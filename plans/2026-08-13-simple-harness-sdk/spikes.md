@@ -431,3 +431,49 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   canonical authority bundle、same transaction、adapter self-hash/global receipt replay与pure-before-interrupt
   边界均已形成可执行闭包；实现时须把interrupt node context无physical Ports落实为类型/构造级能力缩减。
 - 状态：定稿，T4.1/T4.3可按修订后的cross-owner contract恢复实现。
+
+## H15 — Full Workflow semantic extraction closure（执行期审计）
+
+- 触发：H14通过后对T4 WIP与30-source oracle逐文件只读对照，发现实现轨正在重写一个最小新引擎而非
+  提取完整Workflow：contracts把`JsonType` enum误缩成`str`并漏状态/Port allowlist；definition/compile
+  删除完整manifest hashes、SCC/cycle/recursion/channel/tool/prompt/policy/callable-source验证；更严重的是
+  `NativeWorkflowExecutable` 只有terminal projection，没有source的constructor、ainvoke、resume、astream、
+  drive/frontier/task/route/retry/interrupt执行。现有H7 12条与新happy tests仍可GREEN，却会迫使SDK consumer
+  重开发Workflow engine，直接违反用户确认边界与AC-5/AC-7。
+- A2结论：T4.1/T4.3 affected production/commit立即停止；现有未提交代码只算可丢弃骨架。两条任务改为
+  以 frozen `backend/deskpet/workflows/{contracts,definition,runner,native,recovery,replay,control,
+  execution_ports}.py` 为behavior oracle的机械迁移，只做approved import/Port/H14 transforms。所有
+  disposition target必须证明语义，不以symbol存在计完成；新module拆分不得删源行为。
+- tests closure：迁移源oracle assertions，补source-vs-SDK public surface/manifest/engine execution gate；
+  runner需覆盖start/resume/cancel/recover/precreated，native需覆盖ainvoke/astream/frontier/route/retry/
+  parallel/loop/interrupt/failure/completion并用真实checkpoint reopen。H7 terminal gate只是其中一层。
+- 狭挑战迭代 1：`P0 FAIL`，2个P0 + 3个P1：NativeWorkflowExecutable缺source 22-method execution
+  surface而只是terminal壳；Runner/Native state-machine owner分工未冻结；task/frontier/route/join/cycle/retry/
+  failure/interrupt/completion语义全未覆盖；其余9个native targets是未接线局部模型；terminal又丢generic
+  delivery intents。已修订为Runner只做registry/lease/admission/recovery并delegate，Native是唯一task/
+  frontier owner；逐项冻结execution semantics与source-equivalent oracle，并保留bounded generic delivery +
+  workflow.final同事务/no replay，待第二轮挑战。
+- 狭挑战迭代 2：`FAIL`，1个P0 + 2个P1：T4.3 errors owner只列InvalidStatePatch，使source-exact
+  T4.1缺整套error vocabulary；source constructor的产品terminal registries/DeepResearch progress+metrics
+  没有exact Port transform；generic delivery没有可执行bounds/identity/privacy/order。已把完整errors类/enums/
+  envelope归T4.3，冻结generic terminal/progress/observer Ports替换产品依赖，并为delivery定义16项、32KiB、
+  depth8/items512、stable charset/unique identity/SDK event derivation/privacy recursive deny/canonical sort与
+  全mutation/fault/reopen测试，待第三轮挑战。
+- 狭挑战迭代 3：`FAIL`，1个P0 + 2个P1：conditional selector仍拿full Context，可在route receipt前
+  physical call后崩溃重放；async terminal commit projector仍拿full Context且lookup/legacy fallback不明确；
+  errors.py不在原30-file/184-symbol机器oracle，文字owner不能防伪实现/产品duplicate。已冻结selector
+  pure policy+capability-reduced context+effect-node拆分；terminal projector改为nullable capability lookup、
+  pure ProjectionContext、deterministic input/output hash与strict intent/blob validation；新增不改变原freeze的
+  T0.5 supplemental errors hash/12-symbol disposition/API/survivor gate，待第四轮挑战。
+- 狭挑战迭代 4：`FAIL`，1个P0 + 2个P1：terminal capability/request factory未durably pin，restart
+  lookup None会把原projector Run降级legacy；没有pre-final output receipt就无法兑现跨crash output conflict；
+  pure route仍留live clock/observer/progress callable。已把exact projector descriptor与request schema/factory
+  hashes固化manifest/start snapshot；新增pure projection prepare receipt，prepare后绝不重跑，prepare前重算
+  明确以trusted-pure/零外部可见为边界；route context只留immutable identity/state/frozen timestamp，observer/
+  progress由engine在selector外调用，补registry drift/prepare fault与mutable clock/callback spy测试，待第五轮。
+- 狭挑战迭代 5：`PASS`，`NEW_CRITICAL_FINDINGS=0`。Projector descriptor/request factory已pin进manifest/
+  immutable start snapshot，lookup不得降级；projection pure pre-prepare、durable prepared authority与final consume/
+  replay边界可执行；PureRouteContext只有immutable inputs/frozen logical time且零callable；T4.1是唯一schema/UoW
+  owner；supplemental errors oracle与source完全一致。实现fault matrix另须验证projection prepare/read/consume
+  继承active lease+expected-head fence、terminal/cancelled stale writer拒绝，以及blob ref wire/ownership/existence。
+- 状态：定稿，T0.5 GREEN后T4.1/T4.3可恢复完整机械迁移。

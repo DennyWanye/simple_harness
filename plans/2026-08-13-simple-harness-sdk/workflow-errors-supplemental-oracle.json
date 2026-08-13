@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "source_commit": "122ec55989f8a77e023aeb44ba1b4dae1b694269",
+  "source_path": "backend/deskpet/workflows/errors.py",
+  "source_sha256": "2d5e1c536f2a1c73dcae8034425572c3749ca904029d44253af2f0bcdb01bb93",
+  "reason": "H15 found that the reusable Workflow error vocabulary was omitted from the original inventory.",
+  "entries": [
+    {"symbol": "WorkflowErrorCode", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.WorkflowErrorCode"},
+    {"symbol": "ErrorDisposition", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.ErrorDisposition"},
+    {"symbol": "ERROR_DISPOSITIONS", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.ERROR_DISPOSITIONS"},
+    {"symbol": "WorkflowContractError", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.WorkflowContractError"},
+    {"symbol": "WorkflowDefinitionError", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.WorkflowDefinitionError"},
+    {"symbol": "InvalidStatePatch", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.InvalidStatePatch"},
+    {"symbol": "StateMergeConflict", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.StateMergeConflict"},
+    {"symbol": "WorkflowDependencyUnavailable", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.WorkflowDependencyUnavailable"},
+    {"symbol": "AsyncOnlyWorkflowError", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.AsyncOnlyWorkflowError"},
+    {"symbol": "UnsupportedDeltaChannelError", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.UnsupportedDeltaChannelError"},
+    {"symbol": "LeaseLostError", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.LeaseLostError"},
+    {"symbol": "WorkflowNodeError", "disposition": "sdk_public", "target_symbol": "simple_harness.workflow.errors.WorkflowNodeError"}
+  ],
+  "forbidden_product_authority_definitions_after_cutover": [
+    "WorkflowErrorCode", "ErrorDisposition", "ERROR_DISPOSITIONS", "WorkflowContractError",
+    "WorkflowDefinitionError", "InvalidStatePatch", "StateMergeConflict",
+    "WorkflowDependencyUnavailable", "AsyncOnlyWorkflowError", "UnsupportedDeltaChannelError",
+    "LeaseLostError", "WorkflowNodeError"
+  ]
+}

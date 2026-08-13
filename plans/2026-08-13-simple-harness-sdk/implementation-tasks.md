@@ -47,6 +47,21 @@
 - tests：generator golden/self tests覆盖 source drift、unclassified、duplicate target、forbidden survivor。
 - 依赖：T0.2；必须在 T1.1 前 PASS，不能推迟到 cutover。
 
+### T0.5 — 补冻 Workflow error vocabulary oracle [AC-5, AC-8]
+
+- 文件：`workflow-errors-supplemental-oracle.json`、
+  `$PRODUCT_REPO/scripts/acceptance/{verify_sdk_oracles,build_sdk_symbol_disposition}.py`、对应golden tests。
+- 原因：H15发现`backend/deskpet/workflows/errors.py`被原30-file inventory漏掉；不修改或放宽既有
+  30-file/184-symbol freeze，而是增加独立supplemental authority。
+- 冻结：source commit=`122ec55989f8a77e023aeb44ba1b4dae1b694269`，SHA-256=
+  `2d5e1c536f2a1c73dcae8034425572c3749ca904029d44253af2f0bcdb01bb93`，12个symbols逐项
+  `sdk_public -> simple_harness.workflow.errors.*`，并全部进入final product forbidden-survivor扫描。
+- gate：两个acceptance scripts必须同时校验原oracle与supplemental hash/inventory/disposition/API targets；
+  source drift、missing/extra symbol、target缺失、产品保留任一同名definition/constant都fail closed。
+- tests：supplemental unchanged PASS；逐项source drift/unclassified/duplicate target/missing SDK target/
+  forbidden survivor golden FAIL；不得重新生成或改变原184 inventory hash。
+- 依赖：T0.4；必须在T4.1/T4.3提交前GREEN。
+
 ## S1 — contracts / Provider / Tool
 
 ### T1.1 — 冻结 JSON、identity、message/event/error public API [AC-1, AC-2]
@@ -516,7 +531,16 @@
 
 ### T4.1 — Native compiler/runner/checkpoint/control ports [AC-5, AC-7]
 
-- 文件：`workflow/{contracts,definition,compiler,runner,checkpoint,lease,recovery,replay,trace,control,execution_ports}.py`。
+- 文件：`workflow/{contracts,definition,compiler,runner,checkpoint,lease,recovery,replay,trace,control,execution_ports}.py`，
+  以及T2.1 clean schema v1 / T2.2 SQLite UoW 的 workflow checkpoint/adapter operation receipt 与
+  `terminal_projection_prepares` authority（本任务是这些Workflow-owned表/命令的唯一owner）。
+- 迁移基线：这是 frozen sources 的 full semantic extraction，不是 greenfield rewrite。以
+  `backend/deskpet/workflows/{contracts,definition,runner,recovery,replay,control,execution_ports}.py` 为
+  behavior oracle，除已批准 `BC-SDK-IMPORTS`、Host dependency Port化、H14明确新增的 pure-interrupt 与
+  same-transaction/receipt约束外，保留所有 reusable public/private行为、构造签名、状态枚举、validation、
+  manifest/hash、retry/loop/HITL/quarantine/replay/recovery语义；不得因 focused tests未覆盖而删除或
+  用小型替代实现。`compiler/checkpoint/lease/trace` 可以从源模块拆分职责，但拆分前后行为必须由迁移的
+  source oracle assertions与API snapshot证明等价。
 - 改法：完整兑现 frozen symbol disposition 的非-native Workflow authority，不能只实现 runner
   最小表面：`control.py` 必须提供 `ExecutionControl`、`WorkflowInterrupt`、`WorkflowSuspended`、
   `bind_execution_control`、`workflow_interrupt`；`execution_ports.py` 必须提供 public
@@ -535,6 +559,20 @@
   重复 configure、构造 concrete SQLite或 hidden fallback。保留
   retry/loop/HITL/quarantine/replay语义。contracts/definition/recovery/replay/runner/control/
   execution_ports 的 frozen target symbol 必须全部存在且由 API snapshot/symbol disposition gate校验。
+  `CompiledWorkflow` 继续拥有 definition-derived pure graph operations：node/route lookup、patch validation与
+  reducer merge、edge/join/activation/cycle budget计算；`WorkflowRunner` 只拥有registry/lease/admission/
+  recovery orchestration，materialize一个T4.3 `NativeWorkflowExecutable` 后委托执行，禁止自己成为第二个
+  node task/frontier/retry/HITL state-machine owner。Runner与Native的delegation protocol/API snapshot必须
+  明确，product cutover gate扫描并禁止SDK外第二个 Workflow state-machine owner。
+  Conditional route selector是pure graph authority：`ConditionalEdge` 必须声明
+  `selector_effect_policy="pure"`（缺失/其他值compile fail），调用时只传immutable state与
+  `PureRouteContext`；该context只含immutable workflow/run/checkpoint/task/source identity、deep-copied validated
+  state与checkpoint中冻结的logical timestamp，不含live clock、observer/progress或任何callable/Port。
+  Engine可在selector返回/route receipt提交后，用engine-owned observer/progress发通知，但selector自身零
+  callback authority。effectful routing必须拆成durable effect node +
+  pure selector。selector结果canonical validate后，用stable
+  `(run_id, checkpoint_id, task_id, source)` route operation identity同事务提交；selector调用后、route
+  receipt前crash可以重算，但selector physical调用始终为0。
   Adapter 六类 write 都必须携 caller从 durable input派生的 `operation_id`；canonical `payload_hash`
   必须由 adapter 对该method全部会影响write或outcome的实际参数自行 canonicalize + SHA-256重算，禁止
   信任 caller传入hash或遗漏可写字段。若保留 caller expected hash，只能先constant-compare adapter重算值，
@@ -558,7 +596,11 @@
   与 checkpoint同生共死；六类method各覆盖 exact operation replay 与 same-key/different-payload conflict，
   对每个method逐一变更每个可写/影响outcome字段都必须触发adapter重算hash conflict；另测两个并发
   method复用同global operation id只有一个winner，loser ledger/checkpoint零写，并断言 receipt/outcome
-  identity未变化。
+  identity未变化。另迁移 frozen source 的 contracts/definition/runner/recovery/replay assertions（只允许
+  import/factory/明确H14 transform）；fail closed 比较 source public surface与SDK disposition targets，
+  并覆盖完整 `WorkflowManifest` hashes、SCC/cycle budget、recursion/superstep、channel writer/reducer、
+  tool/prompt/policy/callable-source validation、runner start/resume/cancel/recover/precreated paths，禁止用
+  仅能通过新写happy tests的小引擎替代。
 - 依赖：T2.1–T2.5。
 
 ### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]
@@ -572,16 +614,72 @@
   `test_optional_profiles.py`。
 - 依赖：T2.3、T3.3、T4.1。
 
-### T4.3 — Native terminal projection / legacy compatibility [AC-5, AC-8]
+### T4.3 — Native execution kernel / terminal projection / legacy compatibility [AC-5, AC-8]
 
 - 文件：`workflow/{native,errors}.py`，`tests/conformance/test_full_runtime_seam.py` 的既有
   `h7_workflow_terminal_gate`（只允许补 marker/import factory，不改 assertion semantics）。
-- API：`NativeWorkflowExecutable.terminal_intents(state, *, run_id, status, error,
-  recovery_action)`；`InvalidStatePatch`。
+- API：完整保留 source `NativeWorkflowExecutable` 构造与 `ainvoke/resume/astream` 执行表面，并新增/保留
+  public `terminal_intents(state, *, run_id, status, error, recovery_action)`；`errors.py` 完整拥有
+  `WorkflowErrorCode`、`ErrorDisposition`/`ERROR_DISPOSITIONS`、`WorkflowContractError`、
+  `WorkflowDefinitionError`、`InvalidStatePatch`、`StateMergeConflict`、`WorkflowDependencyUnavailable`、
+  `AsyncOnlyWorkflowError`、`UnsupportedDeltaChannelError`、`LeaseLostError`、`WorkflowNodeError`，保留source
+  inheritance、stable code/details、node error retry/default disposition与`to_envelope()` byte shape。原
+  30-file/184-symbol disposition完全漏掉`errors.py`；H15 T0.5 supplemental oracle把整套error vocabulary
+  明确列为SDK public authority，API snapshot冻结所有类型与constant。
+- 迁移基线：`backend/deskpet/workflows/native.py` 是 executable behavior oracle，不得只创建同名类型或
+  terminal facade。必须机械迁移 genesis/load/drive/frontier/task worker/route/retry/failure/interrupt/
+  completion intents、stable task/activation/invocation identity、checkpoint operations与stream/resume，
+  再把持久化/执行依赖接到T4.1 Ports；10个 disposition targets要有行为等价测试，不接受“symbol存在”。
+  `NativeWorkflowExecutable` 是唯一 node task/frontier state-machine owner：ledger-first pending task recovery、
+  bounded parallel frontier与deterministic error winner、StatePatch validate/merge/reduce、conditional route
+  receipt、join activation/firing、cycle epoch/budget、retry/failure/engine-failure、max-supersteps、node-level
+  interrupt以及completion/terminal atomic commit都在这里；T4.1 Runner只能delegate。
+  Source中产品化 constructor dependencies做唯一 approved transform：删除 concrete
+  `TerminalProjectionRegistry`/`AsyncTerminalCommitProjectionRegistry` 参数，替换为必填 generic
+  `TerminalProjectionPort` 与 `TerminalCommitProjectionPort`（protocol由SDK `workflow/native.py` owner）。
+  前者同步`project_public(workflow_name,workflow_version,raw,engine_status)`；后者先同步
+  `lookup(workflow_name,workflow_version)->TerminalCommitProjector | None`，`None`明确表示legacy fallback到
+  下述generic delivery/final projection，存在projector才异步调用`project(request, ProjectionContext)`。
+  `ProjectionContext`只含run/workflow/checkpoint identity、validated immutable state摘要与deadline/clock，
+  不含Provider/Tool/effect/artifact/delivery/任意Host callback Port；projector contract为deterministic pure
+  computation，不得physical I/O。这里的clock/deadline都是start/checkpoint冻结的数值，不是callable/live
+  time。返回值必须是同一bounded generic intent list + optional SHA-256 blob refs，完整通过delivery
+  schema/size/depth/privacy/identity校验。Terminal capability是否存在不能由restart时registry现状推断：
+  `WorkflowManifest` 与 immutable start snapshot必须持久化nullable `TerminalProjectionDescriptor`
+  (`capability_id`,`version`,`projector_fingerprint`,`request_schema_hash`,`request_factory_hash`)及descriptor
+  digest；`None`才是legacy。非None时每次lookup必须按exact descriptor匹配，missing/version/fingerprint/hash
+  drift均fail closed，不得降级legacy。request factory是SDK-owned pure canonical function，输入字段/schema与
+  hash进入descriptor；Host只实现projector，不能临时拼request。
+  Projector output在terminal final transaction前先用stable
+  `(run_id, terminal_checkpoint_id, descriptor_digest)` operation写 durable `terminal_projection_prepares`
+  receipt，保存input hash、validated canonical output JSON/output hash与blob refs。prepare已存在时只读使用，
+  不再调用projector；同identity异input/descriptor conflict。若crash发生在projector返回但prepare commit前，
+  允许重算，因为projector是trusted pure且尚无外部/持久化结果；不声称能检测该窗口的非确定输出。首个
+  成功prepare commit的输出成为唯一authority，随后terminal+delivery transaction原子consume该receipt，
+  exact after-commit replay不重投影。Host可注入产品projector，SDK descriptor=None默认保留legacy。
+  `TerminalProjectionDescriptor`、`ProjectionContext`、`TerminalCommitProjector`、两个Projection Ports与
+  prepare receipt/result都是SDK public typed contracts；SQLite prepare/read/consume commands经T4.1
+  canonical `WorkflowExecutionPorts` 暴露，Native不能访问concrete SQLite或另开transaction。
+  `_freeze_public_progress`、DeepResearch-specific `_v2_observer_attributes/_emit_v2_metrics` 不进入SDK engine；
+  替换为可选 `WorkflowProgressPort.freeze_patch(...)` 与 `WorkflowObserverPort.node_started/node_finished(...)`，
+  未注入时只保留validated StatePatch且不发metrics，绝不得import/no-op产品DeepResearch代码。constructor/
+  Ports/API snapshot与测试必须证明此exact transform，不能只保留method名字。
 - 改法：`terminal_public` 采用严格 bounded schema，只允许 frozen metrics/diagnostic codes/
   skipped stage IDs/retry action，拒绝未知字段、负数、重复 stage、非 allowlist 值，且绝不投影
   topic/raw query 等私有 state；没有 `terminal_public` 的 legacy workflow 保持 frozen exact
   canonical JSON byte shape。实现属于通用 Workflow runtime，不包含 DeskPet 产品 schema。
+  generic delivery不是产品字段：保留 source `values.delivery_intents` 的bounded contract，校验每项stable
+  intent identity/event key/channel/payload并按canonical order生成delivery intents，再追加workflow.final。
+  v0.1精确schema：list最多16项；每项只允许`intent_id`、`kind`、`channel`、`payload`，四字段都必填；
+  `intent_id`为1..128字符且仅`[A-Za-z0-9._:-]`、全list唯一；`kind`为1..64字符同字符集且不得为`final`；
+  `channel`为1..64字符同字符集；`event_key`由SDK唯一派生`terminal:{intent_id}`、`event_type`唯一派生
+  `workflow.{kind}`，caller不得提供/覆盖。payload必须是JSON object，canonical UTF-8 bytes<=32KiB、最大
+  nesting depth 8、总container items<=512；payload key禁止`topic`、`raw_query`、`prompt`、`messages`、
+  `credentials`、`secrets`、`private_state`，并递归拒绝以`_private`/`secret_`开头的key。SDK按
+  `(intent_id, kind, channel, SHA256(canonical payload))`排序；重复identity、未知字段、空channel/kind、
+  超限/深嵌套/隐私key一律整批fail closed，禁止静默skip。
+  terminal + delivery intents必须在同一 checkpoint/execution transaction落地，after-commit exact replay
+  不重复。产品 terminal registry/metrics仍留Host adapter，不能因此删generic delivery。
   T4.3 同时是 T4.1 `control.py` 的 node-level consumer owner：`NativeWorkflowExecutable` 每次执行单个
   native task 必须构造 `ExecutionControl(task_id, durable_responses)`，在
   `bind_execution_control(...)` scope 内调用 node；捕获 `WorkflowSuspended` 后只能经 T4.1 canonical
@@ -604,6 +702,22 @@
   identity/物理调用一次、interrupt稳定resume、后置effect只在response后一次；任何 interrupt node声明
   非pure policy必须compile fail closed，且该node context不可取得physical effect Port。不得用内存counter
   要求不可能的coroutine续跑语义；API docs标明 trusted Workflow code / no raw I/O 边界。
+  同时迁移 source native engine 的 genesis/ainvoke/astream/route/retry/parallel barrier/loop budget/
+  interrupt/failure/completion oracle；close/reopen后从真实 checkpoint恢复，不能由InMemory fake自证；
+  `NativeWorkflowExecutable` 缺任一 execution method或绕过T4.1 canonical Ports即FAIL。至少覆盖linear、
+  conditional route、join、bounded cycle、parallel deterministic winner、retry、pending-result crash/reopen、
+  route receipt crash、interrupt suspend/reopen/resume、max-step/failure、terminal+generic delivery atomic/no replay，
+  并证明InMemory与durable store行为等价。`NodeTaskOutcome`等9个辅助target必须保留source types/fields/invariants
+  （如StatePatch/NodeExecutionIdentity与pending progress），不能用未接线Mapping壳代替。
+  errors source oracle/API snapshot覆盖全词汇；constructor transform测试用generic fake Ports证明product
+  registry/DeepResearch metrics不可import且unknown projection fail closed；delivery逐字段mutation、17项、
+  32KiB边界、depth/items、duplicate id、privacy keys、canonical order与terminal atomic rollback/reopen全覆盖。
+  conditional selector-before-route-receipt crash用真实Provider/Tool ledger spy证明selector physical count=0；
+  compiler拒绝非pure/missing selector policy。terminal commit projector覆盖lookup None legacy fallback、显式
+  capability missing/version/fingerprint/request hash drift fail、narrow context无physical Port、request factory
+  字段mutation、project-before-prepare crash重算但零外部调用、prepare-after-commit reopen不重投影、同prepare
+  identity异input conflict、returned intent/blob逐字段mutation与prepare后/final commit前reopen。route tests另
+  用mutable wall clock与callback spies证明selector拿不到live time/callable且reopen分支一致。
 - 依赖：T3.0、T4.1。
 
 ## S5 — official Profiles
