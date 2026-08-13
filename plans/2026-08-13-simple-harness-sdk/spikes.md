@@ -227,6 +227,30 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   write-point crash/reopen matrix。
 - 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
 
+## H11 — Runtime owner lease heartbeat（执行期静态闭包审计）
+
+- 触发：T3.1 首版只在 `_activate` 获取有界 `workflow_leases` row，长 Driver 运行期间
+  无 renew。TTL 过期后第二 Runtime 可接管，而旧 Driver 仍可继续物理 Provider/Tool；
+  只在最后 Context/terminal CAS 拒绝已经太晚。
+- 结论：增加 owner+epoch CAS `renew_runtime_lease`，Runtime 在严格小于 TTL 的间隔
+  heartbeat。renew 失败立即 cancel 旧 Driver/未 handoff effect；所有 side-effect/context/
+  terminal 命令均消费当前 active lease fence，Provider/Tool handoff 在同 UoW transaction
+  校验 fence。失租前已 handed_off 的原调用只允许完成/reconcile，新 owner 不重放。
+  close 按 cancel Driver/未 handoff -> heartbeat 保持期间 join Driver -> 停并 join heartbeat ->
+  释放 lease 顺序，防止慢取消期间形成无租双 owner。
+  虚拟 clock 覆盖长运行续租、新 epoch 接管、旧 owner 零新出站/写入和 close 无泄漏。
+- 性质：这是 durable single-owner Kernel 的 safety closure，不是历史 Run 兼容。
+- 狭挑战迭代 1：`FAIL`，2 个 critical（Provider/Tool handoff 的 lease-fenced API/SQL 责任
+  未落文件；non-cooperative call 下 bounded close/隔离语义未冻结）。已指定 T2.4/T2.5
+  Port 签名、同 transaction 的 SQLite active-lease + ledger CAS、Tool 双 fence、post-handoff settle
+  例外、竞态测试和 non-cooperative bounded-close 分支。
+- 狭挑战迭代 2：`FAIL`，1 个 critical（只改底层 UoW 签名，未冻结从
+  `DriverInvocation` 经 ReAct 到 Coordinator/Executor 的 per-call lease 传递）。已将
+  `ExecutionLease` 列为上层 public invoke/execute 到两个 handoff UoW 的逐层必填参数，
+  禁止共享可变 state/闭包/Host pre-check，并补漏传/错 run/旧 epoch 零物理调用回归，
+  待第三轮挑战。
+- 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
+
 ## H10 — ReAct termination durable checkpoint（执行期静态闭包审计）
 
 - 触发：T3.3 的 standalone ReAct 实现将 `turns/tool_calls/repeat/started_at` 只保存在
@@ -249,4 +273,3 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   任一超限则零 effect prepare。
 - 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
 - 性质：这是未发布 SDK schema v1 的 runtime closure，不是历史 Run 兼容处理。
-- 狭挑战迭代 1：待执行。

@@ -195,7 +195,11 @@
 
 - 文件：`runtime/{kernel,terminal,admission,context,start_snapshot,live_index}.py`。
 - API：`build_runtime(uow, profiles, drivers, ports, root_profile_key="agent.general")` 不接受 classifier；
-  `Runtime.start/close`、`RunClient.start/query/signal/cancel`。
+  `Runtime.start/close`、`RunClient.start/query/signal/cancel`。`RuntimePorts` 必须显式提供
+  Provider coordinator、Tool executor、Authorization、Context、Delivery、Reconciliation 与 typed
+  ReAct checkpoint authority（仅暴露携 invocation `ExecutionLease` 的 read/CAS）；这些字段
+  不得为 optional/`None` 或由 Driver 私有引用绕过，test 若不需要某能力也必须
+  显式注入 typed no-op/spy Port。
 - 改法：移植 atomic start/activation、single owner/recovery lease、terminal lifecycle；root key const
   校验；`tool_catalog_stale` 走一次 permanent terminal。`ContextPort` 冻结为 durable
   `load -> ContextSnapshot(revision, messages)` 与
@@ -207,8 +211,43 @@
   每次 append 在同一 transaction 中校验 `workflow_leases` 的 active
   owner+epoch+expiry；旧 owner 在新 epoch 接管后即使 revision 尚未变也必须拒绝，
   不增加第二个内存 authority。
+  Runtime 必须以严格小于 TTL 的间隔 heartbeat，用 owner+epoch CAS 原子
+  `renew_runtime_lease`；同 owner 再 claim 不得只返回旧 expiry。renew 失败/超时必须立即
+  cancel 该 owner 的 Driver 与所有尚未 handoff 的 side effects，之后任何 Provider/Tool/
+  Context/terminal command 必须用相同 active lease fence。Provider/Tool 的 durable
+  handoff transition 必须在同一 UoW transaction 内校验 active owner+epoch+expiry；旧 owner
+  失租后未 handoff 的操作零写入/零出站拒绝。失租前已原子进入 `handed_off`
+  的物理调用可完成一次，但新 owner 只能读取/reconcile 原 ledger，绝不得重放；
+  `close()` 必须先取消 Driver/未 handoff 操作并在 heartbeat 仍有效时 join 完成，
+  然后停止并 join heartbeat，最后释放 lease；禁止先停续租后等待慢取消。
+- 跨 slice API 责任：`execution/dispatch.py::ProviderInvocationUnitOfWork.
+  hand_off_provider_invocation(..., execution_lease)` 与 `execution/effects.py::EffectUnitOfWork.
+  mark_effect_handed_off(..., run_fence, execution_lease)` 为必改 public Port；SQLite 实现在各自
+  `BEGIN IMMEDIATE` 内先匹配 `workflow_leases(run_id, runtime.kernel, owner_id, epoch,
+  expires_at > now)` 再执行 ledger CAS。Tool handoff 同时校验原 `RunFenceLease` 和
+  Runtime `ExecutionLease`，两者缺一拒绝。Provider/Tool post-handoff settle/reconcile 是唯一
+  active-runtime-lease 例外：只能按原 ledger identity/version 终结一次，不得发起第二
+  transport/handler。这些 API/SQL/tests 属 T3.1 H11 amendment，不得留给 Host 外部 check。
+  `ExecutionLease` 必须从 `DriverInvocation.execution_lease` 沿
+  `ReActDriver/AgentLoopCollaborator/ReActLoop -> ProviderInvocationCoordinator.invoke(...,
+  execution_lease) -> hand_off_provider_invocation` 和 `ReActLoop -> EffectExecutor.execute(...,
+  execution_lease) -> mark_effect_handed_off` 逐层必填传递；禁止存入共享可变
+  coordinator/executor state、闭包或 Host pre-check。每层都校验
+  `execution_lease.run_id == command/context run_id` 且 namespace 为 canonical `runtime.kernel`；
+  漏传由类型签名阻止，错 run/旧 epoch 必须在 handoff 前零物理调用拒绝。
 - tests：`test_kernel_start.py`, `test_fixed_root.py`, `test_start_recovery.py`,
-  `test_catalog_stale_terminal.py`。
+  `test_catalog_stale_terminal.py`；虚拟 clock 跨过多个 TTL 时 heartbeat 保持唯一 owner/
+  第二 Runtime 零接管；停 renew 并由新 epoch 接管后，旧 owner 的 Driver 被 cancel，
+  未 handoff Provider/Tool/Context/terminal 都是零新调用/写入；已 handoff 仅允许原调用
+  完成/reconcile 而第二 transport/handler 为 0；close 后无 heartbeat task。
+  直接回归文件：`tests/integration/execution/test_provider_dispatch.py`、
+  `test_effect_atomic.py`、`tests/integration/runtime/test_kernel_start.py`；在 lease check 后/ledger CAS 前发生
+  epoch+1 takeover 的并发用例必须证明旧 owner 两种 handoff 均零写入/零物理调用。
+  non-cooperative Provider/Tool 的 bounded close 超时分支必须将未 handoff 隔离并依靠 stale
+  lease 拒绝后续步骤；已 handoff 交 ledger reconciler，旧 task 不得保持无界 heartbeat，
+  且 close 有界返回。
+  补充 focused type/runtime tests 覆盖 Coordinator/Executor 漏传不可调用、错 run lease、
+  旧 epoch lease，三者均在 handoff row/transport/handler 计数为 0 时拒绝。
 - 依赖：T3.0、T2.2、T2.6。
 
 ### T3.2 — child/continuation/reconciler closure [AC-5]
