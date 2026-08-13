@@ -1444,6 +1444,12 @@
 
 ### Follow-up backlog（待排期）
 
+- 🟡 **P2 — Simple Harness SDK 消费端首次登录 cold-start 验收** — 本次 SDK 提取仍硬验收
+  clean wheel 安装、纯净 import、显式 Runtime 生命周期、schema v1 首建/reopen，以及已有有效开发
+  登录态下的真实桌面 Workflow E2E；但“清除桌面应用全部数据 -> 首次登录 -> 不经暖重启直接使用
+  SDK Tool/Workflow”的产品级路径需要交互式凭据输入，按用户 SR-9 决定不阻塞当前 release unit，
+  后续独立验证 auth 恢复、Provider/Tool/Profile catalog 异步注册竞态。详见
+  [follow-up](../plans/2026-08-13-simple-harness-sdk-cold-start-followup.md)。
 - 🔴 **P1 — Harness 兼容执行入口与 expected-red 账本收口** — canonical
   `EffectBatchExecutor` 的连续 safe segment/unsafe barrier、reserved host field 拒绝和 durable
   `/stop` 已有直接测试通过，但旧 `test_current_failures.py` 仍绑定退役 AgentLoop/AST 假设并产生

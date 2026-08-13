@@ -1,0 +1,39 @@
+{
+  "behavior_change_id": "BC-SDK-IMPORTS",
+  "status": "approved",
+  "approved_at": "2026-08-13",
+  "approval_event": {
+    "source_request_id": "SR-8",
+    "text_sha256": "112c0f14b202efa7280e1cfa8cb81f4a7dd9ffc4490ca265ad85391d673efaaa"
+  },
+  "approval_sources": ["SR-1", "SR-5", "SR-7", "SR-8"],
+  "scope": "Frozen black-box tests listed in testcase-lock.json only",
+  "reason": "The owner required Simple Harness to use the extracted SDK, remove the old same-source Kernel and Workflows, and keep agent.general as the sole semantic selector.",
+  "allowed_changes": [
+    {
+      "old": "Imports of SDK-owned symbols from backend.deskpet.harness, backend.deskpet.execution, backend.deskpet.workflows, backend.agent.agent_loop, and backend.providers.openai_compatible",
+      "new": "Imports of the matching public simple_harness symbols, or consumer Adapter factories that implement a simple_harness public Port",
+      "constraint": "Existing terminal status, event, identity, idempotency, effect, delivery, authorization, budget, and recovery assertions must retain the same normalized assertion AST hash"
+    },
+    {
+      "old": "Fixtures that directly construct RunKernel with RegisteredRouter/StaticClassifier or launch ticketless children",
+      "new": "Fixtures construct the fixed agent.general SDK runtime and issue a frozen one-shot ProfileLaunchTicket for children",
+      "constraint": "Tests that assert canonical durable behavior are migrated; assertions that require the retired bypass itself are removed and recorded in the transformation receipt"
+    },
+    {
+      "old": "Personal Workflow fixtures whose only semantic authority is ModelPersonalWorkflowMatcher returning one preselected candidate",
+      "new": "Fixtures expose a bounded PersonalWorkflowDescriptor catalog and make agent.general emit workflow_spawn(candidate_id, catalog_generation)",
+      "constraint": "Frozen graph/owner/version anti-forgery and safe-tool assertions must be retained or strengthened"
+    }
+  ],
+  "forbidden_changes": [
+    "Changing expected failure to success or success to failure except for explicit removal of legacy router, ticketless child, or independent Personal matcher behavior",
+    "Weakening exact-once, unknown, fence, atomicity, authorization, budget, secret-redaction, output-contract, or delivery assertions",
+    "Deleting a frozen testcase merely because the new implementation fails it",
+    "Adding a compatibility implementation that preserves a second execution authority"
+  ],
+  "verification": {
+    "mechanism": "verify_sdk_oracles.py compares original file hash, approved import/fixture transforms, normalized assertion AST hash, and an explicit retired-assertion receipt",
+    "expiry": "SDK v0.1 cutover only"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "frozen_at": "2026-08-13",
+  "source_commit": "122ec55989f8a77e023aeb44ba1b4dae1b694269",
+  "policy": "Byte changes require an approved behavior_change_id; copying assertions into the SDK does not authorize deleting or weakening the source oracle.",
+  "files": {
+    "backend/tests/harness_simplification/test_general_agent_root.py": "ab6cda12feecad1d6941d4ca833cff18fc65cc8c5080290071c454b65c482744",
+    "backend/tests/harness_simplification/test_run_kernel.py": "cf58858e9728c8919ea11e25a53cf6333322475fdca221592cad4d3ff2fb8f4f",
+    "backend/tests/harness_simplification/test_harness_bootstrap.py": "3cb43b5c13cecaefe1f041ad97171cc2cd112145848744e64090ba61fb078eac",
+    "backend/tests/harness_simplification/test_wi2_tool_executor.py": "5af35317c186f45541918aa690f8f020263e19b7f2819a8b354f83d5f5d9ebca",
+    "backend/tests/harness_simplification/test_execution_continuations_uow.py": "c13baa0f1bb959aac3c37c5f4b44c1350fbf6b9d7ef7e13cbe3a4362c1d1a704",
+    "backend/tests/harness_simplification/test_workflow_driver.py": "c1fee4e25ff02ee8e096852f53d673b1e9ebe6dfe1a277d72d5c3ef6ea3efc0f",
+    "backend/tests/harness_simplification/test_workflow_outbox_tx.py": "6a0d07748f74c8174bd7ad7abac967e8a32a192e0e0967ce94881f777ca7e7f8",
+    "backend/tests/companion/test_provider_dispatch.py": "4c19960b5b31294f9fa5f862225db63b1a3b992a18ad074402cc901e55ed03eb",
+    "backend/tests/companion/test_personal_workflow.py": "d5487daf0d1b7fc1aef3f6dd003066a0d792922cc63e256e7d8b6f47c7c1bd47",
+    "backend/tests/harness_simplification/test_product_workflow_profiles.py": "fd541f92f9f1bcb1a3e09f6e7e288c4a7d1ec6a4f1f259676f4d87e5a6686496",
+    "backend/tests/harness_simplification/test_model_workflow_spawn.py": "dc68900a850cab284fc7f5d9db7a744e1cb81fb6bb5869391b8363af4942915d",
+    "backend/tests/capabilities/test_same_run_activation_harness.py": "9c6d23fa1d15a4015be5eee856d0260244c79bcc26f70623179ceffc050a5208"
+  }
+}

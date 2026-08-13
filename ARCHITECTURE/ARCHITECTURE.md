@@ -1,4 +1,4 @@
-<!-- last-calibrated: 9e53bb7924a8b0a2a7a7b98799d6288da2c41914 -->
+<!-- last-calibrated: 122ec55989f8a77e023aeb44ba1b4dae1b694269 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
 > Last verified: 2026-08-13. The Harness `open/generation=1` owner remains the only
@@ -778,3 +778,11 @@ consumer 取消会重新读取最新 durable effect version，将仍可能完成
 process-local late evidence 在 durable terminal 决策前只 peek、不出 ready index；terminal Run 的
 Reconciler 将其结算为 `late_reconciled/reconciled/reconciled_completed_suppressed` 后才 acknowledge，
 不会恢复 Driver。running 窗口与 CAS loser 都保留重试能力。
+
+## 20. 2026-08-13 SDK 提取实施前基线
+
+当前仓库尚未发布独立 SDK；生产执行 authority 仍位于 DeskPet 源码树中的
+`RunKernel + ReAct/Workflow Driver + SqliteExecutionUnitOfWork`。已确认的 SDK 目标是提取完整
+durable Harness 和官方 `durable_task/personal_v1/capability_build`，由 Simple Harness 先真实
+消费，再交付 AIPhone 消费合同。当前依赖图、Workflow 选择 authority、模块分类、数据重置和
+许可证边界统一见 [`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)。
