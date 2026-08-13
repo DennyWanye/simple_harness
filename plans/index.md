@@ -11,6 +11,8 @@
 
 | 工作项 | 主文档 | 一句话 | 状态 |
 |---|---|---|---|
+| **shell-file-event-audit-followup** | [follow-up](2026-08-13-shell-file-event-audit-followup.md) | 为不透明 shell 增加 Run-scoped OS 文件事件审计，补足“创建后立即删除”无法由最终摘要观测的边界；明确是可观测性而非安全沙箱。 | 📋 已登记 |
+| **deepresearch-topn-quality-followup** | [follow-up](2026-07-20-deepresearch-topn-quality-followup.md) | v8 候选：显式 Top N 数量/逐项引用门，并让主卡诚实展示 partial/insufficient 业务终态。 | 📋 已登记 |
 | **context-continuity-fix** | [plan](2026-07-12-context-continuity-fix/plan.md) | 修复近期历史尾部、L2/L3 失败隔离、当前消息去重与短澄清图片误触发。 | ✅ 已落地 |
 | **deepresearch-agent-reach** | [plan](2026-07-12-deepresearch-agent-reach/plan.md) | 直接集成固定版本 Agent-Reach，以薄适配器为 DeepResearch 提供平台 URL 识别、doctor、读取后端和 Trace；保留 DeskPet 原生 workflow、fan-out、评分与 Session 交付。 | ✅ 已落地 |
 | **native-workflow-engine** | [plan](2026-07-11-native-workflow-engine/plan.md) | 移除 LangGraph/LangChain/LangSmith 运行与打包依赖，以 DeskPet 原生 canonical-JSON frontier/checkpoint/HITL 内核执行三条长任务；完成冻结包和 PPT Session 真机闭环。 | ✅ 已落地 |
