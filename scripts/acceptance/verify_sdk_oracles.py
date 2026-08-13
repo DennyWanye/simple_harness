@@ -11,14 +11,20 @@ from __future__ import annotations
 
 import argparse
 import ast
-from collections import Counter
 import hashlib
 import json
-from pathlib import Path
 import re
 import subprocess
 import sys
-from typing import Any, Iterable
+from collections import Counter
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+try:
+    from scripts.acceptance import build_sdk_symbol_disposition as symbol_gate
+except ModuleNotFoundError:  # Direct ``python scripts/acceptance/...`` execution.
+    import build_sdk_symbol_disposition as symbol_gate  # type: ignore[no-redef]
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +32,7 @@ PLAN_DIR = ROOT / "plans/2026-08-13-simple-harness-sdk"
 LOCK_PATH = PLAN_DIR / "testcase-lock.json"
 BC_PATH = PLAN_DIR / "behavior-changes/BC-SDK-IMPORTS.json"
 SOURCE_REQUEST_PATH = PLAN_DIR / "source-request.md"
+SUPPLEMENTAL_PATH = PLAN_DIR / "workflow-errors-supplemental-oracle.json"
 ALLOWED_RETIREMENT_REASONS = frozenset(
     {"legacy_router", "ticketless_child", "personal_preselection_matcher"}
 )
@@ -94,7 +101,9 @@ def _assertion_fingerprints(source: bytes, *, filename: str) -> tuple[str, ...]:
 def assertion_ast_hash(source: bytes, *, filename: str = "<oracle>") -> str:
     """Return an order-insensitive, multiplicity-preserving assertion AST hash."""
 
-    return _sha256("\n".join(_assertion_fingerprints(source, filename=filename)).encode())
+    return _sha256(
+        "\n".join(_assertion_fingerprints(source, filename=filename)).encode()
+    )
 
 
 def verify_oracle_bytes(
@@ -112,7 +121,9 @@ def verify_oracle_bytes(
             "FROZEN_ORACLE_CHANGED", f"{filename}: no approved BC-SDK-IMPORTS transform"
         )
 
-    original_fingerprints = Counter(_assertion_fingerprints(original, filename=filename))
+    original_fingerprints = Counter(
+        _assertion_fingerprints(original, filename=filename)
+    )
     current_fingerprints: Counter[str] = Counter()
     candidate_names: list[str] = []
     for candidate_name, candidate_source in candidates:
@@ -152,7 +163,9 @@ def verify_oracle_bytes(
         "candidate_files": candidate_names,
         "original_assertions": sum(original_fingerprints.values()),
         "retired_assertions": sum(retired.values()),
-        "added_assertions": sum((current_fingerprints - original_fingerprints).values()),
+        "added_assertions": sum(
+            (current_fingerprints - original_fingerprints).values()
+        ),
     }
 
 
@@ -172,7 +185,10 @@ def _git_show(repo: Path, commit: str, relative: str) -> bytes:
 
 
 def _validate_approval(bc: dict[str, Any], source_request_path: Path) -> None:
-    if bc.get("behavior_change_id") != "BC-SDK-IMPORTS" or bc.get("status") != "approved":
+    if (
+        bc.get("behavior_change_id") != "BC-SDK-IMPORTS"
+        or bc.get("status") != "approved"
+    ):
         raise OracleInvariantError("BEHAVIOR_CHANGE_NOT_APPROVED", "BC-SDK-IMPORTS")
     event = bc.get("approval_event")
     if not isinstance(event, dict) or event.get("source_request_id") != "SR-8":
@@ -182,17 +198,23 @@ def _validate_approval(bc: dict[str, Any], source_request_path: Path) -> None:
     except OSError as exc:
         raise OracleInvariantError("BEHAVIOR_CHANGE_NOT_APPROVED", str(exc)) from exc
     match = re.search(r"^\| SR-8 \| “(.*?)” \|", ledger, re.MULTILINE)
-    if match is None or _sha256(match.group(1).encode("utf-8")) != event.get("text_sha256"):
+    if match is None or _sha256(match.group(1).encode("utf-8")) != event.get(
+        "text_sha256"
+    ):
         raise OracleInvariantError("BEHAVIOR_CHANGE_NOT_APPROVED", "SR-8 hash mismatch")
 
 
 def _receipt_for(receipts: dict[str, Any], relative: str) -> dict[str, Any] | None:
     transforms = receipts.get("transforms", {})
     if not isinstance(transforms, dict):
-        raise OracleInvariantError("ORACLE_RECEIPT_INVALID", "transforms must be an object")
+        raise OracleInvariantError(
+            "ORACLE_RECEIPT_INVALID", "transforms must be an object"
+        )
     value = transforms.get(relative)
     if value is not None and not isinstance(value, dict):
-        raise OracleInvariantError("ORACLE_RECEIPT_INVALID", f"{relative}: expected object")
+        raise OracleInvariantError(
+            "ORACLE_RECEIPT_INVALID", f"{relative}: expected object"
+        )
     return value
 
 
@@ -204,6 +226,9 @@ def verify_repository(
     source_request_path: Path = SOURCE_REQUEST_PATH,
     receipt_path: Path | None = None,
     replacement_root: Path | None = None,
+    supplemental_path: Path = SUPPLEMENTAL_PATH,
+    sdk_root: Path | None = None,
+    final_product_root: Path | None = None,
 ) -> dict[str, Any]:
     lock = _load_json(lock_path)
     bc = _load_json(bc_path)
@@ -217,7 +242,9 @@ def verify_repository(
     results: dict[str, Any] = {}
     for relative, expected_hash in sorted(files.items()):
         if not isinstance(relative, str) or not isinstance(expected_hash, str):
-            raise OracleInvariantError("ORACLE_CONFIG_INVALID", "invalid testcase lock entry")
+            raise OracleInvariantError(
+                "ORACLE_CONFIG_INVALID", "invalid testcase lock entry"
+            )
         current_path = repo / relative
         current = current_path.read_bytes() if current_path.is_file() else None
         if current is not None and _sha256(current) == expected_hash:
@@ -227,7 +254,8 @@ def verify_repository(
         original = _git_show(repo, source_commit, relative)
         if _sha256(original) != expected_hash:
             raise OracleInvariantError(
-                "ORACLE_BASELINE_HASH_MISMATCH", f"{relative}: git bytes differ from lock"
+                "ORACLE_BASELINE_HASH_MISMATCH",
+                f"{relative}: git bytes differ from lock",
             )
         receipt = _receipt_for(receipts, relative)
         candidates: list[tuple[str, bytes]] = []
@@ -267,11 +295,22 @@ def verify_repository(
         result["status"] = "approved_transform"
         result["sha256"] = _sha256(current) if current is not None else None
         results[relative] = result
+    try:
+        supplemental = symbol_gate.validate_supplemental_oracle(
+            repo,
+            supplemental_path=supplemental_path,
+            expected_source_commit=source_commit,
+            sdk_root=sdk_root,
+            final_product_root=final_product_root,
+        )
+    except symbol_gate.SymbolDispositionError as exc:
+        raise OracleInvariantError(exc.code, exc.detail) from exc
     return {
         "status": "PASS",
         "behavior_change_id": "BC-SDK-IMPORTS",
         "source_commit": source_commit,
         "files": results,
+        "supplemental": supplemental,
     }
 
 
@@ -283,6 +322,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-request", type=Path, default=SOURCE_REQUEST_PATH)
     parser.add_argument("--receipt", type=Path)
     parser.add_argument("--replacement-root", type=Path)
+    parser.add_argument("--supplemental", type=Path, default=SUPPLEMENTAL_PATH)
+    parser.add_argument(
+        "--sdk-root",
+        type=Path,
+        help="Optionally require every supplemental target in this SDK checkout.",
+    )
+    parser.add_argument(
+        "--final-product-root",
+        type=Path,
+        help="At final cutover, reject supplemental authority survivors.",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -292,18 +342,30 @@ def main(argv: list[str] | None = None) -> int:
             bc_path=args.behavior_change.resolve(),
             source_request_path=args.source_request.resolve(),
             receipt_path=args.receipt.resolve() if args.receipt else None,
-            replacement_root=args.replacement_root.resolve() if args.replacement_root else None,
+            replacement_root=args.replacement_root.resolve()
+            if args.replacement_root
+            else None,
+            supplemental_path=args.supplemental.resolve(),
+            sdk_root=args.sdk_root.resolve() if args.sdk_root else None,
+            final_product_root=(
+                args.final_product_root.resolve() if args.final_product_root else None
+            ),
         )
     except OracleInvariantError as exc:
         if args.json:
-            print(json.dumps({"status": "FAIL", "code": exc.code, "detail": exc.detail}))
+            print(
+                json.dumps({"status": "FAIL", "code": exc.code, "detail": exc.detail})
+            )
         else:
             print(str(exc), file=sys.stderr)
         return 1
     if args.json:
         print(json.dumps(report, sort_keys=True))
     else:
-        print(f"SDK_ORACLES_PASS files={len(report['files'])} bc=BC-SDK-IMPORTS")
+        print(
+            f"SDK_ORACLES_PASS files={len(report['files'])} "
+            f"supplemental={report['supplemental']['entries']} bc=BC-SDK-IMPORTS"
+        )
     return 0
 
 
