@@ -58,10 +58,11 @@ SQL_DML_RE = re.compile(
 )
 SQL_TABLE_RE = re.compile(r"(?i)\b(execution_[a-z0-9_]+)\b")
 GENERIC_WORDS = frozenset({"opcode", "operation", "action"})
-# Universal action, provider/effect handoff fencing, and running-root steering
-# add typed transaction entrypoints. They remain on the one
-# SqliteExecutionUnitOfWork DML authority.
-UOW_TRANSACTION_STARTER_BUDGET = 53
+# Four reviewed, typed recovery/configuration entrypoints were added after the
+# R4.5 census: blocked-root start, active-budget configuration, expired-budget
+# claim, and project-workspace rebind.  They remain on the single
+# SqliteExecutionUnitOfWork DML authority; generic opcode dispatch is forbidden.
+UOW_TRANSACTION_STARTER_BUDGET = 57
 
 
 class AuthorityInvariantError(RuntimeError):
@@ -90,13 +91,14 @@ def _git_executable() -> str:
     discovered = shutil.which("git")
     if discovered:
         return discovered
-    bundled = (
+    bundled_root = (
         Path.home()
         / ".cache/codex-runtimes/codex-primary-runtime"
-        / "dependencies/native/git/cmd/git.exe"
+        / "dependencies/native/git"
     )
-    if bundled.is_file():
-        return str(bundled)
+    for bundled in (bundled_root / "bin/git", bundled_root / "cmd/git.exe"):
+        if bundled.is_file():
+            return str(bundled)
     raise AuthorityInvariantError("git executable is required for the authority audit")
 
 
@@ -151,6 +153,42 @@ def _sql_text(node: ast.AST) -> str | None:
         if left is not None and right is not None:
             return left + right
     return None
+
+
+def _assigned_sql_texts(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+    name: str,
+) -> tuple[str, ...]:
+    """Resolve local SQL constants without pretending arbitrary values are safe."""
+
+    resolved: list[str] = []
+    for node in ast.walk(function):
+        value: ast.AST | None = None
+        targets: tuple[ast.AST, ...] = ()
+        if isinstance(node, ast.Assign):
+            value = node.value
+            targets = tuple(node.targets)
+        elif isinstance(node, ast.AnnAssign):
+            value = node.value
+            targets = (node.target,)
+        if value is None or not any(
+            isinstance(target, ast.Name) and target.id == name for target in targets
+        ):
+            continue
+        sql = _sql_text(value)
+        if sql is not None:
+            resolved.append(sql)
+    return tuple(resolved)
+
+
+def _is_read_only_sql(sql: str) -> bool:
+    """Accept only statically recognisable read statements.
+
+    CTEs are intentionally not accepted here: writable CTEs and dynamically
+    assembled opcodes must continue to fail closed.
+    """
+
+    return re.match(r"(?is)^\s*(?:select|pragma|explain)\b", sql) is not None
 
 
 def _enclosing_symbols(tree: ast.Module, relative: str) -> list[SymbolNode]:
@@ -279,9 +317,18 @@ def _generic_sql_violations(repo: Path) -> list[str]:
                     continue
                 if child.func.attr not in {"execute", "executemany", "executescript"} or not child.args:
                     continue
-                sql = _sql_text(child.args[0])
+                sql_arg = child.args[0]
+                sql = _sql_text(sql_arg)
                 if sql is None and function_tables:
-                    violations.append(f"{relative}:{symbol.symbol}:{child.lineno}:dynamic_sql")
+                    local_sql = (
+                        _assigned_sql_texts(symbol.node, sql_arg.id)
+                        if isinstance(sql_arg, ast.Name)
+                        else ()
+                    )
+                    if not local_sql or not all(_is_read_only_sql(item) for item in local_sql):
+                        violations.append(
+                            f"{relative}:{symbol.symbol}:{child.lineno}:dynamic_sql"
+                        )
                 elif (
                     sql is not None
                     and "{}" in sql

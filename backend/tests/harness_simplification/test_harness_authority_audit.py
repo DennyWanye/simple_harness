@@ -64,14 +64,15 @@ def test_manifest_refresh_preserves_approved_baseline_commit(monkeypatch, tmp_pa
     assert json.loads(path.read_text(encoding="utf-8"))["baseline_commit"] == approved_commit
 
 
-def test_authority_audit_resolves_bundled_git_without_path(monkeypatch) -> None:
+def test_authority_audit_resolves_platform_bundled_git_without_path(monkeypatch) -> None:
     monkeypatch.delenv("DESKPET_GIT", raising=False)
     monkeypatch.setenv("PATH", "")
 
     executable = Path(authority_audit._git_executable())
 
     assert executable.is_file()
-    assert executable.name == "git.exe"
+    assert executable.name in {"git", "git.exe"}
+    assert "dependencies/native/git" in executable.as_posix()
 
 
 @pytest.mark.parametrize(
@@ -184,6 +185,38 @@ async def dispatch(db, opcode, table):
 
     assert violations == [
         "backend/deskpet/harness/renamed_writer.py:dispatch:generic_opcode"
+    ]
+
+
+def test_local_dynamic_execution_select_is_recognised_as_read_only(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "backend/deskpet/harness/public_reader.py",
+        '''
+async def read_facts(db):
+    table = "execution_runs"
+    query = f"SELECT run_id, status FROM {table} WHERE run_id=?"
+    return await db.execute(query, ("run-1",))
+''',
+    )
+
+    assert authority_audit._generic_sql_violations(tmp_path) == []
+
+
+def test_local_dynamic_execution_dml_still_fails_closed(tmp_path: Path) -> None:
+    _write(
+        tmp_path,
+        "backend/deskpet/harness/dynamic_writer.py",
+        '''
+async def write_status(db):
+    table = "execution_runs"
+    query = f"UPDATE {table} SET status='failed' WHERE run_id=?"
+    await db.execute(query, ("run-1",))
+''',
+    )
+
+    assert authority_audit._generic_sql_violations(tmp_path) == [
+        "backend/deskpet/harness/dynamic_writer.py:write_status:5:dynamic_sql"
     ]
 
 

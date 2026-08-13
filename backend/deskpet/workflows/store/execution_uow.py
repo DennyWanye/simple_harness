@@ -447,6 +447,20 @@ class ExecutionTx:
             now=now,
         )
 
+    async def mark_workflow_running_on_claim(
+        self,
+        *,
+        run_id: str,
+        now: float,
+    ) -> bool:
+        """Advance a generic Workflow Run inside the caller-owned claim tx."""
+
+        return await self._unit_of_work._mark_workflow_running_on_claim_tx(
+            self._db,
+            run_id=run_id,
+            now=now,
+        )
+
     async def open_workflow_decision(
         self,
         *,
@@ -1252,6 +1266,45 @@ class SqliteExecutionUnitOfWork:
                 "execution_driver_conflict", "workflow checkpoint cannot mutate another driver"
             )
         return row
+
+    @staticmethod
+    async def _mark_workflow_running_on_claim_tx(
+        db: aiosqlite.Connection,
+        *,
+        run_id: str,
+        now: float,
+    ) -> bool:
+        """Synchronize the generic Run while the native lease claim is open.
+
+        Returning ``False`` lets the Workflow store preserve its existing
+        ``StaleRunFence`` boundary without teaching that store execution SQL.
+        """
+
+        row = await (
+            await db.execute(
+                "SELECT driver_kind FROM execution_runs WHERE run_id=?",
+                (run_id,),
+            )
+        ).fetchone()
+        if row is None or str(row["driver_kind"]) != "workflow":
+            return False
+        cursor = await db.execute(
+            """UPDATE execution_runs
+            SET status='running',
+                started_at=COALESCE(started_at,?),
+                version=version+CASE
+                    WHEN status!='running' OR started_at IS NULL THEN 1
+                    ELSE 0
+                END,
+                updated_at=CASE
+                    WHEN status!='running' OR started_at IS NULL THEN ?
+                    ELSE updated_at
+                END
+            WHERE run_id=? AND terminal_event_id IS NULL
+              AND status IN ('created','queued','running','waiting')""",
+            (now, now, run_id),
+        )
+        return cursor.rowcount == 1
 
     async def _consume_workflow_decisions_tx(
         self,

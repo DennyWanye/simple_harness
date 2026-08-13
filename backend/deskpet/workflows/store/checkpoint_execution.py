@@ -1,8 +1,8 @@
 """Compatibility adapter for native checkpoints joining an execution UoW tx.
 
 The adapter deliberately owns no SQL or transaction lifecycle.  It binds the
-checkpointer's already-open SQLite connection to the canonical execution UoW
-and forwards the five typed checkpoint operations.
+caller's already-open SQLite connection to the canonical execution UoW and
+forwards the typed workflow/checkpoint operations.
 """
 
 from __future__ import annotations
@@ -24,6 +24,18 @@ class SqliteCheckpointExecutionAdapter:
     @property
     def unit_of_work(self) -> SqliteExecutionUnitOfWork:
         return self._unit_of_work
+
+    async def mark_running_on_claim(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        run_id: str,
+        now: float,
+    ) -> bool:
+        return await self._unit_of_work.bind(db).mark_workflow_running_on_claim(
+            run_id=run_id,
+            now=now,
+        )
 
     async def consume_decisions(
         self,

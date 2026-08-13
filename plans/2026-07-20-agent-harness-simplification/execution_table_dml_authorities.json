@@ -14,7 +14,7 @@
       "counted": true,
       "kind": "runtime_dml",
       "path": "backend/deskpet/workflows/store/execution_uow.py",
-      "source_hash": "4fd6f1bae3b427af84864512e39a3942f3472b2c8c84337186d9dcaad2183767",
+      "source_hash": "f396d7f92fff523f06b7fe457ca19a6845f42bbcd489fe54870897b359c097eb",
       "symbol": "SqliteExecutionUnitOfWork",
       "tables": [
         "execution_child_commands",
@@ -35,7 +35,7 @@
     {
       "authority": "schema_migration",
       "callsites": [
-        "backend/deskpet/workflows/store/schema.py:_initialize_workflow_db_unlocked:260"
+        "backend/deskpet/workflows/store/schema.py:_initialize_workflow_db_unlocked:261"
       ],
       "counted": false,
       "kind": "schema_migration",

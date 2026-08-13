@@ -2,6 +2,22 @@
 
 > **最后更新**：2026-08-13
 
+## 2026-08-13 里程碑：Execution 单一写入 authority 收口
+
+- **第二个 `execution_runs` 写入者已删除**：原生 `WorkflowRunStore.claim()` 通过无 SQL 的
+  checkpoint adapter，把通用 Run 的 running 同步加入 caller-owned SQLite 事务；adapter 缺失或
+  写后异常时，Workflow lease/version 与 Execution status/version 会一起回滚。
+- **authority gate 恢复可信**：局部变量承载的静态只读 SELECT 不再误报，动态 DML 仍 fail closed；
+  bundled Git 同时支持 macOS/Linux `bin/git` 与 Windows `cmd/git.exe`。四个新增 transaction
+  starter 已按阻断 root、有效执行预算配置/恢复、项目 workspace 重绑定逐项审核，保持强类型 API，
+  不引入通用 opcode。
+- **当前验证**：聚焦 `48 passed`；authority enforce-target PASS（DML `1`、UoW starters `57`、
+  run map `1`、supervisor task `0`、presenter `1`、legacy `0`）；可靠性门禁后端 `58 passed`、
+  前端 `14 passed`，`HARNESS_RELIABILITY: PASS`。扩大 Harness 为
+  `905 passed / 14 failed / 4 xfailed`，较修复前减少 2 个失败。剩余 14 项是 2 项代码体积预算、
+  1 项 parity fixture 漂移、10 项不可达历史 Git 锚点、1 项 R6 旧 cutover fixture，因此尚不宣称
+  Harness 全量绿。本轮按用户决定跳过冷启动性能对照，Realtime 继续关闭。
+
 ## 2026-08-13 里程碑：复杂 Harness 输出契约、精确授权与 Kimi 真机闭环
 
 - **一次性授权恢复为精确调用语义**：“允许一次”不再把 TaskGrant 带入后续 continuation，只有

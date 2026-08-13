@@ -16,7 +16,12 @@ from deskpet.workflows.launcher import WorkflowLauncher
 from deskpet.workflows.ipc import WorkflowIPCDispatcher
 from deskpet.workflows.runner import WorkflowRegistry, WorkflowRunResult, WorkflowRunner
 from deskpet.workflows.service import WorkflowService, WorkflowServiceError
-from deskpet.workflows.store import NativeCheckpointStore, RunFence, WorkflowRunStore
+from deskpet.workflows.store import (
+    NativeCheckpointStore,
+    RunFence,
+    StaleRunFence,
+    WorkflowRunStore,
+)
 from deskpet.workflows.store.checkpoint_execution import (
     SqliteCheckpointExecutionAdapter,
 )
@@ -598,6 +603,70 @@ async def test_native_claim_atomically_marks_generic_workflow_running(tmp_path):
     assert running[0] == "running"
     assert running[1] is not None
     assert running[2] == queued[2] + 1
+
+
+@pytest.mark.asyncio
+async def test_native_claim_without_execution_adapter_rolls_back_both_ledgers(tmp_path):
+    path = tmp_path / "native-claim-no-adapter.db"
+    service, _, _, _, ports = _stack(path)
+    prepared = _prepared(service, "code", "v1", suffix="no-claim-adapter")
+    await service.start_prepared(
+        prepared,
+        service.execution_spec(prepared),
+        execution_ports=ports,
+    )
+
+    unconfigured_store = WorkflowRunStore(path)
+    with pytest.raises(StaleRunFence, match="requires an adapter"):
+        await unconfigured_store.claim(prepared.run_id, "unconfigured-owner")
+
+    with sqlite3.connect(path) as db:
+        assert db.execute(
+            "SELECT status,lease_owner,lease_epoch,run_version FROM workflow_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone() == ("created", None, 0, 0)
+        execution = db.execute(
+            "SELECT status,started_at,version FROM execution_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone()
+        assert execution is not None
+        assert execution[0] in {"created", "queued"}
+        assert execution[1] is None
+
+
+@pytest.mark.asyncio
+async def test_native_claim_execution_adapter_fault_rolls_back_both_ledgers(tmp_path):
+    path = tmp_path / "native-claim-adapter-fault.db"
+
+    class FaultingClaimAdapter(SqliteCheckpointExecutionAdapter):
+        async def mark_running_on_claim(self, db, *, run_id: str, now: float) -> bool:
+            assert await super().mark_running_on_claim(db, run_id=run_id, now=now)
+            raise RuntimeError("injected-claim-fault")
+
+    adapter = FaultingClaimAdapter(SqliteExecutionUnitOfWork(path))
+    service, _, store, _, ports = _stack(path, adapter=adapter)
+    prepared = _prepared(service, "ppt", "v1", suffix="claim-fault")
+    await service.start_prepared(
+        prepared,
+        service.execution_spec(prepared),
+        execution_ports=ports,
+    )
+
+    with pytest.raises(RuntimeError, match="injected-claim-fault"):
+        await store.claim(prepared.run_id, "faulting-owner")
+
+    with sqlite3.connect(path) as db:
+        assert db.execute(
+            "SELECT status,lease_owner,lease_epoch,run_version FROM workflow_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone() == ("created", None, 0, 0)
+        execution = db.execute(
+            "SELECT status,started_at,version FROM execution_runs WHERE run_id=?",
+            (prepared.run_id,),
+        ).fetchone()
+        assert execution is not None
+        assert execution[0] in {"created", "queued"}
+        assert execution[1] is None
 
 
 @pytest.mark.asyncio

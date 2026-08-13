@@ -18,6 +18,14 @@ from deskpet.execution.ports import ExecutionUnitOfWork
 class CheckpointExecutionAdapter(Protocol):
     """Execution-ledger writes that must join the checkpointer transaction."""
 
+    async def mark_running_on_claim(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        run_id: str,
+        now: float,
+    ) -> bool: ...
+
     async def consume_decisions(
         self,
         db: aiosqlite.Connection,

@@ -13,6 +13,7 @@ from typing import Any, Iterable
 import aiosqlite
 
 from ..errors import LeaseLostError, WorkflowContractError
+from ..execution_ports import CheckpointExecutionAdapter
 from .schema import initialize_workflow_db
 
 
@@ -40,6 +41,14 @@ class WorkflowRunStore:
     def __init__(self, path: str | Path, *, clock=time.time) -> None:
         self.path = Path(path)
         self._clock = clock
+        self._execution_adapter: CheckpointExecutionAdapter | None = None
+
+    def configure_execution_adapter(self, adapter: CheckpointExecutionAdapter) -> None:
+        """Bind the sole Execution DML authority before generic Runs start."""
+
+        if self._execution_adapter is not None and self._execution_adapter is not adapter:
+            raise ValueError("workflow run store already has another execution adapter")
+        self._execution_adapter = adapter
 
     async def initialize(self) -> None:
         await initialize_workflow_db(self.path)
@@ -834,34 +843,22 @@ class WorkflowRunStore:
                 raise StaleRunFence(f"run cannot be claimed: {run_id}")
             execution = await (
                 await db.execute(
-                    """SELECT driver_kind,status,started_at
-                    FROM execution_runs WHERE run_id=?""",
+                    "SELECT run_id FROM execution_runs WHERE run_id=?",
                     (run_id,),
                 )
             ).fetchone()
             if execution is not None:
-                if str(execution["driver_kind"]) != "workflow":
+                if self._execution_adapter is None:
                     await db.rollback()
                     raise StaleRunFence(
-                        f"native workflow cannot claim another driver: {run_id}"
+                        f"generic workflow execution requires an adapter: {run_id}"
                     )
-                cursor = await db.execute(
-                    """UPDATE execution_runs
-                    SET status='running',
-                        started_at=COALESCE(started_at,?),
-                        version=version+CASE
-                            WHEN status!='running' OR started_at IS NULL THEN 1
-                            ELSE 0
-                        END,
-                        updated_at=CASE
-                            WHEN status!='running' OR started_at IS NULL THEN ?
-                            ELSE updated_at
-                        END
-                    WHERE run_id=? AND terminal_event_id IS NULL
-                      AND status IN ('created','queued','running','waiting')""",
-                    (now, now, run_id),
+                synchronized = await self._execution_adapter.mark_running_on_claim(
+                    db,
+                    run_id=run_id,
+                    now=now,
                 )
-                if cursor.rowcount != 1:
+                if synchronized is not True:
                     await db.rollback()
                     raise StaleRunFence(
                         f"generic workflow execution cannot be claimed: {run_id}"

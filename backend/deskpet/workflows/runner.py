@@ -252,6 +252,10 @@ class WorkflowRunner:
         if not callable(configure):
             raise ValueError("workflow saver cannot accept checkpoint execution ports")
         configure(ports.checkpoint)
+        configure_store = getattr(self.store, "configure_execution_adapter", None)
+        if not callable(configure_store):
+            raise ValueError("workflow run store cannot accept execution ports")
+        configure_store(ports.checkpoint)
         self.execution_ports = ports
 
     async def start(

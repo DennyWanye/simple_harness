@@ -954,7 +954,11 @@ state.db schema 为 v22，存在该 Session 的 `provider_attempt` 样本。comp
 - 活动运行索引：只有一个 `BoundedLiveIndex`。
 - 常驻协调任务：`0`。`HarnessReconciler` 只在 durable 事件到达时创建一个可合并的短任务；
   同时最多一个，处理到当前积压为空就退出。未来到期的 delivery 重试只保留一个一次性计时器。
-- 执行表写入：只有一个 execution-table DML authority。
+- 执行表写入：只有一个 execution-table DML authority：
+  `SqliteExecutionUnitOfWork`。`WorkflowRunStore` 领取原生 lease 时只负责
+  `workflow_runs`，通过无 SQL、无事务生命周期的 `SqliteCheckpointExecutionAdapter`
+  在同一个 caller-owned SQLite 事务中同步 `execution_runs`；适配器缺失、身份不匹配或
+  中途异常都会回滚两个 ledger，禁止恢复旧的第二写入者。
 - 产品结果转换：只有一个 `RunPresenter` 转换 authority。
 - 工具批次：只有一个 `EffectBatchExecutor`。
 - 子任务：统一表示为持久化 `ChildRun`，再回到 Kernel 生命周期。
@@ -963,6 +967,12 @@ state.db schema 为 v22，存在该 Session 的 `provider_attempt` 样本。comp
 
 关闭时先停止新触发，再等待或取消唯一短任务并确认它已经退出，之后才关闭 Driver。
 这些约束由 authority gate 和结构测试锁定，不依赖人工约定。
+
+Execution UoW 当前有 57 个可发现的事务入口。新增的四个入口已经逐项审核：阻断 root 的
+原子创建/终结、root 有效执行预算冻结、崩溃恢复时过期预算认领、首次写入或 child 启动前的
+项目 workspace 重绑定。它们是不同的强类型业务事务，不合并为通用 opcode，仍由同一个
+UoW/DML authority 实现。authority audit 对局部变量承载的 SQL 只接受静态可证明的
+`SELECT/PRAGMA/EXPLAIN`；动态 DML、可写 CTE 或无法解析的 SQL 继续 fail closed。
 
 ## ReAct 与 Workflow 的关系
 
@@ -1192,6 +1202,23 @@ tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝�
 
 ## 验证状态
 
+### 2026-08-13 Execution 单一写入 authority 收口
+
+`WorkflowRunStore.claim()` 不再直接更新 `execution_runs`，通用 Run 的 running 同步改由
+`ExecutionTx.mark_workflow_running_on_claim()` 加入原生 lease 的同一事务。新增测试覆盖正常领取、
+未配置 adapter 和 adapter 写后抛错三条路径；后两条均验证 `workflow_runs` lease/version 与
+`execution_runs` status/version 同时保持原值。authority 审计同时修正局部只读 SELECT 的误报，
+并支持 macOS/Linux 与 Windows 的 bundled Git 布局。
+
+当前验证结果：Workflow/authority 聚焦 `48 passed`；
+`harness_authority_audit.py --check --enforce-target` 为 PASS，机器事实为 execution DML
+authority `1`、UoW transaction starter `57`、live run map `1`、supervisor task `0`、presenter
+`1`、legacy survivor `0`；可靠性门禁后端 `58 passed`、前端 `14 passed`，最终
+`HARNESS_RELIABILITY: PASS`。Harness 扩大套件为
+`905 passed / 14 failed / 4 xfailed`，比修复前少 2 个失败；剩余为 AgentLoop/ReAct 两项代码
+体积预算、parity fixture 漂移、十项不可达历史 Git 锚点与一项 R6 旧 cutover fixture，不能宣称
+完整 Harness 全绿。本轮按用户决定不执行冷启动性能对照；Realtime 继续关闭。
+
 ### 2026-08-13 崩溃恢复可靠性门禁
 
 新增单命令门禁：
@@ -1218,10 +1245,9 @@ marker 只有一组 START/END；Workbench 无需刷新/切换即显示恢复终�
 
 本轮同时移除 `execution/harness_public_read_service.py` 对 `memory.SessionDB` 的生产依赖；
 state.db 公共消息 keyset reader 归还 Inspector 自己的只读边界，Execution 包依赖方向门重新
-通过。加入五项硬退出测试后，扩大 Harness 目录复跑为
-`895 passed / 4 xfailed / 16 failed`；剩余项是历史
-authority/parity fixture 不可达、Git fallback 和 AgentLoop/ReAct 文件预算等非本轮恢复语义
-失败，不能用本门禁替代完整仓库绿灯。
+通过。该轮加入五项硬退出测试后的扩大结果是
+`895 passed / 4 xfailed / 16 failed`；当前最新扩大结果已由上方“Execution 单一写入 authority
+收口”更新，不能用本门禁替代完整仓库绿灯。
 
 ### 2026-07-29 Harness 全量门禁收口
 
