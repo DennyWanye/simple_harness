@@ -474,6 +474,12 @@ class ToolCatalogMutationError(RuntimeError):
     """An atomic catalog mutation is malformed or conflicts with live specs."""
 
 
+class ToolCatalogSnapshotUnavailable(ToolCatalogMutationError):
+    """A durable snapshot references ToolSpecs absent from this process."""
+
+    code = "tool_catalog_stale"
+
+
 class PreparedToolCallStale(ValueError):
     """A prepared call no longer resolves to its exact leased ToolSpec."""
 
@@ -1644,7 +1650,7 @@ class ToolRegistry:
             } | set(self._retired_specs)
             missing = sorted(fingerprints - available)
             if missing:
-                raise ToolCatalogMutationError(
+                raise ToolCatalogSnapshotUnavailable(
                     "snapshot references unavailable ToolSpecs: "
                     + ",".join(missing)
                 )

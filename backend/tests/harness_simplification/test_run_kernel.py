@@ -2111,6 +2111,19 @@ def test_permanent_recovery_failure_unwraps_stale_prepared_call() -> None:
     )
 
 
+def test_permanent_recovery_failure_accepts_typed_stale_catalog() -> None:
+    from deskpet.tools.registry import ToolCatalogSnapshotUnavailable
+
+    failure = ToolCatalogSnapshotUnavailable(
+        "snapshot references unavailable ToolSpecs: " + "a" * 64
+    )
+
+    assert (
+        DriverRuntime._permanent_recovery_failure_code(failure)
+        == "tool_catalog_stale"
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("yield_before_failure", [False, True])
 async def test_recover_stream_stale_prepared_call_terminalizes_once(

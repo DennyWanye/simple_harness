@@ -21,7 +21,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1553"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1547"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -36,8 +36,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_child_inbox:4104",
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_child_inbox:4199",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_child_inbox:4098",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_child_inbox:4193",
         "backend/deskpet/harness/reconciler.py:HarnessReconciler._reconcile_signals:168"
       ],
       "generic_opcode": false,
@@ -96,7 +96,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1459"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1453"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -271,7 +271,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:4874",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:4868",
         "backend/deskpet/harness/kernel.py:RunKernel._signal_control_locked:986"
       ],
       "generic_opcode": false,
@@ -293,7 +293,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal.iterator:4500"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal.iterator:4494"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -339,7 +339,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal.iterator:4511"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal.iterator:4505"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -466,7 +466,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._bootstrap_root_task_context:2429"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._bootstrap_root_task_context:2423"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -481,7 +481,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1428"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1422"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -636,7 +636,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1593"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1587"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -649,7 +649,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1543"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._admit_provider_boundary:1537"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -662,8 +662,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._persist_boundary:369",
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._save_durable_boundary:358",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._persist_boundary:363",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._save_durable_boundary:352",
         "backend/deskpet/workflows/store/execution_uow.py:SqliteExecutionUnitOfWork.commit_skill_scope_activation:1158"
       ],
       "generic_opcode": false,
@@ -701,7 +701,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:4643"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:4637"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -795,7 +795,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:4678"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver.signal_decision_atomically.iterator:4672"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -853,7 +853,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_tool_outcomes:4381",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._apply_tool_outcomes:4375",
         "backend/deskpet/harness/tool_executor.py:EffectBatchExecutor.execute:1167"
       ],
       "generic_opcode": false,
@@ -876,7 +876,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._resume_completed:3867"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._resume_completed:3861"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -889,7 +889,7 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react_recovery.py:ReactFailureRecoveryMixin._persist_failure_set:314"
+        "backend/deskpet/harness/drivers/react_recovery.py:ReactFailureRecoveryMixin._persist_failure_set:321"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",
@@ -902,8 +902,8 @@
     {
       "authority": "sqlite_execution_uow",
       "callsites": [
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._ensure_external_wait_staged:875",
-        "backend/deskpet/harness/drivers/react.py:ReActDriver._stage_external_wait_boundary:865"
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._ensure_external_wait_staged:869",
+        "backend/deskpet/harness/drivers/react.py:ReActDriver._stage_external_wait_boundary:859"
       ],
       "generic_opcode": false,
       "kind": "transaction_starter",

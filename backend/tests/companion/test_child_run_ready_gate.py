@@ -16,6 +16,7 @@ from deskpet.execution.contracts import (
     PersistenceLevel,
     RunContext,
     RunCreate,
+    RunRef,
     RunStartSnapshotRecord,
     RunStatus,
     canonical_json,
@@ -391,6 +392,70 @@ async def test_child_activation_rehydrates_lost_process_pin_after_commit(
     assert state is not None
     assert state.intent_status == "bound"
     assert state.projection_status == "ready"
+    await uow.close()
+
+
+@pytest.mark.asyncio
+async def test_child_with_unavailable_historical_tools_terminalizes_once(
+    tmp_path,
+) -> None:
+    uow, store, platform, parent, parent_lease, coordinator = await _stack(
+        tmp_path
+    )
+    command = await coordinator.submit(parent, _delegate())
+    start = await uow.read_run_start_snapshot(command.child_run_id)
+    assert start is not None
+    prepared = platform._prepared_child_catalog_leases.pop(
+        command.child_run_id
+    )
+    await prepared._pin.rollback()
+    await platform.snapshot_lease_ready_gate.unregister_pending(
+        prepared.lease_intent_id,
+        command.child_run_id,
+    )
+    await parent_lease.release_prepared()
+    assert platform.registry.unregister("fixture_read") is True
+    assert platform.registry.retired_spec_fingerprints() == frozenset()
+
+    leased = (
+        await uow.lease_child_commands(
+            owner="scheduler", limit=1, lease_seconds=30
+        )
+    )[0]
+    scheduled = await uow.schedule_child_command(
+        command.operation_id,
+        lease_owner="scheduler",
+        lease_epoch=leased.schedule_lease_epoch,
+    )
+    driver = _CountingDriver()
+    kernel = RunKernel(
+        uow=uow,
+        router=None,
+        profiles=ProfileRegistry(
+            (ProfileSpec("agent.general", "agent.general", "react"),)
+        ),
+        root_profile_key="agent.general",
+        drivers=driver_catalog(
+            (RegisteredDriver("react", driver, durable_from_start=True),)
+        ),
+        child_runs=coordinator,
+    )
+
+    await kernel._accept_precreated_child(scheduled)
+
+    terminal = await uow.query(
+        RunRef(
+            command.child_run_id,
+            command.intent.child_spec.context.session_id,
+        ),
+        command.intent.child_spec.context.actor(),
+    )
+    assert terminal.status is RunStatus.FAILED
+    assert driver.starts == 0
+    # A later reconciliation tick sees the durable terminal and does not
+    # attempt to rebuild the missing process pin again.
+    await kernel._accept_precreated_child(scheduled)
+    assert driver.starts == 0
     await uow.close()
 
 

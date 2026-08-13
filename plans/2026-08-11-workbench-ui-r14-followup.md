@@ -280,10 +280,13 @@ workspace 内创建交易账本 CSV、Python 标准库 Decimal 分析器、9 项
 memory 环境假设；本轮已修与改动直接相邻的 durable semantic-router、artifact flag 和 mutation
 fixture 回归，但不能把剩余 79 项伪报为通过。
 
-新观察到的独立问题：用历史 r15 profile 启动当前源码时，恢复旧 Run 会因当前 catalog 已不含
+已解决（2026-08-13）：用历史 r15 profile 启动当前源码时，恢复旧 Run 曾因当前 catalog 已不含
 历史 ToolSpecs 而反复抛 `ToolCatalogMutationError: snapshot references unavailable ToolSpecs`。
-这不是 fresh-profile 能力验证的失败，也不能靠忽略日志解决；后续需给历史 Run/catalog 漂移定义
-有界 fail-closed 终态，避免启动恢复循环刷栈。
+现在缺失 snapshot ToolSpec 使用 typed `tool_catalog_stale`；precreated child 在 Driver、Provider 和
+工具执行前进入现有永久恢复不兼容通道，durable 终态只提交一次，后续 reconciliation 看到终态后
+不再重建 process pin。实现没有拿当前同名 ToolSpec 替换历史指纹，也没有伪造已消失的 handler。
+精确复现与相邻回归 `122 passed`，完整 Harness `921 passed / 4 xfailed / 0 failed`，reliability
+gate 后端 `58 passed`、前端 `14 passed`，`HARNESS_RELIABILITY: PASS`。
 
 下一验收已于下述第二轮完成：使用隔离 fresh profile + `kimi-k3` 从真实 Workbench UI 选择可信
 workspace，执行多文件、测试、CLI、自检和一次 `register_artifacts` 的 child durable task，并以

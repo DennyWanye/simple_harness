@@ -1217,10 +1217,10 @@ commit，再允许跨历史迁移做 tree-to-tree 比较。R6 cutover fixture �
 重新可执行。产品 turn parity mapping 由当前源码重算后仍为 `141/141`、unmapped `0`；变化只来自
 调用点行号/派生 identity，冻结 source hash 与 capability 对应关系没有变化。
 
-结构拆分保持单一执行 authority：`RunKernel` 为 1,281 行，`AgentLoop` class AST 为 3,727 行，
-`react.py` 为 5,138 行，分别满足当前 `<=1,300 / <=3,800 / <=5,200` 边界。当前 Harness
-construction 账本为 raw `167,836`、migration-adjusted `167,329`、core `28,486`、Kernel
-`1,281`，六个公开操作、unknown classification `0`、deletion budget `255`，全部通过当前
+结构拆分保持单一执行 authority：`RunKernel` 为 1,291 行，`AgentLoop` class AST 为 3,727 行，
+`react.py` 为 5,132 行，分别满足当前 `<=1,300 / <=3,800 / <=5,200` 边界。当前 Harness
+construction 账本为 raw `167,852`、migration-adjusted `167,345`、core `28,496`、Kernel
+`1,291`，六个公开操作、unknown classification `0`、deletion budget `255`，全部通过当前
 `harness_boundary_construction` 门。R4.5/R5.5 的旧 final 数值仍作为历史里程碑保留，不冒充
 适用于后来扩展产品能力的当前预算。
 
@@ -1228,8 +1228,15 @@ construction 账本为 raw `167,836`、migration-adjusted `167,329`、core `28,4
 Kernel 聚焦 `118 passed`，AgentLoop 持久化聚焦 `31 passed`；authority enforce-target 仍为
 execution DML `1`、UoW transaction starter `57`、live run map `1`、supervisor task `0`、
 presenter `1`、legacy survivor `0`。完整 `backend/tests/harness_simplification` 为
-`920 passed / 4 xfailed / 0 failed`，此前 14 个意外失败全部关闭。4 个 xfail 是明确登记的
+`921 passed / 4 xfailed / 0 failed`，此前 14 个意外失败全部关闭。4 个 xfail 是明确登记的
 预期红用例。本轮按用户决定不执行冷启动性能对照；Realtime 继续关闭。
+
+历史 catalog 恢复也已收口：durable snapshot 引用当前进程不存在的 ToolSpec 时，registry 返回
+typed `tool_catalog_stale`。precreated child 在进入 Driver/Provider/工具执行前，经同一
+`DriverRuntime` 永久恢复不兼容通道提交一次 failed 终态并通知父 Run；后续 reconciliation 直接
+观察该终态，不再反复重建 process pin 或刷异常。这里没有把当前同名 ToolSpec 冒充历史 handler，
+也没有放宽 fingerprint/lease 校验。相邻组合 `122 passed`，reliability gate 后端 `58 passed`、
+前端 `14 passed`，最终 `HARNESS_RELIABILITY: PASS`。
 
 ### 2026-08-13 Execution 单一写入 authority 收口
 

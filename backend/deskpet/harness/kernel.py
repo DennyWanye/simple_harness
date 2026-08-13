@@ -1202,11 +1202,21 @@ class RunKernel(KernelTerminalLifecycle):
                 )
             prepared_child_context = None
             if self._child_runs is not None:
-                prepared_child_context = (
-                    await self._child_runs.activate_child_snapshot_after_commit(
-                        start_snapshot
+                try:
+                    prepared_child_context = (
+                        await self._child_runs.activate_child_snapshot_after_commit(
+                            start_snapshot
+                        )
                     )
-                )
+                except BaseException as exc:
+                    registration = self._drivers[record.spec.driver_kind]
+                    if await self._runtime.terminalize_permanent_recovery_failure(
+                        registration,
+                        record,
+                        exc,
+                    ):
+                        return
+                    raise
             active.prepared_context = prepared_child_context
             if await self._uow.load_continuation(record.run_id) is not None:
                 await self._launch_live(active, self._drivers[record.spec.driver_kind],
