@@ -421,6 +421,105 @@ async def test_failed_root_is_visible_to_next_turn_before_dispatcher_drain(
 
 
 @pytest.mark.asyncio
+async def test_recovered_success_is_projected_and_notified_exactly_once(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await store.activate_runtime()
+    await store.create(_spec())
+    session_db = SessionDB(tmp_path / "state.db")
+    await session_db.initialize()
+    await session_db.ensure_session("session-1")
+    target = SessionTerminalDeliveryTargetV1("session-1", 0)
+    final = await store.commit_run_outcome(
+        "run-1",
+        expected_version=0,
+        terminal_status=RunStatus.COMPLETED,
+        event=_terminal_candidate(payload={"text": "RECOVERED_OK"}),
+        deliveries=(
+            DeliverySpec(
+                "session_terminal",
+                "session-transcript-v1",
+                target.target_id,
+                DeliveryPolicy.DURABLE_REQUIRED,
+            ),
+        ),
+    )
+    notifications: list[tuple[str, dict[str, Any]]] = []
+
+    async def notify(session_id: str, frame: dict[str, Any]) -> None:
+        notifications.append((session_id, frame))
+
+    sink = SessionTerminalDeliverySink(session_db, live_notifier=notify)
+    await sink.deliver(final.event, target.target_id)
+    await sink.deliver(final.event, target.target_id)
+
+    messages = await session_db.get_messages("session-1")
+    assert [(row["role"], row["content"]) for row in messages] == [
+        ("assistant", "RECOVERED_OK")
+    ]
+    assert messages[0]["workflow_event_id"] == final.event.event_id
+    assert notifications == [
+        (
+            "session-1",
+            {
+                "type": "chat_v2_final",
+                "payload": {
+                    "session_id": "session-1",
+                    "run_id": "run-1",
+                    "task_scope_id": "run-1",
+                    "text": "RECOVERED_OK",
+                    "replace_all_provisional": True,
+                    "recovered_terminal": True,
+                },
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_live_presenter_success_suppresses_terminal_backfill_duplicate(
+    tmp_path: Path,
+) -> None:
+    store = SqliteExecutionUnitOfWork(tmp_path / "workflow.db")
+    await store.activate_runtime()
+    await store.create(_spec())
+    session_db = SessionDB(tmp_path / "state.db")
+    await session_db.initialize()
+    await session_db.ensure_session("session-1")
+    await session_db.append_message(
+        session_id="session-1",
+        role="assistant",
+        content="LIVE_OK",
+        root_run_id="run-1",
+        task_scope_id="task-1",
+    )
+    target = SessionTerminalDeliveryTargetV1("session-1", 0)
+    final = await store.commit_run_outcome(
+        "run-1",
+        expected_version=0,
+        terminal_status=RunStatus.COMPLETED,
+        event=_terminal_candidate(payload={"text": "LIVE_OK"}),
+        deliveries=(),
+    )
+    notifications: list[dict[str, Any]] = []
+
+    async def notify(_session_id: str, frame: dict[str, Any]) -> None:
+        notifications.append(frame)
+
+    await SessionTerminalDeliverySink(
+        session_db,
+        live_notifier=notify,
+    ).deliver(final.event, target.target_id)
+
+    messages = await session_db.get_messages("session-1")
+    assert [(row["role"], row["content"]) for row in messages] == [
+        ("assistant", "LIVE_OK")
+    ]
+    assert notifications == []
+
+
+@pytest.mark.asyncio
 async def test_consistency_gate_projects_every_failure_not_only_one_page(
     tmp_path: Path,
 ) -> None:

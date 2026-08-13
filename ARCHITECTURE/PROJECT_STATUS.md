@@ -53,10 +53,16 @@
 - **崩溃恢复门禁已建立**：`scripts/acceptance/harness_reliability_gate.py` 用单命令固定验证授权、
   effect handoff、child→parent、终态投影与重连回放；其中五项会在精确事务 hook 上对独立
   解释器发送真实 `SIGKILL`，重启后验证 SQLite 完整性及外部写/signal/delivery 唯一。当前后端
-  `57 passed`、前端 `12 passed`，
+  `58 passed`、前端 `14 passed`，
   `HARNESS_RELIABILITY: PASS`。Reconciler 的 lane/worker 瞬时失败现在记录结构化关联字段并在默认
   1 秒后 one-shot 重试，关闭时取消 timer，不引入常驻 supervisor。Inspector 的 state.db
   keyset reader 已移回 Execution 自有只读边界，移除 Execution→Memory 越层依赖。
+- **真实 Tauri supervisor E2E 已闭环**：macOS Workbench 内真实点击“允许一次”，在外部 shell
+  effect 已写 START、尚未完成时 `SIGKILL` backend；Tauri 主进程不退出并约 2 秒拉起新 backend。
+  原 Run `efb4a75a2d5759b99b492ed77748278c` 最终 completed，marker 只有一组 START/END，UI 无需刷新
+  即显示恢复终态并回到“空闲”，死进程权限卡同步清除。恢复账本同时终结 effect 和 attempt 为
+  `unknown / started_may_complete`，不重复执行不可判定的外部副作用；Session 重映射、终态 live
+  delivery 和恢复竞态日志误报也已关闭。原始证据仅存本地 gitignored 目录，等待后续 NAS 归档。
 
 ## 2026-08-12 里程碑：Workbench last-mile、设置、恢复与托盘真测全部收口
 

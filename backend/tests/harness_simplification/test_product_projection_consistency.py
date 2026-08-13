@@ -44,11 +44,19 @@ def test_every_product_history_read_crosses_consistency_gate_first() -> None:
     tree = ast.parse(source)
 
     history = _branch_for_message_type(tree, "session_messages_load")
+    remap_lines = sorted(
+        child.lineno
+        for child in ast.walk(ast.Module(body=history.body, type_ignores=[]))
+        if isinstance(child, ast.Call)
+        and isinstance(child.func, ast.Name)
+        and child.func.id == "_remap_chat_peer_group"
+    )
     ensure_lines = _body_method_lines(history, "ensure_current")
     history_reads = _body_method_lines(history, "get_messages")
+    assert len(remap_lines) == 1
     assert len(ensure_lines) == 1
     assert history_reads
-    assert ensure_lines[0] < history_reads[0]
+    assert remap_lines[0] < ensure_lines[0] < history_reads[0]
 
     session_list = _branch_for_message_type(tree, "sessions_list")
     ensure_lines = _body_method_lines(session_list, "ensure_current")

@@ -6,6 +6,7 @@ import asyncio
 import base64
 import json
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
 from weakref import WeakValueDictionary
@@ -139,8 +140,14 @@ class SessionTerminalDeliveryContributor:
 
 
 class SessionTerminalDeliverySink:
-    def __init__(self, session_db: Any) -> None:
+    def __init__(
+        self,
+        session_db: Any,
+        *,
+        live_notifier: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> None:
         self._session_db = session_db
+        self._live_notifier = live_notifier
 
     async def is_bound(self, target_id: str) -> bool:
         target = SessionTerminalDeliveryTargetV1.parse(target_id)
@@ -157,14 +164,51 @@ class SessionTerminalDeliverySink:
         if event.run_id != event.root_run_id:
             raise DeliveryDiscarded("child_terminal_not_projected")
         if event.status not in {
+            OutcomeStatus.SUCCEEDED,
             OutcomeStatus.FAILED,
             OutcomeStatus.CANCELLED,
         }:
             return
+        payload = thaw_json(event.candidate.payload)
+        if not isinstance(payload, Mapping):
+            payload = {}
+        content = (
+            str(payload.get("text") or "")
+            if event.status is OutcomeStatus.SUCCEEDED
+            else public_terminal_error_summary(event)
+        )
+
+        # The ordinary live presenter usually persists a successful final
+        # before the delivery dispatcher reaches this sink.  Recovery after a
+        # process crash has no venue subscriber, so that row is absent even
+        # though workflow.db owns a committed terminal.  Read the exact root
+        # scope first and only backfill the missing projection.  This keeps one
+        # transcript writer visible to users without duplicating normal turns.
+        existing = await self._session_db.get_messages(
+            target.session_id,
+            limit=256,
+            root_run_id=event.root_run_id,
+        )
+        already_projected = any(
+            str(row.get("role") or "") == "assistant"
+            and str(row.get("content") or "") == content
+            and not row.get("tool_calls")
+            for row in existing
+        )
+        if already_projected:
+            return
+        task_scope_id = next(
+            (
+                str(row.get("task_scope_id") or "").strip()
+                for row in reversed(existing)
+                if str(row.get("task_scope_id") or "").strip()
+            ),
+            event.root_run_id,
+        )
         message_id = await self._session_db.append_projection_if_epoch(
             target.session_id,
             "assistant",
-            public_terminal_error_summary(event),
+            content,
             expected_epoch=target.session_epoch,
             projection_event_id=event.event_id,
             projection_kind="assistant_message",
@@ -174,12 +218,63 @@ class SessionTerminalDeliverySink:
         )
         if message_id is None:
             raise DeliveryDiscarded("session_epoch_mismatch")
+        if self._live_notifier is None:
+            return
+        if event.status is OutcomeStatus.SUCCEEDED:
+            frame = {
+                "type": "chat_v2_final",
+                "payload": {
+                    "session_id": target.session_id,
+                    "run_id": event.root_run_id,
+                    "task_scope_id": task_scope_id,
+                    "text": content,
+                    "replace_all_provisional": True,
+                    "recovered_terminal": True,
+                },
+            }
+        elif event.status is OutcomeStatus.CANCELLED:
+            frame = {
+                "type": "chat_v2_interrupted",
+                "payload": {
+                    "session_id": target.session_id,
+                    "run_id": event.root_run_id,
+                    "cancelled": True,
+                    "recovered_terminal": True,
+                },
+            }
+        else:
+            frame = {
+                "type": "chat_v2_error",
+                "payload": {
+                    "session_id": target.session_id,
+                    "run_id": event.root_run_id,
+                    "error": content,
+                    "recovered_terminal": True,
+                },
+            }
+        try:
+            await self._live_notifier(target.session_id, frame)
+        except Exception:
+            # The transcript row is the durable authority.  A missing or
+            # closing websocket must never roll the delivery back; the next
+            # session_messages_load will replay the same projection.
+            return
 
 
 class SessionProjectionStore(Protocol):
     async def get_session_delivery_state(
         self, session_id: str
     ) -> dict[str, Any]: ...
+
+    async def get_messages(
+        self,
+        session_id: str,
+        limit: int = 50,
+        offset: int = 0,
+        *,
+        root_run_id: str | None = None,
+        task_scope_id: str | None = None,
+    ) -> list[dict[str, Any]]: ...
 
 
 @dataclass(frozen=True, slots=True)

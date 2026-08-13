@@ -1107,6 +1107,15 @@ pending -> accepted_start_pending -> launch_claimed -> launched
   `lane / run_id / root_run_id / signal_id / child_run_id / driver_kind / error_type` 等适用关联字段，
   并安排默认 1 秒后的一次性重试。未捕获的 worker 异常走同一重试边界；`close()` 会取消尚未
   到期的 retry timer，保持“事件触发 + 有界 one-shot”，不恢复常驻轮询 supervisor。
+- Supervisor 重启 backend 后，`session_messages_load` 会先把当前消息 peer 重新映射到用户实际
+  选择的 Session，再运行终态一致性门。恢复器不仅补齐缺失的 root assistant 终态投影，还通过
+  live notifier 向仍连接的 Workbench 发送唯一 `chat_v2_final/error/interrupted`；前端以重连后的
+  pending-decision snapshot 为权威清理死进程遗留权限卡，并在任一 Run 终态再次兜底清理。
+- 已开始但进程退出的外部 effect 继续诚实收敛为 `unknown / started_may_complete`，不盲目重试；
+  同一恢复事务同时终结 effect 与对应 execution attempt，避免 Run 已完成但 attempt 永久显示
+  `running`。若恢复终态 CAS 已由另一 owner 赢得，Runtime 记录
+  `driver_recovery_converged` 而不是误报 `driver_recovery_failed`；真正的暂时异常仍保留类型、
+  错误码并进入有界重试。
 - Session 记忆 fanout 和 `VectorWorker` 只接受 `user/assistant` 的普通文本；单条正文上限
   32,768 字符，tool、data-URI/base64 和超长内容不会进入实时 embedding 或启动 backfill。
   backfill 同时清理旧版本错误写入的无效向量，避免截图工具结果造成数百个 embedding chunk
@@ -1197,7 +1206,15 @@ backend/.venv/bin/python scripts/acceptance/harness_reliability_gate.py
 在精确 UoW hook 上接受真实 `SIGKILL`：permission resolve、effect claim、外部效果完成但 settle
 未提交、child terminal enqueue、root terminal outbox；新进程接管后逐库验证
 `PRAGMA integrity_check=ok`，且外部写、terminal signal、event/delivery 均保持唯一。当前结果为
-后端 `57 passed`、前端 `12 passed`，最终 `HARNESS_RELIABILITY: PASS`。
+后端 `58 passed`、前端 `14 passed`，最终 `HARNESS_RELIABILITY: PASS`。
+
+同日又用真实 macOS Tauri Workbench 做了 supervisor 终测：在 UI 点击一次“允许一次”后，
+`run_shell` 写入 START 并等待 45 秒期间对 backend 发送真实 `SIGKILL`，Tauri 主进程保持存活并在
+约 2 秒内拉起新 backend。原 Run `efb4a75a2d5759b99b492ed77748278c` 没有重建或重复执行，外部
+marker 只有一组 START/END；Workbench 无需刷新/切换即显示恢复终态、回到“空闲”且权限卡消失。
+账本最终为 Run `completed`、effect 与 attempt 均为 `unknown / started_may_complete`、终态 delivery
+各一次，符合“不确定外部效果不重试”的 fail-closed 语义。原始截图和数据库检查保存在 gitignored
+`.local-test-evidence/2026-08-13/tauri-supervisor-e2e-r1/`，不进入 Git。
 
 本轮同时移除 `execution/harness_public_read_service.py` 对 `memory.SessionDB` 的生产依赖；
 state.db 公共消息 keyset reader 归还 Inspector 自己的只读边界，Execution 包依赖方向门重新

@@ -207,6 +207,87 @@ async def _assert_integrity(path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_reconciliation_terminalizes_dead_worker_attempt(tmp_path: Path) -> None:
+    path = tmp_path / "reconcile-attempt.db"
+    healthy, request = await matrix._permission_ready(path)
+    claim = await healthy.claim_tool_call(
+        matrix._grant(request),
+        matrix._actor(request.run_id),
+        **matrix._effect_claim_kwargs(),
+    )
+    await healthy.persist_react_boundary(
+        request.run_id,
+        0,
+        {"state": "running-effect"},
+    )
+    started = await healthy.mark_effect_dispatch_started(
+        claim.effect_id,
+        claim.attempt_no,
+        claim.effect_version,
+        "dispatch:reconcile-attempt",
+        DISPATCH_ACK_HASH,
+    )
+    recovering = SqliteExecutionUnitOfWork(path, clock=lambda: 101.0)
+    lease = await recovering.recovery_scope(
+        request.run_id,
+        owner="recovery-test",
+        lease_seconds=30.0,
+    )
+    assert not isinstance(lease, bool)
+    await recovering.settle_effect(
+        claim.effect_id,
+        expected_effect_version=started.effect_version,
+        attempt_no=claim.attempt_no,
+        worker_owner=claim.worker_owner,
+        worker_epoch=claim.worker_epoch,
+        status="unknown",
+        outcome={
+            "state": "malformed",
+            "error": {
+                "code": "malformed_tool_outcome",
+                "message": "late effect evidence unavailable after process recovery",
+            },
+            "value": None,
+        },
+        node_execution_id="node-recovery",
+        checkpoint_ns="graph",
+        checkpoint_id="checkpoint-recovery",
+        expected_continuation_version=1,
+        continuation_payload={"state": "reconciled"},
+        event=RunEventCandidate(
+            event_key="recovery-effect-unknown",
+            kind="tool.outcome",
+            status=OutcomeStatus.UNKNOWN,
+            driver_kind="react",
+        ),
+        deliveries=(matrix._delivery(),),
+        recovery_lease=lease,
+        reconciliation=True,
+    )
+
+    async with aiosqlite.connect(path) as db:
+        effect = await (
+            await db.execute(
+                "SELECT status,handoff_state FROM execution_effects WHERE effect_id=?",
+                (claim.effect_id,),
+            )
+        ).fetchone()
+        attempt = await (
+            await db.execute(
+                """SELECT status,handoff_state,ended_at
+                FROM execution_effect_attempts
+                WHERE effect_id=? AND attempt_no=?""",
+                (claim.effect_id, claim.attempt_no),
+            )
+        ).fetchone()
+    assert effect == ("unknown", "started_may_complete")
+    assert attempt is not None
+    assert attempt[:2] == ("unknown", "started_may_complete")
+    assert attempt[2] is not None
+    await _assert_integrity(path)
+
+
+@pytest.mark.asyncio
 async def test_permission_resolution_hard_crash_reopens_once(tmp_path: Path) -> None:
     path = tmp_path / "permission.db"
     healthy = await matrix._store(path)

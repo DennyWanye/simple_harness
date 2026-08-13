@@ -119,6 +119,80 @@ describe("usePermissionRequests", () => {
     expect(result.current.current?.request_id).toBe("request-2");
   });
 
+  it("drops a dead-process submitted card when reconnect snapshot is empty", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    const request = {
+      request_id: "request-dead-process",
+      decision_id: "decision-dead-process",
+      category: "shell",
+      summary: "long shell",
+      params: { call_id: "call-dead-process" },
+      default_action: "prompt",
+      dangerous: true,
+      session_id: "session-recovered",
+      run_id: "run-recovered",
+    };
+
+    act(() => channel.emit({ type: "permission_request", payload: request }));
+    act(() => result.current.resolve("allow"));
+    expect(result.current.resolving).toBe(true);
+
+    act(() => {
+      channel.emit({
+        type: "permissions_pending_list_response",
+        payload: { pending: [] },
+      });
+    });
+
+    expect(result.current.current).toBeNull();
+    expect(result.current.resolving).toBe(false);
+  });
+
+  it("retires every permission card for a durably terminal Run", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    const first = {
+      request_id: "request-terminal-1",
+      decision_id: "decision-terminal-1",
+      category: "shell",
+      summary: "first",
+      params: {},
+      default_action: "prompt",
+      dangerous: true,
+      session_id: "session-terminal",
+      run_id: "run-terminal",
+    };
+    const second = {
+      ...first,
+      request_id: "request-terminal-2",
+      decision_id: "decision-terminal-2",
+      summary: "second",
+    };
+
+    act(() => {
+      channel.emit({ type: "permission_request", payload: first });
+      channel.emit({ type: "permission_request", payload: second });
+    });
+    act(() => result.current.resolve("allow"));
+    expect(result.current.resolving).toBe(true);
+
+    act(() => {
+      channel.emit({
+        type: "chat_v2_final",
+        payload: { run_id: "run-terminal", text: "done" },
+      });
+    });
+
+    expect(result.current.current).toBeNull();
+    expect(result.current.resolving).toBe(false);
+    act(() => {
+      channel.emit({ type: "permission_request", payload: first });
+      channel.emit({ type: "permission_request", payload: second });
+    });
+    expect(result.current.current).toBeNull();
+  });
+
   it("uses decision identity and never reopens a resolved replay", () => {
     const channel = new FakePanelChannel();
     const { result } = renderHook(() => usePermissionRequests(channel));

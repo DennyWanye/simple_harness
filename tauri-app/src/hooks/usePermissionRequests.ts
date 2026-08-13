@@ -40,7 +40,9 @@ type PermissionChannel = {
 };
 
 function permissionIdentity(
-  payload: Pick<PermissionRequest["payload"], "decision_id" | "request_id">,
+  payload: Partial<
+    Pick<PermissionRequest["payload"], "decision_id" | "request_id">
+  >,
 ): string {
   return String(payload.decision_id || payload.request_id || "").trim();
 }
@@ -201,6 +203,31 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
             payload?: { pending?: Array<Partial<PermissionRequest["payload"]>> };
           }
         ).payload?.pending ?? [];
+        const snapshotIdentities = new Set(
+          pending
+            .map((item) => permissionIdentity(item))
+            .filter(Boolean),
+        );
+        // A reconnect snapshot is authoritative for the current backend
+        // generation.  Drop cards that belonged to the dead process; durable
+        // Run recovery will either replay a still-pending decision or publish
+        // the terminal frame.  Keeping an absent card here leaves the shell
+        // forever disabled at "提交中…" even after the Run completed.
+        queueRef.current = queueRef.current.filter((item) =>
+          snapshotIdentities.has(permissionIdentity(item)),
+        );
+        const active = currentRef.current;
+        if (
+          active &&
+          !snapshotIdentities.has(permissionIdentity(active))
+        ) {
+          currentRef.current = null;
+          setCurrent(null);
+          resolvingIdentityRef.current = null;
+          setResolving(false);
+          setResolveError(null);
+          showNext();
+        }
         for (const item of pending) {
           if (!item.request_id) continue;
           enqueue({
@@ -217,6 +244,20 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
             ...(item.version !== undefined ? { version: item.version } : {}),
           });
         }
+        return;
+      }
+      if (
+        msg.type === "chat_v2_final" ||
+        msg.type === "chat_v2_error" ||
+        msg.type === "workflow_final"
+      ) {
+        const payload = (
+          msg as { payload?: { run_id?: string; root_run_id?: string } }
+        ).payload;
+        const runId = String(
+          payload?.run_id || payload?.root_run_id || "",
+        ).trim();
+        if (runId) dismissRun(runId);
         return;
       }
       if (msg.type === "permission_response_applied") {

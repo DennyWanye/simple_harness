@@ -32,6 +32,7 @@ from deskpet.execution.contracts import (
     RunStatus,
     StaleRecoveryLease,
     TERMINAL_RUN_STATUSES,
+    TerminalConflict,
     WorkflowRunSeed,
     fingerprint_json,
 )
@@ -2248,6 +2249,38 @@ async def test_transient_recovery_failure_remains_retryable_without_terminal(
             for event in await uow.list_events(run_id)
             if event.kind == "run.final"
         ]
+
+
+@pytest.mark.asyncio
+async def test_recovery_terminal_conflict_is_logged_as_convergence(
+    caplog,
+) -> None:
+    class Uow:
+        async def recovery_scope(self, subject, *, owner=None, lease_seconds=30.0):
+            return subject
+
+    runtime = DriverRuntime(
+        uow=Uow(),
+        live=BoundedLiveIndex(max_runs=1),
+        query=lambda *args: None,
+        finalize=lambda *args, **kwargs: None,
+    )
+    record = SimpleNamespace(run_id="recovery-terminal-conflict")
+    registration = RegisteredDriver("react", FakeDriver())
+
+    async def terminal_conflict(*_args, **_kwargs):
+        raise TerminalConflict("terminal_conflict", "another terminal already won")
+
+    runtime.consume_fenced = terminal_conflict
+    with caplog.at_level("INFO", logger="deskpet.harness.runtime"):
+        await runtime.drive_recovery(
+            registration,
+            record,
+            RecoveryLease(record.run_id, "owner", 1, 9999),
+        )
+
+    assert "driver_recovery_converged" in caplog.text
+    assert "driver_recovery_failed" not in caplog.text
 
 
 @pytest.mark.asyncio

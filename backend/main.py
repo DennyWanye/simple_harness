@@ -8017,11 +8017,25 @@ async def _build_product_harness_stack(generation: int):
         )
 
     growth_sink = GrowthTerminalDeliverySink(_companion_store)
-    session_terminal_sink = SessionTerminalDeliverySink(session_db)
+
+    async def notify_session_terminal(
+        _session_id: str, frame: dict[str, Any]
+    ) -> None:
+        # A recovered Run has no surviving venue websocket/presenter.  Fan the
+        # durable terminal projection into whichever product peer is currently
+        # bound to the session; an absent peer is harmless because state.db is
+        # already current before this callback runs.
+        await _broadcast_default_chat_peers(None, frame)
+
+    session_terminal_projection_sink = SessionTerminalDeliverySink(session_db)
+    session_terminal_sink = SessionTerminalDeliverySink(
+        session_db,
+        live_notifier=notify_session_terminal,
+    )
     service_context.register(
         "session_terminal_projection_gate",
         SessionTerminalProjectionConsistencyGate(
-            uow, session_db, session_terminal_sink
+            uow, session_db, session_terminal_projection_sink
         ),
     )
     return await build_product_harness_composition(
@@ -12300,6 +12314,14 @@ async def control_channel(ws: WebSocket):
                 payload = raw.get("payload", {}) or {}
                 target_sid = payload.get("session_id") or session_id
                 limit = int(payload.get("limit") or 200)
+                # Loading a transcript is also the product shell's explicit
+                # declaration of which conversation this transport currently
+                # presents.  Rebind the peer group before the consistency
+                # gate: a recovered terminal may be committed while the
+                # websocket is reconnecting, and its live notification must
+                # route back to this selected history session rather than the
+                # transport's startup/default topic.
+                _remap_chat_peer_group(session_id, str(target_sid))
                 sdb = service_context.get("session_db")
                 msgs: list = []
                 _companion_history_events: list[dict[str, Any]] = []

@@ -4168,7 +4168,7 @@ class SqliteExecutionUnitOfWork:
         session_epoch: int,
         limit: int | None = None,
     ) -> tuple[RunEvent, ...]:
-        """Read every current-epoch root failure visible at one DB snapshot.
+        """Read every current-epoch root terminal visible at one DB snapshot.
 
         ``None`` is intentionally unbounded: product consistency gates must
         not silently omit old failures merely because more than one repair
@@ -4196,7 +4196,7 @@ class SqliteExecutionUnitOfWork:
                     JOIN execution_runs AS r ON r.run_id=e.run_id
                     WHERE r.session_id=? AND r.run_id=r.root_run_id
                       AND e.kind='run.final'
-                      AND e.status IN ('failed','cancelled')
+                      AND e.status IN ('succeeded','failed','cancelled')
                       AND (
                         EXISTS (
                           SELECT 1 FROM execution_deliveries AS d
@@ -7084,7 +7084,35 @@ class SqliteExecutionUnitOfWork:
             target_disposition = (
                 "inflight_effect_may_complete" if status == "unknown" else "normal"
             )
-            if not reconciliation:
+            if reconciliation:
+                # A recovery lease replaces the dead worker's owner fence, but
+                # it must still terminalize that worker's attempt in the same
+                # transaction as the canonical effect.  Leaving the attempt
+                # at ``running`` after the effect becomes ``unknown`` makes
+                # diagnostics report a ghost executor and weakens restart
+                # invariants even though the physical call is not replayed.
+                cursor = await db.execute(
+                    """UPDATE execution_effect_attempts SET status=?,
+                    handoff_state=?,completion_disposition=?,outcome_json=?,
+                    updated_at=?,ended_at=? WHERE effect_id=? AND attempt_no=?
+                    AND status IN ('running','unknown')""",
+                    (
+                        status,
+                        target_handoff_state,
+                        target_disposition,
+                        outcome_json,
+                        now,
+                        now,
+                        effect_id,
+                        attempt_no,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise VersionConflict(
+                        "stale_effect_attempt",
+                        "effect attempt changed before reconciliation",
+                    )
+            else:
                 cursor = await db.execute(
                     """UPDATE execution_effect_attempts SET status=?,
                     handoff_state=?,completion_disposition=?,outcome_json=?,

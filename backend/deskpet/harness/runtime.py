@@ -186,11 +186,27 @@ class DriverRuntime:
                 lease,
                 release=True,
             )
-        except Exception as exc:
-            logger.exception(
-                "driver_recovery_failed run_id=%s driver_kind=%s",
+        except TerminalConflict as exc:
+            # Recovery can race with a concurrent terminal owner (for example,
+            # a durable effect reconciler).  The winning terminal is already
+            # authoritative, so this is convergence rather than a failed
+            # recovery attempt.
+            logger.info(
+                "driver_recovery_converged run_id=%s driver_kind=%s "
+                "reason=%s",
                 record.run_id,
                 registration.kind,
+                getattr(exc, "code", "terminal_conflict"),
+            )
+            return
+        except Exception as exc:
+            logger.exception(
+                "driver_recovery_failed run_id=%s driver_kind=%s "
+                "error_type=%s error_code=%s",
+                record.run_id,
+                registration.kind,
+                type(exc).__name__,
+                getattr(exc, "code", ""),
             )
             if await self.terminalize_permanent_recovery_failure(
                 registration, record, exc
