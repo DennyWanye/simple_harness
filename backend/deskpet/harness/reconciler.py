@@ -20,8 +20,9 @@ class HarnessReconciler:
                  coordinator: ChildRunCoordinator | None = None,
                  delivery: ExecutionDeliveryDispatcher | None = None,
                  owner: str = "harness", item_timeout: float = 5.0,
-                 batch_limit: int = 16) -> None:
-        if min(item_timeout, batch_limit) <= 0:
+                 batch_limit: int = 16,
+                 failure_retry_delay: float = 1.0) -> None:
+        if min(item_timeout, batch_limit, failure_retry_delay) <= 0:
             raise ValueError("reconciliation budgets must be positive")
         if coordinator is not None and kernel is None:
             raise ValueError("child coordinator requires the Kernel child boundary")
@@ -29,6 +30,7 @@ class HarnessReconciler:
         self._child_enabled, self._delivery = coordinator is not None, delivery
         self._owner, self._item_timeout = owner, item_timeout
         self._batch_limit = batch_limit
+        self._failure_retry_delay = float(failure_retry_delay)
         self._idle = asyncio.Event()
         self._idle.set()
         self._dirty = self._worker_running = self._closing = False
@@ -50,8 +52,15 @@ class HarnessReconciler:
                 while self._dirty and not self._closing:
                     self._dirty = False
                     await self.reconcile_all()
-            except Exception:
-                logger.exception("event-triggered harness reconciliation failed")
+            except Exception as exc:
+                detail = f"worker:{type(exc).__name__}:{exc}"
+                self.last_errors = (*self.last_errors, detail)
+                logger.exception(
+                    "harness_reconcile_worker_failed error_type=%s error=%s "
+                    "retry_delay_seconds=%s",
+                    type(exc).__name__, exc, self._failure_retry_delay,
+                )
+                self._schedule_after(self._failure_retry_delay)
             finally:
                 restart = self._dirty and not self._closing
                 self._worker_running = False
@@ -160,6 +169,14 @@ class HarnessReconciler:
                     except Exception as exc:
                         errors.append(f"{record.signal_id}:{type(exc).__name__}:"
                                       f"{getattr(exc, 'code', '')}:{exc}")
+                        logger.warning(
+                            "harness_terminal_parent_signal_ack_failed "
+                            "parent_run_id=%s signal_id=%s child_run_id=%s "
+                            "error_type=%s error_code=%s error=%s",
+                            parent.run_id, record.signal_id,
+                            record.child_run_id, type(exc).__name__,
+                            getattr(exc, "code", ""), exc, exc_info=exc,
+                        )
                 remaining -= len(records)
                 continue
             try:
@@ -167,6 +184,11 @@ class HarnessReconciler:
                     parent.run_id, owner=f"{self._owner}:signal")
             except Exception as exc:
                 errors.append(f"{parent.run_id}:{type(exc).__name__}:{exc}")
+                logger.warning(
+                    "harness_child_signal_lease_failed parent_run_id=%s "
+                    "error_type=%s error=%s",
+                    parent.run_id, type(exc).__name__, exc, exc_info=exc,
+                )
                 continue
             lease_transferred = False
             records = ()
@@ -195,6 +217,14 @@ class HarnessReconciler:
                     except Exception as exc:
                         errors.append(
                             f"{record.signal_id}:{type(exc).__name__}:{exc}")
+                        logger.warning(
+                            "harness_child_signal_reconcile_failed "
+                            "parent_run_id=%s signal_id=%s child_run_id=%s "
+                            "signal_kind=%s error_type=%s error=%s",
+                            parent.run_id, record.signal_id,
+                            record.child_run_id, record.kind,
+                            type(exc).__name__, exc, exc_info=exc,
+                        )
             finally:
                 if recovery_lease is None and not lease_transferred:
                     try:
@@ -202,6 +232,13 @@ class HarnessReconciler:
                     except Exception as exc:
                         errors.append(f"{parent.run_id}:release:"
                                       f"{type(exc).__name__}:{exc}")
+                        logger.warning(
+                            "harness_child_signal_lease_release_failed "
+                            "parent_run_id=%s lease_owner=%s lease_epoch=%s "
+                            "error_type=%s error=%s",
+                            parent.run_id, lease.owner, lease.epoch,
+                            type(exc).__name__, exc, exc_info=exc,
+                        )
             remaining -= min(len(records), 1 if lease_transferred else len(records))
         saturated = len(parents) >= parent_limit or remaining <= 0
         return tuple(errors), saturated and not errors
@@ -256,6 +293,16 @@ class HarnessReconciler:
                 detail = f"{record.run_id}:{type(exc).__name__}:{exc}"
                 errors.append(detail)
                 fatal_errors.append(detail)
+                logger.error(
+                    "harness_run_recovery_failed run_id=%s root_run_id=%s "
+                    "driver_kind=%s status=%s error_type=%s error=%s",
+                    record.run_id,
+                    getattr(record.context, "root_run_id", record.run_id),
+                    getattr(getattr(record, "spec", None), "driver_kind", "unknown"),
+                    getattr(getattr(record, "status", "unknown"), "value",
+                            getattr(record, "status", "unknown")),
+                    type(exc).__name__, exc, exc_info=exc,
+                )
         self.last_errors = tuple(errors)
         self.last_fatal_recovery_errors = tuple(fatal_errors)
         if len(eligible) > limit and not errors:
@@ -282,6 +329,14 @@ class HarnessReconciler:
                     f"{record.run_id}:{type(exc).__name__}:"
                     f"{getattr(exc, 'code', '')}:{exc}"
                 )
+                logger.warning(
+                    "harness_active_budget_cancel_failed run_id=%s "
+                    "root_run_id=%s error_type=%s error_code=%s error=%s",
+                    record.run_id,
+                    getattr(record.context, "root_run_id", record.run_id),
+                    type(exc).__name__, getattr(exc, "code", ""), exc,
+                    exc_info=exc,
+                )
         self.last_errors = tuple(errors)
         return len(records) >= limit and not errors
 
@@ -302,6 +357,12 @@ class HarnessReconciler:
                     result = await operation
             except Exception as exc:
                 errors.append(f"{name}:{type(exc).__name__}:{exc}")
+                logger.warning(
+                    "harness_reconcile_step_failed lane=%s error_type=%s "
+                    "error=%s retry_delay_seconds=%s",
+                    name, type(exc).__name__, exc, self._failure_retry_delay,
+                    exc_info=exc,
+                )
                 return None
             errors.extend(f"{name}:{error}" for error in self.last_errors)
             await asyncio.sleep(0)
@@ -350,6 +411,12 @@ class HarnessReconciler:
                 self._dirty = True
         await step("active_budget_schedule", self._schedule_next_active_budget())
         self.last_errors = tuple(errors)
+        if errors and not self._closing:
+            # Every failed lane reads durable work, so an exception must not
+            # consume the only wakeup.  A one-shot retry preserves the
+            # event-driven design while guaranteeing progress after transient
+            # storage, provider, or delivery failures.
+            self._schedule_after(self._failure_retry_delay)
     async def _reconcile_startup(self) -> None:
         """Drain pre-existing durable backlog before opening product ingress."""
         for _pass in range(1024):

@@ -30,7 +30,6 @@ from deskpet.execution.run_read_model import (
     ReadCutV1,
     ReadSourceCutV1,
 )
-from deskpet.memory.session_db import SessionDB
 from deskpet.security.provider_public_projection import ProviderPublicProjectorV1
 from deskpet.security.redaction import TraceRedactor
 from deskpet.security.sensitive_text import redact_sensitive_text
@@ -71,6 +70,40 @@ _EVENT_PUBLIC_FIELDS = frozenset(
     }
 )
 _REDACTOR = TraceRedactor()
+
+
+async def _read_public_message_projection_page_tx(
+    db: aiosqlite.Connection,
+    *,
+    table: str,
+    session_id: str,
+    root_run_id: str,
+    after_created_at: float,
+    after_id: int,
+    limit: int = 256,
+) -> list[aiosqlite.Row]:
+    """Read one bounded keyset page inside the caller-owned state cut."""
+
+    if table not in {"messages", "messages_archive"}:
+        raise ValueError("unsupported public message projection table")
+    page_limit = min(512, max(1, int(limit)))
+    cursor = await db.execute(
+        f"SELECT id,role,content,created_at,workflow_event_id,projection_kind "
+        f"FROM {table} WHERE session_id=? AND root_run_id=? "
+        "AND (created_at>? OR (created_at=? AND id>?)) "
+        "ORDER BY created_at,id LIMIT ?",
+        (
+            session_id,
+            root_run_id,
+            float(after_created_at),
+            float(after_created_at),
+            int(after_id),
+            page_limit,
+        ),
+    )
+    rows = await cursor.fetchall()
+    await cursor.close()
+    return rows
 
 
 def _json_object(value: Any) -> dict[str, Any]:
@@ -789,7 +822,7 @@ class HarnessPublicReadService:
         cursor_time = -1.0
         cursor_id = -1
         while True:
-            batch = await SessionDB.read_public_message_projection_page_tx(
+            batch = await _read_public_message_projection_page_tx(
                 db,
                 table=table,
                 session_id=session_id,

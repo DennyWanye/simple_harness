@@ -1103,6 +1103,10 @@ pending -> accepted_start_pending -> launch_claimed -> launched
 - reconciler 遇到已有 live owner 的 recoverable Run（包括 effect-ready 定向恢复）时只注册
   owner 完成后的再唤醒并跳过本轮，不再同步等待或用 5 秒 item budget 取消正在进行的 provider
   调用；真正的 child inbox、恢复准备和持久化错误仍保持 fail-closed。
+- event-triggered reconciler 的任一 lane 暂时失败时，不再消费掉唯一唤醒后静默闲置；错误会记录
+  `lane / run_id / root_run_id / signal_id / child_run_id / driver_kind / error_type` 等适用关联字段，
+  并安排默认 1 秒后的一次性重试。未捕获的 worker 异常走同一重试边界；`close()` 会取消尚未
+  到期的 retry timer，保持“事件触发 + 有界 one-shot”，不恢复常驻轮询 supervisor。
 - Session 记忆 fanout 和 `VectorWorker` 只接受 `user/assistant` 的普通文本；单条正文上限
   32,768 字符，tool、data-URI/base64 和超长内容不会进入实时 embedding 或启动 backfill。
   backfill 同时清理旧版本错误写入的无效向量，避免截图工具结果造成数百个 embedding chunk
@@ -1178,6 +1182,25 @@ fingerprint 不再对 `final_params` 做浅拷贝。
 tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝，修复没有放宽 JSON 契约。
 
 ## 验证状态
+
+### 2026-08-13 崩溃恢复可靠性门禁
+
+新增单命令门禁：
+
+```bash
+backend/.venv/bin/python scripts/acceptance/harness_reliability_gate.py
+```
+
+门禁以生产恢复不变量为准，覆盖 39 个 UoW/Team 原子故障窗口及上层授权后启动、已开始但
+结果未知的 effect、effect 已提交但模型尚未恢复、child 终态已提交但 parent 尚未消费、root
+终态已提交但 Session 尚未投影，以及前端断线重连去重/旧 epoch 丢弃。当前结果为后端
+`52 passed`、前端 `12 passed`，最终 `HARNESS_RELIABILITY: PASS`。
+
+本轮同时移除 `execution/harness_public_read_service.py` 对 `memory.SessionDB` 的生产依赖；
+state.db 公共消息 keyset reader 归还 Inspector 自己的只读边界，Execution 包依赖方向门重新
+通过。扩大 Harness 目录复跑为 `890 passed / 4 xfailed / 16 failed`；剩余项是历史
+authority/parity fixture 不可达、Git fallback 和 AgentLoop/ReAct 文件预算等非本轮恢复语义
+失败，不能用本门禁替代完整仓库绿灯。
 
 ### 2026-07-29 Harness 全量门禁收口
 

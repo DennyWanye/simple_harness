@@ -3263,46 +3263,6 @@ class SessionDB:
             ),
         }
 
-    @staticmethod
-    async def read_public_message_projection_page_tx(
-        db: aiosqlite.Connection,
-        *,
-        table: str,
-        session_id: str,
-        root_run_id: str,
-        after_created_at: float,
-        after_id: int,
-        limit: int = 256,
-    ) -> list[aiosqlite.Row]:
-        """Read one keyset page inside the caller-owned state read cut.
-
-        Only the two projection authorities are accepted as table names; all
-        owner keys remain bound parameters.  Keeping the caller's transaction
-        open lets Inspector read live messages, archive rows, and provider
-        audit data from one explicit state.db cut.
-        """
-
-        if table not in {"messages", "messages_archive"}:
-            raise ValueError("unsupported public message projection table")
-        page_limit = min(512, max(1, int(limit)))
-        cursor = await db.execute(
-            f"SELECT id,role,content,created_at,workflow_event_id,projection_kind "
-            f"FROM {table} WHERE session_id=? AND root_run_id=? "
-            "AND (created_at>? OR (created_at=? AND id>?)) "
-            "ORDER BY created_at,id LIMIT ?",
-            (
-                session_id,
-                root_run_id,
-                float(after_created_at),
-                float(after_created_at),
-                int(after_id),
-                page_limit,
-            ),
-        )
-        rows = await cursor.fetchall()
-        await cursor.close()
-        return rows
-
     async def get_messages(
         self,
         session_id: str,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from types import SimpleNamespace
 
 import aiosqlite
@@ -251,6 +252,106 @@ async def test_event_worker_drains_all_immediate_deliveries() -> None:
     assert await reconciler.drain(0.2)
     assert delivery.remaining == 0
     assert delivery.calls == 4
+
+
+@pytest.mark.asyncio
+async def test_event_worker_retries_transient_lane_failure_without_new_event(
+    caplog,
+) -> None:
+    recovered = asyncio.Event()
+
+    class Uow:
+        calls = 0
+
+        async def list_recoverable(self, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("injected transient read failure")
+            recovered.set()
+            return ()
+
+    uow = Uow()
+    reconciler = HarnessReconciler(
+        uow,
+        object(),
+        failure_retry_delay=0.005,
+    )
+
+    with caplog.at_level(logging.WARNING, logger="deskpet.harness.reconciler"):
+        reconciler.trigger()
+        await asyncio.wait_for(recovered.wait(), timeout=0.2)
+        assert await reconciler.drain(0.2)
+
+    assert uow.calls == 2
+    assert reconciler.last_errors == ()
+    assert "harness_reconcile_step_failed lane=recovery" in caplog.text
+    await reconciler.close(0.1)
+
+
+@pytest.mark.asyncio
+async def test_event_worker_retries_unhandled_reconcile_failure(caplog) -> None:
+    recovered = asyncio.Event()
+
+    class Uow:
+        async def list_recoverable(self, **kwargs):
+            return ()
+
+    reconciler = HarnessReconciler(
+        Uow(),
+        object(),
+        failure_retry_delay=0.005,
+    )
+    healthy_pass = reconciler.reconcile_all
+    calls = 0
+
+    async def fail_once() -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("injected worker failure")
+        await healthy_pass()
+        recovered.set()
+
+    reconciler.reconcile_all = fail_once
+
+    with caplog.at_level(logging.ERROR, logger="deskpet.harness.reconciler"):
+        reconciler.trigger()
+        await asyncio.wait_for(recovered.wait(), timeout=0.2)
+        assert await reconciler.drain(0.2)
+
+    assert calls == 2
+    assert "harness_reconcile_worker_failed" in caplog.text
+    await reconciler.close(0.1)
+
+
+@pytest.mark.asyncio
+async def test_close_cancels_pending_failure_retry() -> None:
+    attempted = asyncio.Event()
+
+    class Uow:
+        calls = 0
+
+        async def list_recoverable(self, **kwargs):
+            self.calls += 1
+            attempted.set()
+            raise RuntimeError("persistent read failure")
+
+    uow = Uow()
+    reconciler = HarnessReconciler(
+        uow,
+        object(),
+        failure_retry_delay=0.05,
+    )
+    reconciler.trigger()
+    await asyncio.wait_for(attempted.wait(), timeout=0.2)
+    assert await reconciler.drain(0.2)
+    assert reconciler._retry_timer is not None
+
+    await reconciler.close(0.1)
+    await asyncio.sleep(0.06)
+
+    assert reconciler._retry_timer is None
+    assert uow.calls == 1
 
 
 @pytest.mark.asyncio
