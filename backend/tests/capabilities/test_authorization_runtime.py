@@ -312,3 +312,42 @@ async def test_confirm_only_never_uses_auto_or_historical_grant(
     )
     assert replay_without_confirmation.action == "wait"
     assert replay_without_confirmation.proposed_task_grant is None
+
+
+@pytest.mark.asyncio
+async def test_confirm_only_open_pass_does_not_require_future_decision_id(
+    tmp_path: Path,
+) -> None:
+    store = _Store(AuthorizationPolicyState("manual", 2, 100.0))
+    runtime = PreparedAuthorizationRuntime(store, clock=lambda: 100.0)
+    waiting = await runtime.plan_prepared_call(
+        call=_call(tmp_path / "confirm.txt"),
+        context=_context(tmp_path),
+        permission_category="write_file",
+        task_grant_id=None,
+        principal_id="user-1",
+        explicit_only=True,
+        decision_nonce="nonce-open",
+        confirm_only_snapshot_ref="tool-set:run-1",
+        confirm_only_snapshot_hash=_hash("confirm-only-open"),
+    )
+
+    assert waiting.action == "wait"
+    assert waiting.projects_waiting_ui
+    assert waiting.decision_id is None
+
+    missing_confirmed_fence = await runtime.plan_prepared_call(
+        call=_call(tmp_path / "confirm.txt"),
+        context=_context(tmp_path),
+        permission_category="write_file",
+        task_grant_id=None,
+        principal_id="user-1",
+        confirmed=True,
+        explicit_only=True,
+        decision_nonce="nonce-open",
+        confirm_only_snapshot_ref="tool-set:run-1",
+        confirm_only_snapshot_hash=_hash("confirm-only-open"),
+    )
+
+    assert missing_confirmed_fence.action == "deny"
+    assert "missing its frozen decision fences" in missing_confirmed_fence.reason

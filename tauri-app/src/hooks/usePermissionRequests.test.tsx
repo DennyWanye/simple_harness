@@ -160,6 +160,103 @@ describe("usePermissionRequests", () => {
     expect(result.current.current?.decision_id).toBe("decision-2");
   });
 
+  it("advances when the same Run opens its next decision before the prior ACK", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    const first = {
+      request_id: "request-race-1",
+      decision_id: "decision-race-1",
+      category: "shell",
+      summary: "first",
+      params: { tool_name: "run_shell" },
+      default_action: "prompt",
+      dangerous: true,
+      session_id: "session-race",
+      run_id: "run-race",
+    };
+    const second = {
+      ...first,
+      request_id: "request-race-2",
+      decision_id: "decision-race-2",
+      summary: "second",
+      params: { tool_name: "workflow_spawn" },
+    };
+
+    act(() => channel.emit({ type: "permission_request", payload: first }));
+    act(() => result.current.resolve("allow"));
+    expect(result.current.resolving).toBe(true);
+
+    act(() => {
+      channel.emit({ type: "permission_request", payload: second });
+    });
+
+    expect(result.current.current?.decision_id).toBe("decision-race-2");
+    expect(result.current.resolving).toBe(false);
+
+    // The delayed ACK for the already superseded card is harmless.
+    act(() => {
+      channel.emit({
+        type: "permission_response_applied",
+        payload: { ok: true, decision_id: "decision-race-1" },
+      });
+    });
+    expect(result.current.current?.decision_id).toBe("decision-race-2");
+  });
+
+  it("closes a submitted card when its exact tool outcome arrives before the ACK", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    const request = {
+      request_id: "request-tool-result",
+      decision_id: "decision-tool-result",
+      category: "shell",
+      summary: "run shell",
+      // The current durable projection keeps call_id in the prompt params;
+      // newer producers may also duplicate it at the top level.
+      params: { tool_name: "run_shell", call_id: "call-result" },
+      default_action: "prompt",
+      dangerous: true,
+      session_id: "session-result",
+      run_id: "run-result",
+    };
+
+    act(() => channel.emit({ type: "permission_request", payload: request }));
+    act(() => result.current.resolve("allow"));
+    expect(result.current.resolving).toBe(true);
+
+    // Neither a different Run nor a different call may retire the card.
+    act(() => {
+      channel.emit({
+        type: "tool_result",
+        payload: { run_id: "other-run", call_id: "call-result", ok: true },
+      });
+      channel.emit({
+        type: "tool_result",
+        payload: { run_id: "run-result", call_id: "other-call", ok: true },
+      });
+    });
+    expect(result.current.current?.decision_id).toBe("decision-tool-result");
+    expect(result.current.resolving).toBe(true);
+
+    act(() => {
+      channel.emit({
+        type: "tool_result",
+        payload: { run_id: "run-result", call_id: "call-result", ok: true },
+      });
+    });
+    expect(result.current.current).toBeNull();
+    expect(result.current.resolving).toBe(false);
+
+    // A delayed ACK remains idempotent.
+    act(() => {
+      channel.emit({
+        type: "permission_response_applied",
+        payload: { ok: true, decision_id: "decision-tool-result" },
+      });
+    });
+    expect(result.current.current).toBeNull();
+  });
+
   it("keeps the popup open when the backend rejects the decision", () => {
     const channel = new FakePanelChannel();
     const { result } = renderHook(() => usePermissionRequests(channel));

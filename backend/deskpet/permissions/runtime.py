@@ -369,11 +369,18 @@ class PreparedAuthorizationRuntime:
         state = await self._store.get_policy_state()
         now = float(self._clock())
         principal = principal_id or _principal(context)
+        # Before the user responds there is deliberately no durable
+        # ``decision_id`` in the authorization plan yet.  The open decision
+        # itself is created immediately after this planning pass.  Requiring
+        # that final fence here turns every confirm-only request into a deny
+        # instead of projecting the required waiting UI.  The frozen nonce and
+        # snapshot fences must already exist; the decision id becomes
+        # mandatory only on the confirmed pass.
         explicit_fences = (
-            decision_id,
             decision_nonce,
             confirm_only_snapshot_ref,
             confirm_only_snapshot_hash,
+            *((decision_id,) if confirmed else ()),
         )
         if explicit_only and any(
             not isinstance(value, str) or not value.strip()

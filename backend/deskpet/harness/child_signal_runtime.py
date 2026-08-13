@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+from collections.abc import Callable
 
 from deskpet.execution.contracts import (
     IdempotencyConflict,
@@ -17,6 +19,8 @@ from .ports import DriverSignal
 from .runtime import DriverRuntime
 from .user_continuations import UserContinuationCoordinator
 
+logger = logging.getLogger(__name__)
+
 
 class ChildSignalRuntime:
     """Transfer child-signal delivery into the parent's single execution task."""
@@ -28,12 +32,45 @@ class ChildSignalRuntime:
         runtime: DriverRuntime,
         continuations: UserContinuationCoordinator,
         heartbeat_interval: float,
+        reconcile_trigger: Callable[[], None] | None = None,
     ) -> None:
         self._live = live
         self._lock = live.lock
         self._runtime = runtime
         self._continuations = continuations
         self._heartbeat_interval = heartbeat_interval
+        self._reconcile_trigger = reconcile_trigger
+
+    def _task_done(self, task: asyncio.Task[None]) -> None:
+        """Observe every background owner and wake durable recovery.
+
+        A child completion can commit a new waiting decision before its live UI
+        event is published.  If the background owner then fails, leaving the
+        exception unobserved strands that decision until process restart.  The
+        durable reconciler can replay the boundary immediately, so always wake
+        it after the owner settles and retain the original exception in logs.
+        """
+
+        if not task.cancelled():
+            error = task.exception()
+            if error is not None:
+                logger.error(
+                    "child_signal_owner_failed task=%s error_type=%s error=%s",
+                    task.get_name(),
+                    type(error).__name__,
+                    error,
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+        if self._reconcile_trigger is not None:
+            try:
+                self._reconcile_trigger()
+            except Exception:
+                # asyncio done callbacks must never leak a second exception;
+                # the original child-owner failure is already preserved above.
+                logger.exception(
+                    "child_signal_reconcile_wakeup_failed task=%s",
+                    task.get_name(),
+                )
 
     async def deliver(
         self,
@@ -85,6 +122,7 @@ class ChildSignalRuntime:
                     ),
                     name=f"deskpet-child-signal:{signal.signal_id}",
                 )
+                active.task.add_done_callback(self._task_done)
             # Queue the new owner before a competing signal can take the lock.
             # asyncio.Lock wakes waiters in FIFO order.
             await asyncio.sleep(0)

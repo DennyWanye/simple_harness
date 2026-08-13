@@ -606,7 +606,17 @@ async def _present_tool_result(event: AgentEvent, context: RunPresentationContex
     public_text = public_result if isinstance(public_result, str) else json.dumps(public_result, ensure_ascii=False)
     await _send_both(context, {'type': 'tool_use_event', 'payload': _task_payload(context, {'kind': 'result', 'tool_name': event.tool_name, 'result': public_text, 'turn': event.iteration})})
     ok = event.outcome_status == 'succeeded'
-    result_payload = {'tool': event.tool_name, 'ok': ok, 'result': public_text, 'turn': event.iteration}
+    result_payload = {
+        'tool': event.tool_name,
+        'ok': ok,
+        'result': public_text,
+        'turn': event.iteration,
+        # Permission decisions and tool outcomes share this stable identity.
+        # Keeping it on the public frame lets the frontend retire a submitted
+        # permission card as soon as the exact tool settles, without waiting
+        # for the provider's next response or relying on a timeout.
+        'call_id': event.tool_call_id,
+    }
     if artifacts:
         result_payload['artifacts'] = artifacts
     result_frame = {'type': 'tool_result', 'payload': _task_payload(context, result_payload)}

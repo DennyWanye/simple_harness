@@ -201,6 +201,9 @@ class RunKernel:
             runtime=self._runtime,
             continuations=self._continuations,
             heartbeat_interval=self._child_signal_heartbeat_interval,
+            reconcile_trigger=getattr(
+                child_runs, "trigger_reconciliation", None
+            ),
         )
         self._admission_launcher = AdmissionLauncher(
             uow=uow,

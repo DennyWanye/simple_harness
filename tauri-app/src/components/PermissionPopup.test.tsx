@@ -6,6 +6,28 @@ import { PermissionPopup } from "./PermissionPopup";
 afterEach(cleanup);
 
 describe("PermissionPopup", () => {
+  it("describes workflow spawning as a child task instead of a shell command", () => {
+    render(
+      <PermissionPopup
+        request={{
+          request_id: "permission-child",
+          run_id: "run-child",
+          category: "shell",
+          summary: "允许 DeskPet 执行 workflow_spawn",
+          params: { tool_name: "workflow_spawn", arguments: { objective: "test" } },
+          default_action: "prompt",
+          dangerous: false,
+          session_id: "session-child",
+        }}
+        onResolve={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "启动子任务" })).toBeTruthy();
+    expect(screen.getByText(/受约束的子任务/)).toBeTruthy();
+    expect(screen.queryByText(/运行 shell 命令/)).toBeNull();
+  });
+
   it("shows exact tool arguments and stops the fenced Run without a deny race", () => {
     const order: string[] = [];
     const onStopRun = vi.fn(() => order.push("stop"));

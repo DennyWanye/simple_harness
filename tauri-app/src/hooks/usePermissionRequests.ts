@@ -45,6 +45,10 @@ function permissionIdentity(
   return String(payload.decision_id || payload.request_id || "").trim();
 }
 
+function permissionCallId(payload: PermissionRequest["payload"]): string {
+  return String(payload.call_id || payload.params?.call_id || "").trim();
+}
+
 export function usePermissionRequests(channel: PermissionChannel | null) {
   const [current, setCurrent] = useState<
     PermissionRequest["payload"] | null
@@ -52,6 +56,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
   const currentRef = useRef<PermissionRequest["payload"] | null>(null);
   const queueRef = useRef<PermissionRequest["payload"][]>([]);
   const resolvedRef = useRef<Set<string>>(new Set());
+  const resolvingIdentityRef = useRef<string | null>(null);
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
 
@@ -59,6 +64,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
     const next = queueRef.current.shift();
     currentRef.current = next ?? null;
     setCurrent(next ?? null);
+    resolvingIdentityRef.current = null;
     setResolving(false);
     setResolveError(null);
   }, []);
@@ -123,22 +129,44 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
     [rememberResolved, showNext],
   );
 
-  const enqueue = useCallback((payload: PermissionRequest["payload"]) => {
-    const identity = permissionIdentity(payload);
-    if (!identity || resolvedRef.current.has(identity)) return;
-    if (
-      (currentRef.current && permissionIdentity(currentRef.current) === identity) ||
-      queueRef.current.some((item) => permissionIdentity(item) === identity)
-    ) {
-      return;
-    }
-    if (currentRef.current === null) {
-      currentRef.current = payload;
-      setCurrent(payload);
-    } else {
-      queueRef.current.push(payload);
-    }
-  }, []);
+  const enqueue = useCallback(
+    (payload: PermissionRequest["payload"]) => {
+      const identity = permissionIdentity(payload);
+      if (!identity || resolvedRef.current.has(identity)) return;
+      if (
+        (currentRef.current &&
+          permissionIdentity(currentRef.current) === identity) ||
+        queueRef.current.some((item) => permissionIdentity(item) === identity)
+      ) {
+        return;
+      }
+
+      const active = currentRef.current;
+      const resolvingIdentity = resolvingIdentityRef.current;
+      if (
+        active &&
+        resolvingIdentity &&
+        resolvingIdentity === permissionIdentity(active) &&
+        String(active.run_id || "").trim() !== "" &&
+        String(active.run_id || "").trim() ===
+          String(payload.run_id || "").trim()
+      ) {
+        // A Run cannot durably open its next permission decision until the
+        // previous one was accepted.  The next same-Run request is therefore
+        // a stronger acknowledgement than the delayed response frame and can
+        // safely advance the FIFO immediately.
+        completeCurrent(resolvingIdentity);
+      }
+
+      if (currentRef.current === null) {
+        currentRef.current = payload;
+        setCurrent(payload);
+      } else {
+        queueRef.current.push(payload);
+      }
+    },
+    [completeCurrent],
+  );
 
   useEffect(() => {
     if (!channel) return undefined;
@@ -214,11 +242,42 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
           return;
         }
         if (payload.ok === false) {
+          resolvingIdentityRef.current = null;
           setResolving(false);
           setResolveError(payload.error?.message ?? "授权提交失败，请重试");
           return;
         }
         completeCurrent(identity);
+        return;
+      }
+      if (msg.type === "tool_result") {
+        const payload = (
+          msg as {
+            payload?: {
+              run_id?: string;
+              call_id?: string;
+            };
+          }
+        ).payload;
+        const active = currentRef.current;
+        const resolvingIdentity = resolvingIdentityRef.current;
+        const runId = String(payload?.run_id || "").trim();
+        const callId = String(payload?.call_id || "").trim();
+        if (
+          active &&
+          resolvingIdentity &&
+          resolvingIdentity === permissionIdentity(active) &&
+          runId !== "" &&
+          callId !== "" &&
+          runId === String(active.run_id || "").trim() &&
+          callId === permissionCallId(active)
+        ) {
+          // The exact tool outcome proves that the durable permission signal
+          // was accepted and the operation has settled.  The backend ACK may
+          // arrive later after the provider continues; do not keep a disabled
+          // modal over the UI during that unrelated work.
+          completeCurrent(resolvingIdentity);
+        }
         return;
       }
       if (msg.type === "chat_v2_interrupted") {
@@ -274,6 +333,7 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
         reply as unknown as { type: string; payload?: Record<string, unknown> },
       );
       if (!sent) return;
+      resolvingIdentityRef.current = permissionIdentity(current);
       setResolving(true);
       setResolveError(null);
     },

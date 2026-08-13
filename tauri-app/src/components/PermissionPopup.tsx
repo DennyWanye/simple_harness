@@ -105,6 +105,19 @@ const DEFAULT_META: CategoryMeta = {
   hint: "请确认这次操作。",
 };
 
+function permissionMeta(request: PermissionRequest["payload"]): CategoryMeta {
+  const toolName = String(request.params?.tool_name || "").trim();
+  if (toolName === "workflow_spawn") {
+    return {
+      label: "启动子任务",
+      icon: "🧩",
+      level: "warning",
+      hint: "启动一个受约束的子任务；请确认目标、工作目录和输出要求。",
+    };
+  }
+  return CATEGORY_META[request.category as PermissionCategory] ?? DEFAULT_META;
+}
+
 export const PermissionPopup: React.FC<Props> = ({
   request,
   onResolve,
@@ -129,8 +142,7 @@ export const PermissionPopup: React.FC<Props> = ({
   }, [request, onResolve, resolving]);
 
   if (!request) return null;
-  const meta =
-    CATEGORY_META[request.category as PermissionCategory] ?? DEFAULT_META;
+  const meta = permissionMeta(request);
 
   // accent border color by level
   const accent =

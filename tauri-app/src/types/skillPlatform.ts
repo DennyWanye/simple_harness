@@ -44,6 +44,8 @@ export interface PermissionRequest {
     /** Present for canonical Harness decisions. Legacy PermissionGate prompts
      * intentionally omit this fence and continue to use request_id only. */
     run_id?: string;
+    /** Stable tool-call fence shared with the matching tool_result frame. */
+    call_id?: string;
     decision_id?: string;
     nonce?: string;
     version?: number;

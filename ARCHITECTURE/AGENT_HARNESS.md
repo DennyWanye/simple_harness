@@ -552,9 +552,12 @@ Manual 模式的“允许一次”现在严格只覆盖当前 prepared call：�
 确定性 TaskGrant ID 碰撞报 `proposed TaskGrant identity belongs to another grant`。Auto 模式
 仍保持无人工 decision 的确定性幂等身份。
 
-权限前端不再点击后立即假定成功。`permission_response` 必须收到 backend 的
-`permission_response_applied` ACK 才清除弹窗并推进任务；过期、冲突或策略拒绝会返回显式失败
-ACK，弹窗保留并展示原因。ControlChannel 每次重新连接都会重新查询 durable pending decisions，
+权限前端不再点击后立即假定成功。`permission_response` 只有在以下可审计事实之一出现后才清除
+弹窗：backend 返回精确 decision 的 `permission_response_applied`；同一 Run 打开下一条 durable
+decision；或同一 `run_id + call_id` 的 `tool_result` 已经结算。工具结果的 public frame 明确携带
+stable `call_id`，前端同时兼容 decision prompt 中的 `params.call_id`；因此工具已经完成时不会继续
+用禁用的“提交中…”弹窗遮住模型续答，也不会用 timeout 或仅凭 Run 身份误关其他调用。过期、冲突
+或策略拒绝仍返回显式失败 ACK，弹窗保留并展示原因。ControlChannel 每次重新连接都会重新查询 durable pending decisions，
 因此应用重启或短暂断线不会永久丢失仍有效的审批请求。“停止当前任务”现在只发送
 `chat_v2_interrupt`，不再额外伪造一次 deny；收到 cancelled ACK 后按 root Run 清除当前及排队中的
 decision，失败时保留弹窗和错误，消除了 Run 已停止但旧权限弹窗仍留在界面的状态分裂。
@@ -569,6 +572,17 @@ decision，失败时保留弹窗和错误，消除了 Run 已停止但旧权限�
 completed 并在 UI 显示 `A_OK / B_OK`、回到“空闲”。独立重复授权 root
 `84e99cc1d7c75f50b8421e37096d4107` 与 child
 `child-c12007c76d8ed42c91a317bee8336c90` 也 completed。
+
+同日的恢复/授权复测补齐了两个边界。`confirm-only` 在未来 decision identity 尚未生成时保持
+`wait`，只有已确认且 nonce/snapshot fence 完整时才校验 `decision_id`，不再把“尚待用户确认”
+误判为 deny。child terminal signal 的后台 owner 无论成功还是异常都会唤醒 reconciler；异常使用
+结构化 traceback 记录，避免 task callback 静默吞错。macOS `kimi-k3` root
+`88efdacaeb5a585794aa18231647b717` 经 `run_shell → workflow_spawn → child terminal → run_shell`
+自动继续，child `child-09c8eb64c4334860aa7df03b470da714` 返回 `CHILD_DONE` 后无需用户追问，
+root 最终输出 `ROOT_AUTO_CONTINUATION_PASS`。最终单工具 Run
+`35459a155afc57b49e7158c7dbea635d` 的 `run_shell_9` 在批准后约 58 ms 写入 durable
+`tool.outcome=succeeded`；0.5 秒 UI 快照已显示 `✓ ok` 且权限卡消失，此时模型仍在续答，约 7.2 秒
+后才提交 `PERMISSION_CARD_SETTLED_PASS`，证明弹窗由精确工具结算而非迟到 final/ACK 收束。
 
 普通 `workflow.durable_task` 现在必须在 `workflow_spawn` 时声明精确文件 `output_refs` 与可选目录
 `scratch_refs`。Host 在 child 创建前冻结 `task-output-contract-v1`（workspace、声明引用、非可变文件
@@ -590,8 +604,10 @@ Artifact 拒绝和终审均有带 `contract_id` 的结构化日志。
 可打开 ArtifactCard，根任务独立只读复核后 completed。新会话同时验证从当前可见历史会话继承
 `kimi-k3`，不再因 transport 默认 Session 回退到 `sf-glm-5.2`。
 
-当前相关回归与相邻 migration 合并为后端 `300 passed`、前端权限/ControlChannel/聊天
-`59 passed`，TypeScript、Python
+当前新增聚焦回归后端 `65 passed`、前端权限弹窗/Hook `11 passed`；前端全量
+`556 passed`。扩展 Harness 目录为 `892 passed / 4 xfailed / 17 failed`，失败仍属于既有
+架构预算、旧 commit/fixture 可达性、依赖方向和 parity 漂移，未触及本轮修复文件，因此不宣称
+Python Harness 全量绿色。TypeScript、Python
 编译、execution build manifest、diff check 与 Tauri debug bundle build PASS。边界仍明确：直接工具
 调用可以在执行前阻断；任意 shell 在同一进程内“创建后删除”的瞬时文件若最终无残留，只有接入
 OS 级文件事件审计才能完整观测，当前契约不把 shell 文本解析伪装成可靠安全边界。
@@ -1076,7 +1092,9 @@ pending -> accepted_start_pending -> launch_claimed -> launched
   attached signal 仍保留为一致性错误，不能静默吞掉。
 - durable child 每个终态事件都会立即唤醒 child signal reconciler，包括 native checkpoint
   仍存在或 active execution 已释放的边界；attached terminal signal 投递后立即恢复父 Run。
-  终态之后迟到的公开 progress 幂等忽略，不再尝试向 terminal execution 追加事件。
+  child-signal 后台 task 无论成功或异常都会触发 reconciler；异常记录结构化 traceback，不再由
+  `asyncio` callback 静默丢失。终态之后迟到的公开 progress 幂等忽略，不再尝试向 terminal
+  execution 追加事件。
 - loop guard 已为控制工具预填 `replan_required/attempt_budget_exhausted` outcome 时，Driver
   直接把该失败回填给同一父模型，不再调用 `prepare_control` 或创建 child。兼容历史上已经
   错误创建的 child：若 terminal signal 到达时该 call 已有不同的权威 outcome，事务保留首个

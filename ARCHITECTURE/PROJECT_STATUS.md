@@ -7,10 +7,22 @@
 - **一次性授权恢复为精确调用语义**：“允许一次”不再把 TaskGrant 带入后续 continuation，只有
   “本会话始终允许”才复用授权；每个人工 decision 具有独立 grant instance，连续相同
   `workflow_spawn` 不再发生 TaskGrant 身份碰撞。Auto 模式仍保留确定性幂等 identity。
-- **权限 UI 以 backend ACK 为准**：前端收到 `permission_response_applied` 后才关闭弹窗并推进
-  任务；过期/冲突响应保留弹窗并显示真实错误，ControlChannel 重连后重新拉取 pending decisions。
+- **权限 UI 以精确结算事实为准**：前端收到 `permission_response_applied`、同一 Run 的下一条
+  durable decision，或精确匹配 `run_id + call_id` 的 `tool_result` 后才关闭弹窗并推进任务；工具
+  结果 public frame 已补 stable `call_id`，decision prompt 的 `params.call_id` 兼容旧投影。过期/冲突
+  响应保留弹窗并显示真实错误，ControlChannel 重连后重新拉取 pending decisions。
   “停止当前任务”仅发送 interrupt，收到 cancelled ACK 后按 root Run 清除当前及排队 decision；
   失败则保留弹窗与错误，不再出现停止已生效但权限卡残留的状态分裂。
+- **child 自动收尾与 confirm-only 边界已修复**：child terminal signal 的后台 task 成功/异常都会
+  唤醒 reconciler，异常带 traceback 进入结构化日志；`confirm-only` 在未来 decision identity 尚未
+  生成时保持 wait，不再误判 deny。真实 `kimi-k3` root
+  `88efdacaeb5a585794aa18231647b717` 在 child
+  `child-09c8eb64c4334860aa7df03b470da714` 返回 `CHILD_DONE` 后无需用户追问，自动执行第二次
+  `run_shell` 并输出 `ROOT_AUTO_CONTINUATION_PASS`。
+- **权限卡延迟真机闭环**：最终 Run `35459a155afc57b49e7158c7dbea635d` 的 `run_shell_9`
+  durable outcome 在批准后约 58 ms succeeded；0.5 秒 UI 快照已显示 `✓ ok`、权限卡已消失，而
+  Kimi 最终 `PERMISSION_CARD_SETTLED_PASS` 约 7.2 秒后才提交，证明不再等待 provider 续答或
+  迟到 ACK。
 - **纯文本 durable child 能有限收敛**：objective 明确禁止工具、只需返回文本且无写入/测试义务时，
   单次 `end_turn` 即可完成；有文件、命令或测试要求时仍必须提供 effect/receipt。真机 `kimi-k3`
   root `4a976f0aa972525a899753cd7c630fec` 串行启动两个 child
@@ -30,10 +42,12 @@
   Artifact；持久化审计 `passed=true / baseline_matches=true / missing_outputs=[] /
   retained_scratch=[]`，UI 有两张真实 ArtifactCard，根任务独立复核后 completed。空白新会话也
   已真机确认继承当前可见历史会话的 `kimi-k3`，不再回退到 transport 默认模型。
-- **当前验证**：相关与相邻 migration 后端合并 `300 passed`；前端权限/ControlChannel/聊天
-  `59 passed`；TypeScript、
+- **当前验证**：本轮新增聚焦后端 `65 passed`、前端权限弹窗/Hook `11 passed`；前端全量
+  `556 passed`；TypeScript、
   Python 编译、execution build manifest、diff check 和 Tauri debug bundle build PASS。扩大检查发现并
-  修复 `state.db` v27 marker 在补跑旧 v15/v16 migration 后误降到 26 的问题。
+  修复 `state.db` v27 marker 在补跑旧 v15/v16 migration 后误降到 26 的问题。扩展 Harness 目录
+  当前为 `892 passed / 4 xfailed / 17 failed`；17 项是既有架构预算、旧 commit/fixture 可达性、
+  依赖方向和 parity 漂移，不宣称 Python Harness 全量基线绿色。
 
 ## 2026-08-12 里程碑：Workbench last-mile、设置、恢复与托盘真测全部收口
 

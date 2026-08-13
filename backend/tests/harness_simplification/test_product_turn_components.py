@@ -1260,6 +1260,9 @@ async def test_presenter_does_not_duplicate_tool_lifecycle_as_progress() -> None
         "tool_use_event",
         "tool_result",
     ]
+    tool_result = next(frame for frame in ws.frames if frame["type"] == "tool_result")
+    assert tool_result["payload"]["run_id"] == "run-tool-ui"
+    assert tool_result["payload"]["call_id"] == "call-tool-ui"
     assert all(
         frame["type"] != "chat_v2_reasoning_summary"
         for frame in ws.frames
