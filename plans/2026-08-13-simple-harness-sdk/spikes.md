@@ -298,6 +298,55 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
 - 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
 - 性质：这是未发布 SDK schema v1 的 runtime closure，不是历史 Run 兼容处理。
 
+## H13 — ReAct phase recovery 与 late-evidence wake closure（执行期审计）
+
+- 触发：H10 focused checkpoint `db42aaf` 虽证明 budget checkpoint durable，但独立复审构造出
+  assistant/tool result 已 append 后重启的确定性 fingerprint drift：checkpoint仍为旧 phase，代码用
+  已变化 Context + 同 RequestId 再调 Provider，T2.4 正确地拒绝同 logical call 的新 fingerprint，Run
+  最终 driver_failed。原 crash test 只测同进程异常次数，没有覆盖 frozen close/reopen fault matrix。
+- 狭挑战结论：`FAIL`，4 个 critical：
+  1. `provider_reserved/tool_batch_reserved` 未冻结 exact request/response/progress，重启会重调 Provider；
+  2. EffectId 只含 run + raw provider call ID，跨 turn 重复 raw ID会错误复用或 conflict；
+  3. Provider/Tool unknown 把 Run写 WAITING，但 recovery 不枚举 WAITING、无 Provider reconciliation
+     authority，late evidence无法唤醒；
+  4. Effect recovery 在读 ledger 前重新 Registry validate/authorize，授权漂移可覆盖已terminal结果。
+- 修订：checkpoint 持久化 canonical ProviderRequest/Response + digest/context revision/ordered append
+  progress，恢复严格 ledger-first phase machine；内部 Tool identity加入 durable turn ordinal；新增 typed
+  ProviderReconciliationPort 和 durable WAITING wake receipt/CAS；EffectExecutor 对 stable identity先读
+  terminal/unknown ledger，只有不存在或 confirmed_not_started 才 authorize/dispatch。补每个 append
+  前后 reopen、重复 raw call ID、授权漂移和两类 unknown 三态 late-evidence/并发 wake矩阵。
+- 第二轮挑战：`FAIL`，4 个 critical（evidence先于WAITING会丢 wake且枚举全部WAITING与零自旋冲突；
+  Provider completed缺response/usage/target/budget契约和跨slice owner；terminal effect未先校验frozen
+  intent且confirmed_not_started会留下旧授权PREPARED窗；raw/internal call ID未区分Provider协议关联）。
+  已补 durable blocker/resolution 双向原子关联，只枚举resolved+unconsumed；Provider late completed
+  response/usage/target验证及budget+resolution同事务；EffectRecord-first intent验证 + fresh authorize后单次
+  reauthorization CAS；checkpoint双存raw/internal ID且Provider message始终raw，并将所有跨slice文件/
+  schema owner纳入T3.3，待第三轮挑战。
+- 第三轮挑战：`FAIL`，2 个 critical（resolved wake先consume、后activation会在中间崩溃时永久丢唤醒；
+  resolution未绑定具体 uncertainty epoch，第一次confirmed_not_started会阻塞第二次handoff后的late
+  completed或错误resolve新blocker）。已补单事务
+  `resolved blocker + Runtime lease claim + WAITING->RUNNING + activation receipt + consume`，提交后
+  schedule前崩溃由普通running recovery接管；ledger显式 handoff_attempt/rehandoff_count，blocker与
+  resolution唯一键绑定同一attempt，旧epoch不唤醒新epoch，最多一次safe re-handoff由durable counter
+  独立约束，待第四轮挑战。
+- 第四轮挑战：`FAIL`，2 个 critical（reopen时confirmed_not_started要求fresh auth/current fence，
+  但resolution前Run尚未activation，形成authority循环；same-process WAITING仍有active lease/fence时
+  盲目epoch+1会使合法heartbeat与内存authority stale）。已改为confirmed_not_started只落resolution、
+  ledger保持UNKNOWN，resolution wake完成activation+fence后由ReAct fresh auth/reset；activation同owner
+  active lease复用/renew同epoch，expired/missing才epoch+1且outbound前必须取得匹配新fence，待第五轮。
+- 第五轮挑战：`FAIL`，2 个 critical（B写resolution但A持WAITING active lease持续heartbeat时，B不能
+  takeover且A没有durable wake poll，resolution永远不消费；reauthorization CAS成功为PREPARED后、
+  handoff前crash，新epoch无法使用旧fence也无法重走UNKNOWN transition）。已要求每个WAITING active
+  owner运行只扫resolved+unconsumed的durable wake-drain；并增加无handoff receipt PREPARED的
+  `refresh_prepared_effect_authority`，fresh auth后仅换current fence/receipt、不增handoff_attempt，待第六轮。
+- 第六轮挑战：`FAIL`，1 个 critical（允许wake-drain与heartbeat同task，却要求close先join drain，
+  会在non-cooperative Driver隔离前误停heartbeat）。已冻结独立 lifecycle control：combined task只
+  disable/join drain iteration，heartbeat必须持续到Driver隔离完成后才停；补combined-loop close测试，
+  待第七轮。
+- 第七轮挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
+- 性质：这是未发布 SDK 的 H10 实现闭包，不是历史 Run兼容；`db42aaf` 只是 focused checkpoint，
+  T3.3/S3 从未被标为完成。
+
 ## H12 — H7 阶段门与 child-to-parent public orchestration closure（执行期审计）
 
 - 触发：T3.0 v4 把源项目 H7 的 12 个 assertions 恢复后，真实 RED 分成两种 owner：4 个

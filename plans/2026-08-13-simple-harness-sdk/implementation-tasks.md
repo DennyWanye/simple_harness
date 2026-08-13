@@ -395,13 +395,16 @@
 ### T3.3 — ReAct Driver / termination budgets [AC-3..6]
 
 - 文件：`runtime/drivers/{react,react_loop}.py`,
-  `runtime/{context,termination,react_checkpoint}.py`，以及 T2.2 SQLite UoW 的 checkpoint CAS。
+  `runtime/{context,termination,react_checkpoint}.py`，`providers/reconciliation.py`，
+  `execution/{dispatch,provider_invocations,effects}.py`、`tools/{executor,reconciliation}.py`，以及
+  T2.1 clean schema v1 / T2.2 SQLite UoW 的 checkpoint、wait-blocker、resolution、reauthorization CAS。
 - 改法：把现 `AgentLoop` state machine改用 Context/Provider/Tool/Authorization/Trace Ports；Provider
   每 turn 只经 T2.4 coordinator；Tool只经 T2.5；max turns/calls/wall/cost/repeat hard gates写代码。
   `workflow_checkpoints` 的 `react.termination.v1` namespace 是唯一 durable termination authority，
   checkpoint 包含 version/lease_epoch、Unix epoch wall-clock `started_at/last_observed_at`、
-  `provider_turns_reserved_total/tool_calls_reserved_total/repeat_key/repeat_streak`、
-  phase 及当前 provider request/tool batch 稳定身份。每个 Provider 轮次在出站前先用
+  `provider_turns_reserved_total/tool_calls_reserved_total/repeat_key/repeat_streak`、phase、
+  ProviderRequest canonical snapshot + fingerprint + context revision、ProviderResponse/tool-call order
+  canonical snapshot + digest，以及每个 Tool result append progress。每个 Provider 轮次在出站前先用
   owner+lease_epoch+expected_version CAS 到 `provider_reserved` 并递增 turn，RequestId 只由
   `(run_id, durable turn ordinal)` 派生；每个 Tool batch 在 prepare 任何 effect 前，
   按 Provider response 中的 call order 对每个 call 逐个模拟预算，`repeat_key` 冻结为
@@ -410,6 +413,67 @@
   checkpoint/effect/handler 全部零变化。恢复时必须先用同一
   request/effect identity 读取或 reconcile T2.4/T2.5 ledger，完成后用 T3.1 的稳定
   `append_id` 幂等写 context，再 CAS 到下一 phase；`unknown` 禁止分配新 turn/effect。
+  恢复必须严格按 phase 执行 `ledger read/reconcile -> assistant append -> ordered effects -> each result
+  append -> ready CAS`：`provider_reserved` 先按 checkpoint 中冻结的 exact ProviderRequest 读同一
+  invocation ledger，terminal response只读返回，绝不得用已变化的最新 Context重建同 RequestId；
+  `tool_batch_reserved` 已有 frozen response/tool-call snapshot，绝不得再次调用 Provider。每个 append
+  用稳定 receipt推进 checkpoint progress，因此 assistant/result append前后 crash均只读 replay。
+  checkpoint 对每个 Tool call 同时持久化 `raw_provider_call_id` 与 bounded internal ID（canonical tuple
+  SHA-256，display prefix可读但总长受限）。Effect ledger、append receipt、SDK correlation使用 internal
+  ID；Provider-facing assistant tool-call 与 Tool result `Message.call_id` 必须保持 raw ID；恢复时验证
+  raw/internal/turn ordinal 映射。同 Run 不同 turn 重复 raw ID是两个不同 effect，同 turn duplicate
+  raw ID fail closed。
+  `RuntimePorts`/`RuntimeServices` 增加 required typed `ProviderReconciliationPort`。其 observation 为：
+  `completed(response, usage/cost evidence, evidence_ref)`、`confirmed_not_started(evidence_ref)`、
+  `still_unknown(evidence_ref)`；completed 必须匹配原 RequestId/request fingerprint/target digest，可信
+  usage 仍按 frozen estimator/policy计算。Provider response + budget settle + resolution receipt 必须同一
+  transaction，禁止不匹配 late response污染 Context或budget。
+  Provider/Tool unknown 的等待协议使用 durable `run_wait_blockers` + `reconciliation_resolutions`，不靠
+  时序通知。Provider invocation/effect ledger 增加 explicit `handoff_attempt`，每次物理 handoff前原子
+  +1，UNKNOWN 保留该 immutable uncertainty epoch；官方 policy 对 confirmed_not_started 最多允许一次
+  re-handoff，并用 durable `rehandoff_count` 约束。Kernel 在一个 transaction 提交 WAITING +
+  blocker(kind, ledger identity, handoff_attempt/observed unknown version)；
+  reconciler 对 completed 在一个 transaction settle ledger + unique resolution receipt；对
+  confirmed_not_started 只验证 ledger identity/version/attempt并写 evidence-bound resolution，原 ledger
+  保持 UNKNOWN/不可dispatch，不能在尚未恢复Runtime authority时reset。无论先后，blocker创建时
+  必须查已有 resolution，resolution写入时也更新已有 blocker。recoverable-WAITING只枚举
+  `resolved AND wake_unconsumed`；resolution identity/唯一键固定为
+  `(kind, ledger_identity, handoff_attempt)`，blocker必须引用同一 epoch，同 epoch same outcome hash幂等、
+  异 outcome conflict，旧 epoch resolution绝不得resolve新 blocker。still_unknown不写 actionable
+  resolution，因此保持WAITING、零调用、零自旋。completed恢复；confirmed_not_started按 durable
+  rehandoff_count最多允许同 logical identity一次重新 handoff，不能靠禁止后续 epoch resolution限次。
+  wake 不得先 consume 再在内存 schedule：`consume_resolved_wait_and_claim_activation` 必须在一个
+  `BEGIN IMMEDIATE` 内校验 blocker resolved/unconsumed并分支处理 Runtime lease：同 owner的 active
+  ExecutionLease 原子 renew/reuse同 epoch；没有 active lease或已expired才 claim epoch+1；active异owner
+  不得偷取。随后同事务 CAS Run `WAITING -> RUNNING`、写 activation receipt并标 wake consumed。
+  exact activation receipt重试只读返回同 lease/outcome；提交后即使 schedule前崩溃，普通 running
+  recovery仍能接管。Runtime 随后必须在任何 Provider reset/Tool reauthorization/handoff前，以该
+  ExecutionLease acquire/reuse匹配 `runtime_lease_epoch` 的 RunFence；same-process wake复用原 active
+  fence，新 epoch takeover使fence epoch+1。旧 Runtime lease失效后新 owner/epoch可 reclaim，不能形成
+  永久 claimed wake或让内存中的旧lease/fence继续出站。
+  每个持有 WAITING Run active lease 的 Runtime 必须运行 durable wake-drain（可与 heartbeat同一个
+  physical task，但 drain enable/disable/join control 必须与 heartbeat续租生命周期逻辑独立可测）：
+  只扫描该 owner+epoch 且 `resolved AND wake_unconsumed` blockers，
+  所以 still_unknown 不自旋。非owner reconciler只写 durable resolution；active owner wake-drain自动
+  same-epoch consume/activate/schedule，无需外部手动 `reconcile()`。close先disable并join drain分支，
+  但 heartbeat续租必须继续；然后按既定 cancel/隔离并join Driver，Driver安全退出后才停止/join
+  heartbeat physical loop并release authority。若两者合并为一个task，disable drain不得终止task或
+  heartbeat分支。新owner随后才能takeover。
+  Effect recovery 必须先用 turn-scoped EffectId读取 ledger，并在返回/重concile前比对 run、turn ordinal、
+  internal CallId、tool name、canonical arguments/request hash；任一不匹配conflict。Tool reconciliation
+  直接消费 immutable `EffectRecord`，不能先依赖当前 Registry/Authorization。terminal匹配后直接返回
+  原结果。confirmed_not_started 不得先 reset成携旧授权的 dispatchable PREPARED；resolution/wake先恢复
+  active Runtime lease + matching RunFence，ReAct再做当前 Registry validation + fresh Authorization，
+  然后由 `reauthorize_effect_not_started` 在一个 transaction CAS 原 unknown/handed_off version +
+  matching resolution attempt/evidence、绑定 current fence/fresh authorization receipt并转为 PREPARED。
+  crash在fresh authorize前后都保留不可dispatch旧state；只有该CAS成功才可handoff。若 crash发生在
+  PREPARED CAS成功后、physical handoff前，新 epoch恢复必须 ledger-first识别“无handoff receipt的
+  PREPARED”，fresh authorize后调用 `refresh_prepared_effect_authority`，CAS frozen intent、matching
+  resolution attempt、effect version、handoff_attempt未增长、current Runtime lease/RunFence与fresh
+  receipt，只更新 fence/auth authority而不增加handoff_attempt；旧 fence/receipt不得出站。随后才
+  mark handed_off。after-commit exact refresh receipt幂等只读，异payload conflict。Provider
+  confirmed_not_started也先resolution/wake，再由ReAct用 frozen request + 新active lease/fence CAS
+  原 UNKNOWN 到同 identity retry-ready state；reconciler自身不得无authority重发。
   崩溃可保守地消耗已 reserve 的 budget，但绝不得重置、重用 RequestId 或额外物理调用。
   wall-clock 不得使用跨进程不可比的 monotonic origin；若 injected epoch clock 比
   durable `last_observed_at` 倒退，则 fail closed 为 wall-clock termination，禁止通过调钟绕过上限。
@@ -420,7 +484,23 @@
   epoch 跨 reopen 触发硬上限，stale owner/lease_epoch/checkpoint version 全部拒绝；
   旧 owner 在 lease epoch 接管后携带尚新 context revision 进行 append 也必须零写入拒绝；
   同 batch 多个相同/不同 signature、跨 batch 同 signature、reserve 后 crash/reopen，
-  并断言任一 call 超 max Tool/repeat 时 effect/handler 为 0。
+  并断言任一 call 超 max Tool/repeat 时 effect/handler 为 0。补 assistant append、tool batch reserve、
+  每个 result append前后 close/reopen；跨 turn重复 raw call ID；已terminal effect后授权策略改deny仍
+  ledger-first返回原结果；Provider/Tool unknown 的 completed/confirmed_not_started/still_unknown late
+  evidence各自 wake矩阵，尤其覆盖 resolution-before-WAITING lost-wakeup；still_unknown零自旋，两个
+  reconciler并发只恢复一次。Provider completed验证response/request/target/usage-budget绑定与同事务
+  resolution；Tool terminal intent mismatch拒绝；confirmed_not_started在fresh authorize前后 crash不留
+  dispatchable旧receipt；两个turn重复raw ID产生distinct effects但Provider-facing Tool messages仍用raw ID。
+  wake activation逐 write-point/after_commit response loss/commit后schedule前进程终止均可恢复；Provider
+  和 Tool 都覆盖第一次 unknown -> confirmed_not_started -> 第二次 handoff/unknown -> late completed，
+  两个 uncertainty epoch/resolution、同一 logical identity、物理 handoff最多两次、最终只恢复一次。
+  same-process late evidence复用当前 lease/fence epoch且heartbeat持续；close/reopen或expired lease走
+  epoch+1新fence；activation commit后schedule前crash、新epoch提交但fence acquisition前crash均可恢复，
+  旧heartbeat/旧fence后续ledger/物理调用为0。另测A持WAITING active lease持续heartbeat、B写resolution
+  且activation被拒时，无手动A.reconcile，A wake-drain仍只恢复一次。Tool补reauthorization CAS
+  after-commit响应丢失、CAS成功后handoff前close/reopen：新epoch refresh authority不增加handoff_attempt，
+  旧fence/receipt物理调用0、最终handler最多一次。补 combined wake-drain+heartbeat task 的
+  non-cooperative close：drain停止后Driver隔离完成前lease持续renew，最后loop才终止且无task泄漏。
 - 依赖：T1.2–T1.3、T2.4–T2.5、T3.1。
 
 ### T3.4 — SDK runtime conformance surface [AC-4, AC-5, AC-8]
