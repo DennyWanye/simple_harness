@@ -514,13 +514,51 @@
 
 ## S4 — Workflow runtime / selection
 
-### T4.1 — Native compiler/runner/checkpoint ports [AC-5, AC-7]
+### T4.1 — Native compiler/runner/checkpoint/control ports [AC-5, AC-7]
 
-- 文件：`workflow/{contracts,definition,compiler,runner,checkpoint,lease,recovery,replay,trace}.py`。
-- 改法：`WorkflowRunner.__init__` 必填 registry/checkpoint/lease/recovery/trace/UoW；禁止构造 concrete
-  SQLite；保留 retry/loop/HITL/quarantine/replay语义。
+- 文件：`workflow/{contracts,definition,compiler,runner,checkpoint,lease,recovery,replay,trace,control,execution_ports}.py`。
+- 改法：完整兑现 frozen symbol disposition 的非-native Workflow authority，不能只实现 runner
+  最小表面：`control.py` 必须提供 `ExecutionControl`、`WorkflowInterrupt`、`WorkflowSuspended`、
+  `bind_execution_control`、`workflow_interrupt`；`execution_ports.py` 必须提供 public
+  `WorkflowExecutionPorts` 与 private `CheckpointExecutionAdapter`，并由 runner 的真实 HITL/checkpoint
+  路径消费，禁止成为未接线兼容壳。`CheckpointExecutionAdapter` 的每个 execution-ledger write
+  必须接收 checkpointer 已打开的 transaction handle，并与对应 checkpoint/head/decision/effect/finalize
+  写入同一个 commit/rollback boundary；adapter 不得 commit、不得另开 connection、不得持有 hidden
+  concrete store。逐 write-point fault 后 close/reopen 必须全回滚或全提交，不能出现 checkpoint 与
+  execution ledger 分叉。`WorkflowRunner.__init__` 必填
+  registry/checkpoint/lease/recovery/trace/`WorkflowExecutionPorts`，不再另收一份 UoW；canonical UoW
+  只取 `execution_ports.unit_of_work`。checkpoint authority 必须一次性
+  `bind_execution_adapter(execution_ports.checkpoint)`，并暴露进程内 opaque `transaction_owner`；adapter
+  的 `transaction_owner` 必须用 object identity 与 checkpoint authority相同，否则构造时零写拒绝。
+  adapter method 的第一个参数是 checkpoint authority创建且仍打开的 `WorkflowTransaction`；transaction
+  只允许 owner commit/rollback，adapter只能在其中执行 ledger writes。禁止 A checkpoint + B adapter、
+  重复 configure、构造 concrete SQLite或 hidden fallback。保留
+  retry/loop/HITL/quarantine/replay语义。contracts/definition/recovery/replay/runner/control/
+  execution_ports 的 frozen target symbol 必须全部存在且由 API snapshot/symbol disposition gate校验。
+  Adapter 六类 write 都必须携 caller从 durable input派生的 `operation_id`；canonical `payload_hash`
+  必须由 adapter 对该method全部会影响write或outcome的实际参数自行 canonicalize + SHA-256重算，禁止
+  信任 caller传入hash或遗漏可写字段。若保留 caller expected hash，只能先constant-compare adapter重算值，
+  不匹配零写。并在同 transaction 落 `operation_id UNIQUE` 的全局 receipt（receipt另存
+  `adapter_method`，因此同id跨method也冲突）：`mark_running_on_claim` identity由
+  `(run_id, checkpoint namespace, lease/claim epoch)` 派生；`consume_decisions` 由
+  `(run_id, checkpoint_id, canonical ordered decision ids)` 派生；`open_decision` 由
+  `(run_id, interrupt_id)` 派生；`materialize_intent` 由 `(run_id, stable intent id)` 派生；
+  `link_effects` 由 `(run_id, checkpoint namespace, checkpoint_id, canonical ordered effect ids)` 派生；
+  `finalize_run` 由 `(run_id, terminal checkpoint_id)` 派生。receipt保存method、identity、adapter重算的
+  payload hash与
+  serialized outcome；after-commit重试先读receipt，同key+同hash只读返回原outcome，即使lease/head已推进，
+  同key异hash或跨method复用key均零写 conflict；并发跨method同id只能一个transaction winner，另一方
+  整体回滚。禁止 caller随机 UUID或adapter按重试时间生成新identity。
 - tests：`test_compiler.py`, `test_runner_fault_matrix.py`, `test_checkpoint_reopen.py`,
-  `test_lease_quarantine.py`, `test_replay.py`。
+  `test_lease_quarantine.py`, `test_replay.py`；另补 control suspend/resume/interrupt 与 execution ports
+  checkpoint adapter真实接线测试，证明 missing authority fail closed、重复 interrupt/reopen 幂等且
+  runner 没有绕过 Ports；注入 A/B mismatched checkpoint/adapter transaction owner、重复 bind 或额外
+  hidden UoW 必须在构造时零写拒绝；checkpoint
+  transaction 内每个 adapter write 前后 fault、after-commit response loss、close/reopen 均验证 ledger
+  与 checkpoint同生共死；六类method各覆盖 exact operation replay 与 same-key/different-payload conflict，
+  对每个method逐一变更每个可写/影响outcome字段都必须触发adapter重算hash conflict；另测两个并发
+  method复用同global operation id只有一个winner，loser ledger/checkpoint零写，并断言 receipt/outcome
+  identity未变化。
 - 依赖：T2.1–T2.5。
 
 ### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]
@@ -544,8 +582,28 @@
   skipped stage IDs/retry action，拒绝未知字段、负数、重复 stage、非 allowlist 值，且绝不投影
   topic/raw query 等私有 state；没有 `terminal_public` 的 legacy workflow 保持 frozen exact
   canonical JSON byte shape。实现属于通用 Workflow runtime，不包含 DeskPet 产品 schema。
+  T4.3 同时是 T4.1 `control.py` 的 node-level consumer owner：`NativeWorkflowExecutable` 每次执行单个
+  native task 必须构造 `ExecutionControl(task_id, durable_responses)`，在
+  `bind_execution_control(...)` scope 内调用 node；捕获 `WorkflowSuspended` 后只能经 T4.1 canonical
+  checkpoint/execution transaction提交 durable interrupt并终止本次 node，resume时同 stable
+  interrupt id消费 response。Python coroutine不能跨进程恢复栈，因此 v0.1 明确冻结 interrupt-capable
+  node 为 pure-before-interrupt：`NodeDefinition` 对 interrupt-capable node 必须声明
+  `pre_interrupt_effect_policy = pure`，compiler拒绝缺失/其他值；`WorkflowContext` 在该node执行期间不注入
+  Provider/Tool/任意physical effect Port。任意裸I/O/Host callback属于trusted Workflow code违反SDK
+  contract；SDK不承诺也不伪装成Python沙箱，官方 profiles 与 conformance host禁止这种用法。
+  需要 durable/non-idempotent effect 的workflow必须拆成 pre-interrupt durable effect node + pure interrupt
+  node + post-interrupt node；前后 effect node沿正常 graph intent 进入现有 T2.5 EffectExecutor，不新增
+  consumer-owned Port或测试fake去重authority。禁止伪称可以恢复Python continuation，
+  禁止仅由 runner 外层 bind，禁止 native 绕过 `WorkflowExecutionPorts`/transaction adapter。
 - tests：T3.0 冻结的 8 个 `h7_workflow_terminal_gate` 全 GREEN；
   `verify_full_runtime_stage.py --stage workflow` 还必须证明 4+8+全 12 GREEN，禁止 skip/xfail。
+  另补真实 native node 调 `workflow_interrupt` 的首次 suspend + close/reopen + response resume测试；断言
+  node-level bind有效、stable interrupt/decision identity、同 transaction rollback、exact replay一次，
+  并用无 bind/错误 authority证明 fail closed。另构造三node
+  `durable effect -> pure interrupt -> durable effect` 经真实 T2.5 ledger close/reopen，断言前置 effect稳定
+  identity/物理调用一次、interrupt稳定resume、后置effect只在response后一次；任何 interrupt node声明
+  非pure policy必须compile fail closed，且该node context不可取得physical effect Port。不得用内存counter
+  要求不可能的coroutine续跑语义；API docs标明 trusted Workflow code / no raw I/O 边界。
 - 依赖：T3.0、T4.1。
 
 ## S5 — official Profiles

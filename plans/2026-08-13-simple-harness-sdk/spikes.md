@@ -387,3 +387,47 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   或隔离 task 后 release Runtime/Run authority，使新 epoch 无需等待第二套 TTL 即可 reclaim，待第五轮。
 - 第五轮窄挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
 - 性质：这是未发布 SDK 的真实 public seam/任务 owner closure，不是历史 Run 兼容。
+
+## H14 — Workflow frozen symbol owner closure（执行期审计）
+
+- 触发：T4.1 实现前按 frozen `source-symbol-disposition.json` 逐项核对时发现，原 T4.1 文件清单
+  只列 contracts/definition/compiler/runner/checkpoint/lease/recovery/replay/trace，但 disposition 还冻结了
+  7 个没有其他 task owner 的 target：`workflow.control` 的 5 个 HITL authority，以及
+  `workflow.execution_ports` 的 public `WorkflowExecutionPorts` / private
+  `CheckpointExecutionAdapter`。若直接执行，首版 SDK 会遗漏已批准的 reusable Workflow 语义，或迫使
+  Host 重新开发 HITL/checkpoint wiring，违反 AC-5/AC-7 与用户已确认的 SDK 边界。
+- A2 结论：affected implementation line 在落 production 前停止；不允许删 disposition、改 target、
+  将 symbol 偷塞进其他 module，或做未接线兼容壳。把 `control.py` 与 `execution_ports.py` 明确归入
+  T4.1，并要求 runner 的真实 suspend/resume/interrupt/checkpoint 路径消费这些 Ports；API snapshot 与
+  disposition gate覆盖全部 frozen target。
+- 计数澄清：contracts/definition/recovery/replay/runner 共 41 个 frozen entries（37 public + 4 private）；
+  加上上述 7 个 authority 后由 T4.1 拥有 48 个 frozen targets，`compiler.py`、`checkpoint.py`、
+  `lease.py`、`trace.py` 是实现这些语义所需的新模块，不替代任何 target。
+- 狭挑战迭代 1：`FAIL`，3 个 critical：control 的真实 node-level consumer 在 T4.3 `native.py`，只让
+  T4.1 runner消费无法保证 node interrupt binding；CheckpointExecutionAdapter 未冻结加入 checkpointer
+  已打开的同一transaction，可另开连接造成 durable state撕裂；runner 分别接收 UoW/checkpoint 与
+  `WorkflowExecutionPorts` 却没有同源约束，可构造 A/B authority分叉。已修订为 T4.1 提供 control/
+  execution contracts与唯一 authority bundle、adapter接收现有 transaction且不得自行commit/open；
+  T4.3 明确负责 Native node-level bind/suspend/resume消费。补跨 task接线、mismatch零写、逐write fault/
+  reopen与stable interrupt replay测试，待第二轮挑战。
+- 狭挑战迭代 2：`FAIL`，2 个 critical：Python node在interrupt前做裸physical effect时，reopen从函数
+  开头重跑必然重复，bind/response持久化不能恢复coroutine continuation；adapter same-transaction仍未
+  定义after-commit exact replay identity。已明确 interrupt-capable node在interrupt前只能纯计算或使用
+  task+ordinal稳定identity的receipt-backed durable effect Port，普通非幂等步骤必须拆成pre/interrupt/post
+  durable nodes；并为 adapter六类write冻结durable-input派生operation id、canonical payload hash、同事务
+  unique receipt、receipt-first same/different payload语义及逐method fault/reopen测试，待第三轮挑战。
+- 狭挑战迭代 3：`FAIL`，2 个 critical：若payload hash由caller提供，caller可用旧hash掩盖新payload；
+  `(adapter_method, operation_id)` unique又允许同id跨method各写一行，与跨method conflict要求矛盾。
+  已改为adapter对每个method全部实际写入/outcome参数自行canonicalize并重算hash，逐字段mutation均
+  conflict；receipt以global `operation_id UNIQUE`且另存method，并发跨method同id只有一个winner、loser
+  transaction全回滚，待第四轮挑战。
+- 狭挑战迭代 4：`FAIL`，1 个 critical：上一轮允许的receipt-backed pre-interrupt effect Port没有文件/
+  API/owner，`WorkflowExecutionPorts`也没有physical dispatch/reconcile，可能把实现重新甩给Host或用fake
+  自证。v0.1改为interrupt node严格pure-before-interrupt，只接受
+  `pre_interrupt_effect_policy=pure`且执行context不注入physical effect Port；需要effect时必须拆成
+  pre-effect/pure-interrupt/post-effect三个durable nodes，effect nodes经既有T2.5 ledger。补真实ledger
+  close/reopen unknown/no-replay与非法policy fail-closed测试，待第五轮挑战。
+- 狭挑战迭代 5：`PASS`，`NEW_CRITICAL_FINDINGS=0`。7 frozen target owner、node-level control consumer、
+  canonical authority bundle、same transaction、adapter self-hash/global receipt replay与pure-before-interrupt
+  边界均已形成可执行闭包；实现时须把interrupt node context无physical Ports落实为类型/构造级能力缩减。
+- 状态：定稿，T4.1/T4.3可按修订后的cross-owner contract恢复实现。
