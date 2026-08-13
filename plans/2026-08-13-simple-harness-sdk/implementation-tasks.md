@@ -176,7 +176,9 @@
 ### T3.0 — 冻结真实 Provider/ReAct/Tool/child/delivery seam [AC-5, AC-8]
 
 - 文件：把 `spikes.md` H7 的 current integration cases复制为 SDK RED conformance skeleton：
-  `tests/conformance/test_full_runtime_seam.py`；只替换 imports/factories，不改 assertion semantics。
+  `tests/conformance/test_full_runtime_seam.py`；只替换 imports/factories，不改 assertion semantics；
+  `scripts/acceptance/verify_full_runtime_stage.py`；`pyproject.toml` 注册
+  `h7_runtime_gate` / `h7_workflow_terminal_gate` strict markers。
 - 改法：一个 fixture要求五个显式 Ports：Provider、Tool、Authorization、Context、Delivery；执行
   `Provider -> AgentLoopCollaborator -> ReActDriver -> Kernel -> EffectBatchExecutor -> same Driver`，
   另一个执行 attached child terminal -> parent signal -> root terminal -> delivery。开始 T3.1 时测试因
@@ -187,8 +189,18 @@
   传入生产实现，禁止 `conformance_case`/静态字典自证后门。调用顺序必须来自
   test-owned spy，terminal/ledger/context/child signal/outbox 必须查真实 Runtime/SQLite；
   restart case 必须 close Runtime/DB、同路径重建并 reconcile，直接断言物理调用数、
-  稳定 ID 和 no-replay。T3.0 首个字符串 oracle commit 仅是中间 RED checkpoint，
-  不得作为 T3 通过依据。
+  稳定 ID 和 no-replay。冻结的 12-case 文件按真实实现 owner 拆成两个**阶段门而非删减门**：
+  4 个 `h7_runtime_gate`（Provider/ReAct/Tool、restart reconciliation、attached child -> parent ->
+  root terminal -> delivery）由 T3.1–T3.3 负责；8 个 `h7_workflow_terminal_gate`（strict public
+  terminal、6 个 invalid state、legacy byte shape）由 T4.3 负责。T3.3 退出时前 4 个必须
+  GREEN；后 8 个不得 skip/xfail，必须由 verifier 逐 nodeid 证明唯一 RED 原因为
+  冻结的 T4.3 pending-symbol 集合：缺 `simple_harness.workflow.native.NativeWorkflowExecutable`
+  和/或 `simple_harness.workflow.errors.InvalidStatePatch`；即使 T4.1 已创建 package，也只允许这两个
+  T4.3 authority 尚缺，不接受 fixture/assertion/其他 import error。T4.3 退出时后 8 个必须 GREEN，且最终全 12
+  GREEN。verifier 必须先 collect 并精确断言 runtime=4、workflow=8、全集=12；stage=`runtime`
+  要求 runtime pytest exit 0 且 workflow pytest exit 1/逐 nodeid exact reason；stage=`workflow`
+  要求两组和全集均 exit 0。marker 未注册、case 漂移、额外 error 或普通 pytest failure 均 fail
+  closed。T3.0 首个字符串 oracle commit 仅是中间 RED checkpoint，不得作为 T3 通过依据。
 - 依赖：T2.6、T1.2–T1.3；是 T3.1/T3.3 的前置 gate。
 
 ### T3.1 — Kernel lifecycle closure [AC-5, AC-6]
@@ -300,14 +312,84 @@
 
 ### T3.2 — child/continuation/reconciler closure [AC-5]
 
-- 文件：`runtime/{child_runs,child_signal_runtime,user_continuations,reconciler,runtime}.py`。
+- 文件：`runtime/{child_runs,child_coordinator,child_signal_runtime,user_continuations,reconciler,kernel}.py`，
+  T2.2/T2.6 SQLite UoW continuation-aware commit methods。
 - 改法：child 入口只接 `ProfileLaunchTicketRef`；恢复 lease/epoch；parent signal/continuation FIFO；
   startup reconciliation顺序 provider -> effects -> child signals -> deliveries -> recoverable Run。
   `ChildSignalRuntime` 只能消费 T2.3 durable head-of-line signal claim lease，处理成功后
   用记录中的相同 owner/claim_epoch ack；crash/reopen 保留 claim 并等 lease 到期 reclaim，
   未过期 head 不得被后续 signal 超越，禁止进程内 list/lock 作为 authority。
+  Runtime 必须公开 typed `children.launch(ChildLaunchRequest) -> ChildRunHandle`：facade 只调用
+  `claim_profile_launch_and_commit_child`，再由同一 Runtime 对返回的 durable child run 获取
+  ExecutionLease/RunFence 并 schedule，返回 handle 中的真实 `RunRecord`；禁止测试/Host 直调
+  私有 `_activate/_schedule`。Runtime 还必须公开 `reconcile()`，严格执行 startup reconciler后
+  `recover()`，以及公开 `dispatch_deliveries_once()`，不得让 conformance 访问 `_ports`。
+  Kernel 对 `parent_run_id is not None` 的 child terminal 分支不得调用 root terminal API：ATTACHED/
+  ROOT_TERMINAL_CHILD child 的 COMPLETED/FAILED/CANCELLED 也统一调用
+  `finalize_child_and_enqueue_parent_signal(..., run_fence, execution_lease, now)`，以
+  `(child_run_id, child version, terminal state)` 派生
+  stable command/signal/event IDs，并在同一 transaction 写 child terminal + 唯一 parent signal；
+  transaction 还必须落 child terminal fence receipt 并 CAS release 当前 RunFence；terminal 后不得遗留
+  active fence。每个 child terminal command 的第一步按 stable command/signal identity + terminal
+  outcome hash 只读已提交 receipt：完全相同即使 fence 已 released 也返回原 signal/outcome；identity
+  或 hash 不同立即 conflict/零写。只有没有 receipt 时才校验后述双 fence并写入，绝不生成第二条signal。
+  producer transaction 必须从 durable `run_links` 读取唯一 attachment policy（不信任 caller/内存
+  branch），并先校验 active `workflow_leases`、current `run_fences` 与 runtime epoch 三方等式；
+  DETACHED 使用同样双 fence 的 `commit_detached_child_terminal`，但不创建 parent signal。ATTACHED
+  由 parent Driver消费 signal 后继续；ROOT_TERMINAL_CHILD 由 parent Driver消费同一 durable
+  signal 后直接把 child terminal projection 作为 root terminal。DETACHED child 只原子 terminalize
+  自身且不 signal parent；root (`parent_run_id is None`) 仍走 fenced root terminal + delivery path。
+  三种 child terminal state、attached/root-terminal-child/detached、逐
+  write-point crash/reopen 都要覆盖；DETACHED terminal 同样落 fence receipt/release fence，并采用
+  receipt-first exact replay。
+  等待态 parent 被 durable continuation 唤醒时，Runtime 用当次 `ExecutionLease` 按 FIFO claim 至多
+  一个 continuation，将该 immutable `ContinuationRecord` 放进 `DriverInvocation.continuations`。
+  clean schema v1 的 continuation row 必须补 `claimed_by/runtime_lease_epoch/claim_epoch/
+  ack_receipt_id` 与 durable progress receipt。continuation claim **不另设独立 TTL**；其有效性完全绑定
+  `workflow_leases(run_id, runtime.kernel, owner, runtime_lease_epoch, expires_at > now)`，所以 Runtime
+  heartbeat 续 ExecutionLease 即同步维持 claim，避免双租约漂移。每次首次 claim、或原 runtime lease
+  已失效/epoch 已被接管后的 reclaim，原子递增独立 claim_epoch。每个 Run 只允许 oldest non-acked
+  HOL：head 仍绑定 active runtime lease 时返回 None，禁止越过它 claim 后续 pending；只有该 runtime
+  lease 已失效/换 epoch，当前新 ExecutionLease 才能 CAS reclaim。
+  Driver 返回 WAITING 时只允许
+  `commit_runtime_state_and_ack_continuation(..., continuation_claim, execution_lease, receipt_id, now)`；
+  terminal 时只允许
+  `commit_root_terminal_with_deliveries_and_ack_continuation(..., continuation_claim,
+  run_fence, execution_lease, receipt_id, now)`。两个 command 都必须在单个 `BEGIN IMMEDIATE` 内完成；
+  每个 atomic progress command 的**第一步**必须按 `receipt_id` 只读 durable progress receipt：若
+  claim identity（continuation/owner/runtime epoch/claim epoch）与 outcome hash 完全相同，即使 Run
+  已 terminal、旧 lease/fence 已释放，也只读返回原 outcome；receipt identity 或任一 hash 不同立即
+  conflict/零写。只有没有 receipt 时，才校验 active Runtime lease、current RunFence（terminal path）、
+  continuation owner+runtime epoch+claim epoch，再同时写 ack receipt
+  与对应 parent state/event（terminal 还包括 delivery outbox）；不得暴露“先 ack 后 progress”或
+  “先 progress 后 ack”的 Runtime public path。same receipt + same claim/outcome hash 重试返回原 outcome，
+  异 receipt/owner/runtime epoch/claim epoch/version/payload 拒绝；逐 write-point crash/reopen 后只能
+  全回滚或全提交。无 continuation 的原 root path 继续走现有 fenced command。
+  WAITING progress+ack commit 后 Runtime 必须立即重查同 Run 的 eligible HOL；若已有 pending 或
+  reclaimable continuation，则在同一 active owner lease 下重新 schedule（不得等待外部 signal/
+  `reconcile()`）。若 head 仍绑定另一个 active Runtime lease，则当前 owner 返回 None；该 lease失效或
+  takeover 后由 normal Runtime recovery/reconcile 重查；
+  terminal Run 的剩余 continuations 必须 durable quarantine/拒绝再 claim，不能重新唤醒 terminal。
+  每个携 claimed continuation 的 Driver 出口必须封闭：正常 WAITING/terminal 走上述两个 atomic
+  progress command；普通 exception 走 continuation-aware FAILED terminal + ack（同 receipt-first/
+  double-fence 规则）。Runtime close 或 task cancellation 若尚未 commit，不得用无-continuation terminal
+  path；必须先隔离/cancel task，再停止 heartbeat并 release 该 Run 的 ExecutionLease/RunFence，使旧
+  claim 立即可被新 runtime epoch reclaim。non-cooperative task 超过 bounded close timeout 时也按该顺序
+  释放 authority；遗留 task 后续所有 progress/handoff 被 stale lease/fence 拒绝。禁止保留 active
+  Runtime lease + orphan claimed continuation。
 - tests：`test_root_two_children.py`, `test_child_restart.py`, `test_continuation_restart.py`,
-  `test_startup_reconcile_order.py`。
+  `test_startup_reconcile_order.py`；另补 public child launch/schedule、public reconcile/delivery、
+  continuation -> DriverInvocation -> atomic WAITING/terminal ack 的 fault/reopen matrix；另测两条
+  continuation 的 HOL 不越序、claim crash/runtime-lease失效/reclaim、同 owner runtime epoch+1 携旧 claim零写，
+  两条预先 queued continuation 不手动 reconcile 而按 FIFO 各消费一次并最终 terminal、terminal 后
+  残余 continuation 被 quarantine 且 Driver 不再启动；虚拟时钟跨多个原 claim 时刻但 ExecutionLease
+  heartbeat 持续 renew 时，长 Driver 只 commit 一次、无重复 Driver；child producer 补 stale owner、
+  同 owner runtime epoch+1 + old fence、caller policy mismatch 的 child/event/signal 零写；progress
+  after_commit 关闭DB/reopen后用旧 lease + exact receipt 只读成功、异 receipt/hash 零写，并由 T3.0
+  四个 runtime seam assertions验证闭环。child attached/root-terminal/detached after_commit reopen 的
+  exact receipt 只读成功、异 payload 零写且 terminal 后无 active fence；claimed-continuation Driver
+  普通 exception、cancel、non-cooperative timeout 三案必须无需等自然 TTL 就可由新 epoch恢复，且
+  progress/terminal/signal 不重复。
 - 依赖：T2.3–T2.6、T3.1。
 
 ### T3.3 — ReAct Driver / termination budgets [AC-3..6]
@@ -372,6 +454,20 @@
   `test_optional_profiles.py`。
 - 依赖：T2.3、T3.3、T4.1。
 
+### T4.3 — Native terminal projection / legacy compatibility [AC-5, AC-8]
+
+- 文件：`workflow/{native,errors}.py`，`tests/conformance/test_full_runtime_seam.py` 的既有
+  `h7_workflow_terminal_gate`（只允许补 marker/import factory，不改 assertion semantics）。
+- API：`NativeWorkflowExecutable.terminal_intents(state, *, run_id, status, error,
+  recovery_action)`；`InvalidStatePatch`。
+- 改法：`terminal_public` 采用严格 bounded schema，只允许 frozen metrics/diagnostic codes/
+  skipped stage IDs/retry action，拒绝未知字段、负数、重复 stage、非 allowlist 值，且绝不投影
+  topic/raw query 等私有 state；没有 `terminal_public` 的 legacy workflow 保持 frozen exact
+  canonical JSON byte shape。实现属于通用 Workflow runtime，不包含 DeskPet 产品 schema。
+- tests：T3.0 冻结的 8 个 `h7_workflow_terminal_gate` 全 GREEN；
+  `verify_full_runtime_stage.py --stage workflow` 还必须证明 4+8+全 12 GREEN，禁止 skip/xfail。
+- 依赖：T3.0、T4.1。
+
 ## S5 — official Profiles
 
 ### T5.1 — durable_task graph/ports [AC-5, AC-7]
@@ -382,7 +478,7 @@
   Workspace/Artifact/Authorization Ports。
 - tests：`test_durable_task_graph.py`, `test_durable_task_human.py`, `test_durable_task_recovery.py`,
   `test_durable_task_output_negative.py`。
-- 依赖：T4.1–T4.2。
+- 依赖：T4.1–T4.3。
 
 ### T5.2 — personal descriptor/catalog/interpreter [AC-6, AC-7]
 

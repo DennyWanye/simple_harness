@@ -297,3 +297,44 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   任一超限则零 effect prepare。
 - 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
 - 性质：这是未发布 SDK schema v1 的 runtime closure，不是历史 Run 兼容处理。
+
+## H12 — H7 阶段门与 child-to-parent public orchestration closure（执行期审计）
+
+- 触发：T3.0 v4 把源项目 H7 的 12 个 assertions 恢复后，真实 RED 分成两种 owner：4 个
+  Provider/ReAct/Tool/restart/child 闭环依赖 T3；8 个 strict/legacy terminal projection 依赖尚未创建的
+  `simple_harness.workflow`。原计划只写“T3.3 前 12 GREEN”，但 T4 仅有 T4.1/T4.2，既没有
+  `workflow/native.py` / `workflow/errors.py` owner，也没有办法把精确预期的 8 RED 当成绿色阶段门。
+- 阶段门结论：不删、不 skip、不 xfail 任何 assertion。注册两个 strict pytest markers，增加
+  fail-closed verifier：collect 必须精确 4+8=12；T3 结束时 4 runtime GREEN 且 8 workflow 逐 nodeid
+  只能因缺 T4.3 frozen `workflow.native.NativeWorkflowExecutable` / `workflow.errors.InvalidStatePatch`
+  authority RED（允许 package 尚不存在或已由 T4.1 创建，但不允许其他 error）；新增 T4.3 实现
+  strict/legacy terminal 后 4、8、全 12
+  都必须 GREEN。第一轮窄挑战：`FAIL`，2 个 critical（无真实 T4 owner；无可执行 expected-RED
+  verifier）；已按上述方案补 owner/脚本/精确阶段语义，待复审。
+- public seam 结论：v4 还暴露 T3.2 只有低层 UoW/receiver、没有 H7 所需 public orchestration。
+  Runtime 必须提供 typed child launch + schedule、public reconcile、public delivery dispatch；
+  `DriverInvocation` 必须携 FIFO claimed continuation。现 continuation schema 没有 expiry/claim epoch，
+  会在 crash 后永久 claimed，且查询 pending 会越过旧 head；因此 clean schema v1 必须增加绑定
+  Runtime lease epoch 的 durable claim lease/独立 claim epoch/HOL eligibility/progress receipt。
+  continuation ack 与 parent WAITING/terminal
+  progress（含 terminal outbox）必须同 transaction，否则 crash 会造成重复 parent progress 或永久
+  丢 wakeup。新增 continuation-aware fault/reopen matrix；不得让 conformance 访问 `_ports` 或
+  `_activate/_schedule` 伪造闭环。
+- 第二轮窄挑战：`FAIL`，3 个 critical（未接 Kernel child terminal -> parent signal producer；ack
+  第一条后第二条 continuation 缺自动 drain liveness；runtime 阶段错误原因硬编码整包缺失会被 T4.1
+  合法并行进度打破）。已补 attached/supervised child 三种 terminal 的原子 stable signal、detached
+  不 signal；WAITING ack 后立即重查/expiry wake、terminal 残余 quarantine；verifier 改为只接受
+  T4.3 两个 pending public authorities，待第三轮复审。
+- 第三轮窄挑战：`FAIL`，3 个 critical（child terminal producer 缺 Runtime/Run 双 fence与durable
+  attachment policy；continuation claim 独立 TTL 会和持续 renew 的 Runtime lease冲突；exact receipt
+  replay若先验已释放 lease就无法处理 after-commit 响应丢失）。已修订为 producer/detached terminal
+  同事务读取 run_link 并校验双 fence；continuation claim 不设第二套 TTL、只绑定 active
+  ExecutionLease；atomic progress 先只读 exact receipt，未命中才校验 active authorities并写入，待
+  第四轮复审。
+- 第四轮窄挑战：`FAIL`，2 个 critical（child terminal 没有同事务 fence receipt/release 与
+  receipt-first after-commit replay；Driver 异常但 heartbeat 仍 active 时会留下 orphan continuation
+  claim）。已补三种 child attachment terminal 的 receipt-first、terminal/signal/fence receipt/release
+  单事务；claimed-continuation Driver 正常/exception/cancel/non-cooperative 所有出口必须 atomic ack
+  或隔离 task 后 release Runtime/Run authority，使新 epoch 无需等待第二套 TTL 即可 reclaim，待第五轮。
+- 第五轮窄挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
+- 性质：这是未发布 SDK 的真实 public seam/任务 owner closure，不是历史 Run 兼容。
