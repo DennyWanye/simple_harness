@@ -1,0 +1,141 @@
+{
+  "schema_version": "1.3.0",
+  "feature": "simple-harness-sdk-v0.1",
+  "repo_root": ".",
+  "source_request_file": "plans/2026-08-13-simple-harness-sdk/source-request.md",
+  "acceptance_file": "plans/2026-08-13-simple-harness-sdk/acceptance.md",
+  "behavior_contract": {
+    "path": "plans/2026-08-13-simple-harness-sdk/behavior-contract.md",
+    "status": "FROZEN"
+  },
+  "executor_engine": "codex-gpt5.5",
+  "testcase_files": [
+    "testcase/2026-08-13-simple-harness-sdk/manual-test.md",
+    "testcase/2026-08-13-simple-harness-sdk/black-box-fixtures.md",
+    "testcase/2026-08-13-simple-harness-sdk/full-surface-smoke.md",
+    "testcase/2026-08-13-simple-harness-sdk/value-smoke.md",
+    "testcase/2026-08-13-simple-harness-sdk/prepare-black-box-env.sh",
+    "testcase/2026-08-13-simple-harness-sdk/run-sdk-public-smoke.sh"
+  ],
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "decided_by": "user",
+      "rationale": "acceptance 与 SR-9 保留主 Agent 及三个 Workflow 的自然语言语义质量门"
+    },
+    "llm_payload_driven": {
+      "value": true,
+      "decided_by": "user",
+      "rationale": "acceptance 与 SR-9 保留模型 Tool 和 workflow control payload 的 durable 状态机门"
+    },
+    "stateful_init": {
+      "value": false,
+      "decided_by": "user",
+      "rationale": "SR-9 明确 SDK 采用显式依赖注入且本次不修改首次登录或远程配置初始化"
+    }
+  },
+  "decision_sources": {
+    "stateful_init": "SR-9",
+    "cold_start_followup": "plans/2026-08-13-simple-harness-sdk-cold-start-followup.md"
+  },
+  "scenarios": [
+    {
+      "scenario_id": "SDK-S1",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": ["fresh"],
+      "min_root_runs": 1,
+      "ac_ids": ["SDK-AC-1", "SDK-AC-5", "SDK-AC-6", "SDK-AC-8"],
+      "input_class": "纯回答、无需 Tool/Workflow",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/main.py", "backend/vendor/**"]
+    },
+    {
+      "scenario_id": "SDK-S2",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": ["fresh"],
+      "min_root_runs": 1,
+      "ac_ids": ["SDK-AC-2", "SDK-AC-3", "SDK-AC-4", "SDK-AC-5", "SDK-AC-6", "SDK-AC-8"],
+      "input_class": "单个只读宿主 Tool",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/tools/**", "backend/vendor/**"]
+    },
+    {
+      "scenario_id": "SDK-S3",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": ["fresh"],
+      "min_root_runs": 2,
+      "ac_ids": ["SDK-AC-5", "SDK-AC-6", "SDK-AC-7", "SDK-AC-8"],
+      "input_class": "durable 多步骤任务",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/workflows/**", "backend/vendor/**"]
+    },
+    {
+      "scenario_id": "SDK-S4",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": ["fresh"],
+      "min_root_runs": 2,
+      "ac_ids": ["SDK-AC-5", "SDK-AC-6", "SDK-AC-7", "SDK-AC-8"],
+      "input_class": "Personal 受信候选选择",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/companion/**", "backend/vendor/**"]
+    },
+    {
+      "scenario_id": "SDK-S5",
+      "required": true,
+      "ui": true,
+      "gate_type": "positive-value",
+      "required_lanes": ["fresh"],
+      "min_root_runs": 2,
+      "ac_ids": ["SDK-AC-5", "SDK-AC-6", "SDK-AC-7", "SDK-AC-8"],
+      "input_class": "Capability 缺口构建与激活",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/capabilities/**", "backend/vendor/**"]
+    },
+    {
+      "scenario_id": "SDK-S6",
+      "required": true,
+      "ui": false,
+      "gate_type": "negative-safety",
+      "required_lanes": ["fresh"],
+      "min_root_runs": 1,
+      "ac_ids": ["SDK-AC-2", "SDK-AC-3", "SDK-AC-4", "SDK-AC-5", "SDK-AC-6", "SDK-AC-8"],
+      "input_class": "malformed、unknown、重复与乱序 payload",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/vendor/**", "scripts/acceptance/**"]
+    },
+    {
+      "scenario_id": "SDK-S7",
+      "required": true,
+      "ui": false,
+      "gate_type": "negative-safety",
+      "required_lanes": ["temporal-fault"],
+      "min_root_runs": 1,
+      "ac_ids": ["SDK-AC-3", "SDK-AC-4", "SDK-AC-5", "SDK-AC-7", "SDK-AC-8"],
+      "input_class": "副作用 handoff 后崩溃与对账",
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/vendor/**", "scripts/acceptance/**"]
+    }
+  ],
+  "followups": [
+    {
+      "source_request": "SR-9",
+      "scope": "产品清数据后首次登录并立即直达 SDK 功能",
+      "blocking_this_release": false
+    }
+  ]
+}
