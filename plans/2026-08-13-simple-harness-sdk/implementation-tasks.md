@@ -61,12 +61,20 @@
 ### T1.2 — Provider Port 与一次调用 HTTP Adapter [AC-2, AC-3]
 
 - 文件：`providers/{base,openai_compatible,errors,redaction}.py`。
-- 签名：`Provider.invoke(request: ProviderRequest, *, cancel: CancelToken) -> ProviderResponse`；
-  `OpenAICompatibleProvider(client, base_url, model, secret, timeout)`。
+- 签名：`Provider.target -> ProviderTarget(provider_id, model, pricing_key, endpoint_identity,
+  adapter_key)`；
+  `Provider.invoke(request: ProviderRequest, *, cancel: CancelToken) -> ProviderResponse`；
+  `OpenAICompatibleProvider(client, base_url, provider_id, model, pricing_key, secret, timeout)`。
+  官方 Adapter 在构造时从 normalized base URL、固定 adapter key 与 model 自己生成 immutable
+  `ProviderTarget`；实际 endpoint/model 必须直接取自同一组字段。Host 和
+  `ProviderRequest.metadata` 都不能覆盖 target。可信边界明确为 Host composition：SDK 不承诺防止
+  恶意 Host 自己实现一个撒谎的 Provider；自定义 Provider 必须由 Host 信任并通过 conformance。
 - 改法：从当前 Adapter只复刻 protocol oracle；移除 Agent/context/metrics/retry/fallback；解析
   structured tool calls与 usage；401/402/429/5xx/timeout/cancel 分 typed error；异常 `repr` 先 redaction。
 - tests：`tests/conformance/test_provider_contract.py`, `tests/integration/test_openai_mock_server.py`,
-  `test_secret_canary.py`；live probe 复跑 H4。
+  `test_secret_canary.py`；新增 target immutability、normalized endpoint identity、payload 使用 exact
+  target model、metadata/model override 拒绝，以及自定义 Provider trust-boundary 文档/contract；
+  live probe 复跑 H4。
 - 依赖：T1.1。
 
 ### T1.3 — Tool Registry / Authorization / reconciliation contracts [AC-2, AC-4]
@@ -112,9 +120,21 @@
 
 - 文件：`execution/{provider_invocations,dispatch,budget}.py`, SQLite UoW methods。
 - 状态：`claimed -> handed_off -> succeeded|failed|unknown`；只有同 invocation CAS settle；usage
-  absence -> estimator upper-bound or `unknown`，policy不得累计 0。
-- tests：`test_provider_dispatch_atomic.py`, `test_provider_unknown.py`, `test_budget_recovery.py`；移植
-  current `test_provider_dispatch.py` oracle。
+  absence -> estimator upper-bound or `unknown`，policy不得累计 0。`FrozenPriceEstimator` 必须绑定
+  exact full `ProviderTarget` digest。claim 行持久化 canonical target snapshot/digest、estimator
+  snapshot ID/digest。stable logical call identity 固定为数据库唯一的 `run_id + request_id`；request
+  fingerprint 只描述不可变请求内容，target/estimator digest 是同一 logical row 的不可变 CAS 属性，
+  不能因配置变化生成第二个 invocation ID；
+  Coordinator 在 durable claim 和物理 handoff前验证当前 Provider/estimator 与冻结值。首次配置
+  mismatch 或 claim 后重启替换 target/estimator，都以稳定 `provider_budget_target_mismatch` 拒绝，
+  Provider 调用次数为 0。不接受响应后才标 unknown 或 request metadata override 作为
+  pre-dispatch hard-cap authority。官方 Adapter target 是 SDK 可验证 authority；自定义 Provider 的
+  真实性仍属于可信 Host composition 边界，不宣传为防恶意 Host。
+- tests：`test_provider_dispatch_atomic.py`, `test_provider_unknown.py`, `test_budget_recovery.py`；新增
+  相同 model/pricing key 但不同 provider/endpoint、claim 后重启替换 target/estimator snapshot、两个
+  Coordinator 用不同 target 并发 claim 同一 logical call（恰好一行、第二 transport 零调用）、声明
+  target 与 official adapter payload 一致性；全部 mismatch 在 transport 前拒绝。移植 current
+  `test_provider_dispatch.py` oracle。
 - 依赖：T2.2、T1.2。
 
 ### T2.5 — Effect ledger / fence / reconciliation [AC-4, AC-5]

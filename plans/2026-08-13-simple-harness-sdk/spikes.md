@@ -162,6 +162,39 @@ Effect executor落账并 signal同一 ReAct Driver；真实 AgentLoop/Provider c
 门禁是 T3.0 先把这 12 个 source assertions 变成 SDK `test_full_runtime_seam.py` 的预期 RED，再由
 T3.1–T3.3 转 GREEN。Adapter不得为了过测试调用旧 authority。
 
+## H8 — Provider target 与价格表的 pre-dispatch 绑定
+
+T2.4 执行中发现 T1.2 Provider Port 没有声明实际 provider/model identity；若由 Host 自报 estimator
+model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap。
+
+- 可丢弃代码：`/tmp/sdk-provider-target-spike.uWGsdP/spike.py`，SHA-256
+  `19a03956366542384136ae0fe0a35b641e378ec75ee58f81dc0eda9ee07ae5a8`。
+- 命令：`backend/.venv/bin/python /tmp/sdk-provider-target-spike.uWGsdP/spike.py`。
+- 实际输出：`PROVIDER_TARGET_SPIKE_PASS calls_before_mismatch=0 calls_after_match=1`。
+- 结论：采用 immutable `ProviderTarget(provider_id, model, pricing_key)`；Adapter 的物理出站 model
+  与公开 target 同源，冻结 estimator 精确绑定 target。Coordinator 在 claim/handoff 前比较，
+  mismatch 时稳定拒绝且 transport 调用数为 0；禁止 Host/request metadata 覆盖。
+
+第一轮 challenger 进一步指出，内存比较没有覆盖跨重启 identity，且 immutable 不能防恶意 Host
+同时伪造自定义 Provider 与 estimator。补充 spike：
+
+- 可丢弃代码：`/tmp/sdk-provider-restart-spike.UaaYDL/spike.py`，SHA-256
+  `34dd1085bf2fe66ad31f22a61334a3a8e69243ed6d1ac68e237dcc7df98fe410`。
+- 命令：`backend/.venv/bin/python /tmp/sdk-provider-restart-spike.UaaYDL/spike.py`。
+- 实际输出：`PROVIDER_RESTART_BINDING_SPIKE_PASS calls=0 old=ee1342d4 new=10b54ac7`。
+- 修订结论：完整 target 加 `endpoint_identity/adapter_key`，并与 estimator snapshot 一起进入 durable
+  invocation identity/CAS；reopen 后换 target/价格表必须零调用拒绝。官方 Adapter 从真实构造字段
+  生成 target；自定义 Provider 的诚实性属于可信 Host composition 边界，不宣称防恶意宿主。
+
+第二轮 challenger 发现 configuration digest 不能进入 invocation ID，否则换配置会形成第二个调用。
+补充并发 SQLite spike：
+
+- 可丢弃代码：`/tmp/sdk-provider-logical-call-spike.XrOpjN/spike.py`，SHA-256
+  `2932ad0223ab2f80ed17c6012e2198436cd7a1bb335d3ec5261d289c059f6636`。
+- 实际输出：`LOGICAL_CALL_UNIQUENESS_SPIKE_PASS rows=1 results=created,mismatch second_transport_calls=0`。
+- 最终模型：`run_id + request_id` 是数据库唯一 logical call；request/target/estimator fingerprints
+  是该行不可变 CAS 属性。配置变化只能 mismatch，不能产生新的 invocation identity。
+
 ## 关键假设收口
 
 | 假设 | 状态 | 剩余门 |
@@ -173,3 +206,4 @@ T3.1–T3.3 转 GREEN。Adapter不得为了过测试调用旧 authority。
 | H5 | PASS | Linux ARM64、Windows x64 仍必须由原生 release runners 执行 acceptance |
 | H6 | PASS（当前行为 GREEN / coupling RED 均已复现） | 每个 extraction Slice 重跑 clean-wheel import 与 frozen behavior oracle |
 | H7 | PASS（12-case integrated source oracle） | T3.0 建 SDK RED，T3.3 必须用新五 Port 转 GREEN |
+| H8 | PASS（首次、重启及并发异配置均在 transport 前拒绝） | T1.2 official target 同源 + T2.4 unique logical call 与 durable config CAS 回归 |
