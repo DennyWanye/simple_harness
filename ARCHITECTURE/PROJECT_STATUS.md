@@ -1444,6 +1444,12 @@
 
 ### Follow-up backlog（待排期）
 
+- 🔴 **P1 — Harness 兼容执行入口与 expected-red 账本收口** — canonical
+  `EffectBatchExecutor` 的连续 safe segment/unsafe barrier、reserved host field 拒绝和 durable
+  `/stop` 已有直接测试通过，但旧 `test_current_failures.py` 仍绑定退役 AgentLoop/AST 假设并产生
+  误导性 xfail；同时旧 `ToolRegistry.execute_tool()` 的 direct compatibility path 仍允许调用参数覆盖
+  session context。后续需统一 fail-closed reserved-field 语义、审计/退役兼容入口、迁移陈旧 xfail，
+  且不得抬高结构预算。详见 [follow-up](../plans/2026-08-13-harness-residual-defects-followup.md)。
 - 🔴 **P1 — DeepResearch Top N 报告完整性与 partial 主卡可见性** — 真实 run `9ed2660a...` 的 v7 流程、子方向进度、文件落盘和文件操作均正常，但“前十个 AI 大模型”报告未明确列出 10 个模型；后端业务状态已诚实为 `partial`，主进度卡却仍只显示 engine `已完成 / 100%`。根因是 v7 没有持久化显式数量约束，child/final 只验证 citation 合法性而不验证 N 个命名项与逐项引用，且 `business_status` 未进入 `workflow.final` 主卡投影。v7 已 immutable，后续应以新的 v8 保留六节点简单图并增加确定性数量/逐项引用门、一次有界修复和独立业务终态徽标；本轮仅登记，未开发。详见 [follow-up](../plans/2026-07-20-deepresearch-topn-quality-followup.md)。
 - 🟡 **P2 — `run_shell` 瞬时文件事件审计** — 当前输出契约可拦截直接文件工具越界，并发现 shell
   执行后的全部最终残留；但同一次 shell 内“创建后立即删除”的 workspace 外文件需要 OS 级事件
