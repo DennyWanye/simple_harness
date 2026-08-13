@@ -193,6 +193,7 @@ class PreparedAuthorizationRuntime:
         resources: tuple[ResourceSelector, ...],
         permission_categories: tuple[str, ...],
         effect_kinds: tuple[str, ...],
+        grant_instance_id: str | None = None,
     ) -> str:
         fingerprint = _canonical_hash(
             {
@@ -205,6 +206,7 @@ class PreparedAuthorizationRuntime:
                 "resources": [item.to_dict() for item in resources],
                 "permission_categories": list(permission_categories),
                 "effect_kinds": list(effect_kinds),
+                "grant_instance_id": grant_instance_id,
             }
         )
         return f"task-grant:{fingerprint}"
@@ -220,6 +222,7 @@ class PreparedAuthorizationRuntime:
         permission_category: str,
         effect_kind: str,
         now: float,
+        grant_instance_id: str | None = None,
     ) -> TaskGrant:
         scoped = _merge_selectors(resources)
         task_grant_id = self._task_grant_id(
@@ -232,6 +235,7 @@ class PreparedAuthorizationRuntime:
             resources=scoped,
             permission_categories=(permission_category,),
             effect_kinds=(effect_kind,),
+            grant_instance_id=grant_instance_id,
         )
         return TaskGrant(
             task_grant_id=task_grant_id,
@@ -258,6 +262,7 @@ class PreparedAuthorizationRuntime:
         permission_category: str,
         effect_kind: str,
         now: float,
+        grant_instance_id: str | None = None,
     ) -> TaskGrant:
         if current.source != source:
             seed_resources = _merge_selectors(
@@ -272,6 +277,7 @@ class PreparedAuthorizationRuntime:
                 permission_category=permission_category,
                 effect_kind=effect_kind,
                 now=now,
+                grant_instance_id=grant_instance_id,
             )
         resources = _merge_selectors(
             (*current.resource_selectors, *resources)
@@ -291,6 +297,7 @@ class PreparedAuthorizationRuntime:
             resources=resources,
             permission_categories=permissions,
             effect_kinds=effects,
+            grant_instance_id=grant_instance_id,
         )
         return TaskGrant(
             task_grant_id=next_id,
@@ -476,6 +483,11 @@ class PreparedAuthorizationRuntime:
                     permission_category=permission_category,
                     effect_kind=call.effect_type,
                     now=now,
+                    grant_instance_id=(
+                        decision_id
+                        if confirmed and state.mode != "auto"
+                        else None
+                    ),
                 )
             else:
                 proposal = self._expanded_task_grant(
@@ -488,6 +500,11 @@ class PreparedAuthorizationRuntime:
                     permission_category=permission_category,
                     effect_kind=call.effect_type,
                     now=now,
+                    grant_instance_id=(
+                        decision_id
+                        if confirmed and state.mode != "auto"
+                        else None
+                    ),
                 )
             candidate = proposal
 

@@ -15,7 +15,13 @@ from deskpet.workflows.adapters.code_runtime import (
     derive_effect_id,
     workflow_session_ref,
 )
-from deskpet.workflows.effects import NormalizedToolOutcome, PreparedToolCall
+from deskpet.workflows.effects import (
+    NormalizedToolOutcome,
+    PreparedTarget,
+    PreparedToolCall,
+    TargetMode,
+)
+from deskpet.workflows.output_contract import TaskOutputContractV1
 from deskpet.workflows.contracts import NodeExecutionIdentity
 from deskpet.workflows.proposal_state import (
     ConvergenceStateV1,
@@ -167,6 +173,80 @@ async def test_proposal_port_prepares_stable_json_calls_from_chat_response() -> 
     assert first.reasoning_summary_ref.startswith("reasoning:sha256:")
     assert [schema["function"]["name"] for schema in llm.tools] == ["write_file"]
     json.dumps(first.to_dict())
+
+
+@pytest.mark.asyncio
+async def test_proposal_port_rejects_undeclared_prepared_output(
+    tmp_path: Path,
+) -> None:
+    class _TargetRegistry(_ProposalRegistry):
+        def prepare_call(
+            self, tool_name, raw_params, session_id, stable_call_id
+        ):
+            prepared = super().prepare_call(
+                tool_name, raw_params, session_id, stable_call_id
+            )
+            target = PreparedTarget.prepare(
+                tmp_path / str(raw_params["path"]),
+                run_id="run-1",
+                stable_call_id=stable_call_id,
+                mode=TargetMode.CREATE,
+            )
+            return PreparedToolCall.prepare(
+                tool_name=prepared.tool_name,
+                stable_call_id=prepared.stable_call_id,
+                final_params=prepared.arguments_json(),
+                prepared_targets=(target,),
+                tool_spec_version=prepared.tool_spec_version,
+                schema_hash=prepared.schema_hash,
+                permission_policy_version=prepared.permission_policy_version,
+                effect_type=prepared.effect_type,
+            )
+
+    contract = TaskOutputContractV1.freeze(
+        str(tmp_path), output_refs=["declared.txt"]
+    )
+    outcome = await ProposalPort(
+        _ProposalLLM(),
+        _TargetRegistry(),
+        session_id="session-1",
+        output_contract=contract,
+    ).propose(_proposal_state())
+
+    assert outcome.prepared_calls == ()
+    assert outcome.error is not None
+    assert outcome.error.code == "tool_output_contract_violation"
+    assert outcome.error.retryable is True
+    assert outcome.error.details["output_refs"] == ["declared.txt"]
+
+
+@pytest.mark.asyncio
+async def test_truncated_tool_free_proposal_discards_prose_and_requests_chunked_write() -> None:
+    class _TruncatedLLM:
+        async def chat_with_fallback(self, messages, *, tools):
+            del messages, tools
+            return ChatResponse(
+                content="```python\n" + ("print('unexecuted')\n" * 500),
+                tool_calls=[],
+                stop_reason="length",
+                usage=ChatUsage(input_tokens=10, output_tokens=4096),
+                model="kimi-k3",
+            )
+
+    outcome = await ProposalPort(
+        _TruncatedLLM(),
+        _ProposalRegistry(),
+        session_id="session-1",
+    ).propose(_proposal_state())
+
+    assert outcome.assistant_content == ""
+    assert outcome.prepared_calls == ()
+    assert outcome.error is not None
+    assert outcome.error.code == "proposal_truncated_without_tool_call"
+    assert outcome.error.retryable is True
+    instruction = str(outcome.error.details["instruction"])
+    assert "file_write" in instruction
+    assert "2500" in instruction
 
 
 @pytest.mark.asyncio
@@ -323,6 +403,39 @@ async def test_proposal_hides_repeatable_search_tools_after_discovery_limit() ->
         "write_file",
         "tool_describe",
     ]
+
+
+@pytest.mark.asyncio
+async def test_proposal_hides_dynamic_tool_after_continue_without() -> None:
+    class _DynamicRegistry(_ProposalRegistry):
+        def schemas(self):
+            return [
+                {"type": "function", "function": {"name": "file_read"}},
+                {
+                    "type": "function",
+                    "function": {"name": "mcp_filesystem_list_directory"},
+                },
+            ]
+
+    payload = _proposal_state().to_dict()
+    payload["committed_tool_results"] = {
+        "declined-call": {
+            "stable_call_id": "declined-call",
+            "tool_name": "mcp_filesystem_list_directory",
+            "status": "failed",
+            "code": "unsupported_dynamic_tool",
+            "retryable": False,
+        }
+    }
+    llm = _ProposalLLM()
+
+    await ProposalPort(
+        llm,
+        _DynamicRegistry(),
+        session_id="session-1",
+    ).propose(ProposalStateV1.from_dict(payload))
+
+    assert [schema["function"]["name"] for schema in llm.tools] == ["file_read"]
 
 
 @pytest.mark.asyncio

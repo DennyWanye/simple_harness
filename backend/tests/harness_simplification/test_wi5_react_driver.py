@@ -726,6 +726,127 @@ async def test_queued_user_continuation_keeps_a_recoverable_resume_marker(
     assert events[-1].kind == "terminal"
 
 
+@pytest.mark.asyncio
+async def test_user_continuation_waits_for_pending_tool_result_before_model_input(
+    tmp_path,
+) -> None:
+    collaborator = ScriptedCollaborator(
+        resumes=[(ReactFinal("continued after tool result"),)]
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    spec = _run_spec("run-react")
+    await store.create(spec)
+    resolver = TaskWorkContextResolver(tmp_path / "tasks")
+    task_scope_id = resolver.task_scope_id(
+        "session-react", spec.context.request_id, spec.context.turn_id
+    )
+    work = resolver.resolve(
+        session_id="session-react",
+        root_run_id="run-react",
+        task_scope_id=task_scope_id,
+        explicit_workspace=tmp_path / "tasks" / "run-react",
+    )
+    conversation = resolver.conversation_boundary(
+        work, ("request:seed",)
+    )
+    await store.create_task_context(
+        work, conversation, resolver.projection(work)
+    )
+    call = _call(0, durable=True)
+    boundary = ReactCommandBoundary(
+        run_id="run-react",
+        session_id="session-react",
+        command_id="pending-tool",
+        command_kind="control_delegate",
+        canonical_messages=(
+            {"role": "user", "content": "seed"},
+            {
+                "role": "assistant",
+                "content": "starting child",
+                "tool_calls": [
+                    {
+                        "id": call.stable_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": call.tool_name,
+                            "arguments": "{}",
+                        },
+                    }
+                ],
+            },
+        ),
+        session_projection_cursor=0,
+        prepared_context_ref=None,
+        tool_set_snapshot_ref=None,
+        pending_calls=(call,),
+        tool_contexts=(_context(call),),
+        outcomes=(_outcome(call),),
+        outcome_statuses=(OutcomeStatus.SUCCEEDED,),
+        provider_state={},
+        iteration=0,
+        completion_state={"model_backfilled": False},
+        run_context=spec.context,
+        run_spec=spec,
+    )
+    await store.persist_react_boundary(
+        "run-react", 0, boundary.to_payload()
+    )
+    reserved, queued, _ = await store.enqueue_user_continuation(
+        "run-react",
+        "request:during-child",
+        "also include the USD totals",
+        task_scope_id=task_scope_id,
+        expected_boundary_version=conversation.version,
+    )
+
+    events = await _collect(
+        driver.signal(
+            UserContinuationSignal(
+                "run-react",
+                task_scope_id=task_scope_id,
+                message_ref=queued.message_ref,
+                content=queued.content,
+                expected_boundary_version=reserved.version,
+                queued=True,
+            )
+        )
+    )
+
+    assert [event.kind for event in events] == ["persisted_event"]
+    saved = ReactCommandBoundary.from_record(
+        await store.load_continuation("run-react")
+    )
+    assert saved.canonical_messages[-1]["role"] == "assistant"
+    assert saved.completion_state["deferred_user_continuations"] == [
+        {
+            "role": "user",
+            "content": "also include the USD totals",
+            "_deskpet_message_ref": "request:during-child",
+        }
+    ]
+
+    completed = await _collect(driver._resume_completed(saved))
+
+    assert completed[-1] == DriverTerminalCandidate(
+        "run-react", "completed", "continued after tool result"
+    )
+    resumed, _signal = collaborator.resume_inputs[0]
+    assert [message["role"] for message in resumed.canonical_messages[-3:]] == [
+        "assistant",
+        "tool",
+        "user",
+    ]
+    assert (
+        resumed.canonical_messages[-2]["tool_call_id"]
+        == call.stable_call_id
+    )
+    assert (
+        resumed.canonical_messages[-1]["_deskpet_message_ref"]
+        == "request:during-child"
+    )
+    assert "deferred_user_continuations" not in resumed.completion_state
+
+
 async def _record_effect(path, call: PreparedToolCall, outcome: NormalizedToolOutcome, status: str) -> None:
     if status == "unknown":
         handoff_state = "started_may_complete"
@@ -1340,6 +1461,12 @@ async def test_project_directory_selection_rebinds_same_run_before_writes(
     assert len(open_projections) == 1
     assert open_projections[0]["decision"].decision_id == decision.decision_id
     assert open_projections[0]["root_run_id"] == "run-react"
+    projection_by_id = await store.get_open_decision_projection_by_id(
+        decision.decision_id
+    )
+    assert projection_by_id is not None
+    assert projection_by_id["session_id"] == "session-react"
+    assert projection_by_id["decision"].decision_id == decision.decision_id
 
     response = {
         "decision": "complete",
@@ -1694,14 +1821,85 @@ async def test_authorization_policy_auto_never_projects_permission_ui(
 
 
 @pytest.mark.asyncio
-async def test_manual_confirmation_creates_task_grant_and_suppresses_repeat_ui(
+async def test_manual_allow_once_creates_exact_grant_but_prompts_again(
+    tmp_path,
+):
+    driver, store, _, path = await _authorization_driver(tmp_path, mode="manual")
+    initial = await _collect(driver.start(_request()))
+    assert [item.kind for item in initial] == ["open_decision"]
+    first = initial[0]
+    response = {"decision": "allow", "source": "user"}
+
+    resumed = await _collect(
+        driver.signal_decision_atomically(
+            DecisionSignal(
+                "run-react",
+                first.decision_id,
+                response,
+                nonce=first.nonce,
+                version=0,
+            ),
+            _durable_signal(first, response),
+            _actor(),
+        )
+    )
+
+    assert [item.kind for item in resumed] == [
+        "persisted_event",
+        "open_decision",
+    ]
+    second = resumed[-1]
+    assert second.decision_id != first.decision_id
+    boundary_record = await store.load_continuation("run-react")
+    assert boundary_record is not None
+    boundary = ReactCommandBoundary.from_record(boundary_record)
+    assert "task_grant_id" not in boundary.completion_state
+    async with aiosqlite.connect(path) as db:
+        task_grants = await (
+            await db.execute(
+                "SELECT source,COUNT(*) FROM task_grants GROUP BY source"
+            )
+        ).fetchall()
+    assert task_grants == [("user", 1)]
+
+    second_response = {"decision": "allow", "source": "user"}
+    completed = await _collect(
+        driver.signal_decision_atomically(
+            DecisionSignal(
+                "run-react",
+                second.decision_id,
+                second_response,
+                nonce=second.nonce,
+                version=0,
+            ),
+            _durable_signal(second, second_response),
+            _actor(),
+        )
+    )
+    assert [item.kind for item in completed] == [
+        "persisted_event",
+        "execute_tools",
+    ]
+    async with aiosqlite.connect(path) as db:
+        task_grant_count = (
+            await (
+                await db.execute(
+                    "SELECT COUNT(*) FROM task_grants WHERE source='user'"
+                )
+            ).fetchone()
+        )[0]
+    assert task_grant_count == 2
+
+
+@pytest.mark.asyncio
+async def test_manual_allow_session_creates_task_grant_and_suppresses_repeat_ui(
     tmp_path,
 ):
     driver, _, _, path = await _authorization_driver(tmp_path, mode="manual")
     initial = await _collect(driver.start(_request()))
     assert [item.kind for item in initial] == ["open_decision"]
     first = initial[0]
-    response = {"allow": True, "source": "user"}
+    response = {"decision": "allow_session", "source": "user"}
 
     resumed = await _collect(
         driver.signal_decision_atomically(
@@ -2653,6 +2851,109 @@ async def test_failed_child_objective_blocks_paraphrased_redelegation_before_tic
 
 
 @pytest.mark.asyncio
+async def test_retryable_child_failure_blocks_same_file_contract_with_added_diagnosis(
+    tmp_path,
+):
+    prior = _workflow_spawn_call(
+        "子任务A：读取 input/orders.csv、input/payments.csv、input/refunds.csv 和 "
+        "oracle.json，生成 pipeline.py、normalized.json、validation.md、"
+        "test_validation.py；不得生成 reconciliation.json、FINAL_REPORT.md、"
+        "final_summary.json。",
+        call_id="failed-file-contract-spawn",
+    )
+    repeated = _workflow_spawn_call(
+        "子任务A（数据规范化与校验）：基于已读取的数据，生成 pipeline.py、"
+        "normalized.json、validation.md、test_validation.py。输入摘要：orders.csv "
+        "有重复订单，payments.csv 有孤儿付款，refunds.csv 有币种不匹配；"
+        "oracle.json 定义期望总额。不得生成 reconciliation.json、"
+        "FINAL_REPORT.md、final_summary.json。",
+        call_id="expanded-file-contract-spawn",
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request, prepared
+            raise AssertionError("same file contract must be rejected before ticket")
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-expanded-file-contract",
+                repeated,
+                _context(repeated),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": repeated.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("reported the retryable child failure honestly")]],
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    signature = driver._delegate_objective_signature(
+        prior, route_hint="workflow.durable_task"
+    )
+    assert signature is not None
+    signature.update(
+        child_run_id="child-retryable-failure",
+        command_id="delegate-retryable-failure",
+        retryable=True,
+    )
+
+    candidates = await _collect(
+        driver.start(
+            replace(
+                _request(),
+                completion_state={
+                    "stop_reason": None,
+                    "failed_delegate_objectives": [signature],
+                },
+            )
+        )
+    )
+
+    assert candidates == [
+        DriverTerminalCandidate(
+            "run-react",
+            "completed",
+            "reported the retryable child failure honestly",
+        )
+    ]
+    persisted = ReactCommandBoundary.from_record(
+        await store.load_continuation("run-react")
+    )
+    assert persisted.outcomes[0] is not None
+    assert persisted.outcomes[0].error["code"] == "duplicate_failed_delegation"
+
+
+def test_delegate_file_contract_allows_distinct_followup_outputs() -> None:
+    failed_a = _workflow_spawn_call(
+        "读取 input/orders.csv 和 oracle.json，生成 pipeline.py、normalized.json、"
+        "validation.md、test_validation.py。",
+        call_id="failed-stage-a",
+    )
+    stage_b = _workflow_spawn_call(
+        "读取 normalized.json 和 oracle.json，生成 reconciliation.json、"
+        "FINAL_REPORT.md、final_summary.json。",
+        call_id="distinct-stage-b",
+    )
+    failed_signature = ReActDriver._delegate_objective_signature(
+        failed_a, route_hint="workflow.durable_task"
+    )
+    followup_signature = ReActDriver._delegate_objective_signature(
+        stage_b, route_hint="workflow.durable_task"
+    )
+
+    assert failed_signature is not None
+    assert followup_signature is not None
+    assert not ReActDriver._delegate_objectives_match(
+        followup_signature, failed_signature
+    )
+
+
+@pytest.mark.asyncio
 async def test_failed_child_objective_allows_materially_distinct_delegate(
     tmp_path,
 ):
@@ -2715,6 +3016,72 @@ async def test_failed_child_objective_allows_materially_distinct_delegate(
     )
 
     assert candidates == [command]
+
+
+@pytest.mark.asyncio
+async def test_permanent_child_failure_blocks_same_profile_even_after_paraphrase(
+    tmp_path,
+):
+    prior = _workflow_spawn_call(
+        "Reconcile the CNY and USD order, payment, and refund ledgers",
+        call_id="failed-reconciliation-spawn",
+    )
+    paraphrased = _workflow_spawn_call(
+        "Independently audit the currency totals and write a final finance report",
+        call_id="paraphrased-reconciliation-spawn",
+    )
+
+    class Collaborator(ScriptedCollaborator):
+        async def prepare_control(self, request, prepared):
+            del request, prepared
+            raise AssertionError("permanent profile failure must not issue a ticket")
+
+    collaborator = Collaborator(
+        [
+            ReactControlBatch(
+                "control-permanent-failure-paraphrase",
+                paraphrased,
+                _context(paraphrased),
+                (
+                    {
+                        "role": "assistant",
+                        "tool_calls": [{"id": paraphrased.stable_call_id}],
+                    },
+                ),
+            )
+        ],
+        resumes=[[ReactFinal("reported the permanent child failure")]],
+    )
+    driver, store, _ = await _driver(tmp_path, collaborator)
+    signature = driver._delegate_objective_signature(
+        prior, route_hint="workflow.durable_task"
+    )
+    assert signature is not None
+    signature.update(
+        child_run_id="child-permanent-failure",
+        command_id="delegate-permanent-failure",
+        retryable=False,
+    )
+    request = replace(
+        _request(),
+        completion_state={
+            "stop_reason": None,
+            "failed_delegate_objectives": [signature],
+        },
+    )
+
+    candidates = await _collect(driver.start(request))
+
+    assert candidates == [
+        DriverTerminalCandidate(
+            "run-react", "completed", "reported the permanent child failure"
+        )
+    ]
+    persisted = ReactCommandBoundary.from_record(
+        await store.load_continuation("run-react")
+    )
+    assert persisted.outcomes[0] is not None
+    assert persisted.outcomes[0].error["code"] == "duplicate_failed_delegation"
 
 
 @pytest.mark.asyncio

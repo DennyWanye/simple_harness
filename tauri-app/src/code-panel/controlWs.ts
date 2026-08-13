@@ -177,6 +177,9 @@ export interface ControlWS {
     body: CanonicalJson,
   ): Promise<boolean>;
   on_message(fn: Listener): () => void;
+  on_state_change(
+    fn: (state: "disconnected" | "connecting" | "connected") => void,
+  ): () => void;
   state(): "disconnected" | "connecting" | "connected";
 }
 
@@ -201,6 +204,15 @@ let latestCompanionIdentityStatus: any | null =
 let companionActionInFlight = false;
 
 let current_state: ControlWS["state"] extends () => infer R ? R : never = "disconnected";
+const state_listeners = new Set<(state: typeof current_state) => void>();
+
+function set_control_state(next: typeof current_state) {
+  if (current_state === next) return;
+  current_state = next;
+  state_listeners.forEach((listener) => {
+    try { listener(next); } catch (error) { console.warn(error); }
+  });
+}
 
 async function open_socket() {
   // Idempotent guard with global lookup. Any pre-existing socket on
@@ -212,7 +224,7 @@ async function open_socket() {
   const existing = G.__deskpet_panel_ws__;
   if (existing && existing.readyState === WebSocket.OPEN) {
     ws = existing;
-    current_state = "connected";
+    set_control_state("connected");
     while (_outbox.length > 0) {
       const queued = _outbox.shift();
       if (queued) ws.send(queued);
@@ -226,13 +238,13 @@ async function open_socket() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return;
   }
-  current_state = "connecting";
+  set_control_state("connecting");
   let secret = "";
   try {
     secret = await invoke<string>("get_shared_secret");
   } catch (e) {
     console.warn("[session-control] get_shared_secret failed:", e);
-    current_state = "disconnected";
+    set_control_state("disconnected");
     schedule_reconnect();
     return;
   }
@@ -240,7 +252,7 @@ async function open_socket() {
     // A missing secret means the backend is not ready. Do not leave the
     // visible ChatView/sidebar stuck in the transient "connecting" state
     // for the entire exponential-backoff interval.
-    current_state = "disconnected";
+    set_control_state("disconnected");
     schedule_reconnect();
     return;
   }
@@ -268,13 +280,13 @@ async function open_socket() {
       return;
     }
     console.warn("[session-control] websocket handshake timed out");
-    current_state = "disconnected";
+    set_control_state("disconnected");
     connectingSocket.close();
   }, CONNECT_TIMEOUT_MS) as unknown as number;
   ws.onopen = () => {
     clear_connect_timeout();
     reconnect_attempt = 0;
-    current_state = "connected";
+    set_control_state("connected");
     // A provisional stream is meaningful only on the socket that delivered
     // it. Drop every partial before durable history is requested.
     useSessionsStore.getState().clear_companion_provisional();
@@ -380,7 +392,7 @@ async function open_socket() {
   };
   ws.onclose = () => {
     clear_connect_timeout();
-    current_state = "disconnected";
+    set_control_state("disconnected");
     companionActionInFlight = false;
     useSessionsStore.getState().clear_companion_provisional();
     schedule_reconnect();
@@ -2047,6 +2059,12 @@ export const controlWS: ControlWS = {
     }
     return () => {
       listeners.delete(fn);
+    };
+  },
+  on_state_change(fn) {
+    state_listeners.add(fn);
+    return () => {
+      state_listeners.delete(fn);
     };
   },
   state() {

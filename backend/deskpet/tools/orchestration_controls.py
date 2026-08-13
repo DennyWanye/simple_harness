@@ -133,6 +133,26 @@ def workflow_spawn_schema(profiles: ProfileRegistry) -> dict[str, Any]:
                     "items": {"type": "string"},
                     "default": [],
                 },
+                "output_refs": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "default": [],
+                    "description": (
+                        "Exact workspace-relative deliverable files the child "
+                        "may create or modify. Use [] for a read-only/text-only "
+                        "child. Every durable child must declare this boundary."
+                    ),
+                },
+                "scratch_refs": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "default": [],
+                    "description": (
+                        "Optional workspace-relative temporary files or directory "
+                        "prefixes (end directories with /). They may be used while "
+                        "running but must be removed before the child completes."
+                    ),
+                },
                 "workspace_ref": {
                     "anyOf": [{"type": "string"}, {"type": "null"}]
                 },
@@ -141,7 +161,12 @@ def workflow_spawn_schema(profiles: ProfileRegistry) -> dict[str, Any]:
                     "const": profiles.generation,
                 },
             },
-            "required": ["profile_key", "objective", "catalog_generation"],
+            "required": [
+                "profile_key",
+                "objective",
+                "output_refs",
+                "catalog_generation",
+            ],
             "additionalProperties": False,
         },
     }

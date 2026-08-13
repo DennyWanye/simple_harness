@@ -50,6 +50,8 @@ class WorkflowSpawnRequest:
     profile_key: str
     objective: str
     input_refs: tuple[str, ...]
+    output_refs: tuple[str, ...]
+    scratch_refs: tuple[str, ...]
     workspace_ref: str | None
     parent_run_id: str
     root_run_id: str
@@ -70,6 +72,8 @@ class WorkflowSpawnRequest:
             "profile_key": self.profile_key,
             "objective": self.objective,
             "input_refs": list(self.input_refs),
+            "output_refs": list(self.output_refs),
+            "scratch_refs": list(self.scratch_refs),
             "workspace_ref": self.workspace_ref,
             "parent_run_id": self.parent_run_id,
             "root_run_id": self.root_run_id,

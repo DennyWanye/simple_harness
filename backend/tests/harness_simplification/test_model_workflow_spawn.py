@@ -24,6 +24,7 @@ from deskpet.execution.contracts import (
 )
 from deskpet.harness.adapters.subagent_registry import (
     ProductDelegateFactory,
+    _child_context_os,
     _complete_presentation_objective,
 )
 from deskpet.harness.child_runs import ChildRunCoordinator
@@ -50,6 +51,16 @@ from deskpet.tools.orchestration_controls import (
     register_orchestration_controls,
 )
 from deskpet.tools.registry import ToolRegistry
+from deskpet.tools.capabilities import (
+    ToolCapabilityResolver,
+    ToolEligibilityContext,
+    ToolExposureIntent,
+)
+from deskpet.tools.prepared_snapshot import (
+    dump_context_os_snapshot,
+    load_context_os_snapshot,
+)
+from deskpet.types.task_grants import canonical_filesystem_path
 from deskpet.types.task_work_context import TaskWorkContextResolver
 from deskpet.workflows.store import SqliteExecutionUnitOfWork
 from deskpet.workflows.definitions.personal_workflow import (
@@ -129,6 +140,42 @@ def _profiles() -> ProfileRegistry:
         ),
         generation=7,
     )
+
+
+def test_child_context_os_is_stable_per_spawn_and_isolated_between_children():
+    registry = ToolRegistry()
+    eligibility = ToolEligibilityContext("session-1", "request-1", "chat")
+    prepared = ToolCapabilityResolver(registry).resolve_draft(
+        ToolExposureIntent(), eligibility=eligibility
+    ).finalize(scope_id="parent-scope")
+    parent = dump_context_os_snapshot(prepared, eligibility)
+
+    first = _child_context_os(
+        parent,
+        parent_run_id="root-run",
+        stable_call_id="spawn-call-a",
+    )
+    first_replay = _child_context_os(
+        parent,
+        parent_run_id="root-run",
+        stable_call_id="spawn-call-a",
+    )
+    second = _child_context_os(
+        parent,
+        parent_run_id="root-run",
+        stable_call_id="spawn-call-b",
+    )
+
+    first_set, first_eligibility = load_context_os_snapshot(first)
+    second_set, second_eligibility = load_context_os_snapshot(second)
+    assert first == first_replay
+    assert first_set.scope_id.startswith("child-scope:")
+    assert first_set.scope_id != prepared.scope_id
+    assert first_set.scope_id != second_set.scope_id
+    assert replace(first_set, scope_id=prepared.scope_id) == prepared
+    assert replace(second_set, scope_id=prepared.scope_id) == prepared
+    assert first_eligibility == eligibility
+    assert second_eligibility == eligibility
 
 
 def _request(tmp_path) -> tuple[DriverStart, object]:
@@ -414,7 +461,7 @@ def test_workflow_spawn_scope_ignores_model_workspace_and_fails_closed(
         for item in prepared.resource_selectors
         if item.kind == "filesystem"
     )
-    assert filesystem.canonical_value == str(tmp_path).lower()
+    assert filesystem.canonical_value == canonical_filesystem_path(tmp_path)
     with pytest.raises(
         ValueError, match="workflow_spawn_catalog_binding_mismatch"
     ):
@@ -511,7 +558,9 @@ async def test_workflow_spawn_is_dynamic_prepared_control(tmp_path) -> None:
         "workflow_spawn:run-1:7:workflow.deep_research"
     )
     assert selectors["system_change"].access == ("delegate",)
-    assert selectors["filesystem"].canonical_value == str(tmp_path).lower()
+    assert selectors["filesystem"].canonical_value == canonical_filesystem_path(
+        tmp_path
+    )
     assert selectors["filesystem"].access == ("read", "write")
     exact = PreparedAuthorizationRuntime(object()).build_exact_request(
         call=prepared,
@@ -918,7 +967,7 @@ def test_workspace_prepare_freezes_the_host_bound_write_scope(tmp_path) -> None:
     assert len(prepared.resource_selectors) == 1
     selector = prepared.resource_selectors[0]
     assert selector.kind == "filesystem"
-    assert selector.canonical_value == str(tmp_path.resolve()).casefold()
+    assert selector.canonical_value == canonical_filesystem_path(tmp_path)
     assert selector.access == ("write",)
     assert registry.get(WORKSPACE_PREPARE).outcome_parser_id == (
         "json_error_envelope_v1"
@@ -1353,6 +1402,8 @@ async def test_durable_task_child_keeps_ticket_bound_capability_records(
                 "实现核心玩法",
                 "运行项目验证",
             ],
+            "output_refs": ["project.godot", "main.gd"],
+            "scratch_refs": [".task-tmp/"],
             "workspace_ref": str(tmp_path),
             "catalog_generation": 7,
         },
@@ -1401,6 +1452,16 @@ async def test_durable_task_child_keeps_ticket_bound_capability_records(
         "实现核心玩法",
         "运行项目验证",
     )
+    assert command.intent.child_request["output_contract"]["output_refs"] == (
+        "main.gd",
+        "project.godot",
+    )
+    assert command.intent.child_request["output_contract"]["scratch_refs"] == (
+        ".task-tmp/",
+    )
+    assert len(
+        command.intent.child_request["output_contract"]["baseline_digest"]
+    ) == 64
 
 
 @pytest.mark.asyncio

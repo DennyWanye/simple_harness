@@ -199,6 +199,7 @@ def initial_state(
     turn_id: str = "",
     provider_snapshot: Mapping[str, JsonValue] | None = None,
     model_snapshot: Mapping[str, JsonValue] | None = None,
+    output_contract: Mapping[str, JsonValue] | None = None,
 ) -> WorkflowState:
     """Build the strict JSON input envelope expected by the v1 graph."""
 
@@ -228,6 +229,7 @@ def initial_state(
         "capability_snapshot": [item.to_dict() for item in resolved_capabilities],
         "provider_snapshot": dict(provider_snapshot or {}),
         "model_snapshot": dict(model_snapshot or {}),
+        "output_contract": dict(output_contract or {}),
     }
     return {
         "schema_version": STATE_SCHEMA_VERSION,

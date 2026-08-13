@@ -20,6 +20,85 @@ class _FakeWS:
 
 
 @pytest.mark.asyncio
+async def test_context_trace_execution_decision_routes_through_run_kernel(
+    monkeypatch,
+):
+    import main
+
+    decision = SimpleNamespace(
+        request=SimpleNamespace(
+            decision_id="execution-decision-1",
+            run_id="child-run-1",
+        )
+    )
+
+    class ExecutionUow:
+        async def list_open_decision_projections(self, session_id):
+            assert session_id == "session-1"
+            return ()
+
+        async def get_open_decision_projection_by_id(self, decision_id):
+            assert decision_id == "execution-decision-1"
+            return {
+                "decision": decision,
+                "session_id": "historical-session-1",
+            }
+
+    captured: list[tuple[str, dict, dict]] = []
+
+    async def signal(session_id, payload, response):
+        captured.append((session_id, payload, response))
+        return SimpleNamespace(duplicate=False)
+
+    monkeypatch.setattr(main, "_signal_product_harness_decision", signal)
+    websocket = _FakeWS()
+
+    handled = await main._try_resolve_execution_workflow_decision(
+        websocket,
+        session_id="session-1",
+        raw={
+            "type": "workflow_decision_resolve",
+            "request_id": "request-1",
+            "payload": {
+                "decision_id": "execution-decision-1",
+                "nonce": "execution-nonce-1",
+                "expected_version": 3,
+                "response": "allow_once_opaque",
+            },
+        },
+        workflow_service=SimpleNamespace(execution_uow=ExecutionUow()),
+    )
+
+    assert handled is True
+    assert captured == [
+        (
+            "historical-session-1",
+            {
+                "run_id": "child-run-1",
+                "decision_id": "execution-decision-1",
+                "nonce": "execution-nonce-1",
+                "version": 3,
+            },
+            {"action": "allow_once_opaque"},
+        )
+    ]
+    assert websocket.sent == [
+        {
+            "type": "workflow_decision_resolve_response",
+            "request_id": "request-1",
+            "ok": True,
+            "payload": {
+                "decision_id": "execution-decision-1",
+                "run_id": "child-run-1",
+                "status": "accepted",
+                "audit": "Execution decision recorded by RunKernel",
+                "duplicate": False,
+            },
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_product_harness_wrapper_does_not_wall_clock_cancel_run(
     monkeypatch,
 ):
@@ -1299,6 +1378,25 @@ def test_transport_disconnect_does_not_cancel_durable_run() -> None:
 
     source = inspect.getsource(main._run_product_harness_chat)
     assert 'session.cancel("transport_task_cancelled")' not in source
+
+
+def test_empty_new_chat_inherits_visible_peer_group_not_transport_id(
+    monkeypatch,
+) -> None:
+    import main
+
+    monkeypatch.setattr(
+        main,
+        "_chat_peer_groups",
+        {"message-panel-main": "kimi-session"},
+    )
+
+    assert main._resolve_chat_source_session("message-panel-main", "") == (
+        "kimi-session"
+    )
+    assert main._resolve_chat_source_session(
+        "message-panel-main", "explicit-session"
+    ) == "explicit-session"
 
 
 @pytest.mark.asyncio

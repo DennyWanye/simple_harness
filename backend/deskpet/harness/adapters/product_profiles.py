@@ -64,7 +64,7 @@ def _durable_task_payload(request: DriverStart) -> Mapping[str, Any]:
     missing = sorted(name for name in _DURABLE_REQUIRED if payload.get(name) is None)
     if missing:
         raise ValueError(f"durable task profile payload is incomplete: {','.join(missing)}")
-    return {
+    result = {
         "request": str(payload.get("request") or _text(request)), "session_ref": dict(payload["session_ref"]),
         "capability_snapshot": list(payload["capability_snapshot"]),
         "messages": [dict(message) for message in payload["messages"]],
@@ -78,6 +78,14 @@ def _durable_task_payload(request: DriverStart) -> Mapping[str, Any]:
         "context_os": dict(payload["context_os"]) if isinstance(payload.get("context_os"), Mapping) else None,
         "workspace_ref": payload.get("workspace_ref"),
     }
+    # Preserve the host-issued immutable output boundary through the profile
+    # adapter. Historical Runs and the separately guarded Capability Builder
+    # legitimately lack this field, so compatibility reads remain optional;
+    # new ordinary durable-task launches are already fail-closed at admission.
+    raw_output_contract = payload.get("output_contract")
+    if isinstance(raw_output_contract, Mapping):
+        result["output_contract"] = dict(raw_output_contract)
+    return result
 
 
 def _personal_workflow_payload(request: DriverStart) -> Mapping[str, Any]:

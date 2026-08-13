@@ -2,6 +2,39 @@
 
 > **最后更新**：2026-08-13
 
+## 2026-08-13 里程碑：复杂 Harness 输出契约、精确授权与 Kimi 真机闭环
+
+- **一次性授权恢复为精确调用语义**：“允许一次”不再把 TaskGrant 带入后续 continuation，只有
+  “本会话始终允许”才复用授权；每个人工 decision 具有独立 grant instance，连续相同
+  `workflow_spawn` 不再发生 TaskGrant 身份碰撞。Auto 模式仍保留确定性幂等 identity。
+- **权限 UI 以 backend ACK 为准**：前端收到 `permission_response_applied` 后才关闭弹窗并推进
+  任务；过期/冲突响应保留弹窗并显示真实错误，ControlChannel 重连后重新拉取 pending decisions。
+  “停止当前任务”仅发送 interrupt，收到 cancelled ACK 后按 root Run 清除当前及排队 decision；
+  失败则保留弹窗与错误，不再出现停止已生效但权限卡残留的状态分裂。
+- **纯文本 durable child 能有限收敛**：objective 明确禁止工具、只需返回文本且无写入/测试义务时，
+  单次 `end_turn` 即可完成；有文件、命令或测试要求时仍必须提供 effect/receipt。真机 `kimi-k3`
+  root `4a976f0aa972525a899753cd7c630fec` 串行启动两个 child
+  `child-a0a1262669335fafdcf779b61001c5ff`、`child-feea8f055f616ffa1920c22d85968034`，
+  两次“允许一次”均 ACK 成功、两个 child 与 root 均 completed，UI 最终显示 `A_OK / B_OK` 并回到
+  “空闲”；独立重复授权 root `84e99cc1d7c75f50b8421e37096d4107` 也 completed。
+- **任务输出契约已进入生产链**：普通 durable child 启动前必须声明精确 `output_refs` 与可选
+  `scratch_refs`；Host 冻结 workspace 与非可变内容摘要并绑定 launch ticket/start snapshot。
+  prepared file target 与 Artifact 注册执行前拒绝越界；终审要求声明产物存在且不是 symlink、scratch
+  全清、其余工作区摘要不变。新 Run fail closed，历史无契约 Run 只读兼容并明确告警。契约冻结、
+  拒绝和终审日志均带稳定 `contract_id`。不透明 shell 的持久越界由终审捕获；同一 shell 内创建后
+  删除的瞬时文件仍需未来 OS 级文件事件审计，当前不通过解析命令文本伪装保证。
+- **Kimi 复杂真机复验 PASS**：第一次 Run 因 profile adapter 丢契约被主动停止并保留 FAIL 事实；
+  修复后 root `1be3666915615161b1a9fac699aaf3e8`、child
+  `child-f16d23bf03ac0c5f152609abc12f12df` 均 completed。child 读取 CSV，在声明 scratch 中生成并
+  运行 Python，产出 `summary.json`/`REPORT.md`、校验总额 `422.00`、清理 scratch，并只注册两项
+  Artifact；持久化审计 `passed=true / baseline_matches=true / missing_outputs=[] /
+  retained_scratch=[]`，UI 有两张真实 ArtifactCard，根任务独立复核后 completed。空白新会话也
+  已真机确认继承当前可见历史会话的 `kimi-k3`，不再回退到 transport 默认模型。
+- **当前验证**：相关与相邻 migration 后端合并 `300 passed`；前端权限/ControlChannel/聊天
+  `59 passed`；TypeScript、
+  Python 编译、execution build manifest、diff check 和 Tauri debug bundle build PASS。扩大检查发现并
+  修复 `state.db` v27 marker 在补跑旧 v15/v16 migration 后误降到 26 的问题。
+
 ## 2026-08-12 里程碑：Workbench last-mile、设置、恢复与托盘真测全部收口
 
 - **ArtifactCard last-mile 的 root 与 child 自动桥接已实现**：生产 `execute_prepared` 生成

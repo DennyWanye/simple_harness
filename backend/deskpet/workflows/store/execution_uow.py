@@ -5330,26 +5330,74 @@ class SqliteExecutionUnitOfWork:
                 )
             ).fetchall()
             return tuple(
-                {
-                    "decision": self._row_to_decision(row),
-                    "session_id": str(row["session_id"]),
-                    "root_run_id": str(row["root_run_id"]),
-                    "request_id": str(row["request_id"]),
-                    "turn_id": str(row["turn_id"]),
-                    "driver_kind": str(row["driver_kind"]),
-                    "workspace_root": (
-                        None
-                        if row["workspace_root"] is None
-                        else str(row["workspace_root"])
-                    ),
-                    "workspace_source": (
-                        None
-                        if row["workspace_source"] is None
-                        else str(row["workspace_source"])
-                    ),
-                }
+                self._open_decision_projection_from_row(row)
                 for row in rows
             )
+
+    async def get_open_decision_projection_by_id(
+        self,
+        decision_id: str,
+    ) -> dict[str, Any] | None:
+        """Resolve an inspector-visible decision to its authoritative session.
+
+        ContextTrace is application-scoped and can inspect workflow runs from
+        historical sessions.  Its control socket session is therefore not a
+        trustworthy routing hint.  The immutable decision id is looked up in
+        the execution ledger and the returned session is later re-checked by
+        RunKernel together with nonce/version.
+        """
+
+        normalized_decision_id = str(decision_id or "").strip()
+        if not normalized_decision_id:
+            raise ValueError("decision_id is required")
+        async with self._read_connection() as db:
+            row = await (
+                await db.execute(
+                    """SELECT execution_decisions.*,execution_runs.session_id,
+                    execution_runs.root_run_id,execution_runs.request_id,
+                    execution_runs.turn_id,execution_runs.driver_kind,
+                    execution_task_work_contexts.workspace_root,
+                    execution_task_work_contexts.workspace_source
+                    FROM execution_decisions
+                    JOIN execution_runs USING(run_id)
+                    LEFT JOIN execution_task_work_contexts
+                      ON execution_task_work_contexts.root_run_id=
+                         execution_runs.root_run_id
+                    WHERE execution_decisions.decision_id=?
+                      AND execution_runs.status='waiting'
+                      AND execution_decisions.status='open'""",
+                    (normalized_decision_id,),
+                )
+            ).fetchone()
+            return (
+                None
+                if row is None
+                else self._open_decision_projection_from_row(row)
+            )
+
+    @classmethod
+    def _open_decision_projection_from_row(
+        cls,
+        row: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "decision": cls._row_to_decision(row),
+            "session_id": str(row["session_id"]),
+            "root_run_id": str(row["root_run_id"]),
+            "request_id": str(row["request_id"]),
+            "turn_id": str(row["turn_id"]),
+            "driver_kind": str(row["driver_kind"]),
+            "workspace_root": (
+                None
+                if row["workspace_root"] is None
+                else str(row["workspace_root"])
+            ),
+            "workspace_source": (
+                None
+                if row["workspace_source"] is None
+                else str(row["workspace_source"])
+            ),
+        }
 
     @staticmethod
     def _assert_signal_binding(

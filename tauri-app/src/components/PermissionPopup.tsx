@@ -35,7 +35,9 @@ type Decision = "allow" | "allow_session" | "deny";
 interface Props {
   request: PermissionRequest["payload"] | null;
   onResolve: (decision: Decision) => void;
-  onStopRun?: (runId: string) => void;
+  onStopRun?: () => void;
+  resolving?: boolean;
+  resolveError?: string | null;
 }
 
 interface CategoryMeta {
@@ -107,6 +109,8 @@ export const PermissionPopup: React.FC<Props> = ({
   request,
   onResolve,
   onStopRun,
+  resolving = false,
+  resolveError = null,
 }) => {
   const allowOnceRef = useRef<HTMLButtonElement | null>(null);
 
@@ -115,14 +119,14 @@ export const PermissionPopup: React.FC<Props> = ({
     // 自动聚焦"允许一次"，回车确认
     allowOnceRef.current?.focus();
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !resolving) {
         e.preventDefault();
         onResolve("deny");
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [request, onResolve]);
+  }, [request, onResolve, resolving]);
 
   if (!request) return null;
   const meta =
@@ -286,11 +290,9 @@ export const PermissionPopup: React.FC<Props> = ({
           {request.run_id && onStopRun && (
             <button
               type="button"
+              disabled={resolving}
               className="bp-btn-secondary"
-              onClick={() => {
-                onStopRun(request.run_id!);
-                onResolve("deny");
-              }}
+              onClick={onStopRun}
               style={{
                 ...buttonStyle("secondary", "md"),
                 marginRight: "auto",
@@ -301,6 +303,7 @@ export const PermissionPopup: React.FC<Props> = ({
           )}
           <button
             type="button"
+            disabled={resolving}
             className="bp-btn-secondary"
             onClick={() => onResolve("deny")}
             style={buttonStyle("secondary", "md")}
@@ -309,6 +312,7 @@ export const PermissionPopup: React.FC<Props> = ({
           </button>
           <button
             type="button"
+            disabled={resolving}
             className="bp-btn-secondary"
             onClick={() => onResolve("allow_session")}
             style={buttonStyle("secondary", "md")}
@@ -319,13 +323,26 @@ export const PermissionPopup: React.FC<Props> = ({
           <button
             ref={allowOnceRef}
             type="button"
+            disabled={resolving}
             className={meta.level === "error" ? "bp-btn-danger" : "bp-btn-primary"}
             onClick={() => onResolve("allow")}
             style={buttonStyle(meta.level === "error" ? "danger" : "primary", "md")}
           >
-            允许一次
+            {resolving ? "提交中…" : "允许一次"}
           </button>
         </div>
+        {resolveError && (
+          <div
+            role="alert"
+            style={{
+              color: tokens.color.danger.fg,
+              background: tokens.color.danger.soft,
+              padding: `${tokens.space.sm}px ${tokens.space.lg}px`,
+            }}
+          >
+            {resolveError}
+          </div>
+        )}
       </div>
     </div>
   );

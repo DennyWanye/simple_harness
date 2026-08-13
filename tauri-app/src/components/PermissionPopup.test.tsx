@@ -6,9 +6,9 @@ import { PermissionPopup } from "./PermissionPopup";
 afterEach(cleanup);
 
 describe("PermissionPopup", () => {
-  it("shows exact tool arguments and stops the fenced Run before denying", () => {
+  it("shows exact tool arguments and stops the fenced Run without a deny race", () => {
     const order: string[] = [];
-    const onStopRun = vi.fn((runId: string) => order.push(`stop:${runId}`));
+    const onStopRun = vi.fn(() => order.push("stop"));
     const onResolve = vi.fn((decision: string) =>
       order.push(`resolve:${decision}`),
     );
@@ -41,6 +41,7 @@ describe("PermissionPopup", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "停止当前任务" }));
 
-    expect(order).toEqual(["stop:run-1", "resolve:deny"]);
+    expect(order).toEqual(["stop"]);
+    expect(onResolve).not.toHaveBeenCalled();
   });
 });

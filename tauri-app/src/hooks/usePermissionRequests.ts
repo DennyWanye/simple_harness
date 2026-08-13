@@ -26,6 +26,17 @@ type PermissionChannel = {
   send(message: { type: string; payload?: Record<string, unknown> }): boolean;
   onMessage?: (listener: (message: unknown) => void) => () => void;
   on_message?: (listener: (message: unknown) => void) => () => void;
+  state?:
+    | "disconnected"
+    | "connecting"
+    | "connected"
+    | (() => "disconnected" | "connecting" | "connected");
+  onStateChange?: (
+    listener: (state: "disconnected" | "connecting" | "connected") => void,
+  ) => () => void;
+  on_state_change?: (
+    listener: (state: "disconnected" | "connecting" | "connected") => void,
+  ) => () => void;
 };
 
 function permissionIdentity(
@@ -41,12 +52,76 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
   const currentRef = useRef<PermissionRequest["payload"] | null>(null);
   const queueRef = useRef<PermissionRequest["payload"][]>([]);
   const resolvedRef = useRef<Set<string>>(new Set());
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const showNext = useCallback(() => {
     const next = queueRef.current.shift();
     currentRef.current = next ?? null;
     setCurrent(next ?? null);
+    setResolving(false);
+    setResolveError(null);
   }, []);
+
+  const rememberResolved = useCallback((identity: string) => {
+    if (!identity) return;
+    resolvedRef.current.add(identity);
+    if (resolvedRef.current.size > 512) {
+      const oldest = resolvedRef.current.values().next().value;
+      if (oldest) resolvedRef.current.delete(oldest);
+    }
+  }, []);
+
+  const completeCurrent = useCallback(
+    (identity: string) => {
+      const completed = currentRef.current;
+      if (!completed || permissionIdentity(completed) !== identity) return;
+      const sessionId = String(completed.session_id || "").trim();
+      const runId = String(completed.run_id || "").trim();
+      if (sessionId && runId) {
+        const store = useSessionsStore.getState();
+        store.upsert_run_projection(sessionId, runId, {
+          status: "running",
+          inflight: true,
+        });
+        if (
+          useSessionsStore.getState().sessions[sessionId]?.run_projections?.[
+            runId
+          ]?.status === "running"
+        ) {
+          useSessionsStore.getState().upsert(sessionId, {
+            status: "running",
+            inflight: true,
+          });
+        }
+      }
+      rememberResolved(identity);
+      showNext();
+    },
+    [rememberResolved, showNext],
+  );
+
+  const dismissRun = useCallback(
+    (runId: string) => {
+      const normalized = runId.trim();
+      if (!normalized) return;
+      const retained = [] as PermissionRequest["payload"][];
+      for (const item of queueRef.current) {
+        if (String(item.run_id || "").trim() === normalized) {
+          rememberResolved(permissionIdentity(item));
+        } else {
+          retained.push(item);
+        }
+      }
+      queueRef.current = retained;
+      const active = currentRef.current;
+      if (active && String(active.run_id || "").trim() === normalized) {
+        rememberResolved(permissionIdentity(active));
+        showNext();
+      }
+    },
+    [rememberResolved, showNext],
+  );
 
   const enqueue = useCallback((payload: PermissionRequest["payload"]) => {
     const identity = permissionIdentity(payload);
@@ -69,7 +144,22 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
     if (!channel) return undefined;
     const subscribe = channel.onMessage ?? channel.on_message;
     if (!subscribe) return undefined;
-    channel.send({ type: "permissions_pending_list", payload: {} });
+    const requestPending = () => {
+      channel.send({ type: "permissions_pending_list", payload: {} });
+    };
+    // ChatView commonly mounts while ControlChannel is still connecting. Its
+    // generic outbox queues chat turns only, so an eager pending-list request
+    // can otherwise be dropped forever. Re-query on every successful
+    // connection; decision identity de-duplication safely merges live replay.
+    const subscribeState = channel.onStateChange ?? channel.on_state_change;
+    const channelState =
+      typeof channel.state === "function" ? channel.state() : channel.state;
+    if (!subscribeState || channelState === "connected") {
+      requestPending();
+    }
+    const offState = subscribeState?.call(channel, (state) => {
+      if (state === "connected") requestPending();
+    });
     const off = subscribe.call(channel, (raw) => {
       const msg = raw as { type?: string };
       if (msg.type === "permission_request") {
@@ -99,16 +189,71 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
             ...(item.version !== undefined ? { version: item.version } : {}),
           });
         }
+        return;
+      }
+      if (msg.type === "permission_response_applied") {
+        const payload = (
+          msg as {
+            payload?: {
+              ok?: boolean;
+              request_id?: string;
+              decision_id?: string;
+              error?: { message?: string };
+            };
+          }
+        ).payload;
+        if (!payload) return;
+        const identity = String(
+          payload.decision_id || payload.request_id || "",
+        ).trim();
+        if (
+          !identity ||
+          !currentRef.current ||
+          identity !== permissionIdentity(currentRef.current)
+        ) {
+          return;
+        }
+        if (payload.ok === false) {
+          setResolving(false);
+          setResolveError(payload.error?.message ?? "授权提交失败，请重试");
+          return;
+        }
+        completeCurrent(identity);
+        return;
+      }
+      if (msg.type === "chat_v2_interrupted") {
+        const payload = (
+          msg as {
+            payload?: {
+              run_id?: string;
+              cancelled?: boolean;
+            };
+          }
+        ).payload;
+        const runId = String(payload?.run_id || "").trim();
+        if (!runId) return;
+        if (payload?.cancelled === false) {
+          if (
+            currentRef.current &&
+            String(currentRef.current.run_id || "").trim() === runId
+          ) {
+            setResolving(false);
+            setResolveError("停止任务失败，请重试");
+          }
+          return;
+        }
+        dismissRun(runId);
       }
     });
     return () => {
       off();
+      offState?.();
     };
-  }, [channel, enqueue]);
+  }, [channel, completeCurrent, dismissRun, enqueue]);
 
   const resolve = useCallback(
     (decision: Decision) => {
-      if (!current || !channel) return;
+      if (!current || !channel || resolving) return;
       const reply: PermissionResponse = {
         type: "permission_response",
         payload: {
@@ -129,41 +274,33 @@ export function usePermissionRequests(channel: PermissionChannel | null) {
         reply as unknown as { type: string; payload?: Record<string, unknown> },
       );
       if (!sent) return;
-      const sessionId = String(current.session_id || "").trim();
-      const runId = String(current.run_id || "").trim();
-      if (sessionId && runId) {
-        const store = useSessionsStore.getState();
-        store.upsert_run_projection(sessionId, runId, {
-          status: "running",
-          inflight: true,
-        });
-        // upsert_run_projection preserves terminal authority.  Only clear the
-        // permission pill when this decision actually resumed a live Run;
-        // a late response must not reopen an already terminal session.
-        if (
-          useSessionsStore.getState().sessions[sessionId]?.run_projections?.[
-            runId
-          ]?.status === "running"
-        ) {
-          useSessionsStore.getState().upsert(sessionId, {
-            status: "running",
-            inflight: true,
-          });
-        }
-      }
-      const identity = permissionIdentity(current);
-      if (identity) {
-        resolvedRef.current.add(identity);
-        // A session can run for days; keep this replay fence bounded.
-        if (resolvedRef.current.size > 512) {
-          const oldest = resolvedRef.current.values().next().value;
-          if (oldest) resolvedRef.current.delete(oldest);
-        }
-      }
-      showNext();
+      setResolving(true);
+      setResolveError(null);
     },
-    [current, channel, showNext]
+    [current, channel, resolving]
   );
 
-  return { current, resolve } as const;
+  const stopCurrentRun = useCallback(() => {
+    if (!current || !channel || resolving) return;
+    const runId = String(current.run_id || "").trim();
+    if (!runId) return;
+    const sent = channel.send({
+      type: "chat_v2_interrupt",
+      payload: { session_id: current.session_id, run_id: runId },
+    });
+    if (!sent) {
+      setResolveError("停止任务请求发送失败，请重试");
+      return;
+    }
+    setResolving(true);
+    setResolveError(null);
+  }, [channel, current, resolving]);
+
+  return {
+    current,
+    resolve,
+    stopCurrentRun,
+    resolving,
+    resolveError,
+  } as const;
 }

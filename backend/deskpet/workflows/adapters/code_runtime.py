@@ -56,6 +56,7 @@ from ..proposal_state import (
     ProposalStateV1,
     derive_stable_call_id,
 )
+from ..output_contract import TaskOutputContractV1
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +135,25 @@ def _compact_repeatable_search_payloads(
             }
         )
     return copied
+
+
+def _declined_dynamic_tool_names(state: ProposalStateV1) -> frozenset[str]:
+    """Return tools the user chose to exclude for the rest of this Run.
+
+    ``continue_without`` is a durable decision, not a one-turn hint.  Keeping
+    the exact tool hidden from later provider turns prevents the model from
+    reopening the same unsupported-dynamic-tool decision indefinitely while
+    leaving alternative built-in capabilities available.
+    """
+
+    return frozenset(
+        str(result.get("tool_name") or "")
+        for result in state.committed_tool_results.values()
+        if isinstance(result, Mapping)
+        and str(result.get("code") or "") == "unsupported_dynamic_tool"
+        and result.get("retryable") is False
+        and str(result.get("tool_name") or "")
+    )
 
 
 def _policy_payload(policy: object | None) -> dict[str, JsonValue] | None:
@@ -279,6 +299,7 @@ class ProposalPort:
         provider_invocation_coordinator: Any | None = None,
         context_compressor: object | None = None,
         compaction_trigger_tokens: int | None = None,
+        output_contract: TaskOutputContractV1 | None = None,
     ) -> None:
         self.llm_registry = llm_registry
         self.tool_registry = tool_registry
@@ -300,6 +321,7 @@ class ProposalPort:
             if compaction_trigger_tokens is not None
             else None
         )
+        self.output_contract = output_contract
         self.allowed_tools = (
             frozenset(str(name) for name in allowed_tools)
             if allowed_tools is not None else None
@@ -646,6 +668,13 @@ class ProposalPort:
                 raise RuntimeError("context_os_code_proposal_validation_unavailable")
             effective_prepared = self._effective_prepared_tool_set(state)
         tool_schemas = self._tool_schemas(effective_prepared)
+        declined_dynamic_tools = _declined_dynamic_tool_names(state)
+        if declined_dynamic_tools:
+            tool_schemas = [
+                schema
+                for schema in tool_schemas
+                if _schema_tool_name(schema) not in declined_dynamic_tools
+            ]
         discovery_saturated = (
             _consecutive_discovery_searches(state)
             >= _MAX_CONSECUTIVE_DISCOVERY_SEARCHES
@@ -744,7 +773,28 @@ class ProposalPort:
         checkpoint_key = f"{state.request_id}:{state.turn_id}"
         raw_proposals: list[dict[str, JsonValue]] = []
         prepared_calls: list[PreparedToolCall] = []
-        proposal_error: ProposalErrorV1 | None = None
+        truncated_without_tool_call = (
+            str(response.stop_reason or "") == "length"
+            and not response.tool_calls
+        )
+        proposal_error: ProposalErrorV1 | None = (
+            ProposalErrorV1(
+                code="proposal_truncated_without_tool_call",
+                message_ref="proposal:truncated_without_tool_call",
+                retryable=True,
+                details={
+                    "instruction": (
+                        "The prior response reached its output limit without "
+                        "executing any tool. Do not continue code or file "
+                        "content as prose. Call file_write directly using a "
+                        "compact payload or overwrite followed by append "
+                        "chunks of at most 2500 characters."
+                    )
+                },
+            )
+            if truncated_without_tool_call
+            else None
+        )
         for index, tool_call in enumerate(response.tool_calls):
             raw_args = copy.deepcopy(dict(tool_call.arguments or {}))
             validate_json_value(raw_args)
@@ -879,7 +929,38 @@ class ProposalPort:
                         },
                     )
                 else:
-                    prepared_calls.append(prepared_call)
+                    try:
+                        if self.output_contract is not None:
+                            self.output_contract.validate_prepared_call(
+                                prepared_call
+                            )
+                    except ValueError as exc:
+                        reason = str(exc)
+                        raw["prepare_error"] = reason
+                        proposal_error = proposal_error or ProposalErrorV1(
+                            code="tool_output_contract_violation",
+                            message_ref=(
+                                f"proposal:{stable_call_id}:output_contract"
+                            ),
+                            retryable=True,
+                            details={
+                                "tool_name": str(tool_call.name),
+                                "reason": reason,
+                                "output_refs": list(
+                                    self.output_contract.output_refs
+                                ),
+                                "scratch_refs": list(
+                                    self.output_contract.scratch_refs
+                                ),
+                                "instruction": (
+                                    "Use only a declared output_ref or "
+                                    "scratch_ref. Do not create helper files "
+                                    "outside the frozen task output contract."
+                                ),
+                            },
+                        )
+                    else:
+                        prepared_calls.append(prepared_call)
             raw_proposals.append(raw)
 
         reasoning_ref = None
@@ -900,7 +981,13 @@ class ProposalPort:
             or ""
         )
         return ProposalOutcomeV1(
-            assistant_content=response.content,
+            # Unexecuted truncated prose is neither a receipt nor useful
+            # continuation context.  Persist only the host's structured
+            # recovery instruction below so the next provider turn converges
+            # on a bounded tool call instead of extending the same code dump.
+            assistant_content=(
+                "" if truncated_without_tool_call else response.content
+            ),
             reasoning_summary_ref=reasoning_ref,
             raw_tool_proposals=raw_proposals,
             prepared_calls=prepared_calls,

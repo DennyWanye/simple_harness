@@ -266,6 +266,7 @@ WORKFLOW_PORT_NAMES = frozenset(
         "effect",
         "permission",
         "artifact",
+        "output_contract",
         "receipt",
         "notifier",
         "evaluator",

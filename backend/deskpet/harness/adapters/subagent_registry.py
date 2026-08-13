@@ -6,6 +6,7 @@ import hashlib
 import json
 import re
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
@@ -22,6 +23,7 @@ from deskpet.tools.orchestration_controls import (
     WORKFLOW_SPAWN,
 )
 from deskpet.workflows.effects import PreparedToolCall
+from deskpet.workflows.output_contract import TaskOutputContractV1
 from deskpet.workflows.definitions.personal_workflow import (
     personal_workflow_query_hash,
     selection_from_capability_snapshot,
@@ -106,6 +108,36 @@ def _allowed_tools(request: Any) -> set[str]:
     if not isinstance(raw, (list, tuple, set, frozenset)):
         raise ValueError("capability snapshot tools must be a sequence")
     return {str(item) for item in raw if str(item).strip()}
+
+
+def _child_context_os(
+    raw_context: object,
+    *,
+    parent_run_id: str,
+    stable_call_id: str,
+) -> object:
+    """Clone a parent's frozen catalog into one child-owned live scope.
+
+    The schemas and eligibility remain frozen, but runtime activations must not
+    leak between sequential children.  A deterministic id keeps replay of the
+    same provider call idempotent while distinct workflow_spawn calls receive
+    independent activation revisions.
+    """
+
+    if not isinstance(raw_context, Mapping):
+        return raw_context
+    from deskpet.tools.prepared_snapshot import (
+        dump_context_os_snapshot,
+        load_context_os_snapshot,
+    )
+
+    prepared, eligibility = load_context_os_snapshot(raw_context)
+    child_scope_id = "child-scope:" + hashlib.sha256(
+        f"{parent_run_id}|{stable_call_id}".encode("utf-8")
+    ).hexdigest()
+    return dump_context_os_snapshot(
+        replace(prepared, scope_id=child_scope_id), eligibility
+    )
 
 
 def _workspace_from(request: Any, requested: object) -> str | None:
@@ -393,10 +425,36 @@ class ProductDelegateFactory:
                 ),
             )
             workspace = builder_launch.staging_root
+        output_contract: TaskOutputContractV1 | None = None
+        raw_output_refs = args.get("output_refs")
+        raw_scratch_refs = args.get("scratch_refs", ())
+        if profile.workflow_name == "durable_task" and not mutation_control:
+            if workspace is None:
+                raise ValueError(
+                    "workflow.durable_task requires a committed workspace_ref; "
+                    "call workspace_prepare first"
+                )
+            if not isinstance(raw_output_refs, list):
+                raise ValueError(
+                    "workflow.durable_task requires an explicit output_refs array"
+                )
+            if not isinstance(raw_scratch_refs, list):
+                raise ValueError("workflow.durable_task scratch_refs must be an array")
+            output_contract = TaskOutputContractV1.freeze(
+                workspace,
+                output_refs=raw_output_refs,
+                scratch_refs=raw_scratch_refs,
+            )
         spawn = WorkflowSpawnRequest(
             profile_key=profile_key,
             objective=objective,
             input_refs=tuple(str(item) for item in args.get("input_refs", ())),
+            output_refs=(
+                output_contract.output_refs if output_contract is not None else ()
+            ),
+            scratch_refs=(
+                output_contract.scratch_refs if output_contract is not None else ()
+            ),
             workspace_ref=workspace,
             parent_run_id=request.run_id,
             root_run_id=context.root_run_id,
@@ -424,6 +482,8 @@ class ProductDelegateFactory:
             "topic": objective,
             "objective": objective,
             "input_refs": list(spawn.input_refs),
+            "output_refs": list(spawn.output_refs),
+            "scratch_refs": list(spawn.scratch_refs),
             "workspace_ref": workspace,
             "task_scope_id": task_scope_id,
             "profile_catalog_generation": generation,
@@ -436,11 +496,8 @@ class ProductDelegateFactory:
                 personal_selection.to_child_payload()
             )
         if profile.workflow_name == "durable_task":
-            if workspace is None:
-                raise ValueError(
-                    "workflow.durable_task requires a committed workspace_ref; "
-                    "call workspace_prepare first"
-                )
+            if output_contract is None and not mutation_control:
+                raise RuntimeError("durable task output contract is unavailable")
             if _requires_selected_project_workspace(
                 request,
                 objective,
@@ -547,7 +604,20 @@ class ProductDelegateFactory:
                             self._tool_registry, allowed_tools=allowed
                         )
                     ],
-                    "messages": [{"role": "user", "content": objective}],
+                    "messages": [
+                        {
+                            "role": "system",
+                            "content": (
+                                "The host froze task-output-contract-v1. Create or "
+                                "modify only output_refs and scratch_refs. Every "
+                                "output_ref must exist at completion; every "
+                                "scratch_ref must be removed. Persistent changes "
+                                "outside the contract fail the audit. Register only "
+                                "declared output_refs as artifacts."
+                            ),
+                        },
+                        {"role": "user", "content": objective},
+                    ],
                     "plan_steps": durable_plan_steps,
                     "approval_required": False,
                     "started_at": time.time(),
@@ -555,9 +625,15 @@ class ProductDelegateFactory:
                     "turn_id": context.turn_id,
                     "provider_snapshot": dict(provider_snapshot),
                     "model_snapshot": dict(model_snapshot),
-                    "context_os": request.request_payload.get("context_os"),
+                    "context_os": _child_context_os(
+                        request.request_payload.get("context_os"),
+                        parent_run_id=str(request.run_id),
+                        stable_call_id=str(call.stable_call_id),
+                    ),
                 }
             )
+            if output_contract is not None:
+                child_payload["output_contract"] = output_contract.to_dict()
             if profile.profile_key == "workflow.capability_build":
                 if builder_launch is None:  # pragma: no cover - guarded above
                     raise RuntimeError("capability builder launch is missing")

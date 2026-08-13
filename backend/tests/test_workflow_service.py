@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
+from deskpet.execution.contracts import DecisionOpen, DecisionRecord
 from deskpet.workflows.definition import WorkflowManifest
 from deskpet.workflows.evaluation import HumanEvaluationRecord
 from deskpet.workflows.outbox import OutboxError, stable_delivery_id, stable_event_id
@@ -462,6 +463,77 @@ async def test_run_detail_matches_frontend_aggregate_and_history_degrades_missin
     assert hydration["missing_event_ids"] == ["missing-event"]
     assert hydration["mark_seen_after_reduce"] is True
     assert hydration["events"][0]["hydration"]["apply_before_seen"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_detail_projects_open_execution_decision_for_context_trace(
+    tmp_path, monkeypatch
+):
+    service, _store = await _service(tmp_path)
+    started = await _start(service, base_epoch=7)
+    run_id = started["run_id"]
+    decision = DecisionRecord(
+        request=DecisionOpen(
+            decision_id="execution-decision-1",
+            run_id=run_id,
+            nonce="execution-nonce-1",
+            kind="workflow_hitl",
+            prompt_schema_version=1,
+            prompt={
+                "checkpoint_id": "checkpoint-1",
+                "interrupt_id": "interrupt-1",
+                "prompt": {
+                    "kind": "unsupported_dynamic_tool",
+                    "options": [
+                        "allow_once_opaque",
+                        "continue_without",
+                        "cancel",
+                    ],
+                },
+            },
+            expires_at=None,
+        ),
+        status="open",
+        response_schema_version=None,
+        response=None,
+        decision_version=4,
+        created_at=10.0,
+        resolved_at=None,
+    )
+
+    async def list_open(session_id):
+        assert session_id == "session-base"
+        return ({"decision": decision},)
+
+    monkeypatch.setattr(
+        service.execution_uow,
+        "list_open_decision_projections",
+        list_open,
+    )
+
+    detail = await service.run_detail(run_id)
+
+    assert detail["decisions"] == [
+        {
+            "decision_id": "execution-decision-1",
+            "run_id": run_id,
+            "kind": "workflow_hitl",
+            "status": "open",
+            "prompt": {
+                "kind": "unsupported_dynamic_tool",
+                "options": [
+                    "allow_once_opaque",
+                    "continue_without",
+                    "cancel",
+                ],
+            },
+            "nonce": "execution-nonce-1",
+            "version": 4,
+            "expires_at": None,
+            "created_at": 10.0,
+            "execution_decision": True,
+        }
+    ]
 
 
 @pytest.mark.asyncio

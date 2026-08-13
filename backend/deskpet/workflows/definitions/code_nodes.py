@@ -320,6 +320,10 @@ def _provider_failure_is_retryable(exc: BaseException) -> bool:
 def _provider_failure_message_ref(exc: BaseException) -> str:
     """Reduce a provider exception chain to a safe, user-renderable code."""
 
+    safe_runtime_codes = {
+        "tool_activation_revision_conflict",
+        "tool_activation_scope_conflict",
+    }
     current: BaseException | None = exc
     seen: set[int] = set()
     while current is not None and id(current) not in seen:
@@ -330,6 +334,9 @@ def _provider_failure_message_ref(exc: BaseException) -> str:
             return "provider:insufficient_balance"
         if error_class in {"relay_key_invalid", "empty_api_key"}:
             return f"provider:{error_class}"
+        runtime_code = str(current).strip()
+        if runtime_code in safe_runtime_codes:
+            return f"workflow_node:llm_proposal:{runtime_code}"
         current = current.__cause__ or current.__context__
     return "workflow_node:llm_proposal:provider_failure"
 
@@ -981,12 +988,17 @@ def _durable_task_evidence_satisfied(
     both obligations.
     """
 
+    request = proposal_state.original_request.strip()
+    requires_write, requires_test = _execution_obligations(
+        request
+    )
     successful = _successful_receipts(proposal_state)
     if not successful:
-        return False
-    requires_write, requires_test = _execution_obligations(
-        proposal_state.original_request
-    )
+        return (
+            not requires_write
+            and not requires_test
+            and bool(_EXPLICIT_TOOL_FREE_REQUEST.search(request))
+        )
     if not requires_write and not requires_test:
         return True
 
@@ -995,16 +1007,28 @@ def _durable_task_evidence_satisfied(
         for result in successful
         if str(result.get("tool_name", "")) not in _DISCOVERY_ONLY_TOOL_NAMES
     ]
-    action_tools = {
-        str(result.get("tool_name", ""))
+    write_receipts = [
+        result
         for result in action_receipts
-    }
-    if requires_write and not (action_tools & _WRITE_TOOL_NAMES):
+        if str(result.get("tool_name", "")) in _WRITE_TOOL_NAMES
+    ]
+    test_receipts = [
+        result
+        for result in action_receipts
+        if str(result.get("tool_name", "")) in _TEST_TOOL_NAMES
+    ]
+    if requires_write and not write_receipts:
         return False
-    if requires_test and not (action_tools & _TEST_TOOL_NAMES):
+    if requires_test and not test_receipts:
         return False
-    if requires_write and requires_test and len(action_receipts) < 2:
-        return False
+    if requires_write and requires_test:
+        return any(
+            str(write.get("stable_call_id", ""))
+            and str(test.get("stable_call_id", ""))
+            and str(write["stable_call_id"]) != str(test["stable_call_id"])
+            for write in write_receipts
+            for test in test_receipts
+        )
     return bool(action_receipts)
 
 
@@ -1027,6 +1051,10 @@ def _tool_free_receipt_backed_completed(
         or not outcome.assistant_content.strip()
     ):
         return False
+    # A durable child may legitimately exist only to reason or return a
+    # compact textual result.  ``_durable_task_evidence_satisfied`` admits the
+    # no-receipt case only when the objective explicitly forbids tools and has
+    # no write/test obligation; all effectful objectives remain fail-closed.
     return _durable_task_evidence_satisfied(proposal_state)
 
 
@@ -1065,11 +1093,16 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
             return StatePatch({"values": _merged_values(state, {"workflow_status": "cancelled", "cancel_reason": "dynamic_tool_rejected"})})
         if action == "continue_without":
             calls = [call for call in calls if call.stable_call_id not in review_ids]
+            reviewed_by_id = {
+                str(item["stable_call_id"]): item for item in review
+            }
             skipped = {
                 call_id: {
                     "stable_call_id": call_id,
+                    "tool_name": str(reviewed_by_id[call_id]["tool_name"]),
                     "status": "failed",
                     "code": "unsupported_dynamic_tool",
+                    "retryable": False,
                 }
                 for call_id in review_ids
             }
@@ -1225,7 +1258,7 @@ async def tool_execution_handler(state: WorkflowState, context: WorkflowContext)
                 ],
             }
         )
-    else:
+    elif outcome.assistant_content:
         messages.append(
             {
                 "role": "assistant",
@@ -1373,6 +1406,24 @@ async def test_handler(state: WorkflowState, context: WorkflowContext) -> StateP
         }
     else:
         result = {"passed": True, "evidence_refs": []}
+    output_contract_port = context.ports.get("output_contract")
+    if (
+        str(effective.get("workflow_name") or "") == "durable_task"
+        and output_contract_port is not None
+    ):
+        contract_result = await _call(
+            output_contract_port,
+            method="audit",
+        )
+        if not isinstance(contract_result, Mapping):
+            raise TypeError("output contract audit must return a JSON object")
+        contract_payload = copy.deepcopy(dict(contract_result))
+        result["output_contract"] = contract_payload
+        result["passed"] = bool(result.get("passed", False)) and bool(
+            contract_payload.get("passed", False)
+        )
+        if not bool(contract_payload.get("passed", False)):
+            result["failure_code"] = "task_output_contract_failed"
     validate_json_value(result)
     evidence = [str(value) for value in result.get("evidence_refs", [])]
     proposal = proposal_state.to_dict()
@@ -1395,6 +1446,13 @@ async def audit_handler(state: WorkflowState, context: WorkflowContext) -> State
         "incomplete_todo_ids": incomplete,
         "reason": "complete" if test_passed and not incomplete else ("incomplete_todos" if incomplete else "tests_failed"),
     }
+    if isinstance(test_result, Mapping):
+        if isinstance(test_result.get("output_contract"), Mapping):
+            audit["output_contract"] = copy.deepcopy(
+                dict(test_result["output_contract"])
+            )
+        if test_result.get("failure_code"):
+            audit["failure_code"] = str(test_result["failure_code"])
     evaluator = context.ports.get("evaluator")
     if evaluator is not None and hasattr(evaluator, "audit"):
         override = await _call(evaluator, copy.deepcopy(audit), proposal_state, method="audit")

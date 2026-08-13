@@ -2424,6 +2424,43 @@ class WorkflowService:
             self._decision_dict(item)
             for item in await self.human_store.list_open_decisions(run_id=run_id)
         ]
+        # Native Harness children persist their suspension boundary in
+        # ``execution_decisions``.  ContextTrace is also the recovery UI for
+        # those execution-owned workflow runs, so hiding that second decision
+        # store leaves a real child permanently parked after restart even
+        # though the inspector can see the waiting run.  Project the same
+        # immutable decision fence here; resolution is routed back through the
+        # RunKernel in ``main.py`` rather than the legacy human store.
+        list_execution_decisions = getattr(
+            self._owner_uow, "list_open_decision_projections", None
+        )
+        if callable(list_execution_decisions):
+            for projection in await list_execution_decisions(str(run["session_id"])):
+                decision = projection["decision"]
+                request = decision.request
+                if request.run_id != run_id:
+                    continue
+                raw_prompt = _plain(request.prompt)
+                nested_prompt = raw_prompt.get("prompt")
+                display_prompt = (
+                    dict(nested_prompt)
+                    if isinstance(nested_prompt, Mapping)
+                    else raw_prompt
+                )
+                decisions.append(
+                    {
+                        "decision_id": request.decision_id,
+                        "run_id": request.run_id,
+                        "kind": request.kind.value,
+                        "status": decision.status.value,
+                        "prompt": display_prompt,
+                        "nonce": request.nonce,
+                        "version": decision.decision_version,
+                        "expires_at": request.expires_at,
+                        "created_at": decision.created_at,
+                        "execution_decision": True,
+                    }
+                )
         deliveries = await self.list_deliveries(run_id=run_id)
         delivery_aggregate = await self.outbox.delivery_aggregate(run_id)
         return {

@@ -74,6 +74,19 @@ def test_provider_failure_message_ref_preserves_safe_balance_diagnostic() -> Non
     )
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "tool_activation_revision_conflict",
+        "tool_activation_scope_conflict",
+    ],
+)
+def test_provider_failure_message_ref_preserves_safe_runtime_code(code: str) -> None:
+    assert _provider_failure_message_ref(RuntimeError(code)) == (
+        f"workflow_node:llm_proposal:{code}"
+    )
+
+
 def test_llm_proposal_node_retries_transient_provider_failures() -> None:
     node = next(
         item
@@ -238,12 +251,20 @@ class _ProgressRecorder:
         self.events.append((identity.node_id, transition))
 
 
-def _context(proposer, dispatch, evaluator=None, progress=None) -> WorkflowContext:
+def _context(
+    proposer,
+    dispatch,
+    evaluator=None,
+    progress=None,
+    output_contract=None,
+) -> WorkflowContext:
     ports = {"llm": proposer, "tool": dispatch}
     if evaluator is not None:
         ports["evaluator"] = evaluator
     if progress is not None:
         ports["progress"] = progress
+    if output_contract is not None:
+        ports["output_contract"] = output_contract
     return WorkflowContext(ports=ports, request_id="request", turn_id="turn")
 
 
@@ -839,6 +860,49 @@ async def test_unknown_dynamic_tool_requires_durable_allow_once_decision() -> No
 
 
 @pytest.mark.asyncio
+async def test_continue_without_records_dynamic_tool_as_non_retryable() -> None:
+    dynamic = _prepared("dynamic-call", tool_name="mcp_filesystem_list_directory")
+    proposer = FakeProposer(
+        [
+            _outcome(dynamic, source="mcp", access="write"),
+            _outcome(
+                _prepared("dynamic-call-2", tool_name="mcp_filesystem_list_directory"),
+                source="mcp",
+                access="write",
+            ),
+        ]
+    )
+    saver = MemoryNativeStore()
+    context = _context(proposer, JournaledDispatch(), FakeEvaluator())
+    executable = CODE_COMPLEX_V1.bind(checkpointer=saver)
+
+    waiting = await executable.ainvoke(
+        _state("dynamic-decline-run", capability_snapshot=[]),
+        context,
+        thread_id="dynamic-decline-run",
+        run_id="dynamic-decline-run",
+    )
+    waiting_again = await executable.resume(
+        {_interrupt_id(waiting): {"action": "continue_without"}},
+        context,
+        thread_id="dynamic-decline-run",
+        run_id="dynamic-decline-run",
+    )
+
+    assert _interrupt_id(waiting_again)
+    result = saver.snapshot.state["values"]["proposal_state"]["committed_tool_results"][
+        "dynamic-call"
+    ]
+    assert result == {
+        "stable_call_id": "dynamic-call",
+        "tool_name": "mcp_filesystem_list_directory",
+        "status": "failed",
+        "code": "unsupported_dynamic_tool",
+        "retryable": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_process_local_control_tools_are_reported_but_never_dispatched(tmp_path) -> None:
     proposer = FakeProposer(
         [
@@ -1004,6 +1068,85 @@ async def test_durable_task_discovery_receipts_cannot_complete_effectful_todo(
 
 
 @pytest.mark.asyncio
+async def test_durable_task_explicit_tool_free_end_turn_completes_once(
+    tmp_path,
+) -> None:
+    request = "不要调用任何工具，仅返回 A_OK。"
+    proposer = FakeProposer(
+        [_outcome(content="A_OK", stop_reason="end_turn")]
+    )
+    runner, _, run_id = await _durable_runner(
+        tmp_path,
+        owner="durable-tool-free-terminal",
+    )
+
+    result = await runner.run(
+        run_id,
+        _durable_state(
+            run_id,
+            request=request,
+            plan_steps=[request],
+            proposal_budget=3,
+            fix_budget=0,
+        ),
+        _context(proposer, JournaledDispatch()),
+    )
+
+    assert result.status is WorkflowRunStatus.COMPLETED
+    assert len(proposer.states) == 1
+    report = result.output["values"]["delivery_intents"][0]["payload"]
+    assert report["status"] == "completed"
+    assert report["todos"][0]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_durable_task_output_contract_failure_blocks_completion(
+    tmp_path,
+) -> None:
+    class FailedOutputContract:
+        async def audit(self):
+            return {
+                "passed": False,
+                "missing_outputs": ["result.json"],
+                "retained_scratch": [],
+                "baseline_matches": True,
+            }
+
+    request = "不要调用任何工具，仅返回 A_OK。"
+    proposer = FakeProposer(
+        [_outcome(content="A_OK", stop_reason="end_turn")]
+    )
+    runner, _, run_id = await _durable_runner(
+        tmp_path,
+        owner="durable-output-contract-failure",
+    )
+
+    result = await runner.run(
+        run_id,
+        _durable_state(
+            run_id,
+            request=request,
+            plan_steps=[request],
+            proposal_budget=2,
+            fix_budget=0,
+        ),
+        _context(
+            proposer,
+            JournaledDispatch(),
+            output_contract=FailedOutputContract(),
+        ),
+    )
+
+    report = result.output["values"]["delivery_intents"][0]["payload"]
+    assert report["status"] == "blocked"
+    assert report["audit"]["reason"] == "tests_failed"
+    assert report["audit"]["failure_code"] == "task_output_contract_failed"
+    assert report["audit"]["output_contract"]["missing_outputs"] == [
+        "result.json"
+    ]
+
+
+@pytest.mark.asyncio
 async def test_durable_task_accepts_production_tool_outcome_state_as_receipt(
     tmp_path,
 ) -> None:
@@ -1107,6 +1250,16 @@ async def test_durable_task_one_shell_receipt_cannot_prove_change_and_verificati
 ) -> None:
     proposer = FakeProposer(
         [
+            _outcome(
+                _prepared(
+                    "unrelated-read-1",
+                    tool_name="mcp_filesystem_read_text_file",
+                ),
+                _prepared(
+                    "unrelated-read-2",
+                    tool_name="mcp_filesystem_read_text_file",
+                ),
+            ),
             _outcome(_prepared("copy-call", tool_name="run_shell")),
             _outcome(content="The requested fix and verification are complete.", stop_reason="end_turn"),
         ]
@@ -1122,7 +1275,7 @@ async def test_durable_task_one_shell_receipt_cannot_prove_change_and_verificati
             run_id,
             request="复制并修复 Godot 项目，然后启动验证",
             capability_snapshot=[_capability("run_shell")],
-            proposal_budget=2,
+            proposal_budget=3,
             fix_budget=0,
         ),
         _context(proposer, JournaledDispatch()),
@@ -1221,6 +1374,12 @@ async def test_rejected_proposal_error_is_fed_back_to_next_model_turn(
     )
 
     assert result.status is WorkflowRunStatus.COMPLETED
+    assert not any(
+        message.get("role") == "assistant"
+        and not str(message.get("content") or "")
+        and not message.get("tool_calls")
+        for message in proposer.states[1].messages
+    )
     feedback = proposer.states[1].messages[-1]
     assert feedback["role"] == "system"
     payload = json.loads(feedback["content"])

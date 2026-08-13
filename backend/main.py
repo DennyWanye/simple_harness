@@ -5163,6 +5163,10 @@ async def lifespan(app: FastAPI):
             ProposalPort as _RecoveryProposalPort,
             ToolDispatchPort as _RecoveryToolDispatchPort,
         )
+        from deskpet.workflows.output_contract import (
+            TaskOutputContractPort as _TaskOutputContractPort,
+            TaskOutputContractV1 as _TaskOutputContractV1,
+        )
         from deskpet.workflows.definitions.v1 import (
             code_complex_initial_state as _code_recovery_initial_state,
             durable_task_initial_state as _durable_task_initial_state,
@@ -5184,6 +5188,7 @@ async def lifespan(app: FastAPI):
                 turn_id=str(values["turn_id"]),
                 provider_snapshot=dict(values["provider_snapshot"]),
                 model_snapshot=dict(values["model_snapshot"]),
+                output_contract=dict(values.get("output_contract") or {}),
             )
 
         def _durable_task_state_factory(**values):
@@ -5202,6 +5207,7 @@ async def lifespan(app: FastAPI):
                 turn_id=str(values["turn_id"]),
                 provider_snapshot=dict(values["provider_snapshot"]),
                 model_snapshot=dict(values["model_snapshot"]),
+                output_contract=dict(values.get("output_contract") or {}),
             )
 
         async def _code_recovery_context_factory(row, start_payload):
@@ -5215,6 +5221,15 @@ async def lifespan(app: FastAPI):
             )
             shim = _RecoveryShim(provider=provider)
             session_id = str(row.get("session_id") or "default")
+            workflow_name = str(row.get("workflow_name") or "code_complex")
+            from deskpet.harness.adapters.legacy_execution_migration import (
+                resolve_frozen_legacy_workspace,
+            )
+            workspace = await resolve_frozen_legacy_workspace(
+                row=row,
+                start_payload=start_payload,
+                session_db=service_context.get("session_db"),
+            )
             provider_name = str(
                 provider_snapshot.get("provider")
                 or provider_snapshot.get("provider_id")
@@ -5282,15 +5297,6 @@ async def lifespan(app: FastAPI):
                             request_id=request_id,
                         ) is None:
                             raise
-                workflow_name = str(row.get("workflow_name") or "code_complex")
-                from deskpet.harness.adapters.legacy_execution_migration import (
-                    resolve_frozen_legacy_workspace,
-                )
-                workspace = await resolve_frozen_legacy_workspace(
-                    row=row,
-                    start_payload=start_payload,
-                    session_db=service_context.get("session_db"),
-                )
                 from deskpet.tools.capabilities import canonical_hash
 
                 scope_hash = canonical_hash(
@@ -5349,49 +5355,75 @@ async def lifespan(app: FastAPI):
                 if prepared_tool_set is not None
                 else None
             )
+            output_contract = None
+            output_contract_port = None
+            if workflow_name == "durable_task":
+                raw_output_contract = start_payload.get("output_contract")
+                if isinstance(raw_output_contract, dict):
+                    output_contract = _TaskOutputContractV1.from_dict(
+                        raw_output_contract
+                    )
+                    if Path(output_contract.workspace_root) != Path(workspace):
+                        raise RuntimeError(
+                            "durable task output contract workspace mismatch"
+                        )
+                    output_contract_port = _TaskOutputContractPort(
+                        output_contract
+                    )
+                elif start_payload.get("capability_builder") is None:
+                    # Compatibility read for Runs created before
+                    # task-output-contract-v1 shipped. New durable-task launches
+                    # are rejected by the host unless they carry a frozen
+                    # contract, but making an old checkpoint unrecoverable would
+                    # turn a safety upgrade into data loss.
+                    logger.warning(
+                        "durable_task_legacy_output_contract_missing",
+                        run_id=str(row.get("run_id") or ""),
+                        root_run_id=str(row.get("root_run_id") or ""),
+                    )
+            ports = {
+                "llm": _RecoveryProposalPort(
+                    shim,
+                    deskpet_tool_registry_v2,
+                    session_id=session_id,
+                    provider_name=provider_name,
+                    model_name=model_name,
+                    profile_key=f"workflow.{workflow_name}",
+                    allowed_tools=allowed_tools,
+                    context_os_v1=context_os_enabled,
+                    prepared_tool_set=prepared_tool_set,
+                    eligibility=eligibility,
+                    execution_context=execution_context,
+                    capability_scope_store=service_context.get(
+                        "tool_capability_scope_store"
+                    ),
+                    runtime_tool_state=runtime_tool_state,
+                    dispatch_fence_acquirer=service_context.get(
+                        "run_execution_fence_acquirer"
+                    ),
+                    provider_invocation_coordinator=service_context.get(
+                        "provider_invocation_coordinator"
+                    ),
+                    context_compressor=service_context.get(
+                        "context_compressor"
+                    ),
+                    output_contract=output_contract,
+                ),
+                "tool": _RecoveryToolDispatchPort(
+                    deskpet_tool_registry_v2,
+                    session_id=session_id,
+                    execution_context=execution_context,
+                    runtime_tool_state=runtime_tool_state,
+                    workflow_name=workflow_name,
+                    dispatch_fence_acquirer=service_context.get(
+                        "run_execution_fence_acquirer"
+                    ),
+                ),
+            }
+            if output_contract_port is not None:
+                ports["output_contract"] = output_contract_port
             return WorkflowContext(
-                ports={
-                    "llm": _RecoveryProposalPort(
-                        shim,
-                        deskpet_tool_registry_v2,
-                        session_id=session_id,
-                        provider_name=provider_name,
-                        model_name=model_name,
-                        profile_key=(
-                            f"workflow.{str(row.get('workflow_name') or 'code_complex')}"
-                        ),
-                        allowed_tools=allowed_tools,
-                        context_os_v1=context_os_enabled,
-                        prepared_tool_set=prepared_tool_set,
-                        eligibility=eligibility,
-                        execution_context=execution_context,
-                        capability_scope_store=service_context.get(
-                            "tool_capability_scope_store"
-                        ),
-                        runtime_tool_state=runtime_tool_state,
-                        dispatch_fence_acquirer=service_context.get(
-                            "run_execution_fence_acquirer"
-                        ),
-                        provider_invocation_coordinator=service_context.get(
-                            "provider_invocation_coordinator"
-                        ),
-                        context_compressor=service_context.get(
-                            "context_compressor"
-                        ),
-                    ),
-                    "tool": _RecoveryToolDispatchPort(
-                        deskpet_tool_registry_v2,
-                        session_id=session_id,
-                        execution_context=execution_context,
-                        runtime_tool_state=runtime_tool_state,
-                        workflow_name=str(
-                            row.get("workflow_name") or "code_complex"
-                        ),
-                        dispatch_fence_acquirer=service_context.get(
-                            "run_execution_fence_acquirer"
-                        ),
-                    ),
-                },
+                ports=ports,
                 request_id=str(row.get("request_id") or ""),
                 turn_id=str(row.get("turn_id") or ""),
             )
@@ -7360,6 +7392,26 @@ def _remap_chat_peer_group(transport_sid: str, effective_sid: str) -> None:
     task_session_manager.remap_peer_group(sid, effective_sid)
 
 
+def _resolve_chat_source_session(
+    transport_sid: str,
+    requested_session_id: object,
+) -> str:
+    """Resolve the user-visible source Session for a new conversation.
+
+    An empty ChatView sends no session id. The WebSocket transport id is a
+    stable window identity (often ``message-panel-main``), not a model-binding
+    authority. In that case inherit from the transport's currently mapped
+    peer group so a new topic follows the model the user was actually using.
+    """
+
+    requested = str(requested_session_id or "").strip()
+    if requested:
+        return requested
+    transport = str(transport_sid or "default")
+    mapped = str(_chat_peer_groups.get(transport) or "").strip()
+    return mapped or _initial_chat_peer_group(transport)
+
+
 def _resolve_chat_task_scope(
     *,
     base_sid: str,
@@ -8348,6 +8400,119 @@ async def _signal_product_harness_decision(
     )
     _harness_runtime.reconciler.trigger()
     return receipt
+
+
+async def _try_resolve_execution_workflow_decision(
+    ws: WebSocket,
+    *,
+    session_id: str,
+    raw: Mapping[str, Any],
+    workflow_service: Any,
+) -> bool:
+    """Route ContextTrace decisions owned by the execution ledger.
+
+    ``workflow_runs`` and ``execution_runs`` intentionally share the same
+    public inspector, but their decision authorities are different.  The
+    legacy workflow IPC only knows ``workflow_decisions``; execution-owned
+    children must be fenced and resumed through RunKernel.  Return ``False``
+    when the id is not an open execution decision so legacy IPC remains the
+    compatibility fallback.
+    """
+
+    if str(raw.get("type") or "") != "workflow_decision_resolve":
+        return False
+    payload = raw.get("payload")
+    if not isinstance(payload, Mapping):
+        return False
+    decision_id = str(payload.get("decision_id") or "").strip()
+    if not decision_id:
+        return False
+    execution_uow = getattr(workflow_service, "execution_uow", None)
+    if execution_uow is None or not hasattr(
+        execution_uow, "list_open_decision_projections"
+    ):
+        return False
+    projection = next(
+        (
+            item
+            for item in await execution_uow.list_open_decision_projections(
+                session_id
+            )
+            if item["decision"].request.decision_id == decision_id
+        ),
+        None,
+    )
+    if projection is None and hasattr(
+        execution_uow, "get_open_decision_projection_by_id"
+    ):
+        projection = await execution_uow.get_open_decision_projection_by_id(
+            decision_id
+        )
+    if projection is None:
+        return False
+    decision = projection["decision"]
+    authoritative_session_id = str(projection["session_id"])
+    response = payload.get("response")
+    normalized_response = (
+        dict(response)
+        if isinstance(response, Mapping)
+        else {"action": str(response or "cancel")}
+    )
+    try:
+        receipt = await _signal_product_harness_decision(
+            authoritative_session_id,
+            {
+                "run_id": decision.request.run_id,
+                "decision_id": decision.request.decision_id,
+                "nonce": str(payload.get("nonce") or ""),
+                "version": payload.get("expected_version"),
+            },
+            normalized_response,
+        )
+    except Exception as exc:  # noqa: BLE001
+        await ws.send_json(
+            {
+                "type": "workflow_ipc_error",
+                "request_type": "workflow_decision_resolve",
+                "request_id": raw.get("request_id"),
+                "ok": False,
+                "error": {
+                    "code": getattr(exc, "code", type(exc).__name__),
+                    "message": str(exc),
+                    "retryable": False,
+                },
+                "payload": {
+                    "error": {
+                        "code": getattr(exc, "code", type(exc).__name__),
+                        "message": str(exc),
+                        "retryable": False,
+                    }
+                },
+            }
+        )
+        return True
+    await ws.send_json(
+        {
+            "type": "workflow_decision_resolve_response",
+            "request_id": raw.get("request_id"),
+            "ok": True,
+            "payload": {
+                "decision_id": decision.request.decision_id,
+                "run_id": decision.request.run_id,
+                "status": "accepted",
+                "audit": "Execution decision recorded by RunKernel",
+                "duplicate": bool(getattr(receipt, "duplicate", False)),
+            },
+        }
+    )
+    logger.info(
+        "execution_workflow_decision_resolved",
+        session_id=authoritative_session_id,
+        run_id=decision.request.run_id,
+        decision_id=decision.request.decision_id,
+        action=normalized_response.get("action"),
+    )
+    return True
 
 
 async def _run_product_harness_continuation(
@@ -11359,15 +11524,50 @@ async def control_channel(ws: WebSocket):
             elif msg_type == "permission_response":
                 payload = raw.get("payload", {}) or {}
                 target_sid = str(payload.get("session_id") or session_id)
-                receipt = await _signal_product_harness_decision(
-                    target_sid,
-                    payload,
-                    {"decision": str(payload.get("decision") or "deny")},
-                )
+                decision_id = payload.get("decision_id") or payload.get("request_id")
+                try:
+                    receipt = await _signal_product_harness_decision(
+                        target_sid,
+                        payload,
+                        {"decision": str(payload.get("decision") or "deny")},
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "permission_response_rejected",
+                        decision_id=decision_id,
+                        error_type=type(exc).__name__,
+                        error=str(exc),
+                    )
+                    await ws.send_json(
+                        {
+                            "type": "permission_response_applied",
+                            "payload": {
+                                "ok": False,
+                                "request_id": payload.get("request_id"),
+                                "decision_id": decision_id,
+                                "error": {
+                                    "code": getattr(exc, "code", type(exc).__name__),
+                                    "message": str(exc),
+                                },
+                            },
+                        }
+                    )
+                    continue
                 logger.info(
                     "permission_response_applied",
-                    decision_id=payload.get("decision_id") or payload.get("request_id"),
+                    decision_id=decision_id,
                     duplicate=receipt.duplicate,
+                )
+                await ws.send_json(
+                    {
+                        "type": "permission_response_applied",
+                        "payload": {
+                            "ok": True,
+                            "request_id": payload.get("request_id"),
+                            "decision_id": decision_id,
+                            "duplicate": receipt.duplicate,
+                        },
+                    }
                 )
 
             elif msg_type == "external_wait_response":
@@ -13027,7 +13227,10 @@ async def control_channel(ws: WebSocket):
                 _attachment_blocks = _normalize_attachment_blocks(
                     _payload.get("attachments")
                 )
-                _msg_sid = _payload.get("session_id") or session_id
+                _msg_sid = _resolve_chat_source_session(
+                    session_id,
+                    _payload.get("session_id"),
+                )
                 _base_msg_sid = _msg_sid
                 _scope_decision = _resolve_chat_task_scope(
                     base_sid=_msg_sid,
@@ -13421,6 +13624,13 @@ async def control_channel(ws: WebSocket):
                         },
                     })
                 else:
+                    if await _try_resolve_execution_workflow_decision(
+                        ws,
+                        session_id=session_id,
+                        raw=raw,
+                        workflow_service=workflow_service,
+                    ):
+                        continue
                     start_workflow_ipc_dispatch(
                         workflow_service,
                         raw,

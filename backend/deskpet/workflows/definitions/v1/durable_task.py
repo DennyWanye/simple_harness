@@ -71,6 +71,7 @@ def initial_state(
     turn_id: str = "",
     provider_snapshot: Mapping[str, JsonValue] | None = None,
     model_snapshot: Mapping[str, JsonValue] | None = None,
+    output_contract: Mapping[str, JsonValue] | None = None,
 ) -> WorkflowState:
     state = _legacy_initial_state(
         request=request,
@@ -91,6 +92,7 @@ def initial_state(
         turn_id=turn_id,
         provider_snapshot=provider_snapshot,
         model_snapshot=model_snapshot,
+        output_contract=output_contract,
     )
     state["workflow_name"] = WORKFLOW_NAME
     return state

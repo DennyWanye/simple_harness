@@ -28,9 +28,41 @@ class FakePanelChannel {
   }
 }
 
+class ReconnectingPanelChannel extends FakePanelChannel {
+  state: "disconnected" | "connecting" | "connected" = "connecting";
+  private stateListener:
+    | ((state: "disconnected" | "connecting" | "connected") => void)
+    | null = null;
+
+  onStateChange = (
+    listener: (state: "disconnected" | "connecting" | "connected") => void,
+  ) => {
+    this.stateListener = listener;
+    return () => {
+      if (this.stateListener === listener) this.stateListener = null;
+    };
+  };
+
+  connect() {
+    this.state = "connected";
+    this.stateListener?.("connected");
+  }
+}
+
 afterEach(cleanup);
 
 describe("usePermissionRequests", () => {
+  it("requests pending decisions after a channel finishes connecting", () => {
+    const channel = new ReconnectingPanelChannel();
+    renderHook(() => usePermissionRequests(channel));
+
+    expect(channel.sent).toEqual([]);
+    act(() => channel.connect());
+    expect(channel.sent).toEqual([
+      { type: "permissions_pending_list", payload: {} },
+    ]);
+  });
+
   it("restores pending requests after reconnect and de-duplicates live replay", () => {
     const channel = new FakePanelChannel();
     const { result } = renderHook(() => usePermissionRequests(channel));
@@ -76,6 +108,14 @@ describe("usePermissionRequests", () => {
         run_id: "run-1",
       },
     });
+    expect(result.current.current?.request_id).toBe("request-1");
+    expect(result.current.resolving).toBe(true);
+    act(() => {
+      channel.emit({
+        type: "permission_response_applied",
+        payload: { ok: true, request_id: "request-1" },
+      });
+    });
     expect(result.current.current?.request_id).toBe("request-2");
   });
 
@@ -106,12 +146,55 @@ describe("usePermissionRequests", () => {
     expect(result.current.current?.decision_id).toBe("decision-1");
 
     act(() => result.current.resolve("deny"));
+    act(() => {
+      channel.emit({
+        type: "permission_response_applied",
+        payload: { ok: true, decision_id: "decision-1" },
+      });
+    });
     expect(result.current.current?.decision_id).toBe("decision-2");
 
     act(() => {
       channel.emit({ type: "permission_request", payload: first });
     });
     expect(result.current.current?.decision_id).toBe("decision-2");
+  });
+
+  it("keeps the popup open when the backend rejects the decision", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    act(() => {
+      channel.emit({
+        type: "permission_request",
+        payload: {
+          request_id: "request-retry",
+          decision_id: "decision-retry",
+          category: "shell",
+          summary: "retry me",
+          params: {},
+          default_action: "prompt",
+          dangerous: false,
+          session_id: "session-1",
+          run_id: "run-1",
+        },
+      });
+    });
+
+    act(() => result.current.resolve("allow"));
+    act(() => {
+      channel.emit({
+        type: "permission_response_applied",
+        payload: {
+          ok: false,
+          decision_id: "decision-retry",
+          error: { message: "decision fence expired" },
+        },
+      });
+    });
+
+    expect(result.current.current?.decision_id).toBe("decision-retry");
+    expect(result.current.resolving).toBe(false);
+    expect(result.current.resolveError).toBe("decision fence expired");
   });
 
   it("clears the permission pill when a live Run decision is sent", () => {
@@ -141,6 +224,13 @@ describe("usePermissionRequests", () => {
       });
     });
     act(() => result.current.resolve("allow"));
+    expect(result.current.resolving).toBe(true);
+    act(() => {
+      channel.emit({
+        type: "permission_response_applied",
+        payload: { ok: true, decision_id: "decision-resume" },
+      });
+    });
 
     expect(useSessionsStore.getState().sessions["session-resume"]).toMatchObject({
       status: "running",
@@ -149,5 +239,83 @@ describe("usePermissionRequests", () => {
         "run-resume": { status: "running", inflight: true },
       },
     });
+  });
+
+  it("waits for interrupt ACK and clears every queued decision for that Run", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    const first = {
+      request_id: "request-stop-1",
+      decision_id: "decision-stop-1",
+      category: "shell",
+      summary: "first",
+      params: {},
+      default_action: "prompt",
+      dangerous: false,
+      session_id: "session-stop",
+      run_id: "run-stop",
+    };
+    const second = {
+      ...first,
+      request_id: "request-stop-2",
+      decision_id: "decision-stop-2",
+      summary: "second",
+    };
+
+    act(() => {
+      channel.emit({ type: "permission_request", payload: first });
+      channel.emit({ type: "permission_request", payload: second });
+    });
+    act(() => result.current.stopCurrentRun());
+
+    expect(channel.sent.at(-1)).toEqual({
+      type: "chat_v2_interrupt",
+      payload: { session_id: "session-stop", run_id: "run-stop" },
+    });
+    expect(result.current.current?.decision_id).toBe("decision-stop-1");
+    expect(result.current.resolving).toBe(true);
+
+    act(() => {
+      channel.emit({
+        type: "chat_v2_interrupted",
+        payload: { run_id: "run-stop", cancelled: true },
+      });
+    });
+    expect(result.current.current).toBeNull();
+    expect(result.current.resolving).toBe(false);
+
+    act(() => {
+      channel.emit({ type: "permission_request", payload: first });
+      channel.emit({ type: "permission_request", payload: second });
+    });
+    expect(result.current.current).toBeNull();
+  });
+
+  it("keeps the popup open when interrupt ACK reports cancellation failure", () => {
+    const channel = new FakePanelChannel();
+    const { result } = renderHook(() => usePermissionRequests(channel));
+    act(() => {
+      channel.emit({
+        type: "permission_request",
+        payload: {
+          request_id: "request-stop-failed",
+          category: "shell",
+          summary: "stop me",
+          params: {},
+          default_action: "prompt",
+          dangerous: false,
+          session_id: "session-stop",
+          run_id: "run-stop-failed",
+        },
+      });
+      result.current.stopCurrentRun();
+      channel.emit({
+        type: "chat_v2_interrupted",
+        payload: { run_id: "run-stop-failed", cancelled: false },
+      });
+    });
+    expect(result.current.current?.run_id).toBe("run-stop-failed");
+    expect(result.current.resolving).toBe(false);
+    expect(result.current.resolveError).toBe("停止任务失败，请重试");
   });
 });

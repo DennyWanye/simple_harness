@@ -544,6 +544,62 @@ UNKNOWN，不使用同会话全局 receipt。第三个 fresh profile 真机 Run
 `denied`，延迟复查仍为 `child_count=0`、`ticket_count=0`，事件仅有 waiting/resumed/final，界面
 明确回复 `authorization_denied` 且未创建 durable child。相关后端扩大回归 `328 passed`。
 
+### 一次性授权、确认 ACK 与纯文本 child 收敛（2026-08-13）
+
+Manual 模式的“允许一次”现在严格只覆盖当前 prepared call：只有显式
+`allow_session` 才把 TaskGrant 带入 continuation；每次人工决策又以 durable `decision_id`
+形成独立 grant instance，连续两次同 selector 的 `allow` 不会复用上一次授权，也不会再因
+确定性 TaskGrant ID 碰撞报 `proposed TaskGrant identity belongs to another grant`。Auto 模式
+仍保持无人工 decision 的确定性幂等身份。
+
+权限前端不再点击后立即假定成功。`permission_response` 必须收到 backend 的
+`permission_response_applied` ACK 才清除弹窗并推进任务；过期、冲突或策略拒绝会返回显式失败
+ACK，弹窗保留并展示原因。ControlChannel 每次重新连接都会重新查询 durable pending decisions，
+因此应用重启或短暂断线不会永久丢失仍有效的审批请求。“停止当前任务”现在只发送
+`chat_v2_interrupt`，不再额外伪造一次 deny；收到 cancelled ACK 后按 root Run 清除当前及排队中的
+decision，失败时保留弹窗和错误，消除了 Run 已停止但旧权限弹窗仍留在界面的状态分裂。
+
+`workflow.durable_task` 对显式“禁止调用工具、只返回文本”且没有写入/测试义务的 objective，
+现在允许一次 `end_turn` 作为完成证据；存在任何正向写入、执行或测试要求时仍要求 receipt/effect，
+继续 fail closed。macOS fresh-profile 真机 `kimi-k3` root
+`4a976f0aa972525a899753cd7c630fec` 先后两次弹出“允许一次”，两个 decision
+`84a44b…`、`d31609…` 均记录 `permission_response_applied/duplicate=false`，child
+`child-a0a1262669335fafdcf779b61001c5ff` 与
+`child-feea8f055f616ffa1920c22d85968034` 均在一次无工具 `end_turn` 后 completed，root 最终
+completed 并在 UI 显示 `A_OK / B_OK`、回到“空闲”。独立重复授权 root
+`84e99cc1d7c75f50b8421e37096d4107` 与 child
+`child-c12007c76d8ed42c91a317bee8336c90` 也 completed。
+
+普通 `workflow.durable_task` 现在必须在 `workflow_spawn` 时声明精确文件 `output_refs` 与可选目录
+`scratch_refs`。Host 在 child 创建前冻结 `task-output-contract-v1`（workspace、声明引用、非可变文件
+基线摘要），并把它绑定进 launch ticket、child start snapshot 与恢复状态；模型不能在 child 内拓宽。
+`file_write/edit_file/register_artifacts` 等带 prepared target 的调用在执行前拒绝越界路径，产物注册又
+只能引用声明 output；`run_shell` 属于不透明命令，不能可靠预判其内部所有副作用，因此允许在声明
+scratch/output 内工作，并在 final test gate 对整个非可变工作区做内容摘要复核。终审同时要求所有
+output 为非符号链接普通文件、scratch 全清、基线未变，否则以 `task_output_contract_failed` 阻断交付。
+新建 Run 严格必需契约；升级前的历史 Run 只读兼容恢复并记录
+`durable_task_legacy_output_contract_missing`，避免安全升级造成历史任务数据丢失。契约冻结、路径拒绝、
+Artifact 拒绝和终审均有带 `contract_id` 的结构化日志。
+
+首次真机复验暴露 profile adapter 丢弃已冻结契约：root `ed83c92abd3b53a5b3a9cd8396651029` / child
+`child-379851aaa4a3cd40bcb0ad48310f1485` 被立即停止并保留 FAIL 记录；修复 adapter 跨层传递后，
+`kimi-k3` root `1be3666915615161b1a9fac699aaf3e8` / child
+`child-f16d23bf03ac0c5f152609abc12f12df` 真机 completed。child 在声明 scratch 内生成并运行 Python，
+产出 `summary.json`、`REPORT.md`，校验总额 `422.00`，删除 scratch 并仅注册两项 Artifact；持久化
+审计为 `passed=true / baseline_matches=true / missing_outputs=[] / retained_scratch=[]`，UI 显示两张
+可打开 ArtifactCard，根任务独立只读复核后 completed。新会话同时验证从当前可见历史会话继承
+`kimi-k3`，不再因 transport 默认 Session 回退到 `sf-glm-5.2`。
+
+当前相关回归与相邻 migration 合并为后端 `300 passed`、前端权限/ControlChannel/聊天
+`59 passed`，TypeScript、Python
+编译、execution build manifest、diff check 与 Tauri debug bundle build PASS。边界仍明确：直接工具
+调用可以在执行前阻断；任意 shell 在同一进程内“创建后删除”的瞬时文件若最终无残留，只有接入
+OS 级文件事件审计才能完整观测，当前契约不把 shell 文本解析伪装成可靠安全边界。
+
+同轮扩大回归还修复了 `state.db` 旧 marker 修复路径的版本回退：v27
+`019_provider_fault_correlation_v27.sql` 已持久化时，补跑较早 v15/v16 migration 后会从 durable
+marker 恢复到 27，不再错误停在 26。
+
 历史消息的 workflow 卡以 parent `root_run_id` 查找 terminal Session projection；若 child summary
 仍缓存为 running，父 root 的 completed/failed/cancelled 会覆盖显示，并与同源 public task trace
 合并为一张卡。没有可信开始/结束时间时显示“耗时未记录”，不再把缺失计时伪装为“0 秒”。真机在

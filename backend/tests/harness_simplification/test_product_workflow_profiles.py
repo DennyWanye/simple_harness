@@ -94,6 +94,37 @@ def test_durable_task_profile_rejects_lossy_payload(tmp_path) -> None:
         build(request("durable.task.v1", {"text": "fix it"}))
 
 
+def test_durable_task_profile_preserves_host_output_contract(tmp_path) -> None:
+    profiles = build_product_profile_registry(Registry(), blob_root=tmp_path).specs
+    build = profiles["workflow.durable_task"].request_factory
+    assert build is not None
+    contract = {
+        "schema_version": 1,
+        "workspace_root": str(tmp_path),
+        "output_refs": ["summary.json"],
+        "scratch_refs": [".scratch/"],
+        "baseline_digest": "a" * 64,
+    }
+    payload = build(
+        request(
+            "workflow.durable_task",
+            {
+                "request": "summarize",
+                "session_ref": {},
+                "capability_snapshot": [],
+                "messages": [{"role": "user", "content": "summarize"}],
+                "provider_snapshot": {},
+                "model_snapshot": {},
+                "started_at": 1.0,
+                "request_id": "request-1",
+                "turn_id": "turn-1",
+                "output_contract": contract,
+            },
+        )
+    )
+    assert payload["output_contract"] == contract
+
+
 def test_capability_builder_is_a_bounded_durable_task_profile(tmp_path) -> None:
     profiles = build_product_profile_registry(Registry(), blob_root=tmp_path).specs
     builder = profiles["workflow.capability_build"]

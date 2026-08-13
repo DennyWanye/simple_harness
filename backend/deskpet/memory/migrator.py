@@ -496,7 +496,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            _MESSAGE_ARCHIVE_PROJECTION_SCHEMA_VERSION
+            _PROVIDER_FAULT_CORRELATION_SCHEMA_VERSION
+            if _PROVIDER_FAULT_CORRELATION_MIGRATION in durable_markers
+            else _MESSAGE_ARCHIVE_PROJECTION_SCHEMA_VERSION
             if _MESSAGE_ARCHIVE_PROJECTION_MIGRATION in durable_markers
             else _PROVIDER_WORKLOAD_AUDIT_SCHEMA_VERSION
             if _PROVIDER_WORKLOAD_AUDIT_MIGRATION in durable_markers

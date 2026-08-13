@@ -95,6 +95,8 @@ export type WorkflowDecisionView = {
   expires_at?: number | null;
   created_at: number;
   options?: WorkflowDecisionOption[];
+  /** Decision is owned by the canonical execution ledger, not the legacy store. */
+  execution_decision?: boolean;
 };
 
 export type WorkflowDeliveryView = {

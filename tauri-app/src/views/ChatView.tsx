@@ -1020,12 +1020,9 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
       <PermissionPopup
         request={permissionRequests.current}
         onResolve={permissionRequests.resolve}
-        onStopRun={(runId) => {
-          controlWS.send({
-            type: "chat_v2_interrupt",
-            payload: { session_id: activeSid, run_id: runId },
-          });
-        }}
+        resolving={permissionRequests.resolving}
+        resolveError={permissionRequests.resolveError}
+        onStopRun={permissionRequests.stopCurrentRun}
       />
     </section>
   );

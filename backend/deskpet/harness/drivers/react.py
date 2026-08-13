@@ -302,7 +302,10 @@ class ReActDriver:
             confirmed=confirmed,
             decision_expires_at=decision.expires_at,
             explicit_only=explicit_only,
-            decision_id=decision.decision_id if explicit_only else None,
+            # Every manual confirmation needs its own TaskGrant identity even
+            # for ordinary tools.  ``allow_session`` reuses that committed
+            # grant through completion state; ``allow`` deliberately does not.
+            decision_id=decision.decision_id if confirmed else None,
             decision_nonce=decision.nonce if explicit_only else None,
             confirm_only_snapshot_ref=(
                 boundary.confirm_only_snapshot_ref if explicit_only else None
@@ -522,6 +525,19 @@ class ReActDriver:
         tokens = {f"w:{item}" for item in words} | {
             f"c:{item}" for item in cjk_tokens
         }
+        # File and path references are stronger delegation anchors than prose
+        # tokens.  Providers commonly retry the same failed child after adding
+        # a long diagnosis or input summary; that extra prose can dilute the
+        # token-overlap score even though the child's concrete input/output
+        # contract is unchanged.  Keep only hashes in continuation state.
+        anchors = {
+            match.group(0).strip("/.").rsplit("/", 1)[-1]
+            for match in re.finditer(
+                r"(?<![a-z0-9_.-])(?:[a-z0-9_.-]+/)*[a-z0-9_.-]+\.[a-z0-9]{1,12}(?![a-z0-9_.-])",
+                normalized,
+            )
+            if match.group(0).strip("/.")
+        }
         if not tokens:
             tokens = {"n:" + re.sub(r"\s+", " ", normalized).strip()}
         token_hashes = tuple(
@@ -537,6 +553,10 @@ class ReActDriver:
                 normalized_text.encode("utf-8")
             ).hexdigest(),
             "token_hashes": list(token_hashes),
+            "anchor_hashes": sorted(
+                hashlib.sha256(anchor.encode("utf-8")).hexdigest()
+                for anchor in anchors
+            ),
         }
 
     @staticmethod
@@ -549,6 +569,17 @@ class ReActDriver:
             return False
         if current.get("objective_hash") == previous.get("objective_hash"):
             return True
+        current_anchors = {
+            str(item) for item in current.get("anchor_hashes", ()) if str(item)
+        }
+        previous_anchors = {
+            str(item) for item in previous.get("anchor_hashes", ()) if str(item)
+        }
+        if len(current_anchors) >= 2 and len(previous_anchors) >= 2:
+            anchor_shared = len(current_anchors & previous_anchors)
+            anchor_larger = max(len(current_anchors), len(previous_anchors))
+            if anchor_shared / anchor_larger >= 0.9:
+                return True
         current_tokens = {
             str(item) for item in current.get("token_hashes", ()) if str(item)
         }
@@ -589,6 +620,12 @@ class ReActDriver:
             if not isinstance(raw, Mapping):
                 continue
             previous = dict(raw)
+            if (
+                previous.get("retryable") is False
+                and str(current.get("profile_key") or "")
+                == str(previous.get("profile_key") or "")
+            ):
+                return current, previous
             if cls._delegate_objectives_match(current, previous):
                 return current, previous
         return None
@@ -4419,6 +4456,13 @@ class ReActDriver:
             prepare_feedback = getattr(self._collaborator, 'prepare_tool_feedback', None)
             if callable(prepare_feedback):
                 state, messages = await prepare_feedback(boundary, state, messages)
+            deferred_continuations = [
+                dict(item)
+                for item in state.pop("deferred_user_continuations", ())
+                if isinstance(item, Mapping)
+            ]
+            if deferred_continuations:
+                messages = tuple(messages) + tuple(deferred_continuations)
             boundary = replace(boundary, canonical_messages=messages, completion_state=state, version=boundary.version + 1)
             await self._save_progress(boundary, recovery_lease=recovery_lease)
         retry_batch = self._pending_capability_retry_batch(boundary)
@@ -4477,6 +4521,12 @@ class ReActDriver:
                     child_run_id=signal.child_run_id,
                     command_id=signal.command_id,
                 )
+                if isinstance(value, Mapping):
+                    failure = value.get("error")
+                    if isinstance(failure, Mapping):
+                        signature["retryable"] = bool(
+                            failure.get("retryable", True)
+                        )
                 history.append(signature)
                 state["failed_delegate_objectives"] = history[
                     -self._DELEGATE_OBJECTIVE_HISTORY_LIMIT :
@@ -4960,6 +5010,14 @@ class ReActDriver:
                     if isinstance(item, Mapping)
                     and item.get("_deskpet_message_ref")
                 }
+                existing_refs.update(
+                    str(item.get("_deskpet_message_ref"))
+                    for item in boundary.completion_state.get(
+                        "deferred_user_continuations", ()
+                    )
+                    if isinstance(item, Mapping)
+                    and item.get("_deskpet_message_ref")
+                )
                 already_applied = message_ref in existing_refs
                 if already_applied:
                     updated = boundary
@@ -4968,14 +5026,28 @@ class ReActDriver:
                         "type": "user_continuation",
                         "message_ref": message_ref,
                     }
-                    messages = boundary.canonical_messages + (
-                        {
-                            "role": "user",
-                            "content": str(signal.content),
-                            "_deskpet_message_ref": message_ref,
-                        },
-                    )
                     state = copy.deepcopy(dict(boundary.completion_state))
+                    user_message = {
+                        "role": "user",
+                        "content": str(signal.content),
+                        "_deskpet_message_ref": message_ref,
+                    }
+                    if (
+                        boundary.pending_calls
+                        and not bool(state.get("model_backfilled"))
+                    ):
+                        deferred = [
+                            dict(item)
+                            for item in state.get(
+                                "deferred_user_continuations", ()
+                            )
+                            if isinstance(item, Mapping)
+                        ]
+                        deferred.append(user_message)
+                        state["deferred_user_continuations"] = deferred
+                        messages = boundary.canonical_messages
+                    else:
+                        messages = boundary.canonical_messages + (user_message,)
                     refs = list(state.get("user_continuation_refs") or ())
                     refs.append(message_ref)
                     state["user_continuation_refs"] = list(
@@ -5297,10 +5369,27 @@ class ReActDriver:
                         assert planned_authorization is not None
                         task_grant = planned_authorization.committed_task_grant
                         assert task_grant is not None
-                        state['task_grant_id'] = task_grant.task_grant_id
-                        state['authorization_policy_generation'] = (
-                            planned_authorization.policy_state.generation
+                        # The permission UI has two distinct positive choices:
+                        # ``allow`` authorizes only this prepared call, while
+                        # ``allow_session`` deliberately reuses the resulting
+                        # TaskGrant for later covered calls.  Internal policy
+                        # decisions use the legacy boolean vocabulary and must
+                        # keep their automatic grant reuse.
+                        explicit_decision = str(
+                            response.get('decision') or ''
+                        ).strip().casefold()
+                        reuse_task_grant = (
+                            'decision' not in response
+                            or explicit_decision == 'allow_session'
                         )
+                        if reuse_task_grant:
+                            state['task_grant_id'] = task_grant.task_grant_id
+                            state['authorization_policy_generation'] = (
+                                planned_authorization.policy_state.generation
+                            )
+                        else:
+                            state.pop('task_grant_id', None)
+                            state.pop('authorization_policy_generation', None)
                     boundary = replace(boundary, completion_state=state, pending_decision=None, version=boundary.version + 1)
                 else:
                     denied = NormalizedToolOutcome.failure(
