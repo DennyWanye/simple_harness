@@ -226,6 +226,30 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   `BEGIN IMMEDIATE` 内完成 signal CAS + continuation/event/payload + unique receipt，并补逐
   write-point crash/reopen matrix。
 - 狭挑战迭代 3：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
+- 实现复审迭代 4：发现草案只对 effect row 的历史 `fence_epoch` 做 CAS，未在
+  handoff transaction 查当前 `run_fences`；且 Executor 构造时 owner 可与 per-call runtime
+  owner 不一致。已冻结为同 transaction 同时校验当前 Runtime lease + 当前 active
+  RunFence row，两 lease 必须同 run/同 owner，Executor 用 per-call owner acquire。
+- 实现复审迭代 5：发现 `claim_runtime_activation` 与无条件 `RunFencePort.acquire`
+  分两个 transaction，旧 owner 可在中间过期/新 owner 接管后恢复，覆盖新 RunFence
+  造成活性故障。已冻结 `RunFencePort.acquire(run_id, execution_lease)` 在同 transaction
+  先校验 active Runtime lease 再处理 fence，Kernel/Tool 均传 per-call lease。同 active owner/lease
+  epoch acquire 幂等返回同一 run-level fence，不得每 Tool call 递增导致 Kernel terminal
+  fence 失效；只有新 runtime owner/epoch 接管才递增。执行性复审又补充 exact
+  `now` 参数与 `run_fences.runtime_lease_epoch`，避免真实时钟/虚拟时钟分裂，
+  并区分同 owner ID 的 runtime epoch+1 接管。待第五轮挑战。
+- 实现复审迭代 6：发现即使 Tool acquire 幂等返回 Kernel fence，现有 Executor
+  `finally release()` 仍会使 terminal fence 失效。修订为 Kernel 唯一 acquire/release run-level
+  fence，`DriverInvocation.run_fence` 与 execution lease 逐层传到 EffectExecutor；Tool 只验证/
+  消费，不 acquire/release。第三方窄挑战又要求 handoff 精确匹配
+  `run_fences.runtime_lease_epoch == execution_lease.epoch == run_fence.runtime_lease_epoch`，
+  阻止同 owner epoch+1 接管但尚未重取 fence 时拼接旧 fence。待第六轮挑战。
+- 实现复审迭代 7：第三方挑战发现同一“新 runtime lease 已 claim、新 fence
+  尚未 acquire”窗口还可被旧 owner 用旧 current fence 提交 terminal。已明确
+  `commit_root_terminal_with_deliveries(..., run_fence, execution_lease, now)` 在同一
+  transaction 校验 active runtime lease + current RunFence + runtime epoch 三方等式后才写
+  terminal/event/outbox，并补异 owner/同 owner epoch+1 两类窗口的零写回归。
+- 最终窄挑战：`PASS`，`NEW_CRITICAL_FINDINGS=0`。
 
 ## H11 — Runtime owner lease heartbeat（执行期静态闭包审计）
 

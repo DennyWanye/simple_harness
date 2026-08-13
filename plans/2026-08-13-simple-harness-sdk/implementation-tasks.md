@@ -225,13 +225,47 @@
   mark_effect_handed_off(..., run_fence, execution_lease)` 为必改 public Port；SQLite 实现在各自
   `BEGIN IMMEDIATE` 内先匹配 `workflow_leases(run_id, runtime.kernel, owner_id, epoch,
   expires_at > now)` 再执行 ledger CAS。Tool handoff 同时校验原 `RunFenceLease` 和
-  Runtime `ExecutionLease`，两者缺一拒绝。Provider/Tool post-handoff settle/reconcile 是唯一
+  Runtime `ExecutionLease`，两者缺一拒绝；不得只比较 effect row 中的历史
+  `fence_epoch`。同 transaction 必须查 `run_fences` 当前行为
+  `(run_id, execution_lease.owner_id, run_fence.epoch, active)`，并要求
+  `run_fence.run_id == execution_lease.run_id` 且 `run_fence.owner_id == execution_lease.owner_id`。
+  handoff 还必须同时匹配
+  `run_fences.runtime_lease_epoch == execution_lease.epoch == run_fence.runtime_lease_epoch`；
+  同 owner 以 runtime epoch+1 接管但尚未 acquire 新 RunFence 的窗口，旧 fence + 新
+  ExecutionLease 组合也必须零 handoff 拒绝。
+  `EffectExecutor` 不得用构造时静态 owner 或自行 acquire/release fence；必须消费
+  Kernel 通过 `DriverInvocation` 传入的 per-call `execution_lease + run_fence`。Provider/Tool
+  post-handoff settle/reconcile 是唯一
   active-runtime-lease 例外：只能按原 ledger identity/version 终结一次，不得发起第二
   transport/handler。这些 API/SQL/tests 属 T3.1 H11 amendment，不得留给 Host 外部 check。
-  `ExecutionLease` 必须从 `DriverInvocation.execution_lease` 沿
+  T2.6 terminal 也是必改跨 slice API：`commit_root_terminal_with_deliveries(...,
+  run_fence, execution_lease, now)` 及任何其他 terminal path 必须在同一
+  `BEGIN IMMEDIATE` 内先校验 active `workflow_leases` owner/epoch/expiry，再校验
+  current `run_fences` owner/fence epoch/state 以及
+  `row.runtime_lease_epoch == run_fence.runtime_lease_epoch == execution_lease.epoch`，
+  然后才允许 terminal event + delivery outbox + Run terminal CAS。失租后没有 terminal
+  settle 例外；旧 owner 必须零 event/零 outbox/零 Run 变化拒绝。
+  `RunFencePort.acquire(run_id, execution_lease, *, now)` 也必须在递增/替换
+  `run_fences` 前，
+  于同一 transaction 校验 active Runtime lease 与 run/owner；只有 Kernel `_activate`
+  调用 acquire，并传当次 `ExecutionLease` 与同一 injected Unix epoch clock 的 `now`；
+  UoW 不得在内部偷用 `time.time()` 或忽略 expiry。禁止 claim runtime lease 后另做一个
+  无 fence 的 RunFence acquire，防止旧 owner 在两步之间过期，恢复后覆盖新 owner
+  的 current RunFence。若 `run_fences` 已是同一 active execution owner 且当前 runtime
+  lease epoch 未变，acquire 必须幂等返回原 RunFenceLease，不递增 epoch；只有新
+  runtime owner/epoch 接管才递增。Kernel 与该 Run 的所有 Tool call 共用这张
+  run-level fence；EffectExecutor 只验证/消费传入的 fence，不 acquire，也不在
+  `finally` release。只有 Kernel terminal/close/takeover lifecycle 可释放/替换 fence，
+  禁止每 Tool call 创建或释放 fence 使 Kernel terminal fence 失效。
+  为区分同 owner ID 在 lease 过期后以 epoch+1 重新接管，`run_fences` schema v1
+  必须新增 `runtime_lease_epoch` 并由 `RunFenceLease` 返回/校验；幂等条件是
+  owner_id + runtime_lease_epoch 同时相同，同 owner 但新 runtime epoch 仍必须使 RunFence
+  epoch +1。
+  `ExecutionLease` 与 Kernel-owned `RunFenceLease` 必须从
+  `DriverInvocation.{execution_lease,run_fence}` 沿
   `ReActDriver/AgentLoopCollaborator/ReActLoop -> ProviderInvocationCoordinator.invoke(...,
   execution_lease) -> hand_off_provider_invocation` 和 `ReActLoop -> EffectExecutor.execute(...,
-  execution_lease) -> mark_effect_handed_off` 逐层必填传递；禁止存入共享可变
+  execution_lease, run_fence) -> mark_effect_handed_off` 逐层必填传递；禁止存入共享可变
   coordinator/executor state、闭包或 Host pre-check。每层都校验
   `execution_lease.run_id == command/context run_id` 且 namespace 为 canonical `runtime.kernel`；
   漏传由类型签名阻止，错 run/旧 epoch 必须在 handoff 前零物理调用拒绝。
@@ -247,7 +281,21 @@
   lease 拒绝后续步骤；已 handoff 交 ledger reconciler，旧 task 不得保持无界 heartbeat，
   且 close 有界返回。
   补充 focused type/runtime tests 覆盖 Coordinator/Executor 漏传不可调用、错 run lease、
-  旧 epoch lease，三者均在 handoff row/transport/handler 计数为 0 时拒绝。
+  旧 epoch lease，三者均在 handoff row/transport/handler 计数为 0 时拒绝；另覆盖
+  新 Runtime acquire 使 `run_fences` epoch 递增但 effect row 仍是旧 epoch 的场景，旧
+  RunFenceLease 必须零 handoff，以及 RunFence/ExecutionLease owner mismatch 零 handler。
+  再补 runtime-lease claim 后暂停 -> TTL 过期 -> 新 owner claim+acquire -> 旧 owner 恢复 acquire
+  的确定性竞态；旧 acquire 必须零更新拒绝，新 owner 的 RunFence epoch/owner 保持不变。
+  同 active owner 的 Kernel acquire 后执行 N 次 Tool，必须始终传递同一 fence epoch，
+  Tool 期间 `run_fences.state` 仍为 active，最后 terminal commit 仍用该 epoch 成功；
+  仅 takeover 使 epoch +1。直接测试 EffectExecutor 不调用 `RunFencePort.acquire/release`。
+  用 virtual epoch clock 证明 `now == expires_at` 及 `now > expires_at` 时 acquire 零更新拒绝；
+  同 owner_id 以 runtime lease epoch+1 接管时 RunFence epoch 必须 +1，不得返回旧 fence。
+  直接构造“同 owner ID、新 ExecutionLease epoch+1、旧 RunFence”组合，Provider/Tool
+  handoff 均必须在 ledger/transport/handler 全为 0 时拒绝。
+  对 terminal 补确定性 race：新 owner（及同 owner epoch+1）已 claim runtime lease ->
+  暂停在新 RunFence acquire 前 -> 旧 owner 尝试 terminal，断言 runs/run_events/
+  delivery_outbox 全部零变化。
 - 依赖：T3.0、T2.2、T2.6。
 
 ### T3.2 — child/continuation/reconciler closure [AC-5]
