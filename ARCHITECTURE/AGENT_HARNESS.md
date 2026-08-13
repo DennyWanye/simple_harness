@@ -1193,12 +1193,16 @@ backend/.venv/bin/python scripts/acceptance/harness_reliability_gate.py
 
 门禁以生产恢复不变量为准，覆盖 39 个 UoW/Team 原子故障窗口及上层授权后启动、已开始但
 结果未知的 effect、effect 已提交但模型尚未恢复、child 终态已提交但 parent 尚未消费、root
-终态已提交但 Session 尚未投影，以及前端断线重连去重/旧 epoch 丢弃。当前结果为后端
-`52 passed`、前端 `12 passed`，最终 `HARNESS_RELIABILITY: PASS`。
+终态已提交但 Session 尚未投影，以及前端断线重连去重/旧 epoch 丢弃。另有五个独立解释器
+在精确 UoW hook 上接受真实 `SIGKILL`：permission resolve、effect claim、外部效果完成但 settle
+未提交、child terminal enqueue、root terminal outbox；新进程接管后逐库验证
+`PRAGMA integrity_check=ok`，且外部写、terminal signal、event/delivery 均保持唯一。当前结果为
+后端 `57 passed`、前端 `12 passed`，最终 `HARNESS_RELIABILITY: PASS`。
 
 本轮同时移除 `execution/harness_public_read_service.py` 对 `memory.SessionDB` 的生产依赖；
 state.db 公共消息 keyset reader 归还 Inspector 自己的只读边界，Execution 包依赖方向门重新
-通过。扩大 Harness 目录复跑为 `890 passed / 4 xfailed / 16 failed`；剩余项是历史
+通过。加入五项硬退出测试后，扩大 Harness 目录复跑为
+`895 passed / 4 xfailed / 16 failed`；剩余项是历史
 authority/parity fixture 不可达、Git fallback 和 AgentLoop/ReAct 文件预算等非本轮恢复语义
 失败，不能用本门禁替代完整仓库绿灯。
 

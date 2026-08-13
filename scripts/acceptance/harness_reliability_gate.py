@@ -31,6 +31,7 @@ class GateLane:
 
 BACKEND_SELECTORS = (
     "backend/tests/harness_simplification/test_fault_matrix.py",
+    "backend/tests/harness_simplification/test_process_crash_recovery.py",
     "backend/tests/harness_simplification/test_harness_bootstrap.py::"
     "test_event_worker_retries_transient_lane_failure_without_new_event",
     "backend/tests/harness_simplification/test_harness_bootstrap.py::"
