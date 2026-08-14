@@ -2,7 +2,7 @@
 
 > Last Updated: 2026-08-15
 > SDK Repository: simple-harness-sdk (branch: codex/sdk-v0.1-foundation)
-> HEAD: bff5cb1
+> HEAD: 14d40d7
 
 ## Overall Status
 
@@ -17,7 +17,13 @@
 - Total: ~3920 lines delivered across 6 phases
 - Test suite: 43 tests PASSED
 
-**⏳ T5.2-T5.4 Pending** (Other workflow profiles)
+**✅ T5.2 Complete** (personal_v1 workflow profile)
+- Started: 2026-08-15
+- Completed: 2026-08-15
+- Total: ~1157 lines (674 implementation + 483 tests)
+- Test suite: 19 tests PASSED
+
+**⏳ T5.3-T5.4 Pending** (Other workflow profiles)
 
 **⏳ T6.x Pending** (Product Cutover)
 
@@ -191,11 +197,47 @@ uv run pytest tests/integration/workflows/ -v
 
 ---
 
-## Remaining Work Estimate
+## T5.2 Personal V1 Workflow Status
 
-### T5.2 personal_v1
-- **Source**: `backend/deskpet/workflows/definitions/personal_workflow.py` (465 lines)
-- **Effort**: 3-4 sessions (simpler than durable_task)
+### Implementation ✅
+- **Status**: Complete (2026-08-15, commit 14d40d7)
+- **Total Lines**: ~1157 lines (674 implementation + 483 tests)
+- **Files Created**:
+  1. `src/simple_harness/workflows/personal_v1/__init__.py` (25 lines)
+  2. `src/simple_harness/workflows/personal_v1/selection.py` (399 lines)
+  3. `src/simple_harness/workflows/personal_v1/ports.py` (39 lines)
+  4. `src/simple_harness/workflows/personal_v1/definition.py` (211 lines)
+  5. `tests/integration/workflows/test_personal_v1_graph.py` (234 lines)
+  6. `tests/integration/workflows/test_personal_v1_execution.py` (249 lines)
+
+### Architecture
+- **Pattern**: Single-node wrapper workflow that delegates to interpreter
+- **Selection**: PersonalWorkflowSelectionV1 with cryptographic verification
+  - selection_id: deterministic from identity payload
+  - selection_fingerprint: hash of full snapshot (identity + bindings + leases)
+  - Frozen graph + tool bindings with security metadata
+- **Port**: PersonalWorkflowRuntimePort interface
+  - Single execute() method takes selection + inputs
+  - Returns outputs mapping
+- **Workflow**: Single execute node, no loops, no HITL gates
+  - Delegates to runtime port for actual execution
+  - Entry: execute → END
+
+### Tests ✅
+- **Total**: 19 tests PASSED
+- **Graph tests** (11 tests): Definition metadata, nodes, edges, channels, state initialization
+- **Execution tests** (8 tests): Runtime port invocation, error handling, input/output validation
+
+**Verification**:
+```bash
+cd /Users/denny/projects/simple-harness-sdk
+uv run pytest tests/integration/workflows/test_personal_v1*.py -v
+# ============================== 19 passed in 0.02s ===============================
+```
+
+---
+
+## Remaining Work Estimate
 
 ### T5.3 capability_build
 - **Source**: `backend/deskpet/capabilities/builder.py`
@@ -208,29 +250,30 @@ uv run pytest tests/integration/workflows/ -v
 - **T6.1**: Product SDK adapters (5-6 sessions)
 - **T6.2**: Dependency switch and integration (3-4 sessions)
 
-**Total Remaining**: ~15-20 sessions for complete SDK-AC-1..8 acceptance
+**Total Remaining**: ~12-16 sessions for complete SDK-AC-1..8 acceptance
 
 ---
 
 ## Next Steps
 
-1. **Immediate**: Start T5.2 personal_v1 workflow profile
-2. **After T5.2**: T5.3 capability_build workflow
-3. **After T5.3**: T5.4 Conformance CLI
-4. **Final**: T6 Product Cutover
+1. **Immediate**: Start T5.3 capability_build workflow
+2. **After T5.3**: T5.4 Conformance CLI
+3. **Final**: T6 Product Cutover
 
 ---
 
 ## Files Modified This Session
 
 **Product Repository** (`/Users/denny/projects/simple_harness`):
-1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated Phase 6 complete, HEAD bff5cb1, T5.1 complete)
+1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated T5.2 complete, HEAD 14d40d7)
 
 **SDK Repository** (`/Users/denny/projects/simple-harness-sdk`):
-1. `tests/integration/workflows/__init__.py` (new, 5 lines, commit 1470363)
-2. `tests/integration/workflows/test_durable_task_graph.py` (new, 386 lines, commit 1470363)
-3. `tests/integration/workflows/test_durable_task_human.py` (new, 388 lines, commit c3a5f1e)
-4. `tests/integration/workflows/test_durable_task_recovery.py` (new, 276 lines, commit c3a5f1e)
-5. `tests/integration/workflows/test_durable_task_output.py` (new, 269 lines, commit bff5cb1)
+1. `src/simple_harness/workflows/personal_v1/__init__.py` (new, 25 lines, commit 14d40d7)
+2. `src/simple_harness/workflows/personal_v1/selection.py` (new, 399 lines, commit 14d40d7)
+3. `src/simple_harness/workflows/personal_v1/ports.py` (new, 39 lines, commit 14d40d7)
+4. `src/simple_harness/workflows/personal_v1/definition.py` (new, 211 lines, commit 14d40d7)
+5. `tests/integration/workflows/test_personal_v1_graph.py` (new, 234 lines, commit 14d40d7)
+6. `tests/integration/workflows/test_personal_v1_execution.py` (new, 249 lines, commit 14d40d7)
+7. `pyproject.toml` (modified, added pytest-anyio, commit 14d40d7)
 
-**Status**: T5.1 durable_task workflow complete, ready to start T5.2 personal_v1
+**Status**: T5.2 personal_v1 workflow complete, ready to start T5.3 capability_build
