@@ -872,8 +872,17 @@
      已验证genesis/head，`SETTLED`只接受SETTLED receipt、`activation=None`与exact serialized outcome。
      SETTLED branch必须先读取并constant-compare完整receipt+outcome后只读返回，不查询或要求仍active的lease、
      RunFence、dispatch或current expiry；保留的claim字段只用于audit/replay identity。
-     same owner但不同epoch/expiry、caller整体替换为自洽的新activation、action/phase/version错配都必须在typed
-     constructor与SQLite replay两层fail closed且零写；逐字段mutation和close/reopen矩阵属于H16 gate。
+     typed constructor负责拒绝receipt/activation内部任一owner/epoch/expiry/action/phase/version交叉字段不一致；
+     public immutable value本身不是durable provenance token，caller若整体构造一套字段自洽但并非current row的
+     receipt+activation，必须由canonical Lifecycle method在同一open `WorkflowTransaction` / same
+     `transaction_owner`内重读current receipt/version/authority rows并以等价atomic CAS线性化拒绝；官方
+     `SqliteExecutionUnitOfWork`必须在同一`BEGIN IMMEDIATE`完成这些gate。Runtime不得接受caller-supplied
+     `PrecreatedStartDispatch`，官方路径只能消费其刚调用canonical Lifecycle Port得到的结果，后续每个mutation
+     仍须重验current authority。custom durable Port是显式trusted persistence authority，必须提供相同atomic CAS
+     语义并通过共享conformance suite；恶意/不conformant Port不可能由value层证明来源，不属于value invariant。
+     该value不得作为任何mutation authority单独使用；不得引入Host-issued seal、隐藏global cache或第二factory
+     authority来伪装数据库来源。逐字段partial mutation、整体自洽replacement、close/reopen与custom Port
+     conformance矩阵都属于H16 gate。
      `build_runtime`/`Runtime.__init__` 公开签名删除`workflow_driver`注入参数；改为必填
      SDK-owned `workflow_runner`/official factory binding（无workflow profile时可None），Runtime内部调
      `build_workflow_runtime_driver`并注册reserved key。Host `drivers` 仍只能传extension key，不能传入、
