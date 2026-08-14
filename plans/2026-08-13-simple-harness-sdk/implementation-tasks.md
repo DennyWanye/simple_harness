@@ -1117,7 +1117,7 @@
   <= 1024，超限在catalog/ticket/Run写入前typed reject；
   immutable `WorkflowCatalogProfileBinding(profile_key, description, use_when, avoid_when, input_schema_ref,
   profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, checkpoint_namespace,
-  manifest_hash, state_schema_version, input_schema_hash,
+  manifest_hash, state_schema_version, start_input_schema: StartInputSchema,
   terminal_projection_descriptor, terminal_request_factory_hash, capability_snapshot)` 与
   `WorkflowCatalogAuthority(authority_id="model_spawnable", generation, version, catalog_hash, profiles)`，
   其中profiles是按profile key排序的完整binding tuple；catalog hash由SDK从这组完整canonical fields重算，caller
@@ -1139,7 +1139,7 @@
   `VerifiedWorkflowLaunchTicket(ticket_receipt_id, ticket_id, candidate_id, profile_key, catalog_generation,
   catalog_authority_version, catalog_hash,
   profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, checkpoint_namespace,
-  manifest_hash, state_schema_version, input_schema_hash, terminal_projection_descriptor,
+  manifest_hash, state_schema_version, start_input_schema: StartInputSchema, terminal_projection_descriptor,
   terminal_request_factory_hash, capability_snapshot, session_id,
   request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?, resolved_run_id,
   resolved_trace_id, resolved_thread_id,
@@ -1190,6 +1190,10 @@
   `workflow_catalog_authorities(authority_id PRIMARY KEY, generation, version, catalog_hash, canonical_profiles,
   updated_at)` row；catalog发布/替换只能走`publish_catalog`并以expected version CAS。Port必须验证exact
   verified type、non-exported factory token、registry snapshot/catalog/binding hashes并从verified content重算写入；
+  `canonical_profiles`必须持久化每个binding的完整`StartInputSchema`（ref+canonical bytes+hash），不只存hash；
+  launch ticket的`canonical_payload`也pin同一完整schema snapshot。`read_catalog/verify/admit_runtime_start`从这些
+  durable bytes重建typed schema并用同一bounded validator校验actual input，close/reopen后不得查询Runner registry或
+  信任caller预验；schema bytes/hash/ref任一漂移零写。
   直接constructor、subclass、copy/replace、手写全字段或token不匹配均零写。SQLite不得持有/查询第二个registry；
   SDK内存catalog只能是该row的
   immutable read view，不得成为另一个current authority或在transaction外热换。Runtime必须调用canonical
@@ -1221,6 +1225,11 @@
   start schema门禁必须覆盖oversized bytes、depth、node/property/required/enum/string各上限、raw cyclic mapping、
   external/recursive `$ref`、pattern/format/unknown keyword与非finite numeric；official/custom registrations均走同一
   validator并在超限时catalog/ticket/Run三层零写，actual start input oversized/deep同样在ticket/Run前拒绝。
+  补catalog publish→close DB并销毁原registration/schema objects与cache→同路径reopen，以只含相同
+  CompiledWorkflow registry、但没有Host提供StartInputSchema/registration cache的fresh Runner执行ticket issue/admit
+  valid+invalid input：schema验证只凭durable bytes，compiled executable/manifest仍从fresh registry取得并独立与
+  durable binding compare。fresh registry缺workflow或binding drift必须`graph_version_unavailable`/零Run；删除/篡改
+  schema bytes、ref或hash同样fail closed且零Run，证明hash-only carrier不可通过且没有第二executable authority。
 - `admit_runtime_start`的receipt-first key为ticket receipt ID，existing generic admission必须逐项比较
   resolved run/trace/thread、session/request/catalog、full canonical input、StartAdmissionRequest与StartSnapshot；
   exact replay永远返回同`RuntimeStartReceipt`，同ticket配不同RunStart/request/snapshot一律零写conflict，不能生成

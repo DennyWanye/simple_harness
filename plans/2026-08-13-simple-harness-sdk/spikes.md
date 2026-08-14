@@ -687,4 +687,16 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
 - A2 profile-registration窄挑战第二轮：`PASS`，`NEW_CRITICAL_FINDINGS=0`。bounded strict dialect在
   canonicalize前关闭cycle/ref/regex/组合与资源DoS；descriptor fingerprint/ref、schema hash、verified catalog、
   durable row与admission Runner重算保持独立compare，无第二schema/start authority。affected catalog factory可恢复。
+- A2 catalog-factory implementation preflight再次暂停A1：binding/verified ticket只携schema hash，durable SQLite在
+  restart后无法独立验证actual input，而查询Runner registry或信caller预验都违背单一authority。已把完整typed
+  `StartInputSchema(ref, canonical bytes, hash)`加入catalog binding与verified/ticket canonical payload，publish持久化
+  bytes，read/verify/admit用同一bounded validator重建；补销毁registry后reopen验证及bytes/ref/hash corruption零写。
+  待窄挑战。
+- A2 schema-carrier窄挑战第一轮：`FAIL`，`NEW_CRITICAL_FINDINGS=1`。durable schema本身闭合，但“销毁
+  Runner registry仍成功admit”与prepare必须取得CompiledWorkflow矛盾。已改为销毁原registration/schema cache，
+  reopen使用仅含相同compiled workflows的fresh Runner；schema只来自durable bytes，compiled binding仍独立比对，
+  missing/drift registry走graph_version_unavailable零写。待下一轮。
+- A2 schema-carrier窄挑战第二轮：`PASS`，`NEW_CRITICAL_FINDINGS=0`。durable schema bytes/ref/hash是reopen
+  后唯一input-validation authority；fresh same-version CompiledWorkflow registry仍是独立executable/manifest
+  authority，missing/drift与schema corruption分别fail closed，无第二registry/schema authority。
 - 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。
