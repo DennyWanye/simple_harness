@@ -2,7 +2,7 @@
 
 > Last Updated: 2026-08-15
 > SDK Repository: simple-harness-sdk (branch: codex/sdk-v0.1-foundation)
-> HEAD: f2258a5
+> HEAD: 33dfb93
 
 ## Overall Status
 
@@ -13,7 +13,7 @@
 
 **🚧 T5.x In Progress** (Official Workflow Profiles)
 - Started: 2026-08-15
-- Current: T5.1 Phase 2 complete
+- Current: T5.1 Phase 3 complete (~1360 lines delivered)
 
 **⏳ T6.x Pending** (Product Cutover)
 
@@ -47,15 +47,26 @@ uv run python -c "from simple_harness.workflows.durable_task.ports import *; fro
 # Output: ✓ Imports successful
 ```
 
-### Phase 3: Graph Definition ⏳
-- **Status**: Not started
-- **Target File**: `src/simple_harness/workflows/durable_task/definition.py`
-- **Estimated Lines**: ~200 lines
+### Phase 3: Graph Definition ✅
+- **Status**: Complete (2026-08-15, commit 33dfb93)
+- **File**: `src/simple_harness/workflows/durable_task/definition.py`
+- **Lines**: 360 lines
 - **Content**:
-  - WorkflowDefinition for durable_task
-  - Node definitions (intake, clarify, plan, wait_approval, llm_proposal, tool_execution, completion_decision, test, audit, finalize, fix_round)
-  - Edge definitions and conditional branches
-  - RetryPolicy, interrupt points, barriers
+  - `create_definition()` factory for WorkflowDefinition
+  - 10 node definitions (intake → clarify → plan → wait_approval → llm_proposal → tool_execution → completion_decision → test → audit → finalize)
+  - Edge definitions and 3 conditional branches
+  - RetryPolicy (llm_proposal: 3 attempts, tool_execution: 2 attempts)
+  - HITL interrupt points: clarify, wait_approval, tool_execution
+  - Loop budgets: proposal_turns (40), fix_rounds (8)
+  - `create_initial_state()` helper
+
+**Verification**:
+```bash
+cd /Users/denny/projects/simple-harness-sdk
+uv run python -c "from simple_harness.workflows.durable_task import *; print('✓ Module imports'); print(f'Workflow: {WORKFLOW_NAME} v{WORKFLOW_VERSION}')"
+# Output: ✓ Module imports
+#         Workflow: durable_task vv1
+```
 
 ### Phase 4: Node Handlers ⏳
 - **Status**: Not started
@@ -97,7 +108,10 @@ uv run python -c "from simple_harness.workflows.durable_task.ports import *; fro
 ## Remaining Work Estimate
 
 ### T5.1 Remaining Effort
-- **Phase 3**: 1 session (straightforward graph definition)
+- **Phase 4**: 8-10 sessions (complex node handler rewrite, ~1200 lines)
+- **Phase 5**: 1 session (output contract, ~100 lines)
+- **Phase 6**: 2-3 sessions (comprehensive tests, ~500 lines)
+- **Total T5.1**: ~12-15 sessions remaining
 - **Phase 4**: 3-4 sessions (complex rewrite, ~1200 lines)
 - **Phase 5**: 1 session (output validation)
 - **Phase 6**: 2 sessions (comprehensive tests)
