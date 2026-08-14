@@ -1,8 +1,8 @@
-<!-- plan-status: finalized (plan-bs) -->
+<!-- plan-status: finalized (plan-test A2 revision) -->
 
 # Plan：提取完整 durable Simple Harness SDK v0.1 并迁移 Simple Harness
 
-> plan-status: finalized（plan-bs；2026-08-13）  
+> plan-status: finalized（2026-08-14 plan-test A2 修订；T4.1/T4.2 authority/API 冲突已独立挑战 PASS）  
 > 代码基线：`simple_harness@122ec55989f8a77e023aeb44ba1b4dae1b694269`  
 > 独立仓库：`simple-harness-sdk`（实施时记录其初始 commit）  
 > 行为事实源：[`behavior-contract.md`](behavior-contract.md)  
@@ -398,7 +398,7 @@ Spike 结果写入 [`spikes.md`](spikes.md)；临时代码放 `mktemp -d`，跑�
 | SDK-AC-5 | T2.1–2.6, T3.1–3.4, T4.1, T5.1, T6.5 | atomic matrix、Kernel/child/HITL/crash/delivery E2E |
 | SDK-AC-6 | T2.3, T3.1, T4.2, T5.2–5.3, T6.1–6.3 | fixed root、agent control、Personal candidate、no router/matcher |
 | SDK-AC-7 | T2.1, T4.1, T5.1–5.3, T6.4–6.5 | three Profile E2E、clean schema/reset、restart |
-| SDK-AC-8 | T0.1–0.3, T3.4, T5.4, T6.1–6.5, T7.1–7.5 | consumer CLI、desktop exact-wheel self-use、old authority absence、release/Handoff |
+| SDK-AC-8 | T0.1–0.3, T3.4, T4.1–T4.2, T5.4, T6.1–6.5, T7.1–7.5 | Workflow API/Port snapshot、consumer CLI、desktop exact-wheel self-use、old authority absence、release/Handoff |
 
 ## 10. 执行纪律与完成定义
 

@@ -571,7 +571,7 @@
 
 ## S4 — Workflow runtime / selection
 
-### T4.1 — Native compiler/runner/checkpoint/control ports [AC-5, AC-7]
+### T4.1 — Native compiler/runner/checkpoint/control ports [AC-5, AC-7, AC-8]
 
 - 文件：`workflow/{contracts,definition,compiler,runner,checkpoint,lease,recovery,replay,trace,control,execution_ports}.py`，
   以及T2.1 clean schema v1 / T2.2 SQLite UoW 的 workflow checkpoint/adapter operation receipt 与
@@ -592,8 +592,10 @@
   写入同一个 commit/rollback boundary；adapter 不得 commit、不得另开 connection、不得持有 hidden
   concrete store。逐 write-point fault 后 close/reopen 必须全回滚或全提交，不能出现 checkpoint 与
   execution ledger 分叉。H16 的三 authority lifecycle 裁决显式覆盖旧 source constructor：
-  `WorkflowRunner.__init__` 必填 registry/checkpoint/recovery/trace/`WorkflowExecutionPorts`，删除独立
-  `lease` 参数，不再另收一份 UoW；canonical UoW
+  `WorkflowRunner.__init__` 必填 registry/checkpoint/trace/`WorkflowExecutionPorts`，删除独立
+  `lease`、可执行 policy `recovery` 参数，不再另收一份 UoW；canonical UoW 与 durable recovery
+  primitives 分别只取 `execution_ports.unit_of_work` 与 `execution_ports.recovery`；
+  consumer 不得注入 recovery classifier/callback。canonical UoW
   只取 `execution_ports.unit_of_work`。checkpoint authority 必须一次性
   `bind_execution_adapter(execution_ports.checkpoint)`，并暴露进程内 opaque `transaction_owner`；adapter
   的 `transaction_owner` 必须用 object identity 与 checkpoint authority相同，否则构造时零写拒绝。
@@ -1147,7 +1149,7 @@
   cursor跳过，按request_id读取任意行必须由API/SQL结构性禁止。
 - 依赖：T2.1–T2.5。
 
-### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]
+### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6, AC-8]
 
 - 文件：`runtime/profiles.py`, `runtime/orchestration.py`, `runtime/drivers/workflow.py`,
   `runtime/drivers/react.py`, `runtime/drivers/react_loop.py`, `tools/contracts.py`, `tools/executor.py`,
@@ -1157,7 +1159,10 @@
   `execution/sqlite/migrations/0001_initial.sql`。launch-ticket receipt与generic admission的schema/UoW
   owner明确属于本task；不得让Host新增表或实现第二Port。
 - API：`ProfileDescriptor(key, description, use_when, avoid_when, input_schema_ref, generation,
-  fingerprint)`；`workflow_spawn(profile_key, objective, ..., candidate_id?, catalog_generation)`；
+  fingerprint)`；Agent-visible reserved Tool 名为 `workflow_spawn`，其 JSON input schema 只含
+  `profile_key/objective/start_input/candidate_id?`，不是第二个 Python launch API，也不接受
+  `catalog_generation` 或技术 identity；唯一 public Python execution API 是下文
+  `RunClient.workflow_spawn(invocation: WorkflowSpawnInvocation)`；
   immutable `StartInputSchema(schema_ref, canonical_schema, schema_hash)` 与
   `WorkflowProfileRegistration(descriptor: ProfileDescriptor, workflow_name, workflow_version,
   start_input_schema: StartInputSchema)`。`StartInputSchema`只接受T1.3 fail-closed schema dialect：支持类型
