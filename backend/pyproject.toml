@@ -155,16 +155,22 @@ dependencies = [
     # loader + user overrides merge (overrides.yaml under %APPDATA%).
     "pyyaml>=6.0",
     # T6.2: SDK dependency for T6 Product Cutover.
-    # Development uses path dependency (see [tool.uv.sources]).
-    # Production uses vendored wheel (T7.3).
+    # T7.3: Production uses vendored wheel with exact hash verification.
+    # The vendored wheel is the exact artifact from GitHub Release v0.1.0,
+    # verified via scripts/verify_sdk_wheel.py against SHA256SUMS.
     "simple-harness-sdk>=0.1.0",
 ]
 
 [tool.uv.sources]
-# T6.2: Development-time path dependency to SDK repository.
-# This allows backend code to import from simple_harness public API
-# during development. Production uses vendored wheel (T7.3).
-simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
+# T7.3: Production uses local vendored wheel (exact Release artifact).
+# Development can still use path dependency by uncommenting below and
+# commenting out the wheel reference.
+#
+# Development (path dependency):
+# simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
+#
+# Production (vendored wheel from Release):
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.0-py3-none-any.whl" }
 
 [project.optional-dependencies]
 dev = [
