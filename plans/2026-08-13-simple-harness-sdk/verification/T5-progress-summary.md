@@ -2,7 +2,7 @@
 
 > Last Updated: 2026-08-15
 > SDK Repository: simple-harness-sdk (branch: codex/sdk-v0.1-foundation)
-> HEAD: 9ae7d99
+> HEAD: bff5cb1
 
 ## Overall Status
 
@@ -11,9 +11,13 @@
 - Working tree clean
 - All P0-P1 gaps from HANDOFF closed
 
-**🚧 T5.x In Progress** (Official Workflow Profiles)
+**✅ T5.1 Complete** (durable_task workflow profile)
 - Started: 2026-08-15
-- Current: T5.1 Phase 5 complete (~3190 lines delivered)
+- Completed: 2026-08-15
+- Total: ~3920 lines delivered across 6 phases
+- Test suite: 43 tests PASSED
+
+**⏳ T5.2-T5.4 Pending** (Other workflow profiles)
 
 **⏳ T6.x Pending** (Product Cutover)
 
@@ -115,28 +119,79 @@ uv tool run ruff check src/simple_harness/workflows/durable_task/output_contract
 # Output: All checks passed!
 ```
 
-### Phase 6: Tests ⏳
-- **Status**: Not started
-- **Target Files**:
-  1. `tests/integration/workflows/test_durable_task_graph.py`
-  2. `tests/integration/workflows/test_durable_task_human.py`
-  3. `tests/integration/workflows/test_durable_task_recovery.py`
-  4. `tests/integration/workflows/test_durable_task_output_negative.py`
-- **Estimated Lines**: ~500 lines total
+### Phase 6: Tests ✅
+- **Status**: Complete (2026-08-15, commits 1470363, c3a5f1e, bff5cb1)
+- **Target Files** (all created):
+  1. `tests/integration/workflows/__init__.py` (5 lines)
+  2. `tests/integration/workflows/test_durable_task_graph.py` (386 lines, 12 tests)
+  3. `tests/integration/workflows/test_durable_task_human.py` (388 lines, 11 tests)
+  4. `tests/integration/workflows/test_durable_task_recovery.py` (276 lines, 7 tests)
+  5. `tests/integration/workflows/test_durable_task_output.py` (269 lines, 13 tests)
+- **Total Lines**: ~1324 lines
+- **Total Tests**: 43 tests
 - **Content**:
-  - Mock Ports for isolated testing
-  - Graph transition correctness
-  - HITL interrupt/resume
-  - Recovery and checkpoint consistency
-  - Output validation (positive and negative cases)
+  - **Graph tests**: Definition metadata, nodes, edges, channels, budgets, state initialization
+  - **HITL tests**: Interrupt structure, trigger/skip behavior, resume after user response
+  - **Recovery tests**: State serialization roundtrip, loop counter/budget persistence, checkpoint consistency
+  - **Output tests**: Receipt-backed validation (write/test obligations), tool-free validation, contract modes
+
+**Verification**:
+```bash
+cd /Users/denny/projects/simple-harness-sdk
+uv run pytest tests/integration/workflows/ -v
+# ============================= test session starts ==============================
+# collected 43 items
+# 
+# test_durable_task_graph.py::test_definition_metadata PASSED             [  2%]
+# test_durable_task_graph.py::test_definition_nodes PASSED                [  4%]
+# test_durable_task_graph.py::test_definition_edges PASSED                [  6%]
+# test_durable_task_graph.py::test_definition_conditional_edges PASSED    [  9%]
+# test_durable_task_graph.py::test_definition_channels PASSED             [ 11%]
+# test_durable_task_graph.py::test_definition_loop_budgets PASSED         [ 13%]
+# test_durable_task_graph.py::test_create_initial_state_minimal PASSED    [ 16%]
+# test_durable_task_graph.py::test_create_initial_state_with_overrides PASSED [ 18%]
+# test_durable_task_graph.py::test_create_initial_state_budget_clamping PASSED [ 20%]
+# test_durable_task_graph.py::test_initial_state_messages_default PASSED  [ 23%]
+# test_durable_task_graph.py::test_initial_state_messages_custom PASSED   [ 25%]
+# test_durable_task_graph.py::test_initial_state_snapshots PASSED         [ 27%]
+# test_durable_task_human.py::test_clarification_interrupt_structure PASSED [ 30%]
+# test_durable_task_human.py::test_approval_interrupt_structure PASSED    [ 32%]
+# test_durable_task_human.py::test_tool_execution_interrupt_structure PASSED [ 34%]
+# test_durable_task_human.py::test_initial_state_clarification_flag PASSED [ 37%]
+# test_durable_task_human.py::test_initial_state_approval_flag PASSED     [ 39%]
+# test_durable_task_human.py::test_clarify_triggers_interrupt[asyncio] PASSED [ 41%]
+# test_durable_task_human.py::test_clarify_skips_when_not_required[asyncio] PASSED [ 44%]
+# test_durable_task_human.py::test_approval_triggers_interrupt[asyncio] PASSED [ 46%]
+# test_durable_task_human.py::test_approval_proceeds_with_decision[asyncio] PASSED [ 48%]
+# test_durable_task_human.py::test_tool_execution_triggers_interrupt[asyncio] PASSED [ 51%]
+# test_durable_task_human.py::test_tool_execution_proceeds_with_auth[asyncio] PASSED [ 53%]
+# test_durable_task_output.py::test_tool_free_clean_end_turn PASSED       [ 55%]
+# test_durable_task_output.py::test_tool_free_with_prepared_calls PASSED  [ 58%]
+# test_durable_task_output.py::test_tool_free_with_write_obligation PASSED [ 60%]
+# test_durable_task_output.py::test_tool_free_explicit_request PASSED     [ 62%]
+# test_durable_task_output.py::test_receipt_backed_write_complete PASSED  [ 65%]
+# test_durable_task_output.py::test_receipt_backed_write_missing PASSED   [ 67%]
+# test_durable_task_output.py::test_receipt_backed_test_complete PASSED   [ 69%]
+# test_durable_task_output.py::test_receipt_backed_failed_tool PASSED     [ 72%]
+# test_durable_task_output.py::test_receipt_backed_not_end_turn PASSED    [ 74%]
+# test_durable_task_output.py::test_validate_output_contract_receipt_mode PASSED [ 76%]
+# test_durable_task_output.py::test_validate_output_contract_tool_free_mode PASSED [ 79%]
+# test_durable_task_output.py::test_validate_output_contract_default_mode PASSED [ 81%]
+# test_durable_task_output.py::test_validate_output_contract_unknown_mode PASSED [ 83%]
+# test_durable_task_recovery.py::test_initial_state_roundtrip PASSED      [ 86%]
+# test_durable_task_recovery.py::test_loop_counter_recovery PASSED        [ 88%]
+# test_durable_task_recovery.py::test_budget_enforcement_after_recovery PASSED [ 90%]
+# test_durable_task_recovery.py::test_values_channel_recovery PASSED      [ 93%]
+# test_durable_task_recovery.py::test_message_history_recovery PASSED     [ 95%]
+# test_durable_task_recovery.py::test_snapshot_metadata_recovery PASSED   [ 97%]
+# test_durable_task_recovery.py::test_partial_completion_recovery PASSED  [100%]
+# 
+# ============================== 43 passed in 0.03s ===============================
+```
 
 ---
 
 ## Remaining Work Estimate
-
-### T5.1 Remaining Effort
-- **Phase 6**: 2-3 sessions (comprehensive tests, 4 test files)
-- **Total**: 2-3 sessions
 
 ### T5.2 personal_v1
 - **Source**: `backend/deskpet/workflows/definitions/personal_workflow.py` (465 lines)
@@ -153,15 +208,15 @@ uv tool run ruff check src/simple_harness/workflows/durable_task/output_contract
 - **T6.1**: Product SDK adapters (5-6 sessions)
 - **T6.2**: Dependency switch and integration (3-4 sessions)
 
-**Total Remaining**: ~18-23 sessions for complete SDK-AC-1..8 acceptance
+**Total Remaining**: ~15-20 sessions for complete SDK-AC-1..8 acceptance
 
 ---
 
 ## Next Steps
 
-1. **Immediate**: Continue T5.1 Phase 6 (write comprehensive tests)
-2. **After T5.1**: Start T5.2 personal_v1
-3. **Milestone**: T5.x complete → move to T5.4 Conformance
+1. **Immediate**: Start T5.2 personal_v1 workflow profile
+2. **After T5.2**: T5.3 capability_build workflow
+3. **After T5.3**: T5.4 Conformance CLI
 4. **Final**: T6 Product Cutover
 
 ---
@@ -169,10 +224,13 @@ uv tool run ruff check src/simple_harness/workflows/durable_task/output_contract
 ## Files Modified This Session
 
 **Product Repository** (`/Users/denny/projects/simple_harness`):
-1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated Phase 4-5, HEAD, estimates)
+1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated Phase 6 complete, HEAD bff5cb1, T5.1 complete)
 
 **SDK Repository** (`/Users/denny/projects/simple-harness-sdk`):
-1. `src/simple_harness/workflows/durable_task/nodes.py` (new, 1478 lines, commit 862c9e8)
-2. `src/simple_harness/workflows/durable_task/output_contract.py` (new, 336 lines, commit 9ae7d99)
+1. `tests/integration/workflows/__init__.py` (new, 5 lines, commit 1470363)
+2. `tests/integration/workflows/test_durable_task_graph.py` (new, 386 lines, commit 1470363)
+3. `tests/integration/workflows/test_durable_task_human.py` (new, 388 lines, commit c3a5f1e)
+4. `tests/integration/workflows/test_durable_task_recovery.py` (new, 276 lines, commit c3a5f1e)
+5. `tests/integration/workflows/test_durable_task_output.py` (new, 269 lines, commit bff5cb1)
 
-**Status**: Ready to commit progress documentation and continue to Phase 6 (tests)
+**Status**: T5.1 durable_task workflow complete, ready to start T5.2 personal_v1
