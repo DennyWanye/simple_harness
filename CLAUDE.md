@@ -1,126 +1,239 @@
-# CLAUDE.md — DeskPet 项目级 Claude 工作笔记
+# CLAUDE.md
 
-本文件给 Claude 子代理 / 助手用，记录本仓库特有的开发上下文（区别于全局 `~/.claude/CLAUDE.md`）。
-
-> 🧭 **接手前先读架构事实源**: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) —
-> 全局状态、模块生产链路、完成度、最近里程碑与已知问题统一从这里进入。
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ---
 
-## ✅ ARCHITECTURE 更新纪律（HARD — 不可妥协）
+## Project Overview
 
-**任何任务一旦"通过测试完成"，必须同步更新 [`ARCHITECTURE/`](./ARCHITECTURE/index.md) 中对应的架构事实源。**
+**Simple Harness** is a cross-platform desktop AI workbench with four main views (Sessions / Skills / Artifacts / Settings) plus a local backend Agent with autonomous capabilities. Forked from DeskPet in 2026-08 with significant architectural changes.
 
-- **触发条件**：一个 WI / slice / 功能模块跑通验收（pytest/vitest/cargo/手工 E2E 全绿）→ 视为"完成"。
-- **强制动作**（完成的同一次交付内，不能拖到下次）：
-  1. 更新对应 `ARCHITECTURE/<MODULE>.md` 的生产链路、边界或验证状态
-  2. 更新 [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) 的模块完成度
-  3. 若是里程碑级 → 追加到 PROJECT_STATUS 最近里程碑（倒序）
-  4. 若 worktree 合并到 master → 更新 PROJECT_STATUS worktree 状态
-  5. 改相关架构文档顶部“最后更新”日期
-- **判定**："改了代码 / 跑过测试但没更新 ARCHITECTURE" = 任务**未完成**。
-- **禁止双写**：`STATUS/` 仅保留历史路径兼容跳转，不能再写入新的状态正文。
-- **粒度**：实现细节放各 plan，架构目录记录当前生产事实、边界、状态和证据链接。
+**Tech Stack:**
+- **Backend:** Python 3.11+ FastAPI (`backend/`)
+- **Frontend:** React 19 + Vite (`tauri-app/src/`)
+- **Shell:** Tauri 2 + Rust (`tauri-app/src-tauri/`)
 
----
-
-## 🚀 测试阶段：能力即开即用，**不灰度**（HARD — 用户 2026-06-27 定调）
-
-**当前处于测试阶段。开发完成（单测/验收通过）的能力要立即默认开启（flag = ON / 默认 True）投入使用，不做灰度 / shadow / 分批渐进。**
-
-- **判定**："开发好了但 flag 还默认 OFF 没开起来用" = **不可接受**——测试阶段就是要把做好的能力全跑起来暴露问题。
-- **强制动作**：一个能力一旦"开发完成"（单测绿 + 实现完整），同一交付内把它的出厂默认 flag 翻 **ON**，不要留 `default False` 等"灰度通过再开"。
-- **例外（仍 OFF）**：① 实现**未完成 / 半成品**的（如 artifact 信封 last_mile 未实装）；② 明确危险/不可逆且无护栏的（如自然语言遗忘 `enable_natural_language`）；③ 与当前主线程无关的（如 code 模式专属）。这些标注原因，做完/补护栏后**立即**开启。
-- **不要再写"shadow 先行 / 批 A 批 B 灰度 / 默认 OFF 等观测通过"这类渐进上线话术**——那是生产阶段的做法，现在不用。
-- **对照**：已开发但默认 OFF 的能力清单见 [`plans/2026-06-26-agent-harness-alignment/00-PLAN.md`](./plans/2026-06-26-agent-harness-alignment/00-PLAN.md) §WI-0.0（全量点亮表）。
+**Key Differences from DeskPet:**
+- Removed Live2D rendering system entirely
+- Removed hosted account system (manual provider configuration only)
+- Changed from desktop pet window to standard workbench UI
+- macOS support added (NVML GPU checks Windows-only)
 
 ---
 
-## 🔑 开发期登录测试账号（**仅 DEV 环境**）
+## Essential Commands
 
-DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时走 onboarding 登录流程：
-1. Tauri 弹登录窗 → 用户输入账号密码
-2. relay 反代 → 校验账号 → 下发 `tsk_xxx` access token + `key_xxx` device key
-3. token 写入 OS keychain（Windows DPAPI / macOS Keychain）
-4. backend 通过 `DESKPET_CLOUD_API_KEY` env 拿到 key 调 LLM
+### Development Setup (First Time)
 
-**测试凭据**：本仓库**不包含**。请从 `LOCAL-DEV-CREDENTIALS.md`（gitignored）读取，
-模板见 [`LOCAL-DEV-CREDENTIALS.md.example`](./LOCAL-DEV-CREDENTIALS.md.example)。
+```bash
+./scripts/setup.sh
+```
 
-### 子代理用法
+Installs all dependencies: frontend npm packages + backend Python venv (includes PyTorch download, takes 15-30 min first run).
 
-跑 windows-mcp E2E（如 MR-1）需要真实 LLM 链路时：
-1. 启动 Tauri 应用 → 出现 onboarding 登录窗
-2. 用上面账号登录 → 等 relay 下发 key → keychain 写入
-3. 关掉 onboarding → 进入桌宠主界面
-4. backend 自动从 keychain 读 key → 真 LLM 调用可用
-5. 此时对话"帮我生成 PPT" → LLM 调 `ppt_create` → 真生成 .pptx → ArtifactCard 渲染
+**Prerequisites:** Node.js ≥20, Rust toolchain, [uv](https://docs.astral.sh/uv/)
 
-### 安全约束
+### Daily Development
 
-- ⚠️ **不要 push 到 public GitHub**（git 历史会永久保留）
-- ⚠️ **不要写进 .env 或 secrets/ 目录**（这两个会被 diagnostic bundle 收集）
-- ⚠️ **不要在子代理产出的 manual-results-* 报告里截图账号密码**（截图前先关 onboarding 窗）
-- ✅ 仓库**保持 private**（git@github.com:DennyWanye/deskpet 是 private repo）
-- ✅ 测试 keychain 由测试代码用 `monkeypatch.setattr("backend.secrets.get_cloud_api_key", lambda: "fake-sk-...")` mock，**生产代码永远从 OS keychain 读**
+```bash
+./scripts/dev.sh
+```
 
----
+Starts everything in one command: Tauri shell spawns Python backend + Vite frontend automatically. Backend runs at port 8100, Vite at 5173.
 
-## 📁 分支 / 端口 / 关键文档
+**IMPORTANT:** Don't manually start backend with `python main.py` — Tauri's `process_manager.rs` already spawns it. Manual start causes port 8100 conflict (error 10048 on Windows). Let Tauri manage the backend lifecycle.
 
-- **分支策略**：master 直接开发（`feedback_deskpet_branch_strategy`），不走长寿命 feature 分支。worktree 拓扑与各模块完成度见 [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) §2。
-- **端口隔离**（真测高频）：main 树 backend=**8100** / vite=**5173**（默认）；其他 worktree 经 `scripts/dev-worktree.ps1` 注入 `DESKPET_BACKEND_PORT`/`DESKPET_VITE_PORT` 错开。
-- **关键 plan/文档清单**：当前生产事实以 [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) 为准；实现过程见各 `plans/<date>-*/00-*.md`。last-mile 升级 PRD/TDD/手测用例在 `plans/2026-05-23-tool-last-mile-upgrade/`。
-- **last-mile 验收命令**：`python scripts/acceptance/last_mile_smoke.py`（期望 `DECISION: SHIP`）+ 对应 TG pytest 套件（命令清单见该 plan 目录）。
+### Testing
 
----
+```bash
+# Backend tests
+cd backend
+python -m pytest                    # Run all tests
+python -m pytest -v                 # Verbose
+python -m pytest -m perf            # Performance regression tests (skipped by default)
+python -m pytest -m model_required  # Tests requiring BGE-M3 model weights
+python -m pytest tests/test_agent_loop_pipeline.py  # Single test file
 
-## 🚨 项目特有的"踩过的坑"
+# Frontend tests
+cd tauri-app
+npm test                # Run all Vitest tests
+npm run test:watch      # Watch mode
+npm run typecheck       # TypeScript type checking
+npm run lint            # ESLint
 
-1. **Tauri dev 启动后留 orphan 进程**（feedback_tauri_dev_cleanup）—— `TaskStop` 不会清 `deskpet.exe` + Vite。stop 前必 `taskkill /F /IM deskpet.exe` + Vite 进程。
-2. **改代码后只跑 unit test 不算完成**（feedback_simulate_manual_test）—— 必须 windows-mcp 走 end-to-end + 截图 + 抓日志。
-3. **E2E ≠ 脚本回放**（feedback_real_e2e_not_script_replay）—— 不能用"再跑一遍 resolution 函数的脚本"当 E2E 证据；必须验证真实运行栈的实际出站行为。
-4. **不要加沙箱护栏**（feedback_no_sandbox_constraints）—— deskpet 是单机桌宠，只防手滑级破坏。
-5. **跨层契约漂移**（feedback_cross_layer_contract）—— pytest + tsc 都过但后端前端对字段单位 disagree → `scripts/e2e_*.py` live smoke 兜底。
-6. **vector worker test_enqueue_small_batch_flushes_on_interval flaky**（time-based，已 spawn_task 跟踪修复）。
-7. **不要手动起 backend 再起 Tauri（端口双占）★ 已踩多次** —— Tauri 自己会
-   spawn 一个 backend 到 `DESKPET_BACKEND_PORT`（默认 8100，见
-   `process_manager.rs::spawn_once` + `check_port_free`）。如果你为了"先验证
-   backend"手动 `python main.py` 占了那个端口，Tauri 启动时 `os error 10048`
-   端口被占用 → 桌宠弹"启动失败"对话框。**正确做法**：**不要**手动起 backend，
-   只给 **Tauri 进程**注入 env（`DESKPET_BACKEND_PORT` / `DESKPET_USER_DATA_DIR`
-   / `DESKPET_DEV_MODE` / `DESKPET_BACKEND_DIR`），让 Tauri 自己 spawn + 管理
-   backend。要看 backend 日志：它 stdout 被 rust pipe（读完 SHARED_SECRET 后
-   静默 drain），**structlog 全走 stderr → `Stdio::inherit()` → 落进 tauri dev
-   的重定向 log**，所以抓 tauri dev 的 log 就能拿到完整 backend 日志。
-8. **跑 worktree 的 backend 必须设 `DESKPET_BACKEND_DIR`（否则 Tauri 跑 frozen
-   exe，没有你的改动）★** —— `backend_launch.rs::resolve_with` 优先级：
-   **priority-1** = `DESKPET_BACKEND_DIR` env（设了就跑 `<dir>/.venv/Scripts/
-   python.exe main.py`，`DESKPET_PYTHON` 可覆盖解释器）；**priority-2** = bundle
-   `target/debug/backend/deskpet-backend.exe`（PyInstaller frozen，**主 checkout
-   旧构建产物，不含 worktree 改动**）。所以真机测 worktree 代码必须
-   `DESKPET_BACKEND_DIR=<worktree>/backend` + `DESKPET_PYTHON=<主.venv python>`，
-   日志里确认出现 `[backend_launch] Dev python=... backend_dir=<worktree>` 才对；
-   若看到 `[backend_launch] Bundled exe=...` 说明跑的是旧 frozen，测了等于白测。
-9. **`tauri dev` 会自己跑 `beforeDevCommand`（= `npm run dev:relay`）起 vite ——
-   不要再手动起一个 vite（双 vite 互抢 strictPort）★** —— `tauri.conf.json` 的
-   `beforeDevCommand` 已经会启动 vite dev server。如果你为了"先确认前端"又手动
-   `npm run dev:relay`，就会有两个 vite 抢同一个 `DESKPET_VITE_PORT`（strictPort
-   下第二个直接退或漂到下一个端口，devUrl 对不上 → 白屏 / webview 连错）。**正确
-   做法**：要么纯跑 `npx tauri dev`（让它自管唯一 vite），要么用
-   `--config '{"build":{"beforeDevCommand":""}}'` 关掉自带 vite 后只手动起一个。
-   二选一，别两个都起。
+# Build
+cd tauri-app
+npm run build           # Frontend production build
+npm run tauri:build     # Full Tauri application build
+```
 
 ---
 
-## 🔒 手工测试纪律（HARD CONSTRAINT — 不可妥协）
+## Architecture Overview
 
-触发词："用 windows-mcp 测试" / "跑手工测试" / "模拟人工点击" / "真测" / "真 E2E" / `/goal` 设了相关 condition → 本约束强制生效。
+### Module Architecture
 
-**完整纪律（禁止清单 / workaround / 报告格式）见全局** `~/.claude/knowledge-base/windows-mcp-e2e.md`。本项目特有补充：
+The **canonical source of truth** for architecture and project status is [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md). Always read that first when picking up a task.
 
-- **不允许**用 `ws://127.0.0.1:8100/*` WebSocket 直注、`pytest`/`last_mile_smoke.py`、`import` backend 查 registry、`cmdkey /list`/boot log grep 当 UI 测试证据 —— 全是协议层/脚本/间接证据，不替代真模拟点击。
-- **中文输入 workaround**：STA Runspace + `Clipboard.SetText("中文")` + Ctrl+V；焦点不在目标窗口先 Click 输入框聚焦再粘贴；用 backend log 确认消息真收到。
-- **每个 case**：Snapshot/Screenshot → 真坐标点击/真输入 → 截图 → 日志判定；动作前 declare `坐标=(x,y)|动作=|期望=`；失败 retry ≥3 次不同 workaround 才能标"环境受限"；跳过须等用户确认。
+Key architecture documents:
+- [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) — Module completion status, active worktrees, recent milestones, known issues
+- [`ARCHITECTURE/AGENT_HARNESS.md`](./ARCHITECTURE/AGENT_HARNESS.md) — Current Agent Harness production facts
+- [`ARCHITECTURE/UI.md`](./ARCHITECTURE/UI.md) — UI theme, shared styles, page coverage
+- [`ARCHITECTURE/AgentLoop.md`](./ARCHITECTURE/AgentLoop.md) — ReAct loop, tool registration, completion gate
 
-**记住**：用户要的不是"PASS 数量"，是"真 E2E 证据"。绕过得来的 PASS 是负价值。
+### Code Structure
+
+```
+backend/
+├── main.py                    # FastAPI app + WebSocket routes
+├── config.py                  # Configuration management
+├── agent/                     # Legacy P3 agent code
+├── deskpet/                   # P4+ new architecture
+│   ├── agent/                 # Assembler + classifier
+│   ├── memory/                # Three-tier memory + sqlite-vec
+│   ├── tools/                 # Tool implementations (ppt/web/OCR/etc)
+│   ├── skills/                # Skill loader + builtin skills
+│   ├── mcp/                   # MCP client
+│   ├── workflows/             # Workflow engine
+│   └── companion/             # Companion growth system
+├── llm/                       # LLM provider adapters
+├── providers/                 # ASR/TTS providers
+└── tests/                     # pytest test suite
+
+tauri-app/
+├── src/
+│   ├── components/            # UI components (WorkbenchShell/Sidebar/etc)
+│   ├── views/                 # Four main views (Chat/Skills/Artifacts/Settings)
+│   ├── stores/                # Zustand state management
+│   └── chat/                  # Chat UI components
+└── src-tauri/
+    └── src/                   # Rust native layer (IPC, keychain, process mgmt)
+```
+
+### Important Patterns
+
+**Backend:**
+- Agent loop uses ReAct pattern with tool registration system
+- Three-tier memory: short-term / episodic / entity (BGE-M3 embeddings + sqlite-vec)
+- LLM providers: Anthropic / OpenAI / Google Gemini adapters with fallback chain
+- Tools register via `deskpet.tools` with effect policies
+
+**Frontend:**
+- Zustand for state management
+- WebSocket connection to backend control channel
+- Four-view workbench: Sessions / Skills / Artifacts / Settings
+
+---
+
+## Development Discipline
+
+### ARCHITECTURE Update Rule (HARD CONSTRAINT)
+
+**Any task that passes tests MUST update [`ARCHITECTURE/`](./ARCHITECTURE/) in the same delivery.**
+
+When a feature/module passes acceptance (pytest/vitest/cargo/manual E2E):
+1. Update corresponding `ARCHITECTURE/<MODULE>.md` with production chain/boundaries/validation status
+2. Update [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) module completion
+3. If milestone-level → append to PROJECT_STATUS recent milestones (reverse chronological)
+4. If worktree merged to master → update PROJECT_STATUS worktree status
+5. Update "last updated" date in relevant architecture docs
+
+**"Code changed + tests pass but ARCHITECTURE not updated" = task INCOMPLETE.**
+
+`STATUS/` directory is legacy only (historical link compatibility) — DO NOT write new status content there.
+
+### Testing Phase: Immediate Default-ON (HARD CONSTRAINT)
+
+**Current phase is testing. Completed capabilities must be default-ON immediately, no gradual rollout.**
+
+- "Developed but flag still default OFF" = **NOT ACCEPTABLE**
+- When a capability passes unit tests + implementation complete, flip its default flag **ON** in the same delivery
+- **Exceptions** (still OFF): ① incomplete/half-done implementations, ② dangerous/irreversible without guardrails, ③ unrelated to current mainline
+- Do not write "shadow mode / gradual rollout / batch A/B / default OFF until observation passes" — that's for production phase, not now
+
+---
+
+## Common Pitfalls (踩过的坑)
+
+1. **Tauri spawns backend automatically** — Don't manually run `python main.py`. Tauri's `process_manager.rs` spawns backend to `DESKPET_BACKEND_PORT` (default 8100). Manual start causes port conflict → "os error 10048" → app fails to start. **Correct:** Only start via `./scripts/dev.sh` or `npm run tauri:dev`.
+
+2. **Backend logs go to stderr** — Backend stdout is piped by Rust (reads SHARED_SECRET then drains). structlog writes to stderr → `Stdio::inherit()` → logs appear in tauri dev output. Check tauri dev logs to see backend logs.
+
+3. **Running worktree backend requires `DESKPET_BACKEND_DIR`** — `backend_launch.rs::resolve_with` priority: ① `DESKPET_BACKEND_DIR` env (runs `<dir>/.venv/Scripts/python.exe main.py`), ② bundled `target/debug/backend/deskpet-backend.exe` (PyInstaller frozen, from main checkout, **doesn't include worktree changes**). To test worktree code, must set `DESKPET_BACKEND_DIR=<worktree>/backend`. Verify logs show `[backend_launch] Dev python=... backend_dir=<worktree>`, not `[backend_launch] Bundled exe=...`.
+
+4. **`tauri dev` runs `beforeDevCommand` automatically** — `tauri.conf.json` already starts vite dev server via `beforeDevCommand`. Don't manually run another `npm run dev:relay` → two vite instances fight over `DESKPET_VITE_PORT` (strictPort) → second exits or shifts port → devUrl mismatch → blank screen. **Correct:** Either pure `npx tauri dev` (self-managed vite) OR use `--config '{"build":{"beforeDevCommand":""}}'` to disable auto-vite then manually start one. Pick one, not both.
+
+5. **Unit tests alone don't prove completion** — Must run end-to-end validation with real UI interaction when applicable. Scripted function replay is not E2E evidence.
+
+6. **Cross-layer contract drift** — pytest + tsc both pass but backend/frontend disagree on field units → use `scripts/e2e_*.py` live smoke tests as final gate.
+
+7. **Port isolation for worktrees** — Main tree uses backend=8100 / vite=5173 (defaults). Other worktrees must inject `DESKPET_BACKEND_PORT`/`DESKPET_VITE_PORT` to avoid conflicts (see `scripts/dev-worktree.ps1`).
+
+---
+
+## Project-Specific Context
+
+### Branch Strategy
+
+Master branch for direct development — no long-lived feature branches. Worktree topology and module completion status tracked in [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) §2.
+
+### Testing Credentials (DEV only)
+
+LLM calls go through relay (default gpt-5.5 equivalent). Test credentials stored in `LOCAL-DEV-CREDENTIALS.md` (gitignored). Template: [`LOCAL-DEV-CREDENTIALS.md.example`](./LOCAL-DEV-CREDENTIALS.md.example).
+
+**Security constraints:**
+- ⚠️ Don't push to public GitHub
+- ⚠️ Don't write to `.env` or `secrets/` (collected by diagnostic bundle)
+- ✅ Repository is private (git@github.com:DennyWanye/deskpet)
+
+### Configuration
+
+Main config: `config.toml` at repository root. LLM providers configured in Settings panel (writes to OS keychain, not config file).
+
+### Python Dependencies
+
+PyTorch version strictly pinned (torch 2.7.1 + torchvision 0.22.1 + torchaudio 2.7.1). **All three must match minor versions.** See `backend/pyproject.toml` for detailed version rationale.
+
+GPU deployment uses cu128 channel for Blackwell GPU support (sm_120):
+```bash
+pip install --index-url https://download.pytorch.org/whl/cu128 \
+    torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1
+```
+
+### Key Documentation
+
+- Quick start: [`README.md`](./README.md), [`QUICKSTART.md`](./QUICKSTART.md)
+- Architecture baseline: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md)
+- Deployment overview: [`ARCHITECTURE.md`](./ARCHITECTURE.md)
+- Contribution guide: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+- License: BUSL-1.1 (see [`LICENSE`](./LICENSE), auto-converts to Apache-2.0 on 2030-05-27)
+
+### Plans Directory
+
+Implementation plans live in `plans/<date>-*/00-PLAN.md`. Architecture docs record current production facts; plans record implementation process. Check [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md) first for current module status before diving into plans.
+
+---
+
+## Quick Reference
+
+**Start development:**
+```bash
+./scripts/setup.sh    # First time only
+./scripts/dev.sh      # Daily
+```
+
+**Run tests:**
+```bash
+cd backend && python -m pytest
+cd tauri-app && npm test
+```
+
+**Check architecture:**
+- Start here: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md)
+- Status: [`ARCHITECTURE/PROJECT_STATUS.md`](./ARCHITECTURE/PROJECT_STATUS.md)
+
+**Remember:**
+- Don't manually start backend (Tauri manages it)
+- Update ARCHITECTURE/ when task completes
+- Default-ON for completed features in testing phase
+- Unit tests + E2E validation required for completion
