@@ -654,7 +654,8 @@
     记录为 `unshipped_sdk_draft_delete`；它不是frozen source symbol，不进入也不改写
     `source-symbol-disposition.json`。
     typed fields/invariants也属于public snapshot：`StartAdmissionReceipt(request_id, request_key,
-    request_fingerprint, run_id, phase, version, claim_owner?, activation?, serialized_outcome?)`且
+    request_fingerprint, run_id, phase, version, claim_action?, claim_owner?, claim_epoch?, claim_expires_at?,
+    activation?, serialized_outcome?)`，`StartClaimAction=NEW|RESUME`且
     `StartPhase=ADMITTED|CLAIMED|RUNNING|SETTLED`；`ResumeAdmissionRequest(receipt_id, run_id,
     expected_run_version, expected_checkpoint_head, pending_interrupts[(id,payload_hash)], responses,
     responses_hash)`；`ResumeAdmissionReceipt`保存request全部immutable identity、phase/version、claim
@@ -663,7 +664,19 @@
     `ForkRequest(fork_id,fingerprint,source_run_id,source_namespace,source_checkpoint_id,source_run_version,
     source_head,engine/manifest/implementation/schema hashes,canonical patch,dangerous_confirmation?)`，
     `ForkReceipt`保存完整request identity、stable child run/trace/checkpoint IDs、phase/version/claim与outcome。
-    所有hash由SDK从typed content重算，caller supplied值只可constant-compare。
+    所有hash由SDK从typed content重算，caller supplied值只可constant-compare。start receipt 的claim
+    authority也是public snapshot的一部分：`ADMITTED`必须令action/owner/epoch/expiry/activation全为None；
+    `CLAIMED|RUNNING`必须同时携`claim_action`、非空owner、正整数workflow claim epoch、finite acquisition
+    expiry与同run/namespace/owner的`WorkflowActivation`；`claim_epoch` exact等于
+    `WorkflowLease.epoch`，而`WorkflowLease.runtime_lease_epoch == ExecutionLease.epoch ==
+    RunFenceLease.runtime_lease_epoch`，不得把workflow claim epoch与独立`RunFenceLease.fence_epoch`混用。
+    `claim_expires_at` exact等于claim签发时`WorkflowLease.expires_at == ExecutionLease.expires_at`的immutable
+    audit值，RunFence不携expiry也不被heartbeat续租。heartbeat只co-renew durable Runtime dispatch record、
+    ExecutionLease与WorkflowLease rows，不重写receipt/version/RunFence；后续mutation在同一transaction重读
+    current rows，要求Runtime dispatch/ExecutionLease/WorkflowLease owner+runtime epoch彼此相等、两条lease的
+    current durable expiry相等且`> now`、RunFence仍active且owner/run/runtime epoch/fence epoch为current，同时
+    caller immutable expiry不得晚于current durable expiry。`SETTLED`保留最后一次claim的
+    action/owner/epoch/expiry作receipt-first audit identity、`activation=None`且必须有serialized outcome。
     `WorkflowLifecyclePort` exact mutation surface为
     `admit_start_standalone(transaction, request, *, now, fault?) -> StartAdmissionReceipt`、
     `claim_activation(transaction, run_id, expected_run_version, owner_id, *, now, ttl_seconds, fault?) ->
@@ -846,6 +859,21 @@
      然后用新invocation authority同tx rebind为RESUME_RUNNING，不重写genesis；SETTLED无论
      旧lease是否过期都receipt-first只读返回原outcome且activation=None。PRECREATED出现
      ADMITTED、RUNNING无genesis/head、live foreign owner、旧invocation epoch均fail closed/零写。
+     `PrecreatedStartDispatch`构造时必须独立重算并constant-compare完整claim authority：对
+     `CLAIMED|RUNNING`，receipt的`claim_owner/claim_epoch/claim_expires_at`必须分别等于activation中的共同
+     owner、`WorkflowLease.epoch`与`WorkflowLease.expires_at == ExecutionLease.expires_at`；RunFence只校验
+     run/owner/runtime epoch/fence epoch co-fence，不参与expiry比较。current durable expiry不由typed constructor
+     猜测，而由上述同事务SQLite current-row gate验证。`workflow_start_admissions`必须durably保存
+     `claim_action`；首次claim原子写`claim_action=NEW`，recovery/takeover推进receipt version与WorkflowLease
+     claim epoch时原子改为`claim_action=RESUME`。`NEW_CLAIMED`只接受`claim_action=NEW`的CLAIMED receipt；该首次claim的
+     after-commit响应丢失或same-authority exact replay必须receipt-first返回相同`NEW_CLAIMED`，不得改判action。
+     `RESUME_CLAIMED`只接受`claim_action=RESUME`且recovery/takeover已原子推进durable receipt version+
+     WorkflowLease claim epoch后的CLAIMED receipt，`RESUME_RUNNING`只接受`claim_action=RESUME`的RUNNING receipt及
+     已验证genesis/head，`SETTLED`只接受SETTLED receipt、`activation=None`与exact serialized outcome。
+     SETTLED branch必须先读取并constant-compare完整receipt+outcome后只读返回，不查询或要求仍active的lease、
+     RunFence、dispatch或current expiry；保留的claim字段只用于audit/replay identity。
+     same owner但不同epoch/expiry、caller整体替换为自洽的新activation、action/phase/version错配都必须在typed
+     constructor与SQLite replay两层fail closed且零写；逐字段mutation和close/reopen矩阵属于H16 gate。
      `build_runtime`/`Runtime.__init__` 公开签名删除`workflow_driver`注入参数；改为必填
      SDK-owned `workflow_runner`/official factory binding（无workflow profile时可None），Runtime内部调
      `build_workflow_runtime_driver`并注册reserved key。Host `drivers` 仍只能传extension key，不能传入、
