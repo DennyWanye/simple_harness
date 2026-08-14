@@ -2,7 +2,7 @@
 
 > Last Updated: 2026-08-15
 > SDK Repository: simple-harness-sdk (branch: codex/sdk-v0.1-foundation)
-> HEAD: 14d40d7
+> HEAD: 8ac569a
 
 ## Overall Status
 
@@ -23,7 +23,13 @@
 - Total: ~1157 lines (674 implementation + 483 tests)
 - Test suite: 19 tests PASSED
 
-**⏳ T5.3-T5.4 Pending** (Other workflow profiles)
+**✅ T5.3 Complete** (capability_build workflow profile)
+- Started: 2026-08-15
+- Completed: 2026-08-15
+- Total: ~83 lines (35 implementation + 48 tests)
+- Test suite: 3 tests PASSED
+
+**⏳ T5.4 Pending** (Conformance CLI)
 
 **⏳ T6.x Pending** (Product Cutover)
 
@@ -237,43 +243,68 @@ uv run pytest tests/integration/workflows/test_personal_v1*.py -v
 
 ---
 
+## T5.3 Capability Build Workflow Status
+
+### Implementation ✅
+- **Status**: Complete (2026-08-15, commit 8ac569a)
+- **Total Lines**: ~83 lines (35 implementation + 48 tests)
+- **Files Created**:
+  1. `src/simple_harness/workflows/capability_build/__init__.py` (35 lines)
+  2. `tests/integration/workflows/test_capability_build_profile.py` (48 lines)
+
+### Architecture
+- **Pattern**: Profile/configuration layer over durable_task workflow
+- **Key Discovery**: capability_build is NOT a new workflow graph—it's a bounded durable_task profile
+- **Profile Constants**:
+  - WORKFLOW_PROFILE_KEY: "workflow.capability_build"
+  - WORKFLOW_NAME: "durable_task" (reuses existing graph)
+  - WORKFLOW_VERSION: "v1"
+  - DEFAULT_PROPOSAL_BUDGET: 40 (constrained)
+  - DEFAULT_FIX_BUDGET: 3 (constrained)
+- **Relationship**: Uses same workflow graph as durable_task but with tighter budgets for safety
+
+### Tests ✅
+- **Total**: 3 tests PASSED
+- **Coverage**: Profile constants, durable_task reuse verification, budget constraints
+
+**Verification**:
+```bash
+cd /Users/denny/projects/simple-harness-sdk
+uv run pytest tests/integration/workflows/test_capability_build_profile.py -v
+# ============================== 3 passed in 0.01s ===============================
+```
+
+---
+
 ## Remaining Work Estimate
 
-### T5.3 capability_build
-- **Source**: `backend/deskpet/capabilities/builder.py`
-- **Effort**: 2-3 sessions (specialization of durable_task)
-
 ### T5.4 Conformance CLI
-- **Effort**: 2 sessions
+- **Effort**: 2-3 sessions (CLI + pytest plugin)
 
 ### T6 Product Cutover
 - **T6.1**: Product SDK adapters (5-6 sessions)
 - **T6.2**: Dependency switch and integration (3-4 sessions)
 
-**Total Remaining**: ~12-16 sessions for complete SDK-AC-1..8 acceptance
+**Total Remaining**: ~10-13 sessions for complete SDK-AC-1..8 acceptance
 
 ---
 
 ## Next Steps
 
-1. **Immediate**: Start T5.3 capability_build workflow
-2. **After T5.3**: T5.4 Conformance CLI
-3. **Final**: T6 Product Cutover
+1. **Immediate**: Start T5.4 Conformance CLI
+2. **After T5.4**: T6 Product Cutover
+3. **Final**: E2E verification and release
 
 ---
 
 ## Files Modified This Session
 
 **Product Repository** (`/Users/denny/projects/simple_harness`):
-1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated T5.2 complete, HEAD 14d40d7)
+1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated T5.3 complete, HEAD 8ac569a)
+2. `plans/2026-08-13-simple-harness-sdk/verification/T5.3-capability-build-design.md` (new verification doc)
 
 **SDK Repository** (`/Users/denny/projects/simple-harness-sdk`):
-1. `src/simple_harness/workflows/personal_v1/__init__.py` (new, 25 lines, commit 14d40d7)
-2. `src/simple_harness/workflows/personal_v1/selection.py` (new, 399 lines, commit 14d40d7)
-3. `src/simple_harness/workflows/personal_v1/ports.py` (new, 39 lines, commit 14d40d7)
-4. `src/simple_harness/workflows/personal_v1/definition.py` (new, 211 lines, commit 14d40d7)
-5. `tests/integration/workflows/test_personal_v1_graph.py` (new, 234 lines, commit 14d40d7)
-6. `tests/integration/workflows/test_personal_v1_execution.py` (new, 249 lines, commit 14d40d7)
-7. `pyproject.toml` (modified, added pytest-anyio, commit 14d40d7)
+1. `src/simple_harness/workflows/capability_build/__init__.py` (new, 35 lines, commit 8ac569a)
+2. `tests/integration/workflows/test_capability_build_profile.py` (new, 48 lines, commit 8ac569a)
 
-**Status**: T5.2 personal_v1 workflow complete, ready to start T5.3 capability_build
+**Status**: T5.1-T5.3 complete (all workflow profiles), ready to start T5.4 Conformance CLI
