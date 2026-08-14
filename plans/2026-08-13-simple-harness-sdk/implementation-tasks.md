@@ -666,8 +666,6 @@
     所有hash由SDK从typed content重算，caller supplied值只可constant-compare。
     `WorkflowLifecyclePort` exact mutation surface为
     `admit_start_standalone(transaction, request, *, now, fault?) -> StartAdmissionReceipt`、
-    `admit_start_precreated(transaction, request, execution_lease, run_fence, expected_generic_run_version,
-    *, now, ttl_seconds, fault?) -> StartAdmissionReceipt`、
     `claim_activation(transaction, run_id, expected_run_version, owner_id, *, now, ttl_seconds, fault?) ->
     WorkflowActivation`、`bind_activation(transaction, run_id, expected_run_version, execution_lease, run_fence,
     *, now, ttl_seconds, fault?) -> WorkflowActivation`、`renew_activation(transaction, activation, *, now,
@@ -690,7 +688,56 @@
     `read_recovery_snapshot(run_id) -> RecoverySnapshot`,
     `commit_recovery_outcome(transaction, candidate, expected_snapshot, outcome, *, now, fault?)`与
     `claim_resolved_recovery(transaction, blocker_id, expected_resolution_version, owner_id, *, now,
-    ttl_seconds, fault?) -> RecoveryClaim`；`WorkflowReplayPort` exact surface为
+    ttl_seconds, fault?) -> RecoveryClaim`；为保持policy在SDK而不是Port，还必须提供
+    `repair_checkpoint_head(transaction, candidate, expected_snapshot, replacement_head,
+    outcome, *, now, fault?) -> RecoveryOutcome` 与
+    `quarantine_recovery_candidate(transaction, candidate, expected_snapshot, quarantine,
+    outcome, *, now, fault?) -> RecoveryOutcome`。`replacement_head` 是SDK从同run+pinned namespace
+    最高committed revision选出的typed `(checkpoint_id, revision, checkpoint_hash)`；
+    `quarantine` 是canonical `(quarantine_id, reason, source_head?, observed_hash?, detail_ref?)`，
+    Port只验证全snapshot CAS并原子写head/record+outcome，不得自行选head或reason。
+    `WorkflowLifecyclePort` 还必须提供
+    `list_unsettled_start_admissions(snapshot_cursor, *, limit) -> (receipts,next_cursor)` 与
+    `list_unsettled_resume_admissions(snapshot_cursor, *, limit) -> (receipts,next_cursor)`，`limit`必须
+    `1..50`，Port cursor只推进到本次实际返回的最后receipt，均以stable receipt key
+    升序keyset；start枚举`ADMITTED|CLAIMED|RUNNING`，resume枚举
+    `ADMITTED|CLAIMED|RETRY_WAIT`，返回完整immutable receipt而不按expiry/owner/mode/due做policy过滤。
+    SDK scanner用注入`now`分类；precreated receipt必须先经Runtime recovery取得typed
+    `ExecutionLease+RunFenceLease`才可claim，Port不得伪造第二套owner。
+    `RecoverySnapshot` 还必须携完整无policy evidence：
+    `checkpoint_candidates: tuple[RecoveryCheckpointCandidate,...]` 按revision升序，每条为
+    `(checkpoint_id, namespace, revision, checkpoint_hash, status, schema_version)`，只枚举同run+
+    pinned namespace的committed checkpoints；`blockers: tuple[RecoveryBlockerSnapshot,...]` 按
+    blocker_id升序，每条为`(blocker_id, kind, ledger_id, observed_unknown_version,
+    handoff_attempt, resolution_state?, resolution_version?, evidence_ref?)`。read只左连接/枚举真实
+    durable evidence，不选replacement head、不解释resolution。RecoverySnapshot canonical hash包含
+    这两组，所有recovery mutation同tx重读并CAS其全量digest；分页/读取后新checkpoint、
+    blocker或resolution进展必须使旧outcome零写conflict。
+    `ensure_and_bind_precreated_start(transaction, request, execution_lease, run_fence,
+    dispatch_claim: RuntimeStartDispatchClaim, *, now, ttl_seconds, fault?) -> PrecreatedStartDispatch` 与
+    `recover_precreated_start(transaction, recovery_work: WorkflowRecoveryWork, execution_lease, run_fence,
+    *, now, ttl_seconds, fault?) -> PrecreatedStartDispatch` 也是
+    `WorkflowLifecyclePort` 的必填durable mutation，不是Runner可以直连SQLite实现的helper。
+    `ensure_and_bind_precreated_start`只处理无workflow start receipt的首次dispatch与其after-commit exact replay；
+    `recover_precreated_start`处理已有CLAIMED/RUNNING/SETTLED receipt。CLAIMED/RUNNING takeover对start receipt
+    `version/claim_owner/claim_epoch/claim_expires_at`与Workflow projection同tx CAS；稳定fault labels为
+    `workflow:ensure_precreated_start:before_<table>_write/after_<table>_write/after_commit`，对实际写入的
+    start receipt/workflow lease/start dispatch claim每张表都要列出。它必须在创建或重绑workflow start
+    receipt的同一transaction以stable claim capability identity重读current dispatch record，验证
+    run/owner/runtime epoch/claim epoch、current Runtime lease/RunFence与`record.expires_at > now`，再CAS
+    current record version的`CLAIMED->CONSUMED`；不得比较Driver取得时的旧version/expiry。已CONSUMED只允许
+    receipt-first匹配同一workflow receipt返回，不得进入第二Driver。
+    `recover_precreated_start`只接受`receipt_kind=start`的完整frozen work，重读并constant-compare current
+    receipt id/version/request fingerprint/snapshot及generic Run/head，以新Runtime lease/RunFence CAS重绑
+    CLAIMED或RUNNING receipt；它不得要求/创建/消费dispatch claim，也不得新建start receipt。wrong kind、stale
+    snapshot、live foreign workflow owner、terminal/WAITING、旧runtime epoch均零写。Runner/Driver只能按tag调用
+    这两个Port methods，旧`admit_start_precreated` public path删除，禁止自行组合`bind_activation`或私有SQL。
+    两个dispatcher在任何已有phase（CLAIMED/RUNNING/SETTLED包括receipt-first返回）都必须从dispatch claim绑定的
+    request或`WorkflowRecoveryWork.receipt_snapshot`自行重算canonical request fingerprint，并与持久化
+    `request_key/request_fingerprint/request_json/mode/run/trace/thread`全量constant-compare；同key任一
+    ticket/input/manifest/identity字段变化均在读取outcome或rebind前零写conflict，不得因SETTLED
+    或旧claim过期而跳过request identity。
+    `WorkflowReplayPort` exact surface为
     `read_fork(fork_id) -> ForkReceipt?`、
     `prepare_fork(transaction, request, expected_source_snapshot, *, now, fault?) -> ForkReceipt`、
     `claim_fork(transaction, fork_id, expected_receipt_version, owner_id, *, now, ttl_seconds, fault?) ->
@@ -756,6 +803,16 @@
      current RunFence三方关系，缺失/过期零transport/handler。Workflow context effect/provider adapter必须显式
      携immutable activation调用，禁止hidden mutable closure。补仅WorkflowLease expiry/mismatch而Runtime lease+
      RunFence仍active的零physical regression。
+     SDK必须提供两个official private adapter，而不是让workflow/Host重写：
+     `WorkflowProviderAdapter(coordinator, activation, clock)` 与
+     `WorkflowEffectAdapter(executor, activation, clock)`。它们是每次Driver invocation构造的
+     immutable value，每个method显式把同一`activation.execution_lease/run_fence/workflow_lease`
+     传入T2.4/T2.5 public call，且run identity必须与Node context一致。
+     `WorkflowRuntimeDriver.start` 只能从`DriverInvocation.services.provider/tools`与当次CLAIMED
+     `WorkflowActivation` 构造adapter，再以typed `WorkflowContext.provider/effects` 字段传给
+     Runner/Native；不得仅把activation序列化到configurable、不得放入可替换的字符串
+     `ports` mapping或hidden mutable closure。pure route/interrupt context构造时必须移除这两个
+     typed adapters。漏传、错run/owner、旧runtime/workflow/fence epoch均在transport/handler前零物理调用。
   3. precreated path必须经Port化 `_require_precreated` 从durable execution authority验证generic Run与
      workflow Run同一ID、driver kind、trace identity、lease owner/epoch；terminal则由
      `_assert_precreated_terminal` 验证workflow terminal checkpoint与generic terminal/event/delivery在同一
@@ -764,9 +821,79 @@
      `ExecutionLease + RunFenceLease`并走`bind_activation/claim_resume_precreated`。wrong owner、expired/old
      Runtime epoch、同owner旧RunFence或另一run的lease在admission/claim阶段零receipt、零checkpoint、零effect。
      start同样区分`StartMode.STANDALONE|PRECREATED`：precreated Runtime在Workflow Driver前已创建并激活generic
-     Run，故只能调用`admit_start_precreated`，在同transaction验证现有generic Run/start snapshot/version及typed
-     leases，同时创建workflow receipt/row与projection lease，直接落CLAIMED；不得再创建reserved generic Run，
+     Run。首次`START_NEW|START_ORPHAN`只能调用`ensure_and_bind_precreated_start`，在同transaction验证现有generic
+     Run/start snapshot/version、typed leases与dispatch claim，同时创建workflow receipt/row与projection lease并
+     消费claim，直接落CLAIMED；不得再创建reserved generic Run，
      不存在admission后再bind窗口，standalone scanner也不得claim PRECREATED receipt。
+     official Runtime launch不得要求Host或测试事先seed admission：T4.2 launch在generic
+     `StartSnapshot` 中pin入typed `workflow_admission: StartAdmissionRequest | None`，序列化时保留
+     完整canonical request（不是只保留`start_input`）。`driver_kind="workflow"` 必须非None，
+     其他driver必须None。SDK `WorkflowRuntimeDriver.start` 在执行Native前先用该typed
+     request、当次`DriverInvocation.execution_lease/run_fence`与reserved dispatch claim调用
+     `ensure_and_bind_precreated_start`，然后用
+     返回的CLAIMED receipt/activation调Runner；after-commit响应丢失重试必须只读同receipt。
+     `run_precreated` 不得接受“admission必定已被外部创建”的隐藏前提。真实
+     `Runtime.start(workflow profile)` 从空DB到genesis/terminal必须零手工seed GREEN。
+     `WorkflowRuntimeDriver.recover`遇`RECOVER_START`则必须调用
+     `recover_precreated_start(transaction, recovery_work, execution_lease, run_fence, ...)`，不得设置/伪造
+     `workflow_start_dispatch`；`RECOVER_RESUME`只走`claim_resume_precreated`。上述步骤必须由对应SDK-owned
+     tagged dispatcher执行；dispatch exact fields为
+     `(action, receipt, activation?, serialized_outcome?)`，`action = NEW_CLAIMED | RESUME_CLAIMED |
+     RESUME_RUNNING | SETTLED`。无receipt时原子admit+bind为NEW_CLAIMED；CLAIMED且同一
+     active authority只读返回，旧claim过期且invocation的Runtime lease/RunFence已是current时
+     CAS receipt version/owner并重bind为RESUME_CLAIMED；RUNNING必须验证genesis/head存在，
+     然后用新invocation authority同tx rebind为RESUME_RUNNING，不重写genesis；SETTLED无论
+     旧lease是否过期都receipt-first只读返回原outcome且activation=None。PRECREATED出现
+     ADMITTED、RUNNING无genesis/head、live foreign owner、旧invocation epoch均fail closed/零写。
+     `build_runtime`/`Runtime.__init__` 公开签名删除`workflow_driver`注入参数；改为必填
+     SDK-owned `workflow_runner`/official factory binding（无workflow profile时可None），Runtime内部调
+     `build_workflow_runtime_driver`并注册reserved key。Host `drivers` 仍只能传extension key，不能传入、
+     删除或替换official driver object。
+     `RuntimeUnitOfWork` public Protocol必须暴露opaque `transaction_owner`。构造时必须验证
+     `type(workflow_runner) is WorkflowRunner`（禁subclass/alternate factory）且
+     `workflow_runner.execution_ports.unit_of_work.transaction_owner is uow.transaction_owner`；Runner的
+     checkpoint/lifecycle/recovery/replay已在其自身constructor绑定同owner，因而这个identity check
+     将Runtime与全部Workflow authority锁在同一DB/transaction owner。跨库Runner、镜像run id、
+     缺owner都必须在Runtime构造时零写拒绝。
+     Native terminal不得先单独把generic `runs.state`终态化、释放authority，再让Kernel
+     二次terminalize。`WorkflowLifecyclePort.commit_terminal(transaction, activation,
+     expected_run_version, expected_checkpoint_head, terminal_checkpoint_id, terminal_state,
+     terminal_payload, deliveries, terminal_fence_receipt_id, *, now, fault?) ->
+     WorkflowTerminalOutcome` 是唯一terminal command：在checkpointer同一open transaction中验证
+     三份current authority、new checkpoint/head，并原子写terminal workflow/generic Run、
+     `run.<state>` event、outbox deliveries、terminal fence receipt，然后release Runtime/Workflow lease与
+     RunFence。它保留H14 `finalize_run` 的stable `(run_id, terminal_checkpoint_id)` operation id/
+     global receipt语义，但将其payload扩展为上述全部authority/terminal fields并由adapter重算
+     hash；不得再保留只`UPDATE runs.state` 的旁路。after-commit重试先receipt-first只读返回
+     同outcome，异payload零写conflict。Kernel看到Workflow Driver terminal result后只调
+     `verify_workflow_terminal(outcome: WorkflowTerminalOutcome) -> bool`；UoW必须对七字段/
+     outcome hash与durable receipt、exact terminal Run state/version、terminal checkpoint/head id+hash/revision、
+     event、exact outbox immutable creation facts集合（delivery id、sink、idempotency key、canonical payload、
+     created_at）、terminal fence receipt、Runtime/Workflow lease rows已删除/
+     released且RunFence state=`released` 逐项constant-compare；任一缺失/多余/漂移返回false，
+     验证成功即复用已提交
+     terminal，不再调generic `_terminalize`。逐checkpoint/event/outbox/fence/lease/run write fault与
+     close/reopen必须全回滚或全提交。
+     outbox的当前delivery state是dispatch authority，允许在验证时为
+     `pending|claimed|delivered|failed|released`；verifier不得把terminal commit时的mutable state写入
+     outcome hash或要求它保持不变，但必须按terminal receipt保存的delivery IDs验证无缺失/额外行，且上述
+     immutable creation facts逐项一致。补terminal commit后dispatcher在heartbeat/Driver return前把outbox推进到
+     delivered或failed的barrier回归，两种状态都必须验证成功且不得重写terminal。
+     `WorkflowTerminalOutcome` 是immutable typed value，exact fields为
+     `(receipt_id, run_id, checkpoint_id, state, event_id, delivery_ids, outcome_hash)`；`outcome_hash`由SDK对
+     前六字段和terminal payload/deliveries canonical SHA-256重算，DB receipt保存同hash。
+     `DriverResult` 新增reserved typed `workflow_terminal: WorkflowTerminalOutcome | None`；只有exact
+     `WorkflowRuntimeDriver` 返回terminal state时允许非None，其他driver设置、Workflow terminal缺失或
+     WAITING携带均拒绝。Native→Runner→Driver必须原样传该typed value，禁止放进普通
+     payload自声明。Kernel以七字段+UoW durable receipt constant-compare后只清理local task/
+     heartbeat index，不重写terminal。
+     terminal transaction先release Runtime lease而typed outcome尚未从Driver返回时，并发heartbeat
+     可观测到stale lease。Runtime heartbeat在workflow Run renew conflict时必须先通过UoW
+     `read_workflow_terminal_outcome(run_id) -> WorkflowTerminalOutcome | None` 读取并调同一
+     full-outcome verifier；若完整terminal receipt/event/outbox/fence receipt已提交，则该conflict是
+     benign terminal release，heartbeat只停止自身，不取消Driver、不走lease-loss/cancel/failure。
+     无receipt或任一字段不完整仍按真实lease loss隔离。用barrier测terminal commit后、
+     Driver return前heartbeat立即renew，最终必须返回同typed outcome且零cancel/failure。
   4. cancel是durable状态机：`lifecycle.request_cancel(transaction, request, expected_run_version,
      activation?, now)`先原子落 `cancel_requested`，同时release/increment current Runtime lease、RunFence与派生
      WorkflowLease，使任一旧writer三方epoch校验失败；已prepared/handed-off/
@@ -807,6 +934,59 @@
      `resume_pending_checkpoint`。每个outcome固定`previous_status/status/action/reason/receipt_id`；mutation CAS都绑定
      status+run version+两类lease epoch+expected head。补双scanner、scanner-vs-live Runner、late reconciliation
      交错，旧scanner不得回退新head或quarantine active Run。
+     Runner公开constructor删除可执行policy的`WorkflowRecoveryPort`/consumer callback；只依赖
+     canonical `WorkflowExecutionPorts.recovery` durable primitives。`recover_expired` 必须遍历上述
+     exact candidate pages并返回真实outcomes，不得stub为空；`recover(run_id)` 必须先走
+     同一classify/repair/quarantine/uncertainty pipeline，不得绕过后直接`_execute`。
+     precreated unsettled receipt不由Workflow scanner自行claim Runtime authority。SDK official
+     `WorkflowRuntimeDriver.list_recovery_work(cursor, *, now) -> (items,next_cursor)` 把start/resume枚举转为
+     immutable `WorkflowRecoveryWork(run_id, receipt_kind, receipt_id, receipt_version, mode, due_at?,
+     request_fingerprint, receipt_snapshot: StartAdmissionReceipt | ResumeAdmissionReceipt)`，snapshot按kind保存
+     完整canonical start request或resume responses并与flat identity重算一致；仅排除
+     standalone，不查/领Runtime lease也不丢弃尚未due RETRY_WAIT。cursor是typed
+     `WorkflowRecoveryCursor(start_cursor?, resume_cursor?)`：每轮分别从两个Port最多取50条，
+     按`(receipt_kind, receipt_id)` 稳定合并返回最多100条，并将两个cursor分别推进到
+     已消费的各自最后receipt；禁止用一个字符串cursor跨两表或因一类持续新增而
+     饿饿另一类。Runtime startup `recoverable_runs`
+     阶段消费items：用canonical UoW对该run取得或跳过active owner、claim
+     `ExecutionLease`和RunFence，构造携带该work的`DriverInvocation`，再调
+     `WorkflowRuntimeDriver.recover(invocation, work)`。Driver/Runner必须constant-compare work与当前receipt。
+     precreated start receipt的RUNNING phase必须生成`RECOVER_START` work，由Runtime在lease expiry/takeover后调用
+     `recover_precreated_start`；active owner只读skip。standalone RUNNING不得交给Runtime Driver或start scanner
+     自领Runtime authority，仍由Runner的canonical recovery candidate classify/repair pipeline处理。其他start走
+     对应tagged dispatcher，resume走`claim_resume_precreated`并复用receipt内responses。
+     claim后、Driver前crash可由新Runtime epoch重枚举/接管；active foreign owner、wrong mode/
+     receipt/version/run、旧epoch均零写且零node/effect。active owner同进程由Runtime的durable
+     wake-drain消费，不等TTL。
+     对`due_at > now`的RETRY_WAIT，Runtime以注入`clock/sleep`注册可取消timer，key为
+     `(receipt_kind, receipt_id, receipt_version, due_at)`；到期后必须重读receipt并重走上述
+     Runtime claim/typed recover，version/due/phase已变则no-op。close先取消/join所有timer；重启靠全量
+     scan重建；timer与startup/takeover同时到期仍只能一个Runtime lease/receipt claim winner，
+     不得遗失无外部signal的due wake。
+     live Driver新写`RETRY_WAIT`时不能等下次startup scan：immutable
+     `WorkflowRetryWake(run_id, receipt_id, receipt_version, mode, due_at, wait_event_id,
+     generic_run_version, outcome_hash)` 由Native store
+     从已提交receipt构造，经Runner/official Driver原样放入reserved
+     `DriverResult.workflow_retry_wake: WorkflowRetryWake | None`。只有exact Workflow Driver的WAITING result
+     可携带。`defer_resume_retry`/`commit_retry`必须在保存RETRY_WAIT receipt的同一transaction把generic
+     Run CAS到WAITING、写stable `workflow.retry_waiting` event与durable wake identity，并release
+     Runtime/Workflow lease和RunFence；不得只推进workflow receipt而把generic Run留RUNNING。
+     canonical UoW必须提供
+     `verify_workflow_retry_wake(wake: WorkflowRetryWake) -> bool`，逐项重读并constant-compare receipt、
+     due/hash、generic Run WAITING state/version、wait event与三份authority已release。Runtime收到wake后先调用
+     该verifier；成功则注册上述timer并跳过普通`commit_runtime_state(WAITING)`，失败则fail closed，禁止用第二个
+     transaction修补generic Run。heartbeat在commit与Driver return之间遇到renew conflict时也必须先验证同一
+     durable wake；完整则视为benign WAITING release，只停止heartbeat而不取消Driver。
+     返回前crash由startup scan补偿；返回与timer同时到期、close/restart均仍由
+     Runtime lease+receipt CAS保证唯一winner。其他driver设置、非WAITING携带或自声明payload
+     中的due_at都拒绝。
+     standalone `RETRY_WAIT` 不经Runtime Driver：Runner在Native返回同一
+     `WorkflowRetryWake`后先重读receipt，再以同一注入`clock/sleep`注册Runner-owned
+     cancellable timer；到期后走`claim_resume_standalone`并复用receipt responses。Runner必须有
+     `close()`取消/join timers，且进程重启时由SDK standalone unsettled scanner全量枚举
+     ADMITTED/CLAIMED/RETRY_WAIT，对未due重建timer、已due立即claim。live timer/startup scanner/
+     并发Runner仍由receipt CAS只允许一个claim winner；无Runtime、无外部signal、不重启也
+     必须在due时继续。
   6. replay/fork必须只用canonical `WorkflowExecutionPorts`，并验证指定历史checkpoint的run owner、namespace、
      engine version、manifest/implementation hash、pending results/fanout、interrupt decisions、state/schema/type
      compatibility。危险确认不是bool：`DangerousEffectObservation(effect_id, kind, state, ledger_version,
@@ -856,6 +1036,14 @@
      requested run/trace/thread id缺省时不在admission前生成随机值：SDK从canonical request fingerprint用固定
      namespace+domain separator确定性派生三者，并将resolved identities写receipt/start snapshot；若caller显式
      给值则该值进入fingerprint。并发exact start与after-commit reopen必须得到相同三identity。
+     durable generic admission前的唯一factory为SDK
+     `WorkflowRunner.prepare_start_admission(ticket: VerifiedWorkflowLaunchTicket,
+     start: RunStart) -> StartAdmissionRequest`。Runtime在写generic Run/start snapshot之前调它；
+     factory从exact registry/compiled workflow读manifest、schema/limits、implementation、terminal descriptor/
+     request-factory与capability metadata，对`start.input`先canonical validate/freeze后自行填充全部
+     hash/namespace/version字段。Host只能提交T4.2 ticket和RunStart，不能提交/覆盖
+     `StartAdmissionRequest`、manifest hash、schema或descriptor。ticket/profile/catalog/workflow任一不匹配在
+     generic receipt前零写拒绝。
   8. resume不是单一bool receipt而是versioned state machine：`ResumePhase = ADMITTED | CLAIMED | RETRY_WAIT |
      SETTLED`。
      `admit_resume(transaction, request, expected_run_version, expected_checkpoint_head, now)`以
@@ -881,7 +1069,8 @@
      `RETRYABLE|FAILED|WAITING|ADVANCED|TERMINAL` outcome+operation/head。仅`commit_task_result`等必然继续到下一
      durable出口的中间write可保持CLAIMED。`commit_retry`是唯一不直接SETTLED的出口：它同transaction把receipt
      CAS到RETRY_WAIT，保存immutable原responses+hash、decision ids、retry operation id/attempt、next_attempt_at与
-     checkpoint head，并release当前activation。到期前exact caller只读返回typed IN_PROGRESS；startup/due scanner
+     checkpoint head，同时把generic Run置WAITING、写stable retry-wait event/wake并release全部三份activation
+     authority。到期前exact caller只读返回typed IN_PROGRESS；startup/due scanner
      只允许一个claimant CAS RETRY_WAIT->CLAIMED，复用receipt内同一responses调用Native resume，decision与effect仍
      由既有operation/ledger receipt去重；再次retry更新同receipt attempt/next time。只有随后WAITING/ADVANCED/
      FAILED/TERMINAL durable出口才SETTLED。每种出口逐table before/after-write、after-commit reopen，加到期双claimant
@@ -892,13 +1081,148 @@
   H16 tests必须直接证明registry无bound authority cache、漏传/错owner store构造零写、heartbeat lease loss、
   precreated identity mismatch、cancel unknown convergence、repair/quarantine、fork dangerous confirmation、start
   并发幂等和resume CAS；所有关键命令含before/after write与after-commit fault、关闭数据库并以同路径重开。
+  必须包含precreated genesis已提交/start receipt=`RUNNING`后进程崩溃、关闭同路径DB、lease过期重开：startup
+  enumeration构造同receipt snapshot的`RECOVER_START`，新Runtime epoch恢复且node/effect不重放；active owner及
+  standalone RUNNING均不得被该Runtime scanner误claim。
 - 依赖：T2.1–T2.5。
 
 ### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]
 
-- 文件：`runtime/profiles.py`, `runtime/orchestration.py`, `runtime/drivers/workflow.py`。
+- 文件：`runtime/profiles.py`, `runtime/orchestration.py`, `runtime/drivers/workflow.py`,
+  `workflow/execution_ports.py`, `execution/uow.py`, `execution/sqlite/uow.py`,
+  `execution/sqlite/migrations/0001_initial.sql`。launch-ticket receipt与generic admission的schema/UoW
+  owner明确属于本task；不得让Host新增表或实现第二Port。
 - API：`ProfileDescriptor(key, description, use_when, avoid_when, input_schema_ref, generation,
-  fingerprint)`；`workflow_spawn(profile_key, objective, ..., candidate_id?, catalog_generation)`。
+  fingerprint)`；`workflow_spawn(profile_key, objective, ..., candidate_id?, catalog_generation)`；
+  immutable `WorkflowCatalogAuthority(authority_id="model_spawnable", generation, version, catalog_hash,
+  profiles)`，其中profiles按profile key排序并冻结每个profile fingerprint/workflow name+version/
+  implementation fingerprint；
+  immutable `WorkflowLaunchRequest(request_key, candidate_id?, profile_key, catalog_generation,
+  session_id, request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?,
+  tool_catalog_generation, objective, start_input)`；
+  public immutable `WorkflowLaunchTicket(ticket_receipt_id, payload_hash, candidate_id, profile_key,
+  catalog_generation)` 与SDK-factory-only immutable
+  `VerifiedWorkflowLaunchTicket(ticket_receipt_id, ticket_id, candidate_id, profile_key, catalog_generation,
+  catalog_authority_version, catalog_hash,
+  profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, session_id,
+  request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?, resolved_run_id,
+  resolved_trace_id, resolved_thread_id,
+  tool_catalog_generation, objective_hash, start_input_hash)`。ticket由SDK在catalog generation/profile
+  fingerprint/workflow binding全部校验后生成，identity字段与objective/start input的canonical
+  hash共同进入`ticket_id`；requested identity缺省时，`issue`按固定公开namespace和
+  `workflow-launch/{run|trace|thread}/v1` domain separator从canonical request fingerprint确定性派生三个
+  nonoptional resolved IDs；caller显式requested值必须成为对应resolved值并进入fingerprint。
+  `prepare_start_admission` 必须重算`RunStart.input` hash并与
+  `start_input_hash` constant-compare，且逐项constant-compare
+  `RunStart.execution_session_id/request_id/run_id/tool_catalog_generation`与verified ticket的
+  `session_id/request_id/resolved_run_id/tool_catalog_generation`；`RunStart.input`必须与receipt冻结的完整
+  canonical start input相同，objective也只能来自该已验证input。Host不能
+  构造或改写verified type。`workflow_spawn` 必须在canonical Runtime UoW同tx写
+  `workflow_launch_ticket_receipts(ticket_receipt_id UNIQUE, canonical_payload, payload_hash, catalog_generation,
+  catalog_authority_version, catalog_hash, profile_fingerprint, issued_at)`后才返回public ticket。唯一SDK-owned authority为
+  `WorkflowLaunchTicketPort`，其exact surface为
+  `publish_catalog(transaction, authority: WorkflowCatalogAuthority, expected_version, *, now, fault?) ->
+  WorkflowCatalogAuthority`、`read_catalog(transaction) -> WorkflowCatalogAuthority`、
+  `issue(transaction, request: WorkflowLaunchRequest, *, now, fault?) -> WorkflowLaunchTicket`、
+  `verify(transaction, ticket) -> VerifiedWorkflowLaunchTicket` 与
+  `admit_runtime_start(transaction, ticket, start: RunStart, request: StartAdmissionRequest,
+  snapshot: StartSnapshot, claim: RuntimeActivationClaim, *, now, fault?) -> RuntimeStartAdmission`。
+  `RuntimeActivationClaim(owner_id, namespace=RUNTIME_LEASE_NAMESPACE, lease_ttl_seconds)`是typed caller
+  authority，namespace必须exact `runtime.kernel`、owner非空、TTL正数；禁止隐藏owner、从ticket派生owner或用real
+  clock替代`now`。返回值拆成immutable
+  `RuntimeStartReceipt(ticket_receipt_id, run_id, trace_id, thread_id, committed_run_version,
+  start_snapshot_hash, workflow_request_hash, created_at)`、ephemeral
+  `RuntimeStartActivation(execution_lease, run_fence)`、stable immutable capability
+  `RuntimeStartDispatchClaim(claim_id, run_id, owner_id, runtime_lease_epoch, claim_epoch)`与durable
+  `RuntimeStartDispatchRecord(claim_id, run_id, owner_id, runtime_lease_epoch, claim_epoch, expires_at,
+  version, state)`（`state=CLAIMED|CONSUMED`）与
+  `RuntimeStartDisposition = START_NEW | START_ORPHAN | ATTACH_CURRENT | RECOVER_START |
+  RECOVER_RESUME | FOREIGN_ACTIVE | WAITING | CANCEL_PENDING | TERMINAL`、
+  `RuntimeStartAdmission(receipt, disposition, activation?, dispatch_claim?, recovery_work?,
+  workflow_terminal?, retry_wake?)`；
+  durable start receipt永不保存或重写lease/fence token。`WorkflowRecoveryWork`必须携同一transaction读取并
+  freeze的完整typed `receipt_snapshot: StartAdmissionReceipt | ResumeAdmissionReceipt`，且
+  `receipt_kind/id/version/mode/due_at/request_fingerprint`必须与snapshot重算一致；resume snapshot包含原始
+  canonical responses+hash，start snapshot包含完整canonical StartAdmissionRequest，Runtime不得在transaction
+  外重读/重建这些字段。
+  这些类型只可由该同事务command返回；`issue`必须在与Runtime UoW相同的
+  `transaction_owner`中读取exact durable catalog generation/profile/workflow binding，自行canonical validate/freeze
+  objective+start input、派生所有identity/hash并原子写receipt；receipt-first相同request key+相同全payload只读
+  返回原ticket，任一字段不同零写conflict。stable fault labels至少覆盖
+  `workflow:launch_ticket:before_receipt_write/after_receipt_write/after_commit`，close/reopen response-loss返回
+  同一ticket；并发exact request只有一个receipt winner。current catalog/profile唯一authority是同库
+  `workflow_catalog_authorities(authority_id PRIMARY KEY, generation, version, catalog_hash, canonical_profiles,
+  updated_at)` row；catalog发布/替换只能走`publish_catalog`并以expected version CAS，SDK内存catalog只能是该row的
+  immutable read view，不得成为另一个current authority或在transaction外热换。Runtime必须调用canonical
+  `WorkflowUnitOfWork.run_atomic`取得同owner的open `BEGIN IMMEDIATE` transaction，并在该一个callback内依次
+  `verify(transaction, ticket)`、调用Runner的pure `prepare_start_admission`、再调用
+  `admit_runtime_start`；最后一个命令必须在同transaction重读ticket receipt与current durable catalog row，且SQL
+  CAS exact `authority_id/generation/version/catalog_hash`及profile binding、
+  重算request/snapshot并原子写generic Run、start snapshot及runtime activation/fence。不得在verify与generic
+  write间commit、释放transaction或缓存verified object供后续transaction使用。`verify`重读该receipt、catalog/profile/
+  payload hash并用非导出factory token构造exact verified type；Port `transaction_owner` 必须与
+  Runtime UoW/Runner相同。`prepare_start_admission` 只接exact verified type并验证factory token/
+  receipt hash。直接constructor、copy/replace、subclass、异catalog/异DB receipt均在generic write前拒绝；
+  restart后可从同durable public ticket receipt重新verify为同一semantic binding，不依赖进程内cache。
+  `workflow_spawn`只能构造`WorkflowLaunchRequest`并调用Port `issue`；禁止直接构造ticket、直写SQLite receipt、
+  调私有factory或由Host提供已验证binding。Port缺失、transaction owner不一致、catalog/profile漂移必须在
+  generic Run/start admission前零写拒绝。
+- `admit_runtime_start`的receipt-first key为ticket receipt ID，existing generic admission必须逐项比较
+  resolved run/trace/thread、session/request/catalog、full canonical input、StartAdmissionRequest与StartSnapshot；
+  exact replay永远返回同`RuntimeStartReceipt`，同ticket配不同RunStart/request/snapshot一律零写conflict，不能生成
+  第二个Run。command在任何activation判断前必须同transaction读取并交叉验证generic Run state/version、workflow
+  start/resume receipt phase、checkpoint head、start dispatch claim与terminal/retry receipts。新插入generic
+  receipt必须在同transaction创建stable `(ticket_receipt_id, run_id)` dispatch record并返回对应claim capability的
+  `START_NEW`；只有
+  durable一致的RUNNING/可恢复orphan状态允许activation处理。active foreign owner返回`FOREIGN_ACTIVE`且不改
+  receipt。Runtime `owner_id`必须是每个进程activation随机生成且不跨进程复用。Runtime在进入run_atomic前必须先以
+  `ticket_receipt_id`取得进程内single-flight start slot，并持有到Driver task已原子注册进live index；followers只
+  await/attach leader，不能调用admit command或Driver。leader遇after-commit异常必须释放slot，使下一caller可读取
+  durable record继续。对这个唯一leader，同owner且未过期、已有`CLAIMED` dispatch record但无workflow receipt时返回
+  同一`START_ORPHAN` activation+claim；已有matching start/resume receipt则返回`ATTACH_CURRENT`且不暴露
+  activation/claim、不启动第二Driver。无authority或
+  已过期才在同transaction按
+  `max(workflow_leases epoch, run_fences.runtime_lease_epoch)+1` CAS claim新Runtime lease并取得匹配
+  RunFence；无workflow start receipt时还必须CAS dispatch record到新owner/runtime epoch并令claim_epoch+1，才返回
+  `START_ORPHAN`；已有start receipt返回携同tx
+  `WorkflowRecoveryWork`的`RECOVER_START`，已有resume receipt返回`RECOVER_RESUME`，不得把新token回写
+  immutable receipt。generic WAITING与匹配workflow
+  WAITING/RETRY_WAIT只返回`WAITING`并交给canonical blocker/wake/recovery路径；即使due已到也不得在start replay
+  中claim或调用Driver.start。generic CANCEL_REQUESTED/CANCELLING只返回`CANCEL_PENDING`并交cancel convergence；
+  COMPLETED/FAILED/CANCELLED必须以full terminal verifier成功后返回`TERMINAL`。CREATED/ADMISSION_PENDING/QUEUED、
+  generic/workflow phase不一致、terminal验证失败均fail closed/零写，不能猜测修复。
+  durable dispatch record的`expires_at/version`必须与绑定Runtime lease同事务co-renew/release；Driver持有的
+  stable claim capability不得随heartbeat替换。只要该Runtime lease仍active，
+  即使本地task暂未写workflow receipt也禁止claim takeover。Runtime lease expiry/takeover后，新runtime epoch才可CAS
+  claim；旧claim不能被same/different owner用于ensure或物理出站。
+  exact allowed-field matrix为：`START_NEW|START_ORPHAN`只允许`activation+dispatch_claim`，其余四个optional全None；
+  `RECOVER_START|RECOVER_RESUME`只允许`activation+recovery_work`且work kind必须匹配disposition，claim/terminal/
+  wake全None；`ATTACH_CURRENT|FOREIGN_ACTIVE|CANCEL_PENDING`五个optional全None；`WAITING`仅允许在durable
+  RETRY_WAIT时`retry_wake!=None`，普通HITL/blocker WAITING则五个optional全None；`TERMINAL`只允许
+  `workflow_terminal!=None`。任何其他组合在Runtime调度前拒绝，零Driver、零timer、零convergence。
+  Runtime只对`START_NEW|START_ORPHAN`调用`Driver.start`，只对两个`RECOVER_*`以结果携带的原样
+  `WorkflowRecoveryWork`调用`Driver.recover`；Runtime必须把`START_*`结果中的dispatch claim作为reserved typed
+  `DriverInvocation.workflow_start_dispatch`原样传给exact Workflow Driver，其他driver/RECOVER设置该字段均拒绝；
+  Driver只能把它传给`ensure_and_bind_precreated_start`消费。`ATTACH_CURRENT|FOREIGN_ACTIVE`返回existing handle，WAITING注册或保留
+  canonical wake并返回waiting handle，CANCEL_PENDING触发durable cancel convergence，TERMINAL只读返回原outcome。
+  旧owner/epoch、wrong namespace、
+  `now >= expires_at`均不能执行Driver。stable per-table before/after-write与after-commit fault、close/reopen、并发winner，以及
+  catalog mutation与admission必须共享同一个`transaction_owner`/BEGIN IMMEDIATE：若publisher先CAS到G+1，旧ticket
+  admission零Run/零snapshot；若admission先持write transaction，publisher必须阻塞到admission commit，已提交Run合法
+  pin G且随后publish G+1不改写该snapshot。补final catalog row read后/first generic write前barrier覆盖这两种顺序，
+  禁止用非durable registry swap伪造测试。
+  另补generic start commit响应丢失且Driver尚未创建workflow receipt的两支：TTL内leader重试得到same receipt+
+  same `START_ORPHAN` activation/claim，但single-flight保证原leader仍活跃时只attach且零第二Driver；TTL后新进程/
+  owner重试得到same receipt+`START_ORPHAN` epoch递增的新activation/claim，
+  旧activation不能bind workflow或出站。已有workflow start/resume receipt且live same owner只返回
+  `ATTACH_CURRENT`，必须复用Runtime live index中的现有task而非二次dispatch。
+  barrier回归固定A已取得dispatch claim并进入Driver、暂停在workflow receipt前，B同ticket重试在single-flight
+  slot附着A，admit command/Driver/node/provider/tool计数保持单次；A在after-commit、注册task前异常释放slot后，
+  B成为leader并用same claim启动一次。heartbeat续租跨多个原claim TTL仍不得让另一进程takeover。
+  另用虚拟时钟让A暂停跨多个heartbeat续租：A恢复后以最初stable capability读取current record/version并只消费
+  一次；随后新runtime epoch takeover后，A的旧runtime/claim epoch capability即使claim id相同也必须零写拒绝。
+  再补terminal、HITL WAITING、未到期与已到期RETRY_WAIT、CANCEL_REQUESTED四类同ticket replay，全部必须
+  `activation=None`且node/provider/tool零调用；RETRY_WAIT只能由timer/startup scanner取得下一activation。
 - 改法：control schema从 frozen model-spawnable catalog生成；Host只 validate + bind ticket；无 regex/
   classifier/route_hint。conditional registration检查 required Ports。
 - tests：`test_agent_selected_profile.py`, `test_stale_catalog.py`, `test_forged_binding.py`,

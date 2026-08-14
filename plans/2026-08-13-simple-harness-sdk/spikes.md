@@ -567,4 +567,95 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
 - RecoveryCandidate修订第二轮独立狭挑战：`PASS`，
   `NEW_CRITICAL_FINDINGS=0`。exact枚举集、keyset cursor、pinned namespace、nullable authority
   snapshot、SDK分类责任与全snapshot CAS已形成可执行闭包，affected recovery line可恢复。
+- H16 implementation completion audit：`FAIL`，`NEW_CRITICAL_FINDINGS=8`。当前虽有701项
+  full regression GREEN，但官方Runtime仍依赖测试手工seed precreated admission；Workflow context
+  未获得typed三重authority；Native与Kernel terminal存在split-brain；recovery policy与
+  replay public saga仍是stub/bypass；start/resume scanner无枚举Port；official driver仍由Host参数
+  注入；start schema validation未在durable receipt前执行。已补充：typed
+  `StartSnapshot.workflow_admission`与official Driver零seed顺序、SDK内部official factory、typed
+  Provider/Effect adapters、单一transaction workflow/generic terminal command、SDK-owned
+  repair/quarantine primitives、unsettled start/resume pagination scanner，并重申旧bypass/stub必须删除。
+  待独立狭挑战通过后恢复affected implementation。
+- implementation-audit修订第一轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=5`。首次zero-seed未定义RUNNING/SETTLED重启phase dispatch；Runtime与
+  Runner未锁定同transaction owner；recovery缺checkpoint candidates和blocker/resolution evidence；
+  precreated due receipt无Runtime handoff seam；terminal outcome无typed Driver carrier。已补充
+  `ensure_and_bind_precreated_start`四action、exact Runner/UoW identity check、RecoverySnapshot完整
+  evidence与full digest CAS、Runtime recovery→official Driver typed work交接、
+  `WorkflowTerminalOutcome`+`DriverResult.workflow_terminal`。
+- implementation-audit修订第二轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=5`。phase dispatcher未归属Lifecycle Port；未due RETRY_WAIT无未来wake；
+  start/resume双cursor合并未定义；terminal verify四参与七字段carrier矛盾；workflow
+  admission在generic receipt前无SDK factory owner。已补充Lifecycle exact mutation/fault labels、
+  injected-clock due timer/close/restart、typed composite cursor与50+50 stable merge、全outcome verify签名、
+  `prepare_start_admission(VerifiedWorkflowLaunchTicket, RunStart)` 及T4.2 typed ticket。
+- implementation-audit修订第三轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=3`。terminal transaction释放lease与Driver返回间的heartbeat竞态可误取消
+  已成功Driver；live RETRY_WAIT在Driver返回时未触发timer注册；public immutable verified
+  ticket仍可被Host直接构造。已补充terminal-conflict先读完整durable outcome的benign
+  heartbeat分支、typed `WorkflowRetryWake` reserved DriverResult carrier、durable launch-ticket receipt+
+  same-UoW verify Port+SDK-only factory token及伪造负测。待第四轮挑战。
+- implementation-audit修订第四轮并行狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=5`。dispatcher未在每个existing phase全量比对request fingerprint；
+  standalone RETRY_WAIT无future wake；50+50 merge与Port最多100返回缺`limit`矛盾；terminal
+  verifier未覆盖Run/head/lease/fence所有authority rows；verified ticket缺issuance authority。已补充
+  all-phase full request compare、Runner-owned standalone timer/scanner/close、Port `limit=1..50`、
+  full terminal row/set verifier，以及durable launch-ticket receipt+same-UoW factory-token verify。待第五轮挑战。
+- implementation-audit修订第五轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=3`。RETRY_WAIT只更新Workflow receipt会让generic Run继续RUNNING；terminal
+  verifier若比较mutable outbox state会在正常delivery推进后误判；launch ticket Port只有verify而无唯一issue
+  mutation owner。已补充retry receipt+generic WAITING+event+wake+三authority release单transaction与
+  `verify_workflow_retry_wake`、terminal只比较outbox immutable creation facts并允许状态推进、以及
+  `WorkflowLaunchTicketPort.issue/verify` exact surface、same-UoW receipt-first/fault/concurrency矩阵。待第六轮挑战。
+- implementation-audit修订第六轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=2`。ticket `verify`与generic admission分属事务会留下catalog/profile推进TOCTOU；
+  verified ticket的optional requested IDs与必填RunStart identity未形成唯一resolved binding，同一ticket可被配上
+  第二个RunStart。已补充nonoptional deterministic resolved run/trace/thread、RunStart session/request/run/catalog/
+  full-input全量比较，以及同一`WorkflowUnitOfWork.run_atomic`内
+  `verify -> pure prepare_start_admission -> admit_runtime_start`原子链、exact replay/diff conflict与barrier回归。
+  待第七轮挑战。
+- implementation-audit修订第七轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=2`。原子start command未携runtime owner/namespace/TTL，且把永久幂等receipt与可过期
+  lease/fence混进同一exact replay outcome。已补typed `RuntimeActivationClaim`，并拆分immutable
+  `RuntimeStartReceipt`与ephemeral `RuntimeStartActivation`；receipt永远精确重放，activation按同owner未过期
+  幂等、foreign active拒绝、expired takeover epoch CAS规则取得，旧token零执行。待第八轮挑战。
+- implementation-audit修订第八轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=2`。同ticket replay在无authority时未先按Run/workflow phase分类，可能重激活terminal
+  或绕过RETRY_WAIT due；且`RuntimeStartAdmission`无法表达foreign/waiting/terminal的无activation结果。已补
+  seven-way typed disposition、optional activation/terminal/wake代数、Run+workflow phase交叉验证，以及只有
+  NEW/CURRENT/RECOVERY_ACTIVE可执行Driver，WAITING/CANCEL/TERMINAL全部零activation/零node。待第九轮挑战。
+- implementation-audit修订第九轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=2`。RECOVERY_ACTIVE未区分Driver.start与start/resume recover，可能丢responses或
+  重复start；optional result algebra仍允许非法字段组合。已细分九态dispatch，恢复态携同transaction冻结的完整
+  typed receipt snapshot，并冻结每态exact allowed-field matrix与Runtime start/recover/no-dispatch行为。待第十轮挑战。
+- implementation-audit修订第十轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=1`。generic start已提交但workflow receipt尚未写入的窗口，same-owner同ticket重试仍会
+  二次Driver.start。已补durable versioned `RuntimeStartDispatchClaim`，START_*必须携claim，current claim只允许
+  ATTACH，Runtime lease失效后才可epoch takeover；official Driver将claim原样交给
+  `ensure_and_bind_precreated_start`并在workflow receipt同transaction消费。待第十一轮挑战。
+- implementation-audit修订第十一轮独立狭挑战：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=1`。Driver若携带会被heartbeat更新的claim version/expiry，长任务会因token drift被拒；
+  若忽略又会放过旧token。已拆分stable `RuntimeStartDispatchClaim` capability identity与可续租
+  `RuntimeStartDispatchRecord`，ensure用稳定identity+current lease/fence/expiry重读并CAS最新record version，
+  takeover后旧epoch capability零写。待第十二轮挑战。
+- implementation-audit修订第十二轮独立狭挑战：`PASS`，
+  `NEW_CRITICAL_FINDINGS=0`。此前所有H16/T4.2 authority、recovery、retry、terminal、ticket admission、
+  resolved identity、start state algebra、dispatch single-flight与stable claim/current record语义均未再发现可复现
+  P0/P1。进入第二条独立审查线做最终全量复核。
+- implementation-audit第二审查线全量复核第一轮：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=2`。RECOVER_START不携首次dispatch claim却仍被唯一ensure dispatcher要求claim，形成
+  不可执行authority algebra；catalog/profile若仍是内存current authority，SQLite BEGIN IMMEDIATE无法关闭最终
+  read到generic write间的TOCTOU。已拆分`ensure_and_bind_precreated_start(dispatch_claim)`与
+  `recover_precreated_start(recovery_work)`两条tagged mutation，删除旧admit path；并将catalog/profile current
+  binding冻结为同库versioned authority row，只能same-UoW publish/read/CAS，覆盖publisher/admission两种锁顺序。
+  待第二审查线下一轮。
+- implementation-audit第二审查线全量复核第二轮：`FAIL`，
+  `NEW_CRITICAL_FINDINGS=1`。precreated start receipt进入RUNNING后不在unsettled start枚举中，genesis后崩溃会
+  无法构造RECOVER_START并永久搁置。已把RUNNING加入只读枚举，明确precreated expired RUNNING由Runtime
+  takeover→recover dispatcher，active owner跳过；standalone RUNNING仍走Runner canonical recovery policy，并补
+  close/reopen不重放矩阵。待第二审查线下一轮。
+- implementation-audit第二审查线全量复核第三轮：`PASS`，
+  `NEW_CRITICAL_FINDINGS=0`。RUNNING枚举/mode分流、first-dispatch与recovery authority拆分、同库catalog
+  version CAS，以及此前ticket/start/retry/terminal/single-flight/heartbeat所有矩阵未再发现可复现P0/P1。
+  H16/T4.2 affected implementation line可按当前exact APIs恢复。
 - 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。
