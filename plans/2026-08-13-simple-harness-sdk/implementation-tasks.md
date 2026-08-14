@@ -700,7 +700,8 @@
     `list_unsettled_start_admissions(snapshot_cursor, *, limit) -> (receipts,next_cursor)` 与
     `list_unsettled_resume_admissions(snapshot_cursor, *, limit) -> (receipts,next_cursor)`，`limit`必须
     `1..50`，Port cursor只推进到本次实际返回的最后receipt，均以stable receipt key
-    升序keyset；start枚举`ADMITTED|CLAIMED|RUNNING`，resume枚举
+    升序keyset；start cursor/identity必须使用schema唯一主键`request_key`，不得使用可重复的`request_id`；
+    resume使用其唯一`receipt_id`。start枚举`ADMITTED|CLAIMED|RUNNING`，resume枚举
     `ADMITTED|CLAIMED|RETRY_WAIT`，返回完整immutable receipt而不按expiry/owner/mode/due做policy过滤。
     SDK scanner用注入`now`分类；precreated receipt必须先经Runtime recovery取得typed
     `ExecutionLease+RunFenceLease`才可claim，Port不得伪造第二套owner。
@@ -942,7 +943,10 @@
      `WorkflowRuntimeDriver.list_recovery_work(cursor, *, now) -> (items,next_cursor)` 把start/resume枚举转为
      immutable `WorkflowRecoveryWork(run_id, receipt_kind, receipt_id, receipt_version, mode, due_at?,
      request_fingerprint, receipt_snapshot: StartAdmissionReceipt | ResumeAdmissionReceipt)`，snapshot按kind保存
-     完整canonical start request或resume responses并与flat identity重算一致；仅排除
+     完整canonical start request或resume responses并与flat identity重算一致；`receipt_kind=start`时
+     `receipt_id` exact等于`StartAdmissionReceipt.request_key`，`receipt_kind=resume`时exact等于
+     `ResumeAdmissionReceipt.receipt_id`，所有read/CAS/pagination均用这个durable primary key，不得按
+     `StartAdmissionReceipt.request_id`查询或推进cursor；仅排除
      standalone，不查/领Runtime lease也不丢弃尚未due RETRY_WAIT。cursor是typed
      `WorkflowRecoveryCursor(start_cursor?, resume_cursor?)`：每轮分别从两个Port最多取50条，
      按`(receipt_kind, receipt_id)` 稳定合并返回最多100条，并将两个cursor分别推进到
@@ -1084,6 +1088,8 @@
   必须包含precreated genesis已提交/start receipt=`RUNNING`后进程崩溃、关闭同路径DB、lease过期重开：startup
   enumeration构造同receipt snapshot的`RECOVER_START`，新Runtime epoch恢复且node/effect不重放；active owner及
   standalone RUNNING均不得被该Runtime scanner误claim。
+  另补两个start receipts共享同一request_id、不同request_key，`limit=1`逐页枚举并分别recover；第二条不得被
+  cursor跳过，按request_id读取任意行必须由API/SQL结构性禁止。
 - 依赖：T2.1–T2.5。
 
 ### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]
@@ -1094,9 +1100,16 @@
   owner明确属于本task；不得让Host新增表或实现第二Port。
 - API：`ProfileDescriptor(key, description, use_when, avoid_when, input_schema_ref, generation,
   fingerprint)`；`workflow_spawn(profile_key, objective, ..., candidate_id?, catalog_generation)`；
-  immutable `WorkflowCatalogAuthority(authority_id="model_spawnable", generation, version, catalog_hash,
-  profiles)`，其中profiles按profile key排序并冻结每个profile fingerprint/workflow name+version/
-  implementation fingerprint；
+  immutable `WorkflowCatalogProfileBinding(profile_key, profile_fingerprint, workflow_name, workflow_version,
+  implementation_fingerprint, checkpoint_namespace, manifest_hash, state_schema_version, input_schema_hash,
+  terminal_projection_descriptor, terminal_request_factory_hash, capability_snapshot)` 与
+  `WorkflowCatalogAuthority(authority_id="model_spawnable", generation, version, catalog_hash, profiles)`，
+  其中profiles是按profile key排序的完整binding tuple；catalog hash由SDK从这组完整canonical fields重算，caller
+  hash只可constant-compare。SDK-factory-only non-subclassable
+  `VerifiedWorkflowCatalogAuthority(authority, registry_snapshot_id, registry_snapshot_hash, factory_token)`只能由
+  `WorkflowRunner.prepare_catalog_authority(generation, profile_keys) -> VerifiedWorkflowCatalogAuthority`从一次
+  immutable registry snapshot构造；Runner对每个CompiledWorkflow重算全部binding与catalog/snapshot hash，禁止
+  Host传入binding/hash。漏字段、重复profile、generation回退或同profile不同compiled binding在factory阶段拒绝；
   immutable `WorkflowLaunchRequest(request_key, candidate_id?, profile_key, catalog_generation,
   session_id, request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?,
   tool_catalog_generation, objective, start_input)`；
@@ -1104,7 +1117,9 @@
   catalog_generation)` 与SDK-factory-only immutable
   `VerifiedWorkflowLaunchTicket(ticket_receipt_id, ticket_id, candidate_id, profile_key, catalog_generation,
   catalog_authority_version, catalog_hash,
-  profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, session_id,
+  profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, checkpoint_namespace,
+  manifest_hash, state_schema_version, input_schema_hash, terminal_projection_descriptor,
+  terminal_request_factory_hash, capability_snapshot, session_id,
   request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?, resolved_run_id,
   resolved_trace_id, resolved_thread_id,
   tool_catalog_generation, objective_hash, start_input_hash)`。ticket由SDK在catalog generation/profile
@@ -1121,7 +1136,7 @@
   `workflow_launch_ticket_receipts(ticket_receipt_id UNIQUE, canonical_payload, payload_hash, catalog_generation,
   catalog_authority_version, catalog_hash, profile_fingerprint, issued_at)`后才返回public ticket。唯一SDK-owned authority为
   `WorkflowLaunchTicketPort`，其exact surface为
-  `publish_catalog(transaction, authority: WorkflowCatalogAuthority, expected_version, *, now, fault?) ->
+  `publish_catalog(transaction, authority: VerifiedWorkflowCatalogAuthority, expected_version, *, now, fault?) ->
   WorkflowCatalogAuthority`、`read_catalog(transaction) -> WorkflowCatalogAuthority`、
   `issue(transaction, request: WorkflowLaunchRequest, *, now, fault?) -> WorkflowLaunchTicket`、
   `verify(transaction, ticket) -> VerifiedWorkflowLaunchTicket` 与
@@ -1146,13 +1161,16 @@
   canonical responses+hash，start snapshot包含完整canonical StartAdmissionRequest，Runtime不得在transaction
   外重读/重建这些字段。
   这些类型只可由该同事务command返回；`issue`必须在与Runtime UoW相同的
-  `transaction_owner`中读取exact durable catalog generation/profile/workflow binding，自行canonical validate/freeze
+  `transaction_owner`中读取exact durable完整catalog profile binding，自行canonical validate/freeze
   objective+start input、派生所有identity/hash并原子写receipt；receipt-first相同request key+相同全payload只读
   返回原ticket，任一字段不同零写conflict。stable fault labels至少覆盖
   `workflow:launch_ticket:before_receipt_write/after_receipt_write/after_commit`，close/reopen response-loss返回
   同一ticket；并发exact request只有一个receipt winner。current catalog/profile唯一authority是同库
   `workflow_catalog_authorities(authority_id PRIMARY KEY, generation, version, catalog_hash, canonical_profiles,
-  updated_at)` row；catalog发布/替换只能走`publish_catalog`并以expected version CAS，SDK内存catalog只能是该row的
+  updated_at)` row；catalog发布/替换只能走`publish_catalog`并以expected version CAS。Port必须验证exact
+  verified type、non-exported factory token、registry snapshot/catalog/binding hashes并从verified content重算写入；
+  直接constructor、subclass、copy/replace、手写全字段或token不匹配均零写。SQLite不得持有/查询第二个registry；
+  SDK内存catalog只能是该row的
   immutable read view，不得成为另一个current authority或在transaction外热换。Runtime必须调用canonical
   `WorkflowUnitOfWork.run_atomic`取得同owner的open `BEGIN IMMEDIATE` transaction，并在该一个callback内依次
   `verify(transaction, ticket)`、调用Runner的pure `prepare_start_admission`、再调用
@@ -1161,12 +1179,24 @@
   重算request/snapshot并原子写generic Run、start snapshot及runtime activation/fence。不得在verify与generic
   write间commit、释放transaction或缓存verified object供后续transaction使用。`verify`重读该receipt、catalog/profile/
   payload hash并用非导出factory token构造exact verified type；Port `transaction_owner` 必须与
-  Runtime UoW/Runner相同。`prepare_start_admission` 只接exact verified type并验证factory token/
-  receipt hash。直接constructor、copy/replace、subclass、异catalog/异DB receipt均在generic write前拒绝；
+  Runtime UoW/Runner相同。`prepare_start_admission`只接exact verified type，先从Runner registry按workflow
+  name/version取得CompiledWorkflow并从其manifest/schema/descriptor/factory/capabilities/input schema自行重算
+  同一`WorkflowCatalogProfileBinding`，与verified ticket全字段constant-compare，之后才生成request/snapshot；
+  `admit_runtime_start`再从durable catalog row+ticket canonical payload独立重算并全字段比较
+  `StartAdmissionRequest`的session/request/turn/requested+resolved identities、checkpoint namespace、manifest/
+  implementation/schema、terminal descriptor+factory、capability snapshot、full validated input，以及
+  `StartSnapshot`的profile/driver/catalog/input/workflow admission。它不得信任caller预制hash或只比较
+  run/request_key。factory token/receipt hash仍必须验证。直接constructor、copy/replace、subclass、异catalog/异DB
+  receipt均在generic write前拒绝；
   restart后可从同durable public ticket receipt重新verify为同一semantic binding，不依赖进程内cache。
   `workflow_spawn`只能构造`WorkflowLaunchRequest`并调用Port `issue`；禁止直接构造ticket、直写SQLite receipt、
   调私有factory或由Host提供已验证binding。Port缺失、transaction owner不一致、catalog/profile漂移必须在
   generic Run/start admission前零写拒绝。
+- `WorkflowLaunchTicketPort`/SQLite command不得持有第二个in-memory compiled registry，也不得接受Host提供的
+  `StartAdmissionRequest`作为authority；durable catalog row是transaction内的compare authority，Runner compiled
+  registry只负责纯构造并必须与它精确匹配。测试必须先用SDK `publish_catalog`+Runner factory生成合法binding，禁止
+  手写任意manifest/schema hash；直接构造/copy/replace verified catalog均在catalog row前零写。逐一变更上述每个
+  binding/request/snapshot字段均在runs/start snapshots前零写。
 - `admit_runtime_start`的receipt-first key为ticket receipt ID，existing generic admission必须逐项比较
   resolved run/trace/thread、session/request/catalog、full canonical input、StartAdmissionRequest与StartSnapshot；
   exact replay永远返回同`RuntimeStartReceipt`，同ticket配不同RunStart/request/snapshot一律零写conflict，不能生成

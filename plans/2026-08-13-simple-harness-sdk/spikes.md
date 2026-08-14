@@ -658,4 +658,20 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   `NEW_CRITICAL_FINDINGS=0`。RUNNING枚举/mode分流、first-dispatch与recovery authority拆分、同库catalog
   version CAS，以及此前ticket/start/retry/terminal/single-flight/heartbeat所有矩阵未再发现可复现P0/P1。
   H16/T4.2 affected implementation line可按当前exact APIs恢复。
+- H16/T4.2 A-split implementation challenge：`FAIL`，`NEW_CRITICAL_FINDINGS=6`。71项GREEN仍允许合法ticket
+  注入caller自选manifest/schema；RECOVER_RESUME/WAITING/TERMINAL矩阵不可达或未验证；CONSUMED dispatch
+  record会毒化recovery heartbeat；start recovery错误用非唯一request_id；result缺cross-binding；fault矩阵不全。
+  其中prepared admission full binding与start receipt unique identity属于A2 plan精度缺口，先暂停affected production。
+  已补完整`WorkflowCatalogProfileBinding`/verified ticket字段、Runner compiled binding重算+durable row独立全字段比较，
+  并冻结start work/cursor/read exact使用唯一`request_key`及重复request_id分页回归。待窄挑战PASS后恢复1/4；
+  其余2/3/5/6按既有plan直接修复。
+- A2 prepared-admission/recovery-identity窄挑战第一轮：`FAIL`，`NEW_CRITICAL_FINDINGS=1`。request_key
+  recovery修订已闭合；但public WorkflowCatalogAuthority无法证明来自同一Runner compiled snapshot，而SQLite又
+  正确地不能持有第二registry，存在可手写durable poisoned catalog/DoS。已增加Runner-only
+  `prepare_catalog_authority`与factory-token `VerifiedWorkflowCatalogAuthority`，publish只接受verified type并
+  重算snapshot/catalog/binding hashes，直接constructor/copy/replace零写。待下一轮。
+- A2 prepared-admission/recovery-identity窄挑战第二轮：`PASS`，`NEW_CRITICAL_FINDINGS=0`。Runner-only
+  immutable registry snapshot factory、verified token与publish-side全hash重算关闭catalog provenance；admission
+  继续独立比对Runner binding、durable catalog、ticket、request和snapshot。request_key recovery identity/pagination
+  亦保持闭合，affected A implementation可恢复。
 - 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。
