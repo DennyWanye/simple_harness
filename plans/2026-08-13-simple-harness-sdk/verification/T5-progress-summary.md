@@ -2,7 +2,7 @@
 
 > Last Updated: 2026-08-15
 > SDK Repository: simple-harness-sdk (branch: codex/sdk-v0.1-foundation)
-> HEAD: 862c9e8
+> HEAD: 9ae7d99
 
 ## Overall Status
 
@@ -13,7 +13,7 @@
 
 **🚧 T5.x In Progress** (Official Workflow Profiles)
 - Started: 2026-08-15
-- Current: T5.1 Phase 4 complete (~2850 lines delivered)
+- Current: T5.1 Phase 5 complete (~3190 lines delivered)
 
 **⏳ T6.x Pending** (Product Cutover)
 
@@ -92,14 +92,28 @@ uv tool run ruff check src/simple_harness/workflows/durable_task/nodes.py
 # Output: All checks passed!
 ```
 
-### Phase 5: Output Contract ⏳
-- **Status**: Not started
-- **Target File**: `src/simple_harness/workflows/durable_task/output_contract.py`
-- **Estimated Lines**: ~100 lines
+### Phase 5: Output Contract ✅
+- **Status**: Complete (2026-08-15, commit 9ae7d99)
+- **File**: `src/simple_harness/workflows/durable_task/output_contract.py`
+- **Lines**: 336 lines
 - **Content**:
-  - Output validation schema
-  - Completion criteria verification
-  - Receipt-based completion logic
+  - `validate_output_contract()`: main validation entry point
+  - `validate_receipt_backed_completion()`: durable task contract (default)
+  - `validate_tool_free_completion()`: read-only request validation
+  - Evidence validation: write/test obligations from request text
+  - Request analysis: detect obligations, remove negative prohibitions
+  - Tool classification: write/test/discovery-only tool sets
+  - Contract modes: receipt_backed (requires tool receipts), tool_free (clean end_turn)
+
+**Verification**:
+```bash
+cd /Users/denny/projects/simple-harness-sdk
+uv run python -c "from simple_harness.workflows.durable_task.output_contract import *; print('✓ Imports pass')"
+# Output: ✓ Imports pass
+
+uv tool run ruff check src/simple_harness/workflows/durable_task/output_contract.py
+# Output: All checks passed!
+```
 
 ### Phase 6: Tests ⏳
 - **Status**: Not started
@@ -121,9 +135,8 @@ uv tool run ruff check src/simple_harness/workflows/durable_task/nodes.py
 ## Remaining Work Estimate
 
 ### T5.1 Remaining Effort
-- **Phase 5**: 1 session (output validation)
-- **Phase 6**: 2 sessions (comprehensive tests)
-- **Total**: 3-4 sessions
+- **Phase 6**: 2-3 sessions (comprehensive tests, 4 test files)
+- **Total**: 2-3 sessions
 
 ### T5.2 personal_v1
 - **Source**: `backend/deskpet/workflows/definitions/personal_workflow.py` (465 lines)
@@ -140,26 +153,26 @@ uv tool run ruff check src/simple_harness/workflows/durable_task/nodes.py
 - **T6.1**: Product SDK adapters (5-6 sessions)
 - **T6.2**: Dependency switch and integration (3-4 sessions)
 
-**Total Remaining**: ~20-25 sessions for complete SDK-AC-1..8 acceptance
+**Total Remaining**: ~18-23 sessions for complete SDK-AC-1..8 acceptance
 
 ---
 
 ## Next Steps
 
-1. **Immediate**: Continue T5.1 Phase 5 (create `output_contract.py`)
-2. **Next Session**: T5.1 Phase 6 (write tests for graph/handlers)
-3. **After T5.1**: Start T5.2 personal_v1
-4. **Milestone**: T5.x complete → move to T5.4 Conformance
-5. **Final**: T6 Product Cutover
+1. **Immediate**: Continue T5.1 Phase 6 (write comprehensive tests)
+2. **After T5.1**: Start T5.2 personal_v1
+3. **Milestone**: T5.x complete → move to T5.4 Conformance
+4. **Final**: T6 Product Cutover
 
 ---
 
 ## Files Modified This Session
 
 **Product Repository** (`/Users/denny/projects/simple_harness`):
-1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated Phase 4, HEAD, estimates)
+1. `plans/2026-08-13-simple-harness-sdk/verification/T5-progress-summary.md` (updated Phase 4-5, HEAD, estimates)
 
 **SDK Repository** (`/Users/denny/projects/simple-harness-sdk`):
 1. `src/simple_harness/workflows/durable_task/nodes.py` (new, 1478 lines, commit 862c9e8)
+2. `src/simple_harness/workflows/durable_task/output_contract.py` (new, 336 lines, commit 9ae7d99)
 
-**Status**: Ready to commit progress documentation and continue to Phase 5
+**Status**: Ready to commit progress documentation and continue to Phase 6 (tests)
