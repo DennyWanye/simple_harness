@@ -1100,16 +1100,37 @@
   owner明确属于本task；不得让Host新增表或实现第二Port。
 - API：`ProfileDescriptor(key, description, use_when, avoid_when, input_schema_ref, generation,
   fingerprint)`；`workflow_spawn(profile_key, objective, ..., candidate_id?, catalog_generation)`；
-  immutable `WorkflowCatalogProfileBinding(profile_key, profile_fingerprint, workflow_name, workflow_version,
-  implementation_fingerprint, checkpoint_namespace, manifest_hash, state_schema_version, input_schema_hash,
+  immutable `StartInputSchema(schema_ref, canonical_schema, schema_hash)` 与
+  `WorkflowProfileRegistration(descriptor: ProfileDescriptor, workflow_name, workflow_version,
+  start_input_schema: StartInputSchema)`。`StartInputSchema`只接受T1.3 fail-closed schema dialect：支持类型
+  `object|array|string|integer|number|boolean|null`与关键字`type/properties/required/
+  additionalProperties/items/enum/const/minLength/maxLength/minimum/maximum/minItems/maxItems/title/
+  description/default`；root必须object、`additionalProperties=false`，所有其他关键字（含`$ref/$defs/pattern/
+  format/oneOf/anyOf/allOf`）拒绝，不调用external resolver或正则引擎。raw mapping在canonicalize前用迭代遍历
+  检测object-identity cycle并限制：canonical UTF-8 <= 32768 bytes、depth <= 12、schema nodes <= 256、
+  total properties <= 256/per object <= 64、total required <= 256、enum entries total <= 256/per enum <= 64、
+  key/ref/title/description/default及所有string literal各<=4096 UTF-8 bytes；numeric必须finite。schema hash由
+  SDK重算，schema_ref必须exact等于descriptor.input_schema_ref；descriptor fingerprint则由SDK从
+  key/description/use_when/avoid_when/input_schema_ref/generation独立重算并constant-compare，不能拿schema hash替代。
+  registration与actual start input
+  validation复用同一个SDK validator；start input另限canonical UTF-8 <= 65536 bytes、depth <= 12、JSON nodes
+  <= 1024，超限在catalog/ticket/Run写入前typed reject；
+  immutable `WorkflowCatalogProfileBinding(profile_key, description, use_when, avoid_when, input_schema_ref,
+  profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, checkpoint_namespace,
+  manifest_hash, state_schema_version, input_schema_hash,
   terminal_projection_descriptor, terminal_request_factory_hash, capability_snapshot)` 与
   `WorkflowCatalogAuthority(authority_id="model_spawnable", generation, version, catalog_hash, profiles)`，
   其中profiles是按profile key排序的完整binding tuple；catalog hash由SDK从这组完整canonical fields重算，caller
   hash只可constant-compare。SDK-factory-only non-subclassable
   `VerifiedWorkflowCatalogAuthority(authority, registry_snapshot_id, registry_snapshot_hash, factory_token)`只能由
-  `WorkflowRunner.prepare_catalog_authority(generation, profile_keys) -> VerifiedWorkflowCatalogAuthority`从一次
-  immutable registry snapshot构造；Runner对每个CompiledWorkflow重算全部binding与catalog/snapshot hash，禁止
-  Host传入binding/hash。漏字段、重复profile、generation回退或同profile不同compiled binding在factory阶段拒绝；
+  `WorkflowRunner.prepare_catalog_authority(generation, registrations: Sequence[WorkflowProfileRegistration]) ->
+  VerifiedWorkflowCatalogAuthority`从一次immutable registry snapshot构造。registration是profile→compiled的唯一
+  typed mapping：SDK内置三个official registrations，Host只可为custom workflow提交descriptor+真实input schema，
+  不可提交manifest/implementation/terminal/capability hashes。Runner按name/version查CompiledWorkflow，验证
+  descriptor generation/fingerprint与schema ref/hash，从CompiledWorkflow manifest/definition重算manifest、
+  implementation、state schema、terminal descriptor+request factory与capability snapshot；checkpoint namespace由SDK
+  固定`workflow/{profile_key}/{workflow_name}/{workflow_version}`规则派生。漏字段、重复profile、generation回退、
+  registry lookup mismatch或同profile不同compiled binding在factory阶段拒绝；
   immutable `WorkflowLaunchRequest(request_key, candidate_id?, profile_key, catalog_generation,
   session_id, request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?,
   tool_catalog_generation, objective, start_input)`；
@@ -1197,6 +1218,9 @@
   registry只负责纯构造并必须与它精确匹配。测试必须先用SDK `publish_catalog`+Runner factory生成合法binding，禁止
   手写任意manifest/schema hash；直接构造/copy/replace verified catalog均在catalog row前零写。逐一变更上述每个
   binding/request/snapshot字段均在runs/start snapshots前零写。
+  start schema门禁必须覆盖oversized bytes、depth、node/property/required/enum/string各上限、raw cyclic mapping、
+  external/recursive `$ref`、pattern/format/unknown keyword与非finite numeric；official/custom registrations均走同一
+  validator并在超限时catalog/ticket/Run三层零写，actual start input oversized/deep同样在ticket/Run前拒绝。
 - `admit_runtime_start`的receipt-first key为ticket receipt ID，existing generic admission必须逐项比较
   resolved run/trace/thread、session/request/catalog、full canonical input、StartAdmissionRequest与StartSnapshot；
   exact replay永远返回同`RuntimeStartReceipt`，同ticket配不同RunStart/request/snapshot一律零写conflict，不能生成

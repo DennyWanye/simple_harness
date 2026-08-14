@@ -674,4 +674,17 @@ model，只能在响应后发现 mismatch，已经无法满足调用前 hard-cap
   immutable registry snapshot factory、verified token与publish-side全hash重算关闭catalog provenance；admission
   继续独立比对Runner binding、durable catalog、ticket、request和snapshot。request_key recovery identity/pagination
   亦保持闭合，affected A implementation可恢复。
+- A2 implementation preflight发现新的可执行性缺口：现有CompiledWorkflow不拥有ProfileDescriptor文案、真实input
+  schema或checkpoint namespace，`prepare_catalog_authority(generation, profile_keys)`无法按plan重算完整binding。
+  已暂停catalog factory production，补`WorkflowProfileRegistration(descriptor, workflow_name/version,
+  start_input_schema)`作为唯一profile→compiled映射；Runner从registry/CompiledWorkflow派生manifest/implementation/
+  terminal/capability与固定namespace，Host不得提交这些authority fields。待窄挑战。
+- A2 profile-registration窄挑战第一轮：`FAIL`，`NEW_CRITICAL_FINDINGS=1`。authority owner已单一，但custom
+  start_input_schema没有dialect/资源上限，可用超大、深层、cycle、external ref或病态关键字在durable拒绝前DoS。
+  已冻结复用T1.3 fail-closed subset、禁止ref/pattern/format/unknown keywords，并限定schema/input bytes、depth、
+  nodes、properties、required、enum、strings；同一迭代式validator用于registration与start input，补全零写负测。
+  待下一轮。
+- A2 profile-registration窄挑战第二轮：`PASS`，`NEW_CRITICAL_FINDINGS=0`。bounded strict dialect在
+  canonicalize前关闭cycle/ref/regex/组合与资源DoS；descriptor fingerprint/ref、schema hash、verified catalog、
+  durable row与admission Runner重算保持独立compare，无第二schema/start authority。affected catalog factory可恢复。
 - 性质：这是未发布SDK的首版语义完整性修正，不涉及历史Run兼容或数据迁移。
