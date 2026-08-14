@@ -166,6 +166,21 @@
   identity 唯一约束。after-commit 重试只有在同一 owner/epoch 且
   continuation/event/payload/receipt 身份一致时返回原 outcome，任一异同拒绝；
   不存在先 ack 后写 parent progress 或先写 progress 后 ack 的 public path。
+  对T4.2 workflow_spawn child completion只批准两个窄命令。第一条必须在child signal恢复后、执行任何k+1 Tool前调用：
+  `ack_continuation_and_continue_tool_batch(continuation_claim, child_wait_receipt, pending_completion,
+  expected_checkpoint, execution_lease, run_fence, *, now, fault?) ->
+  BatchContinueOutcome(disposition=CONTINUE|BUDGET_TERMINAL, progress_receipt)`。同一BEGIN验证public pending completion、batch
+  cursor与current authority，CAS continuation CLAIMED->ACKED、child-wait CLAIMED->ACKED_COMPLETION_PENDING、写unique
+  progress receipt，并把ReAct checkpoint推进`TOOL_BATCH_CONTINUE(next_ordinal,pending_completion_queue)`，保持parent Run
+  RUNNING与lease/fence active；after-commit exact replay返回同receipt。它按H10同步观察started/last-observed/deadline/policy：
+  rollback或deadline命中时写BUDGET_TERMINAL code，后续只允许synthetic closure；未命中才允许physical k+1。此command成功前
+  k+1 Provider/Tool/WAITING/terminal全为0，因此nested spawn/UNKNOWN永不携旧continuation claim。
+  第二条`commit_pending_child_completions_and_react_ready(expected_checkpoint, pending_completion_queue,
+  result_append_receipts, execution_lease, run_fence, *, now, fault?) -> ReactReadyOutcome(READY|BUDGET_EXCEEDED,
+  progress_receipt)`只能在全部raw ToolResults以physical或synthetic方式闭合后调用；按`(spawn_ordinal,terminal_receipt_id)`稳定
+  顺序append全部pending child completion messages并把各child-wait `ACKED_COMPLETION_PENDING->ACKED`，再推进
+  READY_FOR_PROVIDER或BUDGET_EXCEEDED terminal convergence。任一queue/batch/append/checkpoint/authority不匹配零写。
+  除这两条外仍禁止running中途ACK，原WAITING/terminal/exception continuation-aware exit contract不变。
 - tests：`test_atomic_child_launch.py`, `test_atomic_child_terminal_signal.py`,
   `test_ticket_generation.py`；duplicate/stale/reused ticket；signal claim 并发唯一 owner、claim 后崩溃
   reopen、未过期不可偷取、过期 reclaim 且 epoch 递增、旧 owner/epoch ack 拒绝、
@@ -841,7 +856,9 @@
      不存在admission后再bind窗口，standalone scanner也不得claim PRECREATED receipt。
      official Runtime launch不得要求Host或测试事先seed admission：T4.2 launch在generic
      `StartSnapshot` 中pin入typed `workflow_admission: StartAdmissionRequest | None`，序列化时保留
-     完整canonical request（不是只保留`start_input`）。`driver_kind="workflow"` 必须非None，
+     完整canonical request（不是只保留`start_input`），因此objective、spawn_origin、parent/root Run、fixed ATTACHED与
+     child command identity也逐层进入start snapshot canonical payload/hash；任一层mutation/reopen必须在child/generic write前
+     conflict。`driver_kind="workflow"` 必须非None，
      其他driver必须None。SDK `WorkflowRuntimeDriver.start` 在执行Native前先用该typed
      request、当次`DriverInvocation.execution_lease/run_fence`与reserved dispatch claim调用
      `ensure_and_bind_precreated_start`，然后用
@@ -1058,7 +1075,8 @@
      `request_key, mode, session_id, request_id, turn_id, profile_key, driver_kind="workflow",
      tool_catalog_generation, workflow_name/version, requested_run_id?, requested_trace_id?, requested_thread_id?,
      checkpoint_namespace, manifest_hash, implementation_hash, state_schema_version, terminal projection descriptor+
-     request-factory hashes, start_input, capability_snapshot`。`start_input`是唯一caller state authority，先按
+     request-factory hashes, objective, start_input, capability_snapshot, spawn_origin, parent_run_id, root_run_id,
+     attachment_policy=AttachmentPolicy.ATTACHED, child_command_id`。`start_input`是唯一caller state authority，先按
      compiled schema/limits canonical validate/freeze；SDK纯函数从它+全部pinned manifest/descriptor/capability/
      identity字段生成唯一immutable `StartSnapshot`，caller不得同时提交另一份snapshot。precreated Runtime已有
      start snapshot时，admission重算并constant-compare全部字段后才bind，mismatch零写。SDK从snapshot内部重算
@@ -1132,6 +1150,9 @@
 ### T4.2 — Profile catalog / orchestration control / launch ticket [AC-6]
 
 - 文件：`runtime/profiles.py`, `runtime/orchestration.py`, `runtime/drivers/workflow.py`,
+  `runtime/drivers/react.py`, `runtime/drivers/react_loop.py`, `tools/contracts.py`, `tools/executor.py`,
+  `tools/registry.py`, `tools/reconciliation.py`, `runtime/workflow_spawn.py`, `runtime/kernel.py`,
+  `runtime/live_index.py`, `runtime/termination.py`, `runtime/react_checkpoint.py`, `runtime/context.py`,
   `workflow/execution_ports.py`, `execution/uow.py`, `execution/sqlite/uow.py`,
   `execution/sqlite/migrations/0001_initial.sql`。launch-ticket receipt与generic admission的schema/UoW
   owner明确属于本task；不得让Host新增表或实现第二Port。
@@ -1152,6 +1173,13 @@
   registration与actual start input
   validation复用同一个SDK validator；start input另限canonical UTF-8 <= 65536 bytes、depth <= 12、JSON nodes
   <= 1024，超限在catalog/ticket/Run写入前typed reject；
+  catalog/profile projection另有aggregate硬限：profiles `<=32`；profile key UTF-8 `<=128`，description/use_when/
+  avoid_when各`<=2048`，schema_ref `<=4096`；完整`WorkflowCatalogAuthority`与
+  `WorkflowCatalogSelectionSnapshot` canonical UTF-8各`<=262144` bytes，生成的全部workflow ToolSpec canonical bytes
+  合计`<=262144`，包含messages/tools/input的最终ProviderRequest canonical UTF-8 `<=1048576`。这些bounds在任何
+  catalog/checkpoint/provider ledger写入与物理Provider调用前用iterative bounded canonicalization执行；N+1 profiles、
+  aggregate bytes+1、corrupt reopen均typed reject、零ledger/零transport。单项上限与aggregate上限必须同时满足，禁止
+  先deepcopy/完整编码再检查。
   immutable `WorkflowCatalogProfileBinding(profile_key, description, use_when, avoid_when, input_schema_ref,
   profile_fingerprint, workflow_name, workflow_version, implementation_fingerprint, checkpoint_namespace,
   manifest_hash, state_schema_version, start_input_schema: StartInputSchema,
@@ -1170,7 +1198,122 @@
   registry lookup mismatch或同profile不同compiled binding在factory阶段拒绝；
   immutable `WorkflowLaunchRequest(request_key, candidate_id?, profile_key, catalog_generation,
   session_id, request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?,
-  tool_catalog_generation, objective, start_input)`；
+  tool_catalog_generation, objective, start_input, spawn_origin: WorkflowSpawnOrigin, root_run_id,
+  attachment_policy=AttachmentPolicy.ATTACHED, child_command_id)`；`workflow_spawn` v0.1只允许`ATTACHED`，root id必须从
+  durable parent Run继承（parent为root时等于parent.run_id），child command id由payload-independent spawn operation id按固定
+  `workflow-spawn/child-command/v1` domain确定性派生，Host/Agent不得选择或降级为DETACHED/new root；
+  为把Agent的语义选择与Runtime durable authority明确分开，public SDK还必须提供immutable
+  `WorkflowSpawnSelection(profile_key, objective, start_input, candidate_id?)`、immutable
+  `WorkflowCatalogSelectionSnapshot(authority_id, generation, version, catalog_hash,
+  profiles[(profile_key,description,use_when,avoid_when,profile_fingerprint,
+  start_input_schema: StartInputSchema)], canonical_hash)`、
+  `WorkflowSpawnOrigin(parent_run_id, parent_request_id, turn_id, internal_tool_call_id)`与SDK-factory-only、
+  non-subclassable `WorkflowSpawnToolContext(run_id, request_id, turn_id, internal_tool_call_id,
+  catalog_snapshot_hash, react_checkpoint_revision, execution_lease: ExecutionLease,
+  run_fence: RunFenceLease, workflow_lease: WorkflowLease?, effect_id, effect_handoff_attempt, factory_token)`、
+  immutable `WorkflowSpawnIssueAuthority(react_checkpoint_revision, execution_lease, run_fence,
+  workflow_lease?, effect_id, effect_handoff_attempt, effect_request_hash)`、
+  non-subclassable `WorkflowSpawnInvocation(spawn_operation_id, origin, start: RunStart, selection,
+  catalog_selection: WorkflowCatalogSelectionSnapshot, issue_authority: WorkflowSpawnIssueAuthority,
+  factory_token)`与SDK-owned immutable
+  `WorkflowSpawnResult(schema_version="workflow_spawn.result.v1", child_run_id, child_request_id,
+  parent_run_id, root_run_id, ticket_receipt_id, runtime_start_receipt_id, child_command_id,
+  attachment_policy=AttachmentPolicy.ATTACHED)`；result canonical JSON的exact key set/order/UTF-8 bytes由SDK唯一factory从verified
+  ticket + RuntimeStartReceipt + durable child Run/run_link/launch command重算，不能接受任意dict或序列化完整RunRecord。
+  SDK内部另用immutable `ChildStartDispatchRef(child_start_receipt_id, child_dispatch_claim_id, child_run_id)`、
+  factory-only immutable `WorkflowChildWaitBinding(parent_run_id, child_run_id, child_command_id,
+  parent_wait_receipt_id, expected_parent_version, react_checkpoint_revision, expected_signal_domain,
+  source_phase="tool_batch_reserved", batch_digest, spawn_ordinal, next_tool_ordinal,
+  spawn_result_append_receipt_id, context_revision, termination_started_at, termination_last_observed_at,
+  wall_deadline?, termination_policy_snapshot_hash)`与
+  stable `WorkflowSpawnAdmissionOutcome(child_start_ref: ChildStartDispatchRef, result: WorkflowSpawnResult,
+  suspension: WorkflowChildWaitBinding)`记录可跨进程byte/field-exact重放的committed事实；它不携lease/fence。
+  child live control使用factory-only tagged union
+  `WorkflowSpawnChildControl(kind=START|RECOVER|ATTACH|WAITING|CANCEL|TERMINAL, admission: RuntimeStartAdmission)`：START只允许
+  `activation+dispatch_claim`，RECOVER只允许`activation+recovery_work`，ATTACH只允许current same-owner live index且不dispatch，
+  WAITING/FOREIGN只注册durable observation不dispatch；CANCEL exact只接受CANCEL_PENDING且activation/dispatch/recovery/terminal
+  全None；TERMINAL只读existing terminal/signal。任一wrong/missing optional field fail closed。
+  reserved Tool seam另用factory-only
+  `WorkflowSpawnToolOutcome(tool_result: ToolResult, child_control: WorkflowSpawnChildControl,
+  child_start_ref: ChildStartDispatchRef, suspension: WorkflowChildWaitBinding)`；control中的live admission若存在必须是本次current authority，
+  其余三字段由同一`WorkflowSpawnAdmissionOutcome`factory产生，禁止handler拆装。这些internal type不进入Agent Tool schema，也
+  不能由Host构造。handler总返回sealed factory-only union
+  `WorkflowSpawnHandlerOutcome = WorkflowSpawnSucceeded(control: WorkflowSpawnToolOutcome) |
+  WorkflowSpawnFailed(tool_result: ToolResult, completion_receipt_id, batch_action=CONTINUE|PARENT_TERMINAL)`；catalog stale/
+  graph unavailable active-driver failure为CONTINUE，parent terminal convergence为PARENT_TERMINAL，二者都不得携child control/
+  suspension。UNKNOWN不是return variant，只能进入durable blocker。
+  `RunClient.workflow_spawn_catalog() ->
+  WorkflowCatalogSelectionSnapshot`、`RunClient.bind_workflow_spawn(context: WorkflowSpawnToolContext,
+  selection) -> WorkflowSpawnInvocation`与
+  `RunClient.workflow_spawn(invocation: WorkflowSpawnInvocation) -> WorkflowSpawnToolOutcome`（模块级
+  `workflow_spawn(client, invocation)`只能是该method的薄facade）。该control outcome只能由下述reserved static handler返回并由
+  SDK EffectExecutor消费，Host/programmatic caller不得取出`result`后忽略suspension；普通程序化child launch继续使用T3.2
+  `Runtime.children.launch`，不存在第二条裸RunClient launch路径。`RunStart`新增nonoptional typed `turn_id`；
+  Agent-visible official Tool schema只暴露selection四个字段，不能暴露request key、catalog generation、session/request/
+  run/trace/thread/tool generation。SDK-owned Tool handler必须从current `DriverInvocation`、durable parent Run与ReAct turn
+  构造`RunStart`（`execution_session_id=parent.execution_session_id`、`turn_id=current durable ReAct turn id`、
+  `tool_catalog_generation=parent StartSnapshot`、`input=selection.start_input`）；parent run/request+durable turn+internal
+  tool call identity用固定domain `workflow-spawn/operation/v1` SHA256派生payload-independent
+  `spawn_operation_id`，child `RequestId/RunId`再分别用`workflow-spawn/request/v1`与`workflow-spawn/run/v1` domain
+  只从该operation id确定性派生。official Tool handler必须通过SDK private factory从上述完整origin、生成的RunStart与
+  selection与该Provider turn生成ToolSpec时取得的同一隐藏`catalog_selection`构造invocation；直接constructor/subclass/
+  copy/replace/token mismatch拒绝。`workflow_spawn_catalog`从canonical Port同transaction读取current catalog并生成
+  immutable snapshot；snapshot的canonical hash覆盖每个profile完整description/use_when/avoid_when/fingerprint与typed
+  schema ref+canonical bytes+hash，SDK projection只能从该snapshot纯生成official ToolSpec，禁止二次读取current catalog
+  或process cache。Provider pre-dispatch reserve必须在同一durable ReAct checkpoint原子pin snapshot canonical bytes/hash，
+  并把hash纳入ProviderRequest fingerprint/tool spec snapshot；provider response checkpoint还必须pin ordered raw tool calls
+  `(raw_call_id,name,canonical arguments hash)`。全局ToolRegistry只注册一个SDK-owned静态`workflow_spawn` handler，
+  exact internal handler surface为`WorkflowSpawnToolHandler.execute(arguments, context: WorkflowSpawnToolContext) ->
+  WorkflowSpawnHandlerOutcome`；ToolRegistry/ToolExecutor只允许该reserved handler返回此factory-only union，普通Tool仍只返回
+  `ToolResult`。reserved handler执行前EffectExecutor仍是唯一PREPARED->HANDED_OFF writer；但
+  `continue_spawn_admission`是该effect唯一terminal writer，并在parent authority释放前同BEGIN写Effect terminal result。
+  handler返回后EffectExecutor严禁再次settle/write，只能以effect id/request hash/outcome.tool_result canonical hash做
+  lease-free receipt-first read/compare；terminal row缺失则返回UNKNOWN/fail closed，不能补写，异ToolResult冲突。验证通过后把
+  `WorkflowSpawnSucceeded.control`原样放入ReAct的typed `DriverResult.workflow_spawn_control`；
+  `WorkflowSpawnFailed(batch_action=CONTINUE)`按T3.3 normal stable Context append/result-progress后继续next ordinal，零child/wait row；
+  `PARENT_TERMINAL`只做terminal receipt-first收敛且不恢复batch。ReAct不得drop/rebuild任一字段，Kernel收到DriverResult后
+  按`WorkflowSpawnChildControl.kind`唯一分流：START用activation+dispatch claim调Driver.start；RECOVER用activation+recovery_work
+  调Driver.recover；ATTACH只关联existing live-index task；WAITING/FOREIGN只注册durable observation且不dispatch；CANCEL只附着/
+  触发该child唯一durable cancel convergence，零Driver.start/recover，直到child terminal receipt；parent仍活且等待时cancelled child
+  terminal走ATTACHED signal，parent已terminal则late quarantine；TERMINAL只读验证
+  existing child terminal/signal。所有分支都在同一控制路径终止parent Driver，禁止把RECOVER当START或为ATTACH二次schedule。
+  正常路径必须观测child Driver真实启动exact一次，测试不得私调child terminal；若crash在completion commit→handler return、
+  handler→EffectExecutor、EffectExecutor→ReAct、ReAct→Kernel或schedule前，startup从durable receipt恢复同一child admission/
+  dispatch并只schedule一次。
+  禁止per-turn注册/替换/closure capture；`ToolContext`新增optional typed `workflow_spawn_context`，只有ReAct/
+  EffectExecutor在逐call执行前可用private factory从current DriverInvocation+durable checkpoint/call mapping构造，非
+  workflow_spawn call必须None。静态handler只把该typed context+Agent arguments交给同一个public binder。
+  `bind_workflow_spawn`不接收caller snapshot/DriverInvocation，而是用factory token+run/request/turn/call/revision从
+  `ReactCheckpointPort`重读durable pin，重算snapshot/hash并验证internal call id在ordered response中exact一次、name exact
+  `workflow_spawn`、canonical selection payload与该call arguments exact；然后才用pinned snapshot构造invocation。
+  binder必须把context中的完整lease/fence/effect authority复制进immutable `issue_authority`并逐字段交叉校验；
+  factory token只证明SDK construction，禁止索引hidden side table/cache。Host不得重算origin/operation id或在metadata
+  塞伪context。selection完整canonical payload只进入request fingerprint，不进入任何identity；
+  同operation id+不同selection必须命中同request key并零ticket conflict。Host只注册official Tool，不写binder。
+  `RunClient.workflow_spawn`在任何catalog/ticket write前必须重算`spawn_operation_id`并验证origin、RunStart派生的
+  RequestId/RunId/turn与factory token，再验证`RunStart.input`与`selection.start_input` canonical bytes
+  exact相等，之后只冻结/使用一个input value。SDK method按下面receipt-first顺序构造`WorkflowLaunchRequest`：
+  `request_key=spawn_operation_id`、
+  `catalog_generation=catalog_selection.generation`、`session_id=start.execution_session_id`、
+  `request_id=start.request_id`、`turn_id=start.turn_id`、`requested_run_id=start.run_id`、requested trace/thread为None、
+  `tool_catalog_generation=start.tool_catalog_generation`、objective/start input来自selection，并把完整canonical
+  `spawn_origin`和catalog selection identity写入WorkflowLaunchRequest/ticket receipt payload+fingerprint。首次issue在
+  同一transaction要求current catalog authority/version/hash与snapshot exact，且selected profile fingerprint/schema hash
+  exact；G到G+1漂移必须typed `catalog_stale`/零ticket，不能把同profile key重绑。Runtime在transaction内验证RunStart的
+  session/request/run/turn/tool generation、origin、selection snapshot与durable ticket；
+  禁止从request id猜turn、从input抽objective、使用RuntimeProfile补catalog generation或让Host再传一份duplicate
+  identity。首次无ticket receipt时还必须从`issue_authority`在同一open transaction重读parent Run/start、current ExecutionLease/
+  RunFence/optional WorkflowLease与exact Effect ledger handed-off row，验证run/owner/runtime epoch/fence epoch、effect id/
+  handoff attempt/internal call/request hash全匹配且parent非cancel/terminal后才可写ticket；old context跨TTL、same-owner
+  new epoch、foreign takeover或parent cancel/terminal均零ticket/零child Run。只有matching generic admission是
+  lease-free receipt-first terminal evidence；ticket-only只是incomplete intermediate，不允许旧issue authority继续
+  admission。逐字段mapping/API snapshot、official Tool schema与mismatch零ticket gate属于T4.2。门禁还必须覆盖：G snapshot
+  生成Provider request后暂停→publish G+1→同call bind仍只读取durable G pin且首次issue typed stale/零ticket；close/reopen
+  销毁cache后由G pin纯生成的ToolSpec canonical bytes一致；跨DriverInvocation/run/turn/call id、wrong tool name或同call
+  different selection全部在ticket前零写。
+  还必须覆盖A/B两个并发Provider turn交错调用同一static handler仍各自绑定其durable snapshot/call、global registry中
+  official handler count始终为1、crash/reopen后无需closure即可重建typed context，以及wrong/missing/Host metadata
+  context在handler/ledger前拒绝。
   public immutable `WorkflowLaunchTicket(ticket_receipt_id, payload_hash, candidate_id, profile_key,
   catalog_generation)` 与SDK-factory-only immutable
   `VerifiedWorkflowLaunchTicket(ticket_receipt_id, ticket_id, candidate_id, profile_key, catalog_generation,
@@ -1180,23 +1323,62 @@
   terminal_request_factory_hash, capability_snapshot, session_id,
   request_id, turn_id, requested_run_id?, requested_trace_id?, requested_thread_id?, resolved_run_id,
   resolved_trace_id, resolved_thread_id,
-  tool_catalog_generation, objective_hash, start_input_hash)`。ticket由SDK在catalog generation/profile
+  tool_catalog_generation, objective, objective_hash, start_input_hash, spawn_origin, parent_run_id, root_run_id,
+  attachment_policy=AttachmentPolicy.ATTACHED, child_command_id)`。`objective`是独立Agent semantic
+  authority，必须是strip后非空且原始UTF-8 bytes `<=32768`的string，完整原文与hash都持久化；不得只保存hash或从start input/
+  Host callback/process cache重建。ticket由SDK在catalog generation/profile
   fingerprint/workflow binding全部校验后生成，identity字段与objective/start input的canonical
   hash共同进入`ticket_id`；requested identity缺省时，`issue`按固定公开namespace和
   `workflow-launch/{run|trace|thread}/v1` domain separator从canonical request fingerprint确定性派生三个
   nonoptional resolved IDs；caller显式requested值必须成为对应resolved值并进入fingerprint。
   `prepare_start_admission` 必须重算`RunStart.input` hash并与
   `start_input_hash` constant-compare，且逐项constant-compare
-  `RunStart.execution_session_id/request_id/run_id/tool_catalog_generation`与verified ticket的
-  `session_id/request_id/resolved_run_id/tool_catalog_generation`；`RunStart.input`必须与receipt冻结的完整
-  canonical start input相同，objective也只能来自该已验证input。Host不能
+  `RunStart.execution_session_id/request_id/run_id/turn_id/tool_catalog_generation`与verified ticket的
+  `session_id/request_id/resolved_run_id/turn_id/tool_catalog_generation`；`RunStart.input`必须与receipt冻结的完整
+  canonical start input相同。完整objective必须从ticket receipt canonical payload重建，并与verified ticket的
+  `objective+objective_hash`、`StartAdmissionRequest.objective`及`StartSnapshot.workflow_admission`逐层
+  constant-compare；绝不能从start input、Host callback或process cache重建。Host不能
   构造或改写verified type。`workflow_spawn` 必须在canonical Runtime UoW同tx写
+  只有持有Runtime-bound exact Runner的`RunClient.prove_graph_unavailable(ticket, ready_activation) ->
+  VerifiedWorkflowGraphUnavailable`可调用Runner private proof factory；它在一次immutable registry snapshot中exact workflow
+  name/version missing或implementation hash drift时返回，并把deterministic registry content digest与exact ready activation/
+  continuation owner epochs写入proof。graph存在且匹配、另一Runner/Runtime/activation均拒绝。该proof不是admission
+  authority，只能进入上述failure settlement；Runner自身不公开可脱离Runtime调用的proof API。
   `workflow_launch_ticket_receipts(ticket_receipt_id UNIQUE, canonical_payload, payload_hash, catalog_generation,
   catalog_authority_version, catalog_hash, profile_fingerprint, issued_at)`后才返回public ticket。唯一SDK-owned authority为
   `WorkflowLaunchTicketPort`，其exact surface为
   `publish_catalog(transaction, authority: VerifiedWorkflowCatalogAuthority, expected_version, *, now, fault?) ->
   WorkflowCatalogAuthority`、`read_catalog(transaction) -> WorkflowCatalogAuthority`、
-  `issue(transaction, request: WorkflowLaunchRequest, *, now, fault?) -> WorkflowLaunchTicket`、
+  `issue(transaction, request: WorkflowLaunchRequest, issue_authority: WorkflowSpawnIssueAuthority,
+  *, now, fault?) -> WorkflowLaunchTicket`、
+  `read_issued(transaction, request_key) -> (WorkflowLaunchTicket, WorkflowLaunchRequest) | None`、
+  `read_admitted(transaction, ticket: WorkflowLaunchTicket) -> RuntimeStartReceipt | None`、
+  `claim_spawn_continuation(transaction, ticket: WorkflowLaunchTicket, issue_authority:
+  WorkflowSpawnIssueAuthority, ready: WorkflowSpawnContinuationReady?, *, now, ttl_seconds, fault?) ->
+  WorkflowSpawnContinuationClaim`、
+  `mark_spawn_continuation_ready(transaction, ticket: WorkflowLaunchTicket, effect_snapshot,
+  evidence_ref, *, now, fault?) -> WorkflowSpawnContinuationReady`、
+  `list_ready_spawn_continuations(snapshot_cursor, *, limit) -> (ready_items,next_cursor)`、
+  `consume_spawn_ready_and_claim_activation(transaction, ready: WorkflowSpawnContinuationReady,
+  blocker_snapshot, owner_id, *, now, ttl_seconds, fault?) -> WorkflowSpawnReadyActivation`、
+  `read_spawn_ready_activation(transaction, parent_run_id, activation_receipt_id?) ->
+  WorkflowSpawnReadyActivation | None`、
+  `reclaim_spawn_ready_activation(transaction, prior: WorkflowSpawnReadyActivation, owner_id,
+  *, now, ttl_seconds, fault?) -> WorkflowSpawnReadyActivation`、
+  `read_spawn_continuation_outcome(transaction, spawn_operation_id) -> ToolResult | None`、
+  `read_spawn_admission_outcome(transaction, spawn_operation_id) -> WorkflowSpawnAdmissionOutcome | None`、
+  `continue_spawn_admission(transaction, ticket: WorkflowLaunchTicket, continuation:
+  WorkflowSpawnContinuationClaim, start: RunStart, request: StartAdmissionRequest, snapshot: StartSnapshot,
+  claim: RuntimeActivationClaim, *, now, fault?) -> WorkflowSpawnToolOutcome`、
+  `settle_spawn_continuation_catalog_stale(transaction, continuation: WorkflowSpawnContinuationClaim,
+  ready: WorkflowSpawnContinuationReady?, *, now, fault?) -> ToolResult`、
+  `settle_spawn_continuation_graph_unavailable(transaction, continuation:
+  WorkflowSpawnContinuationClaim, ready: WorkflowSpawnContinuationReady?, evidence:
+  VerifiedWorkflowGraphUnavailable, *, now, fault?) -> ToolResult`、
+  `settle_spawn_continuation_for_parent_terminal(transaction, ticket: WorkflowLaunchTicket,
+  ready_or_continuation, parent_terminal_snapshot, *, now, fault?) -> ToolResult`、
+  `resume_admitted_runtime_start(transaction, ticket: WorkflowLaunchTicket, claim: RuntimeActivationClaim,
+  *, now, fault?) -> RuntimeStartAdmission`、
   `verify(transaction, ticket) -> VerifiedWorkflowLaunchTicket` 与
   `admit_runtime_start(transaction, ticket, start: RunStart, request: StartAdmissionRequest,
   snapshot: StartSnapshot, claim: RuntimeActivationClaim, *, now, fault?) -> RuntimeStartAdmission`。
@@ -1213,14 +1395,70 @@
   RECOVER_RESUME | FOREIGN_ACTIVE | WAITING | CANCEL_PENDING | TERMINAL`、
   `RuntimeStartAdmission(receipt, disposition, activation?, dispatch_claim?, recovery_work?,
   workflow_terminal?, retry_wake?)`；
+  ticket-only child admission continuation另用immutable
+  `WorkflowSpawnContinuationClaim(spawn_operation_id, ticket_receipt_id, parent_run_id, owner_id,
+  runtime_lease_epoch, run_fence_epoch, workflow_lease_epoch?, claim_epoch, expires_at, version)`与
+  `WorkflowSpawnContinuationReady(ready_receipt_id, spawn_operation_id, ticket_receipt_id, effect_id,
+  handoff_attempt, evidence_ref, version, created_at)`；该ready receipt是独立SDK-local recovery authority，不是
+  `completed|confirmed_not_started|still_unknown`三态Tool reconciliation outcome，也不改变Effect handoff counters。
+  wake activation使用immutable `WorkflowSpawnReadyActivation(ready_receipt, continuation_claim,
+  execution_lease, run_fence, workflow_lease?, blocker_id, activation_receipt_id, activation_version,
+  predecessor_activation_receipt_id?, state)`，其中`state=ACTIVE|SUPERSEDED|CONSUMED`；同一
+  `spawn_operation_id/ready_receipt_id`任一时刻最多一个`ACTIVE`，successor必须以stable predecessor id串成不可分叉链。
+  registry failure authority使用SDK-factory-only non-subclassable
+  `VerifiedWorkflowGraphUnavailable(ticket_receipt_id, profile_key, workflow_name, workflow_version,
+  expected_implementation_hash, registry_content_digest, activation_receipt_id, parent_run_id, owner_id,
+  runtime_lease_epoch, run_fence_epoch, workflow_lease_epoch?, continuation_claim_epoch, observed_kind,
+  observed_implementation_hash?, factory_token)`，`observed_kind=missing|drift`。
   durable start receipt永不保存或重写lease/fence token。`WorkflowRecoveryWork`必须携同一transaction读取并
   freeze的完整typed `receipt_snapshot: StartAdmissionReceipt | ResumeAdmissionReceipt`，且
   `receipt_kind/id/version/mode/due_at/request_fingerprint`必须与snapshot重算一致；resume snapshot包含原始
   canonical responses+hash，start snapshot包含完整canonical StartAdmissionRequest，Runtime不得在transaction
   外重读/重建这些字段。
-  这些类型只可由该同事务command返回；`issue`必须在与Runtime UoW相同的
+  这些类型只可由该同事务command返回；首次`issue`必须在与Runtime UoW相同的
   `transaction_owner`中读取exact durable完整catalog profile binding，自行canonical validate/freeze
-  objective+start input、派生所有identity/hash并原子写receipt；receipt-first相同request key+相同全payload只读
+  objective+start input、派生所有identity/hash，验证current parent/effect authority，并原子写ticket receipt与
+  `workflow_spawn_continuations(operation_id UNIQUE,ticket_receipt_id,parent_run_id,state=PENDING|CLAIMED|COMPLETED,
+  owner_id?,runtime_lease_epoch?,run_fence_epoch?,workflow_lease_epoch?,claim_epoch,expires_at?,version,
+  completion_receipt_id?,completion_path_kind?,effect_id,handoff_attempt,effect_request_hash,
+  issue_authority_hash)`；terminal completion另写独立
+  `workflow_spawn_completion_receipts(completion_receipt_id PRIMARY KEY,spawn_operation_id UNIQUE,
+  ticket_receipt_id,parent_run_id,path_kind,effect_id,handoff_attempt,effect_request_hash,issue_authority_hash,
+  tool_result_json,tool_result_hash,child_runtime_start_receipt_id?,failure_evidence_kind?,failure_evidence_id?,
+  failure_evidence_json?,failure_evidence_hash?,activation_chain_head_id?,child_wait_receipt_id?,canonical_hash,created_at)`与
+  `workflow_spawn_child_wait_receipts(parent_wait_receipt_id PRIMARY KEY,spawn_operation_id UNIQUE,parent_run_id,
+  child_run_id,child_command_id,parent_pre_version,parent_waiting_version,react_checkpoint_revision,
+  react_checkpoint_hash,expected_signal_domain,source_phase,batch_digest,spawn_ordinal,next_tool_ordinal,
+  prior_result_append_receipts_json,budget_terminal_code?,synthetic_result_append_receipts_json,
+  raw_tool_call_id,spawn_result_append_id,spawn_result_append_receipt_id,
+  spawn_tool_message_hash,context_pre_revision,context_post_revision,released_runtime_lease_epoch,released_workflow_lease_epoch?,
+  termination_started_at,termination_last_observed_at,wall_deadline?,termination_policy_snapshot_hash,
+  released_run_fence_epoch,child_start_receipt_id,child_dispatch_claim_id,child_runtime_lease_epoch,
+  state=UNCONSUMED|WOKEN|CLAIMED|ACKED_COMPLETION_PENDING|ACKED|ACKED_PARENT_TERMINAL,
+  child_signal_id?,continuation_id?,wake_activation_receipt_id?,
+  progress_receipt_id?,pending_child_completion_json?,pending_child_completion_hash?,
+  child_completion_append_id?,child_completion_append_receipt_id?,child_completion_context_revision?,
+  pending_completion_terminal_receipt_id?,pending_completion_terminal_state?,pending_completion_terminal_hash?,
+  parent_terminal_phase_kind?,child_cancel_request_id?,child_cancel_receipt_id?,reused_child_cancel_receipt_id?,late_signal_quarantine_receipt_id?,
+  claimed_continuation_terminal_ack_receipt_id?,
+  version,identity_hash,lifecycle_hash,created_at)`；每次state推进同tx写stable successor ids并CAS version，
+  identity hash永不变、lifecycle hash覆盖current state/ids。DDL采用可执行的单向闭环：先写child-wait row（`spawn_operation_id UNIQUE`并FK continuation），再写completion
+  row，其non-null `child_wait_receipt_id UNIQUE` FK child-wait；child-wait不反向FK completion，reader通过两表相同operation id/
+  canonical hash重算闭环。两row必须同transaction写，不能从current Run/checkpoint事后重建。
+  failure evidence
+  canonical JSON使用与start input相同的迭代preflight并限制UTF-8 `<=65536`、depth `<=12`、nodes `<=1024`，不得只存id或
+  回查later current authority。receipt必须持久化封闭枚举
+  `path_kind=DIRECT|READY_RECOVERY|PARENT_TERMINAL_TICKET_ONLY|PARENT_TERMINAL_READY_UNACTIVATED|
+  PARENT_TERMINAL_ACTIVATED`并重复冻结上述effect/request/authority identity；ticket-only recovery另写
+  `workflow_spawn_continuation_ready(ready_receipt_id PRIMARY KEY,operation_id UNIQUE,ticket_receipt_id,effect_id,
+  handoff_attempt,evidence_ref,version,created_at,consumed_at?)`与专用
+  `workflow_spawn_ready_activations(activation_receipt_id PRIMARY KEY,ready_receipt_id,spawn_operation_id,
+  parent_run_id,effect_id,owner_id,runtime_lease_epoch,run_fence_epoch,workflow_lease_epoch?,continuation_claim_epoch,
+  predecessor_activation_receipt_id? UNIQUE,state,version,canonical_hash,created_at,superseded_at?,consumed_at?)`；
+  SQLite必须以partial unique index（`UNIQUE(ready_receipt_id) WHERE state='ACTIVE'`）或语义等价的独立current row
+  保证每个ready任一时刻最多一个ACTIVE，且predecessor只能形成单链，不能覆盖旧row或复用通用
+  `wait_activation_receipts(blocker_id UNIQUE)`。consume/reclaim/continue/failure/terminal settlement必须在同一BEGIN对该表
+  做current ACTIVE CAS并重算canonical hash。receipt-first相同request key+相同全payload只读
   返回原ticket，任一字段不同零写conflict。stable fault labels至少覆盖
   `workflow:launch_ticket:before_receipt_write/after_receipt_write/after_commit`，close/reopen response-loss返回
   同一ticket；并发exact request只有一个receipt winner。current catalog/profile唯一authority是同库
@@ -1231,6 +1469,10 @@
   launch ticket的`canonical_payload`也pin同一完整schema snapshot。`read_catalog/verify/admit_runtime_start`从这些
   durable bytes重建typed schema并用同一bounded validator校验actual input，close/reopen后不得查询Runner registry或
   信任caller预验；schema bytes/hash/ref任一漂移零写。
+  `RuntimePorts.workflow_launch`必须是nonoptional `WorkflowLaunchTicketPort`，其`transaction_owner`与Runtime UoW及
+  Runner canonical execution ports完全相同；`Runtime.__init__/build_runtime`必须fail closed验证，不得缓存Host
+  registration或另持catalog。model-spawnable workflow profile不通过`RuntimeProfile`补metadata；official workflow
+  driver是SDK reserved driver，profile/workflow binding只能来自本次durable ticket verification。
   直接constructor、subclass、copy/replace、手写全字段或token不匹配均零写。SQLite不得持有/查询第二个registry；
   SDK内存catalog只能是该row的
   immutable read view，不得成为另一个current authority或在transaction外热换。Runtime必须调用canonical
@@ -1251,7 +1493,49 @@
   run/request_key。factory token/receipt hash仍必须验证。直接constructor、copy/replace、subclass、异catalog/异DB
   receipt均在generic write前拒绝；
   restart后可从同durable public ticket receipt重新verify为同一semantic binding，不依赖进程内cache。
-  `workflow_spawn`只能构造`WorkflowLaunchRequest`并调用Port `issue`；禁止直接构造ticket、直写SQLite receipt、
+  `RunClient.workflow_spawn`先在canonical UoW transaction中以payload-independent `spawn_operation_id`调用
+  `read_issued`：若已有receipt，必须从durable canonical payload重建完整request+public ticket并逐项比较本次
+  parent/turn/tool-call identity与selection；exact则返回原ticket，selection任一变化则typed conflict，不读取或替换成
+  current catalog generation。若无receipt，才读取current catalog generation、用上述唯一mapping构造
+  `WorkflowLaunchRequest`并调用Port `issue`。`read_issued`只读同transaction owner的durable receipt，不接受Host
+  payload，也不把旧catalog binding提升为current authority。取得ticket并进入process-local single-flight后，admission
+  transaction先调用`read_admitted`：该read只在generic admission已存在时，从durable ticket receipt、
+  RuntimeStartReceipt、Run、StartSnapshot与workflow request hash重算并返回原receipt；不存在返回None，任一
+  corruption/conflict fail closed。它不查询current catalog，也不创建/claim authority。existing exact receipt必须在
+  同一transaction调用`resume_admitted_runtime_start`；该command重读full terminal/authority rows并按既定
+  START_ORPHAN/ATTACH/RECOVER/WAITING/CANCEL/TERMINAL矩阵原子claim或只读返回，禁止创建第二generic admission，且
+  不依赖current catalog。只有`read_admitted is None`时才调用`claim_spawn_continuation`：PENDING或expired CLAIMED只可
+  由current parent Runtime authority取得/reclaim，claim epoch原子+1；live foreign/current different epoch拒绝，same
+  owner+same epoch exact返回current claim。original handler的same current authority可在PENDING时令`ready=None`；
+  旧authority隔离后的新owner/epoch必须携exact unconsumed `WorkflowSpawnContinuationReady`，无ready或错effect/
+  handoff evidence零写。随后才调用`verify(current catalog)`→Runner prepare→
+  `continue_spawn_admission`；后者必须在同一transaction CAS current continuation owner/runtime/fence/workflow
+  epoch+expiry、current parent authority与catalog/ticket/start request，并原子创建`parent_run_id=spawn_origin.parent_run_id`
+  且`root_run_id=WorkflowLaunchRequest.root_run_id`的child Run、`attachment_policy=ATTACHED`的durable `run_links` row、stable
+  child launch command/receipt与generic RuntimeStartReceipt/StartSnapshot，再把continuation置COMPLETED+completion receipt；
+  这些rows必须逐项匹配ticket里的parent/root/child command identity，禁止写`parent_run_id=NULL`的新root或拆transaction调用
+  第二套child launcher。同一BEGIN还必须ledger-first settle workflow_spawn Effect/ToolResult、把durable ReAct checkpoint CAS到
+  terminal后先按T3.3 canonical Context protocol用raw Provider tool call id、stable
+  `append_id=SHA256("workflow-spawn/context-result/v1",spawn_operation_id)`与expected context revision把exact ToolResult message
+  append一次，并把append receipt/post revision/message hash写child-wait receipt；Effect result canonical hash必须与Context Tool
+  message重算一致。随后才把durable ReAct checkpoint CAS到
+  `CHILD_WAIT(child_command_id,child_run_id,parent_wait_receipt_id,expected_signal_domain,
+  source_phase=tool_batch_reserved,batch_digest,spawn_ordinal,next_tool_ordinal,prior_result_append_receipts,
+  spawn_result_append_receipt_id,context_revision)`、把parent Run从当前RUNNING revision CAS到
+  WAITING并写unique wait receipt，然后release parent Runtime/Workflow lease与RunFence；返回的factory-only
+  `WorkflowChildWaitBinding`必须逐项对应这些rows。也就是说child materialization、Tool outcome、parent WAITING/checkpoint与
+  Context append、authority release是一个atomic WorkflowTransaction；不存在handler return后另tx补Tool message或“Tool成功后再
+  进入WAITING”的窗口。该child terminal的COMPLETED/FAILED/CANCELLED强制走T3.2
+  `finalize_child_and_enqueue_parent_signal`，从durable run_link读取ATTACHED policy并产生唯一parent signal/continuation；parent
+  ReAct按既有FIFO continuation恢复，不能走root terminal/delivery。official EffectExecutor把
+  `WorkflowSpawnAdmissionOutcome.result`作为用户可见ToolResult，同时把`suspension`作为typed internal outcome交给ReAct；ReAct
+  必须在任何下一Provider/Tool/terminal前逐项验证binding并立即退出Driver，禁止Host handler自行决定是否suspend。旧Driver即使
+  crash后恢复也因parent WAITING+released authorities零物理调用。old handler即使ticket exact也不能绕过claim；after-commit same claim只读返回原
+  admission，异claim/payload零写。parent cancel/terminal时PENDING/CLAIMED continuation终止为COMPLETED failed outcome
+  且不建child Run。因此旧generation
+  未admit ticket返回typed `catalog_stale`且零Run，已admit ticket receipt-first返回原Run，不能误报payload conflict或
+  签第二ticket。commit durable public ticket后才以`ticket_receipt_id`进入下述process-local
+  single-flight；禁止直接构造ticket、直写SQLite receipt、
   调私有factory或由Host提供已验证binding。Port缺失、transaction owner不一致、catalog/profile漂移必须在
   generic Run/start admission前零写拒绝。
 - `WorkflowLaunchTicketPort`/SQLite command不得持有第二个in-memory compiled registry，也不得接受Host提供的
@@ -1323,10 +1607,186 @@
   一次；随后新runtime epoch takeover后，A的旧runtime/claim epoch capability即使claim id相同也必须零写拒绝。
   再补terminal、HITL WAITING、未到期与已到期RETRY_WAIT、CANCEL_REQUESTED四类同ticket replay，全部必须
   `activation=None`且node/provider/tool零调用；RETRY_WAIT只能由timer/startup scanner取得下一activation。
+  official `workflow_spawn`还必须提供SDK-owned T2.5 reconciliation，而不是复用Host generic observer猜结果。
+  reconciler从EffectRecord冻结的run/turn/internal call/arguments与durable ReAct pin重算同一spawn operation id，并读取
+  ticket/admission receipts：已有matching generic admission时必须调用上述唯一`WorkflowSpawnResult` factory，从同一组
+  ticket/RuntimeStartReceipt/child Run/run_link/command生成byte-exact stable handle payload，以该durable evidence
+  ledger-first settle exact `ToolResult.succeeded`，不要求旧parent lease且不再调用handler；只有ticket、尚无admission时，
+  若旧parent Runtime/RunFence仍可能让handler继续，reconciler仍按冻结三态返回`still_unknown`；旧authority已被隔离且
+  parent仍可恢复时，reconciler调用`mark_spawn_continuation_ready`写独立evidence-bound ready receipt+durable wake，不能
+  claim Runtime authority、不能写三态resolution、不能直接admit。`list_ready_spawn_continuations`按stable operation id
+  keyset、limit `1..50`只枚举unconsumed ready及其exact parent Tool blocker；ready先于WAITING/blocker时先durable保留，
+  blocker后写后自然变eligible，不得丢wake。wake drain必须调用单一
+  `consume_spawn_ready_and_claim_activation`：同一transaction验证ready/effect attempt/blocker、claim或reuse current
+  Runtime lease+RunFence/WorkflowLease、CAS parent `WAITING->RUNNING`、写unique activation receipt，并把原blocker标
+  `superseded_by=ready_receipt_id,wake_consumed=true`；same receipt exact replay返回同activation，任一identity变化零写。
+  generic late reconciliation resolution遇superseded blocker只能记录evidence，不得再次activate。crash在consume任一
+  write前后由全rollback或activation receipt+RUNNING recovery继续，禁止scanner先消费ready再另tx schedule。
+  `DriverInvocation`新增factory-only optional `workflow_spawn_ready: WorkflowSpawnReadyActivation | None`；只允许ReAct
+  driver携带，其他driver/non-ready invocation必须None。Kernel在consume成功后把exact returned value交给scheduled
+  Driver；若crash在consume after_commit→schedule前或schedule→driver前，startup RUNNING recovery必须调用
+  `read_spawn_ready_activation`只在same owner+same current runtime/fence/workflow epochs时从ACTIVE、unconsumed receipt
+  重建同值。若原Runtime authority已expired/released，canonical RUNNING startup takeover必须调用
+  `reclaim_spawn_ready_activation`：同一transaction验证prior ACTIVE/unconsumed、旧lease/fence失效、same ready/effect/
+  operation，原子claim新ExecutionLease+RunFence/WorkflowLease、continuation claim epoch+1，写successor ACTIVE activation
+  receipt并把prior置SUPERSEDED；任一时刻最多一个ACTIVE。异owner与same-owner epoch+1都走该path，旧owner恢复后所有
+  continue/failure settlement零写。不得复用旧token或重新打开已superseded blocker。ReAct进入
+  generic UNKNOWN observer前必须先逐项匹配run/turn/effect/handoff attempt/continuation claim并执行spawn continue或
+  typed failure；completion同tx consume activation receipt。缺失/错receipt fail closed，不能再次写WAITING或新blocker。
+  spawn ready activation成功进入`continue_spawn_admission`时，该ready/activation/original Tool blocker必须先在同一BEGIN
+  完整consume，随后创建的是独立`CHILD_WAIT` receipt；两者不可同时eligible。child terminal signal无论在admission返回前或后
+  到达，都只通过T3.2 HOL signal/continuation消费该CHILD_WAIT一次；generic late spawn resolution不得唤醒child wait。
+  child signal/HOL continuation wake时，不得直接使用raw terminal payload；只能调用T4.3同一approved
+  `terminal_public` factory从immutable child terminal projection生成
+  `WorkflowChildCompletionMessage(version="workflow_child_completion.v1",child_command_id,child_run_id,terminal_state,
+  terminal_receipt_id,public_result?,public_error?,delivery_refs)`。exact allowlist仅含这些key；public_error只含stable
+  `code/message/recovery_action`，不得含private cause/trace/evidence；delivery只传validated safe content ref+bounded summary，不传blob/
+  private metadata。投影在freeze/Context write前迭代限制canonical UTF-8 `<=65536`、depth `<=8`、nodes `<=256`、每string
+  `<=8192`、arrays/maps各`<=64`并递归拒绝private/secret-like keys与nonfinite/cycle。若源projection超限或privacy-invalid，factory
+  必须产生deterministic bounded public failure summary（stable code=`workflow_child_public_projection_rejected`，不含原始bytes）并继续
+  completion/ACK，不能反复重试巨型payload或让parent stranded。生成的bounded canonical message写入out-of-band pending
+  continuation receipt/checkpoint，不能立刻追加Provider Context或复用raw call k。随后必须在任何k+1 Tool前调用
+  `ack_continuation_and_continue_tool_batch`，把pending message放进durable ordered queue、ACK当前continuation并推进child-wait到
+  ACKED_COMPLETION_PENDING；`state in {ACKED_COMPLETION_PENDING,ACKED} iff continuation ack receipt exists`。
+  ReAct再从checkpoint冻结的exact `next_tool_ordinal=spawn_ordinal+1`继续同一ordered batch，先核验batch digest/prior append
+  receipts/context revision；按T3.3既有ordered progress逐个执行k+1..N、每个Effect与Context append均exact一次。k+1若再次
+  workflow_spawn、UNKNOWN、retry或HITL，因旧continuation已ACK可独立进入其正常suspension/blocker，pending completion queue仍
+  durable保留。全部raw ToolResults闭合后调用`commit_pending_child_completions_and_react_ready`，按
+  `(spawn_ordinal,terminal_receipt_id)`稳定顺序用各自stable append id与exact Provider-compatible `role="user"` canonical JSON
+  content追加所有pending completion message一次，写append receipt/revision并把对应child-wait推进ACKED；此后才允许下一Provider。
+  parent因cancel、permanent Driver/handler exception或正常terminal提前收敛时，所有parent root terminal/cancel/
+  continuation-aware terminal command必须在其同一BEGIN枚举并full-verify该parent所有nonfinal child-wait，统一CAS到
+  `ACKED_PARENT_TERMINAL`并写parent terminal receipt id/state/hash，但按来源冻结
+  `parent_terminal_phase_kind=CHILD_ACTIVE|SIGNAL_PENDING|CONTINUATION_CLAIMED|COMPLETION_PENDING`：CHILD_ACTIVE从durable
+  ATTACHED run_link/child command执行receipt-first child cancel matrix：child为RUNNING|WAITING时首次派生stable child-cancel receipt并
+  在parent terminal同一BEGIN CAS到CANCEL_REQUESTED；已为CANCEL_REQUESTED|CANCELLING时必须读取并full-verify该child唯一durable
+  cancel command/receipt的child id、stable cancel identity与target terminal policy，在parent closure只写
+  `reused_child_cancel_receipt_id`，不改child state/版本、不建第二request；cancel worker后续版本推进仍按immutable cancel receipt验证。
+  existing cancel错child/损坏才conflict；child已terminal则receipt-first读取terminal outcome。该cancel receipt/
+  child state必须成为以后每次Provider/Tool handoff同BEGIN的Run-state gate，CANCEL_REQUESTED时零ledger/transport/handler；Kernel
+  durable cancel convergence隔离active task、reconcile已handoff effect并最终release child fence，不要求parent伪造child lease。
+  child稍后terminal的signal只能写quarantine receipt；
+  SIGNAL_PENDING同tx把未claim signal/continuation标terminal-quarantined；CONTINUATION_CLAIMED只允许continuation-aware terminal
+  command凭current claim同tx写ack/progress+quarantine receipt；COMPLETION_PENDING按前述queue tombstone，不追加Context、不调用
+  Provider。terminal对外完成前必须完成全部closure，不能由startup事后best-effort；after-commit exact replay返回同terminal/
+  tombstone/cancel/quarantine evidence。A/B多项wait必须全有或全无地封闭，ATTACHED child不得成为无cancel authority的孤儿。
+  Provider Context中不能生成第二条raw call k的tool message。不能从ordinal1重跑、跳到Provider或重扣已reserved batch预算；
+  后续普通Tool已PREPARED/UNKNOWN/terminal分别走既有ledger-first恢复，不另造identity；每个尚未物理handoff的Tool都必须先校验
+  current durable wall fence/last_observed，child wait前的call/cost/count reservation不重复扣，wall authority绝不因旧batch reservation
+  被旁路。
+  wake后的current ReAct owner读取ready activation，构造new
+  `WorkflowSpawnIssueAuthority`并调用`claim_spawn_continuation`+`continue_spawn_admission`（不签第二ticket、不调用Tool
+  handler/transport、不增加handoff_attempt或rehandoff_count）；current catalog仍匹配则创建exact一个Run并ledger-first
+  settle success，已stale则settle typed `workflow_catalog_stale` failure，并原子consume ready/complete continuation。old handler
+  无论ticket exact都因continuation owner/epoch CAS零写；无ticket时只有旧handler
+  authority已确定失效/隔离才写`confirmed_not_started`，否则`still_unknown`，禁止blind replay。ticket或admission任一
+  identity/hash/origin不匹配fail closed，不得用“存在某Run”伪证据。fault matrix覆盖ticket commit前/后、admission后、
+  EffectResult settle before/after/after_commit、close/reopen、旧handler恢复与reconciler并发；最终必须exact一个ticket、
+  一个child Run、一个terminal Tool outcome，parent解除UNKNOWN继续，且confirmed-not-started fresh attempt仍复用相同
+  operation id并受T2.5至多两次物理handoff上限。
+  claim后若current catalog确定性漂移，只能调用`settle_spawn_continuation_catalog_stale`，command在同tx自行重算
+  durable current catalog/ticket mismatch；若Runner compiled registry missing/drift，Runner必须在一次immutable registry
+  snapshot上用private factory生成`VerifiedWorkflowGraphUnavailable`，携expected/observed binding与snapshot id/hash。
+  `settle_spawn_continuation_graph_unavailable`验证exact factory type/token、ticket/profile/expected hash与current claim，
+  还必须逐项匹配current `WorkflowSpawnReadyActivation`的activation receipt、parent/owner/runtime/fence/workflow/claim epochs
+  与Runtime-bound registry content digest，不让SQLite查询第二registry。所有settlement第一步调用
+  `read_spawn_continuation_outcome`：只有确实不存在completion receipt时返回`None`；一旦completion row/continuation terminal
+  pointer任一存在却缺行、损坏或错链，必须fail closed抛`UnitOfWorkConflict`，绝不能返回`None`后把已settled当成未settled重试。
+  已有terminal outcome按operation id只读返回，不重造proof、不比较fresh process snapshot，
+  但绝不能只按operation id信任一张completion row。reader必须在同一read transaction从该operation id开始逐层重算并
+  constant-compare完整durable chain：ticket canonical payload/origin/request+selection hash -> continuation operation id/
+  ticket id/completion receipt/path_kind/effect id/handoff attempt/request+issue-authority hash -> Effect terminal result canonical hash，
+  并按封闭path matrix验证后续shape：`DIRECT`必须完全没有ready/activation row，且从continuation冻结的direct issue authority
+  重算到Effect terminal；`READY_RECOVERY`必须存在exact ready receipt与完整ACTIVE->SUPERSEDED*->CONSUMED activation successor
+  chain；三种parent-terminal path都必须关联exact parent terminal receipt：`PARENT_TERMINAL_TICKET_ONLY`必须零ready/零activation，
+  `PARENT_TERMINAL_READY_UNACTIVATED`必须exact一个unconsumed ready、零activation并由terminal command同tx consume ready、
+  supersede/consume原blocker，`PARENT_TERMINAL_ACTIVATED`必须有ready与被terminal command消费的完整activation chain。任何hybrid、
+  path_kind漂移、该有却缺或该无却多均fail closed。
+  success outcome还必须exact关联同ticket的RuntimeStartReceipt/child Run/StartSnapshot；
+  failure outcome必须exact关联allowlist中的`catalog_stale|graph_version_unavailable|workflow_parent_terminal_before_spawn`
+  immutable durable evidence与对应settlement receipt：catalog stale evidence冻结ticket catalog generation/version/hash与settlement时
+  observed authority id/version/hash；graph unavailable evidence冻结完整verified proof fields、registry content digest、observed binding
+  与activation receipt/claim epochs；parent terminal evidence冻结terminal receipt id/state/hash。settlement与Effect/completion同tx写
+  canonical evidence bytes+hash，reader只从这些历史bytes重算kind/id/hash，不查询后续catalog或fresh registry。任一缺行、跨parent/child Run、跨ticket/effect、重复ACTIVE、broken predecessor、
+  identity/hash/result漂移都fail closed，不得返回ToolResult。只有全链验证通过才receipt-first返回原terminal outcome；未settled时
+  才验证current proof，另一Runner/Runtime/activation零写。两command均同tx CAS continuation/ready/ticket/effect、consume ready/activation receipt、complete
+  continuation并settle exact terminal failed ToolResult，零Run/零handler。direct constructor/copy/replace、另一DB/ticket/
+  registry snapshot、caller自选错误码、非确定性异常或stale evidence拒绝；覆盖claim后catalog mutation、两个不同registry
+  进程（A graph正确、B graph missing/drift）交错伪proof零写、合法failure并发winner、逐write fault与after-commit换process/
+  snapshot id后receipt-first exact replay；另以真实SQLite覆盖normal direct success、direct catalog-stale、ticket-only early、
+  mark-ready after_commit但consume前parent terminal、activated parent terminal与ready-recovery的before/after/after_commit close-reopen，
+  late consume/reclaim必须零写；逐path_kind/FK/identity/hash/predecessor/result/evidence field做删除、插入伪ready/activation与hybrid
+  mutation，并在catalog settle后继续publish G+2/G+3、销毁Runner后仍从immutable evidence重放；close/reopen后只有原合法shape的
+  全链outcome可只读返回。
+  success path的`read_spawn_admission_outcome`采用同样receipt-first/fail-closed规则，并额外full-verify completion↔child-wait
+  receipt的历史pre/post revision与CHILD_WAIT checkpoint hash↔released Runtime/Workflow/RunFence epochs↔child
+  RuntimeStartReceipt/dispatch claim/current-or-recoverable child activation，以及Effect terminal ToolResult↔Context raw call/
+  stable append id/receipt/pre-post revision/message hash exact equality；验证通过才由SDK factory重建field-exact
+  stable `WorkflowSpawnAdmissionOutcome(child_start_ref,result,suspension)`，而不是只返回ToolResult或旧lease/fence。
+  reader不得要求parent当前永远WAITING或checkpoint仍停CHILD_WAIT：wait state为UNCONSUMED时才验证current WAITING+CHILD_WAIT；
+  WOKEN/CLAIMED/ACKED_COMPLETION_PENDING/ACKED/ACKED_PARENT_TERMINAL时按实际phase验证child signal -> T3.2 HOL continuation -> wake activation/pending
+  completion/progress receipt/final context append successor chain；ACKED_COMPLETION_PENDING与ACKED必须有exact canonical
+  continuation ack/progress receipt，前者必须无final completion append，后者必须有exact append。ACKED_PARENT_TERMINAL必须无
+  late append，并使用封闭nullability matrix：CHILD_ACTIVE要求signal/continuation/ack/progress全None，且恰有首次child cancel
+  receipt/state CAS或`reused_child_cancel_receipt_id`二者之一；
+  SIGNAL_PENDING要求signal/continuation quarantine但claim/ack/progress全None；CONTINUATION_CLAIMED要求current claim+ack/progress+
+  quarantine；COMPLETION_PENDING要求既有ack/progress+queue tombstone。任一phase出现多余/缺失字段都fail closed；同时
+  exact关联parent terminal receipt与phase-specific evidence：CHILD_ACTIVE验证stable child cancel request以及late terminal signal quarantine，
+  SIGNAL_PENDING验证signal/continuation quarantine，CONTINUATION_CLAIMED验证current-claim ack/progress/quarantine，
+  COMPLETION_PENDING验证queue tombstone；不再要求current parent WAITING。parent
+  后续再次WAITING或terminal则继续验证对应atomic progress/terminal receipt。新Runtime/Workflow/RunFence epoch只需严格高于历史
+  released epoch，不得当corruption；伪successor、跳过HOL或错signal fail closed。child terminal+parent resume/terminal后再次read/
+  reopen仍必须返回同一stable outcome。
+  `continue_spawn_admission` after-commit重试第一步调用该reader：同process且原child activation仍current可只读取得；fresh process、
+  TTL takeover或same-owner epoch+1必须用stable `ChildStartDispatchRef`调用canonical
+  `resume_admitted_runtime_start`/START_ORPHAN recovery，在同tx取得本次current child activation，再由private factory组合成
+  disposition-exact `WorkflowSpawnChildControl`与`WorkflowSpawnToolOutcome`。user result/suspension/ref byte/field exact，ephemeral activation只要求current-authority exact，绝不
+  返回历史token。旧owner replay、TTL takeover与same-owner epoch+1时旧control零schedule，新control exact一次。任一binding/
+  checkpoint/release/dispatch字段漂移抛`UnitOfWorkConflict`且零reschedule。逐字段mutation、每层return前crash与fresh-process
+  replay覆盖stable Outcome与current live control。
+  若parent已`CANCELLED|COMPLETED|FAILED`而无active Runtime owner，startup/cancel convergence必须调用
+  `settle_spawn_continuation_for_parent_terminal`：同一transaction full-verify parent terminal receipt、ticket/
+  continuation/ready/effect identity与handoff attempt，并枚举/full-verify该ready的唯一current ACTIVE activation（ticket-only
+  early state允许不存在）；若存在则必须同BEGIN CAS `ACTIVE->CONSUMED`、写terminal completion receipt与chain hash，再原子把
+  continuation+ready置COMPLETED/consumed并把Effect settle为terminal failed
+  `workflow_parent_terminal_before_spawn`。command还须验证parent terminal已经释放/失效的Runtime/Workflow lease与RunFence，
+  不要求伪造live authority，不创建child Run。terminal settle、reclaim与continue在同一current-ACTIVE CAS上只允许一个winner；
+  loser receipt-first返回winner outcome或零写conflict，绝不能遗留ACTIVE给startup/Driver。same receipt exact replay只读返回，
+  异evidence/payload conflict；覆盖三terminal states、两个reconciler并发、terminal/reclaim/continue三方barrier、每write fault与
+  after_commit reopen，最终full-chain outcome可读、零ACTIVE activation。
 - 改法：control schema从 frozen model-spawnable catalog生成；Host只 validate + bind ticket；无 regex/
   classifier/route_hint。conditional registration检查 required Ports。
 - tests：`test_agent_selected_profile.py`, `test_stale_catalog.py`, `test_forged_binding.py`,
-  `test_optional_profiles.py`。
+  `test_optional_profiles.py`；另补真实SQLite/Runtime `parent Agent -> workflow_spawn -> ATTACHED child ->
+  child terminal -> unique parent signal -> FIFO continuation -> parent ReAct resume`闭环，覆盖child admission/run_link/command各
+  write fault、child terminal before/after ToolResult return、admission after_commit→Driver crash、旧Driver恢复、parent terminal
+  race、parent wake前后close/reopen；child signal前下一Provider/Tool/terminal物理调用必须为0，signal后只wake/恢复一次；逐项断言parent/root/ATTACHED/command identity及
+  DIRECT/READY_RECOVERY/receipt-first三条路径的`WorkflowSpawnResult` typed fields与canonical bytes完全相同。另覆盖spawn为
+  ordered batch first/middle/last、k+1 Tool已/未PREPARED/UNKNOWN、Context append before/after/after_commit与各cursor crash点；
+  budget不重复，physical effect与Context Tool message各exact一次，下一Provider request必须先包含spawn及剩余batch的完整有序
+  ToolResults，再包含exact一条`role=user` child completion canonical message。补direct/ready catalog stale、graph unavailable、parent
+  terminal三类`WorkflowSpawnFailed`，active failure继续batch且child/wait rows为0，parent terminal不恢复batch。补completion append
+  后/下一Provider前后crash、claim takeover，断言ACKED iff T3.2 ack receipt；补private cause/secret-like key、oversize/deep/cycle/
+  nonfinite、artifact/delivery safe ref与reopen canonical bytes，Provider request零private payload且parent始终可progress/ACK。
+  补child A wake→completion append→running ACK→下一Provider spawn child B，B先/后terminal及每write crash，A/B signal FIFO各一次；
+  再覆盖ACK后下一步进入UNKNOWN resolution-before-WAITING、retry due、HITL decision与terminal，旧A claim不得出现在任何新blocker/
+  wait command中。用virtual clock覆盖child跨parent wall deadline的`now==deadline`、`>deadline`、clock rollback与ACK各write
+  before/after/after_commit：旧continuation仍可ACK且parent可BUDGET_EXCEEDED terminal收敛，剩余Tool ledger/handler全0；未超限
+  path的每个后续Tool current wall fence通过且不重复预算扣减。deadline/rollback分别发生在wake前、k+1前、k+m前、child
+  completion append前时，所有未执行raw call都按序得到exact synthetic rejected Context receipt，零Effect row/handler，旧claim最终
+  ACK且不stranded。
+  补A及A+B pending queue阶段的parent cancel、permanent FAILED exception、normal terminal与append/terminal race；每write/
+  after_commit reopen必须全量落`ACKED_PARENT_TERMINAL`或全量append，零late Context/Provider，原spawn stable outcome仍可读。
+  另在child terminal前、signal enqueue后/claim前、continuation claim后、completion pending后分别触发parent cancel/terminal及
+  after_commit；逐phase断言stable child cancel或signal/continuation quarantine/current-claim ack evidence，最终无可唤醒
+  continuation、无无cancel authority的active ATTACHED child，spawn outcome始终可读。
+  对CHILD_ACTIVE补确定性barrier：child持active lease/fence暂停在Provider/Tool handoff前，parent terminal同tx写cancel receipt+
+  CAS child CANCEL_REQUESTED后child恢复，effect ledger/transport/handler全0；已handoff只reconcile。cancel与child terminal并发只一
+  terminal winner且late signal quarantine。四phase逐字段nullability mutation/reopen reader均覆盖。
+  覆盖child cancel first→parent terminal、parent first→child cancel、CANCELLING barrier与cancel terminal after_commit：parent closure
+  首次或复用恰一个cancel authority，parent terminal均可完成，旧child handoff仍为0。
+  覆盖admission commit→schedule前cancel、active child cancel、parent-driven cancel与after_commit fresh reopen：control必须exact
+  CANCEL_PENDING→CANCEL，wrong tag/optional fields拒绝，Provider/Tool物理调用0，最终signal或quarantine唯一收敛。
 - 依赖：T2.3、T3.3、T4.1。
 
 ### T4.3 — Native execution kernel / terminal projection / legacy compatibility [AC-5, AC-8]
