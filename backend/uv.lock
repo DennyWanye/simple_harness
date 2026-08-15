@@ -7776,7 +7776,7 @@ requires-dist = [
     { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4" },
     { name = "selectolax", specifier = ">=0.3" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
-    { name = "simple-harness-sdk", editable = "../../simple-harness-sdk" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.1.0-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tomli", specifier = ">=2.0" },
@@ -7796,9 +7796,12 @@ provides-extras = ["dev"]
 [[package]]
 name = "simple-harness-sdk"
 version = "0.1.0"
-source = { editable = "../../simple-harness-sdk" }
+source = { path = "vendor/simple_harness_sdk-0.1.0-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
+]
+wheels = [
+    { filename = "simple_harness_sdk-0.1.0-py3-none-any.whl", hash = "sha256:d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91" },
 ]
 
 [package.metadata]
@@ -7807,14 +7810,6 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'testing'", specifier = ">=8.3,<9" },
 ]
 provides-extras = ["testing"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.3,<9" },
-    { name = "pytest-anyio", specifier = ">=0.0.0" },
-    { name = "reuse", specifier = ">=5.0,<6" },
-    { name = "twine", specifier = ">=6.1,<7" },
-]
 
 [[package]]
 name = "six"

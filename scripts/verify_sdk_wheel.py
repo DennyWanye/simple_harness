@@ -19,7 +19,7 @@ from pathlib import Path
 # Expected hash from GitHub Release SHA256SUMS
 # Update this when vendoring a new SDK version
 EXPECTED_HASH = {
-    "0.1.0": "PLACEHOLDER_UPDATE_AFTER_RELEASE",
+    "0.1.0": "d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91",
 }
 
 
