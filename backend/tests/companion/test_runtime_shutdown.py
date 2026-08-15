@@ -14,7 +14,7 @@ from deskpet.companion.runtime import (
     ForegroundActivityGate,
 )
 from deskpet.companion.store import CompanionStore
-from backend.tests.companion.test_runtime_scheduler import (
+from tests.companion.test_runtime_scheduler import (
     ExecutionState,
     MutableClock,
     wait_until,
