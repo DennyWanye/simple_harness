@@ -1,268 +1,215 @@
-# Simple Harness SDK handoff
+# Simple Harness SDK v0.1.0 — Handoff 文档
 
-状态日期：2026-08-15（Asia/Shanghai）  
-当前结论：**INCOMPLETE / 可继续，但必须从小 slice 恢复**。
+**日期：** 2026-08-16  
+**接收方：** 下一个执行验收 E2E 测试与 CI 推送的 agent  
+**优先级：** HIGH — SDK v0.1.0 Release 已发布，两个遗留门未关闭
 
-本文是给新 session 的事实交接，不是完成声明，也不是授权 push、发布或产品切换。
+---
 
-## 1. 目标与边界
+## 1. 全局状态总览
 
-目标是完成可复用的 Simple Harness SDK：durable RunKernel、Native Workflow、Provider/Tool/Effect/Checkpoint/Recovery/Reconciliation、SQLite lease/fence、crash/reopen/exact replay，以及：
+| 项目 | 状态 | 备注 |
+|------|------|------|
+| SDK 代码 | ✅ 完整 | 1122 测试全绿 |
+| SDK wheel v0.1.0 构建 | ✅ 完成 | pure-Python `py3-none-any` |
+| SDK GitHub 仓库 | ✅ 已推送 | `github.com/DennyWanye/simple-harness-sdk` |
+| GitHub Release v0.1.0 | ✅ 已发布 | 含 wheel + sdist + SHA256SUMS |
+| 产品 vendored wheel | ✅ 集成 | `backend/vendor/simple_harness_sdk-0.1.0-py3-none-any.whl` |
+| GitHub Actions workflows | ⚠️ 本地已提交，**未推送** | 网络/代理 TLS 问题阻断，见§3 |
+| 桌面 E2E 测试 SDK-S1～S5 | ❌ NOT RUN | LLM provider 未配置，见§4 |
 
-`Agent ReAct -> workflow_spawn -> ATTACHED child Workflow -> parent continuation`
+---
 
-Host 不应重新实现 Workflow 引擎或 durable semantics。
-
-保持以下边界：
-
-- 不 push 到 public remote，不发布 wheel，不切换 DeskPet product ingress；
-- 不执行 AIPhone/桌面真实 E2E，除非另有明确授权；
-- 不使用 destructive Git 操作；当前未提交改动必须先审计；
-- 测试原始日志、数据库、截图和凭据留在本机，不加入 Git；
-- 任何真正完成的 slice 必须同步更新 `ARCHITECTURE/` 与 `PROJECT_STATUS.md`。
-
-## 2. 仓库与工作树
-
-### Product / plan 仓库
-
-- 路径：`/Users/denny/projects/simple_harness`
-- 分支：`main`
-- HEAD：`660054df docs: resolve sdk workflow authority plan conflicts`
-- 当前工作区：`CLAUDE.md` 是既有修改；本 handoff 和 `verification/` 是本次未跟踪文档/账本；不要把 `CLAUDE.md` 混入 SDK 提交。
-
-主要事实源：
-
-- [`ARCHITECTURE/index.md`](/Users/denny/projects/simple_harness/ARCHITECTURE/index.md)
-- [`acceptance.md`](/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/acceptance.md)
-- [`behavior-contract.md`](/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/behavior-contract.md)
-- [`implementation-tasks.md`](/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/implementation-tasks.md)
+## 2. 关键身份信息
 
 ### SDK 仓库
+- **本地路径：** `/Users/denny/projects/simple-harness-sdk`
+- **Remote：** `https://github.com/DennyWanye/simple-harness-sdk.git`
+- **当前 main HEAD（本地）：** `0e38532` — `feat: restore GitHub Actions workflows`
+- **当前 main HEAD（remote）：** `54b62f6` — workflows 被临时删除的那个 commit（比本地落后一个 commit）
+- **GitHub Release：** `https://github.com/DennyWanye/simple-harness-sdk/releases/tag/v0.1.0`
 
-- 路径：`/Users/denny/projects/simple-harness-sdk`
-- 分支：`codex/sdk-v0.1-foundation`
-- HEAD：`86edaa7 feat(runtime): checkpoint workflow launch and kernel lifecycle`
-- 当前未提交文件：
+### Wheel 身份
+```
+文件名:  simple_harness_sdk-0.1.0-py3-none-any.whl
+SHA256:  d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91
+```
+产品 vendored 路径：`/Users/denny/projects/simple_harness/backend/vendor/simple_harness_sdk-0.1.0-py3-none-any.whl`  
+release artifacts 路径：`/Users/denny/projects/simple-harness-sdk/dist/`
 
-  - `src/simple_harness/runtime/kernel.py`
-  - `src/simple_harness/runtime/orchestration.py`
-  - `src/simple_harness/tools/contracts.py`
-  - `tests/unit/runtime/test_termination.py`
-  - `tests/unit/runtime/test_workflow_spawn_contracts.py`
+### 产品仓库
+- **本地路径：** `/Users/denny/projects/simple_harness`
+- **Remote：** `git@github.com:DennyWanye/deskpet`（**私有仓库，不得推送到公开 GitHub**）
 
-这些改动是未完成的 catalog-selection pin / public spawn contract 施工，不能 reset、checkout、clean 或覆盖。
+---
 
-## 3. 已提交且可回滚的 SDK checkpoint
+## 3. 任务一：推送 GitHub Actions Workflows
 
-当前 HEAD 已包含：
+### 背景
+`.github/workflows/` 下有三个文件，在当前机器因代理 TLS 握手失败无法推送：
 
-- `927694f`：允许 Context append 使用 caller transaction；
-- `d3e5fab`：Tool/schema bounded preflight；
-- `015268b`：immutable workflow catalog authority contracts；
-- `d31e595`：partial workflow runtime/persistence foundation，包含 H16 lifecycle、SQLite durable primitives、runner/recovery/replay/native checkpoint 及对应测试；
-- `86edaa7`：workflow launch admission、official workflow driver、Kernel lifecycle/cancel carrier 与相关测试。
-
-两个最近 checkpoint 都经过干净临时树验证：
-
-- `d31e595` 候选：`710 passed`，变更范围 Ruff、生产 Pyright、REUSE、wheel/sdist、twine 均通过；
-- `86edaa7` 之后：全套 `977 passed`，当前 slice focused `267 passed`，相关 Ruff/Pyright/diff-check/REUSE/build/twine 通过。
-
-这些是恢复点，不代表 SDK-AC-5/6/8、T4.1 或 T4.2 已完成。
-
-## 4. 独立 worktree 与未合并成果
-
-### Parent-terminal slice：可审阅、尚未合并
-
-- worktree：`/Users/denny/projects/simple-harness-sdk-t4-parent-terminal`
-- branch：`codex/t4-parent-terminal-settle`
-- commit：`95c3d2d23c72e7562fd6917dcfac54c692857734`
-- 修改文件：SQLite UoW + H16 integration test 两个文件；worktree clean
-- 证据：parent-terminal focused `25 passed`；H16 文件 `281 passed`；full suite `1002 passed`；touched Ruff PASS；生产 Pyright 0；diff-check PASS。
-- 内容：ticket-only、ready-unactivated、activated/reclaim successor 三种 parent-terminal settlement shape；COMPLETED/FAILED/CANCELLED；ACTIVE CAS consume；Effect/completion/continuation atomic settlement；exact replay/conflicting evidence；reader fail-closed。
-- 合并前必须在主 SDK HEAD 上重新 cherry-pick/审阅并复跑，不要直接复制文件。
-
-### Activation-adapter slice：未完成、不要合并
-
-- worktree：`/Users/denny/projects/simple-harness-sdk-t41-adapters`
-- branch：`codex/t41-activation-adapters`
-- base：`86edaa7`
-- 当前 dirty：`execution/dispatch.py`、`execution/sqlite/uow.py`、新 `workflow/adapters.py`、两个 RED 测试。
-- 首次 RED：缺 `simple_harness.workflow.adapters`，属于计划内接口缺口；该 agent 随后因模型不可用退出，**没有 commit**。
-- 不要从该 worktree 猜测或手工拷贝半成品；先重新启动独立 agent 或自己完成后再验证。
-
-旧 detached worktree（仅供历史比对，通常不要触碰）：
-
-- `/private/tmp/simple-harness-persistence-range.lXUuNJ/wt`
-- `/private/tmp/simple-harness-sdk-a.n5XP1U`
-- `/private/tmp/simple-harness-sdk-a2.8RefMA`
-
-## 5. 最新完成度审计：仍未闭合的真实缺口
-
-### P0-1：公开 workflow_spawn 前链
-
-缺少或未完整接线：
-
-- `RunClient.workflow_spawn_catalog()`
-- `RunClient.bind_workflow_spawn(...)`
-- `RunClient.workflow_spawn(...)`
-- `RunClient.prove_graph_unavailable(...)`
-- SDK-owned static `workflow_spawn` handler
-- durable catalog snapshot 与 ReAct/provider turn 的绑定
-
-### P0-2：Tool / Effect / ReAct reserved seam
-
-- `ToolContext` typed `workflow_spawn_context` 尚未完成 durable production 接线；
-- `EffectExecutor` 尚未拥有 sealed `WorkflowSpawnHandlerOutcome` 分支；
-- ReAct 首次 Provider tool-call 尚未把 static handler、effect handoff、ticket/continuation、typed control outcome 串成一条真实链；
-- `WorkflowProviderAdapter` / `WorkflowEffectAdapter` 尚未合并。
-
-### P0-3：terminal/retry typed seam
-
-- durable terminal/retry types 和 SQLite verifier 已有基础；
-- `DriverResult.workflow_terminal` / `workflow_retry_wake` 尚未完整接到 Workflow Driver 和 Kernel；
-- Kernel 仍有 generic terminalize 旁路风险；
-- benign terminal lease-release、retry timer/startup race 仍需真实测试。
-
-### P0-4：parent-terminal settlement
-
-独立 worktree 的 `95c3d2d` 已实现，但尚未合并、复跑和形成主分支证据。
-
-### P1：recovery/scanner/fork orchestration
-
-- `WorkflowRunner.recover_expired()` 当前仍为 stub `return []`；
-- `recover()` 仍可能绕过 classify/repair/quarantine pipeline；
-- recovery Port 的 repair/quarantine primitives 及 SDK policy 尚未闭环；
-- start/resume scanner、`WorkflowRecoveryCursor`、due `WorkflowRetryWake`、standalone RETRY_WAIT wake、orphan fork startup consumer 尚未完成。
-
-### 架构决策提醒：catalog pin
-
-durable immutable catalog snapshot 是正确的 TOCTOU/replay 方向，但不要把大段 workflow 专属数据随意塞进通用 `TerminationState`。建议使用 typed `WorkflowCatalogSelectionPin`，挂在 ReAct turn/checkpoint 或 spawn invocation receipt 上，保存 canonical bytes/hash、generation/version、profile fingerprint、schema ref/hash；ToolContext 只携 hash/receipt，binder 从同一 transaction owner 的 durable pin 读取。当前未提交测试正处于 RED：`TerminationState` 尚未实现新增 pin 字段，不能将其标绿或直接作为最终架构。
-
-## 6. 当前可复现实证
-
-在 `86edaa7` clean HEAD（未包含当前五个未提交文件）上：
-
-- `uv run pytest -q`：`977 passed in 8.91s`；
-- workflow launch/cancel/spawn focused：`267 passed`；
-- 相关变更路径 Ruff：PASS；生产路径 Pyright：0 errors；
-- `uv run reuse lint`：183/183 compliant（新增文件版本为 183/183）；
-- `uv build` + `uv run twine check dist/*`：PASS。
-
-当前未提交施工状态：
-
-- spawn contracts + termination focused：`20 passed / 1 failed`；
-- 唯一失败是 `TerminationState.__init__()` 尚未接受 `workflow_catalog_selection`，这是当前明确施工 RED；
-- 相关当前 Ruff：PASS。
-
-## 7. 继续工作的推荐顺序（2026-08-15 更新）
-
-**T4.x 已完成**（步骤 2-6 已在后续提交中完成）：
-- ✅ WorkflowCatalogSelectionPin 完成（`b3e8e0c`）
-- ✅ Parent-terminal settlement 完成（`f7faf13`, `95c3d2d` merged）
-- ✅ Activation adapters 完成（`1fb70be`）
-- ✅ RunClient workflow_spawn API 完成（`22fa696`）
-- ✅ Recovery scanner 完成（`98c591a`）
-- ✅ Terminal/retry seam 完成（`f2258a5`）
-
-**当前状态**（HEAD: `f2258a5`）：
-- 1009 tests PASSED
-- 工作树干净
-- T0-T4 完整实现验证通过
-
-**下一阶段**：T5.x 官方 Workflow Profiles（大型任务）
-
-### T5.1 durable_task 进度（2026-08-15 开始）
-
-**已完成**：
-- ✅ Phase 1: 设计文档（`verification/T5.1-durable-task-design.md`）
-- ✅ Phase 2: 基础合约（~1000行）
-  - `workflows/durable_task/__init__.py`
-  - `workflows/durable_task/ports.py`（5个 Port 接口）
-  - `workflows/durable_task/state.py`（Proposal 状态机）
-
-**待完成**（约1500+行需从产品重写）：
-- ⏳ Phase 3: Graph 定义（`definition.py`）
-- ⏳ Phase 4: 节点处理器（`nodes.py`，最复杂部分）
-- ⏳ Phase 5: 输出合约（`output_contract.py`）
-- ⏳ Phase 6: 测试（4个测试文件）
-
-**后续任务**：
-- T5.2: personal_v1 workflow
-- T5.3: capability_build workflow
-- T5.4: Conformance CLI
-- T6: Simple Harness cutover
-
-1. 新 session 首先读取本文件、`AGENTS.md`、`ARCHITECTURE/index.md` 和 `implementation-tasks.md`。
-2. 继续 T5.1 Phase 3：创建 `definition.py`，定义 durable_task graph 结构。
-3. 实现 Phase 4：从产品 `code_nodes.py` (1584行) 重写节点处理器，通过 Ports 调用能力。
-4. 每个 phase 都必须：语法检查 → 单元测试 → Ruff/Pyright → 提交。
-5. 所有 T5.x 完成后才进入 T6 cutover；没有真实 SDK-AC-1..8 receipt 前，不更新 ARCHITECTURE 为完成。
-
-建议 commit 语义保持单一：
-
-```text
-feat(runtime): add durable workflow selection pin
-feat(workflow): merge parent-terminal settlement
-feat(runtime): wire workflow activation adapters
-feat(runtime): expose durable workflow spawn handler
-feat(workflow): implement recovery scanner policy
+```
+.github/workflows/ci.yml             — PR/push 构建 + 测试
+.github/workflows/release.yml        — tag v* 触发自动发布
+.github/workflows/platform-tests.yml — Linux/macOS/Windows 多平台验证
 ```
 
-## 8. plan-test ledger、验证与原始日志位置
+commit `0e38532` 已在本地 `main` 分支，内容完整，只需推送。
 
-### 机器账本
+### 阻断原因
+本机走 HTTP 代理 `127.0.0.1:7897`，代理对 `github.com:443` 做 TLS 拦截，LibreSSL 握手失败（`SSL_ERROR_SYSCALL`）。`gh auth` keyring token 失效；`gh auth refresh` 需要交互模式。
 
-- 早期流程分析账本：
-  `/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/verification/2026-08-14-program-r1/plan-test-run.json`
-  - `runs=0`、`evidence=0`，只能用于审计历史流程，不能作为完成凭证。
-- 当前恢复 ledger：
-  `/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/verification/2026-08-14-program-r2/plan-test-run.json`
-  - run id：`run-20260814-225810`
-  - phase-3 已登记；7 个 black-box 场景仍 NOT_RUN，这是实现阶段的预期状态。
-- plan challenge finding：
-  `/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/verification/2026-08-14-program-r1/findings-plan-iteration-001-round-1.json`
-  （若该路径不存在，以 `verification/2026-08-14-program-r1/findings-plan-iteration-001-round-1.json` 为准。）
+### 执行步骤
 
-### plan-test skill
+**前置：确认网络可达**
+```bash
+curl -s --max-time 5 -H "Authorization: token <TOKEN>" https://api.github.com/user | python3 -m json.tool | grep login
+```
 
-- 当前 skill：`/Users/denny/.codex/skills/plan-test/SKILL.md`
-- 本次核验的 local/remote HEAD：`1f0e3fa57bc0f3accc6599c12af4b3438ee743c4`
-- 远程仓库：`https://github.com/DennyWanye/plan-test-skill.git`
-- 当前没有 plan-test finalize receipt；不要把 phase-3 ledger 当最终完成凭证。
+**推送 commit `0e38532`（workflows 已在其中）**
+```bash
+cd /Users/denny/projects/simple-harness-sdk
+git log --oneline -3   # 确认 0e38532 在最顶
+git push origin main
+```
 
-### 原始 Codex session logs（只读，不进 Git）
+如果 `gh auth` token 失效，先重新登录：
+```bash
+gh auth login -h github.com   # 需要交互式浏览器授权
+# 或者：
+echo "<PAT_WITH_WORKFLOW_SCOPE>" | gh auth login --with-token
+```
 
-- 主 plan-test 长日志：
-  `/Users/denny/.codex/sessions/2026/08/14/rollout-2026-08-14T00-06-41-019ffbe0-306f-73e3-adb3-b71e18d2c802.jsonl`
-- 后续实现/审计日志：
-  `/Users/denny/.codex/sessions/2026/08/14/rollout-2026-08-14T17-11-43-019fff8a-a0c0-75f0-a675-7ad859c279e7.jsonl`
-  `/Users/denny/.codex/sessions/2026/08/14/rollout-2026-08-14T22-32-50-01a000b0-9fe7-70d0-8242-2318f2c36e53.jsonl`
-  `/Users/denny/.codex/sessions/2026/08/14/rollout-2026-08-14T22-41-30-01a000b8-8e6f-7380-be65-b2a780a19f77.jsonl`
+PAT 所需 scopes：`repo` + `workflow`
 
-原始日志可能包含环境路径和内部工具输出，只在本机查看，不复制到仓库、handoff 或 memory。
+**验证推送成功**
+```bash
+gh api repos/DennyWanye/simple-harness-sdk/contents/.github/workflows 2>&1 | python3 -m json.tool | grep name
+# 应看到 ci.yml / platform-tests.yml / release.yml 三个文件
+```
 
-## 9. 新 session 的第一组安全命令
+---
 
+## 4. 任务二：桌面 E2E 测试（SDK-S1～S5）
+
+### 背景
+这是 SDK v0.1.0 验收的**最后一道 required 门**。测试规范在：
+```
+/Users/denny/projects/simple_harness/testcase/2026-08-13-simple-harness-sdk/manual-test.md
+```
+
+需要在 **exact vendored wheel frozen backend** 上执行，使用真实 Tauri 桌面窗口点击/输入。
+
+### 阻断原因
+桌面应用 LLM 配置指向 relay server，该 endpoint 返回 HTTP 451（法律原因不可用）。需要配置可用的 LLM provider。
+
+### 目标模型
+```
+deepseeker-v4-flash
+```
+
+### 环境准备
+
+**1. 配置 LLM provider（通过 Settings UI，不要写入 config.toml 明文）**
+
+启动应用后打开 Settings → LLM Provider，填写：
+- Model：`deepseeker-v4-flash`
+- Base URL：`<deepseeker API endpoint>`
+- API Key：通过 UI 写入 OS Keychain（**不要**写入 `config.toml` 或任何文件）
+
+> ⚠️ CLAUDE.md 硬约束：`config.toml` 的 `api_key` 字段必须保持空字符串 `""`。
+> ⚠️ 不要写到 `.env` 或 `secrets/`（会被诊断 bundle 收集）。
+
+**2. 启动应用（只能用这个命令）**
 ```bash
 cd /Users/denny/projects/simple_harness
-sed -n '1,260p' plans/2026-08-13-simple-harness-sdk/HANDOFF.md
-git status --short
+./scripts/dev.sh
+```
+> ⚠️ 绝对不要手动 `python main.py`，Tauri 的 `process_manager.rs` 会自动管理 backend。  
+> 端口：backend=8100，Vite=5173。
 
-cd /Users/denny/projects/simple-harness-sdk
-git status --short
-git log -8 --oneline --decorate
-uv run pytest -q
-python3 /Users/denny/.codex/skills/plan-test/scripts/plan_test_gate.py \
-  check-wip-limit --repo-dir /Users/denny/projects/simple-harness-sdk
+**3. 验证 backend 使用了 vendored wheel**
+
+启动日志中确认：
+```
+simple_harness_sdk version: 0.1.0
+wheel SHA256: d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91
 ```
 
-如果先合并 parent-terminal worktree：
+### 测试场景（按顺序执行）
 
-```bash
-git show --stat --oneline 95c3d2d
-git cherry-pick 95c3d2d
-uv run pytest -q tests/integration/execution/test_workflow_launch_admission_h16.py
-uv run pytest -q
-```
+证据写入：`.local-test-evidence/2026-08-16/simple-harness-sdk/<run-id>/`
 
-任何 cherry-pick 冲突必须先保存状态并审阅，不得用 `reset --hard`、`checkout --` 或 `git clean` 处理。
+#### SDK-S1 — 纯回答
+精确输入：`用一句话解释什么是幂等性。`
+- 新建对话，粘贴精确输入，等待 terminal
+- 验证：中文一句话，不声称调用了 Tool 或 Workflow
+- 对账：`root Profile=agent.general, status=completed, child_count=0, effect_count=0`
+- 证据：截图 + Run ID
+
+#### SDK-S2 — 单个只读 Tool
+精确输入：`读取当前项目摘要，然后用中文告诉我重点。`
+- 确认只读摘要 Tool fixture 已注册
+- 验证：恰好一个 Tool 调用成功，不启动 Workflow
+- 对账：`call/effect=1, settled`
+
+#### SDK-S3 — durable 多步骤任务（需要 2 个独立 root）
+精确输入：`分析这个项目的测试缺口，形成计划，执行获准的检查并给出可审计结论。`
+- Run A：新会话执行，HITL 出现时真点击批准
+- Run B：在已有 **≥10 轮历史**的 Product Session 再执行同一输入
+- 验证：两个 root 独立，child lineage 可恢复
+
+#### SDK-S4 — Personal 候选绑定（需要 2 个独立 root）
+Fixture：`weekly_work_planner` + `fitness_training_coach`  
+精确输入：`安排下周项目优先级，并提醒我周五做一次复盘。`
+- 验证：模型选择 `workflow.personal_v1` + 正确 candidate ID
+- 第二个 root 重跑一次；另做伪造 graph/version 的受控 negative
+
+#### SDK-S5 — Capability 缺口构建（需要 2 个独立 root）
+精确输入：`完成一项当前 catalog 没有能力处理、且允许安装新能力的任务。`
+- 先建立安全目标 `fixture.text.normalize` 的历史上下文
+- 在 install/activate 前真点击授权
+- 验证：`capability_build` workflow 绑定 durable_task 特化
+
+### 证据要求（每个 root）
+每步操作前记录：`坐标=(x,y)|动作=...|期望=...`，随后截图。  
+证据文件命名：`<scenario>-<run-id>-<step>.png`
+
+禁止：WebSocket 注入、直接 import backend、pytest 回放。
+
+---
+
+## 5. 文件位置速查
+
+| 路径 | 用途 |
+|------|------|
+| `/Users/denny/projects/simple-harness-sdk/` | SDK 仓库 |
+| `/Users/denny/projects/simple-harness-sdk/.github/workflows/` | 待推送的 3 个 workflow 文件（本地已有） |
+| `/Users/denny/projects/simple-harness-sdk/dist/` | release artifacts（wheel + sdist + SHA256SUMS） |
+| `/Users/denny/projects/simple_harness/backend/vendor/` | 产品 vendored wheel |
+| `testcase/2026-08-13-simple-harness-sdk/manual-test.md` | 完整测试规范 |
+| `plans/2026-08-13-simple-harness-sdk/acceptance.md` | 验收标准 |
+| `.local-test-evidence/` | 测试证据写入目录（gitignored） |
+
+---
+
+## 6. 完成条件
+
+- [ ] `git push origin main` 成功，`github.com/DennyWanye/simple-harness-sdk` 的 `main` 分支包含 `.github/workflows/` 目录
+- [ ] SDK-S1 PASS（截图 + Run ID 证据）
+- [ ] SDK-S2 PASS（截图 + Run ID 证据）
+- [ ] SDK-S3 PASS，两个独立 root（截图 + Run ID 证据）
+- [ ] SDK-S4 PASS，两个独立 root（截图 + Run ID 证据）
+- [ ] SDK-S5 PASS，两个独立 root（截图 + Run ID 证据）
+- [ ] 所有证据写入 `.local-test-evidence/2026-08-16/simple-harness-sdk/`
+
+以上全部完成后，SDK v0.1.0 验收关闭。
+
+---
+
+## 7. 安全约束（必须遵守）
+
+- ⚠️ 产品仓库 `git@github.com:DennyWanye/deskpet` 是**私有仓库**，不得推送到任何公开位置
+- ⚠️ API key / token 不得写入 `config.toml`、`.env`、`secrets/` 目录
+- ⚠️ 截图中不得包含密码、API key、token、cookie 或完整 Provider body
+- ✅ SDK 仓库 `github.com/DennyWanye/simple-harness-sdk` 可以正常操作
