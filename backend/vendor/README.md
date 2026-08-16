@@ -2,13 +2,35 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
-## simple_harness_sdk-0.1.0-py3-none-any.whl
+## Active candidate: simple_harness_sdk-0.1.1-py3-none-any.whl
+
+**Source:** local immutable candidate built from SDK commit
+`82fb531f0f1fd5aab027e9d9b016a1aee6475066`
+**Planned tag:** `v0.1.1` (not created or published)
+**SHA256:** `d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca`
+**Candidate manifest SHA256:** `7b6eb38a429b966d39ae0aad5a78ca056ae1884c4e4e4199fbc13ec1aadf1334`
+
+The earlier local candidates were superseded by the workflow recovery and
+typed Tool authority fixes in the active bytes above. A replacement machine
+receipt must bind this exact wheel before release.
+
+The product lockfile must point to these exact bytes while Slice B/C testing is
+in progress. This candidate must not be described as a GitHub Release until the
+user separately approves publication.
+
+Verification:
+
+```bash
+python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.1-py3-none-any.whl
+```
+
+## Historical artifact: simple_harness_sdk-0.1.0-py3-none-any.whl
 
 **Source:** GitHub Release `v0.1.0`  
 **URL:** https://github.com/DennyWanye/simple-harness-sdk/releases/tag/v0.1.0  
 **SHA256:** (see `scripts/verify_sdk_wheel.py` for expected hash)
 
-### Verification Procedure
+### Release verification procedure
 
 Before vendoring a new SDK wheel:
 

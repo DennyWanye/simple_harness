@@ -198,15 +198,19 @@ function App() {
     void (async () => {
       const core = await import("@tauri-apps/api/core").catch(() => null);
       if (!core) return;
-      try {
-        const existingSecret = await core.invoke<string>("get_shared_secret");
-        if (!cancelled && existingSecret) {
-          setSecret(existingSecret);
-          setBootError(null);
-          setBootState("ready");
+      for (let attempt = 0; attempt < 20 && !cancelled; attempt += 1) {
+        try {
+          const existingSecret = await core.invoke<string>("get_shared_secret");
+          if (!cancelled && existingSecret) {
+            setSecret(existingSecret);
+            setBootError(null);
+            setBootState("ready");
+            return;
+          }
+        } catch {
+          // The child may still be publishing its secret. Retry briefly.
         }
-      } catch {
-        // The failure is real; preserve the actionable overlay.
+        await new Promise((resolve) => setTimeout(resolve, 250));
       }
     })();
     return () => {

@@ -36,7 +36,6 @@ from xml.etree import ElementTree as ET
 import httpx
 
 from ._config import WebToolsConfig, load_web_config
-from .registry import registry
 
 # Re-export ``WebToolsConfig`` so tests can build disposable config
 # instances via ``web_tools.WebToolsConfig(...)`` without having to
@@ -295,7 +294,6 @@ async def _handle_web_fetch(args: dict[str, Any], task_id: str) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-registry.register("web_fetch", "web", _SCHEMA_FETCH, _handle_web_fetch)
 
 # NOTE: ``web_search`` is registered ONCE in ``code_tools/registration.py``
 # (it delegates to the same unified ``search_provider`` as research). Chat
@@ -447,9 +445,6 @@ async def _handle_web_extract_article(args: dict[str, Any], task_id: str) -> str
     return json.dumps(payload, ensure_ascii=False)
 
 
-registry.register(
-    "web_extract_article", "web", _SCHEMA_ARTICLE, _handle_web_extract_article
-)
 
 
 # ---------------------------------------------------------------------
@@ -640,7 +635,6 @@ async def _handle_web_crawl(args: dict[str, Any], task_id: str) -> str:
     )
 
 
-registry.register("web_crawl", "web", _SCHEMA_CRAWL, _handle_web_crawl)
 
 
 # ---------------------------------------------------------------------
@@ -798,6 +792,14 @@ async def _handle_web_read_sitemap(args: dict[str, Any], task_id: str) -> str:
     )
 
 
-registry.register(
-    "web_read_sitemap", "web", _SCHEMA_SITEMAP, _handle_web_read_sitemap
-)
+def register_static_tools(registry) -> None:
+    registry.register("web_fetch", "web", _SCHEMA_FETCH, _handle_web_fetch)
+    registry.register(
+        "web_extract_article", "web", _SCHEMA_ARTICLE,
+        _handle_web_extract_article,
+    )
+    registry.register("web_crawl", "web", _SCHEMA_CRAWL, _handle_web_crawl)
+    registry.register(
+        "web_read_sitemap", "web", _SCHEMA_SITEMAP,
+        _handle_web_read_sitemap,
+    )

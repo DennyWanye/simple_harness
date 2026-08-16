@@ -476,10 +476,7 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def _register() -> None:
-    try:
-        from .registry import registry
-
+def register_static_tools(registry) -> None:
         registry.register(
             "excel_create",
             "office",
@@ -489,10 +486,5 @@ def _register() -> None:
             timeout_seconds=30.0,
             concurrency_safe=False,  # G3: writes .xlsx to disk
         )
-    except Exception:  # noqa: BLE001
-        pass
 
-
-_register()
-
-__all__ = ["excel_create"]
+__all__ = ["excel_create", "register_static_tools"]

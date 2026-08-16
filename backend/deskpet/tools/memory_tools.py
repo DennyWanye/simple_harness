@@ -34,7 +34,6 @@ import time
 import uuid
 from typing import Any, Awaitable, Callable, Optional
 
-from deskpet.tools.registry import registry
 from deskpet.execution.provider_workloads import invoke_explicit, workload_context
 from deskpet.tools.capabilities import current_tool_execution_context
 
@@ -334,16 +333,6 @@ def _parse_confirm_response(raw: str) -> list[int]:
 # ---------------------------------------------------------------------
 # 模块顶层 register — pkgutil discovery 触发时执行
 # ---------------------------------------------------------------------
-registry.register(
-    name="memory_forget",
-    toolset="memory",
-    schema=_SCHEMA,
-    handler=_handle,
-    permission_category="write_file",
-    dangerous=True,
-    source="builtin",
-    concurrency_safe=False,  # G3: mutates FactsStore — serialize
-)
 
 
 # =====================================================================
@@ -619,28 +608,24 @@ async def _memory_search_handle(args: dict, task_id: str) -> str:  # noqa: ARG00
 
 
 # 注册（memory_tools.py 字典序先于 stubs.py，故 stubs.py 守卫模式跳过同名 stub）
-registry.register(
-    name="memory_write",
-    toolset="memory",
-    schema=_MEMORY_WRITE_SCHEMA,
-    handler=_memory_write_handle,
-    permission_category="write_file",
-    source="builtin",
-    concurrency_safe=False,  # G3: mutates FactsStore — serialize
-)
-registry.register(
-    name="memory_read",
-    toolset="memory",
-    schema=_MEMORY_READ_SCHEMA,
-    handler=_memory_read_handle,
-    permission_category="read_file",
-    source="builtin",
-)
-registry.register(
-    name="memory_search",
-    toolset="memory",
-    schema=_MEMORY_SEARCH_SCHEMA,
-    handler=_memory_search_handle,
-    permission_category="read_file",
-    source="builtin",
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        name="memory_forget", toolset="memory", schema=_SCHEMA,
+        handler=_handle, permission_category="write_file", dangerous=True,
+        source="builtin", concurrency_safe=False,
+    )
+    registry.register(
+        name="memory_write", toolset="memory", schema=_MEMORY_WRITE_SCHEMA,
+        handler=_memory_write_handle, permission_category="write_file",
+        source="builtin", concurrency_safe=False,
+    )
+    registry.register(
+        name="memory_read", toolset="memory", schema=_MEMORY_READ_SCHEMA,
+        handler=_memory_read_handle, permission_category="read_file",
+        source="builtin",
+    )
+    registry.register(
+        name="memory_search", toolset="memory", schema=_MEMORY_SEARCH_SCHEMA,
+        handler=_memory_search_handle, permission_category="read_file",
+        source="builtin",
+    )

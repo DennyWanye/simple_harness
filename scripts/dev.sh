@@ -21,6 +21,18 @@ if [ ! -d "$ROOT/tauri-app/node_modules" ]; then
   exit 1
 fi
 
+# Check for existing instances before starting
+if lsof -ti:5173 >/dev/null 2>&1 || lsof -ti:8100 >/dev/null 2>&1; then
+  printf '\033[33m[dev] 检测到端口占用（5173 或 8100），正在清理旧实例...\033[0m\n' >&2
+  pkill -9 -f "target/debug/simple-harness" 2>/dev/null || true
+  pkill -9 -f "tauri dev" 2>/dev/null || true
+  pkill -9 -f "vite" 2>/dev/null || true
+  lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+  lsof -ti:8100 | xargs kill -9 2>/dev/null || true
+  sleep 2
+  printf '\033[32m[dev] 清理完成\033[0m\n' >&2
+fi
+
 # 显式指向源码 backend（优先级最高，覆盖编译期 fallback 路径）。
 export DESKPET_BACKEND_DIR="$ROOT/backend"
 

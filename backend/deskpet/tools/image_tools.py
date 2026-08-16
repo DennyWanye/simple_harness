@@ -39,7 +39,6 @@ from .context_adapter import (
     legacy_execution_context,
     legacy_host_service,
 )
-from .registry import registry
 
 log = logging.getLogger(__name__)
 
@@ -753,12 +752,9 @@ def _handle_generate_image(
     )
 
 
-registry.register(
-    "generate_image",
-    "image",
-    _SCHEMA,
-    _handle_generate_image,
-    context_handler=bind_context_handler(_handle_generate_image),
-    permission_category="network",
-    timeout_seconds=_TOOL_TIMEOUT_S,
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        "generate_image", "image", _SCHEMA, _handle_generate_image,
+        context_handler=bind_context_handler(_handle_generate_image),
+        permission_category="network", timeout_seconds=_TOOL_TIMEOUT_S,
+    )

@@ -102,8 +102,11 @@ _VALID_SERVICES = frozenset({
     "provider_workload_audit",
     "harness_public_read_service",
     "session_terminal_projection_gate",
-    # Unified capability-pack state and authorization policy share the
-    # workflow execution database; the platform owns local worker lifetimes.
+    # Slice B: the sole immutable publication for the closed-ingress SDK stack.
+    "sdk_runtime_ready",
+    # Capability-pack, policy, TaskGrant, and authorization saga state are
+    # product-owned in data/product_state.db.  They must never bind the SDK
+    # execution database; the platform separately owns local worker lifetimes.
     "capability_store",
     "capability_platform",
     "capability_center",
@@ -223,6 +226,7 @@ class ServiceContext:
     provider_workload_audit: Any | None = None
     harness_public_read_service: Any | None = None
     session_terminal_projection_gate: Any | None = None
+    sdk_runtime_ready: Any | None = None
     capability_store: Any | None = None
     capability_platform: Any | None = None
     capability_center: Any | None = None

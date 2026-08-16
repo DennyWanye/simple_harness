@@ -39,7 +39,6 @@ import platformdirs
 
 from .capabilities import ToolExecutionContext
 from .context_adapter import bind_context_handler, legacy_execution_context
-from .registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -645,25 +644,26 @@ async def _handle_workspace_recall(
 # ---------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------
-registry.register(
-    "file_read", "file", _SCHEMA_READ, _handle_file_read,
-    context_handler=bind_context_handler(_handle_file_read),
-)
-registry.register(
-    "file_write", "file", _SCHEMA_WRITE, _handle_file_write,
-    context_handler=bind_context_handler(_handle_file_write),
-    concurrency_safe=False,  # G3: filesystem write — must serialize
-)
-registry.register(
-    "file_glob", "file", _SCHEMA_GLOB, _handle_file_glob,
-    context_handler=bind_context_handler(_handle_file_glob),
-)
-registry.register(
-    "file_grep", "file", _SCHEMA_GREP, _handle_file_grep,
-    context_handler=bind_context_handler(_handle_file_grep),
-)
-registry.register(
-    "workspace_recall", "file",
-    _SCHEMA_WORKSPACE_RECALL, _handle_workspace_recall,
-    context_handler=bind_context_handler(_handle_workspace_recall),
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        "file_read", "file", _SCHEMA_READ, _handle_file_read,
+        context_handler=bind_context_handler(_handle_file_read),
+    )
+    registry.register(
+        "file_write", "file", _SCHEMA_WRITE, _handle_file_write,
+        context_handler=bind_context_handler(_handle_file_write),
+        concurrency_safe=False,
+    )
+    registry.register(
+        "file_glob", "file", _SCHEMA_GLOB, _handle_file_glob,
+        context_handler=bind_context_handler(_handle_file_glob),
+    )
+    registry.register(
+        "file_grep", "file", _SCHEMA_GREP, _handle_file_grep,
+        context_handler=bind_context_handler(_handle_file_grep),
+    )
+    registry.register(
+        "workspace_recall", "file", _SCHEMA_WORKSPACE_RECALL,
+        _handle_workspace_recall,
+        context_handler=bind_context_handler(_handle_workspace_recall),
+    )

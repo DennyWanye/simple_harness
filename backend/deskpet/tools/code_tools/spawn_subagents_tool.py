@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
-from typing import Any
+from typing import Any, Protocol
 
 from ..capabilities import ToolExecutionContext
 
@@ -156,6 +157,55 @@ def build_await_subagents_tool(workflow_service_provider):
     return _handler, dict(_AWAIT_SCHEMA)
 
 
+class SdkSubagentJoinPort(Protocol):
+    """Host boundary used by the SDK Tool catalog to join durable children."""
+
+    def await_subagents(
+        self,
+        *,
+        arguments: dict[str, Any],
+        context: ToolExecutionContext,
+        operation_key: str,
+    ) -> Any: ...
+
+
+def build_sdk_await_subagents_tool(
+    join_port_provider,
+):
+    """Build the new-stack join handler without importing legacy authority.
+
+    The product host owns the durable child lookup and authorization details.
+    The Tool layer only supplies the frozen SDK call identity and execution
+    context to that typed boundary.
+    """
+
+    async def _handler(
+        args,
+        operation_key="",
+        *,
+        execution_context=None,
+    ):
+        if execution_context is None:
+            raise RuntimeError("await_subagents requires SDK execution context")
+        port = join_port_provider()
+        await_join = getattr(port, "await_subagents", None)
+        if port is None or not callable(await_join):
+            raise RuntimeError("SDK subagent join port is unavailable")
+        result = await_join(
+            arguments=dict(args),
+            context=execution_context,
+            operation_key=str(operation_key),
+        )
+        if inspect.isawaitable(result):
+            result = await result
+        return result if isinstance(result, str) else json.dumps(
+            result,
+            ensure_ascii=False,
+        )
+
+    return _handler, dict(_AWAIT_SCHEMA)
+
+
 def normalize_delegation(name: str, args: dict[str, Any]) -> tuple[str, Any, bool]:
     """Validate legacy argument shapes and return prompt/tools/detachment."""
     requested: Any = None
@@ -242,6 +292,7 @@ def build_subagent_batch_delegate(
 
 
 __all__ = [
+    "SdkSubagentJoinPort", "build_sdk_await_subagents_tool",
     "build_subagent_batch_delegate", "normalize_delegation",
     "product_delegation_tool_catalog", "_SPAWN_SCHEMA", "_AWAIT_SCHEMA",
 ]

@@ -1,0 +1,60 @@
+{
+  "schema_version": "1.3.0",
+  "feature": "simple-harness-sdk-v0.1.1-slice-c",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "source_request_file": "plans/2026-08-13-simple-harness-sdk/source-request.md",
+  "acceptance_file": "plans/2026-08-13-simple-harness-sdk/acceptance.md",
+  "behavior_contract": {"path":"plans/2026-08-13-simple-harness-sdk/behavior-contract.md","status":"FROZEN"},
+  "executor_engine": "codex-gpt5.5",
+  "behavior_changes": [
+    {
+      "behavior_change_id": "BC-SDK-CANDIDATE-BEFORE-RELEASE-001",
+      "target": "testcase/2026-08-13-simple-harness-sdk/manual-test.md:22",
+      "old_behavior": "从 private immutable release 取得同一份 candidate wheel、wheel SHA-256、tag、commit、release manifest；不使用 SDK checkout、editable install、PYTHONPATH 或 path dependency。",
+      "new_behavior": "从 Slice A clean commit 的只读 candidate 目录取得同一份 wheel、wheel SHA-256、planned tag、commit、BUILD_INFO 与 candidate manifest；不使用 SDK checkout、editable install、PYTHONPATH 或 path dependency。桌面验收通过并取得发布批准后，创建 final immutable release，再从远端下载同一 bytes完成SDK-C7。",
+      "scope": "仅替换该手工测试的发布前置；不改变 acceptance、产品行为或桌面 expected results。",
+      "expiry": "v0.1.1 program 完成或放弃时失效。",
+      "approval": {
+        "approved_at": "2026-08-16",
+        "message_sha256": "76acb3020f13f19f990818c18c2479976b53916edeac18aa40bef1d434d41803",
+        "context": "用户在被明确告知该回复将同时批准总计划与 candidate-before-release behavior change 后回复：s好的， 请你处理"
+      }
+    },
+    {
+      "behavior_change_id": "BC-SDK-A7-REMOTE-GATE-002",
+      "target": "testcase/2026-08-16-simple-harness-sdk-v0.1.1/slice-c-cutover-oracle.md:15",
+      "old_behavior": "SDK-C7只验证release identity与远端bytes等于vendor。",
+      "new_behavior": "SDK-C7还要求同一wheel SHA在macOS ARM64、Windows x64、Linux ARM64 Python3.11完成clean import、schema reopen与四套conformance。",
+      "scope": "承接从Slice A迁移的最终三平台required gate；不授权执行远端动作。",
+      "expiry": "v0.1.1 program完成或放弃时失效。",
+      "approval": {
+        "approved_at": "2026-08-16",
+        "message_sha256": "2f5f51773fc29defabe6e3eef5938f1e07c4f2045b76dc42063de7d3e56eacf6",
+        "message": "同意，继续"
+      }
+    }
+  ],
+  "testcase_files": [
+    "testcase/2026-08-13-simple-harness-sdk/manual-test.md",
+    "testcase/2026-08-13-simple-harness-sdk/black-box-fixtures.md",
+    "testcase/2026-08-13-simple-harness-sdk/full-surface-smoke.md",
+    "testcase/2026-08-13-simple-harness-sdk/value-smoke.md",
+    "testcase/2026-08-16-simple-harness-sdk-v0.1.1/slice-c-cutover-oracle.md"
+  ],
+  "release_unit": {"must_ac_count":4,"max_plan_lines":125,"high_risk_subsystems":3},
+  "applicability": {
+    "input_sensitive":{"value":true,"decided_by":"user","rationale":"真实桌面主Agent与多个Workflow结果会随自然语言语义改变"},
+    "llm_payload_driven":{"value":true,"decided_by":"user","rationale":"模型Tool和Workflow控制载荷直接驱动桌面端durable状态机"},
+    "stateful_init":{"value":false,"decided_by":"user","rationale":"沿用SR-9且本slice不修改首次登录或远程配置初始化"}
+  },
+  "scenarios": [
+    {"scenario_id":"SDK-C1","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-6","SDK-AC-8"],"input_class":"text voice background单一入口自动化","cold_start":false,"expected_run_created":true,"impact_paths":["backend/main.py","backend/deskpet/sdk_adapters/ingress.py"]},
+    {"scenario_id":"SDK-C1U","required":true,"ui":true,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-6","SDK-AC-8"],"input_class":"voice和background真实桌面入口","cold_start":false,"expected_run_created":true,"impact_paths":["backend/main.py","backend/deskpet/sdk_adapters/ingress.py","backend/deskpet/voice/**","backend/deskpet/companion/**","tauri-app/**"]},
+    {"scenario_id":"SDK-C2","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-8"],"input_class":"terminal Session artifact delivery","cold_start":false,"expected_run_created":true,"impact_paths":["backend/deskpet/sdk_adapters/delivery.py","backend/deskpet/agent/**"]},
+    {"scenario_id":"SDK-C3","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["fresh"],"min_root_runs":1,"ac_ids":["SDK-AC-6","SDK-AC-8"],"input_class":"旧authority absence与功能parity","cold_start":false,"expected_run_created":false,"impact_paths":["backend/deskpet/harness/**","backend/deskpet/workflows/**","scripts/acceptance/**"]},
+    {"scenario_id":"SDK-C4","required":true,"ui":true,"gate_type":"negative-safety","required_lanes":["fresh","temporal-fault"],"min_root_runs":1,"ac_ids":["SDK-AC-7","SDK-AC-8"],"input_class":"reset与frozen backend restart","cold_start":false,"expected_run_created":true,"impact_paths":["scripts/dev/reset_sdk_execution_data.py","backend/vendor/**","tauri-app/src-tauri/**"]},
+    {"scenario_id":"SDK-C5","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-8"],"input_class":"SDK-S6 S7 fault matrix","cold_start":false,"expected_run_created":true,"impact_paths":["backend/deskpet/sdk_adapters/**","scripts/acceptance/**"]},
+    {"scenario_id":"SDK-C6","required":true,"ui":true,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-6","SDK-AC-7","SDK-AC-8"],"input_class":"SDK-S1至S5真实桌面语义矩阵","cold_start":false,"expected_run_created":true,"impact_paths":["backend/**","tauri-app/**"]},
+    {"scenario_id":"SDK-C7","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["fresh"],"min_root_runs":1,"ac_ids":["SDK-AC-8"],"input_class":"immutable release identity与三平台同bytes conformance","cold_start":false,"expected_run_created":false,"impact_paths":["backend/vendor/**","ARCHITECTURE/**","plans/**"]}
+  ]
+}

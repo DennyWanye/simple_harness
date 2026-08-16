@@ -1,0 +1,874 @@
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+from types import SimpleNamespace
+
+import pytest
+
+
+EXPECTED_MANIFEST_SHA256 = (
+    "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf"
+)
+
+
+def test_checked_in_real_manifest_has_exact_77_plus_two_projection() -> None:
+    from deskpet.tool_catalog import load_tool_manifest
+
+    manifest = load_tool_manifest()
+
+    assert manifest.manifest_sha256 == EXPECTED_MANIFEST_SHA256
+    assert manifest.pre_cutover_count == 79
+    assert len(manifest.tools) == 77
+    assert tuple(sorted(manifest.workflows)) == (
+        "workflow.deep_research",
+        "workflow.presentation",
+    )
+    assert "deepresearch" not in manifest.tool_names
+    assert "ppt_pro" not in manifest.tool_names
+    assert "ppt_create" in manifest.tool_names
+    with pytest.raises(TypeError):
+        manifest.tools[0]["name"] = "tampered"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        manifest.workflows["workflow.deep_research"]["workflow_version"] = "bad"  # type: ignore[index]
+
+
+def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
+    from deskpet.tool_catalog import load_tool_manifest, migrate_tool_schemas
+
+    manifest = load_tool_manifest()
+    migrated, records = migrate_tool_schemas(manifest)
+
+    assert len(records) == 70
+    specialized = {
+        record.name
+        for record in records
+        if record.disposition != "closed_object_contract"
+    }
+    assert specialized == {
+        "app_launch",
+        "capability_build",
+        "capability_repair",
+        "doc_create",
+        "doc_edit",
+        "download_file",
+        "excel_create",
+        "move_file",
+        "ppt_create",
+        "process_start",
+        "window_capture",
+        "window_focus",
+        "window_key",
+        "workflow_spawn",
+    }
+    assert all(record.old_hash != record.new_hash for record in records)
+    assert len(migrated) == 77
+    assert sum(len(record.closed_object_paths) for record in records) == 71
+
+    def assert_closed(node, path="$" ) -> None:
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node.get("additionalProperties") is False, path
+            for key, value in node.items():
+                assert_closed(value, f"{path}.{key}")
+        elif isinstance(node, list):
+            for index, value in enumerate(node):
+                assert_closed(value, f"{path}[{index}]")
+
+    # Construction is the SDK's public fail-closed schema validator.
+    from simple_harness.tools import ToolSpec
+
+    for name, schema in migrated.items():
+        assert_closed(schema["parameters"])
+        ToolSpec(name, schema["description"], schema["parameters"])
+
+
+def test_tools_package_import_is_pure_in_new_process() -> None:
+    backend = Path(__file__).resolve().parents[2]
+    command = """
+import json, sys
+import deskpet.tools
+loaded = sorted(
+    name for name in sys.modules
+    if name.startswith('deskpet.tools.') and name != 'deskpet.tools.registry'
+)
+print(json.dumps({'loaded': loaded}))
+"""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(backend)
+    result = subprocess.run(
+        [sys.executable, "-c", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload == {"loaded": []}
+
+
+def test_closed_ingress_legacy_main_sequence_still_reaches_79() -> None:
+    backend = Path(__file__).resolve().parents[2]
+    command = """
+import importlib
+from types import SimpleNamespace
+from deskpet.tool_catalog import load_tool_manifest
+
+dynamic = {
+    'agent', 'agent_parallel', 'await_subagents', 'context_page_in',
+    'memory_recall', 'spawn_subagents', 'spawn_team', 'todo_write',
+    'tool_activate', 'tool_describe', 'tool_search', 'web_search',
+}
+for item in load_tool_manifest().tools:
+    if item['name'] in dynamic:
+        continue
+    identity = item.get('context_handler_id') or item['handler_id']
+    if '<locals>' in identity:
+        identity = item['handler_id']
+    module_name, qualname = identity.split(':', 1)
+    value = importlib.import_module(module_name)
+    for component in qualname.split('.'):
+        value = getattr(value, component)
+    assert callable(value)
+
+from deskpet.tools import registry
+base_names = registry.list_tools()
+assert len(base_names) == 44, (len(base_names), base_names)
+assert {'generate_image', 'ppt_create', 'ppt_pro'} <= set(base_names)
+from deskpet.tools.os_tools import register_os_tools
+from deskpet.tools.code_tools import register_code_tools
+from deskpet.tools.code_tools.spawn_subagents_tool import build_await_subagents_tool, product_delegation_tool_catalog
+from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
+from deskpet.tools.context_page_in_tools import ContextPageInStore, register_context_page_in
+from deskpet.tools.memory_recall import register_memory_recall
+from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
+from deskpet.tools.orchestration_controls import register_orchestration_controls
+from deskpet.tools.capabilities import ToolCapabilityBridgeService, ToolCapabilityScopeStore
+from deskpet.tools.tool_search import register_capability_bridge_tools
+register_os_tools(registry)
+delegates = product_delegation_tool_catalog()
+todo_handler, todo_schema = build_todo_write_tool(object(), session_id_resolver=lambda: 's')
+await_handler, await_schema = build_await_subagents_tool(lambda: SimpleNamespace(execution_uow=None))
+register_code_tools(
+    registry, todo_write_handler=todo_handler, todo_write_schema=todo_schema,
+    agent_handler=delegates['agent'][0], agent_schema=delegates['agent'][1],
+    agent_parallel_handler=delegates['agent_parallel'][0], agent_parallel_schema=delegates['agent_parallel'][1],
+    spawn_team_handler=delegates['spawn_team'][0], spawn_team_schema=delegates['spawn_team'][1],
+    spawn_subagents_handler=delegates['spawn_subagents'][0], spawn_subagents_schema=delegates['spawn_subagents'][1],
+    await_subagents_handler=await_handler, await_subagents_schema=await_schema,
+)
+page_store = ContextPageInStore()
+register_context_page_in(registry, page_store, execution_context_getter=lambda: SimpleNamespace(session_id='s', request_id='r', scope_id='scope'))
+class Query:
+    async def recall_readonly(self, query, limit, owner_scope): return []
+class Scope:
+    def resolve_for_run(self, run_id): return SimpleNamespace(run_id=run_id)
+register_memory_recall(registry, Query(), Scope())
+profiles = ProfileRegistry((ProfileSpec('agent.general', 'general', 'react', display_name='General'),))
+register_orchestration_controls(registry, profiles)
+register_capability_bridge_tools(registry, ToolCapabilityBridgeService(registry, ToolCapabilityScopeStore()))
+names = registry.list_tools()
+assert len(names) == 79, (len(names), names)
+assert 'deepresearch' in names and 'ppt_pro' in names and 'ppt_create' in names
+print(len(names))
+"""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(backend)
+    result = subprocess.run(
+        [sys.executable, "-c", command],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.stdout.strip() == "79"
+
+
+def test_sdk_registry_builder_rejects_duplicate_without_partial_publish() -> None:
+    from deskpet.sdk_adapters.tools import (
+        PRODUCT_TOOL_NAMES,
+        ProductToolRegistration,
+        build_product_tool_registry,
+    )
+
+    async def handler(_arguments, _context):
+        return {"ok": True}
+
+    registrations = [
+        ProductToolRegistration(
+            name=name,
+            description=name,
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            handler=handler,
+            dispatch_kind="sync",
+            permission_category="read_file",
+            metadata={"source": "real-manifest", "version": "1"},
+        )
+        for name in PRODUCT_TOOL_NAMES
+    ]
+    registrations.append(registrations[0])
+
+    published = None
+    with pytest.raises(ValueError, match="duplicate product Tool"):
+        published = build_product_tool_registry(registrations)
+
+    assert published is None
+
+
+def _catalog_dependencies(page_store, execution_context):
+    from deskpet.tool_catalog import ToolCatalogDependencies
+
+    class SearchResponse:
+        def to_dict(self):
+            return {
+                "results": [{"url": "https://example.invalid", "title": "real factory"}],
+                "provider": "typed-double",
+            }
+
+    class SearchGateway:
+        calls = 0
+
+        async def search(self, request):
+            self.calls += 1
+            assert request.query == "phase-b"
+            return SearchResponse()
+
+    class TodoStore:
+        async def replace_session_todos(self, _session_id, _items):
+            return None
+
+    class MemoryQuery:
+        async def recall_readonly(self, _query, _limit, _scope):
+            return []
+
+    class MemoryScope:
+        def resolve_for_run(self, _run_id):
+            return object()
+
+    class CapabilityBridge:
+        def search(self, *_args, **_kwargs): return []
+        def describe(self, *_args, **_kwargs): return {}
+        def suggestions(self, *_args, **_kwargs): return []
+        def activate(self, *_args, **_kwargs): raise AssertionError("not invoked")
+
+    return ToolCatalogDependencies(
+        todo_session_db=TodoStore(),
+        workflow_service_provider=lambda: None,
+        context_page_store=page_store,
+        execution_context_getter=lambda: execution_context,
+        memory_query=MemoryQuery(),
+        memory_scope_resolver=MemoryScope(),
+        capability_bridge_service=CapabilityBridge(),
+        search_gateway=SearchGateway(),
+    )
+
+
+def test_explicit_catalog_builds_77_real_handlers_without_legacy_registry() -> None:
+    backend = Path(__file__).resolve().parents[2]
+    code = """
+import json, sys
+from types import SimpleNamespace
+from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
+from deskpet.tools.context_page_in_tools import ContextPageInStore
+class Search:
+    async def search(self, request): raise AssertionError('not invoked')
+class Todo:
+    async def replace_session_todos(self, session_id, items): pass
+class MemoryQuery:
+    async def recall_readonly(self, query, limit, scope): return []
+class MemoryScope:
+    def resolve_for_run(self, run_id): return object()
+class Bridge:
+    def search(self, *args, **kwargs): return []
+    def describe(self, *args, **kwargs): return {}
+    def suggestions(self, *args, **kwargs): return []
+    def activate(self, *args, **kwargs): raise AssertionError('not invoked')
+deps = ToolCatalogDependencies(
+    Todo(), lambda: None, ContextPageInStore(),
+    lambda: SimpleNamespace(session_id='s', request_id='r', scope_id='scope'),
+    MemoryQuery(), MemoryScope(), Bridge(), Search(),
+)
+catalog = build_explicit_product_tool_catalog(deps)
+print(json.dumps({
+    'count': len(catalog.registrations),
+    'legacy_loaded': 'deskpet.tools.registry' in sys.modules,
+    'config_loaded': 'config' in sys.modules,
+    'blocked_loaded': sorted(name for name in sys.modules if name.startswith(
+        ('deskpet.harness', 'deskpet.workflows')
+    )),
+    'handlers': len({item.metadata['handler_id'] for item in catalog.registrations}),
+}))
+"""
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(backend)
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert json.loads(result.stdout) == {
+        "count": 77,
+        "legacy_loaded": False,
+        "config_loaded": False,
+        "blocked_loaded": [],
+        "handlers": 77,
+    }
+
+
+def test_each_of_65_static_handler_resolutions_is_import_pure() -> None:
+    from deskpet.tool_catalog import load_tool_manifest
+
+    backend = Path(__file__).resolve().parents[2]
+    dynamic = {
+        "agent", "agent_parallel", "await_subagents", "context_page_in",
+        "memory_recall", "spawn_subagents", "spawn_team", "todo_write",
+        "tool_activate", "tool_describe", "tool_search", "web_search",
+    }
+    descriptors = [
+        item for item in load_tool_manifest().tools
+        if str(item["name"]) not in dynamic
+    ]
+    assert len(descriptors) == 65
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(backend)
+    probe = """
+import importlib, json, sys
+module_name, qualname = sys.argv[1], sys.argv[2]
+value = importlib.import_module(module_name)
+for component in qualname.split('.'):
+    value = getattr(value, component)
+assert callable(value)
+print(json.dumps({
+    'blocked': sorted(name for name in sys.modules if name == 'config' or name.startswith(
+        ('deskpet.tools.registry', 'deskpet.tools._catalog_compat',
+         'deskpet.harness', 'deskpet.workflows')
+    )),
+}))
+"""
+    failures: dict[str, object] = {}
+    for item in descriptors:
+        identity = str(item.get("context_handler_id") or item["handler_id"])
+        if "<locals>" in identity:
+            identity = str(item["handler_id"])
+        module_name, qualname = identity.split(":", 1)
+        result = subprocess.run(
+            [sys.executable, "-c", probe, module_name, qualname],
+            check=True,
+            capture_output=True,
+            text=True,
+            env=env,
+        )
+        blocked = json.loads(result.stdout)["blocked"]
+        if blocked:
+            failures[str(item["name"])] = blocked
+    assert failures == {}
+
+
+def test_environment_schema_adapter_preserves_map_and_rejects_unsafe_entries() -> None:
+    from deskpet.tool_catalog import adapt_model_arguments
+
+    assert adapt_model_arguments(
+        "process_start",
+        {"environment": [{"key": "PATH_SUFFIX", "value": "safe"}]},
+    )["environment"] == {"PATH_SUFFIX": "safe"}
+    with pytest.raises(ValueError, match="unique"):
+        adapt_model_arguments(
+            "app_launch",
+            {"environment": [{"key": "X", "value": "1"}, {"key": "X", "value": "2"}]},
+        )
+    with pytest.raises(ValueError, match="bounded"):
+        adapt_model_arguments(
+            "app_launch",
+            {"environment": [{"key": f"K{index}", "value": "x"} for index in range(65)]},
+        )
+
+
+def test_all_specialized_schema_adapters_preserve_handler_values_and_reject_invalid() -> None:
+    from deskpet.tool_catalog import adapt_model_arguments
+
+    assert adapt_model_arguments(
+        "capability_build",
+        {
+            "original_args": [
+                {"key": "count", "value_json": "2"},
+                {"key": "nested", "value_json": '{"ok":true}'},
+            ]
+        },
+    )["original_args"] == {"count": 2, "nested": {"ok": True}}
+    with pytest.raises(ValueError, match="unique"):
+        adapt_model_arguments(
+            "capability_build",
+            {
+                "original_args": [
+                    {"key": "same", "value_json": "1"},
+                    {"key": "same", "value_json": "2"},
+                ]
+            },
+        )
+
+    digest = "a" * 64
+    for tool_name, field in (
+        ("capability_repair", "failure_receipt_ref"),
+        ("download_file", "expected_sha256"),
+        ("move_file", "expected_source_hash"),
+    ):
+        assert adapt_model_arguments(tool_name, {field: digest})[field] == digest
+        with pytest.raises(ValueError, match="64 hexadecimal"):
+            adapt_model_arguments(tool_name, {field: "not-a-digest"})
+
+    for tool_name, field, value in (
+        ("doc_create", "spec", '{"title":"x"}'),
+        ("doc_edit", "ops", '[{"op":"replace"}]'),
+        ("excel_create", "spec", '{"sheets":[]}'),
+        ("ppt_create", "outline", '[{"title":"x"}]'),
+    ):
+        assert adapt_model_arguments(tool_name, {field: value})[field] == value
+        with pytest.raises(json.JSONDecodeError):
+            adapt_model_arguments(tool_name, {field: "{"})
+
+    for tool_name in ("window_capture", "window_focus", "window_key"):
+        assert adapt_model_arguments(tool_name, {"creation_time": 1.25})[
+            "creation_time"
+        ] == 1.25
+        with pytest.raises(ValueError, match="greater than zero"):
+            adapt_model_arguments(tool_name, {"creation_time": 0})
+
+    assert adapt_model_arguments("workflow_spawn", {}) == {}
+    assert adapt_model_arguments(
+        "workflow_spawn", {"workspace_ref": "/tmp/workspace"}
+    )["workspace_ref"] == "/tmp/workspace"
+
+
+def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+    import importlib
+    import inspect
+
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog, load_tool_manifest
+    from deskpet.tools.capabilities import ToolExecutionContext
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    # The two environment migrations must be observed by the real handlers,
+    # not merely by the argument adapter.
+    environments: list[dict[str, str] | None] = []
+
+    class ProcessService:
+        async def start(self, **kwargs):
+            environments.append(kwargs.get("environment"))
+            return {
+                "pid": 101,
+                "creation_time": 10.0,
+                "command_line": [kwargs["executable"]],
+                "executable": kwargs["executable"],
+                "parent_pid": None,
+                "lease_id": "lease-1",
+                "root_run_id": kwargs["root_run_id"],
+            }
+
+    from deskpet.tools.os_tools import app_tools, process_tools
+    from deskpet.tools import window_use_tool
+
+    service = ProcessService()
+    monkeypatch.setattr(app_tools, "get_process_tool_service", lambda: service)
+    monkeypatch.setattr(process_tools, "_PROCESS_SERVICE", service)
+    monkeypatch.setattr(
+        app_tools,
+        "discover_app",
+        lambda _query: [{
+            "source": "fixture", "executable": "/bin/echo",
+            "discovered": True, "launchable_probe": True,
+        }],
+    )
+    class ProcessProbe:
+        def __init__(self, _pid): pass
+        def create_time(self): return 10.0
+        def is_running(self): return True
+
+    monkeypatch.setattr(app_tools.psutil, "Process", ProcessProbe)
+    monkeypatch.setattr(
+        window_use_tool,
+        "_guard",
+        lambda: json.dumps({"ok": False, "error": "window-boundary-double"}),
+    )
+
+    runtime_context = SimpleNamespace(
+        session_id="session-1", request_id="request-1", scope_id="scope-1"
+    )
+    registry, _ = build_product_tool_registry(
+        build_explicit_product_tool_catalog(
+            _catalog_dependencies(ContextPageInStore(), runtime_context)
+        ).registrations
+    )
+    sdk_context = ToolContext(
+        RunId("run-1"), RequestId("request-1"), CancellationToken(),
+        {"session_id": "session-1", "scope_id": "scope-1",
+         "write_scope_root": str(tmp_path), "workspace": str(tmp_path)},
+    )
+    legacy_context = ToolExecutionContext(
+        scope_id="scope-1", session_id="session-1", request_id="request-1",
+        root_run_id="run-1", run_id="run-1", call_id="legacy-call",
+        effect_id="legacy-call", workspace=str(tmp_path),
+        write_scope_root=str(tmp_path), owner_key="",
+    )
+    manifest = {str(item["name"]): item for item in load_tool_manifest().tools}
+
+    async def direct(name: str, arguments: dict):
+        item = manifest[name]
+        identity = str(item.get("context_handler_id") or item["handler_id"])
+        if "<locals>" in identity:
+            identity = str(item["handler_id"])
+        module_name, qualname = identity.split(":", 1)
+        value = importlib.import_module(module_name)
+        for component in qualname.split("."):
+            value = getattr(value, component)
+        parameters = inspect.signature(value).parameters
+        if (
+            item.get("context_handler_id") == identity
+            and item.get("context_handler_id") != item["handler_id"]
+        ):
+            result = value(arguments, legacy_context)
+        elif "execution_context" in parameters:
+            result = value(
+                arguments, "legacy-call", execution_context=legacy_context
+            )
+        else:
+            result = value(arguments, "legacy-call")
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, str):
+            try:
+                return json.loads(result)
+            except ValueError:
+                return result
+        return result
+
+    async def sdk(name: str, arguments: dict, index: int):
+        return await registry.invoke(
+            ToolCall(CallId(f"sdk-{index}"), name, arguments), sdk_context
+        )
+
+    async def case() -> None:
+        environment = {"MIGRATION_EQ": "yes"}
+        app_old = await direct(
+            "app_launch", {"app": "/bin/echo", "argv": [], "environment": environment}
+        )
+        app_new = await sdk(
+            "app_launch",
+            {"app": "/bin/echo", "argv": [], "environment": [
+                {"key": "MIGRATION_EQ", "value": "yes"}
+            ]},
+            1,
+        )
+        process_old = await direct(
+            "process_start", {"executable": "/bin/echo", "argv": [], "environment": environment}
+        )
+        process_new = await sdk(
+            "process_start",
+            {"executable": "/bin/echo", "argv": [], "environment": [
+                {"key": "MIGRATION_EQ", "value": "yes"}
+            ]},
+            2,
+        )
+        assert app_old["ok"] and process_old["ok"]
+        assert app_new.outcome is process_new.outcome is ToolOutcome.SUCCEEDED
+        assert environments == [environment, environment, environment, environment]
+
+        digest = "a" * 64
+        cases = (
+            ("capability_build", {"objective": "build", "original_args": {"count": 2},
+                                  "catalog_generation": 1},
+             {"objective": "build", "original_args": [
+                 {"key": "count", "value_json": "2"}
+             ], "catalog_generation": 1}),
+            ("capability_repair", {"failure_receipt_ref": digest, "catalog_generation": 1},
+             {"failure_receipt_ref": digest, "catalog_generation": 1}),
+            ("doc_create", {"spec": {"title": "x"}},
+             {"spec": '{"title":"x"}'}),
+            ("doc_edit", {"file_path": str(tmp_path / "missing.docx"), "ops": []},
+             {"file_path": str(tmp_path / "missing.docx"), "ops": "[]"}),
+            ("download_file", {"url": "invalid://url", "destination": str(tmp_path / "download"),
+                               "max_bytes": 1024, "expected_sha256": digest},
+             {"url": "invalid://url", "destination": str(tmp_path / "download"),
+              "max_bytes": 1024, "expected_sha256": digest}),
+            ("excel_create", {"spec": {"sheets": []}},
+             {"spec": '{"sheets":[]}'}),
+            ("move_file", {"source": str(tmp_path / "missing"),
+                           "destination": str(tmp_path / "dest"),
+                           "expected_source_hash": digest},
+             {"source": str(tmp_path / "missing"),
+              "destination": str(tmp_path / "dest"),
+              "expected_source_hash": digest}),
+            ("ppt_create", {"outline": [], "dry_run": True},
+             {"outline": "[]", "dry_run": True}),
+            ("window_capture", {"pid": 1, "creation_time": 1.0, "hwnd": 1},
+             {"pid": 1, "creation_time": 1.0, "hwnd": 1}),
+            ("window_focus", {"pid": 1, "creation_time": 1.0, "hwnd": 1},
+             {"pid": 1, "creation_time": 1.0, "hwnd": 1}),
+            ("window_key", {"pid": 1, "creation_time": 1.0, "hwnd": 1,
+                            "keys": "ENTER"},
+             {"pid": 1, "creation_time": 1.0, "hwnd": 1, "keys": "ENTER"}),
+            ("workflow_spawn", {"profile_key": "agent.general", "objective": "x",
+                                "output_refs": [], "catalog_generation": 1,
+                                "workspace_ref": None},
+             {"profile_key": "agent.general", "objective": "x",
+              "output_refs": [], "catalog_generation": 1}),
+        )
+        assert len(cases) == 12
+        for index, (name, old_arguments, new_arguments) in enumerate(cases, 3):
+            old_result = await direct(name, old_arguments)
+            new_result = await sdk(name, new_arguments, index)
+            old_ok = not (
+                isinstance(old_result, dict)
+                and (old_result.get("ok") is False or old_result.get("error"))
+            )
+            assert (new_result.outcome is ToolOutcome.SUCCEEDED) is old_ok, (
+                name, old_result, new_result
+            )
+            if name == "ppt_create" and old_ok:
+                assert thaw_json(new_result.value)["slide_count"] == old_result["slide_count"]
+
+    asyncio.run(case())
+
+
+def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> None:
+    import asyncio
+
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    calls: list[tuple[dict, object, str]] = []
+
+    class JoinPort:
+        async def await_subagents(self, *, arguments, context, operation_key):
+            calls.append((arguments, context, operation_key))
+            return {"ok": True, "results": [{"run_id": "child-1"}]}
+
+    dependencies = _catalog_dependencies(
+        ContextPageInStore(),
+        SimpleNamespace(session_id="session-1", request_id="request-1", scope_id="scope-1"),
+    )
+    dependencies = type(dependencies)(
+        dependencies.todo_session_db,
+        lambda: JoinPort(),
+        dependencies.context_page_store,
+        dependencies.execution_context_getter,
+        dependencies.memory_query,
+        dependencies.memory_scope_resolver,
+        dependencies.capability_bridge_service,
+        dependencies.search_gateway,
+    )
+    registry, _ = build_product_tool_registry(
+        build_explicit_product_tool_catalog(dependencies).registrations
+    )
+    context = ToolContext(
+        RunId("run-1"),
+        RequestId("request-1"),
+        CancellationToken(),
+        {"session_id": "session-1", "scope_id": "scope-1"},
+    )
+
+    async def case() -> None:
+        result = await registry.invoke(
+            ToolCall(CallId("join-call-1"), "await_subagents", {"run_ids": ["child-1"]}),
+            context,
+        )
+        assert result.outcome is ToolOutcome.SUCCEEDED
+        assert thaw_json(result.value)["results"][0]["run_id"] == "child-1"
+
+    before = set(sys.modules)
+    asyncio.run(case())
+    newly_blocked = sorted(
+        name
+        for name in set(sys.modules) - before
+        if name.startswith(("deskpet.harness", "deskpet.workflows"))
+    )
+    assert newly_blocked == []
+    assert calls[0][0] == {"run_ids": ["child-1"]}
+    assert calls[0][2] == "join-call-1"
+    assert calls[0][1].call_id == "join-call-1"
+
+
+def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> None:
+    import asyncio
+
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    source = tmp_path / "source.txt"
+    source.write_text("real-sync-handler", encoding="utf-8")
+    destination = tmp_path / "destination.txt"
+    workspace = tmp_path / "workspace"
+    runtime_context = SimpleNamespace(
+        session_id="session-1",
+        request_id="request-1",
+        scope_id="scope-1",
+    )
+    page_store = ContextPageInStore()
+    page_ref = page_store.put(
+        kind="segment",
+        source="fixture",
+        content="real-context-handler",
+        session_id="session-1",
+        request_id="request-1",
+        scope_id="scope-1",
+    )
+    catalog = build_explicit_product_tool_catalog(
+        _catalog_dependencies(page_store, runtime_context)
+    )
+    registry, inventory = build_product_tool_registry(catalog.registrations)
+    by_name = {item.name: item for item in inventory}
+    assert by_name["read_file"].dispatch_kind == "sync"
+    assert by_name["process_list"].dispatch_kind == "async"
+    assert by_name["context_page_in"].dispatch_kind == "context"
+    assert by_name["write_file"].dispatch_kind == "staged"
+    assert by_name["workspace_prepare"].dispatch_kind == "control"
+    assert by_name["web_search"].dispatch_kind == "provider"
+
+    context = ToolContext(
+        RunId("run-1"),
+        RequestId("request-1"),
+        CancellationToken(),
+        {
+            "session_id": "session-1",
+            "scope_id": "scope-1",
+            "workspace": str(workspace),
+            "write_scope_root": str(tmp_path),
+        },
+    )
+
+    async def invoke(name: str, arguments: dict, index: int):
+        result = await registry.invoke(
+            ToolCall(CallId(f"call-{index}"), name, arguments),
+            context,
+        )
+        assert result.outcome is ToolOutcome.SUCCEEDED, (name, result.error)
+        return thaw_json(result.value)
+
+    async def case() -> None:
+        sync = await invoke("read_file", {"path": str(source)}, 1)
+        assert "real-sync-handler" in json.dumps(sync)
+        await invoke("process_list", {"max_entries": 1}, 2)
+        page = await invoke(
+            "context_page_in",
+            {"reference_id": page_ref.reference_id, "source_hash": page_ref.source_hash},
+            3,
+        )
+        assert page["content"] == "real-context-handler"
+        await invoke(
+            "write_file",
+            {"path": str(destination), "content": "real-staged-handler", "overwrite": True},
+            4,
+        )
+        assert destination.read_text(encoding="utf-8") == "real-staged-handler"
+        control = await invoke("workspace_prepare", {}, 5)
+        assert control["result"]["workspace_root"] == str(workspace)
+        provider = await invoke("web_search", {"query": "phase-b", "max_results": 1}, 6)
+        assert provider["provider"] == "typed-double"
+
+    asyncio.run(case())
+
+
+def test_required_provider_failure_occurs_before_catalog_publish() -> None:
+    from deskpet.tool_catalog import ToolCatalogDependencies
+
+    with pytest.raises(RuntimeError, match="search_gateway"):
+        ToolCatalogDependencies(
+            object(), lambda: None, object(), lambda: None,
+            object(), object(), object(), None,
+        )
+
+
+def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -> None:
+    import asyncio
+
+    from simple_harness import CallId, RequestId, RunId
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+    from deskpet.tools.project_group_send import configure_project_group_transport
+
+    class Transport:
+        def __init__(self) -> None:
+            self.keys: list[str] = []
+
+        def send_all_project_groups(self, *, content: str, idempotency_key: str):
+            self.keys.append(idempotency_key)
+            return {
+                "ok": True,
+                "delivery_ref": content,
+                "physical_send_count": 1,
+            }
+
+    transport = Transport()
+    configure_project_group_transport(transport)
+    try:
+        runtime_context = SimpleNamespace(
+            session_id="session-1", request_id="request-1", scope_id="scope-1"
+        )
+        catalog = build_explicit_product_tool_catalog(
+            _catalog_dependencies(ContextPageInStore(), runtime_context)
+        )
+        registry, _ = build_product_tool_registry(catalog.registrations)
+        allowed = tmp_path / "allowed"
+        outside = tmp_path / "outside.txt"
+        context = ToolContext(
+            RunId("run-1"),
+            RequestId("same-request"),
+            CancellationToken(),
+            {
+                "session_id": "session-1",
+                "scope_id": "scope-1",
+                "workspace": str(allowed),
+                "write_scope_root": str(allowed),
+            },
+        )
+
+        async def case() -> None:
+            denied = await registry.invoke(
+                ToolCall(
+                    CallId("write-call"),
+                    "write_file",
+                    {"path": str(outside), "content": "must-not-write", "overwrite": True},
+                ),
+                context,
+            )
+            assert denied.outcome is ToolOutcome.FAILED
+            assert not outside.exists()
+
+            for call_id in ("delivery-call-1", "delivery-call-2"):
+                result = await registry.invoke(
+                    ToolCall(
+                        CallId(call_id),
+                        "project_group_send",
+                        {"target_scope": "all_project_groups", "content": call_id},
+                    ),
+                    context,
+                )
+                assert result.outcome is ToolOutcome.SUCCEEDED
+            assert transport.keys == ["delivery-call-1", "delivery-call-2"]
+
+        asyncio.run(case())
+    finally:
+        configure_project_group_transport(None)

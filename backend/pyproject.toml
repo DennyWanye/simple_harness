@@ -156,9 +156,9 @@ dependencies = [
     "pyyaml>=6.0",
     # T6.2: SDK dependency for T6 Product Cutover.
     # T7.3: Production uses vendored wheel with exact hash verification.
-    # The vendored wheel is the exact artifact from GitHub Release v0.1.0,
-    # verified via scripts/verify_sdk_wheel.py against SHA256SUMS.
-    "simple-harness-sdk>=0.1.0",
+    # Slice B consumes the exact local v0.1.1 candidate bytes. Publication is
+    # intentionally deferred until product cutover and desktop E2E pass.
+    "simple-harness-sdk>=0.1.1",
 ]
 
 [tool.uv.sources]
@@ -169,8 +169,8 @@ dependencies = [
 # Development (path dependency):
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
-# Production (vendored wheel from Release):
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.0-py3-none-any.whl" }
+# Production (vendored immutable candidate):
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.1-py3-none-any.whl" }
 
 [project.optional-dependencies]
 dev = [

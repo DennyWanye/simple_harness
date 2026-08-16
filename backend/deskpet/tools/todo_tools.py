@@ -33,7 +33,6 @@ from typing import Any
 
 import platformdirs
 
-from .registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +200,7 @@ def _handle_todo_complete(args: dict[str, Any], task_id: str) -> str:
 # binding to replace the ToolSpec and lose its checked execution identity.
 # Keep the old callable for data-compatibility helpers, but never expose it as
 # a second production writer.
-registry.register(
-    "todo_complete", "todo", _SCHEMA_COMPLETE, _handle_todo_complete
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        "todo_complete", "todo", _SCHEMA_COMPLETE, _handle_todo_complete
+    )

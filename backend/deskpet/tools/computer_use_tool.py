@@ -57,7 +57,6 @@ import tomli
 from deskpet.types.task_grants import ResourceSelector
 
 from .capabilities import ToolExecutionContext
-from .registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -671,79 +670,33 @@ _TOOLSET = "computer_use"
 # flag ON(code_e2e 真测)时 requires_env=[] → 正常可见可用。
 _CU_HIDE_ENV: list[str] = [] if _computer_use_enabled() else ["__DESKPET_COMPUTER_USE_DISABLED__"]
 
-registry.register(
-    "screen_capture",
-    _TOOLSET,
-    _SCHEMA_CAPTURE,
-    _handle_screen_capture,
-    context_handler=_handle_screen_capture_context,
-    permission_category="read_file",
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_screen_capture_resources,
-    resource_scope_resolver_id="builtin:screen_capture:primary-screen",
-    resource_scope_resolver_version="v1",
-)
-registry.register(
-    "screen_click",
-    _TOOLSET,
-    _SCHEMA_CLICK,
-    _handle_screen_click,
-    permission_category="shell",
-    dangerous=True,
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_screen_input_resources,
-    resource_scope_resolver_id="builtin:screen_click:primary-screen",
-    resource_scope_resolver_version="v1",
-)
-registry.register(
-    "screen_move",
-    _TOOLSET,
-    _SCHEMA_MOVE,
-    _handle_screen_move,
-    permission_category="shell",
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_screen_input_resources,
-    resource_scope_resolver_id="builtin:screen_move:primary-screen",
-    resource_scope_resolver_version="v1",
-)
-registry.register(
-    "screen_type",
-    _TOOLSET,
-    _SCHEMA_TYPE,
-    _handle_screen_type,
-    permission_category="shell",
-    dangerous=True,
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_screen_input_resources,
-    resource_scope_resolver_id="builtin:screen_type:primary-screen",
-    resource_scope_resolver_version="v1",
-)
-registry.register(
-    "screen_key",
-    _TOOLSET,
-    _SCHEMA_KEY,
-    _handle_screen_key,
-    permission_category="shell",
-    dangerous=True,
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_screen_input_resources,
-    resource_scope_resolver_id="builtin:screen_key:primary-screen",
-    resource_scope_resolver_version="v1",
-)
-registry.register(
-    "screen_scroll",
-    _TOOLSET,
-    _SCHEMA_SCROLL,
-    _handle_screen_scroll,
-    permission_category="shell",
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_screen_input_resources,
-    resource_scope_resolver_id="builtin:screen_scroll:primary-screen",
-    resource_scope_resolver_version="v1",
-)
+def register_static_tools(registry) -> None:
+    registrations = (
+        ("screen_capture", _SCHEMA_CAPTURE, _handle_screen_capture, "read_file", False),
+        ("screen_click", _SCHEMA_CLICK, _handle_screen_click, "shell", True),
+        ("screen_move", _SCHEMA_MOVE, _handle_screen_move, "shell", False),
+        ("screen_type", _SCHEMA_TYPE, _handle_screen_type, "shell", True),
+        ("screen_key", _SCHEMA_KEY, _handle_screen_key, "shell", True),
+        ("screen_scroll", _SCHEMA_SCROLL, _handle_screen_scroll, "shell", False),
+    )
+    for name, schema, handler, permission, dangerous in registrations:
+        kwargs = {
+            "permission_category": permission,
+            "dangerous": dangerous,
+            "requires_env": _CU_HIDE_ENV,
+            "concurrency_safe": False,
+            "resource_scope_resolver": (
+                _screen_capture_resources
+                if name == "screen_capture"
+                else _screen_input_resources
+            ),
+            "resource_scope_resolver_id": (
+                "builtin:screen_capture:primary-screen"
+                if name == "screen_capture"
+                else f"builtin:{name}:primary-screen"
+            ),
+            "resource_scope_resolver_version": "v1",
+        }
+        if name == "screen_capture":
+            kwargs["context_handler"] = _handle_screen_capture_context
+        registry.register(name, _TOOLSET, schema, handler, **kwargs)

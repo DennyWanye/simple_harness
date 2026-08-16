@@ -17,6 +17,7 @@
  * convention.
  */
 import { useEffect, useMemo, useState } from "react";
+import { v4 as uuidv4 } from "uuid";
 
 import type { Provider } from "./SettingsProviders";
 import { dark } from "../theme/components";
@@ -49,20 +50,15 @@ export interface ValidationResult {
 /**
  * Validate a draft client-side. `editing=true` (i.e. provider already
  * exists) skips id format check and allows empty api_key (means "leave
- * keychain alone"). When adding, api_key is required.
+ * keychain alone"). When adding, api_key is required. ID is auto-generated
+ * for new providers, so no validation needed.
  */
 export function validateProviderDraft(
   draft: ProviderDraft,
   opts: { editing: boolean },
 ): ValidationResult {
   const errors: ValidationResult["errors"] = {};
-  if (!opts.editing) {
-    if (!draft.id || !draft.id.trim()) {
-      errors.id = "id 不能为空";
-    } else if (!KEBAB_RE.test(draft.id.trim())) {
-      errors.id = "id 只能是小写字母 / 数字 / 短横线（kebab-case）";
-    }
-  }
+  // ID validation removed - now auto-generated via UUID
   if (!draft.name || !draft.name.trim()) {
     errors.name = "name 不能为空";
   }
@@ -199,16 +195,18 @@ interface AddProviderModalProps {
   probing?: boolean;
 }
 
-const blank_draft: ProviderDraft = {
-  id: "",
-  source: "user",
-  name: "",
-  base_url: "",
-  models: [],
-  default_model: "",
-  enabled: true,
-  api_key: "",
-};
+function createBlankDraft(): ProviderDraft {
+  return {
+    id: uuidv4(),
+    source: "user",
+    name: "",
+    base_url: "",
+    models: [],
+    default_model: "",
+    enabled: true,
+    api_key: "",
+  };
+}
 
 export function AddProviderModal({
   editing,
@@ -220,7 +218,7 @@ export function AddProviderModal({
   probing,
 }: AddProviderModalProps) {
   const [draft, setDraft] = useState<ProviderDraft>(() =>
-    editing ? prefillFromProvider(editing) : blank_draft,
+    editing ? prefillFromProvider(editing) : createBlankDraft(),
   );
   const [submitted, setSubmitted] = useState(false);
   const [newModel, setNewModel] = useState("");
@@ -228,7 +226,7 @@ export function AddProviderModal({
 
   // If the editing target changes (rare; UI usually re-mounts), reset draft.
   useEffect(() => {
-    setDraft(editing ? prefillFromProvider(editing) : blank_draft);
+    setDraft(editing ? prefillFromProvider(editing) : createBlankDraft());
     setSubmitted(false);
     setNewModel("");
   }, [editing]);
@@ -313,20 +311,18 @@ export function AddProviderModal({
           </button>
         </header>
 
-        <label style={fieldStyle}>
-          <span>id (kebab-case)</span>
-          <input
-            data-testid="provider-id-input"
-            disabled={isEditing}
-            value={draft.id}
-            onChange={(e) => setDraft({ ...draft, id: e.target.value })}
-            placeholder="my-relay-deepseek"
-            style={inputStyle}
-          />
-          {submitted && validation.errors.id && (
-            <span style={errStyle}>{validation.errors.id}</span>
-          )}
-        </label>
+        {/* ID field hidden for new providers (auto-generated UUID) */}
+        {isEditing && (
+          <label style={fieldStyle}>
+            <span>id</span>
+            <input
+              data-testid="provider-id-input"
+              disabled={true}
+              value={draft.id}
+              style={{ ...inputStyle, opacity: 0.6 }}
+            />
+          </label>
+        )}
 
         <label style={fieldStyle}>
           <span>name</span>
@@ -353,6 +349,22 @@ export function AddProviderModal({
           />
           {submitted && validation.errors.base_url && (
             <span style={errStyle}>{validation.errors.base_url}</span>
+          )}
+        </label>
+
+        <label style={fieldStyle}>
+          <span>api_key {isEditing && <em style={{ fontSize: 10, color: dark.textMuted }}>(留空保留已存的 key)</em>}</span>
+          <input
+            data-testid="provider-api-key-input"
+            type="password"
+            value={draft.api_key}
+            onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
+            placeholder={isEditing ? "(已配置)" : "sk-..."}
+            style={inputStyle}
+            autoComplete="off"
+          />
+          {submitted && validation.errors.api_key && (
+            <span style={errStyle}>{validation.errors.api_key}</span>
           )}
         </label>
 
@@ -487,22 +499,6 @@ export function AddProviderModal({
             <span style={errStyle}>{validation.errors.models}</span>
           )}
         </div>
-
-        <label style={fieldStyle}>
-          <span>api_key {isEditing && <em style={{ fontSize: 10, color: dark.textMuted }}>(留空保留已存的 key)</em>}</span>
-          <input
-            data-testid="provider-api-key-input"
-            type="password"
-            value={draft.api_key}
-            onChange={(e) => setDraft({ ...draft, api_key: e.target.value })}
-            placeholder={isEditing ? "(已配置)" : "sk-..."}
-            style={inputStyle}
-            autoComplete="off"
-          />
-          {submitted && validation.errors.api_key && (
-            <span style={errStyle}>{validation.errors.api_key}</span>
-          )}
-        </label>
 
         {/* 2026-08-09：「启用」开关原先只对 relay provider 显示，relay 移除后
             改为编辑既有 provider 时一律可见（新建的默认就是启用）。 */}

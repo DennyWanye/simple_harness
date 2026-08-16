@@ -2683,10 +2683,7 @@ async def _resolve_default_llm_call_v2() -> _LLMCallV2:
     return _call
 
 
-def _register_deepresearch_tool() -> None:
-    """Side-effect: register deepresearch with the global tool registry."""
-    try:
-        from .registry import registry  # type: ignore
+def register_static_tools(registry) -> None:
         registry.register(
             "deepresearch",
             "web",
@@ -2700,10 +2697,5 @@ def _register_deepresearch_tool() -> None:
             # 丢掉已抓到的一手源(真机 UI 测 TC-P2-03 deep 档 180s 超时实证)。
             timeout_seconds=_DEEPRESEARCH_TOOL_TIMEOUT,
         )
-    except Exception as exc:  # noqa: BLE001
-        log.debug("research tool registration skipped: %s", exc)
-
-
-_register_deepresearch_tool()
 
 research_run = deepresearch  # deprecated alias: use deepresearch

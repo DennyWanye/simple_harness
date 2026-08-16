@@ -214,10 +214,7 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def _register() -> None:
-    try:
-        from .registry import registry
-
+def register_static_tools(registry) -> None:
         registry.register(
             "file_organize",
             "office",
@@ -227,10 +224,5 @@ def _register() -> None:
             timeout_seconds=60.0,
             concurrency_safe=False,  # G3: bulk filesystem mutation
         )
-    except Exception:  # noqa: BLE001
-        pass
 
-
-_register()
-
-__all__ = ["file_organize"]
+__all__ = ["file_organize", "register_static_tools"]

@@ -76,7 +76,6 @@ from deskpet.types.task_grants import ResourceSelector
 
 from .capabilities import ToolExecutionContext
 from ._config import _candidate_paths
-from .registry import registry
 
 logger = logging.getLogger(__name__)
 
@@ -657,17 +656,12 @@ def _browser_task_resources(
 
 # The general agent can discover this tool from the same catalog as every
 # other capability; there is no Code-mode-only registration path.
-registry.register(
-    "run_browser_task",
-    "e2e",
-    _SCHEMA,
-    _handle_run_browser_task,
-    permission_category="network",
-    dangerous=True,
-    resource_scope_resolver=_browser_task_resources,
-    resource_scope_resolver_id="builtin:run_browser_task:job",
-    resource_scope_resolver_version="v1",
-    requires_env=(
-        [] if _is_enabled() else ["__DESKPET_BROWSER_USE_DISABLED__"]
-    ),
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        "run_browser_task", "e2e", _SCHEMA, _handle_run_browser_task,
+        permission_category="network", dangerous=True,
+        resource_scope_resolver=_browser_task_resources,
+        resource_scope_resolver_id="builtin:run_browser_task:job",
+        resource_scope_resolver_version="v1",
+        requires_env=([] if _is_enabled() else ["__DESKPET_BROWSER_USE_DISABLED__"]),
+    )

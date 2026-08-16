@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.3.0",
+  "feature": "simple-harness-sdk-v0.1.1-slice-b",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "source_request_file": "plans/2026-08-13-simple-harness-sdk/source-request.md",
+  "acceptance_file": "plans/2026-08-13-simple-harness-sdk/acceptance.md",
+  "behavior_contract": {"path":"plans/2026-08-13-simple-harness-sdk/behavior-contract.md","status":"FROZEN"},
+  "executor_engine": "codex-gpt5.5",
+  "testcase_files": ["testcase/2026-08-16-simple-harness-sdk-v0.1.1/slice-b-black-box.md"],
+  "release_unit": {"slice_id":"SDK-v0.1.1-B","parent_program":"simple-harness-sdk-v0.1.1-cutover","scope_hash":"bec90cbc08806b95c94152bd5aef64b23d51866369b437a5ba1c0213d6d56b56","must_ac_count":4,"max_plan_lines":231,"high_risk_subsystems":3},
+  "applicability": {
+    "input_sensitive":{"value":true,"decided_by":"user","rationale":"产品Adapter必须保留自然语言Agent与Workflow的语义结果合同"},
+    "llm_payload_driven":{"value":true,"decided_by":"user","rationale":"Provider工具调用Workflow和权限载荷会推进SDK durable状态机"},
+    "stateful_init":{"value":false,"decided_by":"user","rationale":"仅验证已有登录态closed-ingress组合且不改首次登录初始化"}
+  },
+  "scenarios": [
+    {"scenario_id":"SDK-B1","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["fresh","temporal-fault"],"min_root_runs":1,"ac_ids":["SDK-AC-7","SDK-AC-8"],"input_class":"exact wheel和独立storage identity","cold_start":false,"expected_run_created":false,"impact_paths":["backend/vendor/**","backend/pyproject.toml","backend/uv.lock","backend/deskpet/sdk_adapters/runtime_paths.py","backend/deskpet/product_state/**","backend/deskpet/capabilities/store.py"]},
+    {"scenario_id":"SDK-B2","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-8"],"input_class":"startup readiness失败重试","cold_start":false,"expected_run_created":true,"impact_paths":["backend/main.py","backend/deskpet/sdk_adapters/composition.py","backend/context.py"]},
+    {"scenario_id":"SDK-B3","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh","temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-8"],"input_class":"Provider Tool reconciliation和显式inventory","cold_start":false,"expected_run_created":true,"impact_paths":["backend/main.py","backend/deskpet/sdk_adapters/provider.py","backend/deskpet/sdk_adapters/tools.py","backend/deskpet/sdk_adapters/reconciliation.py","backend/deskpet/tool_catalog/**","backend/deskpet/tool_handlers/**","backend/deskpet/tools/__init__.py","backend/deskpet/tools/registry.py","backend/deskpet/tools/**"]},
+    {"scenario_id":"SDK-B4","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh","temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-6","SDK-AC-7"],"input_class":"权限Personal和Capability Host","cold_start":false,"expected_run_created":true,"impact_paths":["backend/main.py","backend/deskpet/sdk_adapters/authorization.py","backend/deskpet/sdk_adapters/personal_catalog.py","backend/deskpet/sdk_adapters/capability_host.py","backend/deskpet/product_state/**","backend/deskpet/permissions/**","backend/deskpet/capabilities/**","backend/deskpet/capabilities/refresh.py","backend/deskpet/capabilities/run_catalog.py"]},
+    {"scenario_id":"SDK-B5","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh","temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-6","SDK-AC-8"],"input_class":"DeepResearch v7-sdk1和PPT v2 host definitions","cold_start":false,"expected_run_created":true,"impact_paths":["backend/deskpet/sdk_adapters/workflows.py","backend/deskpet/sdk_adapters/product_workflows/**","backend/deskpet/workflows/definitions/sdk_v7/deep_research.py","backend/deskpet/workflows/definitions/sdk_v2/ppt_pro.py"]},
+    {"scenario_id":"SDK-B6","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":1,"ac_ids":["SDK-AC-8"],"input_class":"product conformance四suite","cold_start":false,"expected_run_created":false,"impact_paths":["backend/deskpet/sdk_adapters/conformance.py","backend/vendor/**"]}
+  ]
+}

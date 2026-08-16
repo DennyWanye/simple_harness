@@ -1404,8 +1404,8 @@ def test_main_routes_code_through_the_single_product_harness_ingress() -> None:
     assert any(
         isinstance(node.func, ast.Attribute)
         and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "_harness_venue"
-        and node.func.attr == "open"
+        and node.func.value.id == "_sdk_ingress"
+        and node.func.attr == "open_venue"
         for node in calls
     )
     assert not any(

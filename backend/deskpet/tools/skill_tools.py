@@ -3,15 +3,22 @@
 from __future__ import annotations
 
 import inspect
+import hashlib
 import json
 import logging
 from typing import Any, Mapping, Protocol
 
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
-from deskpet.tools.registry import registry
-from deskpet.companion.skills import instruction_content_hash
 
 log = logging.getLogger(__name__)
+
+
+def instruction_content_hash(instruction: str) -> str:
+    """SHA-256 of exact instruction bytes without loading capability authority."""
+
+    if not isinstance(instruction, str):
+        raise TypeError("instruction must be a string")
+    return hashlib.sha256(instruction.encode("utf-8")).hexdigest()
 
 
 class FrozenSkillInstructionResolver(Protocol):
@@ -262,21 +269,19 @@ async def _handle(
     )
 
 
-registry.register(
-    name="skill_invoke",
-    toolset="control",
-    schema=_SCHEMA,
-    handler=_reject_untrusted,
-    context_handler=_handle,
-    permission_category="read_file",
-    source="builtin",
-    spec_version="core.skill_invoke.v2",
-    permission_policy_version="v1",
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        name="skill_invoke", toolset="control", schema=_SCHEMA,
+        handler=_reject_untrusted, context_handler=_handle,
+        permission_category="read_file", source="builtin",
+        spec_version="core.skill_invoke.v2",
+        permission_policy_version="v1",
+    )
 
 
 __all__ = [
     "FrozenSkillInstructionResolver",
     "bind",
     "is_bound",
+    "register_static_tools",
 ]

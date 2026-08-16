@@ -5599,15 +5599,7 @@ _PPT_PRO_SCHEMA = {
 }
 
 
-def _register_ppt_tool() -> None:
-    """Module-import side effect: register ppt_create with the registry.
-
-    Wrapped in a try/except so import-cycles or missing registry don't
-    break test collection — every test in this repo imports the tool
-    module directly without needing the registry.
-    """
-    try:
-        from .registry import registry  # type: ignore
+def register_static_tools(registry) -> None:
         registry.register(
             "ppt_create",
             "ppt",
@@ -5622,16 +5614,8 @@ def _register_ppt_tool() -> None:
             timeout_seconds=1200.0,
             concurrency_safe=False,  # G3: writes .pptx to disk
         )
-    except Exception as exc:  # noqa: BLE001
-        log.debug("ppt tool registration skipped: %s", exc)
-
-
-def _register_ppt_pro_tool() -> None:
-    try:
         if not _ppt_pro_cfg().enabled:
             return
-        from .registry import registry  # type: ignore
-
         registry.register(
             "ppt_pro",
             "ppt",
@@ -5643,9 +5627,3 @@ def _register_ppt_pro_tool() -> None:
             concurrency_safe=False,
             completion_semantics="accepted_async",
         )
-    except Exception as exc:  # noqa: BLE001
-        log.debug("ppt_pro tool registration skipped: %s", exc)
-
-
-_register_ppt_tool()
-_register_ppt_pro_tool()

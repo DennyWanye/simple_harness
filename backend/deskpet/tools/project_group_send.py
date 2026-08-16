@@ -16,9 +16,7 @@ import threading
 from typing import Any, Mapping, Protocol
 
 from deskpet.types.task_grants import ResourceSelector
-from deskpet.workflows.contracts import EffectKind, EffectPolicy
 
-from .registry import registry
 
 
 class ProjectGroupTransport(Protocol):
@@ -156,29 +154,20 @@ _SCHEMA = {
 }
 
 
-registry.register(
-    "project_group_send",
-    "external_action",
-    _SCHEMA,
-    _handle_project_group_send,
-    permission_category="external_action",
-    source="builtin",
-    dangerous=True,
-    concurrency_safe=False,
-    resource_scope_resolver=_resource_scope,
-    resource_scope_resolver_id="builtin:project_group_send:all_project_groups",
-    resource_scope_resolver_version="v1",
-    effect_policy=EffectPolicy(
-        policy_id="deskpet:project_group_send:external_send",
-        version="v1",
-        kind=EffectKind.OPAQUE_MANUAL,
-        max_attempts=1,
-    ),
-    outcome_parser_id="json_error_envelope_v1",
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        "project_group_send", "external_action", _SCHEMA,
+        _handle_project_group_send, permission_category="external_action",
+        source="builtin", dangerous=True, concurrency_safe=False,
+        resource_scope_resolver=_resource_scope,
+        resource_scope_resolver_id="builtin:project_group_send:all_project_groups",
+        resource_scope_resolver_version="v1",
+        outcome_parser_id="json_error_envelope_v1",
+    )
 
 
 __all__ = [
     "ProjectGroupTransport",
     "configure_project_group_transport",
+    "register_static_tools",
 ]

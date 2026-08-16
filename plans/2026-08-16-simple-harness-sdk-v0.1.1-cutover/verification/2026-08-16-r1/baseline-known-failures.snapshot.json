@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "failures": {
+    "backend-a": "d2abd6430c63edcfacdde6cc2ebba5b4514ce577580cf2510985901d3dfd4042",
+    "backend-c": "93c4c1e0b5a33d8975ee4b3d35e96b6ae9007c91463deb9a5f3de2da73064fc1",
+    "backend-d-f": "1baa54db97d6b5b011f6042fe697bf73f2c32c49c1311d351bc9e655012bf4ca",
+    "backend-m-r": "b7a1dc84349d6f00b796a39340ee3d433d8f6f04d367687bc74e921f66ce05a0",
+    "backend-s-z": "2cf6812756a066a62382d728ea417be63b1311a3fbf01360af348e75ccbb8148",
+    "backend-capabilities": "1219551fa22116ca98f297d5872aa4e8175b55073afe0562be1ea4507f107648",
+    "backend-harness-simplification": "27ed94830a4f59f5b5a978be7e2560dd758250e3c7a44bbd0bfc9b96663e5eb5",
+    "root-tests": "3fcba2d77f91b5e5567d88d474c866d0c9be68990b0ad8dad522ba970668e0db",
+    "frontend-lint": "4f6915643731fe785abddeb9056bef09c93b16cd8a3c1e8520c2c6ea1d1ceb64"
+  }
+}

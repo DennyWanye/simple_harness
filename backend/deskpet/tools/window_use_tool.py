@@ -30,7 +30,6 @@ from .computer_use_tool import (
     _ok,
     _workspace_root,
 )
-from .registry import registry
 
 
 _MAX_WINDOWS = 100
@@ -795,10 +794,8 @@ def _window_capture_resources(
 _TOOLSET = "computer_use"
 _TARGET_REQUIRED = ["pid", "creation_time", "hwnd"]
 
-registry.register(
-    "window_list",
-    _TOOLSET,
-    {
+def register_static_tools(registry) -> None:
+    list_schema = {
         "name": "window_list",
         "description": (
             "List visible top-level Windows windows with hwnd, PID, process "
@@ -810,15 +807,8 @@ registry.register(
             "properties": {"query": {"type": "string"}},
             "required": [],
         },
-    },
-    _window_list,
-    permission_category="read_file",
-    requires_env=_CU_HIDE_ENV,
-)
-registry.register(
-    "window_focus",
-    _TOOLSET,
-    {
+    }
+    focus_schema = {
         "name": "window_focus",
         "description": "Focus one exact visible window after PID-reuse validation.",
         "parameters": {
@@ -826,19 +816,8 @@ registry.register(
             "properties": _target_properties(),
             "required": _TARGET_REQUIRED,
         },
-    },
-    _window_focus,
-    permission_category="shell",
-    dangerous=True,
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_window_resources,
-    resource_scope_resolver_id="builtin:window_focus:exact-window",
-)
-registry.register(
-    "window_capture",
-    _TOOLSET,
-    {
+    }
+    capture_schema = {
         "name": "window_capture",
         "description": (
             "Capture only one exact window rectangle, not the full desktop. "
@@ -852,19 +831,8 @@ registry.register(
             },
             "required": _TARGET_REQUIRED,
         },
-    },
-    _window_capture,
-    context_handler=_window_capture_context,
-    permission_category="read_file",
-    requires_env=_CU_HIDE_ENV,
-    concurrency_safe=False,
-    resource_scope_resolver=_window_capture_resources,
-    resource_scope_resolver_id="builtin:window_capture:exact-window",
-)
-registry.register(
-    "window_key",
-    _TOOLSET,
-    {
+    }
+    key_schema = {
         "name": "window_key",
         "description": (
             "Focus one exact window, then press either one key/combo or a short "
@@ -915,16 +883,33 @@ registry.register(
             },
             "required": _TARGET_REQUIRED,
         },
-    },
-    _window_key,
-    permission_category="shell",
-    dangerous=True,
-    requires_env=_CU_HIDE_ENV,
-    timeout_seconds=15.0,
-    concurrency_safe=False,
-    resource_scope_resolver=_window_resources,
-    resource_scope_resolver_id="builtin:window_key:exact-window",
-)
+    }
+    registry.register(
+        "window_list", _TOOLSET, list_schema, _window_list,
+        permission_category="read_file", requires_env=_CU_HIDE_ENV,
+    )
+    registry.register(
+        "window_focus", _TOOLSET, focus_schema, _window_focus,
+        permission_category="shell", dangerous=True,
+        requires_env=_CU_HIDE_ENV, concurrency_safe=False,
+        resource_scope_resolver=_window_resources,
+        resource_scope_resolver_id="builtin:window_focus:exact-window",
+    )
+    registry.register(
+        "window_capture", _TOOLSET, capture_schema, _window_capture,
+        context_handler=_window_capture_context,
+        permission_category="read_file", requires_env=_CU_HIDE_ENV,
+        concurrency_safe=False,
+        resource_scope_resolver=_window_capture_resources,
+        resource_scope_resolver_id="builtin:window_capture:exact-window",
+    )
+    registry.register(
+        "window_key", _TOOLSET, key_schema, _window_key,
+        permission_category="shell", dangerous=True,
+        requires_env=_CU_HIDE_ENV, timeout_seconds=15.0,
+        concurrency_safe=False, resource_scope_resolver=_window_resources,
+        resource_scope_resolver_id="builtin:window_key:exact-window",
+    )
 
 
 __all__ = [
@@ -935,4 +920,5 @@ __all__ = [
     "_window_focus",
     "_window_key",
     "_window_list",
+    "register_static_tools",
 ]

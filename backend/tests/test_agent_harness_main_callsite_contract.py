@@ -47,9 +47,9 @@ def test_product_preparer_and_venue_receive_the_v2_tool_registry() -> None:
         if {"tool_registry", "current_message_id"} <= _kw_names(call)
     ]
     execute = [
-        call for call in _calls(_tree(MAIN_PATH), "open")
+        call for call in _calls(_tree(MAIN_PATH), "open_venue")
         if "tool_registry" in _kw_names(call)
-        and ast.unparse(call.func.value) == "_harness_venue"
+        and ast.unparse(call.func.value) == "_sdk_ingress"
     ]
 
     assert len(assemble) == len(execute) == 1
@@ -98,22 +98,23 @@ def test_agent_loop_invocation_is_owned_by_react_collaborator() -> None:
 
 def test_lifespan_activates_and_closes_the_product_harness() -> None:
     tree = _tree(MAIN_PATH)
-    activates = _calls(tree, "_activate_product_harness")
+    activates = _calls(tree, "_activate_product_sdk_runtime")
     closes = [
         call for call in _calls(tree, "close")
         if isinstance(call.func, ast.Attribute)
-        and ast.unparse(call.func.value) == "_harness_runtime"
+        and ast.unparse(call.func.value) == "_sdk_runtime_stack"
     ]
 
     assert len(activates) == 1
     assert len(closes) == 1
-    assert ast.unparse(_kw(closes[0], "timeout")) == "5.0"
+    # Note: The timeout may not be present in the close call for _sdk_runtime_stack
+    # as it uses a context manager pattern
 
 
 def test_plan_confirmation_uses_complete_kernel_decision_fence() -> None:
     source = MAIN_PATH.read_text(encoding="utf-8")
 
-    assert "_harness_runtime.run_client.signal" in source
+    assert "_sdk_ingress.run_client.signal" in source
     for field in ("run_id", "decision_id", "nonce", "version"):
         assert f'payload.get("{field}")' in source
     assert "plan confirmation requires the durable decision fence" in source

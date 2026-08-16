@@ -179,10 +179,7 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def _register() -> None:
-    try:
-        from .registry import registry
-
+def register_static_tools(registry) -> None:
         registry.register(
             "pdf_export",
             "office",
@@ -191,10 +188,5 @@ def _register() -> None:
             permission_category="write_file",
             timeout_seconds=100.0,
         )
-    except Exception:  # noqa: BLE001
-        pass
 
-
-_register()
-
-__all__ = ["pdf_export", "find_soffice"]
+__all__ = ["pdf_export", "find_soffice", "register_static_tools"]

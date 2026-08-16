@@ -3993,8 +3993,100 @@ class ToolRegistry:
             return list(self._tools.values())
 
 
-# Module-level singleton. Import this in tool modules:
-#
-#     from deskpet.tools.registry import registry
-#     registry.register("my_tool", ...)
-registry = ToolRegistry()
+class _LegacyProductToolRegistry(ToolRegistry):
+    """Lazy compatibility owner for callers importing the old singleton.
+
+    Static provider modules are import-pure. The first catalog read/dispatch
+    asks the package-level compatibility assembler to invoke every module's
+    explicit ``register_static_tools`` function. Custom ``ToolRegistry``
+    instances never receive this product catalog.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._product_catalog_ready = False
+        self._product_catalog_loading = False
+
+    def _ensure_product_catalog(self) -> None:
+        if self._product_catalog_ready or self._product_catalog_loading:
+            return
+        self._product_catalog_loading = True
+        try:
+            from deskpet.tools import _legacy_registry_proxy
+
+            target = _legacy_registry_proxy._target()
+            if target is not self:
+                raise RuntimeError("legacy Tool catalog assembled into foreign registry")
+            self._product_catalog_ready = True
+        finally:
+            self._product_catalog_loading = False
+
+    def has(self, name: str) -> bool:
+        self._ensure_product_catalog()
+        return super().has(name)
+
+    def dispatch_kind(self, name: str) -> str:
+        self._ensure_product_catalog()
+        return super().dispatch_kind(name)
+
+    def schemas(self, *args: Any, **kwargs: Any) -> Any:
+        self._ensure_product_catalog()
+        return super().schemas(*args, **kwargs)
+
+    def dispatch(self, *args: Any, **kwargs: Any) -> str:
+        self._ensure_product_catalog()
+        return super().dispatch(*args, **kwargs)
+
+    async def execute_tool(self, *args: Any, **kwargs: Any) -> Any:
+        self._ensure_product_catalog()
+        return await super().execute_tool(*args, **kwargs)
+
+    async def execute_tool_outcome(self, *args: Any, **kwargs: Any) -> Any:
+        self._ensure_product_catalog()
+        return await super().execute_tool_outcome(*args, **kwargs)
+
+    def prepare_call(self, *args: Any, **kwargs: Any) -> Any:
+        self._ensure_product_catalog()
+        return super().prepare_call(*args, **kwargs)
+
+    def prepare_frozen_call(self, *args: Any, **kwargs: Any) -> Any:
+        self._ensure_product_catalog()
+        return super().prepare_frozen_call(*args, **kwargs)
+
+    def tool_inventory(self, *args: Any, **kwargs: Any) -> list[Any]:
+        self._ensure_product_catalog()
+        return super().tool_inventory(*args, **kwargs)
+
+    def list_tools(self, source: Optional[str] = None) -> list[str]:
+        self._ensure_product_catalog()
+        return super().list_tools(source)
+
+    def get(self, name: str) -> Optional[ToolSpec]:
+        self._ensure_product_catalog()
+        return super().get(name)
+
+    def all_specs(self) -> list[ToolSpec]:
+        self._ensure_product_catalog()
+        return super().all_specs()
+
+
+# Old closed-ingress callers keep a lazy singleton; new SDK composition never
+# imports or instantiates it.
+registry = _LegacyProductToolRegistry()
+
+
+def __getattr__(name: str) -> Any:
+    """Preserve ``from deskpet.tools import registry`` after submodule imports.
+
+    Python assigns the imported ``deskpet.tools.registry`` module onto its
+    parent package.  Forward unknown module attributes through the package's
+    explicit compatibility proxy so old closed-ingress callers still see the
+    explicitly assembled 44-tool base catalog.
+    """
+
+    if name.startswith("__"):
+        raise AttributeError(name)
+
+    from deskpet.tools import _legacy_registry_proxy
+
+    return getattr(_legacy_registry_proxy, name)

@@ -1,7 +1,7 @@
-<!-- last-calibrated: 122ec55989f8a77e023aeb44ba1b4dae1b694269 -->
+<!-- last-calibrated: 42fbbd0f1fd2e3cd8eeb0cde650df49ae48aa4a7 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> Last verified: 2026-08-13. The Harness `open/generation=1` owner remains the only
+> Last verified: 2026-08-16. The Harness `open/generation=1` owner remains the only
 > production execution owner. DeskPet has one main Session with multiple isolated top-level
 > Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to
 > `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a
@@ -779,10 +779,23 @@ process-local late evidence 在 durable terminal 决策前只 peek、不出 read
 Reconciler 将其结算为 `late_reconciled/reconciled/reconciled_completed_suppressed` 后才 acknowledge，
 不会恢复 Driver。running 窗口与 CAS loser 都保留重试能力。
 
-## 20. 2026-08-13 SDK 提取实施前基线
+## 20. 2026-08-16 SDK v0.1.1 candidate 完成后、产品切换前基线
 
-当前仓库尚未发布独立 SDK；生产执行 authority 仍位于 DeskPet 源码树中的
-`RunKernel + ReAct/Workflow Driver + SqliteExecutionUnitOfWork`。已确认的 SDK 目标是提取完整
-durable Harness 和官方 `durable_task/personal_v1/capability_build`，由 Simple Harness 先真实
-消费，再交付 AIPhone 消费合同。当前依赖图、Workflow 选择 authority、模块分类、数据重置和
-许可证边界统一见 [`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)。
+独立 Simple Harness SDK v0.1.0 已发布，产品也固定并安装了 exact vendored wheel；但生产执行
+authority 仍位于 DeskPet 源码树中的
+`RunKernel + ReAct/Workflow Driver + SqliteExecutionUnitOfWork`。当前产品装配从
+`main.py:_build_product_harness_stack` 进入
+`deskpet.harness.adapters.product_composition.build_product_harness_composition`，没有调用
+`deskpet.sdk_adapters.composition.build_product_runtime`；后者仍会抛 `NotImplementedError`。
+
+SDK v0.1.1 active 本地 candidate 已在 hotfix 提交 `f13a30a` 上通过 full regression、clean
+exact-wheel conformance 与 reproducible build；wheel SHA-256 为 `48048ffb…f204e2f`。旧
+`371ceb98…10d5` receipt 已被取代，active bytes 仍待补发机器 receipt。该 candidate
+尚未 push/tag/release，已安装到产品 closed-ingress 适配环境。因而当前状态仍是“SDK artifact 已存在、消费者切换未完成”，
+不是桌面 SDK 自用完成。T6 必须先用
+SDK public Runtime/Workflow authority 替换产品同源核心，保留 Session/UI/权限/Provider/Tool/
+Capability 等产品 Adapter，再在 SDK schema v1 上完成 reset/reopen/recovery；随后执行
+SDK-S1..S5 真实桌面 E2E 与 SDK-S6..S7 自动化 fault injection/reconcile。exact v0.1.0 wheel
+的 conformance CLI 仍为占位且 release identity 漂移，需补齐 SDK Workflow/Conformance public
+surface；这一 SDK-owned 缺口现已由 v0.1.1 candidate 关闭。当前依赖图、边界、证据和切换风险统一见
+[`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)。

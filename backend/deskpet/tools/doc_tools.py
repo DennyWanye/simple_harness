@@ -657,10 +657,7 @@ def _handle_edit(args: dict[str, Any], task_id: str = "") -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def _register() -> None:
-    try:
-        from .registry import registry
-
+def register_static_tools(registry) -> None:
         registry.register("doc_create", "office", _CREATE_SCHEMA, _handle_create,
                            permission_category="write_file", timeout_seconds=30.0,
                            concurrency_safe=False)  # G3: writes .docx to disk
@@ -669,10 +666,5 @@ def _register() -> None:
         registry.register("doc_edit", "office", _EDIT_SCHEMA, _handle_edit,
                            permission_category="write_file", timeout_seconds=30.0,
                            concurrency_safe=False)  # G3: mutates .docx on disk
-    except Exception:  # noqa: BLE001
-        pass
 
-
-_register()
-
-__all__ = ["doc_create", "doc_read", "doc_edit"]
+__all__ = ["doc_create", "doc_read", "doc_edit", "register_static_tools"]

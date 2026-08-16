@@ -146,10 +146,7 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
     return json.dumps(image_ocr(str(args.get("image_path", ""))), ensure_ascii=False)
 
 
-def _register() -> None:
-    try:
-        from .registry import registry
-
+def register_static_tools(registry) -> None:
         registry.register(
             "image_ocr",
             "office",
@@ -158,10 +155,5 @@ def _register() -> None:
             permission_category="read_file",
             timeout_seconds=60.0,
         )
-    except Exception:  # noqa: BLE001
-        pass
 
-
-_register()
-
-__all__ = ["image_ocr", "ocr_engine_available"]
+__all__ = ["image_ocr", "ocr_engine_available", "register_static_tools"]

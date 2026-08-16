@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from deskpet.harness.profiles import ProfileRegistry
 from deskpet.types.task_grants import ResourceSelector
-from deskpet.workflows.contracts import EffectKind, EffectPolicy
+
+if TYPE_CHECKING:
+    from deskpet.harness.profiles import ProfileRegistry
 
 
 WORKFLOW_SPAWN = "workflow_spawn"
@@ -322,6 +323,8 @@ def _capability_mutation_resources(
 
 def register_orchestration_controls(registry: Any, profiles: ProfileRegistry) -> None:
     """Register the core exclusive control surface once at composition time."""
+
+    from deskpet.workflows.contracts import EffectKind, EffectPolicy
 
     if registry.has(WORKFLOW_SPAWN):
         if registry.dispatch_kind(WORKFLOW_SPAWN) != "delegate_control":

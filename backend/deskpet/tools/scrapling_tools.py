@@ -18,7 +18,6 @@ from typing import Any
 
 import httpx
 
-from .registry import registry
 
 log = logging.getLogger(__name__)
 
@@ -203,20 +202,14 @@ async def _handle_gold_price_lookup(args: dict[str, Any], task_id: str) -> str:
     return _json(out)
 
 
-registry.register(
-    "scrapling_fetch",
-    "web",
-    _SCRAPLING_FETCH_SCHEMA,
-    _handle_scrapling_fetch,
-    permission_category="network",
-    timeout_seconds=60.0,
-)
-
-registry.register(
-    "gold_price_lookup",
-    "web",
-    _GOLD_PRICE_SCHEMA,
-    _handle_gold_price_lookup,
-    permission_category="network",
-    timeout_seconds=60.0,
-)
+def register_static_tools(registry) -> None:
+    registry.register(
+        "scrapling_fetch", "web", _SCRAPLING_FETCH_SCHEMA,
+        _handle_scrapling_fetch, permission_category="network",
+        timeout_seconds=60.0,
+    )
+    registry.register(
+        "gold_price_lookup", "web", _GOLD_PRICE_SCHEMA,
+        _handle_gold_price_lookup, permission_category="network",
+        timeout_seconds=60.0,
+    )

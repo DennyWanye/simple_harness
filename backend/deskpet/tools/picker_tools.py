@@ -210,10 +210,7 @@ def _handle(args: dict[str, Any], task_id: str = "") -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def _register() -> None:
-    try:
-        from .registry import registry
-
+def register_static_tools(registry) -> None:
         registry.register(
             "office_pick_file",
             "office",
@@ -222,10 +219,5 @@ def _register() -> None:
             permission_category="read_file",
             timeout_seconds=310.0,
         )
-    except Exception:  # noqa: BLE001
-        pass
 
-
-_register()
-
-__all__ = ["office_pick"]
+__all__ = ["office_pick", "register_static_tools"]

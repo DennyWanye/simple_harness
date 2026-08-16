@@ -1,0 +1,704 @@
+{
+  "manifest_sha256": "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf",
+  "migrations": [
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "agent",
+      "new_hash": "a1195dc4e92b1ff3f27cb7a438d30d90e512108d1c3bb0609676bc1ac02f844d",
+      "old_hash": "2ead5ba590dbda695c02166aa206a8a55bc03f9fd61c081537ddf48af37a95d3",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$",
+        "$.properties.subagents.items"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "agent_parallel",
+      "new_hash": "9d9f24012b85137613cabc5f10c976ee27a1b9f6ce389898a66b5150151061f0",
+      "old_hash": "75a6ee6cd2f4af3b156757006828239e6dc5fe6479c3a52f753decd9c9513ec2",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "agent_reach_doctor",
+      "new_hash": "397c2828a57d092ce8c024283c6e5995a417628e240c1f497ae311ed1e059548",
+      "old_hash": "bc97cfd4d856a3d1c222c6af195d1d3985b7f878d94639b79a1433fbd53ba7f2",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "agent_reach_read",
+      "new_hash": "5731cb6a700bd09261eaa0a42913e56d992efc5ede030e9228cf27e12f7601b3",
+      "old_hash": "ebd26808f309d13939ba611163500a7032a23340d84a236d980dcfd8c30f4072",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "app_discover",
+      "new_hash": "d5cc7cec9fc28496c28d782741fecb54823e6e0b6981e8dcdefa5055ad0acc4d",
+      "old_hash": "aa1e6c96e30e100663d0f11aa0fe7fa795861623356418ea0a9284bad907e929",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "environment_map_to_bounded_key_value_array;closed_object_contract",
+      "name": "app_launch",
+      "new_hash": "25333d5eb5ef86cbe1eca3fd3e83b517112ba3e13f774b9cc2f20254ad60f540",
+      "old_hash": "96abc23a0f05e53302a99b3b0d59321c611ab894a9f9dfabeafe65920517f3e8",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "await_subagents",
+      "new_hash": "aa6aabf1681c01609a43bae33c470a1d5cebd3cfa7c60a87deb73b14d5572f1e",
+      "old_hash": "00a99f2440c39427d2104f5210a191456dab09be5a46d742ca5ff79ed2752b01",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [],
+      "disposition": "open_object_to_bounded_key_value_json_array",
+      "name": "capability_build",
+      "new_hash": "004e5928ee7f791e651431132a0e79d621ffeb41709a4aeac9ae5c07086cccd4",
+      "old_hash": "ecebddad407b3ec51c2abacc95053bc640d72371d075648ce2b99b3a04e2a61b",
+      "spec_version": "capability-builder-1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [],
+      "disposition": "failure_receipt_ref:regex_to_exact_length_handler_validation",
+      "name": "capability_repair",
+      "new_hash": "776c67a2096813144ae572d0824dfbe11c91667b917b1876a12ea1a8366601b5",
+      "old_hash": "773d04fe36ff766d8b744e15441e5c48b969b08a986c51a0bd5ea2f33e87ad8e",
+      "spec_version": "capability-builder-1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "desktop_create_file",
+      "new_hash": "02fb2b7d0cb8566e5f6e6421180e8f4f01ae95fbca6c3e0d2782d32f77f28346",
+      "old_hash": "095996ca999ed95763ecd6fb108604980552b87b40af01216d89cc771cbbe1f7",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "spec_union_to_bounded_json_string;closed_object_contract",
+      "name": "doc_create",
+      "new_hash": "ec8b0e0fcc50b67a942b459b104266cb6ae1edc8a53d03c5d06cc485769370d9",
+      "old_hash": "5b4307a3a796f35920aab464aab2c345f7de8c4a95a2812bec32e05444abce1c",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "ops_union_to_bounded_json_string;closed_object_contract",
+      "name": "doc_edit",
+      "new_hash": "11e5bada1af3127f2fe883a6c7ef410139dff6b45b28a6cdb734340fb4bb6982",
+      "old_hash": "4d5f078577ff3724d397872b710418178d0295a10ef1b7ac8cc77b3646a5847f",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "doc_read",
+      "new_hash": "71d244024de56c7a89834421b1cfe23e65fcafe7b7802839a3b77ac8f5a0a15d",
+      "old_hash": "12d47fdc71188ca5bcbc5623306265a1c7091f39638582f00ede61afc91160f2",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "expected_sha256:regex_to_exact_length_handler_validation;closed_object_contract",
+      "name": "download_file",
+      "new_hash": "ed125416d2abf66d746c45caed187c59b23d37575607934d976d219ce75b7aa1",
+      "old_hash": "db2637e4224505bea2290e8797efdb6035e6be5890164dc7adc50b49f1af8280",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "edit_file",
+      "new_hash": "a4fb38350204cff86a7f0d2e489061489829c5a3de5b4efa177e27b3d432f205",
+      "old_hash": "16d7ce43dd752f83fe9cd337edf099d84b7d9a8a9bd3d04facd26b895fb9ef15",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "spec_union_to_bounded_json_string;closed_object_contract",
+      "name": "excel_create",
+      "new_hash": "47d71641442710bc9fa9c4a785a3615fb525259dd9eccb12d53e228e143eb387",
+      "old_hash": "34fe517b1625254b281868dc4bdcfcb1e26dc399482e49ae9076e986368412d2",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "fetch_tool_result",
+      "new_hash": "b571eacf15452be07799cb9153e04c719e58ec77790b9fe8a10316de46c8fc58",
+      "old_hash": "4f5f270e20a1525d5cb3c7f4c84a866c85ff3c39603cb751bdfa79b46f9b259d",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "file_glob",
+      "new_hash": "3d4c35372b9162166221623aba2fc5bc82305c071934a9ab04508ae20db1f012",
+      "old_hash": "5ce11cf7f67299258f9a4b7ef64ef0c7d5611688027bea7deb52a379e1eeb9d6",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "file_grep",
+      "new_hash": "48b29fff3e2a3f4d8fe301e303b166bd4a5ce07e3fd76c4136e0ec8336842b93",
+      "old_hash": "e9baada34ba39f50fae863902f07cfa04ce5eade73378b68e80e0e67ef522b43",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "file_organize",
+      "new_hash": "2d0a869362d4ddec9d3fa1fc615a9b0c76ee88a2e930dc2d82c8770a63f56887",
+      "old_hash": "7a1794e602607c32767fca6ca4908746346dc6e07a6a36a151641de08d347d54",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "file_read",
+      "new_hash": "bcd0804d62566503ff84f9a4039f0c2aa4e2a77e829834287770ffe292978d56",
+      "old_hash": "eaf837dde75fb2335ce468dd0f09bfd5f0a5ddb9ff38f27c54b38a213f34ed89",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "file_write",
+      "new_hash": "8a7052e37728d9d8596276ca0a40d5d0ba0e343149a24a505d30371eadf75c4e",
+      "old_hash": "80b302f5d55d2cf081895a0fb269300fa0b0f44448819330e3967b22c0ebf5a7",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "generate_image",
+      "new_hash": "6a40e9f9479182e1041eef9bc081357cb271f01e57914f753564abfa61d4fb84",
+      "old_hash": "aee8ca562c1328c8aca2192bb33781e5813ce7045a6fb513aa910555eb6c03bf",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "glob",
+      "new_hash": "9f7cc72f6c374cda846c635da84e5a38547013ce2b8c93fe090252f068d62525",
+      "old_hash": "5568ac77ac37a1599cd946e4a6d8f79c44ac6e606703a3521db3c8c5d0abf90c",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "gold_price_lookup",
+      "new_hash": "6456691a80c965e4081d069d6580d138828046fe577ce2a54bb4bdeb484138db",
+      "old_hash": "1b7b51720475d1dfce10d261778fd5b84fc4ae6c964c2078c56bd1b43c550392",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "grep",
+      "new_hash": "7ee67952b417ad9401d435a26cd97c1353ee52e11462ea892fc2db8d2363f167",
+      "old_hash": "6592e9a3c5dca8d87b4c4d3d21ddc476dad181bb1bfe56e246f88872c02a6e28",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "image_ocr",
+      "new_hash": "9a9192bd0ac5659f6cfeff756f4bcf6e5116819ccbcf8c45b4aa6f2c52d0df56",
+      "old_hash": "1fd0b3d0bf53c5766797682d2eb6490a62570d6a81593fdcfbcb7645e2deb953",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "list_directory",
+      "new_hash": "3650af6f935361a0e6baf31393c6dd68898b5a8a2ce2b8b080f75d51b8bb65ef",
+      "old_hash": "872313268196ce8a6bf2394c8bf0c50d222dfa01f89e340457035428ef1d1123",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "memory_forget",
+      "new_hash": "e0f5b49410e8c610555a03df55dc7b4cd94240d1f0e0ed6e16b72c4f38c78156",
+      "old_hash": "a4d7a02f2c25652e5ba278ccce48c586203e226f8524215a78640392d4cee97a",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "memory_read",
+      "new_hash": "6dd215f28501fef367d3e133105eb67a295b7e039c272428fad23f946c507f2e",
+      "old_hash": "d5cb52a3065e5e7925f74de96d0f8f7a70d673be5e56413b8ffd4a63533a2fd1",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "memory_search",
+      "new_hash": "6add1fd1bdf35276662ea7ec29d948bd309485d3fbe08af236e2ca3a74bb840c",
+      "old_hash": "36f75ef6775393a81e3560370c22d821c1452a9fe925310e65a1a210c7ce7ea1",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "memory_write",
+      "new_hash": "189aa5c493d510aa3fd2ce4a658c25e86499bcb74154ed468a963abf2e6cb1f4",
+      "old_hash": "47c9d71baa1a4742b6f0e715f2c0625d92f9c77814f0992b9e1853360042a322",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "expected_source_hash:regex_to_exact_length_handler_validation;closed_object_contract",
+      "name": "move_file",
+      "new_hash": "4c4e2e2671da36d4b8cf702780171fbc13cc412d4e4535958914f70cf13bccc3",
+      "old_hash": "bf20c75c26a9578f405c8e6dd9f4d934d2065dd2db76d20fa964d2d52cfe6b64",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "office_pick_file",
+      "new_hash": "4c7dff68c32f57e8dde89fb789996af78415a56dd7f8ff1e3cc138005f0aedce",
+      "old_hash": "4349ac43c6417bd00e4c5578910edeac207ddf7c75dae0745edbf0f37bd03e16",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "pdf_export",
+      "new_hash": "81153240edb8a5efd169a611735c882790716431fa805c82c6edb7b2fda10848",
+      "old_hash": "22a31ecdf4100abdd5b948317af7f4718b889c38117e16c2027a95048594d070",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "outline_union_to_bounded_json_string;closed_object_contract",
+      "name": "ppt_create",
+      "new_hash": "25b5f621811214e7462108df3e8226d8702c0555ab3503091cbfa628c5e76b15",
+      "old_hash": "5f17fa4c05726d47c3f4fed77d803b69a6f46090136bbcf98aff568b8d319703",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "process_list",
+      "new_hash": "77b2b2dbad17df575e97b8baadc0127b6036fc9d5253846a2a69cd5aef74eb15",
+      "old_hash": "c09cdd164df92374b0232be94ac6217104c06a922c125bfa63eff057adf919cf",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "environment_map_to_bounded_key_value_array;closed_object_contract",
+      "name": "process_start",
+      "new_hash": "0acc0fc9ec58130275360d81f4cc8ca29d9f83732c8045ba50cedc9ae7fbd65c",
+      "old_hash": "6bae8807ff89a3e3dd37a5583784ed4a683889645b79700e8217df16cfff6a11",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "process_stop",
+      "new_hash": "c147b85c41194d817a0abe9cbf1ee7a7b787c8ce79195ff36e6900a57186de15",
+      "old_hash": "816af0a7d4d4d5fec3e8ef111c7935a70abcffdf0d64580e64aed000da1e9c61",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "process_wait",
+      "new_hash": "2b3bcb7da0211c479c5e24a9368aa0580bf68696bfb3990cf8079512fd83fd06",
+      "old_hash": "97a4cbe60ca67ea38932ed4c98f8681d45207dc2524f6ebf6f86c0ed651ed832",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "read_file",
+      "new_hash": "91cc15827b265f12292807593e96dafc99a1f5785c6197889bd25f43c9000ba4",
+      "old_hash": "1cdece8451598f883a67fc56108296cbd5810a6ad284d68650a8f2f8491fe657",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "register_artifacts",
+      "new_hash": "6f7e7346df8614aab2054c277e42a8ced8dab63c49e41c866560f08325189abd",
+      "old_hash": "43f9eec52f3093ac73fa68e0ef919052c9c94cfa0e7361b77c8d8fb6fe711f6d",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "run_browser_task",
+      "new_hash": "9c4d200f3d8eb682763aa0db92e64d92c5c80b8bb650a4d10f98a421bfe7b031",
+      "old_hash": "340c7310ddfbf94a2dd5cd53459c26b42a8afd1d05665eec4e1877b736d40c77",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "run_shell",
+      "new_hash": "7d22a7dfa2b8366d5da355ac4617e0637e2e4d6dd30b622d9795fe9ef08acdd5",
+      "old_hash": "628e99f3b67991896424028908071bdd397d7199af6e3a7f89884d920d0b1486",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "scrapling_fetch",
+      "new_hash": "9769b675cb1889cc229d870bea4f23fca84dafc43a3946ff8e77287a7be5b881",
+      "old_hash": "7bca26ce21ce7fa58eb3e1fa212cba970feb86983f1a5d68ce10a955d4737f30",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "screen_capture",
+      "new_hash": "a627949e20d56ee716b88bade112a16a93c1f182f5b91bd66a76c16216019db6",
+      "old_hash": "1491f419b268a17eaf13d2f148afc3de14a70f1941ccb601879f8ca9392e3327",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "screen_click",
+      "new_hash": "049add7dd85538f5e4feae2829f0e484a2f4e8e24a79e29d1c6582d1317b16be",
+      "old_hash": "e75c923542d188798f2480f4b6e0bfe57918856db00b1570838325062cdaeceb",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "screen_key",
+      "new_hash": "56e966b3832dd94b5451b5070ad98fb36feaa69b0e0fa183bdccab6b8565d0e2",
+      "old_hash": "9776cf02449136fb62b8454a244e9888721359d2d731bbe1ed84566d25d00d02",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "screen_move",
+      "new_hash": "8df4ab97ec3fea6a7bea30db97d073d64f93cce2323f37885b2002cadf06184a",
+      "old_hash": "8b943c7b1a4c4bcb83b426d961752fecac62552bf25f8c3b29dd120bd77b16e5",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "screen_scroll",
+      "new_hash": "692c47fa604a0bcf64edd6fd8cab488fdc2263d8082f7c756cb271ae249a0269",
+      "old_hash": "f06b64da20359a339ad37c0a2910073969859086fbf829c694fecdc4ad02389e",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "screen_type",
+      "new_hash": "ad2383a8512b95d03db5fabf951059ed0f164f616446505fe464f6d2046850eb",
+      "old_hash": "dd16c3036eefe2eaaac7384fe0e46eafb845767a6315fde0a2e46ee84bd6a273",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$",
+        "$.properties.subagents.items"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "spawn_subagents",
+      "new_hash": "f177e28f2e033cb92937fa518ebb25e3587a152313b9cd9cc61fb526c22a5f75",
+      "old_hash": "9fefcd37dbf81d3a2f2b9fc7c14c9211b6fdb05d9fc3840ce41857e6cc20074e",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "spawn_team",
+      "new_hash": "8bf514841f440604931934d6d0c8be170952d9d5a2bd773eeb68ee996dee9a0b",
+      "old_hash": "29b62d5bed9440a62cafc30f135eadae900a42505d22be5bf5defc64830d377e",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "todo_complete",
+      "new_hash": "ff16eea446074eed98c1b931c01b9d5e07f6f3b1db8eca36179faf42e06f39d4",
+      "old_hash": "f6bfa046228314ebd8a5ed2168f1d552eb3db301a66025ecd7380bf3285819e9",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$",
+        "$.properties.items.items"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "todo_write",
+      "new_hash": "3dcf0a087fc2f6e45690124ca47c179cc16a1aeb7f7fc191f52df85cf0fb324c",
+      "old_hash": "dccd3b2da966350d43ef02921d28936867adc3638c22b3c1041fe5f0e829f01e",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "tool_activate",
+      "new_hash": "271a9e0e242cea36a26aab1839060ba249937888406294d5261702eef4750afb",
+      "old_hash": "0ed7b00d883833ac48256edb8d9c47e3e0c5bc483d1c18cde31ede9d5d73b45f",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "tool_describe",
+      "new_hash": "c5c9b0a6d78c8723f3410d2dfe786dacdfa77467f757a30caa6df58e30a1ffa5",
+      "old_hash": "d1cb7d0e7b58a05c3a1bfad22cfe80f64f4992ffc434590eeff369bdf5256624",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "tool_search",
+      "new_hash": "8b04cf93cc141513f6793e4003ab850b0163840fc1879407f17d20c807f1a419",
+      "old_hash": "8ec79232fb9b3ad17cdb6dbf08e2eab25cb26cb833df912cd44843c5f2b6224d",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "web_crawl",
+      "new_hash": "53e67a0832e574daf7057c3a8ca58ae2c795f7c45247704991a66541566fd259",
+      "old_hash": "7b8d672a2a61605d8ae7de85903435d967f0a0ddd7ac6ca4970e9187b592beac",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "web_extract_article",
+      "new_hash": "bb93f16dced892dbaacbf4f8a2f461851a6ac9194a7636581d8267356621d138",
+      "old_hash": "98ebe2aa9750f0577665709f0b66716642dcccec84a75940656d4ab5f3fab5bf",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "web_fetch",
+      "new_hash": "91b41ec90c429af4202b8a655523dea0e266511d5cc0a369509953f67d88d3f2",
+      "old_hash": "bcaaec71b8fcbc9573d62c206d4869e9e6d5a9dfce30f78026c7af369817ef0f",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "web_read_sitemap",
+      "new_hash": "a6f223c3b9e9793bc1871dff08d110ec4714222b9edd0a4dde8429432c56cb60",
+      "old_hash": "1204641e222488ff9630add8d53ffd1ca74cd3a8fdf3a48bd198a3a4ff7dc5de",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "web_search",
+      "new_hash": "dde758e7911b71254d4aa4283a4cc5220f82e516cdec8a7c5b50ced8bb234c4c",
+      "old_hash": "5e8abc668c06f107086e2068556be6f1b620db09821a99e66475b695e9004f1d",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "exclusive_minimum_to_minimum_plus_handler_validation;closed_object_contract",
+      "name": "window_capture",
+      "new_hash": "ac58530739c964fb48b2a82eb51ff80c63427e2fff19f443095d44405ec7df7a",
+      "old_hash": "55555f3e597320c98606e3204388f39cebc7dcf81df0fa79248db4131e842da9",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "exclusive_minimum_to_minimum_plus_handler_validation;closed_object_contract",
+      "name": "window_focus",
+      "new_hash": "335d9a040fe7a16ab42abd58158aa8417d3d0104f74f163cb91b57e91ae87340",
+      "old_hash": "c1f46895d819c7714e4d5f9ad6d88b383bb1c60aab887f703ac6b25c422c2d0d",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$",
+        "$.properties.steps.items"
+      ],
+      "disposition": "exclusive_minimum_to_minimum_plus_handler_validation;closed_object_contract",
+      "name": "window_key",
+      "new_hash": "b0de6b80f7774ac56ff2a3ac4cd9741e25111ce013d93d1cec856924d61af193",
+      "old_hash": "c882aa5d3839e004fd0b5a33efdccc1ecfb87eb706f19571a714c478086a9771",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "window_list",
+      "new_hash": "ab1547ab63e1b5d8fc04db149cc931b98d684880721bc0452bb4951a623dfbca",
+      "old_hash": "5c70c4fde2f841b0b05571c3d5a3bacae816ba28d1ad45543b3c93d5f6e09a55",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [],
+      "disposition": "nullable_optional_string_to_optional_bounded_string",
+      "name": "workflow_spawn",
+      "new_hash": "437731fefffb51044f20a551b6bd39d17fa393d70349b844618c18441b32a923",
+      "old_hash": "f13003154bc96becc6f78d4fedb047af62456888ffb5280295e5991a129250ef",
+      "spec_version": "profiles-1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "workspace_recall",
+      "new_hash": "1902c0f3cb92e712ab13cd6714b3124d147872b96476951eadeb8cfc7453fe60",
+      "old_hash": "68e0977b22047f5e60f0b71f7da3bb854d3930b7fc1ed83054d5d4e1ba6cbe21",
+      "spec_version": "v1.sdk-schema-2"
+    },
+    {
+      "closed_object_paths": [
+        "$"
+      ],
+      "disposition": "closed_object_contract",
+      "name": "write_file",
+      "new_hash": "349a67dc5b8632d5bb5711b12d0d4b6b3127b6684ee6e81d2890351b6f5e5dc7",
+      "old_hash": "b97355eb46f3243aacb666cfe031a896875474677485d29e5f90927b60005476",
+      "spec_version": "v1.sdk-schema-2"
+    }
+  ],
+  "schema_version": 2
+}

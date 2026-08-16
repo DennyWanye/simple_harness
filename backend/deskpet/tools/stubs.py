@@ -21,9 +21,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .registry import registry
-
-
 def _stub_handler(slice_name: str):
     """Return a handler closure that reports the owning slice."""
 
@@ -40,7 +37,7 @@ def _stub_handler(slice_name: str):
 
 
 def _maybe_register(
-    name: str, toolset: str, schema: dict[str, Any], slice_name: str,
+    registry, name: str, toolset: str, schema: dict[str, Any], slice_name: str,
 ) -> None:
     """WI-T4.1 v3 守卫注册：name 已存在 → 跳过（真实现优先）.
 
@@ -113,6 +110,7 @@ _MEMORY_SEARCH_SCHEMA: dict[str, Any] = {
     },
 }
 
-_maybe_register("memory_write", "memory", _MEMORY_WRITE_SCHEMA, "T3.1")
-_maybe_register("memory_read", "memory", _MEMORY_READ_SCHEMA, "T3.1")
-_maybe_register("memory_search", "memory", _MEMORY_SEARCH_SCHEMA, "T3.1")
+def register_static_tools(registry) -> None:
+    _maybe_register(registry, "memory_write", "memory", _MEMORY_WRITE_SCHEMA, "T3.1")
+    _maybe_register(registry, "memory_read", "memory", _MEMORY_READ_SCHEMA, "T3.1")
+    _maybe_register(registry, "memory_search", "memory", _MEMORY_SEARCH_SCHEMA, "T3.1")

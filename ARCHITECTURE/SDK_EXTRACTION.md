@@ -1,8 +1,89 @@
-# Simple Harness SDK 提取架构基线
+# Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-13  
-> 代码基线：`122ec55989f8a77e023aeb44ba1b4dae1b694269`  
-> 状态：实施前基线；SDK 尚未创建，本文只记录当前生产事实、提取边界和已确认目标。
+> 最后校准：2026-08-16
+> 代码基线：`42fbbd0f1fd2e3cd8eeb44ba1b4dae1b694269`
+> 状态：SDK v0.1.1 immutable candidate 已 vendor/install；产品 B1/B2 closed-ingress composition 与 B3 可独立产品项已实现，B3 SDK metadata sidecar 仍 PENDING，真实 ingress cutover 未执行。
+
+## 0. 当前实施状态（2026-08-16）
+
+- SDK Slice A 后续发现 PPT durable interrupt 缺少 public atomic resolve/resume seam；本地 hotfix
+  提交 `f13a30a` 现生成 active `0.1.1` wheel
+  `simple_harness_sdk-0.1.1-py3-none-any.whl`，SHA-256 为
+  `48048ffbb827df15ae27efad67fa78d31302c9869381cb175d0d908c5f204e2f`。该 exact bytes 已通过
+  targeted 21 tests、SDK 全量 `1181 passed, 2 expected skips`、artifact/exact-wheel/build 10 tests
+  与双构建 byte-identical；candidate manifest SHA-256 为
+  `aa960d8219f941a8bc56cf75748bf7b105ed264c7248f2117d02c1dd0e38981b`。旧 wheel
+  `371ceb98...10d5` 的机器 receipt 已被此 hotfix 取代，active bytes 仍须补发新机器 receipt。
+  未创建 tag、push、dispatch 或 Release。
+- 独立仓库 `/Users/denny/projects/simple-harness-sdk` 的远端仍为
+  `0e38532`（本地现已前进到未推送的 `f13a30a`）。旧 v0.1.0 release identity 仍漂移：本地 `v0.1.0` tag 指向 `88e19eb`，远端
+  同名 tag 指向 `54b62f6`，GitHub Release 的 `BUILD_INFO.txt` 又声明 build commit 为
+  `88e19eb`。产品 vendored wheel 为
+  `backend/vendor/simple_harness_sdk-0.1.0-py3-none-any.whl`，SHA-256 是
+  `d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91`，并由
+  `backend/pyproject.toml:161-173` 与 `backend/uv.lock:7797-7804` 固定。该 bytes 可审计，
+  但 tag/commit/manifest 不一致使它不能关闭 SDK-AC-8。
+- 安装依赖不等于生产切换。当前真实启动链仍是
+  `backend/main.py:7878-8107 -> deskpet.harness.adapters.product_composition`
+  `:28-205 -> deskpet.harness.bootstrap:58-214`，由产品源码树中的
+  `RunKernel/ReActDriver/WorkflowDriver/SqliteExecutionUnitOfWork` 持有执行 authority。
+- Product Slice B 的 B1/B2 已形成 closed-ingress 基线：`runtime_paths.py` 只解析
+  `<user-data>/data/simple-harness-sdk/execution-v1.sqlite3`，校验 exact `0.1.1` wheel 的
+  version/SHA/direct-url origin，并拒绝 home/repo/evidence/symlink escape；`composition.py`
+  直接使用 SDK public Runtime 与真实 SQLite Database/UoW，提供串行 start/reconcile/recover/query/close、
+  failure cleanup、dependency re-read retry 和 close-during-start 屏障。dependency loader 创建的 product
+  resources 通过 typed closer bundle 转交 stack ownership，正常关闭和 partial failure 都按
+  Runtime → resources逆序 → SDK DB 清理且每项只关闭一次。完整成功后只发布 immutable
+  `ServiceContext.sdk_runtime_ready`；`main.py` 当前仅注册空 slot，text/voice/background ingress 仍保持旧链路，
+  因而这不是生产 cutover。workflow runner/registrations/closers 现只能由
+  `workflow_factory(database, uow)` 在 SDK Database/UoW 创建后构建，并显式核对同一 transaction owner；
+  `WorkflowFactoryResourceScope` 在 factory 返回前持有 partial resources，异常时逆序清理，成功
+  transfer 后再由 stack 接管；foreign owner、runtime start partial failure 与正常 close 均 fail closed/
+  逆序清理。B2/B3 聚焦测试当前为 `27 passed`。
+- Product Slice B B3 的产品侧已把 pre-cutover 79 个 reachable identity 显式收敛为 77 个 SDK Tool 与
+  `workflow.deep_research`/`workflow.presentation` 两个 Workflow profile。catalog 使用 checked-in
+  real metadata manifest（语义 SHA-256 `891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf`），
+  全部普通 object schema 均递归 closed；实际 70 个变更 Tool 的 old/new hash 已逐项固定，包含 14 项
+  specialized migration。其中 `app_launch`/`process_start.environment` 采用 SDK
+  0.1.1 可表达的 bounded key/value array，并在真实 handler adapter 处拒绝重复/越界后还原 map。
+  `deskpet.tools` import 不再 `pkgutil` 扫描；21 个 legacy static provider 模块均改成 import-pure
+  `register_static_tools(registry)`，新 SDK catalog 直接绑定真实 product handlers/factories。65 个 static
+  descriptor 已逐项在 fresh process 证明 resolve 不加载 config、legacy registry、compat sink、旧 harness/
+  workflows；即使新 catalog 先 resolve 全部 65 项，旧 closed-ingress main 仍显式重放 44 个 base
+  registrations 并恢复 79 reachable（含 `generate_image`/`ppt_create`/`ppt_pro`）。SDK ToolCall 的真实
+  `call_id` 进入旧 handler context/effect identity，写路径
+  resource fence 与相同 request 下不同 call 的 idempotency identity 已覆盖；新 stack 的
+  `await_subagents` 只调用 typed Host join port，不再导入旧 harness。六类代表
+  （sync/async/context/staged/control/provider）已真实调用；14 个 specialized schema migration 也已逐项
+  对照真实 handler 的 legacy shape 与 SDK migrated shape，environment 由 typed process double 实际观察
+  还原 map。B3/B2 聚焦为 `27 passed`，相邻 Tool/manifest 回归为 `47 passed`。全
+  `tests/sdk_adapters` 当前为 `90 passed, 1 failed`；唯一失败是并行 Workflow slice 的 fresh-process
+  import purity（`deskpet.workflows.__init__` 仍加载旧 contracts/definition），不属于 B2/B3 所有权。
+  **B3 仍为 PENDING**：当前 exact 0.1.1 public SDK 没有可承载/执行完整 effect/resource/parser/outcome/
+  control/lifecycle metadata 的 Tool inventory sidecar 合同，产品 manifest metadata 虽已保留但尚不能进入
+  SDK 执行决策；须等待新 wheel 提供 public sidecar/五态合同后接线与重验，不能把当前注册成功写成 B3 PASS。
+- exact 0.1.0 wheel 的 `simple_harness.testing.run_conformance_suite` 与 CLI 仍是占位：
+  `src/simple_harness/testing/__init__.py:24-39` 抛 `NotImplementedError`，
+  `testing/cli.py:154-171` 返回 `status=not_implemented`。因此当前不能把“1122 tests
+  passing”解释为消费者 conformance 或桌面 SDK 自用验收完成。
+- SDK 0.1.0 也尚不能驱动三个官方 Workflow 的真实消费者接入：sealed
+  `WorkflowRuntimeDriver` 未注入 durable-task/personal/capability Host ports，
+  `WorkflowContext` 会拒绝节点实际读取的 port 名；`personal_v1` 缺少 public definition/profile
+  factory，`capability_build` 只有 profile 常量。现有 immutable 0.1.0 不允许覆写，因此先形成
+  **v0.1.1 candidate**，在 tag/commit/BUILD_INFO/SHA256SUMS/wheel bytes 全一致且通过门禁后再发布。
+- 生产 composition 仍构造 `ModelPersonalWorkflowMatcher`（`backend/main.py:7881-7885`,
+  `:7968-7974`），与 SDK-AC-6 禁止 Personal 前置 matcher 的要求冲突；T6 cutover 必须删除该
+  production wiring，由同一个 `agent.general` 通过 frozen descriptor/catalog 选择。
+- 当前验收事实源仍是
+  `plans/2026-08-13-simple-harness-sdk/acceptance.md`。按其中 SDK-AC-6..8，下一
+  release slice 必须先闭合 Product Adapter、SDK Runtime ingress、schema v1/reset、旧
+  authority 退休与 conformance，再执行 `testcase/2026-08-13-simple-harness-sdk/manual-test.md`
+  的 SDK-S1..S5 桌面 E2E 与 SDK-S6..S7 自动化 fault/reopen/reconcile。直接在现状跑桌面
+  S1..S5 只会验证旧 Harness，不能关闭 SDK 门。
+- 下一安全顺序固定为：将上述 exact v0.1.1 wheel 安装进当前 Simple Harness App → 完成
+  Product Adapter/production composition 与 schema reset/reopen → 只在该 App 做 SDK-S1..S7
+  桌面/故障验收。Windows x64、Linux ARM64 同 bytes 远端复验以及发布仍须用户单独批准，
+  当前均为 `PENDING_OUT_OF_SLICE`。
 
 ## 1. 主要矛盾
 

@@ -174,6 +174,7 @@ service_context.register("workflow_service", None)
 service_context.register("run_execution_fence_acquirer", None)
 service_context.register("provider_invocation_coordinator", None)
 service_context.register("harness_public_read_service", None)
+service_context.register("sdk_runtime_ready", None)
 
 
 def _persist_supervisor_enabled(enabled: bool) -> bool:
@@ -454,7 +455,7 @@ _tool_capability_scope_store = None
 _tool_capability_resolver = None
 _automode_path = _Path(_paths.user_data_dir()) / "permissions_auto_mode.json"
 try:
-    from deskpet.tools.registry import registry as deskpet_tool_registry_v2
+    from deskpet.tools import registry as deskpet_tool_registry_v2
     from deskpet.tools.os_tools import register_os_tools as _register_os_tools_v2
     from deskpet.permissions.gate import (
         PermissionGate as _PermissionGate,
@@ -1889,14 +1890,14 @@ def _initialize_companion_action_decision_service() -> None:
                 _companion_store, _companion_detail_query
             ),
         )
-    if uow is not None and _harness_venue is not None:
+    if uow is not None and _sdk_ingress is not None:
         service_context.register(
             "companion_growth_action_decision_service",
             CompanionActionDecisionService(
                 identity_gate=_companion_identity_gate,
                 companion_store=_companion_store,
                 execution=SqliteExecutionDecisionRecovery(uow.path),
-                kernel_client=_harness_venue,
+                kernel_client=_sdk_ingress,
             ),
         )
 
@@ -4320,7 +4321,7 @@ async def lifespan(app: FastAPI):
         from deskpet.execution.tool_completion_latch_script import (
             ToolCompletionLatchScriptV1,
         )
-        from deskpet.tools.registry import registry as _runtime_tool_registry
+        from deskpet.tools import registry as _runtime_tool_registry
 
         _runtime_tool_registry.set_tool_completion_latch(
             ToolCompletionLatchScriptV1.from_environment()
@@ -5445,12 +5446,14 @@ async def lifespan(app: FastAPI):
         )
         from deskpet.workflows.effects import EffectJournal as _PersonalEffectJournal
 
+        # Import the actual ToolRegistry instance for personal_runtime_adapter
+        from deskpet.tools.registry import registry as _actual_tool_registry
         _workflow_service.runtime_adapters.register(
             build_personal_runtime_adapter(
                 journal=_PersonalEffectJournal(
                     _workflow_service.run_store.path
                 ),
-                tool_registry=deskpet_tool_registry_v2,
+                tool_registry=_actual_tool_registry,
                 run_start_snapshot_reader=(
                     _workflow_service.execution_uow.read_run_start_snapshot
                 ),
@@ -6345,23 +6348,34 @@ async def lifespan(app: FastAPI):
     except Exception as _mi_exc:  # noqa: BLE001
         logger.warning("model_context_startup_resolve_failed err=%s", _mi_exc)
 
-    # Task 13 startup order is fail-closed: Platform foundation exists before
-    # authority composition, while user catalog and Companion ingress remain
-    # closed until Harness registers the full core catalog and the durable
-    # cutover reconciler has proved every receipt.
-    await _initialize_capability_runtime()
-    await _initialize_growth_authority()
-    await _activate_product_harness()
-    await _complete_growth_authority_cutover()
-    await _initialize_companion_projection_services()
-    await _activate_companion_runtime_adapter_and_open_ingress()
-    _initialize_companion_action_decision_service()
+    if _sdk_desktop_test_enabled():
+        # This local acceptance mode exists to validate the new SDK itself.
+        # Do not make it depend on the legacy Workflow/Harness cutover gates.
+        _initialize_sdk_desktop_test_bridge()
+    else:
+        # Task 13 startup order is fail-closed: Platform foundation exists before
+        # authority composition, while user catalog and Companion ingress remain
+        # closed until Harness registers the full core catalog and the durable
+        # cutover reconciler has proved every receipt.
+        await _initialize_capability_runtime()
+        await _initialize_growth_authority()
+        # Slice C: Use SDK Runtime instead of legacy harness
+        await _activate_product_sdk_runtime()
+        await _complete_growth_authority_cutover()
+        await _initialize_companion_projection_services()
+        await _activate_companion_runtime_adapter_and_open_ingress()
+        _initialize_companion_action_decision_service()
     logger.info("startup complete")
     yield
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
     global _harness_accepting, _harness_runtime, _harness_venue
+    global _sdk_runtime_stack, _sdk_ingress
+    global _sdk_desktop_bridge
     _harness_accepting = False
+    # Close SDK Runtime ingress
+    if _sdk_ingress is not None:
+        _sdk_ingress.close()
     _pending_ingress = tuple(_companion_ingress_tasks)
     for _task in _pending_ingress:
         _task.cancel()
@@ -6404,6 +6418,25 @@ async def lifespan(app: FastAPI):
             return_exceptions=True,
         )
     _provider_workload_maintenance_tasks.clear()
+    if _sdk_desktop_bridge is not None:
+        try:
+            await _sdk_desktop_bridge.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("sdk_desktop_test_shutdown_failed", error=str(exc))
+        finally:
+            _sdk_desktop_bridge = None
+            service_context.register("sdk_runtime_ready", None)
+    # Close SDK Runtime Stack (Slice C)
+    if _sdk_runtime_stack is not None:
+        try:
+            await _sdk_runtime_stack.close()
+            logger.info("product_sdk_runtime_stopped")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("product_sdk_runtime_shutdown_failed", error=str(exc))
+        finally:
+            _sdk_runtime_stack = None
+            _sdk_ingress = None
+            service_context.register("sdk_runtime_ready", None)
     if _harness_runtime is not None:
         try:
             await _harness_runtime.close(timeout=5.0)
@@ -7858,16 +7891,57 @@ async def _build_product_agent_loop(request):
     )
 
 
+# Legacy harness globals (to be removed after full SDK cutover)
 _harness_runtime = None
 _harness_venue = None
 _harness_accepting = False
+
+# SDK Runtime globals (Slice C production ingress)
+_sdk_runtime_stack = None
+_sdk_ingress = None
+
+_sdk_desktop_bridge = None
+
+
+def _sdk_desktop_test_enabled() -> bool:
+    env_enabled = str(os.environ.get("DESKPET_SDK_DESKTOP_TEST") or "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    return env_enabled or (_paths.user_data_dir() / ".sdk-desktop-test").is_file()
+
+
+def _initialize_sdk_desktop_test_bridge() -> None:
+    """Install the narrow SDK desktop-test ingress without changing normal boots."""
+
+    global _sdk_desktop_bridge
+    if not _sdk_desktop_test_enabled():
+        return
+    provider_registry = service_context.get("provider_registry")
+    if provider_registry is None:
+        raise RuntimeError("SDK desktop test requires the product provider registry")
+    from deskpet.sdk_adapters.desktop_runtime import DesktopSdkRuntimeBridge
+
+    _sdk_desktop_bridge = DesktopSdkRuntimeBridge(
+        user_data_root=_paths.user_data_dir(),
+        provider_registry=provider_registry,
+        ready_publisher=lambda ready: service_context.register(
+            "sdk_runtime_ready", ready
+        ),
+    )
+    logger.info(
+        "sdk_desktop_test_bridge_ready",
+        sdk_version="0.1.1",
+        ingress="lazy",
+        tools=("process_list", "ppt_create"),
+    )
 
 
 def _trigger_harness_recovery_after_identity_bind() -> bool:
     """Retry durable Runs only after the process identity gate is open."""
 
-    runtime = _harness_runtime
-    reconciler = getattr(runtime, "reconciler", None)
+    if _sdk_ingress is None:
+        return False
+    reconciler = getattr(_sdk_ingress, "reconciler", None)
     trigger = getattr(reconciler, "trigger", None)
     if not callable(trigger):
         return False
@@ -8107,6 +8181,278 @@ async def _build_product_harness_stack(generation: int):
     )
 
 
+async def _build_product_sdk_runtime_stack(generation: int):
+    """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
+    import hashlib
+    from pathlib import Path
+
+    from simple_harness import RuntimeProfile
+    from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
+    from simple_harness.execution.delivery import DeliveryDispatcher
+    from simple_harness.execution.dispatch import ProviderInvocationCoordinator
+    from simple_harness.runtime import RuntimePorts, SqliteContextPort
+    from simple_harness.runtime.drivers import build_react_driver
+    from simple_harness.runtime.termination import TerminationLimits
+    from simple_harness.tools import EffectExecutor
+
+    from deskpet.sdk_adapters.composition import (
+        OwnedResourceCloser,
+        ProductSdkRuntimeStack,
+        SdkRuntimeBuildInputs,
+    )
+    from deskpet.sdk_adapters.runtime_paths import (
+        ProductRuntimePathsAdapter,
+        SdkCandidateIdentity,
+    )
+    from deskpet.sdk_adapters.provider import ProductProviderAdapter
+    from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+    from deskpet.sdk_adapters.tools import ProductToolsAdapter
+    from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
+    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+    from deskpet.sdk_adapters.context import ProductContextAdapter
+
+    # Verify required services
+    session_db = service_context.get("session_db")
+    capability_platform = service_context.get("capability_platform")
+    if session_db is None or capability_platform is None:
+        raise RuntimeError("SDK Runtime requires session_db and capability_platform")
+
+    # Load provider chain
+    provider_registry = service_context.get("provider_registry")
+    if provider_registry is None:
+        raise RuntimeError("SDK Runtime requires provider_registry")
+
+    chain = provider_registry.get_chain()
+    if not chain:
+        raise RuntimeError("Provider chain is empty")
+
+    provider_id = str(chain[0]["id"])
+
+    # Create HTTP client for provider
+    import httpx
+    client = httpx.AsyncClient()
+
+    # Build provider adapter
+    provider = ProductProviderAdapter(
+        provider_registry,
+        provider_id=provider_id,
+        client=client,
+        price_resolver=lambda _provider_id, _model: (0, 0, f"product-sdk-v{generation}"),
+    )
+
+    estimator = FrozenPriceEstimator(
+        provider.price_snapshot.version,
+        provider.target.pricing_key,
+        provider.price_snapshot.input_micros_per_million,
+        provider.price_snapshot.output_micros_per_million,
+    )
+    budget_policy = BudgetPolicy()
+
+    # Build ReAct driver
+    driver = build_react_driver(
+        limits=TerminationLimits(max_turns=25, max_tool_calls=50),
+        budget_policy=budget_policy,
+        estimator=estimator,
+    )
+
+    # Build tool adapter
+    from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from types import SimpleNamespace
+
+    # Build tool catalog dependencies
+    todo_session_db = service_context.get("session_db")
+    workflow_service = service_context.get("workflow_service")
+    context_page_store = service_context.get("context_page_in_store")
+    memory_query = service_context.get("memory_recall_query")
+    memory_scope_resolver = service_context.get("memory_recall_scope_resolver")
+    search_gateway = service_context.get("search_gateway")
+
+    # Create a minimal capability bridge service for SDK tool catalog
+    # The SDK Runtime doesn't need full capability activation support
+    class _MinimalCapabilityBridge:
+        def search(self, query: str, *, limit: int = 10, cursor: int = 0) -> dict:
+            return {"tools": [], "total": 0, "cursor": 0}
+        def describe(self, capability_id: str, schema_hash: str, nonce: str) -> dict:
+            return {}
+        def suggestions(self) -> list:
+            return []
+        def activate(self, capability_id: str, schema_hash: str, nonce: str, grant: dict) -> dict:
+            raise RuntimeError("SDK Runtime does not support capability activation")
+
+    # Create execution context getter
+    def execution_context_getter():
+        return SimpleNamespace(
+            session_id="sdk-session",
+            request_id="sdk-request",
+            scope_id="sdk-scope",
+        )
+
+    dependencies = ToolCatalogDependencies(
+        todo_session_db=todo_session_db,
+        workflow_service_provider=lambda: workflow_service,
+        context_page_store=context_page_store,
+        execution_context_getter=execution_context_getter,
+        memory_query=memory_query,
+        memory_scope_resolver=memory_scope_resolver,
+        capability_bridge_service=_MinimalCapabilityBridge(),
+        search_gateway=search_gateway,
+    )
+
+    catalog = build_explicit_product_tool_catalog(dependencies)
+    tools_adapter, tool_inventory = build_product_tool_registry(catalog.registrations)
+
+    # Build authorization system
+    from deskpet.product_state.database import ProductStateDatabase
+    from deskpet.product_state.authorization_saga import (
+        AuthorizationSagaRepository,
+        AuthorizationSagaIdentity,
+    )
+    from deskpet.product_state.task_grants import DurableTaskGrantAuthority
+    from deskpet.types.task_grants import TaskGrant
+    from simple_harness.tools import AuthorizationResult, AuthorizationDecision
+    import time
+
+    # Create product state database for SDK Runtime
+    product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
+    product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
+    product_state_db = ProductStateDatabase(product_state_db_path)
+    product_state_db.initialize()
+
+    # Create authorization saga repository
+    repository = AuthorizationSagaRepository(product_state_db, owner_id=f"sdk-runtime-g{generation}")
+
+    # Create authorization policy (simple allow-all for SDK Runtime)
+    class _SdkAuthorizationPolicy:
+        async def decide(self, prepared, *, request):
+            return AuthorizationResult(
+                AuthorizationDecision.ALLOW,
+                receipt_ref=f"sdk-policy:{prepared.effect_id.value}"
+            )
+
+    # Create grant factory
+    def grant_factory(prepared, result):
+        import hashlib
+        fingerprint = hashlib.sha256(prepared.effect_id.value.encode()).hexdigest()
+        return TaskGrant(
+            task_grant_id=f"sdk-grant:{fingerprint}",
+            root_run_id=prepared.run_id.value,
+            principal_id="sdk-runtime",
+            resource_selectors=(),
+            permission_categories=("read_file", "write_file", "network"),
+            effect_kinds=("read", "write"),
+            source="policy:sdk",
+            policy_generation=generation,
+            expires_at=time.time() + 8 * 60 * 60,  # 8 hours
+            version=1,
+        )
+
+    # Create identity factory
+    def identity_factory(prepared, request):
+        import hashlib
+        effect = prepared.effect_id.value
+        call = prepared.call.call_id.value
+        fingerprint = hashlib.sha256(effect.encode()).hexdigest()
+        grant = grant_factory(prepared, None)
+        return AuthorizationSagaIdentity(
+            authorization_id=f"sdk-auth:{fingerprint}",
+            principal_id="sdk-runtime",
+            session_id=prepared.request_id.value,
+            root_run_id=prepared.run_id.value,
+            run_id=prepared.run_id.value,
+            call_id=call,
+            effect_id=effect,
+            tool_name=prepared.call.name,
+            arguments=dict(prepared.call.arguments),
+            capability_hash="0" * 64,
+            schema_hash="0" * 64,
+            scope_hash="0" * 64,
+            grant_id=grant.task_grant_id,
+            grant_version=grant.version,
+            grant_fingerprint=grant.fingerprint,
+            policy_generation=generation,
+            decision_nonce=request.nonce if request is not None else f"allow:{fingerprint}",
+            decision_version=0,
+            run_lease_epoch=1,
+            execution_lease_epoch=1,
+        )
+
+    # Build authorization adapter
+    authorization_adapter = ProductAuthorizationAdapter(
+        repository,
+        policy=_SdkAuthorizationPolicy(),
+        identity_factory=identity_factory,
+        grant_authority=DurableTaskGrantAuthority(product_state_db),
+        grant_factory=grant_factory,
+        clock=time.time,
+    )
+
+    # Build reconciliation adapter
+    reconciliation_adapter = ProductReconciliationAdapter(repository)
+
+    # Build delivery adapter (no parameters needed)
+    delivery_adapter = ProductDeliveryAdapter()
+
+    # Create a simple Noop reconciliation for general reconciliation port
+    class _NoopReconciliation:
+        async def reconcile(self):
+            return None
+
+    def ports_factory(database, uow):
+        context = SqliteContextPort(database)
+        effects = EffectExecutor(
+            uow=uow,
+            registry=tools_adapter,  # tools_adapter is already a ToolRegistry
+            authorization=authorization_adapter,
+            reconciliation=reconciliation_adapter,
+        )
+        provider_port = ProviderInvocationCoordinator(
+            uow=uow,
+            provider=provider,
+            budget_policy=budget_policy,
+            estimator=estimator,
+        )
+        return RuntimePorts(
+            provider=provider_port,
+            tools=effects,
+            authorization=authorization_adapter,
+            context=context,
+            delivery=DeliveryDispatcher(uow, {"product": delivery_adapter}),
+            tool_reconciliation=reconciliation_adapter,
+            reconciliation=_NoopReconciliation(),
+            provider_reconciliation=_NoopReconciliation(),
+            react_checkpoint=uow,
+            tool_catalog=tools_adapter,
+            owner_id=f"deskpet-product-sdk-g{generation}",
+        )
+
+    # Locate SDK wheel
+    wheel = (
+        Path(__file__).resolve().parent
+        / "vendor"
+        / "simple_harness_sdk-0.1.1-py3-none-any.whl"
+    )
+    wheel_sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
+
+    # Build SDK Runtime Stack
+    stack = ProductSdkRuntimeStack(
+        paths=ProductRuntimePathsAdapter(_paths.user_data_dir()),
+        candidate_identity=SdkCandidateIdentity("0.1.1", wheel_sha256, wheel),
+        dependency_loader=lambda: SdkRuntimeBuildInputs(
+            profiles={"agent.general": RuntimeProfile("agent.general", "react")},
+            drivers={"react": driver},
+            ports_factory=ports_factory,
+            workflow_catalog_digest=f"product-sdk-catalog-g{generation}",
+            owned_resources=(OwnedResourceCloser("provider-http", client.aclose),),
+        ),
+        ready_publisher=lambda ready: service_context.register(
+            "sdk_runtime_ready", ready
+        ),
+    )
+
+    return stack
+
+
 async def _issue_product_harness_host(
     session_id: str,
     *,
@@ -8292,8 +8638,10 @@ async def _snapshot_context_usage_basis_for_run(
 
 
 async def _voice_run_host(session_id: str):
-    host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-        session_id, workspace=None
+    if _sdk_ingress is None:
+        raise RuntimeError("SDK Runtime is unavailable")
+    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+        session_id=session_id, workspace=None
     )
     return host
 
@@ -8306,10 +8654,10 @@ async def _cancel_product_harness_run(
 ) -> bool:
     """Cancel one authenticated Run without consulting a process-local task map."""
 
-    if not _harness_accepting or _harness_runtime is None or not run_id:
+    if _sdk_ingress is None or not _sdk_ingress.accepting or not run_id:
         return False
-    host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-        session_id,
+    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+        session_id=session_id,
         workspace=None,
         # Cancellation authenticates the persisted Run through session,
         # principal and auth epoch.  It must remain available when the bound
@@ -8318,7 +8666,7 @@ async def _cancel_product_harness_run(
         allow_provider_unavailable=True,
         allow_workspace_unavailable=True,
     )
-    await _harness_runtime.run_client.cancel(
+    await _sdk_ingress.require_ready().client.cancel(
         {"run_id": run_id, "expected_session_id": session_id},
         host,
         reason,
@@ -8351,34 +8699,38 @@ async def _product_harness_has_live_attached_child(
     Active-budget enforcement no longer consults this presentation-layer
     helper. Durable waiting transitions pause the root budget directly, and
     RunKernel owns cancellation when the active budget is actually exhausted.
+
+    TEMPORARILY DISABLED: kernel access needs SDK Runtime adapter update.
     """
-
-    if not _harness_accepting or _harness_runtime is None or not run_id:
-        return False
-    from deskpet.execution.contracts import (
-        AttachmentPolicy,
-        RunRef,
-        TERMINAL_RUN_STATUSES,
-    )
-
-    host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-        session_id,
-        workspace=None,
-    )
-    actor = host.actor(root_run_id=run_id)
-    parent_ref = RunRef(run_id, session_id)
-    kernel = _harness_runtime.kernel
-    links = await kernel._uow.list_child_links(parent_ref, actor)
-    for link in links:
-        if link.attachment_policy is AttachmentPolicy.DETACHED:
-            continue
-        child = await kernel._query(
-            RunRef(link.child_run_id, session_id),
-            actor,
-        )
-        if child.status not in TERMINAL_RUN_STATUSES:
-            return True
+    # TODO: Re-enable when SDK Runtime provides kernel access through ingress
     return False
+
+    # if _sdk_ingress is None or not _sdk_ingress.accepting or not run_id:
+    #     return False
+    # from deskpet.execution.contracts import (
+    #     AttachmentPolicy,
+    #     RunRef,
+    #     TERMINAL_RUN_STATUSES,
+    # )
+    #
+    # host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+    #     session_id=session_id,
+    #     workspace=None,
+    # )
+    # actor = host.actor(root_run_id=run_id)
+    # parent_ref = RunRef(run_id, session_id)
+    # kernel = _sdk_ingress.kernel
+    # links = await kernel._uow.list_child_links(parent_ref, actor)
+    # for link in links:
+    #     if link.attachment_policy is AttachmentPolicy.DETACHED:
+    #         continue
+    #     child = await kernel._query(
+    #         RunRef(link.child_run_id, session_id),
+    #         actor,
+    #     )
+    #     if child.status not in TERMINAL_RUN_STATUSES:
+    #         return True
+    # return False
 
 
 async def _signal_product_harness_decision(
@@ -8388,8 +8740,8 @@ async def _signal_product_harness_decision(
 ):
     """Apply one fenced UI decision to the durable execution authority."""
 
-    if not _harness_accepting or _harness_runtime is None:
-        raise RuntimeError("Harness decision ingress is closed")
+    if _sdk_ingress is None or not _sdk_ingress.accepting:
+        raise RuntimeError("SDK Runtime decision ingress is closed")
     run_id = str(payload.get("run_id") or "").strip()
     decision_id = str(
         payload.get("decision_id") or payload.get("request_id") or ""
@@ -8398,11 +8750,11 @@ async def _signal_product_harness_decision(
     version = payload.get("version")
     if not run_id or not decision_id or not nonce or version is None:
         raise ValueError("decision response requires run_id/decision_id/nonce/version")
-    host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-        session_id,
+    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+        session_id=session_id,
         workspace=None,
     )
-    receipt = await _harness_runtime.run_client.signal(
+    receipt = await _sdk_ingress.require_ready().client.signal(
         {"run_id": run_id, "expected_session_id": session_id},
         host,
         {
@@ -8412,7 +8764,7 @@ async def _signal_product_harness_decision(
             "response": response,
         },
     )
-    _harness_runtime.reconciler.trigger()
+    _sdk_ingress.trigger_reconciler()
     return receipt
 
 
@@ -8544,11 +8896,11 @@ async def _run_product_harness_continuation(
     workflow_service = service_context.get("workflow_service")
     execution_uow = getattr(workflow_service, "execution_uow", None)
     if (
-        not _harness_accepting
-        or _harness_runtime is None
+        _sdk_ingress is None
+        or not _sdk_ingress.accepting
         or execution_uow is None
     ):
-        raise RuntimeError("Harness continuation ingress is closed")
+        raise RuntimeError("SDK Runtime continuation ingress is closed")
     projection = await execution_uow.get_task_run_projection(root_run_id)
     boundary = await execution_uow.get_conversation_boundary(root_run_id)
     if (
@@ -8563,11 +8915,11 @@ async def _run_product_harness_continuation(
             "continuation root/task/session identity does not match"
         )
     message_ref = f"request:{request_id}"
-    host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-        session_id,
+    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+        session_id=session_id,
         workspace=None,
     )
-    receipt = await _harness_runtime.run_client.signal(
+    receipt = await _sdk_ingress.require_ready().client.signal(
         {
             "run_id": root_run_id,
             "expected_session_id": session_id,
@@ -8789,9 +9141,9 @@ async def _commit_product_preflight_block(
 
     from deskpet.harness.kernel import root_run_identity
 
-    if _harness_runtime is None:
-        raise RuntimeError("Harness runtime is unavailable")
-    handle = await _harness_runtime.run_client.start_blocked(
+    if _sdk_ingress is None:
+        raise RuntimeError("SDK Runtime is unavailable")
+    handle = await _sdk_ingress.require_ready().client.start_blocked(
         {
             "text": text,
             "request_id": request_id,
@@ -8822,9 +9174,96 @@ async def _commit_product_preflight_block(
     }
     await websocket.send_json(started)
     await _broadcast_default_chat_peers(websocket, started)
-    _harness_runtime.reconciler.trigger()
+    _sdk_ingress.trigger_reconciler()
     async for _event in handle.events:
         pass
+
+
+async def _run_sdk_desktop_chat(
+    websocket,
+    text: str,
+    session_id: str,
+    *,
+    client_request_id: str | None,
+    client_turn_id: str | None,
+) -> None:
+    """Present one real SDK ReAct Run through the existing desktop protocol."""
+
+    bridge = _sdk_desktop_bridge
+    if bridge is None:
+        raise RuntimeError("SDK desktop test bridge is unavailable")
+    request_id = str(client_request_id or "").strip() or uuid.uuid4().hex
+    turn_id = str(client_turn_id or client_request_id or "").strip() or uuid.uuid4().hex
+    run_id = bridge.run_id_for(session_id, request_id, turn_id)
+    task_scope_id = f"sdk-desktop:{run_id}"
+    reserved = {
+        "type": "chat_v2_run_reserved",
+        "payload": {
+            "session_id": session_id,
+            "run_id": run_id,
+            "request_id": request_id,
+            "turn_id": turn_id,
+            "task_scope_id": task_scope_id,
+            "projection_version": 0,
+        },
+    }
+    await websocket.send_json(reserved)
+    await _broadcast_default_chat_peers(websocket, reserved)
+    echo = {
+        "type": "chat_v2_user_echo",
+        "payload": {
+            "session_id": session_id,
+            "text": text,
+            "request_id": request_id,
+            "turn_id": turn_id,
+            "run_id": run_id,
+            "task_scope_id": task_scope_id,
+        },
+    }
+    await _broadcast_default_chat_peers(websocket, echo)
+    started = {
+        "type": "chat_v2_run_started",
+        "payload": {
+            "session_id": session_id,
+            "run_id": run_id,
+            "request_id": request_id,
+            "turn_id": turn_id,
+            "task_scope_id": task_scope_id,
+            "projection_version": 0,
+        },
+    }
+    await websocket.send_json(started)
+    await _broadcast_default_chat_peers(websocket, started)
+    result = await bridge.run_chat(
+        text=text,
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=turn_id,
+    )
+    logger.info(
+        "sdk_desktop_test_run_completed",
+        run_id=result.run_id,
+        state=result.state,
+        tools=result.tool_names,
+    )
+    await _send_chat_final(
+        websocket,
+        {
+            "type": "chat_v2_final",
+            "payload": {
+                "text": result.text,
+                "session_id": session_id,
+                "run_id": result.run_id,
+                "request_id": request_id,
+                "turn_id": turn_id,
+                "task_scope_id": task_scope_id,
+                "sdk_version": "0.1.1",
+                "tool_names": list(result.tool_names),
+            },
+        },
+        session_id=session_id,
+        request_id=request_id,
+    )
 
 
 async def _run_product_harness_chat(
@@ -8839,13 +9278,23 @@ async def _run_product_harness_chat(
 ) -> None:
     """The single production chat ingress into ProductVenue/RunKernel."""
 
+    if _sdk_desktop_test_enabled():
+        await _run_sdk_desktop_chat(
+            websocket,
+            text,
+            session_id,
+            client_request_id=client_request_id,
+            client_turn_id=client_turn_id,
+        )
+        return
+
     from deskpet.execution.run_block_signals import (
         PreflightBlocked,
         RootBlockReasonV1,
     )
 
-    if not _harness_accepting or _harness_venue is None:
-        raise RuntimeError("Harness ingress is closed")
+    if _sdk_ingress is None or not _sdk_ingress.accepting:
+        raise RuntimeError("SDK Runtime ingress is closed")
     session_db = service_context.get("session_db")
     vector_worker = service_context.get("vector_worker")
     user_message_id = None
@@ -8905,18 +9354,19 @@ async def _run_product_harness_chat(
                 error=str(exc),
             )
     try:
-        host, provider, provider_chain, provider_snapshot = (
-            await _issue_product_harness_host(
-                session_id,
-                workspace=workspace,
-            )
+        host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+            session_id=session_id,
+            workspace=workspace,
         )
+        provider = _provider
+        provider_chain = _providers
+        provider_snapshot = _provider_snapshot
     except Exception as exc:
         from llm.resolution import SessionProviderUnavailable
 
         if isinstance(exc, PreflightBlocked):
-            host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-                session_id,
+            host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+                session_id=session_id,
                 workspace=workspace,
                 allow_workspace_unavailable=True,
             )
@@ -8933,8 +9383,8 @@ async def _run_product_harness_chat(
             return
         if not isinstance(exc, SessionProviderUnavailable):
             raise
-        host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-            session_id,
+        host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+            session_id=session_id,
             workspace=workspace,
             allow_provider_unavailable=True,
         )
@@ -8956,10 +9406,9 @@ async def _run_product_harness_chat(
         )
         return
     frozen_session_binding = _snapshot_context_usage_binding_for_run(host)
-    retry_handle = (
-        await _harness_runtime.run_client.resume(request_id, turn_id, host)
-        if turn_id and _harness_runtime is not None else None
-    )
+    # TODO: SDK Runtime client.resume() method not yet implemented
+    # This is only needed for retry/resume scenarios (when turn_id is provided)
+    retry_handle = None  # await _sdk_ingress.require_ready().client.resume(request_id, turn_id, host) if turn_id else None
     frozen_context_usage_basis_sample_id = (
         None
         if retry_handle is not None
@@ -9092,7 +9541,7 @@ async def _run_product_harness_chat(
     )
     session = None
     try:
-        outcome = await _harness_venue.open(
+        outcome = await _sdk_ingress.open_venue(
             turn,
             host,
             services=service_context.snapshot(),
@@ -9111,8 +9560,7 @@ async def _run_product_harness_chat(
             domain_sink=sink,
             provider_launch_snapshot=provider_snapshot,
         )
-        if _harness_runtime is not None:
-            _harness_runtime.reconciler.trigger()
+        _sdk_ingress.trigger_reconciler()
         from deskpet.harness.adapters.venues import ProductVenueRunResult
 
         if isinstance(outcome, ProductVenueRunResult):
@@ -9307,6 +9755,7 @@ async def _enqueue_auto_resume_hint(sid: str, messages: list[dict]) -> None:
 
 
 async def _activate_product_harness() -> None:
+    """Legacy harness activation (to be removed after SDK cutover)."""
     global _harness_accepting, _harness_runtime, _harness_venue
 
     from deskpet.workflows.store import RuntimeActivationCommand
@@ -9360,12 +9809,98 @@ async def _activate_product_harness() -> None:
     )
 
 
-async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
-    """Bind background Runs before opening the sole product ingress."""
+async def _activate_product_sdk_runtime() -> None:
+    """Activate SDK Runtime Stack and ingress (Slice C production)."""
+    global _sdk_runtime_stack, _sdk_ingress
 
-    global _harness_accepting
-    if _harness_runtime is None:
-        raise RuntimeError("product Harness is unavailable")
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from deskpet.workflows.store import RuntimeActivationCommand
+
+    workflow_service = service_context.get("workflow_service")
+    if workflow_service is None:
+        raise RuntimeError("workflow service is required for SDK Runtime activation")
+    uow = workflow_service.execution_uow
+
+    await uow.initialize()
+    state = await uow.get_runtime_state()
+    if state.phase == "legacy":
+        state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
+    if state.phase == "draining":
+        while lease := await uow.activate_runtime(command=RuntimeActivationCommand.claim(
+            f"deskpet-sdk:{os.getpid()}", lease_seconds=30.0
+        )):
+            try:
+                ref = lease.ref
+                launcher = getattr(workflow_service, "launcher", None)
+                if ref.source_kind == "workflow_run" and launcher is not None:
+                    await launcher.recover_pending(only_run_ids={ref.source_run_id})
+                if ref in await uow.scan_legacy_drain_manifest():
+                    raise RuntimeError(
+                        f"legacy durable run is still active: {ref.source_kind}/{ref.source_run_id}"
+                    )
+            except BaseException as exc:
+                await uow.activate_runtime(command=RuntimeActivationCommand.settle(
+                    lease, error=f"{type(exc).__name__}: {exc}"
+                ))
+                raise
+            if await uow.activate_runtime(
+                command=RuntimeActivationCommand.settle(lease)
+            ) is not True:
+                raise RuntimeError("legacy drain lease was lost before settlement")
+        state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
+    if state.phase not in {"activated", "open"}:
+        raise RuntimeError(f"unsupported activation phase: {state.phase}")
+
+    # Check if provider is configured before building SDK Runtime Stack
+    provider_registry = service_context.get("provider_registry")
+    if provider_registry is None:
+        logger.warning("product_sdk_runtime_skipped", reason="provider_registry unavailable")
+        return
+
+    chain = provider_registry.get_chain()
+    if not chain:
+        logger.warning("product_sdk_runtime_skipped", reason="provider_chain_empty - configure LLM provider in Settings")
+        return
+
+    # Try to build SDK Runtime Stack - may fail if API key is missing
+    try:
+        stack = await _build_product_sdk_runtime_stack(state.generation)
+    except Exception as exc:
+        logger.warning("product_sdk_runtime_skipped", reason=f"build_failed: {exc}")
+        return
+
+    if state.phase == "activated":
+        state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
+
+    # Start SDK Runtime
+    await stack.start()
+
+    # Create ingress facade
+    ingress = SdkRuntimeIngress(stack)
+
+    _sdk_runtime_stack = stack
+    _sdk_ingress = ingress
+
+    logger.info(
+        "product_sdk_runtime_ready",
+        generation=state.generation,
+        phase=state.phase,
+        sdk_version="0.1.1",
+        ingress="closed",
+    )
+
+
+async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
+    """Bind background Runs before opening the sole product ingress (SDK Runtime).
+
+    Skips if SDK Runtime is unavailable (e.g. no provider configured).
+    """
+
+    global _sdk_ingress
+    if _sdk_runtime_stack is None or _sdk_ingress is None:
+        logger.warning("companion_runtime_adapter_skipped", reason="SDK Runtime unavailable - configure LLM provider in Settings")
+        return
+
     runtime = service_context.get("companion_runtime")
     growth_pipeline = service_context.get("companion_growth_pipeline")
     store = globals().get("_companion_store")
@@ -9382,8 +9917,9 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
             f"companion:{owner.profile_id}:{owner.profile_generation}:"
             f"{claim.item_id}"
         )
-        host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-            session_id,
+        # Use SDK ingress to create host
+        host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+            session_id=session_id,
             workspace=None,
         )
         zero_capability_hash = fingerprint_json(
@@ -9401,16 +9937,19 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
         )
 
     runtime.handler = BackgroundRunAdapter(
-        client=_harness_runtime.run_client,
+        client=_sdk_ingress.require_ready().client,
         store=store,
         host_factory=_background_host,
         prepared_context_factory=growth_pipeline.prepared_context,
         text_factory=growth_pipeline.prompt,
         result_postprocessor=growth_pipeline.postprocess,
     )
-    _harness_accepting = True
+
+    # Open SDK ingress
+    _sdk_ingress.open()
+
     logger.info(
-        "companion_runtime_adapter_ready product_ingress=open phase=%s",
+        "companion_runtime_adapter_ready product_ingress=open phase=%s sdk_version=0.1.1",
         _growth_authority_router.current.phase.value,
     )
 
@@ -10056,7 +10595,7 @@ async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
     tool_preview = ""
     tool_count = 0
     try:
-        from deskpet.tools.registry import registry as _v2reg
+        from deskpet.tools import registry as _v2reg
         if _v2reg is not None and hasattr(_v2reg, "list_tools"):
             try:
                 _names = _v2reg.list_tools()
@@ -11047,6 +11586,20 @@ async def control_channel(ws: WebSocket):
         })
     except Exception as _e:
         logger.warning("startup_status_send_failed", error=str(_e))
+    if _sdk_desktop_test_enabled():
+        await ws.send_json(
+            {
+                "type": "companion_identity_status",
+                "payload": {
+                    "ready": True,
+                    "status": "ready",
+                    "profile_id": "sdk-desktop-test",
+                    "profile_generation": 1,
+                    "binding_epoch": "1",
+                    "session_id": "default",
+                },
+            }
+        )
     companion_challenge = None
     if _companion_control_ingress is not None:
         try:
@@ -12619,18 +13172,18 @@ async def control_channel(ws: WebSocket):
                 payload = raw.get("payload", {}) or {}
                 _csid = payload.get("session_id") or session_id
                 _decision = payload.get("decision") or "go"
-                if _harness_accepting and _harness_runtime is not None:
+                if _sdk_ingress is not None and _sdk_ingress.accepting:
                     _run_id = str(payload.get("run_id") or "").strip()
                     _decision_id = str(payload.get("decision_id") or "").strip()
                     _nonce = str(payload.get("nonce") or "").strip()
                     _version = payload.get("version")
                     if not _run_id or not _decision_id or not _nonce or _version is None:
                         raise ValueError("plan confirmation requires the durable decision fence")
-                    _host, _provider, _chain, _snapshot = await _issue_product_harness_host(
-                        _csid,
+                    _host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
+                        session_id=_csid,
                         workspace=None,
                     )
-                    _receipt = await _harness_runtime.run_client.signal(
+                    _receipt = await _sdk_ingress.require_ready().client.signal(
                         {"run_id": _run_id, "expected_session_id": _csid},
                         _host,
                         {
@@ -13270,6 +13823,29 @@ async def control_channel(ws: WebSocket):
                     ) == "always"
                     else None
                 )
+                if _sdk_desktop_test_enabled():
+                    if (text or "").strip():
+                        _launch_product_harness_chat(
+                            ws,
+                            text,
+                            _msg_sid,
+                            None,
+                            False,
+                            _attachment_blocks,
+                            str(
+                                _payload.get("request_id")
+                                or raw.get("request_id")
+                                or ""
+                            )
+                            or None,
+                            str(
+                                _payload.get("turn_id")
+                                or raw.get("turn_id")
+                                or ""
+                            )
+                            or None,
+                        )
+                    continue
                 _identity_gate = service_context.get(
                     "companion_identity_gate"
                 )
@@ -13923,8 +14499,8 @@ async def audio_channel(ws: WebSocket):
         # 在上面定义，闭包捕获 session_id，广播时实时取发起窗口 control_ws 作 skip 目标）。
         broadcast=_voice_broadcast,
         run_client=(
-            _harness_runtime.run_client
-            if _harness_accepting and _harness_runtime is not None
+            _sdk_ingress.run_client
+            if _sdk_ingress is not None and _sdk_ingress.accepting
             else None
         ),
     )

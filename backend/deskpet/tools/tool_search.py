@@ -24,8 +24,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .registry import registry
 from .capabilities import ToolCapabilityBridgeService
+
+_legacy_registry = None
 
 _SCHEMA: dict[str, Any] = {
     "name": "tool_search",
@@ -68,7 +69,9 @@ def _handle_tool_search(args: dict[str, Any], task_id: str) -> str:
     tokens = [t for t in query.split() if t]
 
     hits: list[tuple[int, str, dict[str, Any]]] = []
-    for spec in registry.all_specs():
+    if _legacy_registry is None:
+        raise RuntimeError("legacy Tool search registry is not bound")
+    for spec in _legacy_registry.all_specs():
         if toolset_filter and spec.toolset != toolset_filter:
             continue
         if spec.name == "tool_search":
@@ -101,12 +104,13 @@ def _handle_tool_search(args: dict[str, Any], task_id: str) -> str:
     )
 
 
-registry.register(
-    name="tool_search",
-    toolset="control",
-    schema=_SCHEMA,
-    handler=_handle_tool_search,
-)
+def register_static_tools(registry) -> None:
+    global _legacy_registry
+    _legacy_registry = registry
+    registry.register(
+        name="tool_search", toolset="control", schema=_SCHEMA,
+        handler=_handle_tool_search,
+    )
 
 
 _DESCRIBE_SCHEMA: dict[str, Any] = {

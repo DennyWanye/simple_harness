@@ -1,0 +1,92 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6",
+    "AC-7",
+    "AC-8",
+    "AC-9",
+    "AC-10",
+    "AC-11",
+    "AC-12",
+    "AC-14"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-1",
+      "description": "应用核心功能（聊天/技能/工件/设置四个 view）"
+    },
+    {
+      "id": "ASSET-2",
+      "description": "所有现有通过的测试套件"
+    },
+    {
+      "id": "ASSET-3",
+      "description": "构建和部署流程的完整性"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-1",
+      "description": "现有测试套件（pytest + vitest）覆盖了核心功能路径"
+    },
+    {
+      "id": "TRUST-2",
+      "description": "静态分析工具（pylint, eslint, vulture）能准确识别未使用的 imports 和死代码"
+    },
+    {
+      "id": "TRUST-3",
+      "description": "无引用的函数/类确实是死代码，不存在动态调用/反射/字符串导入等隐式使用"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-1",
+      "description": "误删仍在使用的代码（静态分析工具漏检导致）"
+    },
+    {
+      "id": "FAIL-2",
+      "description": "删除后破坏隐式依赖（side effects, monkey patching, import-time 副作用）"
+    },
+    {
+      "id": "FAIL-3",
+      "description": "删除废弃代码导致回退路径或 legacy 兼容层不可用"
+    },
+    {
+      "id": "FAIL-ROUTE",
+      "description": "WebSocket/IPC 连接或消息路由因代码删除而失败"
+    },
+    {
+      "id": "FAIL-IMPORT",
+      "description": "模块导入链因 import 删除而断裂"
+    },
+    {
+      "id": "FAIL-REGRESSION",
+      "description": "UI 层路由或组件渲染因前端代码清理而回归"
+    }
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-1",
+      "description": "不处理代码重构/架构优化（仅删除无用代码，不改写现有逻辑）"
+    },
+    {
+      "id": "OOS-2",
+      "description": "不处理性能优化（除非是移除明显的性能问题代码）"
+    },
+    {
+      "id": "OOS-3",
+      "description": "不处理代码风格统一（除非是明显的调试代码如 console.log）"
+    },
+    {
+      "id": "OOS-4",
+      "description": "不处理动态代码加载场景的深度验证（假设 TRUST-3 成立）"
+    }
+  ],
+  "maximum_acceptable_impact": "某个非核心功能暂时不可用，但核心四个 view 保持工作，且可通过 git revert 快速恢复"
+}

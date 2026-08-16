@@ -1,19 +1,19 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""SQLite repository for capability versions, bindings and lifecycle state.
+"""SQLite repository for product-owned capability and policy state.
 
-``CapabilityStore`` always points at the existing execution database.  It
-supports caller-owned transactions through :meth:`bind`, so binding swaps,
-continuation refreshes and one-shot receipts can be committed by the execution
-UoW in one SQLite CAS.  This module deliberately does not create a second
-database or mutate ``PRAGMA user_version``; production migration ownership
-stays with ``workflows.store.schema``.
+New SDK composition passes a ``ProductStateDatabase`` owner.  Legacy path/UoW
+construction remains only for the still-live pre-cutover runtime and is not
+used by SDK adapters.  Product-owned stores fence :meth:`bind` to connections
+opened by this repository, preventing an SDK execution transaction from being
+mistaken for product policy authority.
 """
 
 from __future__ import annotations
 
 import asyncio
+import inspect
 import hashlib
 import json
 import math
@@ -2792,7 +2792,7 @@ class CapabilityStoreTx:
 
 
 class CapabilityStore:
-    """Repository over the production execution database."""
+    """Repository over product state (or explicit pre-cutover compatibility)."""
 
     def __init__(
         self,
@@ -2806,6 +2806,10 @@ class CapabilityStore:
         else:
             self.path = Path(execution_database.path)
             self._owner = execution_database
+        self.product_owned = bool(
+            getattr(execution_database, "is_product_state_owner", False)
+        )
+        self._owned_connection_ids: set[int] = set()
         self._clock = clock
         self._initialize_lock = asyncio.Lock()
         self._initialized = False
@@ -2817,7 +2821,9 @@ class CapabilityStore:
             if self._initialized:
                 return
             if self._owner is not None:
-                await self._owner.initialize()
+                initialized = self._owner.initialize()
+                if inspect.isawaitable(initialized):
+                    await initialized
             if not self.path.exists():
                 raise CapabilitySchemaMissing(
                     "execution_database_missing",
@@ -2853,6 +2859,11 @@ class CapabilityStore:
         return self._clock()
 
     def bind(self, db: aiosqlite.Connection) -> CapabilityStoreTx:
+        if self.product_owned and id(db) not in self._owned_connection_ids:
+            raise CapabilityStoreConflict(
+                "foreign_product_transaction",
+                "product CapabilityStore can bind only its own product-state transaction",
+            )
         return CapabilityStoreTx(self, db)
 
     async def _connect(self) -> aiosqlite.Connection:
@@ -2863,6 +2874,7 @@ class CapabilityStore:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA synchronous=FULL")
         await db.execute("PRAGMA busy_timeout=5000")
+        self._owned_connection_ids.add(id(db))
         return db
 
     @asynccontextmanager
@@ -2871,6 +2883,7 @@ class CapabilityStore:
         try:
             yield db
         finally:
+            self._owned_connection_ids.discard(id(db))
             await db.close()
 
     @asynccontextmanager

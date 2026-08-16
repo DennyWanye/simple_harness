@@ -2,11 +2,11 @@
 """Verify SDK wheel integrity before vendoring.
 
 Usage:
-    python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.0-py3-none-any.whl
+    python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.1-py3-none-any.whl
 
 Validates:
 - Wheel file exists and is readable
-- SHA256 matches expected hash from Release
+- SHA256 matches the reviewed immutable artifact hash
 - Version metadata matches expected version
 """
 
@@ -16,10 +16,11 @@ import zipfile
 from pathlib import Path
 
 
-# Expected hash from GitHub Release SHA256SUMS
-# Update this when vendoring a new SDK version
+# Reviewed immutable artifact hashes. v0.1.1 is the local candidate approved for
+# product cutover testing; it is intentionally not described as a Release.
 EXPECTED_HASH = {
     "0.1.0": "d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91",
+    "0.1.1": "d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca",
 }
 
 

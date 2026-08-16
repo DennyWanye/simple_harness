@@ -1,6 +1,48 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-13
+> **最后更新**：2026-08-16
+
+## 2026-08-16 里程碑：SDK v0.1.1 本地 candidate 已通过，Simple Harness 消费切换仍未完成
+
+- **已完成**：独立 SDK `v0.1.0` Release 页面、exact wheel vendoring/lock/hash 校验，以及
+  SDK 仓库 `main@0e38532` 的 CI/release/platform workflow 推送。
+- **Slice A active hotfix candidate 已构建**：本地未推送提交 `f13a30a` 补齐 public atomic
+  Workflow interrupt resolve/resume，生成 exact `0.1.1` wheel，SHA-256
+  `48048ffbb827df15ae27efad67fa78d31302c9869381cb175d0d908c5f204e2f`；targeted 21 tests、
+  `1181 passed, 2 expected skips`、artifact/exact-wheel/build 10 tests 与 reproducible build 均通过。
+  旧 `371ceb98...10d5` wheel 的 `SHIPPABLE` receipt 已被取代，active bytes 的新机器 receipt 待补。
+- **Slice B B1/B2 closed-ingress 基线已完成**：产品已从 vendored exact `0.1.1` wheel 安装；独立
+  `execution-v1.sqlite3` 路径、version/SHA/origin fail-closed 校验、真实 SDK Database/UoW/Runtime
+  lifecycle、失败清理/重试重读依赖、并发 start/close、dependency-owned resources 逆序 exactly-once close
+  与唯一 immutable `sdk_runtime_ready` slot已落地。workflow binding 通过 post-DB
+  `workflow_factory(database,uow)` 创建并核对相同 transaction owner；factory resources 在 partial failure/
+  normal close 逆序 exactly-once 清理，factory 返回前资源由 `WorkflowFactoryResourceScope` 持有并在异常时
+  自清理。`main.py` 仅注册空 readiness slot，尚未切换 text/voice/background ingress。
+- **Slice B B3 产品侧可独立项已完成，整体 PENDING**：固定 real manifest SHA `891ae136...310bf`
+  将 79 reachable identity 映射为 77 SDK Tools + 2 Workflow profiles；70 个实际 schema 变化（含 14 个
+  specialized migration）old/new hash 已 checked-in，77 个 object schema 全部递归 closed，environment
+  bounded key/value adapter、真实 `call_id`、write resource fence 与 typed `await_subagents` Host port 均已覆盖。
+  21 个 static provider 以显式 registration 取代 import-time sink；65 个 static resolve 逐项无 config/
+  registry/sink/旧 harness 副作用，且 new-first 后旧 main 仍恢复完整 79。14 个 specialized migration 已
+  逐项经过真实 handler legacy/new shape 等价测试；六类真实 handler、legacy closed-ingress 79 parity、
+  B2/B3 聚焦当前为 `27 passed`，相关 Tool/manifest 为 `47 passed`；全 sdk_adapters 的并行 Workflow
+  import-purity 测试仍有 1 个越界失败。exact 0.1.1 SDK 尚无 public inventory sidecar
+  来执行 effect/resource/parser/outcome/control/lifecycle metadata，故 B3 不得标 PASS；等待新 wheel 合同后接线。
+- **未完成**：产品 B4+ authorization/workflow/conformance 与真实 ingress cutover 仍未闭合，生产入口继续装配
+  `deskpet.harness`；SDK 0.1.0 conformance CLI 仍返回 `not_implemented`，SDK-S1..S7 为
+  `PREPARED / NOT RUN`。
+- **发布身份阻断**：本地 `v0.1.0` tag=`88e19eb`、远端 tag=`54b62f6`、Release
+  `BUILD_INFO` commit=`88e19eb`，三方不一致；现有 release 不能关闭 SDK-AC-8，也不得覆写。
+- **当前门**：把上述同一 wheel bytes 安装进当前 Simple Harness App，再做 Product Adapter/cutover，证明 SDK schema v1
+  和旧 authority 退休，再做 exact-wheel 桌面真 E2E。当前状态不得写成 SDK 消费端 PASS。
+- **仍需单独批准**：SDK push/tag/Release 与 macOS ARM64、Windows x64、Linux ARM64 的同 bytes
+  远端 dispatch 尚未执行；不得用本机结果冒充三平台 release gate。
+- **AC-6/7/8**：AC-6 被旧 ingress 与 `ModelPersonalWorkflowMatcher` 阻断；AC-7 被官方
+  Workflow Host ports、SDK schema v1/reset/cutover proof 阻断；AC-8 被 conformance placeholder、
+  release identity 漂移、旧 authority 与未运行的 E2E 阻断。
+- **事实源**：[`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)、
+  [`acceptance.md`](../plans/2026-08-13-simple-harness-sdk/acceptance.md)、
+  [`manual-test.md`](../testcase/2026-08-13-simple-harness-sdk/manual-test.md)。
 
 ## 2026-08-13 里程碑：历史 ToolSpec/catalog 恢复循环收口
 

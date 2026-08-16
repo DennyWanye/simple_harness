@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.3.0",
+  "feature": "simple-harness-sdk-v0.1.1-slice-a",
+  "repo_root": "/Users/denny/projects/simple-harness-sdk",
+  "source_request_file": "/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/source-request.md",
+  "acceptance_file": "/Users/denny/projects/simple_harness/plans/2026-08-16-simple-harness-sdk-v0.1.1-cutover/acceptance-slice-a.md",
+  "behavior_contract": {
+    "path": "/Users/denny/projects/simple_harness/plans/2026-08-13-simple-harness-sdk/behavior-contract.md",
+    "status": "FROZEN"
+  },
+  "executor_engine": "codex-gpt5.5",
+  "behavior_changes": [
+    {
+      "behavior_change_id": "BC-SDK-A7-REMOTE-GATE-002",
+      "target": "/Users/denny/projects/simple_harness/testcase/2026-08-16-simple-harness-sdk-v0.1.1/slice-a-black-box.md:14",
+      "old_behavior": "SDK-A7要求Slice A在macOS ARM64、Windows x64、Linux ARM64三平台同SHA全部通过。",
+      "new_behavior": "SDK-A7要求本地clean macOS ARM64 exact candidate通过；三平台同bytes required conformance移至SDK-C7。",
+      "scope": "只迁移gate时点；不删除最终三平台要求，不改变产品行为。",
+      "expiry": "v0.1.1 program完成或放弃时失效。",
+      "approval": {
+        "approved_at": "2026-08-16",
+        "message_sha256": "2f5f51773fc29defabe6e3eef5938f1e07c4f2045b76dc42063de7d3e56eacf6",
+        "message": "同意，继续"
+      }
+    }
+  ],
+  "testcase_files": [
+    "/Users/denny/projects/simple_harness/testcase/2026-08-16-simple-harness-sdk-v0.1.1/slice-a-black-box.md"
+  ],
+  "release_unit": {
+    "slice_id": "SDK-v0.1.1-A",
+    "parent_program": "simple-harness-sdk-v0.1.1-cutover",
+    "scope_hash": "a90131413f798e8bb4921a39aea76d772637012f6e800f51f04c9f514d1aa138",
+    "must_ac_count": 4,
+    "max_plan_lines": 150,
+    "high_risk_subsystems": 1
+  },
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "decided_by": "user",
+      "rationale": "原始验收要求自然语言主Agent与三个Workflow的语义选择和有效结果"
+    },
+    "llm_payload_driven": {
+      "value": true,
+      "decided_by": "user",
+      "rationale": "Provider工具调用和Workflow控制载荷会直接驱动durable状态机"
+    },
+    "stateful_init": {
+      "value": false,
+      "decided_by": "user",
+      "rationale": "本slice只实现显式依赖注入SDK且不修改产品首次登录初始化"
+    }
+  },
+  "scenarios": [
+    {"scenario_id":"SDK-A1","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":2,"ac_ids":["SDK-AC-5"],"input_class":"public ReAct no-tool one-tool multi-tool","cold_start":false,"expected_run_created":true,"impact_paths":["src/simple_harness/runtime/**","src/simple_harness/execution/**"]},
+    {"scenario_id":"SDK-A2","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":2,"ac_ids":["SDK-AC-6","SDK-AC-7"],"input_class":"official和host-owned Workflow选择执行","cold_start":false,"expected_run_created":true,"impact_paths":["src/simple_harness/workflow/**","src/simple_harness/workflows/**"]},
+    {"scenario_id":"SDK-A3","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5"],"input_class":"durable Tool permission HITL","cold_start":false,"expected_run_created":true,"impact_paths":["src/simple_harness/tools/**","src/simple_harness/execution/**","src/simple_harness/runtime/**"]},
+    {"scenario_id":"SDK-A4","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5","SDK-AC-8"],"input_class":"delivery crash restart backfill","cold_start":false,"expected_run_created":true,"impact_paths":["src/simple_harness/execution/**","src/simple_harness/runtime/**"]},
+    {"scenario_id":"SDK-A5","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["fresh","temporal-fault"],"min_root_runs":2,"ac_ids":["SDK-AC-5"],"input_class":"硬预算与LLM载荷变异","cold_start":false,"expected_run_created":true,"impact_paths":["src/simple_harness/runtime/**","src/simple_harness/execution/**","src/simple_harness/tools/**"]},
+    {"scenario_id":"SDK-A6","required":true,"ui":false,"gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":1,"ac_ids":["SDK-AC-8"],"input_class":"consumer conformance四suite","cold_start":false,"expected_run_created":false,"impact_paths":["src/simple_harness/testing/**"]},
+    {"scenario_id":"SDK-A7","required":true,"ui":false,"gate_type":"negative-safety","required_lanes":["fresh"],"min_root_runs":1,"ac_ids":["SDK-AC-8"],"input_class":"immutable local candidate复验","cold_start":false,"expected_run_created":false,"impact_paths":["pyproject.toml","src/simple_harness/**","docs/**"]}
+  ]
+}

@@ -1,55 +1,59 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Capability catalog, package lifecycle, and host-side runtime primitives.
+"""Capability public exports with no import-time runtime construction.
 
-The package deliberately has no registry or application-startup side effects.
-Installed code is reached through :class:`LocalToolRuntime`; generated tools
-may only describe side effects through the brokered effect-plan contract.
+Product-state schema initialization imports ``capabilities.store``.  Eagerly
+importing the platform here used to pull the legacy Workflow/Harness authority
+into that otherwise independent DB path.  Public names stay compatible through
+lazy module exports.
 """
 
-from .brokered_planner import BrokeredEffectPlanner, BrokeredPreparedAction
-from .contracts import (
-    CapabilityBinding,
-    CapabilityCatalogSnapshot,
-    CapabilityDescriptor,
-    CapabilityScope,
-    CapabilityVersionDescriptor,
-    CatalogStamp,
-)
-from .effect_plan import (
-    BrokeredCommandBoundary,
-    BrokeredEffectPlanRecord,
-    DeferredToolAcceptedSignal,
-    EffectPlan,
-    EffectPlanValidationError,
-)
-from .input_views import (
-    InputBinding,
-    InputBindingSnapshot,
-    InputViewRequest,
-    InputViewResolver,
-)
-from .local_runtime import (
-    LocalRuntimeRequest,
-    LocalRuntimeResult,
-    LocalToolRuntime,
-    ProcessCleanupReport,
-)
-from .platform import (
-    BrokeredInvocationAuthority,
-    CapabilityPlatform,
-    CapabilityPlatformInitialization,
-    LegacyPluginCatalogSource,
-    LocalCapabilityToolSpecFactory,
-    MCPManagerRevisionSource,
-    ManagedEnvironmentPreparer,
-)
-from .tool_proxy import (
-    BrokeredPlanEnvelope,
-    LocalToolDefinition,
-    LocalToolProxy,
-)
+from importlib import import_module
+
+
+_EXPORT_MODULE = {
+    "BrokeredCommandBoundary": "effect_plan",
+    "BrokeredEffectPlanRecord": "effect_plan",
+    "BrokeredEffectPlanner": "brokered_planner",
+    "BrokeredInvocationAuthority": "platform",
+    "BrokeredPlanEnvelope": "tool_proxy",
+    "BrokeredPreparedAction": "brokered_planner",
+    "CapabilityBinding": "contracts",
+    "CapabilityCatalogSnapshot": "contracts",
+    "CapabilityDescriptor": "contracts",
+    "CapabilityPlatform": "platform",
+    "CapabilityPlatformInitialization": "platform",
+    "CapabilityScope": "contracts",
+    "CapabilityVersionDescriptor": "contracts",
+    "CatalogStamp": "contracts",
+    "DeferredToolAcceptedSignal": "effect_plan",
+    "EffectPlan": "effect_plan",
+    "EffectPlanValidationError": "effect_plan",
+    "InputBinding": "input_views",
+    "InputBindingSnapshot": "input_views",
+    "InputViewRequest": "input_views",
+    "InputViewResolver": "input_views",
+    "LegacyPluginCatalogSource": "platform",
+    "LocalCapabilityToolSpecFactory": "platform",
+    "LocalRuntimeRequest": "local_runtime",
+    "LocalRuntimeResult": "local_runtime",
+    "LocalToolDefinition": "tool_proxy",
+    "LocalToolProxy": "tool_proxy",
+    "LocalToolRuntime": "local_runtime",
+    "MCPManagerRevisionSource": "platform",
+    "ManagedEnvironmentPreparer": "platform",
+    "ProcessCleanupReport": "local_runtime",
+}
+
+
+def __getattr__(name: str):
+    module_name = _EXPORT_MODULE.get(name)
+    if module_name is None:
+        raise AttributeError(name)
+    value = getattr(import_module(f"{__name__}.{module_name}"), name)
+    globals()[name] = value
+    return value
 
 __all__ = [
     "BrokeredCommandBoundary",

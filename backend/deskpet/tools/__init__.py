@@ -1,94 +1,91 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4 tool framework + built-in tools (P4-S5, tasks 7.x / 8.x / 9.x).
+"""DeskPet Tool implementation package.
 
-Module layout
--------------
+Importing this package is deliberately inert. Product composition owns the
+explicit provider inventory; importing a package must never walk the file
+system, execute provider modules, or silently publish a partial catalog.
 
-* ``registry.py``       — :class:`ToolRegistry` singleton with
-  auto-discovery. Importing this package walks every sibling module in
-  ``tools/*.py`` and loads it; each module's top-level
-  ``registry.register(...)`` calls finish tool discovery.
-
-* ``error_classifier.py`` — :func:`classify` decides whether a handler
-  exception is retriable or permanent. Used by ``dispatch``.
-
-* ``_config.py``        — TOML-only loader for ``[tools.web]``, kept
-  local so tool modules don't drag in the full ``backend.config``
-  dependency graph.
-
-* ``tool_search.py``    — meta-tool ``tool_search`` for lazy schema
-  lookup (CCB pattern). Registered at import-time.
-
-* ``file_tools.py``     — 4 workspace-sandboxed tools: ``file_read /
-  file_write / file_glob / file_grep``. All paths forced under
-  ``%APPDATA%\\deskpet\\workspace\\`` with ``..`` traversal blocked.
-
-* ``todo_tools.py``     — 2 todo tools (``todo_write / todo_complete``)
-  backed by a JSON file (``todo.json``). SQLite version lands later.
-
-* ``web_tools.py``      — zero-cost web toolkit (``web_fetch``,
-  ``web_crawl``, ``web_extract_article``, ``web_read_sitemap``) built
-  on ``httpx + trafilatura + selectolax``, shared politeness layer
-  (robots.txt + per-host rate limit + 429/403 block cache).
-
-* ``stubs.py``          — schemas-only stubs for features owned by
-  future slices (memory_* / delegate / skill_invoke / mcp_call). The
-  real implementations replace these registrations when their owning
-  slice ships.
-
-Brave / Tavily / Bing / exa.ai are intentionally absent (D9 decision,
-reinforced by CI grep guard in task 9.9).
+The three legacy registry exports remain lazy during the 0.1.1 cutover so
+older product-only call sites can be migrated independently. Merely importing
+``deskpet.tools`` does not construct that legacy authority.
 """
+
 from __future__ import annotations
 
-import importlib
-import logging
-import pkgutil
-
-# Re-export registry so callers can ``from deskpet.tools import registry``.
-from .registry import ToolRegistry, ToolSpec, registry  # noqa: F401
-
-logger = logging.getLogger(__name__)
-
-# Modules that the registry lives in but that must NOT be imported as
-# tool providers (they either define the registry itself or are helpers).
-_SKIP_SUBMODULES = {"registry", "error_classifier", "_config", "__init__"}
+from threading import RLock
+from typing import Any
 
 
-def _discover_and_load() -> None:
-    """Walk this package's direct submodules and import each one so its
-    top-level ``registry.register(...)`` calls execute.
-
-    We iterate this package's ``__path__`` with ``pkgutil.iter_modules``
-    — that's the standard "what's inside this package?" primitive and
-    works under both source checkout and zipimport. Errors during a
-    single submodule's import are logged but do NOT abort discovery;
-    a broken ``weather_tool.py`` shouldn't take down the whole toolset.
-    """
-    for info in pkgutil.iter_modules(__path__, prefix=__name__ + "."):
-        short = info.name.rsplit(".", 1)[-1]
-        if short in _SKIP_SUBMODULES:
-            continue
-        if short.startswith("_") and short != "__init__":
-            # Private helpers like ``_config`` already in skip list; keep
-            # this as a safety net for future additions.
-            continue
-        if info.ispkg:
-            # No nested tool packages expected; if one appears later we
-            # can recurse, but for now the flat layout is intentional.
-            continue
-        try:
-            importlib.import_module(info.name)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception(
-                "tool auto-discovery: failed to import %s (%s); skipping",
-                info.name,
-                type(exc).__name__,
-            )
+_LEGACY_STATIC_PROVIDER_MODULES = (
+    "agent_reach_tools",
+    "browser_use_tool",
+    "computer_use_tool",
+    "doc_tools",
+    "excel_tools",
+    "file_organize_tools",
+    "file_tools",
+    "image_tools",
+    "memory_tools",
+    "ocr_tools",
+    "pdf_tools",
+    "picker_tools",
+    "ppt_tools",
+    "project_group_send",
+    "research_tools",
+    "scrapling_tools",
+    "skill_tools",
+    "todo_tools",
+    "tool_search",
+    "web_tools",
+    "window_use_tool",
+)
 
 
-_discover_and_load()
+class _LazyRegistryProxy:
+    """Compatibility proxy that keeps package import itself provider-pure."""
 
-__all__ = ["registry", "ToolRegistry", "ToolSpec"]
+    def __init__(self) -> None:
+        self._resolved: Any = None
+        self._lock = RLock()
+
+    def _target(self) -> Any:
+        import importlib
+
+        with self._lock:
+            if self._resolved is not None:
+                return self._resolved
+            registry_module = importlib.import_module(f"{__name__}.registry")
+            target = registry_module.__dict__["registry"]
+            for module_name in _LEGACY_STATIC_PROVIDER_MODULES:
+                module = importlib.import_module(f"{__name__}.{module_name}")
+                register = getattr(module, "register_static_tools", None)
+                if not callable(register):
+                    raise RuntimeError(
+                        f"legacy static Tool provider has no explicit registration: {module_name}"
+                    )
+                register(target)
+            self._resolved = target
+            return target
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._target(), name)
+
+
+registry = _LazyRegistryProxy()
+_legacy_registry_proxy = registry
+
+
+def __getattr__(name: str) -> Any:
+    if name in {"ToolRegistry", "ToolSpec"}:
+        from .registry import ToolRegistry, ToolSpec
+
+        return {
+            "ToolRegistry": ToolRegistry,
+            "ToolSpec": ToolSpec,
+        }[name]
+    raise AttributeError(name)
+
+
+__all__ = ("registry", "ToolRegistry", "ToolSpec")

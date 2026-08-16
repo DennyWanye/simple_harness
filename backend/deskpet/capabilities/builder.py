@@ -1036,7 +1036,7 @@ class CapabilityBuilderHost:
 
     def __init__(
         self,
-        execution_database: object,
+        store: CapabilityStore | object,
         tool_registry: object,
         *,
         environment: PackEnvironment | None = None,
@@ -1044,7 +1044,13 @@ class CapabilityBuilderHost:
         staging_base: str | Path | None = None,
         tool_service: Any | None = None,
     ) -> None:
-        self.store = CapabilityStore(execution_database)  # type: ignore[arg-type]
+        # Slice B composition passes the product-owned store directly.  The
+        # old ingress is intentionally still live until Slice C's atomic
+        # switch, so its old UoW/path constructor remains a compatibility seam
+        # and must not be used by the SDK composition.
+        self.store = (
+            store if isinstance(store, CapabilityStore) else CapabilityStore(store)
+        )  # type: ignore[arg-type]
         self.tool_registry = tool_registry
         self.environment = environment or PackEnvironment.current()
         self.runtime = runtime or LocalToolRuntime(default_timeout_seconds=10.0)
