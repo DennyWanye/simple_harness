@@ -1,65 +1,115 @@
-<!-- last-calibrated: 42fbbd0f1fd2e3cd8eeb0cde650df49ae48aa4a7 -->
+<!-- last-calibrated: 1ec95c3785052c14b4ef2d6b30e5a6d49492f7a3 -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> Last verified: 2026-08-16. The Harness `open/generation=1` owner remains the only
-> production execution owner. DeskPet has one main Session with multiple isolated top-level
-> Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to
-> `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a
-> durable one-shot ticket binds the child Driver. DeepResearch new-run default remains immutable
-> v7; historical v1-v6 runs remain registered for recovery and compatibility reads.
+> **Last verified: 2026-08-17**. 
+> 
+> **当前执行 authority 状态（关键）**: SDK v0.1.1 **已经是唯一的生产执行 authority**。所有 ingress（text/voice/background）通过 `_sdk_ingress` 路由到 SDK Runtime (`simple_harness.runtime`)。当前启动链：
+> 
+> ```
+> backend/main.py:_activate_product_sdk_runtime()
+>   -> _build_product_sdk_runtime_stack()
+>   -> simple_harness.runtime (SDK Runtime)
+>   -> backend/deskpet/sdk_adapters/* (产品适配器桥接)
+> backend/main.py (所有 ingress: text/voice/background)
+>   -> _sdk_ingress.open_venue() (唯一活跃入口)
+>   -> simple_harness.runtime.kernel.RunKernel (SDK)
+>   -> simple_harness.runtime.drivers.react_loop (SDK ReAct Driver)
+>   -> simple_harness.workflow.WorkflowDriver (SDK Workflow Engine)
+> ```
+> 
+> **旧 harness 模块状态**: `backend/deskpet/harness/{kernel,bootstrap,runtime,drivers/}` 等模块仍存在于源码树中，且 `_build_product_harness_stack()` 仍被调用并赋值给 `_harness_runtime`/`_harness_venue`，但**没有任何 ingress 调用它们**。这些是待清理的遗留代码。
+> 
+> **即将进行的清理**: 删除未被使用的旧 harness 核心模块，移除 `_harness_runtime`/`_harness_venue`/`_harness_accepting` 等全局变量及其构建逻辑。这是代码清理而非功能切换，不影响当前生产行为。
+> 
+> **保留的产品代码**: `backend/deskpet/{tools,skills,sdk_adapters,capabilities,companion}` 等产品特定模块完整保留，通过 SDK adapters 桥接到 SDK Runtime。
+> 
+> ---
+> 
+> The SDK Runtime `simple_harness.runtime` is the only production execution owner. DeskPet has one main Session with multiple isolated top-level Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a durable one-shot ticket binds the child Driver. DeepResearch new-run default remains immutable v7; historical v1-v6 runs remain registered for recovery and compatibility reads.
 
 > Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. Backend stdlib and structlog now share one JSON-lines formatter and one resolved user log directory; the rotating text log is diagnostic evidence, not the durable workflow authority. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
 
-> Calibration map: §3 is explicitly retained as the pre-durable persistence baseline; §4.2/§4.3 and §5-§10 retain historical problem/design context. The header, §4.1, §11 and §13-§17 are current-calibrated production facts. DeepResearch detail lives in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md).
+> Calibration map: §3 is explicitly retained as the pre-durable persistence baseline; §4.2/§4.3 and §5-§10 retain historical problem/design context. The header, §4.1, §11 and §13-§17 are current-calibrated production facts. DeepResearch detail lives in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md). §20 describes the SDK v0.1.1 post-cutover cleanup baseline.
 
 ## 1. System Shape
 
 DeskPet is a local desktop product, not a generic agent framework. The application now has one
 product preparation path, one thin control plane and two available execution algorithms. Driver
-selection is not a text classifier:
+selection is not a text classifier.
+
+### 1.1 当前生产架构（使用 SDK v0.1.1）
 
 ```text
 Tauri shell + React UI
         | WebSocket / audio / Tauri commands
-Product Venue Adapter -> ProductTurnPreparer
-        | trusted RunContext + frozen tools/capabilities/provider + Profile Catalog
-RunKernel -> fixed root agent.general -> ReAct Driver (AgentLoop)
+All ingress -> _sdk_ingress (SdkRuntimeIngress)
+        | simple_harness.runtime.RuntimePorts (SDK Runtime)
+        | ProductContextAdapter -> product services (session_db, capabilities, etc.)
+simple_harness.runtime.kernel.RunKernel -> fixed root agent.general
+        | simple_harness.runtime.drivers.react_loop (SDK ReAct Driver)
         | model may call workflow_spawn(profile_key)
         | durable ProfileLaunchTicket -> child ReAct OR Workflow Driver
-EffectBatchExecutor -> ToolRegistry V2
-        | RunPresenter + SqliteExecutionUnitOfWork
-SessionDB / workflow.db / WS / TTS / artifacts
+        | simple_harness.workflow.WorkflowDriver (SDK Workflow Engine)
+ProductToolsAdapter -> product tool handlers (deskpet.tools.*)
+        | ProductAuthorizationAdapter -> permission system
+        | simple_harness.execution.EffectExecutor
+        | simple_harness.execution.UnitOfWork (SDK UoW on SDK execution DB)
+ProductDeliveryAdapter -> SessionDB / WS / TTS / artifacts
 ```
 
-The Harness is the production execution boundary. `backend/main.py` owns ingress/transport and composition, but not a second execution loop. The executable contract is exported from `backend/deskpet/harness/bootstrap.py::HarnessManifest`; the canonical lifecycle and recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md).
+**代码证据**：
+- `backend/main.py:9544`: `outcome = await _sdk_ingress.open_venue(...)`（所有 ingress 的真实路由）
+- `backend/main.py:9949`: `_sdk_ingress.open()`（SDK ingress 被激活）
+- `backend/deskpet/sdk_adapters/ingress.py:1-6`: 注释声明 "sole ingress for all product entry points"
+- `backend/main.py:6363`: `# Slice C: Use SDK Runtime instead of legacy harness`
 
-## 2. Current Request Lifecycle
+### 1.2 待清理的遗留代码
 
-The production request path is:
+虽然 SDK 已是唯一执行 authority，但以下旧 harness 模块仍存在于源码树：
+- `backend/deskpet/harness/kernel.py`（被 SDK `simple_harness.runtime.kernel` 替代）
+- `backend/deskpet/harness/bootstrap.py`（被 SDK runtime 初始化替代）
+- `backend/deskpet/harness/runtime.py`（被 SDK runtime infrastructure 替代）
+- `backend/deskpet/harness/drivers/react*.py`（被 SDK `simple_harness.runtime.drivers.react_loop` 替代）
+- `backend/deskpet/harness/drivers/workflow.py`（被 SDK `simple_harness.workflow` 替代）
+- 其他 harness 基础设施（reconciler, admission_launch, live_index, kernel_terminal 等）
+
+`_build_product_harness_stack()` 仍被调用并赋值给 `_harness_runtime`/`_harness_venue` 全局变量，但**没有任何 ingress 调用它们**。这些是待删除的死代码。
+
+The SDK Runtime `simple_harness.runtime` is the production execution boundary. `backend/main.py` owns ingress/transport and composition, but not a second execution loop. The executable contract is exported from SDK's public API; the canonical lifecycle and recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md) and SDK documentation.
+
+## 2. Current Request Lifecycle (SDK v0.1.1)
+
+生产请求路径（当前）：
 
 ```text
 Main Session text / Tauri / startup recovery
-  -> Product Venue Adapter
-  -> ProductTurnPreparer
-       (history/persona/memory/skills/attachments/problem pipeline
-        + PreparedToolSet + capability catalog + natural-language Profile Catalog)
-  -> RunKernel (one trusted identity; top-level profile fixed to agent.general)
-       -> ReAct Driver -> same parent model
-            -> direct answer or ordinary tools
+  -> _sdk_ingress.open_venue() (SdkRuntimeIngress wraps SDK Runtime)
+  -> ProductContextAdapter (bridges product services to SDK ports)
+       (history/persona/memory/skills/attachments from product services
+        + ProductToolsAdapter with tool catalog + ProductAuthorizationAdapter)
+  -> simple_harness.runtime.kernel.RunKernel (SDK, top-level profile fixed to agent.general)
+       -> simple_harness.runtime.drivers.react_loop (SDK ReAct Driver) -> same parent model
+            -> direct answer or ordinary tools via ProductToolsAdapter
             -> workflow_spawn(profile_key, catalog_generation)
                  -> durable one-shot ProfileLaunchTicket
-                 -> ChildRun using the ticket-bound ReAct/Workflow Driver
-  -> RunPresenter / durable delivery
-  -> SessionDB + WS + TTS + UI
+                 -> ChildRun using ticket-bound simple_harness.workflow.WorkflowDriver (SDK)
+  -> ProductDeliveryAdapter / durable delivery
+  -> SessionDB + WS + TTS + UI (via product delivery adapter)
 ```
 
+**代码证据**：
+- `backend/main.py:9544`: 所有 ingress 调用 `await _sdk_ingress.open_venue(...)`
+- `backend/deskpet/sdk_adapters/ingress.py`: `SdkRuntimeIngress` 包装 SDK Runtime
+- `backend/deskpet/sdk_adapters/composition.py`: 构建 SDK Runtime 并注入产品 adapters
+- `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 桥接产品服务到 SDK ports
+- `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 桥接产品工具到 SDK tool registry
+
 `backend/main.py` owns WebSocket/audio adapters and service composition.
-`ProductTurnPreparer` freezes the provider/model/capability/product payload and describes legal
-child Profiles to the model; it does not select one. `RunKernel` owns identity, coarse lifecycle
+`ProductContextAdapter` freezes the provider/model/capability/product payload and describes legal
+child Profiles to the model; it does not select one. SDK `RunKernel` owns identity, coarse lifecycle
 and recovery admission. For a root it resolves the fixed `agent.general` Profile; for a child it
-only dereferences a valid launch ticket. `AgentLoop.run()` is the dynamic LLM/context/completion
-engine inside the ReAct Driver; it no longer dispatches tools or owns subagent runtime.
-`ToolRegistry V2` is reached through the shared Effect boundary. `RunPresenter` owns the
+only dereferences a valid launch ticket. SDK ReAct Driver is the dynamic LLM/context/completion
+engine. Tool execution is reached through `ProductToolsAdapter` which bridges to product tool handlers in `deskpet.tools.*`. `ProductDeliveryAdapter` owns the
 projection to WebSocket, SessionDB and TTS.
 
 Context OS 工具权限不是全局 Registry 的别名。Preparer 把本轮
@@ -779,23 +829,91 @@ process-local late evidence 在 durable terminal 决策前只 peek、不出 read
 Reconciler 将其结算为 `late_reconciled/reconciled/reconciled_completed_suppressed` 后才 acknowledge，
 不会恢复 Driver。running 窗口与 CAS loser 都保留重试能力。
 
-## 20. 2026-08-16 SDK v0.1.1 candidate 完成后、产品切换前基线
+## 20. 2026-08-17 SDK v0.1.1 Post-Cutover 代码清理基线
 
-独立 Simple Harness SDK v0.1.0 已发布，产品也固定并安装了 exact vendored wheel；但生产执行
-authority 仍位于 DeskPet 源码树中的
-`RunKernel + ReAct/Workflow Driver + SqliteExecutionUnitOfWork`。当前产品装配从
-`main.py:_build_product_harness_stack` 进入
-`deskpet.harness.adapters.product_composition.build_product_harness_composition`，没有调用
-`deskpet.sdk_adapters.composition.build_product_runtime`；后者仍会抛 `NotImplementedError`。
+### 20.1 当前状态（SDK 已接入，旧代码待清理）
 
-SDK v0.1.1 active 本地 candidate 已在 hotfix 提交 `f13a30a` 上通过 full regression、clean
-exact-wheel conformance 与 reproducible build；wheel SHA-256 为 `48048ffb…f204e2f`。旧
-`371ceb98…10d5` receipt 已被取代，active bytes 仍待补发机器 receipt。该 candidate
-尚未 push/tag/release，已安装到产品 closed-ingress 适配环境。因而当前状态仍是“SDK artifact 已存在、消费者切换未完成”，
-不是桌面 SDK 自用完成。T6 必须先用
-SDK public Runtime/Workflow authority 替换产品同源核心，保留 Session/UI/权限/Provider/Tool/
-Capability 等产品 Adapter，再在 SDK schema v1 上完成 reset/reopen/recovery；随后执行
-SDK-S1..S5 真实桌面 E2E 与 SDK-S6..S7 自动化 fault injection/reconcile。exact v0.1.0 wheel
-的 conformance CLI 仍为占位且 release identity 漂移，需补齐 SDK Workflow/Conformance public
-surface；这一 SDK-owned 缺口现已由 v0.1.1 candidate 关闭。当前依赖图、边界、证据和切换风险统一见
-[`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)。
+**SDK v0.1.1 已是唯一生产执行 authority**：
+
+- 启动链：`main.py:_activate_product_sdk_runtime()` → `_build_product_sdk_runtime_stack()` → SDK Runtime
+- 执行核心：`simple_harness.runtime.kernel.RunKernel` + `simple_harness.runtime.drivers.react_loop` + `simple_harness.workflow`
+- 数据库：SDK 管理的 `<user-data>/data/simple-harness-sdk/execution-v1.sqlite3`
+- Ingress：所有入口（text/voice/background）路由到 `_sdk_ingress.open_venue()`（`backend/main.py:9544`）
+- 产品适配器：`backend/deskpet/sdk_adapters/*` 桥接产品服务到 SDK ports
+
+**代码证据**：
+- `backend/main.py:6363`: `# Slice C: Use SDK Runtime instead of legacy harness`
+- `backend/main.py:9544`: `outcome = await _sdk_ingress.open_venue(...)`（真实调用）
+- `backend/main.py:9949`: `_sdk_ingress.open()`（SDK ingress 被激活）
+- `backend/deskpet/sdk_adapters/ingress.py:1-6`: 注释声明 “sole ingress for all product entry points”
+
+**旧 harness 代码仍存在但未使用**：
+
+虽然 SDK 已接管所有执行，但以下模块仍存在于源码树且 `_build_product_harness_stack()` 仍被调用：
+- `backend/deskpet/harness/kernel.py`, `bootstrap.py`, `runtime.py`
+- `backend/deskpet/harness/drivers/react*.py`, `workflow.py`
+- `backend/deskpet/harness/reconciler.py`, `admission_launch.py`, `live_index.py` 等
+- `_harness_runtime`, `_harness_venue`, `_harness_accepting` 全局变量
+
+**关键事实**：`_harness_venue` 被构建但从未被任何 ingress 调用（全仓搜索 `await _harness_venue` 返回 0 结果）。
+
+### 20.2 清理目标（删除死代码）
+
+**待删除的模块**（已被 SDK 完全替代，但仍有遗留引用需清理）：
+- `backend/deskpet/harness/kernel.py` → SDK `simple_harness.runtime.kernel`
+- `backend/deskpet/harness/bootstrap.py` → SDK runtime 初始化
+- `backend/deskpet/harness/runtime.py` → SDK runtime infrastructure
+- `backend/deskpet/harness/drivers/react*.py` → SDK `simple_harness.runtime.drivers.react_loop`
+- `backend/deskpet/harness/drivers/workflow.py` → SDK `simple_harness.workflow`
+- `backend/deskpet/harness/reconciler.py`, `admission_launch.py`, `live_index.py`, `kernel_terminal.py` 等
+
+**清理前必须处理的引用**：
+- `main.py` 中 3 处 `deskpet.harness.kernel.root_run_identity` 导入（需确认 SDK 提供等价功能或内联实现）
+- `main.py` 中 `_build_product_harness_stack()` 调用及其依赖链
+- `deskpet.harness.adapters.product_composition` 及其对旧 drivers 的导入
+- 17+ 个测试文件的 harness 模块导入（需评估是否迁移到 SDK 或删除相应测试）
+
+**待删除的代码**（未使用的构建逻辑）：
+- `main.py` 中的 `_harness_runtime`, `_harness_venue`, `_harness_accepting` 全局变量
+- `_build_product_harness_stack()` 函数及其调用
+- `deskpet.harness.adapters.product_composition` 及相关旧 adapter 代码
+
+**保留的模块**（产品特定逻辑，通过 SDK adapters 工作）：
+- `backend/deskpet/sdk_adapters/*` - 产品到 SDK 的适配器层（**必须保留**）
+- `backend/deskpet/tools/*` - 产品特定工具实现
+- `backend/deskpet/skills/*` - 产品特定技能
+- `backend/deskpet/capabilities/*` - 产品能力系统
+- `backend/deskpet/companion/*` - 产品陪伴成长系统
+- `backend/deskpet/memory/*` - 产品记忆系统
+- `backend/deskpet/session/*` - 产品会话管理
+- `backend/deskpet/execution/*` - 执行相关契约（部分可能被 SDK 使用）
+
+**保留的 harness 模块**（被测试或产品其他部分引用）：
+- `backend/deskpet/harness/contracts.py` - 如果被 SDK adapters 或测试引用
+- `backend/deskpet/harness/ports.py` - 如果被 SDK adapters 或测试引用
+- 其他被测试套件或产品代码实际导入的模块
+
+清理前需通过 grep 确认每个模块的实际引用情况，避免误删仍被使用的代码。
+
+### 20.3 风险与验证
+
+**主要风险**：
+1. 误删被测试套件引用的 harness 模块 → 通过 grep 和测试套件验证
+2. 误删被产品其他部分隐式依赖的代码 → 通过全仓导入分析
+3. 遗漏清理某些旧代码引用 → 通过测试套件和启动验证
+4. **测试套件依赖**：17+ 个测试文件导入旧 harness 模块（`test_run_kernel.py`, `test_harness_bootstrap.py`, `test_workflow_driver.py` 等），删除后这些测试会失败，需评估迁移到 SDK 测试或删除
+
+**验证策略**：
+- 所有删除前先 grep 确认引用情况
+- 处理 `main.py` 中的 3 处 `root_run_identity` 导入（确认 SDK 等价功能或内联实现）
+- 评估测试策略：迁移到 SDK 测试 vs 删除旧 harness 测试
+- 删除后运行完整 pytest 套件
+- 删除后手工测试所有 ingress（text/voice/background）
+- 确认应用能正常启动并处理用户请求
+
+**回退策略**：
+- 所有改动可通过 `git revert` 立即回退
+- 不涉及数据迁移，数据完整性不受影响
+- 不影响 SDK Runtime 或产品 adapters
+
+详细的依赖图、边界、证据和切换历史见 [`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)。

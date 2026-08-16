@@ -1,0 +1,82 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"],
+  "protected_assets": [
+    {
+      "id": "ASSET-1",
+      "description": "用户会话数据和执行历史 (session DB, workflow state)"
+    },
+    {
+      "id": "ASSET-2",
+      "description": "已配置的 LLM provider credentials (OS keychain)"
+    },
+    {
+      "id": "ASSET-3",
+      "description": "SDK Runtime 的正常运行 (当前生产执行 authority)"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-1",
+      "description": "SDK v0.1.1 已正确安装且正常工作 (当前唯一生产执行 authority)"
+    },
+    {
+      "id": "TRUST-2",
+      "description": "开发者账户和本地文件系统可信"
+    },
+    {
+      "id": "TRUST-3",
+      "description": "Python 3.12 runtime 和系统绝对路径程序可信"
+    },
+    {
+      "id": "TRUST-4",
+      "description": "旧 harness 模块 (deskpet.harness.kernel, bootstrap, runtime, drivers) 确实未被任何生产路径使用"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-IMPORT",
+      "description": "误删仍被测试或其他代码引用的模块导致 ModuleNotFoundError"
+    },
+    {
+      "id": "FAIL-LEFTOVER-IMPORT",
+      "description": "遗留的导入引用导致 ImportError 或 ModuleNotFoundError"
+    },
+    {
+      "id": "FAIL-INCOMPLETE-CLEANUP",
+      "description": "清理不完整导致死代码残留"
+    },
+    {
+      "id": "FAIL-SDK-REGRESSION",
+      "description": "误删导致 SDK Runtime 功能失效"
+    },
+    {
+      "id": "FAIL-TEST",
+      "description": "测试导入路径引用已删除模块导致测试套件失败"
+    }
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-1",
+      "description": "SDK v0.1.1 本身的 bugs 或不符合预期的行为（SDK 被视为可信依赖）"
+    },
+    {
+      "id": "OOS-2",
+      "description": "网络故障或外部 LLM provider API 错误"
+    },
+    {
+      "id": "OOS-3",
+      "description": "用户输入的恶意 payload 或注入攻击（本次是代码删除，不涉及输入验证）"
+    },
+    {
+      "id": "OOS-4",
+      "description": "并发竞态条件或死锁（本次不改并发模型）"
+    },
+    {
+      "id": "OOS-5",
+      "description": "依赖包版本冲突或环境配置问题（假设 setup.sh 已正确运行）"
+    }
+  ],
+  "maximum_acceptable_impact": "误删导致应用无法启动或部分测试失败。可通过 git revert 快速恢复。数据完整性不受影响（不修改 schema 或数据）。SDK Runtime 已在使用中，本次仅删除死代码。"
+}

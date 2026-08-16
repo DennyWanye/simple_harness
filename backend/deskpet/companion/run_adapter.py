@@ -12,6 +12,7 @@ import hashlib
 import inspect
 import json
 import re
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, fields, replace
 from typing import Any, TypeAlias
@@ -23,7 +24,7 @@ from deskpet.harness.contracts import (
     HostExtensionRefV1,
     PreparedRunContextV1,
 )
-from deskpet.harness.kernel import root_run_identity
+from deskpet.execution.contracts import root_idempotency_key, RunRef
 
 from .clock import ClockPort, SystemClock
 from .contracts import LeaseClaim, OwnerRef
@@ -596,10 +597,14 @@ class BackgroundRunAdapter:
             host = await host
         if not isinstance(host, HostContext):
             raise TypeError("companion_background_host_invalid")
-        _, execution_ref = root_run_identity(
+        execution_key = root_idempotency_key(
             host.session_id,
             request_id,
             request_id,
+        )
+        execution_ref = RunRef(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{execution_key}").hex,
+            host.session_id,
         )
         prepared_context = facts.prepared_context()
         if self._prepared_context_factory is not None:

@@ -6369,10 +6369,8 @@ async def lifespan(app: FastAPI):
     yield
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
-    global _harness_accepting, _harness_runtime, _harness_venue
     global _sdk_runtime_stack, _sdk_ingress
     global _sdk_desktop_bridge
-    _harness_accepting = False
     # Close SDK Runtime ingress
     if _sdk_ingress is not None:
         _sdk_ingress.close()
@@ -6437,14 +6435,6 @@ async def lifespan(app: FastAPI):
             _sdk_runtime_stack = None
             _sdk_ingress = None
             service_context.register("sdk_runtime_ready", None)
-    if _harness_runtime is not None:
-        try:
-            await _harness_runtime.close(timeout=5.0)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("product_harness_shutdown_failed", error=str(exc))
-        finally:
-            _harness_runtime = None
-            _harness_venue = None
     _capability_platform = service_context.get("capability_platform")
     _capability_center = service_context.get("capability_center")
     if _capability_center is not None:
@@ -7891,12 +7881,7 @@ async def _build_product_agent_loop(request):
     )
 
 
-# Legacy harness globals (to be removed after full SDK cutover)
-_harness_runtime = None
-_harness_venue = None
-_harness_accepting = False
-
-# SDK Runtime globals (Slice C production ingress)
+# SDK Runtime globals (production ingress)
 _sdk_runtime_stack = None
 _sdk_ingress = None
 
@@ -7947,238 +7932,6 @@ def _trigger_harness_recovery_after_identity_bind() -> bool:
         return False
     trigger()
     return True
-
-
-async def _build_product_harness_stack(generation: int):
-    from deskpet.capabilities.contracts import CapabilityScope
-    from deskpet.companion.authority import GrowthAuthorityPhase
-    from deskpet.companion.turn_authority import (
-        CompanionTurnAuthority,
-        HubStorePersonalWorkflowCandidateSource,
-        ModelPersonalWorkflowMatcher,
-    )
-    from deskpet.companion.preferences import (
-        ModelPreferenceTurnInterpreter,
-        PREFERENCE_TURN_DECISION_SCHEMA,
-    )
-    from deskpet.companion.signals import (
-        GrowthTerminalDeliveryContributor,
-        GrowthTerminalDeliverySink,
-    )
-    from deskpet.agent.session_terminal_delivery import (
-        SessionTerminalDeliveryContributor,
-        SessionTerminalDeliverySink,
-        SessionTerminalProjectionConsistencyGate,
-    )
-    from deskpet.harness.adapters.product_composition import build_product_harness_composition
-    from deskpet.harness.adapters.product_profiles import build_product_profile_registry
-    from deskpet.harness.projector import SinkRegistration
-
-    workflow_service = service_context.get("workflow_service")
-    launcher = getattr(workflow_service, "launcher", None)
-    if workflow_service is None or launcher is None:
-        raise RuntimeError("workflow service is unavailable for Harness activation")
-    uow = workflow_service.execution_uow
-    profiles = build_product_profile_registry(
-        workflow_service.runtime_adapters,
-        blob_root=_paths.user_data_dir() / "workflows" / "blobs",
-    )
-    capability_platform = service_context.get("capability_platform")
-    identity_gate = service_context.get("companion_identity_gate")
-    preference_resolver = service_context.get(
-        "companion_preference_resolver_dormant"
-    )
-    session_db = service_context.get("session_db")
-    if (
-        capability_platform is None
-        or identity_gate is None
-        or preference_resolver is None
-        or session_db is None
-    ):
-        raise RuntimeError(
-            "Companion turn authority dependencies are unavailable"
-        )
-
-    def personal_workflow_scope(request, identity):
-        turn = request.turn
-        root_run_id = str(getattr(turn, "root_run_id", "") or "")
-        if not root_run_id:
-            raise RuntimeError("personal workflow scope requires root Run identity")
-        return CapabilityScope.for_run(
-            root_run_id,
-            project_root=getattr(turn, "workspace_ref", None),
-            user_key=identity.owner_key,
-        )
-
-    async def capture_owner_memory_scope(turn, _services, identity):
-        del turn
-        # Task 10 installs the future Companion turn authority while the
-        # GrowthAuthorityRouter still routes production reads/writes to the
-        # legacy branch.  Do not manufacture a Companion owner binding until
-        # Task 13 has atomically moved the sole authority to COMPANION.
-        router = _growth_authority_router
-        if (
-            router is None
-            or router.current.phase is not GrowthAuthorityPhase.COMPANION
-        ):
-            return None
-        if session_db is None:
-            raise RuntimeError("owner memory scope store is unavailable")
-        return await session_db.capture_owner_memory_read_scope(
-            identity.owner.profile_id,
-            identity.owner.profile_generation,
-            identity.binding_epoch,
-        )
-
-    companion_turn_authority = CompanionTurnAuthority(
-        identity_gate=identity_gate,
-        preference_resolver=preference_resolver,
-        preference_interpreter=ModelPreferenceTurnInterpreter(
-            _make_session_aware_llm_call(
-                max_tokens=384,
-                response_format=PREFERENCE_TURN_DECISION_SCHEMA,
-            )
-        ),
-        personal_workflow_source=HubStorePersonalWorkflowCandidateSource(
-            capability_platform.store,
-            scope_resolver=personal_workflow_scope,
-        ),
-        personal_workflow_matcher=ModelPersonalWorkflowMatcher(
-            _make_session_aware_llm_call(max_tokens=128)
-        ),
-        owner_memory_read_scope=capture_owner_memory_scope,
-    )
-    admission_runtime = service_context.get(
-        "admission_task_grant_runtime"
-    )
-
-    async def authorize_admission(record, boundary, actor):
-        if admission_runtime is None:
-            return None
-        workspace_payload = dict(record.context.workspace)
-        workspace = (
-            workspace_payload.get("write_scope_root")
-            or workspace_payload.get("root")
-        )
-        return await admission_runtime.authorize(
-            root_run_id=record.context.root_run_id,
-            principal_id=actor.principal_id,
-            workspace=(
-                None if workspace is None else str(workspace)
-            ),
-            prompt=boundary.admission.prompt,
-        )
-
-    async def project_user_continuation_status(
-        record, signal, status: str, error: str | None,
-    ) -> None:
-        request_id = str(signal.message_ref or "")
-        if request_id.startswith("request:"):
-            request_id = request_id[len("request:"):]
-        await _broadcast_default_chat_peers(
-            None,
-            {
-                "type": "chat_v2_continuation_status",
-                "payload": {
-                    "session_id": record.context.session_id,
-                    "request_id": request_id,
-                    "run_id": record.run_id,
-                    "task_scope_id": signal.task_scope_id,
-                    "status": status,
-                    "error": error,
-                },
-            },
-        )
-
-    growth_sink = GrowthTerminalDeliverySink(_companion_store)
-
-    async def notify_session_terminal(
-        _session_id: str, frame: dict[str, Any]
-    ) -> None:
-        # A recovered Run has no surviving venue websocket/presenter.  Fan the
-        # durable terminal projection into whichever product peer is currently
-        # bound to the session; an absent peer is harmless because state.db is
-        # already current before this callback runs.
-        await _broadcast_default_chat_peers(None, frame)
-
-    session_terminal_projection_sink = SessionTerminalDeliverySink(session_db)
-    session_terminal_sink = SessionTerminalDeliverySink(
-        session_db,
-        live_notifier=notify_session_terminal,
-    )
-    service_context.register(
-        "session_terminal_projection_gate",
-        SessionTerminalProjectionConsistencyGate(
-            uow, session_db, session_terminal_projection_sink
-        ),
-    )
-    return await build_product_harness_composition(
-        uow=uow,
-        profiles=profiles,
-        workflow_launcher=launcher,
-        tool_registry=deskpet_tool_registry_v2,
-        loop_factory=_build_product_agent_loop,
-        auto_mode_check=lambda: bool(
-            permission_gate_v2 is not None
-            and getattr(permission_gate_v2, "auto_mode", False)
-        ),
-        authorization_runtime=service_context.get("authorization_runtime"),
-        capability_refresh_staging=service_context.get(
-            "capability_refresh_staging"
-        ),
-        capability_refresh_service=service_context.get(
-            "capability_refresh_service"
-        ),
-        capability_scope_store=service_context.get(
-            "tool_capability_scope_store"
-        ),
-        brokered_planner=getattr(
-            service_context.get("capability_platform"),
-            "brokered_planner",
-            None,
-        ),
-        capability_builder_host=service_context.get(
-            "capability_builder_host"
-        ),
-        provider_snapshot_resolver=_freeze_durable_task_provider_snapshot,
-        capability_hub=getattr(
-            service_context.get("capability_platform"),
-            "hub",
-            None,
-        ),
-        capability_platform=capability_platform,
-        companion_turn_authority=companion_turn_authority,
-        admission_authorizer=authorize_admission,
-        provider_invocation_coordinator=service_context.get(
-            "provider_invocation_coordinator"
-        ),
-        provider_fence_acquirer=service_context.get(
-            "run_execution_fence_acquirer"
-        ),
-        delivery_handlers=workflow_service.delivery_handlers,
-        delivery_bound_readers={
-            "websocket": lambda _target_id: bool(_control_connections),
-        },
-        extra_delivery_registrations=(
-            SinkRegistration(
-                "companion_growth",
-                "growth-events-v1",
-                growth_sink,
-            ),
-            SinkRegistration(
-                "session_terminal",
-                "session-transcript-v1",
-                session_terminal_sink,
-            ),
-        ),
-        terminal_delivery_contributors=(
-            GrowthTerminalDeliveryContributor(identity_gate),
-            SessionTerminalDeliveryContributor(),
-        ),
-        continuation_observer=project_user_continuation_status,
-        goal_store=service_context.get("session_goal_store"),
-        owner_generation=generation,
-    )
 
 
 async def _build_product_sdk_runtime_stack(generation: int):
@@ -9139,7 +8892,7 @@ async def _commit_product_preflight_block(
 ) -> None:
     """Route a typed preflight failure through the trusted Kernel builder."""
 
-    from deskpet.harness.kernel import root_run_identity
+    from deskpet.execution.contracts import root_idempotency_key, RunRef
 
     if _sdk_ingress is None:
         raise RuntimeError("SDK Runtime is unavailable")
@@ -9150,9 +8903,10 @@ async def _commit_product_preflight_block(
             "turn_id": turn_id,
             "venue": "text",
             "payload": {
-                "root_run_id": root_run_identity(
-                    session_id, request_id, turn_id
-                )[1].run_id,
+                "root_run_id": RunRef(
+                    uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}").hex,
+                    session_id,
+                ).run_id,
                 "task_scope_id": task_scope_id,
                 "route_availability": "unavailable",
             },
@@ -9306,9 +9060,12 @@ async def _run_product_harness_chat(
         or uuid.uuid4().hex
     )
     from deskpet.types.task_work_context import TaskWorkContextResolver
-    from deskpet.harness.kernel import root_run_identity
+    from deskpet.execution.contracts import root_idempotency_key, RunRef
 
-    _, root_ref = root_run_identity(session_id, request_id, turn_id)
+    root_ref = RunRef(
+        uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}").hex,
+        session_id,
+    )
     task_scope_id = TaskWorkContextResolver.task_scope_id(
         session_id, request_id, turn_id
     )
@@ -9693,10 +9450,13 @@ def _launch_product_harness_chat(*args, **kwargs) -> asyncio.Task:
             task_scope_id = ""
             if request_id and turn_id:
                 try:
-                    from deskpet.harness.kernel import root_run_identity
+                    from deskpet.execution.contracts import root_idempotency_key, RunRef
                     from deskpet.types.task_work_context import TaskWorkContextResolver
 
-                    _, root_ref = root_run_identity(session_id, request_id, turn_id)
+                    root_ref = RunRef(
+                        uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}").hex,
+                        session_id,
+                    )
                     run_id = root_ref.run_id
                     task_scope_id = TaskWorkContextResolver.task_scope_id(
                         session_id, request_id, turn_id
@@ -9752,61 +9512,6 @@ async def _enqueue_auto_resume_hint(sid: str, messages: list[dict]) -> None:
         await queue.push(sid, Hint(text=text, alert_id="auto_resume", severity="yellow"))
     except Exception as exc:  # noqa: BLE001
         logger.debug("auto_resume_hint_push_failed sid=%s err=%s", sid, exc)
-
-
-async def _activate_product_harness() -> None:
-    """Legacy harness activation (to be removed after SDK cutover)."""
-    global _harness_accepting, _harness_runtime, _harness_venue
-
-    from deskpet.workflows.store import RuntimeActivationCommand
-
-    workflow_service = service_context.get("workflow_service")
-    if workflow_service is None:
-        raise RuntimeError("workflow service is required for Harness activation")
-    uow = workflow_service.execution_uow
-
-    _harness_accepting = False
-    await uow.initialize()
-    state = await uow.get_runtime_state()
-    if state.phase == "legacy":
-        state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
-    if state.phase == "draining":
-        while lease := await uow.activate_runtime(command=RuntimeActivationCommand.claim(
-            f"deskpet:{os.getpid()}", lease_seconds=30.0
-        )):
-            try:
-                ref = lease.ref
-                launcher = getattr(workflow_service, "launcher", None)
-                if ref.source_kind == "workflow_run" and launcher is not None:
-                    await launcher.recover_pending(only_run_ids={ref.source_run_id})
-                if ref in await uow.scan_legacy_drain_manifest():
-                    raise RuntimeError(
-                        f"legacy durable run is still active: {ref.source_kind}/{ref.source_run_id}"
-                    )
-            except BaseException as exc:
-                await uow.activate_runtime(command=RuntimeActivationCommand.settle(
-                    lease, error=f"{type(exc).__name__}: {exc}"
-                ))
-                raise
-            if await uow.activate_runtime(
-                command=RuntimeActivationCommand.settle(lease)
-            ) is not True:
-                raise RuntimeError("legacy drain lease was lost before settlement")
-        state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
-    if state.phase not in {"activated", "open"}:
-        raise RuntimeError(f"unsupported activation phase: {state.phase}")
-    stack = await _build_product_harness_stack(state.generation)
-    if state.phase == "activated":
-        state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())
-    _harness_runtime, _harness_venue = stack
-    workflow_service.bind_execution_delivery_wakeup(
-        _harness_runtime.reconciler.trigger
-    )
-    logger.info(
-        "product_harness_ready_ingress_closed generation=%d phase=%s",
-        state.generation,
-        state.phase,
-    )
 
 
 async def _activate_product_sdk_runtime() -> None:
