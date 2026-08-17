@@ -1,0 +1,83 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "EI-AC-1",
+    "EI-AC-2",
+    "EI-AC-3",
+    "EI-AC-4",
+    "EI-AC-5",
+    "EI-AC-6",
+    "EI-AC-7",
+    "EI-AC-8"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-1",
+      "description": "SDK 公开 API 的稳定性（消费者依赖）"
+    },
+    {
+      "id": "ASSET-2",
+      "description": "Conformance 测试的准确性（消费者验证工具）"
+    },
+    {
+      "id": "ASSET-3",
+      "description": "文档的正确性（消费者集成指南）"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-1",
+      "description": "消费者按文档实现 Ports（SDK 不防御恶意 Port 实现）"
+    },
+    {
+      "id": "TRUST-2",
+      "description": "开发环境网络可达 PyPI（安装依赖）"
+    },
+    {
+      "id": "TRUST-3",
+      "description": "Python 3.11+ 环境可用"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-1",
+      "description": "文档示例代码无法运行"
+    },
+    {
+      "id": "FAIL-2",
+      "description": "Conformance 测试误报（实际正确但报 FAIL）"
+    },
+    {
+      "id": "FAIL-3",
+      "description": "Conformance 测试漏报（实际错误但报 PASS）"
+    },
+    {
+      "id": "FAIL-4",
+      "description": "缺少必要 Port 接口文档导致消费者无法实现"
+    },
+    {
+      "id": "FAIL-5",
+      "description": "Agent 无法自主选择正确 Workflow（仍依赖产品路由）"
+    }
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-1",
+      "description": "恶意消费者故意破坏 SDK（不防御）"
+    },
+    {
+      "id": "OOS-2",
+      "description": "Python 版本 < 3.11（不支持）"
+    },
+    {
+      "id": "OOS-3",
+      "description": "网络完全隔离环境（无法安装依赖）"
+    },
+    {
+      "id": "OOS-4",
+      "description": "移动端性能优化（AI Phone 自行处理）"
+    }
+  ],
+  "maximum_acceptable_impact": "消费者集成失败，需人工介入排查（不应导致数据丢失或安全问题）"
+}

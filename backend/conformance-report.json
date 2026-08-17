@@ -1,0 +1,285 @@
+{
+  "artifact_sha256": "48048ffbb827df15ae27efad67fa78d31302c9869381cb175d0d908c5f204e2f",
+  "cases": [
+    {
+      "case_id": "provider.physical_request",
+      "duration_seconds": 0.0005578340060310438,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "provider"
+    },
+    {
+      "case_id": "provider.typed_error",
+      "duration_seconds": 0.00022566699772141874,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "provider"
+    },
+    {
+      "case_id": "provider.usage",
+      "duration_seconds": 0.00023979099933058023,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "provider"
+    },
+    {
+      "case_id": "provider.redaction",
+      "duration_seconds": 0.0002140420110663399,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "provider"
+    },
+    {
+      "case_id": "tool.schema",
+      "duration_seconds": 0.014646041992818937,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "tool"
+    },
+    {
+      "case_id": "tool.five_state",
+      "duration_seconds": 2.2958003683015704e-05,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "tool"
+    },
+    {
+      "case_id": "tool.reconcile",
+      "duration_seconds": 0.0005099999980302528,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "tool"
+    },
+    {
+      "case_id": "tool.malformed_duplicate_late",
+      "duration_seconds": 0.0005070829938631505,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "tool"
+    },
+    {
+      "case_id": "runtime.no_tool",
+      "duration_seconds": 0.028599915996892378,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.one_tool",
+      "duration_seconds": 0.03567225000006147,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.multi_turn_tool",
+      "duration_seconds": 0.031118417013203725,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.session_persistence",
+      "duration_seconds": 0.034459207992767915,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.hitl",
+      "duration_seconds": 0.02764341700822115,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.delivery",
+      "duration_seconds": 0.0049450829974375665,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.budget",
+      "duration_seconds": 0.11052075000770856,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "runtime.restart_without_replay",
+      "duration_seconds": 0.03888629200810101,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "runtime"
+    },
+    {
+      "case_id": "workflow.host_owned",
+      "duration_seconds": 0.037106374991708435,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "workflow"
+    },
+    {
+      "case_id": "workflow.official_durable_task",
+      "duration_seconds": 0.5275463750003837,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "workflow"
+    },
+    {
+      "case_id": "workflow.official_personal_v1",
+      "duration_seconds": 0.027688292000675574,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "workflow"
+    },
+    {
+      "case_id": "workflow.official_capability_build",
+      "duration_seconds": 0.03364004199102055,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "workflow"
+    },
+    {
+      "case_id": "workflow.ticket_fingerprint",
+      "duration_seconds": 0.026456749998033047,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "workflow"
+    },
+    {
+      "case_id": "workflow.reopen",
+      "duration_seconds": 0.05898225000419188,
+      "evidence": {
+        "physical_boundary": "sqlite",
+        "probe": 1
+      },
+      "message": null,
+      "required": true,
+      "status": "pass",
+      "suite": "workflow"
+    }
+  ],
+  "errors": [],
+  "host": {
+    "name": "deskpet",
+    "version": "1.0.0"
+  },
+  "platform": "macOS-26.4.1-arm64-arm-64bit",
+  "protocol_version": "1.0.0",
+  "python_version": "3.12.13",
+  "sdk_version": "0.1.1",
+  "status": "pass",
+  "suites": [
+    "provider",
+    "tool",
+    "runtime",
+    "workflow"
+  ]
+}
