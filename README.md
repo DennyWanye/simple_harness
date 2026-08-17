@@ -48,6 +48,26 @@ Linux 另需 Tauri 系统库（webkit2gtk 等，`setup.sh` 检测不到会给出
 > 本地 profile 身份路径，不存在账户登录、注册或登出入口。历史 DeskPet 构建说明不代表
 > 当前可用产品入口。
 
+## 常见问题
+
+### ⚠️ 端口 8100 冲突错误
+
+**症状：** 启动应用时报错 "Address already in use (os error 10048)" 或 "端口 8100 已被占用"。
+
+**原因：** SimpleHarness 使用 Tauri 架构，Rust 壳会**自动管理** Python 后端进程。如果手动启动了后端（`python main.py`），会占用 8100 端口，导致 Tauri 无法启动自己的后端实例。
+
+**解决方案：**
+
+```bash
+# 1. 停止手动启动的后端进程
+pkill -f "python main.py"
+
+# 2. 使用官方启动方式（让 Tauri 管理后端）
+./scripts/dev.sh
+```
+
+**重要：** 不要手动启动后端。`dev.sh` 脚本会设置 `DESKPET_BACKEND_DIR` 环境变量，Tauri Rust 壳会自动启动 `backend/.venv/bin/python main.py` 并在退出时回收进程。手动启动会导致端口冲突。
+
 ## 与 DeskPet 的差异清单（Workbench 改版后现状）
 
 - 删除（fork 期）：Live2D 全链路——`live2dcubismcore`/`pixi-live2d-display`/`pixi.js`
