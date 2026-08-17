@@ -31,7 +31,7 @@ _CONTROL_TOOLS = frozenset(
 _STAGED_TOOLS = frozenset(
     {"desktop_create_file", "doc_create", "doc_edit", "edit_file", "excel_create", "file_write", "move_file", "pdf_export", "ppt_create", "register_artifacts", "write_file"}
 )
-_CONTEXT_TOOLS = frozenset({"context_page_in", "memory_recall", "skill_invoke", "todo_write"})
+_CONTEXT_TOOLS = frozenset({"context_page_in", "skill_invoke", "todo_write"})
 _ASYNC_TOOLS = frozenset(
     {
         "app_discover", "app_launch", "download_file", "file_read", "file_write",
@@ -231,7 +231,6 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
     )
     from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
     from deskpet.tools.context_page_in_tools import build_context_page_in_handler
-    from deskpet.tools.memory_recall import build_memory_recall_handlers
     from deskpet.tools.tool_search import register_capability_bridge_tools
     from deskpet.tools.code_tools.web_search_tool import build_web_search_handler
 
@@ -244,10 +243,7 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         deps.context_page_store,
         execution_context_getter=deps.execution_context_getter,
     )
-    _, memory_handler = build_memory_recall_handlers(
-        deps.memory_query,
-        deps.memory_scope_resolver,
-    )
+    # memory_recall 已移除 — 等待 simple-harness-memory-sdk 集成后重新接入
 
     class Capture:
         def __init__(self) -> None:
@@ -269,7 +265,6 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             "await_subagents": (await_handler, "keyword_context"),
             "todo_write": (todo_handler, "keyword_context"),
             "context_page_in": (page_handler, "standard"),
-            "memory_recall": (memory_handler, "context"),
             "web_search": (build_web_search_handler(deps.search_gateway), "standard"),
         }
     )

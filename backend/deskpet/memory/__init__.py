@@ -1,19 +1,13 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""P4 three-layer memory system.
+"""
+STUBS — 记忆系统已移除，等待 SDK 替换。
 
-- L1 (file memory, P4-S4): ``file_memory.py``
-    MEMORY.md + USER.md under %APPDATA%\\deskpet\\, ``\\n§\\n`` separated,
-    50KB / 20KB caps, frozen snapshot at session start.
-- L2 (session DB, P4-S1 lower): ``session_db.py``
-    aiosqlite WAL-mode SQLite with FTS5 messages index. Lifted from
-    Hermes ``hermes_state.py`` with multi-tenant columns stripped.
-- L3 (vector layer, P4-S2 / S3): ``embedder.py`` + ``retriever.py``
-    BGE-M3 1024-dim embeddings written async via ``embedding_queue``;
-    ``messages_vec`` virtual table (sqlite-vec); hybrid RRF recall
-    (vec 0.5 + fts 0.3 + recency 0.15 + salience 0.05).
+原 deskpet.memory 模块（35个文件，17579行）已被删除。
+替代方案：simple-harness-memory-sdk（独立仓库）
 
-The unified entrypoint is ``manager.py`` (``MemoryManager.recall`` /
-``write``). DB schema migrations live in ``migrations/``.
+架构设计见：plans/2026-08-17-memory-sdk/00-ARCHITECTURE.md
+
+此包仅提供最小化 stubs，防止导入错误，让 app 以无记忆降级模式运行。
 """
