@@ -1,0 +1,7 @@
+{
+  "review_mode": "diff",
+  "findings": [
+    {"id": "slice1-task1-verification-dependency-misordered", "severity": "P2", "scope_relation": "in-scope", "origin": "patch-induced", "violated_acceptance_ids": ["S1-AC-2"], "assurance_contract_ids": ["FAIL-5"], "evidence": "Resolved: Task 5 依赖改为 Task 1、2、3、4 并注明 verify_sdk_candidate 的环境前置", "status": "resolved", "root_cause": "task-level verification criterion now matches the dependency order at both Task 1 and Task 5"},
+    {"id": "quickstart-install-source-left-as-either-or", "severity": "P2", "scope_relation": "in-scope", "origin": "patch-induced", "violated_acceptance_ids": ["S2-AC-4"], "assurance_contract_ids": ["FAIL-3"], "evidence": "Resolved: 安装段唯一来源 clone+uv build（gh release list 独立复核 0.1.2 未发布）；Task 4 干净目录经本地 clone+构建供给 wheel", "status": "resolved", "root_cause": "install section names the single true acquisition path; from-zero gate materializes the wheel via clone+uv build"}
+  ]
+}

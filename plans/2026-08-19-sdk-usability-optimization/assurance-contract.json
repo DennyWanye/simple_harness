@@ -1,0 +1,35 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "S1-AC-1", "S1-AC-2", "S1-AC-3", "S1-AC-4", "S1-AC-5", "S1-AC-6",
+    "S2-AC-1", "S2-AC-2", "S2-AC-3", "S2-AC-4",
+    "S3-AC-1", "S3-AC-2", "S3-AC-3", "S3-AC-4"
+  ],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "宿主生产聊天链路可用性（SDK runtime 是唯一生产 ingress）"},
+    {"id": "ASSET-2", "description": "SDK 公开 API 稳定性（消费者依赖）"},
+    {"id": "ASSET-3", "description": "release 工件完整性（wheel SHA-256 链）"},
+    {"id": "ASSET-4", "description": "文档正确性（消费者唯一接入指南）"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "消费者按文档实现 Ports（SDK 不防御恶意 Port 实现）"},
+    {"id": "TRUST-2", "description": "开发环境可建干净 venv、可联网安装依赖"},
+    {"id": "TRUST-3", "description": "Python 3.11+ 可用；macOS ARM64"},
+    {"id": "TRUST-4", "description": "SDK 仓库 dist/ 的 0.1.2 wheel 为本机从 SDK 仓库 HEAD（896b685，含 cb1f245 consumer layer）构建的工件；dist/ 未入 git、无官方 Release，byte-for-byte SHA-256 核对是真正的完整性锚点"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "vendor 了错误的 wheel bytes（版本/SHA 不符）"},
+    {"id": "FAIL-2", "description": "0.1.2 与宿主 10-Port 用法不兼容导致生产链路回归"},
+    {"id": "FAIL-3", "description": "文档/示例修正后仍跑不通（文档说谎）"},
+    {"id": "FAIL-4", "description": "release-gate 脚本误报 PASS（实际坏了但报过）"},
+    {"id": "FAIL-5", "description": "宿主 fail-closed 校验被削弱（版本/SHA 校验变成摆设）"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "恶意消费者/恶意 SDK 使用者"},
+    {"id": "OOS-2", "description": "Python < 3.11、非 macOS 平台"},
+    {"id": "OOS-3", "description": "完全离线环境"},
+    {"id": "OOS-4", "description": "SDK 新功能缺陷（只保本次触碰面的兼容与文档正确）"}
+  ],
+  "maximum_acceptable_impact": "宿主聊天链路暂时不可用需回滚 vendor；不得导致用户数据丢失/损坏"
+}

@@ -1,0 +1,114 @@
+{
+  "review_mode": "breadth",
+  "coverage": {
+    "acceptance_coverage": true,
+    "entry_and_trust_chain": true,
+    "data_flow_and_persistence": true,
+    "identity_permissions_concurrency_cleanup": true,
+    "failure_and_recovery": true,
+    "tests_and_evidence": true,
+    "release_and_rollback": true,
+    "trusted_boundary_stop": true
+  },
+  "findings": [
+    {
+      "id": "slice1-misses-test-suite-identity-consumers",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["S1-AC-4"],
+      "assurance_contract_ids": ["FAIL-2"],
+      "evidence": "backend/tests/sdk_adapters/test_runtime_paths.py:19-25 builds SdkCandidateIdentity(\"0.1.1\", <0.1.1 wheel sha>, <0.1.1 wheel>) as a POSITIVE test; test_composition.py:31-33 does the same. verify_sdk_candidate rejects when installed distribution version != identity.version, so once Task 3 installs 0.1.2 both test files produce NEW failures. Plan Task 4's completion grep excludes tests; Slice 1 文件影响清单 omits them.",
+      "status": "open",
+      "root_cause": "plan's identity-consumer enumeration was built from production-code grep and excluded the test suite, so the SSOT cutover task list is incomplete"
+    },
+    {
+      "id": "release-gate-conformance-cli-lacks-host",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["S3-AC-3"],
+      "assurance_contract_ids": ["FAIL-4"],
+      "evidence": "0.1.2 wheel conformance CLI (testing/cli.py:57-77) hard-requires --host MODULE:FACTORY, --suite, --artifact-sha256; no conformance host ships in the wheel; examples/minimal-consumer/ has no build_host; only in-repo host is an inline fake in tests/conformance/test_cli.py:182-192 (not shipped). Slice 3 Task 3 never names the host target.",
+      "status": "open",
+      "root_cause": "S3-AC-3 assumes a runnable conformance target exists in the SDK repo; the SDK ships the conformance runner but no consumer-side host implementation"
+    },
+    {
+      "id": "quickstart-extraction-and-install-blocks-unguarded",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["S2-AC-1", "S2-AC-4"],
+      "assurance_contract_ids": ["FAIL-3", "FAIL-4"],
+      "evidence": "(a) quickstart.md has six ```python blocks; only :40-165 is self-contained; others are fragments/placeholder-key blocks. Extraction policy undefined. (b) install blocks say pip install simple_harness_sdk-0.1.1 (quickstart.md:15/:21/:275, integration-guide.md:54/:702) and never state where an external user obtains the wheel; the gate script installs the 0.1.2 wheel itself, so a stale install section would pass every scripted gate.",
+      "status": "open",
+      "root_cause": "plan operationalizes docs-as-tests for python example bodies but not for the install/acquisition path, and never pins down which code blocks the extractor executes"
+    },
+    {
+      "id": "memory-gate-does-not-execute-readme-quickstart-verbatim",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["S3-AC-4", "S3-AC-1"],
+      "assurance_contract_ids": ["FAIL-3", "FAIL-4"],
+      "evidence": "memory-sdk README.md:22-48 quickstart calls MemoryManager.build(..., enable_world_model=True) while S3-AC-1 states enable_world_model=True requires [world] extra; Slice 3 Task 2 gate installs plain 'pip install -e .' and runs a 'README quickstart 等效示例' — a paraphrase, not the verbatim block; the literal README quickstart is never machine-verified.",
+      "status": "open",
+      "root_cause": "gate example is specified as 'equivalent to' rather than 'extracted from' the README, and the extras/install matrix of the quickstart is never reconciled with S3-AC-1's own claims"
+    },
+    {
+      "id": "sdk-012-wheel-provenance-claim-inaccurate",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "new-external-fact",
+      "violated_acceptance_ids": [],
+      "assurance_contract_ids": ["TRUST-4", "ASSET-3"],
+      "evidence": "TRUST-4/plan claim dist/ 0.1.2 wheel is the official build of release commit 91df02d; but the wheel contains consumer_adapter.py/ports.py introduced by cb1f245 which is AFTER 91df02d, and dist/BUILD_INFO.txt + SHA256SUMS record provenance only for 0.1.0 (dist/ is git-untracked). Byte-for-byte vendor verification unaffected.",
+      "status": "open",
+      "root_cause": "the 0.1.2 artifact was rebuilt after the release commit without recording build provenance, and the approved contract text propagated the stale commit reference"
+    },
+    {
+      "id": "verify-sdk-wheel-second-sha-source",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["S1-AC-1"],
+      "assurance_contract_ids": ["FAIL-5"],
+      "evidence": "scripts/verify_sdk_wheel.py:21-24 EXPECTED_HASH has entries for 0.1.0/0.1.1 only; Task 2's verification fails as-is for 0.1.2; updating it as planned creates a second hardcoded copy of the 0.1.2 SHA outside sdk_candidate.py.",
+      "status": "open",
+      "root_cause": "the SSOT sweep was scoped to runtime consumers and the pre-existing wheel-verification script's expected-hash table was left as a parallel hardcoded source"
+    },
+    {
+      "id": "slice1-task1-verification-dependency-misordered",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["S1-AC-2"],
+      "assurance_contract_ids": ["FAIL-5"],
+      "evidence": "Slice 1 Task 1 declares 依赖：无, but its verification 'build_candidate_identity() 通过 verify_sdk_candidate' cannot pass until the wheel is vendored (Task 2) AND installed (Task 3): verify_sdk_candidate checks wheel file, SHA, installed distribution version, direct_url origin.",
+      "status": "open",
+      "root_cause": "task-level verification criterion was written against the end state rather than the task's position in the dependency order"
+    },
+    {
+      "id": "minimal-consumer-fixed-run-id-not-rerunnable",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["S2-AC-2"],
+      "assurance_contract_ids": ["FAIL-3"],
+      "evidence": "examples/minimal-consumer/demo.py:30,55-59 hardcodes db path execution.db + run_id 'run-001'; rerun against persisted db risks duplicate-run rejection; demo prints '⏸️ Task in state: None' and still exits 0 — root cause confirmed: kernel.py:1127 wait_idle(...) -> None returns nothing; fix is example-side, no SDK code change needed.",
+      "status": "open",
+      "root_cause": "example uses fixed durable identifiers against a persistent database and asserts nothing about terminal state, so success is neither rerunnable nor exit-code-visible"
+    },
+    {
+      "id": "memory-sdk-dirty-tree-vs-clean-status-dod",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [],
+      "assurance_contract_ids": [],
+      "evidence": "Acceptance DoD #3 requires 三仓库各自 git status 干净, but simple-harness-memory-sdk has 4 modified gate artifacts (plans/phase2-embeddings/verification/run-1/*); plan's commit strategy does not disposition them.",
+      "status": "open",
+      "root_cause": "pre-existing uncommitted gate artifacts in a target repo were not dispositioned in the plan's commit strategy"
+    }
+  ]
+}

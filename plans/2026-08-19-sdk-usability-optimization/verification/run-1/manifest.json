@@ -1,0 +1,103 @@
+{
+  "run_id": "slice-1",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "source_request_text": "用户：『好的，我们来开始优化』——执行 2026-08-19 双 SDK 易用性评估的三条建议：①harness SDK 宿主 vendor 升级 v0.1.2 + 修正 quickstart 错位 + 推广 build_consumer_runtime；②memory SDK README/extras 修正；③两个 SDK 各加一个 5 分钟跑通验证脚本作 release gate。用户确认范围=全部三条建议，仓库边界=允许各自仓库各自提交。",
+  "acceptance_file": "plans/2026-08-19-sdk-usability-optimization/acceptance.md",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "rationale": "本次为依赖版本切换、文档修正与验证脚本，不新增 LLM 语义功能；宿主聊天链路仅做回归 smoke",
+      "decided_by": "agent"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "rationale": "无 LLM 输出驱动端侧状态机/卡片/流程推进的新功能",
+      "decided_by": "agent"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "Slice 1 改启动装配链路（vendor wheel + 版本/SHA 校验常量），SDK runtime ready slot 是异步注册的持久服务，需冷路径场景",
+      "decided_by": "agent"
+    }
+  },
+  "release_unit": {
+    "slice_id": "slice-1-harness-sdk-0.1.2-vendor",
+    "parent_program": "sdk-usability-optimization",
+    "scope_hash": "见 acceptance.md（S1-AC-1..6 共 6 条 MUST，≤8；Task 10 个，≤10；plan 全文 <2000 行）",
+    "note": "check-release-unit 的 AC 行正则只认 `AC-` 开头 ID，本 program 用 S1-AC-* 命名机器计数为 0；人工核对 slice 1 = 6 条 MUST AC，在 ≤8 阈值内"
+  },
+  "executor_engine": "claude",
+  "scenarios": [
+    {
+      "scenario_id": "S1-vendor-sha",
+      "ac_id": "S1-AC-1",
+      "obligation_id": "TO-S1-1",
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "impact_paths": ["backend/vendor/**", "backend/pyproject.toml", "backend/uv.lock"],
+      "terminal_expectation": "vendor 0.1.2 wheel SHA 与 SDK 仓库 dist/ 逐字节一致；pyproject/uv.lock 指向 0.1.2"
+    },
+    {
+      "scenario_id": "S1-fail-closed",
+      "ac_id": "S1-AC-2",
+      "obligation_id": "TO-S1-2",
+      "kind": "script",
+      "required": true,
+      "gate_type": "negative-safety",
+      "impact_paths": ["backend/deskpet/sdk_adapters/**"],
+      "terminal_expectation": "篡改/错 SHA/错版本的 candidate identity 被 verify_sdk_candidate 拒绝"
+    },
+    {
+      "scenario_id": "S1-api-compat",
+      "ac_id": "S1-AC-3",
+      "obligation_id": "TO-S1-3",
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "impact_paths": ["backend/vendor/**"],
+      "terminal_expectation": "0.1.1→0.1.2 顶层导出/模块清单/RuntimePorts 字段 diff 无删除项"
+    },
+    {
+      "scenario_id": "S1-pytest-baseline",
+      "ac_id": "S1-AC-4",
+      "obligation_id": "TO-S1-4",
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "impact_paths": ["backend/**"],
+      "terminal_expectation": "全量 pytest failed 集合 ⊆ 基线 failed 集合（baseline_runner 快照对比）"
+    },
+    {
+      "scenario_id": "S1-conformance",
+      "ac_id": "S1-AC-5",
+      "obligation_id": "TO-S1-5",
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/vendor/**"],
+      "terminal_expectation": "宿主 adapter conformance 20/20 不劣于切换前"
+    },
+    {
+      "scenario_id": "S1-surface-smoke",
+      "ac_id": "S1-AC-6",
+      "obligation_id": "TO-R1",
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "impact_paths": ["backend/**"],
+      "terminal_expectation": "全表面冒烟：每个用户可达入口最小一枪，无 404/500/未接通"
+    },
+    {
+      "scenario_id": "COLD-1",
+      "ac_id": "S1-AC-6",
+      "obligation_id": "TO-S1-6",
+      "kind": "manual-ui",
+      "required": true,
+      "cold_start": true,
+      "gate_type": "positive-value",
+      "impact_paths": ["backend/**"],
+      "terminal_expectation": "干净用户数据目录冷启动 → sdk_runtime_ready → 主聊天发消息得非空 assistant 回复"
+    }
+  ]
+}
