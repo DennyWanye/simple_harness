@@ -7778,7 +7778,7 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.3" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
     { name = "simple-harness-memory-sdk", editable = "../../simple-harness-memory-sdk" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.1.1-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.1.2-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tomli", specifier = ">=2.0" },
@@ -7804,6 +7804,7 @@ dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pydantic" },
+    { name = "structlog" },
 ]
 
 [package.metadata]
@@ -7819,19 +7820,20 @@ requires-dist = [
     { name = "python-dateutil", marker = "extra == 'world'", specifier = ">=2.9" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
     { name = "simple-harness-memory-sdk", extras = ["embeddings", "world", "openai"], marker = "extra == 'all'" },
+    { name = "structlog", specifier = ">=24.0" },
     { name = "torch", marker = "extra == 'embeddings'", specifier = ">=2.7.1" },
 ]
 provides-extras = ["embeddings", "world", "openai", "dev", "all"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.1.1"
-source = { path = "vendor/simple_harness_sdk-0.1.1-py3-none-any.whl" }
+version = "0.1.2"
+source = { path = "vendor/simple_harness_sdk-0.1.2-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.1.1-py3-none-any.whl", hash = "sha256:d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca" },
+    { filename = "simple_harness_sdk-0.1.2-py3-none-any.whl", hash = "sha256:387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c" },
 ]
 
 [package.metadata]

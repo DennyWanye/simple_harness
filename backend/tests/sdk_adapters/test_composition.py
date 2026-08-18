@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from pathlib import Path
 import sqlite3
 
@@ -20,18 +19,14 @@ from deskpet.sdk_adapters.composition import (
     WorkflowFactoryResourceScope,
     WorkflowRuntimeBuild,
 )
-from deskpet.sdk_adapters.runtime_paths import (
-    ProductRuntimePathsAdapter,
-    SdkCandidateIdentity,
-)
+from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
+from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_wheel_path
 from context import ServiceContext
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-WHEEL = PROJECT_ROOT / "backend/vendor/simple_harness_sdk-0.1.1-py3-none-any.whl"
-IDENTITY = SdkCandidateIdentity(
-    "0.1.1", hashlib.sha256(WHEEL.read_bytes()).hexdigest(), WHEEL
-)
+WHEEL = sdk_wheel_path()
+IDENTITY = build_candidate_identity()
 
 
 class _Noop:

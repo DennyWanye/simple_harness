@@ -2,27 +2,30 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
-## Active candidate: simple_harness_sdk-0.1.1-py3-none-any.whl
+## Active candidate: simple_harness_sdk-0.1.2-py3-none-any.whl
 
-**Source:** local immutable candidate built from SDK commit
-`82fb531f0f1fd5aab027e9d9b016a1aee6475066`
-**Planned tag:** `v0.1.1` (not created or published)
-**SHA256:** `d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca`
-**Candidate manifest SHA256:** `7b6eb38a429b966d39ae0aad5a78ca056ae1884c4e4e4199fbc13ec1aadf1334`
+**Source:** local build from SDK repository HEAD `896b685`（含 cb1f245 consumer adapter layer；
+`git tag v0.1.2` 存在但 GitHub Release 未发布，dist/ 未入 git）
+**SHA256:** `387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c`
+**Vendored:** 2026-08-19（sdk-usability-optimization program, Slice 1）
 
-The earlier local candidates were superseded by the workflow recovery and
-typed Tool authority fixes in the active bytes above. A replacement machine
-receipt must bind this exact wheel before release.
-
-The product lockfile must point to these exact bytes while Slice B/C testing is
-in progress. This candidate must not be described as a GitHub Release until the
-user separately approves publication.
+v0.1.2 对 v0.1.1 为纯新增（consumer adapter 层 + Memory ports + 文档/示例），宿主 10-Port
+适配层无需修改。wheel 身份的单一事实源是
+`backend/deskpet/sdk_adapters/sdk_candidate.py`——切换版本只改那一个文件；
+`scripts/verify_sdk_wheel.py` 的 active 预期 hash 也从该模块 import，不再自行硬编码。
 
 Verification:
 
 ```bash
-python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.1-py3-none-any.whl
+backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.2-py3-none-any.whl
 ```
+
+## Historical artifact: simple_harness_sdk-0.1.1-py3-none-any.whl
+
+**Source:** local immutable candidate built from SDK commit
+`82fb531f0f1fd5aab027e9d9b016a1aee6475066`
+**SHA256:** `d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca`
+**Status:** superseded by v0.1.2 on 2026-08-19; retained for audit rollback.
 
 ## Historical artifact: simple_harness_sdk-0.1.0-py3-none-any.whl
 
@@ -71,7 +74,8 @@ The PyInstaller spec (`build-msi.ps1` / frozen build) automatically collects SDK
 When updating to a new SDK version:
 
 1. Download new wheel from corresponding GitHub Release
-2. Verify via `scripts/verify_sdk_wheel.py` (update EXPECTED_HASH first)
+2. Update the single source of truth `backend/deskpet/sdk_adapters/sdk_candidate.py`
+   (version + filename + SHA256); `scripts/verify_sdk_wheel.py` picks it up automatically
 3. Replace old wheel in `backend/vendor/`
 4. Update `backend/pyproject.toml` path reference to new wheel filename
 5. Run `uv sync` to update lock

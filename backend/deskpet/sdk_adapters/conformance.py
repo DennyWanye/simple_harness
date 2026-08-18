@@ -55,14 +55,15 @@ from deskpet.sdk_adapters.product_workflows.research_ports import (
 )
 from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
-from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter, SdkCandidateIdentity
+from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
+from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_wheel_path
 from deskpet.sdk_adapters.tools import build_product_tool_registry
 from deskpet.sdk_adapters.workflows import build_product_workflow_registrations
 from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
 from deskpet.tools.context_page_in_tools import ContextPageInStore
 
 
-_WHEEL = Path(__file__).resolve().parents[2] / "vendor/simple_harness_sdk-0.1.1-py3-none-any.whl"
+_WHEEL = sdk_wheel_path()
 VENDORED_SDK_SHA256 = hashlib.sha256(_WHEEL.read_bytes()).hexdigest()
 
 
@@ -209,7 +210,7 @@ class _RuntimeSeam:
             self.database=database; self.uow=uow; self.provider=_Provider(self.responses); self.tool=_product_tools(self.root); registry=self.tool
             effects=EffectExecutor(uow=uow,registry=registry,authorization=self.authorization,reconciliation=self.reconciliation,clock=self.clock); provider=ProviderInvocationCoordinator(uow=uow,provider=self.provider,budget_policy=BudgetPolicy(),estimator=self.estimator,clock=self.clock); delivery=DeliveryDispatcher(uow,{"fixture":self.sink},clock=self.clock)
             return RuntimePorts(provider=provider,tools=effects,authorization=self.authorization,context=SqliteContextPort(database,clock=self.clock),delivery=delivery,tool_reconciliation=self.reconciliation,reconciliation=_Noop(),provider_reconciliation=_Noop(),react_checkpoint=uow,tool_catalog=_Catalog(),owner_id="deskpet-conformance",clock=self.clock)
-        self.stack=ProductSdkRuntimeStack(paths=ProductRuntimePathsAdapter(self.root),candidate_identity=SdkCandidateIdentity("0.1.1",VENDORED_SDK_SHA256,_WHEEL),dependency_loader=lambda:SdkRuntimeBuildInputs(profiles={"agent.general":RuntimeProfile("agent.general","react")},drivers={"react":driver},ports_factory=ports_factory,workflow_catalog_digest="conformance-product-workflows"))
+        self.stack=ProductSdkRuntimeStack(paths=ProductRuntimePathsAdapter(self.root),candidate_identity=build_candidate_identity(),dependency_loader=lambda:SdkRuntimeBuildInputs(profiles={"agent.general":RuntimeProfile("agent.general","react")},drivers={"react":driver},ports_factory=ports_factory,workflow_catalog_digest="conformance-product-workflows"))
     async def run(self, run_id, session="session-1"):
         ready=await self.stack.start(); self.runtime=ready.runtime; start=RunStart(ExecutionSessionId(session),RunId(run_id),RequestId(f"request-{run_id}"),f"turn-{run_id}",{"messages":[{"role":"user","content":"physical"}],"capability_snapshot":{"tools":["process_list"]}},1)
         await ready.client.start(start); await ready.runtime.wait_idle(start.run_id); return self.uow.read_run(run_id),self.uow.read_react_checkpoint(run_id)

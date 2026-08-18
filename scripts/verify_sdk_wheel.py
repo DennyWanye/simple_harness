@@ -2,7 +2,7 @@
 """Verify SDK wheel integrity before vendoring.
 
 Usage:
-    python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.1-py3-none-any.whl
+    python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.2-py3-none-any.whl
 
 Validates:
 - Wheel file exists and is readable
@@ -16,12 +16,19 @@ import zipfile
 from pathlib import Path
 
 
-# Reviewed immutable artifact hashes. v0.1.1 is the local candidate approved for
-# product cutover testing; it is intentionally not described as a Release.
-EXPECTED_HASH = {
+# Historical immutable artifact hashes (audit trail, no longer active).
+HISTORICAL_HASH = {
     "0.1.0": "d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91",
     "0.1.1": "d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca",
 }
+
+# The active wheel identity comes from the single source of truth so this
+# script never drifts from what the product actually pins.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_REPO_ROOT / "backend"))
+from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, SDK_WHEEL_SHA256
+
+EXPECTED_HASH = {**HISTORICAL_HASH, SDK_VERSION: SDK_WHEEL_SHA256}
 
 
 def compute_sha256(file_path: Path) -> str:

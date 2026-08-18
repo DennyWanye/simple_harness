@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import pytest
@@ -13,15 +12,21 @@ from deskpet.sdk_adapters.runtime_paths import (
     SdkCandidateIdentity,
     verify_sdk_candidate,
 )
+from deskpet.sdk_adapters.sdk_candidate import (
+    SDK_VERSION,
+    SDK_WHEEL_SHA256,
+    build_candidate_identity,
+    sdk_wheel_path,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-WHEEL = PROJECT_ROOT / "backend/vendor/simple_harness_sdk-0.1.1-py3-none-any.whl"
-WHEEL_SHA256 = hashlib.sha256(WHEEL.read_bytes()).hexdigest()
+WHEEL = sdk_wheel_path()
+WHEEL_SHA256 = SDK_WHEEL_SHA256
 
 
 def test_exact_candidate_identity_and_execution_path(tmp_path: Path) -> None:
-    identity = SdkCandidateIdentity("0.1.1", WHEEL_SHA256, WHEEL)
+    identity = build_candidate_identity()
     verified = verify_sdk_candidate(identity)
     paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
 
@@ -34,7 +39,7 @@ def test_exact_candidate_identity_and_execution_path(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("field", ("version", "sha256", "wheel"))
 def test_candidate_identity_fails_closed(tmp_path: Path, field: str) -> None:
-    version = "0.1.0" if field == "version" else "0.1.1"
+    version = "0.1.0" if field == "version" else SDK_VERSION
     digest = "0" * 64 if field == "sha256" else WHEEL_SHA256
     wheel = tmp_path / "other.whl" if field == "wheel" else WHEEL
     if field == "wheel":

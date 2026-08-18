@@ -62,11 +62,8 @@ from deskpet.tools.ppt_tools import _handle_ppt_create
 
 from .composition import OwnedResourceCloser, ProductSdkRuntimeStack, SdkRuntimeBuildInputs
 from .provider import ProductProviderAdapter
-from .runtime_paths import ProductRuntimePathsAdapter, SdkCandidateIdentity
-
-
-_SDK_VERSION = "0.1.1"
-_SDK_WHEEL_SHA256 = "d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca"
+from .runtime_paths import ProductRuntimePathsAdapter
+from .sdk_candidate import build_candidate_identity
 
 
 @dataclass(frozen=True, slots=True)
@@ -333,16 +330,9 @@ class DesktopSdkRuntimeBridge:
                     owner_id="deskpet-desktop-sdk-test",
                 )
 
-            wheel = (
-                Path(__file__).resolve().parents[2]
-                / "vendor"
-                / "simple_harness_sdk-0.1.1-py3-none-any.whl"
-            )
             stack = ProductSdkRuntimeStack(
                 paths=ProductRuntimePathsAdapter(self._user_data_root),
-                candidate_identity=SdkCandidateIdentity(
-                    _SDK_VERSION, _SDK_WHEEL_SHA256, wheel
-                ),
+                candidate_identity=build_candidate_identity(),
                 dependency_loader=lambda: SdkRuntimeBuildInputs(
                     profiles={"agent.general": RuntimeProfile("agent.general", "react")},
                     drivers={"react": driver},

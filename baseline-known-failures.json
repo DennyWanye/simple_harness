@@ -11,6 +11,7 @@
     "root-tests": "3fcba2d77f91b5e5567d88d474c866d0c9be68990b0ad8dad522ba970668e0db",
     "frontend-lint": "4f6915643731fe785abddeb9056bef09c93b16cd8a3c1e8520c2c6ea1d1ceb64",
     "backend-companion": "e8ed82da6e9c2b74c46c4c8d088a402670a65969dd86c714a8ee8ce40aba13e2",
-    "frontend-vitest": "587f7bd2b57eff8068dee406956d26a1cf811f7f7f65492c798df5e773d2c7ee"
+    "frontend-vitest": "587f7bd2b57eff8068dee406956d26a1cf811f7f7f65492c798df5e773d2c7ee",
+    "backend-sdk-adapters": "f27e9ea54cfc71fddd1488acc1d2887402be675bd625aadb2cda3937be804d0b"
   }
 }

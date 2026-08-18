@@ -217,6 +217,7 @@ from deskpet.tools.public_projection import (
     project_public_tool_calls,
     project_public_tool_result,
 )
+from deskpet.sdk_adapters.sdk_candidate import SDK_VERSION, build_candidate_identity
 from observability.vram import classify_tier
 from router.hybrid_router import HybridRouter, LLMUnavailableError, RoutingStrategy
 from billing.ledger import BillingLedger
@@ -6747,7 +6748,7 @@ def _initialize_sdk_desktop_test_bridge() -> None:
     )
     logger.info(
         "sdk_desktop_test_bridge_ready",
-        sdk_version="0.1.1",
+        sdk_version=SDK_VERSION,
         ingress="lazy",
         tools=("process_list", "ppt_create"),
     )
@@ -6787,7 +6788,6 @@ async def _build_product_sdk_runtime_stack(generation: int):
     )
     from deskpet.sdk_adapters.runtime_paths import (
         ProductRuntimePathsAdapter,
-        SdkCandidateIdentity,
     )
     from deskpet.sdk_adapters.provider import ProductProviderAdapter
     from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
@@ -7024,18 +7024,10 @@ async def _build_product_sdk_runtime_stack(generation: int):
             owner_id=f"deskpet-product-sdk-g{generation}",
         )
 
-    # Locate SDK wheel
-    wheel = (
-        Path(__file__).resolve().parent
-        / "vendor"
-        / "simple_harness_sdk-0.1.1-py3-none-any.whl"
-    )
-    wheel_sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
-
-    # Build SDK Runtime Stack
+    # Build SDK Runtime Stack (wheel identity from the single source of truth)
     stack = ProductSdkRuntimeStack(
         paths=ProductRuntimePathsAdapter(_paths.user_data_dir()),
-        candidate_identity=SdkCandidateIdentity("0.1.1", wheel_sha256, wheel),
+        candidate_identity=build_candidate_identity(),
         dependency_loader=lambda: SdkRuntimeBuildInputs(
             profiles={"agent.general": RuntimeProfile("agent.general", "react")},
             drivers={"react": driver},
@@ -7856,7 +7848,7 @@ async def _run_sdk_desktop_chat(
                 "request_id": request_id,
                 "turn_id": turn_id,
                 "task_scope_id": task_scope_id,
-                "sdk_version": "0.1.1",
+                "sdk_version": SDK_VERSION,
                 "tool_names": list(result.tool_names),
             },
         },
@@ -8404,7 +8396,7 @@ async def _activate_product_sdk_runtime() -> None:
         "product_sdk_runtime_ready",
         generation=state.generation,
         phase=state.phase,
-        sdk_version="0.1.1",
+        sdk_version=SDK_VERSION,
         ingress="closed",
     )
 
@@ -8468,8 +8460,9 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
     _sdk_ingress.open()
 
     logger.info(
-        "companion_runtime_adapter_ready product_ingress=open phase=%s sdk_version=0.1.1",
+        "companion_runtime_adapter_ready product_ingress=open phase=%s sdk_version=%s",
         _growth_authority_router.current.phase.value,
+        SDK_VERSION,
     )
 
 
