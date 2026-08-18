@@ -1465,6 +1465,15 @@ class SessionDB:
                     msg_id,
                     exc,
                 )
+        if inserted and self._memory_backend is not None:
+            try:
+                await self._memory_backend.append_message(sid, "user", content)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "memory_backend append failed for msg_id=%s: %s",
+                    msg_id,
+                    exc,
+                )
         return msg_id
 
     async def settle_companion_ingress_semantic_intent(

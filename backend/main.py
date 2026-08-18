@@ -1098,23 +1098,35 @@ async def _initialize_growth_authority() -> None:
         _paths.user_data_dir() / "data" / "companion.db",
         clock=companion_clock.now_utc,
     )
-    memory_recall_query = service_context.get("memory_recall_query")
-    if memory_recall_query is not None and deskpet_tool_registry_v2 is not None:
-        from deskpet.tools.memory_recall import (
-            CompanionRunMemoryScopeResolver,
-            register_memory_recall,
-        )
-
+    # P4-S13: 记忆 SDK 接线 —— 把认知记忆能力暴露为 product SDK 的 memory tool
+    # provider。旧 deskpet.tools.memory_recall 模块已在记忆系统清理时删除，这里改用
+    # host 侧 recall_adapter（只做「product SDK tool 契约 <-> MemoryBackend」翻译）。
+    from deskpet.memory.recall_adapter import (
+        CompanionRunMemoryScopeResolver,
+        OwnerMemoryRecallQueryAdapter,
+        register_memory_recall,
+    )
+    memory_recall_query = OwnerMemoryRecallQueryAdapter(_memory_backend)
+    service_context.register("memory_recall_query", memory_recall_query)
+    scope_resolver = CompanionRunMemoryScopeResolver(store)
+    service_context.register("memory_recall_scope_resolver", scope_resolver)
+    if deskpet_tool_registry_v2 is not None:
         if deskpet_tool_registry_v2.get("memory_recall") is None:
-            register_memory_recall(
-                deskpet_tool_registry_v2,
-                memory_recall_query,
-                CompanionRunMemoryScopeResolver(store),
-            )
-        service_context.register(
-            "memory_recall_scope_resolver",
-            CompanionRunMemoryScopeResolver(store),
-        )
+            # P4-S13 TODO: core handler authority 清单仍指向已删除的
+            # deskpet/tools/memory_recall.py，需重建 execution_build_* 三个 manifest 后
+            # 才能通过 authority_accepts_handler。在此之前仅注册 provider，不阻断启动；
+            # SDK runtime 的 memory_recall 走 product tool catalog，不受 host registry 影响。
+            try:
+                register_memory_recall(
+                    deskpet_tool_registry_v2,
+                    memory_recall_query,
+                    scope_resolver,
+                )
+            except Exception as _mem_recall_reg_exc:  # noqa: BLE001
+                logger.warning(
+                    "memory_recall_host_registration_deferred",
+                    reason=str(_mem_recall_reg_exc)[:200],
+                )
     preference_resolver = PreferenceResolver(
         store,
         policy=PreferencePolicy.from_growth_config(config.companion.growth),
@@ -2538,8 +2550,30 @@ _fact_extractor = None
 _embedder = None
 _vector_worker = None
 _retriever = None
-_skill_loader = None
-_managed_skill_projection = None
+try:
+    from deskpet.skills.loader import SkillLoader as _SkillLoader
+    from deskpet.companion.skills import (
+        ManagedSkillDiscoveryProjection as _ManagedSkillDiscoveryProjection,
+        inventory_first_party_skill_packs as _inventory_first_party_skill_packs,
+    )
+    _first_party_skill_inventory = _inventory_first_party_skill_packs(
+        _paths.first_party_capability_pack_roots()
+    )
+    _managed_skill_projection = _ManagedSkillDiscoveryProjection(
+        _first_party_skill_inventory
+    )
+    _skill_loader = _SkillLoader(
+        skill_dirs=[],
+        skill_scopes=[],
+        enable_watch=False,
+        knowledge_enabled=bool(
+            getattr(getattr(config, "skills", None), "knowledge_enabled", False)
+        ),
+    )
+except Exception as _skills_exc:  # noqa: BLE001
+    logger.warning("skills_wiring_failed error=%s", str(_skills_exc)[:200])
+    _managed_skill_projection = None
+    _skill_loader = None
 _context_snapshot_store = None
 _context_segment_store = None
 _session_history_planner = None
@@ -2550,7 +2584,14 @@ service_context.register("context_assembler", None)
 service_context.register("session_db", _session_db)
 service_context.register("vector_worker", None)
 service_context.register("embedder", None)
-service_context.register("managed_skill_discovery_projection", None)
+service_context.register("skill_loader", _skill_loader)
+service_context.register(
+    "managed_skill_discovery_projection", _managed_skill_projection
+)
+# P4-S13: ContextPageInStore 是请求作用域的 page-in 引用权威（Context OS），不依赖
+# 记忆 SDK；product SDK tool catalog 的 context_page_in handler 需要它作为 provider。
+from deskpet.tools.context_page_in_tools import ContextPageInStore as _ContextPageInStore
+service_context.register("context_page_in_store", _ContextPageInStore())
 
 base_agent = SimpleLLMAgent(llm, memory=memory_store)
 agent = ToolUsingAgent(base=base_agent, registry=tool_registry)
@@ -6674,6 +6715,7 @@ async def _build_product_agent_loop(request):
 # SDK Runtime globals (production ingress)
 _sdk_runtime_stack = None
 _sdk_ingress = None
+_sdk_context_port = None
 
 _sdk_desktop_bridge = None
 
@@ -6933,16 +6975,29 @@ async def _build_product_sdk_runtime_stack(generation: int):
     # Build reconciliation adapter
     reconciliation_adapter = ProductReconciliationAdapter(repository)
 
-    # Build delivery adapter (no parameters needed)
-    delivery_adapter = ProductDeliveryAdapter()
+    # Build delivery sink: ProductDeliveryAdapter is per-run (needs session/request/run
+    # presentation context), so the stack-level delivery port routes through the global
+    # _DeliverySink, which dispatches to the adapter registered for each run by
+    # _execute_sdk_run via _delivery_adapters.
+    from deskpet.sdk_adapters.desktop_runtime import _DeliverySink
+    delivery_adapter = _DeliverySink()
 
     # Create a simple Noop reconciliation for general reconciliation port
     class _NoopReconciliation:
         async def reconcile(self):
             return None
 
+    # SDK Runtime 的 tool_catalog 端口只要求 ToolCatalogGenerationPort
+    # （current_generation()），而 tools_adapter 是执行用 ToolRegistry、没有该方法。
+    # 这里用固定的 product catalog generation 满足 SDK 的 catalog-lease 校验。
+    class _ProductToolCatalogGeneration:
+        def current_generation(self) -> int:
+            return generation
+
     def ports_factory(database, uow):
+        global _sdk_context_port
         context = SqliteContextPort(database)
+        _sdk_context_port = context
         effects = EffectExecutor(
             uow=uow,
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
@@ -6965,7 +7020,7 @@ async def _build_product_sdk_runtime_stack(generation: int):
             reconciliation=_NoopReconciliation(),
             provider_reconciliation=_NoopReconciliation(),
             react_checkpoint=uow,
-            tool_catalog=tools_adapter,
+            tool_catalog=_ProductToolCatalogGeneration(),
             owner_id=f"deskpet-product-sdk-g{generation}",
         )
 
@@ -9213,7 +9268,11 @@ async def _execute_sdk_run(
     payload = {
         "input": {"text": text},
         "messages": [{"role": "user", "content": text}],
-        "capability_snapshot": context.services.get("capability_snapshot", {}),
+        # capability_snapshot 是 RunStart start_input 里传给 agent 的元数据；
+        # SDK Runtime 的真实 tool catalog 由 tools_adapter 决定，不依赖此字段。
+        # ServiceContext 没有 capability_snapshot 槽位，且其 get() 不支持 default，
+        # 这里暂时固定为空 dict，待 capability 快照接线补全后再替换。
+        "capability_snapshot": {},
     }
 
     # Create presentation infrastructure
@@ -9277,6 +9336,31 @@ async def _execute_sdk_run(
 
         # Query final state
         final_state = _sdk_ingress.query(run_id)
+
+        # SDK 的 ReAct driver 不产生 delivery 事件，assistant 文本只落在 SDK 的
+        # context 里。这里手动把它桥接回 presenter，走 _present_final 的
+        # 「写 SessionDB + 推 WebSocket」既有展示链路。
+        if _sdk_context_port is not None:
+            try:
+                from simple_harness import RunId as SdkRunId
+                from agent.agent_loop import FinalEvent
+                sdk_context = _sdk_context_port.load(SdkRunId(run_id))
+                assistant_texts = [
+                    message.content
+                    for message in sdk_context.messages
+                    if str(message.role.value) == "assistant"
+                ]
+                if assistant_texts:
+                    await presenter.present(
+                        FinalEvent(content=assistant_texts[-1]),
+                        context,
+                        state,
+                    )
+            except Exception as _assistant_exc:  # noqa: BLE001
+                logger.warning(
+                    "sdk_assistant_presentation_failed",
+                    error=str(_assistant_exc)[:200],
+                )
 
         # Finalize presentation
         await delivery_adapter.finish()

@@ -1,7 +1,26 @@
 # HANDOFF — Host 旧记忆实现清理（给下一个 agent）
 
-> 状态：边界与接口契约已落地，并已按第二轮审查修正；本文件是给执行“删除 app 侧旧记忆代码”的 agent 的交接说明。
-> 更新：2026-08-18
+> 状态：记忆 SDK 已接入 host 并真机 E2E 打通（2026-08-19）；旧记忆实现已删除。本文档保留清理交接历史，并记录接入后的残留项。
+> 更新：2026-08-19
+
+## 0.0 接入成果（2026-08-19，已真机验证）
+
+- 主聊天链路真机 PASS：用户消息 → `SessionDB` → 双写 `memory.db`；facts 抽取
+  `pet_name=Max` / `location=上海` / `prefers=咖啡`；真实 DeepSeek 调用 200 OK；
+  assistant 回复经 `chat_v2_final` 回推前端。
+- host 侧补齐 5 处接线缺口（详见 `ARCHITECTURE/PROJECT_STATUS.md` 2026-08-19 里程碑）：
+  新建 `recall_adapter.py`、注册 3 个 SDK tool provider、修 `ProductDeliveryAdapter` 坏桩、
+  补 `tool_catalog.current_generation`、补用户消息双写 + assistant 回复桥接。
+- SDK 仓库 `simple-harness-memory-sdk` 已加 structlog 结构化日志。
+
+## 0.0.1 接入后残留（给下一个 agent 收尾）
+
+- **host 侧 memory_recall tool 注册 deferred**：`execution_build_*` 三个 manifest 仍指向已删除的
+  `deskpet/tools/memory_recall.py`；需重建 authority 的 artifacts 路径 + sha256 + build_digest，
+  才能让 `register_memory_recall` 通过 `authority_accepts_handler`。
+- **curation 未接新 SDK**：`oh4_curation_skipped reason=no_facts_store`。
+- **BGE-M3 下载 451**：`model_provision_failed HTTP 451`，当前走 hash fallback。
+- **companion cutover**：`growth_authority_cutover_failed`（随后仍 ready，非阻断）。
 
 ## 0. 一句话
 

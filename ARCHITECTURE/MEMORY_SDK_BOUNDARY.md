@@ -1,6 +1,6 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-08-18
+> 最后更新：2026-08-19
 > 设计来源：`plans/2026-08-17-memory-sdk/00-ARCHITECTURE.md`
 > SDK 独立仓库：`simple-harness-memory-sdk`
 
@@ -62,17 +62,29 @@ SDK 类型，避免反向耦合。
 
 ```
 backend/deskpet/memory/
-├── __init__.py      # 导出契约
-├── contracts.py     # MemoryBackend / SessionDB / Embedder / WorldModelPort Protocol
-├── session_db.py    # host 会话账本 stub（留 host，仅消息存取委托 MemoryBackend）
-└── embedder_worker.py  # 旧 embedder 子进程 stub，待移除
+├── __init__.py          # 导出契约
+├── contracts.py         # MemoryBackend / SessionDB / Embedder / WorldModelPort Protocol
+├── session_db.py        # host 会话账本（留 host，消息存取双写委托 MemoryBackend）
+├── recall_adapter.py    # SDK 认知记忆 -> product SDK memory tool 的 host 适配层
+└── embedder_worker.py   # 旧 embedder 子进程 stub，待移除
 ```
 
 ## 5. 已知待办 / 边界说明
 
+- **已接入（2026-08-19）**：`main.py` 构造 `SQLiteMemoryBackend` 并传入
+  `SessionDB(memory_backend=...)`；`SessionDB.append_message` 与
+  `append_user_message_with_growth_outbox` 均在用户消息落盘后双写 `MemoryBackend`。
+  `recall_adapter.py` 把 `MemoryBackend.recall` 翻译成 product SDK 的 owner-scoped
+  `recall_readonly`，`CompanionRunMemoryScopeResolver` 提供 `resolve_for_run`。
+- **host 侧 memory_recall tool 注册被 core-handler authority 挡**：`execution_build_*`
+  三个 manifest 仍指向已删除的 `deskpet/tools/memory_recall.py`，`register_memory_recall`
+  会触发 `FileNotFoundError`。当前 main.py 用 try/except defer 到 `memory_recall_host_registration_deferred`
+  warning，不阻断启动。收尾需重建 authority manifest 的 artifacts 路径 + sha256 + build_digest。
+- **curation 未接新 SDK**：`oh4_curation_skipped reason=no_facts_store` —— curation 仍在找旧
+  `service_context["facts_store"]`，未指向 SDK 的 `MemoryBackend.get_facts`。
 - `embedder_worker.py` 是旧记忆 embedder 子进程 stub，非 host 接口/适配层；移除
   需要同步改 `deskpet.frozen_worker_dispatch` 与 `scripts/debug_embedder_worker.py`。
-- `session_db.py` 当前是 stub；它是 **host 会话账本**（约 80 个 public 方法），
+- `session_db.py` 是 **host 会话账本**（约 80 个 public 方法），
   不是 `MemoryBackend` 的薄适配器。二者只在 `append_message` / `get_recent_messages`
   / `initialize` / `close` 相交，其余方法由 host 自行实现。
 - `main.py` 内仍有一段旧的 best-effort 记忆装配（`file_memory` / `manager` /

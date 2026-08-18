@@ -1,6 +1,28 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-17
+> **最后更新**：2026-08-19
+
+## 2026-08-19 里程碑：记忆 SDK（simple-harness-memory-sdk）接入 host 真机 E2E 打通
+
+- **认知记忆链路真机验证 PASS**：主聊天用户消息经 `SessionDB.append_user_message_with_growth_outbox`
+  双写进 SDK `memory.db`，facts 抽取 `pet_name=Max` / `location=上海` / `prefers=咖啡`，单值 key
+  正确 supersede；真实 DeepSeek `deepseek-v4-pro` 调用 200 OK，assistant 回复经 `chat_v2_final` 回推前端。
+- **host 侧补齐 5 处接线缺口**（`main.py` / `session_db.py` / 新建 `recall_adapter.py`）：
+  ① 新建 `deskpet/memory/recall_adapter.py` 暴露 `memory_recall_query` / `memory_recall_scope_resolver`
+  两个 provider；② 注册 `context_page_in_store` / `memory_recall_query` / `memory_recall_scope_resolver`
+  三个 SDK tool-catalog 依赖；③ `ProductDeliveryAdapter()` 无参坏桩 → 走全局 `_DeliverySink`；
+  ④ `tool_catalog` 缺 `current_generation()` → 补 `_ProductToolCatalogGeneration`；
+  ⑤ `append_user_message_with_growth_outbox` 补记忆双写 + `_execute_sdk_run` 补 assistant 回复桥接。
+- **SDK 加结构化日志**：`simple-harness-memory-sdk` 引入 `structlog`，在 `append_message` /
+  `extract_facts` / `recall` / `digital_twin` / `daily_decay` / `summarize` / 生命周期 / embedder
+  fallback 等关键路径输出 `memory.*` 事件，错误路径用 `logger.exception` 保留堆栈（替代 SDK 内部
+  `HarnessError` 吞 private_cause 导致的不可追踪问题）。
+- **已知残留（不阻塞）**：`memory_recall_host_registration_deferred`（host 侧 memory_recall tool
+  注册被 core-handler authority 清单挡住，需重建 `execution_build_*` 三个 manifest）；
+  `oh4_curation_skipped reason=no_facts_store`（curation 未接新 SDK）；`model_provision_failed
+  HTTP 451`（BGE-M3 下载被网络挡，走 hash fallback）；`growth_authority_cutover_failed`（companion
+  切代报错但随后仍 ready）。
+- **事实源**：`ARCHITECTURE/MEMORY_SDK_BOUNDARY.md`、`plans/2026-08-17-memory-sdk/HANDOFF.md`。
 
 ## 2026-08-17 里程碑：SDK v0.1.1 为唯一生产 ingress，旧 harness 死代码已清理
 
