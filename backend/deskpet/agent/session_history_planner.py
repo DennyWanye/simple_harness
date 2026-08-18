@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Mapping, Sequence
 
 from deskpet.agent.tokens import count_messages_tokens
-from deskpet.memory.context_segment_store import (
+from deskpet.agent.context_segment_store import (
     CausalMessageGroup,
     ContextSegment,
     ContextSegmentStore,

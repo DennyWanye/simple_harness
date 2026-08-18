@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,28 @@ def group_causal_messages(messages: Sequence[Any]) -> list[CausalMessageGroup]:
 def recover_broken_causal_messages(groups: Sequence[Any]) -> list[Any]:
     """恢复断裂的因果消息组（stub: 空操作）。"""
     return []
+
+
+def conservative_token_estimate(messages: Sequence[Any]) -> int:
+    """保守估算消息序列的 token 数（stub 实现，避免低估预算）。
+
+    对 CJK 文本按“1 字符 ≈ 1 token”的保守口径，其他文本按每 2 字符 1 token
+    兜底；空内容按 1 token 计数。
+    """
+    total = 0
+    for message in messages:
+        if isinstance(message, Mapping):
+            content = message.get("content", "")
+        else:
+            content = getattr(message, "content", "")
+        text = str(content or "")
+        if not text:
+            total += 1
+            continue
+        cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+        other = max(0, len(text) - cjk)
+        total += cjk + (other + 1) // 2
+    return total
 
 
 class ContextSegmentStore:

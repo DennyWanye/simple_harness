@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, Awaitable, Callable, Mapping, Sequence
 
-from deskpet.memory.companion_message_projection import (
+from deskpet.companion.companion_message_projection import (
     COMPANION_REDACTION_TOMBSTONE,
     COMPANION_REDACTION_TOMBSTONE_HASH,
     CurrentCompanionProjection,

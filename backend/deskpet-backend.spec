@@ -134,8 +134,8 @@ hiddenimports += collect_submodules("agent_reach")
 # abc/finetune/embedder/AbsDataset.py, plus two more frozen-only transformers
 # quirks (inspect.getsource on docstring decorators; dynamic import of
 # transformers.models.* during tokenizer autodetection). The fix is NOT a spec
-# change — it's `deskpet.memory.embedder_worker._apply_frozen_compat()`, which
-# injects a tiny `datasets` stub + patches the two transformers code paths
+# change — it was the (now removed) frozen embedder worker's compat patch, which
+# injected a tiny `datasets` stub + patched the two transformers code paths
 # right before `import FlagEmbedding`. Keep datasets EXCLUDED below (bundling it
 # drags ~150MB of pyarrow/pandas and historically crashed build-time analysis).
 # Do NOT add collect_submodules("datasets") — it does nothing useful here.

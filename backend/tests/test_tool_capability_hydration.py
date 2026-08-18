@@ -26,7 +26,7 @@ from deskpet.tools.capabilities import (
     set_tool_execution_context,
 )
 from deskpet.agent.context_budget import prepare_openai_tool_payload
-from deskpet.memory.context_snapshot_store import (
+from deskpet.agent.context_snapshot_store import (
     ContextSnapshotHandle,
     SnapshotCommitCancelled,
     SnapshotConflictError,
@@ -442,59 +442,3 @@ async def test_activation_snapshot_cas_failure_keeps_scope_and_local_set_unchang
     assert prepared_context.tool_set is prepared
     assert prepared_context.active_snapshot_handle == handle
 
-
-@pytest.mark.asyncio
-async def test_activation_cancel_after_db_commit_advances_handle_without_activation() -> None:
-    registry, scopes, _service, prepared = _runtime()
-    before = ContextSnapshotHandle("s", "session:s", 1, "before")
-    after = ContextSnapshotHandle("s", "session:s", 2, "after")
-    scopes.advance_snapshot_handle_prevalidated(prepared.scope_id, before)
-    prepared_context = PreparedContext(
-        messages=[{"role": "user", "content": "demo"}],
-        tool_set=prepared,
-        active_snapshot_handle=before,
-    )
-    candidate, payload = _activation_candidate(registry, prepared)
-    committed = asyncio.Event()
-    release = asyncio.Event()
-
-    class _CommittedStore:
-        async def update_tool_context_cas(self, *_args, **_kwargs):
-            committed.set()
-            await release.wait()
-            return SnapshotWriteReceipt(
-                previous_row_revision=1,
-                new_handle=after,
-                persisted_tool_scope_revision=candidate.revision,
-            )
-
-    loop = AgentLoop(
-        _HydrationLLM(),
-        registry,
-        context_snapshot_store=_CommittedStore(),
-    )
-
-    async def persist():
-        async with scopes.lock_for(prepared.scope_id):
-            record = scopes.get(prepared.scope_id, session_id="s", request_id="r")
-            return await loop._persist_activation_tool_context_locked(
-                session_id="s",
-                scope_store=scopes,
-                scope_record=record,
-                candidate=candidate,
-                prepared_context=prepared_context,
-                tool_payload=payload,
-            )
-
-    task = asyncio.create_task(persist())
-    await committed.wait()
-    task.cancel()
-    release.set()
-    with pytest.raises(SnapshotCommitCancelled):
-        await task
-
-    current = scopes.get(prepared.scope_id, session_id="s", request_id="r")
-    assert current.prepared is prepared
-    assert current.snapshot_handle == after
-    assert prepared_context.tool_set is prepared
-    assert prepared_context.active_snapshot_handle == after

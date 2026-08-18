@@ -8,7 +8,7 @@ import inspect
 import json
 from typing import Any, Callable, Mapping, Sequence
 
-from deskpet.memory.context_segment_store import (
+from deskpet.agent.context_segment_store import (
     ContextSegmentStore,
     canonical_message_hash,
     conservative_token_estimate,

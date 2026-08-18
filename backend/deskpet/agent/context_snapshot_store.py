@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -18,6 +19,28 @@ class SnapshotConflictError(Exception):
 
 class SnapshotCommitCancelled(Exception):
     """快照提交被取消（任务已超时/中止）。"""
+
+
+@dataclass(frozen=True, slots=True)
+class ContextSnapshotHandle:
+    """上下文快照的 CAS 句柄（host 侧工具能力水合所需的稳定 shape）。"""
+
+    session_id: str
+    task_scope_id: str
+    row_revision: int
+    snapshot_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotWriteReceipt:
+    """上下文快照写入回执。"""
+
+    previous_row_revision: int
+    new_handle: ContextSnapshotHandle
+    persisted_tool_scope_revision: int | None = None
+    attempt_id: str | None = None
+    changed: bool = True
+    idempotent: bool = False
 
 
 async def await_snapshot_commit_ack(task: asyncio.Task) -> Any:  # type: ignore[type-arg]

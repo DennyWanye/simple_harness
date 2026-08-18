@@ -68,7 +68,7 @@ class ToolContextPersistenceMixin:
             "policy_fingerprint": current_tool_set.policy_fingerprint,
             "schema_fingerprint": current_tool_set.schema_fingerprint,
         }
-        from deskpet.memory.context_snapshot_store import (
+        from deskpet.agent.context_snapshot_store import (
             SnapshotCommitCancelled,
             SnapshotConflictError,
             await_snapshot_commit_ack,
@@ -169,7 +169,7 @@ class ToolContextPersistenceMixin:
                 "adapter_state": "prepared",
             }
         )
-        from deskpet.memory.context_snapshot_store import (
+        from deskpet.agent.context_snapshot_store import (
             SnapshotCommitCancelled,
             SnapshotConflictError,
             await_snapshot_commit_ack,

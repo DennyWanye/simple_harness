@@ -442,7 +442,7 @@ class TestMemoryL1Delete:
 # P4-S16: EmbedderStatus
 # ---------------------------------------------------------------------------
 class FakeEmbedder:
-    """Mirrors deskpet.memory.embedder.Embedder 的关键 surface。"""
+    """Mirrors the Embedder 的关键 surface（记忆 SDK 未集成）。"""
 
     def __init__(
         self,

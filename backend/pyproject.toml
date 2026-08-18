@@ -214,7 +214,6 @@ packages = [
     "deskpet.agent.assembler.components",
     "deskpet.agent.assembler.policies",
     "deskpet.memory",
-    "deskpet.memory.migrations",
     "deskpet.tools",
     "deskpet.permissions",
     "deskpet.companion",
@@ -235,9 +234,6 @@ packages = [
 
 [tool.setuptools.package-data]
 "memory.migrations" = ["*.sql"]
-# P4-S0: deskpet.memory 迁移 SQL 需要被 setuptools 打包进来（PyInstaller
-# 间接依赖 installed package 的数据文件）。
-"deskpet.memory.migrations" = ["*.sql"]
 "deskpet.companion.migrations" = ["*.sql"]
 "deskpet.companion.eval_suites" = ["*.json"]
 # P4-S7: ContextAssembler policies ship as declarative YAML + JSONL.
@@ -269,6 +265,10 @@ packages = [
 # dist-portable/（PyInstaller 打包产物）+ temp/ 的 PermissionError（15 errors
 # during collection）。只扫 tests/ 即干净。
 testpaths = ["tests"]
+# 让 backend/tests 里依赖 repo-root 脚本的用例可 import：
+#   - scripts.acceptance.* / scripts.e2e.*（repo-root/scripts）
+#   - backend.scripts.*（repo-root/backend 作为 namespace package）
+pythonpath = [".."]
 markers = [
     "perf: performance regression test (p95 / throughput, 10K+ rows / localhost probes). Skipped by default; allowed to be flaky on CI; run locally before release.",
     "model_required: tests that need real BGE-M3 weights on disk (skipped by default)",

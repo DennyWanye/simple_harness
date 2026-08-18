@@ -1296,7 +1296,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         # WI-4b pre-flush: 压缩真正摘掉中段前,把"当前任务态"写进 L1 文件记忆,
         # 跨 session 记住任务(frozen-snapshot → 只对下个 session 生效)。None (默认)
         # → 不 flush(BC)。每个 run 最多 flush 一次(限频,防刷爆 MEMORY.md 50KB cap)。
-        file_memory: Optional[Any] = None,  # deskpet.memory.file_memory.FileMemory
+        file_memory: Optional[Any] = None,  # FileMemory（记忆 SDK 未集成）
         force_finish_via_tool_choice: bool = True,
         tracer: Optional[Any] = None,
         trace_store: Optional[TraceStore] = None,
@@ -1308,7 +1308,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         # curator None (默认) → 不调 nudge（BC，零行为变更）。非 None 时每
         # curation_nudge_every_n_turns 个回合在 FinalEvent 后 fire-and-forget
         # 一次 nudge（异步，不挡主回合，照 vector_worker 模式）。
-        memory_curator: Optional[Any] = None,  # deskpet.memory.curation.MemoryCurator
+        memory_curator: Optional[Any] = None,  # MemoryCurator（记忆 SDK 未集成）
         curation_nudge_every_n_turns: int = 8,
         provider_workload_context_factory: Optional[Callable[[str], Any]] = None,
         provider_workload_router: Optional[Any] = None,
@@ -4738,7 +4738,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         tool_summary = self._prepared_toolset_summary(current_tool_set)
 
         async def _write(projection: Any, expected: int) -> Any:
-            from deskpet.memory.context_snapshot_store import (
+            from deskpet.agent.context_snapshot_store import (
                 await_snapshot_commit_ack,
             )
 
@@ -4755,7 +4755,7 @@ class AgentLoop(ToolContextPersistenceMixin):
         try:
             receipt = await _write(snapshot, expected_revision)
         except Exception as exc:
-            from deskpet.memory.context_snapshot_store import (
+            from deskpet.agent.context_snapshot_store import (
                 SnapshotConflictError,
             )
 
@@ -4794,7 +4794,7 @@ class AgentLoop(ToolContextPersistenceMixin):
             raise RuntimeError("coverage_compaction_owner_unavailable")
         candidate = resolution.candidates[0]
         committed_ranges: set[tuple[int, int, str]] = set()
-        from deskpet.memory.context_segment_store import CoverageCommitProof
+        from deskpet.agent.context_segment_store import CoverageCommitProof
 
         for job in jobs:
             source_range = (
