@@ -159,6 +159,7 @@ dependencies = [
     # Slice B consumes the exact local v0.1.1 candidate bytes. Publication is
     # intentionally deferred until product cutover and desktop E2E pass.
     "simple-harness-sdk>=0.1.1",
+    "simple-harness-memory-sdk",
 ]
 
 [tool.uv.sources]
@@ -171,6 +172,7 @@ dependencies = [
 #
 # Production (vendored immutable candidate):
 simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.1-py3-none-any.whl" }
+simple-harness-memory-sdk = { path = "../../simple-harness-memory-sdk", editable = true }
 
 [project.optional-dependencies]
 dev = [

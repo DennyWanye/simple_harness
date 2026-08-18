@@ -7713,6 +7713,7 @@ dependencies = [
     { name = "scrapling", extra = ["fetchers"] },
     { name = "selectolax" },
     { name = "silero-vad" },
+    { name = "simple-harness-memory-sdk" },
     { name = "simple-harness-sdk" },
     { name = "sqlite-vec" },
     { name = "structlog" },
@@ -7776,6 +7777,7 @@ requires-dist = [
     { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4" },
     { name = "selectolax", specifier = ">=0.3" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
+    { name = "simple-harness-memory-sdk", editable = "../../simple-harness-memory-sdk" },
     { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.1.1-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
@@ -7792,6 +7794,34 @@ requires-dist = [
     { name = "websockets", specifier = ">=13.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "simple-harness-memory-sdk"
+version = "0.1.0"
+source = { editable = "../../simple-harness-memory-sdk" }
+dependencies = [
+    { name = "aiosqlite" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiosqlite", specifier = ">=0.19" },
+    { name = "anyio", marker = "extra == 'dev'", specifier = ">=4.0" },
+    { name = "httpx", marker = "extra == 'world'", specifier = ">=0.27" },
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.0" },
+    { name = "pydantic", specifier = ">=2.0" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "python-dateutil", marker = "extra == 'world'", specifier = ">=2.9" },
+    { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
+    { name = "simple-harness-memory-sdk", extras = ["embeddings", "world", "openai"], marker = "extra == 'all'" },
+    { name = "torch", marker = "extra == 'embeddings'", specifier = ">=2.7.1" },
+]
+provides-extras = ["embeddings", "world", "openai", "dev", "all"]
 
 [[package]]
 name = "simple-harness-sdk"
