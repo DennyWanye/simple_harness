@@ -2515,13 +2515,22 @@ _message_chunker = None  # type: ignore[assignment]
 # 记忆系统升级 WI-M1.7b: procedural memory（反复问题→解法）存储。
 _skill_memory_store = None  # type: ignore[assignment]
 
-# --- P4-S13 记忆系统已移除（等待 simple-harness-memory-sdk 集成） ---
-# 旧 FileMemory / Manager / Embedder / VectorWorker / Facts / Retriever /
-# SkillLoader 等模块已删除。这里统一降级：相关服务注册为 None，app 以无记忆模式启动。
-# SDK 上线后由 host 适配层把 MemoryBackend / SessionDB 接回（见 deskpet/memory/contracts.py）。
+# --- P4-S13 记忆系统接入（simple-harness-memory-sdk） ---
+# 旧 FileMemory / Manager / Embedder / VectorWorker / Facts / Retriever 等已删除。
+# 这里构造 host 会话账本 SessionDB + SDK 认知记忆 MemoryBackend（双写）；失败降级为 None，
+# app 以无认知记忆模式启动但不阻断。
 _summarizer_state_db_path = None
 _state_db_path = _paths.user_data_dir() / "data" / "state.db"
-_session_db = None
+try:
+    from deskpet.memory.session_db import SessionDB
+    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+    _memory_db_path = _paths.user_data_dir() / "data" / "memory.db"
+    _memory_backend = SQLiteMemoryBackend(str(_memory_db_path), auto_extract_facts=True)
+    _session_db = SessionDB(db_path=_state_db_path, memory_backend=_memory_backend)
+except Exception as _memory_sdk_exc:  # noqa: BLE001
+    logger.warning("memory_sdk_wiring_failed error=%s", str(_memory_sdk_exc)[:200])
+    _memory_backend = None
+    _session_db = None
 # 旧记忆装配块曾赋值、且 main.py 别处仍可能引用的全局变量统一置 None，避免 NameError。
 _file_memory = None
 _image_worker = None
@@ -2538,7 +2547,7 @@ _memory_manager = None
 _workspace_mem_store = None
 _nudge_queue = None
 service_context.register("context_assembler", None)
-service_context.register("session_db", None)
+service_context.register("session_db", _session_db)
 service_context.register("vector_worker", None)
 service_context.register("embedder", None)
 service_context.register("managed_skill_discovery_projection", None)

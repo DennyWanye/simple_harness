@@ -1,0 +1,18 @@
+{
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "run_id": "memory-sdk-integration-slice3",
+  "source_request_text": "接入记忆 SDK：main.py 真实接线 SessionDB+MemoryBackend 并跑后端 smoke",
+  "acceptance_file": "plans/2026-08-18-memory-sdk-integration/acceptance.md",
+  "scenarios": [
+    {"scenario_id": "AC-9", "required": true},
+    {"scenario_id": "AC-10", "required": true},
+    {"scenario_id": "AC-11", "required": true}
+  ],
+  "applicability": {
+    "input_sensitive": {"value": false, "rationale": "接线与后端 smoke 确定性可测，不随自然语言输入语义波动", "decided_by": "agent"},
+    "llm_payload_driven": {"value": false, "rationale": "无 LLM 生成结构化载荷驱动端侧状态机或卡片渲染", "decided_by": "agent"},
+    "stateful_init": {"value": false, "rationale": "本 slice 为本地 SQLite 启动接线，无异步注册服务或远程登录态", "decided_by": "agent"}
+  },
+  "release_unit": {"must_ac": 3, "tasks": 2, "subsystems": 1},
+  "thresholds": {}
+}

@@ -52,3 +52,23 @@ async def test_session_db_wires_memory_backend(tmp_path) -> None:
     assert twin is not None
     assert "Max" in twin.relationships.entities
     await db.close()
+
+
+@pytest.mark.asyncio
+async def test_main_wiring_construction_smoke(tmp_path) -> None:
+    """slice 3: main.py 的 SessionDB + MemoryBackend 构造模式 smoke。"""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    state_db = data_dir / "state.db"
+    memory_db = data_dir / "memory.db"
+    from deskpet.memory.session_db import SessionDB
+    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+    backend = SQLiteMemoryBackend(str(memory_db), auto_extract_facts=True)
+    sdb = SessionDB(db_path=state_db, memory_backend=backend)
+    await sdb.initialize()
+    await sdb.append_message("s1", "user", "我养了一只叫Max的狗，很喜欢吃披萨")
+    assert any(f.key == "pet_name" and f.value == "Max" for f in await sdb.get_facts())
+    assert len(await sdb.recall("Max")) >= 1
+    twin = await sdb.get_digital_twin()
+    assert "Max" in twin.relationships.entities
+    await sdb.close()

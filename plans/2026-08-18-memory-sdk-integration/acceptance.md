@@ -19,3 +19,10 @@
 | AC-6 | 双写喂入 | 有 `memory_backend` 时，`append_message` 把消息喂给 SDK；`initialize`/`close` 联动 backend 生命周期 | 必须 |
 | AC-7 | 认知能力委托 | `SessionDB.recall/get_facts/get_digital_twin` 委托 SDK；无 backend 时返回空/None | 必须 |
 | AC-8 | 后端 smoke | `SessionDB + SQLiteMemoryBackend(auto_extract_facts=True)` 一起跑，append 后 facts/recall/twin 正确 | 必须 |
+
+## Slice 3 追加验收条款（main.py 接线 + 后端 smoke）
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|----|--------|-------------------|--------|
+| AC-9 | 真实接线 | `main.py` 构造 `SessionDB(memory_backend=SQLiteMemoryBackend(memory.db, auto_extract_facts=True))` 并注册 `service_context`，失败降级 `None` 不阻断启动 | 必须 |
+| AC-10 | 编译通过 | `main.py` 经 `py_compile` 无语法/import 破坏 | 必须 |
+| AC-11 | 后端 smoke | 该构造模式的 initialize→append→facts/recall/twin 后端级跑通（用临时 `data/state.db`+`data/memory.db` 模拟 `user_data_dir`） | 必须 |
