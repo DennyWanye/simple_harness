@@ -1,9 +1,9 @@
 {
-  "artifact_sha256": "48048ffbb827df15ae27efad67fa78d31302c9869381cb175d0d908c5f204e2f",
+  "artifact_sha256": "387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c",
   "cases": [
     {
       "case_id": "provider.physical_request",
-      "duration_seconds": 0.0005578340060310438,
+      "duration_seconds": 0.000674375012749806,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -15,7 +15,7 @@
     },
     {
       "case_id": "provider.typed_error",
-      "duration_seconds": 0.00022566699772141874,
+      "duration_seconds": 0.0002792080049403012,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -27,7 +27,7 @@
     },
     {
       "case_id": "provider.usage",
-      "duration_seconds": 0.00023979099933058023,
+      "duration_seconds": 0.00034558301558718085,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -39,7 +39,7 @@
     },
     {
       "case_id": "provider.redaction",
-      "duration_seconds": 0.0002140420110663399,
+      "duration_seconds": 0.00027925000176765025,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -51,7 +51,7 @@
     },
     {
       "case_id": "tool.schema",
-      "duration_seconds": 0.014646041992818937,
+      "duration_seconds": 0.017472209001425654,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -63,7 +63,7 @@
     },
     {
       "case_id": "tool.five_state",
-      "duration_seconds": 2.2958003683015704e-05,
+      "duration_seconds": 2.9874994652345777e-05,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -75,7 +75,7 @@
     },
     {
       "case_id": "tool.reconcile",
-      "duration_seconds": 0.0005099999980302528,
+      "duration_seconds": 0.0007650000043213367,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -87,7 +87,7 @@
     },
     {
       "case_id": "tool.malformed_duplicate_late",
-      "duration_seconds": 0.0005070829938631505,
+      "duration_seconds": 0.000590333977015689,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -99,7 +99,7 @@
     },
     {
       "case_id": "runtime.no_tool",
-      "duration_seconds": 0.028599915996892378,
+      "duration_seconds": 0.03629354102304205,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -111,7 +111,7 @@
     },
     {
       "case_id": "runtime.one_tool",
-      "duration_seconds": 0.03567225000006147,
+      "duration_seconds": 0.046398375008720905,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -123,7 +123,7 @@
     },
     {
       "case_id": "runtime.multi_turn_tool",
-      "duration_seconds": 0.031118417013203725,
+      "duration_seconds": 0.04301537500577979,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -135,7 +135,7 @@
     },
     {
       "case_id": "runtime.session_persistence",
-      "duration_seconds": 0.034459207992767915,
+      "duration_seconds": 0.04628633300308138,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -147,7 +147,7 @@
     },
     {
       "case_id": "runtime.hitl",
-      "duration_seconds": 0.02764341700822115,
+      "duration_seconds": 0.03815637499792501,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -159,7 +159,7 @@
     },
     {
       "case_id": "runtime.delivery",
-      "duration_seconds": 0.0049450829974375665,
+      "duration_seconds": 0.007604790996992961,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -171,7 +171,7 @@
     },
     {
       "case_id": "runtime.budget",
-      "duration_seconds": 0.11052075000770856,
+      "duration_seconds": 0.15574675000971183,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -183,7 +183,7 @@
     },
     {
       "case_id": "runtime.restart_without_replay",
-      "duration_seconds": 0.03888629200810101,
+      "duration_seconds": 0.058409999997820705,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -195,7 +195,7 @@
     },
     {
       "case_id": "workflow.host_owned",
-      "duration_seconds": 0.037106374991708435,
+      "duration_seconds": 0.050667416973738,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -207,7 +207,7 @@
     },
     {
       "case_id": "workflow.official_durable_task",
-      "duration_seconds": 0.5275463750003837,
+      "duration_seconds": 0.7841376670112368,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -219,7 +219,7 @@
     },
     {
       "case_id": "workflow.official_personal_v1",
-      "duration_seconds": 0.027688292000675574,
+      "duration_seconds": 0.03504687501117587,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -231,7 +231,7 @@
     },
     {
       "case_id": "workflow.official_capability_build",
-      "duration_seconds": 0.03364004199102055,
+      "duration_seconds": 0.04347258299821988,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -243,7 +243,7 @@
     },
     {
       "case_id": "workflow.ticket_fingerprint",
-      "duration_seconds": 0.026456749998033047,
+      "duration_seconds": 0.03351383298286237,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -255,7 +255,7 @@
     },
     {
       "case_id": "workflow.reopen",
-      "duration_seconds": 0.05898225000419188,
+      "duration_seconds": 0.07009083300363272,
       "evidence": {
         "physical_boundary": "sqlite",
         "probe": 1
@@ -274,7 +274,7 @@
   "platform": "macOS-26.4.1-arm64-arm-64bit",
   "protocol_version": "1.0.0",
   "python_version": "3.12.13",
-  "sdk_version": "0.1.1",
+  "sdk_version": "0.1.2",
   "status": "pass",
   "suites": [
     "provider",
