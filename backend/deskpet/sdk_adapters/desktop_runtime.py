@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Mapping
 
 import httpx
+import structlog
 
 from simple_harness.contracts import ExecutionSessionId, RequestId, RunId
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
@@ -49,6 +50,13 @@ from simple_harness.tools.reconciliation import (
 )
 
 from deskpet.tool_catalog import load_tool_manifest, migrate_tool_schemas
+
+logger = structlog.get_logger(__name__)
+
+# Global registry: run_id → ProductDeliveryAdapter
+# Populated by _execute_sdk_run() before starting a Run
+# Cleaned up after Run completes
+_delivery_adapters: dict[str, "ProductDeliveryAdapter"] = {}  # type: ignore[name-defined]
 from deskpet.tools.os_tools.process_tools import process_list
 from deskpet.tools.ppt_tools import _handle_ppt_create
 
@@ -131,8 +139,60 @@ class _ToolCatalog:
 
 
 class _DeliverySink:
-    async def deliver(self, payload, *, idempotency_key):  # type: ignore[no-untyped-def]
-        del payload, idempotency_key
+    """Bridge between SDK DeliveryDispatcher and ProductDeliveryAdapter.
+
+    Routes delivery events to the appropriate per-request adapter based on
+    run_id extracted from the payload or idempotency_key.
+    """
+
+    async def deliver(self, payload: dict, *, idempotency_key: str) -> None:  # type: ignore[no-untyped-def]
+        """Deliver one SDK event to the registered ProductDeliveryAdapter.
+
+        Called by SDK DeliveryDispatcher background task. Routes the event
+        to the adapter registered for this run_id.
+
+        Args:
+            payload: SDK delivery payload (should contain run_id or RunEvent data)
+            idempotency_key: Unique delivery key from SDK
+        """
+        # Import here to avoid circular dependency
+        from .delivery import ProductDeliveryAdapter
+
+        # Extract run_id from payload or idempotency_key
+        # Strategy 1: Check if payload contains run_id directly
+        run_id = payload.get("run_id")
+
+        # Strategy 2: Check nested event structure first (before parsing idempotency_key)
+        if not run_id and "event" in payload:
+            event_data = payload.get("event")
+            if isinstance(event_data, dict):
+                run_id = event_data.get("run_id")
+
+        # Strategy 3: If not found, try parsing from idempotency_key
+        # (Assuming format like "run-id:event-id" or similar)
+        if not run_id and ":" in idempotency_key:
+            run_id = idempotency_key.split(":")[0]
+
+        if not run_id:
+            logger.warning(
+                "delivery_sink_no_run_id",
+                payload_keys=list(payload.keys()),
+                idempotency_key=idempotency_key,
+            )
+            return
+
+        # Lookup adapter from global registry
+        adapter = _delivery_adapters.get(run_id)
+        if adapter is None:
+            logger.warning(
+                "delivery_adapter_not_found",
+                run_id=run_id,
+                idempotency_key=idempotency_key,
+            )
+            return
+
+        # Forward to adapter
+        await adapter.handle_event(payload, idempotency_key)
 
 
 def _tool_result(call_id, raw: object) -> ToolResult:  # type: ignore[no-untyped-def]

@@ -6,29 +6,201 @@ RunPresenter, SessionDB, WebSocket, and artifact systems.
 
 from __future__ import annotations
 
+from typing import Any
 
-# TODO T6.1: Implement SDK delivery sink protocol
-# from simple_harness.execution import DeliverySinkPort
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 class ProductDeliveryAdapter:
     """Adapter between SDK execution events and product UI delivery.
 
-    Responsibilities:
-    - Forward SDK execution events to RunPresenter
-    - Update SessionDB with messages and state
-    - Send WebSocket events to frontend
-    - Generate artifact cards for UI
-    - Keep UI rendering product-owned
+    Converts SDK delivery payloads to RunEvents and delegates to RunPresenter
+    for formatting, persistence, and WebSocket delivery. RunPresenter handles
+    all SessionDB updates, WebSocket sends, and artifact card generation.
     """
 
-    def __init__(self):
-        # TODO T6.1: Initialize with product delivery system
-        # - RunPresenter for event formatting
-        # - SessionDB for persistence
-        # - WebSocket for real-time updates
-        # - Artifact system for cards
-        pass
+    def __init__(
+        self,
+        *,
+        session_id: str,
+        request_id: str,
+        run_id: str,
+        presenter: Any,  # RunPresenter
+        adapter: Any,  # RunEventPresentationAdapter
+        context: Any,  # RunPresentationContext
+        state: Any,  # PresentationState
+    ) -> None:
+        """Initialize delivery adapter with product presentation services.
+
+        Args:
+            session_id: Session identifier
+            request_id: Request identifier
+            run_id: Run identifier (for logging)
+            presenter: RunPresenter for event formatting and delivery
+            adapter: RunEventPresentationAdapter for RunEvent → AgentEvent conversion
+            context: RunPresentationContext with WebSocket/SessionDB/etc
+            state: PresentationState tracking tool calls and final text
+        """
+        self._session_id = session_id
+        self._request_id = request_id
+        self._run_id = run_id
+        self._presenter = presenter
+        self._adapter = adapter
+        self._context = context
+        self._state = state
+        self._idempotency_seen: set[str] = set()
+
+    async def handle_event(
+        self,
+        payload: dict[str, Any],
+        idempotency_key: str,
+    ) -> None:
+        """Handle one SDK delivery event.
+
+        Deserializes payload to RunEvent and delegates to RunPresenter for
+        presentation. RunPresenter internally handles WebSocket delivery,
+        SessionDB persistence, and artifact generation.
+
+        Args:
+            payload: SDK delivery payload (contains RunEvent data)
+            idempotency_key: Unique key for exactly-once delivery semantics
+        """
+        # Idempotency: skip if already delivered
+        if idempotency_key in self._idempotency_seen:
+            logger.debug(
+                "delivery_idempotency_skip",
+                key=idempotency_key,
+                session_id=self._session_id,
+                run_id=self._run_id,
+            )
+            return
+
+        try:
+            # Deserialize SDK payload → RunEvent
+            run_event = self._deserialize_run_event(payload)
+
+            # Delegate to RunPresenter for presentation
+            # (This internally handles WebSocket, SessionDB, formatting, etc.)
+            await self._presenter.present_run_event(
+                event=run_event,
+                adapter=self._adapter,
+                context=self._context,
+                state=self._state,
+            )
+
+            # Mark as delivered
+            self._idempotency_seen.add(idempotency_key)
+
+            logger.debug(
+                "delivery_handled",
+                key=idempotency_key,
+                event_kind=run_event.candidate.kind,
+                session_id=self._session_id,
+                run_id=self._run_id,
+            )
+
+        except Exception as exc:
+            logger.error(
+                "delivery_handler_failed",
+                key=idempotency_key,
+                error=str(exc),
+                session_id=self._session_id,
+                run_id=self._run_id,
+                exc_info=True,
+            )
+            # Don't re-raise - delivery failure should not crash SDK Runtime
+
+    def _deserialize_run_event(self, payload: dict[str, Any]) -> "RunEvent":
+        """Deserialize SDK delivery payload → RunEvent.
+
+        Args:
+            payload: SDK delivery payload (serialized RunEvent)
+
+        Returns:
+            RunEvent dataclass instance
+
+        Raises:
+            ValueError: If payload structure is invalid
+        """
+        # Import here to avoid circular dependencies
+        from deskpet.execution.contracts import RunEvent, RunEventCandidate, LiveCursor
+
+        try:
+            # Reconstruct nested candidate object
+            candidate_data = payload.get("candidate", {})
+            candidate = RunEventCandidate(
+                event_key=candidate_data.get("event_key") or payload.get("event_id", "unknown"),
+                kind=candidate_data.get("kind", "status_changed"),
+                status=candidate_data.get("status", "accepted"),  # Use valid OutcomeStatus value
+                driver_kind=candidate_data.get("driver_kind", "react"),
+                correlation=candidate_data.get("correlation", {}),
+                payload=candidate_data.get("payload", {}),
+                error=candidate_data.get("error"),
+                artifact_refs=candidate_data.get("artifact_refs", []),
+            )
+
+            # Reconstruct LiveCursor if present
+            live_cursor = None
+            if "live_cursor" in payload and payload["live_cursor"] is not None:
+                cursor_data = payload["live_cursor"]
+                live_cursor = LiveCursor(
+                    live_seq=cursor_data["live_seq"],
+                    sent_at=cursor_data["sent_at"],
+                )
+
+            # Construct RunEvent
+            run_event = RunEvent(
+                event_id=payload["event_id"],
+                run_id=payload["run_id"],
+                root_run_id=payload["root_run_id"],
+                session_id=payload["session_id"],
+                durable_seq=payload.get("durable_seq"),
+                candidate=candidate,
+                created_at=payload["created_at"],
+                live_cursor=live_cursor,
+            )
+
+            return run_event
+
+        except (KeyError, TypeError) as exc:
+            logger.error(
+                "run_event_deserialization_failed",
+                error=str(exc),
+                payload_keys=list(payload.keys()),
+                session_id=self._session_id,
+                run_id=self._run_id,
+            )
+            raise ValueError(f"Invalid RunEvent payload: {exc}") from exc
+
+    async def finish(self) -> None:
+        """Finalize presentation after Run completes.
+
+        Calls RunPresenter.finish_turn() to perform any cleanup actions
+        like recording billing usage or assembler feedback.
+
+        Also clears idempotency tracking.
+        """
+        try:
+            await self._presenter.finish_turn(self._context, self._state)
+            logger.debug(
+                "delivery_adapter_finished",
+                session_id=self._session_id,
+                run_id=self._run_id,
+            )
+        except Exception as exc:
+            logger.error(
+                "delivery_adapter_finish_failed",
+                error=str(exc),
+                session_id=self._session_id,
+                run_id=self._run_id,
+                exc_info=True,
+            )
+        finally:
+            # Clear idempotency tracking
+            self._idempotency_seen.clear()
+            # Don't re-raise - finish failure should not block Run completion
 
 
 __all__ = ("ProductDeliveryAdapter",)

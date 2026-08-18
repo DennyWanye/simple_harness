@@ -7889,10 +7889,10 @@ _sdk_desktop_bridge = None
 
 
 def _sdk_desktop_test_enabled() -> bool:
-    env_enabled = str(os.environ.get("DESKPET_SDK_DESKTOP_TEST") or "").strip().lower() in {
-        "1", "true", "yes", "on",
-    }
-    return env_enabled or (_paths.user_data_dir() / ".sdk-desktop-test").is_file()
+    # SDK测试模式已完全禁用（2026-08-17）。
+    # 该模式造成用户困惑且限制核心功能（只暴露2个工具）。
+    # SDK集成测试应使用专门的测试脚本，不在生产代码中保留受限分支。
+    return False
 
 
 def _initialize_sdk_desktop_test_bridge() -> None:
@@ -9298,48 +9298,17 @@ async def _run_product_harness_chat(
     )
     session = None
     try:
-        outcome = await _sdk_ingress.open_venue(
-            turn,
-            host,
-            services=service_context.snapshot(),
-            config=config,
-            local_llm=local_llm,
-            tool_registry=deskpet_tool_registry_v2,
-            provider=provider,
-            current_message_id=user_message_id,
-            companion_ingress_owner=(
-                frozen_owner if user_message_id is not None else None
-            ),
-            summary_user_is_confused=_sql_user_is_confused,
-            summary_latest_task_snapshot=_sql_latest_task_snapshot,
-            summary_build_reinject_msg=_sql_build_reinject_msg,
-            presentation_context=context,
-            domain_sink=sink,
-            provider_launch_snapshot=provider_snapshot,
+        # Execute Agent via SDK Runtime
+        await _execute_sdk_run(
+            session_id=session_id,
+            request_id=request_id,
+            turn_id=turn_id,
+            task_scope_id=task_scope_id,
+            text=text,
+            context=context,
+            websocket=websocket,
+            root_run_id=root_ref.run_id,
         )
-        _sdk_ingress.trigger_reconciler()
-        from deskpet.harness.adapters.venues import ProductVenueRunResult
-
-        if isinstance(outcome, ProductVenueRunResult):
-            return
-        session = outcome
-        started = {
-            "type": "chat_v2_run_started",
-            "payload": {
-                "session_id": session_id, "run_id": session.run_id,
-                "request_id": request_id, "turn_id": turn_id,
-                "task_scope_id": task_scope_id,
-                "conversation_boundary_ref": (
-                    context.conversation_boundary_ref
-                ),
-                "conversation_boundary_version": 1,
-                "projection_version": 0,
-            },
-        }
-        await websocket.send_json(started)
-        await _broadcast_default_chat_peers(websocket, started)
-        async for _event in session.events:
-            pass
     except PreflightBlocked as block:
         await _commit_product_preflight_block(
             websocket=websocket,
@@ -10409,6 +10378,137 @@ _GLOBAL_BLOCKING_UI_EVENTS = frozenset({
 })
 
 
+
+
+async def _execute_sdk_run(
+    *,
+    session_id: str,
+    request_id: str,
+    turn_id: int,
+    task_scope_id: str | None,
+    text: str,
+    context: Any,  # RunPresentationContext
+    websocket: Any,  # WebSocket
+    root_run_id: str,
+) -> None:
+    """Execute Agent via SDK Runtime with event delivery to WebSocket.
+
+    Replaces old ProductVenueRunAdapter.open() flow. Creates a
+    ProductDeliveryAdapter, registers it in the global registry,
+    starts SDK Runtime execution, and waits for completion.
+
+    Args:
+        session_id: Session identifier
+        request_id: Request identifier
+        turn_id: Turn number
+        task_scope_id: Optional task scope identifier
+        text: User input text
+        context: RunPresentationContext with all presentation services
+        websocket: WebSocket connection for real-time delivery
+        root_run_id: Root run identifier
+
+    Raises:
+        SdkRuntimeNotReady: If SDK Runtime ingress is not ready
+        Exception: Any SDK Runtime execution errors
+    """
+    from deskpet.agent.run_presenter import (
+        build_product_run_presenter,
+        CanonicalRunEventPresentationAdapter,
+        PresentationState,
+    )
+    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    # Build payload for SDK Runtime
+    payload = {
+        "input": {"text": text},
+        "messages": [{"role": "user", "content": text}],
+        "capability_snapshot": context.services.get("capability_snapshot", {}),
+    }
+
+    # Create presentation infrastructure
+    presenter = build_product_run_presenter()
+    adapter = CanonicalRunEventPresentationAdapter()
+    state = PresentationState()
+
+    # Call SDK Runtime to start execution
+    receipt = await _sdk_ingress.start(
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=str(turn_id),
+        payload=payload,
+        session_generation=1,  # TODO: Get actual generation from context
+    )
+
+    run_id = receipt.run_id
+
+    # Create ProductDeliveryAdapter for this run
+    delivery_adapter = ProductDeliveryAdapter(
+        session_id=session_id,
+        request_id=request_id,
+        run_id=run_id,
+        presenter=presenter,
+        adapter=adapter,
+        context=context,
+        state=state,
+    )
+
+    # Register adapter in global registry (for _DeliverySink routing)
+    _delivery_adapters[run_id] = delivery_adapter
+
+    try:
+        # Send run_started event to WebSocket
+        started = {
+            "type": "chat_v2_run_started",
+            "payload": {
+                "session_id": session_id,
+                "run_id": run_id,
+                "request_id": request_id,
+                "turn_id": turn_id,
+                "task_scope_id": task_scope_id,
+                "conversation_boundary_ref": context.conversation_boundary_ref,
+                "conversation_boundary_version": 1,
+                "projection_version": 0,
+            },
+        }
+        await websocket.send_json(started)
+        await _broadcast_default_chat_peers(websocket, started)
+
+        logger.info(
+            "sdk_run_started",
+            session_id=session_id,
+            request_id=request_id,
+            run_id=run_id,
+        )
+
+        # Wait for SDK Runtime to complete
+        # Events are pushed via DeliveryDispatcher → _DeliverySink → ProductDeliveryAdapter
+        await _sdk_ingress.wait_idle(run_id)
+
+        # Query final state
+        final_state = _sdk_ingress.query(run_id)
+
+        # Finalize presentation
+        await delivery_adapter.finish()
+
+        logger.info(
+            "sdk_run_completed",
+            session_id=session_id,
+            request_id=request_id,
+            run_id=run_id,
+            state=final_state.value if hasattr(final_state, "value") else str(final_state),
+        )
+
+    finally:
+        # Always clean up registry entry
+        _delivery_adapters.pop(run_id, None)
+        logger.debug(
+            "sdk_run_adapter_cleanup",
+            run_id=run_id,
+            remaining_adapters=len(_delivery_adapters),
+        )
+
+
 async def _broadcast_default_chat_peers(originator_ws: WebSocket | None, msg: dict) -> None:
     """2026-05-28 — 多窗口共享 "default" 会话同步广播。
 
@@ -10477,9 +10577,12 @@ async def _send_chat_final(
     """Deliver a terminal frame without one stale socket blocking its peers."""
     payload = msg.get("payload") if isinstance(msg, dict) else {}
     text_len = len(str((payload or {}).get("text") or ""))
+    run_id = payload.get("run_id", "")
+    task_scope_id = payload.get("task_scope_id", "")
+
     logger.info(
-        "chat_v2_final_send_started sid=%s request_id=%s chars=%d",
-        session_id, request_id, text_len,
+        "chat_v2_final_send_started sid=%s request_id=%s run_id=%s task_scope_id=%s chars=%d",
+        session_id, request_id, run_id, task_scope_id, text_len,
     )
 
     async def _send_originator() -> None:
@@ -10489,18 +10592,18 @@ async def _send_chat_final(
                 timeout=_PEER_BROADCAST_TIMEOUT_S,
             )
             logger.info(
-                "chat_v2_final_send_completed sid=%s request_id=%s chars=%d",
-                session_id, request_id, text_len,
+                "chat_v2_final_send_completed sid=%s request_id=%s run_id=%s chars=%d",
+                session_id, request_id, run_id, text_len,
             )
         except asyncio.TimeoutError:
             logger.warning(
-                "chat_v2_final_send_timeout sid=%s request_id=%s timeout_s=%.1f chars=%d",
-                session_id, request_id, _PEER_BROADCAST_TIMEOUT_S, text_len,
+                "chat_v2_final_send_timeout sid=%s request_id=%s run_id=%s timeout_s=%.1f chars=%d",
+                session_id, request_id, run_id, _PEER_BROADCAST_TIMEOUT_S, text_len,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "chat_v2_final_send_failed sid=%s request_id=%s err=%s",
-                session_id, request_id, exc,
+            logger.error(
+                "chat_v2_final_send_failed sid=%s request_id=%s run_id=%s err=%s err_type=%s",
+                session_id, request_id, run_id, exc, type(exc).__name__,
             )
 
     await asyncio.gather(
@@ -11792,6 +11895,34 @@ async def control_channel(ws: WebSocket):
                         "type": "memory_archive_list_response",
                         "payload": {"ok": False, "error": str(exc)},
                     })
+
+            elif msg_type == "session_health_check":
+                # 2026-08-17: 前端健康检查报告 - 记录卡住会话的诊断信息
+                payload = raw.get("payload", {}) or {}
+                target_sid = str(payload.get("session_id") or session_id)
+                stuck_status = payload.get("stuck_status", "unknown")
+                stuck_duration = payload.get("stuck_duration_ms", 0)
+                forced_reset = payload.get("forced_reset", False)
+
+                logger.warning(
+                    "session_health_check_received sid=%s stuck_status=%s duration_ms=%d forced_reset=%s",
+                    target_sid,
+                    stuck_status,
+                    stuck_duration,
+                    forced_reset,
+                )
+
+                # 响应确认（可选，前端不依赖此响应）
+                try:
+                    await ws.send_json({
+                        "type": "session_health_check_ack",
+                        "payload": {
+                            "session_id": target_sid,
+                            "acknowledged": True,
+                        },
+                    })
+                except Exception:
+                    pass
 
             elif msg_type == "permission_response":
                 payload = raw.get("payload", {}) or {}
