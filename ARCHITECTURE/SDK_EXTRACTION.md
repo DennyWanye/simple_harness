@@ -1,8 +1,8 @@
 # Simple Harness SDK 提取与消费架构
 
 > 最后校准：2026-08-19
-> 代码基线：`5b781bf6df5319e2c13230bcee508fff0e470f5a`
-> 状态：SDK v0.1.1 已是唯一生产 ingress（2026-08-17 cutover 完成，旧 harness 死代码已清理）；记忆 SDK（simple-harness-memory-sdk）host 集成真机 E2E 已 PASS（2026-08-19）。**下一步：v0.1.2（含消费者友好层）已发布于 SDK 仓库 dist/，宿主 vendor 切换见 `plans/2026-08-19-sdk-usability-optimization/`。**
+> 代码基线：`6ea59fea`（sdk-usability-optimization program 收尾中）
+> 状态：SDK v0.1.2 已切换为唯一生产 ingress（2026-08-19，含消费者友好层）；记忆 SDK host 集成真机 E2E PASS；companion 冷启动缺陷（fresh DB identity bind 被拒）已随 manifest 重建修复。**切回 0.1.1 只需 revert 宿主 `1efd4c19`。**
 
 ## 0. 当前实施状态（2026-08-19 校正）
 

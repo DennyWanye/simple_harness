@@ -2,6 +2,27 @@
 
 > **最后更新**：2026-08-19
 
+## 2026-08-19 里程碑：SDK 易用性优化（harness 0.1.2 切换 + companion 冷启动修复 + 双 SDK 文档/验证脚本）
+
+- **harness SDK v0.1.2 切换为唯一生产 ingress**：`backend/vendor/` 纳入官方 0.1.2 wheel（SHA
+  `387c8d1d…efd4c`，对 0.1.1 纯新增）；wheel 身份收敛为单一事实源
+  `deskpet/sdk_adapters/sdk_candidate.py`，原 6 处生产硬编码 + 2 个测试 + verify_sdk_wheel.py 全部改 import
+  （FAIL-5 关闭）。conformance 22/22（基线 20/20）、18 分片回归零新增红。
+- **真机 COLD-1 暴露并修复两个既有冷启动缺陷**（0.1.1 上同样存在，scope 扩展用户批准）：
+  ① 全新安装未配 provider 时 `NoProviderConfiguredError` 未捕获 → 整个 app lifespan 崩溃；
+  现 `_provider_chain_or_none()` 优雅跳过（SDK runtime 留待配置后激活）。
+  ② growth authority cutover 在 fresh companion.db 上失败：三个 `execution_build_*` authority manifest
+  仍 pin 25 个已随 SDK cutover 移入新 catalog（`real_tool_manifest.json`）或 memory SDK 的 core.* handler，
+  handler-switch 校验不过 → growth 卡 paused → `companion_profile_bind` 被拒 → 新用户聊天输入框永久禁用。
+  重建 manifest（25 行删除 + build manifest 重新生成）后 manifest legacy 期望集与线上注册表精确吻合
+  （69=69），cold repro 达到 `growth_authority_ready phase=companion`。附带收益：8 个既有红转 PASS。
+- **真机验证 PASS**：全新 userdata → 配置 provider → 重启 → `sdk_runtime_ready sdk_version=0.1.2` →
+  主聊天"你好，介绍下你自己" → `chat_v2_final` 251 字符、0 run 失败。
+- **SDK 仓库消费者体验**（simple-harness-sdk 5 commit）：minimal-consumer 修复（连续两次 COMPLETED exit 0）、
+  quickstart 对齐真实 API、`build_consumer_runtime` 推广为推荐入口、`verify_from_zero.sh` from-zero 门禁。
+  另记录 2 个待 0.1.3 修的 SDK 设计缺陷（provider model 名硬编码 → unknown charge；占位 tool spec 拒参数）。
+- **事实源**：`plans/2026-08-19-sdk-usability-optimization/`、`ARCHITECTURE/SDK_EXTRACTION.md`。
+
 ## 2026-08-19 里程碑：记忆 SDK（simple-harness-memory-sdk）接入 host 真机 E2E 打通
 
 - **认知记忆链路真机验证 PASS**：主聊天用户消息经 `SessionDB.append_user_message_with_growth_outbox`
