@@ -1154,6 +1154,22 @@ function dispatch(msg: any) {
           inflight: false,
         });
         selectNewestInflightRunAfterTerminal(sid, runId);
+
+        // 2026-08-17 Bug fix: 检查是否还有其他正在运行的任务
+        // 如果没有，重置主会话状态为 idle
+        const session = store.sessions[sid];
+        if (session) {
+          const hasOtherInflightRuns = Object.values(session.run_projections || {}).some(
+            (proj) => proj.run_id !== runId && proj.inflight && proj.ui_state !== "closed"
+          );
+          if (!hasOtherInflightRuns) {
+            store.upsert(sid, {
+              status: "idle",
+              inflight: false,
+              active_run_id: null,
+            });
+          }
+        }
       } else {
         store.upsert(sid, {
           status: "idle",
@@ -2081,6 +2097,72 @@ export function __test_reset_companion_identity_status() {
   G.__deskpet_companion_identity_status__ = null;
 }
 
+// ─── Session Health Check (Bug #2 防御) ─────────────────────────────
+// 2026-08-17: 防止会话状态永久卡在 "thinking" 或 "running"。
+// 每 30 秒检查一次，如果发现会话卡住超过 2 分钟，强制重置为 idle。
+
+const SESSION_HEALTH_CHECK_INTERVAL = 15_000; // 15 秒（更频繁检查）
+const SESSION_STUCK_TIMEOUT = 60_000; // 60 秒（从 120 秒降低，更快恢复）
+
+let healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+
+function startSessionHealthCheck() {
+  if (healthCheckTimer) return; // 已经在运行
+
+  healthCheckTimer = setInterval(() => {
+    const store = useSessionsStore.getState();
+    const sessions = store.sessions;
+    const now = Date.now();
+
+    Object.values(sessions).forEach((session) => {
+      const stuckDuration = now - session.last_activity;
+      const isStuck =
+        (session.status === "thinking" || session.status === "running") &&
+        session.inflight &&
+        stuckDuration > SESSION_STUCK_TIMEOUT;
+
+      if (isStuck) {
+        console.warn(
+          `[HealthCheck] Session ${session.base_session_id} stuck in ${session.status} for ${stuckDuration}ms, force reset to idle`
+        );
+
+        // 强制重置状态
+        store.upsert(session.base_session_id, {
+          status: "idle",
+          inflight: false,
+          active_run_id: null,
+        });
+
+        // 发送诊断事件到后端（如果连接正常）
+        if (current_state === "connected") {
+          controlWS.send({
+            type: "session_health_check",
+            payload: {
+              session_id: session.base_session_id,
+              stuck_status: session.status,
+              stuck_duration_ms: stuckDuration,
+              forced_reset: true,
+            },
+          });
+        }
+      }
+    });
+  }, SESSION_HEALTH_CHECK_INTERVAL);
+
+  console.log("[HealthCheck] Session health monitor started");
+}
+
+function stopSessionHealthCheck() {
+  if (healthCheckTimer) {
+    clearInterval(healthCheckTimer);
+    healthCheckTimer = null;
+    console.log("[HealthCheck] Session health monitor stopped");
+  }
+}
+
+// 启动健康检查
+startSessionHealthCheck();
+
 // Auto-connect on import. Caller doesn't need to do anything.
 void open_socket();
 
@@ -2092,6 +2174,7 @@ void open_socket();
 // the reconnect storm.
 if ((import.meta as any).hot) {
   (import.meta as any).hot.dispose(() => {
+    stopSessionHealthCheck(); // 清理健康检查定时器
     if (reconnect_timer != null) {
       clearTimeout(reconnect_timer);
       reconnect_timer = null;

@@ -478,14 +478,7 @@ class ProductVenueRunAdapter:
         presentation_context.conversation_boundary_ref = (
             conversation.boundary_ref
         )
-        resumed = await self._run_client.resume(
-            turn.request_id, turn.turn_id, host
-        )
-        if resumed is not None:
-            platform = services.get("capability_platform")
-            if platform is not None:
-                await platform.require_run_catalog_ready(resumed.run_id)
-            return self._session(resumed, presentation_context)
+        # Note: SDK Runtime v0.1.x doesn't support resume; always start new runs
         effective_host = resolved.host
         turn = resolved.turn
         preparation_service = (

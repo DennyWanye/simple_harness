@@ -39,7 +39,7 @@ export interface ProviderDraft {
 
 // ---- Pure validation helpers ---------------------------------------------
 
-const KEBAB_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+// const KEBAB_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;  // 保留供未来使用
 
 export interface ValidationResult {
   ok: boolean;

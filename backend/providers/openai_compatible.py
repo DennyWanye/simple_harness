@@ -669,6 +669,15 @@ class OpenAICompatibleProvider:
             _attempt_options.cache_boundary if _attempt_options is not None else None
         )
         messages = _stabilize_prefix(messages)
+
+        # 临时调试：打印实际发送的消息
+        logger.info(f"[DEBUG_PERSONA] Sending to model={self.model}, base_url={self.base_url}")
+        for idx, msg in enumerate(messages):
+            role = msg.get("role", "?")
+            content = msg.get("content", "")
+            preview = content[:300] if isinstance(content, str) else str(content)[:300]
+            logger.info(f"[DEBUG_PERSONA] Message {idx} ({role}): {preview}")
+
         payload: dict = {
             "model": self.model,
             "messages": messages,
@@ -1126,6 +1135,15 @@ class OpenAICompatibleProvider:
             _attempt_options.cache_boundary if _attempt_options is not None else None
         )
         messages = _stabilize_prefix(messages)
+
+        # 临时调试：打印实际发送的消息
+        logger.info(f"[DEBUG_PERSONA] STREAM Sending to model={self.model}, base_url={self.base_url}")
+        for idx, msg in enumerate(messages):
+            role = msg.get("role", "?")
+            content = msg.get("content", "")
+            preview = content[:300] if isinstance(content, str) else str(content)[:300]
+            logger.info(f"[DEBUG_PERSONA] STREAM Message {idx} ({role}): {preview}")
+
         payload: dict = {
             "model": self.model,
             "messages": messages,

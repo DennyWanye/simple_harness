@@ -286,94 +286,6 @@ class PersonalWorkflowMatcherPort(Protocol):
     ) -> str | None: ...
 
 
-class ModelPersonalWorkflowMatcher:
-    """Ask the configured model for one exact candidate; invalid output is no match."""
-
-    def __init__(self, llm_call: Callable[..., Any]) -> None:
-        if not callable(llm_call):
-            raise TypeError("personal workflow llm call must be callable")
-        self._llm_call = llm_call
-
-    async def select_candidate(
-        self,
-        *,
-        query: str,
-        candidates: tuple[FrozenPersonalWorkflowCandidateV1, ...],
-        workload_context: Any | None = None,
-    ) -> str | None:
-        if not candidates:
-            return None
-        from deskpet.execution.provider_workloads import (
-            derive_workload_context,
-            invoke_explicit,
-        )
-        prompt = (
-            "Select a Personal Workflow only when one candidate clearly matches "
-            "the user's complete intent. Otherwise select null. Return exactly "
-            "one JSON object with the sole field 'candidate_id', whose value is "
-            "an offered id or null.\nINPUT:\n"
-            + json.dumps(
-                {
-                    "user_request": str(query),
-                    "candidates": [
-                        {
-                            "candidate_id": item.candidate_id,
-                            "name": item.display_name,
-                            "description": item.description,
-                            "workflow_id": item.workflow_id,
-                        }
-                        for item in candidates
-                    ],
-                },
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            )
-        )
-        raw = (
-            await invoke_explicit(
-                self._llm_call,
-                prompt,
-                workload_context=derive_workload_context(
-                    workload_context, "companion.personal_workflow_match"
-                ),
-            )
-            if workload_context is not None
-            else await self._invoke_legacy(prompt)
-        )
-        try:
-            payload = json.loads(str(raw or "").strip())
-        except (TypeError, ValueError):
-            return None
-        if not isinstance(payload, dict) or set(payload) != {"candidate_id"}:
-            return None
-        selected = payload["candidate_id"]
-        if selected is None:
-            return None
-        candidate_ids = {item.candidate_id for item in candidates}
-        return str(selected) if str(selected) in candidate_ids else None
-
-    async def _invoke_legacy(self, prompt: str) -> str:
-        """Compatibility seam for unit fakes predating SessionAwareLLMCall."""
-
-        import inspect
-
-        if len(inspect.signature(self._llm_call).parameters) != 0:
-            return str(await _await(self._llm_call(prompt)) or "")
-        provider = self._llm_call()
-        chunks: list[str] = []
-        async for chunk in provider.chat_stream(
-            [
-                {"role": "system", "content": "Return only the requested JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.0,
-            max_tokens=128,
-        ):
-            chunks.append(str(chunk))
-        return "".join(chunks)
-
-
 ScopeResolver = Callable[
     [CompanionTurnPreparationRequestV1, FrozenOwnerIdentity],
     CapabilityScope | Awaitable[CapabilityScope],
@@ -1000,7 +912,6 @@ __all__ = [
     "FinalizedCompanionTurnV1",
     "FrozenPersonalWorkflowCandidateV1",
     "HubStorePersonalWorkflowCandidateSource",
-    "ModelPersonalWorkflowMatcher",
     "PersonalWorkflowCandidateSourcePort",
     "PersonalWorkflowMatcherPort",
     "PreparedCompanionTurnV1",

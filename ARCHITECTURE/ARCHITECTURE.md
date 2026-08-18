@@ -1,25 +1,31 @@
-<!-- last-calibrated: 1ec95c3785052c14b4ef2d6b30e5a6d49492f7a3 -->
+<!-- last-calibrated: 153338794ea0bc6617d36d77f95e91b6a0cebf2b -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> **Last verified: 2026-08-17**. 
+> **Last verified: 2026-08-18**. 
 > 
-> **当前执行 authority 状态（关键）**: SDK v0.1.1 **已经是唯一的生产执行 authority**。所有 ingress（text/voice/background）通过 `_sdk_ingress` 路由到 SDK Runtime (`simple_harness.runtime`)。当前启动链：
+> **当前执行 authority 状态（关键）**: SDK v0.1.1 Runtime 已安装并初始化，但 **Agent 执行链尚未接通**。Commit `71f3a6e2` 删除了旧 harness 代码（62,349 行），但替换集成未完成。当前状态：
 > 
+> - ✅ SDK Runtime 初始化完成：`_activate_product_sdk_runtime()` 成功创建 `_sdk_ingress`
+> - ⚠️ **执行链断开**：`backend/main.py:9308` 抛出 `NotImplementedError`，Agent 无法执行
+> - ⚠️ **三个未完成组件**：
+>   1. `main.py`: 核心协调器 `_execute_sdk_run()` 函数缺失（替代旧 `ProductVenueRunAdapter.open()`）
+>   2. `desktop_runtime.py:133`: `_DeliverySink.deliver()` 空实现
+>   3. `delivery.py`: `ProductDeliveryAdapter` 仅占位符（TODO T6.1）
+> 
+> **目标架构**（待完成接线后生效）：
 > ```
 > backend/main.py:_activate_product_sdk_runtime()
 >   -> _build_product_sdk_runtime_stack()
->   -> simple_harness.runtime (SDK Runtime)
->   -> backend/deskpet/sdk_adapters/* (产品适配器桥接)
+>   -> simple_harness.runtime (SDK Runtime) ✅ 已初始化
+>   -> backend/deskpet/sdk_adapters/* (产品适配器桥接) ⚠️ 部分未实现
 > backend/main.py (所有 ingress: text/voice/background)
->   -> _sdk_ingress.open_venue() (唯一活跃入口)
->   -> simple_harness.runtime.kernel.RunKernel (SDK)
->   -> simple_harness.runtime.drivers.react_loop (SDK ReAct Driver)
->   -> simple_harness.workflow.WorkflowDriver (SDK Workflow Engine)
+>   -> _execute_sdk_run() ❌ NotImplementedError
+>   -> SdkRuntimeIngress.start() ✅ 可用但未调用
+>   -> DeliveryDispatcher ⚠️ sink 未实现
+>   -> ProductDeliveryAdapter ❌ 占位符
 > ```
 > 
-> **旧 harness 模块状态**: `backend/deskpet/harness/{kernel,bootstrap,runtime,drivers/}` 等模块仍存在于源码树中，且 `_build_product_harness_stack()` 仍被调用并赋值给 `_harness_runtime`/`_harness_venue`，但**没有任何 ingress 调用它们**。这些是待清理的遗留代码。
-> 
-> **即将进行的清理**: 删除未被使用的旧 harness 核心模块，移除 `_harness_runtime`/`_harness_venue`/`_harness_accepting` 等全局变量及其构建逻辑。这是代码清理而非功能切换，不影响当前生产行为。
+> **旧 harness 模块清理状态**: Commit `71f3a6e2` 已删除 `backend/deskpet/harness/{bootstrap.py,drivers/react.py,drivers/react_loop.py,drivers/workflow.py,adapters/product_composition.py}` 及相关测试（共 62,589 行）。**保留了 25 个 harness 文件**（包括 `venues.py` 含 `ProductVenueRunAdapter`）作为死代码，原因是 `companion/run_adapter.py` 仍有依赖链。这些保留文件不再被任何 ingress 调用。
 > 
 > **保留的产品代码**: `backend/deskpet/{tools,skills,sdk_adapters,capabilities,companion}` 等产品特定模块完整保留，通过 SDK adapters 桥接到 SDK Runtime。
 > 
@@ -77,14 +83,17 @@ ProductDeliveryAdapter -> SessionDB / WS / TTS / artifacts
 
 The SDK Runtime `simple_harness.runtime` is the production execution boundary. `backend/main.py` owns ingress/transport and composition, but not a second execution loop. The executable contract is exported from SDK's public API; the canonical lifecycle and recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md) and SDK documentation.
 
-## 2. Current Request Lifecycle (SDK v0.1.1)
+## 2. Request Lifecycle (SDK v0.1.1 目标状态)
 
-生产请求路径（当前）：
+**实现状态**: ⚠️ **INCOMPLETE** - 核心执行链未接通，三个 harness 组件待实现（见 §1 header）
+
+生产请求路径（目标架构）：
 
 ```text
 Main Session text / Tauri / startup recovery
-  -> _sdk_ingress.open_venue() (SdkRuntimeIngress wraps SDK Runtime)
-  -> ProductContextAdapter (bridges product services to SDK ports)
+  -> _execute_sdk_run() ❌ main.py:9308 NotImplementedError (需实现)
+  -> SdkRuntimeIngress.start() ✅ SDK 已初始化但未调用
+  -> ProductContextAdapter ✅ 已实现 (bridges product services to SDK ports)
        (history/persona/memory/skills/attachments from product services
         + ProductToolsAdapter with tool catalog + ProductAuthorizationAdapter)
   -> simple_harness.runtime.kernel.RunKernel (SDK, top-level profile fixed to agent.general)
@@ -93,16 +102,30 @@ Main Session text / Tauri / startup recovery
             -> workflow_spawn(profile_key, catalog_generation)
                  -> durable one-shot ProfileLaunchTicket
                  -> ChildRun using ticket-bound simple_harness.workflow.WorkflowDriver (SDK)
-  -> ProductDeliveryAdapter / durable delivery
-  -> SessionDB + WS + TTS + UI (via product delivery adapter)
+  -> DeliveryDispatcher ⚠️ 已启动但 sink 空实现
+       -> _DeliverySink.deliver() ❌ desktop_runtime.py:133 空实现 (需实现)
+       -> ProductDeliveryAdapter ❌ delivery.py:14 占位符 (需实现)
+  -> SessionDB + WS + TTS + UI (via product delivery adapter) ⚠️ 适配器未接通
 ```
 
 **代码证据**：
-- `backend/main.py:9544`: 所有 ingress 调用 `await _sdk_ingress.open_venue(...)`
-- `backend/deskpet/sdk_adapters/ingress.py`: `SdkRuntimeIngress` 包装 SDK Runtime
-- `backend/deskpet/sdk_adapters/composition.py`: 构建 SDK Runtime 并注入产品 adapters
-- `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 桥接产品服务到 SDK ports
-- `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 桥接产品工具到 SDK tool registry
+- ❌ `backend/main.py:9308`: 抛出 `NotImplementedError`，执行链断开
+- ✅ `backend/main.py:9650`: `_sdk_ingress.open()` 打开 ingress barrier（已实现）
+- ✅ `backend/deskpet/sdk_adapters/ingress.py`: `SdkRuntimeIngress` 提供 `.start()/.signal()/.cancel()/.query()/.wait_idle()` 方法（已实现）
+- ✅ `backend/deskpet/sdk_adapters/composition.py`: 构建 SDK Runtime 并注入产品 adapters（已实现）
+- ✅ `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 桥接产品服务到 SDK ports（已实现）
+- ✅ `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 桥接产品工具到 SDK tool registry（已实现）
+- ❌ `backend/deskpet/sdk_adapters/desktop_runtime.py:133`: `_DeliverySink.deliver()` 空实现
+- ❌ `backend/deskpet/sdk_adapters/delivery.py:14`: `ProductDeliveryAdapter` 仅占位符
+
+**关键方法签名（SdkRuntimeIngress）**：
+```python
+async def start(session_id, request_id, turn_id, payload, session_generation) -> IngressStartReceipt
+async def signal(run_id, signal_name, payload) -> IngressSignalReceipt
+async def cancel(run_id) -> None
+def query(run_id) -> RunState
+async def wait_idle(run_id) -> None
+```
 
 `backend/main.py` owns WebSocket/audio adapters and service composition.
 `ProductContextAdapter` freezes the provider/model/capability/product payload and describes legal

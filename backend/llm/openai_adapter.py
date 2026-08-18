@@ -270,6 +270,14 @@ class OpenAIAdapter(BaseLLMAdapter):
             if k in kwargs:
                 request[k] = kwargs[k]
 
+        # 临时调试：打印实际发送的消息内容
+        logger.info(f"[DEBUG] Sending to {use_model}")
+        for idx, msg in enumerate(messages):
+            role = msg.get("role", "?")
+            content = msg.get("content", "")
+            preview = content[:200] if isinstance(content, str) else str(content)[:200]
+            logger.info(f"[DEBUG] Message {idx} ({role}): {preview}")
+
         if stream:
             request["stream"] = True
             request["stream_options"] = {"include_usage": True}

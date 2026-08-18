@@ -21,9 +21,26 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from deskpet.memory.memory_v2_schema import PPT_OUTLINE_HISTORY_DDL
-
 log = logging.getLogger(__name__)
+
+# PPT Outline history table schema
+PPT_OUTLINE_HISTORY_DDL = """
+CREATE TABLE IF NOT EXISTS ppt_outline_history (
+    outline_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    topic TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    slides_json TEXT NOT NULL,
+    sources_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'proposed',
+    updated_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_ppt_outline_session
+    ON ppt_outline_history(session_id);
+CREATE INDEX IF NOT EXISTS idx_ppt_outline_status
+    ON ppt_outline_history(status);
+"""
 
 ConnectionFactory = Callable[[], sqlite3.Connection]
 

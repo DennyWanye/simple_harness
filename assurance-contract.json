@@ -1,82 +1,123 @@
 {
   "profile": "standard",
-  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"],
+  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6"],
   "protected_assets": [
     {
       "id": "ASSET-1",
-      "description": "用户会话数据和执行历史 (session DB, workflow state)"
+      "description": "用户 Session 数据完整性 - Session 历史记录、对话内容、执行状态不丢失"
     },
     {
       "id": "ASSET-2",
-      "description": "已配置的 LLM provider credentials (OS keychain)"
+      "description": "Agent 执行状态一致性 - Run 状态在 SDK Runtime、SessionDB 和前端之间保持同步"
     },
     {
       "id": "ASSET-3",
-      "description": "SDK Runtime 的正常运行 (当前生产执行 authority)"
+      "description": "前端 WebSocket 连接可用性 - 用户能够实时接收 Agent 执行进度"
     }
   ],
   "trusted_assumptions": [
     {
       "id": "TRUST-1",
-      "description": "SDK v0.1.1 已正确安装且正常工作 (当前唯一生产执行 authority)"
+      "description": "SdkRuntimeIngress 已在应用启动时正确初始化并 open（由 backend/main.py 的启动序列保证）"
     },
     {
       "id": "TRUST-2",
-      "description": "开发者账户和本地文件系统可信"
+      "description": "DeliveryDispatcher 后台任务正常运行（由 SDK Runtime 的 _delivery_pump 保证）"
     },
     {
       "id": "TRUST-3",
-      "description": "Python 3.12 runtime 和系统绝对路径程序可信"
+      "description": "SessionDB 数据库连接正常（由 backend/main.py 的数据库初始化保证）"
     },
     {
       "id": "TRUST-4",
-      "description": "旧 harness 模块 (deskpet.harness.kernel, bootstrap, runtime, drivers) 确实未被任何生产路径使用"
+      "description": "LLM provider 配置正确且可用（用户在设置页完成配置）"
+    },
+    {
+      "id": "TRUST-5",
+      "description": "开发环境：OS、Python 解释器、依赖库版本正确（由 setup.sh 保证）"
     }
   ],
   "in_scope_failures": [
     {
-      "id": "FAIL-IMPORT",
-      "description": "误删仍被测试或其他代码引用的模块导致 ModuleNotFoundError"
+      "id": "FAIL-1",
+      "description": "Agent 执行链抛出 NotImplementedError（当前 bug，main.py:9308）"
     },
     {
-      "id": "FAIL-LEFTOVER-IMPORT",
-      "description": "遗留的导入引用导致 ImportError 或 ModuleNotFoundError"
+      "id": "FAIL-1A",
+      "description": "核心协调逻辑缺失（旧 ProductVenueRunAdapter.open() 被删除，新的 _execute_sdk_run() 未实现）"
     },
     {
-      "id": "FAIL-INCOMPLETE-CLEANUP",
-      "description": "清理不完整导致死代码残留"
+      "id": "FAIL-1B",
+      "description": "_DeliverySink 未实现导致事件无法推送（desktop_runtime.py:133 空实现）"
     },
     {
-      "id": "FAIL-SDK-REGRESSION",
-      "description": "误删导致 SDK Runtime 功能失效"
+      "id": "FAIL-1C",
+      "description": "ProductDeliveryAdapter 未实现导致事件处理失败（delivery.py TODO T6.1）"
     },
     {
-      "id": "FAIL-TEST",
-      "description": "测试导入路径引用已删除模块导致测试套件失败"
+      "id": "FAIL-2",
+      "description": "SDK Runtime 调用参数错误（如 RunStart 参数缺失、类型错误）"
+    },
+    {
+      "id": "FAIL-3",
+      "description": "Run 状态无法查询（ingress.query() 返回 None 或抛出异常）"
+    },
+    {
+      "id": "FAIL-4",
+      "description": "事件流推送失败导致前端无响应（DeliveryDispatcher 未推送或推送格式错误）"
+    },
+    {
+      "id": "FAIL-5",
+      "description": "历史数据读取失败导致系统崩溃（数据格式不兼容）"
+    },
+    {
+      "id": "FAIL-ROUTE",
+      "description": "WebSocket 端点不可达或路由错误（/control, /chat 端点失效）"
+    },
+    {
+      "id": "FAIL-REGRESSION",
+      "description": "修改导致历史功能回归（Session 列表、技能列表、设置页失效）"
     }
   ],
   "in_scope_adversaries": [],
   "out_of_scope_conditions": [
     {
       "id": "OOS-1",
-      "description": "SDK v0.1.1 本身的 bugs 或不符合预期的行为（SDK 被视为可信依赖）"
+      "description": "SDK Runtime 本身的 bug（属于 simple_harness 包的问题，非本项目范围）"
     },
     {
       "id": "OOS-2",
-      "description": "网络故障或外部 LLM provider API 错误"
+      "description": "LLM provider 服务不可用（OpenAI/Anthropic 服务中断，外部依赖）"
     },
     {
       "id": "OOS-3",
-      "description": "用户输入的恶意 payload 或注入攻击（本次是代码删除，不涉及输入验证）"
+      "description": "数据库磁盘空间耗尽（基础设施问题）"
     },
     {
       "id": "OOS-4",
-      "description": "并发竞态条件或死锁（本次不改并发模型）"
+      "description": "网络连接中断（用户本地网络问题）"
     },
     {
       "id": "OOS-5",
-      "description": "依赖包版本冲突或环境配置问题（假设 setup.sh 已正确运行）"
+      "description": "恶意攻击（注入攻击、DDoS 等，standard profile 不防护）"
     }
   ],
-  "maximum_acceptable_impact": "误删导致应用无法启动或部分测试失败。可通过 git revert 快速恢复。数据完整性不受影响（不修改 schema 或数据）。SDK Runtime 已在使用中，本次仅删除死代码。"
+  "maximum_acceptable_impact": "Agent 执行链单次请求失败，返回明确错误信息给用户。不影响其他 Session 的执行。系统可通过重试恢复，不需要重启应用。历史数据不丢失。",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "rationale": "本次修复的是 Agent 执行链的基础设施（NotImplementedError → 调用 SDK Runtime），不涉及验证 Agent 对话质量或输出语义。Agent 对具体用户输入的响应质量属于上层功能验证，不在本次基础设施修复范围内。",
+      "decided_by": "claude-opus-5"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "rationale": "虽然 Agent 执行过程会产生事件推送到前端，但前端状态机的驱动逻辑不在本次修复范围内。本次只修复后端执行链（NotImplementedError → SDK Runtime 调用），前端消费事件的逻辑未改动。",
+      "decided_by": "claude-opus-5"
+    },
+    "stateful_init": {
+      "value": false,
+      "rationale": "SDK Runtime 在应用启动时已完成初始化（backend/main.py 启动序列中 await stack.start() + ingress.open()），不存在'用户首次使用时才触发异步初始化'的冷启动场景。本次修复不涉及初始化逻辑改动。",
+      "decided_by": "claude-opus-5"
+    }
+  }
 }

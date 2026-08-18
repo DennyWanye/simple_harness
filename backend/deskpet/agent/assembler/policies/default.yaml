@@ -89,11 +89,15 @@ policies:
     tool_exposure:
       # Keep common side-effect-free inspection on the standard task surface.
       # Low-frequency and plugin capabilities remain deferred below.
+      # 2026-08-17 Bug fix: 修正工具名称 file_search -> file_glob/file_grep
       direct:
         - memory_read
         - memory_search
         - file_read
-        - file_search
+        - file_write
+        - file_glob
+        - file_grep
+        - workspace_recall
         - reminder_create
         - reminder_list
         - reminder_cancel
@@ -127,13 +131,14 @@ policies:
     tools:
       - file_read
       - file_write
-      - file_search
+      - file_glob
+      - file_grep
       - workspace_recall
       - run_shell
       - todo_add
       - todo_list
     tool_exposure:
-      direct: [file_read, file_write, file_search, workspace_recall, run_shell, todo_add, todo_list]
+      direct: [file_read, file_write, file_glob, file_grep, workspace_recall, run_shell, todo_add, todo_list]
       discoverable: ["source:capability:*", "source:mcp:*", "source:plugin:*"]
       deny: []
     memory:

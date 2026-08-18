@@ -27,7 +27,7 @@ _LEGACY_STATIC_PROVIDER_MODULES = (
     "file_organize_tools",
     "file_tools",
     "image_tools",
-    "memory_tools",
+    # "memory_tools",  # Removed - module no longer exists
     "ocr_tools",
     "pdf_tools",
     "picker_tools",

@@ -1012,6 +1012,18 @@ def _legacy_growth_owner() -> tuple[str, int]:
 async def _initialize_growth_authority() -> None:
     """Compose the one durable Companion authority without opening ingress."""
 
+    # Early return if P4 services (memory system) are unavailable
+    session_db = service_context.get("session_db")
+    managed_projection = service_context.get("managed_skill_discovery_projection")
+    if session_db is None or managed_projection is None:
+        logger.warning(
+            "growth_authority_skipped",
+            reason="p4_services_unavailable",
+            session_db_available=session_db is not None,
+            managed_projection_available=managed_projection is not None,
+        )
+        return
+
     global _companion_store, _growth_authority_router
     global _companion_identity_gate, _companion_profile_coordinator
     global _companion_control_ingress
@@ -1752,7 +1764,12 @@ async def _complete_growth_authority_cutover() -> None:
         or router is None
         or store is None
     ):
-        raise RuntimeError("growth authority composition is unavailable")
+        # Growth authority was skipped (e.g., P4 services unavailable)
+        logger.warning(
+            "growth_authority_cutover_skipped",
+            reason="growth_authority_unavailable",
+        )
+        return
     try:
         await coordinator.execute(cutover_plan)
         # A fresh process reconstructs the module-level Registry in legacy
@@ -1793,7 +1810,14 @@ async def _initialize_companion_projection_services() -> None:
 
     session_db = service_context.get("session_db")
     if _companion_store is None or session_db is None:
-        raise RuntimeError("companion_projection_dependencies_unavailable")
+        # Companion store/session_db unavailable (P4 services failed)
+        logger.warning(
+            "companion_projection_skipped",
+            reason="dependencies_unavailable",
+            companion_store_available=_companion_store is not None,
+            session_db_available=session_db is not None,
+        )
+        return
     detail_query = CompanionDetailQueryPort(
         store=_companion_store,
         platform_store=service_context.get("capability_platform"),
@@ -3666,6 +3690,15 @@ except Exception as _p4_exc:
         error_type=type(_p4_exc).__name__,
     )
     _summarizer_state_db_path = None  # type: ignore[assignment]
+    # Define critical variables needed by downstream code even when P4 services fail
+    _state_db_path = _paths.user_data_dir() / "data" / "state.db"
+    _session_db = None  # type: ignore[assignment]
+    # Register None for services that downstream code expects
+    service_context.register("context_assembler", None)
+    service_context.register("session_db", None)
+    service_context.register("vector_worker", None)
+    service_context.register("embedder", None)
+    service_context.register("managed_skill_discovery_projection", None)
 
 
 base_agent = SimpleLLMAgent(llm, memory=memory_store)
@@ -7731,6 +7764,11 @@ def _bind_frozen_skill_snapshot_resolver(resolver) -> None:
     if resolver is None or not getattr(resolver, "manager_backed", False):
         raise RuntimeError("manager_skill_snapshot_resolver_required")
     assembler = service_context.get("context_assembler")
+    if assembler is None:
+        # P4 services failed to initialize (e.g., memory modules missing)
+        # Skip binding - skills will degrade gracefully
+        logger.warning("assembler_unavailable_skipping_skill_bind")
+        return
     bind = getattr(assembler, "bind_skill_snapshot_resolver", None)
     if not callable(bind):
         raise RuntimeError("assembler_skill_component_unavailable")

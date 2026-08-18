@@ -661,13 +661,30 @@ async def _present_final(event: AgentEvent, context: RunPresentationContext, sta
     try:
         await context.send_final(context.websocket, {'type': 'chat_v2_final', 'payload': _task_payload(context, {'text': state.final_text, 'iterations': event.iteration, 'replace_all_provisional': True})}, session_id=context.session_id, request_id=context.request_id)
     except Exception as exc:  # durable assistant message is already committed above
-        logger.warning(
-            "run_presenter_final_delivery_failed",
+        logger.error(
+            "run_presenter_final_delivery_failed_CRITICAL",
             session_id=context.session_id,
             run_id=context.run_id,
             request_id=context.request_id,
             error_type=type(exc).__name__,
+            error=str(exc),
+            exc_info=True,
         )
+        # Last resort: try to send error event so frontend doesn't stay stuck
+        try:
+            await context.websocket.send_json({
+                'type': 'chat_v2_error',
+                'payload': {
+                    'session_id': context.session_id,
+                    'request_id': context.request_id,
+                    'run_id': context.run_id,
+                    'task_scope_id': getattr(context, 'task_scope_id', None),
+                    'reason': 'final_delivery_failed',
+                    'detail': f'Failed to deliver final event: {type(exc).__name__}',
+                }
+            })
+        except Exception:
+            pass  # Give up, health check will recover after 60s
     try:
         await context.emit_context_usage(
             context.websocket,
@@ -709,7 +726,33 @@ async def _present_error(event: AgentEvent, context: RunPresentationContext, sta
     except Exception as exc:
         logger.debug('auto_resume_handle_failed', sid=context.session_id, error=str(exc))
     if not handled:
-        await _send_both(context, {'type': 'chat_v2_error', 'payload': _task_payload(context, {'reason': event.reason, 'detail': event.detail, 'error_class': event.error_class or '', 'retract_all_provisional': True})})
+        try:
+            await _send_both(context, {'type': 'chat_v2_error', 'payload': _task_payload(context, {'reason': event.reason, 'detail': event.detail, 'error_class': event.error_class or '', 'retract_all_provisional': True})})
+        except Exception as exc:
+            logger.error(
+                "run_presenter_error_delivery_failed_CRITICAL",
+                session_id=context.session_id,
+                run_id=context.run_id,
+                request_id=context.request_id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+                exc_info=True,
+            )
+            # Last resort: try raw WebSocket send
+            try:
+                await context.websocket.send_json({
+                    'type': 'chat_v2_error',
+                    'payload': {
+                        'session_id': context.session_id,
+                        'request_id': context.request_id,
+                        'run_id': context.run_id,
+                        'task_scope_id': getattr(context, 'task_scope_id', None),
+                        'reason': event.reason or 'unknown',
+                        'detail': event.detail or 'Error delivery failed',
+                    }
+                })
+            except Exception:
+                pass  # Give up, health check will recover
 
 async def _present_compacted(event: AgentEvent, context: RunPresentationContext, state: PresentationState) -> None:
     assert isinstance(event, ContextCompactedEvent)
