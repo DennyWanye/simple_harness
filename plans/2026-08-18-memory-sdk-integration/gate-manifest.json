@@ -1,0 +1,19 @@
+{
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "run_id": "memory-sdk-integration-slice1",
+  "source_request_text": "接入记忆 SDK：先恢复 host SessionDB 会话账本并修正 re-home 引用",
+  "acceptance_file": "plans/2026-08-18-memory-sdk-integration/acceptance.md",
+  "scenarios": [
+    {"scenario_id": "AC-1", "required": true},
+    {"scenario_id": "AC-2", "required": true},
+    {"scenario_id": "AC-3", "required": true},
+    {"scenario_id": "AC-4", "required": true}
+  ],
+  "applicability": {
+    "input_sensitive": {"value": false, "rationale": "会话账本恢复与消息往返，确定性可测，不随自然语言输入语义波动", "decided_by": "agent"},
+    "llm_payload_driven": {"value": false, "rationale": "无 LLM 生成结构化载荷驱动端侧状态机或卡片渲染", "decided_by": "agent"},
+    "stateful_init": {"value": false, "rationale": "本 slice 为本地 SQLite 初始化，无异步注册服务或远程登录态", "decided_by": "agent"}
+  },
+  "release_unit": {"must_ac": 4, "tasks": 3, "subsystems": 1},
+  "thresholds": {}
+}

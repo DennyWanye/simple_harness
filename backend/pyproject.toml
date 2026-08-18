@@ -216,6 +216,7 @@ packages = [
     "deskpet.agent.assembler.components",
     "deskpet.agent.assembler.policies",
     "deskpet.memory",
+    "deskpet.memory.migrations",
     "deskpet.tools",
     "deskpet.permissions",
     "deskpet.companion",
@@ -236,6 +237,7 @@ packages = [
 
 [tool.setuptools.package-data]
 "memory.migrations" = ["*.sql"]
+"deskpet.memory.migrations" = ["*.sql"]
 "deskpet.companion.migrations" = ["*.sql"]
 "deskpet.companion.eval_suites" = ["*.json"]
 # P4-S7: ContextAssembler policies ship as declarative YAML + JSONL.

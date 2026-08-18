@@ -1,0 +1,10 @@
+-- 009_memory_v2_v17.sql -- canonical state.db v17 closure
+--
+-- This migration is intentionally executed by the Python callback in
+-- deskpet.memory.memory_v2_schema. SQLite does not support the portable
+-- "ADD COLUMN IF NOT EXISTS" introspection needed to reconcile databases
+-- where feature-owned tables may already exist in several historical forms.
+--
+-- The migrator writes this file's schema_migrations marker and sets
+-- PRAGMA user_version=17 in the same transaction only after the callback
+-- has validated every table, column, index, and rebuilt row count.
