@@ -1,0 +1,18 @@
+{
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "run_id": "memory-sdk-integration-slice4",
+  "source_request_text": "接入记忆 SDK：真实 backend 启动 smoke（import main + SessionDB/MemoryBackend 走一条消息）",
+  "acceptance_file": "plans/2026-08-18-memory-sdk-integration/acceptance.md",
+  "scenarios": [
+    {"scenario_id": "AC-12", "required": true},
+    {"scenario_id": "AC-13", "required": true},
+    {"scenario_id": "AC-14", "required": true}
+  ],
+  "applicability": {
+    "input_sensitive": {"value": false, "rationale": "后端启动与消息往返确定性可测，不随自然语言输入语义波动", "decided_by": "agent"},
+    "llm_payload_driven": {"value": false, "rationale": "本 smoke 不驱动真实 LLM 对话，只走 SessionDB+MemoryBackend 消息链路", "decided_by": "agent"},
+    "stateful_init": {"value": false, "rationale": "本地 SQLite 迁移与模块级构造，非异步注册服务/远程配置/登录态", "decided_by": "agent"}
+  },
+  "release_unit": {"must_ac": 3, "tasks": 1, "subsystems": 1},
+  "thresholds": {}
+}

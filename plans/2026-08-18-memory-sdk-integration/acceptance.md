@@ -26,3 +26,10 @@
 | AC-9 | 真实接线 | `main.py` 构造 `SessionDB(memory_backend=SQLiteMemoryBackend(memory.db, auto_extract_facts=True))` 并注册 `service_context`，失败降级 `None` 不阻断启动 | 必须 |
 | AC-10 | 编译通过 | `main.py` 经 `py_compile` 无语法/import 破坏 | 必须 |
 | AC-11 | 后端 smoke | 该构造模式的 initialize→append→facts/recall/twin 后端级跑通（用临时 `data/state.db`+`data/memory.db` 模拟 `user_data_dir`） | 必须 |
+
+## Slice 4 追加验收条款（真实后端启动 smoke）
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|----|--------|-------------------|--------|
+| AC-12 | 真实 import | `import main` 成功，模块级 `_session_db`/`_memory_backend` 非 None 且 `service_context` 注册 SessionDB | 必须 |
+| AC-13 | SessionDB 初始化 | 真实 `_session_db.initialize()` 迁移成功，`append_message`+`get_recent_messages` 往返一致 | 必须 |
+| AC-14 | SDK 认知记忆生效 | 走一条用户消息后，真实后端实例的 facts/recall/twin 正确 | 必须 |
