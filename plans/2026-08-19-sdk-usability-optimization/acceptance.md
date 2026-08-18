@@ -8,6 +8,10 @@
 
 **包含**（三个垂直 slice，每个独立验收）：
 
+- **Slice 1.5 — 真机 COLD-1 暴露的既有冷启动缺陷修复**（2026-08-19 scope 扩展，用户批准"扩大 scope 现在就修"）
+  - `S1.5-AC-1`：全新安装（未配 LLM provider）启动不得崩溃——`NoProviderConfiguredError` 须被优雅捕获，SDK runtime 按设计跳过，app 存活
+  - `S1.5-AC-2`：全新安装（fresh companion.db）身份绑定成功——growth authority cutover 不再因 manifest 陈旧失败；聊天输入框不再因 `companion_profile_bind` 被拒而永久禁用
+  - `S1.5-AC-3`：上述修复经真机冷启动（干净 userdata → 配置 provider → 聊天）验证通过
 - **Slice 1 — harness SDK v0.1.2 宿主切换**（高风险：改启动装配链路）
   - `backend/vendor/` 纳入官方 `simple_harness_sdk-0.1.2-py3-none-any.whl`（来源 SDK 仓库 `dist/`，SHA-256 逐字节核对）
   - `backend/pyproject.toml` 依赖声明切到 0.1.2 wheel；`desktop_runtime.py` 的 `_SDK_VERSION` / `_SDK_WHEEL_SHA256` 同步更新
@@ -31,6 +35,14 @@
 - 宿主 `sdk_adapters` 重构迁移到 consumer layer（仅验证兼容，不做重构）
 
 ## 功能验收条款
+
+### Slice 1.5 — 真机冷启动缺陷修复（scope 扩展）
+
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|----|--------|-------------------|--------|
+| S1.5-AC-1 | 无 provider 冷启动存活 | 全新 userdata + 未配 provider 启动：`NoProviderConfiguredError` 被捕获，`product_sdk_runtime_skipped` 出现，app lifespan 不崩溃 | 必须 |
+| S1.5-AC-2 | 冷启动身份绑定成功 | 全新 userdata（fresh companion.db）：`growth_authority_ready phase=companion`（非 paused），`companion_profile_bind` 不再被 `companion_runtime_not_started` 拒绝，聊天输入框启用 | 必须 |
+| S1.5-AC-3 | 真机冷路径聊天可用 | 干净 userdata → 配置 provider → 重启 → `sdk_runtime_ready` 0.1.2 → 主聊天发消息得到非空 assistant 回复 | 必须 |
 
 ### Slice 1 — harness SDK v0.1.2 宿主切换
 

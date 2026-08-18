@@ -7,6 +7,7 @@
 ## 结果摘要
 
 - **18 个分片：6 passed / 12 known-failure**（全部为既有红，已记入 `baseline-known-failures.json` 签名）
+  - 2026-08-19 收尾复跑：companion manifest 重建 + 冷启动修复使 8 个后端既有红转 PASS（reminder_authority_cutover ×4、execution_build_manifest ×2、resource_scope_resolvers、personal_workflow effect-settle），零新增失败；已知失败签名随之收窄
   - 2026-08-19 增补第 18 分片 `backend-sdk-adapters`：原分片枚举只覆盖 `tests/test_*.py` 首字母，漏掉 `tests/sdk_adapters/` 子目录（本次切换主战场）；其 pre-change 基线通过 stash + venv 降级 0.1.1 实测取得，2 个既有失败（tool_catalog import-purity / closed-ingress parity，系 809c30b9 删除 memory_tools 的清单残留）已登记签名
 - 通过分片：backend-b、backend-g-l、frontend-typecheck、frontend-build、rust-test、rust-check
 - 既有红分片与代表失败：
