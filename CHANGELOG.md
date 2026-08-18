@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] — Simple Harness Workbench
 
+- **SDK v0.1.2 切换为唯一生产 ingress**：`backend/vendor/` 纳入官方 0.1.2 wheel（对 0.1.1 纯新增，
+  含 consumer adapter 层）；wheel 身份收敛为单一事实源 `deskpet/sdk_adapters/sdk_candidate.py`，
+  原 6 处生产硬编码 + 测试 + `verify_sdk_wheel.py` 全部改 import。conformance 22/22、18 分片回归零新增红。
+- **修复两个既有冷启动缺陷**（真机 COLD-1 暴露，0.1.1 上同样存在）：① 全新安装未配 provider 时
+  `NoProviderConfiguredError` 未捕获导致整个 app 启动崩溃——现优雅跳过；② growth authority cutover
+  在 fresh DB 上因三个 `execution_build_*` manifest 陈旧（pin 25 个已移入新 catalog 的 core.* handler）
+  失败、身份绑定被拒、新用户聊天输入框永久禁用——重建 manifest 后 cold path 走通。
+
 - Replaced the transparent desktop-pet shell and secondary message window with one resizable
   Workbench window containing Chat, Skills, Artifacts, and Settings views.
 - Added persistent window geometry, session sidebar management, macOS autostart integration,

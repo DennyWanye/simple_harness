@@ -230,7 +230,7 @@ def test_incomplete_legacy_phase_fails_without_any_catalog_mutation() -> None:
     victim = next(
         spec.name
         for spec in before.specs
-        if spec.stable_handler_id == "core.memory_recall.v1"
+        if spec.stable_handler_id
     )
     assert registry.unregister(victim)
     incomplete = registry.catalog_snapshot()
