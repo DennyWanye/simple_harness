@@ -6,7 +6,8 @@
 
 ## 结果摘要
 
-- **17 个分片：6 passed / 11 known-failure**（全部为既有红，已记入 `baseline-known-failures.json` 签名）
+- **18 个分片：6 passed / 12 known-failure**（全部为既有红，已记入 `baseline-known-failures.json` 签名）
+  - 2026-08-19 增补第 18 分片 `backend-sdk-adapters`：原分片枚举只覆盖 `tests/test_*.py` 首字母，漏掉 `tests/sdk_adapters/` 子目录（本次切换主战场）；其 pre-change 基线通过 stash + venv 降级 0.1.1 实测取得，2 个既有失败（tool_catalog import-purity / closed-ingress parity，系 809c30b9 删除 memory_tools 的清单残留）已登记签名
 - 通过分片：backend-b、backend-g-l、frontend-typecheck、frontend-build、rust-test、rust-check
 - 既有红分片与代表失败：
   - `backend-a`：`test_pinned_agent_reach_channel_contract`——venv 中 agent-reach 的 `direct_url.json`
@@ -25,5 +26,6 @@
 
 ## 状态文件
 
-- runner state：`verification/baseline/baseline-state.json`（含每分片 log 路径与指纹）
+- runner state：`verification/baseline/baseline-state.json`（18 分片，含每分片 log 路径与指纹）
+- 2026-08-19 修复 `scripts/baseline_runner.py`：FAILURE_PATTERNS 新增 vitest `FAIL <file> > <case>` 稳定 marker——此前 vitest 分片回退到含 Duration 行的 tail-sha256，每次运行签名必漂移、runner 必停
 - 既有失败签名：`baseline-known-failures.json`（本次已随真实状态更新，将随 Slice 1 一并提交）

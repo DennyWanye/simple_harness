@@ -23,6 +23,9 @@ FAILURE_PATTERNS = (
     re.compile(r"^ERROR\s+([^\s]+)", re.MULTILINE),
     re.compile(r"^(.+?:\d+:\d+\s+-\s+error\s+.+)$", re.MULTILINE),
     re.compile(r"^(.+?error TS\d+:.+)$", re.MULTILINE),
+    # vitest: "FAIL  src/foo.test.tsx > suite > case" — stable test-name markers so
+    # known-failure signatures stop depending on the volatile Duration tail hash.
+    re.compile(r"^\s*FAIL\s+(?:\[[^\]]*\]\s+)?(\S+\.test\.[^\s]+(?:\s+>\s+.+)?)$", re.MULTILINE),
 )
 
 
