@@ -1,10 +1,33 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-16
-> 代码基线：`42fbbd0f1fd2e3cd8eeb44ba1b4dae1b694269`
-> 状态：SDK v0.1.1 immutable candidate 已 vendor/install；产品 B1/B2 closed-ingress composition 与 B3 可独立产品项已实现，B3 SDK metadata sidecar 仍 PENDING，真实 ingress cutover 未执行。
+> 最后校准：2026-08-19
+> 代码基线：`5b781bf6df5319e2c13230bcee508fff0e470f5a`
+> 状态：SDK v0.1.1 已是唯一生产 ingress（2026-08-17 cutover 完成，旧 harness 死代码已清理）；记忆 SDK（simple-harness-memory-sdk）host 集成真机 E2E 已 PASS（2026-08-19）。**下一步：v0.1.2（含消费者友好层）已发布于 SDK 仓库 dist/，宿主 vendor 切换见 `plans/2026-08-19-sdk-usability-optimization/`。**
 
-## 0. 当前实施状态（2026-08-16）
+## 0. 当前实施状态（2026-08-19 校正）
+
+**2026-08-17/19 之后的当前事实**（本节下方 2026-08-16 原始记录保留为历史）：
+
+- **Ingress cutover 已执行**：`main.py` 中 `_sdk_ingress` 是所有产品入口（text/voice/background）的唯一活跃
+  ingress，执行链为 `_execute_sdk_run()`（`main.py:9228`）→ `SdkRuntimeIngress.start()` →
+  `DeliveryDispatcher`。旧 `_harness_venue` 构建代码、`_build_product_harness_stack()`、
+  `_activate_product_harness()` 与 11 个未使用 harness 模块已删除（2026-08-17 清理，pytest
+  81 failed / 6466 passed，基线 79 failed / 6636 passed，减少项为已删 harness 单测）。
+- **保留的 harness 文件**：23 个（非 `__init__.py` 口径：contracts/ports/projector/context/profiles/skill_scope/kernel + 13 个引擎
+  模块 + adapters/venues.py + product_turn_open.py + drivers/react_boundary.py），原因是
+  companion/run_adapter.py → venues.py → kernel.py 依赖链与 6 个产品文件的契约类型引用。
+- **已知残留（不阻塞主链路）**：companion/run_adapter.py 期望 `KernelRunClient` 但 main.py 传入 SDK
+  `RunClient`（接口不兼容，companion 后台功能当前不可用，修复需接口适配层）；memory_recall tool 注册
+  被 core-handler authority 清单挡住；curation 未接新 memory SDK。
+- **SDK 仓库已发布 v0.1.2**（release commit `91df02d`，dist/ 含 wheel + tar.gz）：新增消费者友好层
+  `build_consumer_runtime` / `ConsumerRuntimePorts`（3 个 Protocol + database_path）、MemoryQueryPort /
+  MemoryWritePort、quickstart/integration-guide/api 文档与 examples/minimal-consumer。宿主仍 vendor
+  v0.1.1，切换工作见 `plans/2026-08-19-sdk-usability-optimization/`。
+- **B3 状态维持**：0.1.1/0.1.2 均尚无 public Tool inventory sidecar 合同，B3 不得标 PASS。
+- 下方"### 历史记录：2026-08-16 原始状态"至"## 3."中引用的 `deskpet.harness` 生产链路描述为
+  **cutover 前历史基线**（product_composition/bootstrap/subagent_registry 等已删除），仅作设计上下文保留。
+
+### 历史记录：2026-08-16 原始状态
 
 - SDK Slice A 后续发现 PPT durable interrupt 缺少 public atomic resolve/resume seam；本地 hotfix
   提交 `f13a30a` 现生成 active `0.1.1` wheel

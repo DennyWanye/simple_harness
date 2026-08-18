@@ -30,7 +30,7 @@
 - **Harness 死代码清理完成**：删除 `_build_product_harness_stack()` (232 行)、`_activate_product_harness()` (53 行)、`_harness_*` 全局变量，以及 11 个未使用的 harness 模块文件（bootstrap.py, adapters/product_composition.py, product_profiles.py, subagent_registry.py, team.py, legacy_execution_migration.py, drivers/react*.py, workflow.py）。
 - **root_run_identity 内联**：在 main.py (3 处) 和 companion/run_adapter.py (1 处) 内联 3 行 `root_run_identity` 实现，消除对 `deskpet.harness.kernel` 的导入依赖。
 - **测试清理**：删除 tests/harness_simplification/ 目录及 ~20 个 harness 单元测试文件。pytest 结果：81 failed, 6466 passed（基线：79 failed, 6636 passed）— 170 个减少的 passed 测试对应已删除的 harness 单元测试，无新 ImportError，所有保留模块正常工作。
-- **AC-8 保留必要契约**：保留 25 个 harness 文件（contracts.py, ports.py, projector.py, context.py, profiles.py, skill_scope.py, kernel.py + 13 个引擎模块, adapters/venues.py, product_turn_open.py, drivers/react_boundary.py）。原因：companion/run_adapter.py → venues.py → kernel.py 依赖链，以及 6 个产品文件直接引用 harness 契约类型（HostExtensionRefV1, HostContext, PreparedRunContextV1 等）。
+- **AC-8 保留必要契约**：保留 23 个 harness 文件（非 __init__.py 口径，2026-08-19 磁盘核实：contracts.py, ports.py, projector.py, context.py, profiles.py, skill_scope.py, kernel.py + 13 个引擎模块, adapters/venues.py, product_turn_open.py, drivers/react_boundary.py）。原因：companion/run_adapter.py → venues.py → kernel.py 依赖链，以及 6 个产品文件直接引用 harness 契约类型（HostExtensionRefV1, HostContext, PreparedRunContextV1 等）。
 - **已知问题（文档化）**：companion/run_adapter.py 期望 `KernelRunClient` 但 main.py:9940 传入 SDK `RunClient`（接口不兼容），companion 后台功能当前不可用。修复需要接口适配层，超出本次清理范围。
 - **文档更新**：见 [`plans/2026-08-17-sdk-cleanup/cleanup-complete.md`](../plans/2026-08-17-sdk-cleanup/cleanup-complete.md)
 

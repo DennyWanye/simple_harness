@@ -1,32 +1,25 @@
-<!-- last-calibrated: 153338794ea0bc6617d36d77f95e91b6a0cebf2b -->
+<!-- last-calibrated: 5b781bf6df5319e2c13230bcee508fff0e470f5a -->
 # DeskPet Long-Running Agent Architecture Baseline
 
-> **Last verified: 2026-08-18**. 
-> 
-> **当前执行 authority 状态（关键）**: SDK v0.1.1 Runtime 已安装并初始化，但 **Agent 执行链尚未接通**。Commit `71f3a6e2` 删除了旧 harness 代码（62,349 行），但替换集成未完成。当前状态：
-> 
-> - ✅ SDK Runtime 初始化完成：`_activate_product_sdk_runtime()` 成功创建 `_sdk_ingress`
-> - ⚠️ **执行链断开**：`backend/main.py:9308` 抛出 `NotImplementedError`，Agent 无法执行
-> - ⚠️ **三个未完成组件**：
->   1. `main.py`: 核心协调器 `_execute_sdk_run()` 函数缺失（替代旧 `ProductVenueRunAdapter.open()`）
->   2. `desktop_runtime.py:133`: `_DeliverySink.deliver()` 空实现
->   3. `delivery.py`: `ProductDeliveryAdapter` 仅占位符（TODO T6.1）
-> 
-> **目标架构**（待完成接线后生效）：
+> **Last verified: 2026-08-19**.
+>
+> **当前执行 authority 状态**：SDK v0.1.1 Runtime 是**唯一生产 ingress 且执行链已接通**（2026-08-17 清理 + 2026-08-19 真机 E2E PASS）。当前状态：
+>
+> - ✅ SDK Runtime 初始化与执行链：`_activate_product_sdk_runtime()` 创建 `_sdk_ingress`；所有 ingress（text/voice/background）经 `_execute_sdk_run()`（`backend/main.py:9228`，调用点 `:8147`）→ `SdkRuntimeIngress.start()` → `DeliveryDispatcher` 推送；assistant 回复经 `chat_v2_final` 回推前端。
+> - ✅ `_DeliverySink.deliver()` / `ProductDeliveryAdapter` 已接通（2026-08-17/19 两轮接线；host 侧缺口修复记录见 PROJECT_STATUS 2026-08-19 里程碑）。
+> - ✅ 旧 harness 死代码已删除（2026-08-17，~62k 行）；保留 23 个 harness 契约/引擎文件（非 `__init__.py` 口径，清单见 §1.2）供 companion/run_adapter.py 依赖链与契约类型引用。
+> - ⚠️ **已知残留（不阻塞主链路）**：`companion/run_adapter.py` 期望 `KernelRunClient` 但收到 SDK `RunClient`（接口不兼容，companion 后台功能不可用）；`memory_recall` tool 注册被 core-handler authority 清单挡住（`memory_recall_host_registration_deferred`）；curation 未接新 memory SDK（`oh4_curation_skipped reason=no_facts_store`）。
+> - ✅ 记忆链路（2026-08-19）：`SessionDB` 双写 SDK `memory.db`，recall/facts/digital-twin 委托 `simple-harness-memory-sdk`（边界事实源：[`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)）。
+>
+> **当前生产链路**：
 > ```
-> backend/main.py:_activate_product_sdk_runtime()
->   -> _build_product_sdk_runtime_stack()
->   -> simple_harness.runtime (SDK Runtime) ✅ 已初始化
->   -> backend/deskpet/sdk_adapters/* (产品适配器桥接) ⚠️ 部分未实现
 > backend/main.py (所有 ingress: text/voice/background)
->   -> _execute_sdk_run() ❌ NotImplementedError
->   -> SdkRuntimeIngress.start() ✅ 可用但未调用
->   -> DeliveryDispatcher ⚠️ sink 未实现
->   -> ProductDeliveryAdapter ❌ 占位符
+>   -> _execute_sdk_run()  (main.py:9228)
+>   -> SdkRuntimeIngress.start()  (deskpet/sdk_adapters/ingress.py)
+>   -> simple_harness.runtime (SDK v0.1.1 Runtime, vendor wheel)
+>   -> DeliveryDispatcher -> _DeliverySink -> WebSocket 前端
 > ```
-> 
-> **旧 harness 模块清理状态**: Commit `71f3a6e2` 已删除 `backend/deskpet/harness/{bootstrap.py,drivers/react.py,drivers/react_loop.py,drivers/workflow.py,adapters/product_composition.py}` 及相关测试（共 62,589 行）。**保留了 25 个 harness 文件**（包括 `venues.py` 含 `ProductVenueRunAdapter`）作为死代码，原因是 `companion/run_adapter.py` 仍有依赖链。这些保留文件不再被任何 ingress 调用。
-> 
+>
 > **保留的产品代码**: `backend/deskpet/{tools,skills,sdk_adapters,capabilities,companion}` 等产品特定模块完整保留，通过 SDK adapters 桥接到 SDK Runtime。
 > 
 > ---
@@ -64,35 +57,42 @@ ProductDeliveryAdapter -> SessionDB / WS / TTS / artifacts
 ```
 
 **代码证据**：
-- `backend/main.py:9544`: `outcome = await _sdk_ingress.open_venue(...)`（所有 ingress 的真实路由）
-- `backend/main.py:9949`: `_sdk_ingress.open()`（SDK ingress 被激活）
+- `backend/main.py:9228`: `async def _execute_sdk_run(...)`（所有 ingress 的核心协调器）
+- `backend/main.py:8147`: `await _execute_sdk_run(...)`（真实调用点）
+- `backend/main.py:8468`: `_sdk_ingress.open()`（SDK ingress 被激活）
 - `backend/deskpet/sdk_adapters/ingress.py:1-6`: 注释声明 "sole ingress for all product entry points"
 - `backend/main.py:6363`: `# Slice C: Use SDK Runtime instead of legacy harness`
 
-### 1.2 待清理的遗留代码
+### 1.2 旧 harness 遗留代码：已于 2026-08-17 清理完毕
 
-虽然 SDK 已是唯一执行 authority，但以下旧 harness 模块仍存在于源码树：
-- `backend/deskpet/harness/kernel.py`（被 SDK `simple_harness.runtime.kernel` 替代）
-- `backend/deskpet/harness/bootstrap.py`（被 SDK runtime 初始化替代）
-- `backend/deskpet/harness/runtime.py`（被 SDK runtime infrastructure 替代）
-- `backend/deskpet/harness/drivers/react*.py`（被 SDK `simple_harness.runtime.drivers.react_loop` 替代）
-- `backend/deskpet/harness/drivers/workflow.py`（被 SDK `simple_harness.workflow` 替代）
-- 其他 harness 基础设施（reconciler, admission_launch, live_index, kernel_terminal 等）
+以下旧 harness 模块**已删除**（2026-08-17 清理，~62k 行；pytest 81 failed / 6466 passed，
+对比基线 79 failed / 6636 passed，减少项为已删 harness 单测，无新 ImportError）：
+- `backend/deskpet/harness/bootstrap.py`
+- `backend/deskpet/harness/drivers/react.py`、`react_loop.py`、`react_artifact_completion.py`、`react_recovery.py`、`workflow.py`（即 `drivers/react*.py` 4 个 + workflow.py，与删除提交 `71f3a6e2` 一致，共 11 个模块）
+- `backend/deskpet/harness/adapters/product_composition.py`、`product_profiles.py`、`subagent_registry.py`、`team.py`、`legacy_execution_migration.py`
+- `main.py` 中 `_build_product_harness_stack()`、`_activate_product_harness()` 与 `_harness_*` 全局变量（已内联 3 行 `root_run_identity` 替代导入）
 
-`_build_product_harness_stack()` 仍被调用并赋值给 `_harness_runtime`/`_harness_venue` 全局变量，但**没有任何 ingress 调用它们**。这些是待删除的死代码。
+**保留的 23 个 harness 文件**（非 `__init__.py` 口径，2026-08-19 磁盘核实）：
+contracts.py、ports.py、projector.py、context.py、profiles.py、skill_scope.py、kernel.py +
+13 个引擎模块（runtime.py、reconciler.py、admission_launch.py、live_index.py、kernel_terminal.py、
+attempts.py、child_runs.py、child_signal_runtime.py、execution_profiles.py、router.py、
+start_snapshot.py、tool_executor.py、user_continuations.py）+ adapters/venues.py、
+adapters/product_turn_open.py、drivers/react_boundary.py。保留原因：`companion/run_adapter.py` →
+`venues.py` → `kernel.py` 依赖链，以及 6 个产品文件直接引用 harness 契约类型
+（HostExtensionRefV1、HostContext、PreparedRunContextV1 等）。
 
 The SDK Runtime `simple_harness.runtime` is the production execution boundary. `backend/main.py` owns ingress/transport and composition, but not a second execution loop. The executable contract is exported from SDK's public API; the canonical lifecycle and recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md) and SDK documentation.
 
-## 2. Request Lifecycle (SDK v0.1.1 目标状态)
+## 2. Request Lifecycle (SDK v0.1.1 生产现状)
 
-**实现状态**: ⚠️ **INCOMPLETE** - 核心执行链未接通，三个 harness 组件待实现（见 §1 header）
+**实现状态**: ✅ **已接通**（2026-08-17 ingress cutover 完成 + 2026-08-19 真机 E2E PASS：主聊天经 `_execute_sdk_run` 走通，assistant 回复经 `chat_v2_final` 回推前端）
 
-生产请求路径（目标架构）：
+生产请求路径（当前架构）：
 
 ```text
 Main Session text / Tauri / startup recovery
-  -> _execute_sdk_run() ❌ main.py:9308 NotImplementedError (需实现)
-  -> SdkRuntimeIngress.start() ✅ SDK 已初始化但未调用
+  -> _execute_sdk_run() ✅ main.py:9228（调用点 :8147）
+  -> SdkRuntimeIngress.start() ✅ sdk_adapters/ingress.py
   -> ProductContextAdapter ✅ 已实现 (bridges product services to SDK ports)
        (history/persona/memory/skills/attachments from product services
         + ProductToolsAdapter with tool catalog + ProductAuthorizationAdapter)
@@ -102,21 +102,21 @@ Main Session text / Tauri / startup recovery
             -> workflow_spawn(profile_key, catalog_generation)
                  -> durable one-shot ProfileLaunchTicket
                  -> ChildRun using ticket-bound simple_harness.workflow.WorkflowDriver (SDK)
-  -> DeliveryDispatcher ⚠️ 已启动但 sink 空实现
-       -> _DeliverySink.deliver() ❌ desktop_runtime.py:133 空实现 (需实现)
-       -> ProductDeliveryAdapter ❌ delivery.py:14 占位符 (需实现)
-  -> SessionDB + WS + TTS + UI (via product delivery adapter) ⚠️ 适配器未接通
+  -> DeliveryDispatcher ✅
+       -> _DeliverySink.deliver() ✅ desktop_runtime.py:141-189（真实路由实现）
+       -> ProductDeliveryAdapter ✅ delivery.py（完整实现）
+  -> SessionDB + WS + TTS + UI (via product delivery adapter) ✅
 ```
 
 **代码证据**：
-- ❌ `backend/main.py:9308`: 抛出 `NotImplementedError`，执行链断开
-- ✅ `backend/main.py:9650`: `_sdk_ingress.open()` 打开 ingress barrier（已实现）
-- ✅ `backend/deskpet/sdk_adapters/ingress.py`: `SdkRuntimeIngress` 提供 `.start()/.signal()/.cancel()/.query()/.wait_idle()` 方法（已实现）
-- ✅ `backend/deskpet/sdk_adapters/composition.py`: 构建 SDK Runtime 并注入产品 adapters（已实现）
-- ✅ `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 桥接产品服务到 SDK ports（已实现）
-- ✅ `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 桥接产品工具到 SDK tool registry（已实现）
-- ❌ `backend/deskpet/sdk_adapters/desktop_runtime.py:133`: `_DeliverySink.deliver()` 空实现
-- ❌ `backend/deskpet/sdk_adapters/delivery.py:14`: `ProductDeliveryAdapter` 仅占位符
+- ✅ `backend/main.py:9228`: `_execute_sdk_run()` 核心协调器已实现（调用点 :8147）
+- ✅ `backend/main.py:8468`: `_sdk_ingress.open()` 打开 ingress barrier
+- ✅ `backend/deskpet/sdk_adapters/ingress.py`: `SdkRuntimeIngress` 提供 `.start()/.signal()/.cancel()/.query()/.wait_idle()` 方法
+- ✅ `backend/deskpet/sdk_adapters/composition.py`: 构建 SDK Runtime 并注入产品 adapters
+- ✅ `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 桥接产品服务到 SDK ports
+- ✅ `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 桥接产品工具到 SDK tool registry
+- ✅ `backend/deskpet/sdk_adapters/desktop_runtime.py:141-189`: `_DeliverySink.deliver()` 真实路由实现
+- ✅ `backend/deskpet/sdk_adapters/delivery.py`: `ProductDeliveryAdapter` 完整实现
 
 **关键方法签名（SdkRuntimeIngress）**：
 ```python
@@ -855,6 +855,11 @@ Reconciler 将其结算为 `late_reconciled/reconciled/reconciled_completed_supp
 ## 20. 2026-08-17 SDK v0.1.1 Post-Cutover 代码清理基线
 
 ### 20.1 当前状态（SDK 已接入，旧代码待清理）
+
+> **⚠️ 本节为 2026-08-17 清理执行前的历史记录**：§20.1/§20.2 描述的"待清理/待删除"工作已于
+> 2026-08-17 全部执行完毕（见 §1.2 当前事实与 PROJECT_STATUS 2026-08-17 里程碑）；其中
+> `main.py:9544`/`main.py:9949` 等行号证据已失效，runtime.py/reconciler.py 等 13 个引擎模块
+> 实际被**保留**（非删除）。保留本节仅作清理决策的历史依据。
 
 **SDK v0.1.1 已是唯一生产执行 authority**：
 

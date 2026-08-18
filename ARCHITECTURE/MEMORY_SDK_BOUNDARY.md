@@ -62,11 +62,16 @@ SDK 类型，避免反向耦合。
 
 ```
 backend/deskpet/memory/
-├── __init__.py          # 导出契约
-├── contracts.py         # MemoryBackend / SessionDB / Embedder / WorldModelPort Protocol
-├── session_db.py        # host 会话账本（留 host，消息存取双写委托 MemoryBackend）
-├── recall_adapter.py    # SDK 认知记忆 -> product SDK memory tool 的 host 适配层
-└── embedder_worker.py   # 旧 embedder 子进程 stub，待移除
+├── __init__.py           # 导出契约
+├── contracts.py          # MemoryBackend / SessionDB / Embedder / WorldModelPort Protocol
+├── session_db.py         # host 会话账本（留 host，消息存取双写委托 MemoryBackend）
+├── recall_adapter.py     # SDK 认知记忆 -> product SDK memory tool 的 host 适配层
+├── schema.py             # host 账本 SQLite schema
+├── schema_v2_migrator.py # schema v2 迁移
+├── memory_v2_schema.py   # v2 schema 定义
+├── migrator.py           # 迁移器
+├── migrations/           # 迁移脚本
+└── eval/                 # 评测脚本
 ```
 
 ## 5. 已知待办 / 边界说明
@@ -76,21 +81,19 @@ backend/deskpet/memory/
   `append_user_message_with_growth_outbox` 均在用户消息落盘后双写 `MemoryBackend`。
   `recall_adapter.py` 把 `MemoryBackend.recall` 翻译成 product SDK 的 owner-scoped
   `recall_readonly`，`CompanionRunMemoryScopeResolver` 提供 `resolve_for_run`。
+- **旧记忆装配死代码已清理（2026-08-19，HEAD `5b781bf6`）**：`main.py` 内原约 1150 行
+  引用已删除模块（`file_memory`/`manager`/`vector_worker` 等）的 best-effort 死 `try`
+  已整段移除，约 40 个相关全局统一置 `None`（现 `main.py:2531-2553` 为紧凑的
+  SessionDB+MemoryBackend 接线块）；`embedder_worker.py` 已随旧栈删除。
 - **host 侧 memory_recall tool 注册被 core-handler authority 挡**：`execution_build_*`
   三个 manifest 仍指向已删除的 `deskpet/tools/memory_recall.py`，`register_memory_recall`
   会触发 `FileNotFoundError`。当前 main.py 用 try/except defer 到 `memory_recall_host_registration_deferred`
   warning，不阻断启动。收尾需重建 authority manifest 的 artifacts 路径 + sha256 + build_digest。
 - **curation 未接新 SDK**：`oh4_curation_skipped reason=no_facts_store` —— curation 仍在找旧
   `service_context["facts_store"]`，未指向 SDK 的 `MemoryBackend.get_facts`。
-- `embedder_worker.py` 是旧记忆 embedder 子进程 stub，非 host 接口/适配层；移除
-  需要同步改 `deskpet.frozen_worker_dispatch` 与 `scripts/debug_embedder_worker.py`。
 - `session_db.py` 是 **host 会话账本**（约 80 个 public 方法），
   不是 `MemoryBackend` 的薄适配器。二者只在 `append_message` / `get_recent_messages`
   / `initialize` / `close` 相交，其余方法由 host 自行实现。
-- `main.py` 内仍有一段旧的 best-effort 记忆装配（`file_memory` / `manager` /
-  `vector_worker` 等已删除模块），是一整段约 1150 行死 `try`（约 line 2529–3684），
-  其中赋值约 40 个仍被别处引用的全局变量；清理须**整段删除** + 降级逻辑转无条件
-  执行 + 这些全局统一置 `None`（详见 HANDOFF §4）。
 - `context_segment_store` / `context_snapshot_store` 仍是 stub；其中 coverage 段
-  存储的真实语义（`get`、`status` 等）待重实现，属“coverage 规划”宿主要求，不在
+  存储的真实语义（`get`、`status` 等）待重实现，属"coverage 规划"宿主要求，不在
   SDK 边界内。
