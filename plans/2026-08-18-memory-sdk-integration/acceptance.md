@@ -11,3 +11,11 @@
 ## 非功能 / 边界
 - 本 slice 只恢复会话账本，不接 SDK `MemoryBackend`（下一个 slice）。
 - 迁移必须幂等、可降级（sqlite-vec 失败不阻断启动）。
+
+## Slice 2 追加验收条款（接入 MemoryBackend）
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|----|--------|-------------------|--------|
+| AC-5 | 可注入 backend | `SessionDB(db_path, memory_backend=...)` 支持注入 SDK `MemoryBackend`，默认 None 行为不变 | 必须 |
+| AC-6 | 双写喂入 | 有 `memory_backend` 时，`append_message` 把消息喂给 SDK；`initialize`/`close` 联动 backend 生命周期 | 必须 |
+| AC-7 | 认知能力委托 | `SessionDB.recall/get_facts/get_digital_twin` 委托 SDK；无 backend 时返回空/None | 必须 |
+| AC-8 | 后端 smoke | `SessionDB + SQLiteMemoryBackend(auto_extract_facts=True)` 一起跑，append 后 facts/recall/twin 正确 | 必须 |

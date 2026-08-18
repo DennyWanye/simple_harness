@@ -1,0 +1,19 @@
+{
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "run_id": "memory-sdk-integration-slice2",
+  "source_request_text": "接入记忆 SDK：SessionDB 双写喂入 MemoryBackend 并委托 recall/facts/twin",
+  "acceptance_file": "plans/2026-08-18-memory-sdk-integration/acceptance.md",
+  "scenarios": [
+    {"scenario_id": "AC-5", "required": true},
+    {"scenario_id": "AC-6", "required": true},
+    {"scenario_id": "AC-7", "required": true},
+    {"scenario_id": "AC-8", "required": true}
+  ],
+  "applicability": {
+    "input_sensitive": {"value": false, "rationale": "双写与委托逻辑确定性可测，不随自然语言输入语义波动", "decided_by": "agent"},
+    "llm_payload_driven": {"value": false, "rationale": "无 LLM 生成结构化载荷驱动端侧状态机或卡片渲染", "decided_by": "agent"},
+    "stateful_init": {"value": false, "rationale": "本 slice 为本地 SQLite 双写，无异步注册服务或远程登录态", "decided_by": "agent"}
+  },
+  "release_unit": {"must_ac": 4, "tasks": 3, "subsystems": 1},
+  "thresholds": {}
+}

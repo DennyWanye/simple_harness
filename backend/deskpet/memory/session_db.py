@@ -213,6 +213,7 @@ class SessionDB:
         db_path: str | Path,
         *,
         on_message_written: Optional[OnMessageWritten] = None,
+        memory_backend: Any = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._initialized = False
@@ -227,6 +228,10 @@ class SessionDB:
         #   * 不得修改 append_message 的返回值（仍是 msg_id）
         #   * None → 老 S1 行为完全不变（零开销）
         self._on_message_written: Optional[OnMessageWritten] = on_message_written
+        # 记忆 SDK（simple-harness-memory-sdk）的可选认知记忆后端。None → 不接入，
+        # 会话账本照常工作；接入后 append_message 会把消息喂给 SDK（facts/twin/
+        # recall），recall/get_facts/get_digital_twin 也委托给 SDK。
+        self._memory_backend: Any = memory_backend
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -258,6 +263,12 @@ class SessionDB:
         #    spec 明确允许"降级启动"：失败只 warn，不抛。
         self._vec_enabled = await self._try_init_vec()
         await self._repair_excluded_memory_artifacts()
+
+        if self._memory_backend is not None:
+            try:
+                await self._memory_backend.initialize()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("memory_backend initialize failed: %s", exc)
 
         self._initialized = True
         log.info(
@@ -317,7 +328,44 @@ class SessionDB:
 
         保留接口以便未来切 connection pool 时签名不变。
         """
+        if self._memory_backend is not None:
+            try:
+                await self._memory_backend.close()
+            except Exception as exc:  # noqa: BLE001
+                log.warning("memory_backend close failed: %s", exc)
         self._initialized = False
+
+    # ------------------------------------------------------------------
+    # 记忆 SDK 委托（认知记忆；未接入时降级为空）
+    # ------------------------------------------------------------------
+
+    async def recall(
+        self,
+        query: str,
+        session_id: str | None = None,
+        limit: int = 10,
+    ) -> list[Any]:
+        """混合召回（委托 SDK MemoryBackend）；未接入时返回空。"""
+        if self._memory_backend is None:
+            return []
+        return await self._memory_backend.recall(query, session_id=session_id, limit=limit)
+
+    async def get_facts(
+        self,
+        subject: str = "user",
+        category: str | None = None,
+        active_only: bool = True,
+    ) -> list[Any]:
+        """结构化事实（委托 SDK MemoryBackend）；未接入时返回空。"""
+        if self._memory_backend is None:
+            return []
+        return await self._memory_backend.get_facts(subject, category, active_only)
+
+    async def get_digital_twin(self, subject: str = "user") -> Any:
+        """数字孪生体（委托 SDK MemoryBackend）；未接入时返回 None。"""
+        if self._memory_backend is None:
+            return None
+        return await self._memory_backend.get_digital_twin(subject)
 
     # ------------------------------------------------------------------
     # Write path with retry
@@ -2806,6 +2854,16 @@ class SessionDB:
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "on_message_written hook failed for msg_id=%s: %s",
+                    msg_id,
+                    exc,
+                )
+
+        if inserted and self._memory_backend is not None:
+            try:
+                await self._memory_backend.append_message(session_id, role, content)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "memory_backend append failed for msg_id=%s: %s",
                     msg_id,
                     exc,
                 )
