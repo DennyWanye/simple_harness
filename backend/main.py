@@ -8320,6 +8320,20 @@ async def _enqueue_auto_resume_hint(sid: str, messages: list[dict]) -> None:
         logger.debug("auto_resume_hint_push_failed sid=%s err=%s", sid, exc)
 
 
+def _provider_chain_or_none(provider_registry):
+    """Return the configured provider chain, or None when there isn't one.
+
+    Fresh installs have no provider configured and ``get_chain()`` raises
+    ``NoProviderConfiguredError`` there; that must never take down startup —
+    the SDK runtime simply stays skipped until a provider is configured.
+    """
+
+    try:
+        return provider_registry.get_chain()
+    except Exception:
+        return None
+
+
 async def _activate_product_sdk_runtime() -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
     global _sdk_runtime_stack, _sdk_ingress
@@ -8368,7 +8382,7 @@ async def _activate_product_sdk_runtime() -> None:
         logger.warning("product_sdk_runtime_skipped", reason="provider_registry unavailable")
         return
 
-    chain = provider_registry.get_chain()
+    chain = _provider_chain_or_none(provider_registry)
     if not chain:
         logger.warning("product_sdk_runtime_skipped", reason="provider_chain_empty - configure LLM provider in Settings")
         return
