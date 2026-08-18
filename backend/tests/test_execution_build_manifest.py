@@ -116,14 +116,12 @@ def test_phase_registry_validation_rejects_build_or_handler_drift() -> None:
         )
 
 
-def test_memory_recall_is_active_authority_and_not_import_time_callable() -> None:
+def test_memory_recall_authority_retired_after_memory_sdk_migration() -> None:
+    # core.memory_recall.v1 was deleted with the memory system in 809c30b9 and
+    # moved to the simple-harness-memory-sdk (recall_adapter.py). The legacy
+    # authority manifest must no longer claim it.
     authority = core_authority_for_tool("memory_recall")
-    assert authority is not None
-    assert authority.handler_id == "core.memory_recall.v1"
-    assert authority.planned is False
-    assert authority.lifecycle == "active"
-    assert authority.effect.effect_class is EffectClass.READ_ONLY
-    assert authority.effect.idempotency is IdempotencyClass.IDEMPOTENT
+    assert authority is None
 
     from deskpet.tools import registry
 
@@ -203,13 +201,28 @@ def test_runtime_bound_general_tools_keep_checked_metadata() -> None:
         "todo_write",
         "web_search",
     }
+    # Authority for the runtime-bound code tools moved to the SDK tool catalog
+    # (real_tool_manifest.json) after the 0.1.1 cutover; the legacy manifest
+    # no longer stamps core.*.v1 on them. The general-agent tools still do.
+    moved_to_catalog = {
+        "agent",
+        "agent_parallel",
+        "ask_clarification",
+        "await_subagents",
+        "spawn_subagents",
+        "spawn_team",
+        "todo_write",
+    }
     assert expected.issubset(set(registry.list_tools()))
     for name in expected:
         spec = registry.get(name)
         assert spec is not None
-        assert spec.stable_handler_id == f"core.{name}.v1"
-        assert spec.execution_build_identity is not None
-        assert spec.execution_build_identity.handler_id == spec.stable_handler_id
+        if name in moved_to_catalog:
+            assert spec.stable_handler_id == ""
+        else:
+            assert spec.stable_handler_id == f"core.{name}.v1"
+            assert spec.execution_build_identity is not None
+            assert spec.execution_build_identity.handler_id == spec.stable_handler_id
 
 
 def test_generator_detects_stale_output_and_rejects_escape(

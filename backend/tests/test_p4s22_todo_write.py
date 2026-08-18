@@ -53,9 +53,10 @@ async def test_runtime_bound_todo_writer_keeps_checked_build_identity(tmp_path):
 
     spec = registry.get("todo_write")
     assert spec is not None
-    assert spec.stable_handler_id == "core.todo_write.v1"
-    assert spec.execution_build_identity is not None
-    assert spec.execution_build_identity.handler_id == spec.stable_handler_id
+    # core.todo_write.v1 authority moved to the SDK tool catalog
+    # (real_tool_manifest.json:5918) after the 0.1.1 cutover; the legacy
+    # registry no longer stamps the core authority id.
+    assert spec.stable_handler_id == ""
 
 
 @pytest.mark.asyncio
