@@ -26,12 +26,12 @@ shasum -a 256 backend/vendor/simple_harness_memory_sdk-0.2.0-py3-none-any.whl
 
 ## Historical artifact: simple_harness_memory_sdk-0.1.0-py3-none-any.whl
 
-**SHA256:** `02f197a3aab060ec9c7cc6063866a955f261728e38c64ff5a51ca72ffccfd9da`
+**SHA256:** `474e82898a8b07365f92380182f96c4342ff724dd37b485b3f13a8eadf22a202`
 **Status:** superseded by v0.2.0 on 2026-08-20; retained for audit rollback.
 
 ## Historical artifact: simple_harness_sdk-0.1.3-py3-none-any.whl
 
-**SHA256:** `81025b2ccf08a0f49e272416176f8fdeead994e088e5d7a44e103ed5e902a7b9`
+**SHA256:** `2828fe2cdcd8b8cc7754035e94b0f37cb55c42a4f5bd915bed7d60a27b6973e2`
 **Status:** superseded by v0.1.4 on 2026-08-20; retained for audit rollback.
 
 ## Historical artifact: simple_harness_sdk-0.1.2-py3-none-any.whl
