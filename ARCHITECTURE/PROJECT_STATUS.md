@@ -1,6 +1,21 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-19
+> **最后更新**：2026-08-20
+
+## 2026-08-20 里程碑：SDK 生产化 program 完成（harness 0.1.4 + memory 0.2.0）
+
+六个 slice 全部 plan-test 全流程 + 机器门 finalize PASS（receipt 见 program plan）：
+
+- **H1 · harness v0.1.4**（`c5f546cd`，1226 passed）：消除假投递 / ToolContext / facade 边界 /
+  DB 生命周期 / logger 回归 / CI 全量 pytest + scoped ruff/mypy / 版本单一来源 / Memory Port reserved。
+- **M1-M4 · memory 0.2.0**（`bf594aa2`/`eac81d14`/`dcef5d80`/`f7a3ee2b`，83 passed）：
+  召回只读 + 隐私日志 + async Embedder；schema 版本化/迁移/checksum + 原子事务 + 幂等键；
+  级联删除 + embedding lineage + 资源上限；云端 embedding（fail-closed + 凭证安全）。
+- **C1 · 宿主 re-vendor**（`3ebe0ac0`）：vendor harness 0.1.4 + memory 0.2.0，
+  `sdk_candidate.py` 单一事实源同时 track 两 wheel 版本 + SHA；memory SDK 版本改 hatch 动态（修漂移）。
+
+程序事实源：`plans/2026-08-19-sdk-productionization/program-plan.md`；各 slice 的
+`acceptance.md`/`plan.md`/`verification/` 在各自 SDK 仓库 `plans/2026-08-19-*/`、`plans/2026-08-20-*/`。
 
 ## 2026-08-19 里程碑：SDK 易用性优化（harness 0.1.2 切换 + companion 冷启动修复 + 双 SDK 文档/验证脚本）
 
