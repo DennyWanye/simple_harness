@@ -7246,21 +7246,14 @@ async def _cancel_product_harness_run(
 
     if _sdk_ingress is None or not _sdk_ingress.accepting or not run_id:
         return False
-    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-        session_id=session_id,
-        workspace=None,
-        # Cancellation authenticates the persisted Run through session,
-        # principal and auth epoch.  It must remain available when the bound
-        # provider/model was removed or the configured workspace disappeared;
-        # otherwise a user cannot stop exactly the broken Run that needs it.
-        allow_provider_unavailable=True,
-        allow_workspace_unavailable=True,
-    )
-    await _sdk_ingress.require_ready().client.cancel(
-        {"run_id": run_id, "expected_session_id": session_id},
-        host,
-        reason,
-    )
+    # SDK RunClient.cancel(run_id) resolves the persisted Run and its frozen
+    # start snapshot (which carries the session identity), so cancellation is
+    # already authenticated by run_id alone — no host / expected_session_id is
+    # needed (the old harness signature took those, the SDK one does not).
+    from simple_harness import RunId as SdkRunId
+
+    logger.info("product_harness_cancel", run_id=run_id, reason=reason)
+    await _sdk_ingress.require_ready().client.cancel(SdkRunId(run_id))
     provider_workload_router = service_context.get(
         "provider_workload_router"
     )
