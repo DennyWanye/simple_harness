@@ -1,0 +1,31 @@
+{
+  "run_id": "c1-revendor",
+  "source_request_text": "完成 SDK 生产化 C1：重新 vendor harness 0.1.4 + memory 0.2.0，版本单一来源",
+  "acceptance_file": "acceptance.md",
+  "baseline": {
+    "head": "d8ec0d33c11bb7de4b15664a1d3df2f3293664b0",
+    "dirty_patch_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "scenarios": [
+    {"scenario_id": "c1-verify", "required": true, "ui": false}
+  ],
+  "executor_engine": "claude-fable-5",
+  "auditor_engine": "opus-4.8",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "版本 bump + vendor，无 LLM 语义功能"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "无 LLM 结构化载荷驱动端侧状态机路径"
+    },
+    "stateful_init": {
+      "value": false,
+      "decided_by": "agent",
+      "rationale": "无异步注册服务/登录态依赖，无冷启动场景"
+    }
+  }
+}
