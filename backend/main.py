@@ -12694,70 +12694,12 @@ async def control_channel(ws: WebSocket):
                         "payload": {"error": "v2 stack not initialized", "session_id": _msg_sid},
                     })
                     continue
-                _target_root_run_id = str(
-                    _payload.get("target_root_run_id") or ""
-                ).strip()
-                _target_task_scope_id = str(
-                    _payload.get("task_scope_id") or ""
-                ).strip()
-                if bool(_target_root_run_id) != bool(
-                    _target_task_scope_id
-                ):
-                    await ws.send_json(
-                        {
-                            "type": "chat_v2_error",
-                            "payload": {
-                                "error": (
-                                    "continuation requires both "
-                                    "target_root_run_id and task_scope_id"
-                                ),
-                                "session_id": _msg_sid,
-                                "run_id": _target_root_run_id,
-                                "task_scope_id": _target_task_scope_id,
-                            },
-                        }
-                    )
-                    continue
-                if _target_root_run_id:
-                    _boundary_version = _payload.get(
-                        "conversation_boundary_version"
-                    )
-                    if _boundary_version is None:
-                        await ws.send_json(
-                            {
-                                "type": "chat_v2_error",
-                                "payload": {
-                                    "error": (
-                                        "continuation requires "
-                                        "conversation_boundary_version"
-                                    ),
-                                    "session_id": _msg_sid,
-                                    "run_id": _target_root_run_id,
-                                    "task_scope_id": _target_task_scope_id,
-                                },
-                            }
-                        )
-                        continue
-                    _continuation_request_id = (
-                        str(
-                            _payload.get("request_id")
-                            or raw.get("request_id")
-                            or ""
-                        ).strip()
-                        or uuid.uuid4().hex
-                    )
-                    _launch_product_harness_continuation(
-                        ws,
-                        text,
-                        _msg_sid,
-                        root_run_id=_target_root_run_id,
-                        task_scope_id=_target_task_scope_id,
-                        expected_boundary_version=int(
-                            _boundary_version
-                        ),
-                        request_id=_continuation_request_id,
-                    )
-                    continue
+                # 方案 B（2026-08-20）：continuation 退化为 fresh run。SDK 0.1.4
+                # 的 ReAct driver 是单轮语义，多轮对话 = 每条用户消息一个 fresh run、
+                # 历史由 SDK context 组装。旧的 projection/boundary + signal 契约是
+                # 8/17 迁移遗留的半成品（写投影的 create_task_context 已失联、signal
+                # 签名未随 SDK 0.1.3 变更），继续走它只会报 identity mismatch。因此
+                # 忽略 target_root_run_id/task_scope_id，直接落入下方 fresh run 分支。
 
                 # P5-S2 Phase 4: a fresh user-initiated chat message means
                 # the user has implicitly granted a new auto-resume budget.
