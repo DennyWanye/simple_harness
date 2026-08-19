@@ -1,0 +1,24 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["V-AC-1", "V-AC-2", "V-AC-3", "V-AC-4", "V-AC-5"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "宿主生产聊天链路可用性（SDK runtime 唯一生产 ingress）"},
+    {"id": "ASSET-2", "description": "release 工件完整性（wheel SHA 链）"},
+    {"id": "ASSET-3", "description": "fail-closed 校验不被削弱"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "0.1.3 wheel 是 SDK 仓库本机构建（SHA 81025b2c…a7b9，已由 sdk-consumer-0.1.3 的 release gate 验证）"},
+    {"id": "TRUST-2", "description": "本机可构建/同步 uv venv"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "vendor 错 wheel bytes（SHA 不符）"},
+    {"id": "FAIL-2", "description": "0.1.3 与宿主 10-Port 用法不兼容导致回归"},
+    {"id": "FAIL-3", "description": "fail-closed 校验被削弱"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "消费者层 API 的宿主侧使用"},
+    {"id": "OOS-2", "description": "非 macOS 平台"}
+  ],
+  "maximum_acceptable_impact": "宿主聊天链路暂时不可用需回滚 vendor；不得造成数据丢失"
+}
