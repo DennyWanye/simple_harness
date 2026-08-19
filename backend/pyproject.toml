@@ -159,7 +159,7 @@ dependencies = [
     # 2026-08-19: vendored exact v0.1.2 bytes (adds consumer adapter layer;
     # pure-add over 0.1.1). Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk>=0.1.2",
+    "simple-harness-sdk>=0.1.3",
     "simple-harness-memory-sdk",
 ]
 
@@ -172,7 +172,7 @@ dependencies = [
 # simple-harness-sdk = { path = "../../simple-harness-sdk", editable = true }
 #
 # Production (vendored immutable candidate):
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.2-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.3-py3-none-any.whl" }
 simple-harness-memory-sdk = { path = "../../simple-harness-memory-sdk", editable = true }
 
 [project.optional-dependencies]

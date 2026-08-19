@@ -12,9 +12,9 @@ from pathlib import Path
 
 from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
 
-SDK_VERSION = "0.1.2"
-SDK_WHEEL_FILENAME = "simple_harness_sdk-0.1.2-py3-none-any.whl"
-SDK_WHEEL_SHA256 = "387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c"
+SDK_VERSION = "0.1.3"
+SDK_WHEEL_FILENAME = "simple_harness_sdk-0.1.3-py3-none-any.whl"
+SDK_WHEEL_SHA256 = "81025b2ccf08a0f49e272416176f8fdeead994e088e5d7a44e103ed5e902a7b9"
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 

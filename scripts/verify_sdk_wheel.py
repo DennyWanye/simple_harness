@@ -2,7 +2,7 @@
 """Verify SDK wheel integrity before vendoring.
 
 Usage:
-    python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.2-py3-none-any.whl
+    python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.3-py3-none-any.whl
 
 Validates:
 - Wheel file exists and is readable
@@ -20,6 +20,7 @@ from pathlib import Path
 HISTORICAL_HASH = {
     "0.1.0": "d9a1d4f94f826cdf97fb1c23085c85e727400a92f725c7022b0ebf63a18f4d91",
     "0.1.1": "d32212c8cbdb27349a75c1437728e035d8103515361896fc30dbed947b8ed9ca",
+    "0.1.2": "387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c",
 }
 
 # The active wheel identity comes from the single source of truth so this
