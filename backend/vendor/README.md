@@ -2,34 +2,37 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
-## Vendored wheel: simple_harness_memory_sdk-0.1.0-py3-none-any.whl
+## Active candidate: simple_harness_sdk-0.1.4-py3-none-any.whl
 
-**Source:** local build from `simple-harness-memory-sdk` HEAD（647af88）
+**Source:** local build from `simple-harness-sdk`（sdk-productionization H1：发布阻断收尾）
+**SHA256:** `4766ededa6145e628519153d570520271f9aca0fc0aaf0afea6e401a99679e39`
+**Vendored:** 2026-08-20（sdk-productionization C1）
+
+wheel 身份单一事实源 `backend/deskpet/sdk_adapters/sdk_candidate.py`。
+
+## Active candidate: simple_harness_memory_sdk-0.2.0-py3-none-any.whl
+
+**Source:** local build from `simple-harness-memory-sdk`（sdk-productionization M1-M4：召回只读 /
+持久化加固 / 删除 lineage 上限 / 云端 embedding）
+**SHA256:** `15feac345e07c4fccf2f8adde7fe080bd6ac09eabb81c95430cce77fd34f49cc`
+**Vendored:** 2026-08-20（sdk-productionization C1）
+
+Verification:
+
+```bash
+backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.4-py3-none-any.whl
+shasum -a 256 backend/vendor/simple_harness_memory_sdk-0.2.0-py3-none-any.whl
+```
+
+## Historical artifact: simple_harness_memory_sdk-0.1.0-py3-none-any.whl
+
 **SHA256:** `02f197a3aab060ec9c7cc6063866a955f261728e38c64ff5a51ca72ffccfd9da`
-**Vendored:** 2026-08-19（依赖链接方式规范化：editable path → vendored wheel）
+**Status:** superseded by v0.2.0 on 2026-08-20; retained for audit rollback.
 
-Verification:
+## Historical artifact: simple_harness_sdk-0.1.3-py3-none-any.whl
 
-```bash
-shasum -a 256 backend/vendor/simple_harness_memory_sdk-0.1.0-py3-none-any.whl
-```
-
-
-## Active candidate: simple_harness_sdk-0.1.3-py3-none-any.whl
-
-**Source:** local build from SDK repository（sdk-consumer-0.1.3 program；consumer adapter 加
-`model`/`tool_schemas` 字段修复两个消费者层缺陷）
 **SHA256:** `81025b2ccf08a0f49e272416176f8fdeead994e088e5d7a44e103ed5e902a7b9`
-**Vendored:** 2026-08-19（host-revendor-0.1.3 program）
-
-v0.1.3 对 v0.1.2 为纯新增，宿主 10-Port 适配层零改动。wheel 身份单一事实源
-`backend/deskpet/sdk_adapters/sdk_candidate.py` 单点切换（本次只改三行常量）。
-
-Verification:
-
-```bash
-backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.3-py3-none-any.whl
-```
+**Status:** superseded by v0.1.4 on 2026-08-20; retained for audit rollback.
 
 ## Historical artifact: simple_harness_sdk-0.1.2-py3-none-any.whl
 
