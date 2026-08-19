@@ -462,6 +462,47 @@ def test_policy_deny_never_activates_task_grant(tmp_path) -> None:
     asyncio.run(case())
 
 
+def test_authorization_adapter_accepts_object_policy_decide_port(tmp_path) -> None:
+    class Policy:
+        async def decide(self, prepared, *, request):
+            assert prepared.call.name == "write_file"
+            assert request is None
+            return AuthorizationResult(AuthorizationDecision.ALLOW, receipt_ref="policy")
+
+    async def case() -> None:
+        database = ProductStateDatabase(tmp_path / "object-policy.db")
+        database.initialize()
+        set_policy_generation(database)
+        repository = AuthorizationSagaRepository(database)
+        authority = DurableTaskGrantAuthority(database)
+        prepared = PreparedToolEffect(
+            EffectId("effect-1"),
+            RunId("run-1"),
+            ToolCall(CallId("call-1"), "write_file", {"path": "note.txt"}),
+            ToolSpec(
+                "write_file",
+                "Write a file.",
+                {"type": "object", "properties": {}, "additionalProperties": False},
+            ),
+            {},
+        )
+        adapter = ProductAuthorizationAdapter(
+            repository,
+            policy=Policy(),
+            identity_factory=lambda _prepared, _request: identity(),
+            grant_authority=authority,
+            grant_factory=lambda _prepared, _result: grant(),
+            clock=lambda: 10.0,
+        )
+        result = await adapter.prepare(prepared)
+        assert result.decision is AuthorizationDecision.ALLOW
+        assert repository.read("authorization-1").state is AuthorizationSagaState.PREPARED
+        assert authority._read("grant-1").status == "active"
+        database.close()
+
+    asyncio.run(case())
+
+
 def test_sdk_authorization_port_binds_both_product_receipts_before_handoff(
     tmp_path,
 ) -> None:

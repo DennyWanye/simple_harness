@@ -1,6 +1,13 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-20（多轮上下文与 Session ID 复制修复）
+> 最后更新：2026-08-20（SDK 终态投影与工具失败收束修复）
+
+## 0.1 SDK Run 终态投影
+
+消息页的运行开始、成功和失败事件统一按 Host canonical `root_run_id` 更新同一条
+`run_projections`。SDK 内部 `product-sdk-*` ID 不直接暴露给 UI；因此 SDK 运行完成或失败后，
+输入区和右下角状态会一致回到 `发送/空闲`，失败则显示可见的 `run_failed`，不会继续显示停止
+或工具执行中。
 
 ## 0. Workbench 工作台架构（2026-08-05 改版落地）
 

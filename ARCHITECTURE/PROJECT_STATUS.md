@@ -10,6 +10,19 @@
 - ChatView 标题栏和 SessionList 会话行的 Session ID 改为整段选择，双击 UUID 不再只选中一段。
 - 聚焦验证：后端 `4 passed`，前端 `15 passed`，TypeScript PASS；真实桌面双击 E2E 尚未执行。
 
+## 2026-08-20 修复：SDK 工具调用失败与终态投影
+
+- 修复 SDK 内部 execution id 与产品 canonical `root_run_id` 混用导致的 run projection 不收束；
+  `chat_v2_run_started/final/error`、SessionDB 和 UI 现在统一使用 canonical root，SDK id 仅留在
+  checkpoint/effect/delivery 内部。
+- 修复 SDK 桌面授权装配的跨层契约漂移：`ProductAuthorizationAdapter` 正式支持
+  `policy.decide(prepared, request=...)`，并兼容旧 callable fixture；工具调用可继续进入
+  effect handoff/settle，失败终态统一投影为 `run_failed` 并回到 idle。
+- 验证：授权适配器与 SDK execute 聚焦回归 `38 passed`；Python compile、diff check、前端
+  TypeScript 与既有前端 `50 passed` 已通过。Computer Use 已真实验证普通聊天、多轮上下文和
+  失败终态收束；工具成功链路的最终点击复测受 Tauri dev 重启时旧窗口/8100 端口状态残留阻断，
+  需在干净桌面进程下继续验证 `tool.effect_settled`。
+
 ## 2026-08-20 里程碑：SDK 生产化 program 完成（harness 0.1.4 + memory 0.2.0）
 
 六个 slice 全部 plan-test 全流程 + 机器门 finalize PASS（receipt 见 program plan）：

@@ -78,6 +78,35 @@ describe("ws.dispatch chat final dedupe", () => {
     });
   });
 
+  it("settles the canonical root projection when the final response arrives", () => {
+    __test_dispatch({
+      type: "chat_v2_run_started",
+      payload: {
+        session_id: "default",
+        run_id: "root-canonical",
+        request_id: "request-canonical",
+        task_scope_id: "scope-canonical",
+      },
+    });
+    __test_dispatch({
+      type: "chat_v2_final",
+      payload: {
+        session_id: "default",
+        run_id: "root-canonical",
+        task_scope_id: "scope-canonical",
+        text: "已完成",
+      },
+    });
+
+    const session = useSessionsStore.getState().sessions.default;
+    expect(session.run_projections["root-canonical"]).toMatchObject({
+      status: "completed",
+      inflight: false,
+    });
+    expect(session.status).toBe("idle");
+    expect(session.inflight).toBe(false);
+  });
+
   it("keeps live tool traces attached to their durable Run", () => {
     __test_dispatch({
       type: "tool_call",

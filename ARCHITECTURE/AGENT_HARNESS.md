@@ -6,6 +6,17 @@
 
 ## 一句话说明
 
+### SDK 工具执行与终态收束（2026-08-20）
+
+SDK Runtime 的内部 `product-sdk-*` execution id 只用于 SDK checkpoint、effect ledger
+和 delivery registry；产品 UI、SessionDB 与 `chat_v2_final/error` 始终使用 Host 预留的
+canonical `root_run_id`。这样 run-start 与终态投影落在同一条前端 Run projection，回答完成后
+输入区会回到 `发送/空闲`，不会残留“停止/工具执行中”。
+
+SDK 产品授权适配器同时接受旧测试 fixture 的 callable policy 和正式 Host
+`policy.decide(prepared, request=...)` 端口。正式 SDK 桌面装配走后者，工具 effect 才能完成
+prepare → handoff → invoke → settle；授权异常不会再被误报成无上下文的 driver failure。
+
 DeskPet 现在只有一个主 Session。每条普通新消息都创建一个独立顶层 Run，顶层 Profile
 固定为 `agent.general`；运行中的任务收到继续消息时，消息进入该 root 的 durable FIFO，
 不会暗中新建 root。

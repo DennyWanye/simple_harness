@@ -9260,6 +9260,17 @@ async def _assemble_sdk_messages(
     return history_messages + [{"role": "user", "content": text}]
 
 
+def _sdk_capability_snapshot() -> dict[str, list[str]]:
+    """Return the product Tool names exposed to the SDK ReAct driver.
+
+    The SDK driver intentionally treats ``capability_snapshot.tools`` as the
+    allow-list for the Provider request.  The Host catalog is the authority,
+    so this keeps the wire snapshot aligned with the registry instead of
+    silently running every turn with zero tools.
+    """
+    return {"tools": list(deskpet_tool_registry_v2.list_tools())}
+
+
 async def _execute_sdk_run(
     *,
     session_id: str,
@@ -9310,11 +9321,9 @@ async def _execute_sdk_run(
             root_run_id=root_run_id,
             text=text,
         ),
-        # capability_snapshot 是 RunStart start_input 里传给 agent 的元数据；
-        # SDK Runtime 的真实 tool catalog 由 tools_adapter 决定，不依赖此字段。
-        # ServiceContext 没有 capability_snapshot 槽位，且其 get() 不支持 default，
-        # 这里暂时固定为空 dict，待 capability 快照接线补全后再替换。
-        "capability_snapshot": {},
+        # SDK ReAct driver uses this field as the Provider tool allow-list;
+        # keep it sourced from the same product catalog as the executor.
+        "capability_snapshot": _sdk_capability_snapshot(),
     }
 
     # Create presentation infrastructure
@@ -9331,13 +9340,16 @@ async def _execute_sdk_run(
         session_generation=1,  # TODO: Get actual generation from context
     )
 
-    run_id = receipt.run_id
+    # SDK owns an internal execution id, while the product UI and SessionDB
+    # use the canonical root id reserved by Host. Keep the two identities
+    # separate so the final frame settles the same projection that started.
+    sdk_run_id = receipt.run_id
 
     # Create ProductDeliveryAdapter for this run
     delivery_adapter = ProductDeliveryAdapter(
         session_id=session_id,
         request_id=request_id,
-        run_id=run_id,
+        run_id=sdk_run_id,
         presenter=presenter,
         adapter=adapter,
         context=context,
@@ -9345,7 +9357,7 @@ async def _execute_sdk_run(
     )
 
     # Register adapter in global registry (for _DeliverySink routing)
-    _delivery_adapters[run_id] = delivery_adapter
+    _delivery_adapters[sdk_run_id] = delivery_adapter
 
     try:
         # Send run_started event to WebSocket
@@ -9353,7 +9365,7 @@ async def _execute_sdk_run(
             "type": "chat_v2_run_started",
             "payload": {
                 "session_id": session_id,
-                "run_id": run_id,
+                "run_id": root_run_id,
                 "request_id": request_id,
                 "turn_id": turn_id,
                 "task_scope_id": task_scope_id,
@@ -9369,15 +9381,47 @@ async def _execute_sdk_run(
             "sdk_run_started",
             session_id=session_id,
             request_id=request_id,
-            run_id=run_id,
+            sdk_run_id=sdk_run_id,
+            root_run_id=root_run_id,
         )
 
         # Wait for SDK Runtime to complete
         # Events are pushed via DeliveryDispatcher → _DeliverySink → ProductDeliveryAdapter
-        await _sdk_ingress.wait_idle(run_id)
+        await _sdk_ingress.wait_idle(sdk_run_id)
 
         # Query final state
-        final_state = _sdk_ingress.query(run_id)
+        final_state = _sdk_ingress.query(sdk_run_id)
+        sdk_state = getattr(final_state, "state", final_state)
+        sdk_state_value = str(getattr(sdk_state, "value", sdk_state))
+        if sdk_state_value != "completed":
+            # A failed/cancelled SDK run has no assistant text to present.
+            # Emit the product terminal error instead of an empty final frame,
+            # so the UI can settle the canonical root projection visibly.
+            await _send_chat_error(
+                websocket,
+                {
+                    "type": "chat_v2_error",
+                    "payload": {
+                        "session_id": session_id,
+                        "run_id": root_run_id,
+                        "request_id": request_id,
+                        "task_scope_id": task_scope_id,
+                        "error": "run_failed",
+                        "detail": f"sdk_run_{sdk_state_value}",
+                    },
+                },
+                session_id=session_id,
+                request_id=request_id,
+            )
+            logger.warning(
+                "sdk_run_terminal_error_projected",
+                session_id=session_id,
+                request_id=request_id,
+                root_run_id=root_run_id,
+                sdk_run_id=sdk_run_id,
+                state=sdk_state_value,
+            )
+            return
 
         # SDK 的 ReAct driver 不产生 delivery 事件，assistant 文本只落在 SDK 的
         # context 里。这里手动把它桥接回 presenter，走 _present_final 的
@@ -9386,7 +9430,7 @@ async def _execute_sdk_run(
             try:
                 from simple_harness import RunId as SdkRunId
                 from agent.agent_loop import FinalEvent
-                sdk_context = _sdk_context_port.load(SdkRunId(run_id))
+                sdk_context = _sdk_context_port.load(SdkRunId(sdk_run_id))
                 assistant_texts = [
                     message.content
                     for message in sdk_context.messages
@@ -9411,16 +9455,18 @@ async def _execute_sdk_run(
             "sdk_run_completed",
             session_id=session_id,
             request_id=request_id,
-            run_id=run_id,
+            sdk_run_id=sdk_run_id,
+            root_run_id=root_run_id,
             state=final_state.value if hasattr(final_state, "value") else str(final_state),
         )
 
     finally:
         # Always clean up registry entry
-        _delivery_adapters.pop(run_id, None)
+        _delivery_adapters.pop(sdk_run_id, None)
         logger.debug(
             "sdk_run_adapter_cleanup",
-            run_id=run_id,
+            sdk_run_id=sdk_run_id,
+            root_run_id=root_run_id,
             remaining_adapters=len(_delivery_adapters),
         )
 

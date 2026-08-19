@@ -31,6 +31,15 @@ async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run()
     ]
 
 
+def test_sdk_capability_snapshot_exposes_product_catalog():
+    from main import _sdk_capability_snapshot
+
+    snapshot = _sdk_capability_snapshot()
+    assert "file_read" in snapshot["tools"]
+    assert "run_shell" in snapshot["tools"]
+    assert snapshot["tools"] == list(dict.fromkeys(snapshot["tools"]))
+
+
 @pytest.fixture
 def mock_sdk_ingress():
     """Create mock SDK ingress."""

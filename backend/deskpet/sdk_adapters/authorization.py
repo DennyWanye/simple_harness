@@ -23,8 +23,6 @@ from deskpet.product_state.authorization_saga import (
 )
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.types.task_grants import TaskGrant
-
-
 def _hash(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -52,7 +50,17 @@ class ProductAuthorizationAdapter:
         self._fault = fault
 
     async def prepare(self, prepared: PreparedToolEffect) -> AuthorizationResult:
-        result = self._policy(prepared)
+        # Product policies expose the Host authorization port as
+        # ``decide(prepared, request=...)``.  Older unit fixtures supplied a
+        # plain callable, so keep that form as a compatibility path while
+        # honoring the real object contract used by the SDK runtime.
+        decide = getattr(self._policy, "decide", None)
+        if callable(decide):
+            result = decide(prepared, request=None)
+        elif callable(self._policy):
+            result = self._policy(prepared)
+        else:
+            raise TypeError("product authorization policy must be callable or expose decide")
         if inspect.isawaitable(result):
             result = await result
         if not isinstance(result, AuthorizationResult):
