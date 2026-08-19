@@ -2,6 +2,19 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
+## Vendored wheel: simple_harness_memory_sdk-0.1.0-py3-none-any.whl
+
+**Source:** local build from `simple-harness-memory-sdk` HEAD（647af88）
+**SHA256:** `02f197a3aab060ec9c7cc6063866a955f261728e38c64ff5a51ca72ffccfd9da`
+**Vendored:** 2026-08-19（依赖链接方式规范化：editable path → vendored wheel）
+
+Verification:
+
+```bash
+shasum -a 256 backend/vendor/simple_harness_memory_sdk-0.1.0-py3-none-any.whl
+```
+
+
 ## Active candidate: simple_harness_sdk-0.1.3-py3-none-any.whl
 
 **Source:** local build from SDK repository（sdk-consumer-0.1.3 program；consumer adapter 加
