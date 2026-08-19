@@ -9264,10 +9264,31 @@ async def _execute_sdk_run(
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
+    # 多轮上下文：从 session_db 拉最近的历史消息（排除当前 run 自己刚写入的
+    # 那条用户消息），拼到当前消息前，让 SDK ReAct driver 拥有会话上下文。
+    history_messages: list[dict[str, str]] = []
+    session_db = getattr(context, "session_db", None)
+    if session_db is not None:
+        try:
+            rows = await session_db.get_recent_messages(session_id, limit=20)
+            for row in rows:
+                if str(row.get("root_run_id") or "") == str(root_run_id):
+                    continue
+                role = str(row.get("role") or "")
+                content = str(row.get("content") or "")
+                if role in {"user", "assistant"} and content:
+                    history_messages.append({"role": role, "content": content})
+        except Exception as exc:  # noqa: BLE001 - history assembly must not block the run
+            logger.warning(
+                "chat_history_assembly_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+
     # Build payload for SDK Runtime
     payload = {
         "input": {"text": text},
-        "messages": [{"role": "user", "content": text}],
+        "messages": history_messages + [{"role": "user", "content": text}],
         # capability_snapshot 是 RunStart start_input 里传给 agent 的元数据；
         # SDK Runtime 的真实 tool catalog 由 tools_adapter 决定，不依赖此字段。
         # ServiceContext 没有 capability_snapshot 槽位，且其 get() 不支持 default，
