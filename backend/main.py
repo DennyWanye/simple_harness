@@ -9225,6 +9225,41 @@ _GLOBAL_BLOCKING_UI_EVENTS = frozenset({
 
 
 
+async def _assemble_sdk_messages(
+    session_db: Any,
+    *,
+    session_id: str,
+    root_run_id: str,
+    text: str,
+    limit: int = 20,
+) -> list[dict[str, str]]:
+    """Build the ordered SDK chat transcript for one fresh run.
+
+    The current user message is already durable by the time the SDK ingress
+    starts, so exclude rows belonging to this root run and append the current
+    input exactly once.  Non-conversational/tool rows are intentionally left
+    to the SDK's event context rather than sent as malformed chat messages.
+    """
+    history_messages: list[dict[str, str]] = []
+    if session_db is not None:
+        try:
+            rows = await session_db.get_recent_messages(session_id, limit=limit)
+            for row in rows:
+                if str(row.get("root_run_id") or "") == str(root_run_id):
+                    continue
+                role = str(row.get("role") or "")
+                content = str(row.get("content") or "")
+                if role in {"user", "assistant"} and content:
+                    history_messages.append({"role": role, "content": content})
+        except Exception as exc:  # noqa: BLE001 - history must not block a run
+            logger.warning(
+                "chat_history_assembly_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+    return history_messages + [{"role": "user", "content": text}]
+
+
 async def _execute_sdk_run(
     *,
     session_id: str,
@@ -9264,31 +9299,17 @@ async def _execute_sdk_run(
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
-    # 多轮上下文：从 session_db 拉最近的历史消息（排除当前 run 自己刚写入的
-    # 那条用户消息），拼到当前消息前，让 SDK ReAct driver 拥有会话上下文。
-    history_messages: list[dict[str, str]] = []
     session_db = getattr(context, "session_db", None)
-    if session_db is not None:
-        try:
-            rows = await session_db.get_recent_messages(session_id, limit=20)
-            for row in rows:
-                if str(row.get("root_run_id") or "") == str(root_run_id):
-                    continue
-                role = str(row.get("role") or "")
-                content = str(row.get("content") or "")
-                if role in {"user", "assistant"} and content:
-                    history_messages.append({"role": role, "content": content})
-        except Exception as exc:  # noqa: BLE001 - history assembly must not block the run
-            logger.warning(
-                "chat_history_assembly_failed",
-                session_id=session_id,
-                error=str(exc),
-            )
 
     # Build payload for SDK Runtime
     payload = {
         "input": {"text": text},
-        "messages": history_messages + [{"role": "user", "content": text}],
+        "messages": await _assemble_sdk_messages(
+            session_db,
+            session_id=session_id,
+            root_run_id=root_run_id,
+            text=text,
+        ),
         # capability_snapshot 是 RunStart start_input 里传给 agent 的元数据；
         # SDK Runtime 的真实 tool catalog 由 tools_adapter 决定，不依赖此字段。
         # ServiceContext 没有 capability_snapshot 槽位，且其 get() 不支持 default，

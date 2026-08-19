@@ -4,6 +4,33 @@ from unittest.mock import AsyncMock, Mock, MagicMock, patch
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
 
+@pytest.mark.asyncio
+async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run():
+    from main import _assemble_sdk_messages
+
+    class FakeSessionDB:
+        async def get_recent_messages(self, session_id, limit):
+            assert session_id == "session-1"
+            assert limit == 20
+            return [
+                {"root_run_id": "run-old", "role": "user", "content": "之前的问题"},
+                {"root_run_id": "run-old", "role": "assistant", "content": "之前的回答"},
+                {"root_run_id": "run-current", "role": "user", "content": "当前消息"},
+                {"root_run_id": "run-old", "role": "tool", "content": "内部结果"},
+            ]
+
+    assert await _assemble_sdk_messages(
+        FakeSessionDB(),
+        session_id="session-1",
+        root_run_id="run-current",
+        text="当前消息",
+    ) == [
+        {"role": "user", "content": "之前的问题"},
+        {"role": "assistant", "content": "之前的回答"},
+        {"role": "user", "content": "当前消息"},
+    ]
+
+
 @pytest.fixture
 def mock_sdk_ingress():
     """Create mock SDK ingress."""

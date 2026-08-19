@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-13（Harness 复杂任务可靠性真机复测）
+> 最后更新：2026-08-20（多轮上下文与 Session ID 复制修复）
 
 ## 0. Workbench 工作台架构（2026-08-05 改版落地）
 
@@ -47,6 +47,9 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
 - 标题栏展示的当前模型来自 Session 持久化绑定。新话题继承来源 Session 的模型与参数，
   历史会话和应用重启通过独立 hydration 请求重新加载绑定，不再短暂或永久回退到 Provider
   默认模型。
+- ChatView 标题栏与 SessionList 会话行中的完整 Session ID 使用 `user-select: all`；用户双击
+  标识时会选中整个 ID，而不是只选中 UUID 连字符分隔的一段。文本仍保持省略显示且不触发
+  会话切换。
 - 设置页的数据目录分成“当前生效目录”与“下次启动目录”两个事实：Rust 端把偏好写入稳定的
   bootstrap pointer，下一次进程启动再切换，不会在当前进程中伪装已生效；外部
   `DESKPET_USER_DATA_DIR` 固定目录时明确拒绝 UI 改写。Agent 预算请求带 `request_id`，避免
@@ -90,6 +93,9 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
   Session 绑定模型与“尚无用量”，不再短暂显示全局默认模型。
 
 ## 4. 验证状态
+
+- 2026-08-20 聚焦回归：SDK 多轮消息组装 `4 passed`；SessionList/ChatView `15 passed`；
+  TypeScript `tsc -b --noEmit` PASS。该轮未执行真实桌面双击 E2E。
 
 - 当前自动化：Vitest `540 passed`；Rust `79 passed`；companion `647 passed / 10 skipped`，以
   `backend/.venv/bin/python -m pytest backend/tests/companion -q` 从仓库根执行；TypeScript、

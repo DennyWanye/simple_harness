@@ -1,6 +1,6 @@
 # DeskPet Agent Harness 架构
 
-> 最后更新：2026-08-13
+> 最后更新：2026-08-20
 > 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
@@ -52,7 +52,19 @@ flowchart LR
 打开、切换或关闭窗口不改变 Driver、Profile、工具集、授权或运行状态。当前没有 Code 模式
 与普通模式之分。
 
-### 运行中继续输入
+### 当前 SDK 多轮消息与继续输入（2026-08-20）
+
+生产文字入口现在统一通过 SDK ingress 启动 fresh run；后续用户消息不再进入已退休的
+product-harness continuation launcher。Host 在启动每个 fresh run 前从 `SessionDB` 读取当前
+Session 最近 20 条 conversation 消息，保持时间正序，只注入非空 `user/assistant` 内容；当前
+`root_run_id` 已经持久化的用户行会被排除，再把本次输入追加一次，避免当前消息重复。历史读取
+失败只记录 `chat_history_assembly_failed`，不会阻断本轮运行。记忆 SDK recall 仍是独立的语义
+记忆补充，不再承担普通多轮对话历史的唯一来源。
+
+下文描述的 durable continuation FIFO 是旧 product-harness 链路的历史设计记录，不是当前 SDK
+文字入口的生产行为；对应 launcher/coordinator 辅助函数尚待独立死代码清理。
+
+### 历史 product-harness 运行中继续输入
 
 消息页输入区只有一个文本框和一个动态主按钮：
 

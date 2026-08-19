@@ -2,6 +2,14 @@
 
 > **最后更新**：2026-08-20
 
+## 2026-08-20 修复：SDK fresh-run 多轮上下文与 Session ID 双击复制
+
+- 文字 follow-up 继续走 SDK fresh run；Host 现在从 SessionDB 注入最近 20 条按时间正序的
+  `user/assistant` 历史，排除当前 root 已落库的用户消息后只追加一次当前输入。普通多轮上下文
+  不再完全依赖 memory recall。
+- ChatView 标题栏和 SessionList 会话行的 Session ID 改为整段选择，双击 UUID 不再只选中一段。
+- 聚焦验证：后端 `4 passed`，前端 `15 passed`，TypeScript PASS；真实桌面双击 E2E 尚未执行。
+
 ## 2026-08-20 里程碑：SDK 生产化 program 完成（harness 0.1.4 + memory 0.2.0）
 
 六个 slice 全部 plan-test 全流程 + 机器门 finalize PASS（receipt 见 program plan）：
