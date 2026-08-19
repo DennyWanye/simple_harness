@@ -1,8 +1,8 @@
 # Simple Harness SDK 提取与消费架构
 
 > 最后校准：2026-08-19
-> 代码基线：`6ea59fea`（sdk-usability-optimization program 收尾中）
-> 状态：SDK v0.1.2 已切换为唯一生产 ingress（2026-08-19，含消费者友好层）；记忆 SDK host 集成真机 E2E PASS；companion 冷启动缺陷（fresh DB identity bind 被拒）已随 manifest 重建修复。**切回 0.1.1 只需 revert 宿主 `1efd4c19`。**
+> 代码基线：`d3f048e1`（host-revendor-0.1.3 完成）
+> 状态：SDK v0.1.3 为唯一生产 ingress（2026-08-19；0.1.3 对 0.1.2 纯新增——consumer adapter 加 model/tool_schemas，宿主 10-Port 零改动）。SSOT `sdk_candidate.py` 单点切换兑现：切版本只改三行常量。**切回 0.1.2 只需 revert `d3f048e1`。**
 
 ## 0. 当前实施状态（2026-08-19 校正）
 

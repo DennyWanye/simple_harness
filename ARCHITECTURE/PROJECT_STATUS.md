@@ -4,6 +4,9 @@
 
 ## 2026-08-19 里程碑：SDK 易用性优化（harness 0.1.2 切换 + companion 冷启动修复 + 双 SDK 文档/验证脚本）
 
+- **harness SDK v0.1.3 re-vendor（2026-08-19 晚）**：接续 sdk-consumer-0.1.3（消费者层 model/tool_schemas 缺陷修复），
+  宿主 vendor 0.1.3 wheel（SHA 81025b2c…）、SSOT 单点切换（只改 `sdk_candidate.py` 三行）、18 分片回归零新增红、
+  真机冷启动 `sdk_runtime_ready 0.1.3` + 真 DeepSeek 294 字符回复。0.1.3 对 0.1.2 纯新增，宿主 10-Port 零改动。
 - **harness SDK v0.1.2 切换为唯一生产 ingress**：`backend/vendor/` 纳入官方 0.1.2 wheel（SHA
   `387c8d1d…efd4c`，对 0.1.1 纯新增）；wheel 身份收敛为单一事实源
   `deskpet/sdk_adapters/sdk_candidate.py`，原 6 处生产硬编码 + 2 个测试 + verify_sdk_wheel.py 全部改 import

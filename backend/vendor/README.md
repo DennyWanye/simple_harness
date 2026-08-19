@@ -2,23 +2,27 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
-## Active candidate: simple_harness_sdk-0.1.2-py3-none-any.whl
+## Active candidate: simple_harness_sdk-0.1.3-py3-none-any.whl
 
-**Source:** local build from SDK repository HEAD `896b685`（含 cb1f245 consumer adapter layer；
-`git tag v0.1.2` 存在但 GitHub Release 未发布，dist/ 未入 git）
-**SHA256:** `387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c`
-**Vendored:** 2026-08-19（sdk-usability-optimization program, Slice 1）
+**Source:** local build from SDK repository（sdk-consumer-0.1.3 program；consumer adapter 加
+`model`/`tool_schemas` 字段修复两个消费者层缺陷）
+**SHA256:** `81025b2ccf08a0f49e272416176f8fdeead994e088e5d7a44e103ed5e902a7b9`
+**Vendored:** 2026-08-19（host-revendor-0.1.3 program）
 
-v0.1.2 对 v0.1.1 为纯新增（consumer adapter 层 + Memory ports + 文档/示例），宿主 10-Port
-适配层无需修改。wheel 身份的单一事实源是
-`backend/deskpet/sdk_adapters/sdk_candidate.py`——切换版本只改那一个文件；
-`scripts/verify_sdk_wheel.py` 的 active 预期 hash 也从该模块 import，不再自行硬编码。
+v0.1.3 对 v0.1.2 为纯新增，宿主 10-Port 适配层零改动。wheel 身份单一事实源
+`backend/deskpet/sdk_adapters/sdk_candidate.py` 单点切换（本次只改三行常量）。
 
 Verification:
 
 ```bash
-backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.2-py3-none-any.whl
+backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.3-py3-none-any.whl
 ```
+
+## Historical artifact: simple_harness_sdk-0.1.2-py3-none-any.whl
+
+**Source:** local build from SDK repository HEAD `896b685`（含 cb1f245 consumer adapter layer）
+**SHA256:** `387c8d1d97c0f89e4664347fb57ca6a43a0e7fa772b07a0f34c6f3a6e86efd4c`
+**Status:** superseded by v0.1.3 on 2026-08-19; retained for audit rollback.
 
 ## Historical artifact: simple_harness_sdk-0.1.1-py3-none-any.whl
 
