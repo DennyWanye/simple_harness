@@ -6877,6 +6877,24 @@ class _ProductSdkProviderBindingResolver:
         self.registry.mark_terminal(run_id, state)
         self._authorities.pop(str(run_id), None)
 
+    def active_provider_ids(self) -> frozenset[str]:
+        return frozenset(
+            binding.provider_id
+            for run_id in tuple(self._authorities)
+            if (binding := self.registry.resolve(run_id)) is not None
+        )
+
+
+def _assert_sdk_provider_mutation_allowed(provider_ids: Any) -> None:
+    """Fence mutations that would invalidate active or WAITING Run leases."""
+
+    if _sdk_provider_binding_resolver is None:
+        return
+    active = _sdk_provider_binding_resolver.active_provider_ids()
+    conflicts = active.intersection(str(item) for item in provider_ids)
+    if conflicts:
+        raise ProviderMutationConflict(sorted(conflicts)[0])
+
 
 def _sdk_prepared_identity(prepared) -> tuple[str, str]:
     metadata = prepared.context_metadata
@@ -12954,6 +12972,7 @@ async def control_channel(ws: WebSocket):
                         })
                         continue
                     try:
+                        _assert_sdk_provider_mutation_allowed((_pid,))
                         entry = await _reg.update_provider(
                             _pid,
                             expected_incarnation_id=_payload.get("expected_incarnation_id"),
@@ -13009,6 +13028,7 @@ async def control_channel(ws: WebSocket):
                         })
                         continue
                     try:
+                        _assert_sdk_provider_mutation_allowed((_pid,))
                         await _reg.remove_provider(
                             _pid,
                             expected_incarnation_id=_payload.get("expected_incarnation_id"),
@@ -13045,6 +13065,7 @@ async def control_channel(ws: WebSocket):
                     _ordered = _payload.get("ordered_ids") or []
                     _expected_raw = _payload.get("expected_versions")
                     try:
+                        _assert_sdk_provider_mutation_allowed(_ordered)
                         if not isinstance(_expected_raw, dict):
                             raise ValueError("expected_versions is required")
                         _expected_versions = {

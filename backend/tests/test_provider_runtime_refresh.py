@@ -96,9 +96,14 @@ def test_per_run_binding_resolver_retains_waiting_and_releases_terminal(monkeypa
 
     resolver.mark_waiting("run-a")
     assert resolver.registry.resolve("run-a").lease_state == "waiting"
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", resolver)
+    with pytest.raises(main.ProviderMutationConflict):
+        main._assert_sdk_provider_mutation_allowed(("provider-a",))
     resolver.mark_terminal("run-b", "completed")
     with pytest.raises(KeyError):
         resolver.resolve("run-b")
+    resolver.mark_terminal("run-a", "cancelled")
+    main._assert_sdk_provider_mutation_allowed(("provider-a",))
 
 
 @pytest.mark.asyncio
