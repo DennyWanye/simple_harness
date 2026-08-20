@@ -89,6 +89,9 @@ export function InputBar({
 } = {}) {
   const [text, set_text] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const isComposingRef = useRef(false);
+  const suppressCompositionCommitEnterRef = useRef(false);
+  const compositionReleaseTimerRef = useRef<number | null>(null);
 
   // v2 slash state
   const [allCommands, setAllCommands] = useState<SlashCommand[]>([]);
@@ -113,6 +116,15 @@ export function InputBar({
   useEffect(() => {
     fetchCommands().then(setAllCommands).catch(() => setAllCommands([]));
   }, []);
+
+  useEffect(
+    () => () => {
+      if (compositionReleaseTimerRef.current !== null) {
+        window.clearTimeout(compositionReleaseTimerRef.current);
+      }
+    },
+    [],
+  );
 
   // Auto-grow textarea
   useEffect(() => {
@@ -352,9 +364,53 @@ export function InputBar({
     }
   };
 
+  const onCompositionStart = () => {
+    if (compositionReleaseTimerRef.current !== null) {
+      window.clearTimeout(compositionReleaseTimerRef.current);
+      compositionReleaseTimerRef.current = null;
+    }
+    isComposingRef.current = true;
+    suppressCompositionCommitEnterRef.current = false;
+  };
+
+  const onCompositionEnd = () => {
+    isComposingRef.current = false;
+    // macOS WebKit may emit compositionend immediately before the Enter
+    // keydown used to accept the IME candidate. Keep a one-event latch so that
+    // commit Enter cannot fall through to chat submission. Release it at the
+    // end of the event turn so a later, intentional Enter still sends.
+    suppressCompositionCommitEnterRef.current = true;
+    compositionReleaseTimerRef.current = window.setTimeout(() => {
+      suppressCompositionCommitEnterRef.current = false;
+      compositionReleaseTimerRef.current = null;
+    }, 0);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // IME composition — never interfere
-    if (e.nativeEvent.isComposing) return;
+    const nativeKeyCode = (e.nativeEvent as KeyboardEvent).keyCode;
+    // Chromium reports isComposing; macOS WebKit can instead expose the IME
+    // sentinel keyCode 229. The ref covers engines that omit both flags while
+    // composition is still active.
+    if (
+      e.nativeEvent.isComposing ||
+      isComposingRef.current ||
+      nativeKeyCode === 229
+    ) {
+      return;
+    }
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey &&
+      suppressCompositionCommitEnterRef.current
+    ) {
+      e.preventDefault();
+      suppressCompositionCommitEnterRef.current = false;
+      if (compositionReleaseTimerRef.current !== null) {
+        window.clearTimeout(compositionReleaseTimerRef.current);
+        compositionReleaseTimerRef.current = null;
+      }
+      return;
+    }
     // dropdown 打开时拦截 ↑↓ Tab Enter ESC
     if (dropdownOpen && candidates.length > 0) {
       if (e.key === "ArrowDown") {
@@ -479,6 +535,8 @@ export function InputBar({
           ref={taRef}
           value={text}
           onChange={onChange}
+          onCompositionStart={onCompositionStart}
+          onCompositionEnd={onCompositionEnd}
           onKeyDown={onKeyDown}
           disabled={disabled}
           placeholder={

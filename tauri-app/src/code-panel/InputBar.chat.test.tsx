@@ -88,6 +88,70 @@ describe("InputBar chat send", () => {
     );
   });
 
+  it("does not send when Enter confirms an active IME composition", () => {
+    render(<InputBar sessionId="default" placeholder="chat" />);
+
+    const input = screen.getByPlaceholderText("chat");
+    fireEvent.change(input, { target: { value: "阿斯顿" } });
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      shiftKey: false,
+      isComposing: true,
+    });
+
+    expect(controlWS.send).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toBe("阿斯顿");
+  });
+
+  it("does not send for macOS WebKit IME keyCode 229", () => {
+    render(<InputBar sessionId="default" placeholder="chat" />);
+
+    const input = screen.getByPlaceholderText("chat");
+    fireEvent.change(input, { target: { value: "阿斯顿" } });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      keyCode: 229,
+      shiftKey: false,
+      isComposing: false,
+    });
+
+    expect(controlWS.send).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toBe("阿斯顿");
+  });
+
+  it("swallows WebKit's Enter after compositionend, then allows a later Enter", () => {
+    render(<InputBar sessionId="default" placeholder="chat" />);
+
+    const input = screen.getByPlaceholderText("chat");
+    fireEvent.change(input, { target: { value: "阿斯顿" } });
+    fireEvent.compositionStart(input);
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      keyCode: 13,
+      shiftKey: false,
+      isComposing: false,
+    });
+
+    expect(controlWS.send).not.toHaveBeenCalled();
+    expect((input as HTMLTextAreaElement).value).toBe("阿斯顿");
+
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      keyCode: 13,
+      shiftKey: false,
+      isComposing: false,
+    });
+    expect(controlWS.send).toHaveBeenCalledWith({
+      type: "chat_v2",
+      payload: expect.objectContaining({
+        text: "阿斯顿",
+        session_id: "default",
+      }),
+    });
+  });
+
   // 2026-08-09 保留会话移除后的空态入口：没有任何会话时在输入框直接发消息，
   // 必须让后端**新建**一个会话再投递，而不是复活固定 sid。
   it("空态发送走 new_session，不复活任何固定 sid", () => {
