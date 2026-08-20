@@ -6722,6 +6722,11 @@ _sdk_context_port = None
 _sdk_runtime_refresh_lock = asyncio.Lock()
 _sdk_runtime_run_lock = asyncio.Lock()
 _sdk_runtime_provider_binding: tuple[str, str] | None = None
+# Product/UI projections expose the Host canonical root id, while RunClient
+# cancellation is keyed by the SDK's deterministic internal id. Keep the
+# active bridge explicit and bounded to the lifetime of _execute_sdk_run.
+_sdk_run_ids_by_root: dict[str, str] = {}
+_sdk_cancel_requested_run_ids: set[str] = set()
 
 _sdk_desktop_bridge = None
 
@@ -6820,7 +6825,6 @@ async def _build_product_sdk_runtime_stack(
     from simple_harness import RuntimeProfile
     from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
     from simple_harness.execution.delivery import DeliveryDispatcher
-    from simple_harness.execution.dispatch import ProviderInvocationCoordinator
     from simple_harness.runtime import RuntimePorts, SqliteContextPort
     from simple_harness.runtime.drivers import build_react_driver
     from simple_harness.runtime.termination import TerminationLimits
@@ -6834,7 +6838,10 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.sdk_adapters.runtime_paths import (
         ProductRuntimePathsAdapter,
     )
-    from deskpet.sdk_adapters.provider import ProductProviderAdapter
+    from deskpet.sdk_adapters.provider import (
+        ProductProviderAdapter,
+        ProductProviderInvocationCoordinator,
+    )
     from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
     from deskpet.sdk_adapters.tools import ProductToolsAdapter
     from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
@@ -7041,7 +7048,7 @@ async def _build_product_sdk_runtime_stack(
             authorization=authorization_adapter,
             reconciliation=reconciliation_adapter,
         )
-        provider_port = ProviderInvocationCoordinator(
+        provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
             provider=provider,
             budget_policy=budget_policy,
@@ -7289,8 +7296,47 @@ async def _cancel_product_harness_run(
     # needed (the old harness signature took those, the SDK one does not).
     from simple_harness import RunId as SdkRunId
 
-    logger.info("product_harness_cancel", run_id=run_id, reason=reason)
-    await _sdk_ingress.require_ready().client.cancel(SdkRunId(run_id))
+    sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
+    logger.info(
+        "product_harness_cancel",
+        run_id=run_id,
+        sdk_run_id=sdk_run_id,
+        reason=reason,
+    )
+    _sdk_cancel_requested_run_ids.add(sdk_run_id)
+    try:
+        cancelled_record = await _sdk_ingress.require_ready().client.cancel(
+            SdkRunId(sdk_run_id)
+        )
+        cancelled_state = str(
+            getattr(
+                getattr(cancelled_record, "state", None),
+                "value",
+                getattr(cancelled_record, "state", ""),
+            )
+        ).lower()
+    except KeyError:
+        # A stale/terminal projection or a legacy caller may no longer have a
+        # live SDK identity. Treat that as an idempotent miss instead of
+        # tearing down the control WebSocket.
+        logger.info(
+            "product_harness_cancel_not_found",
+            run_id=run_id,
+            sdk_run_id=sdk_run_id,
+            reason=reason,
+        )
+        _sdk_cancel_requested_run_ids.discard(sdk_run_id)
+        return False
+    if cancelled_state != "cancelled":
+        logger.info(
+            "product_harness_cancel_not_applied",
+            run_id=run_id,
+            sdk_run_id=sdk_run_id,
+            state=cancelled_state,
+            reason=reason,
+        )
+        _sdk_cancel_requested_run_ids.discard(sdk_run_id)
+        return False
     provider_workload_router = service_context.get(
         "provider_workload_router"
     )
@@ -9551,6 +9597,7 @@ async def _execute_sdk_run(
     # Register adapter in global registry before SDK start (for Provider,
     # ProductToolsAdapter, and _DeliverySink routing).
     _delivery_adapters[sdk_run_id] = delivery_adapter
+    _sdk_run_ids_by_root[root_run_id] = sdk_run_id
 
     try:
         receipt = await _sdk_ingress.start(
@@ -9596,6 +9643,19 @@ async def _execute_sdk_run(
         final_state = _sdk_ingress.query(sdk_run_id)
         sdk_state = getattr(final_state, "state", final_state)
         sdk_state_value = str(getattr(sdk_state, "value", sdk_state))
+        if sdk_run_id in _sdk_cancel_requested_run_ids:
+            # chat_v2_interrupt owns the canonical cancelled projection and
+            # acknowledgement. Do not race it with a transient SDK
+            # waiting/running read and manufacture run_failed in the UI.
+            logger.info(
+                "sdk_run_user_cancelled",
+                session_id=session_id,
+                request_id=request_id,
+                root_run_id=root_run_id,
+                sdk_run_id=sdk_run_id,
+                observed_state=sdk_state_value,
+            )
+            return
         if sdk_state_value != "completed":
             # A failed/cancelled SDK run has no assistant text to present.
             # Emit the product terminal error instead of an empty final frame,
@@ -9666,6 +9726,9 @@ async def _execute_sdk_run(
     finally:
         # Always clean up registry entry
         _delivery_adapters.pop(sdk_run_id, None)
+        if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
+            _sdk_run_ids_by_root.pop(root_run_id, None)
+        _sdk_cancel_requested_run_ids.discard(sdk_run_id)
         logger.debug(
             "sdk_run_adapter_cleanup",
             sdk_run_id=sdk_run_id,

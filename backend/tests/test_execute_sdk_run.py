@@ -162,9 +162,15 @@ def mock_context():
 @pytest.fixture(autouse=True)
 def clear_registry():
     """Clear global delivery adapter registry."""
+    import main
+
     _delivery_adapters.clear()
+    main._sdk_run_ids_by_root.clear()
+    main._sdk_cancel_requested_run_ids.clear()
     yield
     _delivery_adapters.clear()
+    main._sdk_run_ids_by_root.clear()
+    main._sdk_cancel_requested_run_ids.clear()
 
 
 def _presentation_context(*, websocket, session_db, root_run_id):
@@ -279,6 +285,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
         for row in persisted
     )
     assert sdk_run_id not in _delivery_adapters
+    assert "canonical-root-race" not in main._sdk_run_ids_by_root
 
 
 @pytest.mark.asyncio
@@ -323,6 +330,134 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
 
     assert saw_registered_adapter is True
     assert sdk_run_id not in _delivery_adapters
+    assert "canonical-root-start-failure" not in main._sdk_run_ids_by_root
+
+
+@pytest.mark.asyncio
+async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatch):
+    import main
+
+    client = SimpleNamespace(
+        cancel=AsyncMock(
+            return_value=SimpleNamespace(
+                state=SimpleNamespace(value="cancelled")
+            )
+        )
+    )
+    ingress = SimpleNamespace(
+        accepting=True,
+        require_ready=lambda: SimpleNamespace(client=client),
+    )
+    workload_router = SimpleNamespace(cancel_root=AsyncMock())
+    session_db = SimpleNamespace(clear_session_plan_awaiting=AsyncMock())
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(
+        main,
+        "service_context",
+        SimpleNamespace(
+            get=lambda name: {
+                "provider_workload_router": workload_router,
+                "session_db": session_db,
+            }.get(name)
+        ),
+    )
+    main._sdk_run_ids_by_root["canonical-root"] = "product-sdk-internal"
+
+    assert await main._cancel_product_harness_run(
+        "session-1", "canonical-root", reason="user_interrupt"
+    ) is True
+
+    assert client.cancel.await_count == 1
+    assert client.cancel.await_args.args[0].value == "product-sdk-internal"
+    workload_router.cancel_root.assert_awaited_once_with("canonical-root")
+    session_db.clear_session_plan_awaiting.assert_awaited_once_with("session-1")
+
+
+@pytest.mark.asyncio
+async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
+    import main
+
+    client = SimpleNamespace(cancel=AsyncMock(side_effect=KeyError("stale-root")))
+    ingress = SimpleNamespace(
+        accepting=True,
+        require_ready=lambda: SimpleNamespace(client=client),
+    )
+    workload_router = SimpleNamespace(cancel_root=AsyncMock())
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(
+        main,
+        "service_context",
+        SimpleNamespace(
+            get=lambda name: {
+                "provider_workload_router": workload_router,
+            }.get(name)
+        ),
+    )
+
+    assert await main._cancel_product_harness_run(
+        "session-1", "stale-root", reason="user_interrupt"
+    ) is False
+    workload_router.cancel_root.assert_not_awaited()
+    assert "stale-root" not in main._sdk_cancel_requested_run_ids
+
+
+@pytest.mark.asyncio
+async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypatch):
+    import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+
+    session_id = "cancel-session"
+    request_id = "cancel-request"
+    turn_id = 3
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(
+        session_id, request_id, str(turn_id)
+    ).value
+
+    class CancelledDuringWaitIngress:
+        async def start(self, **_kwargs):
+            return SimpleNamespace(run_id=sdk_run_id)
+
+        async def wait_idle(self, run_id):
+            assert run_id == sdk_run_id
+            main._sdk_cancel_requested_run_ids.add(run_id)
+
+        def query(self, run_id):
+            assert run_id == sdk_run_id
+            return SimpleNamespace(
+                state=SimpleNamespace(value="waiting"),
+                value="waiting",
+            )
+
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    session_db = SimpleNamespace(
+        get_recent_messages=AsyncMock(return_value=[]),
+        append_message=AsyncMock(),
+    )
+    context = _presentation_context(
+        websocket=websocket,
+        session_db=session_db,
+        root_run_id="canonical-cancel-root",
+    )
+    send_error = AsyncMock()
+    monkeypatch.setattr(main, "_sdk_ingress", CancelledDuringWaitIngress())
+    monkeypatch.setattr(main, "_sdk_context_port", None)
+    monkeypatch.setattr(main, "_send_chat_error", send_error)
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+
+    await main._execute_sdk_run(
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=turn_id,
+        task_scope_id="cancel-scope",
+        text="stop this run",
+        context=context,
+        websocket=websocket,
+        root_run_id="canonical-cancel-root",
+    )
+
+    send_error.assert_not_awaited()
+    assert "canonical-cancel-root" not in main._sdk_run_ids_by_root
+    assert sdk_run_id not in main._sdk_cancel_requested_run_ids
 
 
 @pytest.mark.asyncio

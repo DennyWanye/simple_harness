@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -16,10 +17,15 @@ from simple_harness import RequestId
 from simple_harness.contracts import ContractValidationError
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.contracts.json import thaw_json
+from simple_harness.execution.dispatch import (
+    ProviderInvocationCoordinator,
+    ProviderInvocationUnknownError,
+)
 from simple_harness.providers import (
     CancelToken,
     OpenAICompatibleProvider,
     ProviderAuthenticationError,
+    ProviderCancelledError,
     ProviderProtocolError,
     ProviderRequest,
     ProviderResponse,
@@ -376,6 +382,13 @@ class ProductProviderAdapter:
                 _with_public_progress_fields(request),
                 cancel=cancel,
             )
+        except ProviderCancelledError:
+            # OpenAICompatibleProvider converts task cancellation into a
+            # Provider error. At the product boundary restore cooperative
+            # asyncio cancellation so the SDK driver cannot reconcile a user
+            # stop as an unknown physical handoff and move the durable Run
+            # back to waiting.
+            raise asyncio.CancelledError() from None
         except ContractValidationError as exc:
             # OpenAI-compatible payload parsing constructs typed SDK values
             # (CallId, Message metadata, frozen JSON).  A provider-generated
@@ -582,8 +595,38 @@ class ProductProviderAdapter:
         )
 
 
+class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
+    """Keep Provider handoff uncertainty separate from user Run cancellation."""
+
+    async def invoke(
+        self,
+        run_id,
+        request,
+        *,
+        cancel,
+        execution_lease,
+        workflow_lease=None,
+    ):
+        try:
+            return await super().invoke(
+                run_id,
+                request,
+                cancel=cancel,
+                execution_lease=execution_lease,
+                workflow_lease=workflow_lease,
+            )
+        except ProviderInvocationUnknownError:
+            if cancel.is_cancelled:
+                # The physical Provider invocation remains unknown for
+                # reconciliation/billing, but the user-owned Run cancellation
+                # is authoritative and must reach Runtime._cancel_run.
+                raise asyncio.CancelledError() from None
+            raise
+
+
 __all__ = (
     "ProductPriceSnapshot",
     "ProductProviderAdapter",
+    "ProductProviderInvocationCoordinator",
     "ProductProviderRegistry",
 )

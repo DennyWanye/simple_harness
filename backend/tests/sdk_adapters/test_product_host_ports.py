@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -13,9 +14,14 @@ import pytest
 
 from simple_harness import CallId, RequestId, RunId, fingerprint_json
 from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.execution.dispatch import (
+    ProviderInvocationCoordinator,
+    ProviderInvocationUnknownError,
+)
 from simple_harness.providers import (
     CancelToken,
     ProviderAuthenticationError,
+    ProviderCancelledError,
     ProviderPaymentRequiredError,
     ProviderProtocolError,
     ProviderRateLimitError,
@@ -35,13 +41,77 @@ from deskpet.sdk_adapters.capability_host import (
 )
 from deskpet.sdk_adapters.context import ProductContextAdapter
 from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
-from deskpet.sdk_adapters.provider import ProductProviderAdapter
+from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
+    ProductProviderInvocationCoordinator,
+)
 from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
 from deskpet.sdk_adapters.tools import (
     PRODUCT_TOOL_NAMES,
     ProductToolRegistration,
     build_product_tool_registry,
 )
+
+
+def test_provider_restores_cooperative_task_cancellation() -> None:
+    async def case() -> None:
+        client = httpx.AsyncClient()
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        adapter._delegate.invoke = AsyncMock(  # noqa: SLF001
+            side_effect=ProviderCancelledError()
+        )
+        try:
+            with pytest.raises(asyncio.CancelledError):
+                await adapter.invoke(
+                    ProviderRequest(
+                        RequestId("run-cancel:provider-turn:1"),
+                        (Message(MessageRole.USER, "stop"),),
+                    ),
+                    cancel=CancelToken(),
+                )
+        finally:
+            await client.aclose()
+
+    asyncio.run(case())
+
+
+@pytest.mark.asyncio
+async def test_product_coordinator_terminalizes_user_cancelled_run(
+    monkeypatch,
+) -> None:
+    base_invoke = AsyncMock(side_effect=ProviderInvocationUnknownError())
+    monkeypatch.setattr(ProviderInvocationCoordinator, "invoke", base_invoke)
+    coordinator = object.__new__(ProductProviderInvocationCoordinator)
+
+    with pytest.raises(asyncio.CancelledError):
+        await coordinator.invoke(
+            SimpleNamespace(),
+            SimpleNamespace(),
+            cancel=SimpleNamespace(is_cancelled=True),
+            execution_lease=SimpleNamespace(),
+        )
+
+
+@pytest.mark.asyncio
+async def test_product_coordinator_preserves_non_cancel_unknown(monkeypatch) -> None:
+    unknown = ProviderInvocationUnknownError()
+    base_invoke = AsyncMock(side_effect=unknown)
+    monkeypatch.setattr(ProviderInvocationCoordinator, "invoke", base_invoke)
+    coordinator = object.__new__(ProductProviderInvocationCoordinator)
+
+    with pytest.raises(ProviderInvocationUnknownError) as raised:
+        await coordinator.invoke(
+            SimpleNamespace(),
+            SimpleNamespace(),
+            cancel=SimpleNamespace(is_cancelled=False),
+            execution_lease=SimpleNamespace(),
+        )
+    assert raised.value is unknown
 
 
 @dataclass
