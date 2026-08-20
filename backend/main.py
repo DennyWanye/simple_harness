@@ -6561,14 +6561,14 @@ def _bind_frozen_skill_snapshot_resolver(resolver) -> None:
         raise RuntimeError("manager_skill_snapshot_resolver_required")
     assembler = service_context.get("context_assembler")
     if assembler is None:
-        # P4 services failed to initialize (e.g., memory modules missing)
-        # Skip binding - skills will degrade gracefully
-        logger.warning("assembler_unavailable_skipping_skill_bind")
-        return
-    bind = getattr(assembler, "bind_skill_snapshot_resolver", None)
-    if not callable(bind):
-        raise RuntimeError("assembler_skill_component_unavailable")
-    bind(resolver)
+        # The legacy assembler is optional after the SDK Context cutover.  It
+        # must not gate the Manager-backed resolver used by fresh SDK Turns.
+        logger.info("assembler_unavailable_binding_sdk_skill_reader_only")
+    else:
+        bind = getattr(assembler, "bind_skill_snapshot_resolver", None)
+        if not callable(bind):
+            raise RuntimeError("assembler_skill_component_unavailable")
+        bind(resolver)
     service_context.register("frozen_skill_instruction_resolver", resolver)
 
 

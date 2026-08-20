@@ -225,6 +225,32 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
     )
 
 
+def test_sdk_skill_resolver_registration_does_not_depend_on_legacy_assembler():
+    import main
+
+    class Resolver:
+        manager_backed = True
+
+    resolver = Resolver()
+    previous_assembler = main.service_context.get("context_assembler")
+    previous_resolver = main.service_context.get(
+        "frozen_skill_instruction_resolver"
+    )
+    try:
+        main.service_context.register("context_assembler", None)
+        main._bind_frozen_skill_snapshot_resolver(resolver)
+        assert main.service_context.get(
+            "frozen_skill_instruction_resolver"
+        ) is resolver
+    finally:
+        main.service_context.register(
+            "context_assembler", previous_assembler
+        )
+        main.service_context.register(
+            "frozen_skill_instruction_resolver", previous_resolver
+        )
+
+
 @pytest.mark.asyncio
 async def test_sdk_bounded_history_excludes_non_conversation_projections_and_canaries():
     from main import _bounded_sdk_history
