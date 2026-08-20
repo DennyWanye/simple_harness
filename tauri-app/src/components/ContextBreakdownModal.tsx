@@ -58,7 +58,8 @@ interface BreakdownResponse {
   correlation_id: string;
   snapshot_id: string | null;
   sample_id: string | null;
-  snapshot_version: number;
+  snapshot_version: number | null;
+  usage_version: number;
   snapshot_fingerprint: string;
   availability: "available" | "unavailable";
   project_name?: string | null;
@@ -93,14 +94,20 @@ function optionalIdentity(value: unknown): string | null | undefined {
 function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
   if (!value || typeof value !== "object") return null;
   const raw = value as Record<string, unknown>;
+  if (!("snapshot_version" in raw) || !("usage_version" in raw)) return null;
   const sessionId = optionalIdentity(raw.session_id);
   const correlationId = optionalIdentity(raw.correlation_id);
   const snapshotId = optionalIdentity(raw.snapshot_id);
   const sampleId = optionalIdentity(raw.sample_id);
-  const version = finiteNonNegative(raw.snapshot_version);
+  const version = raw.snapshot_version === null
+    ? null
+    : finiteNonNegative(raw.snapshot_version);
+  const usageVersion = finiteNonNegative(raw.usage_version);
   if (
     !sessionId || !correlationId || snapshotId === undefined ||
-    sampleId === undefined || version === null || !Number.isInteger(version) ||
+    sampleId === undefined || version === undefined ||
+    (version !== null && !Number.isInteger(version)) ||
+    usageVersion === null || !Number.isInteger(usageVersion) ||
     !Array.isArray(raw.sections)
   ) return null;
 
@@ -151,6 +158,7 @@ function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
     snapshot_id: snapshotId,
     sample_id: sampleId,
     snapshot_version: version,
+    usage_version: usageVersion,
     snapshot_fingerprint: typeof raw.snapshot_fingerprint === "string"
       ? raw.snapshot_fingerprint.slice(0, 160)
       : "",
@@ -386,7 +394,7 @@ export function ContextBreakdownModal({
   // callbacks in refs and only re-run the effect on open/sessionId changes.
   const sendRef = useRef(send);
   const onMessageRef = useRef(onMessage);
-  const acceptedRef = useRef<{ version: number; fingerprint: string } | null>(null);
+  const acceptedRef = useRef<{ fingerprint: string } | null>(null);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
 
@@ -402,8 +410,12 @@ export function ContextBreakdownModal({
     const requestId = newContextRequestId();
     const expectedSnapshotId = snapshot?.snapshot_id?.trim() || null;
     const expectedSampleId = snapshot?.sample_id?.trim() || null;
-    const expectedVersion = Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
+    const expectedUsageVersion = Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
       ? snapshot!.version!
+      : null;
+    const expectedSnapshotVersion = Number.isInteger(snapshot?.snapshot_version) &&
+      (snapshot?.snapshot_version ?? -1) >= 0
+      ? snapshot!.snapshot_version!
       : null;
     let active = true;
     const off = onMessageRef.current((msg) => {
@@ -414,15 +426,14 @@ export function ContextBreakdownModal({
           p.correlation_id !== requestId ||
           p.snapshot_id !== expectedSnapshotId ||
           p.sample_id !== expectedSampleId ||
-          expectedVersion === null || p.snapshot_version !== expectedVersion
+          expectedUsageVersion === null ||
+          p.usage_version !== expectedUsageVersion ||
+          p.snapshot_version !== expectedSnapshotVersion
         ) return;
         const fingerprint = canonicalJson(p);
         const accepted = acceptedRef.current;
-        if (accepted) {
-          if (p.snapshot_version < accepted.version) return;
-          if (p.snapshot_version === accepted.version && accepted.fingerprint !== fingerprint) return;
-        }
-        acceptedRef.current = { version: p.snapshot_version, fingerprint };
+        if (accepted && accepted.fingerprint !== fingerprint) return;
+        acceptedRef.current = { fingerprint };
         setData(p);
         setLoading(false);
       }
@@ -435,7 +446,8 @@ export function ContextBreakdownModal({
           request_id: requestId,
           expected_snapshot_id: expectedSnapshotId,
           expected_sample_id: expectedSampleId,
-          expected_snapshot_version: expectedVersion,
+          expected_usage_version: expectedUsageVersion,
+          expected_snapshot_version: expectedSnapshotVersion,
         },
       });
     } catch {
@@ -445,7 +457,14 @@ export function ContextBreakdownModal({
       active = false;
       off();
     };
-  }, [open, sessionId, snapshot?.snapshot_id, snapshot?.sample_id, snapshot?.version]);
+  }, [
+    open,
+    sessionId,
+    snapshot?.snapshot_id,
+    snapshot?.snapshot_version,
+    snapshot?.sample_id,
+    snapshot?.version,
+  ]);
 
   const displayState = contextDisplayState(snapshot);
   const measured = displayState === "measured";
@@ -576,7 +595,9 @@ export function ContextBreakdownModal({
             <span>冻结请求构成（按项标记 measured / estimated / unavailable）</span>
             {data && (
               <span style={{ color: "#94a3b8", fontSize: 10 }}>
-                估算合计 {fmtTokens(sectionTotal)} · LLM 实测 {data.last_usage_prompt_tokens === null ? "不可用" : fmtTokens(data.last_usage_prompt_tokens)}
+                {data.availability === "available"
+                  ? `估算合计 ${fmtTokens(sectionTotal)} · LLM 实测 ${data.last_usage_prompt_tokens === null ? "不可用" : fmtTokens(data.last_usage_prompt_tokens)}`
+                  : "冻结请求构成不可用"}
               </span>
             )}
           </div>

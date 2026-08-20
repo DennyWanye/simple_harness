@@ -72,6 +72,8 @@ export interface ContextUsageSnapshot {
   sample_id?: string | null;
   /** Frozen prepared SDK request inspected by the public breakdown. */
   snapshot_id?: string | null;
+  /** Version of the prepared public snapshot; distinct from usage `version`. */
+  snapshot_version?: number | null;
   snapshot_fingerprint?: string | null;
   version?: number;
   binding_epoch?: number;

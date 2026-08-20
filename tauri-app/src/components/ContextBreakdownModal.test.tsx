@@ -12,6 +12,7 @@ const measuredSnapshot: ContextUsageSnapshot = {
   source: "measured",
   sample_id: "sample-7",
   snapshot_id: "snapshot-7",
+  snapshot_version: 3,
   version: 7,
   availability: "available",
   has_measurement: true,
@@ -32,7 +33,8 @@ function fixture(overrides: Record<string, unknown> = {}) {
     correlation_id: "request-placeholder",
     snapshot_id: "snapshot-7",
     sample_id: "sample-7",
-    snapshot_version: 7,
+    snapshot_version: 3,
+    usage_version: 7,
     snapshot_fingerprint: "sha256:public-7",
     availability: "available",
     model: "sf-glm-5.2",
@@ -97,14 +99,15 @@ describe("ContextBreakdownModal authority fence", () => {
         request_id: expect.any(String),
         expected_snapshot_id: "snapshot-7",
         expected_sample_id: "sample-7",
-        expected_snapshot_version: 7,
+        expected_usage_version: 7,
+        expected_snapshot_version: 3,
       },
     });
     const requestId = request.payload.request_id;
 
     emit(fixture({ correlation_id: "old-request" }));
     emit(fixture({ correlation_id: requestId, session_id: "session-2" }));
-    emit(fixture({ correlation_id: requestId, snapshot_version: 6 }));
+    emit(fixture({ correlation_id: requestId, snapshot_version: 2 }));
     emit(fixture({ correlation_id: requestId, snapshot_id: "snapshot-old" }));
     emit(fixture({ correlation_id: requestId, sample_id: "sample-old" }));
     expect(screen.queryByText("System")).toBeNull();
@@ -133,20 +136,35 @@ describe("ContextBreakdownModal authority fence", () => {
     expect(screen.getByText("System")).toBeTruthy();
   });
 
-  it("shows binding-only and missing measurement as unavailable, never numeric zero", () => {
-    setup({
+  it("shows binding-only and missing measurement as unavailable, never numeric zero", async () => {
+    const { send, emit } = setup({
       ...measuredSnapshot,
       source: "binding_only",
       availability: "unavailable",
       has_measurement: false,
       sample_id: null,
       snapshot_id: null,
+      snapshot_version: null,
       prompt_tokens: 0,
       effective_ceiling: 0,
     });
     expect(screen.getByText(/用量不可用/)).toBeTruthy();
     expect(screen.queryByText(/0 \/ 0 tokens/)).toBeNull();
     expect(screen.queryByText(/no model yet/i)).toBeNull();
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    emit(fixture({
+      correlation_id: send.mock.calls[0][0].payload.request_id,
+      snapshot_id: null,
+      snapshot_version: null,
+      sample_id: null,
+      usage_version: 7,
+      availability: "unavailable",
+      sections: [],
+      total_estimated_tokens: null,
+      last_usage_prompt_tokens: null,
+    }));
+    expect(await screen.findByText("冻结请求构成不可用")).toBeTruthy();
+    expect(screen.queryByText(/估算合计 0/)).toBeNull();
   });
 
   it("creates a new request after close/reopen and ignores the retired response", async () => {
