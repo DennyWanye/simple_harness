@@ -60,6 +60,14 @@ export class ControlChannel {
 
   connect() {
     if (this.ws) return;
+    // The shared secret is the transport admission credential. During cold
+    // startup React renders once before Rust has published it; opening an
+    // unauthenticated socket here only creates a reject/reconnect storm and
+    // can leave identity recovery racing a later authenticated channel.
+    if (!this.secret) {
+      this.setState("disconnected");
+      return;
+    }
     this.closing = false;
     this.setState("connecting");
     const wsUrl = `${this.url}?secret=${encodeURIComponent(

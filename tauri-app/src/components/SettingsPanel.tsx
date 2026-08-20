@@ -687,7 +687,7 @@ export function ChatTurnTimeoutSetting({
 // ----------------------------------------------------------------------
 // P3-S9 — Danger Zone: 完全卸载（清除用户数据）.
 //
-// `完全卸载` wipes %AppData%\deskpet\ (config / SQLite / logs). A
+// `完全卸载` wipes the resolved Simple Harness data dir (config / SQLite / logs). A
 // second opt-in checkbox additionally wipes %LocalAppData%\deskpet\
 // models — that's ~9 GB so we require explicit consent.
 //
@@ -726,7 +726,7 @@ function DangerZoneSection() {
     <section style={{ ...sectionStyle, borderTop: "1px solid rgba(248,113,113,0.28)" }}>
       <h3 style={{ ...h3Style, color: "#fca5a5" }}>危险区</h3>
       <p style={hintStyle}>
-        "完全卸载" 会清除 deskpet 解析到的用户数据目录（配置、SQLite、日志）。
+        "完全卸载" 会清除 Simple Harness 当前解析到的用户数据目录（配置、SQLite、日志）。
         ⚠️ 若为 portable 安装（数据实际在安装目录的 <code>userdata/</code>）或你
         自定义过数据目录，此按钮可能删不到真正的数据——最可靠的做法是直接删除
         整个安装目录。卸载安装包本身仍需在「应用和功能」里进行。

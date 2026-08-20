@@ -79,6 +79,16 @@ function App() {
   // states and recovery controls instead of covering them with StartupOverlay.
   const [runtimeBackendError, setRuntimeBackendError] = useState<string | null>(null);
 
+  // A published shared secret is the authoritative proof that this WebView
+  // owns a running backend. A slower, stale bootstrap rejection must never
+  // leave the full-screen failure overlay above an already-connected message
+  // panel (observed during dev/HMR when the port precheck loses that race).
+  useEffect(() => {
+    if (!secret) return;
+    setBootError(null);
+    setBootState("ready");
+  }, [secret]);
+
   // Poll the Rust side for the shared secret. Pure polling — no side
   // effects on the backend process. Safe to replay on HMR, F5, and the
   // backend-restarted supervisor event.
@@ -180,7 +190,11 @@ function App() {
     void (async () => {
       const core = await import("@tauri-apps/api/core").catch(() => null);
       if (!core) return;
-      for (let attempt = 0; attempt < 20 && !cancelled; attempt += 1) {
+      // Backend initialization routinely exceeds five seconds on a cold
+      // machine (MCP discovery/model setup happens before the secret becomes
+      // observable). Match refreshSecret's 30-second recovery budget instead
+      // of abandoning the overlay reconciliation after 20 * 250 ms.
+      for (let attempt = 0; attempt < 120 && !cancelled; attempt += 1) {
         try {
           const existingSecret = await core.invoke<string>("get_shared_secret");
           if (!cancelled && existingSecret) {

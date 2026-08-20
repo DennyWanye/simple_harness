@@ -7,8 +7,9 @@ This is the single source of truth for the user's list of LLM providers.
 Owns:
   - In-memory list of ProviderEntry dataclasses
   - Atomic persistence to `config.toml` `[[llm.endpoints]]` array
-  - API keys stored in OS keychain under service "deskpet", account
-    "provider.<provider_id>" (NEVER plaintext in toml)
+  - API keys stored in OS keychain under the app-specific service
+    "com.dennywanye.simpleharness", account "provider.<provider_id>"
+    (NEVER plaintext in toml)
   - Migration of legacy `[llm.local]` single-provider schema → new list
 
 Schema in config.toml::
@@ -23,7 +24,7 @@ Schema in config.toml::
     enabled = true
 
 `api_key_ref` is the only secret-shaped field. The real key lives in the
-OS keychain at `keyring.get_password("deskpet", "provider.<id>")`. The
+OS keychain at `keyring.get_password("com.dennywanye.simpleharness", "provider.<id>")`. The
 ``api_key_ref`` string is just a UI hint; persistence is keyed by ``id``.
 
 Public API::
@@ -77,14 +78,16 @@ except Exception:  # pragma: no cover — depends on host env
 
 # ───────────────────────── constants ─────────────────────────
 
-KEYCHAIN_SERVICE = "deskpet"
-"""Service name shared with backend/llm/keys.py — single namespace under
-the Windows Credential Manager / macOS Keychain."""
+KEYCHAIN_SERVICE = "com.dennywanye.simpleharness"
+"""App-specific Windows Credential Manager / macOS Keychain service."""
+
+LEGACY_KEYCHAIN_SERVICE = "deskpet"
+"""Historical shared service, read only for one-time in-place migration."""
 
 KEYCHAIN_ACCOUNT_PREFIX = "provider."
 """Per-provider keychain accounts: ``provider.<id>``."""
 
-KEYCHAIN_REF_PREFIX = "deskpet.provider."
+KEYCHAIN_REF_PREFIX = "com.dennywanye.simpleharness.provider."
 """Public-facing ``api_key_ref`` shown in toml; just documentation."""
 
 LEGACY_CLOUD_KEYCHAIN_REF = "deskpet.cloud_api_key"
@@ -417,6 +420,9 @@ class LLMProviderRegistry:
     def _assign_missing_incarnations(self) -> bool:
         changed = False
         for entry in self._entries:
+            if entry.api_key_ref.startswith("deskpet.provider."):
+                entry.api_key_ref = f"{KEYCHAIN_REF_PREFIX}{entry.id}"
+                changed = True
             if not entry.incarnation_id:
                 entry.incarnation_id = uuid.uuid4().hex
                 entry.config_revision = max(1, int(entry.config_revision or 1))
@@ -515,7 +521,48 @@ class LLMProviderRegistry:
                     return value
             except Exception as exc:  # pragma: no cover - backend-specific
                 logger.warning("versioned keychain read failed for %s: %s", provider_id, exc)
-        return self._keychain_load(provider_id)
+        value = self._keychain_load(provider_id)
+        if value:
+            return value
+
+        # Upgrade bridge: only look up the exact provider already present in
+        # this app's canonical config, then copy its secret into our new
+        # app-specific namespace. Never enumerate or delete the historical
+        # shared `deskpet` service, because another application may own it.
+        if entry is not None and _KEYRING_AVAILABLE and keyring is not None:
+            legacy_accounts = (
+                self._versioned_keychain_account(entry),
+                self._keychain_account(provider_id),
+            )
+            for account in legacy_accounts:
+                try:
+                    legacy_value = keyring.get_password(
+                        LEGACY_KEYCHAIN_SERVICE, account
+                    )
+                except Exception as exc:  # pragma: no cover - backend-specific
+                    logger.warning(
+                        "legacy keychain read failed for %s: %s",
+                        provider_id,
+                        exc,
+                    )
+                    break
+                if not legacy_value:
+                    continue
+                try:
+                    self._stage_versioned_secret(entry, legacy_value)
+                    self._refresh_legacy_secret_alias(provider_id, legacy_value)
+                    logger.info(
+                        "provider_secret_namespace_migrated provider_id=%s",
+                        provider_id,
+                    )
+                except Exception as exc:  # pragma: no cover - backend-specific
+                    logger.warning(
+                        "provider secret namespace migration failed for %s: %s",
+                        provider_id,
+                        exc,
+                    )
+                return legacy_value
+        return None
 
     @staticmethod
     def _assert_expected(

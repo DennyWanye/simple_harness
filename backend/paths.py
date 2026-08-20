@@ -45,7 +45,10 @@ import platformdirs
 # an AppAuthor\AppName folder stack on Windows" — we own the top-level
 # name "deskpet" directly, giving clean paths like `AppData\Roaming\deskpet\`
 # instead of `AppData\Roaming\deskpet\deskpet\`.
-_APP_NAME = "deskpet"
+# Match the Tauri bundle identifier.  The historical generic name `deskpet`
+# is shared by other DeskPet-family builds on macOS/Windows and can contain a
+# different app's config.toml/Provider registry.
+_APP_NAME = "com.dennywanye.simpleharness"
 _APP_AUTHOR: str | bool = False
 logger = logging.getLogger(__name__)
 _UNSET = object()

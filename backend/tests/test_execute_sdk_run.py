@@ -8,7 +8,7 @@ from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
 @pytest.mark.asyncio
 async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run():
-    from main import _assemble_sdk_messages
+    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT, _assemble_sdk_messages
 
     class FakeSessionDB:
         async def get_recent_messages(self, session_id, limit):
@@ -27,6 +27,7 @@ async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run()
         root_run_id="run-current",
         text="当前消息",
     ) == [
+        {"role": "system", "content": _SDK_PUBLIC_WORK_NARRATION_PROMPT},
         {"role": "user", "content": "之前的问题"},
         {"role": "assistant", "content": "之前的回答"},
         {"role": "user", "content": "当前消息"},
@@ -35,7 +36,7 @@ async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run()
 
 @pytest.mark.asyncio
 async def test_sdk_message_assembly_excludes_non_conversation_projections_and_canaries():
-    from main import _assemble_sdk_messages
+    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT, _assemble_sdk_messages
 
     public_summary_canary = "PUBLIC_REASONING_SUMMARY_CANARY"
     hidden_reasoning_canary = "HIDDEN_REASONING_CANARY"
@@ -92,6 +93,7 @@ async def test_sdk_message_assembly_excludes_non_conversation_projections_and_ca
     )
 
     assert messages == [
+        {"role": "system", "content": _SDK_PUBLIC_WORK_NARRATION_PROMPT},
         {"role": "user", "content": "保留的用户消息"},
         {"role": "assistant", "content": "保留的助手回复"},
         {"role": "user", "content": "当前用户消息"},
@@ -100,6 +102,9 @@ async def test_sdk_message_assembly_excludes_non_conversation_projections_and_ca
     assert public_summary_canary not in serialized
     assert hidden_reasoning_canary not in serialized
     assert ui_elapsed_canary not in serialized
+    assert "assistant.content" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    assert "不要输出私有思维链" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    assert "避免重复固定模板" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
 
 
 def test_sdk_capability_snapshot_exposes_product_catalog():

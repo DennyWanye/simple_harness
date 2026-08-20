@@ -1,6 +1,26 @@
 # DeskPet — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-20
+> **最后更新**：2026-08-21
+
+## 2026-08-21 macOS Provider 持久化与 App 数据隔离修复
+
+- **根因**：Tauri identifier 虽为 `com.dennywanye.simpleharness`，Rust/Python classic fallback 与
+  Keychain service 仍使用共享名 `deskpet`；Rust 还会把 Cargo `target/debug` 和 macOS bundle 旁的
+  可写目录误判为 portable userdata。构建目录清理后 registry 变空，启动期 orphan recovery 又从
+  `~/Library/Application Support/deskpet/config.toml` 复制 chinzy，形成“每次重构都恢复中转站”。
+- **修复**：classic data/models 与 Keychain namespace 全部改为 App 专属 identifier；portable 必须
+  有 `.deskpet-portable` sentinel；普通启动停止环境式 endpoint 恢复。旧 Keychain 只对 canonical
+  config 已列出的精确 provider id 做一次性复制，不枚举、不删除共享 service。设置页路径与卸载/
+  model override 文案同步显示新的事实源。
+- **迁移**：当前含 `deepseeker-myself` 的有效 profile 已从不稳定 build userdata 非破坏性复制到
+  `~/Library/Application Support/com.dennywanye.simpleharness/`；旧 `deskpet`、旧 bundle userdata
+  和旧 Keychain 项均保留，未做破坏性删除。
+- **验证**：Rust paths `15 passed`；Python paths/config/provider registry `80 passed`；TypeScript
+  typecheck、debug `.app`/DMG build、diff check PASS。Computer Use 检查新 bundle 与完整冷重启后的
+  设置页：只存在 `deepseeker官方`，默认 `deepseek-v4-pro`，API Key 已保存，当前/默认数据目录完全
+  一致；两次真实模型目录探测均 HTTP 200。截图 SHA-256
+  `cce0744340dbd863516f9616f7804d071fddbabb0e156a9f08d3445a438780d0`，原件仅存 ignored
+  `.local-test-evidence/2026-08-21/provider-persistence-macos/`。
 
 ## 2026-08-20 SDK 公开思考过程、工具水合与记忆工具真机闭环
 

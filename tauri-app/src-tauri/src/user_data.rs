@@ -183,7 +183,7 @@ pub struct DataDirSetting {
     /// What `paths::user_data_dir()` would return right now, taking
     /// `DESKPET_USER_DATA` into account.
     pub effective: String,
-    /// `%AppData%\deskpet` — used when the env var is unset.
+    /// App-specific platform data dir — used when the env var is unset.
     pub default: Option<String>,
     /// Value of `DESKPET_USER_DATA` as read from the env at startup.
     /// `None` if unset/empty.
@@ -214,7 +214,11 @@ pub fn get_data_dir_setting() -> Result<DataDirSetting, String> {
     let preference = paths::user_data_preference();
     let default = paths::BaseDirs::from_env()
         .app_data
-        .map(|p| p.join("deskpet").to_string_lossy().to_string());
+        .map(|p| {
+            p.join(paths::APP_DATA_DIR_NAME)
+                .to_string_lossy()
+                .to_string()
+        });
     let effective_path = paths::user_data_dir()
         .ok_or_else(|| "无法确定用户数据目录".to_string())?;
     let effective_exists = effective_path.is_dir();

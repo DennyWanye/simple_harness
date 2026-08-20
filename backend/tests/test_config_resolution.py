@@ -70,6 +70,24 @@ def test_resolve_config_path_prefers_user_data(isolated_dirs, monkeypatch):
     assert config_module.resolve_config_path() == user_cfg
 
 
+def test_resolve_config_path_does_not_ambiently_recover_foreign_provider(
+    isolated_dirs, monkeypatch
+):
+    """Normal startup must never import a Provider from a generic legacy dir."""
+    _tmp, user_data = isolated_dirs
+    user_data.mkdir(parents=True, exist_ok=True)
+    user_cfg = user_data / "config.toml"
+    user_cfg.write_text("[memory]\ndb_path = \"\"\n", encoding="utf-8")
+
+    def fail_if_called(_path):
+        raise AssertionError("ambient endpoint recovery must not run")
+
+    monkeypatch.setattr(config_module, "_recover_orphaned_endpoints", fail_if_called)
+
+    assert config_module.resolve_config_path() == user_cfg
+    assert "llm.endpoints" not in user_cfg.read_text(encoding="utf-8")
+
+
 # ---- seed_user_config_if_missing ------------------------------------
 
 def test_seed_copies_bundle_when_user_missing(isolated_dirs, monkeypatch, tmp_path):

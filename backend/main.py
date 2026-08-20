@@ -9382,6 +9382,18 @@ _GLOBAL_BLOCKING_UI_EVENTS = frozenset({
 
 
 
+_SDK_PUBLIC_WORK_NARRATION_PROMPT = """\
+你在执行需要调用工具的任务时，必须在每一轮 tool_calls 的 assistant.content 中先写一段面向用户的公开工作叙述。
+要求：
+1. 使用 1-2 句简洁、自然且与当前步骤相关的文字，说明你现在要做什么，以及必要时说明它与上一结果的关系。
+2. 文字必须由你根据当前任务和已看到的公开工具结果自行撰写，避免重复固定模板。
+3. 不要输出私有思维链、逐步内心分析、隐藏 reasoning、密钥、完整工具参数或原始工具结果。
+4. 每个真实工具的参数 schema 都包含必填的 `deskpet_public_progress`；调用工具时必须在这个参数中写上述叙述。
+5. 如果 Provider 支持在 assistant.content 中同时返回公开文字，也可以写入相同叙述；不要只返回空 content。
+这段公开叙述会展示在“思考过程”区域，但不会作为后续模型上下文保存。\
+"""
+
+
 async def _assemble_sdk_messages(
     session_db: Any,
     *,
@@ -9428,7 +9440,11 @@ async def _assemble_sdk_messages(
                 session_id=session_id,
                 error=str(exc),
             )
-    return history_messages + [{"role": "user", "content": text}]
+    return [
+        {"role": "system", "content": _SDK_PUBLIC_WORK_NARRATION_PROMPT},
+        *history_messages,
+        {"role": "user", "content": text},
+    ]
 
 
 def _sdk_capability_snapshot() -> dict[str, list[str]]:

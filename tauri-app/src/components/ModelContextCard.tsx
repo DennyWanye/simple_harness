@@ -402,7 +402,7 @@ export function ModelContextCard({ getChannel }: Props) {
               lineHeight: 1.5,
             }}
           >
-            写回 %APPDATA%/deskpet/model_overrides.toml。切模型零配置编辑——
+            写回当前 Simple Harness 用户数据目录下的 model_overrides.toml。切模型零配置编辑——
             ContextManager 阈值随窗口自动伸缩（v2）。
           </div>
         </>

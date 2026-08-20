@@ -112,7 +112,7 @@ def test_user_data_dir_default_is_absolute(clean_env):
     """Without an override, platformdirs returns an absolute OS-standard path."""
     p = paths.user_data_dir()
     assert p.is_absolute()
-    assert p.name == "deskpet"
+    assert p.name == "com.dennywanye.simpleharness"
 
 
 def test_user_data_dir_dev_mode_uses_repo_userdata(clean_env):
@@ -141,7 +141,7 @@ def test_user_data_dir_dev_mode_ignored_when_frozen(clean_env):
     clean_env.setattr(sys, "frozen", True, raising=False)
     clean_env.setattr(paths, "_portable_userdata_dir", lambda: None)
     p = paths.user_data_dir()
-    assert p.name == "deskpet"  # platformdirs classic, not backend/userdata
+    assert p.name == "com.dennywanye.simpleharness"  # classic, not backend/userdata
 
 
 def test_user_cache_dir_env_override(clean_env, tmp_path):

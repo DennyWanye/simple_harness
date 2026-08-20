@@ -23,6 +23,7 @@ from simple_harness.providers import (
     ProviderServerError,
     ProviderTimeoutError,
     ProviderReconciliationState,
+    ProviderToolSpec,
 )
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1
@@ -131,7 +132,7 @@ def test_provider_round_trips_assistant_tool_calls_for_follow_up() -> None:
                             {
                                 "message": {
                                     "role": "assistant",
-                                    "content": None,
+                                    "content": "I will write the requested file.",
                                     "tool_calls": [
                                         {
                                             "id": "call-1",
@@ -282,6 +283,429 @@ def test_provider_captures_only_public_tool_turn_narration() -> None:
             )
         finally:
             _delivery_adapters.pop("run-public-narration", None)
+            await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_extracts_model_authored_virtual_public_progress() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    async def case() -> None:
+        payloads: list[dict] = []
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            payloads.append(payload)
+            assert payload["thinking"] == {"type": "enabled"}
+            assert payload["reasoning_effort"] == "high"
+            assert [item["function"]["name"] for item in payload["tools"]] == [
+                "file_read",
+            ]
+            schema = payload["tools"][0]["function"]["parameters"]
+            assert "deskpet_public_progress" in schema["required"]
+            if len(payloads) == 2:
+                assistant = payload["messages"][1]
+                assert assistant["reasoning_content"] == (
+                    "PRIVATE-COT-MUST-NOT-APPEAR"
+                )
+                assert [
+                    item["function"]["name"] for item in assistant["tool_calls"]
+                ] == ["file_read"]
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": "provider-request-model-progress-final",
+                        "model": "model-a",
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "检查完成。",
+                                },
+                                "finish_reason": "stop",
+                            }
+                        ],
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-model-progress",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "reasoning_content": "PRIVATE-COT-MUST-NOT-APPEAR",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-read",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_read",
+                                            "arguments": json.dumps(
+                                                {
+                                                    "path": "tests/test_config.py",
+                                                    "deskpet_public_progress": (
+                                                        "指定路径刚才未命中，我先定位实际文件，"
+                                                        "再读取目标内容。"
+                                                    ),
+                                                },
+                                                ensure_ascii=False,
+                                            ),
+                                        },
+                                    },
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+            )
+
+        delivery = type(
+            "Delivery",
+            (),
+            {"capture_public_narration": AsyncMock()},
+        )()
+        _delivery_adapters["run-model-progress"] = delivery
+        registry = Registry("secret")
+        registry.entry.base_url = "https://api.deepseek.com"
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            registry,
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        try:
+            response = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-model-progress:provider-turn:2"),
+                    (Message(MessageRole.USER, "read"),),
+                    tools=(
+                        ProviderToolSpec(
+                            "file_read",
+                            "Read a file.",
+                            {"type": "object"},
+                        ),
+                    ),
+                ),
+                cancel=CancelToken(),
+            )
+            expected = "指定路径刚才未命中，我先定位实际文件，再读取目标内容。"
+            assert response.message.content == expected
+            assert [call.name for call in response.tool_calls] == ["file_read"]
+            assert "deskpet_public_progress" not in repr(response.tool_calls)
+            assert "PRIVATE-COT-MUST-NOT-APPEAR" not in response.message.content
+            delivery.capture_public_narration.assert_awaited_once_with(
+                expected,
+                iteration=1,
+                call_ids=("call-read",),
+            )
+            final = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-model-progress:provider-turn:3"),
+                    (
+                        Message(MessageRole.USER, "read"),
+                        response.message,
+                        Message(
+                            MessageRole.TOOL,
+                            '{"ok":true}',
+                            name="file_read",
+                            call_id=CallId("call-read"),
+                        ),
+                    ),
+                    tools=(
+                        ProviderToolSpec(
+                            "file_read",
+                            "Read a file.",
+                            {"type": "object"},
+                        ),
+                    ),
+                ),
+                cancel=CancelToken(),
+            )
+            assert final.message.content == "检查完成。"
+            assert delivery.capture_public_narration.await_count == 1
+        finally:
+            _delivery_adapters.pop("run-model-progress", None)
+            await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_uses_model_summary_when_tool_content_and_progress_are_empty() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    async def case() -> None:
+        payloads: list[dict] = []
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            payloads.append(payload)
+            if len(payloads) == 1:
+                schema = payload["tools"][0]["function"]["parameters"]
+                assert "deskpet_public_progress" in schema["required"]
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": "provider-main-empty-public",
+                        "model": "model-a",
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "reasoning_content": "PRIVATE-REAL-REASONING",
+                                    "tool_calls": [
+                                        {
+                                            "id": "call-read-summary",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "file_read",
+                                                "arguments": '{"path":"tests/test_config.py"}',
+                                            },
+                                        }
+                                    ],
+                                },
+                                "finish_reason": "tool_calls",
+                            }
+                        ],
+                    },
+                )
+            if len(payloads) == 2:
+                assert "tools" not in payload
+                assert payload["max_tokens"] == 180
+                material = json.loads(payload["messages"][1]["content"])
+                assert material == {
+                    "current_user_task": "read",
+                    "private_reasoning": "PRIVATE-REAL-REASONING",
+                    "selected_tools": ["file_read"],
+                }
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": "provider-public-summary",
+                        "model": "model-a",
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": (
+                                        "刚才的相对路径没有命中，我正在确认实际文件位置，"
+                                        "随后会读取目标内容。"
+                                    ),
+                                },
+                                "finish_reason": "stop",
+                            }
+                        ],
+                    },
+                )
+            assistant = payload["messages"][1]
+            assert assistant["reasoning_content"] == "PRIVATE-REAL-REASONING"
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-main-final",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "完成。",
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
+            )
+
+        delivery = type(
+            "Delivery",
+            (),
+            {"capture_public_narration": AsyncMock()},
+        )()
+        _delivery_adapters["run-model-summary"] = delivery
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        tool = ProviderToolSpec(
+            "file_read",
+            "Read a file.",
+            {"type": "object", "properties": {}},
+        )
+        try:
+            first = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-model-summary:provider-turn:1"),
+                    (Message(MessageRole.USER, "read"),),
+                    tools=(tool,),
+                ),
+                cancel=CancelToken(),
+            )
+            expected = (
+                "刚才的相对路径没有命中，我正在确认实际文件位置，"
+                "随后会读取目标内容。"
+            )
+            assert first.message.content == expected
+            assert "PRIVATE-REAL-REASONING" not in first.message.content
+            delivery.capture_public_narration.assert_awaited_once_with(
+                expected,
+                iteration=0,
+                call_ids=("call-read-summary",),
+            )
+            final = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-model-summary:provider-turn:2"),
+                    (
+                        Message(MessageRole.USER, "read"),
+                        first.message,
+                        Message(
+                            MessageRole.TOOL,
+                            '{"ok":true}',
+                            name="file_read",
+                            call_id=CallId("call-read-summary"),
+                        ),
+                    ),
+                    tools=(tool,),
+                ),
+                cancel=CancelToken(),
+            )
+            assert final.message.content == "完成。"
+            assert len(payloads) == 3
+        finally:
+            _delivery_adapters.pop("run-model-summary", None)
+            await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_uses_model_summary_without_private_reasoning() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    async def case() -> None:
+        payloads: list[dict] = []
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content)
+            payloads.append(payload)
+            if len(payloads) == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": "provider-main-no-reasoning",
+                        "model": "model-a",
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": "call-runtime-refresh",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "file_read",
+                                                "arguments": (
+                                                    '{"path":"tests/'
+                                                    'test_provider_runtime_refresh.py"}'
+                                                ),
+                                            },
+                                        }
+                                    ],
+                                },
+                                "finish_reason": "tool_calls",
+                            }
+                        ],
+                    },
+                )
+            assert "tools" not in payload
+            material = json.loads(payload["messages"][1]["content"])
+            assert material == {
+                "current_user_task": (
+                    "读取 tests/test_provider_runtime_refresh.py 前 6 行。"
+                ),
+                "selected_tools": ["file_read"],
+            }
+            assert "test_provider_runtime_refresh.py" not in json.dumps(
+                payloads[0]["tools"], ensure_ascii=False
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-public-summary-no-reasoning",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": (
+                                    "我正在读取 provider runtime refresh 的测试文件，"
+                                    "以核对它覆盖的运行时刷新行为。"
+                                ),
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
+            )
+
+        delivery = type(
+            "Delivery",
+            (),
+            {"capture_public_narration": AsyncMock()},
+        )()
+        _delivery_adapters["run-summary-no-reasoning"] = delivery
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        try:
+            response = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-summary-no-reasoning:provider-turn:1"),
+                    (
+                        Message(
+                            MessageRole.USER,
+                            "读取 tests/test_provider_runtime_refresh.py 前 6 行。",
+                        ),
+                    ),
+                    tools=(
+                        ProviderToolSpec(
+                            "file_read",
+                            "Read a file.",
+                            {"type": "object", "properties": {}},
+                        ),
+                    ),
+                ),
+                cancel=CancelToken(),
+            )
+            expected = (
+                "我正在读取 provider runtime refresh 的测试文件，"
+                "以核对它覆盖的运行时刷新行为。"
+            )
+            assert response.message.content == expected
+            assert response.tool_calls[0].arguments == {
+                "path": "tests/test_provider_runtime_refresh.py"
+            }
+            delivery.capture_public_narration.assert_awaited_once_with(
+                expected,
+                iteration=0,
+                call_ids=("call-runtime-refresh",),
+            )
+            assert len(payloads) == 2
+        finally:
+            _delivery_adapters.pop("run-summary-no-reasoning", None)
             await client.aclose()
 
     asyncio.run(case())

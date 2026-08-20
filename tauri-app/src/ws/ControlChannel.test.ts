@@ -48,6 +48,19 @@ describe("ControlChannel connection-scoped message cache", () => {
     FakeWebSocket.instances = [];
   });
 
+  it("does not open or retry an identity socket before the secret exists", () => {
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    const channel = new ControlChannel(8100, "");
+    const states: string[] = [];
+    channel.onStateChange((state) => states.push(state));
+
+    channel.connect();
+
+    expect(FakeWebSocket.instances).toHaveLength(0);
+    expect(channel.state).toBe("disconnected");
+    expect(states).toEqual(["disconnected"]);
+  });
+
   it("retains an early identity challenge until the React bridge subscribes", () => {
     vi.stubGlobal("WebSocket", FakeWebSocket);
     const channel = new ControlChannel(8100, "secret");

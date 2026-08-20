@@ -4,16 +4,16 @@
 //! P3-S8 — Rust-side mirror of `backend/paths.py`.
 //!
 //! Both the Tauri supervisor and the Python backend need to agree on
-//! *where* user data lives (`%AppData%\deskpet\`) so the UI can open
+//! *where* user data lives (`%AppData%\com.dennywanye.simpleharness\`) so the UI can open
 //! log / data directories without round-tripping through the backend.
 //! We intentionally re-derive the paths here instead of asking the
 //! backend: the "open log dir" button must work **even when the backend
 //! refuses to start** (that's precisely when the user most needs it).
 //!
 //! Priority (per env var):
-//!   user_data_dir  → explicit env || stable preference || portable || `%AppData%\deskpet`
+//!   user_data_dir  → explicit env || stable preference || portable || `%AppData%\com.dennywanye.simpleharness`
 //!   user_log_dir   → `$DESKPET_USER_LOG`  || `<user_data>\logs`
-//!   user_models_dir → `$DESKPET_MODEL_ROOT` || `%LocalAppData%\deskpet\models`
+//!   user_models_dir → `$DESKPET_MODEL_ROOT` || `%LocalAppData%\com.dennywanye.simpleharness\models`
 //!
 //! The `resolve_*_with` variants accept an env-lookup closure and a
 //! pair of base-dir overrides (AppData / LocalAppData) so tests can
@@ -26,6 +26,8 @@ pub type EnvLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
 const USER_DATA_PREFERENCE_ENV: &str = "DESKPET_USER_DATA_PREFERENCE_FILE";
 const USER_DATA_PREFERENCE_DIR: &str = "simple-harness-bootstrap";
 const USER_DATA_PREFERENCE_FILE: &str = "user-data-dir";
+pub(crate) const APP_DATA_DIR_NAME: &str = "com.dennywanye.simpleharness";
+const PORTABLE_SENTINEL_FILE: &str = ".deskpet-portable";
 
 #[derive(Debug, Clone)]
 pub struct BaseDirs {
@@ -39,7 +41,9 @@ impl BaseDirs {
     /// 平台对齐 Python 侧 `backend/paths.py`（platformdirs, roaming=True）：
     /// Windows `%AppData%` / macOS `~/Library/Application Support` /
     /// Linux `$XDG_DATA_HOME`（缺省 `~/.local/share`）。调用方统一再
-    /// join("deskpet")，保证 Rust 与 Python 落同一个用户数据目录
+    /// join(APP_DATA_DIR_NAME)，保证 Rust 与 Python 落同一个、App 专属的
+    /// 用户数据目录。不能复用历史通用名 `deskpet`，否则同机其他 DeskPet
+    /// 应用的 Provider/config.toml 会被本 App 误读。
     /// （否则 onboarding 标记 / device_id 与 config/db 分家 — mac 上
     /// 曾因只读 APPDATA 直接返回 None，onboarding 向导永远弹出）。
     #[cfg(all(not(test), windows))]
@@ -89,8 +93,10 @@ fn resolve_with(
 
 /// Portable-mode userdata dir: when running from a frozen install, data
 /// lives in `<install>/userdata/` next to the exe (mirrors Python
-/// `backend/paths.py::_portable_userdata_dir`). Returns None in dev mode
-/// (current_exe isn't in the install layout) or when userdata/ is not writable.
+/// `backend/paths.py::_portable_userdata_dir`). Portable mode is explicit:
+/// the shipped `.deskpet-portable` sentinel must already exist. Merely running
+/// an executable from Cargo's `target/debug` or a macOS `.app` bundle must not
+/// create an adjacent userdata directory, because build artifacts are unstable.
 ///
 /// Layout: `<install>/deskpet.exe` + `<install>/userdata/`; the backend
 /// exe sits at `<install>/backend/deskpet-backend.exe`, so we also check
@@ -107,12 +113,13 @@ fn portable_userdata_dir_from_exe(exe: &Path) -> Option<PathBuf> {
         parent.to_path_buf()
     };
     let ud = root.join("userdata");
-    if std::fs::create_dir_all(&ud).is_ok() {
-        let probe = ud.join(".deskpet-write-probe");
-        if std::fs::write(&probe, b"").is_ok() {
-            let _ = std::fs::remove_file(&probe);
-            return Some(ud);
-        }
+    if !ud.join(PORTABLE_SENTINEL_FILE).is_file() {
+        return None;
+    }
+    let probe = ud.join(".deskpet-write-probe");
+    if std::fs::write(&probe, b"").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        return Some(ud);
     }
     None
 }
@@ -193,8 +200,10 @@ fn user_data_dir_with_candidates(
     if let Some(p) = portable {
         return Some(p);
     }
-    // 5. classic: %AppData%\deskpet。
-    base.app_data.as_ref().map(|p| p.join("deskpet"))
+    // 5. classic: App-specific directory matching the Tauri bundle identifier.
+    // Never fall back to the historical generic `deskpet` directory: another
+    // DeskPet-family app may own it and its Provider registry is not ours.
+    base.app_data.as_ref().map(|p| p.join(APP_DATA_DIR_NAME))
 }
 
 pub fn user_data_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Option<PathBuf> {
@@ -216,7 +225,9 @@ pub fn user_models_dir_with(base: &BaseDirs, env_lookup: EnvLookup<'_>) -> Optio
     if let Some(p) = portable_userdata_dir() {
         return Some(p.join("models"));
     }
-    base.local_app_data.as_ref().map(|p| p.join("deskpet").join("models"))
+    base.local_app_data
+        .as_ref()
+        .map(|p| p.join(APP_DATA_DIR_NAME).join("models"))
 }
 
 // ---- Public convenience wrappers reading real env ----
@@ -294,10 +305,15 @@ mod tests {
     }
 
     #[test]
-    fn user_data_dir_defaults_to_appdata_deskpet() {
+    fn user_data_dir_defaults_to_bundle_specific_appdata() {
         let env = env_empty();
         let out = user_data_dir_with(&base_win(), &env).unwrap();
-        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+        assert_eq!(
+            out,
+            PathBuf::from(
+                "C:/Users/U/AppData/Roaming/com.dennywanye.simpleharness"
+            )
+        );
     }
 
     #[test]
@@ -332,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn portable_userdata_dir_creates_install_userdata_for_backend_exe() {
+    fn portable_userdata_dir_requires_shipped_sentinel() {
         let root = std::env::temp_dir().join(format!(
             "deskpet-portable-test-{}",
             std::process::id()
@@ -340,6 +356,12 @@ mod tests {
         let backend_dir = root.join("backend");
         std::fs::create_dir_all(&backend_dir).unwrap();
         let exe = backend_dir.join("deskpet-backend.exe");
+
+        assert!(portable_userdata_dir_from_exe(&exe).is_none());
+
+        let userdata = root.join("userdata");
+        std::fs::create_dir_all(&userdata).unwrap();
+        std::fs::write(userdata.join(PORTABLE_SENTINEL_FILE), b"").unwrap();
 
         let out = portable_userdata_dir_from_exe(&exe).unwrap();
 
@@ -361,7 +383,12 @@ mod tests {
     fn user_data_dir_empty_env_treated_as_unset() {
         let env = env_map(&[("DESKPET_USER_DATA", "")]);
         let out = user_data_dir_with(&base_win(), &env).unwrap();
-        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet"));
+        assert_eq!(
+            out,
+            PathBuf::from(
+                "C:/Users/U/AppData/Roaming/com.dennywanye.simpleharness"
+            )
+        );
     }
 
     #[test]
@@ -405,7 +432,12 @@ mod tests {
     fn user_log_dir_nests_under_user_data() {
         let env = env_empty();
         let out = user_log_dir_with(&base_win(), &env).unwrap();
-        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Roaming/deskpet/logs"));
+        assert_eq!(
+            out,
+            PathBuf::from(
+                "C:/Users/U/AppData/Roaming/com.dennywanye.simpleharness/logs"
+            )
+        );
     }
 
     #[test]
@@ -419,7 +451,12 @@ mod tests {
     fn user_models_dir_defaults_to_local_app_data() {
         let env = env_empty();
         let out = user_models_dir_with(&base_win(), &env).unwrap();
-        assert_eq!(out, PathBuf::from("C:/Users/U/AppData/Local/deskpet/models"));
+        assert_eq!(
+            out,
+            PathBuf::from(
+                "C:/Users/U/AppData/Local/com.dennywanye.simpleharness/models"
+            )
+        );
     }
 
     #[test]

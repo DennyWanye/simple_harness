@@ -1256,10 +1256,13 @@ def seed_user_config_if_missing() -> Path | None:
 
 
 def _recover_orphaned_endpoints(canonical_path: Path) -> bool:
-    """Recover enabled provider endpoints from historical userdata locations.
+    """Explicit repair helper for historical userdata locations.
 
-    This is a startup self-heal for installs affected by earlier userdata path
-    drift. It never raises: a recovery failure must not block backend startup.
+    This helper is intentionally *not* part of normal startup. Historical
+    generic `deskpet` directories may belong to another DeskPet-family app;
+    silently copying their Provider registry caused chinzy to reappear after a
+    rebuild. It remains available for an explicit migration/repair flow and
+    never raises.
     """
     try:
         import copy
@@ -1441,10 +1444,6 @@ def resolve_config_path() -> Path:
     # Try (or create) the user-data copy.
     seeded = seed_user_config_if_missing()
     if seeded is not None and seeded.is_file():
-        try:
-            _recover_orphaned_endpoints(seeded)
-        except Exception as e:  # noqa: BLE001 - self-heal must not block startup
-            logger.warning("endpoints_recover_unexpected: %s", e)
         return seeded
 
     # Fall through: bundle default.

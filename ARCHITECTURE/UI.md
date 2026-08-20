@@ -1,6 +1,26 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-20（SDK 公开思考过程、工具状态水合与 Computer Use 闭环）
+> 最后更新：2026-08-21（macOS App 专属数据目录与 Provider 持久化闭环）
+
+## 0.4 macOS App 数据与 Provider 命名空间隔离
+
+- Simple Harness 的 classic 用户数据目录与 Tauri bundle identifier 对齐为
+  `com.dennywanye.simpleharness`；macOS 配置文件固定在
+  `~/Library/Application Support/com.dennywanye.simpleharness/config.toml`。Rust supervisor
+  把同一路径通过 `DESKPET_USER_DATA_DIR` 钉给 Python backend，设置页“当前生效/默认路径”显示
+  同一事实。历史通用 `~/Library/Application Support/deskpet` 不再作为本 App 默认目录。
+- Rust portable 判定要求安装目录已存在 `.deskpet-portable` sentinel。Cargo `target/debug` 和 macOS
+  `.app/Contents/MacOS` 不会因为可写就自动创建邻接 `userdata`，因此重构/清理构建产物不再清空
+  Provider 或分裂 SessionDB。
+- 正常启动不再从通用 `deskpet/config.toml` 静默恢复 endpoint；空 registry 保持为空并要求用户明确
+  配置。Provider API key 的新 Keychain service 为 `com.dennywanye.simpleharness`。升级时只按当前
+  canonical config 中的精确 provider id 从旧 `deskpet` service 读取一次并复制到新 namespace，
+  不枚举、不删除旧凭据，不影响其他应用。
+- 2026-08-21 已把当前有效 DeepSeek profile 非破坏性复制到 App 专属目录。两次新 debug bundle
+  启动及一次完整冷重启均只加载 `deepseeker-myself`；设置页只显示 `deepseeker官方`，默认模型
+  `deepseek-v4-pro`，API key 为已保存状态，真实 `GET https://api.deepseek.com/models` 返回 200；
+  chinzy 未复活。原始证据位于 ignored
+  `.local-test-evidence/2026-08-21/provider-persistence-macos/`。
 
 ## 0.3 SDK 公开思考过程
 
