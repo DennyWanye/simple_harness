@@ -26,9 +26,11 @@ from simple_harness.providers import (
     ProviderProtocolError,
     ProviderRateLimitError,
     ProviderRequest,
+    ProviderResponse,
     ProviderServerError,
     ProviderTimeoutError,
     ProviderReconciliationState,
+    ProviderToolCall,
     ProviderToolSpec,
 )
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
@@ -112,6 +114,35 @@ async def test_product_coordinator_preserves_non_cancel_unknown(monkeypatch) -> 
             execution_lease=SimpleNamespace(),
         )
     assert raised.value is unknown
+
+
+@pytest.mark.asyncio
+async def test_tool_turn_without_public_content_does_not_make_second_provider_call() -> None:
+    client = httpx.AsyncClient()
+    adapter = ProductProviderAdapter(
+        Registry("secret"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda provider, model: (1, 1, "price-v1"),
+    )
+    response = ProviderResponse(
+        RequestId("run-one:provider-turn:1"),
+        Message(MessageRole.ASSISTANT, ""),
+        tool_calls=(
+            ProviderToolCall(CallId("call-one"), "memory_search", {"query": "x"}),
+        ),
+    )
+    adapter._delegate.invoke = AsyncMock(return_value=response)  # noqa: SLF001
+    try:
+        actual = await adapter.invoke(
+            ProviderRequest(RequestId("run-one:provider-turn:1"), (Message(MessageRole.USER, "x"),)),
+            cancel=CancelToken(),
+        )
+    finally:
+        await client.aclose()
+
+    assert adapter._delegate.invoke.await_count == 1  # noqa: SLF001
+    assert actual.message.content == ""
 
 
 @dataclass
@@ -443,12 +474,15 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
         _delivery_adapters["run-model-progress"] = delivery
         registry = Registry("secret")
         registry.entry.base_url = "https://api.deepseek.com"
+        registry.entry.model = "deepseek-v4-pro"
+        registry.entry.models = ("deepseek-v4-pro",)
         client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
         adapter = ProductProviderAdapter(
             registry,
             provider_id="relay",
             client=client,
             price_resolver=lambda provider, model: (1, 1, "price-v1"),
+            model_params={"reasoning_mode": "thinking"},
         )
         try:
             response = await adapter.invoke(
@@ -507,7 +541,7 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
     asyncio.run(case())
 
 
-def test_provider_uses_model_summary_when_tool_content_and_progress_are_empty() -> None:
+def test_provider_does_not_invent_summary_when_tool_content_and_progress_are_empty() -> None:
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
     async def case() -> None:
@@ -542,34 +576,6 @@ def test_provider_uses_model_summary_when_tool_content_and_progress_are_empty() 
                                     ],
                                 },
                                 "finish_reason": "tool_calls",
-                            }
-                        ],
-                    },
-                )
-            if len(payloads) == 2:
-                assert "tools" not in payload
-                assert payload["max_tokens"] == 180
-                material = json.loads(payload["messages"][1]["content"])
-                assert material == {
-                    "current_user_task": "read",
-                    "private_reasoning": "PRIVATE-REAL-REASONING",
-                    "selected_tools": ["file_read"],
-                }
-                return httpx.Response(
-                    200,
-                    json={
-                        "id": "provider-public-summary",
-                        "model": "model-a",
-                        "choices": [
-                            {
-                                "message": {
-                                    "role": "assistant",
-                                    "content": (
-                                        "刚才的相对路径没有命中，我正在确认实际文件位置，"
-                                        "随后会读取目标内容。"
-                                    ),
-                                },
-                                "finish_reason": "stop",
                             }
                         ],
                     },
@@ -620,14 +626,10 @@ def test_provider_uses_model_summary_when_tool_content_and_progress_are_empty() 
                 ),
                 cancel=CancelToken(),
             )
-            expected = (
-                "刚才的相对路径没有命中，我正在确认实际文件位置，"
-                "随后会读取目标内容。"
-            )
-            assert first.message.content == expected
+            assert first.message.content == ""
             assert "PRIVATE-REAL-REASONING" not in first.message.content
             delivery.capture_public_narration.assert_awaited_once_with(
-                expected,
+                "",
                 iteration=0,
                 call_ids=("call-read-summary",),
             )
@@ -649,7 +651,7 @@ def test_provider_uses_model_summary_when_tool_content_and_progress_are_empty() 
                 cancel=CancelToken(),
             )
             assert final.message.content == "完成。"
-            assert len(payloads) == 3
+            assert len(payloads) == 2
         finally:
             _delivery_adapters.pop("run-model-summary", None)
             await client.aclose()
@@ -657,7 +659,7 @@ def test_provider_uses_model_summary_when_tool_content_and_progress_are_empty() 
     asyncio.run(case())
 
 
-def test_provider_uses_model_summary_without_private_reasoning() -> None:
+def test_provider_does_not_make_summary_call_without_private_reasoning() -> None:
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
     async def case() -> None:
@@ -696,36 +698,7 @@ def test_provider_uses_model_summary_without_private_reasoning() -> None:
                         ],
                     },
                 )
-            assert "tools" not in payload
-            material = json.loads(payload["messages"][1]["content"])
-            assert material == {
-                "current_user_task": (
-                    "读取 tests/test_provider_runtime_refresh.py 前 6 行。"
-                ),
-                "selected_tools": ["file_read"],
-            }
-            assert "test_provider_runtime_refresh.py" not in json.dumps(
-                payloads[0]["tools"], ensure_ascii=False
-            )
-            return httpx.Response(
-                200,
-                json={
-                    "id": "provider-public-summary-no-reasoning",
-                    "model": "model-a",
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": (
-                                    "我正在读取 provider runtime refresh 的测试文件，"
-                                    "以核对它覆盖的运行时刷新行为。"
-                                ),
-                            },
-                            "finish_reason": "stop",
-                        }
-                    ],
-                },
-            )
+            raise AssertionError("unexpected second Provider request")
 
         delivery = type(
             "Delivery",
@@ -760,20 +733,16 @@ def test_provider_uses_model_summary_without_private_reasoning() -> None:
                 ),
                 cancel=CancelToken(),
             )
-            expected = (
-                "我正在读取 provider runtime refresh 的测试文件，"
-                "以核对它覆盖的运行时刷新行为。"
-            )
-            assert response.message.content == expected
+            assert response.message.content == ""
             assert response.tool_calls[0].arguments == {
                 "path": "tests/test_provider_runtime_refresh.py"
             }
             delivery.capture_public_narration.assert_awaited_once_with(
-                expected,
+                "",
                 iteration=0,
                 call_ids=("call-runtime-refresh",),
             )
-            assert len(payloads) == 2
+            assert len(payloads) == 1
         finally:
             _delivery_adapters.pop("run-summary-no-reasoning", None)
             await client.aclose()
