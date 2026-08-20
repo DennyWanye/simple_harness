@@ -368,10 +368,14 @@ def clear_registry():
     _delivery_adapters.clear()
     main._sdk_run_ids_by_root.clear()
     main._sdk_cancel_requested_run_ids.clear()
+    main._sdk_retained_presentations.clear()
+    main._sdk_recovery_watch_tasks.clear()
     yield
     _delivery_adapters.clear()
     main._sdk_run_ids_by_root.clear()
     main._sdk_cancel_requested_run_ids.clear()
+    main._sdk_retained_presentations.clear()
+    main._sdk_recovery_watch_tasks.clear()
 
 
 def _presentation_context(*, websocket, session_db, root_run_id):
@@ -468,6 +472,17 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
             assert kwargs["payload"]["messages"] == [
                 {"role": "user", "content": "read the project"}
             ]
+            expected_metadata = {
+                "session_id": session_id,
+                "root_run_id": "canonical-root-race",
+                "request_id": request_id,
+                "task_scope_id": "race-scope",
+                "conversation_boundary_ref": "race-boundary",
+            }
+            assert {
+                key: kwargs["payload"]["context_metadata"][key]
+                for key in expected_metadata
+            } == expected_metadata
             delivery = _delivery_adapters.get(sdk_run_id)
             saw_registered_adapter = delivery is not None
             assert delivery is not None
@@ -536,6 +551,255 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
     )
     assert sdk_run_id not in _delivery_adapters
     assert "canonical-root-race" not in main._sdk_run_ids_by_root
+
+
+@pytest.mark.asyncio
+async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch):
+    import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+
+    session_id = "waiting-session"
+    request_id = "waiting-request"
+    turn_id = 4
+    root_run_id = "waiting-root"
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(
+        session_id, request_id, str(turn_id)
+    ).value
+
+    class WaitingIngress:
+        async def start(self, **_kwargs):
+            return SimpleNamespace(run_id=sdk_run_id)
+
+        async def wait_idle(self, run_id):
+            assert run_id == sdk_run_id
+
+        def query(self, run_id):
+            assert run_id == sdk_run_id
+            return SimpleNamespace(state=SimpleNamespace(value="waiting"))
+
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    session_db = SimpleNamespace(append_message=AsyncMock())
+    context = _presentation_context(
+        websocket=websocket,
+        session_db=session_db,
+        root_run_id=root_run_id,
+    )
+    lifecycle = _BindingLifecycle()
+    monkeypatch.setattr(main, "_sdk_ingress", WaitingIngress())
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+
+    await main._execute_sdk_run(
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=turn_id,
+        task_scope_id="waiting-scope",
+        prepared_snapshot=_prepared_snapshot("wait for approval"),
+        run_binding=_run_binding(sdk_run_id),
+        context=context,
+        websocket=websocket,
+        root_run_id=root_run_id,
+    )
+
+    assert lifecycle.waiting == [sdk_run_id]
+    assert lifecycle.terminal == []
+    assert sdk_run_id in _delivery_adapters
+    assert main._sdk_run_ids_by_root[root_run_id] == sdk_run_id
+    assert main._sdk_retained_presentations[sdk_run_id][3] is context
+
+
+def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch):
+    import main
+
+    sdk_run_id = "sdk-recovered"
+    record = SimpleNamespace(run_id=sdk_run_id)
+    start = {
+        "input": {
+            "input": {"text": "continue after restart"},
+            "context_metadata": {
+                "session_id": "session-recovered",
+                "root_run_id": "root-recovered",
+                "request_id": "request-recovered",
+                "task_scope_id": "scope-recovered",
+                "conversation_boundary_ref": "boundary-recovered",
+                "run_binding": {
+                    "binding_epoch": 8,
+                    "provider_id": "deepseek",
+                    "model_id": "deepseek-chat",
+                },
+            },
+        }
+    }
+    monkeypatch.setattr(
+        main,
+        "service_context",
+        SimpleNamespace(get=lambda _name: None),
+    )
+    monkeypatch.setattr(
+        main,
+        "config",
+        SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
+    )
+
+    assert main._restore_sdk_delivery_route(
+        record, start, SimpleNamespace()
+    ) is True
+    delivery, _presenter, _state, context = (
+        main._sdk_retained_presentations[sdk_run_id]
+    )
+    assert delivery._session_id == "session-recovered"
+    assert context.run_id == "root-recovered"
+    assert context.request_id == "request-recovered"
+    assert context.task_scope_id == "scope-recovered"
+    assert context.conversation_boundary_ref == "boundary-recovered"
+    assert main._sdk_run_ids_by_root["root-recovered"] == sdk_run_id
+
+    missing_scope = {
+        "input": {
+            **start["input"],
+            "context_metadata": {
+                **start["input"]["context_metadata"],
+                "task_scope_id": "",
+            },
+        }
+    }
+    assert main._restore_sdk_delivery_route(
+        SimpleNamespace(run_id="sdk-invalid"),
+        missing_scope,
+        SimpleNamespace(),
+    ) is False
+
+
+@pytest.mark.asyncio
+async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypatch):
+    import main
+
+    sdk_run_id = "sdk-recovered-completed"
+    root_run_id = "root-recovered-completed"
+    presenter = SimpleNamespace(present=AsyncMock())
+    delivery = SimpleNamespace(finish=AsyncMock())
+    state = SimpleNamespace()
+    context = SimpleNamespace(run_id=root_run_id)
+    ingress = SimpleNamespace(
+        wait_idle=AsyncMock(),
+        query=Mock(
+            return_value=SimpleNamespace(
+                state=SimpleNamespace(value="completed")
+            )
+        ),
+    )
+    context_port = SimpleNamespace(
+        load=Mock(
+            return_value=SimpleNamespace(
+                messages=[
+                    SimpleNamespace(
+                        role=SimpleNamespace(value="assistant"),
+                        content="durable recovered answer",
+                    )
+                ]
+            )
+        )
+    )
+    lifecycle = _BindingLifecycle()
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(main, "_sdk_context_port", context_port)
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    main._sdk_retained_presentations[sdk_run_id] = (
+        delivery, presenter, state, context
+    )
+    main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
+    _delivery_adapters[sdk_run_id] = delivery
+
+    await main._watch_retained_sdk_run(sdk_run_id)
+
+    event = presenter.present.await_args.args[0]
+    assert event.content == "durable recovered answer"
+    delivery.finish.assert_awaited_once()
+    assert lifecycle.terminal == [(sdk_run_id, "completed")]
+    assert sdk_run_id not in main._sdk_retained_presentations
+    assert sdk_run_id not in _delivery_adapters
+    assert root_run_id not in main._sdk_run_ids_by_root
+
+
+@pytest.mark.asyncio
+async def test_recovered_route_projects_final_into_durable_session_history(monkeypatch):
+    import main
+
+    sdk_run_id = "sdk-recovered-durable"
+    root_run_id = "root-recovered-durable"
+    session_db = SimpleNamespace(append_message=AsyncMock(return_value=41))
+    monkeypatch.setattr(
+        main,
+        "service_context",
+        SimpleNamespace(get=lambda _name: None),
+    )
+    monkeypatch.setattr(
+        main,
+        "config",
+        SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
+    )
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    assert main._restore_sdk_delivery_route(
+        SimpleNamespace(run_id=sdk_run_id),
+        {
+            "input": {
+                "input": {"text": "resume me"},
+                "context_metadata": {
+                    "session_id": "session-recovered-durable",
+                    "root_run_id": root_run_id,
+                    "request_id": "request-recovered-durable",
+                    "task_scope_id": "scope-recovered-durable",
+                    "conversation_boundary_ref": "boundary-recovered-durable",
+                    "run_binding": {
+                        "binding_epoch": 2,
+                        "provider_id": "deepseek",
+                        "model_id": "deepseek-chat",
+                    },
+                },
+            }
+        },
+        session_db,
+    )
+    monkeypatch.setattr(
+        main,
+        "_sdk_ingress",
+        SimpleNamespace(
+            wait_idle=AsyncMock(),
+            query=Mock(
+                return_value=SimpleNamespace(
+                    state=SimpleNamespace(value="completed")
+                )
+            ),
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "_sdk_context_port",
+        SimpleNamespace(
+            load=Mock(
+                return_value=SimpleNamespace(
+                    messages=[
+                        SimpleNamespace(
+                            role=SimpleNamespace(value="assistant"),
+                            content="answer after restart",
+                        )
+                    ]
+                )
+            )
+        ),
+    )
+    lifecycle = _BindingLifecycle()
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+
+    await main._watch_retained_sdk_run(sdk_run_id)
+
+    persisted = session_db.append_message.await_args.kwargs
+    assert persisted["session_id"] == "session-recovered-durable"
+    assert persisted["role"] == "assistant"
+    assert persisted["content"] == "answer after restart"
+    assert persisted["root_run_id"] == root_run_id
+    assert persisted["task_scope_id"] == "scope-recovered-durable"
+    assert lifecycle.terminal == [(sdk_run_id, "completed")]
 
 
 @pytest.mark.asyncio

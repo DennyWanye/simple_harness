@@ -5203,6 +5203,14 @@ async def lifespan(app: FastAPI):
     # Close SDK Runtime ingress
     if _sdk_ingress is not None:
         _sdk_ingress.close()
+    _pending_sdk_recovery = tuple(_sdk_recovery_watch_tasks.values())
+    for _task in _pending_sdk_recovery:
+        _task.cancel()
+    if _pending_sdk_recovery:
+        await asyncio.gather(
+            *_pending_sdk_recovery, return_exceptions=True
+        )
+    _sdk_recovery_watch_tasks.clear()
     _pending_ingress = tuple(_companion_ingress_tasks)
     for _task in _pending_ingress:
         _task.cancel()
@@ -5263,6 +5271,19 @@ async def lifespan(app: FastAPI):
         finally:
             _sdk_runtime_stack = None
             _sdk_ingress = None
+            from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+            for _sdk_run_id, _retained in tuple(
+                _sdk_retained_presentations.items()
+            ):
+                _delivery_adapters.pop(_sdk_run_id, None)
+                _context = _retained[3]
+                _root_run_id = str(
+                    getattr(_context, "run_id", "") or ""
+                )
+                if _sdk_run_ids_by_root.get(_root_run_id) == _sdk_run_id:
+                    _sdk_run_ids_by_root.pop(_root_run_id, None)
+            _sdk_retained_presentations.clear()
             service_context.register("sdk_runtime_ready", None)
     _capability_platform = service_context.get("capability_platform")
     _capability_center = service_context.get("capability_center")
@@ -6727,8 +6748,122 @@ _sdk_provider_binding_resolver = None
 # active bridge explicit and bounded to the lifetime of _execute_sdk_run.
 _sdk_run_ids_by_root: dict[str, str] = {}
 _sdk_cancel_requested_run_ids: set[str] = set()
+_sdk_retained_presentations: dict[str, tuple[Any, Any, Any, Any]] = {}
+_sdk_recovery_watch_tasks: dict[str, asyncio.Task] = {}
 
 _sdk_desktop_bridge = None
+
+
+class _RecoveredSdkWebSocket:
+    """Detached transport that fans recovered events to current Session peers."""
+
+    async def send_json(self, frame: dict[str, Any]) -> None:
+        await _broadcast_default_chat_peers(None, frame)
+
+
+async def _recovered_sdk_noop_broadcast(
+    _origin: Any, _frame: dict[str, Any]
+) -> None:
+    return None
+
+
+async def _recovered_sdk_send_final(
+    _origin: Any,
+    frame: dict[str, Any],
+    **_identity: Any,
+) -> None:
+    await _broadcast_default_chat_peers(None, frame)
+
+
+def _restore_sdk_delivery_route(
+    record: Any, start: Mapping[str, Any], session_db: Any
+) -> bool:
+    """Rebuild one detached presentation route before SDK startup recovery."""
+
+    from deskpet.agent.run_presenter import (
+        CanonicalRunEventPresentationAdapter,
+        PresentationState,
+        RunPresentationContext,
+        build_product_run_presenter,
+    )
+    from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    start_input = start.get("input")
+    metadata = (
+        start_input.get("context_metadata")
+        if isinstance(start_input, Mapping)
+        else None
+    )
+    if not isinstance(metadata, Mapping):
+        return False
+    run_binding = metadata.get("run_binding")
+    if not isinstance(run_binding, Mapping):
+        return False
+    sdk_run_id = str(record.run_id)
+    session_id = str(metadata.get("session_id") or "").strip()
+    root_run_id = str(metadata.get("root_run_id") or "").strip()
+    request_id = str(metadata.get("request_id") or "").strip()
+    task_scope_id = str(metadata.get("task_scope_id") or "").strip()
+    if not all((sdk_run_id, session_id, root_run_id, request_id, task_scope_id)):
+        return False
+    product_input = start_input.get("input")
+    text = (
+        str(product_input.get("text") or "")
+        if isinstance(product_input, Mapping)
+        else ""
+    )
+    websocket = _RecoveredSdkWebSocket()
+    context = RunPresentationContext(
+        session_id=session_id,
+        text=text,
+        websocket=websocket,
+        services=service_context,
+        config=config,
+        messages=[],
+        session_db=session_db,
+        vector_worker=service_context.get("vector_worker"),
+        activity_store=None,
+        provider_chain=None,
+        fallback_provider=None,
+        request_id=request_id,
+        max_iterations=50,
+        is_sentinel=False,
+        broadcast=_recovered_sdk_noop_broadcast,
+        send_final=_recovered_sdk_send_final,
+        emit_context_usage=_sdk_context_usage_from_projection_only,
+        intent_label_from_turn=_intent_label_from_turn,
+        billing_ledger=None,
+        provider=None,
+        run_id=root_run_id,
+        task_scope_id=task_scope_id,
+        conversation_boundary_ref=(
+            str(metadata.get("conversation_boundary_ref") or "") or None
+        ),
+        provider_binding_epoch=int(run_binding.get("binding_epoch") or 0),
+        provider_binding_provider_id=str(
+            run_binding.get("provider_id") or ""
+        ) or None,
+        provider_binding_model_id=str(run_binding.get("model_id") or "") or None,
+    )
+    presenter = build_product_run_presenter()
+    adapter = CanonicalRunEventPresentationAdapter()
+    state = PresentationState()
+    delivery = ProductDeliveryAdapter(
+        session_id=session_id,
+        request_id=request_id,
+        run_id=sdk_run_id,
+        presenter=presenter,
+        adapter=adapter,
+        context=context,
+        state=state,
+    )
+    _delivery_adapters[sdk_run_id] = delivery
+    _sdk_run_ids_by_root[root_run_id] = sdk_run_id
+    _sdk_retained_presentations[sdk_run_id] = (
+        delivery, presenter, state, context
+    )
+    return True
 
 
 def _sdk_price_snapshot(provider_id: str, model_id: str) -> tuple[int, int, str]:
@@ -7224,6 +7359,12 @@ async def _build_product_sdk_runtime_stack(
                 ).lower()
                 if record_state == "waiting":
                     provider_binding_resolver.mark_waiting(restored.run_id)
+                if not _restore_sdk_delivery_route(record, start, session_db):
+                    logger.warning(
+                        "sdk_recovery_delivery_route_missing",
+                        sdk_run_id=str(record.run_id),
+                        state=record_state,
+                    )
         effects = EffectExecutor(
             uow=uow,
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
@@ -7744,6 +7885,9 @@ async def _signal_product_harness_decision(
         },
     )
     _sdk_ingress.trigger_reconciler()
+    _ensure_sdk_recovery_watcher(
+        _sdk_run_ids_by_root.get(run_id, run_id)
+    )
     return receipt
 
 
@@ -7926,6 +8070,9 @@ async def _run_product_harness_continuation(
         raise RuntimeError(
             str(reason or "continuation was not accepted")
         )
+    _ensure_sdk_recovery_watcher(
+        _sdk_run_ids_by_root.get(root_run_id, root_run_id)
+    )
     receipt_reason = (
         receipt.get("reason")
         if isinstance(receipt, dict)
@@ -8862,6 +9009,8 @@ async def _activate_product_sdk_runtime(
     _sdk_run_binding_registry = getattr(
         _sdk_provider_binding_resolver, "registry", None
     )
+    for recovered_run_id in tuple(_sdk_retained_presentations):
+        _ensure_sdk_recovery_watcher(recovered_run_id)
 
     logger.info(
         "product_sdk_runtime_ready",
@@ -10033,6 +10182,9 @@ async def _execute_sdk_run(
             "session_id": session_id,
             "root_run_id": root_run_id,
             "request_id": request_id,
+            "task_scope_id": task_scope_id,
+            "conversation_boundary_ref": context.conversation_boundary_ref,
+            "conversation_boundary_version": 1,
             "snapshot_id": prepared_snapshot.snapshot_id,
             "binding_epoch": run_binding.binding_epoch,
             "context_window": run_binding.context_window,
@@ -10137,6 +10289,9 @@ async def _execute_sdk_run(
             return
         if sdk_state_value == "waiting":
             terminal_binding_state = None
+            _sdk_retained_presentations[sdk_run_id] = (
+                delivery_adapter, presenter, state, context
+            )
             if _sdk_provider_binding_resolver is not None:
                 _sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
             logger.info(
@@ -10226,17 +10381,119 @@ async def _execute_sdk_run(
                 )
             except KeyError:
                 pass
-        # Always clean up registry entry
-        _delivery_adapters.pop(sdk_run_id, None)
-        if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
-            _sdk_run_ids_by_root.pop(root_run_id, None)
-        _sdk_cancel_requested_run_ids.discard(sdk_run_id)
+        # WAITING is durable and resumable: retain both delivery and identity
+        # routes until a signal causes the Run to reach a terminal state.
+        if terminal_binding_state is not None:
+            _sdk_retained_presentations.pop(sdk_run_id, None)
+            _delivery_adapters.pop(sdk_run_id, None)
+            if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
+                _sdk_run_ids_by_root.pop(root_run_id, None)
+            _sdk_cancel_requested_run_ids.discard(sdk_run_id)
         logger.debug(
             "sdk_run_adapter_cleanup",
             sdk_run_id=sdk_run_id,
             root_run_id=root_run_id,
             remaining_adapters=len(_delivery_adapters),
         )
+
+
+async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
+    """Project a resumed/recovered Run terminal through its retained route."""
+
+    from agent.agent_loop import ErrorEvent, FinalEvent
+    from simple_harness import RunId as SdkRunId
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    retained = _sdk_retained_presentations.get(sdk_run_id)
+    if retained is None or _sdk_ingress is None:
+        return
+    delivery, presenter, state, context = retained
+    terminal_state: str | None = None
+    projection_committed = False
+    try:
+        await _sdk_ingress.wait_idle(sdk_run_id)
+        final = _sdk_ingress.query(sdk_run_id)
+        raw_state = getattr(final, "state", final)
+        state_value = str(getattr(raw_state, "value", raw_state)).lower()
+        if state_value == "waiting":
+            return
+        terminal_state = (
+            state_value
+            if state_value in {"completed", "failed", "cancelled"}
+            else "failed"
+        )
+        if terminal_state == "completed" and _sdk_context_port is not None:
+            sdk_context = _sdk_context_port.load(SdkRunId(sdk_run_id))
+            assistant_texts = [
+                message.content
+                for message in sdk_context.messages
+                if str(message.role.value) == "assistant"
+                and isinstance(message.content, str)
+            ]
+            if assistant_texts:
+                await presenter.present(
+                    FinalEvent(content=assistant_texts[-1]), context, state
+                )
+            else:
+                await presenter.present(
+                    ErrorEvent(
+                        reason="run_failed",
+                        detail="sdk_recovered_final_missing",
+                        error_class="sdk_recovered_final_missing",
+                    ),
+                    context,
+                    state,
+                )
+                terminal_state = "failed"
+        elif terminal_state != "completed":
+            await presenter.present(
+                ErrorEvent(
+                    reason="run_failed",
+                    detail=f"sdk_run_{terminal_state}",
+                    error_class="run_failed",
+                ),
+                context,
+                state,
+            )
+        await delivery.finish()
+        projection_committed = True
+    finally:
+        if terminal_state is not None and projection_committed:
+            if _sdk_provider_binding_resolver is not None:
+                try:
+                    _sdk_provider_binding_resolver.mark_terminal(
+                        sdk_run_id, terminal_state
+                    )
+                except KeyError:
+                    pass
+            _sdk_retained_presentations.pop(sdk_run_id, None)
+            _delivery_adapters.pop(sdk_run_id, None)
+            root_run_id = str(getattr(context, "run_id", "") or "")
+            if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
+                _sdk_run_ids_by_root.pop(root_run_id, None)
+
+
+def _ensure_sdk_recovery_watcher(sdk_run_id: str) -> asyncio.Task | None:
+    """Start at most one terminal watcher for a retained presentation route."""
+
+    run_id = str(sdk_run_id or "").strip()
+    if not run_id or run_id not in _sdk_retained_presentations:
+        return None
+    current = _sdk_recovery_watch_tasks.get(run_id)
+    if current is not None and not current.done():
+        return current
+    task = asyncio.create_task(
+        _watch_retained_sdk_run(run_id),
+        name=f"sdk-recovered-presentation:{run_id}",
+    )
+    _sdk_recovery_watch_tasks[run_id] = task
+
+    def settled(_done: asyncio.Task) -> None:
+        if _sdk_recovery_watch_tasks.get(run_id) is _done:
+            _sdk_recovery_watch_tasks.pop(run_id, None)
+
+    task.add_done_callback(settled)
+    return task
 
 
 async def _broadcast_default_chat_peers(originator_ws: WebSocket | None, msg: dict) -> None:
@@ -12731,6 +12988,10 @@ async def control_channel(ws: WebSocket):
                             "version": int(_version),
                             "response": {"decision": _decision},
                         },
+                    )
+                    _sdk_ingress.trigger_reconciler()
+                    _ensure_sdk_recovery_watcher(
+                        _sdk_run_ids_by_root.get(_run_id, _run_id)
                     )
                     logger.info(
                         "harness_plan_decision sid=%s run_id=%s accepted=%s duplicate=%s",
