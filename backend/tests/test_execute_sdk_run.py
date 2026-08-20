@@ -829,6 +829,35 @@ def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch)
     ) is False
 
 
+def test_unmigratable_v1_recovery_isolated_without_partial_authority():
+    import main
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    sdk_run_id = "sdk-legacy-v1"
+    root_run_id = "root-legacy-v1"
+    provider = SimpleNamespace(mark_terminal=Mock())
+    tools = SimpleNamespace(mark_terminal=Mock(side_effect=KeyError(sdk_run_id)))
+    _delivery_adapters[sdk_run_id] = object()
+    main._sdk_retained_presentations[sdk_run_id] = (object(),) * 4
+    main._sdk_run_ids_by_root[root_run_id] = sdk_run_id
+
+    main._isolate_unrestorable_sdk_tool_authority(
+        sdk_run_id=sdk_run_id,
+        metadata={"root_run_id": root_run_id},
+        provider_binding_resolver=provider,
+        tool_authorities=tools,
+        error=RuntimeError("sdk_tool_authority_migration_unavailable"),
+    )
+
+    provider.mark_terminal.assert_called_once_with(sdk_run_id, "failed")
+    tools.mark_terminal.assert_called_once_with(sdk_run_id, "failed")
+    assert sdk_run_id not in _delivery_adapters
+    assert sdk_run_id not in main._sdk_retained_presentations
+    assert root_run_id not in main._sdk_run_ids_by_root
+    assert sdk_run_id in main._sdk_unavailable_tool_authority_runs
+    main._sdk_unavailable_tool_authority_runs.discard(sdk_run_id)
+
+
 @pytest.mark.asyncio
 async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypatch):
     import main

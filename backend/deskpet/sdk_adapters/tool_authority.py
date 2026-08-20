@@ -50,10 +50,19 @@ from deskpet.workflows.effects import PreparedToolCall
 
 
 SDK_TOOL_AUTHORITY_RECORD_KIND = "deskpet.sdk-tool-authority"
-SDK_TOOL_AUTHORITY_RECORD_VERSION = 1
+SDK_TOOL_AUTHORITY_RECORD_VERSION = 2
 SDK_FULL_CATALOG_DISCLOSURE_POLICY = "full-direct-v1"
 SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY = "explicit-deferred-v1"
 SDK_PERMISSION_POLICY_VERSION = "sdk-product-policy-v1"
+
+
+class SdkToolAuthorityMigrationUnavailable(RuntimeError):
+    code = "sdk_tool_authority_migration_unavailable"
+
+    def __init__(self, run_id: object, version: object) -> None:
+        self.run_id = str(run_id or "")
+        self.version = int(version)
+        super().__init__(f"{self.code}:run={self.run_id}:version={self.version}")
 
 
 def _canonical_sha256(value: object) -> str:
@@ -503,7 +512,15 @@ class SdkRunToolAuthorityRegistry:
             raise ValueError("restored SDK tool lease must be active or waiting")
         if run_start_record.get("kind") != SDK_TOOL_AUTHORITY_RECORD_KIND:
             raise ValueError("sdk_tool_authority_record_kind_invalid")
-        if int(run_start_record.get("schema_version", -1)) != 1:
+        record_version = int(run_start_record.get("schema_version", -1))
+        if record_version == 1:
+            # v1 predates the persisted per-tool executable identity.  It is
+            # impossible to prove that a restarted handler is compatible, so
+            # this Run is isolated rather than inventing an identity.
+            raise SdkToolAuthorityMigrationUnavailable(
+                run_start_record.get("run_id"), record_version
+            )
+        if record_version != SDK_TOOL_AUTHORITY_RECORD_VERSION:
             raise ValueError("sdk_tool_authority_record_version_unsupported")
         generation = int(_field(run_binding, "catalog_generation", -1))
         fingerprint = _required(
@@ -1055,6 +1072,7 @@ __all__ = (
     "SDK_PERMISSION_POLICY_VERSION",
     "SDK_TOOL_AUTHORITY_RECORD_KIND",
     "SDK_TOOL_AUTHORITY_RECORD_VERSION",
+    "SdkToolAuthorityMigrationUnavailable",
     "SdkCapabilityBridgeAdapter",
     "SdkPreparedAuthorizationPolicy",
     "SdkRunToolAuthorityRegistry",

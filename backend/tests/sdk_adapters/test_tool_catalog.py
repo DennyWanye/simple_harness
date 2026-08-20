@@ -15,6 +15,118 @@ EXPECTED_MANIFEST_SHA256 = (
 )
 
 
+@pytest.mark.asyncio
+async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_identity(
+    tmp_path: Path,
+) -> None:
+    from dataclasses import replace
+
+    from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext
+
+    from deskpet.sdk_adapters.context_authority import canonical_sha256
+    from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
+    from deskpet.sdk_adapters.tools import (
+        ProductEffectExecutor,
+        build_product_tool_registry,
+    )
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.capabilities import canonical_hash
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    runtime_context = SimpleNamespace(
+        session_id="session-stable",
+        request_id="request-stable",
+        scope_id="scope-stable",
+    )
+    product_catalog = build_explicit_product_tool_catalog(
+        _catalog_dependencies(ContextPageInStore(), runtime_context)
+    )
+    base_registry, base_inventory = build_product_tool_registry(
+        product_catalog.registrations
+    )
+    changed_registrations = []
+    for registration in product_catalog.registrations:
+        metadata = {
+            **dict(registration.metadata),
+            "manifest_sha256": "unrelated-global-manifest-v2",
+        }
+        if registration.name == "web_search":
+            metadata["handler_id"] = "unrelated:web_search:v2"
+        changed_registrations.append(replace(registration, metadata=metadata))
+    rebuilt_registry, rebuilt_inventory = build_product_tool_registry(
+        changed_registrations
+    )
+    base_by_name = {item.name: item for item in base_inventory}
+    rebuilt_by_name = {item.name: item for item in rebuilt_inventory}
+    assert (
+        rebuilt_by_name["read_file"].execution_identity
+        == base_by_name["read_file"].execution_identity
+    )
+    assert (
+        rebuilt_by_name["web_search"].execution_identity
+        != base_by_name["web_search"].execution_identity
+    )
+
+    specs = base_registry.specs
+    raw_specs = [
+        {
+            "name": spec.name,
+            "description": spec.description,
+            "input_schema": thaw_json(spec.input_schema),
+        }
+        for spec in specs
+    ]
+    authorities = SdkRunToolAuthorityRegistry()
+    authorities.prepare_run(
+        run_id="run-stable",
+        session_id="session-stable",
+        request_id="request-stable",
+        root_run_id="root-stable",
+        task_scope_id="task-stable",
+        workspace_root=str(tmp_path),
+        catalog={
+            "generation": 1,
+            "content_fingerprint": canonical_sha256(raw_specs),
+            "specs": raw_specs,
+            "schema_fingerprints": {
+                item["name"]: canonical_hash(item["input_schema"])
+                for item in raw_specs
+            },
+        },
+        inventory=base_inventory,
+    )
+    rebuilt_registry.bind_run_authorities(authorities)
+    executor = ProductEffectExecutor(
+        uow=object(),
+        registry=rebuilt_registry,
+        authorization=object(),
+        reconciliation=object(),
+    )
+    source = tmp_path / "stable.txt"
+    source.write_text("stable-handler", encoding="utf-8")
+    call = ToolCall(CallId("call-stable"), "read_file", {"path": str(source)})
+    context = ToolContext(
+        RunId("run-stable"),
+        RequestId("request-stable"),
+        CancellationToken(),
+        {
+            "session_id": "session-stable",
+            "scope_id": "scope-stable",
+            "workspace": str(tmp_path),
+            "write_scope_root": str(tmp_path),
+        },
+    )
+
+    await executor._prepared(
+        effect_id=EffectId("effect-stable"), call=call, context=context
+    )
+    result = await rebuilt_registry.invoke(call, context)
+
+    assert result.error_code is None
+    assert "stable-handler" in str(thaw_json(result.value))
+
+
 def test_checked_in_real_manifest_has_exact_77_plus_two_projection() -> None:
     from deskpet.tool_catalog import load_tool_manifest
 

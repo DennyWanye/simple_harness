@@ -30,6 +30,7 @@ from deskpet.sdk_adapters.tool_authority import (
     SdkCapabilityBridgeAdapter,
     SdkPreparedAuthorizationPolicy,
     SdkRunToolAuthorityRegistry,
+    SdkToolAuthorityMigrationUnavailable,
 )
 from deskpet.sdk_adapters.tools import (
     ProductEffectExecutor,
@@ -370,6 +371,84 @@ def test_waiting_restart_fails_closed_when_exact_catalog_or_authority_differs(
                 run_binding=inventory_tampered,
                 catalog_resolver=DurableToolCatalogResolver(uow),
             )
+
+
+def test_pre_change_v1_is_unmigratable_without_identity_but_v2_and_fresh_survive(
+    tmp_path: Path,
+):
+    specs = tuple(
+        ProviderToolSpec(
+            item["name"], item["description"], item["input_schema"]
+        )
+        for item in _catalog()[0]["specs"]
+    )
+    with Database.open(tmp_path / "mixed-authority-versions.db") as database:
+        uow = SqliteExecutionUnitOfWork(database)
+        snapshot = uow.put_tool_catalog_snapshot(specs)
+        catalog = {
+            "generation": snapshot.generation,
+            "content_fingerprint": snapshot.content_fingerprint,
+            "specs": _catalog()[0]["specs"],
+            "schema_fingerprints": _catalog()[0]["schema_fingerprints"],
+        }
+        source_registry = SdkRunToolAuthorityRegistry()
+        old_source = source_registry.prepare_run(
+            run_id="run-v1",
+            session_id="session-v1",
+            request_id="request-v1",
+            root_run_id="root-v1",
+            task_scope_id="task-v1",
+            workspace_root=None,
+            catalog=catalog,
+            inventory=_catalog()[1],
+        )
+        v1_fixture = old_source.run_start_record()
+        v1_fixture["schema_version"] = 1
+        for item in v1_fixture["inventory"]:
+            item.pop("execution_identity", None)
+        v2_source = source_registry.prepare_run(
+            run_id="run-v2",
+            session_id="session-v2",
+            request_id="request-v2",
+            root_run_id="root-v2",
+            task_scope_id="task-v2",
+            workspace_root=None,
+            catalog=catalog,
+            inventory=_catalog()[1],
+        )
+        v2_record = v2_source.run_start_record()
+        assert v2_record["schema_version"] == 2
+        restarted = SdkRunToolAuthorityRegistry()
+
+        with pytest.raises(
+            SdkToolAuthorityMigrationUnavailable,
+            match="migration_unavailable",
+        ):
+            restarted.restore_waiting_run(
+                run_start_record=v1_fixture,
+                run_binding=v1_fixture,
+                catalog_resolver=DurableToolCatalogResolver(uow),
+            )
+        restored_v2 = restarted.restore_waiting_run(
+            run_start_record=v2_record,
+            run_binding=v2_record,
+            catalog_resolver=DurableToolCatalogResolver(uow),
+        )
+        fresh = restarted.prepare_run(
+            run_id="run-fresh",
+            session_id="session-fresh",
+            request_id="request-fresh",
+            root_run_id="root-fresh",
+            task_scope_id="task-fresh",
+            workspace_root=None,
+            catalog=catalog,
+            inventory=_catalog()[1],
+        )
+
+    with pytest.raises(KeyError):
+        restarted.resolve("run-v1")
+    assert restored_v2.lease_state == "waiting"
+    assert fresh.lease_state == "active"
 
 
 def test_disclosure_policy_is_explicit_and_full_catalog_is_direct():

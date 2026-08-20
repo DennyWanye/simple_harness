@@ -35,6 +35,8 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
     watcher = inspect.getsource(main._watch_retained_sdk_run)
 
     assert "tool_authorities.restore_waiting_run" in build
+    assert "except SdkToolAuthorityMigrationUnavailable" in build
+    assert "_isolate_unrestorable_sdk_tool_authority" in build
     assert "DurableToolCatalogResolver" in build
     assert "catalog=frozen_catalog" not in build
     assert "inventory=tool_inventory" not in build

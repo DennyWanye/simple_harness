@@ -5287,6 +5287,7 @@ async def lifespan(app: FastAPI):
                 if _sdk_run_ids_by_root.get(_root_run_id) == _sdk_run_id:
                     _sdk_run_ids_by_root.pop(_root_run_id, None)
             _sdk_retained_presentations.clear()
+            _sdk_unavailable_tool_authority_runs.clear()
             service_context.register("sdk_runtime_ready", None)
     _capability_platform = service_context.get("capability_platform")
     _capability_center = service_context.get("capability_center")
@@ -6755,6 +6756,7 @@ _sdk_run_ids_by_root: dict[str, str] = {}
 _sdk_cancel_requested_run_ids: set[str] = set()
 _sdk_retained_presentations: dict[str, tuple[Any, Any, Any, Any]] = {}
 _sdk_recovery_watch_tasks: dict[str, asyncio.Task] = {}
+_sdk_unavailable_tool_authority_runs: set[str] = set()
 
 _sdk_desktop_bridge = None
 
@@ -6869,6 +6871,39 @@ def _restore_sdk_delivery_route(
         delivery, presenter, state, context
     )
     return True
+
+
+def _isolate_unrestorable_sdk_tool_authority(
+    *,
+    sdk_run_id: str,
+    metadata: Mapping[str, Any],
+    provider_binding_resolver: Any,
+    tool_authorities: Any,
+    error: BaseException,
+) -> None:
+    """Remove partial recovery leases for one fail-closed legacy Run."""
+
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    try:
+        provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
+    except (KeyError, RuntimeError, ValueError):
+        pass
+    try:
+        tool_authorities.mark_terminal(sdk_run_id, "failed")
+    except (KeyError, RuntimeError, ValueError):
+        pass
+    _delivery_adapters.pop(sdk_run_id, None)
+    _sdk_retained_presentations.pop(sdk_run_id, None)
+    _sdk_unavailable_tool_authority_runs.add(sdk_run_id)
+    root_run_id = str(metadata.get("root_run_id") or "")
+    if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
+        _sdk_run_ids_by_root.pop(root_run_id, None)
+    logger.error(
+        "sdk_recovery_tool_authority_isolated",
+        sdk_run_id=sdk_run_id,
+        error_code=getattr(error, "code", type(error).__name__),
+    )
 
 
 def _sdk_price_snapshot(provider_id: str, model_id: str) -> tuple[int, int, str]:
@@ -7107,6 +7142,7 @@ async def _build_product_sdk_runtime_stack(
         SdkCapabilityBridgeAdapter,
         SdkPreparedAuthorizationPolicy,
         SdkRunToolAuthorityRegistry,
+        SdkToolAuthorityMigrationUnavailable,
     )
     from deskpet.sdk_adapters.tools import ProductToolsAdapter
     from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
@@ -7330,18 +7366,27 @@ async def _build_product_sdk_runtime_stack(
                 getattr(getattr(record, "state", None), "value", None)
                 or getattr(record, "state", "")
             ).lower()
-            if record_state == "waiting":
-                tool_authorities.restore_waiting_run(
-                    run_start_record=raw_tool_authority,
-                    run_binding=restored_binding,
-                    catalog_resolver=durable_catalog_resolver,
-                )
-            else:
-                tool_authorities.restore_run(
-                    run_start_record=raw_tool_authority,
-                    run_binding=restored_binding,
-                    catalog_resolver=durable_catalog_resolver,
-                    lease_state="active",
+            try:
+                if record_state == "waiting":
+                    tool_authorities.restore_waiting_run(
+                        run_start_record=raw_tool_authority,
+                        run_binding=restored_binding,
+                        catalog_resolver=durable_catalog_resolver,
+                    )
+                else:
+                    tool_authorities.restore_run(
+                        run_start_record=raw_tool_authority,
+                        run_binding=restored_binding,
+                        catalog_resolver=durable_catalog_resolver,
+                        lease_state="active",
+                    )
+            except SdkToolAuthorityMigrationUnavailable as exc:
+                _isolate_unrestorable_sdk_tool_authority(
+                    sdk_run_id=str(record.run_id),
+                    metadata=metadata,
+                    provider_binding_resolver=provider_binding_resolver,
+                    tool_authorities=tool_authorities,
+                    error=exc,
                 )
         provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
@@ -8650,6 +8695,8 @@ async def _run_product_harness_chat(
         sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
             session_id, request_id, str(turn_id)
         ).value
+        if sdk_run_id in _sdk_unavailable_tool_authority_runs:
+            raise RuntimeError("sdk_tool_authority_unavailable")
         provider_authority = await _freeze_sdk_provider_authority(
             session_db, session_id, host
         )

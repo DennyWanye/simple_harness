@@ -107,6 +107,38 @@ def _canonical_sha256(value: object) -> str:
     ).hexdigest()
 
 
+def _product_tool_execution_identity(
+    registration: ProductToolRegistration,
+    tool: FunctionTool,
+) -> str:
+    """Hash only the stable executable contract of one Tool registration.
+
+    Global manifest/catalog digests are deliberately excluded: changing an
+    unrelated Tool must not invalidate a WAITING Run that never leased it.
+    """
+
+    metadata = registration.metadata
+    source = str(metadata["source"])
+    version = str(metadata["version"])
+    handler_identity = str(
+        metadata.get("handler_id")
+        or metadata.get("stable_handler_id")
+        or f"{source}:{registration.name}:{version}"
+    )
+    return _canonical_sha256(
+        {
+            "name": registration.name,
+            "source": source,
+            "version": version,
+            "dispatch_kind": registration.dispatch_kind,
+            "permission_category": registration.permission_category,
+            "handler_identity": handler_identity,
+            "description": tool.spec.description,
+            "input_schema": thaw_json(tool.spec.input_schema),
+        }
+    )
+
+
 def active_product_tool_call_id() -> CallId:
     """Return the SDK-owned identity of the currently dispatched Tool call."""
 
@@ -321,16 +353,7 @@ def build_product_tool_registry(
     ordered = tuple(by_name[name] for name in PRODUCT_TOOL_NAMES)
     sdk_tools = tuple(_sdk_tool(item) for item in ordered)
     execution_identities = {
-        registration.name: _canonical_sha256(
-            {
-                "name": registration.name,
-                "description": tool.spec.description,
-                "input_schema": thaw_json(tool.spec.input_schema),
-                "dispatch_kind": registration.dispatch_kind,
-                "permission_category": registration.permission_category,
-                "metadata": thaw_json(registration.metadata),
-            }
-        )
+        registration.name: _product_tool_execution_identity(registration, tool)
         for registration, tool in zip(ordered, sdk_tools, strict=True)
     }
     registry = ProductToolsAdapter(
