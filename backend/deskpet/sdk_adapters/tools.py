@@ -77,6 +77,9 @@ class ProductToolInventoryEntry:
 _current_call_id: contextvars.ContextVar[CallId | None] = contextvars.ContextVar(
     "product_sdk_tool_call_id", default=None
 )
+_current_tool_context: contextvars.ContextVar[ToolContext | None] = (
+    contextvars.ContextVar("product_sdk_tool_context", default=None)
+)
 
 
 def active_product_tool_call_id() -> CallId:
@@ -86,6 +89,15 @@ def active_product_tool_call_id() -> CallId:
     if call_id is None:
         raise RuntimeError("product Tool invoked outside SDK ToolRegistry")
     return call_id
+
+
+def active_product_tool_context() -> ToolContext:
+    """Return the current SDK Tool context without any global fallback."""
+
+    context = _current_tool_context.get()
+    if context is None:
+        raise RuntimeError("product Tool invoked outside SDK ToolRegistry")
+    return context
 
 
 class ProductToolsAdapter(ToolRegistry):
@@ -99,6 +111,7 @@ class ProductToolsAdapter(ToolRegistry):
         accepted_result_call_id: CallId | None = None,
     ) -> ToolResult:
         token = _current_call_id.set(call.call_id)
+        context_token = _current_tool_context.set(context)
         try:
             delivery_adapter = None
             try:
@@ -116,6 +129,7 @@ class ProductToolsAdapter(ToolRegistry):
                 await delivery_adapter.present_tool_result(call, result)
             return result
         finally:
+            _current_tool_context.reset(context_token)
             _current_call_id.reset(token)
 
 
@@ -214,5 +228,6 @@ __all__ = (
     "ProductToolRegistration",
     "ProductToolsAdapter",
     "active_product_tool_call_id",
+    "active_product_tool_context",
     "build_product_tool_registry",
 )

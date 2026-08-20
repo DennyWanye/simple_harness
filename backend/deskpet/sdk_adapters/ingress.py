@@ -75,6 +75,8 @@ class SdkRuntimeIngress:
         turn_id: str,
         payload: dict[str, Any],
         session_generation: int,
+        tool_catalog_fingerprint: str | None = None,
+        provider_budget_fingerprint: str | None = None,
     ) -> IngressStartReceipt:
         """Start a new Run through the sole ingress.
 
@@ -95,6 +97,8 @@ class SdkRuntimeIngress:
             turn_id,
             payload,
             session_generation,
+            tool_catalog_fingerprint,
+            provider_budget_fingerprint,
         )
         await ready.client.start(start)
 

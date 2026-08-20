@@ -6719,9 +6719,9 @@ async def _build_product_agent_loop(request):
 _sdk_runtime_stack = None
 _sdk_ingress = None
 _sdk_context_port = None
-_sdk_runtime_refresh_lock = asyncio.Lock()
-_sdk_runtime_run_lock = asyncio.Lock()
-_sdk_runtime_provider_binding: tuple[str, str] | None = None
+_sdk_runtime_catalog: dict[str, Any] | None = None
+_sdk_run_binding_registry = None
+_sdk_provider_binding_resolver = None
 # Product/UI projections expose the Host canonical root id, while RunClient
 # cancellation is keyed by the SDK's deterministic internal id. Keep the
 # active bridge explicit and bounded to the lifetime of _execute_sdk_run.
@@ -6729,6 +6729,153 @@ _sdk_run_ids_by_root: dict[str, str] = {}
 _sdk_cancel_requested_run_ids: set[str] = set()
 
 _sdk_desktop_bridge = None
+
+
+def _sdk_price_snapshot(provider_id: str, model_id: str) -> tuple[int, int, str]:
+    """Freeze the product pricing table for one physical Provider binding.
+
+    The SDK budget authority is expressed as micro-dollars per million
+    tokens.  The old stack passed ``(0, 0)`` for every model, which converted
+    unknown charge into a trusted zero.  Product pricing deliberately has a
+    pessimistic entry for unknown models, so a missing table row remains
+    bounded without becoming free.
+    """
+
+    from deskpet.sdk_adapters.context_authority import canonical_sha256
+    from llm.pricing import get_price
+
+    price = get_price(provider_id, model_id)
+    payload = {
+        "provider_id": str(provider_id),
+        "model_id": str(model_id),
+        "input_per_m": price.input_per_m,
+        "output_per_m": price.output_per_m,
+        "cache_read_per_m": price.cache_read_per_m,
+        "cache_write_per_m": price.cache_write_per_m,
+    }
+    return (
+        max(0, round(price.input_per_m * 1_000_000)),
+        max(0, round(price.output_per_m * 1_000_000)),
+        f"deskpet-pricing:{canonical_sha256(payload)}",
+    )
+
+
+def _freeze_sdk_catalog(tools_adapter: Any, generation: int) -> dict[str, Any]:
+    """Return the exact immutable Tool catalog used by Provider and executor."""
+
+    from deskpet.sdk_adapters.context_authority import canonical_sha256
+
+    specs: list[dict[str, Any]] = []
+    schema_fingerprints: dict[str, str] = {}
+    schema_token_count = 0
+    for spec in tools_adapter.specs:
+        schema = dict(spec.input_schema)
+        record = {
+            "name": str(spec.name),
+            "description": str(spec.description),
+            "input_schema": schema,
+        }
+        specs.append(record)
+        schema_fingerprints[str(spec.name)] = canonical_sha256(schema)
+        schema_token_count += max(1, len(repr(schema)) // 4)
+    fingerprint = canonical_sha256(specs)
+    return {
+        "generation": int(generation),
+        "content_fingerprint": fingerprint,
+        "tool_names": [item["name"] for item in specs],
+        "tool_count": len(specs),
+        "schema_token_count": schema_token_count,
+        "schema_fingerprints": schema_fingerprints,
+        "specs": specs,
+    }
+
+
+class _ProductSdkProviderBindingResolver:
+    """SDK resolver backed only by immutable per-Run product bindings."""
+
+    def __init__(self, provider_registry: Any, client: Any) -> None:
+        from deskpet.sdk_adapters.run_bindings import SdkRunBindingRegistry
+
+        self.registry = SdkRunBindingRegistry()
+        self._provider_registry = provider_registry
+        self._client = client
+        self._authorities: dict[str, Any] = {}
+
+    def build_authority(self, binding: Any) -> Any:
+        from simple_harness.execution import ProviderBinding
+        from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
+        from simple_harness import thaw_json
+        from deskpet.sdk_adapters.provider import ProductProviderAdapter
+
+        entry = self._provider_registry.get_entry(binding.provider_id)
+        if entry is None:
+            raise RuntimeError("SDK bound Provider incarnation is unavailable")
+        if (
+            str(getattr(entry, "incarnation_id", ""))
+            != binding.provider_incarnation_id
+            or int(getattr(entry, "config_revision", 0) or 0)
+            != binding.provider_config_revision
+        ):
+            raise RuntimeError("SDK bound Provider incarnation changed")
+        provider = ProductProviderAdapter(
+            self._provider_registry,
+            provider_id=binding.provider_id,
+            client=self._client,
+            price_resolver=_sdk_price_snapshot,
+            model=binding.model_id,
+            model_params=thaw_json(binding.model_params),
+        )
+        price = provider.price_snapshot
+        estimator = FrozenPriceEstimator(
+            price.version,
+            provider.target.pricing_key,
+            price.input_micros_per_million,
+            price.output_micros_per_million,
+        )
+        return ProviderBinding(provider, estimator, BudgetPolicy())
+
+    def create_binding(self, **raw: Any) -> Any:
+        """Build both sides without allowing their budget identity to drift."""
+
+        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+
+        provisional = SdkRunBindingV1.build(
+            **raw,
+            budget_fingerprint="pending-provider-budget",
+        )
+        authority = self.build_authority(provisional)
+        binding = SdkRunBindingV1.build(
+            **raw,
+            budget_fingerprint=authority.budget_fingerprint,
+        )
+        self.registry.register(binding)
+        self._authorities[binding.run_id] = authority
+        return binding
+
+    def register(self, binding: Any) -> Any:
+        current = self.registry.register(binding)
+        authority = self._authorities.get(current.run_id)
+        if authority is None:
+            authority = self.build_authority(current)
+            if authority.budget_fingerprint != current.budget_fingerprint:
+                raise RuntimeError("SDK Run budget binding fingerprint mismatch")
+            self._authorities[current.run_id] = authority
+        return authority
+
+    def resolve(self, run_id: Any) -> Any:
+        value = str(getattr(run_id, "value", run_id))
+        binding = self.registry.resolve(value)
+        authority = self._authorities.get(value)
+        if binding is None or authority is None:
+            raise KeyError(value)
+        return authority
+
+    def mark_waiting(self, run_id: str) -> None:
+        self.registry.mark_waiting(run_id)
+
+    def mark_terminal(self, run_id: str, state: str) -> None:
+        self.registry.mark_terminal(run_id, state)
+        self._authorities.pop(str(run_id), None)
 
 
 def _sdk_prepared_identity(prepared) -> tuple[str, str]:
@@ -6814,16 +6961,13 @@ def _trigger_harness_recovery_after_identity_bind() -> bool:
 
 async def _build_product_sdk_runtime_stack(
     generation: int,
-    *,
-    provider_id_override: str | None = None,
-    model_override: str | None = None,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
     import hashlib
     from pathlib import Path
 
     from simple_harness import RuntimeProfile
-    from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
+    from simple_harness.execution.budget import BudgetPolicy
     from simple_harness.execution.delivery import DeliveryDispatcher
     from simple_harness.runtime import RuntimePorts, SqliteContextPort
     from simple_harness.runtime.drivers import build_react_driver
@@ -6838,10 +6982,7 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.sdk_adapters.runtime_paths import (
         ProductRuntimePathsAdapter,
     )
-    from deskpet.sdk_adapters.provider import (
-        ProductProviderAdapter,
-        ProductProviderInvocationCoordinator,
-    )
+    from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
     from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
     from deskpet.sdk_adapters.tools import ProductToolsAdapter
     from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
@@ -6854,49 +6995,29 @@ async def _build_product_sdk_runtime_stack(
     if session_db is None or capability_platform is None:
         raise RuntimeError("SDK Runtime requires session_db and capability_platform")
 
-    # Load provider chain
+    # The runtime is stable across Provider mutations.  A physical Provider is
+    # constructed only after a Run freezes its own Session binding.
     provider_registry = service_context.get("provider_registry")
     if provider_registry is None:
         raise RuntimeError("SDK Runtime requires provider_registry")
 
-    chain = provider_registry.get_chain()
-    if not chain:
-        raise RuntimeError("Provider chain is empty")
-
-    provider_id = str(provider_id_override or chain[0]["id"])
-
-    # Create HTTP client for provider
     import httpx
     client = httpx.AsyncClient()
-
-    # Build provider adapter
-    provider = ProductProviderAdapter(
-        provider_registry,
-        provider_id=provider_id,
-        client=client,
-        price_resolver=lambda _provider_id, _model: (0, 0, f"product-sdk-v{generation}"),
-        model=model_override,
-    )
-
-    estimator = FrozenPriceEstimator(
-        provider.price_snapshot.version,
-        provider.target.pricing_key,
-        provider.price_snapshot.input_micros_per_million,
-        provider.price_snapshot.output_micros_per_million,
-    )
     budget_policy = BudgetPolicy()
+    provider_binding_resolver = _ProductSdkProviderBindingResolver(
+        provider_registry, client
+    )
 
     # Build ReAct driver
     driver = build_react_driver(
         limits=TerminationLimits(max_turns=25, max_tool_calls=50),
         budget_policy=budget_policy,
-        estimator=estimator,
+        estimator=None,
     )
 
     # Build tool adapter
     from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
     from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from types import SimpleNamespace
 
     # Build tool catalog dependencies
     todo_session_db = service_context.get("session_db")
@@ -6918,12 +7039,26 @@ async def _build_product_sdk_runtime_stack(
         def activate(self, capability_id: str, schema_hash: str, nonce: str, grant: dict) -> dict:
             raise RuntimeError("SDK Runtime does not support capability activation")
 
-    # Create execution context getter
     def execution_context_getter():
+        from types import SimpleNamespace
+        from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+        from deskpet.sdk_adapters.tools import active_product_tool_context
+
+        try:
+            tool_context = active_product_tool_context()
+        except RuntimeError:
+            return None
+        run_id = tool_context.run_id.value
+        binding = provider_binding_resolver.registry.resolve(run_id)
+        delivery = _delivery_adapters.get(run_id)
+        presentation = getattr(delivery, "_context", None)
+        scope_id = str(getattr(presentation, "task_scope_id", "") or "")
+        if binding is None or not scope_id:
+            return None
         return SimpleNamespace(
-            session_id="sdk-session",
-            request_id="sdk-request",
-            scope_id="sdk-scope",
+            session_id=binding.session_id,
+            request_id=binding.request_id,
+            scope_id=scope_id,
         )
 
     dependencies = ToolCatalogDependencies(
@@ -6939,6 +7074,7 @@ async def _build_product_sdk_runtime_stack(
 
     catalog = build_explicit_product_tool_catalog(dependencies)
     tools_adapter, tool_inventory = build_product_tool_registry(catalog.registrations)
+    frozen_catalog = _freeze_sdk_catalog(tools_adapter, generation)
 
     # Build authorization system
     from deskpet.product_state.database import ProductStateDatabase
@@ -7031,29 +7167,93 @@ async def _build_product_sdk_runtime_stack(
         async def reconcile(self):
             return None
 
-    # SDK Runtime 的 tool_catalog 端口只要求 ToolCatalogGenerationPort
-    # （current_generation()），而 tools_adapter 是执行用 ToolRegistry、没有该方法。
-    # 这里用固定的 product catalog generation 满足 SDK 的 catalog-lease 校验。
-    class _ProductToolCatalogGeneration:
-        def current_generation(self) -> int:
-            return generation
+    projection_pump = None
+
+    async def close_projection_pump() -> None:
+        if projection_pump is not None:
+            await projection_pump.close()
 
     def ports_factory(database, uow):
+        nonlocal projection_pump
         global _sdk_context_port
         context = SqliteContextPort(database)
         _sdk_context_port = context
+        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+
+        recoverable = (
+            *uow.list_recoverable_root_runs(),
+            *uow.list_recoverable_child_runs(),
+        )
+        for record in recoverable:
+            start = uow.read_start_snapshot(str(record.run_id))
+            start_input = start.get("input") if isinstance(start, Mapping) else None
+            metadata = (
+                start_input.get("context_metadata")
+                if isinstance(start_input, Mapping)
+                else None
+            )
+            raw_binding = (
+                metadata.get("run_binding")
+                if isinstance(metadata, Mapping)
+                else None
+            )
+            if isinstance(raw_binding, Mapping):
+                restored = SdkRunBindingV1.from_record(raw_binding)
+                provider_binding_resolver.register(restored)
+                record_state = str(
+                    getattr(getattr(record, "state", None), "value", None)
+                    or getattr(record, "state", "")
+                ).lower()
+                if record_state == "waiting":
+                    provider_binding_resolver.mark_waiting(restored.run_id)
         effects = EffectExecutor(
             uow=uow,
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
             authorization=authorization_adapter,
             reconciliation=reconciliation_adapter,
         )
+        from simple_harness.execution.context_authority import (
+            DurableToolCatalogResolver,
+        )
+
+        catalog_snapshot = uow.put_tool_catalog_snapshot(
+            effects.provider_tool_specs(tuple(frozen_catalog["tool_names"]))
+        )
+        frozen_catalog["generation"] = catalog_snapshot.generation
+        frozen_catalog["content_fingerprint"] = (
+            catalog_snapshot.content_fingerprint
+        )
         provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
-            provider=provider,
-            budget_policy=budget_policy,
-            estimator=estimator,
+            resolver=provider_binding_resolver,
         )
+        if projection_pump is None:
+            from deskpet.sdk_adapters.provider_projection_pump import (
+                ProviderProjectionContextV1,
+                SdkProviderProjectionPump,
+            )
+
+            def projection_context(receipt: Any) -> ProviderProjectionContextV1:
+                start = uow.read_start_snapshot(str(receipt.run_id))
+                if not isinstance(start, Mapping):
+                    raise RuntimeError("sdk_provider_projection_start_snapshot_missing")
+                start_input = start.get("input")
+                metadata = (
+                    start_input.get("context_metadata")
+                    if isinstance(start_input, Mapping)
+                    else None
+                )
+                if not isinstance(metadata, Mapping):
+                    raise RuntimeError("sdk_provider_projection_context_missing")
+                return ProviderProjectionContextV1.from_value(metadata)
+
+            projection_pump = SdkProviderProjectionPump(
+                uow,
+                session_db,
+                context_resolver=projection_context,
+            )
+            projection_pump.start()
+            projection_pump.trigger()
         return RuntimePorts(
             provider=provider_port,
             tools=effects,
@@ -7064,7 +7264,7 @@ async def _build_product_sdk_runtime_stack(
             reconciliation=_NoopReconciliation(),
             provider_reconciliation=_NoopReconciliation(),
             react_checkpoint=uow,
-            tool_catalog=_ProductToolCatalogGeneration(),
+            tool_catalog=DurableToolCatalogResolver(uow),
             owner_id=f"deskpet-product-sdk-g{generation}",
         )
 
@@ -7076,14 +7276,21 @@ async def _build_product_sdk_runtime_stack(
             profiles={"agent.general": RuntimeProfile("agent.general", "react")},
             drivers={"react": driver},
             ports_factory=ports_factory,
-            workflow_catalog_digest=f"product-sdk-catalog-g{generation}",
-            owned_resources=(OwnedResourceCloser("provider-http", client.aclose),),
+            workflow_catalog_digest=frozen_catalog["content_fingerprint"],
+            owned_resources=(
+                OwnedResourceCloser("provider-http", client.aclose),
+                OwnedResourceCloser(
+                    "sdk-provider-projection", close_projection_pump
+                ),
+            ),
         ),
         ready_publisher=lambda ready: service_context.register(
             "sdk_runtime_ready", ready
         ),
     )
 
+    service_context.register("sdk_runtime_catalog", frozen_catalog)
+    service_context.register("sdk_provider_binding_resolver", provider_binding_resolver)
     return stack
 
 
@@ -7242,7 +7449,7 @@ def _snapshot_context_usage_binding_for_run(host: Any) -> dict[str, Any]:
         # Context provenance must come from the typed frozen HostContext
         # binding.  Do not guess from provider_plan names or legacy pairs.
         return {}
-    provider_id, model_id, _incarnation_id, _revision, binding_epoch = (
+    provider_id, model_id, incarnation_id, revision, binding_epoch = (
         binding[:5]
     )
     provider_id = str(provider_id or "").strip()
@@ -7252,7 +7459,55 @@ def _snapshot_context_usage_binding_for_run(host: Any) -> dict[str, Any]:
     return {
         "provider_id": provider_id,
         "preferred_model": model_id,
+        "provider_incarnation_id": str(incarnation_id or ""),
+        "provider_config_revision": int(revision or 0),
         "binding_epoch": int(binding_epoch or 0),
+    }
+
+
+async def _freeze_sdk_provider_authority(
+    session_db: Any, session_id: str, host: Any
+) -> dict[str, Any]:
+    """Project the already-resolved Host route into one immutable SDK binding."""
+
+    from llm.code_params import code_params_to_request
+    from llm.model_catalog import model_context_window
+
+    frozen = _snapshot_context_usage_binding_for_run(host)
+    model_id = str(frozen.get("preferred_model") or "")
+    session_binding = await session_db.get_session_provider_binding_authority(
+        session_id
+    )
+    if int(session_binding.get("binding_epoch") or 0) != int(
+        frozen.get("binding_epoch") or 0
+    ):
+        raise RuntimeError("sdk_provider_binding_changed_during_start")
+    for session_key, frozen_key in (
+        ("provider_id", "provider_id"),
+        ("preferred_model", "preferred_model"),
+    ):
+        selected = str(session_binding.get(session_key) or "")
+        if selected and selected != str(frozen.get(frozen_key) or ""):
+            raise RuntimeError("sdk_provider_binding_changed_during_start")
+    model_params = dict(session_binding.get("model_params") or {})
+    request_params = code_params_to_request(model_params)
+    extra_body = request_params.get("extra_body")
+    context_override = (
+        int(extra_body.get("context_window") or 0)
+        if isinstance(extra_body, Mapping)
+        else 0
+    )
+    context_window = context_override or model_context_window(model_id)
+    if not context_window:
+        raise RuntimeError("sdk_context_window_unavailable")
+    return {
+        "provider_id": str(frozen["provider_id"]),
+        "model_id": model_id,
+        "provider_incarnation_id": str(frozen["provider_incarnation_id"]),
+        "provider_config_revision": int(frozen["provider_config_revision"]),
+        "binding_epoch": int(frozen["binding_epoch"]),
+        "model_params": model_params,
+        "context_window": int(context_window),
     }
 
 
@@ -8185,7 +8440,7 @@ async def _run_product_harness_chat(
         is_sentinel=is_sentinel,
         broadcast=_broadcast_default_chat_peers,
         send_final=_send_chat_final,
-        emit_context_usage=_emit_context_usage,
+        emit_context_usage=_sdk_context_usage_from_projection_only,
         intent_label_from_turn=_intent_label_from_turn,
         billing_ledger=billing_ledger,
         provider=provider,
@@ -8211,29 +8466,67 @@ async def _run_product_harness_chat(
     )
     session = None
     try:
-        # The SDK provider/coordinator snapshot is immutable for its stack.
-        # Serialize the binding refresh with the Run so another Session cannot
-        # swap the global stack to a different model halfway through a turn.
-        resolved_provider_id = str(
-            getattr(provider, "provider_id", "")
-            or getattr(provider, "id", "")
+        from deskpet.sdk_adapters.context_authority import (
+            DefaultDenySnapshotRedactor,
         )
-        resolved_model = str(getattr(provider, "model", "") or "")
-        async with _sdk_runtime_run_lock:
-            await _ensure_product_sdk_runtime_provider_binding(
-                resolved_provider_id, resolved_model
-            )
-            # Execute Agent via SDK Runtime
-            await _execute_sdk_run(
-                session_id=session_id,
-                request_id=request_id,
-                turn_id=turn_id,
-                task_scope_id=task_scope_id,
-                text=text,
-                context=context,
-                websocket=websocket,
-                root_run_id=root_ref.run_id,
-            )
+        from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+
+        if _sdk_provider_binding_resolver is None or _sdk_runtime_catalog is None:
+            raise RuntimeError("SDK per-Run authority is unavailable")
+        sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+            session_id, request_id, str(turn_id)
+        ).value
+        provider_authority = await _freeze_sdk_provider_authority(
+            session_db, session_id, host
+        )
+        prepared_snapshot = await _prepare_sdk_context_snapshot(
+            session_db=session_db,
+            session_id=session_id,
+            request_id=request_id,
+            root_run_id=root_ref.run_id,
+            sdk_run_id=sdk_run_id,
+            turn_id=str(turn_id),
+            text=text,
+            provider_binding=provider_authority,
+            catalog=_sdk_runtime_catalog,
+            attachment_blocks=tuple(user_attachment_blocks),
+            project=workspace,
+        )
+        public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
+        if session_db is not None:
+            await session_db.put_sdk_context_public_snapshot(public_snapshot)
+        run_binding = _sdk_provider_binding_resolver.create_binding(
+            run_id=sdk_run_id,
+            session_id=session_id,
+            request_id=request_id,
+            snapshot_id=prepared_snapshot.snapshot_id,
+            provider_id=provider_authority["provider_id"],
+            provider_incarnation_id=provider_authority["provider_incarnation_id"],
+            provider_config_revision=provider_authority[
+                "provider_config_revision"
+            ],
+            binding_epoch=provider_authority["binding_epoch"],
+            model_id=provider_authority["model_id"],
+            model_params=provider_authority["model_params"],
+            context_window=provider_authority["context_window"],
+            catalog_generation=int(_sdk_runtime_catalog["generation"]),
+            catalog_fingerprint=str(
+                _sdk_runtime_catalog["content_fingerprint"]
+            ),
+        )
+        # Execute Agent via SDK Runtime. Concurrent Sessions resolve their own
+        # immutable binding; no global stack mutation or full-Run lock occurs.
+        await _execute_sdk_run(
+            session_id=session_id,
+            request_id=request_id,
+            turn_id=turn_id,
+            task_scope_id=task_scope_id,
+            prepared_snapshot=prepared_snapshot,
+            run_binding=run_binding,
+            context=context,
+            websocket=websocket,
+            root_run_id=root_ref.run_id,
+        )
     except PreflightBlocked as block:
         await _commit_product_preflight_block(
             websocket=websocket,
@@ -8423,12 +8716,10 @@ def _provider_chain_or_none(provider_registry):
 
 
 async def _activate_product_sdk_runtime(
-    *,
-    provider_id_override: str | None = None,
-    model_override: str | None = None,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
-    global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_provider_binding
+    global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
+    global _sdk_provider_binding_resolver, _sdk_run_binding_registry
 
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from deskpet.workflows.store import RuntimeActivationCommand
@@ -8468,24 +8759,15 @@ async def _activate_product_sdk_runtime(
     if state.phase not in {"activated", "open"}:
         raise RuntimeError(f"unsupported activation phase: {state.phase}")
 
-    # Check if provider is configured before building SDK Runtime Stack
     provider_registry = service_context.get("provider_registry")
     if provider_registry is None:
         logger.warning("product_sdk_runtime_skipped", reason="provider_registry unavailable")
         return
 
-    chain = _provider_chain_or_none(provider_registry)
-    if not chain:
-        logger.warning("product_sdk_runtime_skipped", reason="provider_chain_empty - configure LLM provider in Settings")
-        return
-
-    # Try to build SDK Runtime Stack - may fail if API key is missing
+    # Runtime activation is independent of the current Provider chain. Fresh
+    # installs can add their first Provider later without replacing the stack.
     try:
-        stack = await _build_product_sdk_runtime_stack(
-            state.generation,
-            provider_id_override=provider_id_override,
-            model_override=model_override,
-        )
+        stack = await _build_product_sdk_runtime_stack(state.generation)
     except Exception as exc:
         logger.warning("product_sdk_runtime_skipped", reason=f"build_failed: {exc}")
         return
@@ -8501,12 +8783,13 @@ async def _activate_product_sdk_runtime(
 
     _sdk_runtime_stack = stack
     _sdk_ingress = ingress
-    selected_provider_id = str(provider_id_override or chain[0]["id"])
-    selected_entry = provider_registry.get_entry(selected_provider_id)
-    selected_model = str(
-        model_override or getattr(selected_entry, "model", "") or ""
+    _sdk_runtime_catalog = service_context.get("sdk_runtime_catalog")
+    _sdk_provider_binding_resolver = service_context.get(
+        "sdk_provider_binding_resolver"
     )
-    _sdk_runtime_provider_binding = (selected_provider_id, selected_model)
+    _sdk_run_binding_registry = getattr(
+        _sdk_provider_binding_resolver, "registry", None
+    )
 
     logger.info(
         "product_sdk_runtime_ready",
@@ -8580,100 +8863,6 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
         _growth_authority_router.current.phase.value,
         SDK_VERSION,
     )
-
-
-async def _refresh_product_sdk_runtime_after_provider_change(
-    *,
-    provider_id_override: str | None = None,
-    model_override: str | None = None,
-) -> bool:
-    """Rebuild the frozen provider adapter after provider registry mutations.
-
-    The SDK provider adapter snapshots provider id, endpoint, model, and API key
-    when the runtime stack is built. Fresh installs used to keep ingress closed
-    after the first provider was added, and edits/removals left the old snapshot
-    active until process restart. Serialize a fail-closed rebuild so Settings
-    changes become effective before the mutation is acknowledged to the UI.
-    """
-
-    global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_provider_binding
-
-    async with _sdk_runtime_refresh_lock:
-        previous_stack = _sdk_runtime_stack
-        previous_ingress = _sdk_ingress
-        if previous_ingress is not None:
-            previous_ingress.close()
-        _sdk_runtime_stack = None
-        _sdk_ingress = None
-        _sdk_runtime_provider_binding = None
-        service_context.register("sdk_runtime_ready", None)
-
-        if previous_stack is not None:
-            try:
-                await previous_stack.close()
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "product_sdk_runtime_provider_refresh_close_failed",
-                    error=str(exc),
-                )
-
-        try:
-            if provider_id_override is None and model_override is None:
-                await _activate_product_sdk_runtime()
-            else:
-                await _activate_product_sdk_runtime(
-                    provider_id_override=provider_id_override,
-                    model_override=model_override,
-                )
-            if _sdk_runtime_stack is None or _sdk_ingress is None:
-                logger.info(
-                    "product_sdk_runtime_provider_refresh_inactive",
-                    reason="no_usable_provider",
-                )
-                return False
-            await _activate_companion_runtime_adapter_and_open_ingress()
-        except Exception as exc:  # noqa: BLE001
-            failed_stack = _sdk_runtime_stack
-            if _sdk_ingress is not None:
-                _sdk_ingress.close()
-            _sdk_runtime_stack = None
-            _sdk_ingress = None
-            _sdk_runtime_provider_binding = None
-            service_context.register("sdk_runtime_ready", None)
-            if failed_stack is not None:
-                try:
-                    await failed_stack.close()
-                except Exception as close_exc:  # noqa: BLE001
-                    logger.warning(
-                        "product_sdk_runtime_provider_refresh_cleanup_failed",
-                        error=str(close_exc),
-                    )
-            logger.warning(
-                "product_sdk_runtime_provider_refresh_failed",
-                error=str(exc),
-            )
-            return False
-
-        logger.info("product_sdk_runtime_provider_refresh_ready")
-        return True
-
-
-async def _ensure_product_sdk_runtime_provider_binding(
-    provider_id: str, model: str
-) -> None:
-    """Make the frozen SDK provider snapshot match the current Session binding."""
-
-    desired = (str(provider_id).strip(), str(model).strip())
-    if not all(desired):
-        raise RuntimeError("resolved SDK provider binding is incomplete")
-    if _sdk_runtime_provider_binding == desired and _sdk_ingress is not None:
-        return
-    refreshed = await _refresh_product_sdk_runtime_after_provider_change(
-        provider_id_override=desired[0],
-        model_override=desired[1],
-    )
-    if not refreshed or _sdk_runtime_provider_binding != desired:
-        raise RuntimeError("SDK Runtime provider binding refresh failed")
 
 
 async def _attach_workflow_history_events(
@@ -9507,74 +9696,140 @@ _SDK_PUBLIC_WORK_NARRATION_PROMPT = """\
 """
 
 
-async def _assemble_sdk_messages(
+async def _sdk_context_usage_from_projection_only(*_args: Any, **_kwargs: Any) -> None:
+    """SDK usage is projected from durable physical-attempt receipts only."""
+
+    return None
+
+
+def _sdk_text_tokens(value: object) -> int:
+    text = str(value or "")
+    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
+    return cjk + max(0, len(text) - cjk + 3) // 4
+
+
+async def _bounded_sdk_history(
     session_db: Any,
     *,
     session_id: str,
     root_run_id: str,
-    text: str,
-    limit: int = 20,
-) -> list[dict[str, str]]:
-    """Build the ordered SDK chat transcript for one fresh run.
+    token_budget: int,
+) -> tuple[list[dict[str, Any]], bool]:
+    """Keep the newest complete conversational rows within a hard budget."""
 
-    The current user message is already durable by the time the SDK ingress
-    starts, so exclude rows belonging to this root run and append the current
-    input exactly once.  Non-conversational/tool rows are intentionally left
-    to the SDK's event context rather than sent as malformed chat messages.
-    """
-    history_messages: list[dict[str, str]] = []
-    if session_db is not None:
-        try:
-            rows = await session_db.get_recent_messages(session_id, limit=limit)
-            for row in rows:
-                if str(row.get("root_run_id") or "") == str(root_run_id):
-                    continue
-                role = str(row.get("role") or "")
-                content = str(row.get("content") or "")
-                visibility = str(row.get("context_visibility") or "conversation")
-                projection = str(row.get("projection_kind") or "legacy_message")
-                allowed_projections = {
-                    "user": {"legacy_message", "user_message"},
-                    "assistant": {
-                        "legacy_message",
-                        "assistant_message",
-                        "final_assistant",
-                    },
-                }
-                if (
-                    visibility == "conversation"
-                    and projection in allowed_projections.get(role, set())
-                    and content
-                ):
-                    history_messages.append({"role": role, "content": content})
-        except Exception as exc:  # noqa: BLE001 - history must not block a run
-            logger.warning(
-                "chat_history_assembly_failed",
-                session_id=session_id,
-                error=str(exc),
-            )
-    return [
-        {"role": "system", "content": _SDK_PUBLIC_WORK_NARRATION_PROMPT},
-        *history_messages,
-        {"role": "user", "content": text},
+    rows = await session_db.get_recent_messages(session_id, limit=10_000)
+    allowed = {
+        "user": {"legacy_message", "user_message"},
+        "assistant": {"legacy_message", "assistant_message", "final_assistant"},
+    }
+    candidates = [
+        {
+            "root_run_id": str(row.get("root_run_id") or ""),
+            "role": str(row.get("role") or ""),
+            "content": str(row["content"]),
+            "context_visibility": "conversation",
+            "projection_kind": str(row.get("projection_kind") or "legacy_message"),
+        }
+        for row in rows
+        if str(row.get("root_run_id") or "") != str(root_run_id)
+        and str(row.get("context_visibility") or "conversation") == "conversation"
+        and str(row.get("projection_kind") or "legacy_message")
+        in allowed.get(str(row.get("role") or ""), set())
+        and isinstance(row.get("content"), str)
+        and bool(row.get("content"))
     ]
+    kept: list[dict[str, Any]] = []
+    remaining = max(0, int(token_budget))
+    for row in reversed(candidates):
+        cost = _sdk_text_tokens(row["content"]) + 4
+        if cost > remaining:
+            break
+        kept.append(row)
+        remaining -= cost
+    kept.reverse()
+    return kept, len(kept) != len(candidates)
 
 
-def _sdk_capability_snapshot() -> dict[str, list[str]]:
-    """Return the product Tool names exposed to the SDK ReAct driver.
+async def _prepare_sdk_context_snapshot(
+    *,
+    session_db: Any,
+    session_id: str,
+    request_id: str,
+    root_run_id: str,
+    sdk_run_id: str,
+    turn_id: str,
+    text: str,
+    provider_binding: dict[str, Any],
+    catalog: dict[str, Any],
+    attachment_blocks: tuple[dict[str, Any], ...],
+    project: str | None,
+) -> Any:
+    """Prepare once; the returned messages are the sole Provider authority."""
 
-    The SDK driver intentionally treats ``capability_snapshot.tools`` as the
-    allow-list for the Provider request.  The Host catalog is the authority,
-    so this keeps the wire snapshot aligned with the registry instead of
-    silently running every turn with zero tools.
-    """
-    # The SDK product catalog contains dynamic orchestration/context tools
-    # which are intentionally not registered in the legacy v2 registry.
-    # Using that legacy list silently removed 17 tools (including agent,
-    # spawn_subagents and workflow_spawn) from every Provider request.
-    from deskpet.sdk_adapters.tools import PRODUCT_TOOL_NAMES
+    from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
+    from deskpet.sdk_adapters.context_preparation import (
+        SdkContextPreparationService,
+        SdkContextSources,
+    )
 
-    return {"tools": list(PRODUCT_TOOL_NAMES)}
+    context_window = int(provider_binding["context_window"])
+    compact_at = max(1, int(context_window * 0.8))
+    reserved = (
+        int(catalog.get("schema_token_count") or 0)
+        + _sdk_text_tokens(_SDK_PUBLIC_WORK_NARRATION_PROMPT)
+        + _sdk_text_tokens(text)
+        + sum(_sdk_text_tokens(item) for item in attachment_blocks)
+        + 256
+    )
+    if reserved > compact_at:
+        raise RuntimeError("sdk_context_required_content_exceeds_budget")
+    history, truncated = await _bounded_sdk_history(
+        session_db,
+        session_id=session_id,
+        root_run_id=root_run_id,
+        token_budget=max(0, compact_at - reserved),
+    )
+    service = SdkContextPreparationService(
+        SdkContextSources(
+            history=lambda _session_id: history,
+            persona=lambda: _SDK_PUBLIC_WORK_NARRATION_PROMPT,
+            project=(
+                (lambda _session_id: {"workspace": project}) if project else None
+            ),
+        )
+    )
+    prepared = await service.prepare(
+        session_id=session_id,
+        request_id=request_id,
+        root_run_id=root_run_id,
+        sdk_run_id=sdk_run_id,
+        turn_id=turn_id,
+        text=text,
+        provider_binding=provider_binding,
+        catalog=catalog,
+        attachment_blocks=attachment_blocks,
+    )
+    private = prepared.private_record()
+    budget = dict(private["budget"])
+    budget.update(
+        context_window=context_window,
+        effective_ceiling=compact_at,
+        compact_at=compact_at,
+        truncated=truncated,
+    )
+    return PreparedSdkContextSnapshotV1.build(
+        session_id=session_id,
+        request_id=request_id,
+        root_run_id=root_run_id,
+        sdk_run_id=sdk_run_id,
+        turn_id=turn_id,
+        provider_binding=private["provider_binding"],
+        provider_messages=private["provider_messages"],
+        catalog=private["catalog"],
+        attachments=private["attachments"],
+        sections=private["sections"],
+        budget=budget,
+    )
 
 
 async def _execute_sdk_run(
@@ -9583,7 +9838,8 @@ async def _execute_sdk_run(
     request_id: str,
     turn_id: int,
     task_scope_id: str | None,
-    text: str,
+    prepared_snapshot: Any,
+    run_binding: Any,
     context: Any,  # RunPresentationContext
     websocket: Any,  # WebSocket
     root_run_id: str,
@@ -9617,20 +9873,23 @@ async def _execute_sdk_run(
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
-    session_db = getattr(context, "session_db", None)
-
-    # Build payload for SDK Runtime
+    private = prepared_snapshot.private_record()
+    catalog = dict(private["catalog"])
+    budget = dict(private["budget"])
     payload = {
-        "input": {"text": text},
-        "messages": await _assemble_sdk_messages(
-            session_db,
-            session_id=session_id,
-            root_run_id=root_run_id,
-            text=text,
-        ),
-        # SDK ReAct driver uses this field as the Provider tool allow-list;
-        # keep it sourced from the same product catalog as the executor.
-        "capability_snapshot": _sdk_capability_snapshot(),
+        "input": {"text": str(getattr(context, "text", ""))},
+        "messages": private["provider_messages"],
+        "capability_snapshot": {"tools": list(catalog["tool_names"])},
+        "context_metadata": {
+            "session_id": session_id,
+            "root_run_id": root_run_id,
+            "request_id": request_id,
+            "snapshot_id": prepared_snapshot.snapshot_id,
+            "binding_epoch": run_binding.binding_epoch,
+            "context_window": run_binding.context_window,
+            "effective_ceiling": int(budget.get("effective_ceiling") or 0),
+            "run_binding": run_binding.to_record(),
+        },
     }
 
     # Create presentation infrastructure
@@ -9665,6 +9924,7 @@ async def _execute_sdk_run(
     # ProductToolsAdapter, and _DeliverySink routing).
     _delivery_adapters[sdk_run_id] = delivery_adapter
     _sdk_run_ids_by_root[root_run_id] = sdk_run_id
+    terminal_binding_state: str | None = "failed"
 
     try:
         receipt = await _sdk_ingress.start(
@@ -9672,7 +9932,9 @@ async def _execute_sdk_run(
             request_id=request_id,
             turn_id=str(turn_id),
             payload=payload,
-            session_generation=1,  # TODO: Get actual generation from context
+            session_generation=run_binding.catalog_generation,
+            tool_catalog_fingerprint=run_binding.catalog_fingerprint,
+            provider_budget_fingerprint=run_binding.budget_fingerprint,
         )
         if receipt.run_id != sdk_run_id:
             raise RuntimeError("SDK ingress returned an unexpected Run identity")
@@ -9722,8 +9984,24 @@ async def _execute_sdk_run(
                 sdk_run_id=sdk_run_id,
                 observed_state=sdk_state_value,
             )
+            terminal_binding_state = "cancelled"
+            return
+        if sdk_state_value == "waiting":
+            terminal_binding_state = None
+            if _sdk_provider_binding_resolver is not None:
+                _sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
+            logger.info(
+                "sdk_run_waiting_binding_retained",
+                sdk_run_id=sdk_run_id,
+                root_run_id=root_run_id,
+            )
             return
         if sdk_state_value != "completed":
+            terminal_binding_state = (
+                sdk_state_value
+                if sdk_state_value in {"failed", "cancelled"}
+                else "failed"
+            )
             # A failed/cancelled SDK run has no assistant text to present.
             # Emit the product terminal error instead of an empty final frame,
             # so the UI can settle the canonical root projection visibly.
@@ -9780,6 +10058,7 @@ async def _execute_sdk_run(
 
         # Finalize presentation
         await delivery_adapter.finish()
+        terminal_binding_state = "completed"
 
         logger.info(
             "sdk_run_completed",
@@ -9791,6 +10070,13 @@ async def _execute_sdk_run(
         )
 
     finally:
+        if terminal_binding_state is not None and _sdk_provider_binding_resolver is not None:
+            try:
+                _sdk_provider_binding_resolver.mark_terminal(
+                    sdk_run_id, terminal_binding_state
+                )
+            except KeyError:
+                pass
         # Always clean up registry entry
         _delivery_adapters.pop(sdk_run_id, None)
         if _sdk_run_ids_by_root.get(root_run_id) == sdk_run_id:
@@ -12645,7 +12931,6 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
-                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_added",
                             "payload": {"provider": entry.to_public_dict()},
@@ -12701,7 +12986,6 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
-                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_updated",
                             "payload": {"provider": entry.to_public_dict()},
@@ -12751,7 +13035,6 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
-                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_removed",
                             "payload": {"id": _pid},
@@ -12799,7 +13082,6 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
-                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_reordered",
                             "payload": {"providers": _reg.list_providers()},

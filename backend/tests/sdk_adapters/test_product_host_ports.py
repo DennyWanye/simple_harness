@@ -51,6 +51,7 @@ from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAda
 from deskpet.sdk_adapters.tools import (
     PRODUCT_TOOL_NAMES,
     ProductToolRegistration,
+    active_product_tool_context,
     build_product_tool_registry,
 )
 
@@ -1095,6 +1096,69 @@ def test_tool_adapter_has_exact_explicit_inventory_and_six_dispatch_shapes() -> 
         assert calls == list(kinds)
 
     asyncio.run(case())
+
+
+def test_tool_adapter_contextvar_is_concurrent_and_fail_closed() -> None:
+    observed: dict[str, list[str]] = {}
+    entered = 0
+    both_entered = asyncio.Event()
+    release = asyncio.Event()
+
+    def registration(name: str):
+        async def handler(_arguments, _context):
+            nonlocal entered
+            run_id = active_product_tool_context().run_id.value
+            observed.setdefault(run_id, []).append(
+                active_product_tool_context().request_id.value
+            )
+            entered += 1
+            if entered == 2:
+                both_entered.set()
+            await release.wait()
+            observed[run_id].append(active_product_tool_context().run_id.value)
+            return {"ok": True}
+
+        return ProductToolRegistration(
+            name=name,
+            description=f"{name} fixture",
+            input_schema={"type": "object", "properties": {}},
+            handler=handler,
+            dispatch_kind="async",
+            permission_category="read_file",
+            metadata={"source": "product", "version": "1"},
+        )
+
+    registry, _ = build_product_tool_registry(
+        [registration(name) for name in PRODUCT_TOOL_NAMES]
+    )
+
+    async def case() -> None:
+        tasks = [
+            asyncio.create_task(
+                registry.invoke(
+                    ToolCall(CallId(f"call-{suffix}"), tool, {}),
+                    ToolContext(
+                        RunId(f"run-{suffix}"),
+                        RequestId(f"request-{suffix}"),
+                        CancellationToken(),
+                    ),
+                )
+            )
+            for suffix, tool in (("a", "file_read"), ("b", "file_write"))
+        ]
+        await asyncio.wait_for(both_entered.wait(), timeout=1)
+        release.set()
+        await asyncio.gather(*tasks)
+
+    with pytest.raises(RuntimeError, match="outside SDK ToolRegistry"):
+        active_product_tool_context()
+    asyncio.run(case())
+    assert observed == {
+        "run-a": ["request-a", "run-a"],
+        "run-b": ["request-b", "run-b"],
+    }
+    with pytest.raises(RuntimeError, match="outside SDK ToolRegistry"):
+        active_product_tool_context()
 
 
 def test_tool_adapter_projects_through_registered_run_delivery() -> None:

@@ -7,36 +7,103 @@ from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
 
 @pytest.mark.asyncio
-async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run():
-    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT, _assemble_sdk_messages
+async def test_ingress_passes_exact_catalog_and_budget_fingerprints_to_run_start():
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import thaw_json
 
-    class FakeSessionDB:
-        async def get_recent_messages(self, session_id, limit):
-            assert session_id == "session-1"
-            assert limit == 20
-            return [
-                {"root_run_id": "run-old", "role": "user", "content": "之前的问题"},
-                {"root_run_id": "run-old", "role": "assistant", "content": "之前的回答"},
-                {"root_run_id": "run-current", "role": "user", "content": "当前消息"},
-                {"root_run_id": "run-old", "role": "tool", "content": "内部结果"},
-            ]
+    client = SimpleNamespace(start=AsyncMock())
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=9)
+    )
+    ingress._accepting = True  # noqa: SLF001
 
-    assert await _assemble_sdk_messages(
-        FakeSessionDB(),
-        session_id="session-1",
-        root_run_id="run-current",
-        text="当前消息",
-    ) == [
-        {"role": "system", "content": _SDK_PUBLIC_WORK_NARRATION_PROMPT},
-        {"role": "user", "content": "之前的问题"},
-        {"role": "assistant", "content": "之前的回答"},
-        {"role": "user", "content": "当前消息"},
+    await ingress.start(
+        session_id="session-exact",
+        request_id="request-exact",
+        turn_id="turn-exact",
+        payload={"messages": [{"role": "user", "content": "hello"}]},
+        session_generation=7,
+        tool_catalog_fingerprint="c" * 64,
+        provider_budget_fingerprint="b" * 64,
+    )
+
+    start = client.start.await_args.args[0]
+    assert start.tool_catalog_generation == 7
+    assert start.tool_catalog_fingerprint == "c" * 64
+    assert start.provider_budget_fingerprint == "b" * 64
+    assert thaw_json(start.input)["messages"] == [
+        {"role": "user", "content": "hello"}
     ]
 
 
 @pytest.mark.asyncio
-async def test_sdk_message_assembly_excludes_non_conversation_projections_and_canaries():
-    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT, _assemble_sdk_messages
+async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
+    from main import _prepare_sdk_context_snapshot
+
+    class FakeSessionDB:
+        async def get_recent_messages(self, session_id, limit):
+            assert session_id == "session-1"
+            assert limit == 10_000
+            return [
+                {"root_run_id": "run-old", "role": "user", "content": f"旧消息-{i}-" + "x" * 200}
+                for i in range(100)
+            ]
+
+    prepared = await _prepare_sdk_context_snapshot(
+        session_db=FakeSessionDB(),
+        session_id="session-1",
+        request_id="request-1",
+        root_run_id="run-current",
+        sdk_run_id="sdk-run-current",
+        turn_id="1",
+        text="当前消息",
+        provider_binding={"context_window": 1_000, "provider_id": "p", "model_id": "m"},
+        catalog={"tool_count": 1, "schema_token_count": 100, "tool_names": ["read_file"], "generation": 2, "content_fingerprint": "f"},
+        attachment_blocks=(),
+        project=None,
+    )
+    private = prepared.private_record()
+    assert private["budget"]["truncated"] is True
+    assert private["budget"]["compact_at"] == 800
+    assert private["provider_messages"][-1] == {"role": "user", "content": "当前消息"}
+    assert len(private["provider_messages"]) < 102
+
+
+@pytest.mark.asyncio
+async def test_sdk_preparation_rejects_required_content_over_context_window():
+    from main import _prepare_sdk_context_snapshot
+
+    session_db = SimpleNamespace(get_recent_messages=AsyncMock(return_value=[]))
+    with pytest.raises(RuntimeError, match="required_content_exceeds_budget"):
+        await _prepare_sdk_context_snapshot(
+            session_db=session_db,
+            session_id="session-small",
+            request_id="request-small",
+            root_run_id="root-small",
+            sdk_run_id="sdk-small",
+            turn_id="1",
+            text="x" * 10_000,
+            provider_binding={
+                "context_window": 1_000,
+                "provider_id": "p",
+                "model_id": "m",
+            },
+            catalog={
+                "tool_count": 1,
+                "schema_token_count": 100,
+                "tool_names": ["read_file"],
+                "generation": 2,
+                "content_fingerprint": "f",
+            },
+            attachment_blocks=(),
+            project=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_sdk_bounded_history_excludes_non_conversation_projections_and_canaries():
+    from main import _bounded_sdk_history
 
     public_summary_canary = "PUBLIC_REASONING_SUMMARY_CANARY"
     hidden_reasoning_canary = "HIDDEN_REASONING_CANARY"
@@ -45,7 +112,7 @@ async def test_sdk_message_assembly_excludes_non_conversation_projections_and_ca
     class FakeSessionDB:
         async def get_recent_messages(self, session_id, limit):
             assert session_id == "session-canary"
-            assert limit == 20
+            assert limit == 10_000
             return [
                 {
                     "root_run_id": "run-old",
@@ -85,44 +152,28 @@ async def test_sdk_message_assembly_excludes_non_conversation_projections_and_ca
                 },
             ]
 
-    messages = await _assemble_sdk_messages(
+    rows, truncated = await _bounded_sdk_history(
         FakeSessionDB(),
         session_id="session-canary",
         root_run_id="run-current",
-        text="当前用户消息",
+        token_budget=10_000,
     )
 
-    assert messages == [
-        {"role": "system", "content": _SDK_PUBLIC_WORK_NARRATION_PROMPT},
-        {"role": "user", "content": "保留的用户消息"},
-        {"role": "assistant", "content": "保留的助手回复"},
-        {"role": "user", "content": "当前用户消息"},
-    ]
-    serialized = repr(messages)
+    assert [item["content"] for item in rows] == ["保留的用户消息", "保留的助手回复"]
+    assert truncated is False
+    serialized = repr(rows)
     assert public_summary_canary not in serialized
     assert hidden_reasoning_canary not in serialized
     assert ui_elapsed_canary not in serialized
-    assert "assistant.content" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
-    assert "不要输出私有思维链" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
-    assert "避免重复固定模板" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
 
 
-def test_sdk_capability_snapshot_exposes_product_catalog():
-    from main import _sdk_capability_snapshot
-    from deskpet.sdk_adapters.tools import PRODUCT_TOOL_NAMES
+def test_sdk_price_snapshot_never_marks_unknown_model_free():
+    from main import _sdk_price_snapshot
 
-    snapshot = _sdk_capability_snapshot()
-    assert tuple(snapshot["tools"]) == PRODUCT_TOOL_NAMES
-    assert len(snapshot["tools"]) == 77
-    assert {
-        "agent",
-        "agent_parallel",
-        "spawn_subagents",
-        "spawn_team",
-        "await_subagents",
-        "workflow_spawn",
-        "workspace_prepare",
-    } <= set(snapshot["tools"])
+    input_price, output_price, version = _sdk_price_snapshot("custom", "unknown")
+    assert input_price > 0
+    assert output_price > 0
+    assert version.startswith("deskpet-pricing:")
 
 
 @pytest.fixture
@@ -201,6 +252,46 @@ def _presentation_context(*, websocket, session_db, root_run_id):
     )
 
 
+def _prepared_snapshot(text: str = "read the project"):
+    return SimpleNamespace(
+        snapshot_id="sdk-context:test",
+        private_record=lambda: {
+            "provider_messages": [{"role": "user", "content": text}],
+            "catalog": {
+                "generation": 7,
+                "content_fingerprint": "c" * 64,
+                "tool_names": ["file_read"],
+            },
+            "budget": {"effective_ceiling": 8_000},
+        },
+    )
+
+
+def _run_binding(run_id: str):
+    record = {"schema_version": 1, "run_id": run_id}
+    return SimpleNamespace(
+        run_id=run_id,
+        binding_epoch=3,
+        context_window=16_000,
+        catalog_generation=7,
+        catalog_fingerprint="c" * 64,
+        budget_fingerprint="b" * 64,
+        to_record=lambda: record,
+    )
+
+
+class _BindingLifecycle:
+    def __init__(self) -> None:
+        self.waiting = []
+        self.terminal = []
+
+    def mark_waiting(self, run_id):
+        self.waiting.append(run_id)
+
+    def mark_terminal(self, run_id, state):
+        self.terminal.append((run_id, state))
+
+
 @pytest.mark.asyncio
 async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkeypatch):
     """A worker executing inside start() must already see its Run delivery."""
@@ -221,6 +312,12 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
         async def start(self, **kwargs):
             nonlocal saw_registered_adapter
             assert kwargs["session_id"] == session_id
+            assert kwargs["session_generation"] == 7
+            assert kwargs["tool_catalog_fingerprint"] == "c" * 64
+            assert kwargs["provider_budget_fingerprint"] == "b" * 64
+            assert kwargs["payload"]["messages"] == [
+                {"role": "user", "content": "read the project"}
+            ]
             delivery = _delivery_adapters.get(sdk_run_id)
             saw_registered_adapter = delivery is not None
             assert delivery is not None
@@ -260,13 +357,16 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
     monkeypatch.setattr(main, "_sdk_ingress", FirstTurnInsideStartIngress())
     monkeypatch.setattr(main, "_sdk_context_port", None)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    lifecycle = _BindingLifecycle()
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
 
     await main._execute_sdk_run(
         session_id=session_id,
         request_id=request_id,
         turn_id=turn_id,
         task_scope_id="race-scope",
-        text="read the project",
+        prepared_snapshot=_prepared_snapshot(),
+        run_binding=_run_binding(sdk_run_id),
         context=context,
         websocket=websocket,
         root_run_id="canonical-root-race",
@@ -315,6 +415,8 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
         root_run_id="canonical-root-start-failure",
     )
     monkeypatch.setattr(main, "_sdk_ingress", FailingStartIngress())
+    lifecycle = _BindingLifecycle()
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
 
     with pytest.raises(RuntimeError, match="start failed"):
         await main._execute_sdk_run(
@@ -322,7 +424,8 @@ async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(m
             request_id="race-request",
             turn_id=9,
             task_scope_id="race-scope",
-            text="read the project",
+            prepared_snapshot=_prepared_snapshot(),
+            run_binding=_run_binding(sdk_run_id),
             context=context,
             websocket=websocket,
             root_run_id="canonical-root-start-failure",
@@ -443,13 +546,16 @@ async def test_execute_sdk_run_does_not_project_user_cancel_as_failure(monkeypat
     monkeypatch.setattr(main, "_sdk_context_port", None)
     monkeypatch.setattr(main, "_send_chat_error", send_error)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    lifecycle = _BindingLifecycle()
+    monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
 
     await main._execute_sdk_run(
         session_id=session_id,
         request_id=request_id,
         turn_id=turn_id,
         task_scope_id="cancel-scope",
-        text="stop this run",
+        prepared_snapshot=_prepared_snapshot("stop this run"),
+        run_binding=_run_binding(sdk_run_id),
         context=context,
         websocket=websocket,
         root_run_id="canonical-cancel-root",
