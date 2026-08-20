@@ -7824,6 +7824,8 @@ async def _signal_product_harness_decision(
     session_id: str,
     payload: dict[str, Any],
     response: dict[str, Any],
+    *,
+    authorization: bool = False,
 ):
     """Apply one fenced UI decision to the durable execution authority."""
 
@@ -7838,21 +7840,25 @@ async def _signal_product_harness_decision(
     if not run_id or not decision_id or not nonce or version is None:
         raise ValueError("decision response requires run_id/decision_id/nonce/version")
     sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
-    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-        session_id=session_id,
-        workspace=None,
-    )
-    receipt = await _sdk_ingress.require_ready().client.signal(
-        {"run_id": sdk_run_id, "expected_session_id": session_id},
-        host,
-        {
-            "decision_id": decision_id,
-            "nonce": nonce,
-            "version": int(version),
-            "response": response,
-        },
-    )
-    _sdk_ingress.trigger_reconciler()
+    if authorization:
+        receipt = await _sdk_ingress.decide_authorization(
+            run_id=sdk_run_id,
+            decision_id=decision_id,
+            nonce=nonce,
+            expected_version=int(version),
+            decision=str(response.get("decision") or "deny"),
+        )
+    else:
+        receipt = await _sdk_ingress.signal(
+            run_id=sdk_run_id,
+            signal_id=decision_id,
+            payload={
+                "decision_id": decision_id,
+                "nonce": nonce,
+                "version": int(version),
+                "response": response,
+            },
+        )
     _ensure_sdk_recovery_watcher(sdk_run_id)
     return receipt
 
@@ -8005,17 +8011,10 @@ async def _run_product_harness_continuation(
         )
     message_ref = f"request:{request_id}"
     sdk_run_id = _sdk_run_ids_by_root.get(root_run_id, root_run_id)
-    host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-        session_id=session_id,
-        workspace=None,
-    )
-    receipt = await _sdk_ingress.require_ready().client.signal(
-        {
-            "run_id": sdk_run_id,
-            "expected_session_id": session_id,
-        },
-        host,
-        {
+    receipt = await _sdk_ingress.signal(
+        run_id=sdk_run_id,
+        signal_id=message_ref,
+        payload={
             "kind": "user_continuation",
             "task_scope_id": task_scope_id,
             "message_ref": message_ref,
@@ -8266,7 +8265,6 @@ async def _commit_product_preflight_block(
     }
     await websocket.send_json(started)
     await _broadcast_default_chat_peers(websocket, started)
-    _sdk_ingress.trigger_reconciler()
     async for _event in handle.events:
         pass
 
@@ -9932,8 +9930,8 @@ _SDK_PUBLIC_WORK_NARRATION_PROMPT = """\
 1. 使用 1-2 句简洁、自然且与当前步骤相关的文字，说明你现在要做什么，以及必要时说明它与上一结果的关系。
 2. 文字必须由你根据当前任务和已看到的公开工具结果自行撰写，避免重复固定模板。
 3. 不要输出私有思维链、逐步内心分析、隐藏 reasoning、密钥、完整工具参数或原始工具结果。
-4. 每个真实工具的参数 schema 都包含必填的 `deskpet_public_progress`；调用工具时必须在这个参数中写上述叙述。
-5. 如果 Provider 支持在 assistant.content 中同时返回公开文字，也可以写入相同叙述；不要只返回空 content。
+4. 工具参数 schema 可能提供可选的 `deskpet_public_progress`；支持时可在这个参数中写上述公开叙述，但缺失、空值或类型不正确都不能阻断工具调用，也不得为补齐它而伪造内容。
+5. 如果 Provider 支持在 assistant.content 中同时返回公开文字，优先写入自然的公开叙述；无法提供时保持兼容，不要输出私有推理替代它。
 这段公开叙述会展示在“思考过程”区域，但不会作为后续模型上下文保存。\
 """
 
@@ -10162,9 +10160,23 @@ async def _execute_sdk_run(
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
+    # The frozen tool authority is keyed by the SDK's deterministic physical
+    # Run identity, so compute it before reading any authority into RunStart.
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+        session_id,
+        request_id,
+        str(turn_id),
+    ).value
     private = prepared_snapshot.private_record()
     catalog = dict(private["catalog"])
     budget = dict(private["budget"])
+    tool_authority = (
+        _sdk_tool_authority_registry.resolve(sdk_run_id)
+        if _sdk_tool_authority_registry is not None
+        else None
+    )
+    if _sdk_tool_authority_registry is not None and tool_authority is None:
+        raise RuntimeError("SDK Run Tool authority is unavailable")
     payload = {
         "input": {"text": str(getattr(context, "text", ""))},
         "messages": private["provider_messages"],
@@ -10175,15 +10187,13 @@ async def _execute_sdk_run(
             "request_id": request_id,
             "task_scope_id": task_scope_id,
             "workspace_root": (
-                _sdk_tool_authority_registry.resolve(sdk_run_id)
-                .task_work_context.workspace_root
-                if _sdk_tool_authority_registry is not None
+                tool_authority.task_work_context.workspace_root
+                if tool_authority is not None
                 else None
             ),
             "workspace_binding_version": (
-                _sdk_tool_authority_registry.resolve(sdk_run_id)
-                .task_work_context.binding_version
-                if _sdk_tool_authority_registry is not None
+                tool_authority.task_work_context.binding_version
+                if tool_authority is not None
                 else 1
             ),
             "conversation_boundary_ref": context.conversation_boundary_ref,
@@ -10207,12 +10217,6 @@ async def _execute_sdk_run(
     # registered *before* start() makes the Run visible to a worker. Registering
     # after awaiting start() races a fast first Provider/tool turn and silently
     # drops its public narration and tool lifecycle.
-    sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
-        session_id,
-        request_id,
-        str(turn_id),
-    ).value
-
     # Create ProductDeliveryAdapter for this run
     delivery_adapter = ProductDeliveryAdapter(
         session_id=session_id,
@@ -11901,6 +11905,7 @@ async def control_channel(ws: WebSocket):
                         target_sid,
                         payload,
                         {"decision": str(payload.get("decision") or "deny")},
+                        authorization=True,
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(
@@ -12994,28 +12999,11 @@ async def control_channel(ws: WebSocket):
                     _version = payload.get("version")
                     if not _run_id or not _decision_id or not _nonce or _version is None:
                         raise ValueError("plan confirmation requires the durable decision fence")
-                    _host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
-                        session_id=_csid,
-                        workspace=None,
+                    _receipt = await _signal_product_harness_decision(
+                        _csid,
+                        payload,
+                        {"decision": _decision},
                     )
-                    _sdk_signal_run_id = _sdk_run_ids_by_root.get(
-                        _run_id, _run_id
-                    )
-                    _receipt = await _sdk_ingress.require_ready().client.signal(
-                        {
-                            "run_id": _sdk_signal_run_id,
-                            "expected_session_id": _csid,
-                        },
-                        _host,
-                        {
-                            "decision_id": _decision_id,
-                            "nonce": _nonce,
-                            "version": int(_version),
-                            "response": {"decision": _decision},
-                        },
-                    )
-                    _sdk_ingress.trigger_reconciler()
-                    _ensure_sdk_recovery_watcher(_sdk_signal_run_id)
                     logger.info(
                         "harness_plan_decision sid=%s run_id=%s accepted=%s duplicate=%s",
                         _csid,

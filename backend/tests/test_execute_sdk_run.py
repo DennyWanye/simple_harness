@@ -2,7 +2,7 @@
 from types import SimpleNamespace
 
 import pytest
-from unittest.mock import AsyncMock, Mock, MagicMock, patch
+from unittest.mock import AsyncMock, Mock, MagicMock, create_autospec, patch
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
 
@@ -35,6 +35,71 @@ async def test_ingress_passes_exact_catalog_and_budget_fingerprints_to_run_start
     assert thaw_json(start.input)["messages"] == [
         {"role": "user", "content": "hello"}
     ]
+
+
+@pytest.mark.asyncio
+async def test_ingress_uses_sdk_015_sync_signal_signature():
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import RunClient
+
+    client = create_autospec(RunClient, instance=True)
+    client.signal.return_value = SimpleNamespace(
+        continuation_id="signal-exact"
+    )
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=15)
+    )
+    ingress._accepting = True  # noqa: SLF001
+
+    receipt = await ingress.signal(
+        run_id="sdk-run-exact",
+        signal_id="signal-exact",
+        payload={"kind": "user_continuation"},
+    )
+
+    assert receipt.delivery_id == "signal-exact"
+    client.signal.assert_called_once()
+    args, kwargs = client.signal.call_args
+    assert args[0].value == "sdk-run-exact"
+    assert kwargs == {
+        "signal_id": "signal-exact",
+        "payload": {"kind": "user_continuation"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_ingress_uses_sdk_015_async_authorization_signature():
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import RunClient
+    from simple_harness.tools import AuthorizationDecision
+
+    client = create_autospec(RunClient, instance=True)
+    client.decide_authorization.return_value = SimpleNamespace()
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=15)
+    )
+    ingress._accepting = True  # noqa: SLF001
+
+    receipt = await ingress.decide_authorization(
+        run_id="sdk-run-auth",
+        decision_id="decision-auth",
+        nonce="nonce-auth",
+        expected_version=3,
+        decision="allow",
+    )
+
+    assert receipt.accepted is True
+    client.decide_authorization.assert_awaited_once()
+    args, kwargs = client.decide_authorization.await_args
+    assert args[0].value == "sdk-run-auth"
+    assert kwargs == {
+        "decision_id": "decision-auth",
+        "nonce": "nonce-auth",
+        "expected_version": 3,
+        "decision": AuthorizationDecision.ALLOW,
+    }
 
 
 @pytest.mark.asyncio
@@ -326,6 +391,36 @@ def test_sdk_price_snapshot_never_marks_unknown_model_free():
     assert version.startswith("deskpet-pricing:")
 
 
+def test_public_narration_prompt_matches_optional_tolerant_tool_schema():
+    from main import _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    from deskpet.sdk_adapters.tools import ProductToolRegistration, _sdk_tool
+
+    registration = ProductToolRegistration(
+        name="read_file",
+        description="Read a file",
+        input_schema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+        handler=lambda _arguments, _context: None,
+        dispatch_kind="sync",
+        permission_category="filesystem_read",
+        metadata={"source": "deskpet", "version": "1"},
+    )
+    schema = _sdk_tool(registration).spec.input_schema
+
+    assert "可选" in _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    assert "缺失、空值或类型不正确都不能阻断" in (
+        _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    )
+    assert "必填的 `deskpet_public_progress`" not in (
+        _SDK_PUBLIC_WORK_NARRATION_PROMPT
+    )
+    assert "deskpet_public_progress" in schema["properties"]
+    assert "deskpet_public_progress" not in schema["required"]
+
+
 @pytest.fixture
 def mock_sdk_ingress():
     """Create mock SDK ingress."""
@@ -478,6 +573,8 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
                 "request_id": request_id,
                 "task_scope_id": "race-scope",
                 "conversation_boundary_ref": "race-boundary",
+                "workspace_root": "/tmp/deskpet-race",
+                "workspace_binding_version": 1,
             }
             assert {
                 key: kwargs["payload"]["context_metadata"][key]
@@ -524,6 +621,44 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
     lifecycle = _BindingLifecycle()
     monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
+    from deskpet.sdk_adapters.tool_authority import (
+        SdkRunToolAuthorityRegistry,
+    )
+
+    tool_authority = SdkRunToolAuthorityRegistry()
+    tool_authority.prepare_run(
+        run_id=sdk_run_id,
+        session_id=session_id,
+        request_id=request_id,
+        root_run_id="canonical-root-race",
+        task_scope_id="race-scope",
+        workspace_root="/tmp/deskpet-race",
+        catalog={
+            "generation": 7,
+            "content_fingerprint": "c" * 64,
+            "specs": [
+                {
+                    "name": "file_read",
+                    "description": "Read a file",
+                    "input_schema": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                    },
+                }
+            ],
+        },
+        inventory=[
+            SimpleNamespace(
+                name="file_read",
+                permission_category="filesystem_read",
+                dispatch_kind="sync",
+                source="deskpet",
+                version="1",
+                dangerous=False,
+            )
+        ],
+    )
+    monkeypatch.setattr(main, "_sdk_tool_authority_registry", tool_authority)
 
     await main._execute_sdk_run(
         session_id=session_id,
@@ -891,25 +1026,22 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_waiting_decision_translates_canonical_root_to_sdk_id(monkeypatch):
+async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch):
     import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import RunClient
 
-    client = SimpleNamespace(
-        signal=AsyncMock(return_value=SimpleNamespace(accepted=True))
+    client = create_autospec(RunClient, instance=True)
+    client.signal.return_value = SimpleNamespace(
+        continuation_id="decision-1"
     )
-    ingress = SimpleNamespace(
-        accepting=True,
-        require_ready=lambda: SimpleNamespace(client=client),
-        trigger_reconciler=Mock(),
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=15)
     )
-    host = SimpleNamespace()
+    ingress._accepting = True  # noqa: SLF001
     watcher = Mock()
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
-    monkeypatch.setattr(
-        main,
-        "_issue_product_harness_host",
-        AsyncMock(return_value=(host, None, None, None)),
-    )
     monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
     main._sdk_run_ids_by_root["canonical-waiting"] = "sdk-waiting"
 
@@ -925,12 +1057,142 @@ async def test_waiting_decision_translates_canonical_root_to_sdk_id(monkeypatch)
     )
 
     assert receipt.accepted is True
-    assert client.signal.await_args.args[0] == {
-        "run_id": "sdk-waiting",
-        "expected_session_id": "session-waiting",
+    args, kwargs = client.signal.call_args
+    assert args[0].value == "sdk-waiting"
+    assert kwargs == {
+        "signal_id": "decision-1",
+        "payload": {
+            "decision_id": "decision-1",
+            "nonce": "nonce-1",
+            "version": 2,
+            "response": {"decision": "go"},
+        },
     }
-    ingress.trigger_reconciler.assert_called_once_with()
     watcher.assert_called_once_with("sdk-waiting")
+
+
+@pytest.mark.asyncio
+async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch):
+    import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import RunClient
+    from simple_harness.tools import AuthorizationDecision
+
+    client = create_autospec(RunClient, instance=True)
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=15)
+    )
+    ingress._accepting = True  # noqa: SLF001
+    watcher = Mock()
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
+    main._sdk_run_ids_by_root["canonical-permission"] = "sdk-permission"
+
+    await main._signal_product_harness_decision(
+        "session-permission",
+        {
+            "run_id": "canonical-permission",
+            "decision_id": "permission-1",
+            "nonce": "nonce-permission",
+            "version": 4,
+        },
+        {"decision": "allow"},
+        authorization=True,
+    )
+
+    args, kwargs = client.decide_authorization.await_args
+    assert args[0].value == "sdk-permission"
+    assert kwargs == {
+        "decision_id": "permission-1",
+        "nonce": "nonce-permission",
+        "expected_version": 4,
+        "decision": AuthorizationDecision.ALLOW,
+    }
+    client.signal.assert_not_called()
+    watcher.assert_called_once_with("sdk-permission")
+
+
+@pytest.mark.asyncio
+async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch):
+    import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import RunClient
+
+    client = create_autospec(RunClient, instance=True)
+    client.signal.return_value = SimpleNamespace(
+        continuation_id="request:continuation-request"
+    )
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=15)
+    )
+    ingress._accepting = True  # noqa: SLF001
+    boundary = SimpleNamespace(
+        session_id="session-continuation",
+        task_scope_id="scope-continuation",
+        boundary_ref="boundary-continuation",
+        version=6,
+    )
+    execution_uow = SimpleNamespace(
+        get_task_run_projection=AsyncMock(
+            return_value=SimpleNamespace(
+                session_id="session-continuation",
+                task_scope_id="scope-continuation",
+            )
+        ),
+        get_conversation_boundary=AsyncMock(return_value=boundary),
+    )
+    session_db = SimpleNamespace(append_message=AsyncMock(return_value=7))
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(
+        main,
+        "service_context",
+        SimpleNamespace(
+            get=lambda name: {
+                "workflow_service": SimpleNamespace(
+                    execution_uow=execution_uow
+                ),
+                "session_db": session_db,
+                "vector_worker": None,
+            }.get(name)
+        ),
+    )
+    watcher = Mock()
+    monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    main._sdk_run_ids_by_root["canonical-continuation"] = "sdk-continuation"
+
+    await main._run_product_harness_continuation(
+        websocket,
+        "continue with this detail",
+        "session-continuation",
+        root_run_id="canonical-continuation",
+        task_scope_id="scope-continuation",
+        expected_boundary_version=5,
+        request_id="continuation-request",
+    )
+
+    args, kwargs = client.signal.call_args
+    assert args[0].value == "sdk-continuation"
+    assert kwargs == {
+        "signal_id": "request:continuation-request",
+        "payload": {
+            "kind": "user_continuation",
+            "task_scope_id": "scope-continuation",
+            "message_ref": "request:continuation-request",
+            "content": "continue with this detail",
+            "expected_boundary_version": 5,
+        },
+    }
+    watcher.assert_called_once_with("sdk-continuation")
+    assert session_db.append_message.await_args.kwargs[
+        "workflow_event_id"
+    ] == (
+        "user-continuation:canonical-continuation:"
+        "request:continuation-request"
+    )
 
 
 @pytest.mark.asyncio

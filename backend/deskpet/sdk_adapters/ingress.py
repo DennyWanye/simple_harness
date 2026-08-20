@@ -34,6 +34,9 @@ class IngressSignalReceipt:
     run_id: str
     delivery_id: str
     generation: int
+    accepted: bool = True
+    duplicate: bool = False
+    reason: str | None = None
 
 
 class SdkRuntimeIngress:
@@ -113,6 +116,7 @@ class SdkRuntimeIngress:
         self,
         *,
         run_id: str,
+        signal_id: str,
         payload: dict[str, Any],
     ) -> IngressSignalReceipt:
         """Deliver a signal to a running or completed Run."""
@@ -120,11 +124,50 @@ class SdkRuntimeIngress:
             raise SdkRuntimeNotReady("SDK Runtime ingress is not accepting signals")
         ready = self._stack.require_ready()
 
-        delivery = await ready.client.signal(RunId(run_id), payload)
+        # SDK 0.1.5 enqueues continuations synchronously. Awaiting this value
+        # would fail after the durable signal had already been accepted.
+        delivery = ready.client.signal(
+            RunId(run_id),
+            signal_id=signal_id,
+            payload=payload,
+        )
 
         return IngressSignalReceipt(
             run_id=run_id,
-            delivery_id=delivery.delivery_id.value,
+            delivery_id=delivery.continuation_id,
+            generation=ready.generation,
+            reason="continuation_queued",
+        )
+
+    async def decide_authorization(
+        self,
+        *,
+        run_id: str,
+        decision_id: str,
+        nonce: str,
+        expected_version: int,
+        decision: str,
+    ) -> IngressSignalReceipt:
+        """Resolve one fenced Tool authorization through the SDK API."""
+
+        if not self._accepting:
+            raise SdkRuntimeNotReady("SDK Runtime ingress is not accepting signals")
+        ready = self._stack.require_ready()
+        from simple_harness.tools import AuthorizationDecision
+
+        normalized = str(decision).strip().lower()
+        if normalized not in {"allow", "deny"}:
+            raise ValueError("authorization decision must be allow or deny")
+        await ready.client.decide_authorization(
+            RunId(run_id),
+            decision_id=decision_id,
+            nonce=nonce,
+            expected_version=int(expected_version),
+            decision=AuthorizationDecision(normalized),
+        )
+        return IngressSignalReceipt(
+            run_id=run_id,
+            delivery_id=decision_id,
             generation=ready.generation,
         )
 
