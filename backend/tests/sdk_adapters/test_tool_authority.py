@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from simple_harness import CallId, EffectId, RunId
+from simple_harness import CallId, EffectId, RunId, thaw_json
+from simple_harness.execution.context_authority import DurableToolCatalogResolver
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.providers import ProviderToolSpec
 from simple_harness.tools import PreparedToolEffect, ToolCall, ToolSpec
 
 from deskpet.permissions.policy import AuthorizationPolicyState
@@ -14,6 +17,8 @@ from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
 from deskpet.sdk_adapters.tool_authority import (
+    SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+    SDK_FULL_CATALOG_DISCLOSURE_POLICY,
     SdkCapabilityBridgeAdapter,
     SdkPreparedAuthorizationPolicy,
     SdkRunToolAuthorityRegistry,
@@ -153,6 +158,186 @@ def test_run_authority_isolated_and_waiting_scope_survives_until_terminal():
     restored = _prepare(reconstructed, "run-a")
     assert restored.capability_hash == first.capability_hash
     assert restored.scope_hash == first.scope_hash
+
+
+def test_waiting_restart_uses_exact_durable_catalog_and_run_start_inventory(
+    tmp_path: Path,
+):
+    old_specs = tuple(
+        ProviderToolSpec(
+            item["name"], item["description"], item["input_schema"]
+        )
+        for item in _catalog()[0]["specs"]
+    )
+    new_specs = (
+        ProviderToolSpec(
+            "new_tool",
+            "A tool introduced after the Run started",
+            {"type": "object", "properties": {}},
+        ),
+    )
+    with Database.open(tmp_path / "waiting-restart.db") as database:
+        uow = SqliteExecutionUnitOfWork(database)
+        old_snapshot = uow.put_tool_catalog_snapshot(old_specs, created_at=10.0)
+        uow.put_tool_catalog_snapshot(new_specs, created_at=20.0)
+        old_catalog = {
+            "generation": old_snapshot.generation,
+            "content_fingerprint": old_snapshot.content_fingerprint,
+            "specs": [
+                {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "input_schema": thaw_json(spec.parameters),
+                }
+                for spec in old_specs
+            ],
+            "schema_fingerprints": _catalog()[0]["schema_fingerprints"],
+        }
+        original_registry = SdkRunToolAuthorityRegistry()
+        original = original_registry.prepare_run(
+            run_id="run-old",
+            session_id="session-old",
+            request_id="request-old",
+            root_run_id="root-old",
+            task_scope_id="task-old",
+            workspace_root="/trusted/old-workspace",
+            catalog=old_catalog,
+            inventory=_catalog()[1],
+            disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+        )
+        durable_record = original.run_start_record()
+
+        restarted_registry = SdkRunToolAuthorityRegistry()
+        restored = restarted_registry.restore_waiting_run(
+            run_start_record=durable_record,
+            run_binding=durable_record,
+            catalog_resolver=DurableToolCatalogResolver(uow),
+        )
+
+    assert restored.lease_state == "waiting"
+    assert restored.catalog_generation == old_snapshot.generation
+    assert restored.catalog_fingerprint == old_snapshot.content_fingerprint
+    assert set(restored.specs) == {"tool_search", "read_file"}
+    assert "new_tool" not in restored.specs
+    assert restored.permission_categories == original.permission_categories
+    assert restored.dispatch_kinds == original.dispatch_kinds
+    assert restored.specs["read_file"].source == "real-tool-manifest"
+    assert restored.specs["read_file"].spec_version == "v1"
+    assert restored.capability_hash == original.capability_hash
+    assert restored.scope_hash == original.scope_hash
+
+
+def test_waiting_restart_fails_closed_when_exact_catalog_or_authority_differs(
+    tmp_path: Path,
+):
+    original = _prepare(SdkRunToolAuthorityRegistry(), "run-a")
+    record = original.run_start_record()
+
+    class _MissingCatalog:
+        def resolve(self, _generation, _fingerprint):
+            return None
+
+    with pytest.raises(RuntimeError, match="snapshot_unavailable"):
+        SdkRunToolAuthorityRegistry().restore_waiting_run(
+            run_start_record=record,
+            run_binding=record,
+            catalog_resolver=_MissingCatalog(),
+        )
+    mismatched_binding = {**record, "session_id": "another-session"}
+    with pytest.raises(RuntimeError, match="binding_identity_mismatch"):
+        SdkRunToolAuthorityRegistry().restore_waiting_run(
+            run_start_record=record,
+            run_binding=mismatched_binding,
+            catalog_resolver=_MissingCatalog(),
+        )
+
+    specs = tuple(
+        ProviderToolSpec(
+            item["name"], item["description"], item["input_schema"]
+        )
+        for item in _catalog()[0]["specs"]
+    )
+    with Database.open(tmp_path / "authority-mismatch.db") as database:
+        uow = SqliteExecutionUnitOfWork(database)
+        snapshot = uow.put_tool_catalog_snapshot(specs)
+        exact_catalog = {
+            "generation": snapshot.generation,
+            "content_fingerprint": snapshot.content_fingerprint,
+            "specs": _catalog()[0]["specs"],
+            "schema_fingerprints": _catalog()[0]["schema_fingerprints"],
+        }
+        authority = SdkRunToolAuthorityRegistry().prepare_run(
+            run_id="run-exact",
+            session_id="session-a",
+            request_id="request-run-exact",
+            root_run_id="root-run-exact",
+            task_scope_id="task-run-exact",
+            workspace_root=None,
+            catalog=exact_catalog,
+            inventory=_catalog()[1],
+            disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+        )
+        tampered = authority.run_start_record()
+        tampered["scope_hash"] = "f" * 64
+        restarted = SdkRunToolAuthorityRegistry()
+        with pytest.raises(RuntimeError, match="authority_hash_mismatch"):
+            restarted.restore_waiting_run(
+                run_start_record=tampered,
+                run_binding=tampered,
+                catalog_resolver=DurableToolCatalogResolver(uow),
+            )
+        with pytest.raises(KeyError):
+            restarted.resolve("run-exact")
+
+        inventory_tampered = authority.run_start_record()
+        inventory_tampered["inventory"] = [
+            {
+                **item,
+                "permission_category": (
+                    "network" if item["name"] == "read_file" else item["permission_category"]
+                ),
+            }
+            for item in inventory_tampered["inventory"]
+        ]
+        with pytest.raises(RuntimeError, match="authority_hash_mismatch"):
+            SdkRunToolAuthorityRegistry().restore_waiting_run(
+                run_start_record=inventory_tampered,
+                run_binding=inventory_tampered,
+                catalog_resolver=DurableToolCatalogResolver(uow),
+            )
+
+
+def test_disclosure_policy_is_explicit_and_full_catalog_is_direct():
+    full = _prepare(SdkRunToolAuthorityRegistry(), "run-full")
+    full_record = full.run_start_record()
+
+    assert full.disclosure_policy == SDK_FULL_CATALOG_DISCLOSURE_POLICY
+    assert full_record["direct_names"] == ["read_file", "tool_search"]
+    assert full_record["deferred_names"] == []
+    assert len(full.prepared_tool_set.logical_schemas()) == len(full.specs)
+
+    deferred = _prepare(
+        SdkRunToolAuthorityRegistry(),
+        "run-deferred",
+        deferred_names=("read_file",),
+    )
+    assert (
+        deferred.disclosure_policy
+        == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
+    )
+    with pytest.raises(ValueError, match="full-direct"):
+        SdkRunToolAuthorityRegistry().prepare_run(
+            run_id="run-invalid",
+            session_id="session-a",
+            request_id="request-invalid",
+            root_run_id="root-invalid",
+            task_scope_id="task-invalid",
+            workspace_root=None,
+            catalog=_catalog()[0],
+            inventory=_catalog()[1],
+            deferred_names=("read_file",),
+            disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+        )
 
 
 def test_restart_policy_generation_is_available_before_next_tool_decision():

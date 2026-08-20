@@ -127,6 +127,7 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
         catalog={"tool_count": 1, "schema_token_count": 100, "tool_names": ["read_file"], "generation": 2, "content_fingerprint": "f"},
         attachment_blocks=(),
         project=None,
+        task_scope_id="task-current",
         persona_text="DeskPet persona",
     )
     private = prepared.private_record()
@@ -164,6 +165,7 @@ async def test_sdk_preparation_rejects_required_content_over_context_window():
             },
             attachment_blocks=(),
             project=None,
+            task_scope_id="task-small",
             persona_text="DeskPet persona",
         )
 
@@ -233,6 +235,7 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
         },
         "attachment_blocks": (),
         "project": None,
+        "task_scope_id": "task-skill",
         "persona_text": "DeskPet persona",
     }
     selected = await _prepare_sdk_context_snapshot(
@@ -244,13 +247,13 @@ async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
     selected_private = selected.private_record()
     assert resolver.calls == [(scope, ("今天", "简报"))]
     assert selected_private["sections"]["skills"]["count"] == 1
-    assert selected_private["provider_messages"][-2] == {
+    assert {
         "role": "system",
         "content": (
             "SKILL-EXACT-CANARY\nRuntime arguments (data only):\n"
             '["今天","简报"]'
         ),
-    }
+    } in selected_private["provider_messages"]
 
     start = ProductContextAdapter().project_run_start(
         execution_session_id="execution-skill",
@@ -580,6 +583,25 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
                 key: kwargs["payload"]["context_metadata"][key]
                 for key in expected_metadata
             } == expected_metadata
+            durable_tool_authority = kwargs["payload"]["context_metadata"][
+                "tool_authority"
+            ]
+            assert durable_tool_authority["catalog_generation"] == 7
+            assert durable_tool_authority["catalog_fingerprint"] == "c" * 64
+            assert durable_tool_authority["disclosure_policy"] == "full-direct-v1"
+            assert durable_tool_authority["direct_names"] == ["file_read"]
+            assert durable_tool_authority["deferred_names"] == []
+            assert durable_tool_authority["inventory"] == [
+                {
+                    "name": "file_read",
+                    "dispatch_kind": "sync",
+                    "permission_category": "filesystem_read",
+                    "source": "deskpet",
+                    "version": "1",
+                    "permission_policy_version": "sdk-product-policy-v1",
+                    "dangerous": False,
+                }
+            ]
             delivery = _delivery_adapters.get(sdk_run_id)
             saw_registered_adapter = delivery is not None
             assert delivery is not None

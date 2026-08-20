@@ -44,6 +44,27 @@ class SdkContextSources:
     project: Callable[[str], object] | None = None
 
 
+def trusted_project_task_snapshot(
+    *,
+    task_scope_id: str,
+    root_run_id: str,
+    request_id: str,
+    workspace: str | None,
+) -> dict[str, Any]:
+    """Build the trusted per-request project/task facts sent to the Provider."""
+
+    required = {
+        "task_scope_id": task_scope_id,
+        "root_run_id": root_run_id,
+        "request_id": request_id,
+    }
+    normalized = {key: str(value or "").strip() for key, value in required.items()}
+    missing = [key for key, value in normalized.items() if not value]
+    if missing:
+        raise ValueError(f"trusted project/task snapshot missing {missing[0]}")
+    return {**normalized, "workspace": workspace}
+
+
 async def _resolve(value: object) -> object:
     return await value if inspect.isawaitable(value) else value
 
@@ -141,6 +162,7 @@ class SdkContextPreparationService:
         text: str,
         provider_binding: Mapping[str, Any],
         catalog: Mapping[str, Any],
+        project_task_snapshot: Mapping[str, Any] | None = None,
         attachment_blocks: Sequence[Mapping[str, Any]] = (),
     ) -> PreparedSdkContextSnapshotV1:
         try:
@@ -162,8 +184,8 @@ class SdkContextPreparationService:
             raw_skills = await _resolve(self._sources.skills(text))
             if isinstance(raw_skills, Sequence) and not isinstance(raw_skills, (str, bytes, bytearray)):
                 skill_items = [item for item in raw_skills if isinstance(item, Mapping)]
-        project: Mapping[str, Any] = {}
-        if self._sources.project is not None:
+        project: Mapping[str, Any] = dict(project_task_snapshot or {})
+        if not project and self._sources.project is not None:
             raw_project = await _resolve(self._sources.project(session_id))
             if isinstance(raw_project, Mapping):
                 project = raw_project
@@ -213,7 +235,11 @@ class SdkContextPreparationService:
             "label": "Project / task",
             "count": 1 if project else 0,
             "estimated_tokens": _text_tokens(json.dumps(dict(project), ensure_ascii=False)),
-            "availability": "estimated" if self._sources.project is not None else "unavailable",
+            "availability": (
+                "estimated"
+                if project or self._sources.project is not None
+                else "unavailable"
+            ),
         }
         messages.extend(history)
         sections["history"] = {
@@ -263,4 +289,5 @@ __all__ = (
     "SdkContextPreparationService",
     "SdkContextSourceUnavailable",
     "SdkContextSources",
+    "trusted_project_task_snapshot",
 )

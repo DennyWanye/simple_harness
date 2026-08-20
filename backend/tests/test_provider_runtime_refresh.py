@@ -32,8 +32,13 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
     execute = inspect.getsource(main._execute_sdk_run)
     watcher = inspect.getsource(main._watch_retained_sdk_run)
 
-    assert "tool_authorities.prepare_run" in build
+    assert "tool_authorities.restore_waiting_run" in build
+    assert "DurableToolCatalogResolver" in build
+    assert "catalog=frozen_catalog" not in build
+    assert "inventory=tool_inventory" not in build
     assert "_sdk_tool_authority_registry.prepare_run" in foreground
+    assert "SDK_FULL_CATALOG_DISCLOSURE_POLICY" in foreground
+    assert "tool_authority.run_start_record()" in execute
     assert "_sdk_tool_authority_registry.mark_waiting" in execute
     assert "_sdk_tool_authority_registry.mark_terminal" in execute
     assert "_sdk_tool_authority_registry.mark_terminal" in watcher

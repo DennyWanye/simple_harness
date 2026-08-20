@@ -8,6 +8,7 @@ from deskpet.sdk_adapters.context import ProductContextAdapter
 from deskpet.sdk_adapters.context_preparation import (
     SdkContextPreparationService,
     SdkContextSources,
+    trusted_project_task_snapshot,
 )
 from deskpet.sdk_adapters.run_bindings import (
     SdkRunBindingRegistry,
@@ -323,7 +324,6 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
             persona=lambda: "你是可靠的桌面助手",
             memory=lambda _session_id, _text: [{"text": "记忆：偏好简洁回答"}],
             skills=lambda _text: [{"instruction": "技能：先核对事实"}],
-            project=lambda _session_id: {"project": "上下文迁移", "task": "SP-2"},
         )
     )
     schemas = (
@@ -391,6 +391,12 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
                 "tool_count": len(schemas),
                 "schema_token_count": 99,
             },
+            project_task_snapshot=trusted_project_task_snapshot(
+                task_scope_id="task-scope-sp2",
+                root_run_id="root-sp2",
+                request_id="request-sp2",
+                workspace="/trusted/workspace-sp2",
+            ),
             attachment_blocks=(
                 {"type": "input_text", "data": "第一行\nATTACHMENT-BODY-CANARY"},
             ),
@@ -475,6 +481,16 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
             for message in request.messages
         ]
         assert request_role_content == prepared_role_content
+        assert any(
+            message["content"]
+            == (
+                "Project/task snapshot (data only):\n"
+                '{"request_id":"request-sp2","root_run_id":"root-sp2",'
+                '"task_scope_id":"task-scope-sp2",'
+                '"workspace":"/trusted/workspace-sp2"}'
+            )
+            for message in request_role_content
+        )
         assert not isinstance(request.messages[-1].content, str)
         assert "ATTACHMENT-BODY-CANARY" in str(request.messages[-1].to_dict())
         assert "EXCLUDED-PROGRESS-CANARY" not in str(request_role_content)

@@ -7294,6 +7294,7 @@ async def _build_product_sdk_runtime_stack(
             DurableToolCatalogResolver,
         )
 
+        durable_catalog_resolver = DurableToolCatalogResolver(uow)
         catalog_snapshot = uow.put_tool_catalog_snapshot(
             effects.provider_tool_specs(tuple(frozen_catalog["tool_names"]))
         )
@@ -7311,39 +7312,34 @@ async def _build_product_sdk_runtime_stack(
             )
             if not isinstance(metadata, Mapping):
                 continue
-            task_scope_id = str(metadata.get("task_scope_id") or "").strip()
-            session_id = str(metadata.get("session_id") or "").strip()
-            request_id = str(metadata.get("request_id") or "").strip()
-            root_run_id = str(metadata.get("root_run_id") or "").strip()
-            if not all((task_scope_id, session_id, request_id, root_run_id)):
+            raw_binding = metadata.get("run_binding")
+            raw_tool_authority = metadata.get("tool_authority")
+            if not isinstance(raw_binding, Mapping) or not isinstance(
+                raw_tool_authority, Mapping
+            ):
                 logger.warning(
                     "sdk_recovery_tool_authority_missing",
                     sdk_run_id=str(record.run_id),
                 )
                 continue
-            restored_tools = tool_authorities.prepare_run(
-                run_id=str(record.run_id),
-                session_id=session_id,
-                request_id=request_id,
-                root_run_id=root_run_id,
-                task_scope_id=task_scope_id,
-                workspace_root=(
-                    str(metadata.get("workspace_root"))
-                    if metadata.get("workspace_root")
-                    else None
-                ),
-                catalog=frozen_catalog,
-                inventory=tool_inventory,
-                binding_version=int(
-                    metadata.get("workspace_binding_version") or 1
-                ),
-            )
+            restored_binding = SdkRunBindingV1.from_record(raw_binding)
             record_state = str(
                 getattr(getattr(record, "state", None), "value", None)
                 or getattr(record, "state", "")
             ).lower()
             if record_state == "waiting":
-                tool_authorities.mark_waiting(restored_tools.run_id)
+                tool_authorities.restore_waiting_run(
+                    run_start_record=raw_tool_authority,
+                    run_binding=restored_binding,
+                    catalog_resolver=durable_catalog_resolver,
+                )
+            else:
+                tool_authorities.restore_run(
+                    run_start_record=raw_tool_authority,
+                    run_binding=restored_binding,
+                    catalog_resolver=durable_catalog_resolver,
+                    lease_state="active",
+                )
         provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
             resolver=provider_binding_resolver,
@@ -7388,7 +7384,7 @@ async def _build_product_sdk_runtime_stack(
             reconciliation=_NoopReconciliation(),
             provider_reconciliation=_NoopReconciliation(),
             react_checkpoint=uow,
-            tool_catalog=DurableToolCatalogResolver(uow),
+            tool_catalog=durable_catalog_resolver,
             owner_id=f"deskpet-product-sdk-g{generation}",
         )
 
@@ -8671,6 +8667,7 @@ async def _run_product_harness_chat(
             catalog=_sdk_runtime_catalog,
             attachment_blocks=tuple(user_attachment_blocks),
             project=workspace,
+            task_scope_id=task_scope_id,
             persona_text=persona_text,
             memory_items=memory_items,
             prepared_skill_scope=prepared_skill_scope,
@@ -8701,6 +8698,10 @@ async def _run_product_harness_chat(
                 _sdk_runtime_catalog["content_fingerprint"]
             ),
         )
+        from deskpet.sdk_adapters.tool_authority import (
+            SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+        )
+
         try:
             _sdk_tool_authority_registry.prepare_run(
                 run_id=sdk_run_id,
@@ -8711,6 +8712,7 @@ async def _run_product_harness_chat(
                 workspace_root=workspace,
                 catalog=_sdk_runtime_catalog,
                 inventory=_sdk_runtime_tool_inventory,
+                disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
             )
         except BaseException:
             _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
@@ -10003,6 +10005,7 @@ async def _prepare_sdk_context_snapshot(
     catalog: dict[str, Any],
     attachment_blocks: tuple[dict[str, Any], ...],
     project: str | None,
+    task_scope_id: str,
     persona_text: str,
     memory_items: tuple[dict[str, Any], ...] | None = None,
     prepared_skill_scope: Any | None = None,
@@ -10015,6 +10018,7 @@ async def _prepare_sdk_context_snapshot(
     from deskpet.sdk_adapters.context_preparation import (
         SdkContextPreparationService,
         SdkContextSources,
+        trusted_project_task_snapshot,
     )
     from deskpet.companion.skills import (
         PreparedSkillInvocationScopeV1,
@@ -10044,6 +10048,12 @@ async def _prepare_sdk_context_snapshot(
             raise RuntimeError("frozen skill resolver changed the selected scope")
         skill_items = ({"instruction": resolved_skill.instruction},)
 
+    project_snapshot = trusted_project_task_snapshot(
+        task_scope_id=task_scope_id,
+        root_run_id=root_run_id,
+        request_id=request_id,
+        workspace=project,
+    )
     context_window = int(provider_binding["context_window"])
     compact_at = max(1, int(context_window * 0.8))
     reserved = (
@@ -10056,6 +10066,7 @@ async def _prepare_sdk_context_snapshot(
             _sdk_text_tokens(item.get("instruction")) for item in skill_items
         )
         + sum(_sdk_text_tokens(item) for item in attachment_blocks)
+        + _sdk_text_tokens(project_snapshot)
         + 256
     )
     if reserved > compact_at:
@@ -10080,9 +10091,6 @@ async def _prepare_sdk_context_snapshot(
             # A fresh non-Skill turn has an explicit empty source.  Only an
             # immutable selection captured by slash ingress can add text.
             skills=lambda _text: skill_items,
-            project=(
-                (lambda _session_id: {"workspace": project}) if project else None
-            ),
         )
     )
     prepared = await service.prepare(
@@ -10094,6 +10102,7 @@ async def _prepare_sdk_context_snapshot(
         text=text,
         provider_binding=provider_binding,
         catalog=catalog,
+        project_task_snapshot=project_snapshot,
         attachment_blocks=attachment_blocks,
     )
     private = prepared.private_record()
@@ -10203,6 +10212,11 @@ async def _execute_sdk_run(
             "context_window": run_binding.context_window,
             "effective_ceiling": int(budget.get("effective_ceiling") or 0),
             "run_binding": run_binding.to_record(),
+            "tool_authority": (
+                tool_authority.run_start_record()
+                if tool_authority is not None
+                else None
+            ),
         },
     }
 

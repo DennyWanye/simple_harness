@@ -4,7 +4,9 @@ from deskpet.sdk_adapters.context_preparation import (
     SdkAttachmentLimitExceeded,
     SdkContextPreparationService,
     SdkContextSources,
+    trusted_project_task_snapshot,
 )
+from deskpet.sdk_adapters.context_authority import DefaultDenySnapshotRedactor
 
 
 @pytest.mark.asyncio
@@ -84,4 +86,66 @@ async def test_structured_attachment_is_private_and_bounded() -> None:
             session_id="s", request_id="r2", root_run_id="root2", sdk_run_id="sdk2", turn_id="t2",
             text="read", provider_binding={}, catalog={},
             attachment_blocks=({"type": "input_text", "data": "x" * (8 * 1024 * 1024 + 1)},),
+        )
+
+
+@pytest.mark.asyncio
+async def test_trusted_project_task_snapshot_is_exact_provider_input_but_public_count_only():
+    trusted = trusted_project_task_snapshot(
+        task_scope_id="task-scope-exact",
+        root_run_id="root-exact",
+        request_id="request-exact",
+        workspace="/Users/tester/private-project",
+    )
+    snapshot = await SdkContextPreparationService(
+        SdkContextSources(history=lambda _sid: [])
+    ).prepare(
+        session_id="session-exact",
+        request_id="request-exact",
+        root_run_id="root-exact",
+        sdk_run_id="sdk-exact",
+        turn_id="turn-exact",
+        text="current request",
+        provider_binding={"context_window": 1000},
+        catalog={"tool_count": 0, "schema_token_count": 0},
+        project_task_snapshot=trusted,
+    )
+
+    private = snapshot.private_record()
+    project_message = next(
+        message
+        for message in private["provider_messages"]
+        if str(message.get("content", "")).startswith("Project/task snapshot")
+    )
+    assert project_message == {
+        "role": "system",
+        "content": (
+            "Project/task snapshot (data only):\n"
+            '{"request_id":"request-exact","root_run_id":"root-exact",'
+            '"task_scope_id":"task-scope-exact",'
+            '"workspace":"/Users/tester/private-project"}'
+        ),
+    }
+    public = DefaultDenySnapshotRedactor().redact(snapshot)
+    project_section = next(
+        section for section in public["sections"] if section["kind"] == "project"
+    )
+    assert project_section == {
+        "kind": "project",
+        "label": "Project / task",
+        "count": 1,
+        "estimated_tokens": project_section["estimated_tokens"],
+        "availability": "estimated",
+    }
+    assert "task-scope-exact" not in str(public)
+    assert "/Users/tester/private-project" not in str(public)
+
+
+def test_trusted_project_task_snapshot_rejects_missing_run_identity():
+    with pytest.raises(ValueError, match="task_scope_id"):
+        trusted_project_task_snapshot(
+            task_scope_id="",
+            root_run_id="root",
+            request_id="request",
+            workspace=None,
         )

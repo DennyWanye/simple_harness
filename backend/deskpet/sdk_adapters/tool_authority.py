@@ -49,6 +49,13 @@ from deskpet.types.task_work_context import TaskWorkContext
 from deskpet.workflows.effects import PreparedToolCall
 
 
+SDK_TOOL_AUTHORITY_RECORD_KIND = "deskpet.sdk-tool-authority"
+SDK_TOOL_AUTHORITY_RECORD_VERSION = 1
+SDK_FULL_CATALOG_DISCLOSURE_POLICY = "full-direct-v1"
+SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY = "explicit-deferred-v1"
+SDK_PERMISSION_POLICY_VERSION = "sdk-product-policy-v1"
+
+
 def _canonical_sha256(value: object) -> str:
     return hashlib.sha256(
         json.dumps(
@@ -105,10 +112,12 @@ class SdkRunToolAuthorityV1:
     catalog_fingerprint: str
     capability_hash: str
     scope_hash: str
+    authority_fingerprint: str
     principal_id: str
     permission_categories: Mapping[str, str]
     dispatch_kinds: Mapping[str, str]
     specs: Mapping[str, _FrozenCapabilitySpec]
+    disclosure_policy: str
     lease_state: str = "active"
 
     def __post_init__(self) -> None:
@@ -139,6 +148,50 @@ class SdkRunToolAuthorityV1:
             binding_epoch=self.task_work_context.binding_version,
             capability_snapshot_ref=self.catalog_fingerprint,
         )
+
+    def run_start_record(self) -> dict[str, Any]:
+        """Return the private durable metadata needed for exact restart.
+
+        Provider catalog snapshots intentionally contain only provider-facing
+        schemas.  Product permission, dispatch, source, and version facts are
+        persisted beside the immutable RunStart so a WAITING Run never borrows
+        those facts from the process's current catalog after restart.
+        """
+
+        direct_names = sorted(item.ref.name for item in self.prepared_tool_set.direct)
+        deferred_names = sorted(item.name for item in self.prepared_tool_set.deferred)
+        return {
+            "kind": SDK_TOOL_AUTHORITY_RECORD_KIND,
+            "schema_version": SDK_TOOL_AUTHORITY_RECORD_VERSION,
+            "run_id": self.run_id,
+            "session_id": self.session_id,
+            "request_id": self.request_id,
+            "root_run_id": self.root_run_id,
+            "task_scope_id": self.task_work_context.task_scope_id,
+            "workspace_root": self.task_work_context.workspace_root,
+            "binding_version": self.task_work_context.binding_version,
+            "principal_id": self.principal_id,
+            "catalog_generation": self.catalog_generation,
+            "catalog_fingerprint": self.catalog_fingerprint,
+            "capability_hash": self.capability_hash,
+            "scope_hash": self.scope_hash,
+            "authority_fingerprint": self.authority_fingerprint,
+            "disclosure_policy": self.disclosure_policy,
+            "direct_names": direct_names,
+            "deferred_names": deferred_names,
+            "inventory": [
+                {
+                    "name": name,
+                    "dispatch_kind": self.dispatch_kinds[name],
+                    "permission_category": self.permission_categories[name],
+                    "source": spec.source,
+                    "version": spec.spec_version,
+                    "permission_policy_version": spec.permission_policy_version,
+                    "dangerous": spec.dangerous,
+                }
+                for name, spec in self.specs.items()
+            ],
+        }
 
 
 class SdkRunToolAuthorityRegistry:
@@ -173,6 +226,7 @@ class SdkRunToolAuthorityRegistry:
         inventory: Sequence[object],
         principal_id: str = "sdk-runtime",
         deferred_names: Iterable[str] = (),
+        disclosure_policy: str | None = None,
         binding_version: int = 1,
     ) -> SdkRunToolAuthorityV1:
         run_id = _required(run_id, "run_id")
@@ -180,6 +234,7 @@ class SdkRunToolAuthorityRegistry:
         request_id = _required(request_id, "request_id")
         root_run_id = _required(root_run_id, "root_run_id")
         task_scope_id = _required(task_scope_id, "task_scope_id")
+        principal_id = _required(principal_id, "principal_id")
         catalog_fingerprint = _required(
             catalog.get("content_fingerprint"), "catalog_fingerprint"
         )
@@ -204,6 +259,24 @@ class SdkRunToolAuthorityRegistry:
             raise ValueError(
                 f"unknown deferred SDK capabilities: {sorted(unknown_deferred)!r}"
             )
+        if disclosure_policy is None:
+            disclosure_policy = (
+                SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
+                if deferred
+                else SDK_FULL_CATALOG_DISCLOSURE_POLICY
+            )
+        if disclosure_policy not in {
+            SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+            SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+        }:
+            raise ValueError("unsupported SDK catalog disclosure policy")
+        if disclosure_policy == SDK_FULL_CATALOG_DISCLOSURE_POLICY and deferred:
+            raise ValueError("full-direct disclosure cannot contain deferred tools")
+        if (
+            disclosure_policy == SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
+            and not deferred
+        ):
+            raise ValueError("explicit-deferred disclosure requires deferred tools")
         capabilities: list[PreparedToolCapability] = []
         deferred_refs: list[ToolCapabilityRef] = []
         frozen_specs: dict[str, _FrozenCapabilitySpec] = {}
@@ -231,6 +304,21 @@ class SdkRunToolAuthorityRegistry:
             )
             source = _required(_field(inventory_item, "source"), f"{name}.source")
             version = _required(_field(inventory_item, "version"), f"{name}.version")
+            permission_policy_version = _required(
+                _field(
+                    inventory_item,
+                    "permission_policy_version",
+                    SDK_PERMISSION_POLICY_VERSION,
+                ),
+                f"{name}.permission_policy_version",
+            )
+            dangerous = _field(
+                inventory_item,
+                "dangerous",
+                dispatch in {"staged", "control"},
+            )
+            if not isinstance(dangerous, bool):
+                raise TypeError(f"{name}.dangerous must be a boolean")
             function_schema = {
                 "name": name,
                 "description": description,
@@ -249,9 +337,9 @@ class SdkRunToolAuthorityRegistry:
                 description=description,
                 schema_hash=schema_hash,
                 spec_version=version,
-                permission_policy_version="sdk-product-policy-v1",
+                permission_policy_version=permission_policy_version,
                 permission_category=permission,
-                dangerous=dispatch in {"staged", "control"},
+                dangerous=dangerous,
             )
             capability = PreparedToolCapability(
                 ref,
@@ -272,11 +360,11 @@ class SdkRunToolAuthorityRegistry:
                 schema=function_schema,
                 schema_hash=schema_hash,
                 spec_version=version,
-                permission_policy_version="sdk-product-policy-v1",
+                permission_policy_version=permission_policy_version,
                 permission_category=permission,
                 source=source,
                 toolset=dispatch,
-                dangerous=dispatch in {"staged", "control"},
+                dangerous=dangerous,
             )
             permissions[name] = permission
             dispatch_kinds[name] = dispatch
@@ -318,11 +406,34 @@ class SdkRunToolAuthorityRegistry:
             workspace_source="existing" if workspace_root else "none",
             binding_version=binding_version,
         )
+        authority_fingerprint = _canonical_sha256(
+            {
+                "disclosure_policy": disclosure_policy,
+                "direct": sorted(set(names) - deferred),
+                "deferred": sorted(deferred),
+                "inventory": [
+                    {
+                        "name": name,
+                        "dispatch_kind": dispatch_kinds[name],
+                        "permission_category": permissions[name],
+                        "source": frozen_specs[name].source,
+                        "version": frozen_specs[name].spec_version,
+                        "permission_policy_version": (
+                            frozen_specs[name].permission_policy_version
+                        ),
+                        "dangerous": frozen_specs[name].dangerous,
+                    }
+                    for name in names
+                ],
+                "principal_id": principal_id,
+            }
+        )
         scope_hash = _canonical_sha256(
             {
                 **scope_seed,
                 "prepared_scope_id": prepared.scope_id,
                 "prepared_schema_fingerprint": prepared.schema_fingerprint,
+                "authority_fingerprint": authority_fingerprint,
                 "workspace_root": workspace_root,
                 "workspace_binding_version": binding_version,
             }
@@ -338,10 +449,12 @@ class SdkRunToolAuthorityRegistry:
             catalog_fingerprint=catalog_fingerprint,
             capability_hash=prepared.schema_fingerprint,
             scope_hash=scope_hash,
-            principal_id=_required(principal_id, "principal_id"),
+            authority_fingerprint=authority_fingerprint,
+            principal_id=principal_id,
             permission_categories=permissions,
             dispatch_kinds=dispatch_kinds,
             specs=frozen_specs,
+            disclosure_policy=disclosure_policy,
         )
         current = self._records.get(run_id)
         if current is not None:
@@ -361,6 +474,146 @@ class SdkRunToolAuthorityRegistry:
             raise RuntimeError("sdk_tool_scope_pin_failed")
         self._records[run_id] = record
         return record
+
+    def restore_run(
+        self,
+        *,
+        run_start_record: Mapping[str, Any],
+        run_binding: object,
+        catalog_resolver: object,
+        lease_state: str,
+    ) -> SdkRunToolAuthorityV1:
+        """Restore a recoverable Run from its immutable historical authority.
+
+        There is deliberately no current-catalog fallback.  The resolver must
+        return the exact generation and content fingerprint captured at
+        RunStart, otherwise restart fails closed.
+        """
+
+        normalized_lease = str(lease_state).strip().lower()
+        if normalized_lease not in {"active", "waiting"}:
+            raise ValueError("restored SDK tool lease must be active or waiting")
+        if run_start_record.get("kind") != SDK_TOOL_AUTHORITY_RECORD_KIND:
+            raise ValueError("sdk_tool_authority_record_kind_invalid")
+        if int(run_start_record.get("schema_version", -1)) != 1:
+            raise ValueError("sdk_tool_authority_record_version_unsupported")
+        generation = int(_field(run_binding, "catalog_generation", -1))
+        fingerprint = _required(
+            _field(run_binding, "catalog_fingerprint"), "catalog_fingerprint"
+        )
+        if (
+            int(run_start_record.get("catalog_generation", -1)) != generation
+            or str(run_start_record.get("catalog_fingerprint") or "") != fingerprint
+        ):
+            raise RuntimeError("sdk_tool_authority_binding_mismatch")
+        for identity_field in ("run_id", "session_id", "request_id"):
+            if _required(
+                run_start_record.get(identity_field), identity_field
+            ) != _required(_field(run_binding, identity_field), identity_field):
+                raise RuntimeError("sdk_tool_authority_binding_identity_mismatch")
+        resolve = getattr(catalog_resolver, "resolve", None)
+        if not callable(resolve):
+            raise TypeError("catalog_resolver must expose resolve")
+        snapshot = resolve(generation, fingerprint)
+        if snapshot is None:
+            raise RuntimeError("sdk_tool_catalog_snapshot_unavailable")
+        if (
+            int(getattr(snapshot, "generation", -1)) != generation
+            or str(getattr(snapshot, "content_fingerprint", "")) != fingerprint
+        ):
+            raise RuntimeError("sdk_tool_catalog_snapshot_mismatch")
+        snapshot_specs = tuple(getattr(snapshot, "specs", ()))
+        if not snapshot_specs:
+            raise RuntimeError("sdk_tool_catalog_snapshot_empty")
+        specs = [
+            {
+                "name": _required(_field(item, "name"), "snapshot.spec.name"),
+                "description": _required(
+                    _field(item, "description"), "snapshot.spec.description"
+                ),
+                "input_schema": thaw_json(_field(item, "parameters")),
+            }
+            for item in snapshot_specs
+        ]
+        catalog = {
+            "generation": generation,
+            "content_fingerprint": fingerprint,
+            "specs": specs,
+            "schema_fingerprints": {
+                item["name"]: canonical_hash(item["input_schema"])
+                for item in specs
+            },
+        }
+        raw_inventory = run_start_record.get("inventory")
+        if not isinstance(raw_inventory, list) or not raw_inventory:
+            raise ValueError("sdk_tool_authority_inventory_missing")
+        direct_names = run_start_record.get("direct_names")
+        deferred_names = run_start_record.get("deferred_names")
+        if not isinstance(direct_names, list) or not isinstance(deferred_names, list):
+            raise ValueError("sdk_tool_authority_disclosure_missing")
+        catalog_names = {item["name"] for item in specs}
+        direct = {_required(item, "direct_name") for item in direct_names}
+        deferred = {_required(item, "deferred_name") for item in deferred_names}
+        if direct & deferred or direct | deferred != catalog_names:
+            raise ValueError("sdk_tool_authority_disclosure_differs_from_catalog")
+        expected_authority_fingerprint = _required(
+            run_start_record.get("authority_fingerprint"),
+            "authority_fingerprint",
+        )
+        restored = self.prepare_run(
+            run_id=_required(run_start_record.get("run_id"), "run_id"),
+            session_id=_required(run_start_record.get("session_id"), "session_id"),
+            request_id=_required(run_start_record.get("request_id"), "request_id"),
+            root_run_id=_required(
+                run_start_record.get("root_run_id"), "root_run_id"
+            ),
+            task_scope_id=_required(
+                run_start_record.get("task_scope_id"), "task_scope_id"
+            ),
+            workspace_root=(
+                str(run_start_record["workspace_root"])
+                if run_start_record.get("workspace_root") is not None
+                else None
+            ),
+            catalog=catalog,
+            inventory=raw_inventory,
+            principal_id=_required(
+                run_start_record.get("principal_id"), "principal_id"
+            ),
+            deferred_names=deferred,
+            disclosure_policy=_required(
+                run_start_record.get("disclosure_policy"), "disclosure_policy"
+            ),
+            binding_version=int(run_start_record.get("binding_version", 0)),
+        )
+        if (
+            restored.authority_fingerprint != expected_authority_fingerprint
+            or restored.capability_hash
+            != _required(run_start_record.get("capability_hash"), "capability_hash")
+            or restored.scope_hash
+            != _required(run_start_record.get("scope_hash"), "scope_hash")
+        ):
+            self.mark_terminal(restored.run_id, "failed")
+            raise RuntimeError("sdk_tool_authority_hash_mismatch")
+        return (
+            self.mark_waiting(restored.run_id)
+            if normalized_lease == "waiting"
+            else restored
+        )
+
+    def restore_waiting_run(
+        self,
+        *,
+        run_start_record: Mapping[str, Any],
+        run_binding: object,
+        catalog_resolver: object,
+    ) -> SdkRunToolAuthorityV1:
+        return self.restore_run(
+            run_start_record=run_start_record,
+            run_binding=run_binding,
+            catalog_resolver=catalog_resolver,
+            lease_state="waiting",
+        )
 
     def resolve(self, run_id: object) -> SdkRunToolAuthorityV1:
         value = str(getattr(run_id, "value", run_id))
@@ -789,6 +1042,11 @@ class SdkPreparedAuthorizationPolicy:
 
 
 __all__ = (
+    "SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY",
+    "SDK_FULL_CATALOG_DISCLOSURE_POLICY",
+    "SDK_PERMISSION_POLICY_VERSION",
+    "SDK_TOOL_AUTHORITY_RECORD_KIND",
+    "SDK_TOOL_AUTHORITY_RECORD_VERSION",
     "SdkCapabilityBridgeAdapter",
     "SdkPreparedAuthorizationPolicy",
     "SdkRunToolAuthorityRegistry",
