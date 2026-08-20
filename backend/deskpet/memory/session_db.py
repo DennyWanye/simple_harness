@@ -547,7 +547,10 @@ class SessionDB:
                                 return "duplicate"
                             if (
                                 normalized["settlement_version"] <= current_version
-                                or expected_settlement_version != current_version
+                                or (
+                                    expected_settlement_version is not None
+                                    and expected_settlement_version != current_version
+                                )
                             ):
                                 raise SnapshotContractConflict(
                                     "provider settlement CAS conflict"
@@ -665,6 +668,7 @@ class SessionDB:
         settled_at: float,
         invocation_id: str,
         expected_version: int,
+        source_sequence: int | None = None,
     ) -> dict[str, Any]:
         """CAS-advance a consumer cursor; the position is monotonic."""
 
@@ -674,6 +678,10 @@ class SessionDB:
         invocation = str(invocation_id or "").strip()
         if not consumer or not invocation:
             raise ValueError("consumer_id and invocation_id are required")
+        if source_sequence is not None and (
+            isinstance(source_sequence, bool) or int(source_sequence) < 1
+        ):
+            raise ValueError("source_sequence must be a positive integer")
 
         async def _do() -> dict[str, Any]:
             async with self._write_lock:
@@ -694,25 +702,50 @@ class SessionDB:
                             if row else (-1.0, "")
                         )
                         next_position = (float(settled_at), invocation)
-                        if next_position == current_position:
+                        current_sequence = int(row["source_sequence"]) if row else 0
+                        next_sequence = (
+                            int(source_sequence)
+                            if source_sequence is not None else current_sequence
+                        )
+                        same_position = (
+                            next_sequence == current_sequence
+                            if source_sequence is not None
+                            else next_position == current_position
+                        )
+                        if same_position:
+                            if next_position != current_position:
+                                raise SnapshotContractConflict(
+                                    "projection sequence identity conflict"
+                                )
                             await db.rollback()
                             return dict(row)
-                        if current_version != int(expected_version) or next_position < current_position:
+                        regressed = (
+                            next_sequence < current_sequence
+                            if source_sequence is not None
+                            else next_position < current_position
+                        )
+                        if current_version != int(expected_version) or regressed:
                             raise SnapshotContractConflict("projection cursor CAS conflict")
                         next_version = current_version + 1
                         updated_at = time.time()
                         await db.execute(
                             """INSERT INTO sdk_provider_projection_cursors(
-                            consumer_id,settled_at,invocation_id,version,updated_at
-                            ) VALUES (?,?,?,?,?) ON CONFLICT(consumer_id) DO UPDATE SET
+                            consumer_id,settled_at,invocation_id,version,updated_at,
+                            source_sequence
+                            ) VALUES (?,?,?,?,?,?) ON CONFLICT(consumer_id) DO UPDATE SET
                             settled_at=excluded.settled_at,invocation_id=excluded.invocation_id,
-                            version=excluded.version,updated_at=excluded.updated_at""",
-                            (consumer, float(settled_at), invocation, next_version, updated_at),
+                            version=excluded.version,updated_at=excluded.updated_at,
+                            source_sequence=excluded.source_sequence""",
+                            (
+                                consumer, float(settled_at), invocation, next_version,
+                                updated_at, next_sequence,
+                            ),
                         )
                         await db.commit()
                         return {
                             "consumer_id": consumer, "settled_at": float(settled_at),
                             "invocation_id": invocation, "version": next_version,
+                            "source_sequence": next_sequence,
                             "updated_at": updated_at,
                         }
                     except Exception:

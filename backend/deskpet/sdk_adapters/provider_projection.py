@@ -50,6 +50,9 @@ class ProviderProjectionEnvelopeV1:
     context_window: int
     effective_ceiling: int
     usage: Mapping[str, int | None] | None
+    provider_request_id: str | None = None
+    error_code: str | None = None
+    handoff_attempt: int | None = None
 
     @classmethod
     def from_value(cls, value: object) -> "ProviderProjectionEnvelopeV1":
@@ -84,6 +87,15 @@ class ProviderProjectionEnvelopeV1:
                 _read(value, "effective_ceiling"), "effective_ceiling"
             ),
             usage=usage,
+            provider_request_id=(
+                str(_read(value, "provider_request_id") or "").strip() or None
+            ),
+            error_code=str(_read(value, "error_code") or "").strip() or None,
+            handoff_attempt=(
+                None
+                if _read(value, "handoff_attempt") is None
+                else _non_negative_int(_read(value, "handoff_attempt"), "handoff_attempt")
+            ),
         )
 
     @property
@@ -113,6 +125,9 @@ class ProviderProjectionEnvelopeV1:
             "context_window": self.context_window,
             "effective_ceiling": self.effective_ceiling,
             "usage": None if self.usage is None else dict(self.usage),
+            "provider_request_id": self.provider_request_id,
+            "error_code": self.error_code,
+            "handoff_attempt": self.handoff_attempt,
         }
 
 
@@ -123,11 +138,21 @@ class SdkProviderSettlementReconciler:
         if not self._consumer_id:
             raise ValueError("consumer_id is required")
 
-    async def project(self, envelope: ProviderProjectionEnvelopeV1 | object) -> str:
-        item = (
+    @staticmethod
+    def _coerce(
+        envelope: ProviderProjectionEnvelopeV1 | object,
+    ) -> ProviderProjectionEnvelopeV1:
+        return (
             envelope if isinstance(envelope, ProviderProjectionEnvelopeV1)
             else ProviderProjectionEnvelopeV1.from_value(envelope)
         )
+
+    async def project_attempt(
+        self, envelope: ProviderProjectionEnvelopeV1 | object
+    ) -> str:
+        """Durably project attempt/usage without moving the source cursor."""
+
+        item = self._coerce(envelope)
         result = await self._db.record_sdk_provider_attempt(item.to_record())
         if item.has_trusted_usage:
             usage = item.usage
@@ -158,18 +183,44 @@ class SdkProviderSettlementReconciler:
                 "completed_at": item.settled_at,
                 "created_at": time.time(),
             })
+        return result
+
+    async def advance_cursor(
+        self,
+        envelope: ProviderProjectionEnvelopeV1 | object,
+        *,
+        source_sequence: int | None = None,
+    ) -> None:
+        item = self._coerce(envelope)
         cursor = await self._db.get_sdk_provider_projection_cursor(self._consumer_id)
+        if source_sequence is not None:
+            current_sequence = int(cursor.get("source_sequence", 0)) if cursor else 0
+            should_advance = source_sequence > current_sequence
+        else:
+            should_advance = False
         current_position = (
             (float(cursor["settled_at"]), str(cursor["invocation_id"]))
             if cursor else (-1.0, "")
         )
-        if (item.settled_at, item.invocation_id) > current_position:
+        if source_sequence is None:
+            should_advance = (item.settled_at, item.invocation_id) > current_position
+        if should_advance:
             await self._db.advance_sdk_provider_projection_cursor(
                 self._consumer_id,
                 settled_at=item.settled_at,
                 invocation_id=item.invocation_id,
                 expected_version=int(cursor["version"]) if cursor else 0,
+                source_sequence=source_sequence,
             )
+
+    async def project(
+        self,
+        envelope: ProviderProjectionEnvelopeV1 | object,
+        *,
+        source_sequence: int | None = None,
+    ) -> str:
+        result = await self.project_attempt(envelope)
+        await self.advance_cursor(envelope, source_sequence=source_sequence)
         return result
 
 

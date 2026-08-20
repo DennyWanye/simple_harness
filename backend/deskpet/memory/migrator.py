@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 28  # SDK context authority projection
+TARGET_SCHEMA_VERSION = 29  # SDK Provider outbox sequence cursor
 _V17_MIGRATION = "009_memory_v2_v17.sql"
 _V17_SCHEMA_VERSION = 17
 _V18_MIGRATION = "010_context_os_v18.sql"
@@ -78,6 +78,10 @@ _PROVIDER_FAULT_CORRELATION_MIGRATION = "019_provider_fault_correlation_v27.sql"
 _PROVIDER_FAULT_CORRELATION_SCHEMA_VERSION = 27
 _SDK_CONTEXT_AUTHORITY_MIGRATION = "020_sdk_context_authority_v28.sql"
 _SDK_CONTEXT_AUTHORITY_SCHEMA_VERSION = 28
+_SDK_PROVIDER_PROJECTION_SEQUENCE_MIGRATION = (
+    "021_sdk_provider_projection_sequence_v29.sql"
+)
+_SDK_PROVIDER_PROJECTION_SEQUENCE_SCHEMA_VERSION = 29
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -89,6 +93,9 @@ MIGRATION_STEPS: dict[str, int] = {
     _MESSAGE_ARCHIVE_PROJECTION_MIGRATION: _MESSAGE_ARCHIVE_PROJECTION_SCHEMA_VERSION,
     _PROVIDER_FAULT_CORRELATION_MIGRATION: _PROVIDER_FAULT_CORRELATION_SCHEMA_VERSION,
     _SDK_CONTEXT_AUTHORITY_MIGRATION: _SDK_CONTEXT_AUTHORITY_SCHEMA_VERSION,
+    _SDK_PROVIDER_PROJECTION_SEQUENCE_MIGRATION: (
+        _SDK_PROVIDER_PROJECTION_SEQUENCE_SCHEMA_VERSION
+    ),
 }
 
 

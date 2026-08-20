@@ -358,15 +358,13 @@ class ProductDeliveryAdapter:
             raise ValueError(f"Invalid RunEvent payload: {exc}") from exc
 
     async def finish(self) -> None:
-        """Finalize presentation after Run completes.
+        """Release presentation-local state after an SDK Run completes.
 
-        Calls RunPresenter.finish_turn() to perform any cleanup actions
-        like recording billing usage or assembler feedback.
-
-        Also clears idempotency tracking.
+        SDK Provider receipts are the only usage/billing authority. Calling
+        the legacy presenter ``finish_turn`` here would re-read mutable
+        ``last_usage`` from an unrelated provider chain.
         """
         try:
-            await self._presenter.finish_turn(self._context, self._state)
             logger.debug(
                 "delivery_adapter_finished",
                 session_id=self._session_id,

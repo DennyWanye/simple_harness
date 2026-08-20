@@ -278,10 +278,11 @@ class ProductProviderAdapter:
             or not isinstance(price[1], int)
             or price[0] < 0
             or price[1] < 0
+            or (price[0] == 0 and price[1] == 0)
             or not isinstance(price[2], str)
             or not price[2].strip()
         ):
-            raise ValueError("provider price snapshot is unknown or invalid")
+            raise ValueError("provider price snapshot is unknown, zero, or invalid")
         self.price_snapshot = ProductPriceSnapshot(
             provider_id,
             frozen_model,
