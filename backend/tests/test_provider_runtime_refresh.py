@@ -11,40 +11,32 @@ import pytest
 import main
 
 
-def test_sdk_tool_grant_uses_supported_auto_policy_source():
-    prepared = SimpleNamespace(
-        effect_id=SimpleNamespace(value="effect-1"),
-        run_id=SimpleNamespace(value="run-1"),
-        context_metadata={
-            "session_id": "session-1",
-            "root_run_id": "canonical-root-1",
-        },
-    )
+def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
+    import inspect
 
-    grant = main._build_sdk_task_grant(prepared, generation=7)
+    source = inspect.getsource(main._build_product_sdk_runtime_stack)
 
-    assert grant.source == "policy:auto"
-    assert grant.policy_generation == 7
-    assert grant.root_run_id == "canonical-root-1"
-    assert grant.expires_at is None
-
-    second = main._build_sdk_task_grant(prepared, generation=7)
-    assert second.fingerprint == grant.fingerprint
+    assert "_MinimalCapabilityBridge" not in source
+    assert "_SdkAuthorizationPolicy" not in source
+    assert '"0" * 64' not in source
+    assert "SdkCapabilityBridgeAdapter" in source
+    assert "SdkPreparedAuthorizationPolicy" in source
+    assert "SdkRunToolAuthorityRegistry" in source
 
 
-def test_sdk_prepared_identity_uses_context_metadata_without_request_id():
-    prepared = SimpleNamespace(
-        run_id=SimpleNamespace(value="sdk-run-1"),
-        context_metadata={
-            "session_id": "session-1",
-            "root_run_id": "canonical-root-1",
-        },
-    )
+def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery():
+    import inspect
 
-    assert main._sdk_prepared_identity(prepared) == (
-        "session-1",
-        "canonical-root-1",
-    )
+    build = inspect.getsource(main._build_product_sdk_runtime_stack)
+    foreground = inspect.getsource(main._run_product_harness_chat)
+    execute = inspect.getsource(main._execute_sdk_run)
+    watcher = inspect.getsource(main._watch_retained_sdk_run)
+
+    assert "tool_authorities.prepare_run" in build
+    assert "_sdk_tool_authority_registry.prepare_run" in foreground
+    assert "_sdk_tool_authority_registry.mark_waiting" in execute
+    assert "_sdk_tool_authority_registry.mark_terminal" in execute
+    assert "_sdk_tool_authority_registry.mark_terminal" in watcher
 
 
 def test_foreground_sdk_path_has_no_global_refresh_lock_or_legacy_authority():

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
+from typing import Callable
 
 from deskpet.types.task_grants import TaskGrant
 
@@ -24,8 +25,14 @@ class DurableTaskGrant:
 class DurableTaskGrantAuthority:
     """Owns prepared/active/expired/revoked state outside the SDK DB."""
 
-    def __init__(self, database: ProductStateDatabase) -> None:
+    def __init__(
+        self,
+        database: ProductStateDatabase,
+        *,
+        policy_generation_provider: Callable[[], int] | None = None,
+    ) -> None:
         self.database = database
+        self._policy_generation_provider = policy_generation_provider
 
     def prepare(self, grant: TaskGrant, *, now: float) -> DurableTaskGrant:
         now = self._time(now)
@@ -187,6 +194,11 @@ class DurableTaskGrantAuthority:
             raise TaskGrantConflict("TaskGrant version or policy generation drifted")
 
     def _assert_current_policy(self, policy_generation: int) -> None:
+        if self._policy_generation_provider is not None:
+            current = int(self._policy_generation_provider())
+            if current != policy_generation:
+                raise TaskGrantConflict("TaskGrant policy generation is not current")
+            return
         row = self.database.connection.execute(
             "SELECT generation FROM authorization_policy_state WHERE singleton_id=1"
         ).fetchone()

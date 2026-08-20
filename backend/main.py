@@ -2884,6 +2884,9 @@ async def _set_authorization_auto_mode(enabled: bool) -> bool:
         raise RuntimeError("authorization policy changed repeatedly")
     if permission_gate_v2 is not None:
         permission_gate_v2.set_auto_mode(state.mode == "auto")
+    sdk_policy = service_context.get("sdk_prepared_authorization_policy")
+    if sdk_policy is not None:
+        sdk_policy.update_policy_generation(state.generation)
     return state.mode == "auto"
 
 
@@ -6743,6 +6746,8 @@ _sdk_context_port = None
 _sdk_runtime_catalog: dict[str, Any] | None = None
 _sdk_run_binding_registry = None
 _sdk_provider_binding_resolver = None
+_sdk_tool_authority_registry = None
+_sdk_runtime_tool_inventory = None
 # Product/UI projections expose the Host canonical root id, while RunClient
 # cancellation is keyed by the SDK's deterministic internal id. Keep the
 # active bridge explicit and bounded to the lifetime of _execute_sdk_run.
@@ -7031,41 +7036,6 @@ def _assert_sdk_provider_mutation_allowed(provider_ids: Any) -> None:
         raise ProviderMutationConflict(sorted(conflicts)[0])
 
 
-def _sdk_prepared_identity(prepared) -> tuple[str, str]:
-    metadata = prepared.context_metadata
-    session_id = str(metadata.get("session_id") or prepared.run_id.value)
-    root_run_id = str(metadata.get("root_run_id") or prepared.run_id.value)
-    return session_id, root_run_id
-
-
-def _build_sdk_task_grant(prepared, generation: int):
-    """Build the auto-policy grant used by SDK Runtime Tool effects.
-
-    Keep this outside the runtime composition closure so the durable grant
-    contract is unit-testable. ``TaskGrant.source`` is a closed enum; the old
-    ``policy:sdk`` value crashed the first real Tool call before an effect or
-    authorization card could be created.
-    """
-
-    import hashlib
-    from deskpet.types.task_grants import TaskGrant
-
-    fingerprint = hashlib.sha256(prepared.effect_id.value.encode()).hexdigest()
-    _session_id, root_run_id = _sdk_prepared_identity(prepared)
-    return TaskGrant(
-        task_grant_id=f"sdk-grant:{fingerprint}",
-        root_run_id=root_run_id,
-        principal_id="sdk-runtime",
-        resource_selectors=(),
-        permission_categories=("read_file", "write_file", "network"),
-        effect_kinds=("read", "write"),
-        source="policy:auto",
-        policy_generation=generation,
-        expires_at=None,
-        version=1,
-    )
-
-
 def _sdk_desktop_test_enabled() -> bool:
     # SDK测试模式已完全禁用（2026-08-17）。
     # 该模式造成用户困惑且限制核心功能（只暴露2个工具）。
@@ -7116,9 +7086,6 @@ async def _build_product_sdk_runtime_stack(
     generation: int,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
-    import hashlib
-    from pathlib import Path
-
     from simple_harness import RuntimeProfile
     from simple_harness.execution.budget import BudgetPolicy
     from simple_harness.execution.delivery import DeliveryDispatcher
@@ -7137,6 +7104,11 @@ async def _build_product_sdk_runtime_stack(
     )
     from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
     from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+    from deskpet.sdk_adapters.tool_authority import (
+        SdkCapabilityBridgeAdapter,
+        SdkPreparedAuthorizationPolicy,
+        SdkRunToolAuthorityRegistry,
+    )
     from deskpet.sdk_adapters.tools import ProductToolsAdapter
     from deskpet.sdk_adapters.reconciliation import ProductReconciliationAdapter
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
@@ -7179,40 +7151,29 @@ async def _build_product_sdk_runtime_stack(
     memory_query = service_context.get("memory_recall_query")
     memory_scope_resolver = service_context.get("memory_recall_scope_resolver")
     search_gateway = service_context.get("search_gateway")
-
-    # Create a minimal capability bridge service for SDK tool catalog
-    # The SDK Runtime doesn't need full capability activation support
-    class _MinimalCapabilityBridge:
-        def search(self, query: str, *, limit: int = 10, cursor: int = 0) -> dict:
-            return {"tools": [], "total": 0, "cursor": 0}
-        def describe(self, capability_id: str, schema_hash: str, nonce: str) -> dict:
-            return {}
-        def suggestions(self) -> list:
-            return []
-        def activate(self, capability_id: str, schema_hash: str, nonce: str, grant: dict) -> dict:
-            raise RuntimeError("SDK Runtime does not support capability activation")
+    authorization_runtime = service_context.get("authorization_runtime")
+    capability_store = service_context.get("capability_store")
+    if authorization_runtime is None or capability_store is None:
+        raise RuntimeError("SDK Runtime requires prepared authorization authority")
+    initial_authorization_policy = await capability_store.get_policy_state()
+    tool_authorities = SdkRunToolAuthorityRegistry()
 
     def execution_context_getter():
-        from types import SimpleNamespace
-        from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
-        from deskpet.sdk_adapters.tools import active_product_tool_context
-
-        try:
-            tool_context = active_product_tool_context()
-        except RuntimeError:
-            return None
-        run_id = tool_context.run_id.value
-        binding = provider_binding_resolver.registry.resolve(run_id)
-        delivery = _delivery_adapters.get(run_id)
-        presentation = getattr(delivery, "_context", None)
-        scope_id = str(getattr(presentation, "task_scope_id", "") or "")
-        if binding is None or not scope_id:
-            return None
-        return SimpleNamespace(
-            session_id=binding.session_id,
-            request_id=binding.request_id,
-            scope_id=scope_id,
+        from deskpet.sdk_adapters.tools import (
+            active_product_tool_call_id,
+            active_product_tool_context,
         )
+
+        tool_context = active_product_tool_context()
+        run_id = tool_context.run_id.value
+        return tool_authorities.resolve(run_id).execution_context(
+            call_id=active_product_tool_call_id().value,
+            effect_id=active_product_tool_call_id().value,
+        )
+
+    capability_bridge = SdkCapabilityBridgeAdapter(
+        tool_authorities, execution_context_getter
+    )
 
     dependencies = ToolCatalogDependencies(
         todo_session_db=todo_session_db,
@@ -7221,7 +7182,7 @@ async def _build_product_sdk_runtime_stack(
         execution_context_getter=execution_context_getter,
         memory_query=memory_query,
         memory_scope_resolver=memory_scope_resolver,
-        capability_bridge_service=_MinimalCapabilityBridge(),
+        capability_bridge_service=capability_bridge,
         search_gateway=search_gateway,
     )
 
@@ -7231,12 +7192,8 @@ async def _build_product_sdk_runtime_stack(
 
     # Build authorization system
     from deskpet.product_state.database import ProductStateDatabase
-    from deskpet.product_state.authorization_saga import (
-        AuthorizationSagaRepository,
-        AuthorizationSagaIdentity,
-    )
+    from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
     from deskpet.product_state.task_grants import DurableTaskGrantAuthority
-    from simple_harness.tools import AuthorizationResult, AuthorizationDecision
     import time
 
     # Create product state database for SDK Runtime
@@ -7244,64 +7201,26 @@ async def _build_product_sdk_runtime_stack(
     product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
     product_state_db = ProductStateDatabase(product_state_db_path)
     product_state_db.initialize()
-    _policy_generation_row = product_state_db.connection.execute(
-        "SELECT generation FROM authorization_policy_state WHERE singleton_id=1"
-    ).fetchone()
-    authorization_policy_generation = int(_policy_generation_row[0])
-
     # Create authorization saga repository
     repository = AuthorizationSagaRepository(product_state_db, owner_id=f"sdk-runtime-g{generation}")
-
-    # Create authorization policy (simple allow-all for SDK Runtime)
-    class _SdkAuthorizationPolicy:
-        async def decide(self, prepared, *, request):
-            return AuthorizationResult(
-                AuthorizationDecision.ALLOW,
-                receipt_ref=f"sdk-policy:{prepared.effect_id.value}"
-            )
-
-    # Create grant factory
-    def grant_factory(prepared, result):
-        return _build_sdk_task_grant(prepared, authorization_policy_generation)
-
-    # Create identity factory
-    def identity_factory(prepared, request):
-        import hashlib
-        effect = prepared.effect_id.value
-        call = prepared.call.call_id.value
-        fingerprint = hashlib.sha256(effect.encode()).hexdigest()
-        grant = grant_factory(prepared, None)
-        session_id, root_run_id = _sdk_prepared_identity(prepared)
-        return AuthorizationSagaIdentity(
-            authorization_id=f"sdk-auth:{fingerprint}",
-            principal_id="sdk-runtime",
-            session_id=session_id,
-            root_run_id=root_run_id,
-            run_id=prepared.run_id.value,
-            call_id=call,
-            effect_id=effect,
-            tool_name=prepared.call.name,
-            arguments=dict(prepared.call.arguments),
-            capability_hash="0" * 64,
-            schema_hash="0" * 64,
-            scope_hash="0" * 64,
-            grant_id=grant.task_grant_id,
-            grant_version=grant.version,
-            grant_fingerprint=grant.fingerprint,
-            policy_generation=authorization_policy_generation,
-            decision_nonce=request.nonce if request is not None else f"allow:{fingerprint}",
-            decision_version=0,
-            run_lease_epoch=1,
-            execution_lease_epoch=1,
-        )
+    authorization_policy = SdkPreparedAuthorizationPolicy(
+        authorization_runtime,
+        tool_authorities,
+        initial_policy_generation=initial_authorization_policy.generation,
+    )
 
     # Build authorization adapter
     authorization_adapter = ProductAuthorizationAdapter(
         repository,
-        policy=_SdkAuthorizationPolicy(),
-        identity_factory=identity_factory,
-        grant_authority=DurableTaskGrantAuthority(product_state_db),
-        grant_factory=grant_factory,
+        policy=authorization_policy,
+        identity_factory=authorization_policy.identity_factory,
+        grant_authority=DurableTaskGrantAuthority(
+            product_state_db,
+            policy_generation_provider=(
+                authorization_policy.current_policy_generation
+            ),
+        ),
+        grant_factory=authorization_policy.grant_factory,
         clock=time.time,
     )
 
@@ -7382,6 +7301,49 @@ async def _build_product_sdk_runtime_stack(
         frozen_catalog["content_fingerprint"] = (
             catalog_snapshot.content_fingerprint
         )
+        for record in recoverable:
+            start = uow.read_start_snapshot(str(record.run_id))
+            start_input = start.get("input") if isinstance(start, Mapping) else None
+            metadata = (
+                start_input.get("context_metadata")
+                if isinstance(start_input, Mapping)
+                else None
+            )
+            if not isinstance(metadata, Mapping):
+                continue
+            task_scope_id = str(metadata.get("task_scope_id") or "").strip()
+            session_id = str(metadata.get("session_id") or "").strip()
+            request_id = str(metadata.get("request_id") or "").strip()
+            root_run_id = str(metadata.get("root_run_id") or "").strip()
+            if not all((task_scope_id, session_id, request_id, root_run_id)):
+                logger.warning(
+                    "sdk_recovery_tool_authority_missing",
+                    sdk_run_id=str(record.run_id),
+                )
+                continue
+            restored_tools = tool_authorities.prepare_run(
+                run_id=str(record.run_id),
+                session_id=session_id,
+                request_id=request_id,
+                root_run_id=root_run_id,
+                task_scope_id=task_scope_id,
+                workspace_root=(
+                    str(metadata.get("workspace_root"))
+                    if metadata.get("workspace_root")
+                    else None
+                ),
+                catalog=frozen_catalog,
+                inventory=tool_inventory,
+                binding_version=int(
+                    metadata.get("workspace_binding_version") or 1
+                ),
+            )
+            record_state = str(
+                getattr(getattr(record, "state", None), "value", None)
+                or getattr(record, "state", "")
+            ).lower()
+            if record_state == "waiting":
+                tool_authorities.mark_waiting(restored_tools.run_id)
         provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
             resolver=provider_binding_resolver,
@@ -7453,6 +7415,11 @@ async def _build_product_sdk_runtime_stack(
 
     service_context.register("sdk_runtime_catalog", frozen_catalog)
     service_context.register("sdk_provider_binding_resolver", provider_binding_resolver)
+    service_context.register("sdk_tool_authority_registry", tool_authorities)
+    service_context.register("sdk_runtime_tool_inventory", tool_inventory)
+    service_context.register(
+        "sdk_prepared_authorization_policy", authorization_policy
+    )
     return stack
 
 
@@ -8676,7 +8643,12 @@ async def _run_product_harness_chat(
         )
         from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
-        if _sdk_provider_binding_resolver is None or _sdk_runtime_catalog is None:
+        if (
+            _sdk_provider_binding_resolver is None
+            or _sdk_runtime_catalog is None
+            or _sdk_tool_authority_registry is None
+            or _sdk_runtime_tool_inventory is None
+        ):
             raise RuntimeError("SDK per-Run authority is unavailable")
         sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
             session_id, request_id, str(turn_id)
@@ -8731,6 +8703,20 @@ async def _run_product_harness_chat(
                 _sdk_runtime_catalog["content_fingerprint"]
             ),
         )
+        try:
+            _sdk_tool_authority_registry.prepare_run(
+                run_id=sdk_run_id,
+                session_id=session_id,
+                request_id=request_id,
+                root_run_id=root_ref.run_id,
+                task_scope_id=task_scope_id,
+                workspace_root=workspace,
+                catalog=_sdk_runtime_catalog,
+                inventory=_sdk_runtime_tool_inventory,
+            )
+        except BaseException:
+            _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
+            raise
         # Execute Agent via SDK Runtime. Concurrent Sessions resolve their own
         # immutable binding; no global stack mutation or full-Run lock occurs.
         await _execute_sdk_run(
@@ -8937,6 +8923,7 @@ async def _activate_product_sdk_runtime(
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
     global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
     global _sdk_provider_binding_resolver, _sdk_run_binding_registry
+    global _sdk_tool_authority_registry, _sdk_runtime_tool_inventory
 
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from deskpet.workflows.store import RuntimeActivationCommand
@@ -9006,6 +8993,12 @@ async def _activate_product_sdk_runtime(
     )
     _sdk_run_binding_registry = getattr(
         _sdk_provider_binding_resolver, "registry", None
+    )
+    _sdk_tool_authority_registry = service_context.get(
+        "sdk_tool_authority_registry"
+    )
+    _sdk_runtime_tool_inventory = service_context.get(
+        "sdk_runtime_tool_inventory"
     )
     for recovered_run_id in tuple(_sdk_retained_presentations):
         _ensure_sdk_recovery_watcher(recovered_run_id)
@@ -10181,6 +10174,18 @@ async def _execute_sdk_run(
             "root_run_id": root_run_id,
             "request_id": request_id,
             "task_scope_id": task_scope_id,
+            "workspace_root": (
+                _sdk_tool_authority_registry.resolve(sdk_run_id)
+                .task_work_context.workspace_root
+                if _sdk_tool_authority_registry is not None
+                else None
+            ),
+            "workspace_binding_version": (
+                _sdk_tool_authority_registry.resolve(sdk_run_id)
+                .task_work_context.binding_version
+                if _sdk_tool_authority_registry is not None
+                else 1
+            ),
             "conversation_boundary_ref": context.conversation_boundary_ref,
             "conversation_boundary_version": 1,
             "snapshot_id": prepared_snapshot.snapshot_id,
@@ -10292,6 +10297,8 @@ async def _execute_sdk_run(
             )
             if _sdk_provider_binding_resolver is not None:
                 _sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
+            if _sdk_tool_authority_registry is not None:
+                _sdk_tool_authority_registry.mark_waiting(sdk_run_id)
             logger.info(
                 "sdk_run_waiting_binding_retained",
                 sdk_run_id=sdk_run_id,
@@ -10379,6 +10386,13 @@ async def _execute_sdk_run(
                 )
             except KeyError:
                 pass
+        if terminal_binding_state is not None and _sdk_tool_authority_registry is not None:
+            try:
+                _sdk_tool_authority_registry.mark_terminal(
+                    sdk_run_id, terminal_binding_state
+                )
+            except KeyError:
+                pass
         # WAITING is durable and resumable: retain both delivery and identity
         # routes until a signal causes the Run to reach a terminal state.
         if terminal_binding_state is not None:
@@ -10460,6 +10474,13 @@ async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
             if _sdk_provider_binding_resolver is not None:
                 try:
                     _sdk_provider_binding_resolver.mark_terminal(
+                        sdk_run_id, terminal_state
+                    )
+                except KeyError:
+                    pass
+            if _sdk_tool_authority_registry is not None:
+                try:
+                    _sdk_tool_authority_registry.mark_terminal(
                         sdk_run_id, terminal_state
                     )
                 except KeyError:

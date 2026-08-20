@@ -130,6 +130,12 @@ class PreparedToolCapability:
         schema_hashes = {canonical_hash(schema)}
         if isinstance(schema.get("function"), dict):
             schema_hashes.add(canonical_hash(schema["function"]))
+            if isinstance(schema["function"].get("parameters"), dict):
+                # SDK ProviderToolSpec fingerprints the exact input schema,
+                # while the capability bridge wraps it in the provider-neutral
+                # function envelope. Both representations refer to the same
+                # frozen schema and must preserve that canonical hash.
+                schema_hashes.add(canonical_hash(schema["function"]["parameters"]))
         if self.ref.schema_hash not in schema_hashes:
             raise ValueError(f"schema hash mismatch for {self.ref.name!r}")
         object.__setattr__(self, "canonical_schema", schema)
