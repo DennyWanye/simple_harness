@@ -221,6 +221,8 @@ def test_run_context_usage_identity_comes_from_frozen_host_snapshot():
     assert main._snapshot_context_usage_binding_for_run(_Host()) == {
         "provider_id": "kimi",
         "preferred_model": "kimi-k3",
+        "provider_incarnation_id": "inc-1",
+        "provider_config_revision": 7,
         "binding_epoch": 11,
     }
 
