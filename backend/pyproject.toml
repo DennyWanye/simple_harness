@@ -156,10 +156,10 @@ dependencies = [
     "pyyaml>=6.0",
     # T6.2: SDK dependency for T6 Product Cutover.
     # T7.3: Production uses vendored wheel with exact hash verification.
-    # 2026-08-19: vendored exact v0.1.2 bytes (adds consumer adapter layer;
-    # pure-add over 0.1.1). Wheel identity single source of truth:
+    # 2026-08-21: vendored exact v0.1.5 bytes (SDK Context authority cutover).
+    # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk>=0.1.4",
+    "simple-harness-sdk>=0.1.5",
     "simple-harness-memory-sdk>=0.2.0",
 ]
 
@@ -174,7 +174,7 @@ dependencies = [
 # Production (vendored immutable candidate):
 # Development (path dependency):
 # simple-harness-memory-sdk = { path = "../../simple-harness-memory-sdk", editable = true }
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.4-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.1.5-py3-none-any.whl" }
 simple-harness-memory-sdk = { path = "vendor/simple_harness_memory_sdk-0.2.0-py3-none-any.whl" }
 
 [project.optional-dependencies]

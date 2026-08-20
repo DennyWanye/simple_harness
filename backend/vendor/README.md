@@ -2,11 +2,11 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
-## Active candidate: simple_harness_sdk-0.1.4-py3-none-any.whl
+## Active candidate: simple_harness_sdk-0.1.5-py3-none-any.whl
 
-**Source:** local build from `simple-harness-sdk`（sdk-productionization H1：发布阻断收尾）
-**SHA256:** `4766ededa6145e628519153d570520271f9aca0fc0aaf0afea6e401a99679e39`
-**Vendored:** 2026-08-20（sdk-productionization C1）
+**Source:** local build from `simple-harness-sdk` commit `73458aa`（SDK Context authority cutover）
+**SHA256:** `1551735127e1b91be629bc23ef0369ffbba4aa02c12d1594123a4fca7f5522b6`
+**Vendored:** 2026-08-21（SDK Context authority Slice A）
 
 wheel 身份单一事实源 `backend/deskpet/sdk_adapters/sdk_candidate.py`。
 
@@ -20,7 +20,7 @@ wheel 身份单一事实源 `backend/deskpet/sdk_adapters/sdk_candidate.py`。
 Verification:
 
 ```bash
-backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.4-py3-none-any.whl
+backend/.venv/bin/python scripts/verify_sdk_wheel.py backend/vendor/simple_harness_sdk-0.1.5-py3-none-any.whl
 shasum -a 256 backend/vendor/simple_harness_memory_sdk-0.2.0-py3-none-any.whl
 ```
 
@@ -28,6 +28,11 @@ shasum -a 256 backend/vendor/simple_harness_memory_sdk-0.2.0-py3-none-any.whl
 
 **SHA256:** `474e82898a8b07365f92380182f96c4342ff724dd37b485b3f13a8eadf22a202`
 **Status:** superseded by v0.2.0 on 2026-08-20; retained for audit rollback.
+
+## Historical artifact: simple_harness_sdk-0.1.4-py3-none-any.whl
+
+**SHA256:** `4766ededa6145e628519153d570520271f9aca0fc0aaf0afea6e401a99679e39`
+**Status:** superseded by v0.1.5 on 2026-08-21; retained for audit rollback.
 
 ## Historical artifact: simple_harness_sdk-0.1.3-py3-none-any.whl
 

@@ -12,9 +12,9 @@ from pathlib import Path
 
 from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
 
-SDK_VERSION = "0.1.4"
-SDK_WHEEL_FILENAME = "simple_harness_sdk-0.1.4-py3-none-any.whl"
-SDK_WHEEL_SHA256 = "4766ededa6145e628519153d570520271f9aca0fc0aaf0afea6e401a99679e39"
+SDK_VERSION = "0.1.5"
+SDK_WHEEL_FILENAME = "simple_harness_sdk-0.1.5-py3-none-any.whl"
+SDK_WHEEL_SHA256 = "1551735127e1b91be629bc23ef0369ffbba4aa02c12d1594123a4fca7f5522b6"
 
 SDK_MEMORY_VERSION = "0.2.0"
 SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.2.0-py3-none-any.whl"
