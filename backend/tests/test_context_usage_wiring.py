@@ -60,6 +60,53 @@ async def test_binding_commit_pushes_binding_only_context_authority() -> None:
 
 
 @pytest.mark.asyncio
+async def test_projection_broadcasts_strictly_newer_usage_once(monkeypatch) -> None:
+    import main
+
+    state = {
+        "schema_version": 2,
+        "session_id": "session-live",
+        "source": "measured",
+        "version": 3,
+        "sample_id": "sample-3",
+        "binding_epoch": 2,
+        "availability": "available",
+        "provider_id": "deepseek",
+        "model": "deepseek-v4-pro",
+        "model_id": "deepseek-v4-pro",
+        "prompt_tokens": 10,
+        "completion_tokens": 2,
+        "cached_tokens": None,
+        "context_window": 1_000_000,
+        "effective_ceiling": 800_000,
+        "has_measurement": True,
+        "updated_at": 300.0,
+    }
+
+    class DB:
+        async def get_context_usage_state(self, session_id):
+            assert session_id == "session-live"
+            return dict(state)
+
+    frames = []
+
+    async def broadcast(origin, frame):
+        assert origin is None
+        frames.append(frame)
+
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", broadcast)
+    main._session_context_state.pop("session-live", None)
+
+    assert await main._broadcast_context_usage_snapshot(DB(), "session-live") is True
+    assert await main._broadcast_context_usage_snapshot(DB(), "session-live") is False
+    assert frames == [{"type": "context_usage", "payload": state}]
+
+    state["sample_id"] = "conflicting-sample"
+    with pytest.raises(RuntimeError, match="equal_version_conflict"):
+        await main._broadcast_context_usage_snapshot(DB(), "session-live")
+
+
+@pytest.mark.asyncio
 async def test_chat_launcher_emits_terminal_error_when_failure_precedes_run_open(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -133,6 +133,79 @@ async def test_pump_projects_every_terminal_attempt_but_only_trusted_usage(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_pump_notifies_after_durable_projection_before_cursor_commit(tmp_path) -> None:
+    source = _Source([_receipt(1, "succeeded", usage={
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "total_tokens": 12,
+        "cache_tokens": None,
+        "reasoning_tokens": None,
+    })])
+    db = SessionDB(tmp_path / "state.db")
+    notifications: list[tuple[str, int]] = []
+
+    async def committed(context: ProviderProjectionContextV1) -> None:
+        attempts = await db.list_sdk_provider_attempts(context.session_id)
+        assert len(attempts) == 1
+        cursor = await db.get_sdk_provider_projection_cursor(
+            "sdk-provider-projection-v1"
+        )
+        assert cursor is None
+        notifications.append((context.session_id, 1))
+
+    pump = SdkProviderProjectionPump(
+        source,
+        db,
+        context_resolver=_context,
+        on_committed=committed,
+    )
+
+    assert await pump.run_until_idle() == 1
+    assert notifications == [("session-a", 1)]
+    assert await pump.run_until_idle() == 0
+    assert notifications == [("session-a", 1)]
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_callback_failure_keeps_receipt_for_idempotent_retry(tmp_path) -> None:
+    source = _Source([_receipt(1, "succeeded", usage={
+        "input_tokens": 10,
+        "output_tokens": 2,
+        "total_tokens": 12,
+        "cache_tokens": None,
+        "reasoning_tokens": None,
+    })])
+    db = SessionDB(tmp_path / "state.db")
+    calls = 0
+
+    async def flaky(_context: ProviderProjectionContextV1) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("live delivery unavailable")
+
+    pump = SdkProviderProjectionPump(
+        source, db, context_resolver=_context, on_committed=flaky
+    )
+    with pytest.raises(RuntimeError, match="delivery unavailable"):
+        await pump.run_once()
+    assert await db.get_sdk_provider_projection_cursor(
+        "sdk-provider-projection-v1"
+    ) is None
+    assert len(await db.list_sdk_provider_attempts("session-a")) == 1
+
+    assert await pump.run_once() == 1
+    assert calls == 2
+    cursor = await db.get_sdk_provider_projection_cursor(
+        "sdk-provider-projection-v1"
+    )
+    assert cursor is not None and cursor["source_sequence"] == 1
+    assert len(await db.list_sdk_provider_attempts("session-a")) == 1
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_succeeded_usage_with_unreported_cache_remains_measured(tmp_path) -> None:
     source = _Source([_receipt(1, "succeeded", usage={
         "input_tokens": 13,

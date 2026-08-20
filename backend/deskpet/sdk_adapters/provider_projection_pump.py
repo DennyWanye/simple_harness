@@ -62,6 +62,9 @@ class ProviderProjectionContextV1:
 ProjectionContextResolver = Callable[
     [object], ProviderProjectionContextV1 | object | Awaitable[object]
 ]
+ProjectionCommitted = Callable[
+    [ProviderProjectionContextV1], object | Awaitable[object]
+]
 FaultHook = Callable[[str, object], None]
 
 
@@ -84,6 +87,7 @@ class SdkProviderProjectionPump:
         batch_size: int = 256,
         interval_seconds: float = 2.0,
         fault: FaultHook | None = None,
+        on_committed: ProjectionCommitted | None = None,
     ) -> None:
         if not callable(context_resolver):
             raise TypeError("context_resolver must be callable")
@@ -98,6 +102,7 @@ class SdkProviderProjectionPump:
         self._batch_size = int(batch_size)
         self._interval = max(0.05, float(interval_seconds))
         self._fault = fault
+        self._on_committed = on_committed
         self._reconciler = SdkProviderSettlementReconciler(
             session_db, consumer_id=self._consumer_id
         )
@@ -177,6 +182,10 @@ class SdkProviderProjectionPump:
             envelope = await self._envelope(receipt)
             await self._reconciler.project_attempt(envelope)
             self._hit("provider_projection.session.after_write", receipt)
+            if self._on_committed is not None:
+                notified = self._on_committed(await self._context(receipt))
+                if inspect.isawaitable(notified):
+                    await notified
             await self._reconciler.advance_cursor(
                 envelope, source_sequence=sequence
             )

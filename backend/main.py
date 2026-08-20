@@ -7269,6 +7269,9 @@ async def _build_product_sdk_runtime_stack(
                 uow,
                 session_db,
                 context_resolver=projection_context,
+                on_committed=lambda context: _broadcast_context_usage_snapshot(
+                    session_db, context.session_id
+                ),
             )
             projection_pump.start()
             projection_pump.trigger()
@@ -9241,6 +9244,36 @@ async def _send_context_usage_authority(
         "payload": authoritative,
     })
     return authoritative
+
+
+async def _broadcast_context_usage_snapshot(
+    session_db: Any, session_id: str
+) -> bool:
+    """Publish one strictly newer durable usage authority to matching peers."""
+
+    from deskpet.sdk_adapters.context_authority import canonical_sha256
+
+    incoming = await session_db.get_context_usage_state(session_id)
+    incoming = await _attach_context_snapshot_metadata(session_db, incoming)
+    if str(incoming.get("session_id") or "").strip() != str(session_id):
+        raise RuntimeError("context_usage_projection_session_mismatch")
+    version = int(incoming.get("version") or 0)
+    if version <= 0:
+        return False
+    previous = _session_context_state.get(str(session_id))
+    previous_version = int((previous or {}).get("version") or 0)
+    if version < previous_version:
+        return False
+    if version == previous_version and previous is not None:
+        if canonical_sha256(previous) != canonical_sha256(incoming):
+            raise RuntimeError("context_usage_equal_version_conflict")
+        return False
+    _session_context_state[str(session_id)] = dict(incoming)
+    await _broadcast_default_chat_peers(
+        None,
+        {"type": "context_usage", "payload": incoming},
+    )
+    return True
 
 
 def _snapshot_context_usage_event(
