@@ -6,11 +6,52 @@ RunPresenter, SessionDB, WebSocket, and artifact systems.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+_PUBLIC_TOOL_ACTIONS = {
+    "memory_recall": "查找相关记忆和上下文",
+    "memory_search": "查找相关记忆和上下文",
+    "file_read": "读取目标文件进行核对",
+    "read_file": "读取目标文件进行核对",
+    "file_glob": "定位并检查相关文件",
+    "file_grep": "定位并检查相关文件",
+    "web_search": "检索相关公开资料",
+    "web_fetch": "读取相关公开资料",
+    "run_shell": "运行必要的检查命令",
+    "write_file": "更新相关文件",
+    "edit_file": "更新相关文件",
+}
+
+
+def public_tool_turn_narration(
+    provider_content: str,
+    tool_names: Sequence[str],
+) -> str:
+    """Build bounded public work narration from public-only inputs."""
+
+    public_content = str(provider_content).strip()
+    if public_content:
+        return public_content
+    actions: list[str] = []
+    for raw_name in tool_names:
+        action = _PUBLIC_TOOL_ACTIONS.get(
+            str(raw_name).strip().lower(),
+            "执行下一步工具操作",
+        )
+        if action not in actions:
+            actions.append(action)
+        if len(actions) >= 2:
+            break
+    if not actions:
+        return ""
+    if len(actions) == 1:
+        return f"我正在{actions[0]}，完成后会整理结果。"
+    return f"我先{actions[0]}，再{actions[1]}，完成后会整理结果。"
 
 
 class ProductDeliveryAdapter:
@@ -52,6 +93,7 @@ class ProductDeliveryAdapter:
         self._state = state
         self._idempotency_seen: set[str] = set()
         self._pending_public_narration: dict[int, str] = {}
+        self._projected_narration_iterations: set[int] = set()
         self._staged_call_iterations: dict[str, int] = {}
         self._tool_iterations: dict[str, int] = {}
         self._next_tool_iteration = 0
@@ -65,9 +107,10 @@ class ProductDeliveryAdapter:
     ) -> None:
         """Stage one Provider turn's public content and complete call identity set.
 
-        This method accepts only the Provider adapter's normalized public
-        ``message.content``. Private provider reasoning is intentionally not
-        part of this boundary.
+        This method accepts either the Provider adapter's normalized public
+        ``message.content`` or the host's bounded fallback derived only from
+        public tool names. Private provider reasoning is intentionally not part
+        of this boundary.
         """
 
         stable_iteration = max(0, int(iteration))
@@ -155,6 +198,13 @@ class ProductDeliveryAdapter:
             iteration = staged_iteration
         narration = self._pending_public_narration.pop(iteration, "")
         self._tool_iterations[call_id] = iteration
+
+        if iteration in self._projected_narration_iterations:
+            narration = ""
+        else:
+            if not narration:
+                narration = public_tool_turn_narration("", (call.name,))
+            self._projected_narration_iterations.add(iteration)
 
         if narration:
             try:
@@ -334,6 +384,7 @@ class ProductDeliveryAdapter:
             # Clear idempotency tracking
             self._idempotency_seen.clear()
             self._pending_public_narration.clear()
+            self._projected_narration_iterations.clear()
             self._staged_call_iterations.clear()
             self._tool_iterations.clear()
             self._next_tool_iteration = 0

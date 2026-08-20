@@ -186,7 +186,7 @@ async def test_handle_event_passes_context(delivery_adapter, mock_presenter, moc
 async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presenter):
     from simple_harness import CallId
     from simple_harness.tools import ToolCall, ToolResult
-    from agent.agent_loop import ToolCallEvent, ToolResultEvent
+    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent, ToolResultEvent
 
     call = ToolCall(CallId("call-visible"), "write_file", {"path": "a.txt"})
     await delivery_adapter.present_tool_call(call)
@@ -195,14 +195,17 @@ async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presente
         ToolResult.succeeded(CallId("call-visible"), {"bytes_written": 2}),
     )
 
-    first_event = mock_presenter.present.await_args_list[0].args[0]
-    second_event = mock_presenter.present.await_args_list[1].args[0]
-    assert isinstance(first_event, ToolCallEvent)
-    assert first_event.tool_call.name == "write_file"
-    assert isinstance(second_event, ToolResultEvent)
-    assert second_event.tool_call_id == "call-visible"
-    assert second_event.outcome_status == "succeeded"
-    assert '"bytes_written": 2' in second_event.result
+    events = [item.args[0] for item in mock_presenter.present.await_args_list]
+    assert [type(event) for event in events] == [
+        AssistantMessageEvent,
+        ToolCallEvent,
+        ToolResultEvent,
+    ]
+    assert events[0].content == "我正在更新相关文件，完成后会整理结果。"
+    assert events[1].tool_call.name == "write_file"
+    assert events[2].tool_call_id == "call-visible"
+    assert events[2].outcome_status == "succeeded"
+    assert '"bytes_written": 2' in events[2].result
 
 
 @pytest.mark.asyncio
@@ -239,10 +242,10 @@ async def test_projects_public_narration_before_tool_with_stable_iteration(
 
 
 @pytest.mark.asyncio
-async def test_empty_public_narration_does_not_project_assistant_event(
+async def test_empty_public_narration_projects_safe_tool_fallback(
     delivery_adapter, mock_presenter
 ):
-    from agent.agent_loop import ToolCallEvent
+    from agent.agent_loop import AssistantMessageEvent, ToolCallEvent
     from simple_harness import CallId
     from simple_harness.tools import ToolCall
 
@@ -254,9 +257,12 @@ async def test_empty_public_narration_does_not_project_assistant_event(
     )
 
     events = [item.args[0] for item in mock_presenter.present.await_args_list]
-    assert len(events) == 1
-    assert isinstance(events[0], ToolCallEvent)
-    assert events[0].iteration == 4
+    assert len(events) == 2
+    assert isinstance(events[0], AssistantMessageEvent)
+    assert events[0].content == "我正在读取目标文件进行核对，完成后会整理结果。"
+    assert events[0].reasoning_content == ""
+    assert isinstance(events[1], ToolCallEvent)
+    assert [event.iteration for event in events] == [4, 4]
 
 
 @pytest.mark.asyncio

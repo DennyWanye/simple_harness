@@ -353,7 +353,7 @@ def test_provider_public_narration_projection_is_best_effort() -> None:
     asyncio.run(case())
 
 
-def test_provider_binds_all_tool_calls_when_public_narration_is_empty() -> None:
+def test_provider_binds_all_empty_content_calls_for_delivery_fallback() -> None:
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
 
     async def case() -> None:
@@ -369,6 +369,7 @@ def test_provider_binds_all_tool_calls_when_public_narration_is_empty() -> None:
                             "message": {
                                 "role": "assistant",
                                 "content": None,
+                                "reasoning_content": "PRIVATE-COT-MUST-NOT-APPEAR",
                                 "tool_calls": [
                                     {
                                         "id": call_id,
@@ -403,7 +404,7 @@ def test_provider_binds_all_tool_calls_when_public_narration_is_empty() -> None:
         try:
             response = await adapter.invoke(
                 ProviderRequest(
-                    RequestId("run-empty-narration:provider-turn:4"),
+                    RequestId("provider-turn:4"),
                     (Message(MessageRole.USER, "read"),),
                 ),
                 cancel=CancelToken(),

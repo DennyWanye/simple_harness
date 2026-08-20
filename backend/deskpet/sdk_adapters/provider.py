@@ -260,9 +260,16 @@ class ProductProviderAdapter:
         content = response.message.content.strip()
 
         request_id = request.request_id.value
-        run_id, marker, raw_turn = request_id.rpartition(":provider-turn:")
-        if not marker or not run_id:
-            return
+        run_id = ""
+        if request_id.startswith("provider-turn:"):
+            raw_turn = request_id.removeprefix("provider-turn:")
+        else:
+            legacy_run_id, marker, raw_turn = request_id.rpartition(
+                ":provider-turn:"
+            )
+            if not marker:
+                return
+            run_id = legacy_run_id
         try:
             turn = int(raw_turn)
         except ValueError:
@@ -273,6 +280,13 @@ class ProductProviderAdapter:
         try:
             from .desktop_runtime import _delivery_adapters
 
+            # SDK v0.1.4 uses provider request identities like
+            # ``provider-turn:1`` without a Run id. When exactly one product
+            # Run is active, it is safe to retain the model's public content.
+            # Concurrent ambiguity fails closed here; each per-Run Delivery
+            # adapter still creates its own bounded tool narration fallback.
+            if not run_id and len(_delivery_adapters) == 1:
+                run_id = next(iter(_delivery_adapters))
             delivery = _delivery_adapters.get(run_id)
             if delivery is not None:
                 await delivery.capture_public_narration(

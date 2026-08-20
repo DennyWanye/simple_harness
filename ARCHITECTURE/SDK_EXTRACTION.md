@@ -17,10 +17,13 @@
   模块 + adapters/venues.py + product_turn_open.py + drivers/react_boundary.py），原因是
   companion/run_adapter.py → venues.py → kernel.py 依赖链与 6 个产品文件的契约类型引用。
 - **公开工作叙述与工具投影**：Provider adapter 只捕获 normalized assistant `content`，显式忽略
-  `reasoning_content`；Delivery adapter 在 tool call 前投影公开叙述，同一 Provider turn 多 call 共享
-  iteration 并按 call_id 对账结果。叙述持久化为 `workflow_progress/context_visibility=exclude`，
-  `_assemble_sdk_messages` 只允许普通 conversation 投影，避免 UI 摘要回灌下一轮。delivery 在
-  ingress.start 前预注册，消除首个 Provider/tool turn 丢投影竞态。
+  `reasoning_content`；真实 SDK 的 Provider request id 为 `provider-turn:N`，不含 Run identity，单一
+  活跃 Run 时可保留模型公开 content，并发歧义时 fail closed。Delivery adapter 在每个准确 Run 的
+  tool call 前保证投影一次叙述：模型公开 content 为空时只按公开 tool name 生成有界 fallback；同一
+  Provider turn 多 call 共享 iteration 并按 call_id 对账结果。叙述持久化为
+  `workflow_progress/context_visibility=exclude`，`_assemble_sdk_messages` 只允许普通 conversation
+  投影，避免 UI 摘要回灌下一轮。delivery 在 ingress.start 前预注册，消除首个 Provider/tool turn
+  丢投影竞态。
 - **已知残留（不阻塞主链路）**：companion/run_adapter.py 期望 `KernelRunClient` 但 main.py 传入 SDK
   `RunClient`（接口不兼容，companion 后台功能当前不可用，修复需接口适配层）；curation 未接新
   memory SDK。产品 SDK 的 `memory_recall`/`memory_search` 已于 2026-08-20 接入真实只读查询。
