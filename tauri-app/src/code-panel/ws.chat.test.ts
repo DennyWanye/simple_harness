@@ -29,6 +29,7 @@ function resetStore() {
         active_run_id: null,
         selected_run_id: null,
         run_projections: {},
+        context_usage: null,
         companion_events: [],
         companion_detail_cache: {},
       },
@@ -44,6 +45,35 @@ describe("ws.dispatch chat final dedupe", () => {
   it("reports disconnected while the backend shared secret is unavailable", async () => {
     await vi.waitFor(() => expect(controlWS.state()).toBe("disconnected"));
     expect(CONNECT_TIMEOUT_MS).toBe(5000);
+  });
+
+  it("does not bind a context authority frame to the active Session by fallback", () => {
+    const payload = {
+      schema_version: 2,
+      source: "measured",
+      version: 3,
+      availability: "available",
+      has_measurement: true,
+      model: "session-model",
+      prompt_tokens: 10,
+      completion_tokens: 0,
+      cached_tokens: 0,
+      context_window: 100,
+      effective_ceiling: 90,
+      compact_at: 80,
+      recall_sweet: 20,
+      updated_at: 10,
+    };
+    __test_dispatch({ type: "context_usage", payload });
+    expect(useSessionsStore.getState().sessions.default.context_usage).toBeNull();
+
+    __test_dispatch({
+      type: "context_usage",
+      payload: { ...payload, session_id: "session-other" },
+    });
+    expect(useSessionsStore.getState().sessions.default.context_usage).toBeNull();
+    expect(useSessionsStore.getState().sessions["session-other"].context_usage?.model)
+      .toBe("session-model");
   });
 
   it("does not append a duplicate assistant bubble when chat_response already showed the final text", () => {

@@ -1084,8 +1084,9 @@ function dispatch(msg: any) {
     case "context_usage": {
       // 2026-05-31 restore — Claude-Code-style ring gauge update.
       const p = msg.payload || {};
-      const target_sid = p.session_id || sid;
-      store.upsert_context_usage({ ...p, session_id: target_sid });
+      // Authority frames without their own Session identity are unsafe:
+      // active_sid may have changed while a reconnect response was in flight.
+      store.upsert_context_usage(p);
       break;
     }
     case "chat_v2_user_echo": {

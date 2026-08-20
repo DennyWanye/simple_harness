@@ -20,6 +20,7 @@
 import React, { useMemo } from "react";
 
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
+import { contextDisplayState } from "../context/contextAuthority";
 
 export interface ContextRingProps {
   snapshot: ContextUsageSnapshot | null | undefined;
@@ -41,13 +42,7 @@ const RING_STROKE = 2.5;
 
 /** Pure helper — % filled of the *practical* window. Exposed for vitest. */
 export function ringPercent(snap: ContextUsageSnapshot | null | undefined): number {
-  if (
-    !snap ||
-    snap.has_measurement === false ||
-    snap.source === "binding_only" ||
-    !snap.effective_ceiling ||
-    snap.effective_ceiling <= 0
-  ) return 0;
+  if (!snap || contextDisplayState(snap) !== "measured") return 0;
   return Math.max(0, Math.min(100, (snap.prompt_tokens / snap.effective_ceiling) * 100));
 }
 
@@ -73,6 +68,8 @@ export function ContextRing({
   showLabel = false,
   style,
 }: ContextRingProps) {
+  const displayState = contextDisplayState(snapshot);
+  const measured = displayState === "measured";
   const pct = ringPercent(snapshot);
   const color = ringColor(pct);
   const cx = size / 2;
@@ -80,7 +77,7 @@ export function ContextRing({
   const r = (size - RING_STROKE) / 2;
   const circ = 2 * Math.PI * r;
   const dash = (pct / 100) * circ;
-  const sweetPct = snapshot && snapshot.effective_ceiling
+  const sweetPct = measured && snapshot && snapshot.effective_ceiling
     ? Math.max(0, Math.min(100, (snapshot.recall_sweet / snapshot.effective_ceiling) * 100))
     : 0;
   // Tick position on the ring (in arc length, rotated -90° so 0% sits at 12).
@@ -89,13 +86,12 @@ export function ContextRing({
   const tickY = cy + r * Math.sin(tickAngle);
 
   const tooltip = useMemo(() => {
-    if (!snapshot) return "正在读取本会话 Context 用量";
-    if (snapshot.availability === "unavailable") {
-      return `${snapshot.model || "所选模型"} 当前不可用`;
+    if (displayState === "legacy_incomplete") return "旧记录不完整，Context 用量不可用";
+    if (displayState === "binding_only") {
+      return `${snapshot?.model || "当前 Session 模型"} · 已绑定，尚无真实模型请求`;
     }
-    if (snapshot.source === "binding_only" || snapshot.has_measurement === false) {
-      return `${snapshot.model || "当前模型"} · 尚无本会话用量`;
-    }
+    if (!measured) return `${snapshot?.model || "当前 Session"} · Context 用量不可用`;
+    if (!snapshot) return "Context 用量不可用";
     const parts = [
       `${snapshot.model || "(unknown)"}`,
       `${fmtTokens(snapshot.prompt_tokens)} / ${fmtTokens(snapshot.effective_ceiling)} (${pct.toFixed(1)}%)`,
@@ -104,9 +100,9 @@ export function ContextRing({
         ? `⚠ 已超过 compact 阈值 (${fmtTokens(snapshot.compact_at)})` : null,
     ].filter(Boolean);
     return parts.join(" · ");
-  }, [snapshot, pct]);
+  }, [displayState, measured, snapshot, pct]);
 
-  const dim = !snapshot || snapshot.has_measurement === false || snapshot.source === "binding_only";
+  const dim = !measured;
 
   return (
     <button
@@ -114,7 +110,8 @@ export function ContextRing({
       onClick={onClick}
       disabled={!onClick}
       title={tooltip}
-      aria-label={`Context usage: ${pct.toFixed(0)}%`}
+      aria-label={measured ? `Context usage: ${pct.toFixed(0)}%` : "Context usage unavailable"}
+      data-context-state={displayState}
       data-testid="context-ring"
       style={{
         display: "inline-flex",
@@ -152,7 +149,7 @@ export function ContextRing({
       </svg>
       {showLabel && (
         <span style={{ fontSize: 10.5, color: "#94a3b8", lineHeight: 1, whiteSpace: "nowrap" }}>
-          {snapshot ? `${pct.toFixed(0)}%` : "—"}
+          {measured ? `${pct.toFixed(0)}%` : "—"}
         </span>
       )}
     </button>

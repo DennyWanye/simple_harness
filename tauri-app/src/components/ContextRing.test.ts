@@ -1,14 +1,23 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import React from "react";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { ringColor, ringPercent } from "./ContextRing";
+import { ContextRing, ringColor, ringPercent } from "./ContextRing";
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
 
 function snap(overrides: Partial<ContextUsageSnapshot> = {}): ContextUsageSnapshot {
   return {
+    schema_version: 2,
     session_id: "default",
+    source: "measured",
+    sample_id: "sample-1",
+    snapshot_id: "snapshot-1",
+    version: 1,
+    availability: "available",
+    has_measurement: true,
     model: "deepseek-v4-pro",
     prompt_tokens: 0,
     completion_tokens: 0,
@@ -21,6 +30,8 @@ function snap(overrides: Partial<ContextUsageSnapshot> = {}): ContextUsageSnapsh
     ...overrides,
   };
 }
+
+afterEach(cleanup);
 
 describe("ringPercent", () => {
   it("returns 0 for null / undefined / zero ceiling", () => {
@@ -66,5 +77,21 @@ describe("ringColor", () => {
   it("red at 95% and above", () => {
     expect(ringColor(95)).toBe("#dc2626");
     expect(ringColor(100)).toBe("#dc2626");
+  });
+});
+
+describe("ContextRing authority states", () => {
+  it("renders unavailable as unavailable rather than a numeric zero", () => {
+    render(React.createElement(ContextRing, { showLabel: true, snapshot: snap({
+      source: "binding_only",
+      availability: "unavailable",
+      has_measurement: false,
+      prompt_tokens: 0,
+      effective_ceiling: 0,
+    }) }));
+    expect(screen.getByTestId("context-ring").getAttribute("aria-label"))
+      .toBe("Context usage unavailable");
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("0%")).toBeNull();
   });
 });

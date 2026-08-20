@@ -49,10 +49,7 @@ import { ChangeModelModal } from "../code-panel/ChangeModelModal";
 import { PermissionPopup } from "../components/PermissionPopup";
 import { usePermissionRequests } from "../hooks/usePermissionRequests";
 import {
-  useSessionModelsStore,
-  contextWindowForModel,
   formatContextWindow,
-  effectiveModelId,
 } from "../code-panel/sessionModelsStore";
 import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
@@ -225,11 +222,13 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
   );
   // 模型按钮显示「模型-上下文长度(K/M)」。未固定 preferred_model 时显示
   // 生效的 provider 默认模型，让用户看到「当前真正在用的模型」。
-  const modelCatalog = useSessionModelsStore((s) => s.models);
-  const default_model = useSessionModelsStore((s) => s.default_model);
-  const eff_model = effectiveModelId(preferred_model, default_model);
+  // Header authority is Session-local. A process-global catalog default may
+  // belong to another Session/provider and must never masquerade as binding.
+  const eff_model = preferred_model?.trim() || contextUsage?.model?.trim() || "";
   const is_following_default = !((preferred_model ?? "").trim());
-  const ctx_window = contextWindowForModel(eff_model, modelCatalog);
+  const ctx_window = contextUsage?.context_window && contextUsage.context_window > 0
+    ? contextUsage.context_window
+    : null;
   const ctx_label = formatContextWindow(ctx_window);
 
   // ── 会话标题（sessions_list 旁听；SessionList 常驻同一单例通道，
@@ -559,6 +558,11 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     for (const command of sessionHydrationCommands(activeSid)) {
       controlWS.send(command);
     }
+  }, [activeSid]);
+
+  // A modal opened for one Session cannot survive an ownership switch.
+  useEffect(() => {
+    setContextModalOpen(false);
   }, [activeSid]);
 
   // ── 工具轨迹 / 进度可见性（MessagePanelRoot 派生逻辑随迁）──────────

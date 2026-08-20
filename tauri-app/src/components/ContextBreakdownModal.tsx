@@ -17,13 +17,21 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ContextUsageSnapshot } from "../stores/sessionsStore";
+import {
+  canonicalJson,
+  contextDisplayState,
+  newContextRequestId,
+} from "../context/contextAuthority";
 import { ringColor, ringPercent } from "./ContextRing";
 
 interface BreakdownSection {
   kind: string;
   label: string;
-  tokens: number;
-  preview: string;
+  tokens: number | null;
+  token_source: "measured" | "estimated" | "unavailable";
+  availability: "available" | "unavailable";
+  public_preview: string | null;
+  preview_truncated: boolean;
   count?: number;
 }
 
@@ -47,18 +55,119 @@ interface ContextHistorySample {
 
 interface BreakdownResponse {
   session_id: string;
+  correlation_id: string;
+  snapshot_id: string | null;
+  sample_id: string | null;
+  snapshot_version: number;
+  snapshot_fingerprint: string;
+  availability: "available" | "unavailable";
   project_name?: string | null;
   project_root?: string | null;
   model: string;
   sections: BreakdownSection[];
   total_estimated_tokens: number;
-  last_usage_prompt_tokens: number;
+  last_usage_prompt_tokens: number | null;
   context_window: number;
   effective_ceiling: number;
   compact_at: number;
   updated_at: number;
   history?: ContextHistorySample[];
   ts: number;
+}
+
+const PUBLIC_PREVIEW_LIMIT = 600;
+
+function finiteNonNegative(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : null;
+}
+
+function optionalIdentity(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized || undefined;
+}
+
+function normalizeBreakdownResponse(value: unknown): BreakdownResponse | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const sessionId = optionalIdentity(raw.session_id);
+  const correlationId = optionalIdentity(raw.correlation_id);
+  const snapshotId = optionalIdentity(raw.snapshot_id);
+  const sampleId = optionalIdentity(raw.sample_id);
+  const version = finiteNonNegative(raw.snapshot_version);
+  if (
+    !sessionId || !correlationId || snapshotId === undefined ||
+    sampleId === undefined || version === null || !Number.isInteger(version) ||
+    !Array.isArray(raw.sections)
+  ) return null;
+
+  const sections: BreakdownSection[] = [];
+  for (const item of raw.sections) {
+    if (!item || typeof item !== "object") return null;
+    const section = item as Record<string, unknown>;
+    const kind = optionalIdentity(section.kind);
+    const label = optionalIdentity(section.label);
+    if (!kind || !label) return null;
+    const tokenSource = section.token_source;
+    if (tokenSource !== "measured" && tokenSource !== "estimated" && tokenSource !== "unavailable") {
+      return null;
+    }
+    const tokens = finiteNonNegative(section.tokens);
+    if (tokenSource !== "unavailable" && tokens === null) return null;
+    const publicPreview = typeof section.public_preview === "string"
+      ? section.public_preview.slice(0, PUBLIC_PREVIEW_LIMIT)
+      : null;
+    sections.push({
+      kind,
+      label,
+      tokens,
+      token_source: tokenSource,
+      availability: section.availability === "unavailable" || tokenSource === "unavailable"
+        ? "unavailable"
+        : "available",
+      public_preview: publicPreview,
+      preview_truncated: section.preview_truncated === true ||
+        (typeof section.public_preview === "string" && section.public_preview.length > PUBLIC_PREVIEW_LIMIT),
+      count: finiteNonNegative(section.count) ?? undefined,
+    });
+  }
+
+  const history = Array.isArray(raw.history)
+    ? raw.history.filter((sample): sample is ContextHistorySample => Boolean(
+      sample && typeof sample === "object" &&
+      optionalIdentity((sample as Record<string, unknown>).sample_id) &&
+      optionalIdentity((sample as Record<string, unknown>).session_id) === sessionId &&
+      finiteNonNegative((sample as Record<string, unknown>).tokens_after) !== null &&
+      finiteNonNegative((sample as Record<string, unknown>).created_at) !== null,
+    ))
+    : [];
+
+  return {
+    session_id: sessionId,
+    correlation_id: correlationId,
+    snapshot_id: snapshotId,
+    sample_id: sampleId,
+    snapshot_version: version,
+    snapshot_fingerprint: typeof raw.snapshot_fingerprint === "string"
+      ? raw.snapshot_fingerprint.slice(0, 160)
+      : "",
+    availability: raw.availability === "available" ? "available" : "unavailable",
+    project_name: typeof raw.project_name === "string" ? raw.project_name.slice(0, 160) : null,
+    project_root: null,
+    model: typeof raw.model === "string" ? raw.model.slice(0, 160) : "",
+    sections,
+    total_estimated_tokens: finiteNonNegative(raw.total_estimated_tokens) ?? 0,
+    last_usage_prompt_tokens: finiteNonNegative(raw.last_usage_prompt_tokens),
+    context_window: finiteNonNegative(raw.context_window) ?? 0,
+    effective_ceiling: finiteNonNegative(raw.effective_ceiling) ?? 0,
+    compact_at: finiteNonNegative(raw.compact_at) ?? 0,
+    updated_at: finiteNonNegative(raw.updated_at) ?? 0,
+    history,
+    ts: finiteNonNegative(raw.ts) ?? 0,
+  };
 }
 
 export interface ContextBreakdownModalProps {
@@ -277,6 +386,7 @@ export function ContextBreakdownModal({
   // callbacks in refs and only re-run the effect on open/sessionId changes.
   const sendRef = useRef(send);
   const onMessageRef = useRef(onMessage);
+  const acceptedRef = useRef<{ version: number; fingerprint: string } | null>(null);
   useEffect(() => { sendRef.current = send; }, [send]);
   useEffect(() => { onMessageRef.current = onMessage; }, [onMessage]);
 
@@ -288,27 +398,61 @@ export function ContextBreakdownModal({
     }
     setLoading(true);
     setData(null);
+    acceptedRef.current = null;
+    const requestId = newContextRequestId();
+    const expectedSnapshotId = snapshot?.snapshot_id?.trim() || null;
+    const expectedSampleId = snapshot?.sample_id?.trim() || null;
+    const expectedVersion = Number.isInteger(snapshot?.version) && (snapshot?.version ?? -1) >= 0
+      ? snapshot!.version!
+      : null;
+    let active = true;
     const off = onMessageRef.current((msg) => {
       if (msg?.type === "context_breakdown_response") {
-        const p = msg.payload as BreakdownResponse;
-        if (p?.session_id === sessionId) {
-          setData(p);
-          setLoading(false);
+        const p = normalizeBreakdownResponse(msg.payload);
+        if (
+          !active || !p || p.session_id !== sessionId ||
+          p.correlation_id !== requestId ||
+          p.snapshot_id !== expectedSnapshotId ||
+          p.sample_id !== expectedSampleId ||
+          expectedVersion === null || p.snapshot_version !== expectedVersion
+        ) return;
+        const fingerprint = canonicalJson(p);
+        const accepted = acceptedRef.current;
+        if (accepted) {
+          if (p.snapshot_version < accepted.version) return;
+          if (p.snapshot_version === accepted.version && accepted.fingerprint !== fingerprint) return;
         }
+        acceptedRef.current = { version: p.snapshot_version, fingerprint };
+        setData(p);
+        setLoading(false);
       }
     });
     try {
-      sendRef.current({ type: "context_breakdown_request", payload: { session_id: sessionId } });
+      sendRef.current({
+        type: "context_breakdown_request",
+        payload: {
+          session_id: sessionId,
+          request_id: requestId,
+          expected_snapshot_id: expectedSnapshotId,
+          expected_sample_id: expectedSampleId,
+          expected_snapshot_version: expectedVersion,
+        },
+      });
     } catch {
       setLoading(false);
     }
-    return off;
-  }, [open, sessionId]);
+    return () => {
+      active = false;
+      off();
+    };
+  }, [open, sessionId, snapshot?.snapshot_id, snapshot?.sample_id, snapshot?.version]);
 
+  const displayState = contextDisplayState(snapshot);
+  const measured = displayState === "measured";
   const pct = ringPercent(snapshot);
   const color = ringColor(pct);
   const sectionTotal = useMemo(
-    () => (data?.sections || []).reduce((a, s) => a + (s.tokens || 0), 0),
+    () => (data?.sections || []).reduce((a, s) => a + (s.tokens ?? 0), 0),
     [data],
   );
   const effectiveProjectName =
@@ -343,7 +487,7 @@ export function ContextBreakdownModal({
               Context usage · <span style={{ color: "#94a3b8", fontWeight: 400 }}>{sessionId}</span>
             </h3>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-              {effectiveProjectName} · {snapshot?.model || "(no model yet)"}
+              {effectiveProjectName} · {snapshot?.model?.trim() || "模型信息不可用"}
             </div>
             {effectiveProjectRoot && (
               <div
@@ -371,18 +515,25 @@ export function ContextBreakdownModal({
           </button>
         </header>
 
-        {snapshot && (
-          <div style={{ marginBottom: 12 }}>
-            {(snapshot.source === "binding_only" || snapshot.has_measurement === false) && (
-              <div style={{ color: snapshot.availability === "unavailable" ? "#f87171" : "#94a3b8", fontSize: 11, marginBottom: 8 }}>
-                {snapshot.availability === "unavailable"
-                  ? "所选模型当前不可用，尚无可展示的本会话用量"
-                  : "尚无本会话用量；完成首次模型调用后会显示真实数据"}
-              </div>
-            )}
+        <div style={{ marginBottom: 12 }}>
+          {!measured && (
+            <div
+              role="status"
+              data-testid="context-availability"
+              style={{ color: displayState === "binding_only" ? "#94a3b8" : "#f87171", fontSize: 11, marginBottom: 8 }}
+            >
+              {displayState === "binding_only"
+                ? "仅有本 Session 模型绑定；尚无真实模型请求，Context 用量不可用"
+                : displayState === "legacy_incomplete"
+                  ? "旧 Context 记录不完整，用量不可用"
+                  : "本 Session 尚无可信测量，Context 用量不可用"}
+            </div>
+          )}
+          {measured && snapshot && (
+            <>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 4 }}>
               <span><b style={{ color }}>{snapshot.prompt_tokens.toLocaleString()}</b> / {snapshot.effective_ceiling.toLocaleString()} tokens</span>
-              <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}% used</span>
+              <span style={{ color: "#94a3b8" }}>{pct.toFixed(1)}% measured</span>
             </div>
             <div style={{ position: "relative", height: 8, background: "#1f2937", borderRadius: 4, overflow: "hidden" }}>
               <div style={{ width: `${pct}%`, height: "100%", background: color, transition: "width 240ms" }} />
@@ -406,8 +557,12 @@ export function ContextBreakdownModal({
               {snapshot.compact_at > 0 && <span>compact @ {fmtTokens(snapshot.compact_at)}</span>}
               {snapshot.recall_sweet > 0 && <span>sweet @ {fmtTokens(snapshot.recall_sweet)}</span>}
             </div>
-          </div>
-        )}
+            <div style={{ color: "#64748b", fontSize: 10, marginTop: 5 }}>
+              实测 · sample {snapshot.sample_id || "不可用"} · snapshot {snapshot.snapshot_id || "不可用"}
+            </div>
+            </>
+          )}
+        </div>
 
         <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
           <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8 }}>
@@ -418,10 +573,10 @@ export function ContextBreakdownModal({
 
         <div style={{ borderTop: "1px solid #374151", paddingTop: 12 }}>
           <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 8, display: "flex", justifyContent: "space-between" }}>
-            <span>构成（后端估算 · CJK-aware tokens）</span>
+            <span>冻结请求构成（按项标记 measured / estimated / unavailable）</span>
             {data && (
               <span style={{ color: "#94a3b8", fontSize: 10 }}>
-                估算合计 {fmtTokens(sectionTotal)} · LLM 实测 {fmtTokens(data.last_usage_prompt_tokens)}
+                估算合计 {fmtTokens(sectionTotal)} · LLM 实测 {data.last_usage_prompt_tokens === null ? "不可用" : fmtTokens(data.last_usage_prompt_tokens)}
               </span>
             )}
           </div>
@@ -441,12 +596,12 @@ export function ContextBreakdownModal({
             <>
               <div style={{ display: "flex", height: 10, borderRadius: 4, overflow: "hidden", marginBottom: 8, background: "#1f2937" }}>
                 {data.sections.map((s, index) => {
-                  const w = sectionTotal > 0 ? (s.tokens / sectionTotal) * 100 : 0;
+                  const w = sectionTotal > 0 ? ((s.tokens ?? 0) / sectionTotal) * 100 : 0;
                   if (w <= 0) return null;
                   return (
                     <div
                       key={`${s.kind}:${index}`}
-                      title={`${s.label}: ${fmtTokens(s.tokens)} (${w.toFixed(1)}%)`}
+                      title={`${s.label}: ${s.tokens === null ? "不可用" : fmtTokens(s.tokens)} (${w.toFixed(1)}%)`}
                       style={{ width: `${w}%`, background: SECTION_COLOR[s.kind] || "#64748b" }}
                     />
                   );
@@ -482,7 +637,7 @@ export function ContextBreakdownModal({
                         )}
                       </span>
                       <span style={{ color: "#94a3b8", fontSize: 11 }}>
-                        {fmtTokens(s.tokens)} tokens {expanded[s.kind] ? "▴" : "▾"}
+                        {s.tokens === null ? "tokens 不可用" : `${fmtTokens(s.tokens)} tokens`} · {s.token_source} {expanded[s.kind] ? "▴" : "▾"}
                       </span>
                     </button>
                     {expanded[s.kind] && (
@@ -499,7 +654,8 @@ export function ContextBreakdownModal({
                           whiteSpace: "pre-wrap",
                           wordBreak: "break-word",
                         }}>
-                          {s.preview || "(空)"}
+                          {s.public_preview || "无公开预览"}
+                          {s.preview_truncated ? "…" : ""}
                         </pre>
                       </div>
                     )}

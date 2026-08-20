@@ -22,6 +22,7 @@ import type {
   ContextUsageSnapshot,
   WorkflowDeliveryAggregate,
 } from "../types/messages";
+import { canonicalJson } from "../context/contextAuthority";
 
 export type { ContextUsageSnapshot } from "../types/messages";
 
@@ -1612,12 +1613,24 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   upsert_context_usage(snapshot) {
     let accepted = false;
     set((state) => {
-      const sid = snapshot.session_id;
+      const sid = typeof snapshot.session_id === "string"
+        ? snapshot.session_id.trim()
+        : "";
+      const incomingVersion = snapshot.version;
+      if (!sid || !Number.isInteger(incomingVersion) || (incomingVersion as number) < 0) {
+        return state;
+      }
       const cur = state.sessions[sid] ?? blank_session(sid);
       const previous = cur.context_usage;
-      const incomingVersion = Number(snapshot.version ?? 0);
-      const previousVersion = Number(previous?.version ?? 0);
-      if (previous && incomingVersion < previousVersion) return state;
+      const previousVersion = previous?.version;
+      if (previous && Number.isInteger(previousVersion)) {
+        if ((incomingVersion as number) < (previousVersion as number)) return state;
+        if ((incomingVersion as number) === (previousVersion as number)) {
+          if (canonicalJson(previous) !== canonicalJson(snapshot)) return state;
+          accepted = true;
+          return state;
+        }
+      }
       accepted = true;
       return {
         sessions: {

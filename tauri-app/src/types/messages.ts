@@ -70,6 +70,9 @@ export interface ContextUsageSnapshot {
   session_id: string;
   source?: ContextUsageSource;
   sample_id?: string | null;
+  /** Frozen prepared SDK request inspected by the public breakdown. */
+  snapshot_id?: string | null;
+  snapshot_fingerprint?: string | null;
   version?: number;
   binding_epoch?: number;
   availability?: ContextUsageAvailability;

@@ -6,6 +6,7 @@ import { useSessionsStore } from "./sessionsStore";
 function snapshot(
   version: number,
   source: ContextUsageSnapshot["source"] = "measured",
+  overrides: Partial<ContextUsageSnapshot> = {},
 ): ContextUsageSnapshot {
   return {
     schema_version: 2,
@@ -26,6 +27,7 @@ function snapshot(
     recall_sweet: source === "binding_only" ? 0 : 16_000,
     has_measurement: source !== "binding_only",
     updated_at: version,
+    ...overrides,
   };
 }
 
@@ -45,6 +47,38 @@ describe("Context Usage store authority", () => {
       useSessionsStore.getState().sessions["context-store-session"]
         .context_usage?.version,
     ).toBe(5);
+  });
+
+  it("accepts only an exact replay at the same version", () => {
+    const store = useSessionsStore.getState();
+    const original = snapshot(5);
+    expect(store.upsert_context_usage(original)).toBe(true);
+    expect(store.upsert_context_usage({ ...original })).toBe(true);
+    expect(store.upsert_context_usage({
+      ...original,
+      prompt_tokens: original.prompt_tokens + 1,
+    })).toBe(false);
+    expect(useSessionsStore.getState().sessions["context-store-session"]
+      .context_usage?.prompt_tokens).toBe(original.prompt_tokens);
+  });
+
+  it("fails closed for a missing Session identity or invalid version", () => {
+    const store = useSessionsStore.getState();
+    expect(store.upsert_context_usage({ ...snapshot(1), session_id: "" })).toBe(false);
+    expect(store.upsert_context_usage({ ...snapshot(1), version: undefined })).toBe(false);
+    expect(useSessionsStore.getState().sessions[""]).toBeUndefined();
+  });
+
+  it("keeps model and measurement authority isolated per Session", () => {
+    const store = useSessionsStore.getState();
+    expect(store.upsert_context_usage(snapshot(2, "measured", {
+      session_id: "session-a", model: "model-a", context_window: 100_000,
+    }))).toBe(true);
+    expect(store.upsert_context_usage(snapshot(1, "measured", {
+      session_id: "session-b", model: "model-b", context_window: 200_000,
+    }))).toBe(true);
+    expect(useSessionsStore.getState().sessions["session-a"].context_usage?.model).toBe("model-a");
+    expect(useSessionsStore.getState().sessions["session-b"].context_usage?.model).toBe("model-b");
   });
 
   it("keeps binding-only as an explicit no-measurement state", () => {
