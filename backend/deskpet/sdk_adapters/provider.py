@@ -30,7 +30,6 @@ from simple_harness.providers import (
     ProviderResponse,
     ProviderTarget,
     ProviderToolCall,
-    ProviderToolSpec,
     Secret,
 )
 
@@ -161,44 +160,6 @@ def _retain_tool_calls_in_message(response: ProviderResponse) -> ProviderRespons
             metadata=metadata,
         ),
     )
-
-
-def _with_public_progress_fields(request: ProviderRequest) -> ProviderRequest:
-    """Require model-authored public narration inside every real Tool call."""
-
-    augmented: list[ProviderToolSpec] = []
-    for tool in request.tools:
-        parameters = thaw_json(tool.parameters)
-        if not isinstance(parameters, dict) or parameters.get("type") != "object":
-            augmented.append(tool)
-            continue
-        properties = parameters.get("properties")
-        if not isinstance(properties, dict):
-            properties = {}
-        properties = dict(properties)
-        properties[_PUBLIC_PROGRESS_ARGUMENT] = {
-            "type": "string",
-            "description": (
-                "One or two concise, user-facing sentences describing this "
-                "specific action and, when relevant, its relation to the prior "
-                "public result. Do not reveal private chain-of-thought, hidden "
-                "reasoning, secrets, full arguments, or raw tool output."
-            ),
-        }
-        required = parameters.get("required")
-        required_names = (
-            [str(item) for item in required]
-            if isinstance(required, list)
-            else []
-        )
-        if _PUBLIC_PROGRESS_ARGUMENT not in required_names:
-            required_names.append(_PUBLIC_PROGRESS_ARGUMENT)
-        parameters["properties"] = properties
-        parameters["required"] = required_names
-        augmented.append(
-            ProviderToolSpec(tool.name, tool.description, parameters)
-        )
-    return replace(request, tools=tuple(augmented))
 
 
 def _public_progress_text(value: object, *, maximum: int = 600) -> str:
@@ -372,7 +333,7 @@ class ProductProviderAdapter:
     ) -> ProviderResponse:
         try:
             response = await self._delegate.invoke(
-                _with_public_progress_fields(request),
+                request,
                 cancel=cancel,
             )
         except ProviderCancelledError:

@@ -404,7 +404,8 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
                 "file_read",
             ]
             schema = payload["tools"][0]["function"]["parameters"]
-            assert "deskpet_public_progress" in schema["required"]
+            assert "deskpet_public_progress" in schema["properties"]
+            assert "deskpet_public_progress" not in schema.get("required", [])
             if len(payloads) == 2:
                 assistant = payload["messages"][1]
                 assert assistant["reasoning_content"] == (
@@ -493,7 +494,12 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
                         ProviderToolSpec(
                             "file_read",
                             "Read a file.",
-                            {"type": "object"},
+                            {
+                                "type": "object",
+                                "properties": {
+                                    "deskpet_public_progress": {"type": "string"}
+                                },
+                            },
                         ),
                     ),
                 ),
@@ -524,9 +530,14 @@ def test_provider_extracts_model_authored_virtual_public_progress() -> None:
                     ),
                     tools=(
                         ProviderToolSpec(
-                            "file_read",
-                            "Read a file.",
-                            {"type": "object"},
+                                "file_read",
+                                "Read a file.",
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "deskpet_public_progress": {"type": "string"}
+                                    },
+                                },
                         ),
                     ),
                 ),
@@ -552,7 +563,8 @@ def test_provider_does_not_invent_summary_when_tool_content_and_progress_are_emp
             payloads.append(payload)
             if len(payloads) == 1:
                 schema = payload["tools"][0]["function"]["parameters"]
-                assert "deskpet_public_progress" in schema["required"]
+                assert "deskpet_public_progress" in schema["properties"]
+                assert "deskpet_public_progress" not in schema.get("required", [])
                 return httpx.Response(
                     200,
                     json={
@@ -615,7 +627,12 @@ def test_provider_does_not_invent_summary_when_tool_content_and_progress_are_emp
         tool = ProviderToolSpec(
             "file_read",
             "Read a file.",
-            {"type": "object", "properties": {}},
+            {
+                "type": "object",
+                "properties": {
+                    "deskpet_public_progress": {"type": "string"}
+                },
+            },
         )
         try:
             first = await adapter.invoke(

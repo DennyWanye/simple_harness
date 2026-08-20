@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextvars
+import copy
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -150,11 +151,31 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
             raw = await raw
         return _result(raw)
 
+    input_schema = copy.deepcopy(dict(registration.input_schema))
+    if input_schema.get("type") == "object":
+        properties = input_schema.get("properties")
+        if not isinstance(properties, dict):
+            properties = {}
+        properties = dict(properties)
+        properties["deskpet_public_progress"] = {
+            "type": "string",
+            "description": (
+                "Optional concise user-facing description of the current "
+                "action. Never include private reasoning, secrets, full "
+                "arguments, or raw tool output."
+            ),
+        }
+        input_schema["properties"] = properties
+        required = input_schema.get("required")
+        if isinstance(required, list):
+            input_schema["required"] = [
+                item for item in required if item != "deskpet_public_progress"
+            ]
     return FunctionTool(
         ToolSpec(
             registration.name,
             registration.description,
-            registration.input_schema,
+            input_schema,
         ),
         invoke,
     )
