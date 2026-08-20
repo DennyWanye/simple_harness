@@ -4,11 +4,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from simple_harness import CallId, EffectId, RunId, thaw_json
+from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
 from simple_harness.execution.context_authority import DurableToolCatalogResolver
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.providers import ProviderToolSpec
-from simple_harness.tools import PreparedToolEffect, ToolCall, ToolSpec
+from simple_harness.tools import (
+    CancellationToken,
+    FunctionTool,
+    PreparedToolEffect,
+    ToolCall,
+    ToolContext,
+    ToolResult,
+    ToolSpec,
+)
 
 from deskpet.permissions.policy import AuthorizationPolicyState
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
@@ -23,6 +31,11 @@ from deskpet.sdk_adapters.tool_authority import (
     SdkPreparedAuthorizationPolicy,
     SdkRunToolAuthorityRegistry,
 )
+from deskpet.sdk_adapters.tools import (
+    ProductEffectExecutor,
+    ProductToolsAdapter,
+    SdkToolExecutorCatalogUnavailable,
+)
 
 
 @dataclass(frozen=True)
@@ -32,6 +45,7 @@ class _Inventory:
     permission_category: str
     source: str = "real-tool-manifest"
     version: str = "v1"
+    execution_identity: str = "execution-identity-v1"
 
 
 class _AuthorizationStore:
@@ -126,6 +140,48 @@ def _effect(run_id: str, *, effect_id: str = "effect-a") -> PreparedToolEffect:
             "root_run_id": f"root-{run_id}",
         },
     )
+
+
+def _run_aware_executor_registry(
+    authorities: SdkRunToolAuthorityRegistry,
+    *,
+    read_schema: dict | None = None,
+    execution_identity: str = "execution-identity-v1",
+):
+    catalog, _inventory = _catalog()
+
+    def tool(raw):
+        schema = (
+            read_schema
+            if raw["name"] == "read_file" and read_schema
+            else raw["input_schema"]
+        )
+
+        async def handler(arguments, context):
+            return ToolResult.succeeded(
+                context.call_id,
+                {"tool": raw["name"], "arguments": dict(arguments)},
+            )
+
+        return FunctionTool(
+            ToolSpec(raw["name"], raw["description"], schema),
+            handler,
+        )
+
+    registry = ProductToolsAdapter(
+        tuple(tool(raw) for raw in catalog["specs"]),
+        execution_identities={
+            name: execution_identity for name in ("tool_search", "read_file")
+        },
+    )
+    registry.bind_run_authorities(authorities)
+    executor = ProductEffectExecutor(
+        uow=object(),
+        registry=registry,
+        authorization=object(),
+        reconciliation=object(),
+    )
+    return executor, registry
 
 
 def test_run_authority_isolated_and_waiting_scope_survives_until_terminal():
@@ -260,6 +316,15 @@ def test_waiting_restart_fails_closed_when_exact_catalog_or_authority_differs(
     with Database.open(tmp_path / "authority-mismatch.db") as database:
         uow = SqliteExecutionUnitOfWork(database)
         snapshot = uow.put_tool_catalog_snapshot(specs)
+        uow.put_tool_catalog_snapshot(
+            (
+                ProviderToolSpec(
+                    "new_tool",
+                    "A later generation",
+                    {"type": "object", "properties": {}},
+                ),
+            )
+        )
         exact_catalog = {
             "generation": snapshot.generation,
             "content_fingerprint": snapshot.content_fingerprint,
@@ -338,6 +403,131 @@ def test_disclosure_policy_is_explicit_and_full_catalog_is_direct():
             deferred_names=("read_file",),
             disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
         )
+
+
+@pytest.mark.asyncio
+async def test_run_aware_executor_prepares_and_invokes_matching_frozen_registration():
+    authorities = SdkRunToolAuthorityRegistry()
+    _prepare(authorities, "run-execute")
+    executor, registry = _run_aware_executor_registry(authorities)
+    call = ToolCall(CallId("call-execute"), "read_file", {"path": "README.md"})
+    context = ToolContext(
+        RunId("run-execute"),
+        RequestId("request-run-execute"),
+        CancellationToken(),
+    )
+
+    prepared = await executor._prepared(
+        effect_id=EffectId("effect-execute"),
+        call=call,
+        context=context,
+    )
+    result = await registry.invoke(call, context)
+
+    assert prepared.spec.name == "read_file"
+    assert result.error_code is None
+    assert thaw_json(result.value)["tool"] == "read_file"
+
+
+@pytest.mark.asyncio
+async def test_restarted_old_generation_executes_only_with_compatible_handler(
+    tmp_path: Path,
+):
+    specs = tuple(
+        ProviderToolSpec(
+            item["name"], item["description"], item["input_schema"]
+        )
+        for item in _catalog()[0]["specs"]
+    )
+    with Database.open(tmp_path / "old-executor.db") as database:
+        uow = SqliteExecutionUnitOfWork(database)
+        snapshot = uow.put_tool_catalog_snapshot(specs)
+        uow.put_tool_catalog_snapshot(
+            (
+                ProviderToolSpec(
+                    "new_tool",
+                    "A later generation",
+                    {"type": "object", "properties": {}},
+                ),
+            )
+        )
+        catalog = {
+            "generation": snapshot.generation,
+            "content_fingerprint": snapshot.content_fingerprint,
+            "specs": _catalog()[0]["specs"],
+            "schema_fingerprints": _catalog()[0]["schema_fingerprints"],
+        }
+        original = SdkRunToolAuthorityRegistry().prepare_run(
+            run_id="run-old-executor",
+            session_id="session-old",
+            request_id="request-old",
+            root_run_id="root-old",
+            task_scope_id="task-old",
+            workspace_root=None,
+            catalog=catalog,
+            inventory=_catalog()[1],
+            disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+        )
+        record = original.run_start_record()
+        authorities = SdkRunToolAuthorityRegistry()
+        authorities.restore_waiting_run(
+            run_start_record=record,
+            run_binding=record,
+            catalog_resolver=DurableToolCatalogResolver(uow),
+        )
+        executor, registry = _run_aware_executor_registry(authorities)
+        call = ToolCall(CallId("call-old"), "read_file", {"path": "README.md"})
+        context = ToolContext(
+            RunId("run-old-executor"),
+            RequestId("request-old"),
+            CancellationToken(),
+        )
+
+        prepared = await executor._prepared(
+            effect_id=EffectId("effect-old"), call=call, context=context
+        )
+        result = await registry.invoke(call, context)
+
+    assert prepared.spec.name == "read_file"
+    assert result.error_code is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift", ["schema", "handler"])
+async def test_run_aware_executor_rejects_schema_or_handler_identity_drift(drift):
+    authorities = SdkRunToolAuthorityRegistry()
+    _prepare(authorities, "run-drift")
+    executor, registry = _run_aware_executor_registry(
+        authorities,
+        read_schema=(
+            {"type": "object", "properties": {"changed": {"type": "boolean"}}}
+            if drift == "schema"
+            else None
+        ),
+        execution_identity=(
+            "execution-identity-handler-v2"
+            if drift == "handler"
+            else "execution-identity-v1"
+        ),
+    )
+    call = ToolCall(CallId(f"call-{drift}"), "read_file", {"path": "README.md"})
+    context = ToolContext(
+        RunId("run-drift"),
+        RequestId("request-run-drift"),
+        CancellationToken(),
+    )
+
+    with pytest.raises(
+        SdkToolExecutorCatalogUnavailable,
+        match="sdk_tool_executor_catalog_unavailable",
+    ):
+        await executor._prepared(
+            effect_id=EffectId(f"effect-{drift}"),
+            call=call,
+            context=context,
+        )
+    with pytest.raises(SdkToolExecutorCatalogUnavailable):
+        await registry.invoke(call, context)
 
 
 def test_restart_policy_generation_is_available_before_next_tool_decision():

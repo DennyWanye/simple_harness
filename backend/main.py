@@ -7092,7 +7092,6 @@ async def _build_product_sdk_runtime_stack(
     from simple_harness.runtime import RuntimePorts, SqliteContextPort
     from simple_harness.runtime.drivers import build_react_driver
     from simple_harness.runtime.termination import TerminationLimits
-    from simple_harness.tools import EffectExecutor
 
     from deskpet.sdk_adapters.composition import (
         OwnedResourceCloser,
@@ -7142,7 +7141,10 @@ async def _build_product_sdk_runtime_stack(
 
     # Build tool adapter
     from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
-    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.sdk_adapters.tools import (
+        ProductEffectExecutor,
+        build_product_tool_registry,
+    )
 
     # Build tool catalog dependencies
     todo_session_db = service_context.get("session_db")
@@ -7188,6 +7190,7 @@ async def _build_product_sdk_runtime_stack(
 
     catalog = build_explicit_product_tool_catalog(dependencies)
     tools_adapter, tool_inventory = build_product_tool_registry(catalog.registrations)
+    tools_adapter.bind_run_authorities(tool_authorities)
     frozen_catalog = _freeze_sdk_catalog(tools_adapter, generation)
 
     # Build authorization system
@@ -7284,7 +7287,7 @@ async def _build_product_sdk_runtime_stack(
                         sdk_run_id=str(record.run_id),
                         state=record_state,
                     )
-        effects = EffectExecutor(
+        effects = ProductEffectExecutor(
             uow=uow,
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
             authorization=authorization_adapter,

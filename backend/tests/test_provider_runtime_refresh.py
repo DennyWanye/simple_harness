@@ -22,6 +22,8 @@ def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
     assert "SdkCapabilityBridgeAdapter" in source
     assert "SdkPreparedAuthorizationPolicy" in source
     assert "SdkRunToolAuthorityRegistry" in source
+    assert "ProductEffectExecutor" in source
+    assert "tools_adapter.bind_run_authorities(tool_authorities)" in source
 
 
 def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery():

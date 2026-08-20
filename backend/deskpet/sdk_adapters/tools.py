@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import contextvars
 import copy
+import hashlib
 import inspect
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from simple_harness import CallId, JsonValue
+from simple_harness import CallId, JsonValue, thaw_json
 from simple_harness.tools import (
     FunctionTool,
     ToolCall,
@@ -19,6 +20,7 @@ from simple_harness.tools import (
     ToolResult,
     ToolSpec,
 )
+from simple_harness.tools.executor import EffectExecutor
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
     """agent agent_parallel agent_reach_doctor agent_reach_read app_discover
@@ -72,6 +74,7 @@ class ProductToolInventoryEntry:
     permission_category: str
     source: str
     version: str
+    execution_identity: str
 
 
 _current_call_id: contextvars.ContextVar[CallId | None] = contextvars.ContextVar(
@@ -80,6 +83,28 @@ _current_call_id: contextvars.ContextVar[CallId | None] = contextvars.ContextVar
 _current_tool_context: contextvars.ContextVar[ToolContext | None] = (
     contextvars.ContextVar("product_sdk_tool_context", default=None)
 )
+_validation_run_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "product_sdk_tool_validation_run_id", default=None
+)
+
+
+class SdkToolExecutorCatalogUnavailable(RuntimeError):
+    code = "sdk_tool_executor_catalog_unavailable"
+
+    def __init__(self, tool_name: str) -> None:
+        super().__init__(f"{self.code}:{tool_name}")
+
+
+def _canonical_sha256(value: object) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def active_product_tool_call_id() -> CallId:
@@ -103,6 +128,50 @@ def active_product_tool_context() -> ToolContext:
 class ProductToolsAdapter(ToolRegistry):
     """SDK registry that exposes the current call identity to product wrappers."""
 
+    def __init__(
+        self,
+        tools=(),
+        *,
+        execution_identities: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(tools)
+        self._execution_identities = dict(execution_identities or {})
+        self._run_authorities: object | None = None
+
+    def bind_run_authorities(self, authorities: object) -> None:
+        if (
+            self._run_authorities is not None
+            and self._run_authorities is not authorities
+        ):
+            raise RuntimeError("product Tool authority registry is already bound")
+        self._run_authorities = authorities
+
+    def _validate_execution_identity(self, name: str, run_id: str) -> None:
+        resolve = getattr(self._run_authorities, "resolve", None)
+        if not callable(resolve):
+            raise SdkToolExecutorCatalogUnavailable(name)
+        try:
+            authority = resolve(run_id)
+            frozen = authority.specs[name]
+            current = super().get(name)
+        except (KeyError, RuntimeError):
+            raise SdkToolExecutorCatalogUnavailable(name) from None
+        current_schema_hash = _canonical_sha256(
+            thaw_json(current.spec.input_schema)
+        )
+        if (
+            self._execution_identities.get(name) != frozen.execution_identity
+            or current_schema_hash != frozen.schema_hash
+            or current.spec.description != frozen.schema["description"]
+        ):
+            raise SdkToolExecutorCatalogUnavailable(name)
+
+    def get(self, name: str):
+        run_id = _validation_run_id.get()
+        if run_id is not None:
+            self._validate_execution_identity(name, run_id)
+        return super().get(name)
+
     async def invoke(
         self,
         call: ToolCall,
@@ -110,6 +179,11 @@ class ProductToolsAdapter(ToolRegistry):
         *,
         accepted_result_call_id: CallId | None = None,
     ) -> ToolResult:
+        validation_token = (
+            _validation_run_id.set(context.run_id.value)
+            if self._run_authorities is not None
+            else None
+        )
         token = _current_call_id.set(call.call_id)
         context_token = _current_tool_context.set(context)
         try:
@@ -131,6 +205,43 @@ class ProductToolsAdapter(ToolRegistry):
         finally:
             _current_tool_context.reset(context_token)
             _current_call_id.reset(token)
+            if validation_token is not None:
+                _validation_run_id.reset(validation_token)
+
+
+class ProductEffectExecutor(EffectExecutor):
+    """Bind SDK validation and dispatch to the immutable Run authority."""
+
+    def __init__(self, *, registry: ProductToolsAdapter, **kwargs: Any) -> None:
+        super().__init__(registry=registry, **kwargs)
+
+    async def execute(self, **kwargs: Any):
+        context = kwargs.get("context")
+        if not isinstance(context, ToolContext):
+            raise TypeError("ProductEffectExecutor requires ToolContext")
+        token = _validation_run_id.set(context.run_id.value)
+        try:
+            return await super().execute(**kwargs)
+        finally:
+            _validation_run_id.reset(token)
+
+    async def _prepared(self, *, effect_id, call, context):
+        token = _validation_run_id.set(context.run_id.value)
+        try:
+            return await super()._prepared(
+                effect_id=effect_id,
+                call=call,
+                context=context,
+            )
+        finally:
+            _validation_run_id.reset(token)
+
+    def _prepared_from_decision(self, decision):
+        token = _validation_run_id.set(str(decision.run_id))
+        try:
+            return super()._prepared_from_decision(decision)
+        finally:
+            _validation_run_id.reset(token)
 
 
 def _result(raw: Any) -> ToolResult:
@@ -208,7 +319,24 @@ def build_product_tool_registry(
     if missing or extra:
         raise ValueError(f"product Tool inventory mismatch: missing={missing}, extra={extra}")
     ordered = tuple(by_name[name] for name in PRODUCT_TOOL_NAMES)
-    registry = ProductToolsAdapter(tuple(_sdk_tool(item) for item in ordered))
+    sdk_tools = tuple(_sdk_tool(item) for item in ordered)
+    execution_identities = {
+        registration.name: _canonical_sha256(
+            {
+                "name": registration.name,
+                "description": tool.spec.description,
+                "input_schema": thaw_json(tool.spec.input_schema),
+                "dispatch_kind": registration.dispatch_kind,
+                "permission_category": registration.permission_category,
+                "metadata": thaw_json(registration.metadata),
+            }
+        )
+        for registration, tool in zip(ordered, sdk_tools, strict=True)
+    }
+    registry = ProductToolsAdapter(
+        sdk_tools,
+        execution_identities=execution_identities,
+    )
     inventory = tuple(
         ProductToolInventoryEntry(
             item.name,
@@ -216,6 +344,7 @@ def build_product_tool_registry(
             item.permission_category,
             str(item.metadata["source"]),
             str(item.metadata["version"]),
+            execution_identities[item.name],
         )
         for item in ordered
     )
@@ -225,8 +354,10 @@ def build_product_tool_registry(
 __all__ = (
     "PRODUCT_TOOL_NAMES",
     "ProductToolInventoryEntry",
+    "ProductEffectExecutor",
     "ProductToolRegistration",
     "ProductToolsAdapter",
+    "SdkToolExecutorCatalogUnavailable",
     "active_product_tool_call_id",
     "active_product_tool_context",
     "build_product_tool_registry",

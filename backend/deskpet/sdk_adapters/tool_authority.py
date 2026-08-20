@@ -91,6 +91,7 @@ class _FrozenCapabilitySpec:
     permission_category: str
     source: str
     toolset: str
+    execution_identity: str
     dangerous: bool = False
 
     def env_satisfied(self) -> bool:
@@ -186,6 +187,7 @@ class SdkRunToolAuthorityV1:
                     "permission_category": self.permission_categories[name],
                     "source": spec.source,
                     "version": spec.spec_version,
+                    "execution_identity": spec.execution_identity,
                     "permission_policy_version": spec.permission_policy_version,
                     "dangerous": spec.dangerous,
                 }
@@ -304,6 +306,10 @@ class SdkRunToolAuthorityRegistry:
             )
             source = _required(_field(inventory_item, "source"), f"{name}.source")
             version = _required(_field(inventory_item, "version"), f"{name}.version")
+            execution_identity = _required(
+                _field(inventory_item, "execution_identity"),
+                f"{name}.execution_identity",
+            )
             permission_policy_version = _required(
                 _field(
                     inventory_item,
@@ -364,6 +370,7 @@ class SdkRunToolAuthorityRegistry:
                 permission_category=permission,
                 source=source,
                 toolset=dispatch,
+                execution_identity=execution_identity,
                 dangerous=dangerous,
             )
             permissions[name] = permission
@@ -418,6 +425,7 @@ class SdkRunToolAuthorityRegistry:
                         "permission_category": permissions[name],
                         "source": frozen_specs[name].source,
                         "version": frozen_specs[name].spec_version,
+                        "execution_identity": frozen_specs[name].execution_identity,
                         "permission_policy_version": (
                             frozen_specs[name].permission_policy_version
                         ),

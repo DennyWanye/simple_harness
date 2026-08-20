@@ -598,6 +598,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
                     "permission_category": "filesystem_read",
                     "source": "deskpet",
                     "version": "1",
+                    "execution_identity": "execution-identity-file-read-v1",
                     "permission_policy_version": "sdk-product-policy-v1",
                     "dangerous": False,
                 }
@@ -676,6 +677,7 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
                 dispatch_kind="sync",
                 source="deskpet",
                 version="1",
+                execution_identity="execution-identity-file-read-v1",
                 dangerous=False,
             )
         ],
