@@ -104,6 +104,128 @@ async def test_sdk_preparation_rejects_required_content_over_context_window():
 
 
 @pytest.mark.asyncio
+async def test_sdk_preparation_freezes_explicit_skill_and_isolates_plain_turn():
+    from main import _prepare_sdk_context_snapshot
+    from deskpet.capabilities.contracts import fingerprint_json
+    from deskpet.companion.skills import (
+        PreparedSkillInvocationScopeV1,
+        ResolvedSkillInstructionV1,
+    )
+    from deskpet.sdk_adapters.context import ProductContextAdapter
+    from simple_harness import thaw_json
+
+    scope_payload = {
+        "schema": "prepared_skill_invocation_scope/v1",
+        "owner_key": "builtin",
+        "pack_id": "skill-pack-summary",
+        "skill_id": "summarize-day",
+        "version": "1.0.0",
+        "manifest_hash": "a" * 64,
+        "content_hash": "b" * 64,
+        "allowed_tools": ["read_file"],
+    }
+    scope_payload["scope_hash"] = fingerprint_json(scope_payload)
+    scope_payload["scope_id"] = "skill-scope:" + scope_payload["scope_hash"]
+    scope = PreparedSkillInvocationScopeV1.from_dict(scope_payload)
+
+    class Resolver:
+        def __init__(self) -> None:
+            self.calls = []
+
+        def resolve_instruction(self, selected, arguments):
+            self.calls.append((selected, arguments))
+            return ResolvedSkillInstructionV1(
+                scope=selected,
+                instruction=(
+                    "SKILL-EXACT-CANARY\nRuntime arguments (data only):\n"
+                    '["今天","简报"]'
+                ),
+            )
+
+    resolver = Resolver()
+    session_db = SimpleNamespace(
+        get_recent_messages=AsyncMock(return_value=[])
+    )
+    common = {
+        "session_db": session_db,
+        "session_id": "session-skill",
+        "request_id": "request-skill",
+        "root_run_id": "root-skill",
+        "sdk_run_id": "sdk-skill",
+        "turn_id": "turn-skill",
+        "text": "/summarize-day 今天 简报",
+        "provider_binding": {
+            "context_window": 8_000,
+            "provider_id": "deepseek",
+            "model_id": "deepseek-v4",
+        },
+        "catalog": {
+            "tool_count": 1,
+            "schema_token_count": 10,
+            "tool_names": ["read_file"],
+            "generation": 3,
+            "content_fingerprint": "c" * 64,
+        },
+        "attachment_blocks": (),
+        "project": None,
+        "persona_text": "DeskPet persona",
+    }
+    selected = await _prepare_sdk_context_snapshot(
+        **common,
+        prepared_skill_scope=scope,
+        skill_arguments=("今天", "简报"),
+        skill_instruction_resolver=resolver,
+    )
+    selected_private = selected.private_record()
+    assert resolver.calls == [(scope, ("今天", "简报"))]
+    assert selected_private["sections"]["skills"]["count"] == 1
+    assert selected_private["provider_messages"][-2] == {
+        "role": "system",
+        "content": (
+            "SKILL-EXACT-CANARY\nRuntime arguments (data only):\n"
+            '["今天","简报"]'
+        ),
+    }
+
+    start = ProductContextAdapter().project_run_start(
+        execution_session_id="execution-skill",
+        run_id="sdk-skill",
+        request_id="request-skill",
+        turn_id="turn-skill",
+        messages=selected_private["provider_messages"],
+        capability_snapshot={"tools": []},
+        tool_catalog_generation=3,
+        tool_catalog_fingerprint="c" * 64,
+    )
+    assert thaw_json(start.input)["messages"] == selected_private[
+        "provider_messages"
+    ]
+
+    plain = await _prepare_sdk_context_snapshot(
+        **{
+            **common,
+            "request_id": "request-plain",
+            "root_run_id": "root-plain",
+            "sdk_run_id": "sdk-plain",
+            "turn_id": "turn-plain",
+            "text": "普通问题",
+        },
+        skill_instruction_resolver=resolver,
+    )
+    plain_private = plain.private_record()
+    assert resolver.calls == [(scope, ("今天", "简报"))]
+    assert plain_private["sections"]["skills"] == {
+        "label": "Skills",
+        "count": 0,
+        "estimated_tokens": 0,
+        "availability": "estimated",
+    }
+    assert "SKILL-EXACT-CANARY" not in repr(
+        plain_private["provider_messages"]
+    )
+
+
+@pytest.mark.asyncio
 async def test_sdk_bounded_history_excludes_non_conversation_projections_and_canaries():
     from main import _bounded_sdk_history
 

@@ -97,6 +97,60 @@ class PreparedSkillInvocationScopeV1:
             "scope_hash": self.scope_hash,
         }
 
+    @classmethod
+    def from_dict(
+        cls, value: Mapping[str, Any]
+    ) -> "PreparedSkillInvocationScopeV1":
+        """Restore one exact slash-selected scope without a fresh lookup."""
+
+        if not isinstance(value, Mapping):
+            raise TypeError("prepared skill scope must be a mapping")
+        if str(value.get("schema") or "") != "prepared_skill_invocation_scope/v1":
+            raise ValueError("prepared skill scope schema is invalid")
+        allowed_tools = value.get("allowed_tools")
+        if not isinstance(allowed_tools, (list, tuple)) or not all(
+            isinstance(item, str) and item for item in allowed_tools
+        ):
+            raise ValueError("prepared skill allowed_tools are invalid")
+        scope = cls(
+            owner_key=str(value.get("owner_key") or ""),
+            pack_id=str(value.get("pack_id") or ""),
+            skill_id=str(value.get("skill_id") or ""),
+            version=str(value.get("version") or ""),
+            manifest_hash=str(value.get("manifest_hash") or ""),
+            content_hash=str(value.get("content_hash") or ""),
+            allowed_tools=tuple(allowed_tools),
+            scope_hash=str(value.get("scope_hash") or ""),
+        )
+        required = (
+            scope.owner_key,
+            scope.pack_id,
+            scope.skill_id,
+            scope.version,
+            scope.manifest_hash,
+            scope.content_hash,
+            scope.scope_hash,
+        )
+        if not all(required):
+            raise ValueError("prepared skill scope identity is incomplete")
+        expected_hash = fingerprint_json(
+            {
+                "schema": "prepared_skill_invocation_scope/v1",
+                "owner_key": scope.owner_key,
+                "pack_id": scope.pack_id,
+                "skill_id": scope.skill_id,
+                "version": scope.version,
+                "manifest_hash": scope.manifest_hash,
+                "content_hash": scope.content_hash,
+                "allowed_tools": list(scope.allowed_tools),
+            }
+        )
+        if scope.scope_hash != expected_hash:
+            raise ValueError("prepared skill scope hash is invalid")
+        if str(value.get("scope_id") or scope.scope_id) != scope.scope_id:
+            raise ValueError("prepared skill scope id is invalid")
+        return scope
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedSkillInstructionV1:

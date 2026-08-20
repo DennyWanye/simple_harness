@@ -8255,6 +8255,8 @@ async def _run_product_harness_chat(
     user_attachment_blocks=(),
     client_request_id: str | None = None,
     client_turn_id: str | None = None,
+    prepared_skill_scope: Any | None = None,
+    skill_arguments: tuple[str, ...] = (),
 ) -> None:
     """The single production chat ingress into ProductVenue/RunKernel."""
 
@@ -8556,6 +8558,11 @@ async def _run_product_harness_chat(
             project=workspace,
             persona_text=persona_text,
             memory_items=memory_items,
+            prepared_skill_scope=prepared_skill_scope,
+            skill_arguments=skill_arguments,
+            skill_instruction_resolver=service_context.get(
+                "frozen_skill_instruction_resolver"
+            ),
         )
         public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
         if session_db is not None:
@@ -9860,6 +9867,9 @@ async def _prepare_sdk_context_snapshot(
     project: str | None,
     persona_text: str,
     memory_items: tuple[dict[str, Any], ...] | None = None,
+    prepared_skill_scope: Any | None = None,
+    skill_arguments: tuple[str, ...] = (),
+    skill_instruction_resolver: Any | None = None,
 ) -> Any:
     """Prepare once; the returned messages are the sole Provider authority."""
 
@@ -9868,6 +9878,33 @@ async def _prepare_sdk_context_snapshot(
         SdkContextPreparationService,
         SdkContextSources,
     )
+    from deskpet.companion.skills import (
+        PreparedSkillInvocationScopeV1,
+        ResolvedSkillInstructionV1,
+    )
+
+    skill_items: tuple[dict[str, Any], ...] = ()
+    if prepared_skill_scope is not None:
+        if not isinstance(
+            prepared_skill_scope, PreparedSkillInvocationScopeV1
+        ):
+            raise TypeError("SDK skill selection must be a frozen typed scope")
+        resolve_instruction = getattr(
+            skill_instruction_resolver, "resolve_instruction", None
+        )
+        if not callable(resolve_instruction):
+            raise RuntimeError("frozen_skill_resolver_not_injected")
+        resolved_skill = resolve_instruction(
+            prepared_skill_scope,
+            tuple(str(item) for item in skill_arguments),
+        )
+        if inspect.isawaitable(resolved_skill):
+            resolved_skill = await resolved_skill
+        if not isinstance(resolved_skill, ResolvedSkillInstructionV1):
+            raise TypeError("frozen skill resolver returned an invalid instruction")
+        if resolved_skill.scope != prepared_skill_scope:
+            raise RuntimeError("frozen skill resolver changed the selected scope")
+        skill_items = ({"instruction": resolved_skill.instruction},)
 
     context_window = int(provider_binding["context_window"])
     compact_at = max(1, int(context_window * 0.8))
@@ -9877,6 +9914,9 @@ async def _prepare_sdk_context_snapshot(
         + _sdk_text_tokens(persona_text)
         + _sdk_text_tokens(text)
         + sum(_sdk_text_tokens(item.get("text")) for item in (memory_items or ()))
+        + sum(
+            _sdk_text_tokens(item.get("instruction")) for item in skill_items
+        )
         + sum(_sdk_text_tokens(item) for item in attachment_blocks)
         + 256
     )
@@ -9899,6 +9939,9 @@ async def _prepare_sdk_context_snapshot(
                 if memory_items is not None
                 else None
             ),
+            # A fresh non-Skill turn has an explicit empty source.  Only an
+            # immutable selection captured by slash ingress can add text.
+            skills=lambda _text: skill_items,
             project=(
                 (lambda _session_id: {"workspace": project}) if project else None
             ),
@@ -12596,6 +12639,17 @@ async def control_channel(ws: WebSocket):
                             raise RuntimeError(
                                 "slash instruction activation is empty"
                             )
+                        from deskpet.companion.skills import (
+                            PreparedSkillInvocationScopeV1,
+                        )
+
+                        _slash_scope = PreparedSkillInvocationScopeV1.from_dict(
+                            _slash_result.get("prepared_skill_scope") or {}
+                        )
+                        _slash_arguments = tuple(
+                            str(item)
+                            for item in (_slash_result.get("arguments") or ())
+                        )
                         _launch_product_harness_chat(
                             ws,
                             _slash_text,
@@ -12612,6 +12666,8 @@ async def control_channel(ws: WebSocket):
                                 str(payload.get("turn_id") or "").strip()
                                 or None
                             ),
+                            prepared_skill_scope=_slash_scope,
+                            skill_arguments=_slash_arguments,
                         )
                         _slash_result = {
                             "type": "accepted",
