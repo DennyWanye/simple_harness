@@ -8920,7 +8920,44 @@ def _cache_context_usage_state(payload: dict[str, Any]) -> dict[str, Any]:
     return previous
 
 
-async def _read_context_usage_authority(session_id: str) -> dict[str, Any]:
+async def _attach_context_snapshot_metadata(
+    session_db: Any,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Join public snapshot identity without conflating its version axis."""
+
+    result = dict(payload)
+    sid = str(result.get("session_id") or "").strip()
+    if not sid or not hasattr(
+        session_db, "get_latest_sdk_context_public_snapshot"
+    ):
+        return result
+    public = await session_db.get_latest_sdk_context_public_snapshot(sid)
+    if public is None:
+        result.update({"snapshot_id": None, "snapshot_version": None})
+        return result
+    if not isinstance(public, dict) or str(
+        public.get("session_id") or ""
+    ).strip() != sid:
+        raise RuntimeError("sdk_context_public_snapshot_session_mismatch")
+    result["snapshot_id"] = str(public.get("snapshot_id") or "").strip() or None
+    version = public.get("snapshot_version")
+    result["snapshot_version"] = (
+        int(version)
+        if isinstance(version, int) and not isinstance(version, bool)
+        and version >= 0 else None
+    )
+    result["snapshot_fingerprint"] = str(
+        public.get("snapshot_fingerprint") or ""
+    )[:160]
+    return result
+
+
+async def _read_context_usage_authority(
+    session_id: str,
+    *,
+    attach_snapshot: bool = True,
+) -> dict[str, Any]:
     """Read the durable Session authority; never fabricate a global stub."""
 
     context_sdb = service_context.get("session_db")
@@ -8929,6 +8966,10 @@ async def _read_context_usage_authority(session_id: str) -> dict[str, Any]:
     ):
         raise RuntimeError("context_usage_authority_unavailable")
     authoritative = await context_sdb.get_context_usage_state(session_id)
+    if attach_snapshot:
+        authoritative = await _attach_context_snapshot_metadata(
+            context_sdb, authoritative
+        )
     return _cache_context_usage_state(authoritative)
 
 
@@ -8940,6 +8981,9 @@ async def _send_context_usage_authority(
     """Send the latest durable Context Usage authority to one UI peer."""
 
     authoritative = await session_db.get_context_usage_state(session_id)
+    authoritative = await _attach_context_snapshot_metadata(
+        session_db, authoritative
+    )
     authoritative = _cache_context_usage_state(authoritative)
     await websocket.send_json({
         "type": "context_usage",
@@ -9194,6 +9238,7 @@ async def _emit_context_usage(
                         read_exc,
                     )
                     return
+        payload = await _attach_context_snapshot_metadata(session_db, payload)
         payload = _cache_context_usage_state(payload)
         msg = {"type": "context_usage", "payload": payload}
         try:
@@ -9250,171 +9295,193 @@ def _approx_tokens(text: str | None) -> int:
     return count_text_tokens(text)
 
 
-async def _compute_context_breakdown(session_id: str) -> dict[str, Any]:
-    """Estimate the breakdown of "what's in my context right now" for the
-    given session_id. Drives the ContextBreakdownModal that opens when the
-    user clicks the ring gauge.
+_PUBLIC_CONTEXT_SENSITIVE = re.compile(
+    r"(?i)(authorization\s*:|bearer\s+[a-z0-9._-]+|api[_ -]?key|"
+    r"cookie\s*:|(?:^|\s)(?:/Users/|/home/|[A-Za-z]:\\)|"
+    r"reasoning_content|private[_ -]?reasoning)"
+)
 
-    Returns ``{session_id, sections: [{kind, label, tokens, preview, count?}],
-    total_estimated_tokens, last_usage_prompt_tokens, model, ts}``.
 
-    Sections (Claude-Code parity):
-      * ``system``      — system prompt boilerplate
-      * ``memory``      — recalled facts / persona (RAG injection)
-      * ``tools``       — tool definitions in context
-      * ``history``     — persisted user/assistant turns (recent N)
-      * ``current``     — none for now (the next user input lands at turn-time)
-    """
-    sections: list[dict[str, Any]] = []
+def _public_context_section(raw: Any) -> dict[str, Any] | None:
+    """Normalize one already-redacted snapshot section for Inspector."""
 
-    # 1) Persona / system prompt — pull from the same _resolve_persona the
-    # ContextAssembler uses. This is the frozen header injected at the top
-    # of every turn.
-    persona_text = ""
-    try:
-        from deskpet.agent.assembler.components.persona import _resolve_persona  # type: ignore[attr-defined]
-        persona_text = _resolve_persona(config.raw if hasattr(config, "raw") else {}) or ""
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_persona_probe_failed err=%s", exc)
-    sections.append({
-        "kind": "system",
-        "label": "Persona / system",
-        "tokens": _approx_tokens(persona_text),
-        "preview": persona_text[:400],
-    })
+    if not isinstance(raw, dict):
+        return None
+    kind = str(raw.get("kind") or "").strip()[:80]
+    label = str(raw.get("label") or "").strip()[:160]
+    if not kind or not label:
+        return None
+    estimated = raw.get("estimated_tokens")
+    tokens = (
+        int(estimated)
+        if isinstance(estimated, int) and not isinstance(estimated, bool)
+        and estimated >= 0
+        else None
+    )
+    availability = str(raw.get("availability") or "").strip()
+    if availability not in {"available", "unavailable"}:
+        availability = "available" if tokens is not None else "unavailable"
+    public_ref = raw.get("ref")
+    public_text = public_ref.strip() if isinstance(public_ref, str) else ""
+    public_preview = (
+        public_text[:600]
+        if public_text and not _PUBLIC_CONTEXT_SENSITIVE.search(public_text)
+        else None
+    )
+    item: dict[str, Any] = {
+        "kind": kind,
+        "label": label,
+        "tokens": tokens,
+        "token_source": "estimated" if tokens is not None else "unavailable",
+        "availability": availability,
+        "public_preview": public_preview,
+        "preview_truncated": bool(
+            isinstance(public_ref, str) and len(public_ref.strip()) > 600
+        ),
+    }
+    count = raw.get("count")
+    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+        item["count"] = count
+    return item
 
-    # 2) Memory — recalled facts (subset of what ContextAssembler injects).
-    mem_preview = ""
-    mem_count = 0
-    mem_total_tokens = 0
-    try:
-        fs = service_context.get("facts_store")
-        if fs is not None and hasattr(fs, "list_active"):
-            _facts = await fs.list_active(limit=50)  # returns list[dict]
-            mem_count = len(_facts)
-            preview_lines = []
-            for f in _facts:
-                cat = f.get("category", "?") or "?"
-                subj = f.get("subject", "") or ""
-                val = f.get("value", "") or ""
-                mem_total_tokens += _approx_tokens(cat) + _approx_tokens(subj) + _approx_tokens(val)
-                if len(preview_lines) < 8:
-                    preview_lines.append(f"- [{cat}] {subj}: {val[:60]}")
-            mem_preview = "\n".join(preview_lines)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_memory_probe_failed err=%s", exc)
-    sections.append({
-        "kind": "memory",
-        "label": "Memory / facts",
-        "tokens": mem_total_tokens,
-        "preview": mem_preview[:400],
-        "count": mem_count,
-    })
 
-    # 3) Tools — count + names from the v2 schema-aware registry (the
-    # one the chat_v2 agent loop actually uses). Singleton imported
-    # directly; the legacy ``tool_router`` only carries 3 hello-world tools.
-    tool_preview = ""
-    tool_count = 0
-    try:
-        from deskpet.tools import registry as _v2reg
-        if _v2reg is not None and hasattr(_v2reg, "list_tools"):
-            try:
-                _names = _v2reg.list_tools()
-            except Exception:  # noqa: BLE001
-                _names = []
-            tool_count = len(_names)
-            tool_preview = ", ".join(str(n) for n in _names[:40])
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_tools_probe_failed err=%s", exc)
-    sections.append({
-        "kind": "tools",
-        "label": "Tool definitions",
-        "tokens": tool_count * 60,  # ~60 tokens per tool schema, rough
-        "preview": tool_preview[:400],
-        "count": tool_count,
-    })
+async def _read_context_breakdown_authority(
+    session_id: str,
+) -> dict[str, Any]:
+    """Read only the durable public SDK snapshot and Context usage state."""
 
-    # 4) History — recent user/assistant messages from SessionDB.
-    # SessionDB API: get_recent(session_id, limit=N) → list[ConversationTurn].
-    hist_text = ""
-    hist_count = 0
-    hist_tokens = 0
-    try:
-        sdb = service_context.get("session_db")
-        if sdb is not None and hasattr(sdb, "get_recent"):
-            try:
-                turns = await sdb.get_recent(session_id, limit=200)
-            except Exception:  # noqa: BLE001
-                turns = []
-            hist_count = len(turns)
-            parts = []
-            for t in turns:
-                role = getattr(t, "role", "?")
-                content = getattr(t, "content", "") or ""
-                hist_tokens += _approx_tokens(content)
-                if len(parts) < 12:
-                    parts.append(f"[{role}] {str(content)[:80]}")
-            hist_text = "\n".join(parts)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_history_probe_failed err=%s", exc)
-    sections.append({
-        "kind": "history",
-        "label": "Conversation history",
-        "tokens": hist_tokens,
-        "preview": hist_text[:400],
-        "count": hist_count,
-    })
+    sid = str(session_id or "").strip()
+    if not sid:
+        raise ValueError("session_id is required")
+    context_sdb = service_context.get("session_db")
+    if context_sdb is None or not hasattr(
+        context_sdb, "get_latest_sdk_context_public_snapshot"
+    ):
+        raise RuntimeError("sdk_context_public_snapshot_authority_unavailable")
 
-    # 5) Durable size/compaction history for the Context chart.
-    history: list[dict[str, Any]] = []
-    try:
-        sdb = service_context.get("session_db")
-        if sdb is not None and hasattr(sdb, "list_context_usage_history"):
-            history = await sdb.list_context_usage_history(
-                session_id, limit=512
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_history_samples_failed err=%s", exc)
+    public_snapshot = await context_sdb.get_latest_sdk_context_public_snapshot(
+        sid
+    )
+    usage = await _read_context_usage_authority(sid, attach_snapshot=False)
+    if public_snapshot is not None:
+        if not isinstance(public_snapshot, dict):
+            raise RuntimeError("sdk_context_public_snapshot_invalid")
+        if str(public_snapshot.get("session_id") or "").strip() != sid:
+            raise RuntimeError("sdk_context_public_snapshot_session_mismatch")
 
-    # 6) Resolve the latest durable project/workspace identity. Historical
-    # chat sessions may predate project_name/project_root session metadata.
-    project_context: dict[str, Any] = {}
-    try:
-        workflow_service = service_context.get("workflow_service")
-        execution_uow = getattr(workflow_service, "execution_uow", None)
-        if execution_uow is not None and hasattr(
-            execution_uow, "get_latest_session_project_context"
-        ):
-            project_context = dict(
-                await execution_uow.get_latest_session_project_context(
-                    session_id
-                )
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_project_context_failed err=%s", exc)
-
-    # 7) Total + durable ContextUsageStateV2 authority for cross-check.
-    last: dict[str, Any] = {}
-    try:
-        last = await _read_context_usage_authority(session_id)
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("breakdown_context_usage_state_failed err=%s", exc)
+    raw_sections = (
+        public_snapshot.get("sections", [])
+        if isinstance(public_snapshot, dict)
+        else []
+    )
+    sections = [
+        normalized
+        for raw in raw_sections if isinstance(raw_sections, list)
+        if (normalized := _public_context_section(raw)) is not None
+    ]
+    snapshot_available = isinstance(public_snapshot, dict)
+    binding = (
+        public_snapshot.get("provider_binding", {})
+        if snapshot_available else {}
+    )
+    budget = public_snapshot.get("budget", {}) if snapshot_available else {}
+    binding = binding if isinstance(binding, dict) else {}
+    budget = budget if isinstance(budget, dict) else {}
+    has_measurement = bool(usage.get("has_measurement"))
+    prompt_tokens = usage.get("prompt_tokens")
+    measured_prompt_tokens = (
+        int(prompt_tokens)
+        if has_measurement and isinstance(prompt_tokens, int)
+        and not isinstance(prompt_tokens, bool) and prompt_tokens >= 0
+        else None
+    )
+    source = str(usage.get("source") or "")
+    context_state = (
+        "legacy_incomplete" if usage.get("legacy_incomplete")
+        else "measured" if has_measurement
+        else "binding_only" if source == "binding_only"
+        else "unavailable"
+    )
+    snapshot_version = (
+        public_snapshot.get("snapshot_version") if snapshot_available else None
+    )
+    usage_version = usage.get("version")
     return {
-        "session_id": session_id,
-        "project_name": project_context.get("project_name"),
-        "project_root": project_context.get("project_root"),
-        "model": last.get("model", ""),
+        "session_id": sid,
+        "snapshot_id": (
+            str(public_snapshot.get("snapshot_id") or "").strip() or None
+            if snapshot_available else None
+        ),
+        "snapshot_version": (
+            int(snapshot_version)
+            if isinstance(snapshot_version, int)
+            and not isinstance(snapshot_version, bool) and snapshot_version >= 0
+            else None
+        ),
+        "snapshot_fingerprint": (
+            str(public_snapshot.get("snapshot_fingerprint") or "")[:160]
+            if snapshot_available else ""
+        ),
+        "sample_id": str(usage.get("sample_id") or "").strip() or None,
+        "usage_version": (
+            int(usage_version)
+            if isinstance(usage_version, int) and not isinstance(usage_version, bool)
+            and usage_version >= 0 else None
+        ),
+        "availability": "available" if snapshot_available else "unavailable",
+        "context_state": context_state,
+        "model": str(
+            binding.get("model_id") or usage.get("model_id")
+            or usage.get("model") or ""
+        )[:160],
         "sections": sections,
-        "total_estimated_tokens": sum(s["tokens"] for s in sections),
-        "last_usage_prompt_tokens": last.get("prompt_tokens", 0),
-        "context_window": last.get("context_window", 0),
-        "effective_ceiling": last.get("effective_ceiling", 0),
-        "compact_at": last.get("compact_at", 0),
-        "updated_at": last.get("updated_at", 0),
-        "history": history,
+        "total_estimated_tokens": (
+            sum(item["tokens"] or 0 for item in sections)
+            if snapshot_available else None
+        ),
+        "last_usage_prompt_tokens": measured_prompt_tokens,
+        "context_window": budget.get("context_window") if snapshot_available else None,
+        "effective_ceiling": budget.get("effective_ceiling") if snapshot_available else None,
+        "compact_at": budget.get("compact_at") if snapshot_available else None,
+        "updated_at": usage.get("updated_at"),
         "ts": time.time(),
     }
+
+
+async def _handle_context_breakdown_request(
+    websocket: Any,
+    payload: Any,
+    *,
+    owner_session_id: str,
+) -> bool:
+    """Serve one owner/session/correlation-fenced Inspector query."""
+
+    body = payload if isinstance(payload, dict) else {}
+    requested_sid = str(body.get("session_id") or "").strip()
+    correlation_id = str(
+        body.get("request_id") or body.get("correlation_id") or ""
+    ).strip()
+    owner_sid = str(owner_session_id or "").strip()
+    if (
+        not requested_sid or not correlation_id or len(correlation_id) > 200
+        or not owner_sid or requested_sid != owner_sid
+    ):
+        await websocket.send_json({
+            "type": "error",
+            "payload": {
+                "code": "context_breakdown_request_invalid",
+                "message": "Context Inspector request identity is invalid",
+            },
+        })
+        return False
+    breakdown = await _read_context_breakdown_authority(requested_sid)
+    if breakdown.get("session_id") != requested_sid:
+        raise RuntimeError("context_breakdown_session_mismatch")
+    await websocket.send_json({
+        "type": "context_breakdown_response",
+        "payload": {**breakdown, "correlation_id": correlation_id},
+    })
+    return True
 
 
 _PEER_BROADCAST_TIMEOUT_S = 1.0
@@ -11758,17 +11825,15 @@ async def control_channel(ws: WebSocket):
                     logger.debug("context_usage_request_failed err=%s", exc)
 
             elif msg_type == "context_breakdown_request":
-                # 2026-05-28 — drill-down composition for the ring's
-                # click-through modal. Returns each context section's
-                # token count + a short preview snippet (≤ 400 chars).
                 payload = raw.get("payload", {}) or {}
-                target_sid = payload.get("session_id") or session_id
-                breakdown = await _compute_context_breakdown(target_sid)
                 try:
-                    await ws.send_json({
-                        "type": "context_breakdown_response",
-                        "payload": breakdown,
-                    })
+                    await _handle_context_breakdown_request(
+                        ws,
+                        payload,
+                        owner_session_id=_resolve_chat_source_session(
+                            session_id, None
+                        ),
+                    )
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("context_breakdown_send_failed err=%s", exc)
 
