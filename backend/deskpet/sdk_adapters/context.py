@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from simple_harness import ExecutionSessionId, JsonValue, RequestId, RunId
+from simple_harness import ContentBlock, ExecutionSessionId, JsonValue, RequestId, RunId
 from simple_harness.runtime import RunStart
 
 
@@ -21,6 +21,8 @@ class ProductContextAdapter:
         messages: Sequence[Mapping[str, JsonValue]],
         capability_snapshot: Mapping[str, JsonValue],
         tool_catalog_generation: int,
+        tool_catalog_fingerprint: str | None = None,
+        provider_budget_fingerprint: str | None = None,
         trusted_input: Mapping[str, JsonValue] | None = None,
     ) -> RunStart:
         projected_messages: list[dict[str, JsonValue]] = []
@@ -29,9 +31,19 @@ class ProductContextAdapter:
             content = message.get("content")
             if role not in {"system", "user", "assistant", "tool"}:
                 raise ValueError("prepared message role is invalid")
-            if not isinstance(content, str):
-                raise TypeError("prepared message content must be text")
-            projected_messages.append({"role": role, "content": content})
+            if isinstance(content, str):
+                projected_content: JsonValue = content
+            elif isinstance(content, list) and all(
+                isinstance(block, Mapping) for block in content
+            ):
+                projected_content = [
+                    ContentBlock.from_dict(block).to_dict() for block in content
+                ]
+            else:
+                raise TypeError(
+                    "prepared message content must be text or structured blocks"
+                )
+            projected_messages.append({"role": role, "content": projected_content})
         start_input = dict(trusted_input or {})
         if "messages" in start_input or "capability_snapshot" in start_input:
             raise ValueError("trusted_input cannot override projected authority")
@@ -48,6 +60,8 @@ class ProductContextAdapter:
             turn_id,
             start_input,
             tool_catalog_generation,
+            tool_catalog_fingerprint,
+            provider_budget_fingerprint,
         )
 
 
