@@ -156,6 +156,11 @@ class SdkRuntimeIngress:
         from simple_harness.tools import AuthorizationDecision
 
         normalized = str(decision).strip().lower()
+        if normalized == "allow_session":
+            # SDK 0.1.5 exposes a per-decision ALLOW/DENY contract. The
+            # product's broader session preference remains a UI preference;
+            # this concrete waiting decision is still an ALLOW.
+            normalized = "allow"
         if normalized not in {"allow", "deny"}:
             raise ValueError("authorization decision must be allow or deny")
         await ready.client.decide_authorization(

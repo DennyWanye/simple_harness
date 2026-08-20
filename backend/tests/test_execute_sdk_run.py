@@ -87,7 +87,7 @@ async def test_ingress_uses_sdk_015_async_authorization_signature():
         decision_id="decision-auth",
         nonce="nonce-auth",
         expected_version=3,
-        decision="allow",
+        decision="allow_session",
     )
 
     assert receipt.accepted is True
@@ -1097,7 +1097,7 @@ async def test_waiting_permission_uses_authorization_api_and_resumes(monkeypatch
             "nonce": "nonce-permission",
             "version": 4,
         },
-        {"decision": "allow"},
+        {"decision": "allow_session"},
         authorization=True,
     )
 
