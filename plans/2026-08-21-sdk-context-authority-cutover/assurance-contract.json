@@ -1,0 +1,29 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "用户会话内容、工具参数和工具结果"},
+    {"id": "ASSET-2", "description": "模型上下文边界与 provider 凭据"},
+    {"id": "ASSET-3", "description": "canonical Run 状态与可审计执行记录"},
+    {"id": "ASSET-4", "description": "冻结 Provider Context、附件/项目引用与 durable usage lineage"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "本地 OS、开发者账户和受控测试桌面环境可信"},
+    {"id": "TRUST-2", "description": "canonical Run/event authority 与 public redactor 是生产事实源"},
+    {"id": "TRUST-3", "description": "SDK provider ledger 的 trusted usage 可信且 Provider 可合法缺失 usage"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-6", "description": "SDK request、Inspector 与 durable usage 使用不同 authority"},
+    {"id": "FAIL-7", "description": "Persona、Memory、Skill、附件、项目或 history 静默丢失"},
+    {"id": "FAIL-8", "description": "legacy catalog/估算与真实 SDK schema 漂移或旧入口仍可达"},
+    {"id": "FAIL-9", "description": "usage 缺失、重复、乱序、取消、unknown、重启或多 Session 造成伪造、重复或串线"},
+    {"id": "FAIL-10", "description": "structured attachment、private reasoning 或 secret 泄漏到 public projection/log/evidence"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "宿主 OS 或 Provider 本身已被攻陷"},
+    {"id": "OOS-2", "description": "未经批准的远程协作者读取本机原始数据库"},
+    {"id": "OOS-3", "description": "修改 Provider 价格、币种或外部计费 API"}
+  ],
+  "maximum_acceptable_impact": "Context 或 usage 缺失只能明确 unavailable；不得改变 Run terminal、重复工具、泄漏凭据、丢失产品 Context、跨 Session 串线或把 excluded 数据加入模型请求。"
+}

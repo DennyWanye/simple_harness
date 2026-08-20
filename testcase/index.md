@@ -96,6 +96,11 @@
 
 ---
 
+## 2026-08-21 — SDK Context authority cutover
+
+- [Black-box required testcases](2026-08-21-sdk-context-authority-cutover/testcases.md)
+- [Core-value smoke inputs](2026-08-21-sdk-context-authority-cutover/core-value-smoke-inputs.md)
+
 ## 约定
 
 - **命名**: `<功能简称>-manual-test.md`，跨迭代的大功能可带日期前缀 `YYYY-MM-DD-`。

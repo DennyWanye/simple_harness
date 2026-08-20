@@ -1,0 +1,172 @@
+{
+  "schema_version": "1.4.0",
+  "release_unit": {
+    "id": "2026-08-21-sdk-context-authority-cutover",
+    "title": "SDK Context authority cutover",
+    "acceptance_file": "plans/2026-08-21-sdk-context-authority-cutover/acceptance.md",
+    "plan_file": "plans/2026-08-21-sdk-context-authority-cutover/plan.md"
+  },
+  "source_request": "建立 SDK Context 单一事实源、真实 Provider 用量账本与旧链路退役，并完成自动化和真实 UI 验证闭环。",
+  "behavior_contract": [
+    "fresh SDK Run 只准备一次，同一冻结快照驱动 RunStart、首个物理请求和 Inspector",
+    "产品 Context 按策略完整进入真实请求且 fresh Run 排除 activity、artifact、summary 和其他 Session 数据",
+    "每个 physical attempt 独立持久化真实身份与 nullable usage，不把缺失或失败伪造成零测量",
+    "Provider、executor、Inspector 使用同一不可变 catalog generation、完整 schema 和 fingerprint",
+    "Context UI 明确区分实际测量、估算、binding-only、legacy incomplete 与 unavailable",
+    "多 Session、WAITING、取消、设置变化和完整重启保持 per-Run 隔离与恢复"
+  ],
+  "baseline": {
+    "head": "e92883a5c52d406b30d4b4e212589fbe4fb44e13",
+    "source": "git rev-parse HEAD before Phase 3 D oracle drafting"
+  },
+  "executor_engine": "current",
+  "challenger_engine": "claude",
+  "auditor_engine": "opus-4.8",
+  "testcase_files": [
+    "testcase/2026-08-21-sdk-context-authority-cutover/testcases.md",
+    "testcase/2026-08-21-sdk-context-authority-cutover/core-value-smoke-inputs.md"
+  ],
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "rationale": "真实 LLM 回答与工具选择会随 Persona、历史、附件和用户输入语义明显变化。",
+      "decided_by": "phase-3-d-black-box-preparer"
+    },
+    "llm_payload_driven": {
+      "value": true,
+      "rationale": "Provider 文本、工具调用、usage、reasoning 与 schema 载荷直接驱动 Run、账本和 UI。",
+      "decided_by": "phase-3-d-black-box-preparer"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "Provider 配置、Session 快照、usage、catalog lease 与 WAITING 均依赖持久化及冷启动恢复。",
+      "decided_by": "phase-3-d-black-box-preparer"
+    }
+  },
+  "acceptance_criteria": ["AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17"],
+  "obligations": ["TO-A10", "TO-A11", "TO-A12", "TO-A13", "TO-A14", "TO-A15", "TO-A16", "TO-A17", "TO-R7", "TO-R8", "TO-R9", "TO-R10", "TO-R11"],
+  "required_lanes": ["automated-contract", "automated-integration", "automated-adversarial", "automated-concurrency", "automated-security", "automated-ui", "automated-wiring", "critical-surface-smoke", "affected-surface-smoke", "full-surface-smoke", "computer-use", "real-llm", "cold-start"],
+  "scenarios": [
+    {
+      "scenario_id": "AUT-01", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-contract"], "min_root_runs": 1,
+      "input_class": "snapshot-lineage-content", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-10", "AC-11"], "obligations": ["TO-A10", "TO-A11", "TO-R7"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/memory/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "AUT-02", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-adversarial"], "min_root_runs": 2,
+      "input_class": "context-isolation-tool-loop", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-12", "AC-17"], "obligations": ["TO-A12", "TO-A17", "TO-R8"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/agent/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "AUT-03", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-integration"], "min_root_runs": 1,
+      "input_class": "usage-reconcile-faults", "cold_start": true, "expected_run_created": true,
+      "ac": ["AC-13", "AC-15", "AC-17"],
+      "obligations": ["TO-A13", "TO-A15", "TO-A17", "TO-R7", "TO-R9", "TO-R11"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/memory/**", "backend/deskpet/execution/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "AUT-04", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-contract"], "min_root_runs": 2,
+      "input_class": "catalog-generation-progress", "cold_start": true, "expected_run_created": true,
+      "ac": ["AC-14", "AC-17"], "obligations": ["TO-A14", "TO-A17", "TO-R10"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/tool_catalog/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "AUT-05", "required": true, "ui": true, "gate_type": "automated",
+      "required_lanes": ["automated-ui"], "min_root_runs": 1,
+      "input_class": "ui-authority-hydration", "cold_start": true, "expected_run_created": true,
+      "ac": ["AC-10", "AC-15", "AC-17"],
+      "obligations": ["TO-A10", "TO-A15", "TO-A17", "TO-R7", "TO-R11"],
+      "impact_paths": ["backend/main.py", "backend/deskpet/memory/**", "tauri-app/src/**"]
+    },
+    {
+      "scenario_id": "AUT-06", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-concurrency"], "min_root_runs": 2,
+      "input_class": "multisession-provider-binding", "cold_start": true, "expected_run_created": true,
+      "ac": ["AC-13", "AC-17"], "obligations": ["TO-A13", "TO-A17", "TO-R7", "TO-R9"],
+      "impact_paths": ["backend/main.py", "backend/llm/**", "backend/deskpet/sdk_adapters/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "AUT-07", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-security"], "min_root_runs": 1,
+      "input_class": "attachment-bounds-redaction", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-11", "AC-12", "AC-15", "AC-17"],
+      "obligations": ["TO-A11", "TO-A12", "TO-A15", "TO-A17", "TO-R8", "TO-R11"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/agent/**", "tauri-app/src/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "AUT-08", "required": true, "ui": false, "gate_type": "automated",
+      "required_lanes": ["automated-wiring"], "min_root_runs": 0,
+      "input_class": "legacy-reachability", "cold_start": false, "expected_run_created": false,
+      "ac": ["AC-16"], "obligations": ["TO-A16"],
+      "impact_paths": ["backend/main.py", "backend/deskpet/sdk_adapters/**", "backend/llm/**", "tauri-app/src/**"]
+    },
+    {
+      "scenario_id": "CTX-1", "required": true, "ui": true, "gate_type": "manual",
+      "required_lanes": ["computer-use", "real-llm"], "min_root_runs": 2,
+      "input_class": "persona-history", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-10", "AC-11", "AC-13", "AC-15", "AC-17"],
+      "obligations": ["TO-A10", "TO-A11", "TO-A13", "TO-A15", "TO-A17", "TO-R7", "TO-R11"],
+      "impact_paths": ["backend/main.py", "backend/deskpet/sdk_adapters/**", "backend/deskpet/memory/**", "tauri-app/src/**"]
+    },
+    {
+      "scenario_id": "CTX-2", "required": true, "ui": true, "gate_type": "manual",
+      "required_lanes": ["computer-use", "real-llm"], "min_root_runs": 2,
+      "input_class": "memory-long-history", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-11", "AC-12", "AC-13", "AC-15", "AC-17"],
+      "obligations": ["TO-A11", "TO-A12", "TO-A13", "TO-A15", "TO-A17", "TO-R8", "TO-R9", "TO-R11"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/memory/**", "tauri-app/src/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "CTX-3", "required": true, "ui": true, "gate_type": "manual",
+      "required_lanes": ["computer-use", "real-llm"], "min_root_runs": 2,
+      "input_class": "attachment-project-tool", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-10", "AC-11", "AC-13", "AC-14", "AC-15", "AC-17"],
+      "obligations": ["TO-A10", "TO-A11", "TO-A13", "TO-A14", "TO-A15", "TO-A17", "TO-R7", "TO-R10", "TO-R11"],
+      "impact_paths": ["backend/main.py", "backend/deskpet/sdk_adapters/**", "tauri-app/src/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "CTX-4", "required": true, "ui": true, "gate_type": "manual",
+      "required_lanes": ["computer-use", "real-llm"], "min_root_runs": 1,
+      "input_class": "negative-tool-failure", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-12", "AC-13", "AC-14", "AC-15", "AC-17"],
+      "obligations": ["TO-A12", "TO-A13", "TO-A14", "TO-A15", "TO-A17", "TO-R8", "TO-R9", "TO-R11"],
+      "impact_paths": ["backend/deskpet/sdk_adapters/**", "backend/deskpet/tools/**", "tauri-app/src/**"]
+    },
+    {
+      "scenario_id": "CTX-5", "required": true, "ui": true, "gate_type": "manual",
+      "required_lanes": ["computer-use", "real-llm", "cold-start"], "min_root_runs": 1,
+      "input_class": "cold-start-restart", "cold_start": true, "expected_run_created": true,
+      "ac": ["AC-10", "AC-13", "AC-15", "AC-17"],
+      "obligations": ["TO-A10", "TO-A13", "TO-A15", "TO-A17", "TO-R7", "TO-R9", "TO-R11"],
+      "impact_paths": ["backend/main.py", "backend/llm/**", "backend/deskpet/sdk_adapters/**", "backend/deskpet/memory/**", "tauri-app/src/**"]
+    },
+    {
+      "scenario_id": "SMOKE-CRITICAL", "required": true, "ui": true, "gate_type": "smoke",
+      "required_lanes": ["critical-surface-smoke"], "min_root_runs": 1,
+      "input_class": "critical-surface", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-15", "AC-17"], "obligations": ["TO-A15", "TO-A17", "TO-R11"],
+      "impact_paths": ["backend/main.py", "tauri-app/src/**"]
+    },
+    {
+      "scenario_id": "SMOKE-AFFECTED", "required": true, "ui": true, "gate_type": "smoke",
+      "required_lanes": ["affected-surface-smoke"], "min_root_runs": 1,
+      "input_class": "affected-surface", "cold_start": false, "expected_run_created": true,
+      "ac": ["AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17"],
+      "obligations": ["TO-A10", "TO-A11", "TO-A12", "TO-A13", "TO-A14", "TO-A15", "TO-A16", "TO-A17", "TO-R7", "TO-R8", "TO-R9", "TO-R10", "TO-R11"],
+      "impact_paths": ["backend/**", "tauri-app/src/**", "../simple-harness-sdk/**"]
+    },
+    {
+      "scenario_id": "SMOKE-FULL", "required": true, "ui": true, "gate_type": "smoke",
+      "required_lanes": ["full-surface-smoke"], "min_root_runs": 1,
+      "input_class": "full-surface", "cold_start": true, "expected_run_created": true,
+      "ac": ["AC-16", "AC-17"], "obligations": ["TO-A16", "TO-A17", "TO-R10", "TO-R11"],
+      "impact_paths": ["backend/**", "tauri-app/**", "../simple-harness-sdk/**"]
+    }
+  ]
+}
