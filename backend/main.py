@@ -7870,12 +7870,13 @@ async def _signal_product_harness_decision(
     version = payload.get("version")
     if not run_id or not decision_id or not nonce or version is None:
         raise ValueError("decision response requires run_id/decision_id/nonce/version")
+    sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
     host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
         session_id=session_id,
         workspace=None,
     )
     receipt = await _sdk_ingress.require_ready().client.signal(
-        {"run_id": run_id, "expected_session_id": session_id},
+        {"run_id": sdk_run_id, "expected_session_id": session_id},
         host,
         {
             "decision_id": decision_id,
@@ -7885,9 +7886,7 @@ async def _signal_product_harness_decision(
         },
     )
     _sdk_ingress.trigger_reconciler()
-    _ensure_sdk_recovery_watcher(
-        _sdk_run_ids_by_root.get(run_id, run_id)
-    )
+    _ensure_sdk_recovery_watcher(sdk_run_id)
     return receipt
 
 
@@ -8038,13 +8037,14 @@ async def _run_product_harness_continuation(
             "continuation root/task/session identity does not match"
         )
     message_ref = f"request:{request_id}"
+    sdk_run_id = _sdk_run_ids_by_root.get(root_run_id, root_run_id)
     host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
         session_id=session_id,
         workspace=None,
     )
     receipt = await _sdk_ingress.require_ready().client.signal(
         {
-            "run_id": root_run_id,
+            "run_id": sdk_run_id,
             "expected_session_id": session_id,
         },
         host,
@@ -8070,9 +8070,7 @@ async def _run_product_harness_continuation(
         raise RuntimeError(
             str(reason or "continuation was not accepted")
         )
-    _ensure_sdk_recovery_watcher(
-        _sdk_run_ids_by_root.get(root_run_id, root_run_id)
-    )
+    _ensure_sdk_recovery_watcher(sdk_run_id)
     receipt_reason = (
         receipt.get("reason")
         if isinstance(receipt, dict)
@@ -12979,8 +12977,14 @@ async def control_channel(ws: WebSocket):
                         session_id=_csid,
                         workspace=None,
                     )
+                    _sdk_signal_run_id = _sdk_run_ids_by_root.get(
+                        _run_id, _run_id
+                    )
                     _receipt = await _sdk_ingress.require_ready().client.signal(
-                        {"run_id": _run_id, "expected_session_id": _csid},
+                        {
+                            "run_id": _sdk_signal_run_id,
+                            "expected_session_id": _csid,
+                        },
                         _host,
                         {
                             "decision_id": _decision_id,
@@ -12990,9 +12994,7 @@ async def control_channel(ws: WebSocket):
                         },
                     )
                     _sdk_ingress.trigger_reconciler()
-                    _ensure_sdk_recovery_watcher(
-                        _sdk_run_ids_by_root.get(_run_id, _run_id)
-                    )
+                    _ensure_sdk_recovery_watcher(_sdk_signal_run_id)
                     logger.info(
                         "harness_plan_decision sid=%s run_id=%s accepted=%s duplicate=%s",
                         _csid,

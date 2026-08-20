@@ -891,6 +891,49 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
 
 
 @pytest.mark.asyncio
+async def test_waiting_decision_translates_canonical_root_to_sdk_id(monkeypatch):
+    import main
+
+    client = SimpleNamespace(
+        signal=AsyncMock(return_value=SimpleNamespace(accepted=True))
+    )
+    ingress = SimpleNamespace(
+        accepting=True,
+        require_ready=lambda: SimpleNamespace(client=client),
+        trigger_reconciler=Mock(),
+    )
+    host = SimpleNamespace()
+    watcher = Mock()
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(
+        main,
+        "_issue_product_harness_host",
+        AsyncMock(return_value=(host, None, None, None)),
+    )
+    monkeypatch.setattr(main, "_ensure_sdk_recovery_watcher", watcher)
+    main._sdk_run_ids_by_root["canonical-waiting"] = "sdk-waiting"
+
+    receipt = await main._signal_product_harness_decision(
+        "session-waiting",
+        {
+            "run_id": "canonical-waiting",
+            "decision_id": "decision-1",
+            "nonce": "nonce-1",
+            "version": 2,
+        },
+        {"decision": "go"},
+    )
+
+    assert receipt.accepted is True
+    assert client.signal.await_args.args[0] == {
+        "run_id": "sdk-waiting",
+        "expected_session_id": "session-waiting",
+    }
+    ingress.trigger_reconciler.assert_called_once_with()
+    watcher.assert_called_once_with("sdk-waiting")
+
+
+@pytest.mark.asyncio
 async def test_cancel_product_run_missing_identity_is_idempotent(monkeypatch):
     import main
 
