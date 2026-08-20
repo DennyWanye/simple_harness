@@ -182,8 +182,11 @@ def _extract_public_progress(response: ProviderResponse) -> ProviderResponse:
     cleaned_calls: list[ProviderToolCall] = []
     for call in response.tool_calls:
         arguments = dict(call.arguments)
-        candidate = _public_progress_text(
-            arguments.pop(_PUBLIC_PROGRESS_ARGUMENT, "")
+        raw_progress = arguments.pop(_PUBLIC_PROGRESS_ARGUMENT, "")
+        candidate = (
+            _public_progress_text(raw_progress)
+            if isinstance(raw_progress, str)
+            else ""
         )
         if candidate and not narration:
             narration = candidate
@@ -191,7 +194,7 @@ def _extract_public_progress(response: ProviderResponse) -> ProviderResponse:
             ProviderToolCall(call.call_id, call.name, arguments)
         )
     if not narration:
-        return response
+        return replace(response, tool_calls=tuple(cleaned_calls))
     content = response.message.content.strip() or narration
     return replace(
         response,

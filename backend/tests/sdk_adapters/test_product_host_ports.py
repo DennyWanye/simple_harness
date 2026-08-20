@@ -145,6 +145,45 @@ async def test_tool_turn_without_public_content_does_not_make_second_provider_ca
     assert actual.message.content == ""
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("raw_progress", [None, "", "   ", 7, {"text": "fake"}])
+async def test_non_text_or_blank_public_progress_is_removed_without_narration(
+    raw_progress,
+) -> None:
+    client = httpx.AsyncClient()
+    adapter = ProductProviderAdapter(
+        Registry("secret"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda provider, model: (1, 1, "price-v1"),
+    )
+    response = ProviderResponse(
+        RequestId("run-progress:provider-turn:1"),
+        Message(MessageRole.ASSISTANT, ""),
+        tool_calls=(
+            ProviderToolCall(
+                CallId("call-progress"),
+                "memory_search",
+                {"query": "x", "deskpet_public_progress": raw_progress},
+            ),
+        ),
+    )
+    adapter._delegate.invoke = AsyncMock(return_value=response)  # noqa: SLF001
+    try:
+        actual = await adapter.invoke(
+            ProviderRequest(
+                RequestId("run-progress:provider-turn:1"),
+                (Message(MessageRole.USER, "x"),),
+            ),
+            cancel=CancelToken(),
+        )
+    finally:
+        await client.aclose()
+
+    assert actual.message.content == ""
+    assert actual.tool_calls[0].arguments == {"query": "x"}
+
+
 @dataclass
 class Entry:
     id: str = "relay"
