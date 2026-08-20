@@ -4,8 +4,8 @@ This directory contains exact wheel artifacts from trusted sources, verified via
 
 ## Active candidate: simple_harness_sdk-0.1.5-py3-none-any.whl
 
-**Source:** local build from `simple-harness-sdk` commit `73458aa`（SDK Context authority cutover）
-**SHA256:** `1551735127e1b91be629bc23ef0369ffbba4aa02c12d1594123a4fca7f5522b6`
+**Source:** local build from `simple-harness-sdk` commit `010d1c3`（SDK Context authority cutover）
+**SHA256:** `1fffddd0239806ef15f7fad15db44832cb0b3d89350d8f58d58d95aa68ee7172`
 **Vendored:** 2026-08-21（SDK Context authority Slice A）
 
 wheel 身份单一事实源 `backend/deskpet/sdk_adapters/sdk_candidate.py`。
