@@ -1,4 +1,6 @@
 """Integration tests for _execute_sdk_run function."""
+from types import SimpleNamespace
+
 import pytest
 from unittest.mock import AsyncMock, Mock, MagicMock, patch
 from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
@@ -29,6 +31,75 @@ async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run()
         {"role": "assistant", "content": "之前的回答"},
         {"role": "user", "content": "当前消息"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_sdk_message_assembly_excludes_non_conversation_projections_and_canaries():
+    from main import _assemble_sdk_messages
+
+    public_summary_canary = "PUBLIC_REASONING_SUMMARY_CANARY"
+    hidden_reasoning_canary = "HIDDEN_REASONING_CANARY"
+    ui_elapsed_canary = "耗时 1分钟 1秒"
+
+    class FakeSessionDB:
+        async def get_recent_messages(self, session_id, limit):
+            assert session_id == "session-canary"
+            assert limit == 20
+            return [
+                {
+                    "root_run_id": "run-old",
+                    "role": "user",
+                    "content": "保留的用户消息",
+                    "projection_kind": "user_message",
+                    "context_visibility": "conversation",
+                },
+                {
+                    "root_run_id": "run-old",
+                    "role": "assistant",
+                    "content": "保留的助手回复",
+                    "reasoning_content": hidden_reasoning_canary,
+                    "projection_kind": "assistant_message",
+                    "context_visibility": "conversation",
+                },
+                {
+                    "root_run_id": "run-old",
+                    "role": "assistant",
+                    "content": public_summary_canary,
+                    "projection_kind": "workflow_progress",
+                    "context_visibility": "exclude",
+                },
+                {
+                    "root_run_id": "run-old",
+                    "role": "assistant",
+                    "content": ui_elapsed_canary,
+                    "projection_kind": "workflow_final_status",
+                    "context_visibility": "exclude",
+                },
+                {
+                    "root_run_id": "run-old",
+                    "role": "assistant",
+                    "content": "MALFORMED_NON_CONVERSATION_PROJECTION",
+                    "projection_kind": "artifact_card",
+                    "context_visibility": "conversation",
+                },
+            ]
+
+    messages = await _assemble_sdk_messages(
+        FakeSessionDB(),
+        session_id="session-canary",
+        root_run_id="run-current",
+        text="当前用户消息",
+    )
+
+    assert messages == [
+        {"role": "user", "content": "保留的用户消息"},
+        {"role": "assistant", "content": "保留的助手回复"},
+        {"role": "user", "content": "当前用户消息"},
+    ]
+    serialized = repr(messages)
+    assert public_summary_canary not in serialized
+    assert hidden_reasoning_canary not in serialized
+    assert ui_elapsed_canary not in serialized
 
 
 def test_sdk_capability_snapshot_exposes_product_catalog():
@@ -89,6 +160,164 @@ def clear_registry():
     _delivery_adapters.clear()
     yield
     _delivery_adapters.clear()
+
+
+def _presentation_context(*, websocket, session_db, root_run_id):
+    from deskpet.agent.run_presenter import RunPresentationContext
+
+    return RunPresentationContext(
+        session_id="race-session",
+        text="read the project",
+        websocket=websocket,
+        services={},
+        config=SimpleNamespace(tools=SimpleNamespace(last_mile=None)),
+        messages=[],
+        session_db=session_db,
+        vector_worker=None,
+        activity_store=None,
+        provider_chain=None,
+        fallback_provider=None,
+        request_id="race-request",
+        max_iterations=25,
+        is_sentinel=False,
+        broadcast=AsyncMock(),
+        send_final=AsyncMock(),
+        emit_context_usage=AsyncMock(),
+        intent_label_from_turn=lambda _had_tool: "tool",
+        run_id=root_run_id,
+        task_scope_id="race-scope",
+        conversation_boundary_ref="race-boundary",
+    )
+
+
+@pytest.mark.asyncio
+async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkeypatch):
+    """A worker executing inside start() must already see its Run delivery."""
+    import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness import CallId
+    from simple_harness.tools import ToolCall, ToolResult
+
+    session_id = "race-session"
+    request_id = "race-request"
+    turn_id = 7
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(
+        session_id, request_id, str(turn_id)
+    ).value
+    saw_registered_adapter = False
+
+    class FirstTurnInsideStartIngress:
+        async def start(self, **kwargs):
+            nonlocal saw_registered_adapter
+            assert kwargs["session_id"] == session_id
+            delivery = _delivery_adapters.get(sdk_run_id)
+            saw_registered_adapter = delivery is not None
+            assert delivery is not None
+            call = ToolCall(CallId("call-during-start"), "file_read", {"path": "README.md"})
+            await delivery.capture_public_narration(
+                "I will inspect the project file.",
+                iteration=0,
+                call_ids=(call.call_id.value,),
+            )
+            await delivery.present_tool_call(call)
+            await delivery.present_tool_result(
+                call,
+                ToolResult.succeeded(call.call_id, {"content": "ok"}),
+            )
+            return SimpleNamespace(run_id=sdk_run_id)
+
+        async def wait_idle(self, run_id):
+            assert run_id == sdk_run_id
+
+        def query(self, run_id):
+            assert run_id == sdk_run_id
+            return SimpleNamespace(
+                state=SimpleNamespace(value="completed"),
+                value="completed",
+            )
+
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    session_db = SimpleNamespace(
+        get_recent_messages=AsyncMock(return_value=[]),
+        append_message=AsyncMock(),
+    )
+    context = _presentation_context(
+        websocket=websocket,
+        session_db=session_db,
+        root_run_id="canonical-root-race",
+    )
+    monkeypatch.setattr(main, "_sdk_ingress", FirstTurnInsideStartIngress())
+    monkeypatch.setattr(main, "_sdk_context_port", None)
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+
+    await main._execute_sdk_run(
+        session_id=session_id,
+        request_id=request_id,
+        turn_id=turn_id,
+        task_scope_id="race-scope",
+        text="read the project",
+        context=context,
+        websocket=websocket,
+        root_run_id="canonical-root-race",
+    )
+
+    assert saw_registered_adapter is True
+    frames = [item.args[0] for item in websocket.send_json.await_args_list]
+    assert any(frame["type"] == "chat_v2_reasoning_summary" for frame in frames)
+    assert any(frame["type"] == "tool_call" for frame in frames)
+    assert any(frame["type"] == "tool_result" for frame in frames)
+    persisted = [item.kwargs for item in session_db.append_message.await_args_list]
+    assert any(
+        row.get("content") == "I will inspect the project file."
+        and row.get("projection_kind") == "workflow_progress"
+        and row.get("context_visibility") == "exclude"
+        for row in persisted
+    )
+    assert sdk_run_id not in _delivery_adapters
+
+
+@pytest.mark.asyncio
+async def test_execute_sdk_run_cleans_pre_registered_delivery_when_start_fails(monkeypatch):
+    import main
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(
+        "race-session", "race-request", "9"
+    ).value
+    saw_registered_adapter = False
+
+    class FailingStartIngress:
+        async def start(self, **_kwargs):
+            nonlocal saw_registered_adapter
+            saw_registered_adapter = sdk_run_id in _delivery_adapters
+            raise RuntimeError("start failed")
+
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    session_db = SimpleNamespace(
+        get_recent_messages=AsyncMock(return_value=[]),
+        append_message=AsyncMock(),
+    )
+    context = _presentation_context(
+        websocket=websocket,
+        session_db=session_db,
+        root_run_id="canonical-root-start-failure",
+    )
+    monkeypatch.setattr(main, "_sdk_ingress", FailingStartIngress())
+
+    with pytest.raises(RuntimeError, match="start failed"):
+        await main._execute_sdk_run(
+            session_id="race-session",
+            request_id="race-request",
+            turn_id=9,
+            task_scope_id="race-scope",
+            text="read the project",
+            context=context,
+            websocket=websocket,
+            root_run_id="canonical-root-start-failure",
+        )
+
+    assert saw_registered_adapter is True
+    assert sdk_run_id not in _delivery_adapters
 
 
 @pytest.mark.asyncio

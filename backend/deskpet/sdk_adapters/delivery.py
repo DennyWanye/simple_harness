@@ -51,6 +51,37 @@ class ProductDeliveryAdapter:
         self._context = context
         self._state = state
         self._idempotency_seen: set[str] = set()
+        self._pending_public_narration: dict[int, str] = {}
+        self._staged_call_iterations: dict[str, int] = {}
+        self._tool_iterations: dict[str, int] = {}
+        self._next_tool_iteration = 0
+
+    async def capture_public_narration(
+        self,
+        content: str,
+        *,
+        iteration: int,
+        call_ids: tuple[str, ...],
+    ) -> None:
+        """Stage one Provider turn's public content and complete call identity set.
+
+        This method accepts only the Provider adapter's normalized public
+        ``message.content``. Private provider reasoning is intentionally not
+        part of this boundary.
+        """
+
+        stable_iteration = max(0, int(iteration))
+        narration = str(content).strip()
+        if narration:
+            self._pending_public_narration[stable_iteration] = narration
+        for call_id in call_ids:
+            normalized_call_id = str(call_id).strip()
+            if normalized_call_id:
+                self._staged_call_iterations[normalized_call_id] = stable_iteration
+        self._next_tool_iteration = max(
+            self._next_tool_iteration,
+            stable_iteration + 1,
+        )
 
     async def handle_event(
         self,
@@ -115,6 +146,38 @@ class ProductDeliveryAdapter:
     async def present_tool_call(self, call: Any) -> None:
         """Project an SDK Tool invocation through the existing chat presenter."""
 
+        call_id = call.call_id.value
+        staged_iteration = self._staged_call_iterations.pop(call_id, None)
+        if staged_iteration is None:
+            iteration = self._next_tool_iteration
+            self._next_tool_iteration += 1
+        else:
+            iteration = staged_iteration
+        narration = self._pending_public_narration.pop(iteration, "")
+        self._tool_iterations[call_id] = iteration
+
+        if narration:
+            try:
+                from agent.agent_loop import AssistantMessageEvent
+
+                await self._presenter.present(
+                    AssistantMessageEvent(
+                        content=narration,
+                        reasoning_content="",
+                        tool_calls=[],
+                        iteration=iteration,
+                    ),
+                    self._context,
+                    self._state,
+                )
+            except Exception as exc:  # noqa: BLE001 - projection is best-effort
+                logger.warning(
+                    "sdk_public_narration_projection_failed",
+                    tool_name=getattr(call, "name", ""),
+                    run_id=self._run_id,
+                    error_type=type(exc).__name__,
+                )
+
         try:
             from agent.agent_loop import ToolCallEvent
             from llm.types import ToolCall
@@ -126,7 +189,7 @@ class ProductDeliveryAdapter:
                         name=call.name,
                         arguments=dict(call.arguments),
                     ),
-                    iteration=0,
+                    iteration=iteration,
                 ),
                 self._context,
                 self._state,
@@ -142,6 +205,7 @@ class ProductDeliveryAdapter:
     async def present_tool_result(self, call: Any, result: Any) -> None:
         """Project and persist one settled SDK Tool result for live/history UI."""
 
+        iteration = self._tool_iterations.pop(call.call_id.value, 0)
         try:
             import json
 
@@ -168,7 +232,7 @@ class ProductDeliveryAdapter:
                     result=json.dumps(envelope, ensure_ascii=False),
                     outcome_status=result.outcome.value,
                     outcome_error=error,
-                    iteration=0,
+                    iteration=iteration,
                 ),
                 self._context,
                 self._state,
@@ -269,6 +333,10 @@ class ProductDeliveryAdapter:
         finally:
             # Clear idempotency tracking
             self._idempotency_seen.clear()
+            self._pending_public_narration.clear()
+            self._staged_call_iterations.clear()
+            self._tool_iterations.clear()
+            self._next_tool_iteration = 0
             # Don't re-raise - finish failure should not block Run completion
 
 

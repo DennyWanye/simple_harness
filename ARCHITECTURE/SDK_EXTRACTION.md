@@ -1,10 +1,10 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-19
+> 最后校准：2026-08-20
 > 代码基线：`d3f048e1`（host-revendor-0.1.3 完成）
 > 状态：SDK v0.1.3 为唯一生产 ingress（2026-08-19；0.1.3 对 0.1.2 纯新增——consumer adapter 加 model/tool_schemas，宿主 10-Port 零改动）。SSOT `sdk_candidate.py` 单点切换兑现：切版本只改三行常量。**切回 0.1.2 只需 revert `d3f048e1`。**
 
-## 0. 当前实施状态（2026-08-19 校正）
+## 0. 当前实施状态（2026-08-20 校正）
 
 **2026-08-17/19 之后的当前事实**（本节下方 2026-08-16 原始记录保留为历史）：
 
@@ -16,9 +16,14 @@
 - **保留的 harness 文件**：23 个（非 `__init__.py` 口径：contracts/ports/projector/context/profiles/skill_scope/kernel + 13 个引擎
   模块 + adapters/venues.py + product_turn_open.py + drivers/react_boundary.py），原因是
   companion/run_adapter.py → venues.py → kernel.py 依赖链与 6 个产品文件的契约类型引用。
+- **公开工作叙述与工具投影**：Provider adapter 只捕获 normalized assistant `content`，显式忽略
+  `reasoning_content`；Delivery adapter 在 tool call 前投影公开叙述，同一 Provider turn 多 call 共享
+  iteration 并按 call_id 对账结果。叙述持久化为 `workflow_progress/context_visibility=exclude`，
+  `_assemble_sdk_messages` 只允许普通 conversation 投影，避免 UI 摘要回灌下一轮。delivery 在
+  ingress.start 前预注册，消除首个 Provider/tool turn 丢投影竞态。
 - **已知残留（不阻塞主链路）**：companion/run_adapter.py 期望 `KernelRunClient` 但 main.py 传入 SDK
-  `RunClient`（接口不兼容，companion 后台功能当前不可用，修复需接口适配层）；memory_recall tool 注册
-  被 core-handler authority 清单挡住；curation 未接新 memory SDK。
+  `RunClient`（接口不兼容，companion 后台功能当前不可用，修复需接口适配层）；curation 未接新
+  memory SDK。产品 SDK 的 `memory_recall`/`memory_search` 已于 2026-08-20 接入真实只读查询。
 - **SDK 仓库已发布 v0.1.2**（release commit `91df02d`，dist/ 含 wheel + tar.gz）：新增消费者友好层
   `build_consumer_runtime` / `ConsumerRuntimePorts`（3 个 Protocol + database_path）、MemoryQueryPort /
   MemoryWritePort、quickstart/integration-guide/api 文档与 examples/minimal-consumer。宿主仍 vendor

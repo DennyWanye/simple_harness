@@ -12,7 +12,10 @@
 > **2026-07-18 v6 完成复验**：DeepResearch v6 已成为默认新 run 路由；Computer Use 真测覆盖 2024 国家统计局 exact 三次、2019 partial、generate-now 双击单 command 和重启/history，基础模型当时切换为 `deepseek-v4-pro` 1M。后端 815、前端 822、Rust 73 及 tsc/build/check 全绿。
 > **2026-07-20 v7 简化编排与文件交付**：新 run 默认 v7；Tokio 真机 run 显示 4 个真实子方向及逐项状态，重试原位更新且不重复为第 5 行。标准报告文件卡的打开、另存为、在文件夹中显示、复制路径均经真实点击；报告继续保存到既有 `DeepResearch` 目录，重启后历史投影保持唯一。该轮唯一 required 场景与 AC-1～AC-11 PASS；多类别矩阵为后续候选。
 >
-> **最后更新**: 2026-08-12（+ **Workbench UI 改版** r15 修复后续测：
+> **最后更新**: 2026-08-20（+ **SDK 公开思考过程与终态折叠**：公开叙述/工具卡按 Run 聚合，
+> 运行展开、终态折叠、手动重看、历史水合、隐藏 CoT 隔离与工具 outcome 恢复；DeepSeek macOS
+> Computer Use 主链已 PASS，全新 profile 无额外重启场景保持未重复执行）
+> **历史更新**: 2026-08-12（+ **Workbench UI 改版** r15 修复后续测：
 > WB-1～12 + 错误态/空态/托盘 B10/几何回退 B8/companion B5；TC-WB-08 已补齐可编辑设置的可逆持久化闭环并区分只读状态卡。
 > S07/S08/S13 已修复并真机 PASS；S10/S14/S16 托盘路径由用户在当前 macOS 打包版现场确认
 > PASS，退出终态和重启几何已独立对账。TC-WB-12 步骤 7 经用户批准移除；产品/testcase 层
@@ -31,6 +34,7 @@
 
 | 文档 | 被测功能 / 范围 | 测试目的 | 用例数 | 是否需 windows-mcp |
 |---|---|---|---|---|
+| [2026-08-20-sdk-thinking-process/testcases.md](./2026-08-20-sdk-thinking-process/testcases.md) | **SDK 公开思考过程**：Provider 公开叙述→durable exclude 投影、tool-only Run 分组、运行/终态折叠、手动 toggle、历史 hydration、乱序/幂等、隐藏 `reasoning_content` 与后续上下文隔离、工具 outcome 恢复。 | 验证用户可观察公开工作过程但绝不暴露私有 CoT；保证 DeepSeek 工具链、耗时与成功/失败状态跨重启稳定。 | 10 required + 1 smoke | **macOS Computer Use + 自动化；主链 PASS，独立 cold 场景未重复** |
 | [2026-08-13-simple-harness-sdk/manual-test.md](./2026-08-13-simple-harness-sdk/manual-test.md) | **Simple Harness SDK v0.1 独立黑盒验收**：exact wheel/三平台/纯净 import、公共合同、Provider/Tool、完整 durable Kernel、Agent 自主选择、三个官方 Workflow、schema v1/reset、Simple Harness exact-wheel cutover、发布与 AIPhone Handoff。 | 按 SDK-AC-1～8 与 SDK-S1～7 冻结分步 oracle；覆盖真实桌面价值、LLM payload 对抗、unknown/reconciliation、旧 authority 缺席、许可证与不可变制品；SR-9 产品首次登录 cold-start 单列 follow-up。 | 8 AC 门 + 7 required 场景 + 2 UI 边界/拒绝取消组 | **macOS Computer Use + 自动化/三平台 runner；PREPARED / NOT RUN** |
 | [workbench-ui/index.md](./workbench-ui/index.md) | **Workbench UI 改版（去桌宠、工作台化）**：主窗普通化、message-panel 移除、侧栏四视图（Chat/Skills/Artifacts/Settings）、会话列表迁位、companion 特权迁 main 窗（B5）、几何记忆与旧记录回退（B8）、托盘三项（B10）、设置可编辑项持久化/恢复与只读卡边界、桌宠代码全删、主题变量化、构建全绿。 | 按 acceptance WB-1～WB-12 + 非功能（错误态/空态）验收；旧数据迁移及 TC-WB-12 冷启动对照均经用户裁决退役。WB-1..10 真机手测，WB-9/11/12 脚本判定；r13 仅作历史证据。 | 18（TC-WB-01～18；15 真机 + 3 脚本） | **否**（本轮 mac 真机；Windows 无真机验证，acceptance 列为已知限制随后续补验）。状态：**r15 产品/testcase 层已收口；plan-test gate 按用户要求暂停** |
 | [2026-08-03-session-model-run-visibility/manual-test.md](./2026-08-03-session-model-run-visibility/manual-test.md) | **Session 模型一致性与 Agent 运行可见性**：Kimi 冷路径、≥10 轮多步骤任务、子任务失败后接管、后台 401/402 隔离、双 Session 停止与晚到事件。 | 验证 Session/root 冻结模型、Context Usage、公开读取模型、语义阶段图、紧凑脱敏工具详情与 terminal fence 在真实桌宠 UI 中一致。 | 5 required 场景 + 自动化回归入口 | **是，FROZEN / EXECUTED PASS（2026-08-03）** |

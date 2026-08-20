@@ -120,7 +120,7 @@ from deskpet.tool_catalog import load_tool_manifest
 
 dynamic = {
     'agent', 'agent_parallel', 'await_subagents', 'context_page_in',
-    'memory_recall', 'spawn_subagents', 'spawn_team', 'todo_write',
+    'memory_recall', 'memory_search', 'spawn_subagents', 'spawn_team', 'todo_write',
     'tool_activate', 'tool_describe', 'tool_search', 'web_search',
 }
 for item in load_tool_manifest().tools:
@@ -316,20 +316,20 @@ print(json.dumps({
     }
 
 
-def test_each_of_65_static_handler_resolutions_is_import_pure() -> None:
+def test_each_of_64_static_handler_resolutions_is_import_pure() -> None:
     from deskpet.tool_catalog import load_tool_manifest
 
     backend = Path(__file__).resolve().parents[2]
     dynamic = {
         "agent", "agent_parallel", "await_subagents", "context_page_in",
-        "memory_recall", "spawn_subagents", "spawn_team", "todo_write",
+        "memory_recall", "memory_search", "spawn_subagents", "spawn_team", "todo_write",
         "tool_activate", "tool_describe", "tool_search", "web_search",
     }
     descriptors = [
         item for item in load_tool_manifest().tools
         if str(item["name"]) not in dynamic
     ]
-    assert len(descriptors) == 65
+    assert len(descriptors) == 64
     env = dict(os.environ)
     env["PYTHONPATH"] = str(backend)
     probe = """
@@ -910,3 +910,195 @@ def test_sdk_tool_context_without_metadata_uses_app_workspace(
 
     asyncio.run(case())
     assert (profile / "workspace" / "sdk-bound.txt").read_text() == "bound"
+
+
+def test_memory_recall_and_search_dispatch_to_live_memory_sdk_for_ordinary_run(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+
+    from deskpet.companion.contracts import CompanionStateError
+    from deskpet.memory.recall_adapter import OwnerMemoryRecallQueryAdapter
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    class OrdinaryRunScopeResolver:
+        def resolve_for_run(self, _run_id):
+            raise CompanionStateError("owner_memory_scope_missing_or_ambiguous")
+
+    async def case() -> None:
+        memory_backend = SQLiteMemoryBackend(
+            str(tmp_path / "memory.db"),
+            auto_extract_facts=False,
+        )
+        await memory_backend.initialize()
+        await memory_backend.append_message(
+            "session-memory",
+            "user",
+            "The project codename is Aurora Zebra.",
+        )
+        dependencies = _catalog_dependencies(
+            ContextPageInStore(),
+            SimpleNamespace(
+                session_id="session-memory",
+                request_id="request-memory",
+                scope_id="scope-memory",
+            ),
+        )
+        dependencies = type(dependencies)(
+            dependencies.todo_session_db,
+            dependencies.workflow_service_provider,
+            dependencies.context_page_store,
+            dependencies.execution_context_getter,
+            OwnerMemoryRecallQueryAdapter(memory_backend),
+            OrdinaryRunScopeResolver(),
+            dependencies.capability_bridge_service,
+            dependencies.search_gateway,
+        )
+        registry, _ = build_product_tool_registry(
+            build_explicit_product_tool_catalog(dependencies).registrations
+        )
+        context = ToolContext(
+            RunId("ordinary-sdk-run"),
+            RequestId("ordinary-sdk-request"),
+            CancellationToken(),
+        )
+        try:
+            recall = await registry.invoke(
+                ToolCall(
+                    CallId("memory-recall-call"),
+                    "memory_recall",
+                    {"query": "Aurora Zebra", "limit": 5},
+                ),
+                context,
+            )
+            search = await registry.invoke(
+                ToolCall(
+                    CallId("memory-search-call"),
+                    "memory_search",
+                    {"query": "Aurora Zebra", "top_k": 5},
+                ),
+                context,
+            )
+        finally:
+            await memory_backend.close()
+
+        assert recall.outcome is ToolOutcome.SUCCEEDED
+        assert search.outcome is ToolOutcome.SUCCEEDED
+        recall_items = thaw_json(recall.value)["items"]
+        search_items = thaw_json(search.value)["items"]
+        assert recall_items[0]["text"] == "The project codename is Aurora Zebra."
+        assert search_items[0]["text"] == "The project codename is Aurora Zebra."
+
+    asyncio.run(case())
+
+
+@pytest.mark.parametrize("tool_name", ["memory_recall", "memory_search"])
+@pytest.mark.parametrize(
+    ("scope_mode", "expected_error"),
+    [
+        ("valid", None),
+        ("none", "memory_scope_resolver_invalid_result"),
+        ("wrong_type", "memory_scope_resolver_invalid_result"),
+        ("other_companion_error", "owner_memory_scope_dependency_hash_mismatch"),
+        ("ordinary_missing_scope", None),
+    ],
+)
+def test_memory_read_handlers_fail_closed_except_exact_ordinary_scope_absence(
+    tool_name: str,
+    scope_mode: str,
+    expected_error: str | None,
+) -> None:
+    import asyncio
+
+    from deskpet.companion.companion_message_projection import (
+        OwnerMemoryReadScopeV1,
+        canonical_hash,
+    )
+    from deskpet.companion.contracts import CompanionStateError
+    from deskpet.memory.recall_adapter import (
+        build_memory_recall_handlers,
+        build_memory_search_handler,
+    )
+
+    session_ids = ("session-owner",)
+    session_set = {
+        "profile_id": "profile-owner",
+        "profile_generation": 1,
+        "binding_epoch": 1,
+        "session_set_version": 1,
+        "session_ids": list(session_ids),
+    }
+    session_set_hash = canonical_hash(session_set)
+    scope = OwnerMemoryReadScopeV1(
+        profile_id="profile-owner",
+        profile_generation=1,
+        binding_epoch=1,
+        session_ids=session_ids,
+        session_set_version=1,
+        session_set_hash=session_set_hash,
+        as_of_message_id=7,
+        scope_hash=canonical_hash({
+            "schema_version": 1,
+            "profile_id": "profile-owner",
+            "profile_generation": 1,
+            "binding_epoch": 1,
+            "session_set_version": 1,
+            "session_set_hash": session_set_hash,
+            "as_of_message_id": 7,
+        }),
+    )
+
+    class Query:
+        def __init__(self) -> None:
+            self.scopes = []
+
+        async def recall_readonly(self, _query, _limit, owner_scope):
+            self.scopes.append(owner_scope)
+            return []
+
+    class Resolver:
+        def resolve_for_run(self, _run_id):
+            if scope_mode == "valid":
+                return scope
+            if scope_mode == "none":
+                return None
+            if scope_mode == "wrong_type":
+                return object()
+            if scope_mode == "other_companion_error":
+                raise CompanionStateError(
+                    "owner_memory_scope_dependency_hash_mismatch"
+                )
+            raise CompanionStateError("owner_memory_scope_missing_or_ambiguous")
+
+    query = Query()
+    resolver = Resolver()
+    if tool_name == "memory_recall":
+        _reject, handler = build_memory_recall_handlers(query, resolver)
+        arguments = {"query": "Aurora", "limit": 5}
+    else:
+        handler = build_memory_search_handler(query, resolver)
+        arguments = {"query": "Aurora", "top_k": 5}
+    context = SimpleNamespace(run_id="run-memory", root_run_id="run-memory")
+
+    async def case() -> None:
+        if expected_error is None:
+            payload = json.loads(await handler(arguments, context))
+            assert payload == {"items": [], "ok": True}
+            assert query.scopes == [scope if scope_mode == "valid" else None]
+            return
+        error_type = (
+            CompanionStateError
+            if scope_mode == "other_companion_error"
+            else RuntimeError
+        )
+        with pytest.raises(error_type, match=expected_error):
+            await handler(arguments, context)
+        assert query.scopes == []
+
+    asyncio.run(case())

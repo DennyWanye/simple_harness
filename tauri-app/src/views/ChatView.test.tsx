@@ -33,7 +33,20 @@ vi.mock("../components/MessageStreamPanel", async (importOriginal) => {
   const mod = await importOriginal<Record<string, unknown>>();
   return {
     ...mod,
-    MessageStreamPanel: () => <div data-testid="stub-message-stream" />,
+    MessageStreamPanel: (props: {
+      chatMessages?: Array<{ role: string; text?: string }>;
+    }) => (
+      <div data-testid="stub-message-stream">
+        {(props.chatMessages ?? []).map((message, index) => (
+          <span
+            key={`${message.role}:${message.text ?? ""}:${index}`}
+            data-stream-role={message.role}
+          >
+            {message.text}
+          </span>
+        ))}
+      </div>
+    ),
   };
 });
 vi.mock("../chat/HarnessInspectorPanel", () => ({
@@ -174,5 +187,66 @@ describe("ChatView（WB-4）", () => {
     expect(screen.getByTestId("chat-conn-status").textContent).toContain(
       "后端启动中",
     );
+  });
+
+  it("keeps observable tool/progress inputs independent and removes both when both are hidden", () => {
+    const original = useSessionsStore.getState().sessions.default;
+    useSessionsStore.setState((state) => ({
+      ...state,
+      sessions: {
+        ...state.sessions,
+        default: {
+          ...original,
+          messages: [{
+            id: "summary-visible",
+            role: "reasoning_summary",
+            text: "公开工作叙述",
+            run_id: "run-visible",
+            reasoning_summary_id: "summary-visible",
+            reasoning_status: "running",
+            ts: 1_000,
+          }, {
+            id: "tool-call-visible",
+            role: "tool_call",
+            text: "",
+            run_id: "run-visible",
+            tool_name: "file_read",
+            tool_args: { path: "README.md" },
+            ts: 2_000,
+          }, {
+            id: "tool-result-visible",
+            role: "tool_result",
+            text: "",
+            run_id: "run-visible",
+            tool_name: "file_read",
+            tool_ok: true,
+            tool_result: "done",
+            ts: 3_000,
+          }, {
+            id: "final-visible",
+            role: "assistant",
+            text: "最终回复",
+            run_id: "run-visible",
+            ts: 4_000,
+          }],
+        },
+      },
+    }));
+    render(<ChatView activeSid="default" secret="s3cret" />);
+    const streamRoles = () => Array.from(
+      screen.getByTestId("stub-message-stream").querySelectorAll("[data-stream-role]"),
+    ).map((element) => element.getAttribute("data-stream-role"));
+
+    expect(streamRoles()).toEqual(["progress", "tool", "tool", "assistant"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "隐藏执行进度" }));
+    expect(streamRoles()).toEqual(["tool", "tool", "assistant"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "显示执行进度" }));
+    fireEvent.click(screen.getByRole("button", { name: "隐藏工具消息" }));
+    expect(streamRoles()).toEqual(["progress", "assistant"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "隐藏执行进度" }));
+    expect(streamRoles()).toEqual(["assistant"]);
   });
 });

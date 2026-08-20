@@ -19,6 +19,8 @@ import type {
   TaskRunProjectionState,
   WorkflowProgressStatus,
 } from "../stores/sessionsStore";
+import { useSessionsStore } from "../stores/sessionsStore";
+import { __test_dispatch } from "../code-panel/controlWs";
 import type { HarnessInspectorSnapshot, PublicRunSnapshotV3 } from "../types/messages";
 import { MessageStreamPanel, type ChatStreamMessage } from "./MessageStreamPanel";
 
@@ -494,6 +496,363 @@ describe("WorkflowProgressRow (AC-23)", () => {
     completed.message.workflow_version = "v6";
     rendered.rerender(panel([completed], onWorkflowRetry));
     expect(screen.queryByRole("button", { name: "立即用现有证据生成" })).toBeNull();
+  });
+});
+
+describe("ThinkingProcessGroup (AC-9)", () => {
+  const thinkingMessages = (): ChatStreamMessage[] => [{
+    role: "progress",
+    runId: "run-thinking",
+    text: "我会先检查项目结构，再选择需要修改的文件。",
+    ts: 2_000,
+    status: "running",
+  }, {
+    role: "tool",
+    runId: "run-thinking",
+    text: "调用 file_read",
+    ts: 3_000,
+    toolName: "file_read",
+    toolArgs: { path: "src/App.tsx" },
+  }];
+
+  const projection = (
+    status: TaskRunProjectionState["status"],
+    startedAt = 1_000,
+    lastActivity = 62_000,
+  ): Record<string, TaskRunProjectionState> => ({
+    "run-thinking": {
+      run_id: "run-thinking",
+      task_scope_id: "scope-thinking",
+      version: 1,
+      status,
+      inflight: !["completed", "failed", "cancelled"].includes(status),
+      ui_state: "open",
+      started_at: startedAt,
+      last_activity: lastActivity,
+    },
+  });
+
+  it("groups public narration and tool trace by canonical Run and expands while running", () => {
+    render(panel(thinkingMessages(), undefined, undefined, projection("running")));
+
+    const group = screen.getByTestId("thinking-process-run-thinking");
+    expect(group.getAttribute("data-status")).toBe("running");
+    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("我会先检查项目结构，再选择需要修改的文件。")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /file_read/ })).toBeTruthy();
+  });
+
+  it.each(["starting", "waiting", "running"] as const)(
+    "defaults %s Run thinking to expanded",
+    (status) => {
+      render(panel(thinkingMessages(), undefined, undefined, projection(status)));
+      expect(
+        screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded"),
+      ).toBe("true");
+    },
+  );
+
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "defaults historical %s Run thinking to collapsed",
+    (status) => {
+      render(panel(thinkingMessages(), undefined, undefined, projection(status)));
+      expect(
+        screen.getByRole("button", { name: /耗时/ }).getAttribute("aria-expanded"),
+      ).toBe("false");
+    },
+  );
+
+  it("auto-collapses on terminal transition, reports elapsed time, and permits manual toggle", () => {
+    const rendered = render(panel(
+      thinkingMessages(),
+      undefined,
+      undefined,
+      projection("running"),
+    ));
+    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded")).toBe("true");
+
+    rendered.rerender(panel(
+      thinkingMessages(),
+      undefined,
+      undefined,
+      projection("completed"),
+    ));
+    const header = screen.getByRole("button", { name: /耗时 1 分 1 秒/ });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("我会先检查项目结构，再选择需要修改的文件。")).toBeNull();
+
+    fireEvent.click(header);
+    expect(header.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("我会先检查项目结构，再选择需要修改的文件。")).toBeTruthy();
+    fireEvent.click(header);
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("keeps historical terminal Runs collapsed and degrades missing duration to 已完成", () => {
+    render(panel(
+      thinkingMessages(),
+      undefined,
+      undefined,
+      projection("failed", 1_000, 1_000),
+    ));
+
+    const header = screen.getByRole("button", { name: "已完成" });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("我会先检查项目结构，再选择需要修改的文件。")).toBeNull();
+  });
+
+  it("keeps a tool-only SDK Run elapsed time stable after history hydration without a projection", () => {
+    render(panel([
+      {
+        role: "user",
+        runId: "run-history-tool-only",
+        text: "读取测试文件",
+        ts: 1_000,
+      },
+      {
+        role: "tool",
+        runId: "run-history-tool-only",
+        text: "调用 file_read",
+        ts: 6_000,
+        toolName: "file_read",
+        toolArgs: { path: "README.md" },
+      },
+      {
+        role: "tool",
+        runId: "run-history-tool-only",
+        text: "file_read 完成",
+        ts: 11_000,
+        toolName: "file_read",
+        toolOk: true,
+        toolResultRaw: "done",
+      },
+      {
+        role: "assistant",
+        runId: "run-history-tool-only",
+        text: "读取完成。",
+        ts: 20_000,
+      },
+    ]));
+
+    const header = screen.getByRole("button", { name: "耗时 19 秒" });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByText("读取完成。")).toBeTruthy();
+  });
+
+  it("never renders NaN or a negative duration when terminal timestamps are reversed", () => {
+    render(panel(
+      thinkingMessages(),
+      undefined,
+      undefined,
+      projection("cancelled", 62_000, 1_000),
+    ));
+
+    const header = screen.getByRole("button", { name: "已完成" });
+    expect(header.textContent).not.toMatch(/NaN|-/);
+  });
+
+  it("keeps a terminal group collapsed after a late running upsert for the same Run", () => {
+    const sid = "thinking-terminal-lock";
+    const store = useSessionsStore.getState();
+    store.ensure(sid);
+    store.upsert_run_projection(sid, "run-thinking", {
+      task_scope_id: "scope-thinking",
+      status: "completed",
+      inflight: false,
+      ui_state: "open",
+      started_at: 1_000,
+      last_activity: 62_000,
+    });
+    store.upsert_run_projection(sid, "run-thinking", {
+      status: "running",
+      inflight: true,
+    });
+    const durable = useSessionsStore.getState().sessions[sid].run_projections;
+    render(panel(thinkingMessages(), undefined, undefined, durable));
+
+    expect(screen.getByTestId("thinking-process-run-thinking").getAttribute("data-status"))
+      .toBe("completed");
+    expect(screen.getByRole("button", { name: /耗时 1 分 1 秒/ }).getAttribute("aria-expanded"))
+      .toBe("false");
+  });
+
+  it("bounds an expanded long public narration with an internal scroll container", () => {
+    const long = "公开工作叙述。".repeat(2_000);
+    render(panel([{
+      role: "progress",
+      runId: "run-long",
+      text: long,
+      ts: Date.now(),
+      status: "running",
+    }], undefined, undefined, {
+      "run-long": {
+        ...projection("running")["run-thinking"],
+        run_id: "run-long",
+        started_at: Date.now(),
+        last_activity: Date.now(),
+      },
+    }));
+
+    const body = screen.getByTestId("thinking-process-body-run-long");
+    expect(body.style.maxHeight).toBe("360px");
+    expect(body.style.overflowY).toBe("auto");
+  });
+
+  it("deduplicates repeated Run events but leaves legacy messages without runId flat", () => {
+    const messages = thinkingMessages();
+    render(panel([
+      messages[0],
+      { ...messages[0] },
+      messages[1],
+      { role: "progress", text: "旧版公开进度", ts: 4_000, status: "completed" },
+    ], undefined, undefined, projection("running")));
+
+    expect(screen.getAllByTestId("thinking-process-run-thinking")).toHaveLength(1);
+    expect(screen.getAllByText("我会先检查项目结构，再选择需要修改的文件。")).toHaveLength(1);
+    expect(screen.getByText("旧版公开进度")).toBeTruthy();
+  });
+
+  it("groups a tool-only Run as observable thinking without inventing narration", () => {
+    const rendered = render(panel([{
+      role: "tool",
+      runId: "run-tool-only",
+      text: "调用 file_read",
+      ts: 2_000,
+      toolName: "file_read",
+      toolArgs: { path: "README.md" },
+    }, {
+      role: "tool",
+      runId: "run-tool-only",
+      text: "file_read 完成",
+      ts: 3_000,
+      toolName: "file_read",
+      toolOk: true,
+      toolResultRaw: "done",
+    }, {
+      role: "assistant",
+      runId: "run-tool-only",
+      text: "最终回复仍然正常显示。",
+      ts: 4_000,
+    }], undefined, undefined, {
+      "run-tool-only": {
+        run_id: "run-tool-only",
+        task_scope_id: "scope-tool-only",
+        version: 2,
+        status: "completed",
+        inflight: false,
+        ui_state: "open",
+        started_at: 1_000,
+        last_activity: 5_000,
+      },
+    }));
+
+    const group = screen.getByTestId("thinking-process-run-tool-only");
+    expect(group.getAttribute("data-status")).toBe("completed");
+    const header = screen.getByRole("button", { name: /耗时 4 秒/ });
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(rendered.container.querySelectorAll('[data-role="tool"]')).toHaveLength(0);
+    fireEvent.click(header);
+    expect(rendered.container.querySelectorAll('[data-role="tool"]')).toHaveLength(2);
+    expect(screen.queryByText(/公开工作叙述/)).toBeNull();
+    expect(screen.getByText("最终回复仍然正常显示。")).toBeTruthy();
+  });
+
+  it("expands a running tool-only Run and omits a group only when no observable rows remain", () => {
+    const runningTool: ChatStreamMessage = {
+      role: "tool",
+      runId: "run-tool-running",
+      text: "调用 file_read",
+      ts: 2_000,
+      toolName: "file_read",
+      toolArgs: { path: "README.md" },
+    };
+    const rendered = render(panel([runningTool], undefined, undefined, {
+      "run-tool-running": {
+        run_id: "run-tool-running",
+        task_scope_id: "scope-tool-running",
+        version: 1,
+        status: "running",
+        inflight: true,
+        ui_state: "open",
+        started_at: 1_000,
+        last_activity: 2_000,
+      },
+    }));
+
+    expect(screen.getByTestId("thinking-process-run-tool-running")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /思考中/ }).getAttribute("aria-expanded"))
+      .toBe("true");
+    expect(rendered.container.querySelectorAll('[data-role="tool"]')).toHaveLength(1);
+
+    rendered.rerender(panel([], undefined, undefined, {
+      "run-tool-running": {
+        run_id: "run-tool-running",
+        task_scope_id: "scope-tool-running",
+        version: 1,
+        status: "running",
+        inflight: true,
+        ui_state: "open",
+        started_at: 1_000,
+        last_activity: 2_000,
+      },
+    }));
+    expect(screen.queryByTestId("thinking-process-run-tool-running")).toBeNull();
+  });
+
+  it("rehydrates a durable summary with its Run id and collapses it from terminal projection authority", () => {
+    const sid = "thinking-hydration";
+    useSessionsStore.getState().ensure(sid);
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: sid,
+        messages: [{
+          id: "persisted-summary",
+          role: "assistant",
+          text: "恢复后的公开工作叙述。",
+          projection_kind: "workflow_progress",
+          workflow_event_id: "reasoning-summary:run-hydrated:1:status",
+          run_id: "run-hydrated",
+          task_scope_id: "scope-hydrated",
+          ts: 2_000,
+        }],
+      },
+    });
+    __test_dispatch({
+      type: "task_projections_response",
+      payload: {
+        session_id: sid,
+        projections: [{
+          projection_id: "projection-hydrated",
+          run_id: "run-hydrated",
+          task_scope_id: "scope-hydrated",
+          ui_state: "open",
+          version: 4,
+          status: "completed",
+          started_at: 1,
+          updated_at: 3,
+          ended_at: 3,
+        }],
+      },
+    });
+
+    const hydrated = useSessionsStore.getState().sessions[sid];
+    const summary = hydrated.messages.find((message) =>
+      message.role === "reasoning_summary");
+    expect(summary).toMatchObject({ run_id: "run-hydrated" });
+    render(panel([{
+      role: "progress",
+      runId: summary?.run_id,
+      text: summary?.text ?? "",
+      ts: summary?.ts ?? 0,
+      phase: summary?.reasoning_phase,
+      status: summary?.reasoning_status,
+    }], undefined, undefined, hydrated.run_projections));
+
+    expect(screen.getByTestId("thinking-process-run-hydrated").getAttribute("data-status"))
+      .toBe("completed");
+    expect(screen.getByRole("button", { name: /耗时 2 秒/ }).getAttribute("aria-expanded"))
+      .toBe("false");
   });
 });
 

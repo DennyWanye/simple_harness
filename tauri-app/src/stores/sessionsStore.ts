@@ -1695,6 +1695,16 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
       const now = Date.now();
       const currentProjections = cur.run_projections ?? {};
       const existing = currentProjections[runId];
+      const staleNonTerminalLifecycle =
+        isTerminalTaskRunStatus(existing?.status) &&
+        patch.status !== undefined &&
+        !isTerminalTaskRunStatus(patch.status);
+      if (staleNonTerminalLifecycle) {
+        // Ignore the whole stale lifecycle frame, not just its status. Its
+        // timestamps/version/scope belong to an older observation and must
+        // not mutate the authoritative terminal projection or its duration.
+        return state;
+      }
       // A durable Run is immutable after reaching a terminal state. WebSocket
       // delivery can legitimately reorder a terminal lifecycle snapshot and an
       // older permission/progress event, so never let that older event reopen

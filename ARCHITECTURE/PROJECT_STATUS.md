@@ -2,6 +2,23 @@
 
 > **最后更新**：2026-08-20
 
+## 2026-08-20 SDK 公开思考过程、工具水合与记忆工具真机闭环
+
+- **UI 行为**：同一 canonical Run 的公开工作叙述和工具卡组成唯一思考分组；运行态自动展开并
+  计时，终态自动折叠，点击可反复查看，最终回复保持独立。tool-only DeepSeek Run 同样分组，
+  两类全局隐藏开关均关闭内容时不产生空组。
+- **安全边界**：只投影模型公开 assistant content；隐藏 `reasoning_content`/CoT 永不进入 UI、
+  durable summary 或后续模型 context。公开 summary 固定 `context_visibility=exclude`，上下文组装
+  另以 conversation projection allowlist 兜底。
+- **工具修复**：普通 SDK Run 的 `memory_recall` 不再错误依赖 Companion generation-0 snapshot；
+  `memory_search` 从 retired stub 切到真实 MemoryBackend。scope fallback 仅允许精确缺失异常，其他
+  非法结果 fail closed。tool durable envelope 保留五态 outcome，web failure 不再在重启后漂绿。
+- **验证**：相关 backend `87 passed`，全前端 `600 passed`，TypeScript、debug build、diff check
+  PASS。Computer Use 使用用户配置的 `deepseek-v4-flash` 真实运行：5 秒时自动展开，
+  `memory_recall/memory_search/read_file×2` 全成功；19 秒终态自动折叠、手动开合成功，完整重启后
+  仍为 19 秒且四组结果保持 `ok`。Session `1a5883b0-b50f-41fb-ada1-50f8811dca2e`；原始证据只在
+  ignored `.local-test-evidence/2026-08-20/sdk-thinking-process-run-1/`。
+
 ## 2026-08-20 升级后 Computer Use 全工作台回归与修复
 
 - **真机覆盖**：当前源码 debug `.app` 在隔离 profile 上通过首次设置、会话、技能中心、产物库、

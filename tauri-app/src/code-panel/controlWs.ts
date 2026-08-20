@@ -141,6 +141,84 @@ function persistedWorkflowFileArtifact(workflowEvent: unknown): Record<string, u
   return null;
 }
 
+function publicToolErrorText(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function persistedToolOutcome(text: unknown): {
+  ok: boolean;
+  error?: string;
+  toolName?: string;
+} {
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    const value = JSON.parse(String(text || ""));
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      parsed = value as Record<string, unknown>;
+    }
+  } catch {
+    parsed = null;
+  }
+  if (!parsed) return { ok: true };
+
+  const durableMeta = parsed._deskpet_tool_outcome_v1;
+  const meta = durableMeta && typeof durableMeta === "object" && !Array.isArray(durableMeta)
+    ? durableMeta as Record<string, unknown>
+    : null;
+  const outcomeValue = parsed.outcome;
+  const outcome = typeof outcomeValue === "string"
+    ? outcomeValue.trim().toLowerCase()
+    : "";
+  const explicitOk = typeof parsed.ok === "boolean" ? parsed.ok : undefined;
+  const status = typeof parsed.status === "string"
+    ? parsed.status.trim().toLowerCase()
+    : "";
+  const successfulOutcomes = ["succeeded"];
+  const failedOutcomes = ["partial", "rejected", "failed", "unknown"];
+  const successfulStatuses = ["succeeded", "completed", "ok"];
+  const failedStatuses = [
+    "partial", "rejected", "failed", "unknown", "cancelled", "denied",
+  ];
+  const legacyOutcome = typeof meta?.outcome === "string"
+    ? meta.outcome.trim().toLowerCase()
+    : "";
+  const knownOutcome = successfulOutcomes.includes(outcome)
+    ? true
+    : failedOutcomes.includes(outcome)
+      ? false
+      : undefined;
+  const knownStatus = successfulStatuses.includes(status)
+    ? true
+    : failedStatuses.includes(status)
+      ? false
+      : undefined;
+  const legacyKnownOutcome = successfulOutcomes.includes(legacyOutcome)
+    ? true
+    : failedOutcomes.includes(legacyOutcome)
+      ? false
+      : undefined;
+  const ok = knownOutcome ?? explicitOk ?? knownStatus ?? legacyKnownOutcome ?? false;
+  const structuredError = parsed.error ?? (
+    parsed.error_code || parsed.public_message
+      ? {
+          code: parsed.error_code,
+          message: parsed.public_message,
+        }
+      : undefined
+  ) ?? meta?.error;
+  return {
+    ok,
+    error: ok ? undefined : publicToolErrorText(structuredError),
+    toolName: typeof parsed.tool === "string" ? parsed.tool : undefined,
+  };
+}
+
 // P4-S23 fix: stash the live socket on globalThis so vite HMR (which
 // may swap this module while the old WebSocket is still mid-handshake)
 // can find and close the previous instance instead of stacking
@@ -920,8 +998,16 @@ function dispatch(msg: any) {
     }
     case "chat_response": {
       // Mid-loop assistant text (with tool calls). Render as assistant bubble.
-      const text = msg.payload?.text;
-      if (text) store.push_message(sid, { role: "assistant", text });
+      const p = msg.payload || {};
+      const text = p.text;
+      if (text) {
+        store.push_message(sid, {
+          role: "assistant",
+          text,
+          run_id: String(p.run_id || "").trim() || undefined,
+          task_scope_id: String(p.task_scope_id || "").trim() || undefined,
+        });
+      }
       break;
     }
     case "chat_v2_delta": {
@@ -1041,6 +1127,13 @@ function dispatch(msg: any) {
       let current = store.sessions[sid];
       if (current) {
         const runId = String(p.run_id || "").trim();
+        const runProjection = runId
+          ? current.run_projections?.[runId]
+          : undefined;
+        const runIsKnownNonTerminal = runProjection !== undefined &&
+          runProjection.status !== "completed" &&
+          runProjection.status !== "failed" &&
+          runProjection.status !== "cancelled";
         const lastUserIndex = current.messages.findLastIndex(
           (message) => message.role === "user",
         );
@@ -1048,10 +1141,10 @@ function dispatch(msg: any) {
           (message, index) =>
             !(
               index > lastUserIndex &&
-              (message.role === "assistant" ||
-                message.role === "assistant_delta") &&
+              runIsKnownNonTerminal &&
+              (message.role === "assistant_delta" || message.role === "assistant") &&
               String(message.text || "").trim() === text &&
-              (!runId || !message.run_id || message.run_id === runId)
+              message.run_id === runId
             ),
         );
         if (withoutLiveDuplicate.length !== current.messages.length) {
@@ -1517,16 +1610,27 @@ function dispatch(msg: any) {
       ) {
         break;
       }
-      const resultRaw =
+      const baseResultRaw =
         Array.isArray(p.artifacts) && p.artifacts.length > 0
           ? JSON.stringify(p)
           : p.result;
+      const liveError = publicToolErrorText(p.error) ?? (
+        p.ok === false && typeof p.status === "string" ? p.status : undefined
+      );
+      const resultRaw = p.ok === false && liveError
+        ? JSON.stringify({
+            status: typeof p.status === "string" ? p.status : "failed",
+            error: p.error ?? liveError,
+            result: baseResultRaw,
+          })
+        : baseResultRaw;
       store.push_message(sid, {
         id: messageId,
         role: "tool_result",
         tool_name: p.tool,
         tool_ok: p.ok,
         tool_result: resultRaw,
+        tool_error: liveError,
         workflow_event_id: workflowEventId || undefined,
         run_id: String(p.run_id || "") || undefined,
         task_scope_id: String(p.task_scope_id || "") || undefined,
@@ -1678,19 +1782,14 @@ function dispatch(msg: any) {
           // Tool reply row → tool_result bubble. Reverse-map tool name
           // via the previously-built tcid → name dictionary.
           const tcid: string | undefined = m.tool_call_id;
-          let embeddedToolName: string | undefined;
-          try {
-            const parsed = JSON.parse(String(m.text || ""));
-            embeddedToolName = typeof parsed?.tool === "string" ? parsed.tool : undefined;
-          } catch {
-            embeddedToolName = undefined;
-          }
+          const durableOutcome = persistedToolOutcome(m.text);
           restored.push({
             id: base_id,
             role: "tool_result",
-            tool_name: (tcid && tcid_to_name.get(tcid)) || embeddedToolName,
-            tool_ok: true,
+            tool_name: (tcid && tcid_to_name.get(tcid)) || durableOutcome.toolName,
+            tool_ok: durableOutcome.ok,
             tool_result: m.text || "",
+            tool_error: durableOutcome.error,
             run_id: m.run_id || undefined,
             task_scope_id: m.task_scope_id || undefined,
             ts,

@@ -9406,7 +9406,21 @@ async def _assemble_sdk_messages(
                     continue
                 role = str(row.get("role") or "")
                 content = str(row.get("content") or "")
-                if role in {"user", "assistant"} and content:
+                visibility = str(row.get("context_visibility") or "conversation")
+                projection = str(row.get("projection_kind") or "legacy_message")
+                allowed_projections = {
+                    "user": {"legacy_message", "user_message"},
+                    "assistant": {
+                        "legacy_message",
+                        "assistant_message",
+                        "final_assistant",
+                    },
+                }
+                if (
+                    visibility == "conversation"
+                    and projection in allowed_projections.get(role, set())
+                    and content
+                ):
                     history_messages.append({"role": role, "content": content})
         except Exception as exc:  # noqa: BLE001 - history must not block a run
             logger.warning(
@@ -9472,6 +9486,7 @@ async def _execute_sdk_run(
     )
     from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
     from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
     session_db = getattr(context, "session_db", None)
 
@@ -9494,19 +9509,17 @@ async def _execute_sdk_run(
     adapter = CanonicalRunEventPresentationAdapter()
     state = PresentationState()
 
-    # Call SDK Runtime to start execution
-    receipt = await _sdk_ingress.start(
-        session_id=session_id,
-        request_id=request_id,
-        turn_id=str(turn_id),
-        payload=payload,
-        session_generation=1,  # TODO: Get actual generation from context
-    )
-
-    # SDK owns an internal execution id, while the product UI and SessionDB
-    # use the canonical root id reserved by Host. Keep the two identities
-    # separate so the final frame settles the same projection that started.
-    sdk_run_id = receipt.run_id
+    # SDK owns a deterministic internal execution id, while the product UI and
+    # SessionDB use the canonical root id reserved by Host. Predict the SDK id
+    # from the ingress's single identity function so the delivery bridge can be
+    # registered *before* start() makes the Run visible to a worker. Registering
+    # after awaiting start() races a fast first Provider/tool turn and silently
+    # drops its public narration and tool lifecycle.
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+        session_id,
+        request_id,
+        str(turn_id),
+    ).value
 
     # Create ProductDeliveryAdapter for this run
     delivery_adapter = ProductDeliveryAdapter(
@@ -9519,10 +9532,21 @@ async def _execute_sdk_run(
         state=state,
     )
 
-    # Register adapter in global registry (for _DeliverySink routing)
+    # Register adapter in global registry before SDK start (for Provider,
+    # ProductToolsAdapter, and _DeliverySink routing).
     _delivery_adapters[sdk_run_id] = delivery_adapter
 
     try:
+        receipt = await _sdk_ingress.start(
+            session_id=session_id,
+            request_id=request_id,
+            turn_id=str(turn_id),
+            payload=payload,
+            session_generation=1,  # TODO: Get actual generation from context
+        )
+        if receipt.run_id != sdk_run_id:
+            raise RuntimeError("SDK ingress returned an unexpected Run identity")
+
         # Send run_started event to WebSocket
         started = {
             "type": "chat_v2_run_started",

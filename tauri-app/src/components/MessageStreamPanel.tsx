@@ -75,6 +75,7 @@ export type ChatStreamMessage =
       role: "user" | "assistant" | "tool";
       text: string;
       ts: number;
+      runId?: string;
       toolName?: string;
       toolArgs?: Record<string, unknown>;
       toolOk?: boolean;
@@ -86,6 +87,7 @@ export type ChatStreamMessage =
       role: "progress";
       text: string;
       ts: number;
+      runId?: string;
       phase?: Message["reasoning_phase"];
       status?: Message["reasoning_status"];
     }
@@ -105,6 +107,12 @@ export type ChatStreamMessage =
       message: Message;
       ts: number;
     };
+
+type ThinkingStreamMessage =
+  | Extract<ChatStreamMessage, { role: "progress" }>
+  | (Extract<ChatStreamMessage, { role: "user" | "assistant" | "tool" }> & {
+      role: "tool";
+    });
 
 const LEGACY_SYNTHETIC_TOOL_PROGRESS = [
   /^准备使用\s+\S+\s+处理当前步骤。$/,
@@ -180,6 +188,14 @@ type StreamRow =
       ts: number;
       severity: "yellow" | "red";
       item: InboxItem;
+      key: string;
+    }
+  | {
+      kind: "thinking_group";
+      ts: number;
+      runId: string;
+      messages: ThinkingStreamMessage[];
+      runProjection?: TaskRunProjectionState;
       key: string;
     }
   | {
@@ -346,6 +362,16 @@ export function MessageStreamPanel({
           rows.map((r) =>
             r.kind === "chat" ? (
               <ChatRow key={r.key} msg={r.msg} onWorkflowRetry={onWorkflowRetry} />
+            ) : r.kind === "thinking_group" ? (
+              <ThinkingProcessGroup
+                key={r.key}
+                runId={r.runId}
+                messages={r.messages}
+                runMessages={chatMessages.filter((message) =>
+                  "runId" in message && message.runId === r.runId
+                )}
+                runProjection={r.runProjection}
+              />
             ) : r.kind === "project_directory" ? (
               agentSnapshot?.root_run_id === r.request.run_id &&
               agentSnapshot.aggregate_outcome.status !== "waiting" ? null : (
@@ -461,7 +487,65 @@ function buildRows(
     });
 
     const emitted = new Set<string>();
+    const thinkingGroups = new Map<string, {
+      anchor: number;
+      ts: number;
+      messages: ThinkingStreamMessage[];
+      identities: Set<string>;
+    }>();
     chats.forEach((message, index) => {
+      if (!isThinkingStreamMessage(message) || !message.runId) {
+        return;
+      }
+      if (
+        message.role === "progress" &&
+        (!message.text.trim() || isLegacySyntheticToolProgress(message.text))
+      ) {
+        return;
+      }
+      const runId = message.runId.trim();
+      if (!runId) return;
+      const group = thinkingGroups.get(runId) ?? {
+        anchor: index,
+        ts: message.ts,
+        messages: [],
+        identities: new Set<string>(),
+      };
+      group.anchor = Math.min(group.anchor, index);
+      group.ts = Math.min(group.ts, message.ts);
+      const identity = [
+        message.role,
+        message.ts,
+        message.text,
+        message.role === "tool" ? message.toolName ?? "" : message.status ?? "",
+        message.role === "tool" ? message.toolResultRaw ?? "" : message.phase ?? "",
+        message.role === "tool" ? JSON.stringify(message.toolArgs ?? null) : "",
+      ].join("\u001f");
+      if (!group.identities.has(identity)) {
+        group.identities.add(identity);
+        group.messages.push(message);
+      }
+      thinkingGroups.set(runId, group);
+    });
+    const emittedThinkingGroups = new Set<string>();
+    chats.forEach((message, index) => {
+      if (isThinkingStreamMessage(message) && message.runId) {
+        const runId = message.runId.trim();
+        const group = thinkingGroups.get(runId);
+        if (group && !emittedThinkingGroups.has(runId) && index === group.anchor) {
+          emittedThinkingGroups.add(runId);
+          rows.push({
+            kind: "thinking_group",
+            ts: group.ts,
+            runId,
+            messages: [...group.messages].sort((left, right) => left.ts - right.ts),
+            runProjection: runProjections[runId],
+            key: `thinking_group:${runId}`,
+          });
+          return;
+        }
+        if (group || message.role === "progress") return;
+      }
       if (message.role === "workflow_progress" || message.role === "workflow_stage") {
         const runId = String(message.message.workflow_run_id || "").trim();
         const group = groups.get(runId);
@@ -591,6 +675,12 @@ function buildRows(
   // Oldest 鈫?newest so newest sits at the bottom (chat-stream UX).
   rows.sort((a, b) => a.ts - b.ts);
   return rows;
+}
+
+function isThinkingStreamMessage(
+  message: ChatStreamMessage,
+): message is ThinkingStreamMessage {
+  return message.role === "progress" || message.role === "tool";
 }
 
 function emptyMessage(f: StreamFilter): string {
@@ -815,6 +905,150 @@ function ChatRow({
         </div>
       )}
     </div>
+  );
+}
+
+const TERMINAL_THINKING_STATUSES = new Set<TaskRunProjectionState["status"]>([
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+function thinkingStatus(
+  messages: ThinkingStreamMessage[],
+  runProjection?: TaskRunProjectionState,
+): TaskRunProjectionState["status"] {
+  if (runProjection) return runProjection.status;
+  const progressStatuses = messages
+    .filter((message): message is Extract<ChatStreamMessage, { role: "progress" }> =>
+      message.role === "progress")
+    .map((message) => message.status)
+    .filter((status): status is NonNullable<typeof status> => status != null);
+  // A durable terminal summary wins over a stale or out-of-order running
+  // summary when the Run projection is unavailable during hydration.
+  if (progressStatuses.includes("failed")) return "failed";
+  if (progressStatuses.includes("completed")) return "completed";
+  if (progressStatuses.includes("running")) return "running";
+  const hasToolResult = messages.some((message) =>
+    message.role === "tool" && message.toolResultRaw !== undefined);
+  return hasToolResult ? "completed" : "running";
+}
+
+function formatThinkingDuration(ms: number): string {
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds} 秒`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return rest > 0 ? `${minutes} 分 ${rest} 秒` : `${minutes} 分`;
+}
+
+function ThinkingProcessGroup({
+  runId,
+  messages,
+  runMessages,
+  runProjection,
+}: {
+  runId: string;
+  messages: ThinkingStreamMessage[];
+  runMessages: ChatStreamMessage[];
+  runProjection?: TaskRunProjectionState;
+}) {
+  const status = thinkingStatus(messages, runProjection);
+  const terminal = TERMINAL_THINKING_STATUSES.has(status);
+  const [expanded, setExpanded] = useState(() => !terminal);
+  const previousStatus = useRef(status);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const wasTerminal = TERMINAL_THINKING_STATUSES.has(previousStatus.current);
+    if (!wasTerminal && terminal) setExpanded(false);
+    if (wasTerminal && !terminal) setExpanded(true);
+    previousStatus.current = status;
+  }, [status, terminal]);
+
+  useEffect(() => {
+    if (terminal) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [terminal]);
+
+  if (messages.length === 0) return null;
+  // Durable SDK history does not always have a task projection (tool-only
+  // provider turns are persisted as ordinary Run-scoped messages).  Use the
+  // complete Run boundary for that fallback so a restart cannot shrink the
+  // elapsed time to only the interval between the first and last tool card.
+  const timestamps = runMessages
+    .map((message) => message.ts)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  const startedAt = runProjection?.started_at ?? (
+    timestamps.length > 0 ? Math.min(...timestamps) : undefined
+  );
+  const endedAt = terminal
+    ? runProjection?.last_activity ?? (timestamps.length > 0 ? Math.max(...timestamps) : undefined)
+    : now;
+  const elapsed = startedAt != null && endedAt != null
+    ? Math.max(0, endedAt - startedAt)
+    : 0;
+  const elapsedKnown = startedAt != null && endedAt != null && endedAt > startedAt;
+  const headerLabel = terminal
+    ? elapsedKnown ? `耗时 ${formatThinkingDuration(elapsed)}` : "已完成"
+    : elapsedKnown ? `思考中 · ${formatThinkingDuration(elapsed)}` : "思考中";
+  const bodyId = `thinking-process-body-${runId.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
+  return (
+    <section
+      data-testid={`thinking-process-${runId}`}
+      data-status={status}
+      style={{ alignSelf: "stretch", width: "100%", color: "#cbd5e1" }}
+    >
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        aria-label={headerLabel}
+        onClick={() => setExpanded((value) => !value)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 2px",
+          border: 0,
+          borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
+          background: "transparent",
+          color: "#94a3b8",
+          cursor: "pointer",
+          font: "inherit",
+          fontSize: 13,
+          textAlign: "left",
+        }}
+      >
+        <span>{headerLabel}</span>
+        <span aria-hidden="true" style={{ transform: expanded ? "rotate(90deg)" : "none" }}>
+          ›
+        </span>
+      </button>
+      {expanded && (
+        <div
+          id={bodyId}
+          data-testid={`thinking-process-body-${runId}`}
+          style={{
+            display: "grid",
+            gap: 8,
+            padding: "10px 2px 12px",
+            maxHeight: 360,
+            overflowY: "auto",
+          }}
+        >
+          {messages.map((message, index) => (
+            <ChatRow
+              key={`${message.role}:${message.ts}:${message.text}:${index}`}
+              msg={message}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

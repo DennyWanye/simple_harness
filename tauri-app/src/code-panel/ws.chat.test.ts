@@ -156,6 +156,192 @@ describe("ws.dispatch chat final dedupe", () => {
     });
   });
 
+  it("preserves failed and succeeded tool outcomes across live to durable hydration", () => {
+    const failedEnvelope = JSON.stringify({
+      outcome: "failed",
+      value: null,
+      error_code: "tool_handler_failed",
+      public_message: "Memory recall handler failed.",
+      retryable: false,
+    });
+    const succeededEnvelope = JSON.stringify({
+      outcome: "succeeded",
+      value: { matches: 2 },
+      error_code: null,
+      public_message: null,
+      retryable: false,
+    });
+    __test_dispatch({
+      type: "tool_result",
+      payload: {
+        session_id: "default",
+        run_id: "run-outcome-history",
+        tool: "memory_recall",
+        ok: false,
+        status: "failed",
+        result: failedEnvelope,
+        error: {
+          code: "tool_handler_failed",
+          message: "Memory recall handler failed.",
+        },
+      },
+    });
+
+    const live = useSessionsStore.getState().sessions.default.messages.at(-1);
+    expect(live).toMatchObject({
+      role: "tool_result",
+      tool_name: "memory_recall",
+      tool_ok: false,
+      tool_error: expect.stringContaining("tool_handler_failed"),
+    });
+    expect(live?.tool_result).toContain("Memory recall handler failed.");
+
+    // Full app restart clears the live Zustand projection before durable rows
+    // are hydrated from SessionDB.
+    resetStore();
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [{
+          id: "call-row-failed",
+          role: "assistant",
+          text: "",
+          tool_calls: [{
+            id: "call-memory-recall",
+            type: "function",
+            function: { name: "memory_recall", arguments: "{}" },
+          }],
+          run_id: "run-outcome-history",
+          ts: 1_000,
+        }, {
+          id: "result-row-failed",
+          role: "tool",
+          text: failedEnvelope,
+          tool_call_id: "call-memory-recall",
+          run_id: "run-outcome-history",
+          ts: 2_000,
+        }, {
+          id: "call-row-ok",
+          role: "assistant",
+          text: "",
+          tool_calls: [{
+            id: "call-memory-search",
+            type: "function",
+            function: { name: "memory_search", arguments: "{}" },
+          }],
+          run_id: "run-outcome-history",
+          ts: 3_000,
+        }, {
+          id: "result-row-ok",
+          role: "tool",
+          text: succeededEnvelope,
+          tool_call_id: "call-memory-search",
+          run_id: "run-outcome-history",
+          ts: 4_000,
+        }],
+      },
+    });
+
+    const hydrated = useSessionsStore.getState().sessions.default.messages.filter(
+      (message) => message.role === "tool_result",
+    );
+    expect(hydrated).toHaveLength(2);
+    expect(hydrated[0]).toMatchObject({
+      tool_name: "memory_recall",
+      tool_ok: false,
+      tool_error: expect.stringContaining("tool_handler_failed"),
+      run_id: "run-outcome-history",
+    });
+    expect(hydrated[0].tool_result).toContain("Memory recall handler failed.");
+    expect(hydrated[1]).toMatchObject({
+      tool_name: "memory_search",
+      tool_ok: true,
+      tool_error: undefined,
+      run_id: "run-outcome-history",
+    });
+  });
+
+  it.each([
+    ["known failed outcome wins conflicts", { outcome: "failed", ok: true, status: "succeeded" }, false],
+    ["known succeeded outcome wins conflicts", { outcome: "succeeded", ok: false, status: "failed" }, true],
+    ["unknown outcome falls back to explicit ok", { outcome: "future_state", ok: true }, true],
+    ["unknown outcome falls back to known status", { outcome: "future_state", status: "succeeded" }, true],
+    ["unknown outcome respects explicit failure", { outcome: "future_state", ok: false }, false],
+    ["all unknown structured state fails closed", { outcome: "future_state", status: "future_status" }, false],
+  ] as const)("hydrates malformed outcome safely: %s", (_label, envelope, expectedOk) => {
+    resetStore();
+    const raw = JSON.stringify({ tool: "memory_search", ...envelope });
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [{
+          id: "matrix-result",
+          role: "tool",
+          text: raw,
+          ts: 1_000,
+        }],
+      },
+    });
+
+    const hydrated = useSessionsStore.getState().sessions.default.messages[0];
+    expect(hydrated).toMatchObject({
+      role: "tool_result",
+      tool_name: "memory_search",
+      tool_ok: expectedOk,
+      tool_result: raw,
+    });
+  });
+
+  it("hydrates canonical bounded web failed/succeeded envelopes without drifting green", () => {
+    resetStore();
+    const failed = JSON.stringify({
+      result_kind: "web_search",
+      status: "failed",
+      item_count: 0,
+      error_code: "tool_handler_failed",
+      public_message: "Search backend failed.",
+    });
+    const succeeded = JSON.stringify({
+      result_kind: "web_search",
+      status: "succeeded",
+      item_count: 2,
+    });
+    __test_dispatch({
+      type: "session_messages_response",
+      payload: {
+        session_id: "default",
+        messages: [{
+          id: "web-failed",
+          role: "tool",
+          text: failed,
+          ts: 1_000,
+        }, {
+          id: "web-succeeded",
+          role: "tool",
+          text: succeeded,
+          ts: 2_000,
+        }],
+      },
+    });
+
+    const [failedRow, succeededRow] = useSessionsStore.getState()
+      .sessions.default.messages;
+    expect(failedRow).toMatchObject({
+      role: "tool_result",
+      tool_ok: false,
+      tool_error: expect.stringContaining("tool_handler_failed"),
+      tool_result: failed,
+    });
+    expect(succeededRow).toMatchObject({
+      role: "tool_result",
+      tool_ok: true,
+      tool_error: undefined,
+      tool_result: succeeded,
+    });
+  });
+
   it("selects a new Run when the previously selected Run is terminal", () => {
     useSessionsStore.getState().upsert_run_projection("default", "run-old", {
       task_scope_id: "scope-old",
@@ -248,6 +434,16 @@ describe("ws.dispatch chat final dedupe", () => {
   });
 
   it("keeps durable reasoning summaries when the final response arrives", () => {
+    useSessionsStore.getState().upsert_run_projection(
+      "default",
+      "run-reasoning",
+      {
+        task_scope_id: "scope-reasoning",
+        status: "running",
+        inflight: true,
+        ui_state: "open",
+      },
+    );
     __test_dispatch({
       type: "chat_response",
       payload: {
@@ -295,6 +491,197 @@ describe("ws.dispatch chat final dedupe", () => {
       ),
     ).toHaveLength(1);
     expect(messages.some((message) => message.role === "assistant_delta")).toBe(false);
+  });
+
+  it("replays reasoning summaries idempotently, rejects missing ids, and normalizes unsafe status", () => {
+    const payload = {
+      session_id: "default",
+      run_id: "run-summary-replay",
+      task_scope_id: "scope-summary-replay",
+      summary_id: "reasoning-summary:run-summary-replay:1:planning",
+      text: "先检查项目目录。",
+      phase: "planning",
+      status: "not-a-status",
+    };
+    __test_dispatch({ type: "chat_v2_reasoning_summary", payload });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: { ...payload, text: "先检查项目目录和入口文件。", status: undefined },
+    });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: { ...payload, summary_id: "", text: "不得接收" },
+    });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: { ...payload, summary_id: "   ", text: "也不得接收" },
+    });
+    __test_dispatch({
+      type: "chat_v2_final",
+      payload: {
+        session_id: "default",
+        run_id: "run-summary-replay",
+        task_scope_id: "scope-summary-replay",
+        text: "检查完成。",
+      },
+    });
+    // A replayed final replaces its same-turn duplicate rather than appending.
+    __test_dispatch({
+      type: "chat_v2_final",
+      payload: {
+        session_id: "default",
+        run_id: "run-summary-replay",
+        task_scope_id: "scope-summary-replay",
+        text: "检查完成。",
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    const summaries = messages.filter((message) => message.role === "reasoning_summary");
+    const finals = messages.filter(
+      (message) => message.role === "assistant" && message.text === "检查完成。",
+    );
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toMatchObject({
+      reasoning_summary_id: payload.summary_id,
+      text: "先检查项目目录和入口文件。",
+      reasoning_status: "running",
+      run_id: "run-summary-replay",
+    });
+    expect(messages.some((message) => message.text === "不得接收")).toBe(false);
+    expect(messages.some((message) => message.text === "也不得接收")).toBe(false);
+    expect(finals).toHaveLength(1);
+    expect(messages.indexOf(summaries[0])).toBeLessThan(messages.indexOf(finals[0]));
+  });
+
+  it("does not delete a canonical final when the same-text reasoning summary arrives late", () => {
+    __test_dispatch({
+      type: "chat_v2_final",
+      payload: {
+        session_id: "default",
+        run_id: "run-late-summary",
+        task_scope_id: "scope-late-summary",
+        text: "检查完成。",
+      },
+    });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: {
+        session_id: "default",
+        run_id: "run-late-summary",
+        task_scope_id: "scope-late-summary",
+        summary_id: "reasoning-summary:run-late-summary:1:status",
+        text: "检查完成。",
+        phase: "status",
+        status: "completed",
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages.filter(
+      (message) => message.role === "assistant" && message.text === "检查完成。",
+    )).toHaveLength(1);
+    expect(messages.filter(
+      (message) =>
+        message.role === "reasoning_summary" && message.text === "检查完成。",
+    )).toHaveLength(1);
+    expect(
+      useSessionsStore.getState().sessions.default.run_projections["run-late-summary"],
+    ).toMatchObject({ status: "completed", inflight: false });
+  });
+
+  it("does not delete a canonical final when a same-text summary omits run_id", () => {
+    __test_dispatch({
+      type: "chat_v2_final",
+      payload: {
+        session_id: "default",
+        run_id: "run-final-missing-summary-scope",
+        text: "最终正文",
+      },
+    });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: {
+        session_id: "default",
+        summary_id: "reasoning-summary:missing-run:1:status",
+        text: "最终正文",
+        phase: "status",
+        status: "completed",
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages.filter(
+      (message) => message.role === "assistant" && message.text === "最终正文",
+    )).toHaveLength(1);
+  });
+
+  it("does not delete another Run's canonical final for a same-text summary", () => {
+    __test_dispatch({
+      type: "chat_v2_final",
+      payload: {
+        session_id: "default",
+        run_id: "run-canonical-final",
+        text: "共享文本",
+      },
+    });
+    useSessionsStore.getState().upsert_run_projection("default", "run-other", {
+      task_scope_id: "scope-other",
+      status: "running",
+      inflight: true,
+      ui_state: "open",
+    });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: {
+        session_id: "default",
+        run_id: "run-other",
+        summary_id: "reasoning-summary:run-other:1:planning",
+        text: "共享文本",
+        phase: "planning",
+        status: "running",
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages.filter(
+      (message) =>
+        message.role === "assistant" &&
+        message.run_id === "run-canonical-final" &&
+        message.text === "共享文本",
+    )).toHaveLength(1);
+  });
+
+  it("does not delete an unscoped historical assistant for a scoped summary", () => {
+    const store = useSessionsStore.getState();
+    store.push_message("default", { role: "user", text: "历史问题" });
+    store.push_message("default", { role: "assistant", text: "相同公开文本" });
+    store.upsert_run_projection("default", "run-scoped-summary", {
+      task_scope_id: "scope-summary",
+      status: "running",
+      inflight: true,
+      ui_state: "open",
+    });
+    __test_dispatch({
+      type: "chat_v2_reasoning_summary",
+      payload: {
+        session_id: "default",
+        run_id: "run-scoped-summary",
+        task_scope_id: "scope-summary",
+        summary_id: "reasoning-summary:run-scoped-summary:1:planning",
+        text: "相同公开文本",
+        phase: "planning",
+        status: "running",
+      },
+    });
+
+    const messages = useSessionsStore.getState().sessions.default.messages;
+    expect(messages.filter(
+      (message) =>
+        message.role === "assistant" &&
+        message.run_id === undefined &&
+        message.text === "相同公开文本",
+    )).toHaveLength(1);
   });
 
   it("tracks a queued continuation until the Driver binds it", () => {

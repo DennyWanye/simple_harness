@@ -40,6 +40,10 @@
 | `tauri-app/src/components/MessageStreamPanel.tsx` | 主消息流 | 新增 Run 级思考分组、耗时、自动展开/折叠和手动 toggle |
 | `tauri-app/src/components/MessageStreamPanel.workflow.test.tsx` | UI 行为契约 | 覆盖 running/terminal/history/点击/缺时间/重复摘要 |
 
+真实 DeepSeek 载荷校正：工具 turn 可能只有公开 tool call/result 而没有公开 assistant narration。
+这类 Run 仍按 canonical Run 形成思考分组，因为工具事件本身就是公开执行过程；只有 progress/tools
+均为空或均被用户隐藏时才不渲染空组。隐藏 `reasoning_content` 不作为分组条件。
+
 ## Assurance / 信任与失败边界
 
 - Profile：standard；绑定 `ASSET-1..3`、`TRUST-1..2`、`FAIL-1..5`。
@@ -57,9 +61,11 @@
 
 - 在 Provider 响应含 `tool_calls` 且 `message.content.strip()` 非空时，从 request id 解析 SDK Run id，
   best-effort 调用已注册 delivery adapter 的 capture 方法；任何投影异常只记安全日志并返回原响应。
-- Delivery adapter 暂存 narration；`present_tool_call` 为 call 分配稳定 iteration，先投影无 tool_calls 的
-  `AssistantMessageEvent` 再投影 `ToolCallEvent`，复用 RunPresenter 既有 public sanitizer/持久化。
-- 验证：Provider mock + Delivery AsyncMock；Delivery 单测断言事件顺序、iteration、空 narration 不产出。
+- Delivery adapter 按 Provider turn 暂存 narration 与本轮全部 call IDs；同一响应的多个 tool call 共享
+  同一稳定 iteration，并各自保持 call/result 映射。首个实际 ToolCall 前只投影一次无 tool_calls 的
+  `AssistantMessageEvent`，再投影全部 `ToolCallEvent`，复用 RunPresenter 既有 public sanitizer/持久化。
+- 验证：Provider mock + Delivery AsyncMock；Delivery 单测断言事件顺序、同 turn 多 call/交错 result
+  iteration、空 narration 不产出、下一 Provider turn 不与上一轮 iteration 冲突。
 
 ### Task 2 — Run 级思考分组 UI [AC-9]
 
@@ -76,8 +82,20 @@
   以 completed summary 安全降级为终态，时间缺失时显示“已完成”。
 - 测试 running 展开、terminal 自动折叠、点击再展开/收起、重复 summary 幂等、缺时间、隐藏工具/
   进度开关、旧无 runId 消息、最终回复顺序。
+- fresh-run 历史组装必须显式排除 `context_visibility=exclude` 与非 conversation projection；用公开 summary
+  和隐藏 reasoning canary 捕获下一轮 Provider messages，证明 UI 摘要、耗时和隐藏内容零回灌。
+- 通过真实 control WS/store hydration fixture 验证同一 terminal Run 的晚到 running 不复活，failed/
+  cancelled/completed 均默认折叠；真正重跑必须使用新的 canonical Run ID。
 - 运行 backend 聚焦 pytest、前端 Vitest/typecheck、affected surface smoke；最后用 Computer Use
   真实发送多工具请求，分别截取运行中展开、终态折叠、点击再展开，并用日志/DB核对。
+
+## 执行期 plan defect 回炉（2026-08-20）
+
+- A2-1（contract-conflict）：原“暂存给下一个 tool call”的单槽方案没有定义一个 Provider response
+  含多个 calls 的归属，导致后续 turn iteration 冲突。修订为 Provider turn→call IDs 显式映射。
+- A2-2（owner-missing）：原计划假定既有 `context_visibility=exclude` 会被 fresh-run context assembler
+  自动尊重；审计证明 `_assemble_sdk_messages` 只按 role 过滤。修订 Task 3，明确由该边界过滤并测试。
+- 两项均不改变 SDK wheel、Provider authority 或 UI 产品范围，只补齐 AC-8 的既定隔离与稳定身份契约。
 
 ## 停止追踪点
 

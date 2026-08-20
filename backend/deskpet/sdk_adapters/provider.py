@@ -237,7 +237,57 @@ class ProductProviderAdapter:
                 or "",
             )
             raise
-        return _retain_tool_calls_in_message(response)
+        response = _retain_tool_calls_in_message(response)
+        await self._capture_public_tool_narration(request, response)
+        return response
+
+    async def _capture_public_tool_narration(
+        self,
+        request: ProviderRequest,
+        response: ProviderResponse,
+    ) -> None:
+        """Best-effort bridge for deliberately public tool-turn narration.
+
+        OpenAI-compatible providers may also return private
+        ``reasoning_content`` fields.  The delegate intentionally does not
+        retain those fields; this bridge only observes normalized assistant
+        ``message.content`` and therefore cannot expose hidden chain of
+        thought or feed it into a later provider turn.
+        """
+
+        if not response.tool_calls:
+            return
+        content = response.message.content.strip()
+
+        request_id = request.request_id.value
+        run_id, marker, raw_turn = request_id.rpartition(":provider-turn:")
+        if not marker or not run_id:
+            return
+        try:
+            turn = int(raw_turn)
+        except ValueError:
+            return
+        if turn < 1:
+            return
+
+        try:
+            from .desktop_runtime import _delivery_adapters
+
+            delivery = _delivery_adapters.get(run_id)
+            if delivery is not None:
+                await delivery.capture_public_narration(
+                    content,
+                    iteration=turn - 1,
+                    call_ids=tuple(call.call_id.value for call in response.tool_calls),
+                )
+        except Exception as exc:  # noqa: BLE001 - presentation is best-effort
+            # Never log narration/provider payloads. A projection failure may
+            # reduce UI detail, but must not change Provider or Run settlement.
+            logger.warning(
+                "sdk_public_narration_capture_failed run_id=%s error_type=%s",
+                run_id,
+                type(exc).__name__,
+            )
 
     def public_snapshot(self) -> dict[str, str | int]:
         return {

@@ -65,14 +65,16 @@ def test_auto_discovery_loads_web_tools():
     } <= names
 
 
-def test_auto_discovery_loads_stubs_and_search():
-    """WI-T3.3 v3：mcp_call / delegate 直接 unregister 后 stubs.py 不再注册.
+def test_auto_discovery_excludes_retired_stubs_and_keeps_search():
+    """Legacy stubs stay out of the module registry after SDK catalog cutover.
 
-    memory_* 仍使用守卫模式；skill_invoke 只由 skill_tools.py 注册.
+    The product SDK catalog owns the real ``memory_search`` binding.  Keeping
+    the old unavailable memory stubs in this auto-discovered registry would
+    reintroduce a second, order-dependent authority.
     """
     names = set(module_registry.list_tools())
     assert "tool_search" in names
-    assert {"memory_write", "memory_read", "memory_search"} <= names
+    assert {"memory_write", "memory_read", "memory_search"}.isdisjoint(names)
     assert "skill_invoke" in names
     # T3.3: mcp_call / delegate 不再 stub（无真 caller，0-release 删）
     assert "mcp_call" not in names

@@ -1,6 +1,24 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-20（升级后 Computer Use 回归、DeepSeek Provider/Tool 闭环修复）
+> 最后更新：2026-08-20（SDK 公开思考过程、工具状态水合与 Computer Use 闭环）
+
+## 0.3 SDK 公开思考过程
+
+- ChatView 保留 user/assistant/progress/tool 的 canonical Run identity；MessageStreamPanel 将同一
+  Run 的公开工作叙述和工具调用/结果聚合为一个“思考过程”。DeepSeek 未输出公开叙述时，真实
+  tool-only Run 仍以工具卡建立分组；全局隐藏开关过滤后没有公开进度和工具时不渲染空组。
+- starting/waiting/running 默认展开并显示递增耗时；completed/failed/cancelled 自动折叠，用户可
+  反复展开/收起。最终 assistant 回复保持独立。历史 hydration 默认折叠；无 durable task
+  projection 的 SDK Run 使用同 Run 用户消息到最终回复的边界，重启前后耗时不会缩短为工具区间。
+- tool result 的 durable public envelope 保留 canonical
+  `succeeded/failed/partial/rejected/unknown`；web 结果不再用 `status=completed` 覆盖真实失败。
+  前端 hydration 按 outcome → legacy ok/status 的优先级恢复颜色与公开错误，未知值 fail closed。
+- 展示面只接收模型主动公开的 assistant content 与既有工具公开摘要；Provider 私有
+  `reasoning_content`、reasoning token、原始响应和 Chain-of-Thought 均不会进入 UI 或 Session。
+
+2026-08-20 真机 DeepSeek 验证：运行中“思考中 · 5 秒”自动展开，`memory_recall`、
+`memory_search` 和两次 `read_file` 全部成功；19 秒终态自动折叠、点击可复看，完整重启后仍为
+19 秒且四组工具保持 `ok`。原始证据位于 ignored `.local-test-evidence/2026-08-20/`。
 
 ## 0.2 升级后真实 UI 回归收口
 

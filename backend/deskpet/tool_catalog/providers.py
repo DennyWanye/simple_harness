@@ -236,7 +236,10 @@ def _execution_context(context: ToolContext) -> ToolExecutionContext:
 
 
 def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable[..., Any], str]]:
-    from deskpet.memory.recall_adapter import build_memory_recall_handlers
+    from deskpet.memory.recall_adapter import (
+        build_memory_recall_handlers,
+        build_memory_search_handler,
+    )
     from deskpet.tools.code_tools.spawn_subagents_tool import (
         build_sdk_await_subagents_tool,
         product_delegation_tool_catalog,
@@ -281,6 +284,13 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             "todo_write": (todo_handler, "keyword_context"),
             "context_page_in": (page_handler, "standard"),
             "memory_recall": (trusted_memory_recall, "context"),
+            "memory_search": (
+                build_memory_search_handler(
+                    deps.memory_query,
+                    deps.memory_scope_resolver,
+                ),
+                "context",
+            ),
             "web_search": (build_web_search_handler(deps.search_gateway), "standard"),
         }
     )

@@ -589,7 +589,12 @@ async def _present_tool_result(event: AgentEvent, context: RunPresentationContex
         parsed = json.loads(event.result)
     except Exception:
         parsed = event.result
-    public_result = project_public_tool_result(event.tool_name, parsed)
+    public_result = project_public_tool_result(
+        event.tool_name,
+        parsed,
+        outcome_status=event.outcome_status,
+        outcome_error=event.outcome_error,
+    )
     last_mile = getattr(getattr(context.config, 'tools', None), 'last_mile', None)
     artifact_cards_enabled = bool(
         getattr(last_mile, 'artifact_envelope', False)

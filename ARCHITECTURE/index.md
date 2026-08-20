@@ -4,7 +4,9 @@
 
 2026-08-20 校准：Agent 执行时间线继续复用 canonical Run ledger 和
 `HarnessPublicReadService`，细粒度活动条目不得创建第二套状态机；时间线及 Inspector 详情
-明确属于 `context_visibility=exclude`，不会自动进入模型上下文。
+明确属于 `context_visibility=exclude`，不会自动进入模型上下文。SDK tool turn 的公开工作叙述
+与工具卡按 canonical Run 聚合为可折叠“思考过程”；隐藏 reasoning/CoT 不投影、不持久化、
+不进入后续模型上下文。
 
 维护规则：功能通过测试后，同一次交付必须更新对应模块架构；完成度、里程碑、worktree 与项目级已知问题同时汇总到 `PROJECT_STATUS.md`。`STATUS/` 只保留历史链接兼容，禁止继续双写。
 

@@ -207,6 +207,220 @@ def test_provider_round_trips_assistant_tool_calls_for_follow_up() -> None:
     asyncio.run(case())
 
 
+def test_provider_captures_only_public_tool_turn_narration() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    async def case() -> None:
+        async def respond(request: httpx.Request) -> httpx.Response:
+            del request
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-public-narration",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "I will inspect the requested file.",
+                                "reasoning_content": "private hidden chain of thought",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-public-narration",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_read",
+                                            "arguments": '{"path":"README.md"}',
+                                        },
+                                    },
+                                    {
+                                        "id": "call-public-narration-2",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_read",
+                                            "arguments": '{"path":"ARCHITECTURE/index.md"}',
+                                        },
+                                    },
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+            )
+
+        delivery = type(
+            "Delivery",
+            (),
+            {"capture_public_narration": AsyncMock()},
+        )()
+        _delivery_adapters["run-public-narration"] = delivery
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        try:
+            response = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-public-narration:provider-turn:3"),
+                    (Message(MessageRole.USER, "read"),),
+                ),
+                cancel=CancelToken(),
+            )
+            assert response.message.content == "I will inspect the requested file."
+            assert "reasoning_content" not in response.message.metadata
+            delivery.capture_public_narration.assert_awaited_once_with(
+                "I will inspect the requested file.",
+                iteration=2,
+                call_ids=(
+                    "call-public-narration",
+                    "call-public-narration-2",
+                ),
+            )
+        finally:
+            _delivery_adapters.pop("run-public-narration", None)
+            await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_public_narration_projection_is_best_effort() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    async def case() -> None:
+        async def respond(request: httpx.Request) -> httpx.Response:
+            del request
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-projection-failure",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": "Public work update.",
+                                "tool_calls": [
+                                    {
+                                        "id": "call-projection-failure",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_read",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+            )
+
+        delivery = type(
+            "Delivery",
+            (),
+            {
+                "capture_public_narration": AsyncMock(
+                    side_effect=RuntimeError("projection unavailable")
+                )
+            },
+        )()
+        _delivery_adapters["run-best-effort"] = delivery
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        try:
+            response = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-best-effort:provider-turn:1"),
+                    (Message(MessageRole.USER, "read"),),
+                ),
+                cancel=CancelToken(),
+            )
+            assert response.tool_calls[0].name == "file_read"
+        finally:
+            _delivery_adapters.pop("run-best-effort", None)
+            await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_binds_all_tool_calls_when_public_narration_is_empty() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    async def case() -> None:
+        async def respond(request: httpx.Request) -> httpx.Response:
+            del request
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-empty-narration",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": call_id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_read",
+                                            "arguments": "{}",
+                                        },
+                                    }
+                                    for call_id in ("call-empty-a", "call-empty-b")
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+            )
+
+        delivery = type(
+            "Delivery",
+            (),
+            {"capture_public_narration": AsyncMock()},
+        )()
+        _delivery_adapters["run-empty-narration"] = delivery
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        try:
+            response = await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-empty-narration:provider-turn:4"),
+                    (Message(MessageRole.USER, "read"),),
+                ),
+                cancel=CancelToken(),
+            )
+            assert len(response.tool_calls) == 2
+            delivery.capture_public_narration.assert_awaited_once_with(
+                "",
+                iteration=3,
+                call_ids=("call-empty-a", "call-empty-b"),
+            )
+        finally:
+            _delivery_adapters.pop("run-empty-narration", None)
+            await client.aclose()
+
+    asyncio.run(case())
+
+
 def test_provider_contract_violation_is_definite_protocol_failure() -> None:
     async def case() -> None:
         async def respond(request: httpx.Request) -> httpx.Response:

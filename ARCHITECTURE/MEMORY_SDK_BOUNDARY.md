@@ -1,6 +1,6 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-08-19
+> 最后更新：2026-08-20
 > 设计来源：`plans/2026-08-17-memory-sdk/00-ARCHITECTURE.md`
 > SDK 独立仓库：`simple-harness-memory-sdk`
 
@@ -85,10 +85,12 @@ backend/deskpet/memory/
   引用已删除模块（`file_memory`/`manager`/`vector_worker` 等）的 best-effort 死 `try`
   已整段移除，约 40 个相关全局统一置 `None`（现 `main.py:2531-2553` 为紧凑的
   SessionDB+MemoryBackend 接线块）；`embedder_worker.py` 已随旧栈删除。
-- **host 侧 memory_recall tool 注册被 core-handler authority 挡**：`execution_build_*`
-  三个 manifest 仍指向已删除的 `deskpet/tools/memory_recall.py`，`register_memory_recall`
-  会触发 `FileNotFoundError`。当前 main.py 用 try/except defer 到 `memory_recall_host_registration_deferred`
-  warning，不阻断启动。收尾需重建 authority manifest 的 artifacts 路径 + sha256 + build_digest。
+- **产品 SDK memory tools 已接通（2026-08-20）**：`memory_recall` 与 `memory_search` 都从显式
+  product catalog 动态绑定 `OwnerMemoryRecallQueryAdapter -> MemoryBackend.recall`。Companion Run
+  有唯一 generation-0 owner scope 时继续使用其 session affinity；普通单用户 SDK Run 仅在 resolver
+  抛精确 `owner_memory_scope_missing_or_ambiguous` 时走全局只读 recall。resolver 返回 None、错误类型
+  或其他 scope 异常均 fail closed，避免权限边界误降级。真实 SQLite backend → catalog → SDK
+  dispatcher canary 与 DeepSeek Computer Use 均验证两工具成功。
 - **curation 未接新 SDK**：`oh4_curation_skipped reason=no_facts_store` —— curation 仍在找旧
   `service_context["facts_store"]`，未指向 SDK 的 `MemoryBackend.get_facts`。
 - `session_db.py` 是 **host 会话账本**（约 80 个 public 方法），

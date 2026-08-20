@@ -17,6 +17,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Mapping
 
 from deskpet.companion.companion_message_projection import OwnerMemoryReadScopeV1
+from deskpet.companion.contracts import CompanionStateError
 from deskpet.tools.capabilities import ToolExecutionContext
 
 
@@ -63,7 +64,7 @@ class OwnerMemoryRecallQueryAdapter:
         self,
         query: str,
         limit: int,
-        owner_scope: OwnerMemoryReadScopeV1,
+        owner_scope: OwnerMemoryReadScopeV1 | None,
     ) -> list[dict[str, Any]]:
         if self._backend is None:
             return []
@@ -133,11 +134,7 @@ def build_memory_recall_handlers(
         run_id = str(context.run_id or context.root_run_id or "").strip()
         if not run_id:
             raise RuntimeError("memory_recall_run_identity_missing")
-        scope = scope_resolver.resolve_for_run(run_id)
-        if inspect.isawaitable(scope):
-            scope = await scope
-        if not isinstance(scope, OwnerMemoryReadScopeV1):
-            raise RuntimeError("memory_recall_scope_unavailable")
+        scope = await _resolve_optional_owner_scope(scope_resolver, run_id)
         hits = query_port.recall_readonly(query, limit, scope)
         if inspect.isawaitable(hits):
             hits = await hits
@@ -159,6 +156,81 @@ def build_memory_recall_handlers(
         )
 
     return reject_untrusted_handler, trusted_context_handler
+
+
+async def _resolve_optional_owner_scope(
+    scope_resolver: Any,
+    run_id: str,
+) -> OwnerMemoryReadScopeV1 | None:
+    """Resolve companion affinity without breaking ordinary desktop Runs.
+
+    The memory SDK stores one local user's cognitive memory and its ``session_id``
+    argument is only an affinity hint, not an authorization filter. Companion
+    Runs freeze that hint in a generation-0 snapshot; ordinary SDK chat Runs do
+    not own such a snapshot and therefore correctly use global recall.
+    """
+
+    try:
+        scope = scope_resolver.resolve_for_run(run_id)
+        if inspect.isawaitable(scope):
+            scope = await scope
+    except CompanionStateError as exc:
+        if str(exc) != "owner_memory_scope_missing_or_ambiguous":
+            raise
+        return None
+    if not isinstance(scope, OwnerMemoryReadScopeV1):
+        raise RuntimeError("memory_scope_resolver_invalid_result")
+    return scope
+
+
+def _validate_memory_search_args(args: Mapping[str, Any]) -> tuple[str, int]:
+    if not isinstance(args, Mapping):
+        raise ValueError("memory_search arguments must be an object")
+    extras = set(args) - {"query", "top_k"}
+    if extras:
+        raise ValueError("memory_search accepts only query and top_k")
+    query = args.get("query")
+    if not isinstance(query, str) or not query.strip() or len(query) > 2000:
+        raise ValueError("memory_search query must be a non-empty string")
+    top_k = args.get("top_k", 5)
+    if isinstance(top_k, bool) or not isinstance(top_k, int):
+        raise ValueError("memory_search top_k must be an integer")
+    return query.strip(), max(1, min(top_k, 50))
+
+
+def build_memory_search_handler(query_port: Any, scope_resolver: Any):
+    """Build the legacy wire-shape search Tool over the live memory SDK."""
+
+    async def trusted_context_handler(
+        args: Mapping[str, Any],
+        context: ToolExecutionContext,
+    ) -> str:
+        query, top_k = _validate_memory_search_args(args)
+        run_id = str(context.run_id or context.root_run_id or "").strip()
+        if not run_id:
+            raise RuntimeError("memory_search_run_identity_missing")
+        scope = await _resolve_optional_owner_scope(scope_resolver, run_id)
+        hits = query_port.recall_readonly(query, top_k, scope)
+        if inspect.isawaitable(hits):
+            hits = await hits
+        items = []
+        for hit in hits:
+            raw = asdict(hit) if is_dataclass(hit) else dict(hit)
+            items.append(
+                {
+                    key: raw[key]
+                    for key in ("message_id", "score", "text", "ts", "source")
+                    if key in raw
+                }
+            )
+        return json.dumps(
+            {"ok": True, "items": items},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+
+    return trusted_context_handler
 
 
 def register_memory_recall(
@@ -192,6 +264,7 @@ __all__ = [
     "MEMORY_RECALL_SCHEMA",
     "MEMORY_RECALL_TOOL_NAME",
     "OwnerMemoryRecallQueryAdapter",
+    "build_memory_search_handler",
     "build_memory_recall_handlers",
     "register_memory_recall",
 ]

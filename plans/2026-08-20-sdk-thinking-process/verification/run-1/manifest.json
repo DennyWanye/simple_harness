@@ -1,0 +1,177 @@
+{
+  "run_id": "run-1",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "source_request_text": "展示公开思考过程：运行时展开，完成后自动折叠并显示耗时，用户可点击重看；隐藏 reasoning_content 不公开。",
+  "acceptance_file": "plans/2026-08-20-sdk-thinking-process/acceptance.md",
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "rationale": "验收判断是确定性的投影边界和展开折叠状态，不以回答语义质量作为通过条件",
+      "decided_by": "agent"
+    },
+    "llm_payload_driven": {
+      "value": true,
+      "rationale": "公开叙述和工具事件由模型响应载荷驱动，必须覆盖空值重复乱序缺字段与超长变异",
+      "decided_by": "agent"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "终态默认折叠与历史内容依赖持久化会话 hydration 和首次 Provider 初始化路径",
+      "decided_by": "agent"
+    }
+  },
+  "release_unit": {
+    "slice_id": "sdk-thinking-process-v1",
+    "parent_program": "agent-harness-alignment",
+    "scope_hash": "c1382bc0be4165141d72f5fbd4298aa368fa6910c8ffcb2c535808fdc272c369"
+  },
+  "executor_engine": "current",
+  "challenger_engine": "current",
+  "auditor_engine": "current",
+  "baseline_head": "ab52263508607d5898f5a3b1664cd8da4f10e35a",
+  "testcase_files": [
+    "testcase/2026-08-20-sdk-thinking-process/testcases.md"
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "TC-AUT-01",
+      "ac_id": "AC-8",
+      "obligation_id": "TO-A8",
+      "acceptance_ids": ["AC-8"],
+      "obligation_ids": ["TO-A8", "TO-R4"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "input_class": "provider-delivery-durable-summary",
+      "impact_paths": ["backend/deskpet/sdk_adapters/provider.py", "backend/deskpet/sdk_adapters/delivery.py", "backend/deskpet/agent/run_presenter.py", "backend/tests/sdk_adapters/test_product_host_ports.py", "backend/tests/test_product_delivery_adapter.py"]
+    },
+    {
+      "scenario_id": "TC-AUT-02",
+      "ac_id": "AC-9",
+      "obligation_id": "TO-A9",
+      "acceptance_ids": ["AC-9"],
+      "obligation_ids": ["TO-A9", "TO-R5"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "input_class": "running-terminal-collapse",
+      "impact_paths": ["tauri-app/src/components/MessageStreamPanel.tsx", "tauri-app/src/components/MessageStreamPanel.workflow.test.tsx"]
+    },
+    {
+      "scenario_id": "TC-AUT-03",
+      "ac_id": "AC-9",
+      "obligation_id": "TO-A9",
+      "acceptance_ids": ["AC-9"],
+      "obligation_ids": ["TO-A9"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "positive-value",
+      "input_class": "manual-toggle",
+      "impact_paths": ["tauri-app/src/components/MessageStreamPanel.tsx", "tauri-app/src/components/MessageStreamPanel.workflow.test.tsx"]
+    },
+    {
+      "scenario_id": "TC-AUT-04",
+      "ac_id": "AC-9",
+      "obligation_id": "TO-R5",
+      "acceptance_ids": ["AC-9"],
+      "obligation_ids": ["TO-A9", "TO-R5"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "regression",
+      "input_class": "hydration-run-isolation",
+      "impact_paths": ["tauri-app/src/code-panel/controlWs.ts", "tauri-app/src/code-panel/ws.chat.test.ts", "tauri-app/src/stores/sessionsStore.ts", "tauri-app/src/stores/sessionsStore.test.ts", "tauri-app/src/views/ChatView.tsx", "tauri-app/src/views/ChatView.test.tsx", "tauri-app/src/components/MessageStreamPanel.tsx", "tauri-app/src/components/MessageStreamPanel.workflow.test.tsx"]
+    },
+    {
+      "scenario_id": "TC-AUT-05",
+      "ac_id": "AC-8",
+      "obligation_id": "TO-A8",
+      "acceptance_ids": ["AC-8", "AC-9"],
+      "obligation_ids": ["TO-A8", "TO-A9"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "negative-safety",
+      "input_class": "tool-only-no-narration",
+      "impact_paths": ["backend/deskpet/sdk_adapters/provider.py", "backend/deskpet/sdk_adapters/delivery.py", "backend/tests/sdk_adapters/test_product_host_ports.py", "backend/tests/test_product_delivery_adapter.py", "tauri-app/src/components/MessageStreamPanel.tsx", "tauri-app/src/components/MessageStreamPanel.workflow.test.tsx"]
+    },
+    {
+      "scenario_id": "TC-AUT-06",
+      "ac_id": "AC-9",
+      "obligation_id": "TO-R5",
+      "acceptance_ids": ["AC-8", "AC-9"],
+      "obligation_ids": ["TO-A8", "TO-A9", "TO-R5"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "negative-safety",
+      "input_class": "malformed-duplicate-out-of-order-long",
+      "impact_paths": ["tauri-app/src/code-panel/controlWs.ts", "tauri-app/src/code-panel/ws.chat.test.ts", "tauri-app/src/stores/sessionsStore.ts", "tauri-app/src/stores/sessionsStore.test.ts", "tauri-app/src/components/MessageStreamPanel.tsx", "tauri-app/src/components/MessageStreamPanel.workflow.test.tsx"]
+    },
+    {
+      "scenario_id": "TC-AUT-07",
+      "ac_id": "AC-8",
+      "obligation_id": "TO-R4",
+      "acceptance_ids": ["AC-8"],
+      "obligation_ids": ["TO-A8", "TO-R4"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "negative-safety",
+      "input_class": "hidden-cot-context-isolation",
+      "impact_paths": ["backend/deskpet/sdk_adapters/provider.py", "backend/main.py", "backend/tests/test_execute_sdk_run.py"]
+    },
+    {
+      "scenario_id": "TC-CU-01",
+      "ac_id": "AC-8",
+      "obligation_id": "TO-R6",
+      "acceptance_ids": ["AC-8", "AC-9"],
+      "obligation_ids": ["TO-A8", "TO-A9", "TO-R6"],
+      "kind": "manual-ui",
+      "required": true,
+      "manual_required": true,
+      "gate_type": "positive-value",
+      "expected_run_created": true,
+      "min_root_runs": 2,
+      "input_class": "real-tool-run-live-collapse-toggle",
+      "impact_paths": ["backend/deskpet/sdk_adapters/provider.py", "backend/deskpet/sdk_adapters/delivery.py", "backend/main.py", "tauri-app/src/views/ChatView.tsx", "tauri-app/src/components/MessageStreamPanel.tsx"]
+    },
+    {
+      "scenario_id": "TC-CU-02",
+      "ac_id": "AC-9",
+      "obligation_id": "TO-R6",
+      "acceptance_ids": ["AC-9"],
+      "obligation_ids": ["TO-A9", "TO-R6"],
+      "kind": "manual-ui",
+      "required": true,
+      "manual_required": true,
+      "gate_type": "stateful-init",
+      "expected_run_created": false,
+      "input_class": "history-switch-restart-hydration",
+      "impact_paths": ["tauri-app/src/code-panel/controlWs.ts", "tauri-app/src/stores/sessionsStore.ts", "tauri-app/src/views/ChatView.tsx", "tauri-app/src/components/MessageStreamPanel.tsx"]
+    },
+    {
+      "scenario_id": "TC-CU-03",
+      "ac_id": "AC-9",
+      "obligation_id": "TO-R6",
+      "acceptance_ids": ["AC-9"],
+      "obligation_ids": ["TO-A9", "TO-R6"],
+      "kind": "manual-ui",
+      "required": true,
+      "manual_required": true,
+      "cold_start": true,
+      "gate_type": "stateful-init",
+      "expected_run_created": true,
+      "input_class": "fresh-profile-first-provider-history",
+      "impact_paths": ["backend/main.py", "tauri-app/src/App.tsx", "tauri-app/src/views/ChatView.tsx", "tauri-app/src/components/MessageStreamPanel.tsx"]
+    },
+    {
+      "scenario_id": "TC-SMOKE-01",
+      "ac_id": "AC-8",
+      "obligation_id": "TO-R4",
+      "acceptance_ids": ["AC-8", "AC-9"],
+      "obligation_ids": ["TO-A8", "TO-A9", "TO-R4", "TO-R5"],
+      "kind": "script",
+      "required": true,
+      "gate_type": "regression",
+      "input_class": "critical-affected-surface",
+      "impact_paths": ["backend/deskpet/sdk_adapters/provider.py", "backend/deskpet/sdk_adapters/delivery.py", "backend/main.py", "backend/tests/sdk_adapters/test_product_host_ports.py", "backend/tests/test_product_delivery_adapter.py", "backend/tests/test_execute_sdk_run.py", "tauri-app/src/code-panel/controlWs.ts", "tauri-app/src/code-panel/ws.chat.test.ts", "tauri-app/src/stores/sessionsStore.ts", "tauri-app/src/stores/sessionsStore.test.ts", "tauri-app/src/views/ChatView.tsx", "tauri-app/src/views/ChatView.test.tsx", "tauri-app/src/components/MessageStreamPanel.tsx", "tauri-app/src/components/MessageStreamPanel.workflow.test.tsx"]
+    }
+  ]
+}

@@ -581,11 +581,13 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     const out: ChatStreamMessage[] = [];
     visibleMessages.forEach((m) => {
       const ts = m.ts;
+      const runId = m.run_id?.trim() || undefined;
       if (m.role === "user") {
         out.push({
           role: "user",
           text: m.text ?? "",
           ts,
+          runId,
           continuationStatus: m.continuation_status,
           continuationError: m.continuation_error,
         });
@@ -600,6 +602,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
             role: "progress",
             text: m.text,
             ts,
+            runId,
             phase: m.reasoning_phase,
             status: m.reasoning_status,
           });
@@ -614,6 +617,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
           role: "tool",
           text: `🔧 调用 ${m.tool_name || "(工具)"}${args ? ` ${args}${args.length >= 120 ? "…" : ""}` : ""}`,
           ts,
+          runId,
           toolName: m.tool_name,
           toolArgs: m.tool_args ?? {},
         });
@@ -624,6 +628,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
           role: "tool",
           text: `${m.tool_ok === false ? "❌" : "✅"} ${m.tool_name || "(工具)"} 完成`,
           ts,
+          runId,
           toolName: m.tool_name,
           toolOk: m.tool_ok,
           toolResultRaw: m.tool_result,
@@ -639,7 +644,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
         return;
       }
       const clean = forPet(m.text);
-      if (clean) out.push({ role: "assistant", text: clean, ts });
+      if (clean) out.push({ role: "assistant", text: clean, ts, runId });
     });
     // provisional 条目排在全部已落库消息之后即可；用已有最大 ts 派生
     // 纯函数时间基（渲染期不得调用 Date.now，react-hooks/purity）。

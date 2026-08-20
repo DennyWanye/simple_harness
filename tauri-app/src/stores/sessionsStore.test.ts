@@ -1247,6 +1247,57 @@ describe("durable workflow decisions", () => {
 });
 
 describe("single-session task run projections", () => {
+  it.each(["completed", "failed", "cancelled"] as const)(
+    "locks a %s Run against a late running upsert while a retry uses a new Run id",
+    (terminalStatus) => {
+      const sid = `terminal-lock-${terminalStatus}`;
+      const store = useSessionsStore.getState();
+      store.ensure(sid);
+      store.upsert_run_projection(sid, "run-original", {
+        task_scope_id: "scope-original",
+        projection_id: "projection-original",
+        version: 7,
+        status: terminalStatus,
+        inflight: false,
+        ui_state: "open",
+        started_at: 1_000,
+        last_activity: 62_000,
+      });
+      store.upsert_run_projection(sid, "run-original", {
+        task_scope_id: "scope-stale",
+        projection_id: "projection-stale",
+        version: 99,
+        status: "running",
+        inflight: true,
+        ui_state: "closed",
+        started_at: 9_000,
+        last_activity: 999_000,
+      });
+      store.upsert_run_projection(sid, "run-retry", {
+        task_scope_id: "scope-retry",
+        status: "running",
+        inflight: true,
+        ui_state: "open",
+      });
+
+      const projections = useSessionsStore.getState().sessions[sid].run_projections;
+      expect(projections["run-original"]).toMatchObject({
+        task_scope_id: "scope-original",
+        projection_id: "projection-original",
+        version: 7,
+        status: terminalStatus,
+        inflight: false,
+        ui_state: "open",
+        started_at: 1_000,
+        last_activity: 62_000,
+      });
+      expect(projections["run-retry"]).toMatchObject({
+        status: "running",
+        inflight: true,
+      });
+    },
+  );
+
   it("settles one of three interleaved runs without clearing the others", () => {
     const sid = "parallel-main-session";
     const store = useSessionsStore.getState();
