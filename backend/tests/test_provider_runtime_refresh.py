@@ -139,3 +139,55 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
     ] = 8
     with pytest.raises(RuntimeError, match="changed_during_start"):
         await main._freeze_sdk_provider_authority(session_db, "session-1", host)
+
+
+@pytest.mark.asyncio
+async def test_sdk_persona_and_memory_use_current_product_authorities(monkeypatch):
+    memory = SimpleNamespace(
+        recall_readonly=AsyncMock(return_value=[{"text": "owner memory", "score": 1}])
+    )
+    registry = SimpleNamespace(
+        get_entry=lambda _provider_id: SimpleNamespace(base_url="https://relay.invalid")
+    )
+    monkeypatch.setattr(
+        main,
+        "config",
+        SimpleNamespace(raw={"agent": {"persona": "Current persona"}}),
+    )
+    monkeypatch.setattr(
+        main,
+        "service_context",
+        SimpleNamespace(
+            get=lambda name: {
+                "provider_registry": registry,
+                "memory_recall_query": memory,
+            }.get(name)
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "_companion_identity_gate",
+        SimpleNamespace(
+            freeze=lambda: SimpleNamespace(
+                owner=SimpleNamespace(profile_id="owner-1", profile_generation=3),
+                binding_epoch=5,
+            )
+        ),
+    )
+    scope = object()
+    session_db = SimpleNamespace(
+        capture_owner_memory_read_scope=AsyncMock(return_value=scope)
+    )
+
+    persona, items = await main._sdk_persona_and_memory_sources(
+        session_db=session_db,
+        text="current request",
+        provider_binding={"provider_id": "deepseek", "model_id": "deepseek-v4-pro"},
+    )
+
+    assert persona.startswith("Current persona")
+    session_db.capture_owner_memory_read_scope.assert_awaited_once_with(
+        "owner-1", 3, 5
+    )
+    memory.recall_readonly.assert_awaited_once_with("current request", 8, scope)
+    assert items == ({"text": "owner memory", "score": 1},)

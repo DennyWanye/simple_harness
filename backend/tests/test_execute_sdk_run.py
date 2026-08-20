@@ -62,6 +62,7 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
         catalog={"tool_count": 1, "schema_token_count": 100, "tool_names": ["read_file"], "generation": 2, "content_fingerprint": "f"},
         attachment_blocks=(),
         project=None,
+        persona_text="DeskPet persona",
     )
     private = prepared.private_record()
     assert private["budget"]["truncated"] is True
@@ -98,6 +99,7 @@ async def test_sdk_preparation_rejects_required_content_over_context_window():
             },
             attachment_blocks=(),
             project=None,
+            persona_text="DeskPet persona",
         )
 
 

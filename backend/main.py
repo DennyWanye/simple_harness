@@ -7529,6 +7529,43 @@ async def _freeze_sdk_provider_authority(
     }
 
 
+async def _sdk_persona_and_memory_sources(
+    *,
+    session_db: Any,
+    text: str,
+    provider_binding: Mapping[str, Any],
+) -> tuple[str, tuple[dict[str, Any], ...] | None]:
+    """Read current Persona and owner-scoped Memory through product ports."""
+
+    from deskpet.agent.assembler.components.persona import _resolve_persona
+
+    persona_config = dict(config.raw)
+    registry = service_context.get("provider_registry")
+    entry = (
+        registry.get_entry(str(provider_binding["provider_id"]))
+        if registry is not None
+        else None
+    )
+    persona_config["llm"] = {
+        "model": str(provider_binding["model_id"]),
+        "base_url": str(getattr(entry, "base_url", "") or "bound-provider"),
+    }
+    persona = _resolve_persona(persona_config)
+
+    memory_query = service_context.get("memory_recall_query")
+    if memory_query is None:
+        return persona, None
+    owner = _companion_identity_gate.freeze()
+    scope = await session_db.capture_owner_memory_read_scope(
+        owner.owner.profile_id,
+        owner.owner.profile_generation,
+        owner.binding_epoch,
+    )
+    recalled = await memory_query.recall_readonly(text, 8, scope)
+    items = tuple(dict(item) for item in recalled if isinstance(item, Mapping))
+    return persona, items
+
+
 async def _snapshot_context_usage_basis_for_run(
     session_db: Any, session_id: str
 ) -> str | None:
@@ -8497,6 +8534,11 @@ async def _run_product_harness_chat(
         provider_authority = await _freeze_sdk_provider_authority(
             session_db, session_id, host
         )
+        persona_text, memory_items = await _sdk_persona_and_memory_sources(
+            session_db=session_db,
+            text=text,
+            provider_binding=provider_authority,
+        )
         prepared_snapshot = await _prepare_sdk_context_snapshot(
             session_db=session_db,
             session_id=session_id,
@@ -8509,6 +8551,8 @@ async def _run_product_harness_chat(
             catalog=_sdk_runtime_catalog,
             attachment_blocks=tuple(user_attachment_blocks),
             project=workspace,
+            persona_text=persona_text,
+            memory_items=memory_items,
         )
         public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
         if session_db is not None:
@@ -9781,6 +9825,8 @@ async def _prepare_sdk_context_snapshot(
     catalog: dict[str, Any],
     attachment_blocks: tuple[dict[str, Any], ...],
     project: str | None,
+    persona_text: str,
+    memory_items: tuple[dict[str, Any], ...] | None = None,
 ) -> Any:
     """Prepare once; the returned messages are the sole Provider authority."""
 
@@ -9795,7 +9841,9 @@ async def _prepare_sdk_context_snapshot(
     reserved = (
         int(catalog.get("schema_token_count") or 0)
         + _sdk_text_tokens(_SDK_PUBLIC_WORK_NARRATION_PROMPT)
+        + _sdk_text_tokens(persona_text)
         + _sdk_text_tokens(text)
+        + sum(_sdk_text_tokens(item.get("text")) for item in (memory_items or ()))
         + sum(_sdk_text_tokens(item) for item in attachment_blocks)
         + 256
     )
@@ -9810,7 +9858,14 @@ async def _prepare_sdk_context_snapshot(
     service = SdkContextPreparationService(
         SdkContextSources(
             history=lambda _session_id: history,
-            persona=lambda: _SDK_PUBLIC_WORK_NARRATION_PROMPT,
+            persona=lambda: (
+                persona_text + "\n\n" + _SDK_PUBLIC_WORK_NARRATION_PROMPT
+            ),
+            memory=(
+                (lambda _session_id, _text: memory_items)
+                if memory_items is not None
+                else None
+            ),
             project=(
                 (lambda _session_id: {"workspace": project}) if project else None
             ),
