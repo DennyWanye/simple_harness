@@ -103,7 +103,6 @@ class ProviderProjectionEnvelopeV1:
         return (
             self.state == "succeeded"
             and self.usage is not None
-            and self.usage.get("cache_tokens") is not None
             and self.context_window > 0
             and self.effective_ceiling > 0
         )
@@ -167,7 +166,11 @@ class SdkProviderSettlementReconciler:
                 "tokens_after": usage["input_tokens"],
                 "prompt_tokens": usage["input_tokens"],
                 "completion_tokens": usage["output_tokens"],
-                "cached_tokens": usage["cache_tokens"],
+                # ContextUsageStateV2 predates nullable cache telemetry and
+                # stores an integer.  Preserve the availability bit in the
+                # immutable sample metadata so an absent field is never
+                # presented as a measured zero.
+                "cached_tokens": usage["cache_tokens"] or 0,
                 "context_window": item.context_window,
                 "effective_ceiling": item.effective_ceiling,
                 "estimate_method": "provider_usage",
@@ -178,6 +181,7 @@ class SdkProviderSettlementReconciler:
                     "snapshot_id": item.snapshot_id,
                     "settlement_version": item.settlement_version,
                     "total_tokens": usage["total_tokens"],
+                    "cache_tokens_available": usage["cache_tokens"] is not None,
                     "reasoning_tokens": usage.get("reasoning_tokens"),
                 },
                 "completed_at": item.settled_at,

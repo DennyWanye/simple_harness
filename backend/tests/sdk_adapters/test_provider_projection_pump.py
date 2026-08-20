@@ -133,6 +133,37 @@ async def test_pump_projects_every_terminal_attempt_but_only_trusted_usage(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_succeeded_usage_with_unreported_cache_remains_measured(tmp_path) -> None:
+    source = _Source([_receipt(1, "succeeded", usage={
+        "input_tokens": 13,
+        "output_tokens": 5,
+        "total_tokens": 18,
+        "cache_tokens": None,
+        "reasoning_tokens": 2,
+    })])
+    db = SessionDB(tmp_path / "state.db")
+    await db.set_context_usage_binding_state(
+        "session-a",
+        binding_epoch=2,
+        provider_id="deepseek",
+        model_id="deepseek-v4",
+    )
+    pump = SdkProviderProjectionPump(source, db, context_resolver=_context)
+
+    assert await pump.run_until_idle() == 1
+    history = await db.list_context_usage_history("session-a")
+    assert len(history) == 1
+    assert history[0]["prompt_tokens"] == 13
+    assert history[0]["cached_tokens"] == 0
+    assert history[0]["metadata"]["cache_tokens_available"] is False
+    state = await db.get_context_usage_state("session-a")
+    assert state["has_measurement"] is True
+    assert state["prompt_tokens"] == 13
+    assert state["cache_tokens_available"] is False
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_sp3_fault_after_outbox_read_leaves_session_and_cursor_untouched(tmp_path) -> None:
     db = SessionDB(tmp_path / "state.db")
     source = _Source([_receipt(1, "failed", error_code="definite")])

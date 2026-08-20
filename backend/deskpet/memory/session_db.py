@@ -1249,7 +1249,17 @@ class SessionDB:
 
         await self._with_retry(_do)
         assert rebuilt is not None
-        return rebuilt.to_public_payload()
+        payload = rebuilt.to_public_payload()
+        if rebuilt.sample_id:
+            sample = await self.get_context_usage_sample(sid, rebuilt.sample_id)
+            metadata = sample.get("metadata") if isinstance(sample, dict) else None
+            if isinstance(metadata, dict) and isinstance(
+                metadata.get("cache_tokens_available"), bool
+            ):
+                payload["cache_tokens_available"] = metadata[
+                    "cache_tokens_available"
+                ]
+        return payload
 
     # ------------------------------------------------------------------
     # Sessions
