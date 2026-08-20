@@ -33,11 +33,20 @@ async def test_sdk_message_assembly_keeps_prior_turns_and_excludes_current_run()
 
 def test_sdk_capability_snapshot_exposes_product_catalog():
     from main import _sdk_capability_snapshot
+    from deskpet.sdk_adapters.tools import PRODUCT_TOOL_NAMES
 
     snapshot = _sdk_capability_snapshot()
-    assert "file_read" in snapshot["tools"]
-    assert "run_shell" in snapshot["tools"]
-    assert snapshot["tools"] == list(dict.fromkeys(snapshot["tools"]))
+    assert tuple(snapshot["tools"]) == PRODUCT_TOOL_NAMES
+    assert len(snapshot["tools"]) == 77
+    assert {
+        "agent",
+        "agent_parallel",
+        "spawn_subagents",
+        "spawn_team",
+        "await_subagents",
+        "workflow_spawn",
+        "workspace_prepare",
+    } <= set(snapshot["tools"])
 
 
 @pytest.fixture

@@ -162,6 +162,8 @@ def write_file(
         )
 
     p = Path(path)
+    if not p.is_absolute() and _scope_root:
+        p = Path(_scope_root) / p
     if mode == "write" and p.exists() and not overwrite:
         return _err(
             "FileExistsError",

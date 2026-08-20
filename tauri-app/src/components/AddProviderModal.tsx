@@ -39,7 +39,18 @@ export interface ProviderDraft {
 
 // ---- Pure validation helpers ---------------------------------------------
 
-// const KEBAB_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;  // 保留供未来使用
+const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const PROVIDER_ID_MAX_LENGTH = 32;
+
+/**
+ * Generate an opaque provider id that satisfies the backend registry contract:
+ * kebab-case and no longer than 32 characters. A raw UUID is 36 characters and
+ * therefore cannot be sent directly.
+ */
+export function createProviderId(rawUuid: string = uuidv4()): string {
+  const compact = rawUuid.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return `provider-${compact.slice(0, 23)}`;
+}
 
 export interface ValidationResult {
   ok: boolean;
@@ -50,15 +61,22 @@ export interface ValidationResult {
 /**
  * Validate a draft client-side. `editing=true` (i.e. provider already
  * exists) skips id format check and allows empty api_key (means "leave
- * keychain alone"). When adding, api_key is required. ID is auto-generated
- * for new providers, so no validation needed.
+ * keychain alone"). When adding, api_key is required. IDs are auto-generated,
+ * but still validated here so frontend/backend contract drift fails locally.
  */
 export function validateProviderDraft(
   draft: ProviderDraft,
   opts: { editing: boolean },
 ): ValidationResult {
   const errors: ValidationResult["errors"] = {};
-  // ID validation removed - now auto-generated via UUID
+  if (!opts.editing) {
+    const id = draft.id.trim();
+    if (!id) {
+      errors.id = "id 不能为空";
+    } else if (!KEBAB_RE.test(id) || id.length > PROVIDER_ID_MAX_LENGTH) {
+      errors.id = "id 必须是 kebab-case，且不超过 32 个字符";
+    }
+  }
   if (!draft.name || !draft.name.trim()) {
     errors.name = "name 不能为空";
   }
@@ -197,7 +215,7 @@ interface AddProviderModalProps {
 
 function createBlankDraft(): ProviderDraft {
   return {
-    id: uuidv4(),
+    id: createProviderId(),
     source: "user",
     name: "",
     base_url: "",

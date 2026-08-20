@@ -226,9 +226,12 @@ export interface PublicRunPhaseItem {
   safe_target_label?: string | null;
   detail_ref?: string | null;
   created_at?: number | null;
+  context_visibility?: PublicContextVisibility;
 }
 
 /** Allowlisted tool data. These fields are safe for direct user display. */
+export type PublicContextVisibility = "exclude";
+
 export interface ToolPublicView {
   tool_ref: string;
   stable_id: string;
@@ -246,6 +249,8 @@ export interface ToolPublicView {
   unavailable_reason?: string | null;
   detail_ref?: string | null;
   created_at?: number | null;
+  /** Transport fixtures may omit this for legacy V3; normalization supplies `exclude`. */
+  context_visibility?: PublicContextVisibility;
 }
 
 export interface PublicRunMessageView {
@@ -254,6 +259,27 @@ export interface PublicRunMessageView {
   phase_id?: string | null;
   text: string;
   created_at: number;
+  /** Transport fixtures may omit this for legacy V3; normalization supplies `exclude`. */
+  context_visibility?: PublicContextVisibility;
+}
+
+export interface PublicRunActivityItem {
+  stable_id: string;
+  kind: string;
+  title: string;
+  status: string;
+  phase_id?: string | null;
+  action_code?: string | null;
+  tool_name?: string | null;
+  safe_text?: string | null;
+  safe_target_label?: string | null;
+  detail_ref?: string | null;
+  public_input?: unknown;
+  public_result?: unknown;
+  duration_ms?: number | null;
+  created_at?: number | null;
+  truncated?: boolean;
+  context_visibility?: PublicContextVisibility;
 }
 
 export interface PublicRunSnapshotV3 {
@@ -265,6 +291,8 @@ export interface PublicRunSnapshotV3 {
   semantic_phases: PublicRunSemanticPhase[];
   tool_public_views: ToolPublicView[];
   public_messages: PublicRunMessageView[];
+  activity_items?: PublicRunActivityItem[];
+  context_visibility?: PublicContextVisibility;
   totals: {
     workflow_facts: number;
     content_facts: number;

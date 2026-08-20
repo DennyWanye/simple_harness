@@ -55,7 +55,7 @@ import structlog
 import uvicorn
 from logging.handlers import RotatingFileHandler
 import paths as _paths
-from observability.log_redaction import redact_log_event
+from observability.log_redaction import add_safe_exception_summary, redact_log_event
 from deskpet.session.task_scope import (
     TaskScopeDecision,
     task_session_manager,
@@ -83,6 +83,7 @@ _foreign_pre_chain = [
     structlog.stdlib.add_logger_name,
     structlog.stdlib.add_log_level,
     structlog.stdlib.PositionalArgumentsFormatter(),
+    add_safe_exception_summary,
     redact_log_event,
     structlog.processors.TimeStamper(fmt="iso"),
 ]
@@ -106,6 +107,7 @@ structlog.configure(
         structlog.stdlib.add_logger_name,
         structlog.stdlib.add_log_level,
         structlog.stdlib.PositionalArgumentsFormatter(),
+        add_safe_exception_summary,
         redact_log_event,
         structlog.processors.TimeStamper(fmt="iso"),
         structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
@@ -6717,8 +6719,46 @@ async def _build_product_agent_loop(request):
 _sdk_runtime_stack = None
 _sdk_ingress = None
 _sdk_context_port = None
+_sdk_runtime_refresh_lock = asyncio.Lock()
+_sdk_runtime_run_lock = asyncio.Lock()
+_sdk_runtime_provider_binding: tuple[str, str] | None = None
 
 _sdk_desktop_bridge = None
+
+
+def _sdk_prepared_identity(prepared) -> tuple[str, str]:
+    metadata = prepared.context_metadata
+    session_id = str(metadata.get("session_id") or prepared.run_id.value)
+    root_run_id = str(metadata.get("root_run_id") or prepared.run_id.value)
+    return session_id, root_run_id
+
+
+def _build_sdk_task_grant(prepared, generation: int):
+    """Build the auto-policy grant used by SDK Runtime Tool effects.
+
+    Keep this outside the runtime composition closure so the durable grant
+    contract is unit-testable. ``TaskGrant.source`` is a closed enum; the old
+    ``policy:sdk`` value crashed the first real Tool call before an effect or
+    authorization card could be created.
+    """
+
+    import hashlib
+    from deskpet.types.task_grants import TaskGrant
+
+    fingerprint = hashlib.sha256(prepared.effect_id.value.encode()).hexdigest()
+    _session_id, root_run_id = _sdk_prepared_identity(prepared)
+    return TaskGrant(
+        task_grant_id=f"sdk-grant:{fingerprint}",
+        root_run_id=root_run_id,
+        principal_id="sdk-runtime",
+        resource_selectors=(),
+        permission_categories=("read_file", "write_file", "network"),
+        effect_kinds=("read", "write"),
+        source="policy:auto",
+        policy_generation=generation,
+        expires_at=None,
+        version=1,
+    )
 
 
 def _sdk_desktop_test_enabled() -> bool:
@@ -6767,7 +6807,12 @@ def _trigger_harness_recovery_after_identity_bind() -> bool:
     return True
 
 
-async def _build_product_sdk_runtime_stack(generation: int):
+async def _build_product_sdk_runtime_stack(
+    generation: int,
+    *,
+    provider_id_override: str | None = None,
+    model_override: str | None = None,
+):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
     import hashlib
     from pathlib import Path
@@ -6811,7 +6856,7 @@ async def _build_product_sdk_runtime_stack(generation: int):
     if not chain:
         raise RuntimeError("Provider chain is empty")
 
-    provider_id = str(chain[0]["id"])
+    provider_id = str(provider_id_override or chain[0]["id"])
 
     # Create HTTP client for provider
     import httpx
@@ -6823,6 +6868,7 @@ async def _build_product_sdk_runtime_stack(generation: int):
         provider_id=provider_id,
         client=client,
         price_resolver=lambda _provider_id, _model: (0, 0, f"product-sdk-v{generation}"),
+        model=model_override,
     )
 
     estimator = FrozenPriceEstimator(
@@ -6894,7 +6940,6 @@ async def _build_product_sdk_runtime_stack(generation: int):
         AuthorizationSagaIdentity,
     )
     from deskpet.product_state.task_grants import DurableTaskGrantAuthority
-    from deskpet.types.task_grants import TaskGrant
     from simple_harness.tools import AuthorizationResult, AuthorizationDecision
     import time
 
@@ -6903,6 +6948,10 @@ async def _build_product_sdk_runtime_stack(generation: int):
     product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
     product_state_db = ProductStateDatabase(product_state_db_path)
     product_state_db.initialize()
+    _policy_generation_row = product_state_db.connection.execute(
+        "SELECT generation FROM authorization_policy_state WHERE singleton_id=1"
+    ).fetchone()
+    authorization_policy_generation = int(_policy_generation_row[0])
 
     # Create authorization saga repository
     repository = AuthorizationSagaRepository(product_state_db, owner_id=f"sdk-runtime-g{generation}")
@@ -6917,20 +6966,7 @@ async def _build_product_sdk_runtime_stack(generation: int):
 
     # Create grant factory
     def grant_factory(prepared, result):
-        import hashlib
-        fingerprint = hashlib.sha256(prepared.effect_id.value.encode()).hexdigest()
-        return TaskGrant(
-            task_grant_id=f"sdk-grant:{fingerprint}",
-            root_run_id=prepared.run_id.value,
-            principal_id="sdk-runtime",
-            resource_selectors=(),
-            permission_categories=("read_file", "write_file", "network"),
-            effect_kinds=("read", "write"),
-            source="policy:sdk",
-            policy_generation=generation,
-            expires_at=time.time() + 8 * 60 * 60,  # 8 hours
-            version=1,
-        )
+        return _build_sdk_task_grant(prepared, authorization_policy_generation)
 
     # Create identity factory
     def identity_factory(prepared, request):
@@ -6939,11 +6975,12 @@ async def _build_product_sdk_runtime_stack(generation: int):
         call = prepared.call.call_id.value
         fingerprint = hashlib.sha256(effect.encode()).hexdigest()
         grant = grant_factory(prepared, None)
+        session_id, root_run_id = _sdk_prepared_identity(prepared)
         return AuthorizationSagaIdentity(
             authorization_id=f"sdk-auth:{fingerprint}",
             principal_id="sdk-runtime",
-            session_id=prepared.request_id.value,
-            root_run_id=prepared.run_id.value,
+            session_id=session_id,
+            root_run_id=root_run_id,
             run_id=prepared.run_id.value,
             call_id=call,
             effect_id=effect,
@@ -6955,7 +6992,7 @@ async def _build_product_sdk_runtime_stack(generation: int):
             grant_id=grant.task_grant_id,
             grant_version=grant.version,
             grant_fingerprint=grant.fingerprint,
-            policy_generation=generation,
+            policy_generation=authorization_policy_generation,
             decision_nonce=request.nonce if request is not None else f"allow:{fingerprint}",
             decision_version=0,
             run_lease_epoch=1,
@@ -8128,17 +8165,29 @@ async def _run_product_harness_chat(
     )
     session = None
     try:
-        # Execute Agent via SDK Runtime
-        await _execute_sdk_run(
-            session_id=session_id,
-            request_id=request_id,
-            turn_id=turn_id,
-            task_scope_id=task_scope_id,
-            text=text,
-            context=context,
-            websocket=websocket,
-            root_run_id=root_ref.run_id,
+        # The SDK provider/coordinator snapshot is immutable for its stack.
+        # Serialize the binding refresh with the Run so another Session cannot
+        # swap the global stack to a different model halfway through a turn.
+        resolved_provider_id = str(
+            getattr(provider, "provider_id", "")
+            or getattr(provider, "id", "")
         )
+        resolved_model = str(getattr(provider, "model", "") or "")
+        async with _sdk_runtime_run_lock:
+            await _ensure_product_sdk_runtime_provider_binding(
+                resolved_provider_id, resolved_model
+            )
+            # Execute Agent via SDK Runtime
+            await _execute_sdk_run(
+                session_id=session_id,
+                request_id=request_id,
+                turn_id=turn_id,
+                task_scope_id=task_scope_id,
+                text=text,
+                context=context,
+                websocket=websocket,
+                root_run_id=root_ref.run_id,
+            )
     except PreflightBlocked as block:
         await _commit_product_preflight_block(
             websocket=websocket,
@@ -8327,9 +8376,13 @@ def _provider_chain_or_none(provider_registry):
         return None
 
 
-async def _activate_product_sdk_runtime() -> None:
+async def _activate_product_sdk_runtime(
+    *,
+    provider_id_override: str | None = None,
+    model_override: str | None = None,
+) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
-    global _sdk_runtime_stack, _sdk_ingress
+    global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_provider_binding
 
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from deskpet.workflows.store import RuntimeActivationCommand
@@ -8382,7 +8435,11 @@ async def _activate_product_sdk_runtime() -> None:
 
     # Try to build SDK Runtime Stack - may fail if API key is missing
     try:
-        stack = await _build_product_sdk_runtime_stack(state.generation)
+        stack = await _build_product_sdk_runtime_stack(
+            state.generation,
+            provider_id_override=provider_id_override,
+            model_override=model_override,
+        )
     except Exception as exc:
         logger.warning("product_sdk_runtime_skipped", reason=f"build_failed: {exc}")
         return
@@ -8398,6 +8455,12 @@ async def _activate_product_sdk_runtime() -> None:
 
     _sdk_runtime_stack = stack
     _sdk_ingress = ingress
+    selected_provider_id = str(provider_id_override or chain[0]["id"])
+    selected_entry = provider_registry.get_entry(selected_provider_id)
+    selected_model = str(
+        model_override or getattr(selected_entry, "model", "") or ""
+    )
+    _sdk_runtime_provider_binding = (selected_provider_id, selected_model)
 
     logger.info(
         "product_sdk_runtime_ready",
@@ -8471,6 +8534,100 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
         _growth_authority_router.current.phase.value,
         SDK_VERSION,
     )
+
+
+async def _refresh_product_sdk_runtime_after_provider_change(
+    *,
+    provider_id_override: str | None = None,
+    model_override: str | None = None,
+) -> bool:
+    """Rebuild the frozen provider adapter after provider registry mutations.
+
+    The SDK provider adapter snapshots provider id, endpoint, model, and API key
+    when the runtime stack is built. Fresh installs used to keep ingress closed
+    after the first provider was added, and edits/removals left the old snapshot
+    active until process restart. Serialize a fail-closed rebuild so Settings
+    changes become effective before the mutation is acknowledged to the UI.
+    """
+
+    global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_provider_binding
+
+    async with _sdk_runtime_refresh_lock:
+        previous_stack = _sdk_runtime_stack
+        previous_ingress = _sdk_ingress
+        if previous_ingress is not None:
+            previous_ingress.close()
+        _sdk_runtime_stack = None
+        _sdk_ingress = None
+        _sdk_runtime_provider_binding = None
+        service_context.register("sdk_runtime_ready", None)
+
+        if previous_stack is not None:
+            try:
+                await previous_stack.close()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "product_sdk_runtime_provider_refresh_close_failed",
+                    error=str(exc),
+                )
+
+        try:
+            if provider_id_override is None and model_override is None:
+                await _activate_product_sdk_runtime()
+            else:
+                await _activate_product_sdk_runtime(
+                    provider_id_override=provider_id_override,
+                    model_override=model_override,
+                )
+            if _sdk_runtime_stack is None or _sdk_ingress is None:
+                logger.info(
+                    "product_sdk_runtime_provider_refresh_inactive",
+                    reason="no_usable_provider",
+                )
+                return False
+            await _activate_companion_runtime_adapter_and_open_ingress()
+        except Exception as exc:  # noqa: BLE001
+            failed_stack = _sdk_runtime_stack
+            if _sdk_ingress is not None:
+                _sdk_ingress.close()
+            _sdk_runtime_stack = None
+            _sdk_ingress = None
+            _sdk_runtime_provider_binding = None
+            service_context.register("sdk_runtime_ready", None)
+            if failed_stack is not None:
+                try:
+                    await failed_stack.close()
+                except Exception as close_exc:  # noqa: BLE001
+                    logger.warning(
+                        "product_sdk_runtime_provider_refresh_cleanup_failed",
+                        error=str(close_exc),
+                    )
+            logger.warning(
+                "product_sdk_runtime_provider_refresh_failed",
+                error=str(exc),
+            )
+            return False
+
+        logger.info("product_sdk_runtime_provider_refresh_ready")
+        return True
+
+
+async def _ensure_product_sdk_runtime_provider_binding(
+    provider_id: str, model: str
+) -> None:
+    """Make the frozen SDK provider snapshot match the current Session binding."""
+
+    desired = (str(provider_id).strip(), str(model).strip())
+    if not all(desired):
+        raise RuntimeError("resolved SDK provider binding is incomplete")
+    if _sdk_runtime_provider_binding == desired and _sdk_ingress is not None:
+        return
+    refreshed = await _refresh_product_sdk_runtime_after_provider_change(
+        provider_id_override=desired[0],
+        model_override=desired[1],
+    )
+    if not refreshed or _sdk_runtime_provider_binding != desired:
+        raise RuntimeError("SDK Runtime provider binding refresh failed")
 
 
 async def _attach_workflow_history_events(
@@ -9268,7 +9425,13 @@ def _sdk_capability_snapshot() -> dict[str, list[str]]:
     so this keeps the wire snapshot aligned with the registry instead of
     silently running every turn with zero tools.
     """
-    return {"tools": list(deskpet_tool_registry_v2.list_tools())}
+    # The SDK product catalog contains dynamic orchestration/context tools
+    # which are intentionally not registered in the legacy v2 registry.
+    # Using that legacy list silently removed 17 tools (including agent,
+    # spawn_subagents and workflow_spawn) from every Provider request.
+    from deskpet.sdk_adapters.tools import PRODUCT_TOOL_NAMES
+
+    return {"tools": list(PRODUCT_TOOL_NAMES)}
 
 
 async def _execute_sdk_run(
@@ -9894,15 +10057,24 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
             "source": "user",
         }
         try:
-            if _upsert_reg.get_entry(_pid) is None:
-                await _upsert_reg.add_provider(_fields)
-                logger.info("provider_registry_upsert_added id=%s", _pid)
-            else:
-                _patch = {k: v for k, v in _fields.items() if k != "id"}
-                if not _patch.get("api_key"):
-                    _patch.pop("api_key", None)
-                await _upsert_reg.update_provider(_pid, **_patch)
-                logger.info("provider_registry_upsert_updated id=%s", _pid)
+            # Onboarding must make the provider it just validated the first
+            # runtime choice. Seeded installs can contain an older enabled
+            # endpoint without a key; leaving equal priorities in insertion
+            # order would make cold startup select that unusable endpoint and
+            # keep the SDK ingress closed despite a successful connection test.
+            _was_present = _upsert_reg.get_entry(_pid) is not None
+            await _upsert_reg.ensure_provider(_fields)
+            _ordered_ids = [_pid, *[
+                str(item["id"])
+                for item in _upsert_reg.get_chain()
+                if str(item["id"]) != _pid
+            ]]
+            await _upsert_reg.reorder(_ordered_ids)
+            logger.info(
+                "provider_registry_upsert_%s id=%s",
+                "updated" if _was_present else "added",
+                _pid,
+            )
         except Exception as _upsert_exc:  # noqa: BLE001
             # 注册失败不该让"测试连接"整体失败——热替换的 local_llm 已生效，
             # 用户仍能看到连接结果；但要显式记录，否则聊天会以
@@ -10202,7 +10374,14 @@ async def metrics(request: Request):
 async def _handle_memory_message(
     ws: "WebSocket", session_id: str, msg_type: str, payload: dict
 ) -> None:
-    store = service_context.get("memory_store")
+    # SessionDB is the current production MemoryStore implementation.  The
+    # legacy ``memory_store`` service key disappeared during the P4 migration,
+    # but this user-facing IPC handler still looked up only that retired key,
+    # leaving MemoryPanel stuck in its loading state forever.  Prefer the
+    # compatibility key when present and otherwise use the authoritative DB.
+    store = service_context.get("memory_store") or service_context.get(
+        "session_db"
+    )
     if store is None:
         await ws.send_json({
             "type": "error",
@@ -12298,6 +12477,7 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
+                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_added",
                             "payload": {"provider": entry.to_public_dict()},
@@ -12353,6 +12533,7 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
+                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_updated",
                             "payload": {"provider": entry.to_public_dict()},
@@ -12402,6 +12583,7 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
+                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_removed",
                             "payload": {"id": _pid},
@@ -12449,6 +12631,7 @@ async def control_channel(ws: WebSocket):
                             "payload": {"reason": "internal_error", "detail": str(exc)},
                         })
                     else:
+                        await _refresh_product_sdk_runtime_after_provider_change()
                         await ws.send_json({
                             "type": "settings_providers_reordered",
                             "payload": {"providers": _reg.list_providers()},

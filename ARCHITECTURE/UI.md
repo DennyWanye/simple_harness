@@ -1,6 +1,36 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-20（SDK 终态投影与工具失败收束修复）
+> 最后更新：2026-08-20（升级后 Computer Use 回归、DeepSeek Provider/Tool 闭环修复）
+
+## 0.2 升级后真实 UI 回归收口
+
+- 能力中心搜索或类别变化时，选中项同步切换为当前筛选结果的首项；右侧详情不会继续显示
+  已被过滤掉的旧能力。`ppt` 真机筛选已验证列表首项与详情均为 `ppt_create`。
+- 侧栏“更多”展开项使用完整的图标 + 文字行按钮，`记忆管理 / ContextTrace / 反馈问题`
+  在 1000×700 默认窗口均可直接辨认，不再依赖 tooltip。
+- 记忆管理 IPC 继续通过 control WS，但后端数据源以当前 `SessionDB` 为权威；旧
+  `memory_store` 服务键只作兼容。加载完成后空会话显示“暂无对话记忆”，不会永久停在 `…`。
+- 已知的 SDK Runtime/Provider 未就绪错误在 UI 映射为“设置 → LLM Providers”的恢复指引；
+  未识别的 HTTP/Provider 诊断仍保留原文，技术细节继续写后台日志。
+- 新 Provider 的隐藏 ID 由紧凑 UUID 派生为 `provider-<23 chars>`，满足后端 kebab-case 且
+  最多 32 字符的契约；前端提交前仍做同一规则的防御校验，不再把 36 字符标准 UUID 送到后端。
+- Provider 新增、编辑、删除和排序成功后，后端会关闭旧 SDK ingress、重建冻结的 Provider
+  adapter 并重新开放 Companion ingress；首个 Provider 添加后可立即聊天，配置变更不再要求重启。
+- SDK 每次 Run 前把冻结的 Provider adapter 与当前 Session 的 provider/model 绑定对齐，并在该
+  Run 内串行锁定；标题栏选择 `deepseek-v4-flash` 时，真实出站不再继续使用默认
+  `deepseek-v4-pro`。
+- OpenAI-compatible 工具回合把 assistant `tool_calls` 持久化到 SDK Message metadata，下一轮
+  还原为标准协议；DeepSeek 不再因“空 assistant + 孤立 tool result”返回 HTTP 400。没有显式
+  项目绑定的 SDK 工具统一使用 `<user_data>/workspace`，相对 `write_file` 不再落到 backend cwd。
+- SDK Run 的 capability snapshot 直接取 77 项产品工具目录，不再使用只含 60 项的 legacy v2
+  registry；`agent`、`spawn_subagents`、`workflow_spawn` 等 17 项动态编排/上下文工具会进入真实
+  Provider 请求。SDK EffectExecutor 的调用与结算复用现有 `RunPresenter` 投影，工具调用卡、结果卡
+  和对应的 assistant/tool 协议消息会同时实时显示并持久化，历史会话重载后仍可恢复。
+- OpenAI-compatible Provider 返回 HTTP 200 后若包含违反 SDK typed contract 的工具调用字段，
+  Product adapter 会把该异常归一为确定的 `provider_protocol_error`，而不是让 coordinator 误记为
+  outcome unknown 并把普通会话留在 `sdk_run_waiting`；其他意外异常仅记录无 payload/secret 的
+  类型化诊断 breadcrumb。
+- Tauri、Cargo 与前端包的产品版本统一为 `0.6.0-beta.9`，设置“关于与更新”读取到同一版本。
 
 ## 0.1 SDK Run 终态投影
 
@@ -100,6 +130,49 @@ DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能
   Session 绑定模型与“尚无用量”，不再短暂显示全局默认模型。
 
 ## 4. 验证状态
+
+- 2026-08-20 Computer Use 真实点击/输入回归：首次设置跳过、会话新建、模型参数、Harness
+  观察、能力/操作视图、产物库刷新、记忆、ContextTrace、反馈、Provider 编辑取消、设置和真实
+  发送失败路径均已覆盖。最终构建真机复测通过能力 `ppt` 详情同步、更多菜单文字、记忆空态、
+  `v0.6.0-beta.9` 版本与 Provider 中文恢复指引。原始截图/日志仅保存在忽略目录
+  `.local-test-evidence/2026-08-20/manual-computer-use-regression/`；截图 SHA-256：
+  `04207049…d05f`、`30f60dab…15fa`、`348c8b66…ac45`。
+- 2026-08-20 DeepSeek Provider 真机闭环：添加时生成
+  `provider-c90fd2eb0f2349f99603b81`，保存无 `invalid provider id`；真实
+  `POST https://api.deepseek.com/chat/completions` 两次返回 200。编辑显示名触发
+  `product_sdk_runtime_provider_refresh_ready` 后无需重启继续回复；会话切到
+  `deepseek-v4-flash` 后收到精确 `FLASH_MODEL_OK`，再次重启仍恢复 6 条消息和该模型绑定。
+  本地截图索引 `.local-test-evidence/2026-08-20/provider-runtime-fix/chat-flash-model-pass.jpeg`，
+  SHA-256 `9a32004d2d29a6bbf6906a0371dc4548fd244589125cf68563331f1f04592a0a`。
+- 2026-08-20 DeepSeek Tool 最终干净会话闭环：Computer Use 坐标点击发送创建文件请求，账本
+  `product-sdk-b28eb5…` 的四个 Provider turn 全部 succeeded，目标均为
+  `deepseek-v4-flash`；`run_shell → write_file → read_file` 三个 effect 全部 succeeded，生成
+  `<isolated-user-data>/workspace/deepseek-final-e2e.txt`，内容精确 `FINAL_TOOL_OK`（13 bytes，
+  SHA-256 `9f370645eacf4c4380cea0b30029fdeeb38b858fdbcb48511dce642987c8e440`）。最终截图
+  `.local-test-evidence/2026-08-20/provider-runtime-fix/final-deepseek-tool-e2e-pass.jpeg`，SHA-256
+  `ca3b9bafa2da0e7adf14e96635cd250a43f0b497e5356d1da9763e2ebed3cfc4`。
+- 2026-08-20 Agent 工具目录/消息投影真机闭环：隔离 Session
+  `233737e1-acbe-4f02-b190-d9334eb262f2` 通过 Computer Use 真实点击发送并调用
+  `tool_search(query="agent")`；UI 同时显示调用卡与 `✓ ok` 结果卡，DeepSeek 从当前请求直接工具表
+  确认 `agent`、`spawn_subagents`、`workflow_spawn` 均可用。最新 Provider request 携带 77 项工具，
+  effect 为 `succeeded`，SessionDB 持久化 assistant `tool_calls` 与 role=`tool` 结果。截图索引
+  `.local-test-evidence/2026-08-20/provider-runtime-fix/agent-tools-visible-pass.jpeg`，SHA-256
+  `37637ffdb3a430264856cd62d93a202873cffb87cc49ca310af4f3a3f22767c8`；相关聚焦自动化
+  `71 passed`。
+- 2026-08-20 `sdk_run_waiting` 修复复测：同一 Session 首次项目调查在 DeepSeek HTTP 200 后因
+  adapter 异常被误分类为 unknown/waiting；修复后真实调查连续完成 5 个工具 effect 并输出完整
+  结果，重启加载最终代码后再次真实调用 `agent_reach_read`，界面显示 `✓ ok`、
+  `FINAL WAIT FIX OK` 并恢复空闲。最新 Run/Provider/effect 分别为
+  `completed/succeeded/succeeded`；截图
+  `.local-test-evidence/2026-08-20/provider-runtime-fix/sdk-run-waiting-fixed-pass.jpeg`，SHA-256
+  `14b3185c2a5d49da445f243b6695024fe507829e9c29ea3352b1f841a7277afc`；聚焦自动化
+  `72 passed`。
+- 本轮工具/Provider/路径聚焦自动化 `62 passed`，另有 adapter/catalog/file 组合验证
+  `56 passed`；Python compile PASS。
+- 本轮聚焦自动化：Provider 前端 `36 passed` + TypeScript PASS；Provider IPC/SDK Runtime
+  热刷新后端 `15 passed`；debug `.app`/DMG 重建 PASS。
+- 聚焦自动化：Vitest `20 passed`，TypeScript PASS；window-control credential pytest
+  `10 passed`，Python compile PASS；debug `.app`/DMG 构建 PASS。
 
 - 2026-08-20 聚焦回归：SDK 多轮消息组装 `4 passed`；SessionList/ChatView `15 passed`；
   TypeScript `tsc -b --noEmit` PASS。该轮未执行真实桌面双击 E2E。

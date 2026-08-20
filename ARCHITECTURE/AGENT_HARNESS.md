@@ -6,6 +6,14 @@
 
 ## 一句话说明
 
+### 执行时间线与模型上下文边界（2026-08-20 校准）
+
+Inspector 的“Agent 执行过程”是 canonical Run ledger 的只读公开投影。阶段、工具动作、状态、
+耗时、脱敏输入/结果预览和技术记录可以显示并持久化为 observability，但都标记
+`context_visibility=exclude`，不会作为普通消息、system fragment、memory recall 或 follow-up
+历史再次送入模型。当前执行轮中模型协议要求的 `tool_result` 仍然属于模型上下文，这是执行协议
+而不是 UI 时间线的回灌。实现细节见 `ARCHITECTURE.md` 的 timeline boundary 小节。
+
 ### SDK 工具执行与终态收束（2026-08-20）
 
 SDK Runtime 的内部 `product-sdk-*` execution id 只用于 SDK checkpoint、effect ledger
@@ -16,6 +24,12 @@ canonical `root_run_id`。这样 run-start 与终态投影落在同一条前端 
 SDK 产品授权适配器同时接受旧测试 fixture 的 callable policy 和正式 Host
 `policy.decide(prepared, request=...)` 端口。正式 SDK 桌面装配走后者，工具 effect 才能完成
 prepare → handoff → invoke → settle；授权异常不会再被误报成无上下文的 driver failure。
+
+完整 77 项 SDK 工具目录在组合时会把 `memory_recall` 动态绑定到
+`deskpet.memory.recall_adapter` 的 owner-scoped 真实适配器，不再依赖已退休的 legacy registry
+authority。清单中为历史会话兼容而保留的 `memory_forget/read/search/write` 由 import-safe
+兼容处理器明确返回 `memory_sdk_unavailable`；它们不会重新引入已删除的旧内存存储栈，也不会再
+因处理器模块缺失导致整个 Agent 工具目录构建或运行时调用崩溃。
 
 DeskPet 现在只有一个主 Session。每条普通新消息都创建一个独立顶层 Run，顶层 Profile
 固定为 `agent.general`；运行中的任务收到继续消息时，消息进入该 root 的 durable FIFO，
@@ -756,13 +770,16 @@ Host 在 `workflow.durable_task` 发 child ticket 前还会按可信的当前用
 切换历史 Session 时，前端会把消息、durable Run projection 与 context usage 三个独立
 read model 一起恢复，避免“消息和工具卡已经显示，左栏却说没有 Run”的假空状态。
 
-观察链路只有一条：
+当前生产观察链路只有一条（V3）；旧 V2 endpoint 仅保留兼容历史客户端，不是新的功能或
+时间线 authority：
 
 ```text
 HarnessInspectorPanel
-  -> WebSocket harness_inspector_snapshot(session_id, root_run_id)
-  -> SqliteExecutionUnitOfWork.inspect_harness_run()
-  -> 现有 execution ledger 的只读投影
+  -> WebSocket harness_inspector_snapshot_request(session_id, root_run_id)
+  -> HarnessPublicReadService.create_manifest()
+  -> semantic_projection.reduce_public_manifest()
+  -> PublicRunSnapshotV3
+  -> 现有 execution ledger 的只读公开投影
 ```
 
 面板不维护第二套状态机。Inspector schema v2 从 start snapshot、provider outcome、effect

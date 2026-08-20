@@ -33,6 +33,18 @@ from typing import Any, Literal, Mapping, Optional
 from deskpet.tools.capabilities import ToolExposureIntent, ToolExposurePolicy
 
 
+def assert_context_visible(value: Any) -> None:
+    """Reject display-only projections at the Context OS boundary."""
+    if isinstance(value, Mapping):
+        if value.get("context_visibility") == "exclude":
+            raise ValueError("display-only projection cannot enter model context")
+        for child in value.values():
+            assert_context_visible(child)
+    elif isinstance(value, (list, tuple)):
+        for child in value:
+            assert_context_visible(child)
+
+
 # ---------------------------------------------------------------------------
 # Task types
 # ---------------------------------------------------------------------------
@@ -123,6 +135,10 @@ class ContextFragment:
     causal_group_id: Optional[str] = None
     anchor_after: Optional[str] = None
     meta: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        assert_context_visible(self.content)
+        assert_context_visible(self.meta)
 
 
 @dataclass(frozen=True)

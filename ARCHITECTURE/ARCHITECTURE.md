@@ -1,7 +1,37 @@
-<!-- last-calibrated: 5b781bf6df5319e2c13230bcee508fff0e470f5a -->
+<!-- last-calibrated: 4b82e3b1e6a76e3bb90f57125013a9ca68d2d430 -->
+
+## Agent activity timeline boundary (2026-08-20)
+
+The user-facing execution timeline is a read-only projection of the existing
+canonical Run ledger. The production path is:
+
+`HarnessPublicReadService.create_manifest -> semantic_projection.reduce_public_manifest -> PublicRunSnapshotV3 -> harnessPublicSnapshotStore -> HarnessInspectorPanel/DurableTaskSteps`.
+
+The timeline may expose bounded, redacted activity items such as a public phase,
+tool action, safe target label, status, duration, and safe input/result preview.
+It must not create another Run owner, state machine, persistence authority, or
+execution channel. Event identity and terminal status continue to come from the
+canonical Root Run and the two-source read cut.
+
+The context boundary is explicit: public timeline summaries, Inspector details,
+technical diagnostics, event names/correlation, and hidden reasoning are
+`context_visibility=exclude`. They are display/audit projections only and are
+never appended to the current or later model messages. A tool result can still
+be part of the normal model protocol for the execution turn that requested it;
+that does not make the separately projected UI detail a context source. Existing
+SessionDB/context assemblers remain the only authority for conversation history,
+memory, and model input.
+
+The timeline reduces by stable event identity and causal/source order. A
+duplicate event is rendered once, an out-of-order event is placed according to
+the durable projection order, an incomplete event degrades to an explicitly
+incomplete item, and late events cannot revive a terminal Run. Public tool
+projection remains default-deny, redacted, and byte-bounded; raw prepared,
+outcome, provider input/output, credentials, and reasoning are not returned to
+the frontend.
 # DeskPet Long-Running Agent Architecture Baseline
 
-> **Last verified: 2026-08-19**.
+> **Last verified: 2026-08-20**.
 >
 > **当前执行 authority 状态**：SDK v0.1.1 Runtime 是**唯一生产 ingress 且执行链已接通**（2026-08-17 清理 + 2026-08-19 真机 E2E PASS）。当前状态：
 >
@@ -781,7 +811,12 @@ GLM。无权威样本时必须改为“Session 绑定模型 + 尚无用量”，
 记录取 token/time；provider attempt 与 compaction sample 并存时可能组合成不存在的混合状态。
 恢复必须使用一个原子权威 sample，或使用带来源/version 的明确 reducer。
 
-Harness Inspector 的原始事实源仍然正确且唯一：
+Harness Inspector 的当前生产 authority 是 V3：
+`HarnessInspectorPanel -> harness_inspector_snapshot_request -> HarnessPublicReadService -> PublicRunSnapshotV3`。
+旧 `harness_inspector_snapshot -> SqliteExecutionUnitOfWork.inspect_harness_run()` endpoint 仅服务
+历史客户端，不得作为新时间线或 Inspector 功能的接线入口。
+
+V2 的原始事实源仍然正确且只读：
 `SqliteExecutionUnitOfWork.inspect_harness_run()` 从 start snapshot、lineage、provider invocation、
 tool/effect 和 canonical events 生成只读 schema v2 snapshot。当前前端
 `buildHarnessActivityFeed()` 把准备、root/child、每次 provider invocation、每次 tool call 和

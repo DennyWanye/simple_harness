@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import type { ToolPublicView } from "../types/messages";
+import type { PublicRunActivityItem, ToolPublicView } from "../types/messages";
 import { normalizePublicRunSnapshot } from "../stores/harnessPublicSnapshotStore";
 
 export interface AgentPublicOutput {
@@ -63,6 +63,25 @@ export interface WorkflowTaskTrace {
   projectionComplete: boolean;
 }
 
+export interface ActivityTimelineItem {
+  id: string;
+  kind: string;
+  title: string;
+  status: string;
+  phaseId?: string;
+  action?: string;
+  toolName?: string;
+  target?: string;
+  text?: string;
+  input?: unknown;
+  result?: unknown;
+  detailRef?: string;
+  durationMs?: number;
+  createdAt?: number;
+  truncated: boolean;
+  contextVisibility: "exclude";
+}
+
 function toolOk(status: string): boolean | undefined {
   if (["completed", "succeeded", "settled"].includes(status)) return true;
   if (["failed", "cancelled", "rejected"].includes(status)) return false;
@@ -88,6 +107,158 @@ function taskTool(view: ToolPublicView, status = view.status): WorkflowTaskTool 
     durationMs: view.duration_ms ?? undefined,
     ts: (view.created_at ?? 0) * 1000,
   };
+}
+
+function boundedText(value: unknown): { text?: string; truncated: boolean } {
+  if (typeof value !== "string" || !value.trim()) return { truncated: false };
+  const codepoints = [...value];
+  if (codepoints.length <= 2048) return { text: value, truncated: false };
+  return { text: codepoints.slice(0, 2048).join("") + "…", truncated: true };
+}
+
+function settleTimelineStatus(status: string, aggregateStatus: string): string {
+  if (![
+    "pending", "prepared", "accepted", "running", "waiting", "unknown",
+  ].includes(status)) return status;
+  if (["running", "waiting", "unknown"].includes(aggregateStatus)) return status;
+  if (aggregateStatus === "cancelled") return "cancelled";
+  if (aggregateStatus === "failed") return "failed";
+  return "completed";
+}
+
+function fromPublicActivity(
+  item: PublicRunActivityItem,
+  aggregateStatus: string,
+): ActivityTimelineItem {
+  const text = boundedText(item.safe_text);
+  const inputText = boundedText(typeof item.public_input === "string" ? item.public_input : undefined);
+  const resultText = boundedText(typeof item.public_result === "string" ? item.public_result : undefined);
+  return {
+    id: item.stable_id,
+    kind: item.kind,
+    title: item.title || "执行记录",
+    status: settleTimelineStatus(item.status || "unknown", aggregateStatus),
+    phaseId: item.phase_id ?? undefined,
+    action: item.action_code ?? undefined,
+    toolName: item.tool_name ?? undefined,
+    target: item.safe_target_label ?? undefined,
+    text: text.text,
+    input: typeof item.public_input === "string" ? inputText.text : item.public_input,
+    result: typeof item.public_result === "string" ? resultText.text : item.public_result,
+    detailRef: item.detail_ref ?? undefined,
+    durationMs: item.duration_ms ?? undefined,
+    createdAt: item.created_at ?? undefined,
+    truncated: item.truncated === true || text.truncated || inputText.truncated || resultText.truncated,
+    contextVisibility: "exclude",
+  };
+}
+
+/**
+ * Pure, display-only projection of the normalized V3 snapshot.  It has no
+ * access to transport messages, raw ledger rows, or context assembly.
+ */
+export function buildActivityTimeline(value: unknown): ActivityTimelineItem[] {
+  const snapshot = normalizePublicRunSnapshot(value);
+  if (!snapshot) return [];
+  const aggregateStatus = snapshot.aggregate_outcome.status;
+  const toolsByStableId = new Map(snapshot.tool_public_views.map((tool) => [tool.stable_id, tool]));
+  const explicit = (snapshot.activity_items ?? []).map((item) => {
+    const timelineItem = fromPublicActivity(item, aggregateStatus);
+    const tool = toolsByStableId.get(item.stable_id);
+    return tool ? {
+      ...timelineItem,
+      title: tool.public_name || timelineItem.title,
+      status: settleTimelineStatus(tool.status, aggregateStatus),
+      action: tool.action_label || timelineItem.action,
+      target: tool.safe_target_label ?? timelineItem.target,
+      input: tool.public_input ?? timelineItem.input,
+      result: tool.public_result ?? timelineItem.result,
+      detailRef: tool.detail_ref ?? timelineItem.detailRef,
+      durationMs: tool.duration_ms ?? timelineItem.durationMs,
+      truncated: tool.truncated === true || timelineItem.truncated,
+    } : timelineItem;
+  });
+  const phaseIndex = new Map(snapshot.semantic_phases.map((phase, index) => [phase.phase_id, index]));
+  const fallback: ActivityTimelineItem[] = [];
+  if (explicit.length === 0) {
+    for (const phase of snapshot.semantic_phases) {
+      for (const item of phase.items) {
+        const text = boundedText(item.safe_text);
+        fallback.push({
+          id: item.stable_id,
+          kind: item.kind,
+          title: item.public_name ?? item.tool_name ?? item.action_code ?? "执行记录",
+          status: settleTimelineStatus(item.status ?? "unknown", aggregateStatus),
+          phaseId: phase.phase_id,
+          action: item.action_code ?? undefined,
+          toolName: item.tool_name ?? undefined,
+          target: item.safe_target_label ?? undefined,
+          text: text.text,
+          detailRef: item.detail_ref ?? undefined,
+          createdAt: item.created_at ?? undefined,
+          truncated: text.truncated,
+          contextVisibility: "exclude",
+        });
+      }
+    }
+    for (const tool of snapshot.tool_public_views) {
+      fallback.push(fromPublicActivity({
+        stable_id: tool.stable_id,
+        kind: "tool",
+        title: tool.public_name,
+        status: tool.status,
+        phase_id: tool.phase_id,
+        action_code: tool.action_label,
+        tool_name: tool.public_name,
+        safe_target_label: tool.safe_target_label,
+        detail_ref: tool.detail_ref,
+        public_input: tool.public_input,
+        public_result: tool.public_result,
+        duration_ms: tool.duration_ms,
+        created_at: tool.created_at,
+        truncated: tool.truncated,
+        context_visibility: "exclude",
+      }, aggregateStatus));
+    }
+    for (const message of snapshot.public_messages) {
+      fallback.push(fromPublicActivity({
+        stable_id: message.stable_id,
+        kind: "narration",
+        title: "更新进度",
+        status: aggregateStatus,
+        phase_id: message.phase_id,
+        safe_text: message.text,
+        created_at: message.created_at,
+        context_visibility: "exclude",
+      }, aggregateStatus));
+    }
+  }
+  const terminalStatuses = new Set(["completed", "completed_with_recovery", "failed", "cancelled"]);
+  const all = explicit.length > 0 ? explicit : fallback;
+  const terminalId = `run-terminal:${snapshot.root_run_id}`;
+  if (terminalStatuses.has(aggregateStatus) && !all.some((item) => item.id === terminalId)) {
+    all.push({
+      id: terminalId,
+      kind: "run_terminal",
+      title: "任务结束",
+      status: aggregateStatus,
+      createdAt: snapshot.aggregate_outcome.ended_at ?? undefined,
+      truncated: false,
+      contextVisibility: "exclude",
+    });
+  }
+  const deduped = new Map<string, ActivityTimelineItem>();
+  for (const item of all) {
+    if (!deduped.has(item.id)) deduped.set(item.id, item);
+  }
+  return [...deduped.values()].sort((left, right) => {
+    const leftTime = left.createdAt ?? Number.POSITIVE_INFINITY;
+    const rightTime = right.createdAt ?? Number.POSITIVE_INFINITY;
+    return leftTime - rightTime
+      || (phaseIndex.get(left.phaseId ?? "") ?? Number.MAX_SAFE_INTEGER)
+        - (phaseIndex.get(right.phaseId ?? "") ?? Number.MAX_SAFE_INTEGER)
+      || left.id.localeCompare(right.id);
+  });
 }
 
 export function buildAgentPublicOutputs(

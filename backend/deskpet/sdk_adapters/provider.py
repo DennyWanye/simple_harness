@@ -4,20 +4,93 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import httpx
 
+from simple_harness.contracts import ContractValidationError
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.contracts.json import thaw_json
 from simple_harness.providers import (
     CancelToken,
     OpenAICompatibleProvider,
     ProviderAuthenticationError,
+    ProviderProtocolError,
     ProviderRequest,
     ProviderResponse,
     ProviderTarget,
     Secret,
 )
+
+
+_PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
+logger = logging.getLogger(__name__)
+
+
+class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
+    """Restore OpenAI tool-call history retained in SDK message metadata."""
+
+    @staticmethod
+    def _message_payload(message: Message) -> dict[str, Any]:
+        payload = OpenAICompatibleProvider._message_payload(message)
+        raw_calls = message.metadata.get(_PROVIDER_TOOL_CALLS_METADATA_KEY)
+        if message.role is not MessageRole.ASSISTANT or not isinstance(
+            raw_calls, Sequence
+        ) or isinstance(raw_calls, (str, bytes, bytearray)):
+            return payload
+
+        calls: list[dict[str, Any]] = []
+        for raw_call in raw_calls:
+            if not isinstance(raw_call, Mapping):
+                continue
+            call_id = raw_call.get("id")
+            name = raw_call.get("name")
+            arguments = raw_call.get("arguments")
+            if not isinstance(call_id, str) or not isinstance(name, str):
+                continue
+            calls.append(
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(
+                            thaw_json(arguments) if isinstance(arguments, Mapping) else {},
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    },
+                }
+            )
+        if calls:
+            payload["tool_calls"] = calls
+        return payload
+
+
+def _retain_tool_calls_in_message(response: ProviderResponse) -> ProviderResponse:
+    if not response.tool_calls:
+        return response
+    metadata = dict(response.message.metadata)
+    metadata[_PROVIDER_TOOL_CALLS_METADATA_KEY] = [
+        {
+            "id": call.call_id.value,
+            "name": call.name,
+            "arguments": dict(call.arguments),
+        }
+        for call in response.tool_calls
+    ]
+    return replace(
+        response,
+        message=Message(
+            response.message.role,
+            response.message.content,
+            name=response.message.name,
+            metadata=metadata,
+        ),
+    )
 
 
 class ProductProviderRegistry(Protocol):
@@ -111,7 +184,7 @@ class ProductProviderAdapter:
         pricing_key = (
             f"{provider_id}:{frozen_model}:{self.price_snapshot.fingerprint}"
         )
-        self._delegate = OpenAICompatibleProvider(
+        self._delegate = _ProductOpenAICompatibleProvider(
             client,
             base_url,
             frozen_model,
@@ -135,7 +208,36 @@ class ProductProviderAdapter:
     async def invoke(
         self, request: ProviderRequest, *, cancel: CancelToken
     ) -> ProviderResponse:
-        return await self._delegate.invoke(request, cancel=cancel)
+        try:
+            response = await self._delegate.invoke(request, cancel=cancel)
+        except ContractValidationError as exc:
+            # OpenAI-compatible payload parsing constructs typed SDK values
+            # (CallId, Message metadata, frozen JSON).  A provider-generated
+            # value that violates one of those contracts is a definite invalid
+            # response, not an unknown physical handoff.  Normalize it to the
+            # provider protocol taxonomy so the coordinator settles the Run as
+            # failed instead of leaving it in sdk_run_waiting forever.
+            logger.warning(
+                "product_provider_contract_violation error_code=%s",
+                getattr(getattr(exc, "code", None), "value", None)
+                or getattr(exc, "code", None)
+                or "",
+            )
+            raise ProviderProtocolError(private_cause=exc) from None
+        except Exception as exc:
+            # The SDK coordinator deliberately converts unexpected exceptions
+            # after a physical handoff into an unknown outcome.  Keep a safe,
+            # payload-free breadcrumb so provider response contract drift can
+            # be diagnosed without logging prompts, responses, or secrets.
+            logger.exception(
+                "product_provider_invoke_failed error_type=%s error_code=%s",
+                type(exc).__name__,
+                getattr(getattr(exc, "code", None), "value", None)
+                or getattr(exc, "code", None)
+                or "",
+            )
+            raise
+        return _retain_tool_calls_in_message(response)
 
     def public_snapshot(self) -> dict[str, str | int]:
         return {

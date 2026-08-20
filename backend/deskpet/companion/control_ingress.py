@@ -1015,7 +1015,16 @@ class CompanionControlIngress:
                 body=body,
             )
         except (WindowControlCredentialError, CanonicalCommandError) as exc:
-            raise CompanionControlIngressError(str(exc)) from exc
+            code = str(exc)
+            # A credential whose signed facts do not match the active
+            # connection/challenge must fail closed. Issuing another challenge
+            # immediately lets a broken or stale signer create an unbounded
+            # request/rechallenge loop; recovery belongs to a fresh transport
+            # connection (or an explicit user retry), not a tight server loop.
+            raise CompanionControlIngressError(
+                code,
+                rechallenge=(code != "credential_facts_mismatch"),
+            ) from exc
         return {
             "connection_id": challenge.connection_id,
             "backend_process_instance_id": self.verifier.backend_process_instance_id,

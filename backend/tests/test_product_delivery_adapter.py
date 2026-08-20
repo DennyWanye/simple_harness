@@ -9,6 +9,7 @@ def mock_presenter():
     """Create mock RunPresenter."""
     presenter = Mock()
     presenter.present_run_event = AsyncMock()
+    presenter.present = AsyncMock()
     return presenter
 
 
@@ -179,6 +180,29 @@ async def test_handle_event_passes_context(delivery_adapter, mock_presenter, moc
     assert call_kwargs["adapter"] is mock_adapter
     assert call_kwargs["context"] is mock_context
     assert call_kwargs["state"] is mock_state
+
+
+@pytest.mark.asyncio
+async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presenter):
+    from simple_harness import CallId
+    from simple_harness.tools import ToolCall, ToolResult
+    from agent.agent_loop import ToolCallEvent, ToolResultEvent
+
+    call = ToolCall(CallId("call-visible"), "write_file", {"path": "a.txt"})
+    await delivery_adapter.present_tool_call(call)
+    await delivery_adapter.present_tool_result(
+        call,
+        ToolResult.succeeded(CallId("call-visible"), {"bytes_written": 2}),
+    )
+
+    first_event = mock_presenter.present.await_args_list[0].args[0]
+    second_event = mock_presenter.present.await_args_list[1].args[0]
+    assert isinstance(first_event, ToolCallEvent)
+    assert first_event.tool_call.name == "write_file"
+    assert isinstance(second_event, ToolResultEvent)
+    assert second_event.tool_call_id == "call-visible"
+    assert second_event.outcome_status == "succeeded"
+    assert '"bytes_written": 2' in second_event.result
 
 
 @pytest.mark.asyncio

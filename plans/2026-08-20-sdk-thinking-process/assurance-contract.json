@@ -1,0 +1,24 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["AC-8", "AC-9"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "用户会话内容、工具参数和工具结果"},
+    {"id": "ASSET-2", "description": "模型上下文边界与 provider 凭据"},
+    {"id": "ASSET-3", "description": "canonical Run 状态与可审计执行记录"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "本地 OS、开发者账户和受控测试桌面环境可信"},
+    {"id": "TRUST-2", "description": "canonical Run/event authority 与 public redactor 是生产事实源"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "乱序、重复、缺字段或超长公开叙述事件"},
+    {"id": "FAIL-4", "description": "敏感参数、凭据或隐藏 reasoning 被公开展示"},
+    {"id": "FAIL-5", "description": "SDK 公开叙述未投影，或思考区运行/终态折叠状态错误"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "宿主 OS 或 provider 本身已被攻陷"},
+    {"id": "OOS-2", "description": "未经批准的远程协作者读取本机原始数据库"}
+  ],
+  "maximum_acceptable_impact": "思考投影丢失只能少显示 UI；不得改变 Run 终态、重复执行工具、泄漏隐藏 reasoning 或污染模型上下文。"
+}

@@ -1,0 +1,50 @@
+{
+  "run_id": "run-1",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "source_request_text": "用户确认继续完成 Agent 执行时间线、上下文隔离功能的 Phase 0/1/实现/测试全流程，并要求明确显示但不进入上下文的数据边界。",
+  "acceptance_file": "acceptance.md",
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "rationale": "Agent 对话和工具任务的输出质量随自然语言输入类别及上下文长度变化",
+      "decided_by": "agent"
+    },
+    "llm_payload_driven": {
+      "value": true,
+      "rationale": "模型工具调用和公开进度载荷直接驱动端侧时间线状态与折叠详情",
+      "decided_by": "agent"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "历史恢复依赖 SessionDB、durable Run projection、登录初始化和冷启动装配",
+      "decided_by": "agent"
+    }
+  },
+  "release_unit": {
+    "slice_id": "agent-activity-timeline-v3",
+    "parent_program": "agent-harness-alignment",
+    "scope_hash": "5760c1fe1ed75c8d13ae6739c0b375e3e4ae57405b22c73790665631a226c97d"
+  },
+  "executor_engine": "current",
+  "challenger_engine": "claude",
+  "auditor_engine": "opus-4.8",
+  "baseline_head": "4b82e3b1e6a76e3bb90f57125013a9ca68d2d430",
+  "testcase_files": [
+    "testcase/2026-08-20-agent-activity-timeline/S-1-tool-task.md",
+    "testcase/2026-08-20-agent-activity-timeline/S-2-no-tool-answer.md",
+    "testcase/2026-08-20-agent-activity-timeline/S-3-failed-tool.md",
+    "testcase/2026-08-20-agent-activity-timeline/S-4-long-context-follow-up.md",
+    "testcase/2026-08-20-agent-activity-timeline/S-5-cold-recovery.md",
+    "testcase/2026-08-20-agent-activity-timeline/S-6-malformed-events.md",
+    "testcase/2026-08-20-agent-activity-timeline/S-7-contract-and-regression.md"
+  ],
+  "scenarios": [
+    {"scenario_id":"S-1","ac_id":"AC-1","obligation_id":"TO-A1","kind":"manual-ui","required":true,"manual_required":true,"gate_type":"positive-value","expected_run_created":true,"min_root_runs":1,"input_class":"tool-driven-file-command","impact_paths":["backend/deskpet/execution/**","tauri-app/src/components/**","tauri-app/src/chat/**"]},
+    {"scenario_id":"S-2","ac_id":"AC-5","obligation_id":"TO-A5","kind":"manual-ui","required":true,"manual_required":true,"gate_type":"positive-value","expected_run_created":true,"input_class":"no-tool-answer","impact_paths":["tauri-app/src/components/**"]},
+    {"scenario_id":"S-3","ac_id":"AC-5","obligation_id":"TO-A5","kind":"manual-ui","required":true,"manual_required":true,"gate_type":"negative-safety","expected_run_created":true,"input_class":"failed-tool","impact_paths":["backend/deskpet/execution/**","tauri-app/src/components/**"]},
+    {"scenario_id":"S-4","ac_id":"AC-3","obligation_id":"TO-A3","kind":"manual-ui","required":true,"manual_required":true,"gate_type":"positive-value","expected_run_created":true,"min_root_runs":2,"input_class":"long-context-follow-up","impact_paths":["backend/deskpet/agent/**","backend/deskpet/memory/**","tauri-app/src/**"]},
+    {"scenario_id":"S-5","ac_id":"AC-4","obligation_id":"TO-A4","kind":"manual-ui","required":true,"manual_required":true,"cold_start":true,"gate_type":"positive-value","expected_run_created":true,"min_root_runs":3,"input_class":"cold-start-recovery","impact_paths":["backend/**","tauri-app/src/**"]},
+    {"scenario_id":"S-6","ac_id":"AC-5","obligation_id":"TO-A5","kind":"script","required":true,"gate_type":"negative-safety","input_class":"out-of-order-duplicate-malformed","impact_paths":["backend/deskpet/execution/**","tauri-app/src/components/**"]},
+    {"scenario_id":"S-7","ac_id":"AC-6","obligation_id":"TO-R1","kind":"script","required":true,"gate_type":"regression","input_class":"cross-layer-legacy-regression","impact_paths":["backend/deskpet/execution/**","tauri-app/src/**"]}
+  ]
+}

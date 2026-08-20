@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from dataclasses import dataclass
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
@@ -16,6 +17,7 @@ from simple_harness.providers import (
     CancelToken,
     ProviderAuthenticationError,
     ProviderPaymentRequiredError,
+    ProviderProtocolError,
     ProviderRateLimitError,
     ProviderRequest,
     ProviderServerError,
@@ -109,6 +111,150 @@ def test_provider_freezes_target_price_and_redacts_secret() -> None:
         assert canary not in public
         assert canary not in repr(adapter)
         await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_round_trips_assistant_tool_calls_for_follow_up() -> None:
+    async def case() -> None:
+        requests: list[dict] = []
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            requests.append(json.loads(request.content))
+            if len(requests) == 1:
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": "provider-request-tool",
+                        "model": "model-a",
+                        "choices": [
+                            {
+                                "message": {
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [
+                                        {
+                                            "id": "call-1",
+                                            "type": "function",
+                                            "function": {
+                                                "name": "file_write",
+                                                "arguments": '{"path":"ok.txt"}',
+                                            },
+                                        }
+                                    ],
+                                },
+                                "finish_reason": "tool_calls",
+                            }
+                        ],
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-final",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {"role": "assistant", "content": "done"},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                },
+            )
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        first = await adapter.invoke(
+            ProviderRequest(RequestId("request-1"), (Message(MessageRole.USER, "write"),)),
+            cancel=CancelToken(),
+        )
+        assert first.message.metadata["provider_tool_calls"][0]["id"] == "call-1"
+        await adapter.invoke(
+            ProviderRequest(
+                RequestId("request-2"),
+                (
+                    Message(MessageRole.USER, "write"),
+                    first.message,
+                    Message(
+                        MessageRole.TOOL,
+                        '{"outcome":"succeeded"}',
+                        name="file_write",
+                        call_id=CallId("call-1"),
+                    ),
+                ),
+            ),
+            cancel=CancelToken(),
+        )
+        assistant = requests[1]["messages"][1]
+        assert assistant["tool_calls"] == [
+            {
+                "id": "call-1",
+                "type": "function",
+                "function": {
+                    "name": "file_write",
+                    "arguments": '{"path":"ok.txt"}',
+                },
+            }
+        ]
+        assert requests[1]["messages"][2]["tool_call_id"] == "call-1"
+        await client.aclose()
+
+    asyncio.run(case())
+
+
+def test_provider_contract_violation_is_definite_protocol_failure() -> None:
+    async def case() -> None:
+        async def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                json={
+                    "id": "provider-request-invalid-call-id",
+                    "model": "model-a",
+                    "choices": [
+                        {
+                            "message": {
+                                "role": "assistant",
+                                "content": None,
+                                "tool_calls": [
+                                    {
+                                        "id": "调用-1",
+                                        "type": "function",
+                                        "function": {
+                                            "name": "file_read",
+                                            "arguments": '{"path":"README.md"}',
+                                        },
+                                    }
+                                ],
+                            },
+                            "finish_reason": "tool_calls",
+                        }
+                    ],
+                },
+            )
+
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        adapter = ProductProviderAdapter(
+            Registry("secret"),
+            provider_id="relay",
+            client=client,
+            price_resolver=lambda provider, model: (1, 1, "price-v1"),
+        )
+        try:
+            with pytest.raises(ProviderProtocolError):
+                await adapter.invoke(
+                    ProviderRequest(
+                        RequestId("request-invalid-call-id"),
+                        (Message(MessageRole.USER, "read"),),
+                    ),
+                    cancel=CancelToken(),
+                )
+        finally:
+            await client.aclose()
 
     asyncio.run(case())
 
@@ -215,6 +361,55 @@ def test_tool_adapter_has_exact_explicit_inventory_and_six_dispatch_shapes() -> 
         assert calls == list(kinds)
 
     asyncio.run(case())
+
+
+def test_tool_adapter_projects_through_registered_run_delivery() -> None:
+    from deskpet.sdk_adapters.desktop_runtime import _delivery_adapters
+
+    def registration(name: str):
+        async def handler(arguments, context):
+            return {"name": name}
+
+        return ProductToolRegistration(
+            name=name,
+            description=f"{name} fixture",
+            input_schema={"type": "object", "properties": {}, "additionalProperties": False},
+            handler=handler,
+            dispatch_kind="async",
+            permission_category="read_file",
+            metadata={"source": "product", "version": "1"},
+        )
+
+    registry, _ = build_product_tool_registry(
+        [registration(name) for name in PRODUCT_TOOL_NAMES]
+    )
+    delivery = type(
+        "Delivery",
+        (),
+        {
+            "present_tool_call": AsyncMock(),
+            "present_tool_result": AsyncMock(),
+        },
+    )()
+    _delivery_adapters["run-visible"] = delivery
+
+    async def case() -> None:
+        result = await registry.invoke(
+            ToolCall(CallId("call-visible"), "file_read", {}),
+            ToolContext(
+                RunId("run-visible"),
+                RequestId("request-visible"),
+                CancellationToken(),
+            ),
+        )
+        assert result.outcome is ToolOutcome.SUCCEEDED
+
+    try:
+        asyncio.run(case())
+        delivery.present_tool_call.assert_awaited_once()
+        delivery.present_tool_result.assert_awaited_once()
+    finally:
+        _delivery_adapters.pop("run-visible", None)
 
 
 def test_importing_sdk_tool_adapter_has_no_product_provider_side_effect() -> None:

@@ -2,6 +2,69 @@
 
 > **最后更新**：2026-08-20
 
+## 2026-08-20 升级后 Computer Use 全工作台回归与修复
+
+- **真机覆盖**：当前源码 debug `.app` 在隔离 profile 上通过首次设置、会话、技能中心、产物库、
+  更多菜单、记忆、ContextTrace、反馈、设置、Provider 编辑取消、模型参数、Harness 观察和真实
+  发送失败路径。动作均为 Computer Use 坐标点击/真实键入；未用 DOM/WS 注入替代。
+- **已修问题**：能力筛选后右侧详情残留；Companion credential mismatch 无界重挑战风险；更多
+  子菜单只有图标无文字；记忆 IPC 读取退役服务键导致永久加载；空记忆不可读；SDK Runtime
+  技术错误无恢复指引；Tauri 关于页版本仍为 `0.1.0`；新 Provider 直接使用 36 字符 UUID 而被
+  后端 32 字符契约拒绝；首个 Provider 添加后 SDK Runtime ingress 仍关闭直到重启；SDK 工具
+  第二轮丢失 assistant `tool_calls` 导致 DeepSeek HTTP 400；TaskGrant/PreparedEffect 跨层契约漂移；
+  Session 显示 flash 但真实 SDK 仍调用 pro；无项目绑定的相对写盘误落 backend cwd。
+- **Provider 修复事实**：前端生成 `provider-<23 chars>` 并在提交前校验 kebab-case/32 字符；
+  Provider add/update/remove/reorder 成功后串行关闭旧 ingress/stack、按最新 registry 重建冻结
+  adapter 并重新开放 Companion ingress，空链或无效凭据保持 fail closed。
+- **SDK Tool 修复事实**：assistant tool-call 结构进入 durable Message metadata 并在后续
+  OpenAI-compatible 请求还原；自动授权使用合法且确定性的 `policy:auto` TaskGrant，prepared
+  identity 从 context metadata 读取。Run 前冻结 adapter 对齐 Session provider/model，并在 Run
+  内锁定。无显式项目 workspace 时 SDK ToolContext 与 `write_file` 相对路径统一绑定
+  `<user_data>/workspace`。Run capability snapshot 改用完整 77 项产品目录，补回 legacy registry
+  漏掉的 17 项动态工具；SDK tool call/result 通过 `RunPresenter` 实时投影并持久化为标准
+  assistant/tool 消息，UI 不再只显示最终文本而隐藏实际工具生命周期。Provider HTTP 200 后的
+  typed contract violation 现在归一为确定的 `provider_protocol_error`，不再落入 unknown handoff
+  而把会话误报为 `run_failed — sdk_run_waiting`；异常诊断不记录请求、响应或 secret。工具目录
+  还将 `memory_recall` 接到现有 memory SDK owner-scoped adapter；其余四个尚未迁移的历史内存
+  handler 由 import-safe compatibility module 明确降级，不再因旧 manifest 路径失效拖垮整份目录。
+- **验证**：原工作台前端聚焦 `20 passed`、credential 后端 `10 passed`；新增 Provider 前端
+  `36 passed` + TypeScript PASS，Provider IPC/运行时刷新后端 `15 passed`；debug `.app`/DMG
+  构建 PASS。真实 DeepSeek `deepseek-v4-pro` 与会话绑定 `deepseek-v4-flash` 均完成 HTTP 200，
+  Provider 编辑热刷新后无需重启继续回复；再次重启保持 Provider、消息和模型绑定。新增工具/
+  Provider/路径聚焦 `62 passed`，组合验证 `56 passed`，Python compile PASS。最终干净 Session
+  `9ae8ed31-37dd-45b6-a24a-16f4a3cb139e` 真实调用 `deepseek-v4-flash`，四个 Provider turn、
+  `run_shell/write_file/read_file` effects 全成功，隔离 workspace 文件内容与 13-byte 结果一致。
+- **证据**：原始回归保存在 Git ignore 的
+  `.local-test-evidence/2026-08-20/manual-computer-use-regression/`；本轮聊天截图在
+  `.local-test-evidence/2026-08-20/provider-runtime-fix/chat-flash-model-pass.jpeg`，SHA-256
+  `9a32004d2d29a6bbf6906a0371dc4548fd244589125cf68563331f1f04592a0a`；最终 Tool 截图
+  `final-deepseek-tool-e2e-pass.jpeg`，SHA-256
+  `ca3b9bafa2da0e7adf14e96635cd250a43f0b497e5356d1da9763e2ebed3cfc4`。Agent 工具修复复测
+  Session `233737e1-acbe-4f02-b190-d9334eb262f2` 的真实请求携带 77 项工具，UI 显示
+  `tool_search` 调用/成功卡片并确认三项 agent 工具可用；截图 `agent-tools-visible-pass.jpeg`，
+  SHA-256 `37637ffdb3a430264856cd62d93a202873cffb87cc49ca310af4f3a3f22767c8`，聚焦回归
+  `71 passed`。等待态分类修复后，同一 Session 的完整项目调查连续 5 个工具 effect 成功；最终
+  版本再次真实调用 `agent_reach_read` 并收到 `FINAL WAIT FIX OK`，最新账本为
+  `Run completed / Provider succeeded / effect succeeded`。截图 `sdk-run-waiting-fixed-pass.jpeg`，
+  SHA-256 `14b3185c2a5d49da445f243b6695024fe507829e9c29ea3352b1f841a7277afc`；聚焦回归
+  `72 passed`。
+
+## 2026-08-20 Agent 执行时间线与上下文隔离 slice
+
+- **实现状态**：代码与 public projection 已完成；Inspector 现在从同一 `PublicRunSnapshotV3`
+  渲染有界、脱敏、可折叠的 activity timeline，旧 V3/legacy snapshot 仍安全降级。
+- **上下文边界**：时间线阶段/状态/耗时/进度/终态、工具安全摘要/预览、Inspector diagnostics、
+  correlation 与 hidden reasoning 均固定 `context_visibility=exclude`；当前执行轮真实
+  `assistant.tool_calls`/`tool` result 仍按模型协议进入该轮 context，但 UI projection 不会回灌。
+- **自动化验证**：S-6 malformed/replay contract smoke PASS；S-7 backend/frontend contract、旧行为
+  聚焦回归、typecheck、build PASS（19 backend tests + 70 frontend tests）。证据账本见
+  `plans/2026-08-20-agent-activity-timeline/verification/run-1/`。
+- **真人验证状态**：S-1 至 S-5 保持 `NOT_RUN`。Computer Use 尝试被 macOS 锁屏阻断，不能用
+  DOM、Vitest 或 WebSocket 直注替代真人点击；解锁后仍需完成截图、真实动作和日志断言。
+- **门禁工具已知问题**：当前 `plan_test_gate.py record-run --exec` 同时写 run/evidence 时，
+  完整性计数会在下一次写入误报 `LEDGER_TAMPERED`；本轮按合法的 `record-run` 后独立
+  `attach-evidence` 路径入账，未手改账本。
+
 ## 2026-08-20 修复：SDK fresh-run 多轮上下文与 Session ID 双击复制
 
 - 文字 follow-up 继续走 SDK fresh run；Host 现在从 SessionDB 注入最近 20 条按时间正序的
@@ -19,9 +82,9 @@
   `policy.decide(prepared, request=...)`，并兼容旧 callable fixture；工具调用可继续进入
   effect handoff/settle，失败终态统一投影为 `run_failed` 并回到 idle。
 - 验证：授权适配器与 SDK execute 聚焦回归 `38 passed`；Python compile、diff check、前端
-  TypeScript 与既有前端 `50 passed` 已通过。Computer Use 已真实验证普通聊天、多轮上下文和
-  失败终态收束；工具成功链路的最终点击复测受 Tauri dev 重启时旧窗口/8100 端口状态残留阻断，
-  需在干净桌面进程下继续验证 `tool.effect_settled`。
+  TypeScript 与既有前端 `50 passed` 已通过。Computer Use 已真实验证普通聊天、多轮上下文、
+  失败终态收束和工具成功链路；最终干净会话中 `tool.effect_settled`、Provider follow-up、
+  Session flash 模型与隔离 workspace 文件均已核验通过。
 
 ## 2026-08-20 里程碑：SDK 生产化 program 完成（harness 0.1.4 + memory 0.2.0）
 
@@ -77,9 +140,10 @@
   `extract_facts` / `recall` / `digital_twin` / `daily_decay` / `summarize` / 生命周期 / embedder
   fallback 等关键路径输出 `memory.*` 事件，错误路径用 `logger.exception` 保留堆栈（替代 SDK 内部
   `HarnessError` 吞 private_cause 导致的不可追踪问题）。
-- **已知残留（不阻塞）**：`memory_recall_host_registration_deferred`（host 侧 memory_recall tool
-  注册被 core-handler authority 清单挡住，需重建 `execution_build_*` 三个 manifest）；
-  `oh4_curation_skipped reason=no_facts_store`（curation 未接新 SDK）；`model_provision_failed
+- **后续收束（2026-08-20）**：`memory_recall` 已改由 SDK 产品目录直接绑定
+  `recall_adapter`，不再尝试向已退休的 legacy core-handler authority 注册；执行身份 manifest
+  已随工具源码重建。
+- **已知残留（不阻塞）**：`oh4_curation_skipped reason=no_facts_store`（curation 未接新 SDK）；`model_provision_failed
   HTTP 451`（BGE-M3 下载被网络挡，走 hash fallback）；`growth_authority_cutover_failed`（companion
   切代报错但随后仍 ready）。
 - **事实源**：`ARCHITECTURE/MEMORY_SDK_BOUNDARY.md`、`plans/2026-08-17-memory-sdk/HANDOFF.md`。

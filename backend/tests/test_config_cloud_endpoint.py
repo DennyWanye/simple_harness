@@ -124,6 +124,45 @@ async def test_update_cloud_config_success():
 
 
 @pytest.mark.asyncio
+async def test_update_cloud_config_promotes_validated_provider_for_runtime(monkeypatch):
+    """A seeded enabled endpoint without a key must not win cold startup."""
+
+    class FakeRegistry:
+        def __init__(self):
+            self.entries = [{"id": "relay-cloud"},]
+            self.reordered = None
+
+        def get_entry(self, provider_id):
+            return next((entry for entry in self.entries if entry["id"] == provider_id), None)
+
+        async def ensure_provider(self, fields):
+            self.entries.append({"id": fields["id"]})
+
+        def get_chain(self):
+            return list(self.entries)
+
+        async def reorder(self, provider_ids):
+            self.reordered = list(provider_ids)
+
+    registry = FakeRegistry()
+    monkeypatch.setattr(main_module.service_context, "provider_registry", registry)
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        resp = await client.post(
+            "/config/cloud",
+            json={
+                "base_url": "https://api.example.com/v1",
+                "model": "gpt-4",
+                "api_key": "sk-test1234567890",
+            },
+            headers={"x-shared-secret": SHARED_SECRET},
+        )
+    assert resp.status_code == 200
+    assert registry.reordered == ["primary", "relay-cloud"]
+
+
+@pytest.mark.asyncio
 async def test_update_cloud_config_keeps_old_key_when_omitted():
     """Second call without api_key should reuse the key from the first call."""
     async with AsyncClient(

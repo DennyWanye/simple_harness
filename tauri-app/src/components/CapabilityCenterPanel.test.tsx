@@ -160,6 +160,12 @@ describe("CapabilityCenterPanel", () => {
       target: { value: "Blender" },
     });
     expect(screen.queryByRole("button", { name: /Godot/ })).toBeNull();
+    expect(screen.getByTestId("capability-detail").textContent).toContain(
+      "Blender",
+    );
+    expect(
+      screen.getByRole("button", { name: /Blender/ }).getAttribute("aria-pressed"),
+    ).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: /Blender/ }));
     expect(screen.getByTestId("capability-detail").textContent).toContain(
       "缺少可执行文件",

@@ -38,6 +38,7 @@ import { useAutostart } from "./hooks/useAutostart";
 import { useBackendLifecycle, type Lifecycle } from "./hooks/useBackendLifecycle";
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
+import { chatErrorMessage } from "./chatErrorMessage";
 import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
 // 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
 // 一条路径（baseUrl + apiKey），身份走本地 profile。
@@ -50,25 +51,6 @@ import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
  * （InputBar 会带 `new_session: true` 让后端新建 uuid 会话再投递）。
  */
 const NO_ACTIVE_SESSION = "";
-
-/**
- * 聊天错误文案 —— 直接呈现后端送来的原文。
- *
- * 取代原 `friendlyChatErrorMessage`（relayErrorText，随 relay 一并移除）：
- * 那层把 relay 的 error_class（余额不足 / key 失效）翻成中文引导语，
- * 而手动 provider 是用户自填 baseUrl，**原始错误比任何转译都更有助于定位**
- * （401 是 key 错、404 是 baseUrl 路径错、超时是网络），不再做语义包装。
- */
-function chatErrorMessage(p: {
-  error?: unknown;
-  detail?: unknown;
-  reason?: unknown;
-}): string {
-  for (const v of [p.error, p.detail, p.reason]) {
-    if (typeof v === "string" && v.trim()) return v.trim();
-  }
-  return "请求失败（后端未提供错误详情）";
-}
 
 function App() {
   // W5 (R17): silent self-update on startup. No-op under dev-browser or
@@ -382,6 +364,7 @@ function App() {
     let rebindPending = false;
     let bindRetryTimer: ReturnType<typeof setTimeout> | null = null;
     let bindRetryAttempts = 0;
+    let rechallengeBackoffPending = false;
     let disposed = false;
 
     const scheduleTransientBindRetry = () => {
@@ -464,7 +447,12 @@ function App() {
             bindingEpoch,
           };
           bindInFlight = false;
-          void sendCurrentIdentity();
+          if (rechallengeBackoffPending) {
+            rechallengeBackoffPending = false;
+            scheduleTransientBindRetry();
+          } else {
+            void sendCurrentIdentity();
+          }
         }
       } else if (message.type === "companion_profile_bound" && challenge) {
         challenge = {
@@ -491,6 +479,13 @@ function App() {
         challenge = null;
         bindInFlight = false;
         rebindPending = true;
+        // The backend sends a fresh challenge immediately after rejecting a
+        // signed bind. Do not answer that challenge in the same event turn:
+        // persistent credential-fact mismatches would otherwise form an
+        // unbounded request/rechallenge loop that can saturate the process and
+        // generate gigabytes of logs. Reuse the bounded exponential retry
+        // budget used for transient identity failures.
+        rechallengeBackoffPending = true;
       } else if (message.type === "companion_control_error") {
         // The local identity authority may be temporarily unavailable even
         // though the Rust credential itself was valid. Keep the challenge and

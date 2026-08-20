@@ -34,6 +34,15 @@ def sandbox(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return workspace
 
 
+def test_workspace_root_honors_bound_user_data_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("DESKPET_WORKSPACE_DIR", raising=False)
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path / "profile"))
+
+    assert file_tools._workspace_root() == (tmp_path / "profile" / "workspace").resolve()
+
+
 # ---------------------------------------------------------------------
 # file_write / file_read round-trip
 # ---------------------------------------------------------------------

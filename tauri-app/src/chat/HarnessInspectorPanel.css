@@ -306,3 +306,37 @@
   outline: 2px solid rgba(56, 189, 248, 0.75);
   outline-offset: 2px;
 }
+.agent-activity-timeline {
+  display: grid;
+  gap: 0;
+  max-height: 340px;
+  overflow: auto;
+  border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.agent-activity-timeline__item {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.agent-activity-timeline__summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 31px;
+  padding: 5px 0;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11.5px;
+}
+
+.agent-activity-timeline__summary::-webkit-details-marker { display: none; }
+.agent-activity-timeline__title { min-width: 0; flex: 1; color: #dce5f2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-activity-timeline__target, .agent-activity-timeline__meta { flex-shrink: 0; color: #8492a6; font-size: 10px; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-activity-timeline__status { flex-shrink: 0; font-size: 10px; }
+.agent-activity-timeline__detail { display: grid; gap: 6px; padding: 4px 0 9px 21px; color: #aebbd0; font-size: 11px; }
+.agent-activity-timeline__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.agent-activity-timeline__line { color: #8492a6; }
+.agent-activity-timeline__tool-actions { display: flex; gap: 6px; }
+.agent-activity-timeline__tool-actions button { border: 1px solid rgba(148, 163, 184, 0.24); border-radius: 4px; background: transparent; color: #b8c6d9; padding: 3px 7px; font: inherit; cursor: pointer; }
+.agent-activity-timeline__pre { max-height: 150px; overflow: auto; margin: 0; padding: 6px; border-radius: 4px; background: rgba(15, 23, 42, 0.42); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10px; }
+.agent-activity-timeline__truncated, .agent-activity-timeline__muted { color: #8492a6; }

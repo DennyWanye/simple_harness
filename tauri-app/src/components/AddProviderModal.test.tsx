@@ -17,6 +17,7 @@ import {
   buildAddProviderMessage,
   buildUpdateProviderMessage,
   buildProbeModelsMessage,
+  createProviderId,
   prefillFromProvider,
   validateProviderDraft,
   type ProviderDraft,
@@ -31,6 +32,21 @@ const valid_draft: ProviderDraft = {
   default_model: "deepseek-chat",
   api_key: "sk-real-key",
 };
+
+describe("createProviderId", () => {
+  it("converts a 36-character UUID into a backend-compatible provider id", () => {
+    const id = createProviderId("123e4567-e89b-12d3-a456-426614174000");
+    expect(id).toMatch(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    expect(id.length).toBeLessThanOrEqual(32);
+    expect(id).toBe("provider-123e4567e89b12d3a456426");
+  });
+
+  it("produces an id accepted by add-mode validation", () => {
+    const id = createProviderId("ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF");
+    const v = validateProviderDraft({ ...valid_draft, id }, { editing: false });
+    expect(v.errors.id).toBeUndefined();
+  });
+});
 
 // ---------------------------------------------------------------------------
 // 4.8 test_add_modal_validates_required_fields_clientside

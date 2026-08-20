@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import json
+import re
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -20,7 +21,9 @@ from typing import Any, Callable, Mapping, Sequence
 import aiosqlite
 
 from deskpet.execution.run_read_model import (
+    CONTEXT_VISIBILITY_EXCLUDE,
     DETAIL_QUERY_KINDS,
+    PublicActivityItem,
     ProjectionManifestV1,
     ProjectionTotalsV1,
     PublicDetailPageV1,
@@ -70,6 +73,24 @@ _EVENT_PUBLIC_FIELDS = frozenset(
     }
 )
 _REDACTOR = TraceRedactor()
+_THINK_RX = re.compile(r"<think>[\s\S]*?(?:</think>|$)", re.IGNORECASE)
+_PUBLIC_HIDDEN_KEYS = frozenset(
+    {
+        "authorization",
+        "api_key",
+        "apikey",
+        "access_token",
+        "refresh_token",
+        "password",
+        "secret",
+        "cookie",
+        "device_key",
+        "token",
+        "reasoning_content",
+        "provider_payload",
+        "raw_payload",
+    }
+)
 
 
 async def _read_public_message_projection_page_tx(
@@ -137,7 +158,10 @@ def _public_event_payload(value: Any) -> dict[str, Any]:
 
 
 def _public_content(value: Any, *, cap: int = 16_384) -> tuple[str, str | None]:
-    text = redact_sensitive_text(str(value or ""))
+    # Thinking-model wrappers are never a public message, even if a provider
+    # accidentally persisted them alongside the user-facing answer.
+    text = _THINK_RX.sub("", str(value or "")).strip()
+    text = redact_sensitive_text(text)
     text = str(_REDACTOR.redact(text))
     encoded = text.encode("utf-8")
     if len(encoded) <= cap:
@@ -174,7 +198,11 @@ def _bounded_public_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
                     clipped = clipped[:-1]
             return "…"
         if isinstance(item, Mapping):
-            keys = sorted(str(key) for key in item)
+            keys = sorted(
+                str(key)
+                for key in item
+                if str(key).casefold() not in _PUBLIC_HIDDEN_KEYS
+            )
             if len(keys) > 64:
                 hashes[path] = hashlib.sha256(_canonical(item).encode("utf-8")).hexdigest()
                 keys = keys[:64]
@@ -194,6 +222,136 @@ def _bounded_public_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
     if hashes:
         result["_truncation_hashes"] = hashes
     return result
+
+
+def _bounded_public_value(value: Any) -> tuple[Any, bool]:
+    """Bound a safe detail whether the projector received a mapping or scalar."""
+    if value is None:
+        return None, False
+    if isinstance(value, Mapping):
+        bounded = _bounded_public_mapping(value)
+        return bounded, bool(bounded.get("_truncation_hashes"))
+    bounded = _bounded_public_mapping({"value": value})
+    return bounded.get("value"), bool(bounded.get("_truncation_hashes"))
+
+
+def _public_views(
+    facts: tuple[PublicFactEnvelope, ...],
+    phases: tuple[Mapping[str, Any], ...],
+    aggregate: Mapping[str, Any],
+    root_run_id: str,
+) -> tuple[tuple[PublicActivityItem, ...], tuple[Mapping[str, Any], ...], tuple[Mapping[str, Any], ...]]:
+    """Build bounded eager views from the same immutable public read cut.
+
+    This function only sees ``PublicFactEnvelope.public_payload``.  It never
+    serializes the envelope itself, so raw ledger/provider fields cannot cross
+    the V3 wire boundary.
+    """
+    phase_by_fact: dict[str, str] = {}
+    for phase in phases:
+        phase_id = str(phase.get("phase_id", ""))
+        for item in phase.get("items", ()):
+            if isinstance(item, Mapping) and item.get("stable_id"):
+                phase_by_fact[str(item["stable_id"])] = phase_id
+
+    title_by_kind = {
+        "tool": "执行工具",
+        "provider": "处理请求",
+        "workflow_step": "执行工作流步骤",
+        "child": "执行子任务",
+        "child_command": "执行子任务",
+        "narration": "更新进度",
+        "content": "更新消息",
+        "user_request": "理解需求",
+        "boundary": "等待确认",
+        "failure_report": "记录失败",
+        "failure_set": "整理失败证据",
+        "run": "建立任务",
+        "run_terminal": "任务结束",
+    }
+    activities: list[PublicActivityItem] = []
+    tools: list[Mapping[str, Any]] = []
+    messages: list[Mapping[str, Any]] = []
+    seen_fact_ids: set[str] = set()
+    for fact in facts:
+        if not fact.stable_id or fact.stable_id in seen_fact_ids:
+            continue
+        seen_fact_ids.add(fact.stable_id)
+        payload = fact.public_payload
+        kind = fact.kind
+        phase_id = phase_by_fact.get(fact.stable_id)
+        status = str(payload.get("status") or "unknown")
+        text = payload.get("content") or payload.get("safe_text")
+        safe_text, text_digest = _public_content(text) if isinstance(text, str) and text.strip() else (None, None)
+        tool_view: dict[str, Any] | None = None
+        if kind == "tool":
+            safe_input, input_truncated = _bounded_public_value(
+                payload.get("safe_input", payload.get("public_input"))
+            )
+            safe_result, result_truncated = _bounded_public_value(
+                payload.get("bounded_result", payload.get("public_result"))
+            )
+            truncation_hashes = payload.get("truncation_hashes", payload.get("_truncation_hashes", {}))
+            tool_view = {
+                "tool_ref": fact.stable_id,
+                "stable_id": fact.stable_id,
+                "phase_id": phase_id,
+                "public_name": str(payload.get("tool_name") or payload.get("public_name") or "工具"),
+                "action_label": str(payload.get("action_code") or payload.get("action_label") or "执行操作"),
+                "safe_target_label": payload.get("safe_target_label"),
+                "status": status,
+                "public_input": safe_input,
+                "public_result": safe_result,
+                "details_available": safe_input is not None,
+                "result_available": safe_result is not None,
+                "truncated": bool(truncation_hashes) or input_truncated or result_truncated,
+                "detail_ref": fact.stable_id,
+                "created_at": fact.created_at,
+                "context_visibility": CONTEXT_VISIBILITY_EXCLUDE,
+            }
+            tools.append(tool_view)
+        if kind in {"content", "narration", "user_request"} and safe_text:
+            messages.append({
+                "message_id": fact.stable_id,
+                "stable_id": fact.stable_id,
+                "phase_id": phase_id,
+                "text": safe_text,
+                "created_at": fact.created_at,
+                "context_visibility": CONTEXT_VISIBILITY_EXCLUDE,
+            })
+        activity = PublicActivityItem(
+            stable_id=fact.stable_id,
+            kind=kind,
+            title=(tool_view or {}).get("public_name") if tool_view else title_by_kind.get(kind, "执行记录"),
+            status=status,
+            phase_id=phase_id,
+            action_code=str(payload.get("action_code")) if payload.get("action_code") is not None else None,
+            tool_name=str(payload.get("tool_name")) if payload.get("tool_name") is not None else None,
+            safe_text=safe_text,
+            safe_target_label=(tool_view or {}).get("safe_target_label") if tool_view else None,
+            detail_ref=fact.stable_id if kind == "tool" else None,
+            public_input=(tool_view or {}).get("public_input") if tool_view else None,
+            public_result=(tool_view or {}).get("public_result") if tool_view else None,
+            duration_ms=payload.get("duration_ms") if isinstance(payload.get("duration_ms"), (int, float)) else None,
+            created_at=fact.created_at,
+            truncated=bool((tool_view or {}).get("truncated")) or text_digest is not None,
+        )
+        activities.append(activity)
+    terminal_status = str(aggregate.get("status") or "unknown")
+    terminal_id = f"run-terminal:{root_run_id}"
+    if terminal_id not in {item.stable_id for item in activities}:
+        activities.append(PublicActivityItem(
+            stable_id=terminal_id,
+            kind="run_terminal",
+            title="任务结束",
+            status=terminal_status,
+            safe_text=None,
+            created_at=aggregate.get("ended_at") if isinstance(aggregate.get("ended_at"), (int, float)) else None,
+        ))
+    activities.sort(key=lambda item: (item.created_at is None, item.created_at or 0.0, item.stable_id))
+    tools.sort(key=lambda item: (item.get("created_at") is None, item.get("created_at") or 0.0, str(item.get("stable_id"))))
+    messages.sort(key=lambda item: (item.get("created_at") is None, item.get("created_at") or 0.0, str(item.get("stable_id"))))
+    return tuple(activities), tuple(tools), tuple(messages)
 
 
 class HarnessPublicReadService:
@@ -300,6 +458,9 @@ class HarnessPublicReadService:
             )
         )
         detail_rows = self._detail_rows(facts)
+        activity_items, tool_public_views, public_messages = _public_views(
+            facts, phases, aggregate, root_run_id
+        )
         totals = ProjectionTotalsV1(
             **{kind: len(detail_rows[kind]) for kind in DETAIL_QUERY_KINDS}
         )
@@ -325,6 +486,9 @@ class HarnessPublicReadService:
             read_cut=read_cut,
             created_at=created_at,
             expires_at=created_at + self._ttl,
+            activity_items=activity_items,
+            tool_public_views=tool_public_views,
+            public_messages=public_messages,
         )
         await self._put_manifest(manifest)
         return manifest
@@ -341,6 +505,10 @@ class HarnessPublicReadService:
             projection_complete=manifest.projection_complete,
             diagnostics=manifest.diagnostics,
             read_cut=manifest.read_cut,
+            context_visibility=CONTEXT_VISIBILITY_EXCLUDE,
+            activity_items=manifest.activity_items,
+            tool_public_views=manifest.tool_public_views,
+            public_messages=manifest.public_messages,
         )
 
     async def query_details(

@@ -27,7 +27,8 @@ _LEGACY_STATIC_PROVIDER_MODULES = (
     "file_organize_tools",
     "file_tools",
     "image_tools",
-    # "memory_tools",  # Removed - module no longer exists
+    # memory_tools intentionally stays out of the legacy registry: it only
+    # provides import-safe compatibility handlers for the checked SDK manifest.
     "ocr_tools",
     "pdf_tools",
     "picker_tools",

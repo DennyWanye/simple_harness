@@ -206,6 +206,21 @@ def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict
 def _execution_context(context: ToolContext) -> ToolExecutionContext:
     metadata = thaw_json(context.metadata)
     call_id = active_product_tool_call_id().value
+    workspace = str(metadata["workspace"]) if metadata.get("workspace") else None
+    write_scope_root = (
+        str(metadata["write_scope_root"])
+        if metadata.get("write_scope_root")
+        else None
+    )
+    if workspace is None and write_scope_root is None:
+        # SDK 0.1.4's ReAct driver currently constructs ToolContext without
+        # propagating host workspace metadata. Keep product file tools bound
+        # to the same app-owned default workspace instead of falling through
+        # to the backend process working directory.
+        from agent.write_scope import resolve_workspace_root
+
+        workspace = str(resolve_workspace_root())
+        write_scope_root = workspace
     return ToolExecutionContext(
         scope_id=str(metadata.get("scope_id") or context.run_id.value),
         session_id=str(metadata.get("session_id") or context.request_id.value),
@@ -214,17 +229,14 @@ def _execution_context(context: ToolContext) -> ToolExecutionContext:
         run_id=context.run_id.value,
         call_id=call_id,
         effect_id=call_id,
-        workspace=(str(metadata["workspace"]) if metadata.get("workspace") else None),
-        write_scope_root=(
-            str(metadata["write_scope_root"])
-            if metadata.get("write_scope_root")
-            else None
-        ),
+        workspace=workspace,
+        write_scope_root=write_scope_root,
         owner_key=str(metadata.get("owner_key") or ""),
     )
 
 
 def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable[..., Any], str]]:
+    from deskpet.memory.recall_adapter import build_memory_recall_handlers
     from deskpet.tools.code_tools.spawn_subagents_tool import (
         build_sdk_await_subagents_tool,
         product_delegation_tool_catalog,
@@ -243,7 +255,10 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         deps.context_page_store,
         execution_context_getter=deps.execution_context_getter,
     )
-    # memory_recall 已移除 — 等待 simple-harness-memory-sdk 集成后重新接入
+    _reject_memory_recall, trusted_memory_recall = build_memory_recall_handlers(
+        deps.memory_query,
+        deps.memory_scope_resolver,
+    )
 
     class Capture:
         def __init__(self) -> None:
@@ -265,6 +280,7 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             "await_subagents": (await_handler, "keyword_context"),
             "todo_write": (todo_handler, "keyword_context"),
             "context_page_in": (page_handler, "standard"),
+            "memory_recall": (trusted_memory_recall, "context"),
             "web_search": (build_web_search_handler(deps.search_gateway), "standard"),
         }
     )

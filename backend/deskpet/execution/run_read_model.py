@@ -8,6 +8,7 @@ from typing import Any, Mapping
 
 
 JsonObject = Mapping[str, Any]
+CONTEXT_VISIBILITY_EXCLUDE = "exclude"
 
 
 def _freeze_json(value: Any) -> Any:
@@ -39,8 +40,11 @@ class PublicFactEnvelope:
     workflow_event_id: str | None = None
     invocation_id: str | None = None
     source_seq: int | None = None
+    context_visibility: str = CONTEXT_VISIBILITY_EXCLUDE
 
     def __post_init__(self) -> None:
+        if self.context_visibility != CONTEXT_VISIBILITY_EXCLUDE:
+            raise ValueError("public fact envelopes are display-only")
         object.__setattr__(self, "public_payload", _freeze_json(self.public_payload))
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,6 +58,40 @@ class PublicFactEnvelope:
             "workflow_event_id": self.workflow_event_id,
             "invocation_id": self.invocation_id,
             "source_seq": self.source_seq,
+            "context_visibility": self.context_visibility,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PublicActivityItem:
+    """Bounded UI activity; this type is deliberately not a context fragment."""
+
+    stable_id: str
+    kind: str
+    title: str
+    status: str
+    phase_id: str | None = None
+    action_code: str | None = None
+    tool_name: str | None = None
+    safe_text: str | None = None
+    safe_target_label: str | None = None
+    detail_ref: str | None = None
+    public_input: Any = None
+    public_result: Any = None
+    duration_ms: int | float | None = None
+    created_at: float | None = None
+    truncated: bool = False
+    context_visibility: str = CONTEXT_VISIBILITY_EXCLUDE
+
+    def __post_init__(self) -> None:
+        if self.context_visibility != CONTEXT_VISIBILITY_EXCLUDE:
+            raise ValueError("activity items are display-only")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in asdict(self).items()
+            if value is not None
         }
 
 
@@ -101,8 +139,14 @@ class ProjectionManifestV1:
     created_at: float
     expires_at: float
     schema_version: str = "3"
+    context_visibility: str = CONTEXT_VISIBILITY_EXCLUDE
+    activity_items: tuple[PublicActivityItem, ...] = ()
+    tool_public_views: tuple[JsonObject, ...] = ()
+    public_messages: tuple[JsonObject, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.context_visibility != CONTEXT_VISIBILITY_EXCLUDE:
+            raise ValueError("public manifests are display-only")
         object.__setattr__(self, "facts", tuple(self.facts))
         object.__setattr__(self, "aggregate_outcome", _freeze_json(self.aggregate_outcome))
         object.__setattr__(
@@ -121,6 +165,9 @@ class ProjectionManifestV1:
             ),
         )
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        object.__setattr__(self, "activity_items", tuple(self.activity_items))
+        object.__setattr__(self, "tool_public_views", tuple(_freeze_json(item) for item in self.tool_public_views))
+        object.__setattr__(self, "public_messages", tuple(_freeze_json(item) for item in self.public_messages))
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,8 +182,14 @@ class PublicRunSnapshotV3:
     diagnostics: tuple[str, ...]
     read_cut: ReadCutV1
     schema_version: str = "3"
+    context_visibility: str = CONTEXT_VISIBILITY_EXCLUDE
+    activity_items: tuple[PublicActivityItem, ...] = ()
+    tool_public_views: tuple[JsonObject, ...] = ()
+    public_messages: tuple[JsonObject, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.context_visibility != CONTEXT_VISIBILITY_EXCLUDE:
+            raise ValueError("public snapshots are display-only")
         object.__setattr__(self, "aggregate_outcome", _freeze_json(self.aggregate_outcome))
         object.__setattr__(
             self,
@@ -144,6 +197,9 @@ class PublicRunSnapshotV3:
             tuple(_freeze_json(item) for item in self.semantic_phases),
         )
         object.__setattr__(self, "diagnostics", tuple(self.diagnostics))
+        object.__setattr__(self, "activity_items", tuple(self.activity_items))
+        object.__setattr__(self, "tool_public_views", tuple(_freeze_json(item) for item in self.tool_public_views))
+        object.__setattr__(self, "public_messages", tuple(_freeze_json(item) for item in self.public_messages))
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -157,6 +213,10 @@ class PublicRunSnapshotV3:
             "projection_complete": self.projection_complete,
             "diagnostics": list(self.diagnostics),
             "read_cut": self.read_cut.to_dict(),
+            "context_visibility": self.context_visibility,
+            "activity_items": [item.to_dict() for item in self.activity_items],
+            "tool_public_views": _thaw_json(self.tool_public_views),
+            "public_messages": _thaw_json(self.public_messages),
         }
 
 
@@ -169,8 +229,11 @@ class PublicDetailPageV1:
     next_cursor: str | None
     projection_complete: bool
     schema_version: str = "3"
+    context_visibility: str = CONTEXT_VISIBILITY_EXCLUDE
 
     def __post_init__(self) -> None:
+        if self.context_visibility != CONTEXT_VISIBILITY_EXCLUDE:
+            raise ValueError("public detail pages are display-only")
         object.__setattr__(
             self, "items", tuple(_freeze_json(item) for item in self.items)
         )
@@ -184,6 +247,7 @@ class PublicDetailPageV1:
             "total": self.total,
             "next_cursor": self.next_cursor,
             "projection_complete": self.projection_complete,
+            "context_visibility": self.context_visibility,
         }
 
 
@@ -200,6 +264,8 @@ DETAIL_QUERY_KINDS = frozenset(
 
 __all__ = [
     "DETAIL_QUERY_KINDS",
+    "CONTEXT_VISIBILITY_EXCLUDE",
+    "PublicActivityItem",
     "ProjectionManifestV1",
     "ProjectionTotalsV1",
     "PublicDetailPageV1",

@@ -208,6 +208,9 @@ describe("Sidebar T13 — 「更多」入口与连接徽章聚合（WB-3）", ()
 
     fireEvent.click(screen.getByTestId("sidebar-more-toggle"));
     expect(screen.getByTestId("sidebar-more-group")).toBeTruthy();
+    expect(screen.getByTestId("memory-toggle").textContent).toContain("记忆管理");
+    expect(screen.getByTestId("trace-toggle").textContent).toContain("ContextTrace");
+    expect(screen.getByTestId("feedback-toggle").textContent).toContain("反馈问题");
     fireEvent.click(screen.getByTestId("memory-toggle"));
     fireEvent.click(screen.getByTestId("trace-toggle"));
     fireEvent.click(screen.getByTestId("feedback-toggle"));

@@ -99,9 +99,21 @@ class ProductToolsAdapter(ToolRegistry):
     ) -> ToolResult:
         token = _current_call_id.set(call.call_id)
         try:
-            return await super().invoke(
+            delivery_adapter = None
+            try:
+                from .desktop_runtime import _delivery_adapters
+
+                delivery_adapter = _delivery_adapters.get(context.run_id.value)
+                if delivery_adapter is not None:
+                    await delivery_adapter.present_tool_call(call)
+            except Exception:
+                delivery_adapter = None
+            result = await super().invoke(
                 call, context, accepted_result_call_id=accepted_result_call_id
             )
+            if delivery_adapter is not None:
+                await delivery_adapter.present_tool_result(call, result)
+            return result
         finally:
             _current_call_id.reset(token)
 

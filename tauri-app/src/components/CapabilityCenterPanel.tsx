@@ -32,6 +32,26 @@ type CategoryFilter = "all" | CapabilityCategory;
 const EMPTY_CAPABILITIES: CapabilityDescriptor[] = [];
 const EMPTY_OPERATIONS: CapabilityOperation[] = [];
 
+function capabilityMatchesFilters(
+  capability: CapabilityDescriptor,
+  category: CategoryFilter,
+  query: string,
+): boolean {
+  if (category !== "all" && !capability.categories.includes(category)) {
+    return false;
+  }
+  const needle = query.trim().toLocaleLowerCase();
+  if (!needle) return true;
+  return [
+    capability.name,
+    capability.description,
+    capability.capability_id,
+    capability.source.label,
+  ]
+    .filter(Boolean)
+    .some((value) => String(value).toLocaleLowerCase().includes(needle));
+}
+
 interface Props {
   open: boolean;
   channel: CapabilityChannel | null;
@@ -155,28 +175,26 @@ export function CapabilityCenterPanel({
   }, [open, channel]);
 
   const visibleCapabilities = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
-    return capabilities.filter((capability) => {
-      if (
-        category !== "all" &&
-        !capability.categories.includes(category)
-      ) {
-        return false;
-      }
-      if (!needle) return true;
-      return [
-        capability.name,
-        capability.description,
-        capability.capability_id,
-        capability.source.label,
-      ]
-        .filter(Boolean)
-        .some((value) => String(value).toLocaleLowerCase().includes(needle));
-    });
+    return capabilities.filter((capability) =>
+      capabilityMatchesFilters(capability, category, query),
+    );
   }, [capabilities, category, query]);
 
+  // Filtering must never leave the detail pane pointing at an item that is no
+  // longer present in the visible list. Persist the fallback selection so the
+  // list's aria state and the detail pane share one source of truth even when
+  // the capability snapshot arrives asynchronously after the filter changes.
+  useEffect(() => {
+    setSelectedId((current) =>
+      current &&
+      visibleCapabilities.some((item) => item.capability_id === current)
+        ? current
+        : visibleCapabilities[0]?.capability_id ?? null,
+    );
+  }, [visibleCapabilities]);
+
   const selected =
-    capabilities.find((item) => item.capability_id === selectedId) ?? null;
+    visibleCapabilities.find((item) => item.capability_id === selectedId) ?? null;
 
   const sendOperationAction = (
     action: CapabilityOperationAction,
@@ -301,7 +319,19 @@ export function CapabilityCenterPanel({
                 <input
                   aria-label="搜索能力"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    const nextQuery = event.target.value;
+                    setQuery(nextQuery);
+                    setSelectedId(
+                      capabilities.find((capability) =>
+                        capabilityMatchesFilters(
+                          capability,
+                          category,
+                          nextQuery,
+                        ),
+                      )?.capability_id ?? null,
+                    );
+                  }}
                   placeholder="名称、来源或 ID"
                   style={inputStyle}
                 />
@@ -311,9 +341,19 @@ export function CapabilityCenterPanel({
                 <select
                   aria-label="能力类别"
                   value={category}
-                  onChange={(event) =>
-                    setCategory(event.target.value as CategoryFilter)
-                  }
+                  onChange={(event) => {
+                    const nextCategory = event.target.value as CategoryFilter;
+                    setCategory(nextCategory);
+                    setSelectedId(
+                      capabilities.find((capability) =>
+                        capabilityMatchesFilters(
+                          capability,
+                          nextCategory,
+                          query,
+                        ),
+                      )?.capability_id ?? null,
+                    );
+                  }}
                   style={inputStyle}
                 >
                   <option value="all">全部</option>

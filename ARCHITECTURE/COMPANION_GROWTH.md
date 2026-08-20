@@ -1,6 +1,6 @@
 # Companion 长期成长架构
 
-> 最后更新：2026-08-02
+> 最后更新：2026-08-20
 > 当前状态：Task 0～16 已完成。committed message → 模型语义判定 → GrowthEvent →
 > reflection → candidate build → independent evaluation → activation/rollback 已接入唯一生产
 > 组合根；S-1～S-5、S-8 已通过真实 Tauri 主消息页点击/输入 E2E，S-6/S-7/S-9 已通过
@@ -21,6 +21,9 @@ Companion 长期成长层复用现有
 - trusted profile owner 由 Rust 签名的 `main/identity_bind` 与
   `message-panel/companion_action` 两条独立 control lease 建立；shared secret 不能授予
   Companion mutation authority。
+- Rust 签名凭据与当前本地身份事实不一致时，后端以
+  `credential_facts_mismatch + rechallenge=false` 终结该次绑定；前端只对可恢复的重新挑战做
+  有界指数退避（最多 10 次），不会形成同步 challenge/rechallenge 风暴或无限日志增长。
 - 消息面板的 `controlWs` 在 renderer 级缓存最近一条
   `companion_identity_status/companion_identity_unready`，新挂载的面板订阅者会立即收到重放。
   因此 React 重挂载或 Vite HMR 复用既有 WebSocket 时，不会因错过一次性身份就绪事件
@@ -41,6 +44,9 @@ Companion 长期成长层复用现有
   全新源码 Tauri 主消息页真人点击验证了空白新建、带草稿新建、即时 user echo 和真实
   Relay final 均落在新 UUID session。旧 HMR 连接曾把消息写入热更新前的 store，因此
   所有真人验收都以全新 Tauri/WebSocket 实例为准。
+- 2026-08-20 升级后真实 `.app` 冷启动验证：全新隔离 profile 在默认 8100 上完成本地身份绑定，
+  两条 control WS 均连接且工作台显示“已连接”；陈旧 profile 的事实不匹配只记录有界拒绝，
+  未再产生无界重挑战。credential 聚焦回归 `10 passed`。
 
 ## Task 3 已投入通用执行主链的能力
 

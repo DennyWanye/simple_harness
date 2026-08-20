@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 
 import type {
+  PublicRunActivityItem,
   PublicRunAggregateOutcome,
   PublicRunMessageView,
   PublicRunSemanticPhase,
@@ -133,6 +134,7 @@ function phase(value: unknown, index: number): PublicRunSemanticPhase | null {
             safe_target_label: typeof publicItem.safe_target_label === "string" ? publicItem.safe_target_label : null,
             detail_ref: typeof publicItem.detail_ref === "string" ? publicItem.detail_ref : null,
             created_at: typeof publicItem.created_at === "number" ? publicItem.created_at : null,
+            context_visibility: "exclude",
           }];
         })
       : [],
@@ -171,6 +173,7 @@ function tool(value: unknown, index: number): ToolPublicView | null {
       : null,
     detail_ref: typeof item.detail_ref === "string" ? item.detail_ref : null,
     created_at: typeof item.created_at === "number" ? item.created_at : null,
+    context_visibility: "exclude",
   };
 }
 
@@ -184,6 +187,30 @@ function narration(value: unknown, index: number): PublicRunMessageView | null {
     phase_id: typeof item.phase_id === "string" ? item.phase_id : null,
     text: item.text,
     created_at: numberValue(item.created_at),
+    context_visibility: "exclude",
+  };
+}
+
+function activity(value: unknown): PublicRunActivityItem | null {
+  const item = record(value);
+  if (!item || typeof item.stable_id !== "string") return null;
+  return {
+    stable_id: item.stable_id,
+    kind: typeof item.kind === "string" ? item.kind : "record",
+    title: typeof item.title === "string" && item.title.trim() ? item.title : "执行记录",
+    status: typeof item.status === "string" ? item.status : "unknown",
+    phase_id: typeof item.phase_id === "string" ? item.phase_id : null,
+    action_code: typeof item.action_code === "string" ? item.action_code : null,
+    tool_name: typeof item.tool_name === "string" ? item.tool_name : null,
+    safe_text: typeof item.safe_text === "string" ? item.safe_text : null,
+    safe_target_label: typeof item.safe_target_label === "string" ? item.safe_target_label : null,
+    detail_ref: typeof item.detail_ref === "string" ? item.detail_ref : null,
+    public_input: item.public_input,
+    public_result: item.public_result,
+    duration_ms: typeof item.duration_ms === "number" ? item.duration_ms : null,
+    created_at: typeof item.created_at === "number" ? item.created_at : null,
+    truncated: item.truncated === true,
+    context_visibility: "exclude",
   };
 }
 
@@ -196,6 +223,7 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
   if (!item) return null;
   const schema = String(item.schema_version ?? "");
   if (schema === "3") {
+    if (item.context_visibility !== undefined && item.context_visibility !== "exclude") return null;
     const sessionId = String(item.session_id ?? "");
     const rootRunId = String(item.root_run_id ?? "");
     if (!sessionId || !rootRunId) return null;
@@ -229,6 +257,26 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
         text: publicItem.safe_text ?? "",
         created_at: publicItem.created_at ?? 0,
       })));
+    const phaseActivities = normalizedPhases.flatMap((semanticPhase) =>
+      semanticPhase.items.map((publicItem) => ({
+        stable_id: publicItem.stable_id,
+        kind: publicItem.kind,
+        title: publicItem.public_name ?? publicItem.tool_name ?? publicItem.action_code ?? "执行记录",
+        status: publicItem.status ?? "unknown",
+        phase_id: semanticPhase.phase_id,
+        action_code: publicItem.action_code,
+        tool_name: publicItem.tool_name,
+        safe_text: publicItem.safe_text,
+        safe_target_label: publicItem.safe_target_label,
+        detail_ref: publicItem.detail_ref,
+        public_input: undefined,
+        public_result: undefined,
+        duration_ms: null,
+        created_at: publicItem.created_at,
+        truncated: false,
+        context_visibility: "exclude" as const,
+      }))
+    );
     return {
       schema_version: "3",
       projection_id: String(item.projection_id ?? `${sessionId}:${rootRunId}`),
@@ -242,6 +290,10 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
       public_messages: Array.isArray(messageValues)
         ? messageValues.flatMap((entry, index) => narration(entry, index) ?? [])
         : phaseMessages,
+      activity_items: Array.isArray(item.activity_items)
+        ? item.activity_items.flatMap((entry) => activity(entry) ?? [])
+        : phaseActivities,
+      context_visibility: "exclude",
       totals: {
         workflow_facts: numberValue(totals?.workflow_facts),
         content_facts: numberValue(totals?.content_facts),
@@ -271,10 +323,12 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
           stable_id: toolRef,
           public_name: String(call.tool_name ?? "工具"),
           action_label: "历史记录",
+          safe_target_label: null,
           status: String(call.outcome_status ?? call.admission_state ?? "unknown"),
           result_available: false,
           details_available: false,
           unavailable_reason: "旧版记录没有可安全公开的详情",
+          context_visibility: "exclude",
         } satisfies ToolPublicView];
       })
     : [];
@@ -292,6 +346,25 @@ export function normalizePublicRunSnapshot(value: unknown): PublicRunSnapshotV3 
     semantic_phases: [],
     tool_public_views: legacyTools,
     public_messages: [],
+    activity_items: legacyTools.map((tool) => ({
+      stable_id: tool.stable_id,
+      kind: "tool",
+      title: tool.public_name,
+      status: tool.status,
+      phase_id: null,
+      action_code: tool.action_label,
+      tool_name: tool.public_name,
+      safe_text: null,
+      safe_target_label: tool.safe_target_label ?? null,
+      detail_ref: null,
+      public_input: undefined,
+      public_result: undefined,
+      duration_ms: null,
+      created_at: null,
+      truncated: false,
+      context_visibility: "exclude" as const,
+    })),
+    context_visibility: "exclude",
     totals: { workflow_facts: 0, content_facts: 0, provider_details: 0, tool_details: legacyTools.length },
     projection_complete: false,
     diagnostics: ["旧版运行记录仅显示安全摘要，详细阶段不可用"],
@@ -315,6 +388,11 @@ export const harnessPublicSnapshotStore = {
         current.projection_complete &&
         TERMINAL_OUTCOMES.has(current.aggregate_outcome.status) &&
         !TERMINAL_OUTCOMES.has(snapshot.aggregate_outcome.status)
+      ) return;
+      if (
+        TERMINAL_OUTCOMES.has(current.aggregate_outcome.status) &&
+        TERMINAL_OUTCOMES.has(snapshot.aggregate_outcome.status) &&
+        current.aggregate_outcome.status !== snapshot.aggregate_outcome.status
       ) return;
     }
     snapshots.set(storeKey, snapshot);

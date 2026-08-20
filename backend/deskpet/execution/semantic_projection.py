@@ -110,6 +110,14 @@ _SAFE_ITEM_FIELDS = (
     "safe_target_label",
     "detail_ref",
     "tool_name",
+    "public_name",
+    "safe_input",
+    "bounded_result",
+    "public_input",
+    "public_result",
+    "duration_ms",
+    "created_at",
+    "truncation_hashes",
 )
 
 
@@ -413,6 +421,20 @@ def _is_terminal_status(status: str | None) -> bool:
     return status in {"completed", "failed", "cancelled"}
 
 
+def _terminal_status_conflict(facts: Sequence[_Fact], root_run_id: str) -> tuple[_Fact, ...]:
+    """Return conflicting root terminal evidence instead of choosing a winner."""
+    terminals = tuple(
+        fact
+        for fact in facts
+        if fact.kind in {"run", "run_terminal"}
+        and _text(fact.payload.get("run_id")) == root_run_id
+        and _text(fact.payload.get("role")) in {None, "root"}
+        and _is_terminal_status(_text(fact.payload.get("status")))
+    )
+    statuses = {_text(fact.payload.get("status")) for fact in terminals}
+    return terminals if len(statuses) > 1 else ()
+
+
 def _root_fact(facts: Sequence[_Fact], root_run_id: str) -> _Fact | None:
     candidates = [
         fact
@@ -631,11 +653,25 @@ def _aggregate_outcome(
     projection_complete: bool,
 ) -> tuple[dict[str, Any], tuple[str, ...]]:
     root = _root_fact(facts, root_run_id)
+    terminal_conflict = _terminal_status_conflict(facts, root_run_id)
     lifecycle = _root_lifecycle_fact(facts, root_run_id)
     root_status = None if root is None else _text(root.payload.get("status"))
     boundaries = _unresolved_boundaries(facts)
     blocks = _valid_block_signals(facts, root_run_id)
     diagnostics: set[str] = set()
+    if terminal_conflict:
+        diagnostics.add("terminal_status_conflict")
+        return (
+            {
+                "status": RootOutcomeStatus.UNKNOWN.value,
+                "explanation_code": "terminal_status_conflict",
+                "evidence_refs": [fact.stable_id for fact in terminal_conflict],
+                "child_warnings": [],
+                "started_at": None if lifecycle is None else lifecycle.payload.get("started_at"),
+                "ended_at": None if lifecycle is None else lifecycle.payload.get("ended_at"),
+            },
+            tuple(sorted(diagnostics)),
+        )
     recovery = _recovery_chain(
         facts,
         root_run_id=root_run_id,
@@ -875,6 +911,8 @@ def _semantic_phases(
             status = PhaseStatus.FAILED
         elif aggregate_status is RootOutcomeStatus.WAITING:
             status = PhaseStatus.WAITING
+        elif aggregate_status is RootOutcomeStatus.UNKNOWN:
+            status = PhaseStatus.UNKNOWN
         elif aggregate_status in {
             RootOutcomeStatus.COMPLETED,
             RootOutcomeStatus.COMPLETED_WITH_RECOVERY,
@@ -914,11 +952,15 @@ def _semantic_phases(
             item: dict[str, Any] = {
                 "stable_id": fact.stable_id,
                 "kind": fact.kind,
+                "created_at": fact.created_at,
+                "context_visibility": "exclude",
             }
             for field in _SAFE_ITEM_FIELDS:
                 value = fact.payload.get(field)
                 if isinstance(value, (str, int, float, bool)) and value != "":
                     item[field] = value
+                elif field in {"safe_input", "bounded_result", "public_input", "public_result", "truncation_hashes"} and isinstance(value, Mapping):
+                    item[field] = dict(value)
             items.append(item)
         steps = list(steps_by_id.values())
         numeric_steps = [
@@ -1015,7 +1057,7 @@ def reduce_public_manifest(
     read_complete, read_diagnostics = _read_cut_complete(read_cut)
     diagnostics.update(read_diagnostics)
     projection_complete = read_complete and not diagnostics.intersection(
-        {"causal_cycle", "stable_id_conflict", "cross_root_fact"}
+        {"causal_cycle", "stable_id_conflict", "cross_root_fact", "terminal_status_conflict"}
     )
     aggregate, aggregate_diagnostics = _aggregate_outcome(
         ordered_facts,
@@ -1025,7 +1067,7 @@ def reduce_public_manifest(
         projection_complete=projection_complete,
     )
     diagnostics.update(aggregate_diagnostics)
-    if "block_signal_terminal_conflict" in diagnostics:
+    if diagnostics.intersection({"block_signal_terminal_conflict", "terminal_status_conflict"}):
         projection_complete = False
     phases = _semantic_phases(
         ordered_facts,

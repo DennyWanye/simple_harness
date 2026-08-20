@@ -2,6 +2,10 @@
 
 本目录是 DeskPet **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-08-20 校准：Agent 执行时间线继续复用 canonical Run ledger 和
+`HarnessPublicReadService`，细粒度活动条目不得创建第二套状态机；时间线及 Inspector 详情
+明确属于 `context_visibility=exclude`，不会自动进入模型上下文。
+
 维护规则：功能通过测试后，同一次交付必须更新对应模块架构；完成度、里程碑、worktree 与项目级已知问题同时汇总到 `PROJECT_STATUS.md`。`STATUS/` 只保留历史链接兼容，禁止继续双写。
 
 | 文档 | 范围 |

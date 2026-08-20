@@ -111,7 +111,7 @@ print(json.dumps({'loaded': loaded}))
     assert payload == {"loaded": []}
 
 
-def test_closed_ingress_legacy_main_sequence_still_reaches_79() -> None:
+def test_closed_ingress_legacy_main_sequence_reaches_74_without_retired_memory_tools() -> None:
     backend = Path(__file__).resolve().parents[2]
     command = """
 import importlib
@@ -137,14 +137,13 @@ for item in load_tool_manifest().tools:
 
 from deskpet.tools import registry
 base_names = registry.list_tools()
-assert len(base_names) == 44, (len(base_names), base_names)
+assert len(base_names) == 40, (len(base_names), base_names)
 assert {'generate_image', 'ppt_create', 'ppt_pro'} <= set(base_names)
 from deskpet.tools.os_tools import register_os_tools
 from deskpet.tools.code_tools import register_code_tools
 from deskpet.tools.code_tools.spawn_subagents_tool import build_await_subagents_tool, product_delegation_tool_catalog
 from deskpet.tools.code_tools.todo_write_tool import build_todo_write_tool
 from deskpet.tools.context_page_in_tools import ContextPageInStore, register_context_page_in
-from deskpet.tools.memory_recall import register_memory_recall
 from deskpet.harness.profiles import ProfileRegistry, ProfileSpec
 from deskpet.tools.orchestration_controls import register_orchestration_controls
 from deskpet.tools.capabilities import ToolCapabilityBridgeService, ToolCapabilityScopeStore
@@ -163,16 +162,12 @@ register_code_tools(
 )
 page_store = ContextPageInStore()
 register_context_page_in(registry, page_store, execution_context_getter=lambda: SimpleNamespace(session_id='s', request_id='r', scope_id='scope'))
-class Query:
-    async def recall_readonly(self, query, limit, owner_scope): return []
-class Scope:
-    def resolve_for_run(self, run_id): return SimpleNamespace(run_id=run_id)
-register_memory_recall(registry, Query(), Scope())
 profiles = ProfileRegistry((ProfileSpec('agent.general', 'general', 'react', display_name='General'),))
 register_orchestration_controls(registry, profiles)
 register_capability_bridge_tools(registry, ToolCapabilityBridgeService(registry, ToolCapabilityScopeStore()))
 names = registry.list_tools()
-assert len(names) == 79, (len(names), names)
+assert len(names) == 74, (len(names), names)
+assert 'memory_recall' not in names
 assert 'deepresearch' in names and 'ppt_pro' in names and 'ppt_create' in names
 print(len(names))
 """
@@ -185,7 +180,7 @@ print(len(names))
         text=True,
         env=env,
     )
-    assert result.stdout.strip() == "79"
+    assert result.stdout.strip() == "74"
 
 
 def test_sdk_registry_builder_rejects_duplicate_without_partial_publish() -> None:
@@ -872,3 +867,46 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
         asyncio.run(case())
     finally:
         configure_project_group_transport(None)
+
+
+def test_sdk_tool_context_without_metadata_uses_app_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from simple_harness import CallId, RequestId, RunId
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    profile = tmp_path / "profile"
+    monkeypatch.delenv("DESKPET_WORKSPACE_DIR", raising=False)
+    monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(profile))
+    runtime_context = SimpleNamespace(
+        session_id="session-1", request_id="request-1", scope_id="scope-1"
+    )
+    registry, _ = build_product_tool_registry(
+        build_explicit_product_tool_catalog(
+            _catalog_dependencies(ContextPageInStore(), runtime_context)
+        ).registrations
+    )
+
+    async def case() -> None:
+        result = await registry.invoke(
+            ToolCall(
+                CallId("write-default-workspace"),
+                "write_file",
+                {"path": "sdk-bound.txt", "content": "bound"},
+            ),
+            ToolContext(
+                RunId("run-default-workspace"),
+                RequestId("request-default-workspace"),
+                CancellationToken(),
+            ),
+        )
+        assert result.outcome is ToolOutcome.SUCCEEDED
+
+    asyncio.run(case())
+    assert (profile / "workspace" / "sdk-bound.txt").read_text() == "bound"

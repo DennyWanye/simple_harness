@@ -701,7 +701,7 @@ export function MemoryPanel({ open, onClose, sessionId, getChannel }: Props) {
 
           <div style={listStyle}>
             {turns.length === 0 && !loading && (
-              <div style={emptyStyle}>(no turns)</div>
+              <div style={emptyStyle}>暂无对话记忆</div>
             )}
             {turns.map((t, idx) => (
               <div
@@ -1165,7 +1165,7 @@ const rowStyle: React.CSSProperties = {
 };
 
 const emptyStyle: React.CSSProperties = {
-  color: dark.textFaint,
+  color: dark.textMuted,
   textAlign: "center",
   marginTop: "32px",
   fontSize: 12,

@@ -20,7 +20,8 @@ defence before real disk access.
 Workspace path resolution tries, in order:
 
   1. ``DESKPET_WORKSPACE_DIR`` env (tests, CI).
-  2. ``user_data_dir() / "workspace"`` — production: ``%APPDATA%\\deskpet\\workspace\\``.
+  2. ``DESKPET_USER_DATA_DIR / "workspace"`` when the app binds an isolated profile.
+  3. ``user_data_dir() / "workspace"`` — production: ``%APPDATA%\\deskpet\\workspace\\``.
 
 The directory is lazily created on first access so tests using tmp
 paths don't need to pre-mkdir.
@@ -153,8 +154,13 @@ def _workspace_root(override: str | Path | None = None) -> Path:
         # Match backend/paths.user_data_dir() without importing the
         # backend flat layout (tools module must be import-safe outside
         # the full backend).
-        base = Path(
-            platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True)
+        configured_user_data = os.environ.get("DESKPET_USER_DATA_DIR")
+        base = (
+            Path(configured_user_data)
+            if configured_user_data
+            else Path(
+                platformdirs.user_data_dir(_APP_NAME, appauthor=False, roaming=True)
+            )
         )
         root = (base / "workspace").resolve()
     root.mkdir(parents=True, exist_ok=True)
@@ -190,7 +196,11 @@ def _resolve_within_workspace(
     # descendant check below as the authority boundary.  Absolute paths,
     # traversal and symlinks that escape the trusted root remain rejected.
     p = Path(path_str)
-    if path_str.startswith(("\\\\", "//")):
+    if (
+        path_str.startswith(("\\\\", "//"))
+        or re.match(r"^[A-Za-z]:[\\/]", path_str)
+        or ".." in re.split(r"[\\/]+", path_str)
+    ):
         return None
     candidate = p.resolve() if p.is_absolute() else (root / p).resolve()
     try:

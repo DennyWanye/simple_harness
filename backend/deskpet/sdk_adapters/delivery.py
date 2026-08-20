@@ -112,6 +112,75 @@ class ProductDeliveryAdapter:
             )
             # Don't re-raise - delivery failure should not crash SDK Runtime
 
+    async def present_tool_call(self, call: Any) -> None:
+        """Project an SDK Tool invocation through the existing chat presenter."""
+
+        try:
+            from agent.agent_loop import ToolCallEvent
+            from llm.types import ToolCall
+
+            await self._presenter.present(
+                ToolCallEvent(
+                    tool_call=ToolCall(
+                        id=call.call_id.value,
+                        name=call.name,
+                        arguments=dict(call.arguments),
+                    ),
+                    iteration=0,
+                ),
+                self._context,
+                self._state,
+            )
+        except Exception as exc:  # noqa: BLE001 - projection is best-effort
+            logger.warning(
+                "sdk_tool_call_projection_failed",
+                tool_name=getattr(call, "name", ""),
+                run_id=self._run_id,
+                error=str(exc),
+            )
+
+    async def present_tool_result(self, call: Any, result: Any) -> None:
+        """Project and persist one settled SDK Tool result for live/history UI."""
+
+        try:
+            import json
+
+            from agent.agent_loop import ToolResultEvent
+            from simple_harness import thaw_json
+
+            envelope = {
+                "outcome": result.outcome.value,
+                "value": thaw_json(result.value),
+                "error_code": result.error_code,
+                "public_message": result.public_message,
+                "retryable": result.retryable,
+            }
+            error = None
+            if result.error_code is not None:
+                error = {
+                    "code": result.error_code,
+                    "message": result.public_message or "Tool execution failed.",
+                }
+            await self._presenter.present(
+                ToolResultEvent(
+                    tool_call_id=call.call_id.value,
+                    tool_name=call.name,
+                    result=json.dumps(envelope, ensure_ascii=False),
+                    outcome_status=result.outcome.value,
+                    outcome_error=error,
+                    iteration=0,
+                ),
+                self._context,
+                self._state,
+            )
+        except Exception as exc:  # noqa: BLE001 - projection is best-effort
+            logger.warning(
+                "sdk_tool_result_projection_failed",
+                tool_name=getattr(call, "name", ""),
+                run_id=self._run_id,
+                error=str(exc),
+            )
+
     def _deserialize_run_event(self, payload: dict[str, Any]) -> "RunEvent":
         """Deserialize SDK delivery payload → RunEvent.
 

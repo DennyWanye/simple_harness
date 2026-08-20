@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "../components/Icon";
 import { buildWorkflowTaskTraces } from "../components/AgentActivityMessage";
 import { DurableTaskSteps } from "../components/workflow/DurableTaskSteps";
+import { ActivityTimeline } from "../components/workflow/ActivityTimeline";
 import {
   configureHarnessPublicDetailsLoader,
   harnessPublicSnapshotStore,
@@ -314,7 +315,15 @@ export function HarnessInspectorPanel({
 
           <section className="harness-inspector__section">
             <div className="harness-inspector__section-title">
-              <strong>步骤详情</strong>
+              <strong>执行记录</strong>
+              <span>公开动作按发生顺序排列，详情默认收起</span>
+            </div>
+            <ActivityTimeline snapshot={snapshot} />
+          </section>
+
+          <section className="harness-inspector__section">
+            <div className="harness-inspector__section-title">
+              <strong>阶段详情</strong>
               <span>默认展开当前阶段；工具结果默认收起</span>
             </div>
             {trace ? <DurableTaskSteps key={trace.runId} trace={trace} /> : (

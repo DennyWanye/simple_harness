@@ -16,6 +16,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { BACKEND_PORT } from "../backendPort";
+import { chatErrorMessage } from "../chatErrorMessage";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { withClientTurnIdentity } from "../ws/clientTurnIdentity";
 import {
@@ -1281,8 +1282,7 @@ function dispatch(msg: any) {
           String(p.error || p.detail || p.reason || "续接失败"),
         );
       }
-      const parts = [p.error, p.detail, p.reason].filter(Boolean);
-      const txt = parts.length ? parts.join(" — ") : "unknown";
+      const txt = chatErrorMessage(p);
       store.push_message(sid, {
         role: "error",
         text: txt,

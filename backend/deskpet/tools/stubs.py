@@ -4,15 +4,14 @@
 """P4-S5: stub tools for features owned by later slices.
 
 WI-T4.1 v3 D11（守卫模式）：``registry.has(name)`` 检查 + ``replace_allowed=True``
-opt-in。pkgutil discovery 按字典序加载，``memory_tools.py`` ('m') < ``stubs.py``
-('s')，所以 memory_tools.py 的 memory_forget 等真实现先注册；本文件后跑时若 name
-已被真实现占用 → 跳过（不覆盖）。T3.2/T3.3 后 ``skill_invoke`` 仅由
+opt-in。当前已删除的内存系统由本模块继续向 legacy registry 提供明确 stub；
+``memory_tools.py`` 仅保留给 checked SDK manifest 的 import-safe 兼容处理器，
+不参与 legacy registry 注册。T3.2/T3.3 后 ``skill_invoke`` 仅由
 ``skill_tools.py`` 注册，mcp_call/delegate 已直接移除。
 
 Stubs grouped by owning slice:
 
-* memory_{write,read,search}      — P4-S4 → 升级路径 T3.1 memory_tools.py
-                                    schema migration（旧名透明翻译到 v2 真实现）
+* memory_{write,read,search}      — 等待 simple-harness-memory-sdk 集成
 * delegate                         — T3.3 v3 直接删（无真 caller）
 * mcp_call                         — T3.3 v3 直接删（无真 caller）
 """
@@ -46,7 +45,7 @@ def _maybe_register(
     不调 register，永远不会触发覆盖。
     """
     if registry.has(name):
-        return  # 真实现已注册（pkgutil 字典序：memory_tools < stubs）
+        return  # 已有显式产品实现时不覆盖
     registry.register(
         name, toolset, schema, _stub_handler(slice_name),
         replace_allowed=True,  # 显式 opt-in: 真实现 import 时合法覆盖本 stub

@@ -55,6 +55,12 @@ describe("HarnessPublicSnapshotStore", () => {
     expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe("cancelled");
   });
 
+  it("rejects conflicting terminal outcomes for the same root", () => {
+    harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 5, "completed"));
+    harnessPublicSnapshotStore.publish(snapshot("session-a", "root", 6, "failed"));
+    expect(harnessPublicSnapshotStore.get("session-a", "root")?.aggregate_outcome.status).toBe("completed");
+  });
+
   it("accepts a newer terminal snapshot even when SQLite data_version restarts lower", () => {
     const running = snapshot("session-a", "root", 20, "running");
     const completed = snapshot("session-a", "root", 21, "completed");

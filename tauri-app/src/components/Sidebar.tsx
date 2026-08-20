@@ -23,7 +23,7 @@ import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { WorkbenchView } from "./WorkbenchShell";
 import { SessionList, type SessionListProps } from "./SessionList";
-import { IconButton } from "./ui";
+import { Icon, type IconName } from "./Icon";
 import {
   useControlWsState,
   worstConnectionState,
@@ -219,24 +219,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
               data-testid="sidebar-more-group"
               style={{
                 display: "flex",
-                alignItems: "center",
+                flexDirection: "column",
                 gap: tokens.space.xs,
                 padding: `0 ${tokens.space.md}px ${tokens.space.xs}px`,
               }}
             >
-              <IconButton
+              <MoreActionButton
                 title="记忆管理"
                 testId="memory-toggle"
                 icon="archive"
                 onClick={moreActions.onMemory}
               />
-              <IconButton
+              <MoreActionButton
                 title="ContextTrace"
                 testId="trace-toggle"
                 icon="compass"
                 onClick={moreActions.onTrace}
               />
-              <IconButton
+              <MoreActionButton
                 title="反馈问题"
                 testId="feedback-toggle"
                 icon="bug"
@@ -331,6 +331,49 @@ const NavButton: React.FC<{
       {icon}
     </span>
     {label}
+  </button>
+);
+
+const MoreActionButton: React.FC<{
+  icon: IconName;
+  title: string;
+  testId: string;
+  onClick: () => void;
+}> = ({ icon, title, testId, onClick }) => (
+  <button
+    type="button"
+    data-testid={testId}
+    aria-label={title}
+    title={title}
+    onClick={onClick}
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: tokens.space.sm,
+      width: "100%",
+      boxSizing: "border-box",
+      padding: `${tokens.space.xs + 1}px ${tokens.space.sm}px`,
+      borderRadius: tokens.radius.md,
+      border: "1px solid transparent",
+      background: "transparent",
+      color: dark.textMuted,
+      fontFamily: tokens.font.ui,
+      fontSize: tokens.text.sm.size,
+      fontWeight: tokens.weight.medium,
+      textAlign: "left",
+      cursor: "pointer",
+    }}
+    onMouseEnter={(event) => {
+      event.currentTarget.style.background = dark.cardHover;
+      event.currentTarget.style.color = dark.text;
+    }}
+    onMouseLeave={(event) => {
+      event.currentTarget.style.background = "transparent";
+      event.currentTarget.style.color = dark.textMuted;
+    }}
+  >
+    <Icon name={icon} size={15} />
+    <span>{title}</span>
   </button>
 );
 
