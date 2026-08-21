@@ -156,6 +156,15 @@ def test_composition_does_not_import_legacy_generic_authority() -> None:
     assert ".reconciler" not in source
 
 
+def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> None:
+    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+    assert "ProductionRuntimeConfig(" in source
+    assert "build_production_runtime(config)" in source
+    assert "ContextPreparationMode.CONSUMER_PREPARED" in source
+    assert "conversation_query=conversation_memory" in source
+    assert "conversation_sink=conversation_memory" in source
+
+
 @pytest.mark.asyncio
 async def test_concurrent_start_is_single_generation_and_close_is_idempotent(
     tmp_path: Path,
