@@ -121,7 +121,7 @@
 本次提取成败不取决于能否把 Python 文件放进另一个仓库，而取决于能否反转当前依赖方向：
 
 ```text
-当前：Harness / Workflow -> DeskPet permissions / tools / companion / product stores
+当前：Harness / Workflow -> simple_harness permissions / tools / companion / product stores
 目标：SDK contracts + ports <- Simple Harness / AIPhone adapters
 ```
 
@@ -250,13 +250,13 @@ Agent 发出控制调用。无论它选择何种 Workflow，effect、授权、�
 | `backend/deskpet/harness` | 37 | 18,338 | execution、tools、capabilities、workflows、permissions、companion |
 | `backend/deskpet/execution` | 17 | 10,259 | security、types、harness、provider/agent |
 | `backend/deskpet/workflows` | 124 | 92,682 | execution、types、security、tools、capabilities、companion、permissions |
-| `backend/agent` | 32 | 12,368 | DeskPet agent/memory/execution/workflow 与 legacy `llm` |
+| `backend/agent` | 32 | 12,368 | simple_harness agent/memory/execution/workflow 与 legacy `llm` |
 | `backend/deskpet/capabilities` | 31 | 28,820 | tools、companion、types、execution、permissions、workflow |
 
 三个特别大的聚合点是：
 
 - `execution/contracts.py` 约 2,133 行，混合通用 Run/Effect/Attempt/Ticket 合同和
-  DeskPet task/grant/projection 字段；
+  simple_harness task/grant/projection 字段；
 - `execution/uow_ports.py` 约 862 行，14 组 Protocol 既含 Kernel/Driver/child/recovery，
   也含 product projection/team/admission；
 - `workflows/store/execution_uow.py` 约 14,845 行，是当前唯一 SQLite 写 authority，但同时
@@ -282,23 +282,23 @@ Agent 发出控制调用。无论它选择何种 Workflow，effect、授权、�
 | generic `DeliverySpec`、terminal delivery outbox/dispatcher/reconciler | `simple_harness.execution.delivery` | root terminal + delivery 原子性；产品 Presenter 只消费 delivery |
 | Provider/Tool public contracts and conformance fixtures | `simple_harness.providers/tools/testing` | 单次 Provider call、typed Tool、稳定错误与 redaction |
 
-“可作为来源”不等于逐文件无修改搬运。所有公开类型必须先从 DeskPet 名称、产品路径、UI 投影和
+“可作为来源”不等于逐文件无修改搬运。所有公开类型必须先从 simple_harness 名称、产品路径、UI 投影和
 隐含环境读取中解耦，并建立显式 `__all__`/public namespace。
 
 ### 5.2 必须先做依赖倒置
 
 | 当前耦合 | 证据 | SDK Port / 拆分方向 |
 |---|---|---|
-| `RunKernel` 直接依赖 DeskPet admission/TaskGrant | `harness/kernel.py:49-50` | `AdmissionPort`、generic grant/decision contracts；产品策略由 Adapter 实现 |
+| `RunKernel` 直接依赖 simple_harness admission/TaskGrant | `harness/kernel.py:49-50` | `AdmissionPort`、generic grant/decision contracts；产品策略由 Adapter 实现 |
 | `ReActDriver` 直接依赖 capabilities、companion skill、permissions、task work context | `harness/drivers/react.py:15-76` | 拆为通用 Driver state machine + capability/authorization/workspace ports |
-| `EffectBatchExecutor` 直接依赖 `ToolRegistry` 与 DeskPet Tool context | `harness/tool_executor.py:24-39` | `ToolExecutorPort`、`ToolReconciliationPort`、prepared-call/outcome contracts、host authorization hook；重启后由 Adapter 返回 `confirmed_not_started/completed/still_unknown` |
-| `AgentLoop` 直接依赖 DeskPet provider invocation/trace 与 legacy context/memory | `agent/agent_loop.py:36-70` | SDK Context/Provider/Trace ports；Simple Harness Context OS 作为 Adapter |
-| `SqliteExecutionUnitOfWork` 直接导入 DeskPet task context、permissions/grants | `workflows/store/execution_uow.py:20-139` | 通用 execution repository + 可选 extension transaction participants |
-| `durable_task` 复用 `code_task/code_nodes`，runtime 直接调用 DeskPet provider/capability | `workflows/definitions/v1/durable_task.py:8-11`; `workflows/adapters/code_runtime.py:20-28` | 官方 durable-task graph + `ProposalPort`、`CapabilityCatalogPort`、`ToolExecutionPort`、`OutputContractPort` |
+| `EffectBatchExecutor` 直接依赖 `ToolRegistry` 与 simple_harness Tool context | `harness/tool_executor.py:24-39` | `ToolExecutorPort`、`ToolReconciliationPort`、prepared-call/outcome contracts、host authorization hook；重启后由 Adapter 返回 `confirmed_not_started/completed/still_unknown` |
+| `AgentLoop` 直接依赖 simple_harness provider invocation/trace 与 legacy context/memory | `agent/agent_loop.py:36-70` | SDK Context/Provider/Trace ports；Simple Harness Context OS 作为 Adapter |
+| `SqliteExecutionUnitOfWork` 直接导入 simple_harness task context、permissions/grants | `workflows/store/execution_uow.py:20-139` | 通用 execution repository + 可选 extension transaction participants |
+| `durable_task` 复用 `code_task/code_nodes`，runtime 直接调用 simple_harness provider/capability | `workflows/definitions/v1/durable_task.py:8-11`; `workflows/adapters/code_runtime.py:20-28` | 官方 durable-task graph + `ProposalPort`、`CapabilityCatalogPort`、`ToolExecutionPort`、`OutputContractPort` |
 | `personal_v1` graph 直接导入 Companion personal workflow types | `workflows/definitions/personal_workflow.py:12-17` | SDK-owned manifest/descriptor/selection contracts + `PersonalWorkflowCatalogPort` |
 | Capability Builder 直接导入 Companion build admission | `capabilities/builder.py:29-48` | SDK-owned optional builder workflow + source/build/test/install/activate/admission ports |
-| `workflow_spawn` 既是 SDK control 又被注册成 DeskPet `OPAQUE_MANUAL/shell` Tool | `tools/orchestration_controls.py:323-349` | SDK-owned orchestration control contract + Host `AuthorizationPort`；SDK 不继承产品 policy id/category |
-| OpenAI Adapter 直接依赖 DeskPet dispatch/context/report/sanitizer/metrics/E2E hook | `backend/providers/openai_compatible.py:1-29`, `:268-334` | 基于 SDK Provider contract 重写薄 HTTP Adapter；dispatch ledger 留在 execution，产品 metrics/hook 留在 Adapter 外 |
+| `workflow_spawn` 既是 SDK control 又被注册成 simple_harness `OPAQUE_MANUAL/shell` Tool | `tools/orchestration_controls.py:323-349` | SDK-owned orchestration control contract + Host `AuthorizationPort`；SDK 不继承产品 policy id/category |
+| OpenAI Adapter 直接依赖 simple_harness dispatch/context/report/sanitizer/metrics/E2E hook | `backend/providers/openai_compatible.py:1-29`, `:268-334` | 基于 SDK Provider contract 重写薄 HTTP Adapter；dispatch ledger 留在 execution，产品 metrics/hook 留在 Adapter 外 |
 
 `WorkflowRunner` 的提取闭包还包含 immutable registry、lease、recovery/quarantine、replay、
 checkpoint store、trace 和 execution-checkpoint adapter；当前 runner 甚至会自行构造具体
@@ -309,7 +309,7 @@ checkpoint store、trace 和 execution-checkpoint adapter；当前 runner 甚至
 ### 5.3 留在 Simple Harness 产品层
 
 - `backend/main.py`、Tauri/React、FastAPI/WebSocket、Voice 和窗口/托盘生命周期；
-- `ProductTurnPreparer` 的 Persona、Memory、Skill、Attachment 与 DeskPet Context OS 装配；
+- `ProductTurnPreparer` 的 Persona、Memory、Skill、Attachment 与 simple_harness Context OS 装配；
 - Simple Harness 的 Tool handler、桌面/文件/Office/浏览器实现；
 - 产品权限 UI、TaskGrant 策略和本机确认体验；
 - RunPresenter、SessionDB、ArtifactCard、TTS 与产品消息投影；
@@ -322,7 +322,7 @@ checkpoint store、trace 和 execution-checkpoint adapter；当前 runner 甚至
 ### 5.4 v0.1 不提取
 
 DeepResearch、PPT、语音、本地模型、浏览器/桌面自动化、完整长期 Memory、MCP marketplace、
-DeskPet team 实现和默认 shell Tool。历史 DeepResearch v1-v6、旧 LangGraph checkpoint 和当前
+simple_harness team 实现和默认 shell Tool。历史 DeepResearch v1-v6、旧 LangGraph checkpoint 和当前
 开发数据库 schema 兼容也不进入 SDK。
 
 ## 6. 三个官方 Workflow 的归属
@@ -419,14 +419,14 @@ tag/commit/wheel hash Handoff，不修改或部署手机端。
 
 1. **事务拆分风险**：14,845 行 UoW 同时是多个领域 authority。必须证明拆出的 SDK repository
    仍能让 ticket claim、child link、effect settle、terminal delivery 保持原子/CAS 语义。
-2. **合同污染风险**：`execution/contracts.py` 的通用类型和 DeskPet 字段混在一起；public API
+2. **合同污染风险**：`execution/contracts.py` 的通用类型和 simple_harness 字段混在一起；public API
    冻结前必须完成字段 provenance 审计。
 3. **AgentLoop 依赖风险**：当前 AgentLoop 不是独立 Core；必须用真实 import-side-effect 和
    fake Provider/Tool spike 验证最小依赖集合。
 4. **Personal Workflow authority 风险**：移除前置 matcher 后，需要验证 bounded descriptor
    catalog 能被主 Agent稳定选择，同时 Host 仍可防止伪造 graph/owner/version。
 5. **Capability Builder 平台风险**：Linux ARM64、macOS ARM64、Windows x64 的隔离构建/安装
-   能力不同；公共 Workflow 必须依赖 Port，不可把 DeskPet 本机实现写入 Core。
+   能力不同；公共 Workflow 必须依赖 Port，不可把 simple_harness 本机实现写入 Core。
 6. **双实现风险**：Simple Harness 迁移必须按 slice 删除旧同源实现；只新增 SDK 并保持产品继续
    使用旧路径不算完成。
 7. **依赖重量风险**：当前 backend 强依赖 FastAPI、Playwright、Torch、语音、Office 等；SDK

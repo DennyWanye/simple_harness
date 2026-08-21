@@ -1,4 +1,4 @@
-# DeskPet Agent Harness 架构
+# simple_harness Agent Harness 架构
 
 > 最后更新：2026-08-20
 > 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
@@ -31,7 +31,7 @@ authority。清单中为历史会话兼容而保留的 `memory_forget/read/searc
 兼容处理器明确返回 `memory_sdk_unavailable`；它们不会重新引入已删除的旧内存存储栈，也不会再
 因处理器模块缺失导致整个 Agent 工具目录构建或运行时调用崩溃。
 
-DeskPet 现在只有一个主 Session。每条普通新消息都创建一个独立顶层 Run，顶层 Profile
+simple_harness 现在只有一个主 Session。每条普通新消息都创建一个独立顶层 Run，顶层 Profile
 固定为 `agent.general`；运行中的任务收到继续消息时，消息进入该 root 的 durable FIFO，
 不会暗中新建 root。
 
@@ -940,7 +940,7 @@ authority，并把确切 measured `sample_id` 冻结进 durable request；AgentL
 5 个语义阶段、2 个工具操作完成修复，Root 与 child 全程为 `kimi-k3`。
 
 2026-07-28 最终真实 Godot E2E 使用 root
-`7e292f4a88b05ef999ec0e9de2b13c6b`。DeskPet 在同一 Root 内通过
+`7e292f4a88b05ef999ec0e9de2b13c6b`。simple_harness 在同一 Root 内通过
 `tool_search("run shell command execute")` 找到并描述 `builtin:run_shell`，自行创建
 `workspace/task-1455b19de08db0a680401ec9d4928c32/GemCollector`，执行 Godot import 与
 headless runtime，根据真实输出修复项目配置、autoload 和绘制 warning，最终 durable
@@ -964,7 +964,7 @@ Ollama fallback 或 `provider_dispatch_unknown_after_handoff`。
 能力桥现以多词 OR 命中比例排序搜索结果；非法 capability id 返回结构化候选，连续两次
 `tool_describe` 失败触发 loop guard，强制模型重新短检索，不再无限猜测裸工具名。
 
-复杂只读审计真机 Run `535ada60c2f1567fbc1c81b2e2a0020b` 验证了循环投影。DeskPet 使用
+复杂只读审计真机 Run `535ada60c2f1567fbc1c81b2e2a0020b` 验证了循环投影。simple_harness 使用
 唯一 `relay-cloud/sf-glm-5.2` 连续完成四轮工具判断：
 `tool_search → tool_describe → tool_activate → run_shell`；每轮稳定 call id 都能与
 Action Call 账本对应，`run_shell` 结果成功回灌后进入第 5 轮。第 5 轮云端在完整响应前断连，
@@ -1093,7 +1093,7 @@ pending -> accepted_start_pending -> launch_claimed -> launched
 - Manual：首次副作用前投影简短计划、目标目录和动作类别；同 task/目录/类别只确认一次，
   新目录、安装或新增高影响类别会创建新的 decision。
 - Auto：由 `AuthorizationPolicy` 以 `policy:auto` actor 立即处理授权，不生成等待用户的
-  DeskPet 弹窗；仍保留 decision/grant、Receipt、取消、错误和审计记录。
+  simple_harness 弹窗；仍保留 decision/grant、Receipt、取消、错误和审计记录。
 - `require_user_content`、外部登录、Windows UAC 等不是可伪造的“同意”。Auto 不绕过
   Secure Desktop 或第三方安全确认，而是把原 call/checkpoint 持久化为
   `waiting_external`，条件满足后原地恢复。
@@ -1218,7 +1218,7 @@ R6 激活后已删除或退出新请求路径：
 
 ## 真实产品能力保持
 
-简化没有移除 DeskPet 的产品能力：
+简化没有移除 simple_harness 的产品能力：
 
 - Tauri / WebSocket 实时事件
 - 权限弹窗和一次性授权

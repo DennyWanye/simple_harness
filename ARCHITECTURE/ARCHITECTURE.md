@@ -29,7 +29,7 @@ incomplete item, and late events cannot revive a terminal Run. Public tool
 projection remains default-deny, redacted, and byte-bounded; raw prepared,
 outcome, provider input/output, credentials, and reasoning are not returned to
 the frontend.
-# DeskPet Long-Running Agent Architecture Baseline
+# simple_harness Long-Running Agent Architecture Baseline
 
 > **Last verified: 2026-08-20**.
 >
@@ -54,7 +54,7 @@ the frontend.
 > 
 > ---
 > 
-> The SDK Runtime `simple_harness.runtime` is the only production execution owner. DeskPet has one main Session with multiple isolated top-level Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a durable one-shot ticket binds the child Driver. DeepResearch new-run default remains immutable v7; historical v1-v6 runs remain registered for recovery and compatibility reads.
+> The SDK Runtime `simple_harness.runtime` is the only production execution owner. simple_harness has one main Session with multiple isolated top-level Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a durable one-shot ticket binds the child Driver. DeepResearch new-run default remains immutable v7; historical v1-v6 runs remain registered for recovery and compatibility reads.
 
 > Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. Backend stdlib and structlog now share one JSON-lines formatter and one resolved user log directory; the rotating text log is diagnostic evidence, not the durable workflow authority. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
 
@@ -62,7 +62,7 @@ the frontend.
 
 ## 1. System Shape
 
-DeskPet is a local desktop product, not a generic agent framework. The application now has one
+simple_harness is a local desktop product, not a generic agent framework. The application now has one
 product preparation path, one thin control plane and two available execution algorithms. Driver
 selection is not a text classifier.
 
@@ -315,7 +315,7 @@ Subagent execution has three separate shapes: blocking `agent_parallel`, process
 
 ## 5. Human-In-The-Loop Today
 
-DeskPet has several real user gates:
+simple_harness has several real user gates:
 
 | Gate | Durable record | Active waiter | Restart behavior |
 |---|---|---|---|
@@ -416,7 +416,7 @@ workflow core
 workflow ports
   checkpoint store / trace store / evaluator / human response / clock
         |
-DeskPet adapters
+simple_harness adapters
   SessionDB / ToolRegistry / provider / WebSocket events / artifacts / receipts
         |
 workflow definitions
@@ -522,7 +522,7 @@ Visual issue invalidation is explicit: issue page -> stable slide id -> incremen
 
 ## 14. Native Workflow Engine（当前）与替换基线（历史）
 
-当前 durable layer 使用 DeskPet 原生引擎。`WorkflowDefinition.bind()` 直接创建 `NativeWorkflowExecutable`；新 checkpoint 使用 `deskpet-native-json-v1`，原生 frontier、条件边/join/reducer、重试、`WorkflowInterrupt`、fenced checkpoint、replay/fork/eval 均已成为生产实现。LangGraph/LangChain 的生产、锁文件和冻结包依赖已移除；旧名称 `FencedAsyncSqliteSaver` 仅作为兼容 import alias 指向 `NativeCheckpointStore`，不是第二个运行时。
+当前 durable layer 使用 simple_harness 原生引擎。`WorkflowDefinition.bind()` 直接创建 `NativeWorkflowExecutable`；新 checkpoint 使用 `deskpet-native-json-v1`，原生 frontier、条件边/join/reducer、重试、`WorkflowInterrupt`、fenced checkpoint、replay/fork/eval 均已成为生产实现。LangGraph/LangChain 的生产、锁文件和冻结包依赖已移除；旧名称 `FencedAsyncSqliteSaver` 仅作为兼容 import alias 指向 `NativeCheckpointStore`，不是第二个运行时。
 
 > 下表和本节余下文字记录 2026-07-11 切换前的替换设计，用来解释边界由来；其中 LangGraph、StateGraph、`Command(resume=...)` 和 legacy saver 都是**迁移前事实**，不能用于描述当前生产链路。
 
@@ -533,10 +533,10 @@ Visual issue invalidation is explicit: issue page -> stable slide id -> incremen
 | Graph scheduling, join and retry | `workflows/definition.py::WorkflowDefinition.bind` | Execute `WorkflowDefinition` directly with a versioned static frontier; support sequential/conditional edges, multi-source join, exclusive barriers, bounded loops/retry and max-step cancellation checks. Dynamic map/Send is not part of the current contract. |
 | Execution identity | LangGraph `runtime.execution_info` -> `NodeExecutionIdentity` | Deterministically generate checkpoint/task/attempt/first-attempt identities from run lineage, base checkpoint, invocation key and retry attempt before calling a handler. |
 | Node lifecycle SPI | LangGraph node wrapper in `definition.py` | Native wrapper owns observer/progress callbacks, trace span activation, retry classification and `succeeded_pending`; storage remains external but these hooks are an engine contract. |
-| Interrupt control flow | `definitions/v1/ppt_pro.py`, `definitions/code_nodes.py` | Raise a DeskPet `WorkflowInterrupt` carrying JSON-safe prompt/id. Native checkpoint commit atomically writes pending state, open decision and run `waiting`; Runner only owns lease/invocation/terminal convergence. |
+| Interrupt control flow | `definitions/v1/ppt_pro.py`, `definitions/code_nodes.py` | Raise a simple_harness `WorkflowInterrupt` carrying JSON-safe prompt/id. Native checkpoint commit atomically writes pending state, open decision and run `waiting`; Runner only owns lease/invocation/terminal convergence. |
 | Checkpoint commit/projection | `store/checkpointer.py::aput_writes/aput` | Store canonical JSON native snapshots and preserve the two-phase invariant: handler success projects `succeeded_pending`; only the fenced checkpoint/head/ownership transaction promotes it to `succeeded`. |
 | Resume/replay/fork | `definition.py::WorkflowExecutable`, `replay.py` | Resume from persisted native frontier; history/fork consume native snapshots. V1 fork remains root-namespace only, rejects pending writes/active fan-out, and requires the existing explicit confirmation gate for dangerous effects. |
-| Evaluation adapter | `scripts/workflow_eval_adapter.py` | Use an in-memory/native checkpoint store and DeskPet interrupt metadata; preserve dataset/experiment behavior without framework types. |
+| Evaluation adapter | `scripts/workflow_eval_adapter.py` | Use an in-memory/native checkpoint store and simple_harness interrupt metadata; preserve dataset/experiment behavior without framework types. |
 | Legacy compatibility | `JsonPlusSerializer` typed checkpoint blobs | Detect by explicit persisted type. An isolated no-pickle reader may expose allowlisted metadata/state for read-only legacy history only; every legacy nonterminal run becomes safely blocked and is never converted or resumed. |
 | Packaging and guard | `pyproject.toml`, `uv.lock`, `deskpet-backend.spec`, runtime hook, dependency smoke | Remove LangGraph/LangChain direct and transitive dependencies, hidden-import collection and strict-msgpack hook; replace smoke with a source/import/clean-interpreter guard and record lock/frozen deltas. |
 
@@ -718,7 +718,7 @@ ordinary message -> top-level agent.general / ReAct
 ### 17.2 授权与外部安全边界
 
 - Manual 以 task/resource/action category 签发可审计 TaskGrant，越界再授权。
-- Auto 只省略 DeskPet 的 permission/plan 等待；grant、Receipt、错误、取消和验证不省略。
+- Auto 只省略 simple_harness 的 permission/plan 等待；grant、Receipt、错误、取消和验证不省略。
 - UAC、外部登录、OTP 等进入 durable `waiting_external`，不算失败，不创建新 Attempt，
   不绕过系统或第三方安全界面。
 
