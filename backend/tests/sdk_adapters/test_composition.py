@@ -9,11 +9,19 @@ import sqlite3
 
 import pytest
 
-from simple_harness import ROOT_PROFILE_KEY, RuntimePorts, RuntimeProfile, SqliteContextPort
+from simple_harness import (
+    ROOT_PROFILE_KEY,
+    RuntimePorts,
+    RuntimeProfile,
+    SqliteContextPort,
+    build_runtime,
+)
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 
 from deskpet.sdk_adapters.composition import (
     OwnedResourceCloser,
     ProductSdkRuntimeStack,
+    ProductionRuntimeBuild,
     SdkRuntimeBuildInputs,
     SdkRuntimeNotReady,
     WorkflowFactoryResourceScope,
@@ -72,6 +80,50 @@ def _inputs(reconciliation: object | None = None) -> SdkRuntimeBuildInputs:
         workflow_catalog_digest="catalog-v1",
         workflow_registrations=(),
     )
+
+
+@pytest.mark.asyncio
+async def test_production_runtime_factory_starts_and_publishes_registrations(
+    tmp_path: Path,
+) -> None:
+    opened_database: Database | None = None
+    base = _inputs()
+
+    def runtime_factory(execution_path: object) -> ProductionRuntimeBuild:
+        nonlocal opened_database
+        opened_database = Database.open(execution_path)
+        uow = SqliteExecutionUnitOfWork(opened_database)
+        runtime = build_runtime(
+            uow,
+            base.profiles,
+            base.drivers,
+            _ports(opened_database, uow, _Noop()),
+        )
+        return ProductionRuntimeBuild(
+            runtime=runtime,
+            transaction_owner=uow,
+            workflow_registrations=("production",),
+        )
+
+    stack = ProductSdkRuntimeStack(
+        paths=ProductRuntimePathsAdapter(tmp_path / "user-data"),
+        candidate_identity=IDENTITY,
+        dependency_loader=lambda: SdkRuntimeBuildInputs(
+            profiles=base.profiles,
+            drivers=base.drivers,
+            ports_factory=base.ports_factory,
+            workflow_catalog_digest=base.workflow_catalog_digest,
+            runtime_factory=runtime_factory,
+        ),
+    )
+
+    ready = await stack.start()
+    assert ready.workflow_registrations == ("production",)
+    assert stack.phase == "ready"
+    await stack.close()
+    assert stack.phase == "closed"
+    assert opened_database is not None
+    opened_database.close()
 
 
 class _OwnedResource:

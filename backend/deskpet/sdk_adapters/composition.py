@@ -35,12 +35,16 @@ PortsFactory: TypeAlias = Callable[
 class ProductionRuntimeBuild:
     runtime: Runtime
     transaction_owner: SqliteExecutionUnitOfWork
+    workflow_registrations: tuple[object, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.runtime, Runtime):
             raise TypeError("production runtime must be Runtime")
         if not isinstance(self.transaction_owner, SqliteExecutionUnitOfWork):
             raise TypeError("production transaction owner must be SQLite UoW")
+        object.__setattr__(
+            self, "workflow_registrations", tuple(self.workflow_registrations)
+        )
 
 
 RuntimeFactory: TypeAlias = Callable[[object], ProductionRuntimeBuild]
@@ -322,6 +326,7 @@ class ProductSdkRuntimeStack:
             runtime: Runtime | None = None
             database: Database | None = None
             owned_resources: tuple[OwnedResourceCloser, ...] = ()
+            workflow_registrations: tuple[object, ...] = ()
             try:
                 verify_sdk_candidate(self._candidate_identity)
                 dependencies = await self._load_dependencies()
@@ -340,6 +345,7 @@ class ProductSdkRuntimeStack:
                         )
                     runtime = production.runtime
                     uow = production.transaction_owner
+                    workflow_registrations = production.workflow_registrations
                 else:
                     database = Database.open(self._paths.execution_database)
                     uow = SqliteExecutionUnitOfWork(database)
@@ -367,6 +373,7 @@ class ProductSdkRuntimeStack:
                         ports,
                         workflow_runner=workflow.runner,
                     )
+                    workflow_registrations = workflow.registrations
                 await runtime.start()
                 if self._close_requested:
                     raise SdkRuntimeNotReady(
@@ -378,7 +385,7 @@ class ProductSdkRuntimeStack:
                     runtime=runtime,
                     client=runtime.client,
                     workflow_catalog_digest=dependencies.workflow_catalog_digest,
-                    workflow_registrations=workflow.registrations,
+                    workflow_registrations=workflow_registrations,
                     ready_at=float(self._clock()),
                 )
                 self._runtime = runtime
