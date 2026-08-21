@@ -195,7 +195,13 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
 @pytest.mark.asyncio
 async def test_sdk_persona_and_memory_use_current_product_authorities(monkeypatch):
     memory = SimpleNamespace(
-        recall_readonly=AsyncMock(return_value=[{"text": "owner memory", "score": 1}])
+        recall_bounded=AsyncMock(
+            return_value=SimpleNamespace(
+                result_id="memory-result-1",
+                result_hash="a" * 64,
+                payload={"items": [{"text": "owner memory", "score": 1}]},
+            )
+        )
     )
     registry = SimpleNamespace(
         get_entry=lambda _provider_id: SimpleNamespace(base_url="https://relay.invalid")
@@ -211,34 +217,26 @@ async def test_sdk_persona_and_memory_use_current_product_authorities(monkeypatc
         SimpleNamespace(
             get=lambda name: {
                 "provider_registry": registry,
-                "memory_recall_query": memory,
+                "conversation_memory": memory,
             }.get(name)
         ),
     )
-    monkeypatch.setattr(
-        main,
-        "_companion_identity_gate",
-        SimpleNamespace(
-            freeze=lambda: SimpleNamespace(
-                owner=SimpleNamespace(profile_id="owner-1", profile_generation=3),
-                binding_epoch=5,
-            )
-        ),
-    )
-    scope = object()
-    session_db = SimpleNamespace(
-        capture_owner_memory_read_scope=AsyncMock(return_value=scope)
-    )
+    session_db = SimpleNamespace()
 
-    persona, items = await main._sdk_persona_and_memory_sources(
+    persona, items, result = await main._sdk_persona_and_memory_sources(
         session_db=session_db,
         text="current request",
         provider_binding={"provider_id": "deepseek", "model_id": "deepseek-v4-pro"},
+        context_query_id="context-query-1",
+        user_id="user-1",
+        session_id="session-1",
     )
 
     assert persona.startswith("Current persona")
-    session_db.capture_owner_memory_read_scope.assert_awaited_once_with(
-        "owner-1", 3, 5
-    )
-    memory.recall_readonly.assert_awaited_once_with("current request", 8, scope)
+    query = memory.recall_bounded.await_args.args[0]
+    assert query.context_query_id == "context-query-1"
+    assert query.user_id == "user-1"
+    assert query.session_id == "session-1"
+    assert query.query_text == "current request"
+    assert result.result_id == "memory-result-1"
     assert items == ({"text": "owner memory", "score": 1},)
