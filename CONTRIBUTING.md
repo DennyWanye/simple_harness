@@ -1,4 +1,4 @@
-# 贡献指南 — DeskPet
+# 贡献指南 — simple_harness
 
 谢谢你愿意贡献！这份文档说明 PR 流程、代码风格、提交约定。
 
@@ -131,7 +131,7 @@ cd tauri-app && npm run lint
 
 ## DCO / 版权 / 协议
 
-- DeskPet 不要求签 CLA
+- simple_harness 不要求签 CLA
 - 提交 PR 即默认你同意你的贡献**以 BUSL-1.1 协议发布**（且 2030-05-27 后转 Apache 2.0）
 - 你的版权归你自己；只需在你新建的源文件里写自己的 `SPDX-FileCopyrightText` 即可
 - 如果引入新的第三方依赖：
@@ -172,7 +172,7 @@ review 来回 3+ 轮还没收敛的 PR 可能被关闭，可以重开新 PR 重�
 
 ## 问题？
 
-开 [GitHub Discussions](https://github.com/DennyWanye/deskpet/discussions) 或
+开 [GitHub Discussions](https://github.com/DennyWanye/simple_harness/discussions) 或
 普通 issue。中文 / English 都接受。
 
 谢谢贡献！🐈

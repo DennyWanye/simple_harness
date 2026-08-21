@@ -1,4 +1,4 @@
-# DeskPet Search Gateway 与 DeepResearch 进度架构基线
+# simple_harness Search Gateway 与 DeepResearch 进度架构基线
 
 > 校准日期：2026-07-20
 
@@ -318,7 +318,7 @@ Outbox 和 SessionDB 继续是进度事实源，`workflow_stage` child bubble �
 
 ### 13.5 外部实践适配
 
-- Circuit breaker 采用 closed/open/half-open 与受限 probe，但不引入新依赖；DeskPet provider 数量固定且状态简单，现有 asyncio lock 足以实现原子 single-flight。
+- Circuit breaker 采用 closed/open/half-open 与受限 probe，但不引入新依赖；simple_harness provider 数量固定且状态简单，现有 asyncio lock 足以实现原子 single-flight。
 - Faithfulness 采用“拆分独立 statements，再逐条判断能否由 retrieved context 推出”的思路，但保留本地 deterministic lexical/exact-token 主判与可选语义 scorer，避免把发布门完全交给另一次 LLM 判断。
 - UI 采用 disclosure card 与 progress status 的可访问语义；折叠态保留富摘要，展开控制只负责附加详情。
 

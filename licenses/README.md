@@ -1,10 +1,10 @@
-# Third-Party Licenses — DeskPet
+# Third-Party Licenses — simple_harness
 
-This directory tracks third-party software bundled or required by DeskPet, with
+This directory tracks third-party software bundled or required by simple_harness, with
 emphasis on dependencies whose license is **not** the project's default
 permissive baseline.
 
-DeskPet itself is licensed under [BUSL-1.1](../LICENSE) (auto-converts to
+simple_harness itself is licensed under [BUSL-1.1](../LICENSE) (auto-converts to
 Apache 2.0 on 2030-05-27). All third-party components listed here retain their
 own original licenses.
 
@@ -18,8 +18,8 @@ own original licenses.
 | Hiyori sample model | Live2D Free Material License Agreement | [`LIVE2D-HIYORI.md`](./LIVE2D-HIYORI.md) |
 
 ⚠️ **Downstream forks ship these under Live2D Inc.'s separate terms.** Read the
-two files above before redistributing DeskPet commercially. The BUSL-1.1
-license on DeskPet **does not** relieve you of Live2D's separate obligations.
+two files above before redistributing simple_harness commercially. The BUSL-1.1
+license on simple_harness **does not** relieve you of Live2D's separate obligations.
 
 ---
 
@@ -169,4 +169,4 @@ If you add a new direct dependency, please:
 
 ---
 
-*Index last updated: 2026-05-27 for DeskPet `0.5.0-phase3-rc1`.*
+*Index last updated: 2026-05-27 for simple_harness `0.5.0-phase3-rc1`.*

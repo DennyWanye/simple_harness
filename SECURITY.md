@@ -2,9 +2,9 @@
 
 ## 报告渠道
 
-发现 DeskPet 中存在安全问题？请**不要**直接开公开 issue。请改用：
+发现 simple_harness 中存在安全问题？请**不要**直接开公开 issue。请改用：
 
-**[GitHub Security Advisories](https://github.com/DennyWanye/deskpet/security/advisories/new)**
+**[GitHub Security Advisories](https://github.com/DennyWanye/simple_harness/security/advisories/new)**
 
 这是 GitHub 提供的私密漏洞披露渠道，只有维护者能看到。我们会在 72 小时
 内首次响应，并在修复后协调公开披露。

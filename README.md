@@ -2,6 +2,9 @@
 
 跨平台桌面 AI 工作台：会话 / 技能中心 / 产物库 / 设置四视图 + 本地后端 Agent 能力（语音规划走中转站 Realtime）。
 
+当前仓库、项目与产品统一称为 `simple_harness`。文档中的 `DeskPet` 仅用于说明分叉历史；
+代码路径、环境变量、数据目录和可执行文件中保留的 `deskpet` 属于兼容标识，不代表当前项目名称。
+
 由 [DeskPet](https://github.com/DennyWanye/deskpet-private) 分叉而来，经两次改版：
 
 1. **fork（2026-08-04）**：移除 Live2D 全链路（零第三方版权资产）+ macOS 支持

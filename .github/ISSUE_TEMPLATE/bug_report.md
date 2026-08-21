@@ -18,7 +18,7 @@ assignees: ''
 
 ## 环境
 
-- DeskPet 版本：（`git rev-parse --short HEAD` 或 release tag）
+- simple_harness 版本：（`git rev-parse --short HEAD` 或 release tag）
 - 构建模式：`manual` / `relay`
 - 操作系统：Windows 11 / macOS 14 / Ubuntu 22.04
 - GPU：NVIDIA RTX 4090 / 无独显 / 其他

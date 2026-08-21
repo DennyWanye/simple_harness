@@ -1,6 +1,6 @@
 # Plugins (P4-S20)
 
-A DeskPet **plugin** is a packaged set of skills + optional MCP
+A simple_harness **plugin** is a packaged set of skills + optional MCP
 servers + optional Python tools. Compared to a single SKILL.md skill,
 a plugin lets you ship multiple skills that share state and bring
 their own MCP backends.
@@ -51,7 +51,7 @@ Everything else has a sensible default.
 
 When the plugin is enabled, the MCPManager merges these servers with
 the global `[mcp]` block from `config.toml`. Each server is annotated
-with `source: "plugin:<name>"` so DeskPet can cleanly stop them when
+with `source: "plugin:<name>"` so simple_harness can cleanly stop them when
 the plugin is disabled.
 
 If a plugin's server name collides with a global server, the
@@ -81,7 +81,7 @@ via `PluginManager.discover()` immediately — verified by
 git clone https://github.com/foo/notion-plugin %APPDATA%\deskpet\plugins\notion-plugin
 ```
 
-Restart DeskPet (or trigger SkillLoader reload via IPC). The plugin
+Restart simple_harness (or trigger SkillLoader reload via IPC). The plugin
 appears in the SkillStorePanel's "已安装" tab.
 
 **Enable / disable** via control-WS IPC:
@@ -120,5 +120,5 @@ plugins; the full SkillStorePanel handles community **skills** today.
 - Plugin MCP servers run as subprocesses spawned by MCPManager — they
   are **not** sandboxed beyond what the user's OS provides. Only
   install plugins you trust.
-- Plugin `mcp.json` server entries do **not** bypass deskpet's
+- Plugin `mcp.json` server entries do **not** bypass simple_harness's
   `[permissions.deny]` patterns at tool-call time.

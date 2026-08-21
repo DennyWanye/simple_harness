@@ -83,7 +83,7 @@ npx @tauri-apps/cli signer generate `
 #    tauri-app/src-tauri/tauri.conf.json > plugins.updater.pubkey
 
 # 3. Update the repo secrets at
-#    https://github.com/DennyWanye/deskpet/settings/secrets/actions
+#    https://github.com/DennyWanye/simple_harness/settings/secrets/actions
 #      TAURI_SIGNING_PRIVATE_KEY          = contents of deskpet.key
 #      TAURI_SIGNING_PRIVATE_KEY_PASSWORD = new passphrase
 ```
@@ -111,7 +111,7 @@ Required repo secrets (Settings → Secrets and variables → Actions):
 | `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | ✅ | Passphrase for the current key (required since P2-0-S8 rotation) |
 
 The updater endpoint is already wired to
-`https://github.com/DennyWanye/deskpet/releases/latest/download/latest.json`,
+`https://github.com/DennyWanye/simple_harness/releases/latest/download/latest.json`,
 so once the workflow publishes a Release with `latest.json`, the
 Tauri updater plugin will pick it up on next app start.
 
@@ -147,7 +147,7 @@ installer. For manual publishing (offline / emergency), the shape is:
   "platforms": {
     "windows-x86_64": {
       "signature": "<contents of DeskPet_0.2.0_x64-setup.exe.sig>",
-      "url": "https://github.com/DennyWanye/deskpet/releases/download/v0.2.0/DeskPet_0.2.0_x64-setup.exe"
+      "url": "https://github.com/DennyWanye/simple_harness/releases/download/v0.2.0/DeskPet_0.2.0_x64-setup.exe"
     }
   }
 }
@@ -165,7 +165,7 @@ In `tauri-app/src-tauri/tauri.conf.json`:
   "updater": {
     "active": true,
     "endpoints": [
-      "https://github.com/DennyWanye/deskpet/releases/latest/download/latest.json"
+      "https://github.com/DennyWanye/simple_harness/releases/latest/download/latest.json"
     ],
     "dialog": true,
     "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJERjExMTNERkY4QjQ3MTMK..."

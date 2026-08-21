@@ -13,7 +13,7 @@ GPLv2. The binary is redistributable when accompanied by a copy of the
 license. Source code is available at the upstream link.
 
 ## Why we ship it
-DeskPet's run_shell tool prefers Git Bash 鈫?bundled busybox 鈫?PowerShell
+simple_harness's run_shell tool prefers Git Bash 鈫?bundled busybox 鈫?PowerShell
 鈫?cmd. End users without Git installed still get a competent unix-like
 shell so LLM-generated ls / grep / sed / awk / find / cat | grep
 commands Just Work without code changes.

@@ -1,4 +1,4 @@
-# DeskPet 内测版 feature flag 审计表（WI-11）
+# simple_harness 内测版 feature flag 审计表（WI-11）
 
 **日期**: 2026-05-22
 **性质**: 审计文档——核对新功能在内测版里的开关状态是否符合预期

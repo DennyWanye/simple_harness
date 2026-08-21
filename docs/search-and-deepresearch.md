@@ -1,6 +1,6 @@
 # Search and DeepResearch
 
-DeskPet includes an in-process Search Gateway. Normal users do not need to
+simple_harness includes an in-process Search Gateway. Normal users do not need to
 install Docker, SearXNG, a browser automation package, or a paid search API.
 Both quick search (`web_search`) and new DeepResearch runs use this gateway so
 that routing, result normalization, deduplication, caching, cooldowns, and
@@ -15,7 +15,7 @@ its own shorter timeout; an empty result, timeout, 403/429 response, CAPTCHA,
 or parse failure is recorded as a structured attempt and the gateway continues
 to the next provider while budget remains.
 
-DeskPet does not solve CAPTCHAs or bypass an upstream service's rate limit. It
+simple_harness does not solve CAPTCHAs or bypass an upstream service's rate limit. It
 uses bounded fallback, temporary provider cooldown, cached results, and a clear
 degraded response instead. When no source is available, DeepResearch reports
 the missing evidence instead of inventing citations.
@@ -32,13 +32,13 @@ enabled = true
 searxng_url = "https://search.example.com"
 ```
 
-DeskPet only registers the provider when `searxng_url` is non-empty and valid.
+simple_harness only registers the provider when `searxng_url` is non-empty and valid.
 The instance must allow a request equivalent to
 `GET /search?q=deskpet&format=json`. If the server disables JSON, requires an
 interactive challenge, or cannot be reached, the provider is skipped or
 degraded without disabling the built-in routes.
 
-To stop using SearXNG, set `searxng_url = ""` and restart DeskPet. To disable
+To stop using SearXNG, set `searxng_url = ""` and restart simple_harness. To disable
 the entire gateway for diagnosis, set `enabled = false`; this is not the
 recommended everyday configuration.
 
@@ -58,7 +58,7 @@ complete private URLs. Typical error codes have these meanings:
 
 For SearXNG, first open its `/search?format=json&q=test` endpoint directly on
 the same machine. A JSON response confirms the required format; an HTML page,
-403, or 429 explains why DeskPet will fall back.
+403, or 429 explains why simple_harness will fall back.
 
 ## DeepResearch progress
 

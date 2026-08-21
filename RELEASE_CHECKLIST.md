@@ -1,6 +1,6 @@
 # OSS 发布前 Checklist
 
-> 第一次把 DeskPet 推到公开 GitHub 仓之前**逐条过一遍**。后续每次大版本
+> 第一次把 simple_harness 推到公开 GitHub 仓之前**逐条过一遍**。后续每次大版本
 > 发布也建议复跑顶部"自动化扫描"段。
 
 ---

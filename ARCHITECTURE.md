@@ -1,4 +1,4 @@
-# DeskPet 部署架构总览（参考）
+# simple_harness 部署架构总览（参考）
 
 > 本文件只解释桌面应用的部署层和目录布局，不是 Agent/Harness 的代码级
 > canonical baseline。长任务 Harness、持久化、恢复与 Trace/Eval 请以

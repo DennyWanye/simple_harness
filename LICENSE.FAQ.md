@@ -1,4 +1,4 @@
-# LICENSE FAQ — 关于 DeskPet 的开源许可证
+# LICENSE FAQ — 关于 simple_harness 的开源许可证
 
 > 中文友好的常见问题解答。本文档**不是**法律意见，正式条款以 [`LICENSE`](./LICENSE) 文件为准。
 
@@ -6,9 +6,9 @@
 
 ## TL;DR
 
-- DeskPet 使用 **Business Source License 1.1 (BUSL-1.1)**
+- simple_harness 使用 **Business Source License 1.1 (BUSL-1.1)**
 - **个人自用、研究、学习、贡献代码、做非竞争性产品 → 没问题，随便用**
-- **不能做的事**：把 DeskPet 作为托管/嵌入服务**卖给第三方**，跟原作者付费版本**直接竞争**
+- **不能做的事**：把 simple_harness 作为托管/嵌入服务**卖给第三方**，跟原作者付费版本**直接竞争**
 - **2030-05-27 之后**：自动转 **Apache License 2.0**，所有限制解除
 
 ---
@@ -27,35 +27,35 @@
 
 ---
 
-## Q2: 我能用 DeskPet 做什么？（✅ 允许）
+## Q2: 我能用 simple_harness 做什么？（✅ 允许）
 
 只要不构成 "competitive offering"，**几乎所有用途都允许**，包括商业用途：
 
 - ✅ **个人桌面使用**（无论你是不是商业用户）
-- ✅ **公司内部使用**（团队/全公司部署 DeskPet 给员工当桌宠，完全可以）
+- ✅ **公司内部使用**（团队/全公司部署 simple_harness 给员工当桌宠，完全可以）
 - ✅ **研究、学习、教学**
 - ✅ **fork 修改**（自己玩、PR 回上游、做学术实验）
-- ✅ **基于 DeskPet 开发上层应用**（只要你的产品不是直接拿 DeskPet 当服务卖）
-- ✅ **在 DeskPet 里集成你自己的付费服务**（比如接你公司的 API）
-- ✅ **写博客/做视频/出书介绍 DeskPet**
+- ✅ **基于 simple_harness 开发上层应用**（只要你的产品不是直接拿 simple_harness 当服务卖）
+- ✅ **在 simple_harness 里集成你自己的付费服务**（比如接你公司的 API）
+- ✅ **写博客/做视频/出书介绍 simple_harness**
 
 ---
 
-## Q3: 我不能用 DeskPet 做什么？（❌ 受限）
+## Q3: 我不能用 simple_harness 做什么？（❌ 受限）
 
 只有一种情况受限：
 
-- ❌ **把 DeskPet 作为托管 (hosted) 或嵌入 (embedded) 服务卖给第三方，跟 DeskPet 官方的付费版本直接竞争**
+- ❌ **把 simple_harness 作为托管 (hosted) 或嵌入 (embedded) 服务卖给第三方，跟 simple_harness 官方的付费版本直接竞争**
 
 具体看 [`LICENSE`](./LICENSE) 里的 "Additional Use Grant" 段。关键定义：
 
 - **"Competitive offering"** = 付费提供给第三方、且功能跟官方付费版本显著重叠的产品
 - **"Hosted"** = 提供给最终用户作为服务运行（典型如 SaaS）
-- **"Embedded"** = 把 DeskPet 的源码或可执行代码打包进竞品里
+- **"Embedded"** = 把 simple_harness 的源码或可执行代码打包进竞品里
 
-**当前情况说明**：DeskPet 现阶段**没有付费版本**，所以严格说目前没有 "competitive offering" 这个标的物。但为了保留未来可能性，条款先放在这里。
+**当前情况说明**：simple_harness 现阶段**没有付费版本**，所以严格说目前没有 "competitive offering" 这个标的物。但为了保留未来可能性，条款先放在这里。
 
-**模糊地带怎么办**：如果你不确定你的用途算不算 "竞争"，[开个 issue](https://github.com/DennyWanye/deskpet/issues) 问。
+**模糊地带怎么办**：如果你不确定你的用途算不算 "竞争"，[开个 issue](https://github.com/DennyWanye/simple_harness/issues) 问。
 
 ---
 
@@ -72,11 +72,11 @@
 
 - 提 PR 即默认你同意你的贡献以 BUSL-1.1 发布（以及 2030-05-27 后转 Apache 2.0）
 - 不需要签 CLA
-- 你的版权归你自己（DeskPet 不要求版权转让）
+- 你的版权归你自己（simple_harness 不要求版权转让）
 
 ---
 
-## Q6: DeskPet 引用了哪些第三方组件？它们的许可证是什么？
+## Q6: simple_harness 引用了哪些第三方组件？它们的许可证是什么？
 
 见 [`licenses/`](./licenses/) 目录：
 
@@ -91,22 +91,22 @@
 
 ## Q7: 有疑问/想用于不确定的场景怎么办？
 
-- 看完本 FAQ 还有疑问 → [开 issue](https://github.com/DennyWanye/deskpet/issues)
+- 看完本 FAQ 还有疑问 → [开 issue](https://github.com/DennyWanye/simple_harness/issues)
 - 法律层面的咨询请找你的律师，本项目维护者不提供法律意见
 
 ---
 
-## Q8: 我能商业使用 DeskPet 吗？
+## Q8: 我能商业使用 simple_harness 吗？
 
 **绝大多数商业场景：可以**。
 
 | 场景 | 可以吗 |
 |---|---|
-| 公司给员工部署 DeskPet 当工作伙伴 | ✅ 可以 |
-| 做 PPT/办公辅助工具卖钱，里面用 DeskPet 当 UI | ✅ 可以（前提是 DeskPet 不是你产品的主体卖点） |
-| 在 DeskPet 上接付费 API 服务 | ✅ 可以 |
-| 卖一个"基于 DeskPet 的桌宠 SaaS 服务" | ❌ 这个是 hosted 竞争 |
-| 把 DeskPet 改头换面包装成自己的桌宠产品卖 | ❌ 这个是 embedded 竞争 |
+| 公司给员工部署 simple_harness 当工作伙伴 | ✅ 可以 |
+| 做 PPT/办公辅助工具卖钱，里面用 simple_harness 当 UI | ✅ 可以（前提是 simple_harness 不是你产品的主体卖点） |
+| 在 simple_harness 上接付费 API 服务 | ✅ 可以 |
+| 卖一个"基于 simple_harness 的桌宠 SaaS 服务" | ❌ 这个是 hosted 竞争 |
+| 把 simple_harness 改头换面包装成自己的桌宠产品卖 | ❌ 这个是 embedded 竞争 |
 
 模糊就问。
 

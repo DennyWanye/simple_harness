@@ -154,7 +154,7 @@
 
 ## 1. 主题事实
 
-DeskPet 的用户界面现在以暗色为默认外观。主窗口背景、功能面板、弹窗、输入框、卡片、
+simple_harness 的用户界面现在以暗色为默认外观。主窗口背景、功能面板、弹窗、输入框、卡片、
 按钮、标签页和遮罩统一从 `tauri-app/src/theme/tokens.ts` 与
 `tauri-app/src/theme/components.ts` 取得语义化颜色和组件样式。
 

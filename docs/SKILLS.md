@@ -1,8 +1,8 @@
 # Skills (P4-S20)
 
-DeskPet supports the **Claude Code SKILL.md** standard. Any community
+simple_harness supports the **Claude Code SKILL.md** standard. Any community
 skill from <https://code.claude.com/docs/en/skills> or
-<https://github.com/anthropics/skills> works in DeskPet too.
+<https://github.com/anthropics/skills> works in simple_harness too.
 
 ## Format
 
@@ -47,7 +47,7 @@ text.
 
 ## Where skills live
 
-DeskPet searches four locations in **priority order** (later overrides
+simple_harness searches four locations in **priority order** (later overrides
 earlier on name conflicts):
 
 1. **bundled** — `deskpet/skills/builtin/` (ships with the app)
@@ -63,11 +63,11 @@ show a badge.
 ## Hot-reload
 
 The user/project skill dirs are watched with `watchdog`. Add or edit a
-`SKILL.md` and DeskPet picks it up within ~1.5s without restart.
+`SKILL.md` and simple_harness picks it up within ~1.5s without restart.
 
 ## Two formats coexist
 
-DeskPet also supports the **legacy** built-in skill format (with
+simple_harness also supports the **legacy** built-in skill format (with
 required `name`/`description`/`version`/`author` frontmatter, used by
 the bundled built-in skills shipped before P4-S20). The loader
 auto-dispatches by frontmatter shape:
@@ -110,5 +110,5 @@ The user said: $ARGUMENTS
 Today is !`date +%Y-%m-%d`. Quote of the day:
 ```
 
-DeskPet's hot-reloader picks this up immediately. Try saying "quote of
+simple_harness's hot-reloader picks this up immediately. Try saying "quote of
 the day" in chat.

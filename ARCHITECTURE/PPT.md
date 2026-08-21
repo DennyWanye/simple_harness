@@ -1,7 +1,7 @@
 # PPT 生成 — 模块架构与状态
 
 > **最后更新**: 2026-07-29
-> **用途**: 一页看清 DeskPet「生成 PPT」全链路怎么工作、由哪些文件承担、能力边界与已知短板。要动 PPT 功能前先读这里。
+> **用途**: 一页看清 simple_harness「生成 PPT」全链路怎么工作、由哪些文件承担、能力边界与已知短板。要动 PPT 功能前先读这里。
 > **同级**: [PROJECT_STATUS.md](./PROJECT_STATUS.md)(全局) · [AgentLoop.md](./AgentLoop.md)(执行引擎)
 
 ---

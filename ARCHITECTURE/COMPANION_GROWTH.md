@@ -105,7 +105,7 @@ GrowthEvent 与 `reflection:growth_f03e…` job 使用同一 root Run。该 job 
 quiet-hours 策略保留为 queued；当时的候选/评测/激活表为空，因此这份证据只证明生产入口，
 不代表 S-1 或 Task 13 已重新完成。
 
-2026-07-26 的 l44 复核继续从真实桌宠点击“消息”打开 `DeskPet · 消息`，发送两条明确
+2026-07-26 的 l44 复核继续从真实桌宠点击“消息”打开 `simple_harness · 消息`，发送两条明确
 纠正。`message:default:42/43` 分别形成
 `growth_1398032a3656c389e06eac31a45dbc9d` 与
 `growth_1d9a5bd150d789de9dc2d1d00a7a0a8a`，对应 reflection job 都进入既有
@@ -339,7 +339,7 @@ child 先建立独立 pending pin 与 bound lease intent，只有 after-commit
 provider launch、tool dispatch、terminal commit 与 delivery 都读取同一 execution fence。
 恢复链按 frozen ToolSet/Context OS snapshot refs 校验，不再依赖 legacy tool-name list。
 
-MCP host entry 只有在 DeskPet adapter、真实 stdio launcher 或 npx 已安装 package bundle、
+MCP host entry 只有在 simple_harness adapter、真实 stdio launcher 或 npx 已安装 package bundle、
 package lock 和 launch/config identity 都能冻结成 `ExecutionBuildIdentity` 时，才能进入
 生产 Registry 与 durable Run catalog。2026-08-11 起，无法证明来源的 MCP tool 在连接阶段
 即 fail closed 并从生产 Registry 隐藏，不能再污染普通问答的 prepared tool set；macOS npx

@@ -25,11 +25,11 @@ assignees: ''
 
 ## 上下文
 
-- 你主要在什么场景用 DeskPet？（工作辅助 / 陪伴 / demo / 学习）
+- 你主要在什么场景用 simple_harness？（工作辅助 / 陪伴 / demo / 学习）
 - 你使用的 LLM Provider 是什么？（OpenAI / Anthropic / 本地 Ollama / 其他）
 - 这个功能对你有多重要？（nice-to-have / 用着不爽 / 没有就放弃用了）
 
 ## Checklist
 
 - [ ] 已搜索现有 issue 没有相同提议
-- [ ] 我理解 DeskPet 主体走 BUSL-1.1 协议（功能采纳与否由维护者权衡）
+- [ ] 我理解 simple_harness 主体走 BUSL-1.1 协议（功能采纳与否由维护者权衡）

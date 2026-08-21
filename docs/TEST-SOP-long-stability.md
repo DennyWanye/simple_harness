@@ -2,7 +2,7 @@
 
 ## 目标
 
-验证 deskpet code mode 在 auto-mode 下能持续无人值守跑真实复杂代码任务。
+验证 simple_harness code mode 在 auto-mode 下能持续无人值守跑真实复杂代码任务。
 合格标准：**连续 6 个 10 分钟周期 0 真错误** (= 1 小时稳定)。
 
 ## 触发条件
@@ -100,7 +100,7 @@ streaming + LLM 集成 + SQLite schema 定义。每个文件 ≤3KB。
 # 1. baseline
 cd backend && python -m pytest tests/ -q --ignore=tests/test_deskpet_vector_worker.py
 
-# 2. 重启 deskpet（如必要）
+# 2. 重启 simple_harness（如必要）
 netstat -ano | grep "LISTENING" | grep -E ":(8100|5173)" | awk '{print $5}'  # PIDs
 tasklist | grep -i deskpet.exe                                                   # deskpet pid
 powershell -Command "Stop-Process -Id <pid1>,<pid2>... -Force"
@@ -187,7 +187,7 @@ periodic_check:
     → diagnose root cause from log
     → write fix
     → run pytest baseline (1236+ should pass)
-    → restart deskpet
+    → restart simple_harness
     → CLEAN_CYCLE_COUNT = 0
     → re-send tasks, restart Monitor
   elif clean_cycle_count >= 6:

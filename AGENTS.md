@@ -1,6 +1,9 @@
-# AGENTS.md — DeskPet 项目级 Codex 工作笔记
+# AGENTS.md — simple_harness 项目级 Codex 工作笔记
 
 本文件给 Codex 子代理 / 助手用，记录本仓库特有的开发上下文（区别于全局 `~/.Codex/AGENTS.md`）。
+
+项目称谓统一使用 `simple_harness`；`deskpet` 仅在真实代码路径、兼容环境变量、数据目录、
+可执行文件名或历史记录中保留，不得再作为当前项目名称。
 
 > 🧭 **接手前先读架构事实源**: [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md) —
 > 全局状态、模块生产链路、完成度、最近里程碑与已知问题统一从这里进入。
@@ -38,7 +41,7 @@
 
 ## 🔑 开发期登录测试账号（**仅 DEV 环境**）
 
-DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时走 onboarding 登录流程：
+simple_harness 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时走 onboarding 登录流程：
 1. Tauri 弹登录窗 → 用户输入账号密码
 2. relay 反代 → 校验账号 → 下发 `tsk_xxx` access token + `key_xxx` device key
 3. token 写入 OS keychain（Windows DPAPI / macOS Keychain）
@@ -61,7 +64,7 @@ DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时�
 - ⚠️ **不要 push 到 public GitHub**（git 历史会永久保留）
 - ⚠️ **不要写进 .env 或 secrets/ 目录**（这两个会被 diagnostic bundle 收集）
 - ⚠️ **不要在子代理产出的 manual-results-* 报告里截图账号密码**（截图前先关 onboarding 窗）
-- ✅ 仓库**保持 private**（git@github.com:DennyWanye/deskpet 是 private repo）
+- ✅ 仓库**保持 private**（git@github.com:DennyWanye/simple_harness 是 private repo）
 - ✅ 测试 keychain 由测试代码用 `monkeypatch.setattr("backend.secrets.get_cloud_api_key", lambda: "fake-sk-...")` mock，**生产代码永远从 OS keychain 读**
 
 ---
@@ -80,7 +83,7 @@ DeskPet 的 LLM 调用走 中转站（默认 gpt-5.5）。用户首次启动时�
 1. **Tauri dev 启动后留 orphan 进程**（feedback_tauri_dev_cleanup）—— `TaskStop` 不会清 `deskpet.exe` + Vite。stop 前必 `taskkill /F /IM deskpet.exe` + Vite 进程。
 2. **改代码后只跑 unit test 不算完成**（feedback_simulate_manual_test）—— 必须 windows-mcp 走 end-to-end + 截图 + 抓日志。
 3. **E2E ≠ 脚本回放**（feedback_real_e2e_not_script_replay）—— 不能用"再跑一遍 resolution 函数的脚本"当 E2E 证据；必须验证真实运行栈的实际出站行为。
-4. **不要加沙箱护栏**（feedback_no_sandbox_constraints）—— deskpet 是单机桌宠，只防手滑级破坏。
+4. **不要加沙箱护栏**（feedback_no_sandbox_constraints）—— simple_harness 是单机桌面应用，只防手滑级破坏。
 5. **跨层契约漂移**（feedback_cross_layer_contract）—— pytest + tsc 都过但后端前端对字段单位 disagree → `scripts/e2e_*.py` live smoke 兜底。
 6. **vector worker test_enqueue_small_batch_flushes_on_interval flaky**（time-based，已 spawn_task 跟踪修复）。
 7. **不要手动起 backend 再起 Tauri（端口双占）★ 已踩多次** —— Tauri 自己会

@@ -3,7 +3,7 @@
 ## 我们的承诺
 
 为了营造开放、友好的环境，作为贡献者和维护者，我们承诺让所有参与
-DeskPet 项目的人——无论年龄、体型、可见或不可见的残疾、族裔、性别认同
+simple_harness 项目的人——无论年龄、体型、可见或不可见的残疾、族裔、性别认同
 与表达、经验水平、教育、社会经济状况、国籍、外表、种族、宗教或性认同
 和性取向——都能获得免于骚扰的体验。
 
@@ -41,8 +41,8 @@ DeskPet 项目的人——无论年龄、体型、可见或不可见的残疾、
 
 ## 执行
 
-如有滥用、骚扰或其他不可接受行为，请通过 [GitHub Issues](https://github.com/DennyWanye/deskpet/issues)
-或 [GitHub Security Advisories](https://github.com/DennyWanye/deskpet/security/advisories)
+如有滥用、骚扰或其他不可接受行为，请通过 [GitHub Issues](https://github.com/DennyWanye/simple_harness/issues)
+或 [GitHub Security Advisories](https://github.com/DennyWanye/simple_harness/security/advisories)
 报告。所有投诉都会被审查与调查，并以维护者认为必要且适当的方式回应。
 维护者有义务对事件报告者的身份保密。
 

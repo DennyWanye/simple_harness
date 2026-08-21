@@ -1,6 +1,6 @@
 # Permission system (P4-S20)
 
-DeskPet's tool-use loop never silently runs sensitive operations on
+simple_harness's tool-use loop never silently runs sensitive operations on
 your computer. Every call to a permission-categorized tool flows
 through the **PermissionGate** before the handler executes:
 

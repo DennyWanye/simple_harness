@@ -3,7 +3,7 @@
 **Status:** 长期 backlog · 不阻塞当前 release
 **Last updated:** 2026-05-09
 
-DeskPet 当前为了赶发行节奏，在硬件支持上做了一系列**显式妥协**。
+simple_harness 当前为了赶发行节奏，在硬件支持上做了一系列**显式妥协**。
 这份文档集中记录每条妥协的来由、目前的影响范围、以及"等有时间了应该怎么做"的
 兼容化路径，避免几个月后忘记为什么这么写。
 
@@ -13,7 +13,7 @@ DeskPet 当前为了赶发行节奏，在硬件支持上做了一系列**显式�
 
 ### 现状
 - `tauri-app/src-tauri/src/gpu_check.rs` 启动时 NVML 探测 NVIDIA GPU，
-  探不到直接弹窗 `DeskPet — 硬件不支持` + `app.exit(1)`，backend 根本不 spawn
+  探不到直接弹窗 `simple_harness — 硬件不支持` + `app.exit(1)`，backend 根本不 spawn
 - 后端 `WhisperModel(device="cuda")`、BGE-M3 向量化、未来的所有本地推理
   全部 hardcode `cuda`
 - PyInstaller 打包的 `torch` 是 CUDA wheel（`+cu130`），AMD/Intel 用户
@@ -78,7 +78,7 @@ DeskPet 当前为了赶发行节奏，在硬件支持上做了一系列**显式�
 | 性格一致性 | system prompt + 固定 voice | voice embedding + role prompt 一体训练 |
 | 闲聊感 | 一问一答 | 可被打断、可主动接话 |
 
-#### 但对 DeskPet 是 hard blockers
+#### 但对 simple_harness 是 hard blockers
 1. **不支持中文** — 训练数据是 Fisher English Corpus + 全英文 customer service prompts，
    中国用户场景基本不可用。
 2. **不支持 tool-use** — 纯 conversational S2S 模型，**完全跑不了 Code mode 的
@@ -92,7 +92,7 @@ DeskPet 当前为了赶发行节奏，在硬件支持上做了一系列**显式�
 5. **License** — NVIDIA Open Model License（不是 MIT/Apache），商用要单独审。
 
 ### 等什么时候再看
-任意一条满足之前，对 DeskPet 实际语言效果提升 = 0：
+任意一条满足之前，对 simple_harness 实际语言效果提升 = 0：
 - [ ] 出中文版（NVIDIA 这种 research drop 大概率不会迭代中文，更可能等
       Qwen-Omni / 阿里 / 腾讯系列出对标 S2S 模型）
 - [ ] 出蒸馏版（≤3B，8G 显存可跑）

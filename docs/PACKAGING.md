@@ -1,4 +1,4 @@
-# Packaging DeskPet (Phase 3)
+# Packaging simple_harness (Phase 3)
 
 **Status**: skeleton — filled out slice-by-slice as Phase 3 lands.
 **Last updated**: 2026-04-22 (P3-S6+S7 user data dirs + 模型外置)
@@ -7,7 +7,7 @@
 
 ## 1. Overview
 
-DeskPet ships as a Tauri installer (`.msi` on Windows) that carries:
+simple_harness ships as a Tauri installer (`.msi` on Windows) that carries:
 
 - The Rust supervisor / launcher (`deskpet.exe`)
 - The React + Vite frontend (bundled into Tauri resources)
@@ -17,7 +17,7 @@ DeskPet ships as a Tauri installer (`.msi` on Windows) that carries:
 Target: clean NVIDIA + Windows 10/11 machine → double-click installer →
 runs in < 90 s cold boot, no Python toolchain required.
 
-**Non-goal (Phase 3)**: CPU-only fallback. DeskPet v0.3.x requires a CUDA-
+**Non-goal (Phase 3)**: CPU-only fallback. simple_harness v0.3.x requires a CUDA-
 capable NVIDIA GPU. The launcher shows a clear error message on unsupported
 hardware (see P3-S2).
 
@@ -93,7 +93,7 @@ backend/dist/deskpet-backend/
 P3-S5 会把上面这个目录挂进 Tauri 的 `resources`，最终安装后变成：
 
 ```
-DeskPet/
+simple_harness/
 ├── deskpet.exe                 (Tauri launcher)
 ├── resources/backend/
 │   ├── deskpet-backend.exe     ← supervisor 认的就是这条路径
@@ -239,7 +239,7 @@ E2E smoke `scripts/e2e_frozen_tauri.ps1` 会 grep 这行做 Bundled 分支
 
 ## 5. 硬件前置检查 (P3-S2)
 
-DeskPet 在 Tauri `setup()` 钩子里跑一次 **NVIDIA GPU 探测**，失败就弹窗 + 退出，
+simple_harness 在 Tauri `setup()` 钩子里跑一次 **NVIDIA GPU 探测**，失败就弹窗 + 退出，
 **根本不拉起 Python backend**。这样用户在不支持的机器上不会看到"能启动但 ASR
 永远 500"的假象。
 
@@ -342,7 +342,7 @@ setup 脚本 junction**，installer 本体保持在 ~1.5 GB。
 ### 首启流程
 
 ```
-  用户双击 installer → 安装到 Program Files\DeskPet\
+  用户双击 installer → 安装到 Program Files\simple_harness\
   → 用户启动 deskpet.exe
   → Tauri spawn deskpet-backend.exe
   → backend.main: paths.ensure_user_dirs()            # mkdir -p
@@ -374,7 +374,7 @@ powershell scripts/setup_user_data.ps1
 
 - 首启 GUI 下载器（当前 slice 不做）：用户没有 repo 时自动拉取 whisper /
   cosyvoice 到 `%LocalAppData%\deskpet\models\`。
-- WiX 卸载脚本：清 `Program Files\DeskPet\`，保留 `%AppData%\deskpet\`
+- WiX 卸载脚本：清 `Program Files\simple_harness\`，保留 `%AppData%\deskpet\`
   （对话历史 + 预算），可选清 `%LocalAppData%\deskpet\models\`。
 
 ## 7. Troubleshooting (skeleton)

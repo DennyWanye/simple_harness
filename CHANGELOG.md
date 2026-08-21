@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to DeskPet are documented in this file.
+All notable changes to simple_harness are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -41,7 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **General-purpose AI assistant + extensible skill marketplace.**
 
-DeskPet evolves from a voice/chat desktop pet into an AI assistant that
+simple_harness evolves from a voice/chat desktop pet into an AI assistant that
 can install community skills from GitHub and execute real OS-level
 operations under user permission. Four stages shipped end-to-end:
 
@@ -159,7 +159,7 @@ SettingsPanel 加状态徽章让用户能直接看见。
 
 ### Tests
 
-- 632 passing in deskpet 套件（rc2 是 628，+4 from `TestEmbedderStatus`）
+- 632 passing in simple_harness 套件（rc2 是 628，+4 from `TestEmbedderStatus`）
 - 26 IPC handler tests
 - frontend `tsc --noEmit` clean，`vite build` clean
 - torch 2.6 升级**零回归**：所有 P2/P3/P4 测试照常通过
@@ -209,7 +209,7 @@ live in the running backend, not just registered.
 
 ### Tests
 
-- 628 passing in deskpet regression (+10 from rc1's 618).
+- 628 passing in simple_harness regression (+10 from rc1's 618).
 - 4/4 S14 assembler-hook tests.
 - 6/6 S15 full-stack tests.
 - Frontend `tsc --noEmit` clean; no UI churn (S11 already declared the
@@ -287,7 +287,7 @@ as standalone services that the UI can exercise today via `p4_ipc.py`.
 
 ### Tests
 
-- 612 passing in deskpet regression (1 timing-flaky in isolation passes).
+- 612 passing in simple_harness regression (1 timing-flaky in isolation passes).
 - 22/22 P4 IPC handlers.
 - Frontend: `tsc --noEmit` clean, `vite build` clean.
 

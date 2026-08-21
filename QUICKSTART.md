@@ -1,6 +1,6 @@
-# QUICKSTART — 5 分钟跑起 DeskPet
+# QUICKSTART — 5 分钟跑起 simple_harness
 
-最短路径让 DeskPet 在你机器上跑起来。第一次跑预计 15-30 分钟（含依赖下载 + 模型下载）。
+最短路径让 simple_harness 在你机器上跑起来。第一次跑预计 15-30 分钟（含依赖下载 + 模型下载）。
 
 ---
 
@@ -27,8 +27,8 @@
 ## Step 1: 克隆 + 装依赖
 
 ```bash
-git clone https://github.com/DennyWanye/deskpet.git
-cd deskpet
+git clone https://github.com/DennyWanye/simple_harness.git
+cd simple_harness
 
 # 后端
 cd backend
@@ -56,7 +56,7 @@ cd ..
 
 ## Step 2: 下载模型（首次必须）
 
-DeskPet 需要本地 ASR（faster-whisper）+ embedding（BGE-M3）+ VAD（Silero）三个模型。
+simple_harness 需要本地 ASR（faster-whisper）+ embedding（BGE-M3）+ VAD（Silero）三个模型。
 
 ```bash
 python scripts/setup_models.py
@@ -131,7 +131,7 @@ npm run tauri:dev
 
 | 现象 | 解决 |
 |---|---|
-| `nvidia-smi: not found` | 装 NVIDIA 显卡驱动；DeskPet 当前只跑 CUDA |
+| `nvidia-smi: not found` | 装 NVIDIA 显卡驱动；simple_harness 当前只跑 CUDA |
 | `Error loading torch_cuda_dll` | PyTorch CUDA wheel 没装好；按 Step 1 重装 |
 | 桌宠窗口空白 / 黑 | Tauri WebView2 没装好（Win10）；从微软官方装一下 |
 | 后端 100% CPU 但前端转圈 | 模型还在首次加载；等 30-60 秒 |
@@ -144,10 +144,10 @@ npm run tauri:dev
 
 - 想理解架构？看 [ARCHITECTURE.md](./ARCHITECTURE.md)
 - 想贡献代码？看 [CONTRIBUTING.md](./CONTRIBUTING.md)
-- 想加新功能？开 [GitHub issue](https://github.com/DennyWanye/deskpet/issues)
+- 想加新功能？开 [GitHub issue](https://github.com/DennyWanye/simple_harness/issues)
 - 想换 Live2D 模型？把你的 `.moc3` 放到 `tauri-app/public/assets/live2d/<你的名字>/`，
   然后改默认模型配置（详见 [`licenses/LIVE2D-HIYORI.md`](./licenses/LIVE2D-HIYORI.md) 最后一段）
 
 ---
 
-*Last updated: 2026-05-27 for DeskPet `0.5.0-phase3-rc1`*
+*Last updated: 2026-05-27 for simple_harness `0.5.0-phase3-rc1`*
