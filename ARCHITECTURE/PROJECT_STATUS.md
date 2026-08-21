@@ -2,6 +2,25 @@
 
 > **最后更新**：2026-08-21
 
+## 2026-08-21 Agent Runtime SDK 0.2/0.3 消费者切换（自动化完成，D-UI 阻塞）
+
+- **生产链**：SDK `build_production_runtime` 默认启用 conversation Memory 与
+  `consumer_prepared` staging；root/continuation 以稳定 identity claim private projection-v2 stage，
+  recalled Memory 仅作为 USER/untrusted data，winner stage 后才公开 projection/start/signal。
+- **Memory 一致性**：Harness execution outbox 与 DeskPet `state.db.product_memory_outbox` 按 provenance
+  分治；后者与 message 同事务，冻结 instance/user/session/id/hash，支持 CAS lease/reclaim/backoff/
+  dead-letter/ack/cleanup。Session→Memory user 一次绑定、不可变，跨 user mismatch fail closed。
+- **开发 reset/隐私**：显式 dev-only 脚本在服务停止后精确清空 state/execution/memory 三库及 sidecar，
+  随后空库初始化；DB 强制 regular-file/no-symlink/0600，diagnostic bundle 排除数据库、sidecar 与 outbox
+  原文，只保留脱敏状态/计数。
+- **候选身份**：Harness 0.2.0 `869c76f…` / wheel `e1f7d4b1…`；Memory 0.3.0
+  `87820fe…` / wheel `6f0682fd…`。两者版本、SHA 与 direct-url origin 均 fail closed。
+- **验证**：D1 `58 passed`；D2/exact `17 passed`；Rust diagnostics `4 passed`；D3 typecheck +
+  `73 files / 615 tests`；production build PASS。D-ALL 发现既有 baseline inventory 未登记 12 failures 与
+  ESLint 171 problems，原始日志在 ignored `.local-test-evidence/2026-08-21-agent-runtime/D-ALL/`。
+- **阻塞**：当前执行环境没有 windows-mcp/Windows Computer Use，S-AR-1/3/4/6 真 UI D-UI 不可执行；
+  按手测纪律不能用 WebSocket、pytest 或脚本回放替代，因此 Task 8 保持 BLOCKED。
+
 ## 2026-08-21 Provider 设置与 SDK 冷启动真机修复
 
 - **用户可见根因**：测试实例后端端口与 bundle 前端默认端口不一致时，Provider 模型探测与新增请求没有
