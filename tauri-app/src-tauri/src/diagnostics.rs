@@ -42,6 +42,22 @@ fn timestamp() -> u64 {
         .unwrap_or(0)
 }
 
+fn is_sensitive_storage_path(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    name == "state.db"
+        || name == "memory.db"
+        || name.contains("execution")
+        || name.ends_with(".sqlite")
+        || name.ends_with(".sqlite3")
+        || name.ends_with(".db-wal")
+        || name.ends_with(".db-shm")
+        || name.contains("product_memory_outbox")
+}
+
 /// Recursively copy `src` dir into `dst` dir. Best-effort: returns the
 /// number of files copied, swallows per-file errors.
 fn copy_dir(src: &Path, dst: &Path) -> usize {
@@ -55,6 +71,9 @@ fn copy_dir(src: &Path, dst: &Path) -> usize {
     };
     for entry in entries.flatten() {
         let path = entry.path();
+        if is_sensitive_storage_path(&path) {
+            continue;
+        }
         let name = entry.file_name();
         let target = dst.join(&name);
         if path.is_dir() {
@@ -75,6 +94,7 @@ fn copy_recent_files(src: &Path, dst: &Path, keep: usize) -> usize {
         Ok(rd) => rd
             .flatten()
             .filter(|e| e.path().is_file())
+            .filter(|e| !is_sensitive_storage_path(&e.path()))
             .filter_map(|e| {
                 let m = e.metadata().ok()?.modified().ok()?;
                 Some((e.path(), m))
@@ -305,6 +325,29 @@ mod tests {
         assert_eq!(n, 3);
         let kept = fs::read_dir(&dst).unwrap().count();
         assert_eq!(kept, 3);
+        let _ = fs::remove_dir_all(&src);
+        let _ = fs::remove_dir_all(&dst);
+    }
+
+    #[test]
+    fn diagnostic_copy_excludes_agent_storage_and_sidecars() {
+        let src = std::env::temp_dir().join(format!("dpd-sensitive-src-{}", timestamp()));
+        let dst = std::env::temp_dir().join(format!("dpd-sensitive-dst-{}", timestamp()));
+        fs::create_dir_all(&src).unwrap();
+        for name in [
+            "state.db",
+            "state.db-wal",
+            "memory.db",
+            "execution-v1.sqlite3",
+            "safe.log",
+        ] {
+            fs::write(src.join(name), "PRIVATE-CANARY").unwrap();
+        }
+        assert_eq!(copy_dir(&src, &dst), 1);
+        assert!(dst.join("safe.log").is_file());
+        assert!(!dst.join("state.db").exists());
+        assert!(!dst.join("memory.db").exists());
+        assert!(!dst.join("execution-v1.sqlite3").exists());
         let _ = fs::remove_dir_all(&src);
         let _ = fs::remove_dir_all(&dst);
     }

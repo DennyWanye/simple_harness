@@ -504,6 +504,7 @@ def _message_scope_kwargs(
     context: RunPresentationContext,
 ) -> dict[str, str]:
     return {
+        "memory_authority": "harness",
         **({"root_run_id": context.run_id} if context.run_id else {}),
         **(
             {"task_scope_id": context.task_scope_id}

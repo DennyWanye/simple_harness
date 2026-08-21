@@ -114,6 +114,7 @@ VALID_EVENTS = frozenset({
     "deepresearch_stage_timing",
     "deepresearch_fetch_attempt_timing",
     "deepresearch_claim_support",
+    "memory_product_outbox",
 })
 
 # Whitelisted ``detail`` keys. A caller can ONLY write these fields —

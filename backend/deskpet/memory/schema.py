@@ -32,6 +32,7 @@ from deskpet.memory.migrator import (
     ensure_v9,
     read_user_version,
 )
+from deskpet.memory.storage import ensure_owner_only_state_db
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,7 @@ async def initialize_state_db(db_path: str | Path) -> None:
     """
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_owner_only_state_db(db_path)
 
     # 2026-05-21 fix: only backup when a migration is actually pending.
     # Previously we backed up on every initialize(), which combined with

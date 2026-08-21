@@ -57,8 +57,18 @@ class OwnerMemoryRecallQueryAdapter:
     - 多 session / 空 scope → 传 None 走全局认知召回。
     """
 
-    def __init__(self, memory_backend: Any) -> None:
+    def __init__(
+        self,
+        memory_backend: Any,
+        session_db: Any,
+        *,
+        default_user_id: str,
+    ) -> None:
         self._backend = memory_backend
+        self._session_db = session_db
+        self._default_user_id = str(default_user_id or "").strip()
+        if not self._default_user_id:
+            raise ValueError("default_user_id is required")
 
     async def recall_readonly(
         self,
@@ -69,8 +79,23 @@ class OwnerMemoryRecallQueryAdapter:
         if self._backend is None:
             return []
         session_ids = tuple(getattr(owner_scope, "session_ids", ()) or ())
+        if session_ids:
+            user_ids = {
+                await self._session_db.memory_user_for_session(item)
+                for item in session_ids
+            }
+            if len(user_ids) != 1:
+                raise CompanionStateError("owner_memory_user_scope_mismatch")
+            user_id = next(iter(user_ids))
+        else:
+            user_id = self._default_user_id
         session_id = session_ids[0] if len(session_ids) == 1 else None
-        hits = await self._backend.recall(query, session_id=session_id, limit=limit)
+        hits = await self._backend.recall(
+            query,
+            session_id=session_id,
+            limit=limit,
+            user_id=user_id,
+        )
 
         items: list[dict[str, Any]] = []
         for hit in hits:

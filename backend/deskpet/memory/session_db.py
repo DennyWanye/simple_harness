@@ -69,6 +69,7 @@ log = logging.getLogger(__name__)
 # P4-S2 hook 类型：(message_id, content) → awaitable None。
 # MemoryManager / VectorWorker 在此接入 "消息落盘后异步跑 embedding"。
 OnMessageWritten = Callable[[int, str], Awaitable[None]]
+DEFAULT_MEMORY_USER_ID = "deskpet-local-owner-v1"
 
 
 class ProviderBindingConflict(RuntimeError):
@@ -237,6 +238,8 @@ class SessionDB:
         # 会话账本照常工作；接入后 append_message 会把消息喂给 SDK（facts/twin/
         # recall），recall/get_facts/get_digital_twin 也委托给 SDK。
         self._memory_backend: Any = memory_backend
+        self._product_memory_dispatcher: Any = None
+        self._state_db_instance_id: str | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -269,9 +272,42 @@ class SessionDB:
         self._vec_enabled = await self._try_init_vec()
         await self._repair_excluded_memory_artifacts()
 
+        async with aiosqlite.connect(self._db_path) as db:
+            await db.execute("PRAGMA foreign_keys=ON")
+            cursor = await db.execute(
+                "SELECT instance_id FROM state_db_identity WHERE singleton=1"
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row is None:
+                self._state_db_instance_id = str(uuid.uuid4())
+                await db.execute(
+                    "INSERT INTO state_db_identity(singleton,instance_id,created_at) VALUES (1,?,?)",
+                    (self._state_db_instance_id, time.time()),
+                )
+            else:
+                self._state_db_instance_id = str(row[0])
+            await db.commit()
+
         if self._memory_backend is not None:
             try:
                 await self._memory_backend.initialize()
+                from simple_harness_memory.core.conversation import (
+                    ConversationMemoryAdapter,
+                )
+                from deskpet.memory.product_outbox import (
+                    ProductMemoryDispatcher,
+                    ProductMemoryOutboxRepository,
+                )
+
+                self._product_memory_dispatcher = ProductMemoryDispatcher(
+                    ProductMemoryOutboxRepository(self._db_path),
+                    ConversationMemoryAdapter(
+                        self._memory_backend, close_backend=False
+                    ),
+                    owner_id=f"deskpet-product:{self._state_db_instance_id}",
+                )
+                self._product_memory_dispatcher.start()
             except Exception as exc:  # noqa: BLE001
                 log.warning("memory_backend initialize failed: %s", exc)
 
@@ -333,6 +369,12 @@ class SessionDB:
 
         保留接口以便未来切 connection pool 时签名不变。
         """
+        if self._product_memory_dispatcher is not None:
+            dispatcher, self._product_memory_dispatcher = (
+                self._product_memory_dispatcher,
+                None,
+            )
+            await dispatcher.close()
         if self._memory_backend is not None:
             try:
                 await self._memory_backend.close()
@@ -349,28 +391,45 @@ class SessionDB:
         query: str,
         session_id: str | None = None,
         limit: int = 10,
+        *,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
     ) -> list[Any]:
         """混合召回（委托 SDK MemoryBackend）；未接入时返回空。"""
         if self._memory_backend is None:
             return []
-        return await self._memory_backend.recall(query, session_id=session_id, limit=limit)
+        if session_id is not None:
+            await self.ensure_memory_user_binding(session_id, user_id=user_id)
+        return await self._memory_backend.recall(
+            query, session_id=session_id, limit=limit, user_id=user_id
+        )
 
     async def get_facts(
         self,
         subject: str = "user",
         category: str | None = None,
         active_only: bool = True,
+        *,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
     ) -> list[Any]:
         """结构化事实（委托 SDK MemoryBackend）；未接入时返回空。"""
         if self._memory_backend is None:
             return []
-        return await self._memory_backend.get_facts(subject, category, active_only)
+        return await self._memory_backend.get_facts(
+            subject, category, active_only, user_id=user_id
+        )
 
-    async def get_digital_twin(self, subject: str = "user") -> Any:
+    async def get_digital_twin(
+        self,
+        subject: str = "user",
+        *,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
+    ) -> Any:
         """数字孪生体（委托 SDK MemoryBackend）；未接入时返回 None。"""
         if self._memory_backend is None:
             return None
-        return await self._memory_backend.get_digital_twin(subject)
+        return await self._memory_backend.get_digital_twin(
+            subject, user_id=user_id
+        )
 
     # ------------------------------------------------------------------
     # Write path with retry
@@ -1277,6 +1336,8 @@ class SessionDB:
         self,
         session_id: str,
         metadata: dict[str, Any] | None = None,
+        *,
+        memory_user_id: str = DEFAULT_MEMORY_USER_ID,
     ) -> str:
         """Ensure a session row exists and return the normalized id.
 
@@ -1302,6 +1363,9 @@ class SessionDB:
                         "ON CONFLICT(id) DO NOTHING",
                         (sid, time.time(), meta_json),
                     )
+                    await self._ensure_memory_binding_in_transaction(
+                        db, session_id=sid, user_id=memory_user_id
+                    )
                     await db.execute(
                         "INSERT INTO session_delivery_state("
                         "session_id, epoch, deleted_at, reason) "
@@ -1314,6 +1378,80 @@ class SessionDB:
 
         await self._with_retry(_do)
         return sid
+
+    @staticmethod
+    async def _ensure_memory_binding_in_transaction(
+        db: aiosqlite.Connection,
+        *,
+        session_id: str,
+        user_id: str,
+    ) -> None:
+        sid = str(session_id or "").strip()
+        uid = str(user_id or "").strip()
+        if not sid or not uid:
+            raise ValueError("session_id and user_id are required")
+        now = time.time()
+        await db.execute(
+            "INSERT INTO sessions(id,created_at,metadata) VALUES (?,?,NULL) "
+            "ON CONFLICT(id) DO NOTHING",
+            (sid, now),
+        )
+        await db.execute(
+            "INSERT INTO memory_users(user_id,created_at) VALUES (?,?) "
+            "ON CONFLICT(user_id) DO NOTHING",
+            (uid, now),
+        )
+        cursor = await db.execute(
+            "SELECT user_id FROM memory_user_bindings WHERE session_id=?",
+            (sid,),
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        if row is not None and str(row[0]) != uid:
+            raise RuntimeError("memory_session_user_conflict")
+        await db.execute(
+            "INSERT INTO memory_user_bindings(session_id,user_id,created_at) "
+            "VALUES (?,?,?) ON CONFLICT(session_id) DO NOTHING",
+            (sid, uid, now),
+        )
+
+    async def ensure_memory_user_binding(
+        self,
+        session_id: str,
+        *,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
+    ) -> str:
+        """Create or verify the immutable product Memory owner for a session."""
+
+        if not self._initialized:
+            await self.initialize()
+
+        async def _do() -> str:
+            async with self._write_lock:
+                async with aiosqlite.connect(self._db_path) as db:
+                    await db.execute("PRAGMA foreign_keys=ON")
+                    await db.execute("BEGIN IMMEDIATE")
+                    await self._ensure_memory_binding_in_transaction(
+                        db, session_id=session_id, user_id=user_id
+                    )
+                    await db.commit()
+                    return str(user_id)
+
+        return await self._with_retry(_do)
+
+    async def memory_user_for_session(self, session_id: str) -> str:
+        if not self._initialized:
+            await self.initialize()
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT user_id FROM memory_user_bindings WHERE session_id=?",
+                (str(session_id),),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        if row is None:
+            raise RuntimeError("memory_session_user_unbound")
+        return str(row[0])
 
     async def bind_session_owner_if_absent(
         self,
@@ -1763,6 +1901,7 @@ class SessionDB:
                         context_visibility="conversation",
                         root_run_id=run_id,
                         task_scope_id=turn,
+                        memory_authority="harness",
                     )
                     event_ref = f"message:{sid}:{msg_id}"
                     envelope = {
@@ -1830,15 +1969,6 @@ class SessionDB:
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "on_message_written hook failed for msg_id=%s: %s",
-                    msg_id,
-                    exc,
-                )
-        if inserted and self._memory_backend is not None:
-            try:
-                await self._memory_backend.append_message(sid, "user", content)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "memory_backend append failed for msg_id=%s: %s",
                     msg_id,
                     exc,
                 )
@@ -3166,6 +3296,8 @@ class SessionDB:
         context_visibility: str | None = None,
         root_run_id: str | None = None,
         task_scope_id: str | None = None,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
+        memory_authority: str = "product",
     ) -> int:
         """写入一条 message。
 
@@ -3213,6 +3345,8 @@ class SessionDB:
                         context_visibility=visibility,
                         root_run_id=root_run_id,
                         task_scope_id=task_scope_id,
+                        user_id=user_id,
+                        memory_authority=memory_authority,
                     )
                     await db.commit()
                     return result
@@ -3235,14 +3369,17 @@ class SessionDB:
                     exc,
                 )
 
-        if inserted and self._memory_backend is not None:
+        # Low-latency attempt through the same durable dispatcher.  Failure
+        # never loses the committed intent: the background scan/restart path
+        # owns retry and dead-letter semantics.
+        if inserted and memory_authority == "product" and self._product_memory_dispatcher is not None:
             try:
-                await self._memory_backend.append_message(session_id, role, content)
+                await self._product_memory_dispatcher.dispatch_once()
             except Exception as exc:  # noqa: BLE001
                 log.warning(
-                    "memory_backend append failed for msg_id=%s: %s",
+                    "product memory dispatch deferred for msg_id=%s code=%s",
                     msg_id,
-                    exc,
+                    type(exc).__name__,
                 )
 
         return msg_id
@@ -3269,6 +3406,8 @@ class SessionDB:
         projection_epoch: int | None = None,
         projection_route_version: int | None = None,
         projection_payload_hash: str | None = None,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
+        memory_authority: str = "product",
     ) -> tuple[int, bool]:
         generic_event_id = projection_event_id or workflow_event_id
         cursor = await db.execute(
@@ -3310,6 +3449,63 @@ class SessionDB:
         inserted = int(cursor.rowcount or 0) > 0
         msg_id = int(cursor.lastrowid or 0) if inserted else 0
         await cursor.close()
+        if inserted:
+            await self._ensure_memory_binding_in_transaction(
+                db, session_id=session_id, user_id=user_id
+            )
+            authority = str(memory_authority or "").strip().lower()
+            if authority not in {"product", "harness", "none"}:
+                raise ValueError("invalid memory_authority")
+            is_product_conversation = (
+                authority == "product"
+                and role in {"user", "assistant"}
+                and projection_kind in {"user_message", "assistant_message"}
+                and context_visibility == "conversation"
+                and workflow_event_id is None
+                and tool_call_id is None
+                and tool_calls_json is None
+                and bool(content.strip())
+            )
+            if is_product_conversation:
+                from simple_harness.runtime import (
+                    ConversationMemoryIntent,
+                    ConversationMemoryRole,
+                )
+
+                instance_id = str(self._state_db_instance_id or "").strip()
+                if not instance_id:
+                    raise RuntimeError("state_db_identity_unavailable")
+                source_event_id = (
+                    f"deskpet-memory/v1/message/{instance_id}/{msg_id}"
+                )
+                intent = ConversationMemoryIntent(
+                    source_event_id=source_event_id,
+                    user_id=user_id,
+                    session_id=session_id,
+                    role=ConversationMemoryRole(role),
+                    memory_text=content,
+                )
+                now = time.time()
+                await db.execute(
+                    """INSERT INTO product_memory_outbox(
+                         source_event_id,state_db_instance_id,message_id,user_id,
+                         session_id,role,memory_text,payload_hash,status,attempt,
+                         next_attempt_at,created_at,updated_at)
+                       VALUES (?,?,?,?,?,?,?,?, 'pending',0,?,?,?)""",
+                    (
+                        source_event_id,
+                        instance_id,
+                        msg_id,
+                        user_id,
+                        session_id,
+                        role,
+                        content,
+                        intent.payload_hash,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
         if not inserted:
             if workflow_event_id is not None:
                 conflict_where = "workflow_event_id = ?"
@@ -3424,6 +3620,8 @@ class SessionDB:
         context_visibility: str | None = None,
         root_run_id: str | None = None,
         task_scope_id: str | None = None,
+        user_id: str = DEFAULT_MEMORY_USER_ID,
+        memory_authority: str = "product",
     ) -> int | None:
         """Append a workflow delivery only while the session fence is live.
 
@@ -3481,6 +3679,8 @@ class SessionDB:
                         context_visibility=visibility,
                         root_run_id=root_run_id,
                         task_scope_id=task_scope_id,
+                        user_id=user_id,
+                        memory_authority=memory_authority,
                     )
                     await db.commit()
                     return msg_id, inserted
