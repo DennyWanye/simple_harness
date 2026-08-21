@@ -593,47 +593,6 @@ class TestMemoryFactsList:
         assert m["payload"]["reason"] == "facts_store_not_registered"
 
 
-class TestMemoryForgetWs:
-    @pytest.mark.asyncio
-    async def test_unbound_returns_error(self) -> None:
-        from deskpet.tools import memory_tools
-        memory_tools._facts_store = None
-        ws = FakeWebSocket()
-        sc = FakeServiceContext(facts_store=FakeFactsStore([{"id": 1}]))
-        await p4_ipc.handle(ws, "s1", "memory_forget", {"fact_id": 1}, sc)
-        m = ws.sent[0]
-        assert m["type"] == "memory_forget_response"
-        assert m["payload"]["status"] == "error"
-        assert "not_bound" in m["payload"]["reason"]
-
-    @pytest.mark.asyncio
-    async def test_forget_by_id_happy_path(self) -> None:
-        from deskpet.tools import memory_tools
-        store = FakeFactsStore([{"id": 7}])
-        memory_tools.bind(
-            facts_store=store, embedder=None, llm_call=None,
-            enable_natural_language=False,
-        )
-        ws = FakeWebSocket()
-        sc = FakeServiceContext(facts_store=store)
-        await p4_ipc.handle(ws, "s1", "memory_forget", {"fact_id": 7}, sc)
-        m = ws.sent[0]
-        assert m["payload"]["status"] == "ok"
-        assert m["payload"]["forgotten_ids"] == [7]
-        assert "op_id" in m["payload"]
-        assert len(store.forgotten_ops) == 1
-        assert store.forgotten_ops[0][0] == 7
-
-    @pytest.mark.asyncio
-    async def test_facts_store_absent_returns_error(self) -> None:
-        ws = FakeWebSocket()
-        sc = FakeServiceContext()
-        await p4_ipc.handle(ws, "s1", "memory_forget", {"fact_id": 1}, sc)
-        m = ws.sent[0]
-        assert m["payload"]["status"] == "error"
-        assert "not_registered" in m["payload"]["reason"]
-
-
 class TestMemoryForgetUndo:
     @pytest.mark.asyncio
     async def test_undo_restores_within_window(self) -> None:

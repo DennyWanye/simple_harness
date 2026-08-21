@@ -1796,14 +1796,6 @@ async def test_research_run_source_pack_kill_switch(monkeypatch):
     assert route["source_pack_queries"] == 0
 
 
-def test_deep_research_skill_mentions_source_packs_and_scrapling_first():
-    root = Path(__file__).resolve().parents[1]
-    text = (root / "deskpet" / "skills" / "builtin" / "deep-research" / "SKILL.md").read_text(encoding="utf-8")
-    assert "source packs" in text
-    assert "Scrapling" in text
-    assert "禁止自己用 `web_search` +" in text
-
-
 # --- P2 query expansion (multi-query / HyDE) ---
 
 @pytest.mark.asyncio

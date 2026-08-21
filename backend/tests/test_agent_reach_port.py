@@ -60,8 +60,10 @@ def test_pinned_agent_reach_channel_contract() -> None:
     assert direct_url["url"].endswith(
         "/e825f6740d24c6c315c3b0dc41907e6c87ff39a5.zip"
     )
-    assert direct_url["archive_info"]["hash"] == (
-        "sha256=bdceee5847d2f20744621c398cf38597abf7709920f4be697348c0e0c708e9d6"
+    lock = (Path(__file__).parents[1] / "uv.lock").read_text(encoding="utf-8")
+    assert (
+        'hash = "sha256:bdceee5847d2f20744621c398cf38597abf7709920f4be697348c0e0c708e9d6"'
+        in lock
     )
     channels = agent_reach.channels.get_all_channels()
     names = [channel.name for channel in channels]

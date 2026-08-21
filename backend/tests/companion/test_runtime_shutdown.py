@@ -111,18 +111,16 @@ def test_main_shutdown_order_closes_active_runtime_then_execution_uow() -> None:
     runtime_close = source.index(
         "await _companion_runtime_service.close(timeout=5.0)"
     )
-    harness_close = source.index("await _harness_runtime.close(timeout=5.0)")
+    sdk_close = source.index("await _sdk_runtime_stack.close()")
     launcher_close = source.index("await _workflow_launcher.shutdown()")
     uow_close = source.index(
         "await asyncio.wait_for(_execution_uow.close(), timeout=5.0)"
     )
-    assert runtime_close < harness_close < launcher_close < uow_close
+    assert runtime_close < sdk_close < launcher_close < uow_close
     coordinator_block = source[
         source.index("profile_coordinator = ProfileBindingCoordinator(") :
         source.index("_companion_runtime = companion_runtime")
     ]
     assert "runtime=companion_runtime" in coordinator_block
     assert "runtime_start_enabled=True" in coordinator_block
-    assert "_legacy_reflection_tasks.add(_reflection_task)" in source
-    assert "_reflection_task.add_done_callback(_legacy_reflection_tasks.discard)" in source
     assert "asyncio.create_task(_reflection_loop())" not in source

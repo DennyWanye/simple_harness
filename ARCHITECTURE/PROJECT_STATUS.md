@@ -2,6 +2,20 @@
 
 > **最后更新**：2026-08-21
 
+## 2026-08-21 macOS 测试基线收口与历史 Windows 测试退役
+
+- **当前平台边界**：simple_harness 现阶段只维护 macOS 测试基线；旧 DeskPet Windows 窗口控制、
+  Playwright bundle、PowerShell fixture、Windows 字体/PPT fixture 与关联 workflow eval 测试已从活跃
+  测试树删除。未来支持 Windows 时按 simple_harness 当前生产合同重新设计测试，不继承这批历史断言。
+- **历史合同清理**：移除已退役 companion fault matrix 及 source-only 旧入口断言；其余仍覆盖当前生产
+  行为的测试改为 SDK production composition、Memory SDK、现行 Provider/Keychain、macOS 路径和
+  结构化日志合同，不以批量 skip 隐藏失败。
+- **macOS 修正**：临时目录统一解析真实路径以兼容 `/var` → `/private/var`；backend build verifier
+  支持 macOS 的 `python3`；Godot detector fixture 使用可执行 POSIX shell 文件。
+- **验证**：完整 `backend/tests` 冷跑 `5708 passed, 47 skipped, 1 deselected`，0 failed；相关定向
+  回归 `18 passed`；`git diff --check` PASS。当前环境未安装 Ruff 可执行文件，因此未将 Ruff 冒充为
+  已运行门禁。
+
 ## 2026-08-21 Agent Runtime SDK 0.2/0.3 消费者切换（自动化完成，D-UI 阻塞）
 
 - **生产链**：SDK `build_production_runtime` 默认启用 conversation Memory 与

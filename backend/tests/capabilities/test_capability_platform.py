@@ -151,12 +151,12 @@ async def test_platform_installs_missing_godot_detector_idempotently_and_invokes
     assert command["status"] == "missing_nonblocking_detector"
     assert environment_evidence["healthchecks"][0]["status"] == "success"
 
-    fake_godot = tmp_path / "fake-godot.cmd"
+    fake_godot = tmp_path / "fake-godot"
     fake_godot.write_text(
-        "@echo off\r\necho 4.3.stable.official.77dcf97d8\r\n",
-        encoding="ascii",
-        newline="",
+        "#!/bin/sh\necho 4.3.stable.official.77dcf97d8\n",
+        encoding="utf-8",
     )
+    fake_godot.chmod(0o755)
     spec = next(
         item
         for item in registry.catalog_snapshot().specs
@@ -184,7 +184,7 @@ async def test_platform_installs_missing_godot_detector_idempotently_and_invokes
     ] == ["process_executable"]
     assert (
         prepared.resource_selectors[0].canonical_value
-        == str(fake_godot.resolve()).casefold()
+        == str(fake_godot.resolve())
     )
     assert spec.context_handler is not None
     outcome = await spec.context_handler(

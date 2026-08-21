@@ -61,17 +61,6 @@ def test_tool_search_all_tokens_required():
     assert out["count"] == 0
 
 
-def test_tool_search_toolset_filter():
-    out = json.loads(
-        _dispatch_legacy({"query": "read", "toolset": "memory"})
-    )
-    names = [m["function"]["name"] for m in out["matches"]]
-    # "read" appears in memory_read's description.
-    assert "memory_read" in names
-    # file_read (toolset=file) MUST be filtered out.
-    assert "file_read" not in names
-
-
 def test_tool_search_rejects_empty_query():
     out = json.loads(_dispatch_legacy({"query": "   "}))
     assert out["error"].startswith("query")

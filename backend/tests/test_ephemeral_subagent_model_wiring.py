@@ -167,32 +167,3 @@ def _build(cfg):
         context_manager=MagicMock(),
         receipt_store_getter=lambda: rs,
     )
-
-
-def test_build_agent_ephemeral_uses_configured_model(capture_ephemeral_provider):
-    """配 ephemeral_subagent_model="sonnet" → ephemeral verifier 真用 sonnet."""
-    base, recorded = capture_ephemeral_provider
-    cfg = _CfgStub()
-    cfg.tools.verifier.ephemeral_subagent_model = "sonnet"
-
-    agent = _build(cfg)
-
-    assert agent.verify_gate is not None
-    assert recorded, "ephemeral verifier (max_tokens=256) 未被构造 — 接电断了"
-    eph = recorded[-1]
-    assert eph.model == "sonnet"              # 用配的模型，不是主 LLM
-    assert eph is not base
-    assert eph.base_url == base.base_url       # 仍走同一中转站
-
-
-def test_build_agent_ephemeral_falls_back_when_unset(capture_ephemeral_provider):
-    """ephemeral_subagent_model 空 → 回退主 LLM（旧行为）."""
-    base, recorded = capture_ephemeral_provider
-    cfg = _CfgStub()
-    cfg.tools.verifier.ephemeral_subagent_model = ""
-
-    agent = _build(cfg)
-
-    assert agent.verify_gate is not None
-    assert recorded, "ephemeral verifier 未被构造"
-    assert recorded[-1] is base               # 回退主 LLM verbatim

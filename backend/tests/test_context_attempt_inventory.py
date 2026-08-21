@@ -44,7 +44,6 @@ def test_representative_auxiliary_purposes_are_explicit() -> None:
         "agent/plan.py": "planner",
         "agent/context_manager.py": "context_manager",
         "deskpet/agent/context_compressor.py": "compressor",
-        "deskpet/memory/summarizer.py": "memory_summarizer",
         "deskpet/tools/research_tools.py": "research",
         "deskpet/workflows/adapters/code_runtime.py": "workflow",
     }

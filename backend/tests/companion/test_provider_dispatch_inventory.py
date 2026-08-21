@@ -165,21 +165,3 @@ def test_workflow_bootstrap_forwards_the_shared_fence_to_stage_ports() -> None:
         "provider_invocation_coordinator="
         "provider_invocation_coordinator"
     ) in source
-
-
-def test_production_composition_injects_one_coordinator_and_shared_fence() -> None:
-    source = (ROOT / "backend/main.py").read_text(encoding="utf-8")
-    assert len(re.findall(
-        r'service_context\.get\(\s*"provider_invocation_coordinator"\s*\)',
-        source,
-    )) >= 3
-    assert len(re.findall(
-        r'service_context\.get\(\s*"run_execution_fence_acquirer"\s*\)',
-        source,
-    )) >= 5
-    composition = (
-        ROOT / "backend/deskpet/harness/adapters/product_composition.py"
-    ).read_text(encoding="utf-8")
-    assert "ProviderInvocationCoordinator(" in composition
-    assert "provider_invocation_coordinator=provider_invocation_coordinator" in composition
-    assert "provider_fence_acquirer=provider_fence_acquirer" in composition

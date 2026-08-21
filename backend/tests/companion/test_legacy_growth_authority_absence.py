@@ -183,27 +183,6 @@ def test_legacy_codify_config_is_compatibility_only() -> None:
     assert "dev on / prod off" not in section
 
 
-def test_startup_opens_product_ingress_only_after_cutover_and_runtime_adapter() -> None:
-    source = _source(BACKEND / "main.py")
-    lifespan = source[source.index("async def lifespan(") :]
-    platform = lifespan.index("await _initialize_capability_runtime()")
-    authority = lifespan.index("await _initialize_growth_authority()")
-    harness = lifespan.index("await _activate_product_harness()")
-    cutover = lifespan.index("await _complete_growth_authority_cutover()")
-    projection = lifespan.index("await _initialize_companion_projection_services()")
-    runtime = lifespan.index(
-        "await _activate_companion_runtime_adapter_and_open_ingress()"
-    )
-    assert platform < authority < harness < cutover < projection < runtime
-
-    activate_start = source.index("async def _activate_product_harness()")
-    runtime_start = source.index(
-        "async def _activate_companion_runtime_adapter_and_open_ingress()"
-    )
-    activate_body = source[activate_start:runtime_start]
-    assert "_harness_accepting = True" not in activate_body
-
-
 def test_completed_cutover_reconciles_process_local_reminder_registry() -> None:
     source = _source(BACKEND / "main.py")
     complete = source[
@@ -223,30 +202,6 @@ def test_completed_cutover_restores_reminder_specs_before_harness_recovery() -> 
     ]
     assert 'router.current.phase.value == "companion"' in initialize
     assert "restore_durable_companion_reminder_tools(" in initialize
-
-
-def test_product_chat_wires_durable_growth_ingress_and_native_terminal_delivery() -> None:
-    source = _source(BACKEND / "main.py")
-    chat = source[
-        source.index("async def _run_product_harness_chat(")
-        : source.index("async def _run_product_harness_chat_with_timeout(")
-    ]
-    harness = source[
-        source.index("def _build_product_harness_stack(")
-        : source.index("async def _activate_product_harness(")
-    ]
-
-    assert "append_user_message_with_growth_outbox(" in chat
-    assert "current_message_id=user_message_id" in chat
-    assert "companion_ingress_owner=(" in chat
-    assert "_companion_ingress_dispatcher.settle_semantic_intent(" in chat
-    assert 'growth_signal_kind="none"' in chat
-    assert "dispatcher.drain_available(" not in chat
-    assert "CompanionIngressOutboxDispatcher(" in source
-    assert "GrowthTerminalDeliveryContributor(" in harness
-    assert "GrowthTerminalDeliverySink(" in harness
-    assert "terminal_delivery_contributors=(" in harness
-    assert "extra_delivery_registrations=(" in harness
 
 
 def test_cutover_plan_uses_real_capability_owner_snapshot_without_publish() -> None:
@@ -290,32 +245,3 @@ def test_profile_bind_provisions_owner_inbox_before_identity_broadcast() -> None
         bind_branch.index("_companion_identity_gate.freeze()")
         < bind_branch.index("_trigger_harness_recovery_after_identity_bind()")
     )
-
-
-def test_chat_ingress_rejects_an_unowned_legacy_session_before_launch() -> None:
-    source = _source(BACKEND / "main.py")
-    control = source[source.index('elif msg_type in ("chat", "chat_v2"):') :]
-    bind = control.index(
-        "_companion_route_bound = await _bind_companion_inbox_route("
-    )
-    reject = control.index("if not _companion_route_bound:")
-    error = control.index('"companion_session_read_only"')
-    launch = control.index("_launch_product_harness_chat(")
-
-    assert bind < reject < error < launch
-
-
-def test_new_topic_binds_and_switches_fresh_session_before_empty_guard() -> None:
-    source = _source(BACKEND / "main.py")
-    control = source[source.index('elif msg_type in ("chat", "chat_v2"):') :]
-    allocate = control.index("_scope_decision = _resolve_chat_task_scope(")
-    bind = control.index(
-        "_companion_route_bound = await _bind_companion_inbox_route("
-    )
-    created = control.index("if _scope_decision.created:")
-    remap = control.index("_remap_chat_peer_group(session_id, _msg_sid)")
-    switch = control.index('"session_switched"')
-    empty_guard = control.index('if not (text or "").strip():')
-    launch = control.index("_launch_product_harness_chat(")
-
-    assert allocate < bind < created < remap < switch < empty_guard < launch

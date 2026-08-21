@@ -37,6 +37,34 @@ from deskpet.tools import computer_use_tool as cu
 # ---------------------------------------------------------------------
 # Fakes
 # ---------------------------------------------------------------------
+_HANDLERS = {
+    "screen_capture": cu._handle_screen_capture,
+    "screen_click": cu._handle_screen_click,
+    "screen_move": cu._handle_screen_move,
+    "screen_type": cu._handle_screen_type,
+    "screen_key": cu._handle_screen_key,
+    "screen_scroll": cu._handle_screen_scroll,
+}
+
+
+def _dispatch(name: str, args: dict[str, object]) -> str:
+    return _HANDLERS[name](args, "mac-test")
+
+
+def _manifest_screen_tools() -> dict[str, dict[str, object]]:
+    manifest_path = (
+        Path(cu.__file__).resolve().parents[1]
+        / "tool_catalog"
+        / "real_tool_manifest.json"
+    )
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    return {
+        item["name"]: item
+        for item in payload["tools"]
+        if str(item["name"]).startswith("screen_")
+    }
+
+
 class _FakeShot:
     def __init__(self, w: int, h: int) -> None:
         self.size = (w, h)
@@ -165,7 +193,7 @@ def test_all_tools_disabled_when_flag_off(
         ("screen_key", {"keys": "ctrl+s"}),
         ("screen_scroll", {"amount": -3}),
     ]:
-        out = json.loads(cu.registry.dispatch(name, args))
+        out = json.loads(_dispatch(name, args))
         assert out["ok"] is False, name
         assert out["error"] == "disabled", name
         assert "computer_use_enabled" in out["hint"], name
@@ -181,7 +209,7 @@ def test_enabled_by_default_when_no_config_file(
     # has computer_use_enabled absent ⇒ disabled. Use a bogus path to be
     # deterministic regardless of the worktree's real config.toml.
     monkeypatch.setenv("DESKPET_CONFIG", str(workspace / "nope.toml"))
-    out = json.loads(cu.registry.dispatch("screen_capture", {}))
+    out = json.loads(_dispatch("screen_capture", {}))
     assert out["ok"] is True
 
 
@@ -192,7 +220,7 @@ def test_screen_capture_returns_ok_shape(
     tmp_path, monkeypatch, workspace, fake_backends
 ):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(cu.registry.dispatch("screen_capture", {}))
+    out = json.loads(_dispatch("screen_capture", {}))
 
     assert out["ok"] is True
     assert out["path"].startswith("screenshots/")
@@ -210,7 +238,7 @@ def test_screen_capture_named_target_forced_png_and_sandboxed(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch("screen_capture", {"name": "shots/login"})
+        _dispatch("screen_capture", {"name": "shots/login"})
     )
     assert out["ok"] is True
     assert out["path"] == "shots/login.png"
@@ -222,7 +250,7 @@ def test_screen_capture_rejects_escape(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch("screen_capture", {"name": "../escape.png"})
+        _dispatch("screen_capture", {"name": "../escape.png"})
     )
     assert out["ok"] is False
     assert "escape" in out["error"]
@@ -236,7 +264,7 @@ def test_screen_click_clamps_out_of_bounds(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch(
+        _dispatch(
             "screen_click", {"x": 999999, "y": -50, "button": "left"}
         )
     )
@@ -254,7 +282,7 @@ def test_screen_click_in_bounds_not_clamped(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch(
+        _dispatch(
             "screen_click", {"x": 400, "y": 300, "double": True}
         )
     )
@@ -269,7 +297,7 @@ def test_screen_click_bad_coords(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch("screen_click", {"x": "abc", "y": 1})
+        _dispatch("screen_click", {"x": "abc", "y": 1})
     )
     assert out["ok"] is False
     assert "integers" in out["error"]
@@ -281,7 +309,7 @@ def test_screen_click_bad_coords(
 def test_screen_type(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch("screen_type", {"text": "hello"})
+        _dispatch("screen_type", {"text": "hello"})
     )
     assert out["ok"] is True
     assert out["typed_chars"] == 5
@@ -293,7 +321,7 @@ def test_screen_key_combo_parsed(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch("screen_key", {"keys": "Ctrl+S"})
+        _dispatch("screen_key", {"keys": "Ctrl+S"})
     )
     assert out["ok"] is True
     assert out["keys"] == ["ctrl", "s"]
@@ -302,7 +330,7 @@ def test_screen_key_combo_parsed(
 
 def test_screen_key_single(tmp_path, monkeypatch, workspace, fake_backends):
     _write_config(tmp_path, monkeypatch, True)
-    out = json.loads(cu.registry.dispatch("screen_key", {"keys": "enter"}))
+    out = json.loads(_dispatch("screen_key", {"keys": "enter"}))
     assert out["ok"] is True
     assert ("press", "enter") in fake_backends.calls
 
@@ -312,7 +340,7 @@ def test_screen_scroll_magnitude_capped(
 ):
     _write_config(tmp_path, monkeypatch, True)
     out = json.loads(
-        cu.registry.dispatch("screen_scroll", {"amount": 10_000_000})
+        _dispatch("screen_scroll", {"amount": 10_000_000})
     )
     assert out["ok"] is True
     assert out["capped"] is True
@@ -324,25 +352,16 @@ def test_screen_scroll_magnitude_capped(
 
 def test_computer_use_tools_visible_from_default_product_schema():
     """Completed screen tools are visible to the general agent by default."""
-    sc = [s for s in cu.registry.all_specs() if s.name.startswith("screen_")]
-    assert len(sc) == 6, [s.name for s in sc]
-    for s in sc:
-        assert s.requires_env == [], s.name
-    schema_names = {f["function"]["name"] for f in cu.registry.schemas()}
-    for s in sc:
-        assert s.name in schema_names
+    tools = _manifest_screen_tools()
+    assert set(tools) == set(_HANDLERS)
+    for name, spec in tools.items():
+        assert spec["requires_env"] == [], name
+        assert spec["schema"]["name"] == name
 
 
 def test_computer_use_tools_are_serial_execution_boundaries():
-    for name in (
-        "screen_capture",
-        "screen_click",
-        "screen_move",
-        "screen_type",
-        "screen_key",
-        "screen_scroll",
-    ):
-        assert cu.registry.get(name).concurrency_safe is False
+    for name, spec in _manifest_screen_tools().items():
+        assert spec["concurrency_safe"] is False, name
 
 
 def test_computer_use_specs_declare_exact_desktop_and_capture_scope(
@@ -352,24 +371,22 @@ def test_computer_use_specs_declare_exact_desktop_and_capture_scope(
         write_scope_root=str(workspace),
         workspace=str(workspace),
     )
-    capture = cu.registry.get("screen_capture")
-    assert capture is not None
-    assert capture.resource_scope_resolver is not None
-    selectors = capture.resource_scope_resolver({}, context)
+    selectors = cu._screen_capture_resources({}, context)
     assert {
         (item.kind, item.access)
         for item in selectors
     } == {
         ("desktop_target", ("observe", "read")),
+        ("desktop_target", ("observe", "read")),
         ("filesystem", ("write",)),
     }
-    assert capture.effect_policy.kind.value == "opaque_manual"
+    assert _manifest_screen_tools()["screen_capture"]["effect_policy"]["kind"] == (
+        "opaque_manual"
+    )
 
-    click = cu.registry.get("screen_click")
-    assert click is not None and click.resource_scope_resolver is not None
     assert [
         item.to_dict()
-        for item in click.resource_scope_resolver(
+        for item in cu._screen_input_resources(
             {"x": 10, "y": 20},
             context,
         )

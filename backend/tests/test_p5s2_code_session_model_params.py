@@ -89,7 +89,7 @@ def test_corrupt_params_json_degrades_to_none(sdb: SessionDB) -> None:
     assert got["model_params"] is None  # never raises
 
 
-def test_clear_binding_removes_row(sdb: SessionDB) -> None:
+def test_clear_binding_preserves_epoch_tombstone(sdb: SessionDB) -> None:
     _run(
         sdb.set_code_session_provider_binding(
             "code:proj-c", None, "gpt-5.5", {"effort": "max"}
@@ -103,9 +103,10 @@ def test_clear_binding_removes_row(sdb: SessionDB) -> None:
         "model_params": None,
     }
     con = sqlite3.connect(sdb._db_path)
-    n = con.execute(
-        "SELECT COUNT(*) FROM code_session_provider "
+    row = con.execute(
+        "SELECT provider_id, preferred_model, model_params, binding_epoch "
+        "FROM code_session_provider "
         "WHERE base_session_id='code:proj-c'"
-    ).fetchone()[0]
+    ).fetchone()
     con.close()
-    assert n == 0
+    assert row == (None, None, None, 2)

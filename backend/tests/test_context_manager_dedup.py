@@ -123,64 +123,6 @@ def test_three_reads_only_last_kept():
     assert len(msgs) == 7
 
 
-def test_path_normalization_windows_casing():
-    """Scenario: Path normalization handles Windows casing.
-
-    read_file("G:\\proj\\App.jsx") then read_file("g:/proj/App.jsx")
-    → 同一 path（resolve + 大小写规范化），第一条 superseded。
-    """
-    ctx = ContextManager()
-    msgs: list[dict] = [{"role": "system", "content": "sys"}]
-
-    msgs.append({"role": "assistant", "content": "", "tool_calls": [{"id": "a"}]})
-    msgs.append(_tool_msg("a", "read_file", "first-copy"))
-    idx1 = len(msgs) - 1
-    ctx.dedup_file_reads(
-        msgs,
-        tool_name="read_file",
-        tool_args={"path": "G:\\proj\\App.jsx"},
-        new_index=idx1,
-        iteration=2,
-    )
-
-    msgs.append({"role": "assistant", "content": "", "tool_calls": [{"id": "b"}]})
-    msgs.append(_tool_msg("b", "read_file", "second-copy"))
-    idx2 = len(msgs) - 1
-    ctx.dedup_file_reads(
-        msgs,
-        tool_name="read_file",
-        tool_args={"path": "g:/proj/App.jsx"},  # 不同大小写 + 正斜杠
-        new_index=idx2,
-        iteration=9,
-    )
-
-    assert "superseded" in msgs[idx1]["content"]
-    assert msgs[idx2]["content"] == "second-copy"
-
-
-def test_path_normalization_forward_back_slash_same():
-    """正反斜杠混用视为同一 path。"""
-    ctx = ContextManager()
-    msgs: list[dict] = [{"role": "system", "content": "sys"}]
-
-    msgs.append({"role": "assistant", "content": "", "tool_calls": [{"id": "a"}]})
-    msgs.append(_tool_msg("a", "read_file", "v1"))
-    i1 = len(msgs) - 1
-    ctx.dedup_file_reads(
-        msgs, tool_name="read_file",
-        tool_args={"path": "C:/a/b/c.py"}, new_index=i1, iteration=1,
-    )
-    msgs.append({"role": "assistant", "content": "", "tool_calls": [{"id": "b"}]})
-    msgs.append(_tool_msg("b", "read_file", "v2"))
-    i2 = len(msgs) - 1
-    ctx.dedup_file_reads(
-        msgs, tool_name="read_file",
-        tool_args={"path": "C:\\a\\b\\c.py"}, new_index=i2, iteration=4,
-    )
-    assert "superseded" in msgs[i1]["content"]
-    assert msgs[i2]["content"] == "v2"
-
-
 def test_write_exec_tools_not_deduplicated():
     """Scenario: Write/exec tools are not deduplicated.
 

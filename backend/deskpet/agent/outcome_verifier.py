@@ -235,7 +235,8 @@ class BuildVerifier:
         )
 
     def _verify_backend(self, changed_files: list[str], cwd: str) -> VerifierOutcome:
-        if _which("python") is None:
+        python = _which("python") or _which("python3")
+        if python is None:
             return VerifierOutcome(
                 verifier=self.NAME, status="skipped", reason="missing_python",
             )
@@ -247,7 +248,7 @@ class BuildVerifier:
             )
         try:
             result = subprocess.run(
-                ["python", "-m", "py_compile", *py_files],
+                [python, "-m", "py_compile", *py_files],
                 cwd=cwd, capture_output=True, text=True,
                 timeout=VERIFIER_TIMEOUT_S, encoding="utf-8", errors="replace",
             )

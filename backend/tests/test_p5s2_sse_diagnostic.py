@@ -151,23 +151,16 @@ async def test_tool_call_args_logged_with_length_and_parse_status(
         f"saw messages: {[r.getMessage() for r in caplog.records]}"
     )
 
-    text = " ".join(rec.getMessage() for rec in dump_lines)
-    # The three load-bearing fields must all appear.
-    assert "args_len=" in text, f"missing args_len in: {text!r}"
-    assert "args_preview=" in text, f"missing args_preview in: {text!r}"
-    assert "parse_ok=" in text, f"missing parse_ok in: {text!r}"
-
-    # Truncated JSON must be flagged unparseable. Accept both Python's
-    # bool repr and a lowercase variant for log-formatter flexibility.
-    assert ("parse_ok=False" in text) or ("parse_ok=false" in text), (
-        f"truncated args should report parse_ok=False; got: {text!r}"
-    )
-
-    # The args_len should equal the truncated payload length.
-    expected_len = f"args_len={len(truncated_args)}"
-    assert expected_len in text, (
-        f"expected {expected_len} in log; got: {text!r}"
-    )
+    payload = dump_lines[-1].msg
+    if isinstance(payload, dict):
+        assert payload["args_len"] == len(truncated_args)
+        assert payload["args_preview"] == truncated_args
+        assert payload["parse_ok"] is False
+    else:
+        text = str(payload)
+        assert f"args_len={len(truncated_args)}" in text
+        assert f"args_preview={truncated_args!r}" in text
+        assert "parse_ok=False" in text
 
 
 @pytest.mark.asyncio

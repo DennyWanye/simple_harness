@@ -59,7 +59,7 @@ def test_t6_1b_empty_artifact_dir_falls_back_to_tempdir():
     )
     # 应在系统 temp 目录下
     import tempfile
-    assert str(p).startswith(tempfile.gettempdir())
+    assert p.is_relative_to(Path(tempfile.gettempdir()).resolve())
 
 
 # ─── T6-2 用户自定义 + ~ 展开 ───────────────────────────────

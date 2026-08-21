@@ -159,7 +159,7 @@ def resolve_for_read(p: str | os.PathLike[str]) -> Optional[Path]:
 
 
 def _temp_dir() -> Path:
-    return Path(tempfile.gettempdir())
+    return Path(tempfile.gettempdir()).resolve()
 
 
 def auto_temp_path(prefix: str, suffix: str) -> Path:

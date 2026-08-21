@@ -134,8 +134,8 @@ def test_main_keeps_v6_and_defaults_new_roots_to_simplified_v7() -> None:
     # above for recovery.
     assert "async def _start_deepresearch_graph" not in source
     assert "_workflow_research_tools.set_deepresearch_workflow_starter(None)" in source
-    assert "build_product_harness_composition" in source
-    assert "_activate_product_harness" in source
+    assert "_build_product_sdk_runtime_stack" in source
+    assert "build_production_runtime(config)" in source
 
 
 def test_main_websocket_delivery_returns_typed_best_effort_outcome() -> None:

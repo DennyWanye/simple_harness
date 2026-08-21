@@ -33,7 +33,8 @@ def test_default_policy_manifest_for_harness_task_types() -> None:
     assert {"tool", "skill"} <= _components(policies["task"])
     assert {
         "file_read",
-        "file_search",
+        "file_glob",
+        "file_grep",
         "reminder_create",
         "reminder_list",
         "reminder_cancel",

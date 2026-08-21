@@ -41,6 +41,7 @@ import pytest_asyncio
 from fastapi.testclient import TestClient
 
 from main import app, SHARED_SECRET, service_context, _control_connections
+from llm import provider_registry as pr_mod
 from llm.provider_registry import LLMProviderRegistry
 from deskpet.memory.session_db import SessionDB
 
@@ -114,8 +115,6 @@ def fresh_registry(tmp_path: Path, monkeypatch):
     the original on teardown so other tests don't see leakage. Also
     monkey-patches keychain to a dict (no real OS keychain writes)."""
     fake_keychain: dict[tuple[str, str], str] = {}
-
-    from llm import provider_registry as pr_mod
 
     class _FakeKeyring:
         @staticmethod
@@ -548,7 +547,7 @@ def test_update_api_key_writes_keychain(fresh_registry):
     reg, kc, _cfg = fresh_registry
     _seed_provider(reg, pid="relay", api_key="sk-original")
     # confirm baseline
-    assert kc[("deskpet", "provider.relay")] == "sk-original"
+    assert kc[(pr_mod.KEYCHAIN_SERVICE, "provider.relay")] == "sk-original"
 
     client = TestClient(app)
     cm, ws = _ws_open(client)
@@ -565,7 +564,7 @@ def test_update_api_key_writes_keychain(fresh_registry):
             }
         )
         _collect_frames(ws, 2)  # updated + providers_changed
-        assert kc[("deskpet", "provider.relay")] == "sk-original"
+        assert kc[(pr_mod.KEYCHAIN_SERVICE, "provider.relay")] == "sk-original"
 
         # 2) Update WITH api_key — keychain updated. Re-pin: the first
         #    update bumped config_revision.
@@ -583,7 +582,7 @@ def test_update_api_key_writes_keychain(fresh_registry):
     finally:
         cm.__exit__(None, None, None)
 
-    assert kc[("deskpet", "provider.relay")] == "sk-new"
+    assert kc[(pr_mod.KEYCHAIN_SERVICE, "provider.relay")] == "sk-new"
 
 
 # ---------- 2.6 remove — cleanup ------------------------------------------
@@ -630,7 +629,7 @@ async def test_remove_cleanup(fresh_registry, fresh_session_db):
             expected_config_revision=entry.config_revision,
         )
 
-    assert kc[("deskpet", "provider.relay")] == "sk-1"
+    assert kc[(pr_mod.KEYCHAIN_SERVICE, "provider.relay")] == "sk-1"
 
     client = TestClient(app)
     cm, ws = _ws_open(client)
@@ -654,7 +653,7 @@ async def test_remove_cleanup(fresh_registry, fresh_session_db):
     assert remaining == {"openrouter"}
 
     # 2) Keychain entry for the relay gone.
-    assert ("deskpet", "provider.relay") not in kc
+    assert (pr_mod.KEYCHAIN_SERVICE, "provider.relay") not in kc
 
     # 3) SessionDB: the relay bindings SURVIVE, still carrying the now-dead
     #    provider's incarnation — that's what makes them detectably stale

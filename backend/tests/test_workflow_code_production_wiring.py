@@ -1402,10 +1402,8 @@ def test_main_routes_code_through_the_single_product_harness_ingress() -> None:
     )
     calls = [node for node in ast.walk(ingress) if isinstance(node, ast.Call)]
     assert any(
-        isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "_sdk_ingress"
-        and node.func.attr == "open_venue"
+        isinstance(node.func, ast.Name)
+        and node.func.id == "_execute_sdk_run"
         for node in calls
     )
     assert not any(

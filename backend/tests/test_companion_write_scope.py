@@ -36,27 +36,6 @@ from agent.write_scope import (
 # ---------------------------------------------------------------------------
 # Scenario: Companion session blocked from writing into a code repo
 # ---------------------------------------------------------------------------
-def test_companion_write_outside_workspace_rejected(tmp_path: Path) -> None:
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    repo_path = "G:\\projects\\deskpet\\backend\\vpn-cli"
-    err = write_scope_check(repo_path, scope_root=ws)
-    assert err is not None  # 拒绝
-    assert "workspace" in err
-    assert "工作区" in err
-
-
-def test_companion_mkdir_command_outside_workspace_rejected(tmp_path: Path) -> None:
-    """run_shell 里的 mkdir 越界也要拦（取命令里的目标路径）。"""
-    ws = tmp_path / "workspace"
-    ws.mkdir()
-    # 绝对路径 mkdir 到仓库
-    err = write_scope_check(
-        "G:\\projects\\deskpet\\backend\\vpn-cli", scope_root=ws
-    )
-    assert err is not None
-
-
 # ---------------------------------------------------------------------------
 # Scenario: Companion session may write inside workspace
 # ---------------------------------------------------------------------------

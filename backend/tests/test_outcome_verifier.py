@@ -97,8 +97,9 @@ def test_t10_4_git_diff_skipped_when_not_git_repo(tmp_path, monkeypatch):
 # ─── T10-5/T10-6/T10-8 build + test + missing toolchain ────
 
 def test_t10_5_build_skipped_when_no_python_files():
+    backend = Path(__file__).parents[1]
     out = BuildVerifier(kind="backend").verify(
-        changed_files=["foo.md"], cwd=".",
+        changed_files=["foo.md"], cwd=str(backend),
     )
     assert out.status == "skipped"
     assert "no_python_files_changed" in out.reason

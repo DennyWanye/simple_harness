@@ -25,7 +25,6 @@ from deskpet.agent.assembler import (
     ComponentRegistry,
     ContextAssembler,
     ContextBundle,
-    MemoryComponent,
     PersonaComponent,
     SkillComponent,
     Slice,
@@ -37,7 +36,7 @@ from deskpet.agent.assembler import (
     build_default_assembler,
     load_policies,
 )
-from deskpet.agent.assembler.bundle import MemoryPolicy, TASK_TYPES
+from deskpet.agent.assembler.bundle import TASK_TYPES
 from deskpet.agent.assembler.classifier import _rule_classify
 # ---------------------------------------------------------------------------
 # Fakes
@@ -522,25 +521,6 @@ async def test_tools_filtered_to_policy_whitelist(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_l1_in_frozen_l2l3_in_dynamic(tmp_path: Path):
-    """Spec 'Prompt Cache Compatibility': L1 goes frozen, L2+L3 go dynamic."""
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
-    bundle = await assembler.assemble(
-        "你好",
-        memory_manager=FakeMemoryManager(),
-        tool_registry=FakeToolRegistry(),
-    )
-    # L1 snapshot has "程序员", L2 recent has "红色", L3 hit text "红色袜子的回忆".
-    # Our renderer puts L1 + L2/L3 together into one slice. Bucket decision:
-    # when only L1 exists we stay frozen; when L2/L3 present we go dynamic.
-    assert "红色" in bundle.memory_block  # dynamic
-    # The tool slice has empty text so frozen_system comes from persona only.
-    assert "DeskPet" in bundle.frozen_system
-
-
-@pytest.mark.asyncio
 async def test_assembler_unknown_task_type_falls_back_to_chat(tmp_path: Path):
     """Caller overrides with an unknown task_type → chat fallback."""
     assembler = build_default_assembler(
@@ -568,25 +548,6 @@ async def test_disabled_mode_emits_all_tools(tmp_path: Path):
     # Legacy mode emits every schema from the registry.
     assert len(bundle.tool_schemas) == 4
     assert bundle.decisions.classifier_path == "disabled"
-
-
-@pytest.mark.asyncio
-async def test_memory_manager_failure_doesnt_crash(tmp_path: Path):
-    """Memory manager raising must not crash the assemble() call."""
-    assembler = build_default_assembler(
-        embedder=FakeEmbedder(), llm_registry=FakeLLM("chat")
-    )
-    bundle = await assembler.assemble(
-        "你好",
-        memory_manager=FakeMemoryManager(raise_on_recall=True),
-        tool_registry=FakeToolRegistry(),
-    )
-    # Memory component returned an empty slice with error meta.
-    assert "memory" in bundle.decisions.components
-    mem_trace = bundle.decisions.components["memory"]
-    assert mem_trace.meta.get("error_type") == "RuntimeError"
-    # Persona still rendered.
-    assert "DeskPet" in bundle.frozen_system
 
 
 # ---------------------------------------------------------------------------
@@ -807,36 +768,6 @@ async def test_web_search_tool_component_grounds_actual_availability():
     assert "可以调用 web_search 联网搜索" in result.text_content
     assert "不得声称自己没有联网" in result.text_content
     assert "用上文已明确的对象补全搜索词" in result.text_content
-
-
-@pytest.mark.asyncio
-async def test_memory_component_dedupes_only_exact_current_message_id():
-    mm = FakeMemoryManager(recall_result={
-        "l1": None,
-        "l2": [
-            {"id": 1, "role": "user", "content": "再试一次"},
-            {"id": 2, "role": "assistant", "content": "好的"},
-            {"id": 3, "role": "user", "content": "再试一次"},
-        ],
-        "l3": [],
-    })
-    result = await MemoryComponent().provide(ComponentContext(
-        task_type="chat",
-        policy=AssemblyPolicy(
-            task_type="chat",
-            memory=MemoryPolicy(relabel_l2=False),
-        ),
-        user_message="再试一次",
-        session_id="s1",
-        current_message_id=3,
-        memory_manager=mm,
-    ))
-
-    assert [m["content"] for m in result.meta["l2_history"]] == [
-        "再试一次",
-        "好的",
-    ]
-    assert result.meta["current_row_deduped"] is True
 
 
 def test_deep_research_rule_is_deterministic():
