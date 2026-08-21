@@ -415,6 +415,28 @@ export function SettingsProviders({
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Provider | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Provider | null>(null);
+  const pendingSaveIdRef = useRef<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const observeSaveResult = useCallback((msg: { type?: string; payload?: any }) => {
+    const pendingId = pendingSaveIdRef.current;
+    if (!pendingId) return;
+    if (msg.type === "settings_providers_error") {
+      pendingSaveIdRef.current = null;
+      setSaving(false);
+      return;
+    }
+    const acknowledgedId = String(msg.payload?.provider?.id || "");
+    const list = Array.isArray(msg.payload?.providers) ? msg.payload.providers : [];
+    if (
+      acknowledgedId === pendingId ||
+      list.some((provider: Provider) => provider.id === pendingId)
+    ) {
+      pendingSaveIdRef.current = null;
+      setSaving(false);
+      setAddOpen(false);
+      setEditTarget(null);
+    }
+  }, []);
   // Re-entrancy guard independent of React state (button-disable already
   // prevents double-clicks; this also blocks programmatic / racy re-entry).
   // Auto-clear timers per provider; cleared on unmount so we never setState
@@ -450,6 +472,7 @@ export function SettingsProviders({
     });
     const offMsg = ch.onMessage?.((incoming) => {
       const msg = incoming as unknown as { type?: string; payload?: any };
+      observeSaveResult(msg);
       if (
         msg.type !== "settings_providers_list_response" &&
         msg.type !== "providers_changed" &&
@@ -465,13 +488,14 @@ export function SettingsProviders({
       offState?.();
       offMsg?.();
     };
-  }, [getChannel]);
+  }, [getChannel, observeSaveResult]);
 
 
   // Listen for inbound provider events on the shared lastMessage prop.
   useEffect(() => {
     if (!lastMessage) return;
     const msg = lastMessage as { type: string; payload?: any };
+    observeSaveResult(msg);
     switch (msg.type) {
       case "settings_providers_list_response":
       case "providers_changed":
@@ -490,7 +514,7 @@ export function SettingsProviders({
       default:
         break;
     }
-  }, [lastMessage]);
+  }, [lastMessage, observeSaveResult]);
 
   // 2026-08-09: relay 虚拟项已移除 — 列表只来自 backend registry。
   const ordered = useMemo(
@@ -506,7 +530,10 @@ export function SettingsProviders({
         setError("控制通道未连接");
         return false;
       }
-      ch.send(msg);
+      if (!ch.send(msg)) {
+        setError("控制通道发送失败，请等待重连后重试");
+        return false;
+      }
       return true;
     },
     [getChannel],
@@ -573,6 +600,9 @@ export function SettingsProviders({
     (draft: ProviderDraft, editing: Provider | null) => {
       const models = draft.models.map((m) => m.trim()).filter(Boolean);
       const default_model = draft.default_model.trim() || models[0] || "";
+      pendingSaveIdRef.current = editing?.id || draft.id;
+      setSaving(true);
+      setError(null);
       if (editing) {
         // 2026-08-09: 所有 provider 一视同仁 —— baseUrl / apiKey / 默认模型 / 启用 全可改。
         const patch: Record<string, unknown> = {
@@ -587,7 +617,7 @@ export function SettingsProviders({
         if (typeof draft.enabled === "boolean") {
           patch.enabled = draft.enabled;
         }
-        send({
+        if (!send({
           type: "settings_providers_update",
           payload: {
             id: editing.id,
@@ -595,9 +625,13 @@ export function SettingsProviders({
             expected_incarnation_id: editing.incarnation_id,
             expected_config_revision: editing.config_revision,
           },
-        });
+        })) {
+          pendingSaveIdRef.current = null;
+          setSaving(false);
+          return;
+        }
       } else {
-        send({
+        if (!send({
           type: "settings_providers_add",
           payload: {
             id: draft.id,
@@ -608,10 +642,12 @@ export function SettingsProviders({
             api_key: draft.api_key,
             enabled: true,
           },
-        });
+        })) {
+          pendingSaveIdRef.current = null;
+          setSaving(false);
+          return;
+        }
       }
-      setAddOpen(false);
-      setEditTarget(null);
     },
     [send],
   );
@@ -620,12 +656,21 @@ export function SettingsProviders({
   const [probedModels, setProbedModels] = useState<string[]>([]);
   const [probeError, setProbeError] = useState<string | null>(null);
   const [probing, setProbing] = useState(false);
+  const probeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearProbeTimeout = useCallback(() => {
+    if (probeTimeoutRef.current) clearTimeout(probeTimeoutRef.current);
+    probeTimeoutRef.current = null;
+  }, []);
+
+  useEffect(() => clearProbeTimeout, [clearProbeTimeout]);
 
   // Watch for the backend's probe response on the shared ws inbox.
   useEffect(() => {
     if (!lastMessage) return;
     const msg = lastMessage as { type: string; payload?: any };
     if (msg.type !== "settings_providers_probe_models_response") return;
+    clearProbeTimeout();
     setProbing(false);
     if (msg.payload?.ok) {
       const list: string[] = Array.isArray(msg.payload.models) ? msg.payload.models : [];
@@ -635,19 +680,30 @@ export function SettingsProviders({
       setProbedModels([]);
       setProbeError(String(msg.payload?.detail || "未知错误"));
     }
-  }, [lastMessage]);
+  }, [clearProbeTimeout, lastMessage]);
 
   const handleProbeModels = useCallback(
-    (base_url: string, api_key: string) => {
+    (base_url: string, api_key: string, provider_id?: string) => {
+      clearProbeTimeout();
       setProbing(true);
       setProbeError(null);
       setProbedModels([]);
-      send({
+      const sent = send({
         type: "settings_providers_probe_models",
-        payload: { base_url, api_key },
+        payload: { base_url, api_key, ...(provider_id ? { provider_id } : {}) },
       });
+      if (!sent) {
+        setProbing(false);
+        setProbeError("控制通道未连接，请等待重连后重试");
+        return;
+      }
+      probeTimeoutRef.current = setTimeout(() => {
+        setProbing(false);
+        setProbeError("获取模型列表超时，请检查网络或 Provider 地址后重试");
+        probeTimeoutRef.current = null;
+      }, 20_000);
     },
-    [send],
+    [clearProbeTimeout, send],
   );
 
   return (
@@ -666,6 +722,7 @@ export function SettingsProviders({
         <button
           type="button"
           onClick={() => {
+            setError(null);
             setEditTarget(null);
             setAddOpen(true);
           }}
@@ -718,12 +775,16 @@ export function SettingsProviders({
             setEditTarget(null);
             setProbedModels([]);
             setProbeError(null);
+            pendingSaveIdRef.current = null;
+            setSaving(false);
           }}
           onSave={(draft) => handleSaveDraft(draft, editTarget)}
           onProbeModels={handleProbeModels}
           probedModels={probedModels}
           probeError={probeError}
           probing={probing}
+          saveError={error}
+          saving={saving}
         />
       )}
       {deleteTarget && (

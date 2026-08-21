@@ -2,6 +2,53 @@
 
 > **最后更新**：2026-08-21
 
+## 2026-08-21 Provider 设置与 SDK 冷启动真机修复
+
+- **用户可见根因**：测试实例后端端口与 bundle 前端默认端口不一致时，Provider 模型探测与新增请求没有
+  到达后端；旧 UI 又在 `send()` 返回失败时关闭新增弹窗，并且模型探测没有超时，表现为“获取中”永久
+  卡住和“点击添加但列表为空”。编辑既有 Provider 还会因前端不持有明文密钥而用空 Authorization 探测，
+  产生 401。
+- **修复**：保存改为传输失败保持弹窗、后端 ACK 后关闭；模型探测增加 20 秒超时；编辑探测通过
+  `provider_id` 在后端读取 App 专属 Keychain，且必须与已保存 base URL 精确相同。SDK 冷启动同时修复
+  frozen Tool schema 的嵌套 `mappingproxy` 与五个未声明 `ServiceContext` publication，Runtime 可正常开放。
+- **验证**：Provider 前端 40 tests、TypeScript PASS；后端 Provider/Runtime/catalog/authority 聚焦
+  52 tests PASS；额外 Runtime service 25 tests 与 catalog 49 tests PASS。重新构建 debug `.app` 后，
+  Computer Use 真机确认 `product_sdk_runtime_ready sdk_version=0.1.5 phase=open`、DeepSeek `/models`
+  HTTP 200、添加 `Local Fixture` 后列表即时出现。原始证据仅保存在 `.local-test-evidence/`。
+- **真实对话补测与现场修复**：首次 DeepSeeker `run_shell(pwd)` 真测发现 SDK 已持久化 open
+  `tool_authorization`，但桌面 Host 未投影 `permission_request`，Run 因 UI 无授权卡停在 WAITING。
+  现由 `SdkRuntimeIngress` 读取 durable open decision 并投影 public-safe、nonce/version fenced 的既有
+  授权协议；live WAITING 与 reconnect replay 均覆盖。复测确认 `deepseek-v4-flash` 两次真实
+  `chat/completions` 均 HTTP 200、允许一次成功、工具结果卡为 `ok`、Run completed、最终回复
+  `done`。原始证据位于 ignored `.local-test-evidence/2026-08-21/deepseeker-provider-tool-e2e/`。
+
+## 2026-08-21 SDK Run 停止链路修复
+
+- **根因**：消息页发送 canonical `root_run_id`，SDK Runtime cancel 只接受内部
+  `product-sdk-*` id；旧路径直接透传导致 `KeyError`、control WebSocket 断开且 Run 继续执行。
+  此外 Provider 已 handoff 后的取消会按副作用安全规则记录 invocation `unknown`，旧产品边界没有
+  将已确认的用户取消重新传播为 Run cancellation，可能再次落回 `waiting`。
+- **修复**：Host 在 SDK Run 生命周期内维护 canonical→internal id 映射并在 start 前注册、finally
+  清理；取消缺失时幂等返回且不击穿 WebSocket。产品 Provider coordinator 在 cancel token 已确认时
+  将 invocation unknown 恢复为 Run-level cancellation；Host 不再把用户已取消后的瞬时
+  running/waiting 状态投影成 `run_failed`。
+- **验证**：SDK execution/provider/runtime 聚焦 `43 passed`，py_compile 与 diff check PASS。
+  Computer Use 在 Session `7e962a92-b5b4-4724-a355-bf6f9ef28a66` 真实发送 120 秒任务并点击
+  “停止”：Run `131d90558c0759679743fd636d8169f7` 约 0.7 秒收束为 `cancelled`，输入区恢复空闲，
+  无最终 `done`、无 `run_failed`、无 WebSocket 断线重连。
+
+## 2026-08-21 macOS 中文输入法候选确认误发送修复
+
+- **根因**：InputBar 只检查 React `nativeEvent.isComposing`；macOS WebKit 可能在候选确认时先派发
+  `compositionend`，再派发同一次 Enter 的非 composing `keydown`，从而穿透 Enter-to-send 分支。
+- **修复**：输入框新增 composition 生命周期 ref、WebKit `keyCode=229` 兼容判断和
+  `compositionend` 后的一次性 Enter latch。候选确认 Enter 不发送，下一次独立 Enter 仍正常发送；
+  不改变 Shift+Enter、Slash 候选和输入历史语义。
+- **验证**：新增 active composition、229 sentinel、end-before-keydown 与后续正常发送三组永久
+  回归；InputBar/ChatView 共 `26 passed`，TypeScript typecheck、debug `.app`/DMG build PASS。
+  Computer Use 在新构建中验证候选 UI 出现、草稿可保留/清空且消息流未新增；因自动控制层不能触发
+  macOS 全局输入源切换，精确简体拼音候选的最终按键确认需用户在中文输入源下再复核一次。
+
 ## 2026-08-21 macOS Provider 持久化与 App 数据隔离修复
 
 - **根因**：Tauri identifier 虽为 `com.dennywanye.simpleharness`，Rust/Python classic fallback 与

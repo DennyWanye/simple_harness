@@ -5574,6 +5574,66 @@ def _sql_build_reinject_msg(snapshot: str) -> dict:
     }
 
 
+async def _project_open_sdk_authorizations(
+    ws: WebSocket,
+    *,
+    session_id: str | None = None,
+    sdk_run_id: str | None = None,
+    rehydrated: bool = False,
+) -> int:
+    """Project durable SDK Tool decisions through the existing desktop UI protocol."""
+
+    ingress = _sdk_ingress
+    if ingress is None or not hasattr(ingress, "list_open_authorizations"):
+        return 0
+    try:
+        decisions = ingress.list_open_authorizations(
+            run_id=sdk_run_id,
+            session_id=session_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "sdk_authorization_projection_failed",
+            sdk_run_id=sdk_run_id,
+            session_id=session_id,
+            error_type=type(exc).__name__,
+        )
+        return 0
+    count = 0
+    for decision in decisions:
+        frame = {
+            "type": "permission_request",
+            "payload": {
+                "session_id": decision.session_id,
+                "run_id": decision.run_id,
+                "sdk_run_id": decision.sdk_run_id,
+                "task_scope_id": decision.task_scope_id,
+                "turn_id": decision.turn_id,
+                "request_id": decision.request_id,
+                "decision_id": decision.decision_id,
+                "nonce": decision.nonce,
+                "version": decision.version,
+                "category": decision.category,
+                "summary": (
+                    decision.prompt
+                    or f"允许 Simple Harness 执行 {decision.tool_name}"
+                ),
+                "params": {
+                    **decision.params,
+                    "tool_name": decision.tool_name,
+                },
+                "default_action": "prompt",
+                "dangerous": decision.dangerous,
+                "expires_at": decision.expires_at,
+                "rehydrated": rehydrated,
+            },
+        }
+        await ws.send_json(frame)
+        await _broadcast_default_chat_peers(ws, frame)
+        count += 1
+    return count
+
+
 async def _replay_open_harness_decisions(
     ws: WebSocket,
     *,
@@ -5668,6 +5728,11 @@ async def _replay_open_harness_decisions(
                     },
                 }
             )
+    await _project_open_sdk_authorizations(
+        ws,
+        session_id=session_id,
+        rehydrated=True,
+    )
 
 
 async def _handle_control_ws_message(raw: dict, *, session_id: str, ws: WebSocket) -> bool:  # noqa: ARG001
@@ -6939,12 +7004,18 @@ def _freeze_sdk_catalog(tools_adapter: Any, generation: int) -> dict[str, Any]:
     """Return the exact immutable Tool catalog used by Provider and executor."""
 
     from deskpet.sdk_adapters.context_authority import canonical_sha256
+    from simple_harness import thaw_json
 
     specs: list[dict[str, Any]] = []
     schema_fingerprints: dict[str, str] = {}
     schema_token_count = 0
     for spec in tools_adapter.specs:
-        schema = dict(spec.input_schema)
+        # SDK ToolSpec recursively freezes schemas with MappingProxyType.  A
+        # shallow dict() only unwraps the root and leaves nested properties
+        # non-JSON, which makes canonical hashing fail during cold startup.
+        schema = thaw_json(spec.input_schema)
+        if not isinstance(schema, dict):
+            raise TypeError(f"{spec.name} Tool schema must be a JSON object")
         record = {
             "name": str(spec.name),
             "description": str(spec.description),
@@ -9023,7 +9094,11 @@ async def _activate_product_sdk_runtime(
     try:
         stack = await _build_product_sdk_runtime_stack(state.generation)
     except Exception as exc:
-        logger.warning("product_sdk_runtime_skipped", reason=f"build_failed: {exc}")
+        logger.warning(
+            "product_sdk_runtime_skipped",
+            reason=f"build_failed: {exc}",
+            exc_info=True,
+        )
         return
 
     if state.phase == "activated":
@@ -10367,6 +10442,10 @@ async def _execute_sdk_run(
                 _sdk_provider_binding_resolver.mark_waiting(sdk_run_id)
             if _sdk_tool_authority_registry is not None:
                 _sdk_tool_authority_registry.mark_waiting(sdk_run_id)
+            await _project_open_sdk_authorizations(
+                websocket,
+                sdk_run_id=sdk_run_id,
+            )
             logger.info(
                 "sdk_run_waiting_binding_retained",
                 sdk_run_id=sdk_run_id,
@@ -13595,8 +13674,20 @@ async def control_channel(ws: WebSocket):
                 # auto-fetch" so users don't have to type model names by hand.
                 # Reply: { ok, models: [string], detail? }
                 _payload = raw.get("payload", {}) or {}
+                _reg = service_context.get("provider_registry")
+                if _reg is None:
+                    await ws.send_json({
+                        "type": "settings_providers_probe_models_response",
+                        "payload": {
+                            "ok": False,
+                            "models": [],
+                            "detail": "provider_registry not initialized",
+                        },
+                    })
+                    continue
                 _base_url = str(_payload.get("base_url") or "").rstrip("/")
                 _api_key = str(_payload.get("api_key") or "")
+                _provider_id = str(_payload.get("provider_id") or "").strip()
                 if not _base_url:
                     await ws.send_json({
                         "type": "settings_providers_probe_models_response",
@@ -13607,6 +13698,39 @@ async def control_channel(ws: WebSocket):
                         },
                     })
                     continue
+                if not _api_key and _provider_id:
+                    _entry = _reg.get_entry(_provider_id)
+                    if _entry is None:
+                        await ws.send_json({
+                            "type": "settings_providers_probe_models_response",
+                            "payload": {
+                                "ok": False,
+                                "models": [],
+                                "detail": "provider not found",
+                            },
+                        })
+                        continue
+                    if str(_entry.base_url).rstrip("/") != _base_url:
+                        await ws.send_json({
+                            "type": "settings_providers_probe_models_response",
+                            "payload": {
+                                "ok": False,
+                                "models": [],
+                                "detail": "base_url differs from saved provider; enter its API key to probe",
+                            },
+                        })
+                        continue
+                    _api_key = str(_reg.resolve_api_key(_provider_id) or "")
+                    if not _api_key:
+                        await ws.send_json({
+                            "type": "settings_providers_probe_models_response",
+                            "payload": {
+                                "ok": False,
+                                "models": [],
+                                "detail": "saved provider API key is unavailable",
+                            },
+                        })
+                        continue
                 try:
                     import httpx as _httpx
                     _models_url = f"{_base_url}/models"

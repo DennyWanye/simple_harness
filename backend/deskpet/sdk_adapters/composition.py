@@ -386,6 +386,48 @@ class ProductSdkRuntimeStack:
     def query(self, run_id: str):  # type: ignore[no-untyped-def]
         return self.require_ready().client.query(RunId(run_id))
 
+    def list_open_authorization_decisions(
+        self,
+        *,
+        run_id: str | None = None,
+        session_id: str | None = None,
+    ) -> tuple[tuple[object, Mapping[str, object]], ...]:
+        """Read durable open Tool decisions without exposing the SDK UoW.
+
+        The desktop host needs this projection after a Run becomes WAITING and
+        again after a control-channel reconnect.  Keep the SQLite/schema access
+        inside the SDK lifecycle boundary instead of letting ``main.py`` reach
+        into ``RunClient._runtime``.
+        """
+
+        self.require_ready()
+        uow = self._uow
+        if uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        clauses = ["d.state='open'", "d.kind='tool_authorization'"]
+        values: list[str] = []
+        if run_id is not None:
+            clauses.append("d.run_id=?")
+            values.append(str(run_id))
+        if session_id is not None:
+            clauses.append("r.execution_session_id=?")
+            values.append(str(session_id))
+        rows = uow.database.connection.execute(
+            "SELECT d.decision_id,d.run_id FROM decisions AS d "
+            "JOIN runs AS r ON r.run_id=d.run_id WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY d.created_at,d.decision_id",
+            tuple(values),
+        ).fetchall()
+        projected: list[tuple[object, Mapping[str, object]]] = []
+        for row in rows:
+            decision = uow.read_decision(str(row["decision_id"]))
+            start = uow.read_start_snapshot(str(row["run_id"]))
+            if decision is None or not isinstance(start, Mapping):
+                continue
+            projected.append((decision, start))
+        return tuple(projected)
+
     async def close(self) -> None:
         self._close_requested = True
         try:

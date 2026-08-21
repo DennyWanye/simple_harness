@@ -1,6 +1,58 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-21（macOS App 专属数据目录与 Provider 持久化闭环）
+> 最后更新：2026-08-21（SDK Context authority；Provider 可靠性；macOS IME）
+
+## 0.7 Provider 设置可靠性与 SDK 冷启动（2026-08-21）
+
+- Provider 新增/编辑不再把“WebSocket 已排队/调用过 send”误当作保存成功：控制通道未连接或底层
+  `send()` 失败时弹窗保持打开并就地显示错误；发送成功后也要等后端
+  `settings_providers_added/settings_providers_updated/providers_changed` 权威确认才关闭，保存期间按钮显示
+  “保存中…”。因此后端拒绝或断线不会再造成“弹窗消失但列表没有 Provider”的假成功。
+- 模型自动获取有 20 秒 UI 超时，断线和无响应都会恢复按钮并给出明确错误。编辑已保存 Provider 时前端
+  只发送 `provider_id + base_url`，后端仅在 URL 与该 Provider 的冻结配置精确匹配时从 App 专属
+  Keychain 解析密钥；密钥不回传前端，也不会被错误发送到修改后的 URL。
+- SDK Runtime 冷启动会先把递归冻结的 Tool schema 完整 `thaw_json` 后再计算 catalog 指纹；
+  `sdk_runtime_catalog/provider_binding/tool_authority/tool_inventory/prepared_authorization_policy` 均是
+  `ServiceContext` 正式槽位。真机隔离启动已验证 `product_sdk_runtime_ready`、SDK `0.1.5`、
+  `phase=open`，不再因嵌套 `mappingproxy` 或未声明服务槽位降级为“模型服务尚未就绪”。
+- 2026-08-21 macOS Computer Use 复测：已保存 DeepSeek Provider 的 `/models` 返回 HTTP 200，按钮退出
+  “获取中”；新增无敏感信息的本地 fixture 后列表立即出现 `Local Fixture`。原始截图/日志位于忽略目录
+  `.local-test-evidence/2026-08-21/sdk-context-authority-run-2-cold/evidence/`。
+- SDK Tool 授权现在由桌面 ingress 从 durable open decision 生成既有 `permission_request`；实时
+  WAITING 与控制通道重连都复用同一 fenced `decision_id/nonce/version`，前端批准后走 SDK
+  `decide_authorization` 恢复原 Run。Computer Use 使用新 `DeepSeeker/deepseek-v4-flash` 完成真实
+  `chat/completions → run_shell(pwd) → 允许一次 → tool result → 第二次 chat/completions → done`，
+  终态思考组自动折叠、Context usage 显示 18k/800k。最终截图仅保存在 ignored
+  `.local-test-evidence/2026-08-21/deepseeker-provider-tool-e2e/final-pass.png`。
+
+## 0.6 Context Inspector 单一事实源（2026-08-21）
+
+- 前台 SDK Run 只准备一次冻结 Context snapshot；同一份 snapshot 驱动 RunStart、首个物理 Provider
+  request 与 Inspector 的公开构成。Persona、owner-scoped Memory、已选择 Skill、conversation
+  allowlist 历史、附件、项目/任务快照与冻结 Tool catalog 均在该边界组装；普通文本没有可信 Skill
+  selection 时明确为空，不回退到 legacy 动态猜测。
+- `context_breakdown_request` 只读取 SessionDB 中的 durable public snapshot 和 Context usage authority，
+  不再动态 probe legacy persona/facts/V2 registry/history/project。请求与响应同时校验 Session、request
+  correlation、snapshot id/version 和独立 usage version；切换 Session 或晚到冲突帧 fail closed。
+- Inspector 只展示 default-deny redactor 产生的有界分类、计数、token 来源与公开预览；隐藏 reasoning、
+  凭据、敏感 header、原始工具参数/结果和私密附件内容不进入公开投影。没有 snapshot 或 Provider usage
+  时明确显示 `unavailable/binding_only/legacy_incomplete`，不把 `0/0` 伪装成实测。
+- SDK provider invocation 的真实 usage 通过 durable projection receipt 幂等写入 SessionDB，再广播严格
+  递增版本；attempt 与 snapshot 分别保留版本轴，重启可恢复。Provider、model、Run/request/attempt 和
+  catalog lineage 均来自 per-Run 冻结 binding，不再读取 legacy `last_usage`。
+
+## 0.5 macOS IME 与 Enter 发送边界
+
+- `InputBar` 的 Enter 发送门禁不再只依赖 React `nativeEvent.isComposing`。macOS WebKit 在用户按
+  Enter 确认中文候选时，可能先发 `compositionend`，再把同一次 Enter 作为非 composing 的
+  `keydown` 交给 React，旧逻辑因此会把候选确认误判成消息发送。
+- 当前生产输入框同时检查组件级 composition 状态、标准 `isComposing` 与 WebKit IME sentinel
+  `keyCode=229`；`compositionend` 后另保留一个只消费候选确认 Enter 的短暂 latch。候选确认只把
+  文字写入草稿，随后一次独立 Enter 仍按原约定发送，Shift+Enter 与 Slash dropdown 行为不变。
+- 回归测试覆盖 active composition、WebKit 229、`compositionend → Enter` 以及下一次正常 Enter。
+  InputBar/ChatView 聚焦 `26 passed`、TypeScript typecheck 和 debug `.app`/DMG build PASS。Computer
+  Use 已验证新构建输入框、候选 UI、草稿清理及零消息发送；自动控制层不能触发 macOS 全局输入源
+  切换，精确“简体拼音候选 → Enter”仍需在中文输入源激活时做一次最终人工确认。
 
 ## 0.4 macOS App 数据与 Provider 命名空间隔离
 

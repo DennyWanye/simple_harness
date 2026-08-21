@@ -407,6 +407,94 @@ def test_add_validates_required_fields(fresh_registry):
     assert len(reg.list_providers()) == 0
 
 
+def test_probe_saved_provider_resolves_key_server_side(fresh_registry, monkeypatch):
+    reg, _kc, _cfg = fresh_registry
+    _seed_provider(
+        reg,
+        pid="deepseek",
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        api_key="sk-saved",
+    )
+    observed: dict[str, Any] = {}
+
+    class _Response:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"data": [{"id": "deepseek-chat"}]}
+
+    class _Client:
+        def __init__(self, *, timeout):
+            observed["timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, *, headers):
+            observed["url"] = url
+            observed["authorization"] = headers.get("Authorization")
+            return _Response()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "AsyncClient", _Client)
+    client = TestClient(app)
+    cm, ws = _ws_open(client)
+    try:
+        ws.send_json({
+            "type": "settings_providers_probe_models",
+            "payload": {
+                "provider_id": "deepseek",
+                "base_url": "https://api.deepseek.com",
+                "api_key": "",
+            },
+        })
+        response = _drain_until(ws, "settings_providers_probe_models_response")
+    finally:
+        cm.__exit__(None, None, None)
+
+    assert response["payload"] == {"ok": True, "models": ["deepseek-chat"]}
+    assert observed == {
+        "timeout": 15.0,
+        "url": "https://api.deepseek.com/models",
+        "authorization": "Bearer sk-saved",
+    }
+
+
+def test_probe_saved_provider_rejects_changed_base_url(fresh_registry):
+    reg, _kc, _cfg = fresh_registry
+    _seed_provider(
+        reg,
+        pid="deepseek",
+        base_url="https://api.deepseek.com",
+        model="deepseek-chat",
+        api_key="sk-saved",
+    )
+    client = TestClient(app)
+    cm, ws = _ws_open(client)
+    try:
+        ws.send_json({
+            "type": "settings_providers_probe_models",
+            "payload": {
+                "provider_id": "deepseek",
+                "base_url": "https://attacker.invalid/v1",
+                "api_key": "",
+            },
+        })
+        response = _drain_until(ws, "settings_providers_probe_models_response")
+    finally:
+        cm.__exit__(None, None, None)
+
+    assert response["payload"]["ok"] is False
+    assert "differs from saved provider" in response["payload"]["detail"]
+
+
 # ---------- 2.4 update — partial patch -------------------------------------
 
 

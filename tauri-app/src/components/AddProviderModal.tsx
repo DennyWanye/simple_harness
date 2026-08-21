@@ -187,13 +187,18 @@ export function buildUpdateProviderMessage(
 export function buildProbeModelsMessage(
   base_url: string,
   api_key: string,
+  provider_id?: string,
 ): {
   type: "settings_providers_probe_models";
-  payload: { base_url: string; api_key: string };
+  payload: { base_url: string; api_key: string; provider_id?: string };
 } {
   return {
     type: "settings_providers_probe_models",
-    payload: { base_url: base_url.trim(), api_key },
+    payload: {
+      base_url: base_url.trim(),
+      api_key,
+      ...(provider_id ? { provider_id } : {}),
+    },
   };
 }
 
@@ -204,13 +209,15 @@ interface AddProviderModalProps {
   onClose(): void;
   onSave(draft: ProviderDraft): void;
   /** Send a ws probe request. Parent owns the channel. */
-  onProbeModels?(base_url: string, api_key: string): void;
+  onProbeModels?(base_url: string, api_key: string, provider_id?: string): void;
   /** Latest probe result from backend (managed by parent). */
   probedModels?: string[];
   /** Backend probe error (if any). */
   probeError?: string | null;
   /** Probe in-flight indicator. */
   probing?: boolean;
+  saveError?: string | null;
+  saving?: boolean;
 }
 
 function createBlankDraft(): ProviderDraft {
@@ -234,6 +241,8 @@ export function AddProviderModal({
   probedModels,
   probeError,
   probing,
+  saveError,
+  saving = false,
 }: AddProviderModalProps) {
   const [draft, setDraft] = useState<ProviderDraft>(() =>
     editing ? prefillFromProvider(editing) : createBlankDraft(),
@@ -411,7 +420,7 @@ export function AddProviderModal({
               type="button"
               onClick={() => {
                 if (onProbeModels && canProbe) {
-                  onProbeModels(draft.base_url, draft.api_key);
+                  onProbeModels(draft.base_url, draft.api_key, editing?.id);
                 }
               }}
               disabled={!canProbe || probing}
@@ -513,6 +522,7 @@ export function AddProviderModal({
               )}
             </div>
           )}
+          {saveError && <span role="alert" style={errStyle}>{saveError}</span>}
           {submitted && validation.errors.models && (
             <span style={errStyle}>{validation.errors.models}</span>
           )}
@@ -538,10 +548,11 @@ export function AddProviderModal({
           </button>
           <button
             type="submit"
+            disabled={saving}
             data-testid="provider-save-button"
             style={saveBtn}
           >
-            {isEditing ? "保存" : "添加"}
+            {saving ? "保存中…" : (isEditing ? "保存" : "添加")}
           </button>
         </footer>
       </form>

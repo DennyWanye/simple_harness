@@ -11,6 +11,56 @@ import pytest
 import main
 
 
+def test_freeze_sdk_catalog_thaws_nested_frozen_tool_schema():
+    from simple_harness.tools import FunctionTool, ToolSpec
+
+    async def invoke(_arguments, _context):
+        return None
+
+    tool = FunctionTool(
+        ToolSpec(
+            "nested_schema",
+            "Nested schema regression fixture",
+            {
+                "type": "object",
+                "properties": {
+                    "payload": {
+                        "type": "object",
+                        "properties": {"name": {"type": "string"}},
+                    }
+                },
+            },
+        ),
+        invoke,
+    )
+    adapter = SimpleNamespace(specs=(tool.spec,))
+
+    frozen = main._freeze_sdk_catalog(adapter, 7)
+
+    assert frozen["generation"] == 7
+    assert frozen["specs"][0]["input_schema"]["properties"]["payload"][
+        "properties"
+    ]["name"] == {"type": "string"}
+    assert len(frozen["schema_fingerprints"]["nested_schema"]) == 64
+
+
+def test_sdk_runtime_publications_are_declared_service_context_slots():
+    from context import ServiceContext
+
+    services = ServiceContext()
+    names = (
+        "sdk_runtime_catalog",
+        "sdk_provider_binding_resolver",
+        "sdk_tool_authority_registry",
+        "sdk_runtime_tool_inventory",
+        "sdk_prepared_authorization_policy",
+    )
+    for name in names:
+        marker = object()
+        services.register(name, marker)
+        assert services.get(name) is marker
+
+
 def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
     import inspect
 

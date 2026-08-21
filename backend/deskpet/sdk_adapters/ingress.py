@@ -7,10 +7,11 @@ product modules — use this facade exclusively.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from simple_harness import RunId
+from simple_harness import RunId, thaw_json
 from simple_harness.contracts import ExecutionSessionId, RequestId
 from simple_harness.runtime import RunStart
 
@@ -37,6 +38,27 @@ class IngressSignalReceipt:
     accepted: bool = True
     duplicate: bool = False
     reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IngressAuthorizationRequest:
+    """Public-safe desktop projection of one durable SDK Tool decision."""
+
+    sdk_run_id: str
+    run_id: str
+    session_id: str
+    request_id: str
+    task_scope_id: str
+    turn_id: str
+    decision_id: str
+    nonce: str
+    version: int
+    tool_name: str
+    prompt: str
+    params: dict[str, Any]
+    category: str
+    dangerous: bool
+    expires_at: float | None
 
 
 class SdkRuntimeIngress:
@@ -188,6 +210,89 @@ class SdkRuntimeIngress:
         ready = self._stack.require_ready()
         return ready.client.query(RunId(run_id))
 
+    def list_open_authorizations(
+        self,
+        *,
+        run_id: str | None = None,
+        session_id: str | None = None,
+    ) -> tuple[IngressAuthorizationRequest, ...]:
+        """Return public-safe open Tool decisions for live/reconnect UI replay."""
+
+        rows = self._stack.list_open_authorization_decisions(
+            run_id=run_id,
+            session_id=session_id,
+        )
+        projected: list[IngressAuthorizationRequest] = []
+        for decision, start in rows:
+            request = thaw_json(getattr(decision, "request", {}))
+            start_value = thaw_json(start)
+            if not isinstance(request, dict) or not isinstance(start_value, dict):
+                continue
+            start_input = start_value.get("input")
+            metadata = (
+                start_input.get("context_metadata")
+                if isinstance(start_input, dict)
+                else None
+            )
+            if not isinstance(metadata, dict):
+                continue
+            tool_name = str(request.get("tool_name") or "").strip()
+            decision_id = str(getattr(decision, "decision_id", "")).strip()
+            nonce = str(request.get("nonce") or "").strip()
+            sdk_run_id = str(getattr(decision, "run_id", "")).strip()
+            root_run_id = str(metadata.get("root_run_id") or "").strip()
+            bound_session_id = str(metadata.get("session_id") or "").strip()
+            if not all(
+                (tool_name, decision_id, nonce, sdk_run_id, root_run_id, bound_session_id)
+            ):
+                continue
+            category = "tool"
+            dangerous = False
+            tool_authority = metadata.get("tool_authority")
+            inventory = (
+                tool_authority.get("inventory")
+                if isinstance(tool_authority, dict)
+                else None
+            )
+            if isinstance(inventory, list):
+                item = next(
+                    (
+                        value
+                        for value in inventory
+                        if isinstance(value, dict)
+                        and str(value.get("name") or "") == tool_name
+                    ),
+                    None,
+                )
+                if item is not None:
+                    category = str(item.get("permission_category") or "tool")
+                    dangerous = bool(item.get("dangerous", False))
+            arguments = request.get("arguments")
+            projected.append(
+                IngressAuthorizationRequest(
+                    sdk_run_id=sdk_run_id,
+                    run_id=root_run_id,
+                    session_id=bound_session_id,
+                    request_id=decision_id,
+                    task_scope_id=str(metadata.get("task_scope_id") or ""),
+                    turn_id=str(start_value.get("turn_id") or ""),
+                    decision_id=decision_id,
+                    nonce=nonce,
+                    version=int(getattr(decision, "version", 0)),
+                    tool_name=tool_name,
+                    prompt=str(request.get("prompt") or ""),
+                    params=(dict(arguments) if isinstance(arguments, dict) else {}),
+                    category=category,
+                    dangerous=dangerous,
+                    expires_at=(
+                        None
+                        if request.get("expires_at") is None
+                        else float(request["expires_at"])
+                    ),
+                )
+            )
+        return tuple(projected)
+
     async def reconcile(self) -> None:
         """Trigger reconciliation of unknown effects/providers."""
         ready = self._stack.require_ready()
@@ -215,6 +320,7 @@ class SdkRuntimeIngress:
 
 
 __all__ = (
+    "IngressAuthorizationRequest",
     "IngressSignalReceipt",
     "IngressStartReceipt",
     "SdkRuntimeIngress",

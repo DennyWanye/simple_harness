@@ -256,9 +256,10 @@ describe("buildAddProviderMessage / buildUpdateProviderMessage", () => {
 
 describe("buildProbeModelsMessage", () => {
   it("emits settings_providers_probe_models with trimmed base_url + api_key passthrough", () => {
-    const m = buildProbeModelsMessage("  https://x.com/v1  ", "sk-real");
+    const m = buildProbeModelsMessage("  https://x.com/v1  ", "sk-real", "saved-provider");
     expect(m.type).toBe("settings_providers_probe_models");
     expect(m.payload.base_url).toBe("https://x.com/v1");
     expect(m.payload.api_key).toBe("sk-real");
+    expect(m.payload.provider_id).toBe("saved-provider");
   });
 });

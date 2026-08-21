@@ -104,6 +104,14 @@ _VALID_SERVICES = frozenset({
     "session_terminal_projection_gate",
     # Slice B: the sole immutable publication for the closed-ingress SDK stack.
     "sdk_runtime_ready",
+    # SDK Context-authority cutover: immutable process publications assembled
+    # before the runtime starts.  These are explicit ServiceContext slots so a
+    # cold boot cannot fail while publishing an otherwise valid SDK stack.
+    "sdk_runtime_catalog",
+    "sdk_provider_binding_resolver",
+    "sdk_tool_authority_registry",
+    "sdk_runtime_tool_inventory",
+    "sdk_prepared_authorization_policy",
     # Capability-pack, policy, TaskGrant, and authorization saga state are
     # product-owned in data/product_state.db.  They must never bind the SDK
     # execution database; the platform separately owns local worker lifetimes.
@@ -227,6 +235,11 @@ class ServiceContext:
     harness_public_read_service: Any | None = None
     session_terminal_projection_gate: Any | None = None
     sdk_runtime_ready: Any | None = None
+    sdk_runtime_catalog: Any | None = None
+    sdk_provider_binding_resolver: Any | None = None
+    sdk_tool_authority_registry: Any | None = None
+    sdk_runtime_tool_inventory: Any | None = None
+    sdk_prepared_authorization_policy: Any | None = None
     capability_store: Any | None = None
     capability_platform: Any | None = None
     capability_center: Any | None = None

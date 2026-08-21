@@ -102,6 +102,65 @@ async def test_ingress_uses_sdk_015_async_authorization_signature():
     }
 
 
+def test_ingress_projects_public_safe_open_authorization_request():
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+
+    decision = SimpleNamespace(
+        run_id="sdk-run-auth",
+        decision_id="authorization:effect-1",
+        version=2,
+        request={
+            "arguments": {"command": "pwd"},
+            "nonce": "nonce-auth",
+            "prompt": "Allow run_shell for this exact request?",
+            "tool_name": "run_shell",
+            "expires_at": 123.0,
+        },
+    )
+    start = {
+        "turn_id": "turn-auth",
+        "input": {
+            "context_metadata": {
+                "session_id": "session-auth",
+                "root_run_id": "root-auth",
+                "task_scope_id": "scope-auth",
+                "tool_authority": {
+                    "inventory": [
+                        {
+                            "name": "run_shell",
+                            "permission_category": "shell",
+                            "dangerous": True,
+                        }
+                    ]
+                },
+            }
+        },
+    }
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        list_open_authorization_decisions=lambda **kwargs: (
+            (decision, start),
+        )
+    )
+
+    projected = ingress.list_open_authorizations(
+        run_id="sdk-run-auth",
+        session_id=None,
+    )
+
+    assert len(projected) == 1
+    assert projected[0].sdk_run_id == "sdk-run-auth"
+    assert projected[0].run_id == "root-auth"
+    assert projected[0].session_id == "session-auth"
+    assert projected[0].decision_id == "authorization:effect-1"
+    assert projected[0].nonce == "nonce-auth"
+    assert projected[0].version == 2
+    assert projected[0].tool_name == "run_shell"
+    assert projected[0].params == {"command": "pwd"}
+    assert projected[0].category == "shell"
+    assert projected[0].dangerous is True
+
+
 @pytest.mark.asyncio
 async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
     from main import _prepare_sdk_context_snapshot
@@ -736,6 +795,29 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
             assert run_id == sdk_run_id
             return SimpleNamespace(state=SimpleNamespace(value="waiting"))
 
+        def list_open_authorizations(self, *, run_id, session_id):
+            assert run_id == sdk_run_id
+            assert session_id is None
+            return (
+                SimpleNamespace(
+                    sdk_run_id=sdk_run_id,
+                    run_id=root_run_id,
+                    session_id=session_id_value,
+                    request_id="authorization:effect-1",
+                    task_scope_id="waiting-scope",
+                    turn_id=str(turn_id),
+                    decision_id="authorization:effect-1",
+                    nonce="nonce-1",
+                    version=0,
+                    tool_name="run_shell",
+                    prompt="Allow run_shell for this exact request?",
+                    params={"command": "pwd"},
+                    category="shell",
+                    dangerous=True,
+                    expires_at=100.0,
+                ),
+            )
+
     websocket = SimpleNamespace(send_json=AsyncMock())
     session_db = SimpleNamespace(append_message=AsyncMock())
     context = _presentation_context(
@@ -744,6 +826,7 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
         root_run_id=root_run_id,
     )
     lifecycle = _BindingLifecycle()
+    session_id_value = session_id
     monkeypatch.setattr(main, "_sdk_ingress", WaitingIngress())
     monkeypatch.setattr(main, "_sdk_provider_binding_resolver", lifecycle)
     monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
@@ -765,6 +848,34 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
     assert sdk_run_id in _delivery_adapters
     assert main._sdk_run_ids_by_root[root_run_id] == sdk_run_id
     assert main._sdk_retained_presentations[sdk_run_id][3] is context
+    permission_frames = [
+        item.args[0]
+        for item in websocket.send_json.await_args_list
+        if item.args[0].get("type") == "permission_request"
+    ]
+    assert permission_frames == [
+        {
+            "type": "permission_request",
+            "payload": {
+                "session_id": session_id,
+                "run_id": root_run_id,
+                "sdk_run_id": sdk_run_id,
+                "task_scope_id": "waiting-scope",
+                "turn_id": str(turn_id),
+                "request_id": "authorization:effect-1",
+                "decision_id": "authorization:effect-1",
+                "nonce": "nonce-1",
+                "version": 0,
+                "category": "shell",
+                "summary": "Allow run_shell for this exact request?",
+                "params": {"command": "pwd", "tool_name": "run_shell"},
+                "default_action": "prompt",
+                "dangerous": True,
+                "expires_at": 100.0,
+                "rehydrated": False,
+            },
+        }
+    ]
 
 
 def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch):
