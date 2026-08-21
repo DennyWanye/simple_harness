@@ -35,6 +35,36 @@ def test_provider_content_blocks_become_body_free_attachment_refs() -> None:
     assert encoded not in repr(refs[0])
 
 
+def test_input_text_attachment_is_preserved_and_budgeted() -> None:
+    blocks = normalize_user_attachment_blocks(
+        [
+            {"type": "text", "text": "ordinary message text"},
+            {
+                "type": "input_text",
+                "name": "fixture.txt",
+                "data": "FIRST LINE\nbody-canary",
+            },
+        ]
+    )
+    assert blocks == [
+        {
+            "type": "input_text",
+            "name": "fixture.txt",
+            "data": "FIRST LINE\nbody-canary",
+        }
+    ]
+
+    messages = append_user_attachment_blocks(
+        [{"role": "user", "content": "read it"}], blocks
+    )
+    refs, tokens = collect_attachment_budget(messages)
+
+    assert len(refs) == 1
+    assert refs[0].media_type == "input_text"
+    assert refs[0].byte_size == len("FIRST LINE\nbody-canary".encode("utf-8"))
+    assert tokens > 0
+
+
 def test_remote_media_uses_conservative_unknown_upper_bound() -> None:
     messages = [
         {

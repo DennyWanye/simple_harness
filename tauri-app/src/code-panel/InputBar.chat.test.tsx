@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { InputBar } from "./InputBar";
@@ -86,6 +86,60 @@ describe("InputBar chat send", () => {
     expect(useSessionsStore.getState().sessions.default.messages.at(-1)?.text).toBe(
       "你好啊",
     );
+  });
+
+  it("sends selected text files as input_text attachments", async () => {
+    render(<InputBar sessionId="default" placeholder="chat" />);
+
+    const file = new File(["FIRST LINE\nbody-canary"], "fixture.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(screen.getByTestId("text-attachment-input"), {
+      target: { files: [file] },
+    });
+    expect(await screen.findByText(/fixture\.txt/)).toBeTruthy();
+
+    const input = screen.getByPlaceholderText("chat");
+    fireEvent.change(input, { target: { value: "附件第一行是什么？" } });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      shiftKey: false,
+      nativeEvent: { isComposing: false },
+    });
+
+    await waitFor(() =>
+      expect(controlWS.send).toHaveBeenCalledWith({
+        type: "chat_v2",
+        payload: expect.objectContaining({
+          text: "附件第一行是什么？",
+          session_id: "default",
+          attachments: [
+            expect.objectContaining({
+              type: "input_text",
+              name: "fixture.txt",
+              media_type: "text/plain",
+              data: "FIRST LINE\nbody-canary",
+            }),
+          ],
+        }),
+      }),
+    );
+    expect(screen.queryByTestId("attachment-list")).toBeNull();
+  });
+
+  it("rejects a text attachment above the 8 MiB block limit", async () => {
+    render(<InputBar sessionId="default" placeholder="chat" />);
+
+    const file = new File(["small"], "oversized.txt", { type: "text/plain" });
+    Object.defineProperty(file, "size", { value: 8 * 1024 * 1024 + 1 });
+    fireEvent.change(screen.getByTestId("text-attachment-input"), {
+      target: { files: [file] },
+    });
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "超过单文件 8 MiB 限制",
+    );
+    expect(screen.queryByTestId("attachment-list")).toBeNull();
   });
 
   it("does not send when Enter confirms an active IME composition", () => {

@@ -1,0 +1,23 @@
+{
+  "acceptance_sha256": "e3ea32764cf3fe654262487581902f49c67a47fe1b6d1b6dc7252769cb418d60",
+  "auditor_input_sha256": "01bcd7dec9f95da2d3a442fa2d6f32be2bbfbfe77383214394694aee2c53de3b",
+  "auditor_output_sha256": "fa1feff791c1af271a91ab223f21f32d2bc0399b9561d6e48ffddeda8761e120",
+  "content_digest": "79d1d2a0a4dc91d242787c902ebc633ff9dd242a286af755970db195c0912d25",
+  "dirty_patch_sha256": "f7c30b27def0f10f2e66f8774b298ea1b086fdfcd6f807ae00b7876b209f18e6",
+  "evidence_manifest_sha256": "7e7e4c9aea91d665307a9807cee1dc03affac51d33a34cfdf9825986905e0ff1",
+  "finalized_at": "2026-08-04T02:12:50+0800",
+  "fixture_only": false,
+  "head": "03fc0782c6f7df4c12e4cf3c1318649e21dfd498",
+  "ledger_sha256": "cf9623e17a0465862561249dac45d17c7caadc6d6f7929b25a9b648986972b15",
+  "receipt_version": 1,
+  "run_id": "session-run-visibility-slice-b-20260803",
+  "scenario_statuses": {
+    "S-SRV-2": "PASS",
+    "S-SRV-3": "PASS",
+    "S-SRV-5": "PASS"
+  },
+  "schema_version": "1.1.0",
+  "state": "SHIPPABLE",
+  "testcase_lock_sha256": "20f1dfb352cab7b4d680b39ab4b4416b859d057bb83a74f36007c41c35c7a3fb",
+  "validator_version": "1.1.0"
+}

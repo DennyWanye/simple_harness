@@ -143,3 +143,106 @@
 | TO-R4 | change-risk | AC-8 | CONTEXT-LEAK | Provider/Session 出站上下文不包含 reasoning summary 或 reasoning_content | 跨层接线不能污染下一轮模型上下文 |
 | TO-R5 | change-risk | AC-9 | STALE-UI | 重复/乱序/缺时间 fixture 不产生重复、负耗时或终态复活 | 防 LLM 事件变异破坏折叠状态 |
 | TO-R6 | change-risk | AC-8, AC-9 | REAL-UI | Computer Use 真实发送工具任务，运行中截图展开，完成后截图折叠，再点击展开 | 证明生产入口和真实交互可达 |
+
+## 2026-08-21 增量验收：SDK Context 单一事实源与旧链路退役
+
+### 主要矛盾与范围
+
+当前生产文字入口已切到 SDK Runtime，但出站消息由 `_assemble_sdk_messages` 临时组装，Context
+弹窗和用量采样仍读取旧 AgentLoop/ContextAssembler 的 registry、facts 和 `last_usage`。因此同一轮
+同时存在“实际 Provider Context”“旧弹窗估算”和“空的 durable usage”三种相互矛盾的事实。
+
+本增量包含：审计所有用户可达的 SDK 文字入口及其恢复路径；建立一次准备、同一快照同时驱动
+Provider 请求、Context Inspector 和 durable usage；恢复既有产品规则要求的 Persona、Memory、Skill、
+附件、项目上下文和历史过滤；使工具目录与真实 SDK catalog 一致；删除或封闭仍可误用的旧读路径。
+
+明确不包含：重新启用已关闭的 Voice；改变 Memory 的权限/召回策略；公开隐藏 CoT；把 UI activity、
+Harness 技术记录、artifact 卡或 `context_visibility=exclude` 投影加入模型上下文；修改 Provider 的
+计费价格或外部 API 契约。
+
+### 增量功能验收条款
+
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|---|---|---|---|
+| AC-10 | Context 单一准备 authority | 每个 fresh SDK Run 只调用一次产品 Context preparation；其冻结结果同时成为 SDK RunStart、Provider 首轮请求和 Inspector 构成的事实源，不再由入口层另组一套消息 | 必须 |
+| AC-11 | 产品 Context 内容完整 | 按既有策略应注入的 Persona/system、Memory、Skill、Session 历史、当前用户消息、附件和项目/任务快照全部出现在真实 Provider 请求；未命中的可选项明确为空而不是伪造 | 必须 |
+| AC-12 | Context 隔离与同 Run 协议 | fresh Run 只读取 `conversation` allowlist；activity/reasoning summary/artifact/技术投影不进入后续 Run；同一 Run 的 assistant tool call、必要的私有 DeepSeek `reasoning_content` 和 tool result 仅按 Provider 协议进入后续 tool turn | 必须 |
+| AC-13 | 真实 Provider 用量权威 | 每个成功 SDK Provider attempt 的实际 input/output/cache usage、实际 provider/model、canonical root/request/attempt identity 被幂等写入 Context usage history；取消/unknown/失败不伪造测量；重启后可恢复 | 必须 |
+| AC-14 | 工具目录一致 | Provider 请求、SDK executor 和 Inspector 使用同一个冻结 product catalog；工具名、数量及完整 schema token 构成一致，不再读取 legacy V2 registry 或用 `count × 60` 伪装真实值 | 必须 |
+| AC-15 | Context UI 如实展示 | 顶部 ring 显示最近真实测量与实际模型；弹窗展示最后一次冻结请求的真实构成、历史变化和“估算/实测”差异；无测量、旧记录或 Provider 不返回 usage 时明确标注来源和缺失，不显示 `(no model yet)` 假象 | 必须 |
+| AC-16 | 旧链路残留审计与封闭 | 对聊天入口、SDK ingress、Context 弹窗、用量持久化、恢复/水合、工具目录和附件路径做引用审计；所有仍请求旧 AgentLoop/legacy registry/facts probe 的生产分支要么切到新 authority，要么证明仅为测试/兼容并不可被生产入口到达 | 必须 |
+| AC-17 | 回归、恢复与多会话隔离 | 普通问答、工具多轮、附件/项目、长历史、取消、Provider 缺 usage、Session 切换和完整重启均保持正确；Context 快照和 usage 不跨 Session/Run 串线，不影响停止、最终回复或工具执行 | 必须 |
+
+### 非功能与数据边界
+
+- **单次准备**：Context preparation 是可审计的冻结事实；Inspector 不得为了显示再次执行 Memory
+  recall、Skill disclosure 或其他可能产生不同结果的动态准备。
+- **幂等与顺序**：provider attempt 使用稳定 source identity；重复 settle 不重复采样，多轮 tool
+  attempt 按实际完成时间展示，晚到旧 attempt 不覆盖更新的 authority。
+- **隐私**：Inspector 只显示有界分类、计数和脱敏预览；API key、cookie、隐藏 reasoning、完整
+  工具参数/结果及私密附件内容不得进入公开投影或测试报告。
+- **性能**：不得为了弹窗查询重新序列化全部历史；Provider payload 大小不因双写而增加；工具 schema
+  token 可在冻结请求上计算并缓存。
+- **兼容**：没有 usage 的 Provider、迁移前 binding-only Session 和旧历史必须可打开；显示明确的
+  `unavailable/legacy incomplete`，不得补造 0-token measured sample。
+- **分片交付**：实施计划必须拆为不超过三个高风险子系统的垂直 slice，各 slice 单独过自动化与
+  affected-surface smoke；最后再做跨 slice 真机与 full-surface gate。
+
+### 适用性
+
+- `input_sensitive=true`：Persona、Memory、历史、附件、项目快照和工具 schema 会随用户输入及 Session
+  状态改变，必须用语义不等价输入验证真实出站质量。
+- `llm_payload_driven=true`：模型 tool call、usage 缺失/异常和多轮结果直接驱动 durable usage 与 UI，
+  必须覆盖乱序、重复、schema 缺失、超长载荷和拒不调用工具。
+- `stateful_init=true`：Provider registry、Session binding、Memory/Skill 服务和 SDK Runtime 均为异步
+  注册并依赖本地持久化，必须覆盖隔离 userdata 冷启动及完整重启恢复。
+
+### LLM / Provider 行为变异清单
+
+- **乱序**：旧 attempt usage 晚于新 attempt 到达；历史保留两条，当前 authority 仍指向最新稳定顺序。
+- **重复**：相同 attempt settle/重放多次；只生成一个 sample，不重复累计或画点。
+- **Schema 违约**：Provider 缺 `usage`、缺 model、usage 字段非整数或 tool call 缺公开进度；主回复和
+  工具状态可继续安全收束，UI 标注 usage unavailable，不制造 measured=0。
+- **超长载荷**：长历史、完整工具 schema、长附件和长工具结果触发既有预算/截断策略；Inspector
+  有界渲染，Provider 请求与 UI 均不崩溃。
+- **拒不调用工具**：模型直接回答工具型请求；产生一次真实文本 attempt usage，UI 不伪造 tool
+  message，Context 仍能在终态展示实际构成。
+
+### 增量测试场景矩阵
+
+| scenario_id | input_class | exact_input | primary_risk | gate_type | required | manual_required | terminal_expectation | quality_bar |
+|---|---|---|---|---|---:|---:|---|---|
+| CTX-1 | 普通问答与 Persona/历史 follow-up | “根据我们刚才聊过的内容，用两句话告诉我你记得我的哪项偏好；不需要调用工具。” | prepared history/persona 与无工具 usage | positive-value | 是 | 是 | completed + 非空回答 + measured usage | 回答引用本会话真实既有内容，Inspector 与真实请求角色/数量一致 |
+| CTX-2 | Memory 与长历史 | 在同一会话完成至少 10 轮后输入：“我之前说过住在哪里、喜欢喝什么？不确定就直说。” | Memory/历史预算、长上下文和隔离 | positive-value | 是 | 是 | completed + 非空回答 + history sample | 只回答确有记录的事实，不引用 activity/tool UI 文案；长会话为独立 root run |
+| CTX-3 | 附件/项目工具任务 | “读取我刚附上的这个公开文本文件，并告诉我第一行；需要的话使用文件工具。” | 附件、项目快照、工具 schema 与多轮 usage | positive-value | 是 | 是 | completed + 正确首行 + ≥2 attempt samples（若调用工具） | Provider 首轮能看到附件引用/内容预算，工具结果正确，Inspector 构成与实际请求一致 |
+| CTX-4 | 失败与隔离对抗 | “读取 `/definitely-not-present/context-canary.txt`；找不到就明确说明，不要猜。” | tool failure、无伪造成功、excluded 投影不回灌 | negative-safety | 是 | 是 | completed/failed 可解释 + usage 有据可查 | 不虚构文件内容；下一 fresh Run 的出站 payload 不含失败卡/公开进度摘要 |
+| CTX-5 | 冷启动与重启恢复 | 隔离 userdata 首次配置 Provider 后执行 CTX-1，再完整退出重启并打开 Context 弹窗 | stateful init、provider/model binding、durable hydration | stateful-init | 是 | 是 | 首次调用可用，重启后测量/模型/历史仍在 | 不需第二次设置；ring 与弹窗恢复同一 sample，不跨会话串线 |
+
+CTX-1 至 CTX-4 至少执行两个独立完整真实 LLM root runs，其中 CTX-2 必须位于 ≥10 轮历史会话；
+CTX-5 使用隔离 userdata，不破坏用户现有 Provider 配置。
+
+### 增量测试义务矩阵
+
+| obligation_id | type | ac_id | risk | min_decisive_test | required_reason |
+|---|---|---|---|---|---|
+| TO-A10 | delivery | AC-10 | — | prepared snapshot identity 同时出现在 RunStart、Provider request 与 Inspector fixture | 直接证明单一事实源 |
+| TO-A11 | delivery | AC-11 | — | Persona/Memory/Skill/history/current/attachment/project 参数化出站契约测试 + CTX-1/2/3 | 证明产品 Context 内容恢复完整 |
+| TO-A12 | delivery | AC-12 | — | conversation allowlist、exclude 负向 canary、同 Run tool/reasoning 协议测试 | 证明上下文隔离且不破坏 Provider 协议 |
+| TO-A13 | delivery | AC-13 | — | 真实 SDK response usage → SessionDB history/state；success/unknown/cancel/missing usage 矩阵 | 证明 durable usage 权威正确 |
+| TO-A14 | delivery | AC-14 | — | catalog snapshot 的工具名/schema 与 Provider request、executor、Inspector 三方精确相等 | 证明工具目录没有 legacy 分叉 |
+| TO-A15 | delivery | AC-15 | — | ring/modal 组件与 WS hydration 测试 + CTX-1/3/5 真人点击 | 证明用户看到真实模型、用量和构成 |
+| TO-A16 | delivery | AC-16 | — | 生产入口引用图 + legacy symbol denylist/wiring test | 证明旧读路径不可达而不是仅口头弃用 |
+| TO-A17 | delivery | AC-17 | — | 多 Session、重复/乱序、长历史、重启、停止回归矩阵 | 证明共享 Context 基础设施无回归 |
+| TO-R7 | change-risk | AC-10, AC-13 | DUAL-AUTHORITY | 同一 Provider attempt 的 request fingerprint、usage sample 和 UI sample lineage 可关联 | 防再次产生三套事实 |
+| TO-R8 | change-risk | AC-11, AC-12 | CONTEXT-LEAK | 敏感/exclude/其他 Session canary 在真实 request_json 中均不存在 | 修改准备链路涉及隐私边界 |
+| TO-R9 | change-risk | AC-13, AC-17 | IDEMPOTENCY-ORDER | settle 重放与晚到 attempt 的 reducer/DB 事务测试 | 共享 durable state 必须防重复和倒退 |
+| TO-R10 | change-risk | AC-14, AC-17 | CATALOG-DRIFT | product catalog generation 变化与 runtime refresh 测试 | 工具 registry 是共享运行基础设施 |
+| TO-R11 | change-risk | AC-15, AC-17 | HYDRATION-REGRESSION | Session 切换、断线重连、完整重启后 UI 权威一致 | 前后端水合契约受影响 |
+
+### 本增量完成定义
+
+- AC-10 至 AC-17 全部有 required PASS 证据，所有 TO-A10…A17、TO-R7…R11 均有绑定 testcase。
+- 实际 Provider request、SDK usage ledger、Session Context authority 和 UI 展示共享可追溯 lineage。
+- 旧入口审计无未解释的生产可达 legacy Context 读取；保留兼容代码均有不可达/只读边界测试。
+- 自动化、类型检查、构建、critical/affected/full-surface smoke、至少两次真实 LLM Run、长历史与
+  隔离 userdata 冷启动全部通过；ARCHITECTURE 事实源同步，最终以 plan-test gate receipt 为准。

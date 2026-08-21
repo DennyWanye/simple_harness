@@ -2,6 +2,9 @@
   "schema_version": "1.4.0",
   "release_unit": {
     "id": "2026-08-21-sdk-context-authority-cutover",
+    "slice_id": "sdk-context-authority-cutover",
+    "parent_program": "simple-harness-sdk-productionization",
+    "scope_hash": "80692ee537ef405033b6e6a38f94fa19c5a2592aa01a78030e5d4a841b65a22b",
     "title": "SDK Context authority cutover",
     "acceptance_file": "plans/2026-08-21-sdk-context-authority-cutover/acceptance.md",
     "plan_file": "plans/2026-08-21-sdk-context-authority-cutover/plan.md"

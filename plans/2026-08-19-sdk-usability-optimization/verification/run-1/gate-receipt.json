@@ -1,0 +1,39 @@
+{
+  "acceptance_sha256": "2232288488f37668c56858f6b7939aae836910d9f0bde0af25e5d97ea47f77ed",
+  "auditor_input_sha256": "5568e1c71efe0209f6a3f9c486ba85979603c41856d6642f7fcc56e782d73aba",
+  "auditor_output_sha256": "3ef88e17a03f32c51a19f206732aba54d6da19d55dfb45ef83865e0fdc5356da",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "5a623a661e56bbb3c05627a860c44c5acb3304cd5c5c2aadd77196c64847d54d",
+  "dirty_patch_sha256": "97c545029e36772274648414b3c5f7bb2ff20beb38c8b16ba67ff1d534c6a41b",
+  "evidence_manifest_sha256": "d5994a9942e1c582df04266777cc0d7fe30caca618e33cce2b4662a05408ac01",
+  "exclusion_scope": [
+    "plans/2026-08-19-sdk-usability-optimization/verification/run-1"
+  ],
+  "finalized_at": "2026-08-19T04:59:05+0800",
+  "fixture_only": false,
+  "head": "f2460588ae6a9b4af12587f2bdca48031c7bef31",
+  "ledger_sha256": "f3d5a76bc37d47990e8346d3e471cd440281f3b15dfc139e10765c0607eee750",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "slice-1",
+  "scenario_statuses": {
+    "COLD-1": "PASS",
+    "S1-api-compat": "PASS",
+    "S1-conformance": "PASS",
+    "S1-fail-closed": "PASS",
+    "S1-pytest-baseline": "PASS",
+    "S1-surface-smoke": "PASS",
+    "S1-vendor-sha": "PASS"
+  },
+  "schema_version": "1.4.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "346ea8380be046be9259fd396e107dfc1690e2fc483cf94017c08df8acf9be7d",
+  "tested_code_head": "f2460588ae6a9b4af12587f2bdca48031c7bef31",
+  "timing_summary": {
+    "declared_ms": 14400000,
+    "entries": 4,
+    "measured_ms": 0
+  },
+  "validator_version": "1.4.0"
+}

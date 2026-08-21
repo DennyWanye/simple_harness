@@ -7559,8 +7559,8 @@ async def _build_product_sdk_runtime_stack(
         def current_generation(self):
             return self._target().current_generation()
 
-        def resolve(self, generation):
-            return self._target().resolve(generation)
+        def resolve(self, generation, content_fingerprint):
+            return self._target().resolve(generation, content_fingerprint)
 
     class _ProductionProjectionPumpProxy:
         async def start(self):

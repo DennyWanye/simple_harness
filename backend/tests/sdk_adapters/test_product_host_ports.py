@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from simple_harness import CallId, RequestId, RunId, fingerprint_json
-from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
 from simple_harness.execution.dispatch import (
     ProviderInvocationCoordinator,
     ProviderInvocationUnknownError,
@@ -44,6 +44,7 @@ from deskpet.sdk_adapters.capability_host import (
 from deskpet.sdk_adapters.context import ProductContextAdapter
 from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
 from deskpet.sdk_adapters.provider import (
+    _ProductOpenAICompatibleProvider,
     ProductProviderAdapter,
     ProductProviderInvocationCoordinator,
 )
@@ -81,6 +82,30 @@ def test_provider_restores_cooperative_task_cancellation() -> None:
             await client.aclose()
 
     asyncio.run(case())
+
+
+def test_input_text_attachment_is_lowered_only_at_provider_wire_boundary() -> None:
+    message = Message(
+        MessageRole.USER,
+        (
+            ContentBlock.from_dict({"type": "text", "text": "read it"}),
+            ContentBlock.from_dict({
+                "type": "input_text",
+                "name": "fixture.txt",
+                "data": "FIRST LINE\nbody-canary",
+            }),
+        ),
+    )
+
+    payload = _ProductOpenAICompatibleProvider._message_payload(message)
+
+    assert payload["content"] == [
+        {"type": "text", "text": "read it"},
+        {
+            "type": "text",
+            "text": 'Attached text file "fixture.txt":\nFIRST LINE\nbody-canary',
+        },
+    ]
 
 
 @pytest.mark.asyncio

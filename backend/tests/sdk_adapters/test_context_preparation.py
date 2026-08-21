@@ -78,8 +78,23 @@ async def test_structured_attachment_is_private_and_bounded() -> None:
         attachment_blocks=({"type": "input_text", "data": "FIRST LINE\nbody-canary"},),
     )
     private = snapshot.private_record()
-    assert private["provider_messages"][-1]["content"][1]["data"].startswith("FIRST LINE")
+    attachment = private["provider_messages"][-1]["content"][1]
+    assert attachment["type"] == "input_text"
+    assert attachment["data"].startswith("FIRST LINE")
     assert "body-canary" not in str(private["attachments"])
+    public = DefaultDenySnapshotRedactor().redact(snapshot)
+    attachment_section = next(
+        section for section in public["sections"] if section["kind"] == "attachments"
+    )
+    assert attachment_section == {
+        "kind": "attachments",
+        "label": "Attachments",
+        "count": 1,
+        "estimated_tokens": attachment_section["estimated_tokens"],
+        "availability": "estimated",
+        "ref": "input_text × 1",
+    }
+    assert "body-canary" not in str(public)
 
     with pytest.raises(SdkAttachmentLimitExceeded):
         await service.prepare(

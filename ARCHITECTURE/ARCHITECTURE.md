@@ -1,4 +1,6 @@
-<!-- last-calibrated: 4b82e3b1e6a76e3bb90f57125013a9ca68d2d430 -->
+<!-- last-calibrated: e92883a5c52d406b30d4b4e212589fbe4fb44e13 -->
+
+# simple_harness Long-Running Agent Architecture Baseline
 
 ## Agent activity timeline boundary (2026-08-20)
 
@@ -19,8 +21,8 @@ technical diagnostics, event names/correlation, and hidden reasoning are
 never appended to the current or later model messages. A tool result can still
 be part of the normal model protocol for the execution turn that requested it;
 that does not make the separately projected UI detail a context source. Existing
-SessionDB/context assemblers remain the only authority for conversation history,
-memory, and model input.
+当前前台文字链的 `_assemble_sdk_messages` 是实际 conversation input owner；完整 Context
+assembler 尚未切入该生产链。
 
 The timeline reduces by stable event identity and causal/source order. A
 duplicate event is rendered once, an out-of-order event is placed according to
@@ -29,24 +31,73 @@ incomplete item, and late events cannot revive a terminal Run. Public tool
 projection remains default-deny, redacted, and byte-bounded; raw prepared,
 outcome, provider input/output, credentials, and reasoning are not returned to
 the frontend.
-# simple_harness Long-Running Agent Architecture Baseline
-
-> **Last verified: 2026-08-20**.
+> **Last verified: 2026-08-21**（代码锚点 `e92883a5c52d406b30d4b4e212589fbe4fb44e13`）。
 >
-> **当前执行 authority 状态**：SDK v0.1.1 Runtime 是**唯一生产 ingress 且执行链已接通**（2026-08-17 清理 + 2026-08-19 真机 E2E PASS）。当前状态：
+> **当前执行 authority 状态**：SDK v0.1.4 Runtime 是前台文字会话的唯一生产执行 authority。当前状态：
 >
-> - ✅ SDK Runtime 初始化与执行链：`_activate_product_sdk_runtime()` 创建 `_sdk_ingress`；所有 ingress（text/voice/background）经 `_execute_sdk_run()`（`backend/main.py:9228`，调用点 `:8147`）→ `SdkRuntimeIngress.start()` → `DeliveryDispatcher` 推送；assistant 回复经 `chat_v2_final` 回推前端。
+> - ✅ SDK Runtime 初始化与前台文字执行链：`_activate_product_sdk_runtime()` 创建 `_sdk_ingress`；
+>   `chat/chat_v2` 经 `_run_product_harness_chat()` → `_execute_sdk_run()`（当前定义约
+>   `backend/main.py:9513`）→ `SdkRuntimeIngress.start()` → `DeliveryDispatcher`；assistant 回复经
+>   `chat_v2_final` 回推。Voice 当前关闭；Companion/background 使用独立 SDK client/start 入口，
+>   不经过 `_execute_sdk_run()`。
 > - ✅ `_DeliverySink.deliver()` / `ProductDeliveryAdapter` 已接通（2026-08-17/19 两轮接线；host 侧缺口修复记录见 PROJECT_STATUS 2026-08-19 里程碑）。
 > - ✅ 旧 harness 死代码已删除（2026-08-17，~62k 行）；保留 23 个 harness 契约/引擎文件（非 `__init__.py` 口径，清单见 §1.2）供 companion/run_adapter.py 依赖链与契约类型引用。
-> - ⚠️ **已知残留（不阻塞主链路）**：`companion/run_adapter.py` 期望 `KernelRunClient` 但收到 SDK `RunClient`（接口不兼容，companion 后台功能不可用）；`memory_recall` tool 注册被 core-handler authority 清单挡住（`memory_recall_host_registration_deferred`）；curation 未接新 memory SDK（`oh4_curation_skipped reason=no_facts_store`）。
+> - ⚠️ **已知残留（不阻塞 foreground 主链路）**：`companion/run_adapter.py` 期望
+>   `KernelRunClient` 但收到 SDK `RunClient`（接口不兼容，companion 后台功能不可用）；
+>   `memory_recall_host_registration_deferred` 只表示 legacy Host V2 registry 未注册，不影响 SDK
+>   product 77-tool catalog 中已接通的 `memory_recall`；curation 未接新 memory SDK。
 > - ✅ 记忆链路（2026-08-19）：`SessionDB` 双写 SDK `memory.db`，recall/facts/digital-twin 委托 `simple-harness-memory-sdk`（边界事实源：[`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)）。
+> - ⚠️ **Context cutover 未完成（2026-08-21 代码校准）**：前台文字链路虽然进入 SDK Runtime，
+>   但 `_run_product_harness_chat` 构造的 `TurnInput` 没有被执行链消费；`_execute_sdk_run` 直接通过
+>   `_assemble_sdk_messages` 构造“公开工作叙述 system prompt + 最多 20 条普通 conversation 历史 +
+>   当前文本”。保留的 `ProductTurnPreparer` / `ProductTurnPreparationService` 和
+>   `ProductContextAdapter` 对该入口不可达，故 Persona、召回 Memory、Skill 指令、附件、项目/任务
+>   快照、Context OS budget/compaction 与会话 `model_params` 未进入真实首个 Provider request。
+> - ⚠️ **Context 观测 authority 未切换**：Context Inspector 仍独立读取 legacy persona/facts/V2
+>   registry/history，并用 `tool_count * 60` 估算；它不是 SDK frozen request 的视图。SDK
+>   `provider_invocations.usage_json` 有真实 usage，但 Session context usage 与 BillingLedger 仍读
+>   legacy `last_usage`/attempt store，因此 UI 可显示 `0/0` 或旧样本。
+> - 🚨 **Context Inspector 公开投影未满足隐私边界**：legacy breakdown 将 persona、facts 与历史
+>   preview 未经统一 public redactor 送到前端 `<pre>`；敏感 header/token/用户正文可能直接可见。
+>   该预览在切换到有界脱敏 frozen snapshot 前不能作为安全审计面。
+> - ⚠️ **Session/Run 隔离缺口**：SDK stack 当前按 provider/model 全局 refresh，前台 Run 通过全局锁
+>   串行，后台入口不共享同一运行锁；Session `model_params` 没有进入 Provider adapter。RunStart
+>   catalog generation 固定为 `1`，context-dependent tool handler 又收到静态
+>   `sdk-session/sdk-request/sdk-scope`，无法证明 Provider、executor、Inspector 和 Session identity
+>   使用同一冻结事实。
+> - ⚠️ **Inspector 请求隔离缺口**：`context_breakdown_request` 直接接受客户端 `session_id` 并读取
+>   对应 facts/history/project root，当前分支没有显式 owner/peer-group access fence；请求/响应也没有
+>   request id、snapshot id 或 expected authority version。切 Session、关闭重开或连续刷新时，前端
+>   只按 Session 接收，无法拒绝同 Session 的晚到旧响应。
+>
+> **2026-08-21 Context/模型/工具 cutover 对照**：
+>
+> | 关注点 | 当前生产 owner / 实际行为 | 已确认缺口 |
+> |---|---|---|
+> | Foreground messages | `_assemble_sdk_messages` | 只有 system + max-20 conversation + current；历史读取失败静默降级 |
+> | Persona / Memory / Skill / project / attachment | 只存在于未消费的 `TurnInput` 或不可达 preparer | 没进入首个 SDK Provider request |
+> | Tool schemas | 77 项 product manifest 同时注册给 SDK Provider/executor | Run payload 只留 names；generation 固定 `1`，Inspector 读另一个 V2 registry |
+> | Tool execution identity | SDK `ToolContext` + product fallback | metadata 不完整；Session/scope/workspace 可回退到 request/default 或固定假 id |
+> | Authorization / capability | unconditional ALLOW + 空 selectors；capability bridge 为 stub | 未达到历史 prepared grant/scope 的 fail-closed 语义 |
+> | Session model params | UI/SessionDB 保存，SDK stack 只消费 provider/model | thinking/fast/effort/context window 丢失；全局 stack refresh 跨 Session |
+> | Reasoning mode | official DeepSeek base URL 时硬编码 thinking enabled/high | 非 provider-neutral；DeepSeeker relay、Kimi 等不按 Session 配置 |
+> | Usage / cost | SDK invocation ledger 保存 usage；SDK price resolver 返回零价 | Session usage/BillingLedger 读 legacy 状态；辅助 narration 调用未独立建账 |
+> | Inspector | legacy 动态 probe + raw preview | 无 snapshot/request lineage、可乱序覆盖，并有敏感预览风险 |
+>
+> 三层工具事实必须分开：**Provider schema** 与 **SDK executor registration** 当前都是 product
+> manifest 的 77 项；**实际 capability/authorization/session-aware execution** 仍有上述 stub、ALLOW
+> 和 identity 缺口。不能用“Provider 看到了 77 个工具”推导所有工具语义已接通。
+>
+> 入口也必须分开：foreground text 走 §2；Voice disabled；Companion/background 走独立 SDK client
+> start；control/recovery 只做 lifecycle 操作。它们不得再统称为全部经过 `_execute_sdk_run()`。
 >
 > **当前生产链路**：
 > ```
-> backend/main.py (所有 ingress: text/voice/background)
->   -> _execute_sdk_run()  (main.py:9228)
+> chat/chat_v2 foreground text
+>   -> _run_product_harness_chat()
+>   -> _execute_sdk_run()  (main.py:9513 附近)
 >   -> SdkRuntimeIngress.start()  (deskpet/sdk_adapters/ingress.py)
->   -> simple_harness.runtime (SDK v0.1.1 Runtime, vendor wheel)
+>   -> simple_harness.runtime (SDK v0.1.4 Runtime, vendored wheel)
 >   -> DeliveryDispatcher -> _DeliverySink -> WebSocket 前端
 > ```
 >
@@ -54,11 +105,18 @@ the frontend.
 > 
 > ---
 > 
-> The SDK Runtime `simple_harness.runtime` is the only production execution owner. simple_harness has one main Session with multiple isolated top-level Runs; there is no Code/normal mode split. Every ordinary top-level Run is fixed to `agent.general`; the model chooses optional child Profiles through `workflow_spawn`, and a durable one-shot ticket binds the child Driver. DeepResearch new-run default remains immutable v7; historical v1-v6 runs remain registered for recovery and compatibility reads.
+> The SDK Runtime `simple_harness.runtime` is the foreground production execution owner. One local
+> owner/inbox may contain multiple UUID conversation Sessions; each Session may contain multiple isolated
+> top-level Runs. WebSocket transport id and peer-group identity are routing metadata, not Session or Run
+> identity. There is no Code/normal mode split. Every ordinary top-level Run is fixed to `agent.general`;
+> the model may choose optional child Profiles through `workflow_spawn`.
 
 > Current observability fact: workflow-node `started_at`/`ended_at`/status/attempt are durable in `workflow_node_attempts`, node `duration_ms` is durable in `trace_spans`, and `deepresearch_stage_timing` is a diagnostic mirror. Backend stdlib and structlog now share one JSON-lines formatter and one resolved user log directory; the rotating text log is diagnostic evidence, not the durable workflow authority. V7 additionally logs privacy-safe child id/attempt/status/reason/source count/duration; page content and full prompts are excluded.
 
-> Calibration map: §3 is explicitly retained as the pre-durable persistence baseline; §4.2/§4.3 and §5-§10 retain historical problem/design context. The header, §4.1, §11 and §13-§17 are current-calibrated production facts. DeepResearch detail lives in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md). §20 describes the SDK v0.1.1 post-cutover cleanup baseline.
+> Calibration map: 本页 header、§1-§2 是 2026-08-21 当前前台事实；§3、§4.2/§4.3、§5-§10、
+> §15-§18 是历史/目标设计记录，不得用作当前 foreground Context/authorization/model-binding 事实。
+> DeepResearch detail lives in [`SEARCH_GATEWAY_DEEPRESEARCH.md`](SEARCH_GATEWAY_DEEPRESEARCH.md).
+> §20 是 v0.1.1 时点的历史清理记录；当前安装版本以 `backend/pyproject.toml` 的 v0.1.4 wheel 为准。
 
 ## 1. System Shape
 
@@ -66,30 +124,32 @@ simple_harness is a local desktop product, not a generic agent framework. The ap
 product preparation path, one thin control plane and two available execution algorithms. Driver
 selection is not a text classifier.
 
-### 1.1 当前生产架构（使用 SDK v0.1.1）
+### 1.1 当前前台文字生产架构（使用 SDK v0.1.4）
 
 ```text
 Tauri shell + React UI
-        | WebSocket / audio / Tauri commands
-All ingress -> _sdk_ingress (SdkRuntimeIngress)
+        | chat/chat_v2 WebSocket
+Foreground text -> _run_product_harness_chat -> _execute_sdk_run
+        | _sdk_ingress (SdkRuntimeIngress)
         | simple_harness.runtime.RuntimePorts (SDK Runtime)
-        | ProductContextAdapter -> product services (session_db, capabilities, etc.)
+        | host 当前临时 payload assembler (_assemble_sdk_messages)
 simple_harness.runtime.kernel.RunKernel -> fixed root agent.general
         | simple_harness.runtime.drivers.react_loop (SDK ReAct Driver)
         | model may call workflow_spawn(profile_key)
         | durable ProfileLaunchTicket -> child ReAct OR Workflow Driver
         | simple_harness.workflow.WorkflowDriver (SDK Workflow Engine)
-ProductToolsAdapter -> product tool handlers (deskpet.tools.*)
-        | ProductAuthorizationAdapter -> permission system
+ProductToolsAdapter -> 77 registered product schemas/handlers
+        | current ProductAuthorizationAdapter policy is unconditional ALLOW
+        | capability search/describe/activate bridge is stubbed
         | simple_harness.execution.EffectExecutor
         | simple_harness.execution.UnitOfWork (SDK UoW on SDK execution DB)
 ProductDeliveryAdapter -> SessionDB / WS / TTS / artifacts
 ```
 
 **代码证据**：
-- `backend/main.py:9228`: `async def _execute_sdk_run(...)`（所有 ingress 的核心协调器）
-- `backend/main.py:8147`: `await _execute_sdk_run(...)`（真实调用点）
-- `backend/main.py:8468`: `_sdk_ingress.open()`（SDK ingress 被激活）
+- `backend/main.py:9513` 附近：`async def _execute_sdk_run(...)`（前台文字协调器）
+- `backend/main.py:8227`：`await _execute_sdk_run(...)`（当前前台调用点）
+- `backend/main.py` `_activate_product_sdk_runtime()`：`_sdk_ingress.open()` 激活 SDK ingress
 - `backend/deskpet/sdk_adapters/ingress.py:1-6`: 注释声明 "sole ingress for all product entry points"
 - `backend/main.py:6363`: `# Slice C: Use SDK Runtime instead of legacy harness`
 
@@ -113,19 +173,20 @@ adapters/product_turn_open.py、drivers/react_boundary.py。保留原因：`comp
 
 The SDK Runtime `simple_harness.runtime` is the production execution boundary. `backend/main.py` owns ingress/transport and composition, but not a second execution loop. The executable contract is exported from SDK's public API; the canonical lifecycle and recovery boundaries are defined in [`AGENT_HARNESS.md`](AGENT_HARNESS.md) and SDK documentation.
 
-## 2. Request Lifecycle (SDK v0.1.1 生产现状)
+## 2. Foreground Text Request Lifecycle (SDK v0.1.4 生产现状)
 
 **实现状态**: ✅ **已接通**（2026-08-17 ingress cutover 完成 + 2026-08-19 真机 E2E PASS：主聊天经 `_execute_sdk_run` 走通，assistant 回复经 `chat_v2_final` 回推前端）
 
 生产请求路径（当前架构）：
 
 ```text
-Main Session text / Tauri / startup recovery
-  -> _execute_sdk_run() ✅ main.py:9228（调用点 :8147）
+Main Session chat/chat_v2
+  -> _run_product_harness_chat()
+  -> _execute_sdk_run() ✅ main.py:9513 附近（调用点 :8227）
   -> SdkRuntimeIngress.start() ✅ sdk_adapters/ingress.py
-  -> ProductContextAdapter ✅ 已实现 (bridges product services to SDK ports)
-       (history/persona/memory/skills/attachments from product services
-        + ProductToolsAdapter with tool catalog + ProductAuthorizationAdapter)
+  -> host 临时 payload assembler `_assemble_sdk_messages`
+       (public narration system prompt + max 20 ordinary conversation rows + current text)
+       ⚠️ ProductContextAdapter/ProductTurnPreparer exist but are not reachable here
   -> simple_harness.runtime.kernel.RunKernel (SDK, top-level profile fixed to agent.general)
        -> simple_harness.runtime.drivers.react_loop (SDK ReAct Driver) -> same parent model
             -> direct answer or ordinary tools via ProductToolsAdapter
@@ -139,12 +200,13 @@ Main Session text / Tauri / startup recovery
 ```
 
 **代码证据**：
-- ✅ `backend/main.py:9228`: `_execute_sdk_run()` 核心协调器已实现（调用点 :8147）
-- ✅ `backend/main.py:8468`: `_sdk_ingress.open()` 打开 ingress barrier
+- ✅ `backend/main.py:9513` 附近：`_execute_sdk_run()` 前台文字协调器（调用点 :8227）
+- ✅ `backend/main.py` `_activate_product_sdk_runtime()`：`_sdk_ingress.open()` 打开 ingress barrier
 - ✅ `backend/deskpet/sdk_adapters/ingress.py`: `SdkRuntimeIngress` 提供 `.start()/.signal()/.cancel()/.query()/.wait_idle()` 方法
 - ✅ `backend/deskpet/sdk_adapters/composition.py`: 构建 SDK Runtime 并注入产品 adapters
-- ✅ `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 桥接产品服务到 SDK ports
-- ✅ `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 桥接产品工具到 SDK tool registry
+- ⚠️ `backend/deskpet/sdk_adapters/context.py`: `ProductContextAdapter` 存在，但前台文字生产入口未构造或调用它
+- ⚠️ `backend/deskpet/sdk_adapters/tools.py`: `ProductToolsAdapter` 注册 77 项 schema/handler；当前
+  capability bridge 仍是空 search/describe 与拒绝 activate，且 handler Context identity 不完整
 - ✅ `backend/deskpet/sdk_adapters/desktop_runtime.py:141-189`: `_DeliverySink.deliver()` 真实路由实现
 - ✅ `backend/deskpet/sdk_adapters/delivery.py`: `ProductDeliveryAdapter` 完整实现
 
@@ -158,19 +220,19 @@ async def wait_idle(run_id) -> None
 ```
 
 `backend/main.py` owns WebSocket/audio adapters and service composition.
-`ProductContextAdapter` freezes the provider/model/capability/product payload and describes legal
-child Profiles to the model; it does not select one. SDK `RunKernel` owns identity, coarse lifecycle
+当前 host 临时 assembler 只冻结有限消息与 capability names；完整产品 Context 尚未通过
+`ProductContextAdapter`/`ProductTurnPreparer` 进入前台文字 Run。SDK `RunKernel` owns identity, coarse lifecycle
 and recovery admission. For a root it resolves the fixed `agent.general` Profile; for a child it
 only dereferences a valid launch ticket. SDK ReAct Driver is the dynamic LLM/context/completion
-engine. Tool execution is reached through `ProductToolsAdapter` which bridges to product tool handlers in `deskpet.tools.*`. `ProductDeliveryAdapter` owns the
+engine. Tool execution is reached through `ProductToolsAdapter`; catalog registration 可达不代表所有
+capability/authorization/session-context 语义已接通。`ProductDeliveryAdapter` owns the
 projection to WebSocket, SessionDB and TTS.
 
-Context OS 工具权限不是全局 Registry 的别名。Preparer 把本轮
-`PreparedToolSet + ToolEligibilityContext` 序列化进 Run；恢复时 Text/ReAct
-与 child Workflow 都重建并重新校验 session/request、policy、visibility、schema
-fingerprint，任何漂移都 fail closed。Proposal 与 Effect 分别绑定同一 trusted
-`ToolExecutionContext`，执行前再补齐 stable call/effect id。
-Workflow 与 ReAct 的恢复准备都在 Harness ingress 进入 `open` 前完成。
+当前 authorization/tool context 仍有明确缺口：composition 注入 unconditional `ALLOW`、空
+resource selectors 与固定宽 grant；SDK ReAct `ToolContext` 不携带完整 metadata，产品 handler 会把
+Session/workspace 回退到 request/default workspace，`context_page_in` 更使用固定
+`sdk-session/sdk-request/sdk-scope`。历史 `PreparedToolSet + ToolEligibilityContext` fail-closed 设计
+尚未迁到这条 SDK foreground 链路。
 
 ReAct and Workflow deliberately remain different execution algorithms. Short
 chat does not write every token to the workflow checkpoint store. The fixed
@@ -546,13 +608,18 @@ Checkpoint compatibility is a versioned boundary. New rows use `checkpoint_type=
 
 The engine switch changes implementation identity. Native registrations publish new implementation/engine metadata and do not pretend to match a legacy LangGraph implementation hash. Terminal legacy runs remain queryable. Legacy nonterminal runs are not converted or resumed in this migration: startup deterministically moves them to `blocked` with `legacy_checkpoint_incompatible`, preserves their existing run/session/decision/pending-write rows as read-only evidence, closes no decision and executes no effect. A user retry creates a new native run through normal ingress, so decision nonce/version and Session run identity never cross engine identities. This is deliberately separate from the existing fork saga, whose `prepare_fork()` copies source workflow/version/hashes and therefore cannot be used as an engine migration transaction. Existing native fork restrictions remain fail-closed, with dangerous effects allowed only after the existing explicit confirmation.
 
-## 15. Context OS V1 Runtime
+## 15. Context OS V1 Runtime（历史目标；当前 foreground 未接入）
 
-Context OS V1 is the default request-context path. Both the bundled `config.toml` and `FeaturesConfig.context_os_v1` default to `true`. The single compatibility rollback is `context_os_v1=false`; it restores the preserved legacy assembler/preflight/schema path. ON and OFF are mutually exclusive for one request: Context OS does not shadow-run a second assembler, tool resolver or lossy compressor.
+> **2026-08-21 校准**：本节记录 2026-07 Context OS 的已实现组件与目标数据流，不是当前
+> foreground SDK 请求链。`context_os_v1` 虽仍可配置，但 `_execute_sdk_run` 不读取该开关；
+> `context_assembler` 在生产 service context 只注册空 slot。下述 planner/snapshot/attempt-store/
+> prepared-tool 断言对当前文字 Run 均不可当作已生效事实。
+
+历史设计中 Context OS V1 由 `context_os_v1=true` 启用；SDK cutover 后该 foreground 接线已经断开。
 
 ### 15.1 Owners and request flow
 
-The production flow is:
+历史目标 flow 是：
 
 ```text
 text/code/voice ingress
@@ -623,11 +690,10 @@ Rollback is intentionally one-dimensional:
 
 Automated verification and benchmark results are recorded in [`../plans/2026-07-13-context-os-v1/results.md`](../plans/2026-07-13-context-os-v1/results.md). Real Windows UI E2E remains a separate evidence boundary and is never inferred from unit tests or protocol-level calls.
 
-## 16. 伴生智能体成长能力现状
+## 16. 伴生智能体成长能力现状（Context 入口描述为历史）
 
-当前主消息线程仍按
-`ProductTurnPreparer → RunKernel → ReAct/Workflow Driver → Effect/UoW → RunPresenter`
-执行；Companion 长期层不会重建第二套 Harness。
+本节成长 Store/Router 事实仍供历史追踪，但下述主消息
+`ProductTurnPreparer → RunKernel` 入口已被 SDK cutover 绕过；当前 foreground 入口以 §2 为准。
 
 2026-07-25 Task 13 已在既有 Product Harness 上完成长期层的单一生产 authority 切换：
 
@@ -736,9 +802,13 @@ ordinary message -> top-level agent.general / ReAct
 - builtin Godot `1.0.2` 复用唯一文件/Shell/下载/应用/桌面原语，提供 Godot 探测、
   项目检查、CLI/编辑器运行知识与验证规则，不携带硬编码塔防模板。
 
-### 17.4 2026-07-27 校准：单一认知入口与授权资源闭环
+### 17.4 2026-07-27 历史校准：单一认知入口与授权资源闭环
 
-普通 Text 消息现在从 `ProductTurnPreparer.prepare_context()` 直接进入
+> **非当前生产事实**：普通 Text 现不进入 `ProductTurnPreparer.prepare_context()`；SDK composition
+> 当前也使用 unconditional ALLOW、空 selectors 与不完整 ToolContext metadata。以下内容保留为
+> cutover 前行为/目标契约。
+
+普通 Text 消息当时从 `ProductTurnPreparer.prepare_context()` 直接进入
 `prepare_direct_run()` 和 `RunKernel.start()`。`ProductVenueRunAdapter` 不再调用
 `route_intent()` 或 `plan_decision()`；旧方法仅供兼容测试/非生产调用保留。因而
 Context 较少的 IntentTriage 不能再 short-circuit、单独澄清、插入另一份计划或阻止
@@ -779,9 +849,14 @@ nonce 与 activate 仍绑定规范化后的 exact identity。
 
 详细实现约束和测试证据见 [`AGENT_HARNESS.md`](AGENT_HARNESS.md)。
 
-## 18. 2026-08-03 实施前校准：Session 模型一致性与运行可见性缺口
+## 18. 2026-08-03 历史校准：Session 模型一致性与运行可见性缺口
 
-当前主执行链已经把 Session 模型绑定作为 root/child Run 的事实源：
+> **2026-08-21 覆盖说明**：Session binding 仍能解析 provider/model，但当前 foreground 只用
+> `(provider_id, model)` 刷新一个全局 SDK stack；`model_params`、thinking/fast/context window 未冻结
+> 进本 Run。不同 Session 的前台 Run被全局锁串行，background 又不共享该锁。以下“start snapshot
+> 已冻结全部模型策略”的表述仅代表 cutover 前设计。
+
+当时主执行链计划把 Session 模型绑定作为 root/child Run 的事实源：
 `llm.resolution.resolve_session_provider_chain()` 从
 `state.db/code_session_provider` 读取 `provider_id/preferred_model/model_params`，
 `main._resolve_agent_provider_chain()` 构造该 Run 的 provider chain，Host start snapshot
@@ -802,14 +877,11 @@ resolver。这些调用只有 purpose 或没有完整 attempt 标签，没有 Se
 维护任务和属于某轮的附属任务目前也没有类型化 policy 区分。这是模型一致性修复的主要结构缺口，
 不能靠捕获单个 HTTP 402 补丁解决。
 
-Context Usage 有两个事实层。成功调用后，`ContextAttemptStore`/provider usage 生成实时 payload，
-并通过 `session_context_usage_history` 持久化；重启请求优先恢复最新 durable sample。若 Session
-尚无 sample，`context_usage_request` 当前仍使用全局 `effective_llm_model(config)` 生成
-`0 / window` stub，而不是读取 Session binding。因此标题栏模型可以是 Kimi，圆环却短暂显示
-GLM。无权威样本时必须改为“Session 绑定模型 + 尚无用量”，不能把全局默认值伪装成测量值。
-当前历史恢复还会从“最近一个有 context window 的 sample”取 model/window，却从历史最后一条
-记录取 token/time；provider attempt 与 compaction sample 并存时可能组合成不存在的混合状态。
-恢复必须使用一个原子权威 sample，或使用带来源/version 的明确 reducer。
+历史上 Context usage 曾从全局 `effective_llm_model(config)` 生成 `0/window` stub，并可能混合不同
+sample；该缺陷已由 SessionDB `ContextUsageStateV2` reducer 修复。当前无测量时只从 Session binding
+构造明确的 `binding_only` state，不再伪造全局 measured-zero。尚未修复的是：真实 SDK
+`provider_invocations.usage_json` 没有桥接到这份 V2 authority，终态采样仍探测 legacy
+`ContextAttemptStore/provider.last_usage`，所以状态会长期停在 binding-only 或误读旧 legacy sample。
 
 Harness Inspector 的当前生产 authority 是 V3：
 `HarnessInspectorPanel -> harness_inspector_snapshot_request -> HarnessPublicReadService -> PublicRunSnapshotV3`。

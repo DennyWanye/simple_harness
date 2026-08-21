@@ -215,6 +215,8 @@ def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> Non
     assert "ContextPreparationMode.CONSUMER_PREPARED" in source
     assert "conversation_query=conversation_memory" in source
     assert "conversation_sink=conversation_memory" in source
+    assert "def resolve(self, generation, content_fingerprint):" in source
+    assert ".resolve(generation, content_fingerprint)" in source
 
 
 @pytest.mark.asyncio

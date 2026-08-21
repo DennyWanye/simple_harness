@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import pytest
 import httpx
 
-from simple_harness import freeze_json
+from simple_harness import freeze_json, thaw_json
 
 from deskpet.memory.session_db import SessionDB
 from deskpet.sdk_adapters.context_authority import (
@@ -129,6 +129,51 @@ async def test_pump_projects_every_terminal_attempt_but_only_trusted_usage(tmp_p
         "sdk-provider-projection-v1"
     )
     assert cursor is not None and cursor["source_sequence"] == 5
+    await db.close()
+
+
+@pytest.mark.asyncio
+async def test_budget_only_unknown_receipt_advances_without_usage_measurement(
+    tmp_path,
+) -> None:
+    receipt = _receipt(
+        1,
+        "unknown",
+        error_code="provider_cancelled_after_handoff",
+    )
+    payload = thaw_json(receipt.payload)
+    payload["usage"] = {
+        "budget": {
+            "kind": "unknown",
+            "estimated": False,
+        }
+    }
+    receipt = _Receipt(
+        receipt.sequence,
+        receipt.invocation_id,
+        receipt.invocation_version,
+        receipt.run_id,
+        receipt.execution_session_id,
+        receipt.request_id,
+        freeze_json(payload),
+        canonical_sha256(payload),
+        receipt.created_at,
+    )
+    db = SessionDB(tmp_path / "state.db")
+    pump = SdkProviderProjectionPump(
+        _Source([receipt]), db, context_resolver=_context
+    )
+
+    assert await pump.run_until_idle() == 1
+    attempts = await db.list_sdk_provider_attempts("session-a")
+    assert len(attempts) == 1
+    assert attempts[0]["state"] == "unknown"
+    assert attempts[0]["usage"] is None
+    assert await db.list_context_usage_history("session-a") == []
+    cursor = await db.get_sdk_provider_projection_cursor(
+        "sdk-provider-projection-v1"
+    )
+    assert cursor is not None and cursor["source_sequence"] == 1
     await db.close()
 
 

@@ -1,8 +1,11 @@
 # SDK Context authority cutover — black-box testcases
 
-Status: oracle draft only; nothing here has been executed. Raw evidence belongs under
-`.local-test-evidence/2026-08-21/<scenario>/<root-run>/`; credentials, cookies, Authorization,
-private reasoning and attachment bodies must never be captured.
+Status: CTX-1～CTX-5 and SMOKE-CRITICAL executed with macOS Computer Use + real DeepSeek on
+2026-08-21 and PASS. Deterministic/automated and wider affected/full surface gates retain their own
+independent receipts; this file does not promote them from this manual run. Reviewable conclusions are in
+`plans/2026-08-21-sdk-context-authority-cutover/verification/run-1/manual-results.md`. Raw evidence belongs
+under `.local-test-evidence/2026-08-21/`; credentials, cookies, Authorization, private reasoning and
+attachment bodies must never be captured.
 
 For every case record scenario, Session/root/request/snapshot/invocation ids, binding epoch and
 catalog generation/fingerprint where applicable. UI cases use Computer Use only: before each action

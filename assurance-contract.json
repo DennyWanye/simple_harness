@@ -1,26 +1,32 @@
 {
   "profile": "standard",
-  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9"],
+  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9", "AC-10", "AC-11", "AC-12", "AC-13", "AC-14", "AC-15", "AC-16", "AC-17"],
   "protected_assets": [
     {"id": "ASSET-1", "description": "用户会话内容、工具参数和工具结果"},
     {"id": "ASSET-2", "description": "模型上下文边界与 provider 凭据"},
-    {"id": "ASSET-3", "description": "canonical Run 状态与可审计执行记录"}
+    {"id": "ASSET-3", "description": "canonical Run 状态与可审计执行记录"},
+    {"id": "ASSET-4", "description": "冻结的实际 Provider Context、附件/项目引用与 durable token usage lineage"}
   ],
   "trusted_assumptions": [
     {"id": "TRUST-1", "description": "本地 OS、开发者账户和受控测试桌面环境可信"},
-    {"id": "TRUST-2", "description": "现有 canonical Run/event authority 与 public redactor 是生产事实源"}
+    {"id": "TRUST-2", "description": "现有 canonical Run/event authority 与 public redactor 是生产事实源"},
+    {"id": "TRUST-3", "description": "SDK ProviderResponse 和 provider invocation ledger 中的 trusted usage 可信，外部 Provider 允许合法缺失 usage"}
   ],
   "in_scope_failures": [
     {"id": "FAIL-1", "description": "乱序、重复、缺字段或超长 activity 事件"},
     {"id": "FAIL-2", "description": "工具失败、投影失败、终态晚到和跨 Run 串线"},
     {"id": "FAIL-3", "description": "UI-only activity 被错误注入当前或后续模型上下文"},
     {"id": "FAIL-4", "description": "敏感参数、凭据或隐藏 reasoning 被公开展示"},
-    {"id": "FAIL-5", "description": "SDK 公开叙述未投影，或思考区运行/终态折叠状态错误"}
+    {"id": "FAIL-5", "description": "SDK 公开叙述未投影，或思考区运行/终态折叠状态错误"},
+    {"id": "FAIL-6", "description": "SDK Provider 请求、Context Inspector 与 durable usage 继续读取不同的新旧 authority"},
+    {"id": "FAIL-7", "description": "Persona、Memory、Skill、附件、项目快照或普通历史在 SDK cutover 后静默丢失"},
+    {"id": "FAIL-8", "description": "legacy 工具目录/估算与真实 SDK catalog/schema 漂移，或旧生产入口仍可达"},
+    {"id": "FAIL-9", "description": "usage 缺失、重复、乱序、取消、unknown、重启或多 Session 导致伪造测量、重复累计或串线"}
   ],
   "in_scope_adversaries": [],
   "out_of_scope_conditions": [
     {"id": "OOS-1", "description": "宿主 OS 或 provider 本身已被攻陷"},
     {"id": "OOS-2", "description": "未经批准的远程协作者读取本机原始数据库"}
   ],
-  "maximum_acceptable_impact": "Activity 丢失只能表现为记录不完整；不得改变 Run 终态、重复执行工具、泄漏凭据或把 excluded 数据加入模型请求。"
+  "maximum_acceptable_impact": "Activity 或 usage 缺失只能明确表现为记录不完整/unavailable；不得改变 Run 终态、重复执行工具、泄漏凭据、丢失既有产品 Context 能力、跨 Session 串线或把 excluded 数据加入模型请求。"
 }

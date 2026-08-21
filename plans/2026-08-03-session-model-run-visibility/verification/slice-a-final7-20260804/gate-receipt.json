@@ -1,0 +1,22 @@
+{
+  "acceptance_sha256": "e3ea32764cf3fe654262487581902f49c67a47fe1b6d1b6dc7252769cb418d60",
+  "auditor_input_sha256": "86db63cbb0c47d4d75718cc40c780534dfe531e00e27e7fd225b5b621eb5fefb",
+  "auditor_output_sha256": "7076831d75b0b6b3d4d6c219ff0142cb25a43e53fd84d6a10a11e398886ad55d",
+  "content_digest": "1f2d475c003184836b88b2c92bff594f1af5cb93acef382b39ccfba4ffcdb1fc",
+  "dirty_patch_sha256": "85d676015d165f366999861fb68e13aca3fc92cfd9ee037479538a38460f315b",
+  "evidence_manifest_sha256": "ba12dd81693256ae157709c58bc07ed40fa9c7b61978ad4166fa992b1b549ab0",
+  "finalized_at": "2026-08-04T02:12:50+0800",
+  "fixture_only": false,
+  "head": "03fc0782c6f7df4c12e4cf3c1318649e21dfd498",
+  "ledger_sha256": "7df2b342c0f40aa9d606e61747ddaf5f3e9b1a135d60ef410eb5887f27398561",
+  "receipt_version": 1,
+  "run_id": "session-model-slice-a-20260803",
+  "scenario_statuses": {
+    "S-SRV-1": "PASS",
+    "S-SRV-4": "PASS"
+  },
+  "schema_version": "1.1.0",
+  "state": "SHIPPABLE",
+  "testcase_lock_sha256": "c3374311536c8bb0bc40161a1433b5523242a819c12b939b3c20d433b83a7e1b",
+  "validator_version": "1.1.0"
+}

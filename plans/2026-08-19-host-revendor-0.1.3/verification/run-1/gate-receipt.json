@@ -1,0 +1,38 @@
+{
+  "acceptance_sha256": "94be7335cdff099e3d6265917c213418fc9e4ab7bf51786e792800779573a904",
+  "auditor_input_sha256": "d3b7719e8712fc1797bf9b28f86988781c0c10831d3dca2bf4b94699db854ba1",
+  "auditor_output_sha256": "fe432ab080c4423cf15d346e88cf815d3ea3e9cd0ee3cad9216aeaca59092138",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "5dcad7c8feb836f258535938a2b129c01da805abe97c28537ec53cbbab87a483",
+  "dirty_patch_sha256": "4dd7c71e0248a66afcd740425a1916c5ae672379ac2c901267208c370e54c102",
+  "evidence_manifest_sha256": "4464f16d11c297d24e63515b4b99c5d3a9ee0ecedc53287d331dd592c45952e5",
+  "exclusion_scope": [
+    "plans/2026-08-19-host-revendor-0.1.3/verification/run-1"
+  ],
+  "finalized_at": "2026-08-19T15:22:12+0800",
+  "fixture_only": false,
+  "head": "1603603592628c1fedc8ab5c3effbf61b4b550ee",
+  "ledger_sha256": "c3a62071c99418d043d162aeabf0a3e04bc3bafe056810d42014ac7ff592e910",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "slice-1",
+  "scenario_statuses": {
+    "V-COLD": "PASS",
+    "V-api-compat": "PASS",
+    "V-regression": "PASS",
+    "V-ssot-single-point": "PASS",
+    "V-surface-smoke": "PASS",
+    "V-vendor-sha": "PASS"
+  },
+  "schema_version": "1.4.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "346ea8380be046be9259fd396e107dfc1690e2fc483cf94017c08df8acf9be7d",
+  "tested_code_head": "1603603592628c1fedc8ab5c3effbf61b4b550ee",
+  "timing_summary": {
+    "declared_ms": 1800000,
+    "entries": 3,
+    "measured_ms": 0
+  },
+  "validator_version": "1.4.0"
+}

@@ -60,6 +60,27 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
     @staticmethod
     def _message_payload(message: Message) -> dict[str, Any]:
         payload = OpenAICompatibleProvider._message_payload(message)
+        content = payload.get("content")
+        if isinstance(content, list):
+            provider_content: list[dict[str, Any]] = []
+            for raw_block in content:
+                if not isinstance(raw_block, Mapping):
+                    continue
+                block = dict(raw_block)
+                if block.get("type") == "input_text" and isinstance(
+                    block.get("data"), str
+                ):
+                    name = str(block.get("name") or "attachment.txt").strip()
+                    provider_content.append({
+                        "type": "text",
+                        "text": (
+                            f'Attached text file "{name}":\n'
+                            + str(block["data"])
+                        ),
+                    })
+                else:
+                    provider_content.append(block)
+            payload["content"] = provider_content
         raw_reasoning = message.metadata.get(
             _PROVIDER_REASONING_CONTENT_METADATA_KEY
         )

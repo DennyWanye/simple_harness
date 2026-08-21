@@ -1,0 +1,33 @@
+{
+  "acceptance_sha256": "fd32afac37e21dc846c1ef93ca0ceffbfb5b2d96b133d11970eea7bcfc0cdbe6",
+  "auditor_input_sha256": "7a1a14954f022f9b1997bba6dc1dd71d7fe646785ea69785aca8ed9b5fb3a371",
+  "auditor_output_sha256": "dfb599ad99586fdd230ae1cab8c3c9b582c09a410e58a1ef6628fc1262f23505",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "3ebe0ac0a38a90e8b78dbf897848475a2412997869701b654f991bc4027d7dd7",
+  "dirty_patch_sha256": "1b683e78ffcfe624166c7fb8bb421db8fdc8e3e1d5168b0b4f67f94794e43819",
+  "evidence_manifest_sha256": "88f67ab91e6af8a1bb645ba648bc3c055be4b51c6a828b3d7a3f9066d32fd422",
+  "exclusion_scope": [
+    "verification/run-1"
+  ],
+  "finalized_at": "2026-08-20T04:03:39+0800",
+  "fixture_only": false,
+  "head": "d8ec0d33c11bb7de4b15664a1d3df2f3293664b0",
+  "ledger_sha256": "a99027e86a907e679ca6328f73746622da1f9874663e23bd8f6d88be978f1081",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "c1-revendor",
+  "scenario_statuses": {
+    "c1-verify": "PASS"
+  },
+  "schema_version": "1.4.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "346ea8380be046be9259fd396e107dfc1690e2fc483cf94017c08df8acf9be7d",
+  "tested_code_head": "d8ec0d33c11bb7de4b15664a1d3df2f3293664b0",
+  "timing_summary": {
+    "declared_ms": 0,
+    "entries": 0,
+    "measured_ms": 0
+  },
+  "validator_version": "1.4.0"
+}

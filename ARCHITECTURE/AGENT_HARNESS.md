@@ -14,6 +14,101 @@
 `phase=ready`、registrations 发布与正常关闭；SDK adapters `171 passed`，SDK/Memory/outbox/reset
 聚焦组合 `90 passed`。
 
+### SDK 0.2.0 consumer-prepared Context 与 Memory 双 outbox（2026-08-21）
+
+前台 root 与 continuation 已切到 SDK `consumer_prepared`：Host 用稳定 request/continuation
+identity claim `ContextStagingRepository` lease，只有 owner 执行 Persona、历史、Skill、附件和一次
+bounded Memory recall；完整私有 provider messages 以 projection-v2 stage/hash 为权威，随后才写公开
+snapshot 并 start/signal。召回 Memory 是 `USER` 角色的 `untrusted_data` segment，不再伪装成
+SYSTEM 指令；winner stage 可由并发 caller 或崩溃恢复复用，避免二次 recall。
+
+Harness root/continuation、Presenter 和 SDK 派生 SessionDB projection 明确标为
+`memory_authority=harness`，由 SDK execution memory outbox 唯一写入 Memory。非 Harness 的普通产品
+conversation message 则在 `state.db` 同事务写 `product_memory_outbox`；dispatcher 使用 frozen
+`state_db_instance_id + user_id + session_id + source_event_id/hash` 做 CAS claim、lease reclaim、重试、
+dead-letter、ack 和有界 cleanup。tool/workflow/companion/excluded projection 不进入该 outbox，旧的
+事务后 best-effort `MemoryBackend.append_message` 已删除。
+
+每个 Session 的 Memory user 由 `memory_user_bindings` 一次绑定且不可变；Memory recall/facts/twin 与
+owner-scoped tool 都显式携带或从该绑定解析 `user_id`，跨 user/session mismatch fail closed。开发期
+schema 变更使用 `reset_agent_data.py` 在服务停止且显式确认后精确删除并空库初始化 state/execution/
+memory 三库及 sidecar，不提供面向最终用户的运行时“全面抹除”。能力默认 ON。
+
+精确候选为 Harness `0.2.0`（source `869c76f2050b5f492b4edee68f4ce2400030b832`，wheel
+SHA-256 `e1f7d4b10f6d02c071b8fabfddeaf52b48f60431cba0fefca1aa349c7be3d233`）与 Memory
+`0.3.0`（source `87820fe2c4cdde21c3a9356ca461b93fe00aadcb`，wheel SHA-256
+`6f0682fdcd958a666e52a294ba5c6e4e721bed53f1669f1f7af63cd33027f014`）。D1 58、D2/exact
+17、Rust diagnostics 4、D3 615 项与 build 已通过。simple_harness macOS 真人消费者回归已补齐：
+CTX-1～CTX-5、Provider/Session/Context/附件/历史重启与停止恢复 critical surface smoke 全部 PASS；原始证据
+只保存在 ignored `.local-test-evidence/2026-08-21/sdk-context-consumer-regression/`。
+
+### 文本附件与取消回执恢复边界（2026-08-21 真人回归修复）
+
+消息页现在提供可见的文本附件入口，支持 `.txt/.md/.csv/.json/.yaml/.yml/.log`，单块上限
+8 MiB、单轮合计上限 16 MiB。Host 在 consumer-prepared private stage 中保留结构化
+`input_text` block，并将正文纳入附件预算；公开 Context snapshot 只投影附件种类、数量和估算
+token，不投影文件正文。只有到 OpenAI-compatible Provider wire boundary 时，`input_text` 才降低为
+Provider 支持的 `text` block，因此 SDK 对 consumer-prepared message/hash 的一致性检查不会被破坏。
+
+Provider terminal outbox 允许取消/超时回执只携带 `budget` 元数据而没有 token measurement。
+Projection pump 现在只把嵌套 `usage` 或含 token measurement key 的旧直出对象当作真实 usage；
+budget-only `unknown` 仍会记录 attempt 并推进有序 cursor，但不会伪造 Context usage。真人停止后现场
+cursor 从 sequence 24 重放到 27，下一真实 DeepSeek Run 完成、Context usage 更新且 UI 回到空闲。
+对应自动化为后端聚焦 `102 passed`、InputBar `20 passed`、TypeScript PASS。
+
+### SDK Context authority cutover 缺口（2026-08-21 代码校准）
+
+> 本节是切换前校准记录；上节 0.2.0 consumer-prepared 链路已关闭其中 Context/Memory 缺口。
+
+当前前台文字生产链不是本文历史章节所描述的
+`ProductVenueRunAdapter.open → ProductTurnPreparer`。真实可达链路为：
+
+```text
+chat/chat_v2
+  -> _run_product_harness_chat (构造 TurnInput，但没有下游消费)
+  -> _execute_sdk_run
+  -> _assemble_sdk_messages
+  -> SdkRuntimeIngress.start
+  -> ProductProviderAdapter.invoke
+```
+
+`_assemble_sdk_messages` 当前只发送公开工作叙述 system prompt、最多 20 条
+`context_visibility=conversation` 且 projection/role allowlist 通过的历史，以及当前用户文本；
+SDK Provider 另接收当前产品 Tool catalog。Persona、召回 Memory、Skill 指令、附件、项目/任务
+快照、Context OS budget/compaction、会话 thinking/fast/effort 尚未被这条链路冻结。保留的
+`ProductTurnPreparationService`、`ProductVenueRunAdapter.open` 与 `ProductContextAdapter` 对普通文字
+入口不可达，下文关于它们的描述是目标边界或 cutover 前历史，不能当作当前生产事实。
+
+同一 SDK Run 内，assistant tool call、tool result 与 DeepSeek 私有 reasoning metadata 仍按 Provider
+协议回送；私有 reasoning 不落 SessionDB，新 Run 历史只读取普通 conversation 投影。这个正确边界
+不能替代缺失的完整首轮 Context 准备。
+
+已确认的相邻生产缺口还包括：Session `model_params` 未传到 `ProductProviderAdapter`；全局 SDK
+stack 通过 provider/model refresh 切换并串行化前台 Run，后台入口可能与切换竞态；RunStart 的
+catalog generation 被固定为 `1`；若工具 handler 查询 execution context，会得到静态
+`sdk-session/sdk-request/sdk-scope`，而非本次 Run 身份；SDK usage 未桥接到 Session context usage 与
+现有 BillingLedger。修复前，Context Inspector 的 legacy 独立估算也不能作为真实请求证据。
+
+### SDK Run 停止身份与取消收束（2026-08-21）
+
+消息页停止操作始终携带产品层 canonical `root_run_id`；Host 在 SDK Run 存活期维护
+`root_run_id -> product-sdk-*` 的有界映射，只把 SDK 内部 id 传给 Runtime Client。映射在
+SDK start 前注册，覆盖最早 Provider/tool 活动窗口，并在所有成功、失败和取消出口清理。这样
+UI 不再把 canonical id 误传给只认识内部 id 的 SDK，也不会因 `KeyError` 击穿 control WebSocket
+后让任务继续运行。
+
+Provider 请求已经物理 handoff 后，SDK invocation ledger 仍可按副作用安全规则结算为
+`unknown`；这与用户要求停止整个 Run 是两个不同事实。产品 Provider coordinator 只在取消 token
+已确认时，把这条 invocation-level unknown 重新传播为 Run-level cancellation，使 Kernel 收束为
+durable `cancelled`，同时保留 provider invocation 的 unknown 账本供对账。Host 对已确认的用户取消
+不会再把瞬时 `running/waiting` 查询结果投影成 `run_failed`；`chat_v2_interrupted` 负责唯一的 UI
+取消投影和输入区复位。
+
+永久回归覆盖 canonical/internal id 翻译、start 前注册与 finally 清理、缺失 id 幂等、Provider
+handoff 后取消和瞬时 waiting 不漂成失败。2026-08-21 Computer Use 真机 Run
+`131d90558c0759679743fd636d8169f7` 在点击“停止”后约 0.7 秒收束为 `cancelled`，没有继续回复、
+`run_failed` 或 WebSocket 重连。
+
 ### 执行时间线与模型上下文边界（2026-08-20 校准）
 
 Inspector 的“Agent 执行过程”是 canonical Run ledger 的只读公开投影。阶段、工具动作、状态、

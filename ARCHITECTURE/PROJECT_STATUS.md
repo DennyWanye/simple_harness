@@ -16,7 +16,7 @@
   回归 `18 passed`；`git diff --check` PASS。当前环境未安装 Ruff 可执行文件，因此未将 Ruff 冒充为
   已运行门禁。
 
-## 2026-08-21 Agent Runtime SDK 0.2/0.3 消费者切换（自动化完成，D-UI 阻塞）
+## 2026-08-21 Agent Runtime SDK 0.2/0.3 消费者切换（含 simple_harness 真人回归）
 
 - **生产链**：SDK `build_production_runtime` 默认启用 conversation Memory 与
   `consumer_prepared` staging；root/continuation 以稳定 identity claim private projection-v2 stage，
@@ -37,8 +37,13 @@
   `73 files / 615 tests`；production build PASS。D-ALL 发现既有 baseline inventory 未登记 12 failures 与
   ESLint 171 problems，原始日志在 ignored `.local-test-evidence/2026-08-21-agent-runtime/D-ALL/`。
   本轮生产 composition 与 SDK/Memory/outbox/reset 聚焦回归 `226 passed`。
-- **阻塞**：当前执行环境没有 windows-mcp/Windows Computer Use，S-AR-1/3/4/6 真 UI D-UI 不可执行；
-  按手测纪律不能用 WebSocket、pytest 或脚本回放替代，因此 Task 8 保持 BLOCKED。
+- **真人消费者回归**：macOS Computer Use 已通过真实 `.app` 完成 CTX-1～CTX-5 与 critical surface smoke。
+  两个 fresh root 都能经 UI 选择公开文本附件并回答首行，公开 Context 仅显示 `input_text × 1` 与
+  估算预算；历史、多轮、缺失文件、Provider/Session/Context 冷重启均通过。真人停止还暴露并修复
+  budget-only `unknown` 回执卡死 Provider projection cursor 的缺陷：现场 cursor 从 24 连续推进至 27，
+  下一真实 Run `225d6f74-23d8-40d9-a105-3b5a53d78c5a` 完成并回到 `✓ 空闲`。最终聚焦回归
+  后端 `102 passed`、InputBar `20 passed`、TypeScript PASS；证据索引见 ignored
+  `.local-test-evidence/2026-08-21/sdk-context-consumer-regression/RESULTS.md`。
 
 ## 2026-08-21 Provider 设置与 SDK 冷启动真机修复
 
@@ -1542,6 +1547,7 @@
 | **技能系统** (17 个 first-party Capability Skill Pack + 自动披露 + marketplace) | ✅ 生产能力基础可用 — first-party Skill 只经 immutable Capability Pack 与 Manager-backed snapshot resolver 提供；`skill_invoke`/slash 使用同一次 Run catalog capture 和 typed frozen scope，Personal Workflow 通过固定解释器与 Effect/UoW 执行。Task 13 已删除进程内 `ToolPathRecorder`、旧 Codifier/CandidateProposal、Presenter/Voice codify 回调和裸 candidate confirm；成长候选改走 durable evidence → candidate → evaluation → activation saga。legacy user Skill 仅作为 migration source/只读兼容面，不再拥有成长写 authority。 | [当前架构事实](./ARCHITECTURE.md#16-伴生智能体成长能力现状) · [Companion 模块](./COMPANION_GROWTH.md) |
 | **Companion 长期成长** | ✅ **2026-07-27 Task 0～16 完成并默认生效** — `companion.db` v6、state.db v21、workflow.db v23，模型语义成长判定、唯一 Router、trusted control lease、PreferenceResolver、Runtime、动作策略、owner-aware Capability、candidate/evaluation/activation、失败吸收与重规划、Personal Workflow、V2 Reminder、durable 通知/history 与详情 UI 均已进入唯一 production path。旧 Codifier/ToolPath/Reminder writer 已退休。真实主消息页 S-1～S-5/S-8 `6/6 PASS`，确定性 S-6/S-7/S-9 `3/3 PASS`；deterministic smoke `DECISION: SHIP`。 | [模块架构](./COMPANION_GROWTH.md) · [真人结果](../plans/2026-07-24-human-anchored-companion-growth/evidence/manual-results.md) · [plan](../plans/2026-07-24-human-anchored-companion-growth/plan.md) |
 | **Agent Harness / 主消息页运行观察** | ✅ **schema v3 语义运行视图与 Session 模型一致性已完成** — workflow/state 完整事实经一致 read cut、keyset 和纯 reducer 生成 Root aggregate 与最多七类实际阶段；blocked 只认结构化 signal，完整 child failure/replacement/root terminal 链显示已接管并完成。左图、消息 activity、右侧 steps 共用一个 Session/root snapshot store；工具使用 default-deny 有界投影并分层折叠，raw payload 不进公共 contract。真实历史 Root 只读复跑为 366 facts/6 phases/29 logical tools/23 shell，projection complete。跨会话 full-surface 后端 29/前端 116，child provider 接线联测 66；S-SRV-1～5 Windows 真机矩阵全部 PASS。 | [Harness 架构](./AGENT_HARNESS.md) · [AgentLoop](./AgentLoop.md) · [testcase](../testcase/2026-08-03-session-model-run-visibility/manual-test.md) |
+| **Agent Runtime SDK Context 消费者** | ✅ **0.2.0 consumer-prepared 与 simple_harness 真人回归完成** — private projection-v2 stage 冻结 Persona/历史/Skill/Memory/附件；公开 snapshot default-deny。文本附件双 fresh root、长历史、缺失文件、冷重启与停止恢复均经 macOS `.app` 真人操作通过；budget-only cancel receipt 不再阻塞 ordered projection cursor。 | [Harness 架构](./AGENT_HARNESS.md) · ignored `.local-test-evidence/2026-08-21/sdk-context-consumer-regression/RESULTS.md` |
 | **Office 文档生成** (PPT/Word/Excel) | ✅ 生产可用 — PPT 模板填充+AI整页生图+视觉评估闭环;**`ppt_pro` 新工具**(deepresearch 调研→大纲卡确认→首图实测判定:惊艳生图/模板兜底,2026-06-22 ship,旧 `ppt_create` 仍在岗作直传路径;**2026-06-24 真机 E2E PASS — 惊艳生图路径 × doubao-seedream-4.0 端到端跑通,gpt-image-2 全面下线**,`719a0b49`);**Word/Excel 升复杂档**(列表/段内混排/字色/页眉页脚页码/插图 · 数字格式/合并/逐格样式/多图表/嵌图);默认落 `OutPut/{PPT,Doc,Excel}` | [PPT 架构](./PPT.md) · `doc-edit`/`excel-generate`/`ppt-generate` SKILL.md + §4 里程碑 |
 | **Agent Loop 优化 7 WI** (tool_choice硬约束/trace/收尾自查/Focus Chain/触发知识/SEARCH-REPLACE降级/ask_clarification) | ✅ 全实现 + 真机 E2E 全 PASS — 7 WI 全 100%(子代理逐批+终评+4代理对抗复审)；WI单测+BC回归全绿；真机抓修3真bug；WI-7 完整问答闭环真点击 PASS；**4代理对抗审计揪出 WI-5 真生效缺口(chat永不fan-out SkillComponent)→已修(`011aab5`)**；**2026-06-20 续修 WI-5 末环真 bug：main.py 漏把 knowledge_enabled 传给 SkillLoader 构造器→loader 恒滤掉知识片段(真机 total=12 而非 15)→已修+真机复验 `skill_auto_disclosed total=15 names=['windows-path-debug'] top_sim=0.950`**。默认 flag off→BC 安全 | [plan](../plans/2026-06-20-agent-loop-optimization/00-PLAN.md) · [架构档](./AgentLoop.md) · [testcase batch-a/b/c](../testcase/) |
 | **上下文连续性 + 图片误触发防护** | ✅ 2026-07-12 完成 — L2 改为独立 newest-tail 并按精确 tool_call_id 保持工具组边界；当前 user row 按 message id 去重；L3/topic embedding 独立限时，超时不再抹掉 L2；`task/web_search` 始终携带同 session 有界连续尾部（8 条），修复自然检索追问丢失上文对象；ContextAssembler 改接 AgentLoop 同一 `deskpet_tool_registry_v2`，不再因旧 `tool_router` 把 `web_search` 静默筛空，并注入基于真实 schema 的工具可用性约束；短澄清轮收敛 `generate_image`，显式生图保持可用；accepted/pending receipt 不算完成证据，短澄清流式假声明延迟并确定性拦截。新增聚焦回归 `65 passed`；Computer Use 真机验证搜索追问实际调用 `web_search`，查询参数明确承接为“命运2 高阶暴君 脉冲步枪”，不再反问对象或声称无联网能力。 | [plan](../plans/2026-07-12-context-continuity-fix/plan.md) · [results](../plans/2026-07-12-context-continuity-fix/RESULTS.md) · [testcase](../testcase/2026-07-12-context-continuity/manual-test.md) |
@@ -1581,6 +1587,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-08-21 | **Agent Runtime SDK 0.2/0.3 simple_harness 真人消费者回归完成 ✅** — CTX-1～CTX-5 与 Provider/Session/Context/附件/历史重启/停止 critical surface smoke 全部 PASS；补齐消息页文本附件到 consumer-prepared private stage、公开 default-deny Context 摘要和 Provider wire lowering。真人停止发现并修复 budget-only `unknown` 回执毒化投影游标，重启后 cursor 24→27、下一真实 DeepSeek Run 完成并回到空闲。 |
 | 2026-08-04 | **桌面游戏操作与小窗口 Context 稳定性修复 ✅** — 桌面输入按全局资源 lane 跨批次/Run 串行；`window_key` 支持有界单事务序列和纯暂停步；截图 base64 提升为有预算的多模态附件；AgentLoop 按冻结模型窗口压缩并在 provider 预检超限时做一次目标保真 rescue。最终自动化与 Windows 真机复测通过，Run `9dd6243c...` 仅一次三步按键调用并截图完成。 |
 | 2026-07-30 | **Harness Inspector 用户时间线 ✅** — 默认页改为“Agent 执行过程”，只显示当前状态、用户需要做什么和按顺序更新的轻量步骤；工具步骤按需展开真实参数，技术账本默认折叠。相关前端 39 passed、production build 与唯一主实例真机交互通过。 |
 | 2026-07-30 | **多步骤任务启动状态与公开进度修复 ✅** — 原生 Workflow child 首次 claim/recovery handoff 原子同步通用 Run 为 running 并设置 started_at；child attach 与进度交付改为事件驱动唤醒；`durable_task@v1` 新增九阶段公开进度、“多步骤任务”标签与安全循环事件 identity。启动兼容精确历史 capability fingerprint，cancel intent 不再阻断 Harness 初始化。相关后端 150 passed、前端聚焦 83 passed；唯一主实例 Session `dfcbaac7...` 真机显示“规划下一步 6/9”，双 Run 对账一致。 |

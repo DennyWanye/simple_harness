@@ -29,6 +29,36 @@ import { createClientTurnIdentity } from "../ws/clientTurnIdentity";
 const _slashInputHistory: string[] = [];
 const HISTORY_MAX = 50;
 
+const ATTACHMENT_BLOCK_LIMIT = 8 * 1024 * 1024;
+const ATTACHMENT_RUN_LIMIT = 16 * 1024 * 1024;
+
+type TextAttachment = {
+  id: string;
+  name: string;
+  mediaType: string;
+  size: number;
+  data: string;
+};
+
+function isSupportedTextFile(file: File): boolean {
+  const extension = file.name.toLowerCase().split(".").pop() ?? "";
+  return (
+    file.type.startsWith("text/") ||
+    ["txt", "md", "csv", "json", "yaml", "yml", "log"].includes(extension) ||
+    ["application/json", "application/yaml", "application/x-yaml"].includes(file.type)
+  );
+}
+
+function readTextFile(file: File): Promise<string> {
+  if (typeof file.text === "function") return file.text();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(reader.error ?? new Error("读取附件失败"));
+    reader.readAsText(file);
+  });
+}
+
 // 输入框与唯一主操作按钮严格等高。
 const INPUT_H = 44;
 
@@ -88,7 +118,10 @@ export function InputBar({
   disabled?: boolean;
 } = {}) {
   const [text, set_text] = useState("");
+  const [attachments, setAttachments] = useState<TextAttachment[]>([]);
+  const [attachmentError, setAttachmentError] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isComposingRef = useRef(false);
   const suppressCompositionCommitEnterRef = useRef(false);
   const compositionReleaseTimerRef = useRef<number | null>(null);
@@ -168,6 +201,13 @@ export function InputBar({
     if (disabled) return;
     const t = text.trim();
     if (!t) return;
+    const attachmentBlocks = attachments.map((attachment) => ({
+      type: "input_text",
+      data: attachment.data,
+      name: attachment.name,
+      media_type: attachment.mediaType,
+      size: attachment.size,
+    }));
     if (!sid) {
       // 空态直发（保留会话 `default` 移除后的唯一入口）：没有当前会话时，
       // 让后端在同一条 chat_v2 里新建会话再投递 —— `new_session: true` 走
@@ -184,12 +224,17 @@ export function InputBar({
           new_session: true,
           request_id: identity.request_id,
           turn_id: identity.turn_id,
+          ...(attachmentBlocks.length > 0
+            ? { attachments: attachmentBlocks }
+            : {}),
         },
       });
       if (!sent) return;
       pushHistory(t);
       setHistoryIdx(null);
       set_text("");
+      setAttachments([]);
+      setAttachmentError("");
       setDropdownOpen(false);
       setArgHintCmd(null);
       return;
@@ -228,6 +273,7 @@ export function InputBar({
         : undefined;
     const shouldDefer =
       !t.startsWith("/") &&
+      attachmentBlocks.length === 0 &&
       Boolean(deferredProjection || pendingParentRequestId);
     useSessionsStore.getState().push_message(sid, {
       role: "user",
@@ -278,6 +324,9 @@ export function InputBar({
         session_id: sid,
         request_id: identity.request_id,
         turn_id: identity.turn_id,
+        ...(attachmentBlocks.length > 0
+          ? { attachments: attachmentBlocks }
+          : {}),
         ...(selectedProjection
           ? {
               target_root_run_id: selectedProjection.run_id,
@@ -311,8 +360,51 @@ export function InputBar({
         status: "error",
         inflight: false,
       });
+    } else {
+      setAttachments([]);
+      setAttachmentError("");
     }
-  }, [text, sid, disabled]);
+  }, [text, sid, disabled, attachments]);
+
+  const onAttachmentChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      if (disabled || files.length === 0) return;
+      const unsupported = files.find((file) => !isSupportedTextFile(file));
+      if (unsupported) {
+        setAttachmentError(`不支持 ${unsupported.name}：请选择文本文件`);
+        return;
+      }
+      const oversized = files.find((file) => file.size > ATTACHMENT_BLOCK_LIMIT);
+      if (oversized) {
+        setAttachmentError(`${oversized.name} 超过单文件 8 MiB 限制`);
+        return;
+      }
+      const currentSize = attachments.reduce((sum, item) => sum + item.size, 0);
+      const addedSize = files.reduce((sum, file) => sum + file.size, 0);
+      if (currentSize + addedSize > ATTACHMENT_RUN_LIMIT) {
+        setAttachmentError("附件总大小超过每轮 16 MiB 限制");
+        return;
+      }
+      try {
+        const loaded = await Promise.all(
+          files.map(async (file, index): Promise<TextAttachment> => ({
+            id: `${file.name}:${file.lastModified}:${file.size}:${index}`,
+            name: file.name,
+            mediaType: file.type || "text/plain",
+            size: file.size,
+            data: await readTextFile(file),
+          })),
+        );
+        setAttachments((current) => [...current, ...loaded]);
+        setAttachmentError("");
+      } catch {
+        setAttachmentError("读取附件失败，请重新选择");
+      }
+    },
+    [attachments, disabled],
+  );
 
   const stop = useCallback(() => {
     if (!sid) return;
@@ -524,6 +616,53 @@ export function InputBar({
           currentArgIndex={currentArgIndex}
         />
       )}
+      {attachments.length > 0 && (
+        <div
+          data-testid="attachment-list"
+          style={{ display: "flex", flexWrap: "wrap", gap: 6 }}
+        >
+          {attachments.map((attachment) => (
+            <span
+              key={attachment.id}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "5px 8px",
+                borderRadius: 8,
+                background: "rgba(37,99,235,0.16)",
+                color: "#bfdbfe",
+                fontSize: 11,
+              }}
+            >
+              📄 {attachment.name}
+              <button
+                type="button"
+                aria-label={`移除附件 ${attachment.name}`}
+                onClick={() =>
+                  setAttachments((current) =>
+                    current.filter((item) => item.id !== attachment.id),
+                  )
+                }
+                style={{
+                  border: 0,
+                  padding: 0,
+                  background: "transparent",
+                  color: "#93c5fd",
+                  cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {attachmentError && (
+        <div role="alert" style={{ color: "#fca5a5", fontSize: 11 }}>
+          {attachmentError}
+        </div>
+      )}
       {/* 第一排：输入框独占一行 + 发送按钮（两者严格等高 INPUT_H，视觉一致）。 */}
       <div style={{ display: "flex", gap: 8, alignItems: "stretch", position: "relative" }}>
         <SlashDropdown
@@ -531,6 +670,36 @@ export function InputBar({
           selectedIdx={selectedIdx}
           onAccept={acceptCandidate}
         />
+        <label
+          aria-label="附加文本文件"
+          title="附加文本文件"
+          style={{
+            alignSelf: "flex-end",
+            height: INPUT_H,
+            minWidth: INPUT_H,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            border: "1px solid rgba(255,255,255,0.10)",
+            borderRadius: 12,
+            background: "rgba(255,255,255,0.05)",
+            color: disabled ? "rgba(148,163,184,0.45)" : "#cbd5e1",
+            cursor: disabled ? "not-allowed" : "pointer",
+            boxSizing: "border-box",
+          }}
+        >
+          📎
+          <input
+            ref={fileInputRef}
+            data-testid="text-attachment-input"
+            type="file"
+            multiple
+            accept=".txt,.md,.csv,.json,.yaml,.yml,.log,text/plain,text/markdown,text/csv,application/json,application/yaml"
+            disabled={disabled}
+            onChange={(event) => void onAttachmentChange(event)}
+            style={{ display: "none" }}
+          />
+        </label>
         <textarea
           ref={taRef}
           value={text}
@@ -631,7 +800,7 @@ export function InputBar({
               whiteSpace: "nowrap",
             }}
           >
-            Enter 发送 · Shift+Enter 换行 · / 命令
+            Enter 发送 · Shift+Enter 换行 · 📎 文本附件 · / 命令
           </span>
         </div>
       </div>

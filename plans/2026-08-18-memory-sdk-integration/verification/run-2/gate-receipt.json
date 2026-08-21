@@ -1,0 +1,36 @@
+{
+  "acceptance_sha256": "e743d7c3273cccec37bb0b3ed18ab4b03336880490d2a934aaa616ae15685790",
+  "auditor_input_sha256": "baf233e79affb9bea3ff691989c1bd1b27b4e100e28040970f7b9787cd12be67",
+  "auditor_output_sha256": "bda91c020633cda31841f6f2b3c5483d984c342a9501bd54b5fe1433278b72c4",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "1c5934e3a9cc215ff0aed2bf360270d0a449476776d987adead0ff69b7dbdd91",
+  "dirty_patch_sha256": "8f1765237acf45e34bd0c9148eee457bf3215ea0a603686d1dbf9e8595e30e18",
+  "evidence_manifest_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "exclusion_scope": [
+    "plans/2026-08-18-memory-sdk-integration/verification/run-2"
+  ],
+  "finalized_at": "2026-08-18T19:01:08+0800",
+  "fixture_only": false,
+  "head": "780dd11b045e44c740a875a123b38fa5d768722f",
+  "ledger_sha256": "7a5125f0ed7442d5f3cc145453fffa05d766a3faf82a66e65a8be3178ed33c9f",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "memory-sdk-integration-slice2",
+  "scenario_statuses": {
+    "AC-5": "PASS",
+    "AC-6": "PASS",
+    "AC-7": "PASS",
+    "AC-8": "PASS"
+  },
+  "schema_version": "1.4.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "346ea8380be046be9259fd396e107dfc1690e2fc483cf94017c08df8acf9be7d",
+  "tested_code_head": "780dd11b045e44c740a875a123b38fa5d768722f",
+  "timing_summary": {
+    "declared_ms": 0,
+    "entries": 0,
+    "measured_ms": 0
+  },
+  "validator_version": "1.4.0"
+}

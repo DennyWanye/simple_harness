@@ -197,6 +197,23 @@ class SdkContextPreparationService:
         private_attachments, public_attachments = _normalize_attachments(attachment_blocks)
         messages: list[dict[str, Any]] = []
         sections: dict[str, dict[str, Any]] = {}
+        attachment_kinds: dict[str, int] = {}
+        for attachment in public_attachments:
+            kind = str(attachment.get("kind") or "attachment")
+            attachment_kinds[kind] = attachment_kinds.get(kind, 0) + 1
+        sections["attachments"] = {
+            "label": "Attachments",
+            "count": len(public_attachments),
+            "estimated_tokens": sum(
+                max(1, (int(attachment.get("size") or 0) + 2) // 3)
+                for attachment in public_attachments
+            ),
+            "availability": "estimated" if public_attachments else "unavailable",
+            "ref": ", ".join(
+                f"{kind} × {count}"
+                for kind, count in sorted(attachment_kinds.items())
+            ),
+        }
         if persona:
             messages.append({"role": "system", "content": persona})
         sections["persona"] = {
@@ -207,10 +224,20 @@ class SdkContextPreparationService:
         }
         memory_texts = [str(item.get("text") or "").strip() for item in memory_items]
         memory_texts = [item for item in memory_texts if item]
-        if memory_texts:
+        if memory_texts or memory_result_id is not None:
+            memory_payload = dict(memory_result_payload or {"items": list(memory_items)})
+            memory_content = "\n".join(memory_texts)
+            if not memory_content:
+                memory_content = json.dumps(
+                    memory_payload,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
             messages.append({
                 "role": "user",
-                "content": "Untrusted recalled memory data:\n" + "\n".join(memory_texts),
+                "content": "Untrusted recalled memory data:\n" + memory_content,
+                "metadata": {"source": "memory", "trust": "untrusted_data"},
             })
         sections["memory"] = {
             "label": "Memory",

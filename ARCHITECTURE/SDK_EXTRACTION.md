@@ -1,8 +1,45 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-20
-> 代码基线：`d3f048e1`（host-revendor-0.1.3 完成）
-> 状态：SDK v0.1.3 为唯一生产 ingress（2026-08-19；0.1.3 对 0.1.2 纯新增——consumer adapter 加 model/tool_schemas，宿主 10-Port 零改动）。SSOT `sdk_candidate.py` 单点切换兑现：切版本只改三行常量。**切回 0.1.2 只需 revert `d3f048e1`。**
+> 最后校准：2026-08-21
+> 代码基线：simple_harness `5d9fdb6e`；当前依赖固定 Harness 0.2.0 / Memory 0.3.0 exact wheels
+> 状态：SDK v0.2.0 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
+> 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
+
+## 2026-08-21 exact candidate 与消费者准入
+
+simple_harness vendor 的 Harness wheel SHA-256 为 `e1f7d4b10f6d02c071b8fabfddeaf52b48f60431cba0fefca1aa349c7be3d233`
+（source `869c76f2050b5f492b4edee68f4ce2400030b832`，CI run `32446683554`，artifact
+`9434287332`）；Memory wheel SHA-256 为
+`6f0682fdcd958a666e52a294ba5c6e4e721bed53f1669f1f7af63cd33027f014`（source
+`87820fe2c4cdde21c3a9356ca461b93fe00aadcb`）。`sdk_candidate.py` 对 vendored bytes、安装版本和
+direct-url origin fail closed；Runtime 使用 SDK `build_production_runtime`，conversation Memory 与
+context staging 默认 ON。
+
+Provider Context 由 consumer-prepared projection-v2 stage 唯一承载；Memory recall 的 query/result
+lineage、structured current message、attachment blocks、catalog/budget/tool authority 均进入同一私有
+snapshot，Memory 内容按 USER/untrusted 投影。Harness execution outbox 与 simple_harness `state.db` product
+outbox 按 provenance 分治，不允许同一消息双写。开发 reset 只用于 schema 变化后清空测试三库。
+
+自动化门禁：D1 `58 passed`、D2/exact `17 passed`、Rust diagnostics `4 passed`、D3 前端
+`615 passed`、typecheck/build PASS。D-ALL 暴露既有 baseline inventory 未登记失败与既有 ESLint
+171 项债务；本切片聚焦门禁无新增红。D-UI 需要 windows-mcp 真桌面点击，当前工具面不可用，状态为
+BLOCKED 而非脚本 PASS。
+
+## 2026-08-21 消费者 Context cutover 校准
+
+> 本节记录切换前缺口；上述 exact-candidate consumer-prepared 实现已关闭 Context/Memory 主缺口。
+
+SDK Runtime 已是 simple_harness 唯一生产执行 ingress，但“进入 SDK”不等于完整产品 Context 已完成
+cutover。普通文字入口当前绕过保留的 `ProductTurnPreparer` / `ProductTurnPreparationService` 和
+`ProductContextAdapter`，由 `backend/main.py::_assemble_sdk_messages` 临时构造有限消息；已构造的
+`TurnInput`（含 attachment blocks、memory policy、workspace/provider/catalog basis）没有被后续执行
+消费。下文将 `ProductTurnPreparer` 画在生产链路中的图属于目标架构或 cutover 前基线，不能作为
+2026-08-21 当前事实。
+
+SDK execution DB 已持久化真实 Provider invocation usage，但产品 SessionDB Context usage、Inspector
+和 BillingLedger 尚未消费该 authority。产品侧还把 `session_generation` 固定为 `1`，并给
+context-dependent tool handler 提供静态 execution identity；这些必须在消费者 Context 单一事实源
+切换中一并消除，而不是在 UI 再做一套估算。
 
 ## 0. 当前实施状态（2026-08-20 校正）
 

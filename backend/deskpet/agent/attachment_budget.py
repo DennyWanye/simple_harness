@@ -10,12 +10,12 @@ from typing import Any, Mapping, Sequence
 
 from deskpet.agent.assembler.bundle import AttachmentRef
 
-_TEXT_TYPES = {"text", "input_text", "output_text"}
+_ORDINARY_TEXT_TYPES = {"text", "output_text"}
 _UNKNOWN_MEDIA_TOKENS = 4_096
 
 
 def normalize_user_attachment_blocks(value: Any) -> list[dict[str, Any]]:
-    """Return defensive copies of provider-shaped, non-text content blocks."""
+    """Return defensive copies of provider-shaped attachment content blocks."""
 
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         return []
@@ -24,7 +24,9 @@ def normalize_user_attachment_blocks(value: Any) -> list[dict[str, Any]]:
         if not isinstance(raw, Mapping):
             continue
         kind = str(raw.get("type") or "").strip()
-        if not kind or kind in _TEXT_TYPES:
+        if not kind or kind in _ORDINARY_TEXT_TYPES:
+            continue
+        if kind == "input_text" and not isinstance(raw.get("data"), str):
             continue
         blocks.append(copy.deepcopy(dict(raw)))
     return blocks
@@ -68,7 +70,7 @@ def collect_attachment_budget(
             if not isinstance(raw, Mapping):
                 continue
             media_type = str(raw.get("type") or "").strip()
-            if not media_type or media_type in _TEXT_TYPES:
+            if not media_type or media_type in _ORDINARY_TEXT_TYPES:
                 continue
             byte_size = _content_block_size(raw)
             explicit = raw.get("estimated_tokens")

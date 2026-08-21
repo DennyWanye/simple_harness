@@ -21,6 +21,14 @@ from .provider_projection import (
 
 logger = logging.getLogger(__name__)
 
+_USAGE_MEASUREMENT_KEYS = frozenset({
+    "input_tokens",
+    "output_tokens",
+    "total_tokens",
+    "cache_tokens",
+    "reasoning_tokens",
+})
+
 
 class ProviderProjectionReceiptSource(Protocol):
     def list_provider_projection_receipts(
@@ -139,11 +147,16 @@ class SdkProviderProjectionPump:
         usage_envelope = payload.get("usage")
         measurement: object | None = None
         if isinstance(usage_envelope, Mapping):
-            measurement = (
-                usage_envelope.get("usage")
-                if "usage" in usage_envelope
-                else usage_envelope
-            )
+            nested_usage = usage_envelope.get("usage")
+            if isinstance(nested_usage, Mapping):
+                measurement = nested_usage
+            elif _USAGE_MEASUREMENT_KEYS.intersection(usage_envelope):
+                # Older receipts exposed the measurement directly.  A modern
+                # terminal receipt may instead contain only ``budget``
+                # metadata (notably after cancellation); that is not a token
+                # measurement and must not poison the ordered projection
+                # cursor.
+                measurement = usage_envelope
         state = str(payload.get("state") or "").strip().lower()
         return ProviderProjectionEnvelopeV1.from_value({
             "invocation_id": _read(receipt, "invocation_id"),
