@@ -15,9 +15,14 @@
   原文，只保留脱敏状态/计数。
 - **候选身份**：Harness 0.2.0 `869c76f…` / wheel `e1f7d4b1…`；Memory 0.3.0
   `87820fe…` / wheel `6f0682fd…`。两者版本、SHA 与 direct-url origin 均 fail closed。
+- **生产冷启动修复**：`runtime_factory` 通过 `ProductionRuntimeBuild` 显式发布 workflow registrations；
+  `ServiceContext` 声明 SDK context staging 与 conversation Memory；Memory dispatcher 注入 Host 时钟，
+  provider projection pump 同时兼容同步和异步 `start()`。永久回归真实调用
+  `_build_product_sdk_runtime_stack()`，验证 Runtime ready、两项 authority publication 与正常关闭。
 - **验证**：D1 `58 passed`；D2/exact `17 passed`；Rust diagnostics `4 passed`；D3 typecheck +
   `73 files / 615 tests`；production build PASS。D-ALL 发现既有 baseline inventory 未登记 12 failures 与
   ESLint 171 problems，原始日志在 ignored `.local-test-evidence/2026-08-21-agent-runtime/D-ALL/`。
+  本轮生产 composition 与 SDK/Memory/outbox/reset 聚焦回归 `226 passed`。
 - **阻塞**：当前执行环境没有 windows-mcp/Windows Computer Use，S-AR-1/3/4/6 真 UI D-UI 不可执行；
   按手测纪律不能用 WebSocket、pytest 或脚本回放替代，因此 Task 8 保持 BLOCKED。
 

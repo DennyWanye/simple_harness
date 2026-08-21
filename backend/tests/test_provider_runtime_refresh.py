@@ -3,12 +3,46 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
 
 import main
+
+
+class _ProductionProviderRegistry:
+    def get_chain(self):  # type: ignore[no-untyped-def]
+        return []
+
+
+class _ProductionCapabilityStore:
+    async def get_policy_state(self):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(generation=1)
+
+
+class _ProductionContextPages:
+    async def get(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+    async def mark_active(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return None
+
+
+class _ProductionMemoryQuery:
+    async def recall_readonly(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return []
+
+
+class _ProductionMemoryScope:
+    async def resolve_for_run(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return SimpleNamespace()
+
+
+class _ProductionSearchGateway:
+    async def search(self, *_args, **_kwargs):  # type: ignore[no-untyped-def]
+        return []
 
 
 def test_freeze_sdk_catalog_thaws_nested_frozen_tool_schema():
@@ -54,11 +88,73 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
         "sdk_tool_authority_registry",
         "sdk_runtime_tool_inventory",
         "sdk_prepared_authorization_policy",
+        "sdk_context_staging",
+        "conversation_memory",
     )
     for name in names:
         marker = object()
         services.register(name, marker)
         assert services.get(name) is marker
+
+
+@pytest.mark.asyncio
+async def test_real_product_sdk_production_composition_starts(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from deskpet.memory.session_db import SessionDB
+    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    memory = SQLiteMemoryBackend(str(data_dir / "memory.db"))
+    session = SessionDB(data_dir / "state.db", memory_backend=memory)
+    await session.initialize()
+    services = {
+        "session_db": session,
+        "capability_platform": object(),
+        "provider_registry": _ProductionProviderRegistry(),
+        "workflow_service": object(),
+        "context_page_in_store": _ProductionContextPages(),
+        "memory_recall_query": _ProductionMemoryQuery(),
+        "memory_recall_scope_resolver": _ProductionMemoryScope(),
+        "search_gateway": _ProductionSearchGateway(),
+        "authorization_runtime": object(),
+        "capability_store": _ProductionCapabilityStore(),
+    }
+    publications = (
+        "sdk_runtime_ready",
+        "sdk_runtime_catalog",
+        "sdk_provider_binding_resolver",
+        "sdk_tool_authority_registry",
+        "sdk_runtime_tool_inventory",
+        "sdk_prepared_authorization_policy",
+        "sdk_context_staging",
+        "conversation_memory",
+    )
+    previous = {
+        name: main.service_context.get(name)
+        for name in (*services, *publications)
+    }
+    stack = None
+    monkeypatch.setattr(main, "_memory_backend", memory)
+    monkeypatch.setattr(main._paths, "user_data_dir", lambda: tmp_path)
+    try:
+        for name, value in services.items():
+            main.service_context.register(name, value)
+        stack = await main._build_product_sdk_runtime_stack(1)
+        ready = await stack.start()
+
+        assert stack.phase == "ready"
+        assert ready.runtime.state.value == "ready"
+        assert main.service_context.get("sdk_context_staging") is not None
+        assert main.service_context.get("conversation_memory") is not None
+    finally:
+        if stack is not None:
+            await stack.close()
+        for name, value in previous.items():
+            main.service_context.register(name, value)
+        await session.close()
 
 
 def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():

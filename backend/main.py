@@ -7543,6 +7543,7 @@ async def _build_product_sdk_runtime_stack(
                 MemoryOutboxRepository(database),
                 conversation_memory,
                 owner_id=f"deskpet-product-sdk-g{generation}:memory",
+                clock=time.time,
             ),
             context_staging=context_staging,
             context_preparation_mode=ContextPreparationMode.CONSUMER_PREPARED,
@@ -7565,7 +7566,9 @@ async def _build_product_sdk_runtime_stack(
         async def start(self):
             if projection_pump is None:
                 raise RuntimeError("production provider projection pump is not bound")
-            await projection_pump.start()
+            started = projection_pump.start()
+            if inspect.isawaitable(started):
+                await started
 
         async def close(self):
             if projection_pump is not None:
