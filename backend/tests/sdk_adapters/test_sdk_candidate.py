@@ -20,7 +20,9 @@ from deskpet.sdk_adapters.sdk_candidate import (
     SDK_WHEEL_FILENAME,
     SDK_WHEEL_SHA256,
     build_candidate_identity,
+    sdk_memory_wheel_path,
     sdk_wheel_path,
+    verify_memory_candidate,
 )
 
 
@@ -37,6 +39,11 @@ def test_wheel_file_matches_pinned_sha() -> None:
     wheel = sdk_wheel_path()
     assert wheel.is_file()
     assert hashlib.sha256(wheel.read_bytes()).hexdigest() == SDK_WHEEL_SHA256
+
+
+def test_memory_candidate_exact_wheel_passes_verify() -> None:
+    assert sdk_memory_wheel_path().is_file()
+    assert verify_memory_candidate() is None
 
 
 def test_identity_rejects_wrong_sha() -> None:

@@ -1284,7 +1284,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
     from simple_harness import RunClient
 
     client = create_autospec(RunClient, instance=True)
-    client.signal.return_value = SimpleNamespace(
+    client.signal_conversation.return_value = SimpleNamespace(
         continuation_id="request:continuation-request"
     )
     ingress = object.__new__(SdkRuntimeIngress)
@@ -1307,7 +1307,21 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         ),
         get_conversation_boundary=AsyncMock(return_value=boundary),
     )
-    session_db = SimpleNamespace(append_message=AsyncMock(return_value=7))
+    session_db = SimpleNamespace(
+        append_message=AsyncMock(return_value=7),
+        ensure_memory_user_binding=AsyncMock(return_value="user-continuation"),
+    )
+    stage = SimpleNamespace(
+        stage_id="stage-continuation",
+        private_snapshot_hash="a" * 64,
+        private_snapshot={"schema_version": 1},
+    )
+    import simple_harness.runtime
+    monkeypatch.setattr(
+        simple_harness.runtime,
+        "prepare_consumer_conversation_context",
+        AsyncMock(return_value=stage),
+    )
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
     monkeypatch.setattr(
         main,
@@ -1318,6 +1332,8 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
                     execution_uow=execution_uow
                 ),
                 "session_db": session_db,
+                "sdk_context_staging": object(),
+                "conversation_memory": object(),
                 "vector_worker": None,
             }.get(name)
         ),
@@ -1338,18 +1354,13 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         request_id="continuation-request",
     )
 
-    args, kwargs = client.signal.call_args
+    args, kwargs = client.signal_conversation.call_args
     assert args[0].value == "sdk-continuation"
-    assert kwargs == {
-        "signal_id": "request:continuation-request",
-        "payload": {
-            "kind": "user_continuation",
-            "task_scope_id": "scope-continuation",
-            "message_ref": "request:continuation-request",
-            "content": "continue with this detail",
-            "expected_boundary_version": 5,
-        },
-    }
+    assert kwargs["continuation_id"] == "request:continuation-request"
+    assert kwargs["value"].memory_text == "continue with this detail"
+    assert kwargs["context_stage_id"] == "stage-continuation"
+    assert kwargs["context_stage_hash"] == "a" * 64
+    assert kwargs["prepared_context"] == {"schema_version": 1}
     watcher.assert_called_once_with("sdk-continuation")
     assert session_db.append_message.await_args.kwargs[
         "workflow_event_id"
@@ -1357,6 +1368,9 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         "user-continuation:canonical-continuation:"
         "request:continuation-request"
     )
+    assert session_db.append_message.await_args.kwargs[
+        "memory_authority"
+    ] == "harness"
 
 
 @pytest.mark.asyncio

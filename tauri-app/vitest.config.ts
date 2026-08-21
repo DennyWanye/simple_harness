@@ -25,6 +25,10 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   test: {
     environment: 'jsdom',
+    // Keep the plan's deterministic `--maxWorkers=1` gate compatible with
+    // Vitest 2/Tinypool on high-core hosts (whose computed minimum can exceed
+    // the CLI maximum otherwise).
+    poolOptions: { forks: { minForks: 1 } },
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     setupFiles: ['./src/test/_setup.ts'],
     coverage: {

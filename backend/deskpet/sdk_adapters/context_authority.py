@@ -64,6 +64,10 @@ class PreparedSdkContextSnapshotV1:
     attachments: tuple[object, ...]
     sections: object
     budget: object
+    lineage: object
+    memory: object | None
+    current_message: object
+    memory_projection_version: int
 
     @classmethod
     def build(
@@ -81,6 +85,10 @@ class PreparedSdkContextSnapshotV1:
         sections: Mapping[str, Any] | None = None,
         budget: Mapping[str, Any] | None = None,
         snapshot_version: int = 1,
+        lineage: Mapping[str, Any] | None = None,
+        memory: Mapping[str, Any] | None = None,
+        current_message: Mapping[str, Any] | None = None,
+        memory_projection_version: int = 2,
     ) -> "PreparedSdkContextSnapshotV1":
         if snapshot_version != 1:
             raise ValueError("PreparedSdkContextSnapshotV1 requires version 1")
@@ -97,6 +105,10 @@ class PreparedSdkContextSnapshotV1:
             "attachments": list(attachments),
             "sections": sections or {},
             "budget": budget or {},
+            "lineage": lineage or {},
+            "memory": memory,
+            "current_message": current_message or provider_messages[-1],
+            "memory_projection_version": int(memory_projection_version),
         }
         fingerprint = canonical_sha256(identity)
         return cls(
@@ -114,7 +126,42 @@ class PreparedSdkContextSnapshotV1:
             attachments=tuple(freeze_json(item) for item in attachments),
             sections=freeze_json(sections or {}),
             budget=freeze_json(budget or {}),
+            lineage=freeze_json(lineage or {}),
+            memory=None if memory is None else freeze_json(memory),
+            current_message=freeze_json(current_message or provider_messages[-1]),
+            memory_projection_version=int(memory_projection_version),
         )
+
+    @classmethod
+    def from_private_record(
+        cls, value: Mapping[str, Any]
+    ) -> "PreparedSdkContextSnapshotV1":
+        snapshot = cls.build(
+            session_id=str(value["session_id"]),
+            request_id=str(value["request_id"]),
+            root_run_id=str(value["root_run_id"]),
+            sdk_run_id=str(value["sdk_run_id"]),
+            turn_id=str(value["turn_id"]),
+            provider_binding=value["provider_binding"],
+            provider_messages=value["provider_messages"],
+            catalog=value["catalog"],
+            attachments=value.get("attachments") or (),
+            sections=value.get("sections") or {},
+            budget=value.get("budget") or {},
+            lineage=value.get("lineage") or {},
+            memory=value.get("memory"),
+            current_message=value.get("current_message"),
+            memory_projection_version=int(
+                value.get("memory_projection_version") or 2
+            ),
+        )
+        if (
+            str(value.get("snapshot_id") or "") != snapshot.snapshot_id
+            or str(value.get("snapshot_fingerprint") or "")
+            != snapshot.snapshot_fingerprint
+        ):
+            raise SnapshotContractConflict()
+        return snapshot
 
     def private_record(self) -> dict[str, Any]:
         return {
@@ -132,6 +179,11 @@ class PreparedSdkContextSnapshotV1:
             "attachments": [thaw_json(item) for item in self.attachments],
             "sections": thaw_json(self.sections),
             "budget": thaw_json(self.budget),
+            "schema_version": 1,
+            "lineage": thaw_json(self.lineage),
+            "memory": None if self.memory is None else thaw_json(self.memory),
+            "current_message": thaw_json(self.current_message),
+            "memory_projection_version": self.memory_projection_version,
         }
 
     def canonical_json(self) -> str:

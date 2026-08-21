@@ -31,6 +31,19 @@ from .runtime_paths import (
 PortsFactory: TypeAlias = Callable[
     [Database, SqliteExecutionUnitOfWork], RuntimePorts
 ]
+@dataclass(frozen=True, slots=True)
+class ProductionRuntimeBuild:
+    runtime: Runtime
+    transaction_owner: SqliteExecutionUnitOfWork
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.runtime, Runtime):
+            raise TypeError("production runtime must be Runtime")
+        if not isinstance(self.transaction_owner, SqliteExecutionUnitOfWork):
+            raise TypeError("production transaction owner must be SQLite UoW")
+
+
+RuntimeFactory: TypeAlias = Callable[[object], ProductionRuntimeBuild]
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +158,7 @@ class SdkRuntimeBuildInputs:
     workflow_registrations: tuple[object, ...] = ()
     workflow_runner: object | None = None
     owned_resources: tuple[OwnedResourceCloser, ...] = ()
+    runtime_factory: RuntimeFactory | None = None
 
     def __post_init__(self) -> None:
         profiles = dict(self.profiles)
@@ -155,6 +169,8 @@ class SdkRuntimeBuildInputs:
             raise ValueError("at least one SDK runtime driver is required")
         if not callable(self.ports_factory):
             raise TypeError("ports_factory must be callable")
+        if self.runtime_factory is not None and not callable(self.runtime_factory):
+            raise TypeError("runtime_factory must be callable")
         if not self.workflow_catalog_digest.strip():
             raise ValueError("workflow_catalog_digest is required")
         if self.workflow_factory is not None and not callable(self.workflow_factory):
@@ -310,32 +326,47 @@ class ProductSdkRuntimeStack:
                 verify_sdk_candidate(self._candidate_identity)
                 dependencies = await self._load_dependencies()
                 owned_resources = dependencies.owned_resources
-                database = Database.open(self._paths.execution_database)
-                uow = SqliteExecutionUnitOfWork(database)
-                workflow = await self._build_workflow_runtime(
-                    dependencies, database, uow
-                )
-                dependency_resources = owned_resources
-                # Transfer the factory-created resources before validation so
-                # even a cross-layer identity collision is cleaned up.
-                owned_resources = dependency_resources + workflow.owned_resources
-                _validate_owned_resources(
-                    dependency_resources, workflow.owned_resources
-                )
-                if workflow.transaction_owner is not uow:
-                    raise ValueError(
-                        "workflow factory returned a foreign transaction owner"
+                if dependencies.runtime_factory is not None:
+                    if dependencies.workflow_factory is not None:
+                        raise ValueError(
+                            "production runtime factory owns workflow composition"
+                        )
+                    production = dependencies.runtime_factory(
+                        self._paths.execution_database
                     )
-                ports = dependencies.ports_factory(database, uow)
-                if not isinstance(ports, RuntimePorts):
-                    raise TypeError("ports_factory must return RuntimePorts")
-                runtime = build_runtime(
-                    uow,
-                    dependencies.profiles,
-                    dependencies.drivers,
-                    ports,
-                    workflow_runner=workflow.runner,
-                )
+                    if not isinstance(production, ProductionRuntimeBuild):
+                        raise TypeError(
+                            "runtime_factory must return ProductionRuntimeBuild"
+                        )
+                    runtime = production.runtime
+                    uow = production.transaction_owner
+                else:
+                    database = Database.open(self._paths.execution_database)
+                    uow = SqliteExecutionUnitOfWork(database)
+                    workflow = await self._build_workflow_runtime(
+                        dependencies, database, uow
+                    )
+                    dependency_resources = owned_resources
+                    # Transfer the factory-created resources before validation so
+                    # even a cross-layer identity collision is cleaned up.
+                    owned_resources = dependency_resources + workflow.owned_resources
+                    _validate_owned_resources(
+                        dependency_resources, workflow.owned_resources
+                    )
+                    if workflow.transaction_owner is not uow:
+                        raise ValueError(
+                            "workflow factory returned a foreign transaction owner"
+                        )
+                    ports = dependencies.ports_factory(database, uow)
+                    if not isinstance(ports, RuntimePorts):
+                        raise TypeError("ports_factory must return RuntimePorts")
+                    runtime = build_runtime(
+                        uow,
+                        dependencies.profiles,
+                        dependencies.drivers,
+                        ports,
+                        workflow_runner=workflow.runner,
+                    )
                 await runtime.start()
                 if self._close_requested:
                     raise SdkRuntimeNotReady(
@@ -471,6 +502,7 @@ async def build_product_runtime(
 __all__ = (
     "OwnedResourceCloser",
     "ProductSdkRuntimeStack",
+    "ProductionRuntimeBuild",
     "SdkRuntimeBuildInputs",
     "SdkRuntimeNotReady",
     "SdkRuntimeReady",

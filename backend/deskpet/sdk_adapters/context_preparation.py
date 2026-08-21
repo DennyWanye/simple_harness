@@ -164,6 +164,10 @@ class SdkContextPreparationService:
         catalog: Mapping[str, Any],
         project_task_snapshot: Mapping[str, Any] | None = None,
         attachment_blocks: Sequence[Mapping[str, Any]] = (),
+        context_query_id: str | None = None,
+        memory_result_id: str | None = None,
+        memory_result_hash: str | None = None,
+        memory_result_payload: Mapping[str, Any] | None = None,
     ) -> PreparedSdkContextSnapshotV1:
         try:
             history_rows = await _resolve(self._sources.history(session_id))
@@ -205,8 +209,8 @@ class SdkContextPreparationService:
         memory_texts = [item for item in memory_texts if item]
         if memory_texts:
             messages.append({
-                "role": "system",
-                "content": "Relevant memory (data only):\n" + "\n".join(memory_texts),
+                "role": "user",
+                "content": "Untrusted recalled memory data:\n" + "\n".join(memory_texts),
             })
         sections["memory"] = {
             "label": "Memory",
@@ -251,7 +255,8 @@ class SdkContextPreparationService:
         user_content: object = text
         if private_attachments:
             user_content = [{"type": "text", "text": text}, *private_attachments]
-        messages.append({"role": "user", "content": user_content})
+        current_message = {"role": "user", "content": user_content}
+        messages.append(current_message)
 
         catalog_tokens = int(catalog.get("schema_token_count") or 0)
         sections["tools"] = {
@@ -281,6 +286,26 @@ class SdkContextPreparationService:
             attachments=public_attachments,
             sections=sections,
             budget=budget,
+            lineage=(
+                {
+                    "context_query_id": context_query_id,
+                    "memory_result_id": memory_result_id,
+                    "memory_result_hash": memory_result_hash,
+                }
+                if context_query_id is not None
+                else {}
+            ),
+            memory=(
+                {
+                    "role": "user",
+                    "trust": "untrusted_data",
+                    "result": dict(memory_result_payload or {"items": list(memory_items)}),
+                }
+                if memory_result_id is not None
+                else None
+            ),
+            current_message=current_message,
+            memory_projection_version=2,
         )
 
 

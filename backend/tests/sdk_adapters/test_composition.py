@@ -132,7 +132,7 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
     with sqlite3.connect(paths.execution_database) as connection:
         assert connection.execute(
             "SELECT max(version) FROM sdk_schema_migrations"
-        ).fetchone()[0] == 2
+        ).fetchone()[0] == 3
         tables = {
             row[0]
             for row in connection.execute(

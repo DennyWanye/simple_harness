@@ -102,6 +102,11 @@ class SdkRuntimeIngress:
         session_generation: int,
         tool_catalog_fingerprint: str | None = None,
         provider_budget_fingerprint: str | None = None,
+        conversation: object | None = None,
+        context_preparation_mode: object | None = None,
+        context_stage_id: str | None = None,
+        context_stage_hash: str | None = None,
+        prepared_context: dict[str, Any] | None = None,
     ) -> IngressStartReceipt:
         """Start a new Run through the sole ingress.
 
@@ -124,6 +129,11 @@ class SdkRuntimeIngress:
             session_generation,
             tool_catalog_fingerprint,
             provider_budget_fingerprint,
+            conversation,
+            context_preparation_mode,
+            context_stage_id,
+            context_stage_hash,
+            prepared_context,
         )
         await ready.client.start(start)
 
@@ -154,6 +164,34 @@ class SdkRuntimeIngress:
             payload=payload,
         )
 
+        return IngressSignalReceipt(
+            run_id=run_id,
+            delivery_id=delivery.continuation_id,
+            generation=ready.generation,
+            reason="continuation_queued",
+        )
+
+    async def signal_conversation(
+        self,
+        *,
+        run_id: str,
+        continuation_id: str,
+        value: object,
+        context_stage_id: str,
+        context_stage_hash: str,
+        prepared_context: Mapping[str, Any],
+    ) -> IngressSignalReceipt:
+        if not self._accepting:
+            raise SdkRuntimeNotReady("SDK Runtime ingress is not accepting signals")
+        ready = self._stack.require_ready()
+        delivery = ready.client.signal_conversation(
+            RunId(run_id),
+            continuation_id=continuation_id,
+            value=value,
+            context_stage_id=context_stage_id,
+            context_stage_hash=context_stage_hash,
+            prepared_context=prepared_context,
+        )
         return IngressSignalReceipt(
             run_id=run_id,
             delivery_id=delivery.continuation_id,

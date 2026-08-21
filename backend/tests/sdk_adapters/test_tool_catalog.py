@@ -1053,7 +1053,17 @@ def test_memory_recall_and_search_dispatch_to_live_memory_sdk_for_ordinary_run(
             "session-memory",
             "user",
             "The project codename is Aurora Zebra.",
+            user_id="user-memory",
+            source_event_id="test-memory/ordinary-run/1",
         )
+        memory_scope = SimpleNamespace(
+            memory_user_for_session=lambda _session_id: None,
+        )
+
+        async def memory_user_for_session(_session_id):
+            return "user-memory"
+
+        memory_scope.memory_user_for_session = memory_user_for_session
         dependencies = _catalog_dependencies(
             ContextPageInStore(),
             SimpleNamespace(
@@ -1067,7 +1077,11 @@ def test_memory_recall_and_search_dispatch_to_live_memory_sdk_for_ordinary_run(
             dependencies.workflow_service_provider,
             dependencies.context_page_store,
             dependencies.execution_context_getter,
-            OwnerMemoryRecallQueryAdapter(memory_backend),
+            OwnerMemoryRecallQueryAdapter(
+                memory_backend,
+                memory_scope,
+                default_user_id="user-memory",
+            ),
             OrdinaryRunScopeResolver(),
             dependencies.capability_bridge_service,
             dependencies.search_gateway,
