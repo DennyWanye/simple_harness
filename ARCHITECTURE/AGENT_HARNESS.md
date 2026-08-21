@@ -1,10 +1,18 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-20
+> 最后更新：2026-08-21
 > 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
+
+### SDK 生产 composition 启动修复（2026-08-21）
+
+生产 `ProductSdkRuntimeStack` 的 `runtime_factory` 分支现在由
+`ProductionRuntimeBuild.workflow_registrations` 显式返回 ready publication 所需的 workflow
+事实，不再读取仅由 fallback builder 创建的局部 `workflow`。动态回归会真实启动该分支、确认
+`phase=ready`、registrations 发布与正常关闭；SDK adapters `171 passed`，SDK/Memory/outbox/reset
+聚焦组合 `90 passed`。
 
 ### 执行时间线与模型上下文边界（2026-08-20 校准）
 
