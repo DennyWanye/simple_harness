@@ -56,6 +56,7 @@ import uvicorn
 from logging.handlers import RotatingFileHandler
 import paths as _paths
 from observability.log_redaction import add_safe_exception_summary, redact_log_event
+from observability.sdk import HostSdkObservability
 from deskpet.session.task_scope import (
     TaskScopeDecision,
     task_session_manager,
@@ -102,6 +103,8 @@ logging.basicConfig(
 # conversation and recalled-memory plaintext.  Keep the dependency below the
 # application log boundary even when a developer raises the root level.
 logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+
+_sdk_observability = HostSdkObservability(_log_dir)
 
 # structlog defaults to its own PrintLogger (stdout only). Point it at
 # stdlib logging so the FileHandler above actually receives events.
@@ -2934,12 +2937,25 @@ async def lifespan(app: FastAPI):
             revision="product-bundled",
             model_name="bge-m3-int8",
         )
+        memory_build_kwargs = {
+            "embedder": memory_embedder,
+            "resource_path": memory_resource,
+            "enable_facts": True,
+        }
+        if "observability_sink" in inspect.signature(
+            MemoryManager.build_production
+        ).parameters:
+            memory_build_kwargs.update(
+                observability_sink=_sdk_observability.sink,
+                correlation=_sdk_observability.correlation,
+            )
         _memory_backend = await MemoryManager.build_production(
-            _memory_db_path,
-            embedder=memory_embedder,
-            resource_path=memory_resource,
-            enable_facts=True,
+            _memory_db_path, **memory_build_kwargs
         )
+        memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
+        if callable(memory_snapshot):
+            _sdk_observability.register_snapshot_source("memory", memory_snapshot)
+        _sdk_observability.export()
         # Settings must report the embedder that the production Memory SDK
         # actually owns.  Leaving this slot at the legacy ``None`` placeholder
         # makes the UI claim BGE is stopped while recall is already using it.
@@ -7684,7 +7700,7 @@ async def _build_product_sdk_runtime_stack(
 
         production_ports.clear()
         profiles = {"agent.general": RuntimeProfile("agent.general", "react")}
-        config = ProductionRuntimeConfig(
+        runtime_config_kwargs = dict(
             execution_path=execution_path,
             provider_builder=lambda uow: _production_ports_for(uow).provider,
             tools_builder=lambda uow: _production_ports_for(uow).tools,
@@ -7707,7 +7723,16 @@ async def _build_product_sdk_runtime_stack(
             structured_message_services=ProductContextAdapter(),
             owner_id=f"deskpet-product-sdk-g{generation}",
         )
+        if "observability_sink" in inspect.signature(
+            ProductionRuntimeConfig
+        ).parameters:
+            runtime_config_kwargs["observability_sink"] = _sdk_observability.sink
+        config = ProductionRuntimeConfig(**runtime_config_kwargs)
         runtime = build_production_runtime(config)
+        runtime_snapshot = getattr(runtime, "diagnostics_snapshot", None)
+        if callable(runtime_snapshot):
+            _sdk_observability.register_snapshot_source("harness", runtime_snapshot)
+        _sdk_observability.export()
         return ProductionRuntimeBuild(
             runtime=runtime,
             transaction_owner=production_ports["ports"].react_checkpoint,
@@ -10654,6 +10679,11 @@ async def _execute_sdk_run(
     _delivery_adapters[sdk_run_id] = delivery_adapter
     _sdk_run_ids_by_root[root_run_id] = sdk_run_id
     terminal_binding_state: str | None = "failed"
+    observability_token = _sdk_observability.bind_ingress(
+        run_id=sdk_run_id,
+        session_id=session_id,
+        request_id=request_id,
+    )
 
     try:
         receipt = await _sdk_ingress.start(
@@ -10833,6 +10863,8 @@ async def _execute_sdk_run(
         )
 
     finally:
+        _sdk_observability.export()
+        _sdk_observability.reset_ingress(observability_token)
         if terminal_binding_state is not None and _sdk_provider_binding_resolver is not None:
             try:
                 _sdk_provider_binding_resolver.mark_terminal(

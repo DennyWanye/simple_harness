@@ -4,9 +4,9 @@
 //! WI-02 (beta-100) — diagnostic feedback bundle.
 //!
 //! The "反馈" button in the toolbar calls `build_diagnostic_bundle`.
-//! We gather crash reports, recent logs and the anonymous metrics file
-//! into a staging dir, write a redacted `meta.json` + the user's note,
-//! then zip it with PowerShell's `Compress-Archive` (no new Rust dep).
+//! We gather only explicit, bounded SDK observability exports into a staging
+//! dir, write a redacted `meta.json` + the user's bounded note, then zip it
+//! with the platform-native archive tool (no new Rust dep).
 //!
 //! **Privacy contract — enforced here and by tests:**
 //! - The bundle NEVER contains the API key. `llm_runtime.json` is NOT
@@ -15,6 +15,8 @@
 //! - `meta.json` is built field-by-field from a fixed allow-list — there
 //!   is no "copy the whole config" path.
 //! - OS credential store is never read.
+//! - Ambient logs, crash reports, metrics, databases, outboxes and product
+//!   content stores are never copied into the bundle.
 //!
 //! Failure philosophy: a missing source dir is recorded as `"missing"`
 //! in `meta.json` and skipped — we never abort the whole bundle just
@@ -26,6 +28,17 @@ use serde::Serialize;
 use tauri::{command, AppHandle};
 
 use crate::paths;
+
+const SDK_OBSERVABILITY_PER_FILE_MAX: u64 = 1_048_576;
+const SDK_OBSERVABILITY_TOTAL_MAX: u64 = 2_621_440;
+const USER_NOTE_MAX_BYTES: usize = 65_536;
+const SDK_OBSERVABILITY_FILES: &[&str] = &[
+    "sdk-observability-events.jsonl",
+    "sdk-observability-events.jsonl.1",
+    "sdk-observability-events.jsonl.2",
+    "sdk-observability-ring.json",
+    "sdk-observability-snapshot.json",
+];
 
 #[derive(Debug, Serialize)]
 pub struct DiagnosticBundle {
@@ -139,6 +152,76 @@ fn dir_file_size(p: &Path) -> u64 {
     std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
 }
 
+fn copy_sdk_observability(log_dir: &Path, staging: &Path) -> String {
+    let destination = staging.join("sdk-observability");
+    if std::fs::create_dir_all(&destination).is_err() {
+        return "degraded:create_failed".into();
+    }
+    let mut total = 0_u64;
+    let mut copied = 0_usize;
+    let mut degraded = false;
+    for name in SDK_OBSERVABILITY_FILES {
+        let source = log_dir.join(name);
+        let metadata = match std::fs::symlink_metadata(&source) {
+            Ok(value) => value,
+            Err(_) => continue,
+        };
+        if !metadata.file_type().is_file() || metadata.len() > SDK_OBSERVABILITY_PER_FILE_MAX {
+            degraded = true;
+            continue;
+        }
+        let bytes = match std::fs::read(&source) {
+            Ok(value) => value,
+            Err(_) => {
+                degraded = true;
+                continue;
+            }
+        };
+        if contains_observability_canary(&bytes) {
+            degraded = true;
+            continue;
+        }
+        let next_total = total.saturating_add(metadata.len());
+        if next_total > SDK_OBSERVABILITY_TOTAL_MAX {
+            degraded = true;
+            continue;
+        }
+        if std::fs::copy(&source, destination.join(name)).is_ok() {
+            total = next_total;
+            copied += 1;
+        } else {
+            degraded = true;
+        }
+    }
+    if copied == 0 && degraded {
+        "degraded:0:0".into()
+    } else if copied == 0 {
+        "missing".into()
+    } else if degraded {
+        format!("degraded:{copied}:{total}")
+    } else {
+        format!("ok:{copied}:{total}")
+    }
+}
+
+fn contains_observability_canary(bytes: &[u8]) -> bool {
+    const DENIED: &[&[u8]] = &[
+        b"CANARY_",
+        b"sk-CANARY",
+        b"Bearer CANARY",
+        b"\"authorization\"",
+        b"\"cookie\"",
+        b"\"token\"",
+        b"\"password\"",
+        b"\"content\"",
+        b"\"body\"",
+        b"\"exception\"",
+    ];
+    DENIED
+        .iter()
+        .any(|needle| bytes.windows(needle.len()).any(|window| window == *needle))
+}
+
 /// Build the diagnostic zip. `user_note` is the free-text problem
 /// description from the feedback panel.
 #[command]
@@ -147,53 +230,40 @@ pub fn build_diagnostic_bundle(
     user_note: String,
 ) -> Result<DiagnosticBundle, String> {
     let _ = &app; // version pulled below; keep handle for future use
-    let data_dir = paths::user_data_dir()
-        .ok_or_else(|| "cannot resolve user data dir".to_string())?;
-    let log_dir = paths::user_log_dir()
-        .unwrap_or_else(|| data_dir.join("logs"));
+    let data_dir =
+        paths::user_data_dir().ok_or_else(|| "cannot resolve user data dir".to_string())?;
+    let log_dir = paths::user_log_dir().unwrap_or_else(|| data_dir.join("logs"));
 
     let ts = timestamp();
     let staging = std::env::temp_dir().join(format!("deskpet-feedback-{ts}"));
-    std::fs::create_dir_all(&staging)
-        .map_err(|e| format!("create staging dir failed: {e}"))?;
+    std::fs::create_dir_all(&staging).map_err(|e| format!("create staging dir failed: {e}"))?;
 
     let mut collected: std::collections::BTreeMap<String, String> =
         std::collections::BTreeMap::new();
 
-    // --- crash_reports/ (try a couple of plausible locations) --------
-    let crash_candidates = [
-        std::env::current_dir().ok().map(|p| p.join("crash_reports")),
-        Some(data_dir.join("crash_reports")),
-        Some(std::env::temp_dir().join("deskpet_crash_reports")),
-    ];
-    let mut crash_copied = 0;
-    for cand in crash_candidates.into_iter().flatten() {
-        if cand.is_dir() {
-            crash_copied += copy_dir(&cand, &staging.join("crash_reports"));
-        }
-    }
+    // Ambient logs/crash reports can contain provider or user content. They
+    // are intentionally excluded; the SDK files below are the sole event
+    // source admitted to the bundle.
+    collected.insert("crash_reports".into(), "excluded".into());
+    collected.insert("logs".into(), "excluded".into());
+
+    // SDK observability is collected from an exact allow-list. Never walk the
+    // product data directory or infer related DB/outbox/content files.
     collected.insert(
-        "crash_reports".into(),
-        if crash_copied > 0 { format!("ok:{crash_copied}") } else { "missing".into() },
+        "sdk_observability".into(),
+        copy_sdk_observability(&log_dir, &staging),
     );
 
-    // --- logs/ — most recent 3 files ---------------------------------
-    let logs_copied = copy_recent_files(&log_dir, &staging.join("logs"), 3);
-    collected.insert(
-        "logs".into(),
-        if logs_copied > 0 { format!("ok:{logs_copied}") } else { "missing".into() },
-    );
-
-    // --- metrics.jsonl (WI-12) --------------------------------------
-    let metrics_src = data_dir.join("metrics.jsonl");
-    if metrics_src.is_file() && std::fs::copy(&metrics_src, staging.join("metrics.jsonl")).is_ok() {
-        collected.insert("metrics".into(), "ok".into());
-    } else {
-        collected.insert("metrics".into(), "missing".into());
-    }
+    collected.insert("metrics".into(), "excluded".into());
 
     // --- user note ---------------------------------------------------
-    let _ = std::fs::write(staging.join("user_note.txt"), &user_note);
+    let note_bytes = user_note.as_bytes();
+    let note_end = note_bytes.len().min(USER_NOTE_MAX_BYTES);
+    let note_end = (0..=note_end)
+        .rev()
+        .find(|index| user_note.is_char_boundary(*index))
+        .unwrap_or(0);
+    let _ = std::fs::write(staging.join("user_note.txt"), &user_note[..note_end]);
 
     // --- meta.json (REDACTED, allow-list only) -----------------------
     let state_db_size = dir_file_size(&data_dir.join("data").join("state.db"));
@@ -279,6 +349,97 @@ pub fn build_diagnostic_bundle(
 }
 
 #[cfg(test)]
+mod sdk_observability_tests {
+    use super::*;
+
+    fn temp_root(label: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "simple-harness-diagnostics-{label}-{}-{}",
+            std::process::id(),
+            timestamp()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        root
+    }
+
+    #[test]
+    fn sdk_observability_copy_is_allowlisted_and_excludes_content_stores() {
+        let root = temp_root("allowlist");
+        let source = root.join("logs");
+        let staging = root.join("staging");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            source.join("sdk-observability-events.jsonl"),
+            b"{\"safe\":true}\n",
+        )
+        .unwrap();
+        for forbidden in [
+            "memory.db",
+            "state.db",
+            "product_memory_outbox.json",
+            "content.json",
+        ] {
+            std::fs::write(source.join(forbidden), b"CANARY_MEMORY_BODY").unwrap();
+        }
+
+        assert!(copy_sdk_observability(&source, &staging).starts_with("ok:"));
+        let copied = staging.join("sdk-observability");
+        assert!(copied.join("sdk-observability-events.jsonl").is_file());
+        for forbidden in [
+            "memory.db",
+            "state.db",
+            "product_memory_outbox.json",
+            "content.json",
+        ] {
+            assert!(!copied.join(forbidden).exists());
+        }
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sdk_observability_copy_degrades_for_oversized_and_missing_files() {
+        let root = temp_root("bounds");
+        let source = root.join("logs");
+        let staging = root.join("staging");
+        std::fs::create_dir_all(&source).unwrap();
+        assert_eq!(copy_sdk_observability(&source, &staging), "missing");
+        std::fs::write(
+            source.join("sdk-observability-ring.json"),
+            vec![b'x'; SDK_OBSERVABILITY_PER_FILE_MAX as usize + 1],
+        )
+        .unwrap();
+        assert_eq!(copy_sdk_observability(&source, &staging), "degraded:0:0");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn sdk_observability_copy_rejects_canary_files_without_blocking_safe_files() {
+        let root = temp_root("canary");
+        let source = root.join("logs");
+        let staging = root.join("staging");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(
+            source.join("sdk-observability-events.jsonl"),
+            b"{\"event_name\":\"safe\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            source.join("sdk-observability-snapshot.json"),
+            b"{\"value\":\"CANARY_MEMORY_BODY_secret\"}",
+        )
+        .unwrap();
+        assert!(copy_sdk_observability(&source, &staging).starts_with("degraded:1:"));
+        assert!(staging
+            .join("sdk-observability/sdk-observability-events.jsonl")
+            .is_file());
+        assert!(!staging
+            .join("sdk-observability/sdk-observability-snapshot.json")
+            .exists());
+        let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
@@ -295,11 +456,17 @@ mod tests {
         let info = redacted_provider_info(&tmp);
         let s = serde_json::to_string(&info).unwrap();
         // The actual key value must never appear.
-        assert!(!s.contains("sk-SECRET-zzz"), "api_key value leaked into meta!");
+        assert!(
+            !s.contains("sk-SECRET-zzz"),
+            "api_key value leaked into meta!"
+        );
         // The `api_key` *field* (quoted key name) must be absent — note
         // `has_api_key` is a different, allowed boolean field, so we
         // match the exact quoted token `"api_key"`.
-        assert!(!s.contains("\"api_key\""), "api_key field leaked into meta!");
+        assert!(
+            !s.contains("\"api_key\""),
+            "api_key field leaked into meta!"
+        );
         assert!(s.contains("https://x/v1"));
         assert!(s.contains("\"has_api_key\":true"));
         let _ = fs::remove_dir_all(&tmp);
