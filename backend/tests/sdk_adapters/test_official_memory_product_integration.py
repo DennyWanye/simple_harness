@@ -407,9 +407,7 @@ def test_interrupted_pair_journal_restores_both_old_databases(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_explicit_memory_write_uses_trusted_identity_and_event_key() -> None:
     manager = SimpleNamespace(
-        append_message=AsyncMock(
-            return_value=SimpleNamespace(message_id=41)
-        )
+        remember_fact=AsyncMock(return_value=41),
     )
     identity = AgentIdentity("deployment", "household", "actor", "session")
     resolver = SimpleNamespace(resolve=AsyncMock(return_value=identity))
@@ -439,7 +437,12 @@ async def test_explicit_memory_write_uses_trusted_identity_and_event_key() -> No
     handler, mode = _dynamic_handlers(dependencies)["memory_write"]
     assert mode == "context"
     result = await handler(
-        {"text": "remember this", "salience": 0.9},
+        {
+            "text": "remember this",
+            "salience": 0.9,
+            "pinned": True,
+            "tier": "l3",
+        },
         SimpleNamespace(
             session_id="session",
             root_run_id="root",
@@ -447,8 +450,94 @@ async def test_explicit_memory_write_uses_trusted_identity_and_event_key() -> No
         ),
     )
     assert result["memory_id"] == 41
-    assert manager.append_message.await_args.kwargs == {
-        "user_id": "actor",
+    principal, content = manager.remember_fact.await_args.args
+    assert (
+        principal.deployment_id,
+        principal.household_id,
+        principal.actor_id,
+        principal.session_id,
+    ) == ("deployment", "household", "actor", "session")
+    assert content == "remember this"
+    assert manager.remember_fact.await_args.kwargs == {
         "source_event_id": "explicit-memory-action/v1/root/call",
         "salience": 0.9,
+        "pinned": True,
+        "tier": "identity",
     }
+
+
+@pytest.mark.asyncio
+async def test_explicit_read_and_forget_use_full_trusted_principal() -> None:
+    identities = {
+        "session-a": AgentIdentity("deployment", "household-a", "actor-a", "session-a"),
+        "session-b": AgentIdentity("deployment", "household-b", "actor-b", "session-b"),
+    }
+
+    async def read_fact(principal, fact_id):
+        if principal.actor_id != "actor-a":
+            return None
+        return SimpleNamespace(id=fact_id, key="preference", value="concise")
+
+    manager = SimpleNamespace(
+        read_fact=AsyncMock(side_effect=read_fact),
+        forget_fact=AsyncMock(return_value="forgotten"),
+    )
+    resolver = SimpleNamespace(
+        resolve=AsyncMock(side_effect=lambda session_id: identities[session_id])
+    )
+    no_op = SimpleNamespace(
+        replace_session_todos=lambda *_args: None,
+        get=lambda *_args: None,
+        mark_active=lambda *_args: None,
+        recall_readonly=lambda *_args: None,
+        resolve_for_run=lambda *_args: None,
+        search=lambda *_args: None,
+        describe=lambda *_args: None,
+        suggestions=lambda *_args: None,
+        activate=lambda *_args: None,
+    )
+    dependencies = ToolCatalogDependencies(
+        no_op,
+        lambda: None,
+        no_op,
+        lambda: None,
+        no_op,
+        no_op,
+        no_op,
+        SimpleNamespace(search=lambda *_args: None),
+        memory_manager=manager,
+        memory_identity_resolver=resolver,
+    )
+    handlers = _dynamic_handlers(dependencies)
+    read = handlers["memory_read"][0]
+    forget = handlers["memory_forget"][0]
+
+    own = await read(
+        {"memory_id": 41},
+        SimpleNamespace(session_id="session-a", root_run_id="root", call_id="read"),
+    )
+    cross = await read(
+        {"memory_id": 41},
+        SimpleNamespace(session_id="session-b", root_run_id="root", call_id="cross"),
+    )
+    forgotten = await forget(
+        {"fact_id": 41},
+        SimpleNamespace(session_id="session-a", root_run_id="root", call_id="forget"),
+    )
+
+    assert own == {
+        "ok": True,
+        "memory": {"id": 41, "key": "preference", "value": "concise"},
+    }
+    assert cross == {"ok": False, "error": "memory_not_found"}
+    assert forgotten == {"ok": True, "receipt": "forgotten"}
+    principal = manager.forget_fact.await_args.kwargs["principal"]
+    assert (
+        principal.deployment_id,
+        principal.household_id,
+        principal.actor_id,
+        principal.session_id,
+    ) == ("deployment", "household-a", "actor-a", "session-a")
+    assert manager.forget_fact.await_args.kwargs["reason"] == (
+        "explicit-memory-action/v1/root/forget"
+    )

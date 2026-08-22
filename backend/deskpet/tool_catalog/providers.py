@@ -297,57 +297,56 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         }
     )
     if deps.memory_manager is not None and deps.memory_identity_resolver is not None:
-        async def memory_write(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
+        from simple_harness_memory import MemoryPrincipal
+
+        async def trusted_principal(context: Any) -> MemoryPrincipal:
             identity = await deps.memory_identity_resolver.resolve(context.session_id)
+            return MemoryPrincipal(
+                identity.deployment_id,
+                identity.household_id,
+                identity.actor_id,
+                identity.session_id,
+            )
+
+        async def memory_write(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
             source_event_id = (
                 f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}"
             )
-            result = await deps.memory_manager.append_message(
-                identity.session_id,
-                "user",
+            tier = {
+                "auto": "auto",
+                "l1": "working",
+                "l2": "long_term",
+                "l3": "identity",
+            }[str(arguments.get("tier", "auto"))]
+            fact_id = await deps.memory_manager.remember_fact(
+                await trusted_principal(context),
                 str(arguments["text"]),
-                user_id=identity.actor_id,
                 source_event_id=source_event_id,
                 salience=float(arguments.get("salience", 0.5)),
+                pinned=bool(arguments.get("pinned", False)),
+                tier=tier,
             )
             return {
                 "ok": True,
-                "memory_id": int(result.message_id),
+                "memory_id": int(fact_id),
                 "source_event_id": source_event_id,
             }
 
         async def memory_forget(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
             if arguments.get("query") and arguments.get("fact_id") is None:
                 return {"ok": False, "error": "natural_language_forget_disabled"}
-            identity = await deps.memory_identity_resolver.resolve(context.session_id)
-            from simple_harness_memory.core.identity import MemoryPrincipal
-
             receipt = await deps.memory_manager.forget_fact(
                 int(arguments["fact_id"]),
                 reason=f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}",
-                principal=MemoryPrincipal(
-                    identity.deployment_id,
-                    identity.household_id,
-                    identity.actor_id,
-                    identity.session_id,
-                ),
+                principal=await trusted_principal(context),
             )
             return {"ok": True, "receipt": str(receipt)}
 
         async def memory_read(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
-            identity = await deps.memory_identity_resolver.resolve(context.session_id)
-            facts = await deps.memory_manager.get_facts(
-                user_id=identity.actor_id,
-                limit=256,
-            )
             fact_id = int(arguments["memory_id"])
-            fact = next(
-                (
-                    item
-                    for item in facts
-                    if item.id is not None and int(item.id) == fact_id
-                ),
-                None,
+            fact = await deps.memory_manager.read_fact(
+                await trusted_principal(context),
+                fact_id,
             )
             if fact is None:
                 return {"ok": False, "error": "memory_not_found"}
