@@ -335,12 +335,22 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         async def memory_forget(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
             if arguments.get("query") and arguments.get("fact_id") is None:
                 return {"ok": False, "error": "natural_language_forget_disabled"}
-            receipt = await deps.memory_manager.forget_fact(
-                int(arguments["fact_id"]),
-                reason=f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}",
-                principal=await trusted_principal(context),
+            source_event_id = (
+                f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}"
             )
-            return {"ok": True, "receipt": str(receipt)}
+            forgotten = bool(await deps.memory_manager.forget_fact(
+                int(arguments["fact_id"]),
+                reason="",
+                principal=await trusted_principal(context),
+                source_event_id=source_event_id,
+                payload_hash=None,
+            ))
+            return {
+                "ok": True,
+                "forgotten": forgotten,
+                "receipt": "forgotten" if forgotten else "already_forgotten",
+                "source_event_id": source_event_id,
+            }
 
         async def memory_read(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
             fact_id = int(arguments["memory_id"])

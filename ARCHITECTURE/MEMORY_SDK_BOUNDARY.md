@@ -61,7 +61,9 @@ fail closed。
 - simple_harness 现有显式 remember/read/forget 工具从 resolver 的完整 deployment/household/actor/session
   构造可信 `MemoryPrincipal`；write 调正式 `remember_fact` 并保留 salience/pinned/tier，返回准确 fact ID；
   read 调 `read_fact`，不再按 legacy user 扫描 facts。独立 event key 的同 payload 重试保持同 ID，元数据变化
-  conflict，跨 principal 不可读/不可重放，forget 后同 event 重试不复活；自然语言遗忘仍按安全例外关闭。
+  conflict，跨 principal 不可读/不可重放。forget 显式传 `source_event_id`，由 SDK canonicalize payload hash；
+  首次 action 与重放返回同一结果，后续独立 action 对已删除 fact 稳定返回 false，receipt 跨重启保持且不复活；
+  自然语言遗忘仍按安全例外关闭。
 - `MemoryManager.share_fact(principal, fact_id)` 是 Memory SDK 正式授权分享接口；本轮不为 simple_harness
   新增 `memory_share` Tool/UI，供后续 K6/AgentOS、NovelTagSystem、AI Phone 消费。
 
@@ -77,8 +79,8 @@ fail closed。
 ## 6. 当前验证状态
 
 - exact wheel SHA/direct-url installed-origin 与 candidate conformance：PASS。
-- candidate/explicit API/lifecycle 聚焦：`77 passed`；SDK + affected product regression：`408 passed, 1 deselected`。
-- FULL_SURFACE_SMOKE：backend `79 passed`；frontend `156 passed`。
+- Round2 candidate/explicit API 聚焦：`72 passed`；SDK + affected product regression：`409 passed, 1 deselected`。
+- FULL_SURFACE_SMOKE：backend `80 passed`；frontend `156 passed`。
 - baseline_runner：17 shards 中 15 PASS；`root-tests` 与 `frontend-lint` 精确命中实施前 known-red；0 new fail。
 - frontend Vitest/typecheck/build 与 Rust test/check：PASS。
 - SH-I01：同 user-data 重启稳定、Provider/API key/model/payload spoof 不影响、跨 user-data 隔离、损坏身份/

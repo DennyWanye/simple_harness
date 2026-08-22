@@ -5,7 +5,7 @@
 ## SDK Context / Memory 官方一等集成（2026-08-22）
 
 - exact 依赖已切到 Harness 0.3.0（wheel SHA `3740d26b…`）与 Memory 0.4.0（wheel SHA
-  `e4055587…`）。生产只构造一个 `MemoryManager`，Harness Runtime 以 `BORROWED` ownership 使用；
+  `81484a81…`）。生产只构造一个 `MemoryManager`，Harness Runtime 以 `BORROWED` ownership 使用；
   shutdown 先关闭 runtime borrower，再由 SessionDB 有界 drain 并唯一 close manager。
 - root/continuation 入口只提交正式 Conversation input 与各自独立、content-addressed 的 non-Memory Context
   source ref；SDK 保存 claim 后调用 read-only provider，并自动完成 Memory recall、frozen stage 与成功 Turn
@@ -16,8 +16,9 @@
 - foreground Harness 只走 execution committed-turn outbox；非 Harness producer 保留 product outbox。
   ordinary foreground catalog 移除 live `memory_recall/memory_search`，避免自动 recall 后二次查询。
 - 显式 remember/read/forget 使用 resolver 生成的完整 `MemoryPrincipal` 与正式 fact API；write 保留
-  salience/pinned/tier 并返回准确 fact ID，重试/冲突/跨 principal/forget 不复活语义由 exact wheel 回归覆盖。
-- 自动化已完成：affected `408 passed, 1 deselected`、FULL_SURFACE backend `79 passed` / frontend `156 passed`、
+  salience/pinned/tier 并返回准确 fact ID；forget 使用显式 action `source_event_id`，持久 True/False receipt
+  在重放与重启后稳定。重试/冲突/跨 principal/forget 不复活语义由 exact wheel 回归覆盖。
+- 自动化已完成：affected `409 passed, 1 deselected`、FULL_SURFACE backend `80 passed` / frontend `156 passed`、
   baseline_runner 0 新红、frontend type/build/Vitest 与 Rust test/check 全绿。MCP 真人 SH-M1～SH-M6 待验。
 - 完整边界与当前验收状态见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
 

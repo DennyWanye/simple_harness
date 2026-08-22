@@ -3,10 +3,11 @@
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
 2026-08-22 当前事实：simple_harness 已 vendor Harness 0.3.0（wheel SHA `3740d26b…`）与 Memory 0.4.0
-（HEAD `ba843d75…`，wheel SHA `e4055587…`）。生产组合使用一个 borrowed `MemoryManager`、正式 AgentIdentity、SDK-prepared
+（HEAD `87f1daee…`，wheel SHA `81484a81…`）。生产组合使用一个 borrowed `MemoryManager`、正式 AgentIdentity、SDK-prepared
 Memory 与 read-only product Context provider；root 与 continuation 使用各自 immutable source ref。
 foreground committed Turn 与非 Harness product outbox 按 provenance 分治，普通前台工具不再二次 live recall。
-显式 remember/read/forget 使用完整可信 principal 与正式 fact API，返回准确 fact ID；shutdown 先关闭借用
+显式 remember/read/forget 使用完整可信 principal 与正式 fact API，返回准确 fact ID；forget 以显式
+`source_event_id` 生成持久 action receipt，同 action 重放保留结果、后续 action 稳定返回 no-op；shutdown 先关闭借用
 runtime、再有界 drain/关闭唯一 SessionDB owner，重复关闭不重复释放 manager。自动化门禁已完成且 0 新红；
 MCP 真人 SH-M1～SH-M6 待验。
 开发期 schema 变化用显式三库 reset 从空库开始，不实现用户运行时全面抹除。聚焦自动化 D1/D2/D3、

@@ -372,7 +372,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "3740d26b95f11e638258969b6e1aa83138c31b959f920d9f060d6e0c73e550c2"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
-        "e4055587faf0bff50bcc919625096c595b6f2bc78dcb5bdb21245c561a4249a1"
+        "81484a81f6a8dc1efb92d9b4b946c2152139c75b794750a241b9388c5cddf5a5"
     )
     assert SDK_WHEEL_SHA256 not in {
         "1e4d21d58bee0e58ea3bc49768ff63ba9095eefd2e2d3436375576005bbac99a",
@@ -382,6 +382,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "2fad089b111b8f6a1e6406e5b6f12167daf911371cfdd2e5c41e0e7a9818700f",
         "f61dbbb747bb5e593088f9e7e7aeeb5ca4757dcf7e24d88403fed44c97f3e376",
         "bf4335d3d06fa1dd3aa538f581af5233abdf15b4441d3b05e6757db6889c8f09",
+        "e4055587faf0bff50bcc919625096c595b6f2bc78dcb5bdb21245c561a4249a1",
     }
 
 
@@ -542,7 +543,12 @@ async def test_explicit_read_and_forget_use_full_trusted_principal() -> None:
         "memory": {"id": 41, "key": "preference", "value": "concise"},
     }
     assert cross == {"ok": False, "error": "memory_not_found"}
-    assert forgotten == {"ok": True, "receipt": "forgotten"}
+    assert forgotten == {
+        "ok": True,
+        "forgotten": True,
+        "receipt": "forgotten",
+        "source_event_id": "explicit-memory-action/v1/root/forget",
+    }
     principal = manager.forget_fact.await_args.kwargs["principal"]
     assert (
         principal.deployment_id,
@@ -550,9 +556,12 @@ async def test_explicit_read_and_forget_use_full_trusted_principal() -> None:
         principal.actor_id,
         principal.session_id,
     ) == ("deployment", "household-a", "actor-a", "session-a")
-    assert manager.forget_fact.await_args.kwargs["reason"] == (
-        "explicit-memory-action/v1/root/forget"
-    )
+    assert manager.forget_fact.await_args.kwargs == {
+        "reason": "",
+        "principal": principal,
+        "source_event_id": "explicit-memory-action/v1/root/forget",
+        "payload_hash": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -641,3 +650,96 @@ async def test_official_explicit_fact_api_is_durable_scoped_and_idempotent(
         assert await manager.read_fact(owner, fact_id) is None
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_official_forget_receipt_replays_conflicts_and_survives_restart(
+    tmp_path,
+) -> None:
+    path = tmp_path / "memory.db"
+    owner = MemoryPrincipal("deployment", "household-a", "actor-a", "session-a")
+    outsider = MemoryPrincipal("deployment", "household-b", "actor-b", "session-b")
+    action = "explicit-memory-action/v1/root/forget-call"
+    later_action = "explicit-memory-action/v1/root/later-forget-call"
+
+    manager = await MemoryManager.build_development(path)
+    first_id = await manager.remember_fact(
+        owner, "first", source_event_id="explicit-write-first"
+    )
+    second_id = await manager.remember_fact(
+        owner, "second", source_event_id="explicit-write-second"
+    )
+    assert (
+        await manager.forget_fact(
+            first_id,
+            reason="",
+            principal=owner,
+            source_event_id=action,
+            payload_hash=None,
+        )
+        is True
+    )
+    assert (
+        await manager.forget_fact(
+            first_id,
+            reason="",
+            principal=owner,
+            source_event_id=action,
+            payload_hash=None,
+        )
+        is True
+    )
+    with pytest.raises(MemoryIdempotencyConflict):
+        await manager.forget_fact(
+            second_id,
+            reason="",
+            principal=owner,
+            source_event_id=action,
+            payload_hash=None,
+        )
+    with pytest.raises(MemoryOwnershipConflict):
+        await manager.forget_fact(
+            first_id,
+            reason="",
+            principal=outsider,
+            source_event_id=action,
+            payload_hash=None,
+        )
+    assert (
+        await manager.forget_fact(
+            first_id,
+            reason="",
+            principal=owner,
+            source_event_id=later_action,
+            payload_hash=None,
+        )
+        is False
+    )
+    await manager.close()
+
+    reopened = await MemoryManager.build_development(path)
+    try:
+        assert (
+            await reopened.forget_fact(
+                first_id,
+                reason="",
+                principal=owner,
+                source_event_id=action,
+                payload_hash=None,
+            )
+            is True
+        )
+        assert (
+            await reopened.forget_fact(
+                first_id,
+                reason="",
+                principal=owner,
+                source_event_id=later_action,
+                payload_hash=None,
+            )
+            is False
+        )
+        assert await reopened.read_fact(owner, first_id) is None
+        assert await reopened.read_fact(outsider, second_id) is None
+    finally:
+        await reopened.close()
