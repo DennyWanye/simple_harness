@@ -7807,7 +7807,7 @@ dependencies = [
     { name = "structlog" },
 ]
 wheels = [
-    { filename = "simple_harness_memory_sdk-0.4.0-py3-none-any.whl", hash = "sha256:81484a81f6a8dc1efb92d9b4b946c2152139c75b794750a241b9388c5cddf5a5" },
+    { filename = "simple_harness_memory_sdk-0.4.0-py3-none-any.whl", hash = "sha256:17b0c534b001e829f6c6735b20723b40e528fe367994142b9f80964e512834e9" },
 ]
 
 [package.metadata]

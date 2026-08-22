@@ -372,7 +372,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "cf629ceed1e419fccacabc220f66ba201120f21ed58d30af5c4f70da97dae147"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
-        "81484a81f6a8dc1efb92d9b4b946c2152139c75b794750a241b9388c5cddf5a5"
+        "17b0c534b001e829f6c6735b20723b40e528fe367994142b9f80964e512834e9"
     )
     assert SDK_WHEEL_SHA256 not in {
         "1e4d21d58bee0e58ea3bc49768ff63ba9095eefd2e2d3436375576005bbac99a",
