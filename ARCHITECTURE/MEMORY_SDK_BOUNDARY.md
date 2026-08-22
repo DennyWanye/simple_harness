@@ -1,7 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
 > 最后更新：2026-08-22
-> 自动化基线：simple_harness `5c825ed0`；Harness 0.3.0 / Memory 0.4.0 exact wheels
+> 自动化基线：simple_harness `88a8bdec`；Harness 0.3.0 / Memory 0.4.0 exact wheels
 
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码与自动化门禁；
 真实 MCP UI 场景 SH-M1～SH-M6 尚待验，因此当前状态是“自动化完成、UI 待验”，不是最终真人验收完成。

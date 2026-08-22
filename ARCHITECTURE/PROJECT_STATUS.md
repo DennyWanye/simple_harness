@@ -22,7 +22,7 @@
   Memory SDK 已提供正式 authorized share API，本轮不新增
   simple_harness share Tool/UI。
 - **自动化证据**：Round2 candidate/explicit API 聚焦 `72 passed`；SDK/affected `409 passed, 1 deselected`；
-  FULL_SURFACE backend `80 passed`、frontend `156 passed`；上一轮 baseline_runner 从 clean `5c825ed0` 全新运行
+  FULL_SURFACE backend `80 passed`、frontend `156 passed`；baseline_runner 从 clean `88a8bdec` 全新运行
   15/17 PASS，余 2 项精确命中实施前 known-red，0 新红；
   frontend Vitest/typecheck/build 与 Rust test/check PASS。
 - **剩余门**：主代理通过 MCP 真坐标执行 SH-M1～SH-M6；完成前状态保持“自动化完成、UI 待验”。原始证据

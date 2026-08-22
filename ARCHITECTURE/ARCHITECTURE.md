@@ -1,4 +1,4 @@
-<!-- last-calibrated: 5c825ed0853ec02bf29bd7ab98716f4835451f41 -->
+<!-- last-calibrated: 88a8bdec279b6bec3eb7d0ab47f2542e57f7d357 -->
 
 # simple_harness Long-Running Agent Architecture Baseline
 
