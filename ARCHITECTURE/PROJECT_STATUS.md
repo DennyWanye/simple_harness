@@ -27,10 +27,12 @@
   backend `83 passed`、MemoryPanel `18 passed`、TypeScript PASS；full baseline 15 PASS + 2 个实施前 known-red，
   0 unexpected。
 - **真实 UI 证据**：macOS Computer Use 使用设置页的 DeepSeek 完成 SH-M1～SH-M6、SH-SURFACE。跨 Session
-  recall、PPT/permission/Artifact、恶意 Memory 数据隔离、冷重启、recall timeout 与 record transient 崩溃恢复
-  均通过；停止链落到 `run.cancelled` 且 ordered projection cursor 不再卡死。
+  `Max` recall、PPT/permission/Artifact、恶意 Memory 数据隔离、冷重启、带进程级 fault attestation 的
+  recall timeout、record transient 崩溃恢复，以及当前构建的附件选择器打开/Esc 安全取消均通过；停止链
+  落到 `run.cancelled` 且 ordered projection cursor 不再卡死。
 - **范围边界**：AIPhone、K6/AgentOS、NovelTagSystem 未修改、未集成、未测试；Harness/Memory 的 future-consumer
-  与 `share_fact` 接口已就绪。原始证据只保存在 ignored `.local-test-evidence/2026-08-22/gate-final-r4/`。
+  与 `share_fact` 接口已就绪。r7 独立审计发现的证据标签、fault attestation、S6-A8 状态和 custody 问题
+  已在继任 Gate 前修复；r7 不作为发布 receipt。原始证据只保存在 ignored `.local-test-evidence/2026-08-22/`。
 
 ## 2026-08-21 macOS 测试基线收口与历史 Windows 测试退役
 

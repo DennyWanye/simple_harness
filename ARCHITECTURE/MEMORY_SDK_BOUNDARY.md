@@ -87,8 +87,10 @@ fail closed。
 - 产品 full baseline：15 shards PASS、2 个实施前 known-red（root live fixture、ESLint 171 fingerprint），0 unexpected。
 - SH-I01：同 user-data 重启稳定、Provider/API key/model/payload spoof 不影响、跨 user-data 隔离、损坏身份/
   错误 snapshot 在 LLM 前拒绝、legacy profile 排除：PASS。
-- 真实 UI：SH-M1～SH-M6、SH-SURFACE 全 PASS。SH-M5 跨进程新 Session 召回 `Aurora-R4`；SH-M6
-  证明 recall timeout 不阻断主 Turn，record transient 在未写入时退出后由 startup recovery 唯一收敛，
-  新 Session 回答“晚饭后”。
-- Gate r4：21/21 required 场景已运行并达到 `READY_FOR_AUDIT`；原始截图、日志和数据库仅在 ignored
-  `.local-test-evidence/2026-08-22/gate-final-r4/`，Git 只保存结论与 hash 索引。
+- 真实 UI：SH-M1～SH-M6、SH-SURFACE 全 PASS。SH-M5 按冻结 exact oracle 跨进程新 Session 召回
+  `Max`；`Aurora-R4` 只属于早期隔离 canary。SH-M6 以进程环境 attestation 直接证明 recall timeout
+  fixture 已启用且主 Turn 不受阻断；record transient 在未写入时退出后由 startup recovery 唯一收敛，
+  新 Session 回答“晚饭后”。SH-SURFACE 已在当前构建真实打开 macOS 附件选择器并以 Esc 安全取消。
+- r7 独立审计因附件截图错配、recall fault 缺直接 attestation、S6-A8 状态文字与导入 custody 不完整而
+  判 FAIL；这些证据/文档缺口已在继任 Gate 输入前修复，r7 不作为发布 receipt。原始截图、日志、进程
+  attestation 和 Gate ledger 仅在 ignored `.local-test-evidence/2026-08-22/`，Git 只保存结论与 hash 索引。

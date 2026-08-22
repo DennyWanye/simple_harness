@@ -146,7 +146,7 @@
 | S6-A5 | persona/skills/history/attachments/tool/artifact/context regression全绿 |
 | S6-A6 | fresh local identity、同user-data重启及Provider/API key变化稳定、不同user-data隔离、损坏identity fail closed、缺binding与v3→v4可恢复cutover |
 | S6-A7 | v3各run状态及已apply/pending Memory交叉矩阵迁移无tentative残留/重复且fault可完整回滚 |
-| S6-A8 | PENDING context orphan有界回收且不误删active/shared source snapshot |
+| S6-A8 | context orphan有界回收且不误删active/shared source snapshot；`test_context_gc_retains_active_or_inspector_failure_and_reclaims_orphan` 已验证 |
 | S6-A9 | root/continuation ref互异且各自稳定重放；旧candidate复用root ref的行为被contract test拒绝 |
 
 ## 真测禁止项
