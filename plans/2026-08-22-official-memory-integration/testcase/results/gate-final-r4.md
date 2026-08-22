@@ -24,6 +24,13 @@ SH-M5 在隔离 profile 写入 `Aurora-R4`、完整退出、重启后由新 Sess
 保持主 Turn completed，record transient 在成功回复但 Memory 尚未提交时退出，清除 fault 后 startup recovery
 唯一提交，随后新 Session 回答“晚饭后”。SH-SURFACE 覆盖设置、技能、产物、Facts、ContextTrace 与权限边界取消。
 
+最终独立审计改为引用 r2 中逐字符合冻结 oracle 的原始证据：SH-M1/SH-M5 均使用 `Max`，SH-M2
+使用标题 `SDK Memory 验收`，SH-M3 两个独立 root 都显示最终一句话偏好总结。原先 `Aurora-R4` / `R4
+Memory 验收` 仅是隔离 canary，不再作为 exact-oracle 主证据。SH-SURFACE 的 file 与 attachment 使用 r2
+对应原始截图；shell/web 因旧截图停留在 file 页面，于最终 HEAD 上用两个新 root 重新真测：`pwd` exit code
+0 并显示工作区路径，`web_search` 返回 Python 官方文档标题与 `docs.python.org` 链接；两者均经可见权限弹窗
+“允许一次”完成，原始截图和脱敏 backend 日志保存在 ignored `.local-test-evidence/`。
+
 原始截图、日志、数据库与 Gate ledger 位于 ignored `.local-test-evidence/2026-08-22/gate-final-r2/`、
 `gate-final-r4/` 及其显式 chain-of-custody successor；本文件不复制原始内容，只保留结论与相对索引。
 
