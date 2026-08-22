@@ -7559,8 +7559,6 @@ async def _build_product_sdk_runtime_stack(
         from simple_harness.execution.context_staging import (
             ContextStagingRepository,
         )
-        from simple_harness.runtime import ContextPreparationMode
-
         context_staging = ContextStagingRepository(database)
         service_context.register("sdk_context_staging", context_staging)
         return RuntimePorts(
@@ -7578,7 +7576,6 @@ async def _build_product_sdk_runtime_stack(
             agent_memory=agent_memory_port,
             context_provider=context_provider,
             context_staging=context_staging,
-            context_preparation_mode=ContextPreparationMode.SDK_PREPARED,
         )
 
     class _ProductionToolCatalogProxy:
@@ -7621,7 +7618,6 @@ async def _build_product_sdk_runtime_stack(
 
     def production_runtime_factory(execution_path):
         from simple_harness.runtime import (
-            ContextPreparationMode,
             ResourceOwnership,
             ProductionRuntimeConfig,
             build_production_runtime,
@@ -7646,7 +7642,6 @@ async def _build_product_sdk_runtime_stack(
             memory=agent_memory_port,
             memory_ownership=ResourceOwnership.BORROWED,
             context_provider=context_provider,
-            context_preparation_mode=ContextPreparationMode.SDK_PREPARED,
             provider_budget_resolver=provider_binding_resolver,
             provider_projection_pump=production_projection_pump,
             run_binding=tool_authorities,
@@ -10861,7 +10856,14 @@ async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
         if terminal_state is not None and projection_committed:
             context_sources = service_context.get("sdk_context_source_repository")
             if context_sources is not None:
-                await context_sources.consume_run(sdk_run_id)
+                try:
+                    await context_sources.consume_run(sdk_run_id)
+                except Exception as exc:  # retained cleanup retries on later GC
+                    logger.warning(
+                        "sdk_context_source_terminal_cleanup_deferred",
+                        sdk_run_id=sdk_run_id,
+                        error=str(exc)[:200],
+                    )
             if _sdk_provider_binding_resolver is not None:
                 try:
                     _sdk_provider_binding_resolver.mark_terminal(

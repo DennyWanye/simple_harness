@@ -17,6 +17,10 @@ from deskpet.memory.session_db import SessionDB
 from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
 from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
 from deskpet.sdk_adapters.memory_faults import DevMemoryFaultPort, wrap_dev_memory_faults
+from deskpet.sdk_adapters.sdk_candidate import (
+    SDK_MEMORY_WHEEL_SHA256,
+    SDK_WHEEL_SHA256,
+)
 from deskpet.migrations.sdk_v4_cutover import recover_product_sdk_pair_v4
 from deskpet.tool_catalog.providers import ToolCatalogDependencies, _dynamic_handlers
 from simple_harness.contracts.messages import Message, MessageRole
@@ -350,6 +354,23 @@ async def test_dev_fault_wrapper_is_one_shot_and_fail_closed(monkeypatch, tmp_pa
     monkeypatch.setenv("DESKPET_DEV_MODE", "0")
     with pytest.raises(RuntimeError, match="memory_faults_require_dev_mode"):
         wrap_dev_memory_faults(target, user_data_dir=isolated)
+
+
+def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
+    assert SDK_WHEEL_SHA256 == (
+        "3740d26b95f11e638258969b6e1aa83138c31b959f920d9f060d6e0c73e550c2"
+    )
+    assert SDK_MEMORY_WHEEL_SHA256 == (
+        "bf4335d3d06fa1dd3aa538f581af5233abdf15b4441d3b05e6757db6889c8f09"
+    )
+    assert SDK_WHEEL_SHA256 not in {
+        "1e4d21d58bee0e58ea3bc49768ff63ba9095eefd2e2d3436375576005bbac99a",
+        "d27b2273ba6a0b75ddbc21781a10e15ed72fd163b9eecf5fd5bda9315695af2c",
+    }
+    assert SDK_MEMORY_WHEEL_SHA256 not in {
+        "2fad089b111b8f6a1e6406e5b6f12167daf911371cfdd2e5c41e0e7a9818700f",
+        "f61dbbb747bb5e593088f9e7e7aeeb5ca4757dcf7e24d88403fed44c97f3e376",
+    }
 
 
 def test_interrupted_pair_journal_restores_both_old_databases(tmp_path) -> None:

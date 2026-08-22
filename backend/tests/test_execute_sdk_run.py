@@ -1312,22 +1312,11 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
         ensure_memory_user_binding=AsyncMock(return_value="user-continuation"),
         get_recent_messages=AsyncMock(return_value=[]),
     )
-    stage = SimpleNamespace(
-        stage_id="stage-continuation",
-        private_snapshot_hash="a" * 64,
-        private_snapshot={"schema_version": 1},
-    )
     context_sources = SimpleNamespace(
         put_pending=AsyncMock(
             return_value=("binding-continuation", "sha256:" + "b" * 64)
         ),
         mark_claimed=AsyncMock(),
-    )
-    import simple_harness.runtime
-    monkeypatch.setattr(
-        simple_harness.runtime,
-        "prepare_consumer_conversation_context",
-        AsyncMock(return_value=stage),
     )
     monkeypatch.setattr(main, "_sdk_ingress", ingress)
     monkeypatch.setattr(

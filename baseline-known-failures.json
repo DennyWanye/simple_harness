@@ -1,5 +1,9 @@
 {
   "schema_version": 1,
+  "signatures": [
+    "root-tests:exit=1",
+    "frontend-lint:exit=1"
+  ],
   "failures": {
     "backend-a": "9a02eb1f43b5a6f95ce09db7e9aa8ad288f440853b46701022ced298f3b20da7",
     "backend-c": "5a52f2cab0818c7d5250e8d2e9e1dedeacb4cccf9e4ee7b3594fc94211650bd1",

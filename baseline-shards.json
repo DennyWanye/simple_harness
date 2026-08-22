@@ -2,133 +2,98 @@
   "schema_version": 1,
   "shards": [
     {
-      "name": "backend-a",
+      "id": "backend-a",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "a",
-        "hi": "a"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "a",
+        "a",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 900
     },
     {
-      "name": "backend-b",
+      "id": "backend-b",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "b",
-        "hi": "b"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "b",
+        "b",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 900
     },
     {
-      "name": "backend-c",
+      "id": "backend-c",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "c",
-        "hi": "c"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "c",
+        "c",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 900
     },
     {
-      "name": "backend-d-f",
+      "id": "backend-d-f",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "d",
-        "hi": "f"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "d",
+        "f",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 1200
     },
     {
-      "name": "backend-g-l",
+      "id": "backend-g-l",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "g",
-        "hi": "l"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "g",
+        "l",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 1200
     },
     {
-      "name": "backend-m-r",
+      "id": "backend-m-r",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "m",
-        "hi": "r"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "m",
+        "r",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 1200
     },
     {
-      "name": "backend-s-z",
+      "id": "backend-s-z",
       "command": [
         "backend/.venv/bin/python",
-        "-m",
-        "pytest"
-      ],
-      "pytest_alpha": {
-        "root": "backend/tests",
-        "lo": "s",
-        "hi": "z"
-      },
-      "args": [
+        "backend/scripts/run_pytest_alpha_shard.py",
+        "backend/tests",
+        "s",
+        "z",
         "-q",
         "--tb=short"
       ],
       "timeout_seconds": 1200
     },
     {
-      "name": "backend-capabilities",
+      "id": "backend-capabilities",
       "command": [
         "backend/.venv/bin/python",
         "-m",
@@ -140,7 +105,7 @@
       "timeout_seconds": 900
     },
     {
-      "name": "backend-companion",
+      "id": "backend-companion",
       "command": [
         "backend/.venv/bin/python",
         "-m",
@@ -152,13 +117,11 @@
       "timeout_seconds": 900
     },
     {
-      "name": "backend-sdk-adapters",
+      "id": "backend-sdk-adapters",
       "command": [
         "backend/.venv/bin/python",
         "-m",
-        "pytest"
-      ],
-      "args": [
+        "pytest",
         "backend/tests/sdk_adapters",
         "-q",
         "--tb=short"
@@ -167,7 +130,7 @@
       "note": "2026-08-19 补：此前分片只按 tests/test_* 首字母枚举，漏掉 tests/sdk_adapters/ 子目录（SDK 切换的主战场）"
     },
     {
-      "name": "root-tests",
+      "id": "root-tests",
       "command": [
         "backend/.venv/bin/python",
         "-m",
@@ -179,7 +142,7 @@
       "timeout_seconds": 900
     },
     {
-      "name": "frontend-vitest",
+      "id": "frontend-vitest",
       "cwd": "tauri-app",
       "command": [
         "node_modules/.bin/vitest",
@@ -188,7 +151,7 @@
       "timeout_seconds": 1200
     },
     {
-      "name": "frontend-typecheck",
+      "id": "frontend-typecheck",
       "cwd": "tauri-app",
       "command": [
         "node_modules/.bin/tsc",
@@ -198,7 +161,7 @@
       "timeout_seconds": 600
     },
     {
-      "name": "frontend-lint",
+      "id": "frontend-lint",
       "cwd": "tauri-app",
       "command": [
         "node_modules/.bin/eslint",
@@ -207,7 +170,7 @@
       "timeout_seconds": 600
     },
     {
-      "name": "frontend-build",
+      "id": "frontend-build",
       "cwd": "tauri-app",
       "command": [
         "npm",
@@ -217,7 +180,7 @@
       "timeout_seconds": 900
     },
     {
-      "name": "rust-test",
+      "id": "rust-test",
       "cwd": "tauri-app/src-tauri",
       "command": [
         "cargo",
@@ -227,7 +190,7 @@
       "timeout_seconds": 1800
     },
     {
-      "name": "rust-check",
+      "id": "rust-check",
       "cwd": "tauri-app/src-tauri",
       "command": [
         "cargo",

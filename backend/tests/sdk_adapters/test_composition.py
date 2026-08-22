@@ -212,7 +212,9 @@ def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> Non
     source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
     assert "ProductionRuntimeConfig(" in source
     assert "build_production_runtime(config)" in source
-    assert "ContextPreparationMode.SDK_PREPARED" in source
+    assert "agent_memory=agent_memory_port" in source
+    assert "context_provider=context_provider" in source
+    assert "ContextPreparationMode" not in source
     assert "memory=agent_memory_port" in source
     assert "context_provider=context_provider" in source
     assert "conversation_query=" not in source

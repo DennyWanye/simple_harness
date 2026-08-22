@@ -1,11 +1,15 @@
 import sqlite3
 import time
+from types import SimpleNamespace
 
 import pytest
 
 from deskpet.memory.product_outbox import ProductMemoryDispatcher, ProductMemoryOutboxRepository
 from deskpet.memory.session_db import SessionDB
-from simple_harness.runtime import ConversationMemoryApplyResult, ConversationMemoryApplyStatus, ConversationMemoryError, ConversationMemoryErrorCode
+
+
+class MemoryTransient(RuntimeError):
+    code = "transient"
 
 
 class ApplyThenCrashSink:
@@ -13,16 +17,25 @@ class ApplyThenCrashSink:
         self.applied = set()
         self.crashed = False
 
-    async def apply(self, intent):
-        self.applied.add((intent.source_event_id, intent.payload_hash))
+    async def append_message(
+        self,
+        session_id,
+        role,
+        content,
+        *,
+        user_id,
+        source_event_id,
+        payload_hash,
+    ):
+        self.applied.add((source_event_id, payload_hash))
         if not self.crashed:
             self.crashed = True
-            raise ConversationMemoryError(ConversationMemoryErrorCode.TRANSIENT)
-        return ConversationMemoryApplyResult(
-            intent.source_event_id,
-            intent.payload_hash,
-            ConversationMemoryApplyStatus.ALREADY_APPLIED,
-            "record-1",
+            raise MemoryTransient("apply-before-ack")
+        return SimpleNamespace(
+            source_event_id=source_event_id,
+            payload_hash=payload_hash,
+            status="already_applied",
+            record_id="record-1",
         )
 
 
