@@ -7292,6 +7292,12 @@ async def _build_product_sdk_runtime_stack(
         service_context.register("memory_identity_authority", memory_identity_authority)
     memory_identity_resolver = memory_identity_authority.resolver
     service_context.register("memory_identity_resolver", memory_identity_resolver)
+    from deskpet.sdk_adapters.memory_facts_surface import OfficialMemoryFactsSurface
+
+    service_context.register(
+        "memory_facts_surface",
+        OfficialMemoryFactsSurface(_memory_backend, memory_identity_resolver),
+    )
 
     # The runtime is stable across Provider mutations.  A physical Provider is
     # constructed only after a Run freezes its own Session binding.

@@ -299,8 +299,37 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
     if deps.memory_manager is not None and deps.memory_identity_resolver is not None:
         from simple_harness_memory import MemoryPrincipal
 
+        def trusted_memory_execution(context: Any) -> tuple[str, str, str]:
+            authority_context = deps.execution_context_getter()
+            metadata = thaw_json(getattr(context, "metadata", {}))
+            session_id = str(
+                getattr(authority_context, "session_id", "")
+                or metadata.get("session_id")
+                or getattr(context, "session_id", "")
+            ).strip()
+            if not session_id:
+                raise RuntimeError("trusted_memory_session_id_unavailable")
+            run = getattr(context, "run_id", None)
+            root_run_id = str(
+                getattr(authority_context, "root_run_id", "")
+                or metadata.get("root_run_id")
+                or getattr(context, "root_run_id", "")
+                or getattr(run, "value", run)
+                or ""
+            ).strip()
+            call = getattr(context, "call_id", None)
+            call_id = str(
+                getattr(authority_context, "call_id", "")
+                or getattr(call, "value", call)
+                or ""
+            ).strip()
+            if not root_run_id or not call_id:
+                raise RuntimeError("trusted_memory_execution_id_unavailable")
+            return session_id, root_run_id, call_id
+
         async def trusted_principal(context: Any) -> MemoryPrincipal:
-            identity = await deps.memory_identity_resolver.resolve(context.session_id)
+            session_id, _, _ = trusted_memory_execution(context)
+            identity = await deps.memory_identity_resolver.resolve(session_id)
             return MemoryPrincipal(
                 identity.deployment_id,
                 identity.household_id,
@@ -309,8 +338,9 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             )
 
         async def memory_write(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
+            _, root_run_id, call_id = trusted_memory_execution(context)
             source_event_id = (
-                f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}"
+                f"explicit-memory-action/v1/{root_run_id}/{call_id}"
             )
             tier = {
                 "auto": "auto",
@@ -335,8 +365,9 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
         async def memory_forget(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
             if arguments.get("query") and arguments.get("fact_id") is None:
                 return {"ok": False, "error": "natural_language_forget_disabled"}
+            _, root_run_id, call_id = trusted_memory_execution(context)
             source_event_id = (
-                f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}"
+                f"explicit-memory-action/v1/{root_run_id}/{call_id}"
             )
             forgotten = bool(await deps.memory_manager.forget_fact(
                 int(arguments["fact_id"]),

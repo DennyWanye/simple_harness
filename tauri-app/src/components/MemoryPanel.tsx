@@ -63,18 +63,23 @@ export const FORGET_UNDO_WINDOW_MS = 5000;
 // --- ws message builders (testable，无 React 副作用) -------------------
 
 export function buildMemoryFactsListMessage(opts?: {
+  sessionId?: string;
   limit?: number;
   subject?: string;
   category?: string;
 }): ControlMessage {
   const payload: Record<string, unknown> = { limit: opts?.limit ?? 200 };
+  if (opts?.sessionId) payload.session_id = opts.sessionId;
   if (opts?.subject) payload.subject = opts.subject;
   if (opts?.category) payload.category = opts.category;
   return { type: "memory_facts_list", payload };
 }
 
-export function buildMemoryForgetMessage(factId: number): ControlMessage {
-  return { type: "memory_forget", payload: { fact_id: factId } };
+export function buildMemoryForgetMessage(factId: number, sessionId?: string): ControlMessage {
+  return {
+    type: "memory_forget",
+    payload: { fact_id: factId, ...(sessionId ? { session_id: sessionId } : {}) },
+  };
 }
 
 export function buildMemoryForgetUndoMessage(opId: string): ControlMessage {
@@ -418,8 +423,8 @@ export function MemoryPanel({ open, onClose, sessionId, getChannel }: Props) {
 
   // --- Facts fetch on tab enter (WI-S2.1b) -------------------------------
   const refreshFacts = useCallback(() => {
-    getChannel()?.send(buildMemoryFactsListMessage({ limit: 200 }));
-  }, [getChannel]);
+    getChannel()?.send(buildMemoryFactsListMessage({ sessionId, limit: 200 }));
+  }, [getChannel, sessionId]);
 
   useEffect(() => {
     if (open && view === "facts") refreshFacts();
@@ -486,7 +491,7 @@ export function MemoryPanel({ open, onClose, sessionId, getChannel }: Props) {
 
   // --- WI-S2.1b handlers ----------------------------------------------
   const handleFactForget = (factId: number) => {
-    getChannel()?.send(buildMemoryForgetMessage(factId));
+    getChannel()?.send(buildMemoryForgetMessage(factId, sessionId));
   };
 
   const handleFactUndo = () => {

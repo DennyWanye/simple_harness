@@ -579,7 +579,57 @@ class FakeFactsStore:
         return list(self.next_restore)
 
 
+class FakeOfficialFactsSurface:
+    def __init__(
+        self,
+        facts: list[dict] | None = None,
+        *,
+        forget_result: bool = True,
+    ) -> None:
+        self.facts = list(facts or [])
+        self.forget_result = forget_result
+        self.list_calls: list[dict[str, Any]] = []
+        self.forget_calls: list[dict[str, Any]] = []
+
+    async def list_active(self, **kwargs: Any) -> list[dict]:
+        self.list_calls.append(dict(kwargs))
+        return list(self.facts)
+
+    async def forget_fact(self, **kwargs: Any) -> bool:
+        self.forget_calls.append(dict(kwargs))
+        return self.forget_result
+
+
 class TestMemoryFactsList:
+    @pytest.mark.asyncio
+    async def test_official_surface_uses_payload_session_not_connection_id(self) -> None:
+        surface = FakeOfficialFactsSurface([{"id": 7, "value": "blue"}])
+        ws = FakeWebSocket()
+        sc = FakeServiceContext(memory_facts_surface=surface)
+        await p4_ipc.handle(
+            ws,
+            "message-panel-main",
+            "memory_facts_list",
+            {"session_id": "real-session", "limit": 12},
+            sc,
+        )
+        assert ws.sent[0]["payload"]["facts"] == [{"id": 7, "value": "blue"}]
+        assert surface.list_calls == [{
+            "session_id": "real-session",
+            "subject": None,
+            "category": None,
+            "limit": 12,
+        }]
+
+    @pytest.mark.asyncio
+    async def test_official_surface_rejects_missing_product_session(self) -> None:
+        surface = FakeOfficialFactsSurface()
+        ws = FakeWebSocket()
+        sc = FakeServiceContext(memory_facts_surface=surface)
+        await p4_ipc.handle(ws, "message-panel-main", "memory_facts_list", {}, sc)
+        assert ws.sent[0]["payload"]["reason"] == "session_id_required"
+        assert surface.list_calls == []
+
     @pytest.mark.asyncio
     async def test_returns_facts_when_store_registered(self) -> None:
         facts = [
@@ -610,6 +660,60 @@ class TestMemoryFactsList:
 
 
 class TestMemoryForgetUndo:
+    @pytest.mark.asyncio
+    async def test_official_forget_rejects_missing_or_unowned_fact(self) -> None:
+        surface = FakeOfficialFactsSurface(forget_result=False)
+        ws = FakeWebSocket()
+        sc = FakeServiceContext(memory_facts_surface=surface)
+
+        await p4_ipc.handle(
+            ws,
+            "message-panel-main",
+            "memory_forget",
+            {"session_id": "real-session", "fact_id": 404},
+            sc,
+        )
+
+        assert ws.sent[0]["payload"] == {
+            "status": "error",
+            "reason": "memory_fact_not_found_or_not_owned",
+        }
+
+    @pytest.mark.asyncio
+    async def test_official_forget_is_principal_scoped_and_has_no_fake_undo(self) -> None:
+        surface = FakeOfficialFactsSurface()
+        ws = FakeWebSocket()
+        sc = FakeServiceContext(memory_facts_surface=surface)
+        await p4_ipc.handle(
+            ws,
+            "message-panel-main",
+            "memory_forget",
+            {"session_id": "real-session", "fact_id": 42},
+            sc,
+        )
+        assert ws.sent[0]["payload"] == {
+            "status": "ok",
+            "forgotten_ids": [42],
+        }
+        assert surface.forget_calls == [{
+            "session_id": "real-session",
+            "fact_id": 42,
+        }]
+
+        undo_ws = FakeWebSocket()
+        await p4_ipc.handle(
+            undo_ws,
+            "message-panel-main",
+            "memory_forget_undo",
+            {"op_id": "legacy-op"},
+            sc,
+        )
+        assert undo_ws.sent[0]["payload"] == {
+            "status": "error",
+            "restored_ids": [],
+            "reason": "memory_forget_irreversible",
+        }
+
     @pytest.mark.asyncio
     async def test_undo_restores_within_window(self) -> None:
         store = FakeFactsStore()

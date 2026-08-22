@@ -34,6 +34,8 @@ from simple_harness.runtime import (
     MemoryScopeKind,
     MemoryScopeRef,
 )
+from simple_harness import CallId, RequestId, RunId
+from simple_harness.tools import CancellationToken, ToolContext
 from simple_harness_memory import (
     MemoryIdempotencyConflict,
     MemoryManager,
@@ -372,7 +374,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "cf629ceed1e419fccacabc220f66ba201120f21ed58d30af5c4f70da97dae147"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
-        "17b0c534b001e829f6c6735b20723b40e528fe367994142b9f80964e512834e9"
+        "bfcd25061477dcf31dab23afbe4578ffc4418ffa1dbd3e4416679a2beba8f144"
     )
     assert SDK_WHEEL_SHA256 not in {
         "1e4d21d58bee0e58ea3bc49768ff63ba9095eefd2e2d3436375576005bbac99a",
@@ -477,6 +479,59 @@ async def test_explicit_memory_write_uses_trusted_identity_and_event_key() -> No
         "pinned": True,
         "tier": "identity",
     }
+
+
+@pytest.mark.asyncio
+async def test_explicit_memory_write_accepts_real_sdk_tool_context_shape() -> None:
+    manager = SimpleNamespace(remember_fact=AsyncMock(return_value=52))
+    identity = AgentIdentity("deployment", "household", "actor", "session-real")
+    resolver = SimpleNamespace(resolve=AsyncMock(return_value=identity))
+    no_op = SimpleNamespace(
+        replace_session_todos=lambda *_args: None,
+        get=lambda *_args: None,
+        mark_active=lambda *_args: None,
+        recall_readonly=lambda *_args: None,
+        resolve_for_run=lambda *_args: None,
+        search=lambda *_args: None,
+        describe=lambda *_args: None,
+        suggestions=lambda *_args: None,
+        activate=lambda *_args: None,
+    )
+    dependencies = ToolCatalogDependencies(
+        no_op,
+        lambda: None,
+        no_op,
+        lambda: SimpleNamespace(
+            session_id="session-real",
+            root_run_id="root-real",
+            call_id="call-real",
+        ),
+        no_op,
+        no_op,
+        no_op,
+        SimpleNamespace(search=lambda *_args: None),
+        memory_manager=manager,
+        memory_identity_resolver=resolver,
+    )
+    handler = _dynamic_handlers(dependencies)["memory_write"][0]
+    context = ToolContext(
+        run_id=RunId("sdk-run"),
+        request_id=RequestId("request"),
+        cancellation=CancellationToken(),
+        metadata={},
+        call_id=CallId("call-real"),
+    )
+
+    result = await handler(
+        {"text": "cobalt", "salience": 0.8, "pinned": True, "tier": "l3"},
+        context,
+    )
+
+    assert result["memory_id"] == 52
+    resolver.resolve.assert_awaited_once_with("session-real")
+    assert manager.remember_fact.await_args.kwargs["source_event_id"] == (
+        "explicit-memory-action/v1/root-real/call-real"
+    )
 
 
 @pytest.mark.asyncio

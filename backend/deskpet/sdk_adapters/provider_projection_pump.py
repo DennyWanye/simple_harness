@@ -195,7 +195,12 @@ class SdkProviderProjectionPump:
             envelope = await self._envelope(receipt)
             await self._reconciler.project_attempt(envelope)
             self._hit("provider_projection.session.after_write", receipt)
-            if self._on_committed is not None:
+            # Failed/cancelled/unknown attempts are durable audit facts, but
+            # they do not advance Context Usage authority.  Broadcasting an
+            # unchanged usage version can conflict with newly attached
+            # snapshot metadata and permanently pin the ordered cursor on the
+            # same terminal receipt.
+            if self._on_committed is not None and envelope.has_trusted_usage:
                 notified = self._on_committed(await self._context(receipt))
                 if inspect.isawaitable(notified):
                     await notified

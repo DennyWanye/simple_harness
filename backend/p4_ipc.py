@@ -100,11 +100,11 @@ async def handle(
         elif msg_type == "context_compaction_set":
             await _handle_context_compaction_set(ws, payload, service_context)
         elif msg_type == "memory_facts_list":
-            await _handle_memory_facts_list(ws, payload, service_context)
+            await _handle_memory_facts_list(ws, session_id, payload, service_context)
         elif msg_type == "memory_forget":
-            await _handle_memory_forget_ws(ws, payload, service_context)
+            await _handle_memory_forget_ws(ws, session_id, payload, service_context)
         elif msg_type == "memory_forget_undo":
-            await _handle_memory_forget_undo(ws, payload, service_context)
+            await _handle_memory_forget_undo(ws, session_id, payload, service_context)
         elif msg_type == "memory_pin":
             await _handle_memory_pin(ws, payload, service_context, pinned=True)
         elif msg_type == "memory_unpin":
@@ -453,15 +453,23 @@ async def _handle_model_provision_status(
 # Stage 2 / WI-S2.1a — MemoryPanel facts view + memory_forget UI bridge
 # ---------------------------------------------------------------------------
 async def _handle_memory_facts_list(
-    ws: Any, payload: dict[str, Any], sc: Any,
+    ws: Any, _connection_session_id: str, payload: dict[str, Any], sc: Any,
 ) -> None:
     """返回 active facts 给前端 facts view 渲染。
 
-    payload: ``{limit?: int, subject?: str, category?: str}``
+    payload: ``{session_id: str, limit?: int, subject?: str, category?: str}``
     Response: ``{type: "memory_facts_list_response", payload: {facts: [...]}}``
     """
+    facts_surface = _get_service(sc, "memory_facts_surface")
     facts_store = _get_service(sc, "facts_store")
-    if facts_store is None:
+    requested_session_id = str(payload.get("session_id") or "").strip()
+    if facts_surface is not None and not requested_session_id:
+        await ws.send_json({
+            "type": "memory_facts_list_response",
+            "payload": {"facts": [], "reason": "session_id_required"},
+        })
+        return
+    if facts_store is None and facts_surface is None:
         await ws.send_json({
             "type": "memory_facts_list_response",
             "payload": {
@@ -478,11 +486,19 @@ async def _handle_memory_facts_list(
     subject = payload.get("subject")
     category = payload.get("category")
     try:
-        rows = await facts_store.list_active(
-            subject=str(subject) if subject else None,
-            category=str(category) if category else None,
-            limit=limit,
-        )
+        if facts_surface is not None:
+            rows = await facts_surface.list_active(
+                session_id=requested_session_id,
+                subject=str(subject) if subject else None,
+                category=str(category) if category else None,
+                limit=limit,
+            )
+        else:
+            rows = await facts_store.list_active(
+                subject=str(subject) if subject else None,
+                category=str(category) if category else None,
+                limit=limit,
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("p4_ipc.memory_facts_list_failed", error=str(exc))
         rows = []
@@ -499,14 +515,60 @@ async def _handle_memory_facts_list(
 
 
 async def _handle_memory_forget_ws(
-    ws: Any, payload: dict[str, Any], sc: Any,
+    ws: Any, _connection_session_id: str, payload: dict[str, Any], sc: Any,
 ) -> None:
     """前端点 🗑 按钮的桥接 —— UI 已确认过来源，直调工具实现。
 
     payload: ``{fact_id?: int, query?: str}``
     Response: ``{type: "memory_forget_response", payload: {status, op_id?, forgotten_ids?, reason?}}``
     """
+    facts_surface = _get_service(sc, "memory_facts_surface")
     facts_store = _get_service(sc, "facts_store")
+    requested_session_id = str(payload.get("session_id") or "").strip()
+    if facts_surface is not None:
+        if not requested_session_id:
+            await ws.send_json({
+                "type": "memory_forget_response",
+                "payload": {"status": "error", "reason": "session_id_required"},
+            })
+            return
+        fact_id = payload.get("fact_id")
+        if fact_id is None:
+            await ws.send_json({
+                "type": "memory_forget_response",
+                "payload": {
+                    "status": "error",
+                    "reason": "official_memory_forget_requires_fact_id",
+                },
+            })
+            return
+        try:
+            fid = int(fact_id)
+            forgotten = await facts_surface.forget_fact(
+                session_id=requested_session_id,
+                fact_id=fid,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("p4_ipc.memory_forget_failed", error=str(exc))
+            await ws.send_json({
+                "type": "memory_forget_response",
+                "payload": {"status": "error", "reason": str(exc)},
+            })
+            return
+        if not forgotten:
+            await ws.send_json({
+                "type": "memory_forget_response",
+                "payload": {
+                    "status": "error",
+                    "reason": "memory_fact_not_found_or_not_owned",
+                },
+            })
+            return
+        await ws.send_json({
+            "type": "memory_forget_response",
+            "payload": {"status": "ok", "forgotten_ids": [fid]},
+        })
+        return
     if facts_store is None:
         await ws.send_json({
             "type": "memory_forget_response",
@@ -577,13 +639,24 @@ async def _handle_memory_forget_ws(
 
 
 async def _handle_memory_forget_undo(
-    ws: Any, payload: dict[str, Any], sc: Any,
+    ws: Any, _connection_session_id: str, payload: dict[str, Any], sc: Any,
 ) -> None:
     """5 秒 undo 窗口内恢复 forgotten fact。
 
     payload: ``{op_id: str, max_age_seconds?: float}``
     Response: ``{type: "memory_forget_undo_response", payload: {status, restored_ids: [...]}}``
     """
+    facts_surface = _get_service(sc, "memory_facts_surface")
+    if facts_surface is not None:
+        await ws.send_json({
+            "type": "memory_forget_undo_response",
+            "payload": {
+                "status": "error",
+                "restored_ids": [],
+                "reason": "memory_forget_irreversible",
+            },
+        })
+        return
     facts_store = _get_service(sc, "facts_store")
     op_id = str(payload.get("op_id") or "").strip()
     if not op_id:

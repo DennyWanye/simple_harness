@@ -70,6 +70,7 @@ describe("WI-S2.1b · buildMemoryFactsListMessage", () => {
 
   it("test_facts_list_message_passes_through_limit_subject_category", () => {
     const m = buildMemoryFactsListMessage({
+      sessionId: "session-real",
       limit: 50,
       subject: "user",
       category: "preference",
@@ -77,6 +78,7 @@ describe("WI-S2.1b · buildMemoryFactsListMessage", () => {
     expect(m.type).toBe("memory_facts_list");
     expect(m.payload).toEqual({
       limit: 50,
+      session_id: "session-real",
       subject: "user",
       category: "preference",
     });
@@ -92,10 +94,10 @@ describe("WI-S2.1b · buildMemoryFactsListMessage", () => {
 
 describe("WI-S2.1b · buildMemoryForgetMessage / buildMemoryForgetUndoMessage", () => {
   it("test_trash_button_emits_memory_forget_with_fact_id", () => {
-    const m = buildMemoryForgetMessage(42);
+    const m = buildMemoryForgetMessage(42, "session-real");
     expect(m).toEqual({
       type: "memory_forget",
-      payload: { fact_id: 42 },
+      payload: { fact_id: 42, session_id: "session-real" },
     });
   });
 

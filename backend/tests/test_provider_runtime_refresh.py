@@ -93,6 +93,7 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
         "sdk_context_source_repository",
         "sdk_context_source_repository",
         "memory_identity_resolver",
+        "memory_facts_surface",
     )
     for name in names:
         marker = object()
@@ -134,6 +135,9 @@ async def test_real_product_sdk_production_composition_starts(
         "sdk_prepared_authorization_policy",
         "sdk_context_staging",
         "conversation_memory",
+        "memory_identity_authority",
+        "memory_identity_resolver",
+        "memory_facts_surface",
     )
     previous = {
         name: main.service_context.get(name)

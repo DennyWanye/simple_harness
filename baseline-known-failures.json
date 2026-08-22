@@ -6,6 +6,6 @@
   ],
   "failures": {
     "root-tests": "3fcba2d77f91b5e5567d88d474c866d0c9be68990b0ad8dad522ba970668e0db",
-    "frontend-lint": "f86354b05b64725711e2c47461efd55003154573164af753461cb40a588481d3"
+    "frontend-lint": "d79bbd8f4193a586e7d5f896be218b1d55e6f8442f5c5d4aca8d67ba2132484e"
   }
 }

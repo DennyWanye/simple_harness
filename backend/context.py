@@ -27,6 +27,7 @@ _VALID_SERVICES = frozenset({
     "sdk_context_source_repository",  # immutable non-Memory Context source authority
     "memory_identity_resolver",  # trusted AgentIdentity session binding
     "memory_identity_authority",  # validated product auth -> AgentIdentity
+    "memory_facts_surface",  # principal-scoped official Memory facts UI adapter
     "frozen_skill_instruction_resolver",  # Run-catalog Skill projection
     "managed_skill_discovery_projection",  # discovery-only managed Skill view
     "file_memory",         # Direct L1 handle (also reachable via manager.file_memory)
@@ -190,6 +191,7 @@ class ServiceContext:
     sdk_context_source_repository: Any | None = None
     memory_identity_resolver: Any | None = None
     memory_identity_authority: Any | None = None
+    memory_facts_surface: Any | None = None
     memory_recall_query: Any | None = None
     memory_recall_scope_resolver: Any | None = None
     frozen_skill_instruction_resolver: Any | None = None

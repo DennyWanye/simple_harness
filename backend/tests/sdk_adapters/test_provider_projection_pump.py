@@ -178,6 +178,42 @@ async def test_budget_only_unknown_receipt_advances_without_usage_measurement(
 
 
 @pytest.mark.asyncio
+async def test_non_usage_terminal_receipt_does_not_broadcast_unchanged_usage(
+    tmp_path,
+) -> None:
+    source = _Source([
+        _receipt(
+            1,
+            "unknown",
+            error_code="provider_cancelled_after_handoff",
+        )
+    ])
+    db = SessionDB(tmp_path / "state.db")
+    notifications: list[str] = []
+
+    async def committed(context: ProviderProjectionContextV1) -> None:
+        notifications.append(context.session_id)
+
+    pump = SdkProviderProjectionPump(
+        source,
+        db,
+        context_resolver=_context,
+        on_committed=committed,
+    )
+
+    assert await pump.run_until_idle() == 1
+    assert notifications == []
+    attempts = await db.list_sdk_provider_attempts("session-a")
+    assert len(attempts) == 1
+    assert attempts[0]["state"] == "unknown"
+    cursor = await db.get_sdk_provider_projection_cursor(
+        "sdk-provider-projection-v1"
+    )
+    assert cursor is not None and cursor["source_sequence"] == 1
+    await db.close()
+
+
+@pytest.mark.asyncio
 async def test_pump_notifies_after_durable_projection_before_cursor_commit(tmp_path) -> None:
     source = _Source([_receipt(1, "succeeded", usage={
         "input_tokens": 10,
