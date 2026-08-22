@@ -7276,13 +7276,13 @@ async def _build_product_sdk_runtime_stack(
     capability_platform = service_context.get("capability_platform")
     if session_db is None or capability_platform is None:
         raise RuntimeError("SDK Runtime requires session_db and capability_platform")
-    product_state_db_path = Path(getattr(session_db, "db_path", _state_db_path))
+    session_state_db_path = Path(getattr(session_db, "db_path", _state_db_path))
     memory_identity_authority = service_context.get("memory_identity_authority")
     if memory_identity_authority is None:
         from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
 
         memory_identity_authority = ValidatedLocalMemoryIdentityAuthority(
-            product_state_db_path,
+            session_state_db_path,
             user_data_dir=_paths.user_data_dir(),
         )
         service_context.register("memory_identity_authority", memory_identity_authority)
@@ -7372,9 +7372,9 @@ async def _build_product_sdk_runtime_stack(
     import time
 
     # Create product state database for SDK Runtime
-    product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
-    product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
-    product_state_db = ProductStateDatabase(product_state_db_path)
+    sdk_product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
+    sdk_product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
+    product_state_db = ProductStateDatabase(sdk_product_state_db_path)
     product_state_db.initialize()
     # Create authorization saga repository
     repository = AuthorizationSagaRepository(product_state_db, owner_id=f"sdk-runtime-g{generation}")
@@ -7420,7 +7420,11 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
     from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
 
-    context_source_repository = ProductContextSourceRepository(product_state_db_path)
+    # Context source/binding tables are owned by the product SessionDB migration
+    # chain (023_official_memory_integration_v31.sql).  Keep them in state.db;
+    # sdk-product-state.db is a separate authority for authorization sagas and
+    # task grants and intentionally does not carry the SessionDB schema.
+    context_source_repository = ProductContextSourceRepository(session_state_db_path)
     context_provider = ProductConversationContextProvider(context_source_repository)
     from deskpet.sdk_adapters.memory_faults import wrap_dev_memory_faults
 

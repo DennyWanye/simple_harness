@@ -152,7 +152,16 @@ async def test_real_product_sdk_production_composition_starts(
         assert ready.runtime.state.value == "ready"
         assert main.service_context.get("sdk_context_staging") is not None
         assert main.service_context.get("conversation_memory") is None
-        assert main.service_context.get("sdk_context_source_repository") is not None
+        context_sources = main.service_context.get("sdk_context_source_repository")
+        assert context_sources is not None
+        assert context_sources._path == data_dir / "state.db"
+        binding_id, source_ref = await context_sources.put_pending(
+            root_run_id="runtime-wiring-smoke",
+            continuation_id=None,
+            payload={"provider_messages": [{"role": "user", "content": "hello"}]},
+        )
+        assert binding_id
+        assert source_ref.startswith("sha256:")
     finally:
         if stack is not None:
             await stack.close()
