@@ -3,6 +3,7 @@
 > 执行日期：2026-08-22  
 > 被测提交：simple_harness `4e797ccd`；Harness SDK `fbb156f`；Memory SDK `3d4247b`  
 > 状态：21/21 required 场景已执行；Gate check-only `READY_FOR_AUDIT`
+> 本地 promotion：`v0.3.0` → Harness `fbb156f`；`v0.4.0` → Memory `3d4247b`；未 push/upload
 
 ## 结果摘要
 
@@ -13,13 +14,17 @@
 | simple_harness 自动化 | 15 shards PASS、2 个实施前 known-red、0 unexpected；focused backend 83、frontend 18、typecheck PASS | r4 exec receipts 与 baseline state |
 | 真实 UI | SH-M1～SH-M6、SH-SURFACE PASS | r4 `artifacts/ui-*.png` primary evidence |
 
+Promotion 后重新校验 Harness canonical `dist/BUILD_INFO.txt`/`SHA256SUMS` 与 wheel `cf629cee…`，
+Memory `candidate-dist` 与 wheel `bfcd2506…`；Python 3.11/3.12/3.13 exact-wheel 联合安装矩阵 PASS，
+Harness full `1379 passed, 2 skipped`、Memory full `200 passed, 7 skipped` 再次通过。
+
 真实 UI 使用设置页已配置的 DeepSeek；凭据未读取、未写入报告。SH-M2 真生成 PPT 并通过权限弹窗；
 SH-M5 在隔离 profile 写入 `Aurora-R4`、完整退出、重启后由新 Session 召回；SH-M6 的 recall timeout
 保持主 Turn completed，record transient 在成功回复但 Memory 尚未提交时退出，清除 fault 后 startup recovery
 唯一提交，随后新 Session 回答“晚饭后”。SH-SURFACE 覆盖设置、技能、产物、Facts、ContextTrace 与权限边界取消。
 
-原始截图、日志、数据库与 Gate ledger 位于 ignored
-`.local-test-evidence/2026-08-22/gate-final-r4/`；本文件不复制原始内容，只保留结论与相对索引。
+原始截图、日志、数据库与 Gate ledger 位于 ignored `.local-test-evidence/2026-08-22/gate-final-r2/`、
+`gate-final-r4/` 及其显式 chain-of-custody successor；本文件不复制原始内容，只保留结论与相对索引。
 
 ## 幂等性审查
 
