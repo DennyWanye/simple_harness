@@ -2,19 +2,19 @@
 
 > **最后更新**：2026-08-23
 
-## 2026-08-23 Host SDK observability S3 接线完成（等待后续成对 revendor）
+## 2026-08-23 SDK observability 完成并成对发布/换包
 
 - **Host composition**：已新增共享 256-entry ring + bounded JSONL + safe logging composite sink，并接入
   Memory production builder 与 Harness production runtime config；真实 SDK run ingress 绑定 opaque
   correlation，既有 principal/owner/session authority 不变。
 - **诊断边界**：用户 log 目录只产生显式 SDK events/ring/snapshot 文件；Rust bundle 只 allowlist 这些
   文件并执行单文件/总量/canary 门，ambient logs/crash/metrics 与 DB/outbox/content 均不复制。
-- **兼容状态**：当前 vendored Harness 0.3.0 / Memory 0.4.0 不含新 API，Host feature-detect 后保持
-  Noop/degraded 且业务可启动；已用 clean sibling Harness `bc6ae8d`、Memory `fda3829` 验证新 API。
-  本轮明确未 vendor wheel、未改 release version、未发布。后续只能按 exact pair 成对 revendor。
-- **自动化证据**：sibling-source Host `5 passed`；当前-wheel backend focused `207 passed, 5 skipped`；
+- **发布状态**：Harness `v0.4.0`（source `bc6ae8d`，wheel `aaf8d79a…`）与 Memory `v0.5.0`
+  （source `9c92ede`，wheel `c274fa6b…`）已按 README 从干净 detached worktree 构建、发布并下载回验；
+  Host 已成对 revendor，installed-origin/hash 门通过。
+- **自动化证据**：Harness full `1404 passed, 2 skipped`；Memory full `213 passed, 7 skipped`；
+  exact-wheel joint artifact `10 passed`；Host focused `212 passed`；
   Rust diagnostics `7 passed` / lib full `83 passed`；Python compile、git diff check 与目标 rustfmt check PASS。
-  5 个 skip 仅表示正式 wheel 尚未进入 Host resolver，不是新 API 测试缺失。
 
 ## 2026-08-22 Harness 0.3 / Memory 0.4 官方一等集成（代码、自动化与真实 UI 完成）
 

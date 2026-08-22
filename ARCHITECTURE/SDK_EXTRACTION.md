@@ -1,11 +1,11 @@
 # Simple Harness SDK 提取与消费架构
 
 > 最后校准：2026-08-23
-> 代码基线：simple_harness `4e797ccd`；当前依赖固定 Harness 0.3.0 / Memory 0.4.0 exact wheels
-> 状态：SDK v0.3.0 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
+> 代码基线：simple_harness `e5242492`；当前依赖固定 Harness 0.4.0 / Memory 0.5.0 exact wheels
+> 状态：SDK v0.4.0 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
 > 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
 
-## 2026-08-23 Host S3 observability composition（尚未 revendor）
+## 2026-08-23 Host S3 observability composition（已 revendor）
 
 - Host 新增 `backend/observability/sdk.py`，在 Harness observability API 可用时默认组合一个共享
   `CompositeSink`：固定 256 条的 `RingBufferSink`、1 MiB × 3 文件的 `JsonlSink` 与只消费安全
@@ -20,10 +20,9 @@
 - Rust diagnostic bundle 对 SDK observability 使用 exact filename allowlist、1 MiB 单文件与
   2.5 MiB 合计上限；拒绝 symlink/non-regular/oversize/canary 文件。ambient backend logs、crash reports、
   metrics、DB、outbox 和 product content 不进入 bundle。
-- 当前 Host 仍固定 Harness 0.3.0 / Memory 0.4.0 wheels；因此启动时 feature-detect 新 API，旧 wheel
-  使用有界 Noop/degraded snapshot。Harness `bc6ae8d` 与 Memory `fda3829` 的 clean sibling source 仅用于
-  API/测试事实，本次没有 vendor、build、publish 或版本修改。新 wheel 成对 revendor 后无需再改 Host 接线即默认启用。
-- 验证：sibling-source Host observability `5 passed`；当前-wheel backend focused `207 passed, 5 skipped`；
+- Host 已固定并校验 Harness 0.4.0 / Memory 0.5.0 wheels；新 observability API 默认启用。
+  Harness wheel SHA `aaf8d79a…58ecb6`，Memory wheel SHA `c274fa6b…51ea46`。
+- 验证：sibling-source Host observability `5 passed`；exact-wheel backend focused `212 passed`；
   Rust diagnostics `7 passed`，Rust lib 全套 `83 passed`；目标 Rust 文件 rustfmt check 通过。canary 覆盖
   Memory 正文、API key、Authorization/header、token、exception、外部 correlation、ring/JSONL/snapshot/bundle，
   并覆盖 SDK/snapshot/export/bundle missing/degraded。

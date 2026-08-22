@@ -1,0 +1,138 @@
+{
+  "manifest_version": 1,
+  "status": "draft",
+  "date": "2026-08-23",
+  "scope": "black-box verification preparation only",
+  "source_documents": [
+    "plans/2026-08-23-sdk-observability/acceptance.md",
+    "plans/2026-08-23-sdk-observability/assurance-contract.json",
+    "plans/2026-08-23-sdk-observability/plan.md"
+  ],
+  "outputs": [
+    "testcase/2026-08-23-sdk-observability/testcases.md",
+    "testcase/2026-08-23-sdk-observability/fixtures.md"
+  ],
+  "applicability": {
+    "input_sensitive": false,
+    "llm_payload_driven": false,
+    "stateful_init": true,
+    "ui_manual_test": {
+      "applicable": false,
+      "reason": "No user-visible diagnostic UI is added or modified; SDK and pipeline contracts are verified through automated black-box integration, restart, and bundle checks."
+    },
+    "cold_restart": {
+      "applicable": true,
+      "reason": "Sink lifecycle, durable outbox/recovery correlation, JSONL/ring state, migration rollback, and Host composition cross process boundaries."
+    },
+    "exact_wheel_consumer": {
+      "applicable": true,
+      "reason": "Cross-package schema parity and Host revendor must be proven without source-checkout leakage."
+    },
+    "remote_telemetry": {
+      "applicable": false,
+      "reason": "Remote collectors, upload, and cloud diagnostic services are explicitly out of scope."
+    }
+  },
+  "release_slices": [
+    {
+      "id": "S1",
+      "name": "safe events and local sinks",
+      "must_acceptance": ["AC-OBS-1", "AC-OBS-2", "AC-OBS-5", "AC-OBS-7", "AC-OBS-8", "AC-OBS-11"],
+      "testcases": ["BB-S1-001", "BB-S1-002", "BB-S1-003", "BB-S1-004", "BB-S1-005", "BB-S1-006", "BB-S1-007"],
+      "smoke": ["critical", "affected"]
+    },
+    {
+      "id": "S2",
+      "name": "correlation transitions and snapshots",
+      "must_acceptance": ["AC-OBS-3", "AC-OBS-4", "AC-OBS-6", "AC-OBS-9", "AC-OBS-11", "AC-OBS-12"],
+      "testcases": ["BB-S2-001", "BB-S2-002", "BB-S2-003", "BB-S2-004", "BB-S2-005", "BB-S2-006", "BB-S2-007", "BB-S2-008"],
+      "smoke": ["critical", "affected"]
+    },
+    {
+      "id": "S3",
+      "name": "memory bundle and optimization loop",
+      "must_acceptance": ["AC-OBS-5", "AC-OBS-7", "AC-OBS-8", "AC-OBS-9", "AC-OBS-10", "AC-OBS-12"],
+      "testcases": ["BB-S3-001", "BB-S3-002", "BB-S3-003", "BB-S3-004", "BB-S3-005", "BB-S3-006", "BB-S3-007", "BB-S3-008"],
+      "smoke": ["critical", "affected", "full"]
+    }
+  ],
+  "acceptance_coverage": {
+    "AC-OBS-1": ["BB-S1-001", "BB-S1-007", "BB-S3-008"],
+    "AC-OBS-2": ["BB-S1-002", "BB-S1-003", "BB-S2-005", "BB-S3-004"],
+    "AC-OBS-3": ["BB-S2-001", "BB-S2-003", "BB-S3-001", "BB-S3-002", "BB-S3-004"],
+    "AC-OBS-4": ["BB-S2-002", "BB-S2-003", "BB-S3-001"],
+    "AC-OBS-5": ["BB-S1-004", "BB-S3-002", "BB-S3-003"],
+    "AC-OBS-6": ["BB-S2-004", "BB-S2-005", "BB-S3-003", "BB-S3-004", "BB-S3-007"],
+    "AC-OBS-7": ["BB-S1-005", "BB-S1-006", "BB-S3-003", "BB-S3-004", "BB-S3-007"],
+    "AC-OBS-8": ["BB-S1-001", "BB-S1-003", "BB-S1-004", "BB-S1-005", "BB-S1-006", "BB-S3-003", "BB-S3-007", "BB-S3-008"],
+    "AC-OBS-9": ["BB-S2-003", "BB-S2-006", "BB-S3-002", "BB-S3-005"],
+    "AC-OBS-10": ["BB-S3-006", "BB-S3-008"],
+    "AC-OBS-11": ["BB-S1-001", "BB-S2-002", "BB-S3-001", "BB-S3-005"],
+    "AC-OBS-12": ["BB-S2-002", "BB-S2-006", "BB-S3-001", "BB-S3-005"]
+  },
+  "obligation_coverage": {
+    "TO-A1": ["BB-S1-001"],
+    "TO-A2": ["BB-S1-002", "BB-S1-003", "BB-S2-005", "BB-S3-004"],
+    "TO-A3": ["BB-S2-001", "BB-S2-003", "BB-S3-001", "BB-S3-002", "BB-S3-004"],
+    "TO-A4": ["BB-S2-002", "BB-S2-003", "BB-S3-001"],
+    "TO-A5": ["BB-S1-004", "BB-S3-002", "BB-S3-003"],
+    "TO-A6": ["BB-S2-004", "BB-S2-005", "BB-S3-003", "BB-S3-004", "BB-S3-007"],
+    "TO-A7": ["BB-S1-005", "BB-S1-006", "BB-S3-003", "BB-S3-004", "BB-S3-007"],
+    "TO-A8": ["BB-S1-001", "BB-S1-003", "BB-S1-004", "BB-S1-005", "BB-S1-006", "BB-S3-003", "BB-S3-007", "BB-S3-008"],
+    "TO-A9": ["BB-S2-003", "BB-S2-006", "BB-S3-002", "BB-S3-005"],
+    "TO-A10": ["BB-S3-006"],
+    "TO-A11": ["BB-S1-001", "BB-S2-002", "BB-S3-001", "BB-S3-005"],
+    "TO-A12": ["BB-S2-002", "BB-S2-006", "BB-S3-001", "BB-S3-005"],
+    "TO-R1": ["BB-S1-001", "BB-S1-007", "BB-S2-001", "BB-S2-008", "BB-S3-008"],
+    "TO-R2": ["BB-S1-002", "BB-S1-003", "BB-S2-004", "BB-S2-005", "BB-S2-008", "BB-S3-007"],
+    "TO-R3": ["BB-S1-004", "BB-S1-005", "BB-S3-002", "BB-S3-003"],
+    "TO-R4": ["BB-S2-003", "BB-S2-006", "BB-S2-007", "BB-S2-008", "BB-S3-001", "BB-S3-002", "BB-S3-005"],
+    "TO-R5": ["BB-S1-005", "BB-S1-006", "BB-S2-004", "BB-S2-005", "BB-S3-003", "BB-S3-007"],
+    "TO-R6": ["BB-S1-002", "BB-S1-007", "BB-S2-007", "BB-S2-008", "BB-S3-004", "BB-S3-008"]
+  },
+  "impact_paths": [
+    {
+      "path": "Harness public observability wire contract and sinks",
+      "impact": "schema compatibility, redaction, sink lifecycle, bounded local storage",
+      "gates": ["BB-S1-001", "BB-S1-003", "BB-S1-004", "BB-S1-005", "BB-S1-006"]
+    },
+    {
+      "path": "Harness runtime run/attempt/tool/context/outbox/recovery pipeline",
+      "impact": "correlation continuity, ordered transitions, business-result isolation, diagnostics snapshot",
+      "gates": ["BB-S2-001", "BB-S2-002", "BB-S2-003", "BB-S2-004", "BB-S2-005"]
+    },
+    {
+      "path": "Memory recall/write/receipt/fact-job/recovery pipeline",
+      "impact": "durable correlation, state diagnosis, erasure and identity boundaries, aggregate snapshot",
+      "gates": ["BB-S3-001", "BB-S3-002", "BB-S3-005"]
+    },
+    {
+      "path": "Host SDK composition and local diagnostics export",
+      "impact": "paired sink injection, JSONL/ring behavior, cold start, bundle collection and limits",
+      "gates": ["BB-S1-002", "BB-S1-007", "BB-S3-003", "BB-S3-004"]
+    },
+    {
+      "path": "Cross-package wheels, migration, vendor and rollback",
+      "impact": "schema parity, source compatibility, exact-wheel identity, database and Host rollback",
+      "gates": ["BB-S1-007", "BB-S2-007", "BB-S2-008", "BB-S3-008"]
+    },
+    {
+      "path": "Diagnostic analysis and optimization comparison",
+      "impact": "root-cause reconstruction without content and deterministic aggregate comparisons",
+      "gates": ["BB-S2-006", "BB-S3-005", "BB-S3-006"]
+    }
+  ],
+  "evidence": {
+    "raw_root": ".local-test-evidence/2026-08-23/sdk-observability/<run-id>/",
+    "git_allowed": ["small textual conclusions", "commands", "PASS/FAIL/BLOCKED", "run/scenario IDs", "relative evidence index", "SHA-256"],
+    "git_forbidden": ["raw logs", "JSONL exports", "ring dumps", "bundles", "databases", "screenshots", "recordings", "canary payloads", "credentials"]
+  },
+  "not_performed": [
+    "implementation inspection",
+    "diff inspection",
+    "product code changes",
+    "test execution",
+    "candidate build or publication",
+    "commit"
+  ]
+}

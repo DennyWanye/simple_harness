@@ -1,0 +1,36 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "AC-OBS-1", "AC-OBS-2", "AC-OBS-3", "AC-OBS-4",
+    "AC-OBS-5", "AC-OBS-6", "AC-OBS-7", "AC-OBS-8",
+    "AC-OBS-9", "AC-OBS-10", "AC-OBS-11", "AC-OBS-12"
+  ],
+  "protected_assets": [
+    {"id": "ASSET-OBS-1", "description": "Memory、用户、prompt/response、附件与工具正文"},
+    {"id": "ASSET-OBS-2", "description": "API key、Authorization、cookie、token、密码与设备凭据"},
+    {"id": "ASSET-OBS-3", "description": "Harness 与 Memory 的业务状态、事务结果和恢复语义"},
+    {"id": "ASSET-OBS-4", "description": "移动端内存、本地磁盘与 diagnostic bundle 容量"},
+    {"id": "ASSET-OBS-5", "description": "用于 Bug 定位和优化比较的诊断因果链完整性"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-OBS-1", "description": "本地 OS、开发者账户与测试运行环境可信"},
+    {"id": "TRUST-OBS-2", "description": "SDK、Host 进程内代码和公开 composition 调用方可信"},
+    {"id": "TRUST-OBS-3", "description": "现有业务状态机、durable authority 与身份校验继续作为事实源"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-OBS-1", "description": "两个 SDK 的事件字段、版本或 correlation 语义漂移"},
+    {"id": "FAIL-OBS-2", "description": "关键状态转换缺失、重复、乱序或仅有自由文本错误"},
+    {"id": "FAIL-OBS-3", "description": "sink、序列化、snapshot 或 bundle 故障影响业务结果"},
+    {"id": "FAIL-OBS-4", "description": "正文或凭据通过 attributes、exception、repr、unknown key 或 fallback 泄漏"},
+    {"id": "FAIL-OBS-5", "description": "JSONL、ring、snapshot 或 bundle 无界增长或并发损坏"},
+    {"id": "FAIL-OBS-6", "description": "恢复或跨进程后 correlation 断裂，导致根因被错误归类"},
+    {"id": "FAIL-OBS-7", "description": "诊断元数据不足以区分主要 recall/context/outbox/recovery 故障"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-OBS-1", "description": "宿主 OS、开发者账户或已安装 SDK 二进制被攻陷"},
+    {"id": "OOS-OBS-2", "description": "远程 telemetry collector、自动上传或云端诊断服务"},
+    {"id": "OOS-OBS-3", "description": "新增用户可见诊断 UI 与产品分析后台"}
+  ],
+  "maximum_acceptable_impact": "Observability 可丢弃事件并明确计数或进入降级状态；不得改变业务结果、阻塞事务或恢复、泄漏正文/凭据、跨身份关联数据，或造成无界内存与磁盘增长。"
+}
