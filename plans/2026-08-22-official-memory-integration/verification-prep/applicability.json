@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "status": "draft-before-gate-init",
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "rationale": "长期 Memory 内容会改变真实模型回答，必须覆盖语义不等价的事实、工具、长上下文、恶意内容与故障恢复输入。",
+      "decided_by": "phase-3-d-black-box-agent"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "rationale": "本次没有新增由模型结构化 payload 驱动的端侧 UI 或状态机；既有 Tool loop 仅作为产品回归验证。",
+      "decided_by": "phase-3-d-black-box-agent"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "正式路径依赖登录身份、两个持久数据库、Runtime、Provider 和桌面应用冷启动，必须验证全新 user-data 首次使用。",
+      "decided_by": "phase-3-d-black-box-agent"
+    }
+  }
+}

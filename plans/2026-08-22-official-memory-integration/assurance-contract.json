@@ -1,0 +1,120 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6",
+    "AC-7",
+    "AC-8"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-MEMORY-PRIVACY",
+      "description": "个人和家庭长期记忆内容、派生 Facts、向量及其身份归属"
+    },
+    {
+      "id": "ASSET-TURN-CONSISTENCY",
+      "description": "正式 committed Turn、冻结 recall stage 与 Memory 最终写入的一致性"
+    },
+    {
+      "id": "ASSET-RELEASE-IDENTITY",
+      "description": "两个 SDK 的源码版本、tag、wheel bytes、SHA-256 与消费者 exact pin"
+    },
+    {
+      "id": "ASSET-SIMPLE-HARNESS-CONTEXT",
+      "description": "simple_harness 当前完整产品 Context、工具与用户可达行为"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-DEVELOPER-HOST",
+      "description": "当前开发者账户、OS/kernel 和系统绝对路径程序可信"
+    },
+    {
+      "id": "TRUST-IDENTITY-SOURCE",
+      "description": "各产品认证或 immutable session binding 产生的 identity 可信，普通消息和模型输出不可信"
+    },
+    {
+      "id": "TRUST-EXPLICIT-PATHS",
+      "description": "消费者为 execution、memory 和模型资源提供显式、已解析、可审计的路径"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-CRASH-WINDOW",
+      "description": "recall、Provider、terminal commit、outbox delivery 或 Memory apply 任一点进程崩溃"
+    },
+    {
+      "id": "FAIL-DUPLICATE-DELIVERY",
+      "description": "恢复或租约竞争导致同一 committed Turn 重复投递"
+    },
+    {
+      "id": "FAIL-IDENTITY-ISOLATION",
+      "description": "身份换绑、scope 过滤错误或跨 household 查询导致隐私泄漏"
+    },
+    {
+      "id": "FAIL-MEMORY-INJECTION",
+      "description": "长期记忆或 Tool 内容试图升级为 system instruction 或触发越权动作"
+    },
+    {
+      "id": "FAIL-SQLITE-OPERABILITY",
+      "description": "SQLite busy、部分事务、损坏、备份恢复失败或不受控并发"
+    },
+    {
+      "id": "FAIL-EMBEDDING-DRIFT",
+      "description": "模型、revision、dimension 或 normalization 变化后静默混用索引"
+    },
+    {
+      "id": "FAIL-DUAL-AUTHORITY",
+      "description": "消费者保留旧自动 recall、writer 或 outbox，造成重复上下文和重复记忆"
+    },
+    {
+      "id": "FAIL-RELEASE-DRIFT",
+      "description": "源码、测试、文档、tag、wheel、SHA 或消费者 pin 不一致"
+    },
+    {
+      "id": "FAIL-PRODUCT-REGRESSION",
+      "description": "SDK 接线导致 simple_harness 现有 Context、Tool、Artifact、启动或恢复行为缩水"
+    }
+  ],
+  "in_scope_adversaries": [
+    {
+      "id": "ADV-UNTRUSTED-CONTENT",
+      "description": "模型、Memory、Tool output 或 Provider 返回的恶意内容尝试改变可信身份、权限或指令层级"
+    }
+  ],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-CROSS-DEVICE-SYNC",
+      "description": "AIPhone、simple_harness 与 K6 之间的远程同步、复制和冲突合并"
+    },
+    {
+      "id": "OOS-LEGACY-MIGRATION",
+      "description": "K6/AgentOS 现有 harness、task、memory 数据迁移"
+    },
+    {
+      "id": "OOS-POSTGRES-BACKEND",
+      "description": "Memory SDK PostgreSQL/pgvector backend"
+    },
+    {
+      "id": "OOS-HOSTILE-HOST",
+      "description": "已控制开发者账户、OS/kernel、进程内存或 gate 的攻击者"
+    },
+    {
+      "id": "OOS-NOVELTAG-FEATURES",
+      "description": "NovelTagSystem 的功能、schema、部署、迁移、备份和清理"
+    },
+    {
+      "id": "OOS-AIPHONE-CHANGES",
+      "description": "AIPhone 仓库、依赖锁、运行时、部署、数据库和产品测试修改"
+    },
+    {
+      "id": "OOS-AGENTOS-CHANGES",
+      "description": "K6/AgentOS 仓库、Python、PostgreSQL、自研 Memory、部署和产品测试修改"
+    }
+  ],
+  "maximum_acceptable_impact": "Memory 故障最多使单个 Turn 降级为空召回或延迟后台写入；不得使主任务失败、回滚已 committed 响应、产生重复事实、跨用户或 household 泄漏、静默混用 embedding，或使 simple_harness 现有功能缩水。"
+}

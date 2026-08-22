@@ -1,0 +1,56 @@
+{
+  "run_id": "official-memory-plan-challenge-20260822",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "source_request_file": "/Users/denny/projects/simple_harness/plans/2026-08-22-official-memory-integration/source-request.md",
+  "acceptance_file": "/Users/denny/projects/simple_harness/plans/2026-08-22-official-memory-integration/acceptance.md",
+  "behavior_contract": {
+    "revision": "official-memory-v1",
+    "source": "acceptance.md sections 2.1-2.3",
+    "approval": "user message: 确认",
+    "preserved": [
+      "bounded recall and frozen untrusted context",
+      "execution outbox and crash recovery",
+      "simple_harness non-memory product context",
+      "non-Harness product memory outbox provenance"
+    ],
+    "changed": [
+      "consumer passes MemoryManager directly",
+      "SDK owns automatic recall and committed-turn record lifecycle",
+      "identity expands to deployment/household/actor/session/scope"
+    ],
+    "removed": [
+      "public ConversationMemoryAdapter",
+      "consumer manual recall/append lifecycle",
+      "foreground per-message memory intent"
+    ]
+  },
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "rationale": "Memory内容会直接改变真实LLM对话答案和长期偏好表现",
+      "decided_by": "user"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "rationale": "本次不新增由LLM结构化载荷驱动的新UI状态机，既有工具链只做回归",
+      "decided_by": "agent"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "功能依赖两个SQLite数据库、身份绑定、Runtime和真实UI冷启动",
+      "decided_by": "user"
+    }
+  },
+  "executor_engine": "current",
+  "challenger_engine": "gpt-5.6-sol",
+  "auditor_engine": "opus-4.8",
+  "release_unit": {
+    "slice_id": "PLAN-ITERATION",
+    "parent_program": "official-memory-integration",
+    "scope_hash": "22adb449af6c151fab00e0d1af605fcb26c5c35f36f988797354536143f10a74",
+    "must_ac_count": 0,
+    "plan_lines": 0,
+    "high_risk_subsystems": 0
+  },
+  "scenarios": []
+}
