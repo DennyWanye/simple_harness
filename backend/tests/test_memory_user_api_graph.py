@@ -1,12 +1,14 @@
 import pytest
 
 from deskpet.memory.session_db import SessionDB
-from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+from simple_harness_memory import MemoryManager
 
 
 @pytest.mark.asyncio
 async def test_two_users_are_sql_scoped_across_append_recall_facts_and_twin(tmp_path):
-    memory = SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True)
+    memory = await MemoryManager.build_development(
+        tmp_path / "memory.db", enable_facts=True
+    )
     session = SessionDB(tmp_path / "state.db", memory_backend=memory)
     await session.initialize()
     await session.append_message("session-a", "user", "我养了一只叫Max的狗", user_id="user-a")

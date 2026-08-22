@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 30  # Agent Runtime Memory ownership + product outbox
+TARGET_SCHEMA_VERSION = 31  # Official Harness/Memory SDK product bindings
 _V17_MIGRATION = "009_memory_v2_v17.sql"
 _V17_SCHEMA_VERSION = 17
 _V18_MIGRATION = "010_context_os_v18.sql"
@@ -84,6 +84,8 @@ _SDK_PROVIDER_PROJECTION_SEQUENCE_MIGRATION = (
 _SDK_PROVIDER_PROJECTION_SEQUENCE_SCHEMA_VERSION = 29
 _AGENT_RUNTIME_MEMORY_MIGRATION = "022_agent_runtime_memory_v30.sql"
 _AGENT_RUNTIME_MEMORY_SCHEMA_VERSION = 30
+_OFFICIAL_MEMORY_INTEGRATION_MIGRATION = "023_official_memory_integration_v31.sql"
+_OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION = 31
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -99,6 +101,7 @@ MIGRATION_STEPS: dict[str, int] = {
         _SDK_PROVIDER_PROJECTION_SEQUENCE_SCHEMA_VERSION
     ),
     _AGENT_RUNTIME_MEMORY_MIGRATION: _AGENT_RUNTIME_MEMORY_SCHEMA_VERSION,
+    _OFFICIAL_MEMORY_INTEGRATION_MIGRATION: _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION,
 }
 
 

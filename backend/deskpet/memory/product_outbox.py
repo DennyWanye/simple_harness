@@ -15,14 +15,6 @@ import uuid
 
 import aiosqlite
 
-from simple_harness.runtime import (
-    ConversationMemoryError,
-    ConversationMemoryErrorCode,
-    ConversationMemoryIntent,
-    ConversationMemoryRole,
-)
-
-
 log = logging.getLogger(__name__)
 
 
@@ -41,19 +33,6 @@ class ProductMemoryOutboxRecord:
     claim_token: str | None
     lease_expires_at: float | None
     next_attempt_at: float
-
-    def intent(self) -> ConversationMemoryIntent:
-        intent = ConversationMemoryIntent(
-            source_event_id=self.source_event_id,
-            user_id=self.user_id,
-            session_id=self.session_id,
-            role=ConversationMemoryRole(self.role),
-            memory_text=self.memory_text,
-        )
-        if intent.payload_hash != self.payload_hash:
-            raise RuntimeError("product_memory_outbox_payload_conflict")
-        return intent
-
 
 def _record(row: aiosqlite.Row) -> ProductMemoryOutboxRecord:
     return ProductMemoryOutboxRecord(
@@ -242,30 +221,27 @@ class ProductMemoryDispatcher:
         )
         for item in records:
             try:
-                result = await self._sink.apply(item.intent())
+                result = await self._sink.append_message(
+                    item.session_id,
+                    item.role,
+                    item.memory_text,
+                    user_id=item.user_id,
+                    source_event_id=item.source_event_id,
+                    payload_hash=item.payload_hash,
+                )
                 if (
-                    result.source_event_id != item.source_event_id
-                    or result.payload_hash != item.payload_hash
+                    str(getattr(result, "source_event_id", "")) != item.source_event_id
+                    or str(getattr(result, "payload_hash", "")) != item.payload_hash
                 ):
                     raise RuntimeError("product_memory_sink_receipt_conflict")
-            except ConversationMemoryError as exc:
-                permanent = exc.code in {
-                    ConversationMemoryErrorCode.APPLY_CONFLICT,
-                    ConversationMemoryErrorCode.PERMANENT,
-                }
+            except Exception as exc:
+                code = str(getattr(getattr(exc, "code", None), "value", None) or "memory_transient")
+                permanent = code in {"apply_conflict", "conflict", "permanent"}
                 await self._repository.settle_failure(
                     item,
                     now=self._clock(),
-                    error_code=exc.code.value,
+                    error_code=code,
                     permanent=permanent or item.attempt >= self._max_attempts,
-                    retry_at=self._clock() + min(60.0, 0.25 * (2 ** min(item.attempt, 8))),
-                )
-            except Exception:
-                await self._repository.settle_failure(
-                    item,
-                    now=self._clock(),
-                    error_code="memory_transient",
-                    permanent=item.attempt >= self._max_attempts,
                     retry_at=self._clock() + min(60.0, 0.25 * (2 ** min(item.attempt, 8))),
                 )
             else:

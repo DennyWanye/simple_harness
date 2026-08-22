@@ -43,7 +43,16 @@ class ProductContextAdapter:
                 raise TypeError(
                     "prepared message content must be text or structured blocks"
                 )
-            projected_messages.append({"role": role, "content": projected_content})
+            projected_message: dict[str, JsonValue] = {
+                "role": role,
+                "content": projected_content,
+            }
+            metadata = message.get("metadata")
+            if metadata is not None:
+                if not isinstance(metadata, Mapping):
+                    raise TypeError("prepared message metadata must be an object")
+                projected_message["metadata"] = dict(metadata)
+            projected_messages.append(projected_message)
         start_input = dict(trusted_input or {})
         if "messages" in start_input or "capability_snapshot" in start_input:
             raise ValueError("trusted_input cannot override projected authority")

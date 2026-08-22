@@ -17,41 +17,25 @@ from typing import Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_MATRIX = (
-    "backend/tests/test_provider_fault_script.py",
+    "backend/tests/test_session_model_run_visibility_smoke.py",
     (
         "backend/tests/test_p5s2_session_provider_resolution.py::"
         "test_pinned_to_deleted_provider_fails_closed"
     ),
-    (
-        "backend/tests/test_harness_public_read_service.py::"
-        "test_manifest_rebuilds_1500_facts_and_106_archive_rows_without_leaks"
-    ),
-    "backend/tests/test_harness_inspector_v3_wiring.py",
+    "backend/tests/test_agent_activity_projection.py",
+    "backend/tests/test_public_tool_projection.py",
     (
         "backend/tests/test_workflow_fault_matrix.py::"
         "test_cancelled_run_rejects_late_result_instead_of_advancing"
     ),
-    (
-        "backend/tests/harness_simplification/test_run_kernel.py::"
-        "test_composed_agent_loop_child_fault_binds_identity_and_parent_recovers"
-    ),
-    (
-        "backend/tests/harness_simplification/test_run_kernel.py::"
-        "test_runtime_reuses_settled_effect_without_live_registry_policy"
-    ),
-    (
-        "backend/tests/harness_simplification/test_wi5_react_driver.py::"
-        "test_permission_batch_waits_for_durable_grant_before_execution"
-    ),
-    (
-        "backend/tests/harness_simplification/test_wi5_react_driver.py::"
-        "test_external_action_wait_survives_restart_and_resumes_same_attempt"
-    ),
+    "backend/tests/test_execute_sdk_run.py",
+    "backend/tests/sdk_adapters/test_provider_projection_pump.py",
+    "backend/tests/sdk_adapters/test_official_memory_product_integration.py",
 )
 FRONTEND_MATRIX = (
     "src/stores/sessionsStore.test.ts",
     "src/code-panel/ws.chat.test.ts",
-    "src/message-panel/HarnessInspectorPanel.test.tsx",
+    "src/chat/HarnessInspectorPanel.test.tsx",
     "src/components/AgentActivityMessage.test.tsx",
     "src/components/workflow/WorkflowProgressGroup.test.tsx",
     "src/stores/harnessPublicSnapshotStore.test.ts",

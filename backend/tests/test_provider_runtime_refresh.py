@@ -90,6 +90,9 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
         "sdk_prepared_authorization_policy",
         "sdk_context_staging",
         "conversation_memory",
+        "sdk_context_source_repository",
+        "sdk_context_source_repository",
+        "memory_identity_resolver",
     )
     for name in names:
         marker = object()
@@ -103,11 +106,11 @@ async def test_real_product_sdk_production_composition_starts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from deskpet.memory.session_db import SessionDB
-    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+    from simple_harness_memory import MemoryManager
 
     data_dir = tmp_path / "data"
     data_dir.mkdir()
-    memory = SQLiteMemoryBackend(str(data_dir / "memory.db"))
+    memory = await MemoryManager.build_development(data_dir / "memory.db")
     session = SessionDB(data_dir / "state.db", memory_backend=memory)
     await session.initialize()
     services = {
@@ -148,7 +151,8 @@ async def test_real_product_sdk_production_composition_starts(
         assert stack.phase == "ready"
         assert ready.runtime.state.value == "ready"
         assert main.service_context.get("sdk_context_staging") is not None
-        assert main.service_context.get("conversation_memory") is not None
+        assert main.service_context.get("conversation_memory") is None
+        assert main.service_context.get("sdk_context_source_repository") is not None
     finally:
         if stack is not None:
             await stack.close()
@@ -288,51 +292,13 @@ async def test_provider_authority_uses_session_params_and_epoch_cas():
         await main._freeze_sdk_provider_authority(session_db, "session-1", host)
 
 
-@pytest.mark.asyncio
-async def test_sdk_persona_and_memory_use_current_product_authorities(monkeypatch):
-    memory = SimpleNamespace(
-        recall_bounded=AsyncMock(
-            return_value=SimpleNamespace(
-                result_id="memory-result-1",
-                result_hash="a" * 64,
-                payload={"items": [{"text": "owner memory", "score": 1}]},
-            )
-        )
-    )
-    registry = SimpleNamespace(
-        get_entry=lambda _provider_id: SimpleNamespace(base_url="https://relay.invalid")
-    )
-    monkeypatch.setattr(
-        main,
-        "config",
-        SimpleNamespace(raw={"agent": {"persona": "Current persona"}}),
-    )
-    monkeypatch.setattr(
-        main,
-        "service_context",
-        SimpleNamespace(
-            get=lambda name: {
-                "provider_registry": registry,
-                "conversation_memory": memory,
-            }.get(name)
-        ),
-    )
-    session_db = SimpleNamespace()
+def test_foreground_no_longer_owns_manual_memory_prepare() -> None:
+    import inspect
 
-    persona, items, result = await main._sdk_persona_and_memory_sources(
-        session_db=session_db,
-        text="current request",
-        provider_binding={"provider_id": "deepseek", "model_id": "deepseek-v4-pro"},
-        context_query_id="context-query-1",
-        user_id="user-1",
-        session_id="session-1",
-    )
-
-    assert persona.startswith("Current persona")
-    query = memory.recall_bounded.await_args.args[0]
-    assert query.context_query_id == "context-query-1"
-    assert query.user_id == "user-1"
-    assert query.session_id == "session-1"
-    assert query.query_text == "current request"
-    assert result.result_id == "memory-result-1"
-    assert items == ({"text": "owner memory", "score": 1},)
+    source = inspect.getsource(main._run_product_harness_chat)
+    continuation = inspect.getsource(main._run_product_harness_continuation)
+    assert "ConversationMemoryRecallQuery" not in source + continuation
+    assert "prepare_consumer_conversation_context" not in source + continuation
+    assert "ConversationTurnInput" in source
+    assert "ConversationContinuationInput" in continuation
+    assert "context_source_snapshot_ref=source_ref" in continuation

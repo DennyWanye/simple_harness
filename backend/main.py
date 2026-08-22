@@ -2551,10 +2551,9 @@ _summarizer_state_db_path = None
 _state_db_path = _paths.user_data_dir() / "data" / "state.db"
 try:
     from deskpet.memory.session_db import SessionDB
-    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
     _memory_db_path = _paths.user_data_dir() / "data" / "memory.db"
-    _memory_backend = SQLiteMemoryBackend(str(_memory_db_path), auto_extract_facts=True)
-    _session_db = SessionDB(db_path=_state_db_path, memory_backend=_memory_backend)
+    _memory_backend = None
+    _session_db = SessionDB(db_path=_state_db_path)
 except Exception as _memory_sdk_exc:  # noqa: BLE001
     logger.warning("memory_sdk_wiring_failed error=%s", str(_memory_sdk_exc)[:200])
     _memory_backend = None
@@ -2919,9 +2918,29 @@ async def lifespan(app: FastAPI):
     logger.info("preloading models...")
     from llm.resolution import ProviderRoutingReadiness
 
-    global _provider_registry
+    global _provider_registry, _memory_backend
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
+    if _memory_backend is None:
+        from paths import resolve_model_dir
+        from simple_harness_memory import MemoryManager
+        from simple_harness_memory.embedders import BGEM3Embedder
+
+        memory_resource = resolve_model_dir("bge-m3-int8").resolve()
+        if not memory_resource.is_dir():
+            raise RuntimeError("memory_embedding_resource_unavailable")
+        memory_embedder = BGEM3Embedder(
+            memory_resource,
+            revision="product-bundled",
+            model_name="bge-m3-int8",
+        )
+        _memory_backend = await MemoryManager.build_production(
+            _memory_db_path,
+            embedder=memory_embedder,
+            resource_path=memory_resource,
+            enable_facts=True,
+        )
+        _session_db.bind_memory_manager(_memory_backend)
     try:
         # SessionDB owns the migration/backup recovery path. Registry identity
         # is loaded only after v23 exists, then legacy bindings are reconciled
@@ -7023,6 +7042,8 @@ def _freeze_sdk_catalog(tools_adapter: Any, generation: int) -> dict[str, Any]:
     schema_fingerprints: dict[str, str] = {}
     schema_token_count = 0
     for spec in tools_adapter.specs:
+        if str(spec.name) in {"memory_recall", "memory_search"}:
+            continue
         # SDK ToolSpec recursively freezes schemas with MappingProxyType.  A
         # shallow dict() only unwraps the root and leaves nested properties
         # non-JSON, which makes canonical hashing fail during cold startup.
@@ -7240,6 +7261,13 @@ async def _build_product_sdk_runtime_stack(
     capability_platform = service_context.get("capability_platform")
     if session_db is None or capability_platform is None:
         raise RuntimeError("SDK Runtime requires session_db and capability_platform")
+    product_state_db_path = Path(getattr(session_db, "db_path", _state_db_path))
+    memory_identity_resolver = service_context.get("memory_identity_resolver")
+    if memory_identity_resolver is None:
+        from deskpet.memory.identity import ProductMemoryIdentityResolver
+
+        memory_identity_resolver = ProductMemoryIdentityResolver(product_state_db_path)
+        service_context.register("memory_identity_resolver", memory_identity_resolver)
 
     # The runtime is stable across Provider mutations.  A physical Provider is
     # constructed only after a Run freezes its own Session binding.
@@ -7308,6 +7336,8 @@ async def _build_product_sdk_runtime_stack(
         memory_scope_resolver=memory_scope_resolver,
         capability_bridge_service=capability_bridge,
         search_gateway=search_gateway,
+        memory_manager=_memory_backend,
+        memory_identity_resolver=memory_identity_resolver,
     )
 
     catalog = build_explicit_product_tool_catalog(dependencies)
@@ -7366,12 +7396,19 @@ async def _build_product_sdk_runtime_stack(
 
     projection_pump = None
     if _memory_backend is None:
-        raise RuntimeError("SDK Runtime requires the Memory SDK backend")
-    from simple_harness_memory.core.conversation import ConversationMemoryAdapter
+        raise RuntimeError("SDK Runtime requires the Memory SDK manager")
+    from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
+    from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
 
-    conversation_memory = ConversationMemoryAdapter(
-        _memory_backend, close_backend=False
+    context_source_repository = ProductContextSourceRepository(product_state_db_path)
+    context_provider = ProductConversationContextProvider(context_source_repository)
+    from deskpet.sdk_adapters.memory_faults import wrap_dev_memory_faults
+
+    agent_memory_port = wrap_dev_memory_faults(
+        _memory_backend,
+        user_data_dir=_paths.user_data_dir(),
     )
+    service_context.register("sdk_context_source_repository", context_source_repository)
 
     async def close_projection_pump() -> None:
         if projection_pump is not None:
@@ -7517,15 +7554,10 @@ async def _build_product_sdk_runtime_stack(
         from simple_harness.execution.context_staging import (
             ContextStagingRepository,
         )
-        from simple_harness.execution.memory_outbox import (
-            MemoryDispatcher,
-            MemoryOutboxRepository,
-        )
         from simple_harness.runtime import ContextPreparationMode
 
         context_staging = ContextStagingRepository(database)
         service_context.register("sdk_context_staging", context_staging)
-        service_context.register("conversation_memory", conversation_memory)
         return RuntimePorts(
             provider=provider_port,
             tools=effects,
@@ -7538,15 +7570,10 @@ async def _build_product_sdk_runtime_stack(
             react_checkpoint=uow,
             tool_catalog=durable_catalog_resolver,
             owner_id=f"deskpet-product-sdk-g{generation}",
-            conversation_memory_enabled=True,
-            memory_dispatcher=MemoryDispatcher(
-                MemoryOutboxRepository(database),
-                conversation_memory,
-                owner_id=f"deskpet-product-sdk-g{generation}:memory",
-                clock=time.time,
-            ),
+            agent_memory=agent_memory_port,
+            context_provider=context_provider,
             context_staging=context_staging,
-            context_preparation_mode=ContextPreparationMode.CONSUMER_PREPARED,
+            context_preparation_mode=ContextPreparationMode.SDK_PREPARED,
         )
 
     class _ProductionToolCatalogProxy:
@@ -7590,6 +7617,7 @@ async def _build_product_sdk_runtime_stack(
     def production_runtime_factory(execution_path):
         from simple_harness.runtime import (
             ContextPreparationMode,
+            ResourceOwnership,
             ProductionRuntimeConfig,
             build_production_runtime,
         )
@@ -7610,9 +7638,10 @@ async def _build_product_sdk_runtime_stack(
             tool_catalog=production_tool_catalog,
             driver=driver,
             profiles=profiles,
-            conversation_query=conversation_memory,
-            conversation_sink=conversation_memory,
-            context_preparation_mode=ContextPreparationMode.CONSUMER_PREPARED,
+            memory=agent_memory_port,
+            memory_ownership=ResourceOwnership.BORROWED,
+            context_provider=context_provider,
+            context_preparation_mode=ContextPreparationMode.SDK_PREPARED,
             provider_budget_resolver=provider_binding_resolver,
             provider_projection_pump=production_projection_pump,
             run_binding=tool_authorities,
@@ -7869,56 +7898,6 @@ async def _freeze_sdk_provider_authority(
         "model_params": model_params,
         "context_window": int(context_window),
     }
-
-
-async def _sdk_persona_and_memory_sources(
-    *,
-    session_db: Any,
-    text: str,
-    provider_binding: Mapping[str, Any],
-    context_query_id: str,
-    user_id: str,
-    session_id: str,
-) -> tuple[str, tuple[dict[str, Any], ...], Any]:
-    """Read current Persona and owner-scoped Memory through product ports."""
-
-    from deskpet.agent.assembler.components.persona import _resolve_persona
-
-    persona_config = dict(config.raw)
-    registry = service_context.get("provider_registry")
-    entry = (
-        registry.get_entry(str(provider_binding["provider_id"]))
-        if registry is not None
-        else None
-    )
-    persona_config["llm"] = {
-        "model": str(provider_binding["model_id"]),
-        "base_url": str(getattr(entry, "base_url", "") or "bound-provider"),
-    }
-    persona = _resolve_persona(persona_config)
-
-    memory_query = service_context.get("conversation_memory")
-    if memory_query is None:
-        raise RuntimeError("conversation Memory authority is unavailable")
-    from simple_harness.runtime import ConversationMemoryRecallQuery
-
-    query = ConversationMemoryRecallQuery.create(
-        context_query_id=context_query_id,
-        user_id=user_id,
-        session_id=session_id,
-        query_text=text,
-        max_items=8,
-        max_bytes=64 * 1024,
-        timeout_seconds=3.0,
-    )
-    result = await memory_query.recall_bounded(query)
-    recalled = result.payload.get("items", ())
-    items = tuple(
-        dict(item)
-        for item in recalled
-        if isinstance(item, Mapping)
-    )
-    return persona, items, result
 
 
 async def _snapshot_context_usage_basis_for_run(
@@ -8255,94 +8234,58 @@ async def _run_product_harness_continuation(
         )
     message_ref = f"request:{request_id}"
     sdk_run_id = _sdk_run_ids_by_root.get(root_run_id, root_run_id)
-    context_staging = service_context.get("sdk_context_staging")
-    conversation_memory = service_context.get("conversation_memory")
     session_db = service_context.get("session_db")
-    if context_staging is None or conversation_memory is None or session_db is None:
+    context_sources = service_context.get("sdk_context_source_repository")
+    if context_sources is None or session_db is None:
         raise RuntimeError("SDK continuation context authority is unavailable")
-    from simple_harness import canonical_json
     from simple_harness.contracts.messages import Message, MessageRole
-    from simple_harness.execution.context_staging import ContextStageKind
-    from simple_harness.runtime import (
-        ConversationContinuationInput,
-        ConversationMemoryRecallQuery,
-        ConversationTurnInput,
-        prepare_consumer_conversation_context,
-    )
+    from simple_harness.runtime import ConversationContinuationInput
 
-    user_id = await session_db.ensure_memory_user_binding(session_id)
     current_message = Message(MessageRole.USER, text)
-    continuation_value = ConversationContinuationInput(current_message, text)
-    turn_value = ConversationTurnInput(
-        user_id=user_id,
+    continuation_value = None
+    history, _truncated = await _bounded_sdk_history(
+        session_db,
         session_id=session_id,
-        message=current_message,
-        memory_text=text,
+        root_run_id=root_run_id,
+        token_budget=32_000,
     )
-
-    async def prepare_continuation(expected_query_id: str) -> Mapping[str, Any]:
-        query = ConversationMemoryRecallQuery.create(
-            context_query_id=expected_query_id,
-            user_id=user_id,
-            session_id=session_id,
-            query_text=text,
-            max_items=8,
-            max_bytes=64 * 1024,
-            timeout_seconds=3.0,
-        )
-        result = await conversation_memory.recall_bounded(query)
-        memory_message = Message(
-            MessageRole.USER,
-            "Untrusted recalled memory data:\n" + canonical_json(result.payload),
-            metadata={"source": "memory", "trust": "untrusted_data"},
-        )
-        return {
-            "schema_version": 1,
-            "lineage": {
-                "context_query_id": expected_query_id,
-                "memory_result_id": result.result_id,
-                "memory_result_hash": result.result_hash,
-            },
-            "memory": {
-                "role": "user",
-                "trust": "untrusted_data",
-                "result": dict(result.payload),
-            },
-            "current_message": current_message.to_dict(),
-            "provider_messages": [
-                memory_message.to_dict(), current_message.to_dict()
-            ],
-        }
-
-    context_stage = await prepare_consumer_conversation_context(
-        context_staging,
-        prepare_continuation,
-        stage_id=f"deskpet-context/v1/continuation/{message_ref}",
-        kind=ContextStageKind.CONTINUATION,
-        identity_key=message_ref,
-        value=turn_value,
-        owner_id=f"deskpet:{os.getpid()}:{request_id}",
-        now=time.time,
-        lease_seconds=30.0,
-        memory=conversation_memory,
-        release_timeout_seconds=3.0,
+    source_payload = {
+        "schema_version": 1,
+        "provider_messages": [
+            *(
+                {"role": row["role"], "content": row["content"]}
+                for row in history
+            ),
+            current_message.to_dict(),
+        ],
+        "current_message": current_message.to_dict(),
+    }
+    context_binding_id, source_ref = await context_sources.put_pending(
+        root_run_id=sdk_run_id,
+        continuation_id=message_ref,
+        payload=source_payload,
     )
-    if context_stage.private_snapshot is None or context_stage.private_snapshot_hash is None:
-        raise RuntimeError("SDK continuation context stage is incomplete")
+    continuation_value = ConversationContinuationInput(
+        current_message,
+        text,
+        context_source_snapshot_ref=source_ref,
+    )
     receipt = await _sdk_ingress.signal_conversation(
         run_id=sdk_run_id,
         continuation_id=message_ref,
         value=continuation_value,
-        context_stage_id=context_stage.stage_id,
-        context_stage_hash=context_stage.private_snapshot_hash,
-        prepared_context=context_stage.private_snapshot,
     )
     accepted = bool(
         receipt.get("accepted")
         if isinstance(receipt, dict)
         else getattr(receipt, "accepted", False)
     )
-    if not accepted:
+    duplicate = bool(
+        receipt.get("duplicate")
+        if isinstance(receipt, dict)
+        else getattr(receipt, "duplicate", False)
+    )
+    if not accepted and not duplicate:
         reason = (
             receipt.get("reason")
             if isinstance(receipt, dict)
@@ -8351,6 +8294,10 @@ async def _run_product_harness_continuation(
         raise RuntimeError(
             str(reason or "continuation was not accepted")
         )
+    await context_sources.mark_claimed(
+        context_binding_id,
+        claim_token=receipt.delivery_id,
+    )
     _ensure_sdk_recovery_watcher(sdk_run_id)
     receipt_reason = (
         receipt.get("reason")
@@ -8971,20 +8918,14 @@ async def _run_product_harness_chat(
         provider_authority = await _freeze_sdk_provider_authority(
             session_db, session_id, host
         )
-        context_staging = service_context.get("sdk_context_staging")
-        conversation_memory = service_context.get("conversation_memory")
-        if context_staging is None or conversation_memory is None:
-            raise RuntimeError("SDK context staging authority is unavailable")
         from simple_harness.contracts.messages import (
             ContentBlock,
             Message,
             MessageRole,
         )
-        from simple_harness.execution.context_staging import ContextStageKind
-        from simple_harness.runtime import (
-            ConversationTurnInput,
-            prepare_consumer_conversation_context,
-        )
+        from simple_harness.runtime import ConversationTurnInput
+        from deskpet.agent.assembler.components.persona import _resolve_persona
+        from deskpet.memory.identity import ProductMemoryIdentityResolver
 
         current_content: Any = text
         if user_attachment_blocks:
@@ -8995,72 +8936,56 @@ async def _run_product_harness_chat(
                     for block in user_attachment_blocks
                 ),
             )
-        conversation = ConversationTurnInput(
-            user_id=await session_db.ensure_memory_user_binding(session_id),
+        actor_id = str(
+            getattr(getattr(frozen_owner, "owner", None), "profile_id", "")
+            or getattr(getattr(frozen_owner, "owner", None), "identity_namespace_hash", "")
+        ).strip()
+        identity_resolver = service_context.get("memory_identity_resolver")
+        if identity_resolver is None:
+            identity_resolver = ProductMemoryIdentityResolver(_state_db_path)
+            service_context.register("memory_identity_resolver", identity_resolver)
+        identity = await identity_resolver.bind(
             session_id=session_id,
+            trusted_actor_id=actor_id,
+        )
+        persona_text = _resolve_persona(dict(config.raw))
+        prepared_snapshot = await _prepare_sdk_context_snapshot(
+            session_db=session_db,
+            session_id=session_id,
+            request_id=request_id,
+            root_run_id=root_ref.run_id,
+            sdk_run_id=sdk_run_id,
+            turn_id=str(turn_id),
+            text=text,
+            provider_binding=provider_authority,
+            catalog=_sdk_runtime_catalog,
+            attachment_blocks=tuple(user_attachment_blocks),
+            project=workspace,
+            task_scope_id=task_scope_id,
+            persona_text=persona_text,
+            memory_items=None,
+            prepared_skill_scope=prepared_skill_scope,
+            skill_arguments=skill_arguments,
+            skill_instruction_resolver=service_context.get(
+                "frozen_skill_instruction_resolver"
+            ),
+        )
+        context_sources = service_context.get("sdk_context_source_repository")
+        if context_sources is None:
+            raise RuntimeError("SDK context source repository is unavailable")
+        context_binding_id, source_ref = await context_sources.put_pending(
+            root_run_id=sdk_run_id,
+            continuation_id=None,
+            payload=prepared_snapshot.private_record(),
+        )
+        conversation = ConversationTurnInput(
+            identity=identity,
             message=Message(MessageRole.USER, current_content),
             memory_text=text,
+            context_source_snapshot_ref=source_ref,
         )
-
-        async def prepare_private(expected_query_id: str) -> Mapping[str, Any]:
-            persona_text, memory_items, memory_result = (
-                await _sdk_persona_and_memory_sources(
-                    session_db=session_db,
-                    text=text,
-                    provider_binding=provider_authority,
-                    context_query_id=expected_query_id,
-                    user_id=conversation.user_id,
-                    session_id=session_id,
-                )
-            )
-            prepared = await _prepare_sdk_context_snapshot(
-                session_db=session_db,
-                session_id=session_id,
-                request_id=request_id,
-                root_run_id=root_ref.run_id,
-                sdk_run_id=sdk_run_id,
-                turn_id=str(turn_id),
-                text=text,
-                provider_binding=provider_authority,
-                catalog=_sdk_runtime_catalog,
-                attachment_blocks=tuple(user_attachment_blocks),
-                project=workspace,
-                task_scope_id=task_scope_id,
-                persona_text=persona_text,
-                memory_items=memory_items,
-                prepared_skill_scope=prepared_skill_scope,
-                skill_arguments=skill_arguments,
-                skill_instruction_resolver=service_context.get(
-                    "frozen_skill_instruction_resolver"
-                ),
-                context_query_id=expected_query_id,
-                memory_result_id=memory_result.result_id,
-                memory_result_hash=memory_result.result_hash,
-                memory_result_payload=memory_result.payload,
-            )
-            return prepared.private_record()
-
-        context_stage = await prepare_consumer_conversation_context(
-            context_staging,
-            prepare_private,
-            stage_id=f"deskpet-context/v1/root/{sdk_run_id}",
-            kind=ContextStageKind.ROOT,
-            identity_key=sdk_run_id,
-            value=conversation,
-            owner_id=f"deskpet:{os.getpid()}:{request_id}",
-            now=time.time,
-            lease_seconds=30.0,
-            memory=conversation_memory,
-            release_timeout_seconds=3.0,
-        )
-        if context_stage.private_snapshot is None:
-            raise RuntimeError("SDK context stage has no private snapshot")
         from deskpet.sdk_adapters.context_authority import (
-            PreparedSdkContextSnapshotV1,
-        )
-
-        prepared_snapshot = PreparedSdkContextSnapshotV1.from_private_record(
-            context_stage.private_snapshot
+            DefaultDenySnapshotRedactor,
         )
         public_snapshot = DefaultDenySnapshotRedactor().redact(prepared_snapshot)
         if session_db is not None:
@@ -9116,8 +9041,21 @@ async def _run_product_harness_chat(
             websocket=websocket,
             root_run_id=root_ref.run_id,
             conversation=conversation,
-            context_stage=context_stage,
+            context_stage=None,
+            context_binding_id=context_binding_id,
         )
+        context_run = _sdk_ingress.query(sdk_run_id)
+        context_run_state = str(
+            getattr(
+                getattr(context_run, "state", None),
+                "value",
+                getattr(context_run, "state", ""),
+            )
+        ).lower()
+        if context_run_state in {"completed", "failed", "cancelled"}:
+            await context_sources.consume(context_binding_id)
+        else:
+            await context_sources.mark_staged(context_binding_id)
     except PreflightBlocked as block:
         await _commit_product_preflight_block(
             websocket=websocket,
@@ -10545,6 +10483,7 @@ async def _execute_sdk_run(
     root_run_id: str,
     conversation: Any | None = None,
     context_stage: Any | None = None,
+    context_binding_id: str | None = None,
 ) -> None:
     """Execute Agent via SDK Runtime with event delivery to WebSocket.
 
@@ -10683,6 +10622,14 @@ async def _execute_sdk_run(
         )
         if receipt.run_id != sdk_run_id:
             raise RuntimeError("SDK ingress returned an unexpected Run identity")
+        if context_binding_id is not None:
+            context_sources = service_context.get("sdk_context_source_repository")
+            if context_sources is None:
+                raise RuntimeError("SDK context source repository is unavailable")
+            await context_sources.mark_claimed(
+                context_binding_id,
+                claim_token=receipt.run_id,
+            )
 
         # Send run_started event to WebSocket
         started = {
@@ -10916,6 +10863,9 @@ async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
         projection_committed = True
     finally:
         if terminal_state is not None and projection_committed:
+            context_sources = service_context.get("sdk_context_source_repository")
+            if context_sources is not None:
+                await context_sources.consume_run(sdk_run_id)
             if _sdk_provider_binding_resolver is not None:
                 try:
                     _sdk_provider_binding_resolver.mark_terminal(

@@ -1,0 +1,296 @@
+from __future__ import annotations
+
+import sqlite3
+import hashlib
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+import pytest
+
+from deskpet.memory.identity import (
+    MemorySessionRebind,
+    ProductMemoryIdentityResolver,
+)
+from deskpet.memory.session_db import SessionDB
+from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
+from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
+from deskpet.sdk_adapters.memory_faults import DevMemoryFaultPort, wrap_dev_memory_faults
+from deskpet.migrations.sdk_v4_cutover import recover_product_sdk_pair_v4
+from deskpet.tool_catalog.providers import ToolCatalogDependencies, _dynamic_handlers
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.runtime import (
+    AgentIdentity,
+    ConversationContextBounds,
+    ConversationContextRequest,
+)
+
+
+@pytest.mark.asyncio
+async def test_identity_binding_is_stable_and_session_cannot_rebind(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    session = SessionDB(state)
+    await session.initialize()
+    await session.ensure_session("session-a")
+    resolver = ProductMemoryIdentityResolver(state)
+    first = await resolver.bind(session_id="session-a", trusted_actor_id="actor-a")
+    refreshed = await resolver.bind(session_id="session-a", trusted_actor_id="actor-a")
+    assert refreshed == first
+    with pytest.raises(MemorySessionRebind):
+        await resolver.bind(session_id="session-a", trusted_actor_id="actor-b")
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_root_and_continuation_sources_are_immutable_and_independent(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    session = SessionDB(state)
+    await session.initialize()
+    repository = ProductContextSourceRepository(state, retention_seconds=10)
+    root_payload = {"provider_messages": [{"role": "user", "content": "root"}]}
+    continuation_payload = {
+        "provider_messages": [{"role": "user", "content": "continuation"}]
+    }
+    root_binding, root_ref = await repository.put_pending(
+        root_run_id="run-a", continuation_id=None, payload=root_payload, now=1
+    )
+    continuation_binding, continuation_ref = await repository.put_pending(
+        root_run_id="run-a",
+        continuation_id="continuation-a",
+        payload=continuation_payload,
+        now=2,
+    )
+    assert root_binding != continuation_binding
+    assert root_ref != continuation_ref
+    assert (await repository.read(root_ref))[0] == root_payload
+    with pytest.raises(RuntimeError, match="context_source_binding_conflict"):
+        await repository.put_pending(
+            root_run_id="run-a",
+            continuation_id=None,
+            payload=continuation_payload,
+            now=3,
+        )
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_context_provider_is_read_only_and_same_ref_same_hash(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    session = SessionDB(state)
+    await session.initialize()
+    repository = ProductContextSourceRepository(state)
+    payload = {"provider_messages": [{"role": "user", "content": "hello"}]}
+    _binding, ref = await repository.put_pending(
+        root_run_id="run-a", continuation_id=None, payload=payload
+    )
+    provider = ProductConversationContextProvider(repository)
+    request = ConversationContextRequest(
+        "prepare-a",
+        AgentIdentity("deployment", "household", "actor", "session"),
+        "run-a",
+        None,
+        ref,
+        Message(MessageRole.USER, "hello"),
+        ConversationContextBounds(),
+    )
+    first = await provider.prepare_once(request)
+    second = await provider.prepare_once(request)
+    assert first.result_hash == second.result_hash
+    with sqlite3.connect(state) as db:
+        assert db.execute(
+            "SELECT status FROM sdk_context_source_bindings"
+        ).fetchone()[0] == "pending"
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_context_gc_retains_active_or_inspector_failure_and_reclaims_orphan(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    session = SessionDB(state)
+    await session.initialize()
+    repository = ProductContextSourceRepository(state, retention_seconds=1)
+    payload = {"provider_messages": [{"role": "user", "content": "shared"}]}
+    _first, ref = await repository.put_pending(
+        root_run_id="run-active",
+        continuation_id=None,
+        payload=payload,
+        now=1,
+        lease_seconds=1,
+    )
+    _second, shared_ref = await repository.put_pending(
+        root_run_id="run-orphan",
+        continuation_id=None,
+        payload=payload,
+        now=1,
+        lease_seconds=1,
+    )
+    assert shared_ref == ref
+    assert await repository.cleanup(
+        now=10,
+        orphan_horizon_seconds=1,
+        claim_exists=lambda root, _continuation: root == "run-active",
+    ) == 1
+    assert (await repository.read(ref))[0] == payload
+    with sqlite3.connect(state) as db:
+        assert db.execute(
+            "SELECT ref_count FROM sdk_context_sources WHERE source_snapshot_ref=?",
+            (ref,),
+        ).fetchone()[0] == 1
+
+    def broken_inspector(_root, _continuation):
+        raise RuntimeError("inspector unavailable")
+
+    assert await repository.cleanup(
+        now=20, orphan_horizon_seconds=1, claim_exists=broken_inspector
+    ) == 0
+    assert await repository.cleanup(
+        now=20,
+        orphan_horizon_seconds=1,
+        claim_exists=lambda _root, _continuation: False,
+    ) >= 2
+    with pytest.raises(KeyError):
+        await repository.read(ref)
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_context_claim_and_terminal_run_release_all_bindings(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    session = SessionDB(state)
+    await session.initialize()
+    repository = ProductContextSourceRepository(state)
+    root_binding, _ = await repository.put_pending(
+        root_run_id="run-claim",
+        continuation_id=None,
+        payload={"message": "root"},
+    )
+    continuation_binding, _ = await repository.put_pending(
+        root_run_id="run-claim",
+        continuation_id="continue-1",
+        payload={"message": "next"},
+    )
+
+    await repository.mark_claimed(
+        continuation_binding,
+        claim_token="continue-1",
+    )
+    with sqlite3.connect(state) as db:
+        row = db.execute(
+            """SELECT status,claim_token,lease_expires_at
+               FROM sdk_context_source_bindings WHERE binding_id=?""",
+            (continuation_binding,),
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "claimed"
+    assert row[1] == "continue-1"
+    assert float(row[2]) > 0
+
+    assert await repository.consume_run("run-claim") == 2
+    with sqlite3.connect(state) as db:
+        statuses = db.execute(
+            """SELECT status FROM sdk_context_source_bindings
+               WHERE binding_id IN (?,?) ORDER BY binding_id""",
+            (root_binding, continuation_binding),
+        ).fetchall()
+    assert statuses == [("consumed",), ("consumed",)]
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_dev_fault_wrapper_is_one_shot_and_fail_closed(monkeypatch, tmp_path) -> None:
+    target = SimpleNamespace(
+        recall_for_turn=AsyncMock(return_value="ok"),
+        record_committed_turn=AsyncMock(return_value="ok"),
+        release_recall=AsyncMock(),
+    )
+    monkeypatch.setenv("DESKPET_MEMORY_RECALL_FAULT", "timeout")
+    monkeypatch.setenv("DESKPET_DEV_MODE", "1")
+    isolated = tmp_path / ".local-test-evidence" / "run"
+    wrapped = DevMemoryFaultPort(target, recall_fault="timeout", record_fault=None)
+    with pytest.raises(TimeoutError):
+        await wrapped.recall_for_turn(object())
+    assert await wrapped.recall_for_turn(object()) == "ok"
+    monkeypatch.setenv("DESKPET_DEV_MODE", "0")
+    with pytest.raises(RuntimeError, match="memory_faults_require_dev_mode"):
+        wrap_dev_memory_faults(target, user_data_dir=isolated)
+
+
+def test_interrupted_pair_journal_restores_both_old_databases(tmp_path) -> None:
+    execution = tmp_path / "execution.db"
+    memory = tmp_path / "memory.db"
+    execution_backup = tmp_path / "execution.bak"
+    memory_backup = tmp_path / "memory.bak"
+    execution.write_bytes(b"mixed-new-execution")
+    memory.write_bytes(b"mixed-new-memory")
+    execution_backup.write_bytes(b"old-execution")
+    memory_backup.write_bytes(b"old-memory")
+    digest = lambda value: hashlib.sha256(value).hexdigest()
+    journal = tmp_path / "cutover.json"
+    journal.write_text(
+        json.dumps(
+            {
+                "protocol": "simple-harness-product/sdk-v4-cutover-journal/v1",
+                "phase": "execution_v4",
+                "execution_path": str(execution),
+                "memory_path": str(memory),
+                "execution_backup": str(execution_backup),
+                "memory_backup": str(memory_backup),
+                "old_execution_hash": digest(b"old-execution"),
+                "old_memory_hash": digest(b"old-memory"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert recover_product_sdk_pair_v4(journal) == "old_pair"
+    assert execution.read_bytes() == b"old-execution"
+    assert memory.read_bytes() == b"old-memory"
+
+
+@pytest.mark.asyncio
+async def test_explicit_memory_write_uses_trusted_identity_and_event_key() -> None:
+    manager = SimpleNamespace(
+        append_message=AsyncMock(
+            return_value=SimpleNamespace(message_id=41)
+        )
+    )
+    identity = AgentIdentity("deployment", "household", "actor", "session")
+    resolver = SimpleNamespace(resolve=AsyncMock(return_value=identity))
+    no_op = SimpleNamespace(
+        replace_session_todos=lambda *_args: None,
+        get=lambda *_args: None,
+        mark_active=lambda *_args: None,
+        recall_readonly=lambda *_args: None,
+        resolve_for_run=lambda *_args: None,
+        search=lambda *_args: None,
+        describe=lambda *_args: None,
+        suggestions=lambda *_args: None,
+        activate=lambda *_args: None,
+    )
+    dependencies = ToolCatalogDependencies(
+        no_op,
+        lambda: None,
+        no_op,
+        lambda: None,
+        no_op,
+        no_op,
+        no_op,
+        SimpleNamespace(search=lambda *_args: None),
+        memory_manager=manager,
+        memory_identity_resolver=resolver,
+    )
+    handler, mode = _dynamic_handlers(dependencies)["memory_write"]
+    assert mode == "context"
+    result = await handler(
+        {"text": "remember this", "salience": 0.9},
+        SimpleNamespace(
+            session_id="session",
+            root_run_id="root",
+            call_id="call",
+        ),
+    )
+    assert result["memory_id"] == 41
+    assert manager.append_message.await_args.kwargs == {
+        "user_id": "actor",
+        "source_event_id": "explicit-memory-action/v1/root/call",
+        "salience": 0.9,
+    }

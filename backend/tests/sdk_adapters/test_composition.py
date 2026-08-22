@@ -184,7 +184,7 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
     with sqlite3.connect(paths.execution_database) as connection:
         assert connection.execute(
             "SELECT max(version) FROM sdk_schema_migrations"
-        ).fetchone()[0] == 3
+        ).fetchone()[0] == 4
         tables = {
             row[0]
             for row in connection.execute(
@@ -212,9 +212,12 @@ def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> Non
     source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
     assert "ProductionRuntimeConfig(" in source
     assert "build_production_runtime(config)" in source
-    assert "ContextPreparationMode.CONSUMER_PREPARED" in source
-    assert "conversation_query=conversation_memory" in source
-    assert "conversation_sink=conversation_memory" in source
+    assert "ContextPreparationMode.SDK_PREPARED" in source
+    assert "memory=agent_memory_port" in source
+    assert "context_provider=context_provider" in source
+    assert "conversation_query=" not in source
+    assert "conversation_sink=" not in source
+    assert 'if str(spec.name) in {"memory_recall", "memory_search"}' in source
     assert "def resolve(self, generation, content_fingerprint):" in source
     assert ".resolve(generation, content_fingerprint)" in source
 

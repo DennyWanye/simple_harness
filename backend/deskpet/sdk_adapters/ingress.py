@@ -120,22 +120,27 @@ class SdkRuntimeIngress:
         # Deterministic root identity for replay idempotency
         run_id = self._compute_run_id(session_id, request_id, turn_id)
 
-        start = RunStart(
-            ExecutionSessionId(session_id),
-            run_id,
-            RequestId(request_id),
-            turn_id,
-            payload,
-            session_generation,
-            tool_catalog_fingerprint,
-            provider_budget_fingerprint,
-            conversation,
-            context_preparation_mode,
-            context_stage_id,
-            context_stage_hash,
-            prepared_context,
-        )
-        await ready.client.start(start)
+        if conversation is not None:
+            await ready.client.start_conversation(
+                conversation,
+                run_id=run_id,
+                request_id=RequestId(request_id),
+                turn_id=turn_id,
+                tool_catalog_generation=session_generation,
+                input=payload,
+            )
+        else:
+            start = RunStart(
+                ExecutionSessionId(session_id),
+                run_id,
+                RequestId(request_id),
+                turn_id,
+                payload,
+                session_generation,
+                tool_catalog_fingerprint,
+                provider_budget_fingerprint,
+            )
+            await ready.client.start(start)
 
         return IngressStartReceipt(
             run_id=run_id.value,
@@ -168,7 +173,9 @@ class SdkRuntimeIngress:
             run_id=run_id,
             delivery_id=delivery.continuation_id,
             generation=ready.generation,
-            reason="continuation_queued",
+            accepted=bool(getattr(delivery, "accepted", True)),
+            duplicate=bool(getattr(delivery, "duplicate", False)),
+            reason=str(getattr(delivery, "reason", None) or "continuation_queued"),
         )
 
     async def signal_conversation(
@@ -177,14 +184,14 @@ class SdkRuntimeIngress:
         run_id: str,
         continuation_id: str,
         value: object,
-        context_stage_id: str,
-        context_stage_hash: str,
-        prepared_context: Mapping[str, Any],
+        context_stage_id: str | None = None,
+        context_stage_hash: str | None = None,
+        prepared_context: Mapping[str, Any] | None = None,
     ) -> IngressSignalReceipt:
         if not self._accepting:
             raise SdkRuntimeNotReady("SDK Runtime ingress is not accepting signals")
         ready = self._stack.require_ready()
-        delivery = ready.client.signal_conversation(
+        delivery = await ready.client.signal_conversation(
             RunId(run_id),
             continuation_id=continuation_id,
             value=value,

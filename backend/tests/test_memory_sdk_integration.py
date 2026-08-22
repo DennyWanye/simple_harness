@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 
 from deskpet.memory.session_db import SessionDB
-from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+from simple_harness_memory import MemoryManager
 
 
 @pytest.mark.asyncio
@@ -41,7 +41,9 @@ async def test_session_db_without_memory_backend_degrades(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_session_db_wires_memory_backend(tmp_path) -> None:
-    backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"), auto_extract_facts=True)
+    backend = await MemoryManager.build_development(
+        tmp_path / "memory.db", enable_facts=True
+    )
     db = SessionDB(str(tmp_path / "state.db"), memory_backend=backend)
     await db.initialize()
     await db.append_message("s1", "user", "我养了一只叫Max的狗，很喜欢吃披萨")
@@ -62,8 +64,10 @@ async def test_main_wiring_construction_smoke(tmp_path) -> None:
     state_db = data_dir / "state.db"
     memory_db = data_dir / "memory.db"
     from deskpet.memory.session_db import SessionDB
-    from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
-    backend = SQLiteMemoryBackend(str(memory_db), auto_extract_facts=True)
+    from simple_harness_memory import MemoryManager
+    backend = await MemoryManager.build_development(
+        memory_db, enable_facts=True
+    )
     sdb = SessionDB(db_path=state_db, memory_backend=backend)
     await sdb.initialize()
     await sdb.append_message("s1", "user", "我养了一只叫Max的狗，很喜欢吃披萨")

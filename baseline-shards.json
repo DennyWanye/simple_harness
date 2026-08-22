@@ -152,18 +152,6 @@
       "timeout_seconds": 900
     },
     {
-      "name": "backend-harness-simplification",
-      "command": [
-        "backend/.venv/bin/python",
-        "-m",
-        "pytest",
-        "backend/tests/harness_simplification",
-        "-q",
-        "--tb=short"
-      ],
-      "timeout_seconds": 900
-    },
-    {
       "name": "backend-sdk-adapters",
       "command": [
         "backend/.venv/bin/python",

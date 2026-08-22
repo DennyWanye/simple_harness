@@ -4,12 +4,12 @@ import pytest
 
 from deskpet.memory.product_outbox import ProductMemoryOutboxRepository
 from deskpet.memory.session_db import SessionDB
-from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
+from simple_harness_memory import MemoryManager
 
 
 @pytest.mark.asyncio
 async def test_message_and_product_intent_commit_once_then_apply(tmp_path):
-    memory = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
+    memory = await MemoryManager.build_development(tmp_path / "memory.db")
     session = SessionDB(tmp_path / "state.db", memory_backend=memory)
     await session.initialize()
     message_id = await session.append_message(

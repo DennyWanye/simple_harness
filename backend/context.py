@@ -24,6 +24,8 @@ _VALID_SERVICES = frozenset({
     "memory_recall_scope_resolver",  # durable Run -> owner memory scope
     "conversation_memory",  # Memory SDK conversation query/sink adapter
     "sdk_context_staging",  # durable private provider-context staging authority
+    "sdk_context_source_repository",  # immutable non-Memory Context source authority
+    "memory_identity_resolver",  # trusted AgentIdentity session binding
     "frozen_skill_instruction_resolver",  # Run-catalog Skill projection
     "managed_skill_discovery_projection",  # discovery-only managed Skill view
     "file_memory",         # Direct L1 handle (also reachable via manager.file_memory)
@@ -184,6 +186,8 @@ class ServiceContext:
     memory_manager: Any | None = None
     conversation_memory: Any | None = None
     sdk_context_staging: Any | None = None
+    sdk_context_source_repository: Any | None = None
+    memory_identity_resolver: Any | None = None
     memory_recall_query: Any | None = None
     memory_recall_scope_resolver: Any | None = None
     frozen_skill_instruction_resolver: Any | None = None

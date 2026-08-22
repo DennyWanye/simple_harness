@@ -56,6 +56,8 @@ class ToolCatalogDependencies:
     memory_scope_resolver: Any
     capability_bridge_service: Any
     search_gateway: Any
+    memory_manager: Any | None = None
+    memory_identity_resolver: Any | None = None
 
     def __post_init__(self) -> None:
         required = {
@@ -294,6 +296,77 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
             "web_search": (build_web_search_handler(deps.search_gateway), "standard"),
         }
     )
+    if deps.memory_manager is not None and deps.memory_identity_resolver is not None:
+        async def memory_write(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
+            identity = await deps.memory_identity_resolver.resolve(context.session_id)
+            source_event_id = (
+                f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}"
+            )
+            result = await deps.memory_manager.append_message(
+                identity.session_id,
+                "user",
+                str(arguments["text"]),
+                user_id=identity.actor_id,
+                source_event_id=source_event_id,
+                salience=float(arguments.get("salience", 0.5)),
+            )
+            return {
+                "ok": True,
+                "memory_id": int(result.message_id),
+                "source_event_id": source_event_id,
+            }
+
+        async def memory_forget(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
+            if arguments.get("query") and arguments.get("fact_id") is None:
+                return {"ok": False, "error": "natural_language_forget_disabled"}
+            identity = await deps.memory_identity_resolver.resolve(context.session_id)
+            from simple_harness_memory.core.identity import MemoryPrincipal
+
+            receipt = await deps.memory_manager.forget_fact(
+                int(arguments["fact_id"]),
+                reason=f"explicit-memory-action/v1/{context.root_run_id}/{context.call_id}",
+                principal=MemoryPrincipal(
+                    identity.deployment_id,
+                    identity.household_id,
+                    identity.actor_id,
+                    identity.session_id,
+                ),
+            )
+            return {"ok": True, "receipt": str(receipt)}
+
+        async def memory_read(arguments: Mapping[str, Any], context: Any) -> dict[str, Any]:
+            identity = await deps.memory_identity_resolver.resolve(context.session_id)
+            facts = await deps.memory_manager.get_facts(
+                user_id=identity.actor_id,
+                limit=256,
+            )
+            fact_id = int(arguments["memory_id"])
+            fact = next(
+                (
+                    item
+                    for item in facts
+                    if item.id is not None and int(item.id) == fact_id
+                ),
+                None,
+            )
+            if fact is None:
+                return {"ok": False, "error": "memory_not_found"}
+            return {
+                "ok": True,
+                "memory": {
+                    "id": fact_id,
+                    "key": str(fact.key),
+                    "value": str(fact.value),
+                },
+            }
+
+        dynamic.update(
+            {
+                "memory_write": (memory_write, "context"),
+                "memory_forget": (memory_forget, "context"),
+                "memory_read": (memory_read, "context"),
+            }
+        )
     dynamic.update({name: (handler, "standard") for name, handler in capture.handlers.items()})
     return dynamic
 

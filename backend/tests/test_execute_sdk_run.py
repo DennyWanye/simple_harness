@@ -1284,9 +1284,9 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
     from simple_harness import RunClient
 
     client = create_autospec(RunClient, instance=True)
-    client.signal_conversation.return_value = SimpleNamespace(
+    client.signal_conversation = AsyncMock(return_value=SimpleNamespace(
         continuation_id="request:continuation-request"
-    )
+    ))
     ingress = object.__new__(SdkRuntimeIngress)
     ingress._stack = SimpleNamespace(  # noqa: SLF001
         require_ready=lambda: SimpleNamespace(client=client, generation=15)
@@ -1310,11 +1310,18 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
     session_db = SimpleNamespace(
         append_message=AsyncMock(return_value=7),
         ensure_memory_user_binding=AsyncMock(return_value="user-continuation"),
+        get_recent_messages=AsyncMock(return_value=[]),
     )
     stage = SimpleNamespace(
         stage_id="stage-continuation",
         private_snapshot_hash="a" * 64,
         private_snapshot={"schema_version": 1},
+    )
+    context_sources = SimpleNamespace(
+        put_pending=AsyncMock(
+            return_value=("binding-continuation", "sha256:" + "b" * 64)
+        ),
+        mark_claimed=AsyncMock(),
     )
     import simple_harness.runtime
     monkeypatch.setattr(
@@ -1334,6 +1341,7 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
                 "session_db": session_db,
                 "sdk_context_staging": object(),
                 "conversation_memory": object(),
+                "sdk_context_source_repository": context_sources,
                 "vector_worker": None,
             }.get(name)
         ),
@@ -1358,9 +1366,13 @@ async def test_waiting_continuation_uses_sync_sdk_signal_and_resumes(monkeypatch
     assert args[0].value == "sdk-continuation"
     assert kwargs["continuation_id"] == "request:continuation-request"
     assert kwargs["value"].memory_text == "continue with this detail"
-    assert kwargs["context_stage_id"] == "stage-continuation"
-    assert kwargs["context_stage_hash"] == "a" * 64
-    assert kwargs["prepared_context"] == {"schema_version": 1}
+    assert kwargs["value"].context_source_snapshot_ref == "sha256:" + "b" * 64
+    assert kwargs["context_stage_id"] is None
+    assert kwargs["prepared_context"] is None
+    context_sources.mark_claimed.assert_awaited_once_with(
+        "binding-continuation",
+        claim_token="request:continuation-request",
+    )
     watcher.assert_called_once_with("sdk-continuation")
     assert session_db.append_message.await_args.kwargs[
         "workflow_event_id"

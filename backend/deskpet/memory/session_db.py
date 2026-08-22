@@ -69,7 +69,7 @@ log = logging.getLogger(__name__)
 # P4-S2 hook 类型：(message_id, content) → awaitable None。
 # MemoryManager / VectorWorker 在此接入 "消息落盘后异步跑 embedding"。
 OnMessageWritten = Callable[[int, str], Awaitable[None]]
-DEFAULT_MEMORY_USER_ID = "deskpet-local-owner-v1"
+DEFAULT_MEMORY_USER_ID = "deskpet-local-owner-v1"  # legacy non-Harness projection only
 
 
 class ProviderBindingConflict(RuntimeError):
@@ -241,6 +241,18 @@ class SessionDB:
         self._product_memory_dispatcher: Any = None
         self._state_db_instance_id: str | None = None
 
+    def bind_memory_manager(self, manager: Any) -> None:
+        """Bind the single process MemoryManager before initialization."""
+        if manager is None:
+            raise TypeError("manager is required")
+        if self._initialized or self._memory_backend is not None:
+            raise RuntimeError("memory_manager_already_bound")
+        self._memory_backend = manager
+
+    @property
+    def db_path(self) -> Path:
+        return self._db_path
+
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
@@ -291,10 +303,6 @@ class SessionDB:
 
         if self._memory_backend is not None:
             try:
-                await self._memory_backend.initialize()
-                from simple_harness_memory.core.conversation import (
-                    ConversationMemoryAdapter,
-                )
                 from deskpet.memory.product_outbox import (
                     ProductMemoryDispatcher,
                     ProductMemoryOutboxRepository,
@@ -302,9 +310,7 @@ class SessionDB:
 
                 self._product_memory_dispatcher = ProductMemoryDispatcher(
                     ProductMemoryOutboxRepository(self._db_path),
-                    ConversationMemoryAdapter(
-                        self._memory_backend, close_backend=False
-                    ),
+                    self._memory_backend,
                     owner_id=f"deskpet-product:{self._state_db_instance_id}",
                 )
                 self._product_memory_dispatcher.start()
@@ -3450,12 +3456,13 @@ class SessionDB:
         msg_id = int(cursor.lastrowid or 0) if inserted else 0
         await cursor.close()
         if inserted:
-            await self._ensure_memory_binding_in_transaction(
-                db, session_id=session_id, user_id=user_id
-            )
             authority = str(memory_authority or "").strip().lower()
             if authority not in {"product", "harness", "none"}:
                 raise ValueError("invalid memory_authority")
+            if authority == "product":
+                await self._ensure_memory_binding_in_transaction(
+                    db, session_id=session_id, user_id=user_id
+                )
             is_product_conversation = (
                 authority == "product"
                 and role in {"user", "assistant"}
@@ -3467,22 +3474,21 @@ class SessionDB:
                 and bool(content.strip())
             )
             if is_product_conversation:
-                from simple_harness.runtime import (
-                    ConversationMemoryIntent,
-                    ConversationMemoryRole,
-                )
-
                 instance_id = str(self._state_db_instance_id or "").strip()
                 if not instance_id:
                     raise RuntimeError("state_db_identity_unavailable")
                 source_event_id = (
                     f"deskpet-memory/v1/message/{instance_id}/{msg_id}"
                 )
-                intent = ConversationMemoryIntent(
+                from simple_harness_memory.core.conversation import (
+                    canonical_message_payload_hash,
+                )
+
+                payload_hash = canonical_message_payload_hash(
                     source_event_id=source_event_id,
                     user_id=user_id,
                     session_id=session_id,
-                    role=ConversationMemoryRole(role),
+                    role=role,
                     memory_text=content,
                 )
                 now = time.time()
@@ -3500,7 +3506,7 @@ class SessionDB:
                         session_id,
                         role,
                         content,
-                        intent.payload_hash,
+                        payload_hash,
                         now,
                         now,
                         now,

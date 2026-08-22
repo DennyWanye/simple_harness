@@ -16,6 +16,13 @@ async def test_harness_and_product_provenance_have_one_authority(tmp_path):
         user_id="user-a",
         memory_authority="harness",
     )
+    with sqlite3.connect(tmp_path / "state.db") as db:
+        assert db.execute(
+            "SELECT count(*) FROM memory_user_bindings"
+        ).fetchone() == (0,)
+        assert db.execute(
+            "SELECT count(*) FROM product_memory_outbox"
+        ).fetchone() == (0,)
     product_id = await session.append_message(
         "session-a",
         "assistant",
