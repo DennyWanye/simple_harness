@@ -13,6 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SessionList } from "./SessionList";
 import { controlWS } from "../code-panel/controlWs";
+import { useSessionsStore } from "../stores/sessionsStore";
 
 vi.mock("../code-panel/controlWs", () => ({
   // 占位值即可：被测逻辑只用它做"不是控制通道自己的 sid"这一层排除判断，
@@ -57,6 +58,7 @@ const SESSIONS = [
 describe("SessionList（WB-5）", () => {
   beforeEach(() => {
     listeners = [];
+    useSessionsStore.setState({ companion_owner: null });
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
     vi.mocked(controlWS.on_message).mockImplementation((fn: (msg: unknown) => void) => {
@@ -145,7 +147,12 @@ describe("SessionList（WB-5）", () => {
     const btn = screen.getByTestId("session-new-topic") as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
 
-    emit({ type: "companion_identity_status", payload: { ready: true } });
+    act(() => {
+      useSessionsStore.getState().set_companion_owner({
+        profile_id: "local-profile",
+        profile_generation: 1,
+      });
+    });
     expect(btn.disabled).toBe(false);
 
     vi.mocked(controlWS.send).mockClear();
@@ -167,7 +174,12 @@ describe("SessionList（WB-5）", () => {
   it("session_switched 消解 pending、刷新清单并上抛新 sid", () => {
     const onSwitch = vi.fn();
     render(<SessionList activeSid="s-older" onSwitchSid={onSwitch} />);
-    emit({ type: "companion_identity_status", payload: { ready: true } });
+    act(() => {
+      useSessionsStore.getState().set_companion_owner({
+        profile_id: "local-profile",
+        profile_generation: 1,
+      });
+    });
     fireEvent.click(screen.getByTestId("session-new-topic"));
 
     vi.mocked(controlWS.send).mockClear();
@@ -176,6 +188,16 @@ describe("SessionList（WB-5）", () => {
     expect(onSwitch).toHaveBeenCalledWith("s-born");
     // 新会话诞生 → 重新拉清单。
     expect(controlWS.send).toHaveBeenCalledWith({ type: "sessions_list" });
+    expect(
+      (screen.getByTestId("session-new-topic") as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("身份广播早于挂载时新建会话入口仍从 store authority 启用", () => {
+    useSessionsStore.setState({
+      companion_owner: { profile_id: "local-profile", profile_generation: 1 },
+    });
+    render(<SessionList activeSid="s-older" onSwitchSid={() => {}} />);
     expect(
       (screen.getByTestId("session-new-topic") as HTMLButtonElement).disabled,
     ).toBe(false);

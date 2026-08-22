@@ -74,6 +74,7 @@ describe("ChatView（WB-4）", () => {
       vi.fn(async () => ({ ok: false }) as Response),
     );
     listeners = [];
+    useSessionsStore.setState({ companion_owner: null });
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
     vi.mocked(controlWS.state).mockReturnValue("connected");
@@ -131,6 +132,12 @@ describe("ChatView（WB-4）", () => {
 
   it("身份就绪后输入回车 → 发送走 controlWS 的 chat_v2", () => {
     render(<ChatView activeSid="default" secret="s3cret" />);
+    act(() => {
+      useSessionsStore.getState().set_companion_owner({
+        profile_id: "local-profile",
+        profile_generation: 1,
+      });
+    });
     emit({ type: "companion_identity_status", payload: { ready: true } });
     // 就绪促升（companion_action_ready）由 ChatView 独家发送。
     expect(controlWS.send_companion_action).toHaveBeenCalledWith(
@@ -155,6 +162,14 @@ describe("ChatView（WB-4）", () => {
         turn_id: expect.any(String),
       }),
     });
+  });
+
+  it("身份广播早于挂载时仍从 store authority 恢复输入可用", () => {
+    useSessionsStore.setState({
+      companion_owner: { profile_id: "local-profile", profile_generation: 1 },
+    });
+    render(<ChatView activeSid="default" secret="s3cret" />);
+    expect(screen.getByPlaceholderText("输入消息，Enter 发送…")).toBeTruthy();
   });
 
   it("mic 禁用占位存在（B9：tooltip 说明语音待 Realtime 接入）", () => {

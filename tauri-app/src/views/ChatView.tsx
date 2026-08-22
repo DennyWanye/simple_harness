@@ -130,7 +130,6 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     Record<string, string | undefined>
   >({});
   const [contextModalOpen, setContextModalOpen] = useState(false);
-  const [companionIdentityReady, setCompanionIdentityReady] = useState(false);
   const contextUsage = useSessionsStore((s) => s.sessions[activeSid]?.context_usage ?? null);
   const workflowRetryDeferreds = useRef(new Map<string, WorkflowRetryDeferred>());
 
@@ -142,6 +141,11 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
     (s) => s.sessions[activeSid]?.companion_events ?? EMPTY_COMPANION_EVENTS,
   );
   const companionOwner = useSessionsStore((s) => s.companion_owner);
+  // Identity readiness is durable frontend state, not an edge-triggered WS
+  // event.  On a cold start the bind broadcast can arrive before ChatView is
+  // mounted; deriving from the store lets a late-mounted view recover without
+  // asking the user to restart or press Retry.
+  const companionIdentityReady = companionOwner !== null;
   const companionProvisional = useCompanionProvisionalValues();
   const [detailEvent, setDetailEvent] = useState<CompanionEvent | null>(null);
   const selectedRunId = useSessionsStore(
@@ -299,7 +303,6 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
       const ready =
         message.payload?.ready === true ||
         message.payload?.status === "ready";
-      setCompanionIdentityReady(ready);
       if (ready) {
         // Promote this window's challenged lease with a Rust-signed,
         // no-side-effect readiness command（ChatView 独家发送，避免与
@@ -309,8 +312,6 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
           { ready: true },
         );
       }
-    } else if (message.type === "companion_identity_unready") {
-      setCompanionIdentityReady(false);
     } else if (shouldRefreshCompanionProjection(message)) {
       // A detail fence may legitimately advance after the card was projected.
       // Refresh the durable projection instead of disabling the whole view.

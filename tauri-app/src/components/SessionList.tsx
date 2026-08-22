@@ -62,7 +62,12 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   const [draftTitle, setDraftTitle] = useState("");
   const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
   const [newTopicPending, setNewTopicPending] = useState(false);
-  const [companionIdentityReady, setCompanionIdentityReady] = useState(false);
+  // The central dispatcher persists the latest identity fence in zustand.
+  // Reading that authority avoids a cold-start race where the one-shot ready
+  // broadcast arrives before this sidebar mounts.
+  const companionIdentityReady = useSessionsStore(
+    (state) => state.companion_owner !== null,
+  );
   // Enter/Esc 会把 editingSid 置空 → input 卸载触发 onBlur；用这个标记让那次
   // 善后 blur 不要再二次提交。startRename 时清零，避免污染下一次编辑。
   const skipBlurRef = useRef(false);
@@ -95,19 +100,6 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     loadSessions();
     return off;
   }, [loadSessions]);
-
-  // companion 身份就绪状态（新话题按钮 gate）。只读订阅——就绪时的
-  // companion_action_ready 促升由 ChatView（常挂载）独家发送，避免双发。
-  useEffect(() => controlWS.on_message((raw: unknown) => {
-    const message = raw as { type?: unknown; payload?: Record<string, unknown> };
-    if (message.type === "companion_identity_status") {
-      setCompanionIdentityReady(
-        message.payload?.ready === true || message.payload?.status === "ready",
-      );
-    } else if (message.type === "companion_identity_unready") {
-      setCompanionIdentityReady(false);
-    }
-  }), []);
 
   // 会话指针同步（MessagePanelRoot :574-609 迁移）：chat 通道（controlWS）
   // 上的 session_switched/task_session_started 及带 session_id 的消息
