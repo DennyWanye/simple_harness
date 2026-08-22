@@ -81,7 +81,8 @@ fail closed。
 ## 6. 当前验证状态
 
 - exact wheel SHA/direct-url installed-origin 与 candidate conformance：PASS。
-- Harness full：`1379 passed, 2 skipped`；Memory full：`200 passed, 7 skipped`。
+- Harness full：`1379 passed, 2 skipped`；Memory 默认 full：`200 passed, 7 skipped`，正式 candidate gate：
+  `205 passed, 2 skipped`。
 - 产品最终聚焦：backend `83 passed`；MemoryPanel `18 passed`；TypeScript typecheck PASS。
 - 产品 full baseline：15 shards PASS、2 个实施前 known-red（root live fixture、ESLint 171 fingerprint），0 unexpected。
 - SH-I01：同 user-data 重启稳定、Provider/API key/model/payload spoof 不影响、跨 user-data 隔离、损坏身份/

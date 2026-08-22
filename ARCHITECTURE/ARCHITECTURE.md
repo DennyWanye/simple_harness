@@ -18,7 +18,8 @@
 - 显式 remember/read/forget 使用 resolver 生成的完整 `MemoryPrincipal` 与正式 fact API；write 保留
   salience/pinned/tier 并返回准确 fact ID；forget 使用显式 action `source_event_id`，持久 True/False receipt
   在重放与重启后稳定。重试/冲突/跨 principal/forget 不复活语义由 exact wheel 回归覆盖。
-- 自动化已完成：Harness full `1379 passed, 2 skipped`、Memory full `200 passed, 7 skipped`、产品最终聚焦
+- 自动化已完成：Harness full `1379 passed, 2 skipped`、Memory 默认 full `200 passed, 7 skipped` / 正式
+  candidate gate `205 passed, 2 skipped`、产品最终聚焦
   backend `83 passed` / MemoryPanel `18 passed` / TypeScript PASS；full baseline 15 PASS + 2 个实施前 known-red，
   0 unexpected。macOS Computer Use 真人 SH-M1～SH-M6 与 SH-SURFACE 全部通过。
 - 完整边界与当前验收状态见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。

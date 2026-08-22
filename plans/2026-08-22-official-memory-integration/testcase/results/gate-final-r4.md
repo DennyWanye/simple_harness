@@ -10,13 +10,14 @@
 | 范围 | 结果 | 主要证据 |
 |---|---|---|
 | Harness SDK | `1379 passed, 2 skipped` | r4 Gate 的 SDK-C/T/I/S/M/R exec receipts |
-| Memory SDK | `200 passed, 7 skipped` | r4 Gate 的 Memory conformance/fault/migration receipts |
+| Memory SDK | 默认 full `200 passed, 7 skipped`；正式 candidate gate `205 passed, 2 skipped` | r4 默认全量与 promotion candidate receipts |
 | simple_harness 自动化 | 15 shards PASS、2 个实施前 known-red、0 unexpected；focused backend 83、frontend 18、typecheck PASS | r4 exec receipts 与 baseline state |
 | 真实 UI | SH-M1～SH-M6、SH-SURFACE PASS | r4 `artifacts/ui-*.png` primary evidence |
 
 Promotion 后重新校验 Harness canonical `dist/BUILD_INFO.txt`/`SHA256SUMS` 与 wheel `cf629cee…`，
 Memory `candidate-dist` 与 wheel `bfcd2506…`；Python 3.11/3.12/3.13 exact-wheel 联合安装矩阵 PASS，
-Harness full `1379 passed, 2 skipped`、Memory full `200 passed, 7 skipped` 再次通过。
+Harness full `1379 passed, 2 skipped`、Memory 默认 full `200 passed, 7 skipped`，以及正式 candidate gate
+`205 passed, 2 skipped` 再次通过。
 
 真实 UI 使用设置页已配置的 DeepSeek；凭据未读取、未写入报告。SH-M2 真生成 PPT 并通过权限弹窗；
 SH-M5 在隔离 profile 写入 `Aurora-R4`、完整退出、重启后由新 Session 召回；SH-M6 的 recall timeout

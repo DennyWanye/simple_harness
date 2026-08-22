@@ -22,7 +22,8 @@
   idempotency、跨 principal 隔离；forget 显式 action ID 的 True/False receipt 可重放、跨重启且不复活。
   Memory SDK 已提供正式 authorized share API，本轮不新增
   simple_harness share Tool/UI。
-- **自动化证据**：Harness full `1379 passed, 2 skipped`；Memory full `200 passed, 7 skipped`；产品最终聚焦
+- **自动化证据**：Harness full `1379 passed, 2 skipped`；Memory 默认 full `200 passed, 7 skipped` / 正式
+  candidate gate `205 passed, 2 skipped`；产品最终聚焦
   backend `83 passed`、MemoryPanel `18 passed`、TypeScript PASS；full baseline 15 PASS + 2 个实施前 known-red，
   0 unexpected。
 - **真实 UI 证据**：macOS Computer Use 使用设置页的 DeepSeek 完成 SH-M1～SH-M6、SH-SURFACE。跨 Session
