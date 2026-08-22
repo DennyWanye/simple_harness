@@ -40,6 +40,24 @@ def _write_json(path: Path, value: Any) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def _spec_name(spec: dict[str, Any]) -> str:
+    value = spec.get("id", spec.get("name"))
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("baseline shard requires a non-empty id or name")
+    return value
+
+
+def _validate_shards(shards: list[dict[str, Any]]) -> None:
+    names = [_spec_name(spec) for spec in shards]
+    duplicates = sorted({name for name in names if names.count(name) > 1})
+    if duplicates:
+        raise ValueError(f"duplicate baseline shard ids: {', '.join(duplicates)}")
+    for spec in shards:
+        command = spec.get("command")
+        if not isinstance(command, list) or not command:
+            raise ValueError(f"shard {_spec_name(spec)} requires a non-empty command")
+
+
 def _expand_command(spec: dict[str, Any]) -> list[str]:
     command = [str(part) for part in spec["command"]]
     alpha = spec.get("pytest_alpha")
@@ -52,7 +70,7 @@ def _expand_command(spec: dict[str, Any]) -> list[str]:
             if lo <= path.stem.removeprefix("test_")[0].lower() <= hi
         ]
         if not paths:
-            raise ValueError(f"shard {spec['name']} expanded to zero pytest files")
+            raise ValueError(f"shard {_spec_name(spec)} expanded to zero pytest files")
         command.extend(paths)
     command.extend(str(part) for part in spec.get("args", []))
     return command
@@ -92,7 +110,7 @@ def _terminate_tree(process: subprocess.Popen[Any]) -> None:
 
 
 def _run_shard(spec: dict[str, Any], evidence_dir: Path, heartbeat: int) -> dict[str, Any]:
-    name = spec["name"]
+    name = _spec_name(spec)
     command = _expand_command(spec)
     cwd = ROOT / spec.get("cwd", ".")
     timeout = int(spec.get("timeout_seconds", 900))
@@ -157,9 +175,10 @@ def main() -> int:
     shards = config.get("shards", [])
     if not shards:
         raise SystemExit("baseline config contains no shards")
+    _validate_shards(shards)
     if args.list:
         for spec in shards:
-            print(f"{spec['name']}: {' '.join(_expand_command(spec))}")
+            print(f"{_spec_name(spec)}: {' '.join(_expand_command(spec))}")
         return 0
 
     run_dir = args.run_dir.resolve()
@@ -172,7 +191,7 @@ def main() -> int:
     unexpected = False
 
     for spec in shards:
-        name = spec["name"]
+        name = _spec_name(spec)
         if args.resume and results.get(name, {}).get("effective_status") in {"passed", "known-failure"}:
             print(f"SKIP {name}: prior effective status is green", flush=True)
             continue

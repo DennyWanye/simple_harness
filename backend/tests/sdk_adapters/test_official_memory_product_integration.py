@@ -3,6 +3,7 @@ from __future__ import annotations
 import sqlite3
 import hashlib
 import json
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -28,6 +29,16 @@ from simple_harness.runtime import (
     AgentIdentity,
     ConversationContextBounds,
     ConversationContextRequest,
+    MemoryRecallBounds,
+    MemoryRecallRequest,
+    MemoryScopeKind,
+    MemoryScopeRef,
+)
+from simple_harness_memory import (
+    MemoryIdempotencyConflict,
+    MemoryManager,
+    MemoryOwnershipConflict,
+    MemoryPrincipal,
 )
 
 
@@ -361,7 +372,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "3740d26b95f11e638258969b6e1aa83138c31b959f920d9f060d6e0c73e550c2"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
-        "bf4335d3d06fa1dd3aa538f581af5233abdf15b4441d3b05e6757db6889c8f09"
+        "e4055587faf0bff50bcc919625096c595b6f2bc78dcb5bdb21245c561a4249a1"
     )
     assert SDK_WHEEL_SHA256 not in {
         "1e4d21d58bee0e58ea3bc49768ff63ba9095eefd2e2d3436375576005bbac99a",
@@ -370,6 +381,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
     assert SDK_MEMORY_WHEEL_SHA256 not in {
         "2fad089b111b8f6a1e6406e5b6f12167daf911371cfdd2e5c41e0e7a9818700f",
         "f61dbbb747bb5e593088f9e7e7aeeb5ca4757dcf7e24d88403fed44c97f3e376",
+        "bf4335d3d06fa1dd3aa538f581af5233abdf15b4441d3b05e6757db6889c8f09",
     }
 
 
@@ -541,3 +553,91 @@ async def test_explicit_read_and_forget_use_full_trusted_principal() -> None:
     assert manager.forget_fact.await_args.kwargs["reason"] == (
         "explicit-memory-action/v1/root/forget"
     )
+
+
+@pytest.mark.asyncio
+async def test_official_explicit_fact_api_is_durable_scoped_and_idempotent(
+    tmp_path,
+) -> None:
+    manager = await MemoryManager.build_development(tmp_path / "memory.db")
+    owner = MemoryPrincipal("deployment", "household-a", "actor-a", "session-a")
+    outsider = MemoryPrincipal("deployment", "household-b", "actor-b", "session-b")
+    event_id = "explicit-memory-action/v1/root/call"
+    try:
+        fact_id = await manager.remember_fact(
+            owner,
+            "remember this",
+            source_event_id=event_id,
+            salience=0.9,
+            pinned=True,
+            tier="identity",
+        )
+        replay_id = await manager.remember_fact(
+            owner,
+            "remember this",
+            source_event_id=event_id,
+            salience=0.9,
+            pinned=True,
+            tier="identity",
+        )
+        assert replay_id == fact_id
+        fact = await manager.read_fact(owner, fact_id)
+        assert fact is not None
+        assert fact.id == fact_id
+        assert fact.value == "remember this"
+        assert fact.pinned is True
+        assert fact.category == "profile"
+        assert await manager.read_fact(outsider, fact_id) is None
+        recall = await manager.recall_for_turn(
+            MemoryRecallRequest(
+                query_id="explicit-fact-recall",
+                turn_id="turn-after-explicit-write",
+                identity=AgentIdentity(
+                    "deployment", "household-a", "actor-a", "session-a"
+                ),
+                scopes=(MemoryScopeRef(MemoryScopeKind.PERSONAL, "actor-a"),),
+                query_text="remember",
+                bounds=MemoryRecallBounds(),
+                turn_started_at=time.time(),
+            )
+        )
+        assert any(
+            item["record_id"] == f"fact:{fact_id}"
+            and item["text"] == "remember this"
+            for item in recall.payload["items"]
+        )
+
+        with pytest.raises(MemoryIdempotencyConflict):
+            await manager.remember_fact(
+                owner,
+                "remember this",
+                source_event_id=event_id,
+                salience=0.8,
+                pinned=True,
+                tier="identity",
+            )
+        with pytest.raises(MemoryOwnershipConflict):
+            await manager.remember_fact(
+                outsider,
+                "remember this",
+                source_event_id=event_id,
+                salience=0.9,
+                pinned=True,
+                tier="identity",
+            )
+
+        assert await manager.forget_fact(fact_id, reason="test", principal=owner)
+        assert (
+            await manager.remember_fact(
+                owner,
+                "remember this",
+                source_event_id=event_id,
+                salience=0.9,
+                pinned=True,
+                tier="identity",
+            )
+            == fact_id
+        )
+        assert await manager.read_fact(owner, fact_id) is None
+    finally:
+        await manager.close()
