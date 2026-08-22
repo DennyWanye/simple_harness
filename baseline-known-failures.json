@@ -5,15 +5,7 @@
     "frontend-lint:exit=1"
   ],
   "failures": {
-    "backend-a": "9a02eb1f43b5a6f95ce09db7e9aa8ad288f440853b46701022ced298f3b20da7",
-    "backend-c": "5a52f2cab0818c7d5250e8d2e9e1dedeacb4cccf9e4ee7b3594fc94211650bd1",
-    "backend-d-f": "24cb08386565a9905211c66e1de6d8b3a98224a33f8a7ddb972c78f609f5bf4e",
-    "backend-m-r": "52b6ade537b275bef2a70ba0edb67758c71941fb16957f9cbcbcfbd5cb39e073",
-    "backend-s-z": "4f3c576983992d020b44bc8757b3b668936d931ded43fa4e6f42969e83dae0be",
-    "backend-capabilities": "1219551fa22116ca98f297d5872aa4e8175b55073afe0562be1ea4507f107648",
-    "backend-harness-simplification": "e4053b96c839b366685eb2a235d05836f01b29c32b36b0d7f422ced9ace8845d",
     "root-tests": "3fcba2d77f91b5e5567d88d474c866d0c9be68990b0ad8dad522ba970668e0db",
-    "frontend-lint": "f86354b05b64725711e2c47461efd55003154573164af753461cb40a588481d3",
-    "backend-companion": "1d21cc1112b05668a19b4e139cc5ee14ab0d677c9109d66dd139c0b04f7b25c3"
+    "frontend-lint": "f86354b05b64725711e2c47461efd55003154573164af753461cb40a588481d3"
   }
 }

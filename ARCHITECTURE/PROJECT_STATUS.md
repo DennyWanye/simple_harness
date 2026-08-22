@@ -4,10 +4,11 @@
 
 ## 2026-08-22 Harness 0.3 / Memory 0.4 官方一等集成（自动化完成，MCP UI 待验）
 
-- **exact candidate**：Harness `f96e8080…` / wheel SHA `3740d26b…`；Memory `bc89d576…` /
-  wheel SHA `bf4335d3…`。版本、wheel hash 与 direct-url installed-origin 均 fail closed；未 tag/push/upload。
+- **exact candidate**：Harness `f96e8080…` / wheel SHA `3740d26b…`；Memory `ba843d75…` /
+  wheel SHA `e4055587…`。版本、wheel hash 与 direct-url installed-origin 均 fail closed；未 tag/push/upload。
 - **生产组合**：一个 production `MemoryManager` 同时服务 Harness 与非 Harness product projection；Runtime
-  使用 `BORROWED` ownership，SessionDB 唯一关闭。前台 root/continuation 不再手工 recall/prepare，改由
+  使用 `BORROWED` ownership；shutdown 先关闭 runtime borrowers，再由 SessionDB 有界 drain/唯一关闭
+  manager，重复/并发关闭不二次释放。前台 root/continuation 不再手工 recall/prepare，改由
   SDK 的 `AgentMemoryPort` 与正式 read-only Context provider 自动生成 frozen stage。
 - **身份与隔离**：actor 只取 validated local `HumanIdentity.identity_namespace_hash`；deployment 来自
   `state_db_identity.instance_id`，household/session binding 持久且不可换绑。SH-I01 的重启稳定、Provider/
@@ -16,9 +17,12 @@
   继续使用 product outbox。Context source 实现 PENDING/CLAIMED/STAGED/CONSUMED、lease、shared refcount 与
   fail-safe orphan GC；产品 v4 migration coordinator 保证 execution/memory all-old 或 all-new。
 - **工具边界**：普通 foreground catalog 移除 `memory_recall/memory_search`；现有 remember/read/forget 使用
-  trusted identity。Memory SDK 已提供正式 authorized share API，本轮不新增 simple_harness share Tool/UI。
-- **自动化证据**：candidate conformance `19 passed`；SDK/affected `239 passed`；FULL_SURFACE backend
-  `77 passed`、frontend `156 passed`；baseline_runner 15/17 PASS，余 2 项精确命中实施前 known-red，0 新红；
+  完整 trusted principal 和正式 `remember_fact/read_fact/forget_fact`，write 返回准确 fact ID，并保持 metadata
+  idempotency、跨 principal 隔离与 forget 不复活。Memory SDK 已提供正式 authorized share API，本轮不新增
+  simple_harness share Tool/UI。
+- **自动化证据**：candidate/explicit API/lifecycle 聚焦 `77 passed`；SDK/affected `408 passed, 1 deselected`；
+  FULL_SURFACE backend `79 passed`、frontend `156 passed`；baseline_runner 从 clean `5c825ed0` 全新运行
+  15/17 PASS，余 2 项精确命中实施前 known-red，0 新红；
   frontend Vitest/typecheck/build 与 Rust test/check PASS。
 - **剩余门**：主代理通过 MCP 真坐标执行 SH-M1～SH-M6；完成前状态保持“自动化完成、UI 待验”。原始证据
   只保存在 ignored `.local-test-evidence/2026-08-22/`。

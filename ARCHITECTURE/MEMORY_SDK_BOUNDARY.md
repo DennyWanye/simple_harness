@@ -1,7 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
 > 最后更新：2026-08-22
-> 自动化基线：simple_harness `e0278fcd`；Harness 0.3.0 / Memory 0.4.0 exact wheels
+> 自动化基线：simple_harness `5c825ed0`；Harness 0.3.0 / Memory 0.4.0 exact wheels
 
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码与自动化门禁；
 真实 MCP UI 场景 SH-M1～SH-M6 尚待验，因此当前状态是“自动化完成、UI 待验”，不是最终真人验收完成。
@@ -34,7 +34,7 @@ query 或 query/sink 双口。Harness 的正式 `AgentMemoryPort` 与 `Conversat
 | Run、Context stage、Provider invocation、committed-turn outbox | Harness execution v4 DB | SDK 执行事实 |
 | Messages/Facts/Twin/recall snapshot/write fence | Memory SDK v4 DB | 长期 Memory 事实 |
 | Persona/历史/Skill/附件/project/task source | simple_harness content-addressed repository | provider 只读；同 ref 同 bytes |
-| MemoryManager 生命周期 | simple_harness process | production builder 构造一次；Runtime `BORROWED`；SessionDB 关闭一次 |
+| MemoryManager 生命周期 | simple_harness process | production builder 构造一次；Runtime `BORROWED`；shutdown 先关 runtime borrowers，再由 SessionDB 有界 drain/关闭 manager 一次 |
 
 身份只来自 `LocalAuthSnapshotProvider.current_snapshot()` 经
 `validate_auth_snapshot(..., user_data_dir=...)` 得到的 `HumanIdentity.identity_namespace_hash`。
@@ -58,8 +58,10 @@ fail closed。
 - Companion/background/非 Harness message 保留 `product_memory_outbox`，经同一个 MemoryManager 的 explicit
   projection 写入。`memory_authority=harness|product|none` 保证同一消息不进两套 authority。
 - ordinary foreground catalog 不再暴露可触发第二次 live recall 的 `memory_recall` / `memory_search`。
-- simple_harness 现有显式 remember/read/forget 工具绑定 trusted Run identity 与独立 event key；自然语言遗忘
-  仍按安全例外关闭。
+- simple_harness 现有显式 remember/read/forget 工具从 resolver 的完整 deployment/household/actor/session
+  构造可信 `MemoryPrincipal`；write 调正式 `remember_fact` 并保留 salience/pinned/tier，返回准确 fact ID；
+  read 调 `read_fact`，不再按 legacy user 扫描 facts。独立 event key 的同 payload 重试保持同 ID，元数据变化
+  conflict，跨 principal 不可读/不可重放，forget 后同 event 重试不复活；自然语言遗忘仍按安全例外关闭。
 - `MemoryManager.share_fact(principal, fact_id)` 是 Memory SDK 正式授权分享接口；本轮不为 simple_harness
   新增 `memory_share` Tool/UI，供后续 K6/AgentOS、NovelTagSystem、AI Phone 消费。
 
@@ -75,8 +77,8 @@ fail closed。
 ## 6. 当前验证状态
 
 - exact wheel SHA/direct-url installed-origin 与 candidate conformance：PASS。
-- SDK adapters + affected product regression：`239 passed`。
-- FULL_SURFACE_SMOKE：backend `77 passed`；frontend `156 passed`。
+- candidate/explicit API/lifecycle 聚焦：`77 passed`；SDK + affected product regression：`408 passed, 1 deselected`。
+- FULL_SURFACE_SMOKE：backend `79 passed`；frontend `156 passed`。
 - baseline_runner：17 shards 中 15 PASS；`root-tests` 与 `frontend-lint` 精确命中实施前 known-red；0 new fail。
 - frontend Vitest/typecheck/build 与 Rust test/check：PASS。
 - SH-I01：同 user-data 重启稳定、Provider/API key/model/payload spoof 不影响、跨 user-data 隔离、损坏身份/
