@@ -1,6 +1,55 @@
-<!-- last-calibrated: e92883a5c52d406b30d4b4e212589fbe4fb44e13 -->
+<!-- last-calibrated: e0278fcd9743930fd5bbb4d0ea056ff1826b17b8 -->
 
 # simple_harness Long-Running Agent Architecture Baseline
+
+## SDK Context / Memory 官方一等集成（2026-08-22）
+
+- exact 依赖已切到 Harness 0.3.0（wheel SHA `3740d26b…`）与 Memory 0.4.0（wheel SHA
+  `bf4335d3…`）。生产只构造一个 `MemoryManager`，Harness Runtime 以 `BORROWED` ownership 使用，
+  SessionDB 负责唯一 close。
+- root/continuation 入口只提交正式 Conversation input 与各自独立、content-addressed 的 non-Memory Context
+  source ref；SDK 保存 claim 后调用 read-only provider，并自动完成 Memory recall、frozen stage 与成功 Turn
+  record。产品 manual recall/prepare 与 `ConversationMemoryAdapter` query/sink 已退休。
+- actor 权威固定为 `LocalAuthSnapshotProvider -> validate_auth_snapshot -> identity_namespace_hash`；deployment
+  来自 state DB instance，household/session binding 持久且不可换绑。模型、payload、Provider/API key 与
+  legacy profile label 不能覆盖身份。
+- foreground Harness 只走 execution committed-turn outbox；非 Harness producer 保留 product outbox。
+  ordinary foreground catalog 移除 live `memory_recall/memory_search`，避免自动 recall 后二次查询。
+- 自动化已完成：affected `239 passed`、FULL_SURFACE backend `77 passed` / frontend `156 passed`、
+  baseline_runner 0 新红、frontend type/build/Vitest 与 Rust test/check 全绿。MCP 真人 SH-M1～SH-M6 待验。
+- 完整边界与当前验收状态见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
+
+## SDK Context / Memory 切换前基线（历史，已由上节取代）
+
+- 当前 exact 依赖为 Harness `0.2.0` 与 Memory `0.3.0`。前台真实入口是 Tauri/React
+  `chat/chat_v2 -> control_channel -> _launch_product_harness_chat -> _run_product_harness_chat`，随后
+  由产品调用 `prepare_consumer_conversation_context()` 生成 projection-v2 private stage，再把 stage
+  交给 SDK Runtime。`build_production_runtime()` 自身尚不会仅凭一个 Memory 实例自动完成 recall；
+  Runtime 只校验、消费消费者已准备的冻结 stage。
+- projection-v2 已包含完整产品 Context、当前结构化消息、Memory query/result lineage、附件、
+  catalog/budget/tool authority。Memory 只以 USER/untrusted data 投影；Provider/tool retry 与 SDK
+  recovery 复用冻结 stage，不二次 recall。
+- 生产组合仍显式构造 Memory SDK `SQLiteMemoryBackend` 与公开 `ConversationMemoryAdapter`，然后把同一
+  adapter 分别作为 `conversation_query` / `conversation_sink` 传给 Harness production config；
+  `MemoryManager` 尚不能直接作为一等 Runtime port。
+- 当前 Harness Memory outbox 的载荷单位是**单条消息**：root/continuation 的 user intent 在 start/enqueue
+  时提交，assistant intent 只在 completed terminal 提交。因此 failed/cancelled Run 仍可能已经把 user
+  intent 投递到长期 Memory；它不是“一次成功 committed user+assistant Turn”的原子记录。
+- Harness execution outbox 与 `state.db.product_memory_outbox` 按 provenance 分治，并非同一前台消息双写：
+  Harness 前台投影标记 `memory_authority=harness`，由 execution outbox 投递；非 Harness product
+  conversation 才由 product outbox 投递。任何收敛不得粗暴删除 product outbox，否则会丢失
+  Companion/background 等非 Harness producer。
+- Memory 目前是前台 Runtime 的硬依赖；backend 缺失或 context recall 异常会阻止 Runtime/Run，而不是
+  自动冻结空 Memory stage。前台 catalog 还同时暴露 `memory_recall` / `memory_search`，模型调用时会在
+  自动 recall 之外再次查询真实 Memory。两点都是当前生产缺口。
+- 当前持久身份只有 immutable `session_id -> user_id`；普通路径可回落到单一默认 Memory user。尚无
+  deployment/household/actor/owner/personal/family 全链路，不能把现有 user/session 隔离描述成家庭隔离。
+- UI 每条普通消息当前启动 fresh root Run；产品 retry handle 仍未接通。SDK staging/outbox 的恢复能力
+  已存在，但 simple_harness 产品重启后的四个 crash window 仍需分别验证，不能用 SDK 单测代替。
+
+下方大量 v0.1.x、切换前 Context 与历史 Harness 章节作为演进记录保留；凡与本节、
+[`SDK_EXTRACTION.md`](SDK_EXTRACTION.md)、[`AGENT_HARNESS.md`](AGENT_HARNESS.md) 或
+[`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md) 冲突，均以这些 2026-08-22 当前事实为准。
 
 ## Agent activity timeline boundary (2026-08-20)
 

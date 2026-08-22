@@ -1,101 +1,86 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-08-20
-> 设计来源：`plans/2026-08-17-memory-sdk/00-ARCHITECTURE.md`
-> SDK 独立仓库：`simple-harness-memory-sdk`
+> 最后更新：2026-08-22
+> 自动化基线：simple_harness `e0278fcd`；Harness 0.3.0 / Memory 0.4.0 exact wheels
 
-本文档是记忆系统拆分后的 **边界事实源**：哪些能力进 SDK，哪些留在 host，以及
-host 唯一依赖的接口契约（Port）。
+本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码与自动化门禁；
+真实 MCP UI 场景 SH-M1～SH-M6 尚待验，因此当前状态是“自动化完成、UI 待验”，不是最终真人验收完成。
 
-## 0. 一句话
+## 1. 当前生产链路
 
-host 依赖接口（Port），不依赖 SDK 的具体实现。旧实现已删除，host 侧只保留
-接口契约与适配层；SDK 上线时是“换个 MemoryBackend 实现”，host 其它代码不动。
+```text
+Tauri/React chat/chat_v2
+  -> validated local HumanIdentity.identity_namespace_hash
+  -> immutable deployment/household/actor/session binding
+  -> root 或 continuation 独立 immutable Context source snapshot
+  -> Harness ConversationTurnInput / ConversationContinuationInput
+  -> SDK durable context claim
+  -> SDK 调 read-only product Context provider + MemoryManager recall
+  -> frozen Context stage（Memory 始终按 untrusted data）
+  -> Provider / Tool / recovery 复用同一 stage
+  -> completed terminal committed-turn outbox
+  -> MemoryManager.record_committed_turn
+```
 
-## 1. SDK 边界
+产品不再调用 `prepare_consumer_conversation_context`，也不再构造 `ConversationMemoryAdapter`、manual recall
+query 或 query/sink 双口。Harness 的正式 `AgentMemoryPort` 与 `ConversationContextProviderPort` 是前台唯一
+自动 Context/Memory 组合。
 
-**进 SDK**（独立仓库 `simple-harness-memory-sdk`）：
+## 2. 资源与身份 ownership
 
-| 能力 | 说明 |
-|---|---|
-| `MemoryBackend` | L1/L2 消息、L3 facts、digital twin、RRF recall、summarize、decay |
-| `Embedder` | 文本向量化（BGE-M3，带 mock 降级） |
-| `WorldModelPort` | 时间 / 事件 / 地理 / 知识边界 |
-
-**留 host**：
-
-| 模块 | 归处 | 说明 |
+| 事实/资源 | owner | 当前边界 |
 |---|---|---|
-| `SessionDB`（会话账本） | `deskpet.memory`（host） | 消息/交付状态/provider 绑定/context usage/目标与 todo/companion ingress；仅“消息存取”4 个方法委托 `MemoryBackend` |
-| `ContextSnapshotStore` | `deskpet.agent` | 上下文快照 CAS，agent 关注 |
-| `CompanionMessageProjection` | `deskpet.companion` | companion 通知投影 |
-| coverage 规划（`ContextSegmentStore` 等） | `deskpet.agent` | coverage / 段存储 |
+| Session/UI message、delivery、Provider usage、非 Harness outbox | `state.db` / SessionDB | 产品投影事实 |
+| Run、Context stage、Provider invocation、committed-turn outbox | Harness execution v4 DB | SDK 执行事实 |
+| Messages/Facts/Twin/recall snapshot/write fence | Memory SDK v4 DB | 长期 Memory 事实 |
+| Persona/历史/Skill/附件/project/task source | simple_harness content-addressed repository | provider 只读；同 ref 同 bytes |
+| MemoryManager 生命周期 | simple_harness process | production builder 构造一次；Runtime `BORROWED`；SessionDB 关闭一次 |
 
-## 2. Host 侧接口契约
+身份只来自 `LocalAuthSnapshotProvider.current_snapshot()` 经
+`validate_auth_snapshot(..., user_data_dir=...)` 得到的 `HumanIdentity.identity_namespace_hash`。
+`deployment_id` 来自 `state_db_identity.instance_id`；首次 actor 获得随机稳定 household；同 session 不可换绑。
+模型、payload、Provider 配置、API key 与 legacy `profile_id` 均不能提供或覆盖 actor；身份损坏在 LLM 前
+fail closed。
 
-host 唯一依赖的契约定义在：
+## 3. Context source durability
 
-- `backend/deskpet/memory/contracts.py`
+- root 与每个 continuation 各自生成 content-addressed immutable source ref；continuation 不继承 root ref。
+- ingress 原子创建带 lease 的 `PENDING` binding；SDK durable accept 后标 `CLAIMED`；stage/terminal 后进入
+  `STAGED` / `CONSUMED`。
+- terminal 释放 root 与全部 continuation refcount；共享 hash 不会被单个 binding 误删。
+- orphan cleanup 只处理超过 horizon/lease 且 execution claim-inspector 证明无引用的记录；inspector 故障
+  保留重试。
+- provider 只读 source snapshot，校验 canonical hash、item/byte bounds，不写产品数据库。
 
-包含四个 `Protocol`：
+## 4. 写入 authority 与工具面
 
-- `MemoryBackend`（核心：append/get_recent/recall/get_facts/get_digital_twin/
-  summarize_old_sessions/daily_decay 等）
-- `SessionDB`（host 会话账本，方法面远大于 MemoryBackend，**不是**其薄适配器）
-- `Embedder`（dim / is_mock / async encode；SDK 同步 embed 由适配层做 sync→async 包装）
-- `WorldModelPort`（temporal / events / weather / knowledge boundary）
+- Harness foreground message 使用 execution committed-turn outbox；`FAILED` / `CANCELLED` 不生成长期 Turn。
+- Companion/background/非 Harness message 保留 `product_memory_outbox`，经同一个 MemoryManager 的 explicit
+  projection 写入。`memory_authority=harness|product|none` 保证同一消息不进两套 authority。
+- ordinary foreground catalog 不再暴露可触发第二次 live recall 的 `memory_recall` / `memory_search`。
+- simple_harness 现有显式 remember/read/forget 工具绑定 trusted Run identity 与独立 event key；自然语言遗忘
+  仍按安全例外关闭。
+- `MemoryManager.share_fact(principal, fact_id)` 是 Memory SDK 正式授权分享接口；本轮不为 simple_harness
+  新增 `memory_share` Tool/UI，供后续 K6/AgentOS、NovelTagSystem、AI Phone 消费。
 
-契约中同时定义宿主自有的最小数据模型 `Message` / `Fact` / `Hit`，刻意不 import
-SDK 类型，避免反向耦合。
+## 5. 恢复、迁移与 DEV fault
 
-## 3. 已完成的 re-home
+- 产品 v4 coordinator 只调用两 SDK 的公开 migrator；先备份两库并写 owner-only journal，任一步失败恢复
+  all-old pair，完整 hash 验证后才保留 all-new pair。
+- recall timeout 按 SDK policy 降级为空 frozen stage；record transient 不回滚成功响应，由 durable outbox
+  重试收敛。
+- fault wrapper 仅在 `DESKPET_DEV_MODE=1` 且 user-data 位于仓库 `.local-test-evidence` 时允许装配；其他路径
+  fail closed。
 
-- `deskpet.memory.context_snapshot_store.py` → `deskpet.agent.context_snapshot_store.py`
-- `deskpet.memory.context_segment_store.py` → `deskpet.agent.context_segment_store.py`
-- `deskpet.memory.companion_message_projection.py` → `deskpet.companion.companion_message_projection.py`
+## 6. 当前验证状态
 
-引用方已同步改为新路径（`agent_loop.py`、`tool_context_persistence.py`、
-`session_history_planner.py`、`session_history_tools.py`、`notifications.py`、
-`main.py`）。
+- exact wheel SHA/direct-url installed-origin 与 candidate conformance：PASS。
+- SDK adapters + affected product regression：`239 passed`。
+- FULL_SURFACE_SMOKE：backend `77 passed`；frontend `156 passed`。
+- baseline_runner：17 shards 中 15 PASS；`root-tests` 与 `frontend-lint` 精确命中实施前 known-red；0 new fail。
+- frontend Vitest/typecheck/build 与 Rust test/check：PASS。
+- SH-I01：同 user-data 重启稳定、Provider/API key/model/payload spoof 不影响、跨 user-data 隔离、损坏身份/
+  错误 snapshot 在 LLM 前拒绝、legacy profile 排除：PASS。
 
-## 4. `deskpet.memory` 当前结构
-
-```
-backend/deskpet/memory/
-├── __init__.py           # 导出契约
-├── contracts.py          # MemoryBackend / SessionDB / Embedder / WorldModelPort Protocol
-├── session_db.py         # host 会话账本（留 host，消息存取双写委托 MemoryBackend）
-├── recall_adapter.py     # SDK 认知记忆 -> product SDK memory tool 的 host 适配层
-├── schema.py             # host 账本 SQLite schema
-├── schema_v2_migrator.py # schema v2 迁移
-├── memory_v2_schema.py   # v2 schema 定义
-├── migrator.py           # 迁移器
-├── migrations/           # 迁移脚本
-└── eval/                 # 评测脚本
-```
-
-## 5. 已知待办 / 边界说明
-
-- **已接入（2026-08-19）**：`main.py` 构造 `SQLiteMemoryBackend` 并传入
-  `SessionDB(memory_backend=...)`；`SessionDB.append_message` 与
-  `append_user_message_with_growth_outbox` 均在用户消息落盘后双写 `MemoryBackend`。
-  `recall_adapter.py` 把 `MemoryBackend.recall` 翻译成 product SDK 的 owner-scoped
-  `recall_readonly`，`CompanionRunMemoryScopeResolver` 提供 `resolve_for_run`。
-- **旧记忆装配死代码已清理（2026-08-19，HEAD `5b781bf6`）**：`main.py` 内原约 1150 行
-  引用已删除模块（`file_memory`/`manager`/`vector_worker` 等）的 best-effort 死 `try`
-  已整段移除，约 40 个相关全局统一置 `None`（现 `main.py:2531-2553` 为紧凑的
-  SessionDB+MemoryBackend 接线块）；`embedder_worker.py` 已随旧栈删除。
-- **产品 SDK memory tools 已接通（2026-08-20）**：`memory_recall` 与 `memory_search` 都从显式
-  product catalog 动态绑定 `OwnerMemoryRecallQueryAdapter -> MemoryBackend.recall`。Companion Run
-  有唯一 generation-0 owner scope 时继续使用其 session affinity；普通单用户 SDK Run 仅在 resolver
-  抛精确 `owner_memory_scope_missing_or_ambiguous` 时走全局只读 recall。resolver 返回 None、错误类型
-  或其他 scope 异常均 fail closed，避免权限边界误降级。真实 SQLite backend → catalog → SDK
-  dispatcher canary 与 DeepSeek Computer Use 均验证两工具成功。
-- **curation 未接新 SDK**：`oh4_curation_skipped reason=no_facts_store` —— curation 仍在找旧
-  `service_context["facts_store"]`，未指向 SDK 的 `MemoryBackend.get_facts`。
-- `session_db.py` 是 **host 会话账本**（约 80 个 public 方法），
-  不是 `MemoryBackend` 的薄适配器。二者只在 `append_message` / `get_recent_messages`
-  / `initialize` / `close` 相交，其余方法由 host 自行实现。
-- `context_segment_store` / `context_snapshot_store` 仍是 stub；其中 coverage 段
-  存储的真实语义（`get`、`status` 等）待重实现，属"coverage 规划"宿主要求，不在
-  SDK 边界内。
+尚未完成：MCP 真人 SH-M1～SH-M6。原始截图、录屏、日志和数据库只进入
+`.local-test-evidence/<date>/<run>/`，不得提交 Git。
