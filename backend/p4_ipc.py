@@ -368,10 +368,25 @@ async def _handle_embedder_status(
         )
         return
     try:
-        is_ready = bool(embedder.is_ready())
-        is_mock = bool(embedder.is_mock())
-        # _model_path 是 Path 对象；str() 兼容缺失情况
-        model_path = str(getattr(embedder, "_model_path", "") or "")
+        # Legacy product embedders expose is_ready()/is_mock().  The official
+        # Memory SDK embedder is constructed synchronously from pinned local
+        # resources and exposes kind/lineage instead.  Support both while the
+        # status authority remains the exact instance used by MemoryManager.
+        ready_probe = getattr(embedder, "is_ready", None)
+        mock_probe = getattr(embedder, "is_mock", None)
+        is_ready = bool(ready_probe()) if callable(ready_probe) else True
+        is_mock = (
+            bool(mock_probe())
+            if callable(mock_probe)
+            else str(getattr(embedder, "kind", "")).lower() in {"mock", "hash"}
+        )
+        # SDK BGEM3Embedder stores the pinned resource as _model_ref; retain
+        # _model_path compatibility for the retired product implementation.
+        model_path = str(
+            getattr(embedder, "_model_path", "")
+            or getattr(embedder, "_model_ref", "")
+            or ""
+        )
     except Exception as exc:
         logger.warning(
             "p4_ipc.embedder_status_failed",

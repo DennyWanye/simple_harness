@@ -505,6 +505,22 @@ class TestEmbedderStatus:
         assert m["payload"]["is_mock"] is True
 
     @pytest.mark.asyncio
+    async def test_returns_official_memory_sdk_embedder_status(self) -> None:
+        class OfficialMemoryEmbedder:
+            kind = "bge"
+            _model_ref = "/models/pinned-bge-m3"
+
+        ws = FakeWebSocket()
+        sc = FakeServiceContextWithEmbedder(embedder=OfficialMemoryEmbedder())
+        await p4_ipc.handle(ws, "s1", "embedder_status", {}, sc)
+        m = ws.sent[0]
+        assert m["payload"] == {
+            "is_ready": True,
+            "is_mock": False,
+            "model_path": "/models/pinned-bge-m3",
+        }
+
+    @pytest.mark.asyncio
     async def test_graceful_when_embedder_absent(self) -> None:
         ws = FakeWebSocket()
         sc = FakeServiceContext()  # 没注册 embedder

@@ -2940,6 +2940,10 @@ async def lifespan(app: FastAPI):
             resource_path=memory_resource,
             enable_facts=True,
         )
+        # Settings must report the embedder that the production Memory SDK
+        # actually owns.  Leaving this slot at the legacy ``None`` placeholder
+        # makes the UI claim BGE is stopped while recall is already using it.
+        service_context.register("embedder", memory_embedder)
         _session_db.bind_memory_manager(_memory_backend)
     try:
         # SessionDB owns the migration/backup recovery path. Registry identity
@@ -4535,7 +4539,7 @@ async def lifespan(app: FastAPI):
     # P4-S15: Embedder warmup runs in the background so cold-start isn't
     # blocked by 286 MB of BGE-M3 weights. Mock fallback returns instantly.
     _emb = service_context.get("embedder")
-    if _emb is not None:
+    if _emb is not None and callable(getattr(_emb, "warmup", None)):
         async def _embedder_warmup_bg() -> None:
             try:
                 await _emb.warmup()
