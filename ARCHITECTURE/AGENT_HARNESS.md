@@ -1,10 +1,23 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-21
+> 最后更新：2026-08-22
 > 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
+
+### Harness 0.3 / Memory 0.4 官方一等组合（2026-08-22，当前）
+
+前台 root 与 continuation 已从 0.2 consumer-prepared 过渡到 Harness 0.3 官方 Agent Memory
+production composition：产品只提供可信 `AgentIdentity`、一个 borrowed `MemoryManager` 与 read-only
+非 Memory Context provider；SDK 每个 Turn 自动完成一次 recall、冻结 stage、terminal-only committed-turn
+outbox、重试和恢复。root 与每个 continuation 使用各自 immutable source snapshot ref，普通 foreground
+catalog 不再暴露第二次 live recall，非 Harness product outbox 按 provenance 保留。
+
+当前 exact bytes 为 Harness `fbb156f` / `v0.3.0` / wheel `cf629cee…` 与 Memory `3d4247b` /
+`v0.4.0` / wheel `bfcd2506…`；local tags 指向候选 source commit，未 push/upload。simple_harness
+自动化与真实 macOS Computer Use + DeepSeek 的 SH-M1～SH-M6、SH-SURFACE 已通过。下方 0.2.0
+composition 章节保留为历史切换记录，不再代表当前生产入口。
 
 ### SDK 生产 composition 启动修复（2026-08-21）
 

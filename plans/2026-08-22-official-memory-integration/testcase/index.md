@@ -13,7 +13,7 @@
 | `02-committed-turn-durability.md` | SDK-T01～T03 | AC-3, AC-4, AC-7 | TO-03, TO-R2 |
 | `03-identity-privacy.md` | SDK-I01～I02 | AC-4, AC-7 | TO-04, TO-R2 |
 | `04-storage-release.md` | SDK-S01～S03, SDK-M01, SDK-R01 | AC-5, AC-6, AC-7, AC-8 | TO-05, TO-08, TO-R3, TO-R4, TO-R5 |
-| `05-simple-harness-ui.md` | SH-M1～SH-M6, SH-SURFACE | AC-6, AC-7, AC-8 | TO-06, TO-07, TO-R1, TO-R5 |
+| `05-simple-harness-ui.md` | SH-M1～SH-M6, SH-I01, SH-SURFACE | AC-4, AC-6, AC-7, AC-8 | TO-04, TO-06, TO-07, TO-R1, TO-R2, TO-R5 |
 
 共 21 个 required case。每个 case 都直接证明 MUST AC 或阻断本次受影响风险；没有独立 AC/risk
 绑定的扩展探索不进入 required 集。
