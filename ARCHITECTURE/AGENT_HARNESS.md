@@ -15,8 +15,8 @@ outbox、重试和恢复。root 与每个 continuation 使用各自 immutable so
 catalog 不再暴露第二次 live recall，非 Harness product outbox 按 provenance 保留。
 
 当前 exact bytes 为 Harness `fbb156f` / `v0.3.0` / wheel `cf629cee…` 与 Memory `3d4247b` /
-`v0.4.0` / wheel `bfcd2506…`；候选 source、主分支与 tags 已推送，冻结 wheel/sdist 已上传到对应的
-draft GitHub Release 并完成下载回验；draft 尚未正式发布。simple_harness
+`v0.4.0` / wheel `bfcd2506…`；候选 source、主分支与 tags 已推送，冻结 wheel/sdist 已正式发布到
+对应 GitHub Release，并通过公开稳定 URL 下载回验。simple_harness
 自动化与真实 macOS Computer Use + DeepSeek 的 SH-M1～SH-M6、SH-SURFACE 已通过。下方 0.2.0
 composition 章节保留为历史切换记录，不再代表当前生产入口。
 

@@ -7,7 +7,7 @@
 - **exact release candidate**：Harness `fbb156f…` / tag `v0.3.0` / wheel SHA `cf629cee…`；Memory
   `3d4247b…` / tag `v0.4.0` / wheel SHA `bfcd2506…`。版本、wheel hash、tag 与 direct-url
   installed-origin 均 fail closed；三个仓库主分支与两个 SDK tag 已推送。冻结 SDK 产物由本地流程构建，
-  已上传到对应 draft GitHub Release 并完成下载回验；draft 尚未正式发布。
+  已正式发布到对应 GitHub Release，并通过公开稳定 URL 下载回验。
 - **生产组合**：一个 production `MemoryManager` 同时服务 Harness 与非 Harness product projection；Runtime
   使用 `BORROWED` ownership；shutdown 先关闭 runtime borrowers，再由 SessionDB 有界 drain/唯一关闭
   manager，重复/并发关闭不二次释放。前台 root/continuation 不再手工 recall/prepare，改由
