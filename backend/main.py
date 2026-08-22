@@ -7262,12 +7262,17 @@ async def _build_product_sdk_runtime_stack(
     if session_db is None or capability_platform is None:
         raise RuntimeError("SDK Runtime requires session_db and capability_platform")
     product_state_db_path = Path(getattr(session_db, "db_path", _state_db_path))
-    memory_identity_resolver = service_context.get("memory_identity_resolver")
-    if memory_identity_resolver is None:
-        from deskpet.memory.identity import ProductMemoryIdentityResolver
+    memory_identity_authority = service_context.get("memory_identity_authority")
+    if memory_identity_authority is None:
+        from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
 
-        memory_identity_resolver = ProductMemoryIdentityResolver(product_state_db_path)
-        service_context.register("memory_identity_resolver", memory_identity_resolver)
+        memory_identity_authority = ValidatedLocalMemoryIdentityAuthority(
+            product_state_db_path,
+            user_data_dir=_paths.user_data_dir(),
+        )
+        service_context.register("memory_identity_authority", memory_identity_authority)
+    memory_identity_resolver = memory_identity_authority.resolver
+    service_context.register("memory_identity_resolver", memory_identity_resolver)
 
     # The runtime is stable across Provider mutations.  A physical Provider is
     # constructed only after a Run freezes its own Session binding.
@@ -8925,7 +8930,6 @@ async def _run_product_harness_chat(
         )
         from simple_harness.runtime import ConversationTurnInput
         from deskpet.agent.assembler.components.persona import _resolve_persona
-        from deskpet.memory.identity import ProductMemoryIdentityResolver
 
         current_content: Any = text
         if user_attachment_blocks:
@@ -8936,18 +8940,10 @@ async def _run_product_harness_chat(
                     for block in user_attachment_blocks
                 ),
             )
-        actor_id = str(
-            getattr(getattr(frozen_owner, "owner", None), "profile_id", "")
-            or getattr(getattr(frozen_owner, "owner", None), "identity_namespace_hash", "")
-        ).strip()
-        identity_resolver = service_context.get("memory_identity_resolver")
-        if identity_resolver is None:
-            identity_resolver = ProductMemoryIdentityResolver(_state_db_path)
-            service_context.register("memory_identity_resolver", identity_resolver)
-        identity = await identity_resolver.bind(
-            session_id=session_id,
-            trusted_actor_id=actor_id,
-        )
+        identity_authority = service_context.get("memory_identity_authority")
+        if identity_authority is None:
+            raise RuntimeError("validated Memory identity authority is unavailable")
+        identity = await identity_authority.bind(session_id=session_id)
         persona_text = _resolve_persona(dict(config.raw))
         prepared_snapshot = await _prepare_sdk_context_snapshot(
             session_db=session_db,

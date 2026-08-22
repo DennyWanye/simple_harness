@@ -11,6 +11,7 @@ import pytest
 from deskpet.memory.identity import (
     MemorySessionRebind,
     ProductMemoryIdentityResolver,
+    ValidatedLocalMemoryIdentityAuthority,
 )
 from deskpet.memory.session_db import SessionDB
 from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
@@ -38,6 +39,142 @@ async def test_identity_binding_is_stable_and_session_cannot_rebind(tmp_path) ->
     assert refreshed == first
     with pytest.raises(MemorySessionRebind):
         await resolver.bind(session_id="session-a", trusted_actor_id="actor-b")
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_validated_identity_is_stable_across_same_userdata_restart(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    user_data = tmp_path / "user-data"
+    session = SessionDB(state)
+    await session.initialize()
+    await session.ensure_session("session-a")
+
+    first = await ValidatedLocalMemoryIdentityAuthority(
+        state,
+        user_data_dir=user_data,
+    ).bind(session_id="session-a")
+    restarted = await ValidatedLocalMemoryIdentityAuthority(
+        state,
+        user_data_dir=user_data,
+    ).bind(session_id="session-a")
+
+    assert restarted == first
+    assert first.actor_id != "legacy_local_profile"
+    assert len(first.actor_id) == 64
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_validated_identity_ignores_provider_api_key_model_and_payload_spoof(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    state = tmp_path / "state.db"
+    user_data = tmp_path / "user-data"
+    session = SessionDB(state)
+    await session.initialize()
+    await session.ensure_session("session-a")
+    await session.ensure_session("session-b")
+
+    class ProductAuthOnly:
+        async def current_snapshot(self):
+            return {
+                "mode": "local",
+                "user_id": None,
+                "actor_id": "payload-spoof",
+                "model": "model-spoof",
+                "api_key": "api-key-spoof",
+            }
+
+    authority = ValidatedLocalMemoryIdentityAuthority(
+        state,
+        user_data_dir=user_data,
+        auth_provider=ProductAuthOnly(),
+    )
+    first = await authority.bind(session_id="session-a")
+    monkeypatch.setenv("DESKPET_CLOUD_API_KEY", "changed-provider-key")
+    monkeypatch.setenv("DESKPET_LLM_MODEL", "changed-provider-model")
+    second = await authority.bind(session_id="session-b")
+
+    assert second.actor_id == first.actor_id
+    assert second.household_id == first.household_id
+    assert second.actor_id not in {
+        "payload-spoof",
+        "model-spoof",
+        "api-key-spoof",
+        "changed-provider-key",
+        "legacy_local_profile",
+    }
+    await session.close()
+
+
+@pytest.mark.asyncio
+async def test_validated_identity_isolated_across_userdata_roots(tmp_path) -> None:
+    state = tmp_path / "state.db"
+    session = SessionDB(state)
+    await session.initialize()
+    await session.ensure_session("session-a")
+    await session.ensure_session("session-b")
+
+    first = await ValidatedLocalMemoryIdentityAuthority(
+        state,
+        user_data_dir=tmp_path / "user-data-a",
+    ).bind(session_id="session-a")
+    second = await ValidatedLocalMemoryIdentityAuthority(
+        state,
+        user_data_dir=tmp_path / "user-data-b",
+    ).bind(session_id="session-b")
+
+    assert second.deployment_id == first.deployment_id
+    assert second.actor_id != first.actor_id
+    assert second.household_id != first.household_id
+    await session.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("identity_contents", "snapshot"),
+    [
+        ("not-json", {"mode": "local", "user_id": None}),
+        (
+            json.dumps({"schema_version": 1, "local_identity_id": "not-a-uuid"}),
+            {"mode": "local", "user_id": None},
+        ),
+        (None, {"mode": "local", "user_id": "spoofed-user"}),
+        (None, {"mode": "relay", "user_id": "spoofed-user"}),
+    ],
+)
+async def test_invalid_identity_or_auth_snapshot_fails_before_llm(
+    tmp_path,
+    identity_contents,
+    snapshot,
+) -> None:
+    state = tmp_path / "state.db"
+    user_data = tmp_path / "user-data"
+    user_data.mkdir()
+    session = SessionDB(state)
+    await session.initialize()
+    await session.ensure_session("session-a")
+    if identity_contents is not None:
+        (user_data / "companion-local-identity.json").write_text(
+            identity_contents,
+            encoding="utf-8",
+        )
+
+    class InvalidAuth:
+        async def current_snapshot(self):
+            return snapshot
+
+    llm = AsyncMock()
+    authority = ValidatedLocalMemoryIdentityAuthority(
+        state,
+        user_data_dir=user_data,
+        auth_provider=InvalidAuth(),
+    )
+    with pytest.raises((ValueError, RuntimeError, json.JSONDecodeError)):
+        await authority.bind(session_id="session-a")
+    llm.assert_not_awaited()
     await session.close()
 
 

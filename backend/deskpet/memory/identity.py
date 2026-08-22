@@ -10,6 +10,11 @@ import time
 import uuid
 
 import aiosqlite
+from deskpet.companion.control_ingress import (
+    LocalAuthSnapshotProvider,
+    TrustedAuthSnapshotProvider,
+    validate_auth_snapshot,
+)
 from simple_harness.runtime import AgentIdentity
 
 
@@ -88,8 +93,42 @@ class ProductMemoryIdentityResolver:
         return AgentIdentity(*(str(value) for value in row))
 
 
+class ValidatedLocalMemoryIdentityAuthority:
+    """Bind Memory identity exclusively from validated product auth state."""
+
+    def __init__(
+        self,
+        state_db_path: str | Path,
+        *,
+        user_data_dir: str | Path,
+        auth_provider: TrustedAuthSnapshotProvider | None = None,
+    ) -> None:
+        self._resolver = ProductMemoryIdentityResolver(state_db_path)
+        self._user_data_dir = Path(user_data_dir)
+        self._auth_provider = auth_provider or LocalAuthSnapshotProvider()
+
+    @property
+    def resolver(self) -> ProductMemoryIdentityResolver:
+        return self._resolver
+
+    async def bind(self, *, session_id: str) -> AgentIdentity:
+        snapshot = await self._auth_provider.current_snapshot()
+        human = validate_auth_snapshot(
+            snapshot,
+            user_data_dir=str(self._user_data_dir),
+        )
+        actor = str(human.identity_namespace_hash).strip()
+        if not actor or actor == human.profile_id or actor == "legacy_local_profile":
+            raise MemoryIdentityUnavailable("validated_actor_identity_invalid")
+        return await self._resolver.bind(
+            session_id=session_id,
+            trusted_actor_id=actor,
+        )
+
+
 __all__ = (
     "MemoryIdentityUnavailable",
     "MemorySessionRebind",
     "ProductMemoryIdentityResolver",
+    "ValidatedLocalMemoryIdentityAuthority",
 )
