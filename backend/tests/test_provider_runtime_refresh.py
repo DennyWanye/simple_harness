@@ -152,6 +152,13 @@ async def test_real_product_sdk_production_composition_starts(
         assert ready.runtime.state.value == "ready"
         assert main.service_context.get("sdk_context_staging") is not None
         assert main.service_context.get("conversation_memory") is None
+        frozen_catalog = main.service_context.get("sdk_runtime_catalog")
+        sdk_inventory = main.service_context.get("sdk_runtime_tool_inventory")
+        assert {item.name for item in sdk_inventory} == set(
+            frozen_catalog["tool_names"]
+        )
+        assert "memory_recall" not in frozen_catalog["tool_names"]
+        assert "memory_search" not in frozen_catalog["tool_names"]
         context_sources = main.service_context.get("sdk_context_source_repository")
         assert context_sources is not None
         assert context_sources._path == data_dir / "state.db"

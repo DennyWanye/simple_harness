@@ -7364,6 +7364,17 @@ async def _build_product_sdk_runtime_stack(
     tools_adapter, tool_inventory = build_product_tool_registry(catalog.registrations)
     tools_adapter.bind_run_authorities(tool_authorities)
     frozen_catalog = _freeze_sdk_catalog(tools_adapter, generation)
+    # memory_recall/memory_search remain registered for explicit product
+    # surfaces, but automatic Memory is injected through AgentMemoryPort and
+    # those tools are deliberately absent from the model-visible SDK catalog.
+    # The per-Run authority must therefore receive the same visible projection,
+    # not the larger executor inventory.
+    visible_tool_names = frozenset(frozen_catalog["tool_names"])
+    sdk_tool_inventory = tuple(
+        item for item in tool_inventory if str(item.name) in visible_tool_names
+    )
+    if {str(item.name) for item in sdk_tool_inventory} != visible_tool_names:
+        raise RuntimeError("SDK catalog is missing product inventory entries")
 
     # Build authorization system
     from deskpet.product_state.database import ProductStateDatabase
@@ -7695,7 +7706,7 @@ async def _build_product_sdk_runtime_stack(
     service_context.register("sdk_runtime_catalog", frozen_catalog)
     service_context.register("sdk_provider_binding_resolver", provider_binding_resolver)
     service_context.register("sdk_tool_authority_registry", tool_authorities)
-    service_context.register("sdk_runtime_tool_inventory", tool_inventory)
+    service_context.register("sdk_runtime_tool_inventory", sdk_tool_inventory)
     service_context.register(
         "sdk_prepared_authorization_policy", authorization_policy
     )
