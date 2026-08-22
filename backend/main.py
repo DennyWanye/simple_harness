@@ -7361,7 +7361,26 @@ async def _build_product_sdk_runtime_stack(
     )
 
     catalog = build_explicit_product_tool_catalog(dependencies)
-    tools_adapter, tool_inventory = build_product_tool_registry(catalog.registrations)
+    from dataclasses import replace as dataclass_replace
+
+    projected_registrations = tuple(
+        dataclass_replace(
+            item,
+            description=(
+                "Administrative memory override only. Ordinary facts, preferences, "
+                "and requests such as 'remember X' are recorded automatically after "
+                "the Turn completes; do not call this tool for them. Call only when "
+                "the user explicitly requests pinned/non-decaying retention or a "
+                "specific memory tier."
+            ),
+        )
+        if item.name == "memory_write"
+        else item
+        for item in catalog.registrations
+    )
+    tools_adapter, tool_inventory = build_product_tool_registry(
+        projected_registrations
+    )
     tools_adapter.bind_run_authorities(tool_authorities)
     frozen_catalog = _freeze_sdk_catalog(tools_adapter, generation)
     # memory_recall/memory_search remain registered for explicit product
@@ -10288,6 +10307,13 @@ _SDK_PUBLIC_WORK_NARRATION_PROMPT = """\
 这段公开叙述会展示在“思考过程”区域，但不会作为后续模型上下文保存。\
 """
 
+_SDK_AUTOMATIC_MEMORY_PROMPT = """\
+Simple Harness 会在每个成功完成的 Turn 结束后自动记录可复用的事实和偏好。
+普通事实、偏好以及“记住 X”这类请求不得调用 memory_write；直接自然确认即可。
+只有用户明确要求置顶、永不衰减，或明确指定 L1/L2/L3 Memory 层级时，才调用 memory_write。
+读取既有记忆由本 Turn 冻结的 Agent Memory 上下文提供；不要为了普通召回调用显式 Memory Tool。\
+"""
+
 
 async def _sdk_context_usage_from_projection_only(*_args: Any, **_kwargs: Any) -> None:
     """SDK usage is projected from durable physical-attempt receipts only."""
@@ -10414,6 +10440,7 @@ async def _prepare_sdk_context_snapshot(
     reserved = (
         int(catalog.get("schema_token_count") or 0)
         + _sdk_text_tokens(_SDK_PUBLIC_WORK_NARRATION_PROMPT)
+        + _sdk_text_tokens(_SDK_AUTOMATIC_MEMORY_PROMPT)
         + _sdk_text_tokens(persona_text)
         + _sdk_text_tokens(text)
         + sum(_sdk_text_tokens(item.get("text")) for item in (memory_items or ()))
@@ -10436,7 +10463,11 @@ async def _prepare_sdk_context_snapshot(
         SdkContextSources(
             history=lambda _session_id: history,
             persona=lambda: (
-                persona_text + "\n\n" + _SDK_PUBLIC_WORK_NARRATION_PROMPT
+                persona_text
+                + "\n\n"
+                + _SDK_PUBLIC_WORK_NARRATION_PROMPT
+                + "\n\n"
+                + _SDK_AUTOMATIC_MEMORY_PROMPT
             ),
             memory=(
                 (lambda _session_id, _text: memory_items)

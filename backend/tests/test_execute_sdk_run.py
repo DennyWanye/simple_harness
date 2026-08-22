@@ -214,7 +214,7 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
         sdk_run_id="sdk-run-current",
         turn_id="1",
         text="当前消息",
-        provider_binding={"context_window": 1_000, "provider_id": "p", "model_id": "m"},
+        provider_binding={"context_window": 1_500, "provider_id": "p", "model_id": "m"},
         catalog={"tool_count": 1, "schema_token_count": 100, "tool_names": ["read_file"], "generation": 2, "content_fingerprint": "f"},
         attachment_blocks=(),
         project=None,
@@ -223,8 +223,14 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
     )
     private = prepared.private_record()
     assert private["budget"]["truncated"] is True
-    assert private["budget"]["compact_at"] == 800
+    assert private["budget"]["compact_at"] == 1_200
     assert private["provider_messages"][-1] == {"role": "user", "content": "当前消息"}
+    assert any(
+        message["role"] == "system"
+        and "成功完成的 Turn 结束后自动记录" in message["content"]
+        and "不得调用 memory_write" in message["content"]
+        for message in private["provider_messages"]
+    )
     assert len(private["provider_messages"]) < 102
 
 

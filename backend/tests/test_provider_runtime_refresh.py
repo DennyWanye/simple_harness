@@ -159,6 +159,11 @@ async def test_real_product_sdk_production_composition_starts(
         )
         assert "memory_recall" not in frozen_catalog["tool_names"]
         assert "memory_search" not in frozen_catalog["tool_names"]
+        memory_write = next(
+            item for item in frozen_catalog["specs"] if item["name"] == "memory_write"
+        )
+        assert "recorded automatically" in memory_write["description"]
+        assert "do not call this tool" in memory_write["description"]
         context_sources = main.service_context.get("sdk_context_source_repository")
         assert context_sources is not None
         assert context_sources._path == data_dir / "state.db"
