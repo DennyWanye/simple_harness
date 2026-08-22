@@ -127,6 +127,8 @@ class SdkRuntimeIngress:
                 request_id=RequestId(request_id),
                 turn_id=turn_id,
                 tool_catalog_generation=session_generation,
+                tool_catalog_fingerprint=tool_catalog_fingerprint,
+                provider_budget_fingerprint=provider_budget_fingerprint,
                 input=payload,
             )
         else:

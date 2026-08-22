@@ -7845,7 +7845,7 @@ dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.3.0-py3-none-any.whl", hash = "sha256:3740d26b95f11e638258969b6e1aa83138c31b959f920d9f060d6e0c73e550c2" },
+    { filename = "simple_harness_sdk-0.3.0-py3-none-any.whl", hash = "sha256:cf629ceed1e419fccacabc220f66ba201120f21ed58d30af5c4f70da97dae147" },
 ]
 
 [package.metadata]

@@ -38,6 +38,38 @@ async def test_ingress_passes_exact_catalog_and_budget_fingerprints_to_run_start
 
 
 @pytest.mark.asyncio
+async def test_conversation_ingress_passes_exact_catalog_and_budget_fingerprints():
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+    from simple_harness.runtime import ConversationTurnInput
+
+    client = SimpleNamespace(start_conversation=AsyncMock())
+    ingress = object.__new__(SdkRuntimeIngress)
+    ingress._stack = SimpleNamespace(  # noqa: SLF001
+        require_ready=lambda: SimpleNamespace(client=client, generation=9)
+    )
+    ingress._accepting = True  # noqa: SLF001
+    conversation = object.__new__(ConversationTurnInput)
+
+    await ingress.start(
+        session_id="session-conversation",
+        request_id="request-conversation",
+        turn_id="turn-conversation",
+        payload={"messages": [{"role": "user", "content": "hello"}]},
+        session_generation=7,
+        tool_catalog_fingerprint="c" * 64,
+        provider_budget_fingerprint="b" * 64,
+        conversation=conversation,
+    )
+
+    assert client.start_conversation.await_args.kwargs[
+        "tool_catalog_fingerprint"
+    ] == "c" * 64
+    assert client.start_conversation.await_args.kwargs[
+        "provider_budget_fingerprint"
+    ] == "b" * 64
+
+
+@pytest.mark.asyncio
 async def test_ingress_uses_sdk_015_sync_signal_signature():
     from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
     from simple_harness import RunClient

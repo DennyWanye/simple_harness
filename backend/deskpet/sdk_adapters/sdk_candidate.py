@@ -18,8 +18,8 @@ from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
 
 SDK_VERSION = "0.3.0"
 SDK_WHEEL_FILENAME = "simple_harness_sdk-0.3.0-py3-none-any.whl"
-SDK_WHEEL_SHA256 = "3740d26b95f11e638258969b6e1aa83138c31b959f920d9f060d6e0c73e550c2"
-SDK_SOURCE_COMMIT = "f96e80804e2300c2c88518df25e04d8570f1bd99"
+SDK_WHEEL_SHA256 = "cf629ceed1e419fccacabc220f66ba201120f21ed58d30af5c4f70da97dae147"
+SDK_SOURCE_COMMIT = "fbb156fb912a49c60770c408893f8c7730616760"
 SDK_CI_RUN_ID = None
 SDK_CI_ARTIFACT_ID = None
 

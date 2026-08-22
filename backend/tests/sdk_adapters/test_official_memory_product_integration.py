@@ -369,7 +369,7 @@ async def test_dev_fault_wrapper_is_one_shot_and_fail_closed(monkeypatch, tmp_pa
 
 def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
     assert SDK_WHEEL_SHA256 == (
-        "3740d26b95f11e638258969b6e1aa83138c31b959f920d9f060d6e0c73e550c2"
+        "cf629ceed1e419fccacabc220f66ba201120f21ed58d30af5c4f70da97dae147"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
         "81484a81f6a8dc1efb92d9b4b946c2152139c75b794750a241b9388c5cddf5a5"
