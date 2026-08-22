@@ -1,6 +1,6 @@
 # S6 — simple_harness 正式接入与 windows-mcp 真 E2E
 
-<!-- slice-status: draft -->
+<!-- slice-status: completed -->
 
 ## Release unit
 

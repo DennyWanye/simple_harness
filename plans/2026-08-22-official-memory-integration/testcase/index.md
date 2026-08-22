@@ -1,6 +1,6 @@
 # 官方 Memory 一等集成：black-box testcase 索引
 
-状态：Phase-3 D 验证准备稿；实现代码冻结后由 gate 记录逐文件 hash，再执行。
+状态：已冻结并执行完成；最终 Gate 记录 21/21 required 场景 PASS。
 
 唯一 oracle 是同目录上级的 `acceptance.md` 与 `assurance-contract.json`。本目录只描述公开入口、
 输入、可观察结果与证据；不得用实现代码、私有 registry、直接数据库注入或协议直注代替用户链路。
@@ -15,7 +15,7 @@
 | `04-storage-release.md` | SDK-S01～S03, SDK-M01, SDK-R01 | AC-5, AC-6, AC-7, AC-8 | TO-05, TO-08, TO-R3, TO-R4, TO-R5 |
 | `05-simple-harness-ui.md` | SH-M1～SH-M6, SH-SURFACE | AC-6, AC-7, AC-8 | TO-06, TO-07, TO-R1, TO-R5 |
 
-共 20 个 required case。每个 case 都直接证明 MUST AC 或阻断本次受影响风险；没有独立 AC/risk
+共 21 个 required case。每个 case 都直接证明 MUST AC 或阻断本次受影响风险；没有独立 AC/risk
 绑定的扩展探索不进入 required 集。
 
 ## 执行纪律

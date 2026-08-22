@@ -1,11 +1,11 @@
 # S2 — Harness committed-turn Outbox 与恢复
 
-<!-- slice-status: draft -->
+<!-- slice-status: completed -->
 
 ## Release unit
 
 - MUST AC：AC-3、AC-7（2/8）
-- Tasks：8/10
+- Tasks：10/10
 - 高风险系统：terminal transaction、execution schema、dispatcher（3/3）
 - 依赖：S1 contract frozen
 

@@ -4,8 +4,9 @@
 
 ## 2026-08-22 Harness 0.3 / Memory 0.4 官方一等集成（代码、自动化与真实 UI 完成）
 
-- **exact candidate**：Harness `fbb156f…` / wheel SHA `cf629cee…`；Memory `3d4247b…` /
-  wheel SHA `bfcd2506…`。版本、wheel hash 与 direct-url installed-origin 均 fail closed；未 tag/push/upload。
+- **exact release candidate**：Harness `fbb156f…` / local tag `v0.3.0` / wheel SHA `cf629cee…`；Memory
+  `3d4247b…` / local tag `v0.4.0` / wheel SHA `bfcd2506…`。版本、wheel hash、tag 与 direct-url
+  installed-origin 均 fail closed；未 push/upload。
 - **生产组合**：一个 production `MemoryManager` 同时服务 Harness 与非 Harness product projection；Runtime
   使用 `BORROWED` ownership；shutdown 先关闭 runtime borrowers，再由 SessionDB 有界 drain/唯一关闭
   manager，重复/并发关闭不二次释放。前台 root/continuation 不再手工 recall/prepare，改由

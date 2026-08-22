@@ -1,11 +1,11 @@
 # S3 — MemoryManager identity/scope 与 committed-turn 原子写
 
-<!-- slice-status: draft -->
+<!-- slice-status: completed -->
 
 ## Release unit
 
 - MUST AC：AC-3、AC-4、AC-7（3/8）
-- Tasks：9/10
+- Tasks：10/10
 - 高风险系统：identity/scope、Memory schema、privacy lifecycle（3/3）
 - 依赖：S1 Agent Memory v1 contract
 

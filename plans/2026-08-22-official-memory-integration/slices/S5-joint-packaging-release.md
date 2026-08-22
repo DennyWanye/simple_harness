@@ -1,11 +1,11 @@
 # S5 — Joint wheel conformance 与 SDK release candidate
 
-<!-- slice-status: draft -->
+<!-- slice-status: completed -->
 
 ## Release unit
 
 - MUST AC：AC-1、AC-8（2/8）
-- Tasks：8/10
+- Tasks：10/10
 - 高风险系统：package dependency、cross-version conformance、release identity（3/3）
 - 依赖：S1～S4 receipts
 

@@ -1,11 +1,11 @@
 # S4 — Memory 有界检索、Embedding lineage 与 SQLite 运维
 
-<!-- slice-status: draft -->
+<!-- slice-status: completed -->
 
 ## Release unit
 
 - MUST AC：AC-5、AC-7（2/8）
-- Tasks：8/10
+- Tasks：10/10
 - 高风险系统：retrieval、embedding、SQLite operations（3/3）
 - 依赖：S3 fresh v4 schema
 

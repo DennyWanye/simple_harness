@@ -1,11 +1,11 @@
 # S1 — Harness Agent Memory 契约与自动 Recall
 
-<!-- slice-status: draft -->
+<!-- slice-status: completed -->
 
 ## Release unit
 
 - MUST AC：AC-1、AC-2、AC-7（3/8）
-- Tasks：8/10
+- Tasks：10/10
 - 高风险系统：public contract、Context staging、Runtime lifecycle（3/3）
 - 依赖：无；以 Harness HEAD `869c76f...` 为起点
 
