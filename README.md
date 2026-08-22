@@ -26,6 +26,12 @@ Python FastAPI（后端；语音规划走中转站 Realtime）。
 模块级架构、项目状态与历史决策见 [`ARCHITECTURE/index.md`](./ARCHITECTURE/index.md)；
 部署层与目录布局概览见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。
 
+## 测试与回归
+
+长期维护的手工/脚本用例索引见 [`testcase/index.md`](./testcase/index.md)。Harness 0.3 / Memory 0.4
+官方一等集成的冻结用例与 Gate r4 结果见
+[`plans/2026-08-22-official-memory-integration/testcase/`](./plans/2026-08-22-official-memory-integration/testcase/)。
+
 ## 快速开始（macOS / Linux，直接跑源码）
 
 不发安装包——像 OpenClaw 那样 clone 下来直接跑：

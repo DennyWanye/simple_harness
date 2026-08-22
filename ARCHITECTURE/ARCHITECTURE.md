@@ -1,11 +1,11 @@
-<!-- last-calibrated: 88a8bdec279b6bec3eb7d0ab47f2542e57f7d357 -->
+<!-- last-calibrated: 4e797ccd -->
 
 # simple_harness Long-Running Agent Architecture Baseline
 
 ## SDK Context / Memory 官方一等集成（2026-08-22）
 
-- exact 依赖已切到 Harness 0.3.0（wheel SHA `3740d26b…`）与 Memory 0.4.0（wheel SHA
-  `81484a81…`）。生产只构造一个 `MemoryManager`，Harness Runtime 以 `BORROWED` ownership 使用；
+- exact 依赖已切到 Harness 0.3.0（HEAD `fbb156f…`，wheel SHA `cf629cee…`）与 Memory 0.4.0
+  （HEAD `3d4247b…`，wheel SHA `bfcd2506…`）。生产只构造一个 `MemoryManager`，Harness Runtime 以 `BORROWED` ownership 使用；
   shutdown 先关闭 runtime borrower，再由 SessionDB 有界 drain 并唯一 close manager。
 - root/continuation 入口只提交正式 Conversation input 与各自独立、content-addressed 的 non-Memory Context
   source ref；SDK 保存 claim 后调用 read-only provider，并自动完成 Memory recall、frozen stage 与成功 Turn
@@ -18,8 +18,9 @@
 - 显式 remember/read/forget 使用 resolver 生成的完整 `MemoryPrincipal` 与正式 fact API；write 保留
   salience/pinned/tier 并返回准确 fact ID；forget 使用显式 action `source_event_id`，持久 True/False receipt
   在重放与重启后稳定。重试/冲突/跨 principal/forget 不复活语义由 exact wheel 回归覆盖。
-- 自动化已完成：affected `409 passed, 1 deselected`、FULL_SURFACE backend `80 passed` / frontend `156 passed`、
-  baseline_runner 0 新红、frontend type/build/Vitest 与 Rust test/check 全绿。MCP 真人 SH-M1～SH-M6 待验。
+- 自动化已完成：Harness full `1379 passed, 2 skipped`、Memory full `200 passed, 7 skipped`、产品最终聚焦
+  backend `83 passed` / MemoryPanel `18 passed` / TypeScript PASS；full baseline 15 PASS + 2 个实施前 known-red，
+  0 unexpected。macOS Computer Use 真人 SH-M1～SH-M6 与 SH-SURFACE 全部通过。
 - 完整边界与当前验收状态见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
 
 ## SDK Context / Memory 切换前基线（历史，已由上节取代）

@@ -101,6 +101,11 @@
 - [Black-box required testcases](2026-08-21-sdk-context-authority-cutover/testcases.md)
 - [Core-value smoke inputs](2026-08-21-sdk-context-authority-cutover/core-value-smoke-inputs.md)
 
+## 2026-08-22 — Harness 0.3 / Memory 0.4 官方一等集成
+
+- [冻结的 black-box testcase](../plans/2026-08-22-official-memory-integration/testcase/index.md)
+- [Gate r4 实际结果](../plans/2026-08-22-official-memory-integration/testcase/results/gate-final-r4.md)
+
 ## 约定
 
 - **命名**: `<功能简称>-manual-test.md`，跨迭代的大功能可带日期前缀 `YYYY-MM-DD-`。

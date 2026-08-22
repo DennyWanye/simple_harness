@@ -1,9 +1,19 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-21
-> 代码基线：simple_harness `5d9fdb6e`；当前依赖固定 Harness 0.2.0 / Memory 0.3.0 exact wheels
-> 状态：SDK v0.2.0 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
+> 最后校准：2026-08-22
+> 代码基线：simple_harness `4e797ccd`；当前依赖固定 Harness 0.3.0 / Memory 0.4.0 exact wheels
+> 状态：SDK v0.3.0 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
 > 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
+
+## 2026-08-22 官方 Agent Memory 产品验收
+
+- exact Harness `fbb156f` / wheel `cf629cee…` 与 Memory `3d4247b` / wheel `bfcd2506…` 已由
+  simple_harness source backend 从 site-packages 消费并通过 installed-origin/hash 门。
+- root 与 continuation 的 immutable source ref、自动 recall/frozen stage、terminal-only committed-turn outbox、
+  trusted four-part identity、Facts list/forget UI 与 product projection 已成为生产链路。
+- macOS Computer Use 在真实 DeepSeek 下完成 7 个 required UI 类别；record transient 在成功回复后、Memory
+  未落库时退出，下一次无故障启动由 durable outbox 收敛并可跨 Session 召回。
+- AIPhone、K6/AgentOS、NovelTagSystem 仍未修改或验证；只能声明接口就绪，不能声明产品接入。
 
 ## 2026-08-21 exact candidate 与消费者准入
 

@@ -2,10 +2,10 @@
 
 > **最后更新**：2026-08-22
 
-## 2026-08-22 Harness 0.3 / Memory 0.4 官方一等集成（自动化完成，MCP UI 待验）
+## 2026-08-22 Harness 0.3 / Memory 0.4 官方一等集成（代码、自动化与真实 UI 完成）
 
-- **exact candidate**：Harness `f96e8080…` / wheel SHA `3740d26b…`；Memory `87f1daee…` /
-  wheel SHA `81484a81…`。版本、wheel hash 与 direct-url installed-origin 均 fail closed；未 tag/push/upload。
+- **exact candidate**：Harness `fbb156f…` / wheel SHA `cf629cee…`；Memory `3d4247b…` /
+  wheel SHA `bfcd2506…`。版本、wheel hash 与 direct-url installed-origin 均 fail closed；未 tag/push/upload。
 - **生产组合**：一个 production `MemoryManager` 同时服务 Harness 与非 Harness product projection；Runtime
   使用 `BORROWED` ownership；shutdown 先关闭 runtime borrowers，再由 SessionDB 有界 drain/唯一关闭
   manager，重复/并发关闭不二次释放。前台 root/continuation 不再手工 recall/prepare，改由
@@ -21,12 +21,14 @@
   idempotency、跨 principal 隔离；forget 显式 action ID 的 True/False receipt 可重放、跨重启且不复活。
   Memory SDK 已提供正式 authorized share API，本轮不新增
   simple_harness share Tool/UI。
-- **自动化证据**：Round2 candidate/explicit API 聚焦 `72 passed`；SDK/affected `409 passed, 1 deselected`；
-  FULL_SURFACE backend `80 passed`、frontend `156 passed`；baseline_runner 从 clean `88a8bdec` 全新运行
-  15/17 PASS，余 2 项精确命中实施前 known-red，0 新红；
-  frontend Vitest/typecheck/build 与 Rust test/check PASS。
-- **剩余门**：主代理通过 MCP 真坐标执行 SH-M1～SH-M6；完成前状态保持“自动化完成、UI 待验”。原始证据
-  只保存在 ignored `.local-test-evidence/2026-08-22/`。
+- **自动化证据**：Harness full `1379 passed, 2 skipped`；Memory full `200 passed, 7 skipped`；产品最终聚焦
+  backend `83 passed`、MemoryPanel `18 passed`、TypeScript PASS；full baseline 15 PASS + 2 个实施前 known-red，
+  0 unexpected。
+- **真实 UI 证据**：macOS Computer Use 使用设置页的 DeepSeek 完成 SH-M1～SH-M6、SH-SURFACE。跨 Session
+  recall、PPT/permission/Artifact、恶意 Memory 数据隔离、冷重启、recall timeout 与 record transient 崩溃恢复
+  均通过；停止链落到 `run.cancelled` 且 ordered projection cursor 不再卡死。
+- **范围边界**：AIPhone、K6/AgentOS、NovelTagSystem 未修改、未集成、未测试；Harness/Memory 的 future-consumer
+  与 `share_fact` 接口已就绪。原始证据只保存在 ignored `.local-test-evidence/2026-08-22/gate-final-r4/`。
 
 ## 2026-08-21 macOS 测试基线收口与历史 Windows 测试退役
 

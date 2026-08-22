@@ -1,10 +1,11 @@
 # Memory SDK 边界与 Host 接口契约
 
 > 最后更新：2026-08-22
-> 自动化基线：simple_harness `88a8bdec`；Harness 0.3.0 / Memory 0.4.0 exact wheels
+> 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
+> Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`
 
-本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码与自动化门禁；
-真实 MCP UI 场景 SH-M1～SH-M6 尚待验，因此当前状态是“自动化完成、UI 待验”，不是最终真人验收完成。
+本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
+与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
 
 ## 1. 当前生产链路
 
@@ -79,12 +80,13 @@ fail closed。
 ## 6. 当前验证状态
 
 - exact wheel SHA/direct-url installed-origin 与 candidate conformance：PASS。
-- Round2 candidate/explicit API 聚焦：`72 passed`；SDK + affected product regression：`409 passed, 1 deselected`。
-- FULL_SURFACE_SMOKE：backend `80 passed`；frontend `156 passed`。
-- baseline_runner：17 shards 中 15 PASS；`root-tests` 与 `frontend-lint` 精确命中实施前 known-red；0 new fail。
-- frontend Vitest/typecheck/build 与 Rust test/check：PASS。
+- Harness full：`1379 passed, 2 skipped`；Memory full：`200 passed, 7 skipped`。
+- 产品最终聚焦：backend `83 passed`；MemoryPanel `18 passed`；TypeScript typecheck PASS。
+- 产品 full baseline：15 shards PASS、2 个实施前 known-red（root live fixture、ESLint 171 fingerprint），0 unexpected。
 - SH-I01：同 user-data 重启稳定、Provider/API key/model/payload spoof 不影响、跨 user-data 隔离、损坏身份/
   错误 snapshot 在 LLM 前拒绝、legacy profile 排除：PASS。
-
-尚未完成：MCP 真人 SH-M1～SH-M6。原始截图、录屏、日志和数据库只进入
-`.local-test-evidence/<date>/<run>/`，不得提交 Git。
+- 真实 UI：SH-M1～SH-M6、SH-SURFACE 全 PASS。SH-M5 跨进程新 Session 召回 `Aurora-R4`；SH-M6
+  证明 recall timeout 不阻断主 Turn，record transient 在未写入时退出后由 startup recovery 唯一收敛，
+  新 Session 回答“晚饭后”。
+- Gate r4：21/21 required 场景已运行并达到 `READY_FOR_AUDIT`；原始截图、日志和数据库仅在 ignored
+  `.local-test-evidence/2026-08-22/gate-final-r4/`，Git 只保存结论与 hash 索引。
