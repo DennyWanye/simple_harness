@@ -370,22 +370,31 @@ class SessionDB:
             )
             return False
 
-    async def close(self) -> None:
+    async def close(self, *, timeout_seconds: float = 5.0) -> None:
         """目前每次调用都是 short-lived connection，无持久 conn 可关。
 
         保留接口以便未来切 connection pool 时签名不变。
         """
-        if self._product_memory_dispatcher is not None:
-            dispatcher, self._product_memory_dispatcher = (
-                self._product_memory_dispatcher,
-                None,
-            )
-            await dispatcher.close()
-        if self._memory_backend is not None:
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        dispatcher, self._product_memory_dispatcher = (
+            self._product_memory_dispatcher,
+            None,
+        )
+        manager, self._memory_backend = self._memory_backend, None
+        if dispatcher is not None:
             try:
-                await self._memory_backend.close()
+                await asyncio.wait_for(
+                    dispatcher.close(timeout_seconds=timeout_seconds),
+                    timeout=timeout_seconds + 0.5,
+                )
             except Exception as exc:  # noqa: BLE001
-                log.warning("memory_backend close failed: %s", exc)
+                log.warning("product memory dispatcher close failed: %s", exc)
+        if manager is not None:
+            try:
+                await asyncio.wait_for(manager.close(), timeout=timeout_seconds)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("memory manager close failed: %s", exc)
         self._initialized = False
 
     # ------------------------------------------------------------------

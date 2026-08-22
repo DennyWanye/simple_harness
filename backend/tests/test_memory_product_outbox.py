@@ -8,6 +8,49 @@ from simple_harness_memory import MemoryManager
 
 
 @pytest.mark.asyncio
+async def test_session_close_drains_dispatcher_and_closes_manager_exactly_once(
+    tmp_path,
+) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    async def append_message(_session_id, _role, _content, **kwargs):
+        return SimpleNamespace(
+            source_event_id=kwargs["source_event_id"],
+            payload_hash=kwargs["payload_hash"],
+        )
+
+    manager = SimpleNamespace(
+        append_message=AsyncMock(side_effect=append_message),
+        close=AsyncMock(),
+    )
+    state = tmp_path / "state.db"
+    session = SessionDB(state, memory_backend=manager)
+    await session.initialize()
+    dispatcher = session._product_memory_dispatcher  # noqa: SLF001
+    dispatcher_task = dispatcher._task  # noqa: SLF001
+    await session.append_message("session-a", "user", "remember on shutdown")
+
+    await session.close(timeout_seconds=1.0)
+    await session.close(timeout_seconds=1.0)
+
+    manager.append_message.assert_awaited_once()
+    manager.close.assert_awaited_once()
+    assert dispatcher_task is not None and dispatcher_task.done()
+    assert session._product_memory_dispatcher is None  # noqa: SLF001
+    assert session._memory_backend is None  # noqa: SLF001
+
+
+def test_lifespan_closes_runtime_before_session_memory_owner() -> None:
+    from pathlib import Path
+
+    source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
+    runtime_close = source.index("await _sdk_runtime_stack.close()")
+    owner_close = source.index("_owned_session_db.close(timeout_seconds=5.0)")
+    assert runtime_close < owner_close
+
+
+@pytest.mark.asyncio
 async def test_message_and_product_intent_commit_once_then_apply(tmp_path):
     memory = await MemoryManager.build_development(tmp_path / "memory.db")
     session = SessionDB(tmp_path / "state.db", memory_backend=memory)

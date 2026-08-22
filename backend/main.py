@@ -5321,6 +5321,21 @@ async def lifespan(app: FastAPI):
             _sdk_retained_presentations.clear()
             _sdk_unavailable_tool_authority_runs.clear()
             service_context.register("sdk_runtime_ready", None)
+    # SessionDB is the sole owner of the borrowed MemoryManager and its
+    # product outbox dispatcher.  Close it after every Runtime borrower, once,
+    # with a hard bound so shutdown cannot hang on a provider/storage fault.
+    _owned_session_db = service_context.get("session_db")
+    if _owned_session_db is not None:
+        try:
+            await asyncio.wait_for(
+                _owned_session_db.close(timeout_seconds=5.0),
+                timeout=6.0,
+            )
+            logger.info("product_memory_owner_stopped")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("product_memory_owner_shutdown_failed", error=str(exc))
+        finally:
+            service_context.register("session_db", None)
     _capability_platform = service_context.get("capability_platform")
     _capability_center = service_context.get("capability_center")
     if _capability_center is not None:
