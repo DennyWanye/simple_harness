@@ -183,7 +183,7 @@ created_at
 | `tauri-app/src/components/ProjectInspector.tsx`（新） | 右侧只读上下文 | 根目录、execution root、Git 状态、复制/打开/新建同项目/relocate |
 | `tauri-app/src/views/ChatView.tsx` | 主聊天布局 | 固定 Inspector rail/窄屏只读条；projectless“在项目中继续” |
 | `tauri-app/src-tauri/src/commands.rs`、`lib.rs` | native directory UI | 复用 folder picker；增加受控打开项目目录 command（若 opener 不能直接复用） |
-| `verification/spikes/windows_path_identity_probe.py` | 目标平台 release probe | Project/explicit root 等价路径、rename、不同目录与可选 junction JSON oracle |
+| `verification/spikes/windows_path_identity_probe.py` | 后续 Windows probe | Project/explicit root 等价路径、rename、不同目录与可选 junction JSON oracle；不阻断本轮 macOS 验收 |
 | `backend/scripts/restore_state_db_backup.py` | guarded support recovery | v32 semantic backfill 失败后的 hash/quick_check/停服恢复；不是 down-migration |
 | `backend/tests/**`、`tauri-app/src/**/*.test.tsx`、`src-tauri` tests | 自动化证据 | AC/风险绑定测试 |
 | `ARCHITECTURE/*.md` | 当前事实源 | 实现验收后同步生产链与状态（执行阶段完成，不在 plan-bs 提前写目标为事实） |
@@ -207,13 +207,14 @@ created_at
 
 | ID | 假设 | 静态证据 | 所需真跑证据 |
 |----|------|----------|--------------|
-| H-1 | `st_dev + st_ino` 在支持边界内识别 symlink/同卷 rename，并拒绝另一目录 | macOS spike 已证明 symlink/rename identity 相同 | Windows checked-in probe 是 plan-task release gate；Project/explicit root 都跑；不满足即停止 |
+| H-1 | `st_dev + st_ino` 在支持边界内识别 symlink/同卷 rename，并拒绝另一目录 | macOS spike 已证明 symlink/rename identity 相同 | 本轮以 macOS 真跑为 gate；Windows checked-in probe 保留到恢复 Windows 支持时执行 |
 | H-2 | bounded Project/Session pages 在 500×200 fixture 下 p95 ≤200ms | 临时 SQLite 100k 完整 join+mapping p95 72.85ms；专项 keyset 51-row page p95 0.196ms | 实现后的 SQL/serialized payload/React Profiler 复测 |
 | H-3 | typed projectless 能经 private run authority 到 physical ToolContext，无需改公开 SDK | contextvar + dynamic MCP wiring spike `3 passed in 0.35s` | 实现后 exhaustive 77-tool admission 与 no-global-fallback wiring tests |
 | H-4 | 现有 folder picker 可为新 ProjectPicker 复用 | Rust command 与 ProjectDirectoryCard 调用链已定位 | React cancel/error test；真人 UI 留给 plan-task |
 
-原始命令与量测见 [verification/spike-results.md](verification/spike-results.md)。Windows probe 因当前为 macOS
-计划阶段无法伪造 PASS；它被提升为执行阶段的强制 release stop gate，而不是口头假设。
+原始命令与量测见 [verification/spike-results.md](verification/spike-results.md)。原计划把 Windows probe 设为
+强制 release stop gate；用户于 2026-08-25 调整范围为“Windows 暂不考虑”，因此本轮只以 macOS 证据判定，
+probe 代码继续保留，未来恢复 Windows 支持时重新升为 gate。
 
 ## 任务清单（按依赖排序）
 
@@ -234,7 +235,7 @@ created_at
   receipt、catalog/backfill state、索引、FK `ON DELETE RESTRICT` 与 binding `UPDATE/DELETE` trigger。
 - checked-in Windows probe 用 stdlib 生成 JSON，覆盖 case/dot-dot/separator 等价、同卷 rename、不同目录和
   可选 junction；oracle 为等价/rename 相等、不同目录不等，unsupported junction 明示 SKIP。
-- 验证：macOS H-1 证据；Windows Project/explicit 两次 probe release gate；registration unit；v31→v32 DDL
+- 验证：macOS H-1 证据；registration unit；v31→v32 DDL
   rollback 与 physical object/marker/user_version 对账。
 
 ### Task 2 — 原子 Project/Session creation 与结构化 handoff  [覆盖 AC-2、AC-3、AC-8]
@@ -398,8 +399,8 @@ created_at
   3. 普通会话→在项目中继续，核对新旧 Session/handoff；
   4. project/execution root 不同 fixture 的归组与执行；
   5. 移走目录后的 missing/fail-closed、同卷 relocate 成功、无关目录拒绝；
-  6. Windows current build 先对 Project root 与 explicit root 各运行 checked-in identity probe；oracle 不满足立即
-     触发停止条件。通过后用 windows-mcp 重跑 folder picker、Explorer 打开、路径等价与上述核心链路。
+  6. Windows current build、Project/explicit identity probe 与 windows-mcp UI 真测由用户于 2026-08-25
+     明确移出本轮，保留为恢复 Windows 支持时的后续 gate。
 - 每个 UI case 遵守项目手测纪律：动作前声明坐标/动作/期望，截图→真点击/输入→截图→日志判定；不得用 WS
   注入或脚本回放替代 UI。
 - 功能全绿后默认开启；同次更新 `ARCHITECTURE/ARCHITECTURE.md`、`AGENT_HARNESS.md`、`UI.md`、

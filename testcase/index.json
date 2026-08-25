@@ -1571,7 +1571,7 @@
       "purpose": "Verify Git-root preview, explicit child registration, folder registration, deduplication, and path identity",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 2,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [

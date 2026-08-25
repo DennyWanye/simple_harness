@@ -13,7 +13,8 @@
 - 包含：数据模型区分 `project_root`（项目归属）与 `execution_root`（实际执行目录）；普通目录两者
   相同，模型允许未来 worktree 使用不同执行目录。
 - 明确不包含：修改既有项目 Session 的项目归属；自动创建/删除 Git worktree；跨设备同步项目；
-  Git clone；云端项目注册；删除用户项目文件。
+  Git clone；云端项目注册；删除用户项目文件；Windows 平台验收（用户于 2026-08-25 明确暂不考虑，
+  Windows probe 与 UI 真测保留为后续非阻断工作）。
 
 ## 功能验收条款
 
@@ -33,7 +34,7 @@
 - 错误态：空路径、文件而非目录、无权限目录、已删除目录、无关目录重新定位都必须给出明确错误，且不产生半绑定 Session。
 - 幂等：重复注册同一规范化目录、重复启动迁移、重复提交同一次 Session 创建不得生成重复 Project 或冲突绑定。
 - 一致性：Session 创建与 Project 绑定必须处于同一事务边界；不存在已进入开发 UI 但没有持久绑定的项目 Session。
-- 路径身份：至少覆盖 macOS symlink/大小写表现和 Windows 等价路径表示的规范化策略；不得只用未经处理的显示字符串作为身份。
+- 路径身份：本轮必须覆盖当前目标平台 macOS 的 symlink、同卷 rename 与大小写表现；不得只用未经处理的显示字符串作为身份。Windows 等价路径表示保留 probe，但不阻断本轮验收。
 - 性能：含 500 个项目、每项目 200 个 Session 的本地 fixture 下，项目会话列表查询 p95 不高于 200 ms；UI 首屏允许分页/虚拟化，不要求一次渲染全部会话。
 - 兼容：现有无项目聊天、Memory、Session title、归档/删除语义保持；本次不改变 Harness SDK 公共协议。
 - UI 验证：确定性桌面 UI，必须在当前实际构建上完成真实点击、重启恢复与截图/日志证据；自动化测试不能替代真人 UI 证据。
@@ -70,7 +71,7 @@
 | TO-R2 | change-risk | AC-4 | FAIL-AUTHORITY | 构造前端路径、旧 code-session 路径与持久绑定冲突，断言执行只接受 Session Binding | 防止多份路径 authority 漂移 |
 | TO-R3 | change-risk | AC-5 | FAIL-SIDEBAR | 项目分组分页/刷新后核对 Session 不消失、不重复、不误归组 | 左侧分组新增索引与缓存风险 |
 | TO-R4 | change-risk | AC-8 | FAIL-REGRESSION | 对既有无项目聊天、标题、归档、Memory 与 Session resume 跑受影响 surface smoke | Session 共享基础设施改动的必要回归 |
-| TO-R5 | change-risk | AC-1 | FAIL-PATH-ID | macOS symlink/大小写 fixture 与 Windows 路径单元 fixture 验证等价/非等价判定 | 路径字符串漂移会造成重复项目和误归属 |
+| TO-R5 | change-risk | AC-1 | FAIL-PATH-ID | macOS symlink/大小写/同卷 rename fixture 验证等价/非等价判定；Windows probe 后续执行 | 路径字符串漂移会造成重复项目和误归属 |
 | TO-E1 | exploratory | — | 多卷挂载、网络盘和 inode 变化 | 对可移动/网络卷运行扩展恢复测试 | 非当前 AC，记录为后续探索，不阻断交付 |
 
 ## 完成的定义（DoD 摘要）
@@ -80,4 +81,3 @@
 - 在当前实际桌面构建上完成项目注册、新建项目 Session、无项目转项目、重启恢复、目录缺失与重新定位的真实 UI 验证。
 - 新能力默认开启；原始截图和日志仅存 `.local-test-evidence/`，Git 只保存结论、索引与 SHA-256。
 - 同次交付更新 `ARCHITECTURE/` 对应事实源及 `ARCHITECTURE/PROJECT_STATUS.md`。
-

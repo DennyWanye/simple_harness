@@ -21,10 +21,10 @@
   "scenarios": [
     {
       "scenario_id":"S-PS-01","required":true,"testcase_ids":["TC-PS-01"],"ui":true,
-      "gate_type":"contract","required_lanes":["fresh","platform-identity"],"min_root_runs":1,
+      "gate_type":"contract","required_lanes":["fresh"],"min_root_runs":1,
       "input_class":"deterministic-project-picker","cold_start":false,"expected_run_created":false,
       "impact_paths":["backend/deskpet/session/project_binding.py","backend/deskpet/memory/session_db.py","backend/main.py","tauri-app/src/components/ProjectPickerDialog.tsx","tauri-app/src-tauri/src/commands.rs","tauri-app/src-tauri/src/lib.rs"],
-      "evidence_contract":{"producer_types":["computer-use","runtime-probe","windows-probe"],"required_artifact_kinds":["ui-capture","execution-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["path_identity_result","project_count"]}
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["path_identity_result","project_count"]}
     },
     {
       "scenario_id":"S-PS-02","required":true,"testcase_ids":["TC-PS-02"],"ui":true,

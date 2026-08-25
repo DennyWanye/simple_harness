@@ -12,7 +12,7 @@ tags:
   - registration
   - path-identity
 entrypoint: project picker
-revision: 1
+revision: 2
 ---
 
 # TC-PS-01 — 项目注册与路径身份
@@ -21,7 +21,7 @@ revision: 1
 
 - 使用隔离 user-data 启动当前候选构建。
 - fixture 含一个 Git 仓库（内有两级子目录）、一个非 Git 目录、指向该 Git 仓库的符号链接，以及一个不同目录。
-- Windows 执行前先按验证说明运行 identity probe；不支持的 junction 只能记 SKIP，Windows 等价路径与 rename 断言不能跳过。
+- 本轮目标平台是 macOS。Windows identity probe 保留为后续工作，不属于本 revision 的通过条件（用户 2026-08-25 确认暂不考虑 Windows）。
 
 ## 步骤与预期
 
@@ -33,10 +33,10 @@ revision: 1
 | 4 | 选择非 Git 目录并确认。 | 预览与注册后的 `project_root` 都是所选非 Git 目录。 |
 | 5 | 依次通过 `..` 等价写法、符号链接和平台支持的大小写/分隔符等价表示重复注册仓库根。 | 每次返回既有 Project；项目总数、分组与身份不增加，显示路径保持规范化。 |
 | 6 | 尝试空路径、文件而非目录、已删除目录和无权限目录。 | 每次均显示明确错误；Project/Session 数量不变，没有半创建分组。 |
-| 7 | 在 macOS 与 Windows 分别对同卷 rename 前后路径执行 identity probe；再对不同目录执行 probe。 | 同一目录 rename 前后 identity 相同；不同目录 identity 不同。Windows 等价路径表示同样归一为同一身份。 |
+| 7 | 在 macOS 对同卷 rename 前后路径执行 identity probe；再对不同目录执行 probe。 | 同一目录 rename 前后 identity 相同；不同目录 identity 不同。 |
 
 ## 通过条件与证据
 
-- 步骤 1～7 全部满足；Windows 必测项未执行则本用例 NOT_RUN。
+- 步骤 1～7 全部满足即通过；Windows 结果不计入本轮判定。
 - UI primary：选择器、预览、确认结果、错误态截图；每个动作前记录坐标/动作/期望。
 - runtime primary：每次注册的 request/session/project correlation、规范化结果和项目计数；不得记录不透明 filesystem identity 原值或凭据。

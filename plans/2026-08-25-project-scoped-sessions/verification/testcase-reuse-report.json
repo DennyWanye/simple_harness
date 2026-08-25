@@ -10,7 +10,7 @@
     "testcase/2026-07-12-context-continuity/manual-test.md"
   ],
   "decisions": [
-    {"obligation_id":"TO-A1","decision":"create-new","candidates":["LEGACY-CCC0F7759682"],"selected_testcases":["TC-PS-01@rev1"],"reason":"现有候选没有 Project 注册、Git 根预览、显式子目录与跨平台路径身份 oracle。"},
+    {"obligation_id":"TO-A1","decision":"create-new","candidates":["LEGACY-CCC0F7759682"],"selected_testcases":["TC-PS-01@rev2"],"reason":"现有候选没有 Project 注册、Git 根预览、显式子目录与当前目标平台 macOS 路径身份 oracle。"},
     {"obligation_id":"TO-A2","decision":"create-new","candidates":["LEGACY-E88B0289CA4F"],"selected_testcases":["TC-PS-02@rev1"],"reason":"既有 Session 重启用例不验证创建时不可变 Project Binding、事务原子性或 lost ACK。"},
     {"obligation_id":"TO-A3","decision":"create-new","candidates":["LEGACY-CF5B7E73EF5C"],"selected_testcases":["TC-PS-03@rev1"],"reason":"现有候选不覆盖 projectless 本地开发 fail-closed 与创建新 Session 的有界交接。"},
     {"obligation_id":"TO-A4","decision":"create-new","candidates":[],"selected_testcases":["TC-PS-04@rev1"],"reason":"旧 context authority 用例针对 SDK snapshot，未验证 Session Binding 到终端和文件物理根的一致性。"},
@@ -22,6 +22,6 @@
     {"obligation_id":"TO-R2","decision":"create-new","candidates":[],"selected_testcases":["TC-PS-04@rev1"],"reason":"复用 authority 主链加入前端、legacy、latest-Run 冲突输入。"},
     {"obligation_id":"TO-R3","decision":"create-new","candidates":["LEGACY-CF5B7E73EF5C"],"selected_testcases":["TC-PS-05@rev1"],"reason":"复用侧栏主链加入分页期间并发 catalog 变化和一致性 fence。"},
     {"obligation_id":"TO-R4","decision":"create-new","candidates":["LEGACY-CA184A465634"],"selected_testcases":["TC-PS-08@rev1"],"reason":"复用迁移主链核对聊天、标题、归档、删除、Memory、Provider 与 resume。"},
-    {"obligation_id":"TO-R5","decision":"create-new","candidates":["LEGACY-CCC0F7759682"],"selected_testcases":["TC-PS-01@rev1"],"reason":"复用注册主链加入 macOS 与 Windows 等价路径、rename 和不同目录 identity probe。"}
+    {"obligation_id":"TO-R5","decision":"create-new","candidates":["LEGACY-CCC0F7759682"],"selected_testcases":["TC-PS-01@rev2"],"reason":"复用注册主链加入本轮目标平台 macOS 的 symlink、rename 和不同目录 identity probe；Windows 按用户确认移为后续。"}
   ]
 }

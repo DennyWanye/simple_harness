@@ -1,7 +1,8 @@
 # Windows identity probe 调用说明
 
-Windows 是 TC-PS-01 / TO-R5 的 release stop gate。必须在 Windows 10/11 真机、当前提交态候选上运行计划中
-checked-in 的 `verification/spikes/windows_path_identity_probe.py`；macOS
+Windows 已由用户于 2026-08-25 明确移出本轮目标平台，因此本 probe 是后续非阻断工作。未来恢复 Windows
+支持时，必须在 Windows 10/11 真机、当前提交态候选上运行计划中 checked-in 的
+`verification/spikes/windows_path_identity_probe.py`；macOS
 结果不能替代。
 
 ```powershell

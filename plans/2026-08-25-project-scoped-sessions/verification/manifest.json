@@ -35,11 +35,11 @@
       ]
     },
     "input_hashes": {
-      "acceptance": "ca3b3666aca28a23a638987d878f174ed1c95c3a17ef01b13c23e6bf688e56df",
+      "acceptance": "d4030a28f8fdbd7635a5996169291f933243fae5e381b23a0f98584580f9ca0c",
       "assurance_contract": "86f53fc953b36b680015de77b92f332f34ed2a9e724e1207fe751467829cda97",
-      "reuse_report": "96e1386c45b2695c4d84eb95903c7681e14e0760b55e9a2a7cd583685ee185dd",
-      "testcase_inventory": "976c73c67eb479d82ba9732b0c59466679f004801f33ff972ec49b4f619bf2d8",
-      "verification_spec": "76bf86453c1319812a0b330c3189bbbe9686b94b56fa6cc4df40f04f8a0da81b"
+      "reuse_report": "612f52f825a0a357ba3a8cac1067b0caf25cfc8f857c62d414e72e89721def3e",
+      "testcase_inventory": "0c8858c244167d64bd925dfa1d8726a9dac229016417a66b55200739040f4f2d",
+      "verification_spec": "3c81fe5a4994559771392f0278ec02f202b93baec7493167a7dcc050bd0407b6"
     },
     "input_paths": {
       "acceptance": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/acceptance.md",
@@ -48,7 +48,7 @@
       "testcase_inventory": "/Users/denny/projects/simple_harness/testcase/index.json",
       "verification_spec": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/verification/verification-spec.json"
     },
-    "seal_sha256": "1ac9db8426008c7a7da72b0a658e42d05e370863ac90afab10c196f46ebf8682",
+    "seal_sha256": "5191341301c27bdfcf7b939945905bfdfa7443664be03494989d71e2accea944",
     "selected_testcase_ids": [
       "TC-PS-01",
       "TC-PS-02",
@@ -80,8 +80,7 @@
       "evidence_contract": {
         "producer_types": [
           "computer-use",
-          "runtime-probe",
-          "windows-probe"
+          "runtime-probe"
         ],
         "required_artifact_kinds": [
           "ui-capture",
@@ -111,8 +110,7 @@
       "min_root_runs": 1,
       "required": true,
       "required_lanes": [
-        "fresh",
-        "platform-identity"
+        "fresh"
       ],
       "scenario_id": "S-PS-01",
       "testcase_ids": [
