@@ -1,22 +1,25 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-25（Session/project-root 当前 UI 基线）
+> 最后更新：2026-08-25（Project-scoped Session 当前 UI）
 
-## 0.9 Session 与项目目录 UI 当前基线（2026-08-25）
+## 0.9 Project-scoped Session UI（2026-08-25）
 
-- `components/SessionList.tsx` 当前消费 `sessions_list_response` 的扁平数组并按最后消息时间倒序展示，
-  没有 Project 分组。后端列表从 `messages` 聚合，所以新建但尚无消息的 Session 不会稳定出现在侧栏。
-- `SessionEntry` 当前只有 Session ID、消息数、最后消息时间、预览与标题；响应没有 `project_id`、
-  `project_root` 或 `execution_root`。新话题只发送 `chat_v2 {session_id,new_session:true,text}`，随后依赖
-  `session_switched/task_session_started` 切换。
-- zustand `SessionState` 虽保留历史 `project_root/project_name` 字段，但 blank Session 默认为
-  `null/(untitled)`，现有 `sessions_list` 生产链不会填充正式项目身份。`ChatView` 只把这两个值传给
-  Context breakdown modal；右侧不存在固定只读项目卡，也没有“新建同项目 Session”入口。
-- 项目生成工作流已有原生 `open_directory_dialog` 和消息流中的 `ProjectDirectoryCard`，但它处理的是某个
-  Run 的项目产物位置选择，不是 Session 创建时的 Project binding。后续 Project-scoped Session UI 可以
-  复用原生目录选择 command，但不得把 Run decision card 当成 Session authority。
-- 无项目 Session 当前仍可能从后端全局 companion workspace 获得默认执行/写入根。因此未来若把无项目
-  会话限定为普通聊天，属于明确行为变化，必须由 acceptance/行为契约和真实 UI 验收共同覆盖。
+- `SessionList` 消费 bounded Project/Session catalog，按 Project 分组并保留独立“无项目会话”区；空 Session
+  在创建后立即可见，重启后也由 durable catalog 恢复。每个 Project 分组提供“新建同项目 Session”，顶部
+  分别提供“新建普通会话”和“添加项目”。既有项目 Session 没有换 Project/改 root 的入口。
+- `ProjectPickerDialog` 复用系统目录选择器，但选择结果先交给后端 strict resolve/stat/Git-root preview。
+  Git 子目录默认预览并绑定仓库根，用户可显式把所选子目录注册为独立 Project；非 Git 目录保持自身。
+  前端只提交创建 intent/project id，不把显示路径直接提升为工具 authority。
+- `ProjectInspector` 在宽屏为只读 rail、窄屏为可展开条，显示 Project 名、`project_root`、必要时单独显示
+  `execution_root`、Git 状态，并提供复制路径、打开目录和新建同项目 Session。目录缺失时才提供受控 relocation；
+  relocation 更新 Project 路径，不修改当前或其他 Session 的 immutable binding。
+- projectless Session 明确显示“普通会话”和“在项目中继续”；后者创建新的项目 Session 与 bounded handoff，
+  原 Session 仍留在无项目区。Session Store 保存后端返回的 typed project/binding view model，不再使用历史
+  `project_root/project_name` 假字段猜归属。
+- macOS 当前 debug `.app` 真人验证了 Git 子目录预览提升、Project 分组、同项目新建、projectless 分区、
+  Inspector 与完整进程重启后零消息 Session/绑定恢复。原始截图在 ignored
+  `.local-test-evidence/2026-08-25/project-scoped-sessions-ui/current-debug-bundle/`；Windows identity probe、
+  missing-root relocation 与完整冻结 UI 矩阵尚未完成，release DoD 仍为 BLOCKED。
 
 ## 0.8 Provider 模型目录刷新（2026-08-24）
 

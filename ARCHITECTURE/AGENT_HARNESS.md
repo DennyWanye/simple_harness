@@ -240,19 +240,25 @@ flowchart LR
 
 ### 当前 Session 到 workspace 的真实边界（2026-08-25）
 
-普通 Session 目前没有不可变项目绑定。新建话题只由 `TaskSessionManager` 生成 UUID，Host 在发布
-`session_switched/task_session_started` 前继承 Provider/Model binding；请求中没有 `project_id`，
-`sessions` schema 也没有项目或 execution-root 字段。
+项目 Session 现在由 state.db v32 的 immutable `session_project_bindings` 唯一决定 workspace；新建时
+`SessionCreationService` 在同一事务中持久化 Session、Project binding、Provider snapshot、request receipt
+和 catalog revision。重复 request replay 返回同一个 Session，冲突 intent 被拒绝。无 binding row 的普通
+Session 是显式 projectless，本地开发能力 fail closed；“在项目中继续”只能创建带 bounded handoff 和
+`source_session_id` 的新项目 Session，不能原地改绑。
 
-每个 root Run 的 `TaskWorkContext` 才拥有 durable `workspace_root + workspace_source +
-binding_version`。下一 fresh Run 启动前，Host 会通过 execution UoW 查询该 Session 最近的
-`user_path` workspace 并把它当作 inherited workspace；这是“最近 Run 派生值”，不是不可变 Session
-项目事实。若查不到，Host 当前仍可使用全局 companion workspace 作为 `write_scope_root`，所以“无项目
-会话不能访问本地项目文件”也不是当前行为。
+每个 fresh root Run 先由 `ProjectBindingService` 返回 tagged `WorkspaceResolutionV1`，再冻结为
+`TaskWorkContext.workspace_root`、Host `workspace/write_scope_root` 以及 SDK Run tool authority v3。
+terminal/file/MCP/project-rules 等所有物理消费者只按 `run_id` 读取该 app-private authority；前端临时路径、
+模型文本、latest-Run workspace 和 retired `code_sessions` 均不能覆盖它。projectless、目录缺失、identity
+漂移或缺 authority 时在 dispatch 前 fail closed，不使用全局默认 workspace。
 
-已退休 Code mode 的 `code_sessions` 仍保存独立、可覆盖的 `base_session_id -> project_root` 映射，仅供
-历史兼容。它与 root-local `TaskWorkContext`、latest-Run Session 派生查询共同构成当前多源路径状态，
-但都不能单独宣称为普通 Session 的 Project authority。
+普通 Project Session 的 `execution_kind=project_root`，有效执行根随 Project 的受控同身份 relocation 更新；
+`explicit` binding 可保存与 `project_root` 不同的 execution root，供测试 fixture/未来 worktree 使用。
+relocation 以 project revision CAS 并在 active root Run 存在时拒绝，Session binding 不变。legacy Code
+mapping 只供 v32 backfill，startup recovery 顺序为 migration/backfill → deleted-run reconcile → SDK ingress。
+
+验证边界：authority/迁移/恢复自动化与 macOS 当前构建的注册、分组、projectless、Inspector、重启恢复核心
+路径已通过；Windows path identity 和冻结 testcase 的其余真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

@@ -42,13 +42,13 @@
       "verification_spec": "76bf86453c1319812a0b330c3189bbbe9686b94b56fa6cc4df40f04f8a0da81b"
     },
     "input_paths": {
-      "acceptance": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/acceptance.md",
-      "assurance_contract": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/assurance-contract.json",
-      "reuse_report": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/verification/testcase-reuse-report.json",
-      "testcase_inventory": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/index.json",
-      "verification_spec": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/verification/verification-spec.json"
+      "acceptance": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/acceptance.md",
+      "assurance_contract": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/assurance-contract.json",
+      "reuse_report": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/verification/testcase-reuse-report.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/verification/verification-spec.json"
     },
-    "seal_sha256": "43c3e4df01a44b3e768bab8df3368c3172ea32e4517921367929a2566c5c30b5",
+    "seal_sha256": "1ac9db8426008c7a7da72b0a658e42d05e370863ac90afab10c196f46ebf8682",
     "selected_testcase_ids": [
       "TC-PS-01",
       "TC-PS-02",
@@ -448,14 +448,14 @@
   "source_request_text": "实现以本地 Project 为根目录创建不可改绑 Session，保留无项目会话，并完成分组 UI、单一执行 authority、目录恢复和旧数据迁移。",
   "structured_audit_required": true,
   "testcase_files": [
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-01-project-registration.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-02-session-create-restart-idempotency.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-03-projectless-handoff-fail-closed.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-04-workspace-authority.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-05-sidebar-inspector-pagination.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-06-project-execution-root-split.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-07-missing-root-relocate.md",
-    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-08-legacy-migration-regression.md"
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-01-project-registration.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-02-session-create-restart-idempotency.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-03-projectless-handoff-fail-closed.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-04-workspace-authority.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-05-sidebar-inspector-pagination.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-06-project-execution-root-split.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-07-missing-root-relocate.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-25-project-scoped-sessions/TC-PS-08-legacy-migration-regression.md"
   ],
   "thresholds": {
     "max_high_risk_subsystems": 3,

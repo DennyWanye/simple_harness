@@ -391,32 +391,27 @@ Additional stores include facts/workspace/skill memory and feedback tables in `s
 
 ### 3.3 当前 Session / Run / workspace authority（2026-08-25）
 
-当前产品可持久保存多个 UUID conversation Sessions，前端只选中其中一个；每条普通用户消息在所选
-Session 中启动一个 fresh root Run。`sessions` 表本身只有 `id/created_at/metadata`，没有正式
-`project_id` 或 `execution_root`。`list_sessions_with_preview()` 从 `messages` 聚合，因此零消息 Session
-不会进入现有列表，响应也只有标题、预览、计数和时间。
+当前 schema v32 由 `projects`、immutable `session_project_bindings`、创建 receipt、catalog revision 与
+semantic backfill state 组成 Project-scoped Session 的 durable authority。项目 Session 在创建事务中一次性
+绑定 `project_id` 与 `execution_kind`；binding row 禁止更新或删除。零消息 Session 也从 catalog 查询返回，
+不再依赖 `messages` 聚合才进入侧栏。无 binding row 的 Session 是显式 typed projectless，不会继承最近 Run、
+旧 Code Session 或全局 companion workspace。
 
-当前路径状态分为四层，不能互相冒充 authority：
+fresh root Run 只通过 `ProjectBindingService` 解析 `WorkspaceResolutionV1`。`project_root` 表示项目归属；
+`execution_root` 表示物理执行边界，允许测试 fixture/未来 worktree 两者不同。解析结果冻结进
+`TaskWorkContext`、Host workspace/write scope 和 SDK Run tool-authority v3 fingerprint；built-in、MCP、
+终端、文件工具及 `ProjectRulesComponent` 都从同一 app-private Run authority 取根。目录缺失、identity
+漂移或 projectless 本地开发请求在物理执行前 fail closed，不能回退其他路径来源。
 
-1. `code_sessions.project_root` 是已退休 Code mode 的兼容映射；同一个 `base_session_id` 的 upsert
-   会覆盖路径。
-2. `execution_task_work_contexts.workspace_root` 是每个 root Run 的 durable workspace；Run 内从
-   provisional `task_default/existing` 到 `user_path` 的一次 rebind 受版本、child 和 write-effect fence
-   约束。
-3. `get_latest_session_project_context()` 不是 Session binding，只是从该 Session 最近一个
-   `user_path` Run（再回退最近 Run workspace）派生的 read model；后续 fresh Run 仍可能产生不同目录。
-4. Run 启动把该派生值冻结进 `HostContext.workspace/write_scope_root`，再投影给 Tool Context 与 Persona
-   的“当前工作区”。当派生值为空时，Host 目前还可能从全局 companion workspace 配置取得默认写入根。
+Project relocation 只允许在无活跃 root Run 时，以 expected project revision CAS 将 Project 的
+`canonical_root` 更新到 filesystem identity 相同的新目录；Session binding 本身保持不变，选择无关目录
+会被拒绝。`code_sessions.project_root` 与 latest-Run workspace 只作为 v32 backfill 输入或历史兼容读取，
+不再参与新 Session/Run 写 authority。迁移在会话入口开放前完成，带 crash-safe backup、manifest/hash、
+逻辑验证和 guarded restore；当前 `TARGET_SCHEMA_VERSION=32`、迁移文件为 `024_project_scoped_sessions_v32.sql`。
 
-因此当前代码尚不存在 Project 实体、不可变 Session→Project binding 或 project-root/execution-root
-双字段模型。新 Session 的现行 `chat_v2 + new_session` 路径只生成 UUID 并继承 Provider/Model binding，
-不继承正式项目绑定。Project-scoped Session 若实施，必须让新的 Session binding 成为 Run workspace 的
-单向上游；legacy Code mapping 与 latest-Run 查询只能作为迁移输入，不能形成并列写 authority。
-
-持久化 version contract 的旧阻断事实已过期：当前 `migrator.py` 的
-`TARGET_SCHEMA_VERSION=31`，注册迁移覆盖至 `023`/v31；memory-v2 的 lazy-schema split 已由 v17 正式迁移
-收口，canonical tables 归 migration runner 所有。后续新增 Project/Session 表仍必须继续遵守同一 migration
-owner、`user_version`/marker 对账与 crash-safe backup/restore 边界，但不再把已关闭的 lazy ownership 当作前置缺陷。
+验证边界：当前代码/自动化、100k catalog 性能探针和 macOS 当前 debug `.app` 的注册、分组、Inspector、
+projectless 与重启恢复核心路径已通过；完整发布验收仍被 Windows path-identity release probe 及其余冻结真人
+场景阻塞，不能把本节生产接线事实解读为完整 release gate 已通过。
 
 ## 4. Long-Running Workflows Today
 
