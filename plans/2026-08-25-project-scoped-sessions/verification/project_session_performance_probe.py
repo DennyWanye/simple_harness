@@ -7,9 +7,13 @@ import asyncio
 import json
 import sqlite3
 import statistics
+import sys
 import tempfile
 import time
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO_ROOT / "backend"))
 
 from deskpet.memory.schema import initialize_state_db
 from deskpet.session.project_binding import ProjectBindingService, _filesystem_identity

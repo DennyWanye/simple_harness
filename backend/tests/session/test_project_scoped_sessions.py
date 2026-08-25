@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ast
 import hashlib
 import json
 import shutil
@@ -595,6 +596,49 @@ async def test_startup_reconciles_deleted_sessions_before_any_workflow_recovery(
     ]
     assert result["delete_reconcile"] == {
         "attempted": 1, "completed": 1, "failed": 0,
+    }
+
+
+def test_lifespan_uses_the_single_ordered_workflow_recovery_composition() -> None:
+    """Lock the production wiring, not only the orchestration helper."""
+
+    main_path = Path(__file__).resolve().parents[2] / "main.py"
+    tree = ast.parse(main_path.read_text(encoding="utf-8"), filename=str(main_path))
+    lifespan = next(
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "lifespan"
+    )
+    calls = [node for node in ast.walk(lifespan) if isinstance(node, ast.Call)]
+
+    def call_name(call: ast.Call) -> str:
+        if isinstance(call.func, ast.Name):
+            return call.func.id
+        if isinstance(call.func, ast.Attribute):
+            return call.func.attr
+        return ""
+
+    names = [call_name(call) for call in calls]
+    assert names.count("activate_and_recover_workflows") == 1
+    assert not set(names).intersection(
+        {
+            "activate_runtime",
+            "recover_expired",
+            "recover_open_decision_events",
+            "recover_due_deliveries",
+            "recover_pending",
+            "start_dispatcher",
+        }
+    )
+    composition = next(
+        call for call in calls if call_name(call) == "activate_and_recover_workflows"
+    )
+    assert {keyword.arg for keyword in composition.keywords} == {
+        "project_bindings",
+        "workflow_service",
+        "workflow_launcher",
+        "required_runtime_identities",
     }
 
 
