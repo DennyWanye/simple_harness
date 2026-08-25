@@ -146,6 +146,8 @@ _VALID_SERVICES = frozenset({
     # Omitting either slot aborts the P4 bootstrap block and leaves the
     # assembler unavailable while context_os_v1 remains enabled.
     "project_initial_context_snapshot",
+    "project_binding_service",
+    "session_creation_service",
     "attach_task_snapshot_to_request",
     # Companion Task 2: host-owned gate; absent/unready means retryable chat
     # rejection rather than guessing a previously active human identity.
@@ -273,6 +275,8 @@ class ServiceContext:
     context_attempt_store: Any | None = None
     compression_model_resolver: Any | None = None
     project_initial_context_snapshot: Any | None = None
+    project_binding_service: Any | None = None
+    session_creation_service: Any | None = None
     attach_task_snapshot_to_request: Any | None = None
     companion_identity_gate: Any | None = None
     companion_profile_coordinator: Any | None = None
