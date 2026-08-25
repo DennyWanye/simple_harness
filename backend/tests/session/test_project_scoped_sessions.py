@@ -26,6 +26,7 @@ from deskpet.session.project_binding import (
     resolve_registration,
 )
 from scripts.restore_state_db_backup import RestoreRefused, restore_state_db
+from deskpet.workflows.startup_recovery import activate_and_recover_workflows
 
 
 async def _ready_db(path: Path) -> None:
@@ -538,6 +539,66 @@ async def test_delete_after_commit_fault_replay_is_idempotent(tmp_path: Path) ->
 
 
 @pytest.mark.asyncio
+async def test_startup_reconciles_deleted_sessions_before_any_workflow_recovery() -> None:
+    events: list[str] = []
+
+    class Bindings:
+        async def reconcile_deleted_session_runs(self, cancel):
+            events.append("delete-scan")
+            await cancel("deleted-session")
+            return {"attempted": 1, "completed": 1, "failed": 0}
+
+    class Runner:
+        async def recover_expired(self):
+            events.append("recover-expired")
+            return ["expired"]
+
+    class Workflows:
+        runner = Runner()
+
+        async def cancel_runs_for_session(self, session_id: str, *, reason: str):
+            assert session_id == "deleted-session"
+            assert reason == "session_deleted_startup_reconcile"
+            events.append("cancel-deleted")
+            return []
+
+        async def activate_runtime(self, *, required_runtime_identities):
+            assert tuple(required_runtime_identities) == ("runtime-a",)
+            events.append("activate")
+
+    class Launcher:
+        async def recover_open_decision_events(self):
+            events.append("recover-decisions")
+            return []
+
+        async def recover_due_deliveries(self, *, recover_claimed: bool):
+            assert recover_claimed
+            events.append("recover-deliveries")
+            return []
+
+        async def recover_pending(self):
+            events.append("recover-pending")
+            return []
+
+        def start_dispatcher(self):
+            events.append("dispatcher")
+
+    result = await activate_and_recover_workflows(
+        project_bindings=Bindings(),
+        workflow_service=Workflows(),
+        workflow_launcher=Launcher(),
+        required_runtime_identities=("runtime-a",),
+    )
+    assert events == [
+        "delete-scan", "cancel-deleted", "activate", "recover-expired",
+        "recover-decisions", "recover-deliveries", "recover-pending", "dispatcher",
+    ]
+    assert result["delete_reconcile"] == {
+        "attempted": 1, "completed": 1, "failed": 0,
+    }
+
+
+@pytest.mark.asyncio
 async def test_catalog_pages_zero_message_pinned_stale_and_relocate(tmp_path: Path) -> None:
     db_path = tmp_path.resolve() / "state.db"
     await _ready_db(db_path)
@@ -879,6 +940,7 @@ async def test_semantic_upgrade_crash_resume_and_guarded_restore(tmp_path: Path)
     quarantine = restore_state_db(state_db=str(db_path), backup=str(backup),
                                   expected_sha256=backup_hash, confirm="RESTORE-STATE-DB")
     assert quarantine.is_file()
+    assert hashlib.sha256(db_path.read_bytes()).hexdigest() == backup_hash
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 31
 
