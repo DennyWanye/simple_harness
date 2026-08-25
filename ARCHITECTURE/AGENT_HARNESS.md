@@ -258,7 +258,10 @@ relocation 以 project revision CAS 并在 active root Run 存在时拒绝，Ses
 mapping 只供 v32 backfill，startup recovery 顺序为 migration/backfill → deleted-run reconcile → SDK ingress。
 
 验证边界：authority/迁移/恢复自动化与 macOS 当前构建的注册、分组、projectless、Inspector、重启恢复核心
-路径已通过；Windows path identity 和冻结 testcase 的其余真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
+路径已通过。真实 `deepseek-v4-flash` Session 进一步证明 `builtin:run_shell` 的 cwd、`builtin:read_file` 和
+`builtin:write_file` 都落在 immutable binding 指向的 Project root；对 `../unrelated` 的读写均返回
+`tool_failed`，物理检查确认越界文件未创建且其他 canary hash 不变。Windows 已按用户 2026-08-25 的范围决定
+移为后续非阻断工作；冻结 testcase 的其余真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

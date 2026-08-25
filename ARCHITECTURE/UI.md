@@ -17,8 +17,11 @@
   原 Session 仍留在无项目区。Session Store 保存后端返回的 typed project/binding view model，不再使用历史
   `project_root/project_name` 假字段猜归属。
 - macOS 当前 debug `.app` 真人验证了 Git 子目录预览提升、Project 分组、同项目新建、projectless 分区、
-  Inspector 与完整进程重启后零消息 Session/绑定恢复。原始截图在 ignored
-  `.local-test-evidence/2026-08-25/project-scoped-sessions-ui/current-debug-bundle/`；Windows identity probe、
+  Inspector 与完整进程重启后零消息 Session/绑定恢复。另一个隔离 Session 通过真实
+  `deepseek-v4-flash` 模型调用 `builtin:run_shell/read_file/write_file`：绑定根内成功，`../unrelated`
+  读写均被拒绝且无越界落盘。原始截图分别在 ignored
+  `.local-test-evidence/2026-08-25/project-scoped-sessions-ui/current-debug-bundle/` 和
+  `.local-test-evidence/2026-08-25/project-scoped-sessions-real-model/`；Windows 已移为后续非阻断工作，
   missing-root relocation 与完整冻结 UI 矩阵尚未完成，release DoD 仍为 BLOCKED。
 
 ## 0.8 Provider 模型目录刷新（2026-08-24）
