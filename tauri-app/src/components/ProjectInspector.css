@@ -1,0 +1,9 @@
+.chat-project-layout { position: relative; box-sizing: border-box; }
+.project-inspector-rail { position: absolute; inset: 0 0 0 auto; width: 280px; display: flex; }
+.project-inspector-compact { display: none; }
+@media (min-width: 1051px) { .chat-project-layout { padding-right: 280px; } }
+@media (max-width: 1050px) {
+  .chat-project-layout { padding-top: 42px; }
+  .project-inspector-rail { display: none; }
+  .project-inspector-compact { position: absolute; inset: 0 0 auto 0; height: 42px; display: flex; z-index: 5; }
+}

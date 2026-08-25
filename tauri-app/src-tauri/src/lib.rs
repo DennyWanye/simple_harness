@@ -91,6 +91,7 @@ pub fn run() {
             commands::app_exit,
             // P4-S22: native folder picker for Code mode entry.
             commands::open_directory_dialog,
+            commands::open_project_directory,
             // WI-01 (beta-100): first-run onboarding state.
             onboarding::onboarding_status,
             onboarding::onboarding_complete,

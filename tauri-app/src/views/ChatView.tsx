@@ -31,6 +31,7 @@ import { dark, bannerStyle } from "../theme/components";
 import { Icon } from "../components/Icon";
 import { ContextRing } from "../components/ContextRing";
 import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
+import { ProjectInspector } from "../components/ProjectInspector";
 import {
   useSessionsStore,
   collect_inbox,
@@ -121,9 +122,10 @@ export interface ChatViewProps {
   activeSid: string;
   /** App 下传的后端共享秘钥（空 = 后端未就绪，显示状态条）。 */
   secret: string;
+  onSwitchSid?: (sid: string) => void;
 }
 
-export function ChatView({ activeSid, secret }: ChatViewProps) {
+export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatViewProps) {
   const permissionRequests = usePermissionRequests(controlWS);
   const [filter, setFilter] = useState<StreamFilter>("all");
   const [showModelModal, setShowModelModal] = useState(false);
@@ -894,7 +896,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
       )}
 
       {/* ── 内容区：Harness 巡检面板 + 消息流 + 输入栏 ── */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex" }}>
+      <div className="chat-project-layout" style={{ flex: 1, minHeight: 0, display: "flex" }}>
         <HarnessInspectorPanel
           open={harnessInspectorOpen}
           sessionId={activeSid}
@@ -985,6 +987,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
             </button>
           </div>
         </div>
+        <ProjectInspector activeSid={activeSid} onSwitchSid={onSwitchSid} />
       </div>
 
       {showModelModal && (
