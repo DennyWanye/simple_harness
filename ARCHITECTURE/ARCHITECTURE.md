@@ -411,9 +411,10 @@ Project relocation 只允许在无活跃 root Run 时，以 expected project rev
 
 验证边界：当前代码/自动化、100k catalog 性能探针和 macOS 当前 debug `.app` 的注册、分组、Inspector、
 projectless 与重启恢复核心路径已通过。真实 `deepseek-v4-flash` Run 已实际调用终端、文件读取和文件写入：
-绑定根内 `pwd`/读/写成功，`../unrelated` 读写均被拒绝且未产生越界文件。Windows 已按用户 2026-08-25
-决定移出本轮目标平台；完整发布验收仍被其余冻结真人场景阻塞，不能把本节生产接线事实解读为完整 release
-gate 已通过。
+绑定根内 `pwd`/读/写成功，`../unrelated` 读写均被拒绝且未产生越界文件。`tool_describe` 的模型可见契约
+现在只有一个顶层 activation `schema_hash`；手动逐项授权与全自动两轮真实 Run 都完成 describe、activate 和
+项目内写入，未改变 Session binding 或物理 workspace 校验。Windows 已按用户 2026-08-25 决定移出本轮
+目标平台；完整发布验收仍被其余冻结真人场景阻塞，不能把本节生产接线事实解读为完整 release gate 已通过。
 
 ## 4. Long-Running Workflows Today
 

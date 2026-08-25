@@ -23,6 +23,10 @@
   `.local-test-evidence/2026-08-25/project-scoped-sessions-ui/current-debug-bundle/` 和
   `.local-test-evidence/2026-08-25/project-scoped-sessions-real-model/`；Windows 已移为后续非阻断工作，
   missing-root relocation 与完整冻结 UI 矩阵尚未完成，release DoD 仍为 BLOCKED。
+- 当前 debug `.app` 还真实验证了授权模式切换：关闭“Agent 全开模式”后，search、describe、activate 与最终
+  `write_file` 逐项弹窗，点击允许后写入成功；重新开启后，同一链路无弹窗成功。两轮模型都复制唯一的顶层
+  `schema_hash`，最终文件只位于当前 Project root。原始截图留在 ignored
+  `.local-test-evidence/2026-08-25/project-scoped-sessions-manual-activation-fix/`。
 
 ## 0.8 Provider 模型目录刷新（2026-08-24）
 

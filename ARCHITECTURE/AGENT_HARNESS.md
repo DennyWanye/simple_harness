@@ -17,6 +17,10 @@ exposure，reserved attempt、restart 与 terminal-effect replay 使用 durable 
 目录只拥有发现和可见性。真实执行继续走 EffectExecutor、prepared authorization/HITL、TaskGrant、
 workspace/origin scope 和 physical handler identity。动态 MCP admission 精确绑定 Run/session/request/scope
 以及 MCP incarnation/execution identity，不把 activation receipt 当作 grant。测试阶段该能力默认开启。
+模型可见的 `tool_describe` 结果只保留一个顶层 `schema_hash`，它就是 `tool_activate` 要求的 capability
+hash；投影内部 input-schema hash 不再以同名字段重复暴露，避免模型复制错误值。严格 hash、一次性 nonce、
+授权和 workspace 校验均保持不变。真实 `deepseek-v4-flash` 已分别在逐项手动授权与 Agent 全开模式完成
+`search → describe → activate → write_file`，两次写入都只落在同一 immutable Project root。
 
 Provider 调查日志由 Host `ProductProviderAdapter` 在真实 SDK invocation seam 统一生成：匿名
 `request_ref` 串联 attempt start、HTTP response shape、parse failure 与 terminal outcome；阶段码明确区分
@@ -260,8 +264,10 @@ mapping 只供 v32 backfill，startup recovery 顺序为 migration/backfill → 
 验证边界：authority/迁移/恢复自动化与 macOS 当前构建的注册、分组、projectless、Inspector、重启恢复核心
 路径已通过。真实 `deepseek-v4-flash` Session 进一步证明 `builtin:run_shell` 的 cwd、`builtin:read_file` 和
 `builtin:write_file` 都落在 immutable binding 指向的 Project root；对 `../unrelated` 的读写均返回
-`tool_failed`，物理检查确认越界文件未创建且其他 canary hash 不变。Windows 已按用户 2026-08-25 的范围决定
-移为后续非阻断工作；冻结 testcase 的其余真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
+`tool_failed`，物理检查确认越界文件未创建且其他 canary hash 不变。修复重复 hash 后，手动授权 Run
+`0c16b1f9…` 与全自动 Run `494ecb93…` 都完成真实激活和项目内写入，持久化 describe 响应各只有一个顶层
+`schema_hash`。Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余真人路径
+尚未完成，因此 release DoD 仍为 BLOCKED。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 
