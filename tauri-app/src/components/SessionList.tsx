@@ -136,7 +136,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     onSwitchSid(session.session_id);
     setPicker(null);
     refreshAll();
-  }), [onSwitchSid, refreshAll, requestCatalog, requestSessions]);
+  }), [activeSid, onSwitchSid, refreshAll, requestCatalog, requestSessions]);
 
   useEffect(() => {
     const previous = previousWsState.current;
