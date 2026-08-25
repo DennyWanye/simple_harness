@@ -12,7 +12,7 @@ from urllib.parse import unquote, urlparse
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _EVIDENCE_ROOT = _PROJECT_ROOT / ".local-test-evidence"
-_EXECUTION_RELATIVE = Path("data/simple-harness-sdk/execution-v1.sqlite3")
+_EXECUTION_RELATIVE = Path("data/simple-harness-sdk/execution-v6.sqlite3")
 
 
 @dataclass(frozen=True, slots=True)

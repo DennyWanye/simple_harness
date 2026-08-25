@@ -206,6 +206,11 @@ def register_capability_bridge_tools(
                 str(args.get("schema_hash", "")),
                 str(args.get("describe_nonce", "")),
             )
+            receipt_json = getattr(proposal, "to_json", None)
+            if callable(receipt_json):
+                receipt = receipt_json()
+                if receipt.get("schema") == "runtime_tool_activation_receipt/v1":
+                    return json.dumps(receipt, ensure_ascii=False)
             return json.dumps(
                 {
                     "status": "activation_proposed",

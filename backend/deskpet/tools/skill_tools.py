@@ -6,11 +6,14 @@ import inspect
 import hashlib
 import json
 import logging
+import re
 from typing import Any, Mapping, Protocol
 
 from deskpet.tools.capabilities import ToolExecutionContext, canonical_hash
 
 log = logging.getLogger(__name__)
+
+_SAFE_RESOLUTION_ERROR = re.compile(r"^[a-zA-Z0-9_.:-]{1,96}$")
 
 
 def instruction_content_hash(instruction: str) -> str:
@@ -49,6 +52,16 @@ def bind(
 
 def is_bound() -> bool:
     return _resolver is not None
+
+
+def _reject_resolution(*, run_id: str, skill_name: str, reason: str) -> str:
+    log.warning(
+        "sdk_skill_instruction_rejected run_id=%s skill=%s reason=%s",
+        run_id,
+        skill_name,
+        reason,
+    )
+    return json.dumps({"ok": False, "error": reason}, ensure_ascii=False)
 
 
 _SCHEMA: dict[str, Any] = {
@@ -122,13 +135,28 @@ async def _handle(
             {"ok": False, "error": "skill_invoke_capability_snapshot_missing"},
             ensure_ascii=False,
         )
-    result = _resolver.resolve_frozen_instruction(
-        run_id=run_id,
-        skill_name=name.strip(),
-        arguments=tuple(arguments),
-    )
-    if inspect.isawaitable(result):
-        result = await result
+    try:
+        result = _resolver.resolve_frozen_instruction(
+            run_id=run_id,
+            skill_name=name.strip(),
+            arguments=tuple(arguments),
+        )
+        if inspect.isawaitable(result):
+            result = await result
+    except Exception as exc:
+        raw_code = str(exc).strip()
+        stable_code = (
+            raw_code if _SAFE_RESOLUTION_ERROR.fullmatch(raw_code) else "unclassified"
+        )
+        log.exception(
+            "sdk_skill_instruction_load_failed run_id=%s skill=%s "
+            "error_type=%s stable_code=%s",
+            run_id,
+            name.strip(),
+            type(exc).__name__,
+            stable_code,
+        )
+        raise
     payload = dict(result)
     required = {
         "owner_key",
@@ -148,9 +176,10 @@ async def _handle(
         "effective_tool_refs_hash",
     }
     if set(payload) != required:
-        return json.dumps(
-            {"ok": False, "error": "frozen_skill_resolution_invalid"},
-            ensure_ascii=False,
+        return _reject_resolution(
+            run_id=run_id,
+            skill_name=name.strip(),
+            reason="frozen_skill_resolution_invalid",
         )
     if (
         str(payload["capability_snapshot_ref"]) != snapshot_ref
@@ -168,9 +197,10 @@ async def _handle(
         )
         or len(str(payload["effective_tool_refs_hash"])) != 64
     ):
-        return json.dumps(
-            {"ok": False, "error": "frozen_skill_scope_identity_invalid"},
-            ensure_ascii=False,
+        return _reject_resolution(
+            run_id=run_id,
+            skill_name=name.strip(),
+            reason="frozen_skill_scope_identity_invalid",
         )
     allowed_ref_hashes = sorted(
         canonical_hash(dict(item)) for item in payload["allowed_tool_refs"]
@@ -188,14 +218,16 @@ async def _handle(
         "idempotency",
     }
     if any(set(item) != exact_fact_fields for item in payload["allowed_tool_refs"]):
-        return json.dumps(
-            {"ok": False, "error": "frozen_skill_exact_tool_facts_invalid"},
-            ensure_ascii=False,
+        return _reject_resolution(
+            run_id=run_id,
+            skill_name=name.strip(),
+            reason="frozen_skill_exact_tool_facts_invalid",
         )
     if allowed_ref_hashes != sorted(payload["effective_tool_ref_hashes"]):
-        return json.dumps(
-            {"ok": False, "error": "frozen_skill_exact_tool_refs_invalid"},
-            ensure_ascii=False,
+        return _reject_resolution(
+            run_id=run_id,
+            skill_name=name.strip(),
+            reason="frozen_skill_exact_tool_refs_invalid",
         )
     widening_controls = {
         "skill_invoke",
@@ -210,9 +242,10 @@ async def _handle(
         "capability_uninstall",
     }
     if widening_controls.intersection(payload["allowed_tools"]):
-        return json.dumps(
-            {"ok": False, "error": "frozen_skill_scope_widening_control"},
-            ensure_ascii=False,
+        return _reject_resolution(
+            run_id=run_id,
+            skill_name=name.strip(),
+            reason="frozen_skill_scope_widening_control",
         )
     frozen_instruction_hash = instruction_content_hash(
         str(payload["instruction"])
@@ -256,6 +289,13 @@ async def _handle(
         ),
         "instruction_content_hash": frozen_instruction_hash,
     }
+    log.info(
+        "sdk_skill_instruction_loaded run_id=%s skill=%s "
+        "loaded_skill_body_count=1 instruction_content_hash=%s",
+        run_id,
+        name.strip(),
+        frozen_instruction_hash,
+    )
     return json.dumps(
         {
             "ok": True,

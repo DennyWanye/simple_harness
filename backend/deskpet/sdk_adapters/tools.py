@@ -7,6 +7,7 @@ import copy
 import hashlib
 import inspect
 import json
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -21,6 +22,8 @@ from simple_harness.tools import (
     ToolSpec,
 )
 from simple_harness.tools.executor import EffectExecutor
+
+logger = logging.getLogger(__name__)
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
     """agent agent_parallel agent_reach_doctor agent_reach_read app_discover
@@ -178,6 +181,15 @@ class ProductToolsAdapter(ToolRegistry):
             raise RuntimeError("product Tool authority registry is already bound")
         self._run_authorities = authorities
 
+    def register_dynamic(self, tool: FunctionTool, *, execution_identity: str) -> None:
+        if not isinstance(tool, FunctionTool):
+            raise TypeError("dynamic product Tool must be FunctionTool")
+        identity = str(execution_identity).strip()
+        if not identity:
+            raise ValueError("dynamic product Tool execution identity is required")
+        super().register(tool)
+        self._execution_identities[tool.spec.name] = identity
+
     def _validate_execution_identity(self, name: str, run_id: str) -> None:
         resolve = getattr(self._run_authorities, "resolve", None)
         if not callable(resolve):
@@ -301,6 +313,33 @@ def _result(raw: Any) -> ToolResult:
     return ToolResult.succeeded(call_id, value)
 
 
+def _sdk_input_schema(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Detach a Host/MCP schema and remove non-semantic dialect markers.
+
+    The SDK intentionally accepts a small executable JSON-Schema subset.  MCP
+    producers commonly add ``$schema``/``$id`` annotations; those markers do
+    not change argument validation and must not make the whole Runtime fail to
+    start.  Every other keyword is retained so the SDK validator can reject
+    unsupported semantics rather than silently weakening them.
+    """
+
+    def normalize(item: Any) -> Any:
+        if isinstance(item, Mapping):
+            return {
+                str(key): normalize(child)
+                for key, child in item.items()
+                if key not in {"$schema", "$id"}
+            }
+        if isinstance(item, (list, tuple)):
+            return [normalize(child) for child in item]
+        return copy.deepcopy(item)
+
+    normalized = normalize(value)
+    if not isinstance(normalized, dict):  # pragma: no cover - Mapping guarantees this
+        raise TypeError("SDK Tool input schema must normalize to an object")
+    return normalized
+
+
 def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
     async def invoke(arguments, context):
         raw = registration.handler(arguments, context)
@@ -308,7 +347,7 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
             raw = await raw
         return _result(raw)
 
-    input_schema = copy.deepcopy(dict(registration.input_schema))
+    input_schema = _sdk_input_schema(registration.input_schema)
     if input_schema.get("type") == "object":
         properties = input_schema.get("properties")
         if not isinstance(properties, dict):
@@ -374,6 +413,101 @@ def build_product_tool_registry(
     return registry, inventory
 
 
+def extend_product_registry_with_mcp(
+    registry: ProductToolsAdapter,
+    inventory: Sequence[ProductToolInventoryEntry],
+    *,
+    legacy_registry: object,
+    execution_context_getter: Callable[[], Any],
+) -> tuple[ProductToolInventoryEntry, ...]:
+    """Project current healthy MCP handlers into the SDK executor registry."""
+
+    all_specs = getattr(legacy_registry, "all_specs", None)
+    execute_tool = getattr(legacy_registry, "execute_tool", None)
+    if not callable(all_specs) or not callable(execute_tool):
+        raise TypeError("legacy MCP registry contract is unavailable")
+    extended = list(inventory)
+    existing = {item.name for item in extended}
+    for legacy in sorted(all_specs(), key=lambda item: str(item.name)):
+        source = str(getattr(legacy, "source", ""))
+        name = str(getattr(legacy, "name", ""))
+        if not source.startswith("mcp:") or name in existing:
+            continue
+        schema = getattr(legacy, "schema", None)
+        if not isinstance(schema, Mapping):
+            raise TypeError(f"MCP Tool schema is invalid: {name}")
+        parameters = schema.get("parameters")
+        if not isinstance(parameters, Mapping):
+            raise TypeError(f"MCP Tool parameters are invalid: {name}")
+        description = str(schema.get("description") or "").strip()
+        if not description:
+            raise ValueError(f"MCP Tool description is required: {name}")
+        identity = _canonical_sha256(
+            {
+                "name": name,
+                "source": source,
+                "spec_version": str(getattr(legacy, "spec_version", "v1")),
+                "schema": dict(schema),
+                "runtime_provenance_ref": str(
+                    getattr(legacy, "runtime_provenance_ref", "")
+                ),
+                "fixture_epoch": int(getattr(legacy, "fixture_epoch", 0)),
+                "fixture_spec_hash": str(getattr(legacy, "fixture_spec_hash", "")),
+                "stable_handler_id": str(getattr(legacy, "stable_handler_id", "")),
+            }
+        )
+
+        async def invoke(arguments, context, *, _name=name):
+            execution_context = execution_context_getter()
+            raw = await execute_tool(
+                _name,
+                dict(arguments),
+                execution_context.session_id,
+                execution_context.request_id,
+                execution_context=execution_context,
+            )
+            if not bool(raw.get("ok", False)):
+                return ToolResult.failed(
+                    context.call_id,
+                    "mcp_tool_failed",
+                    str(raw.get("error") or "MCP Tool failed."),
+                )
+            value = raw.get("result")
+            if isinstance(value, str):
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    pass
+            return ToolResult.succeeded(context.call_id, value)
+
+        try:
+            sdk_tool = FunctionTool(
+                ToolSpec(name, description, _sdk_input_schema(parameters)), invoke
+            )
+        except (TypeError, ValueError) as exc:
+            logger.warning(
+                "mcp_tool_excluded_from_sdk_catalog name=%s reason=schema_incompatible error=%s",
+                name,
+                exc,
+            )
+            continue
+        registry.register_dynamic(sdk_tool, execution_identity=identity)
+        extended.append(
+            ProductToolInventoryEntry(
+                name=name,
+                dispatch_kind="async",
+                permission_category=str(
+                    getattr(legacy, "permission_category", "read_file")
+                ),
+                source=source,
+                version=str(getattr(legacy, "spec_version", "v1")),
+                execution_identity=identity,
+            )
+        )
+        existing.add(name)
+    return tuple(extended)
+
+
 __all__ = (
     "PRODUCT_TOOL_NAMES",
     "ProductToolInventoryEntry",
@@ -384,4 +518,5 @@ __all__ = (
     "active_product_tool_call_id",
     "active_product_tool_context",
     "build_product_tool_registry",
+    "extend_product_registry_with_mcp",
 )

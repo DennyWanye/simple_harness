@@ -2813,6 +2813,10 @@ async def _initialize_capability_runtime() -> None:
     from deskpet.tools import skill_tools as _skill_tools
 
     _skill_tools.bind(skill_resolver=frozen_skill_resolver)
+    service_context.register(
+        "legacy_frozen_skill_instruction_resolver",
+        frozen_skill_resolver,
+    )
     _bind_frozen_skill_snapshot_resolver(skill_pack_snapshot_resolver)
     platform_box["platform"] = platform
     initialized = await platform.initialize()
@@ -7067,7 +7071,12 @@ def _sdk_price_snapshot(provider_id: str, model_id: str) -> tuple[int, int, str]
     )
 
 
-def _freeze_sdk_catalog(tools_adapter: Any, generation: int) -> dict[str, Any]:
+def _freeze_sdk_catalog(
+    tools_adapter: Any,
+    generation: int,
+    *,
+    visibility_registry: Any | None = None,
+) -> dict[str, Any]:
     """Return the exact immutable Tool catalog used by Provider and executor."""
 
     from deskpet.sdk_adapters.context_authority import canonical_sha256
@@ -7078,6 +7087,23 @@ def _freeze_sdk_catalog(tools_adapter: Any, generation: int) -> dict[str, Any]:
     schema_token_count = 0
     for spec in tools_adapter.specs:
         if str(spec.name) in {"memory_recall", "memory_search"}:
+            continue
+        live_spec = (
+            visibility_registry.get(str(spec.name))
+            if visibility_registry is not None
+            else None
+        )
+        if (
+            live_spec is not None
+            and getattr(live_spec, "visible_when", None) is not None
+            and str(getattr(live_spec, "visibility_scope", "global")) == "global"
+            and not live_spec.is_visible(None)
+        ):
+            logger.info(
+                "sdk_tool_excluded_from_catalog name=%s "
+                "reason=global_visibility_not_ready",
+                spec.name,
+            )
             continue
         # SDK ToolSpec recursively freezes schemas with MappingProxyType.  A
         # shallow dict() only unwraps the root and leaves nested properties
@@ -7281,7 +7307,7 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
     from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
     from deskpet.sdk_adapters.tool_authority import (
-        SdkCapabilityBridgeAdapter,
+        SdkRuntimeCapabilityBridgeAdapter,
         SdkPreparedAuthorizationPolicy,
         SdkRunToolAuthorityRegistry,
         SdkToolAuthorityMigrationUnavailable,
@@ -7328,18 +7354,12 @@ async def _build_product_sdk_runtime_stack(
         provider_registry, client
     )
 
-    # Build ReAct driver
-    driver = build_react_driver(
-        limits=TerminationLimits(max_turns=25, max_tool_calls=50),
-        budget_policy=budget_policy,
-        estimator=None,
-    )
-
     # Build tool adapter
     from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
     from deskpet.sdk_adapters.tools import (
         ProductEffectExecutor,
         build_product_tool_registry,
+        extend_product_registry_with_mcp,
     )
 
     # Build tool catalog dependencies
@@ -7351,10 +7371,62 @@ async def _build_product_sdk_runtime_stack(
     search_gateway = service_context.get("search_gateway")
     authorization_runtime = service_context.get("authorization_runtime")
     capability_store = service_context.get("capability_store")
-    if authorization_runtime is None or capability_store is None:
+    capability_scope_store = service_context.get("tool_capability_scope_store")
+    if (
+        authorization_runtime is None
+        or capability_store is None
+        or capability_scope_store is None
+    ):
         raise RuntimeError("SDK Runtime requires prepared authorization authority")
     initial_authorization_policy = await capability_store.get_policy_state()
-    tool_authorities = SdkRunToolAuthorityRegistry()
+    from deskpet.sdk_adapters.capability_catalog import (
+        ProductCapabilityCatalogSourceAdapter,
+    )
+    from deskpet.sdk_adapters.workflows import build_product_workflow_registrations
+
+    skill_projection = service_context.get("managed_skill_discovery_projection")
+    skill_metas = (
+        tuple(skill_projection.list_metas())
+        if skill_projection is not None
+        else ()
+    )
+    workflow_metadata = build_product_workflow_registrations(
+        generation=generation,
+        transaction_owner=object(),
+    )
+    resource_records = ProductCapabilityCatalogSourceAdapter().sdk_resource_records(
+        skills=skill_metas,
+        workflows=workflow_metadata,
+    )
+    tool_authorities = SdkRunToolAuthorityRegistry(
+        scope_store=capability_scope_store,
+        resource_records=resource_records,
+    )
+    from deskpet.sdk_adapters.skill_resolver import (
+        SdkThenLegacyFrozenSkillResolver,
+    )
+    from deskpet.tools import skill_tools as _skill_tools
+
+    _skill_tools.bind(
+        skill_resolver=SdkThenLegacyFrozenSkillResolver(
+            authorities=tool_authorities,
+            snapshot_resolver=service_context.get(
+                "frozen_skill_instruction_resolver"
+            ),
+            legacy_resolver=service_context.get(
+                "legacy_frozen_skill_instruction_resolver"
+            ),
+        )
+    )
+    deskpet_tool_registry_v2.set_dynamic_capability_admission_provider(
+        tool_authorities.validate_runtime_tool_admission
+    )
+    driver = build_react_driver(
+        limits=TerminationLimits(max_turns=25, max_tool_calls=50),
+        budget_policy=budget_policy,
+        estimator=None,
+        tool_exposure_resolver=tool_authorities.resolve_exposure,
+    )
 
     def execution_context_getter():
         from deskpet.sdk_adapters.tools import (
@@ -7369,7 +7441,7 @@ async def _build_product_sdk_runtime_stack(
             effect_id=active_product_tool_call_id().value,
         )
 
-    capability_bridge = SdkCapabilityBridgeAdapter(
+    capability_bridge = SdkRuntimeCapabilityBridgeAdapter(
         tool_authorities, execution_context_getter
     )
 
@@ -7407,8 +7479,26 @@ async def _build_product_sdk_runtime_stack(
     tools_adapter, tool_inventory = build_product_tool_registry(
         projected_registrations
     )
+    from deskpet.tools import registry as live_tool_registry
+
+    tool_inventory = extend_product_registry_with_mcp(
+        tools_adapter,
+        tool_inventory,
+        legacy_registry=live_tool_registry,
+        execution_context_getter=execution_context_getter,
+    )
     tools_adapter.bind_run_authorities(tool_authorities)
-    frozen_catalog = _freeze_sdk_catalog(tools_adapter, generation)
+    frozen_catalog = _freeze_sdk_catalog(
+        tools_adapter,
+        generation,
+        visibility_registry=live_tool_registry,
+    )
+    # Projected MCP handlers still execute through the physical registry.
+    # Freeze its exact policy fingerprint into the SDK Run authority so the
+    # strict execution-time stale check compares the same policy snapshot.
+    frozen_catalog["policy_fingerprint"] = (
+        deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint
+    )
     # memory_recall/memory_search remain registered for explicit product
     # surfaces, but automatic Memory is injected through AgentMemoryPort and
     # those tools are deliberately absent from the model-visible SDK catalog.
@@ -8133,6 +8223,7 @@ async def _signal_product_harness_decision(
     response: dict[str, Any],
     *,
     authorization: bool = False,
+    projection_ws: WebSocket | None = None,
 ):
     """Apply one fenced UI decision to the durable execution authority."""
 
@@ -8166,7 +8257,13 @@ async def _signal_product_harness_decision(
                 "response": response,
             },
         )
-    _ensure_sdk_recovery_watcher(sdk_run_id)
+    if projection_ws is None:
+        _ensure_sdk_recovery_watcher(sdk_run_id)
+    else:
+        _ensure_sdk_recovery_watcher(
+            sdk_run_id,
+            authorization_ws=projection_ws,
+        )
     return receipt
 
 
@@ -9085,8 +9182,17 @@ async def _run_product_harness_chat(
             ),
         )
         from deskpet.sdk_adapters.tool_authority import (
-            SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+            SDK_DIRECT_TOOL_KERNEL,
+            SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
         )
+
+        visible_tool_names = frozenset(
+            str(name) for name in _sdk_runtime_catalog["tool_names"]
+        )
+        direct_tool_names = visible_tool_names & SDK_DIRECT_TOOL_KERNEL
+        deferred_tool_names = visible_tool_names - direct_tool_names
+        if not {"tool_search", "tool_describe", "tool_activate"} <= direct_tool_names:
+            raise RuntimeError("SDK direct Tool kernel is incomplete")
 
         try:
             _sdk_tool_authority_registry.prepare_run(
@@ -9098,7 +9204,8 @@ async def _run_product_harness_chat(
                 workspace_root=workspace,
                 catalog=_sdk_runtime_catalog,
                 inventory=_sdk_runtime_tool_inventory,
-                disclosure_policy=SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+                deferred_names=deferred_tool_names,
+                disclosure_policy=SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
             )
         except BaseException:
             _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
@@ -10349,6 +10456,31 @@ Simple Harness 会在每个成功完成的 Turn 结束后自动记录可复用�
 读取既有记忆由本 Turn 冻结的 Agent Memory 上下文提供；不要为了普通召回调用显式 Memory Tool。\
 """
 
+_SDK_SKILL_DISCOVERY_PROMPT = """\
+专业 Skill 使用规则：
+1. 当用户请求或附件明显可能匹配某个已安装的专业 Skill 时，必须先调用 tool_search 搜索 Skill capability，再开始完成任务；用户不需要输入斜杠命令或 Skill 名称。
+2. 如果搜索结果包含 kind=skill_resource 的匹配项，必须复制该结果返回的精确 selection_key，并调用 skill_invoke，将 selection_key 作为 skill_name 加载冻结的 Skill 正文。不得只根据 Skill 名称、触发词、描述或常识猜测正文并直接回答。
+3. 加载成功后遵循返回的 instruction 完成任务；Skill 只增加任务说明和更窄的工具范围，不会扩大权限，后续工具仍按正常授权流程执行。
+4. 如果搜索没有返回匹配 Skill，或者请求明显不需要专业 Skill，则继续正常处理；不要编造 locator，也不要反复搜索同一个查询。\
+"""
+
+
+def _trusted_local_page_url_from_env() -> str | None:
+    """Resolve an optional host-provided local page without exposing raw input."""
+
+    from deskpet.sdk_adapters.context_preparation import (
+        normalize_trusted_local_page_url,
+    )
+
+    raw = os.environ.get("DESKPET_LOCAL_PAGE_URL", "").strip()
+    if not raw:
+        return None
+    try:
+        return normalize_trusted_local_page_url(raw)
+    except ValueError:
+        logger.warning("sdk_local_page_context_rejected reason=invalid_loopback_url")
+        return None
+
 
 async def _sdk_context_usage_from_projection_only(*_args: Any, **_kwargs: Any) -> None:
     """SDK usage is projected from durable physical-attempt receipts only."""
@@ -10469,6 +10601,7 @@ async def _prepare_sdk_context_snapshot(
         root_run_id=root_run_id,
         request_id=request_id,
         workspace=project,
+        local_page_url=_trusted_local_page_url_from_env(),
     )
     context_window = int(provider_binding["context_window"])
     compact_at = max(1, int(context_window * 0.8))
@@ -10476,6 +10609,7 @@ async def _prepare_sdk_context_snapshot(
         int(catalog.get("schema_token_count") or 0)
         + _sdk_text_tokens(_SDK_PUBLIC_WORK_NARRATION_PROMPT)
         + _sdk_text_tokens(_SDK_AUTOMATIC_MEMORY_PROMPT)
+        + _sdk_text_tokens(_SDK_SKILL_DISCOVERY_PROMPT)
         + _sdk_text_tokens(persona_text)
         + _sdk_text_tokens(text)
         + sum(_sdk_text_tokens(item.get("text")) for item in (memory_items or ()))
@@ -10503,6 +10637,8 @@ async def _prepare_sdk_context_snapshot(
                 + _SDK_PUBLIC_WORK_NARRATION_PROMPT
                 + "\n\n"
                 + _SDK_AUTOMATIC_MEMORY_PROMPT
+                + "\n\n"
+                + _SDK_SKILL_DISCOVERY_PROMPT
             ),
             memory=(
                 (lambda _session_id, _text: memory_items)
@@ -10895,7 +11031,11 @@ async def _execute_sdk_run(
         )
 
 
-async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
+async def _watch_retained_sdk_run(
+    sdk_run_id: str,
+    *,
+    authorization_ws: WebSocket | None = None,
+) -> None:
     """Project a resumed/recovered Run terminal through its retained route."""
 
     from agent.agent_loop import ErrorEvent, FinalEvent
@@ -10914,6 +11054,15 @@ async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
         raw_state = getattr(final, "state", final)
         state_value = str(getattr(raw_state, "value", raw_state)).lower()
         if state_value == "waiting":
+            # One resumed Run may require several sequential Tool decisions
+            # (search -> describe -> activate -> execute).  The first waiting
+            # projection is emitted by _execute_sdk_run; every later waiting
+            # boundary is owned by this recovery watcher.
+            if authorization_ws is not None:
+                await _project_open_sdk_authorizations(
+                    authorization_ws,
+                    sdk_run_id=sdk_run_id,
+                )
             return
         terminal_state = (
             state_value
@@ -10988,7 +11137,11 @@ async def _watch_retained_sdk_run(sdk_run_id: str) -> None:
                 _sdk_run_ids_by_root.pop(root_run_id, None)
 
 
-def _ensure_sdk_recovery_watcher(sdk_run_id: str) -> asyncio.Task | None:
+def _ensure_sdk_recovery_watcher(
+    sdk_run_id: str,
+    *,
+    authorization_ws: WebSocket | None = None,
+) -> asyncio.Task | None:
     """Start at most one terminal watcher for a retained presentation route."""
 
     run_id = str(sdk_run_id or "").strip()
@@ -10998,7 +11151,10 @@ def _ensure_sdk_recovery_watcher(sdk_run_id: str) -> asyncio.Task | None:
     if current is not None and not current.done():
         return current
     task = asyncio.create_task(
-        _watch_retained_sdk_run(run_id),
+        _watch_retained_sdk_run(
+            run_id,
+            authorization_ws=authorization_ws,
+        ),
         name=f"sdk-recovered-presentation:{run_id}",
     )
     _sdk_recovery_watch_tasks[run_id] = task
@@ -12398,6 +12554,7 @@ async def control_channel(ws: WebSocket):
                         payload,
                         {"decision": str(payload.get("decision") or "deny")},
                         authorization=True,
+                        projection_ws=ws,
                     )
                 except Exception as exc:  # noqa: BLE001
                     logger.warning(

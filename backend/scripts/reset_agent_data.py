@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 
-_EXPECTED_NAMES = ("state.db", "execution-v1.sqlite3", "memory.db")
+_EXPECTED_EXECUTION_NAMES = frozenset({"execution-v1.sqlite3", "execution-v6.sqlite3"})
 
 
 class AgentDataResetRefused(RuntimeError):
@@ -21,7 +21,11 @@ def _validated_paths(raw: tuple[str, str, str]) -> tuple[Path, Path, Path]:
     paths = tuple(Path(value).expanduser() for value in raw)
     if any(not value.is_absolute() for value in paths):
         raise AgentDataResetRefused("database paths must be absolute")
-    if tuple(value.name for value in paths) != _EXPECTED_NAMES:
+    if (
+        paths[0].name != "state.db"
+        or paths[1].name not in _EXPECTED_EXECUTION_NAMES
+        or paths[2].name != "memory.db"
+    ):
         raise AgentDataResetRefused("database filenames do not match the storage contract")
     resolved: list[Path] = []
     forbidden = {Path("/"), Path.home().resolve(), Path(__file__).resolve().parents[2]}

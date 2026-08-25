@@ -2,8 +2,15 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
-2026-08-22 当前事实：simple_harness 已 vendor Harness 0.3.0（HEAD `fbb156f…`，wheel SHA `cf629cee…`）与
-Memory 0.4.0（HEAD `3d4247b…`，wheel SHA `bfcd2506…`）。生产组合使用一个 borrowed `MemoryManager`、正式 AgentIdentity、SDK-prepared
+2026-08-25 当前 Tool/Capability 事实：simple_harness 已 vendor Harness 0.6.2（wheel SHA
+`ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e`）与 Memory 0.5.2（wheel SHA
+`deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e`）。SDK 公共 runtime catalog 统一
+built-in、健康 MCP、Skill metadata 与 Workflow profile；fresh Run 采用 compact direct kernel，其余能力
+在同一 durable Run 内搜索、描述、激活并刷新下一 Provider attempt。目录不授予权限，目标执行继续经过
+Host prepared authorization、scope 与 physical identity。完整事实、恢复和当前 UI evidence 边界见
+[`ARCHITECTURE.md`](ARCHITECTURE.md) 与 [`AGENT_HARNESS.md`](AGENT_HARNESS.md)。
+
+生产组合继续使用一个 borrowed `MemoryManager`、正式 AgentIdentity、SDK-prepared
 Memory 与 read-only product Context provider；root 与 continuation 使用各自 immutable source ref。
 foreground committed Turn 与非 Harness product outbox 按 provenance 分治，普通前台工具不再二次 live recall。
 显式 remember/read/forget 使用完整可信 principal 与正式 fact API，返回准确 fact ID；forget 以显式
@@ -19,7 +26,7 @@ Provider wire boundary 才降低为兼容文本；budget-only cancel receipt 不
 当前 Memory 一等集成边界、身份 trust chain、Context source lifecycle、迁移/fault 语义与真实 UI 验收状态，
 以 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md) 为准。
 
-2026-08-21 SDK Context cutover 校准（代码锚点 `e92883a5`）：当前前台文字 Run 的真实链路是
+历史记录 — 2026-08-21 SDK Context cutover 校准（代码锚点 `e92883a5`）：当时前台文字 Run 的链路是
 `_run_product_harness_chat -> _execute_sdk_run -> _assemble_sdk_messages -> SDK Runtime`。
 它尚未消费已经构造的 `TurnInput`，也未进入保留的 `ProductTurnPreparer` /
 `ProductTurnPreparationService`；因此当前首个 Provider 请求只有公开工作叙述 system prompt、最多
@@ -28,9 +35,10 @@ Provider wire boundary 才降低为兼容文本；budget-only cancel receipt 不
 Context Inspector 仍是 legacy persona/facts/V2 tool registry/history 的独立估算，不是 Provider
 请求事实源；SDK provider invocation 的真实 usage 也尚未投影到 Session context usage/billing。
 legacy preview 还缺少统一公开脱敏，可能把敏感 header/token/正文直接展示。这些是已确认的生产
-缺口，不能继续把 `ProductContextAdapter` 或 Inspector 估算描述成已接通事实。
+缺口，不能继续把 `ProductContextAdapter` 或 Inspector 估算描述成当时已接通事实。
 
-以上段落保留为切换前校准记录；其 Context/Memory 主缺口已由本日 0.2.0 consumer-prepared 实现关闭。
+以上段落仅保留为切换前历史校准记录；其 Context/Memory 主缺口后续已关闭，不代表当前 0.4.0 Host
+依赖链。当前事实以本索引顶部 2026-08-25 段落及各专项事实源为准。
 
 2026-08-20 校准：Agent 执行时间线继续复用 canonical Run ledger 和
 `HarnessPublicReadService`，细粒度活动条目不得创建第二套状态机；时间线及 Inspector 详情
@@ -47,7 +55,7 @@ legacy preview 还缺少统一公开脱敏，可能把敏感 header/token/正文
 | [UI.md](UI.md) | 当前暗色优先 UI 主题、共享语义样式、页面覆盖范围、业务边界与真实 Windows 验证状态 |
 | [COMPANION_GROWTH.md](COMPANION_GROWTH.md) | Companion 长期成长当前事实：唯一 Store/Router、可信 owner inbox、durable GrowthEvent、同一 RunKernel 的 reflection/candidate/evaluation 生产编排、Manager activation receipt、V2 Reminder、legacy writer 退休边界与真实 provider 阻塞状态 |
 | [AGENT_HARNESS.md](AGENT_HARNESS.md) | 当前 Agent Harness 事实源：固定 `agent.general` root、`workflow_spawn` ticket/Driver、TaskGoal/Attempt 失败闭环、running-root FIFO、Manual/Auto 与可执行能力目录 |
-| [SDK_EXTRACTION.md](SDK_EXTRACTION.md) | Simple Harness SDK 提取与消费事实源：当前 vendored Harness 0.3.0 / Memory 0.4.0、历史 release/迁移与消费者边界 |
+| [SDK_EXTRACTION.md](SDK_EXTRACTION.md) | Simple Harness SDK 提取与消费事实源：当前 vendored Harness 0.6.2 / Memory 0.5.2、历史 release/迁移与消费者边界 |
 | [MEMORY_SDK_BOUNDARY.md](MEMORY_SDK_BOUNDARY.md) | 官方一等 Memory 生产链、validated local identity、immutable Context source、outbox authority、自动化与真实 UI 验收状态 |
 | [Harness R7 历史流程图](../plans/2026-07-20-agent-harness-simplification/target-architecture.md) | R7 时点的“一个产品准备入口、一个薄 Kernel、两个 Driver、一套 Effect/UoW 底座”证据；其中主线程/Code 工作台产品边界已被 2026-07-24 单主 Session 多 root 架构取代，当前口径以 `AGENT_HARNESS.md` 为准 |
 | [AgentLoop.md](AgentLoop.md) | ReAct 主循环、工具注册/分发、完成守门、ContextManager 与 main 装配 |

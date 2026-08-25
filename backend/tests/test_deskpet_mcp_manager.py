@@ -39,6 +39,7 @@ from deskpet.mcp import manager as mcp_manager_mod
 from deskpet.mcp.manager import (
     MCPManager,
     _BACKOFF_SCHEDULE,
+    _prepare_server_config,
     _resolve_npx_package_artifacts,
 )
 from deskpet.tools.registry import ToolRegistry
@@ -758,6 +759,42 @@ def test_default_config_filesystem_scoped() -> None:
         assert wide not in block, f"filesystem scope too wide: {wide!r}"
 
 
+def test_default_playwright_config_allows_loopback_dev_ports() -> None:
+    root = Path(__file__).resolve().parents[2]
+    text = (root / "config.toml").read_text(encoding="utf-8")
+    assert "http://localhost:*;http://127.0.0.1:*" in text
+
+
+def test_playwright_config_adds_exact_trusted_local_page_origin(monkeypatch):
+    monkeypatch.setenv(
+        "DESKPET_LOCAL_PAGE_URL",
+        "http://localhost:15193/capability-catalog-fixture.html",
+    )
+    prepared = _prepare_server_config({
+        "name": "playwright",
+        "args": [
+            "@playwright/mcp@latest",
+            "--allowed-origins",
+            "http://localhost;http://127.0.0.1",
+        ],
+    })
+    assert prepared["args"][-1] == (
+        "http://localhost;http://127.0.0.1;http://localhost:15193"
+    )
+
+
+def test_playwright_config_rejects_external_local_page_origin(monkeypatch):
+    monkeypatch.setenv(
+        "DESKPET_LOCAL_PAGE_URL",
+        "https://example.com:443/fixture",
+    )
+    original = {
+        "name": "playwright",
+        "args": ["@playwright/mcp@latest"],
+    }
+    assert _prepare_server_config(original) == original
+
+
 @pytest.mark.asyncio
 async def test_mcp_call_success_returns_dict(
     monkeypatch: pytest.MonkeyPatch,
@@ -916,5 +953,143 @@ async def test_server_without_build_identity_does_not_pollute_registry(
     try:
         assert mgr.server_state()["srv"] == "running"
         assert registry.get("mcp_srv_echo") is None
+    finally:
+        await mgr.stop()
+
+
+@pytest.mark.asyncio
+async def test_reconnect_publication_is_atomic_and_fences_old_incarnation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = {"tools": [_FakeTool("echo")], "call_text": "A"}
+    _build_fake_env(monkeypatch, default_script=script)
+    registry = ToolRegistry()
+    mgr = MCPManager(
+        {
+            "enabled": True,
+            "servers": [
+                {
+                    "name": "srv",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "srv",
+                    "args": [],
+                }
+            ],
+        },
+        registry,
+    )
+    await mgr.start()
+    try:
+        runtime = mgr._servers["srv"]  # noqa: SLF001
+        old = registry.get("mcp_srv_echo")
+        assert old is not None
+        incarnation_a = mgr.server_incarnations()["srv"]
+        revision_a = registry.catalog_snapshot().revision
+
+        script.update(
+            tools=[_FakeTool("echo"), _FakeTool("added")],
+            call_text="B",
+        )
+        runtime.state = "reconnecting"
+        assert runtime.exit_stack is not None
+        await runtime.exit_stack.aclose()
+        runtime.exit_stack = None
+        await mgr._connect_once(runtime)  # noqa: SLF001
+
+        incarnation_b = mgr.server_incarnations()["srv"]
+        assert incarnation_b != incarnation_a
+        snapshot_b = registry.catalog_snapshot()
+        assert snapshot_b.revision == revision_a + 1
+        assert {spec.name for spec in snapshot_b.specs if spec.source == "mcp:srv"} == {
+            "mcp_srv_added",
+            "mcp_srv_echo",
+        }
+        fresh = registry.get("mcp_srv_echo")
+        assert fresh is not None
+        assert fresh.schema["parameters"]["properties"]["x"]["type"] == "string"
+
+        current_session = runtime.session
+        assert current_session is not None
+        stale_result = json.loads(await old.handler({}, "old-run"))
+        assert stale_result["error"] == "mcp_incarnation_stale"
+        assert current_session.call_tool_calls == []
+        fresh_result = json.loads(await fresh.handler({}, "fresh-run"))
+        assert fresh_result["content"][0]["text"] == "B"
+
+        changed = _FakeTool("echo")
+        changed.inputSchema["properties"]["x"]["type"] = "integer"
+        script.update(tools=[changed], call_text="C")
+        runtime.state = "reconnecting"
+        assert runtime.exit_stack is not None
+        await runtime.exit_stack.aclose()
+        runtime.exit_stack = None
+        await mgr._connect_once(runtime)  # noqa: SLF001
+
+        incarnation_c = mgr.server_incarnations()["srv"]
+        assert incarnation_c not in {incarnation_a, incarnation_b}
+        snapshot_c = registry.catalog_snapshot()
+        assert snapshot_c.revision == revision_a + 2
+        assert [
+            spec.name for spec in snapshot_c.specs if spec.source == "mcp:srv"
+        ] == ["mcp_srv_echo"]
+        newest = registry.get("mcp_srv_echo")
+        assert newest is not None
+        assert newest.schema["parameters"]["properties"]["x"]["type"] == "integer"
+        newest_session = runtime.session
+        assert newest_session is not None
+        second_stale = json.loads(await fresh.handler({}, "old-b-run"))
+        assert second_stale["error"] == "mcp_incarnation_stale"
+        assert newest_session.call_tool_calls == []
+        newest_result = json.loads(await newest.handler({}, "fresh-c-run"))
+        assert newest_result["content"][0]["text"] == "C"
+    finally:
+        await mgr.stop()
+
+
+@pytest.mark.asyncio
+async def test_failed_reconnect_publication_preserves_previous_catalog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    script = {"tools": [_FakeTool("echo")], "call_text": "A"}
+    _build_fake_env(monkeypatch, default_script=script)
+    registry = ToolRegistry()
+    mgr = MCPManager(
+        {
+            "enabled": True,
+            "servers": [
+                {
+                    "name": "srv",
+                    "enabled": True,
+                    "transport": "stdio",
+                    "command": "srv",
+                    "args": [],
+                }
+            ],
+        },
+        registry,
+    )
+    await mgr.start()
+    try:
+        runtime = mgr._servers["srv"]  # noqa: SLF001
+        before = registry.catalog_snapshot()
+        script.update(tools=[_FakeTool("echo"), _FakeTool("added")], call_text="B")
+        real_register = registry.register
+
+        def _fail_second(name: str, *args: Any, **kwargs: Any) -> None:
+            if name == "mcp_srv_added":
+                raise RuntimeError("registration barrier failed")
+            real_register(name, *args, **kwargs)
+
+        monkeypatch.setattr(registry, "register", _fail_second)
+        with pytest.raises(RuntimeError, match="registration barrier failed"):
+            await mgr._connect_once(runtime)  # noqa: SLF001
+        monkeypatch.setattr(registry, "register", real_register)
+
+        after = registry.catalog_snapshot()
+        assert after.revision == before.revision
+        assert [spec.name for spec in after.specs] == [
+            spec.name for spec in before.specs
+        ]
     finally:
         await mgr.stop()

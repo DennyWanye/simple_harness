@@ -24,6 +24,8 @@ export interface ProviderEntry {
   name: string;
   base_url?: string;
   model?: string;
+  default_model?: string;
+  models?: string[];
   priority?: number;
   enabled?: boolean;
   incarnation_id?: string;
@@ -44,6 +46,20 @@ export const useProvidersStore = create<ProvidersStore>((set) => ({
     set({ providers: Array.isArray(list) ? list : [] });
   },
 }));
+
+/** Resolve the model users should see for a Session's effective Provider. */
+export function effective_provider_model(
+  provider_id: string | null | undefined,
+  providers: ProviderEntry[],
+): string {
+  const enabled = providers.filter((provider) => provider.enabled !== false);
+  const provider = provider_id
+    ? enabled.find((candidate) => candidate.id === provider_id)
+    : enabled[0];
+  return String(
+    provider?.default_model || provider?.model || provider?.models?.[0] || "",
+  ).trim();
+}
 
 // --------------------------------------------------------------------
 // Pure selectors / helpers — exposed for unit tests without needing to

@@ -1,9 +1,23 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-23
-> 代码基线：simple_harness `e5242492`；当前依赖固定 Harness 0.4.0 / Memory 0.5.0 exact wheels
-> 状态：SDK v0.4.0 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
+> 最后校准：2026-08-25
+> 代码基线：simple_harness `3c678e71` + 当前工作树；当前依赖固定 Harness 0.6.2 / Memory 0.5.2 exact wheels
+> 状态：SDK v0.6.2 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
 > 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
+
+## 2026-08-25 SDK-first runtime capability catalog（候选已消费）
+
+- Harness 0.6.2 提供产品中立的 typed runtime catalog、Run-local exposure、search/describe/activation receipt、
+  dynamic ReAct projection 与 v6 durable catalog/recovery；future-consumer fixture 不 import Host。
+- Host vendor exact wheel `ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e`
+  （source `67f5769…`），Memory 0.5.2 wheel
+  `deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e`（source `46624b…`）。
+  `pyproject.toml`、`uv.lock`、candidate/origin/hash 门保持 exact bytes。
+- SDK 目录只拥有发现/可见性；Host 继续拥有权限、TaskGrant、workspace/origin、MCP lifecycle 与 physical
+  handler。当前候选自动化、CAP-1～CAP-5、冷重启对、exact-wheel consumer 与 packaged macOS UI 均通过。
+  最终 source `67f5769…` reproducible wheel 与完整真测 wheel 的运行时包逐文件相同；Host 重锁、重装后
+  又完成无 `PYTHONPATH` 冷启动与可操作 UI 冒烟。候选仍未发布 tag/release：本次只授权代码提交到远程
+  主分支，没有授权 SDK tag、release 上传和 download-back promotion；不得把本地 wheel 描述为 production release。
 
 ## 2026-08-23 Host S3 observability composition（已 revendor）
 

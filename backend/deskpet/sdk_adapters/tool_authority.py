@@ -13,16 +13,24 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import time
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Iterable, Mapping, Sequence
+from typing import Any
 
-from simple_harness import thaw_json
+from simple_harness import RunId, thaw_json
 from simple_harness.tools import (
     AuthorizationDecision,
     AuthorizationRequest,
     AuthorizationResult,
+    CatalogRunToolExposure,
+    ExecutableToolRecord,
     PreparedToolEffect,
+    RuntimeCapabilityRecord,
+    RuntimeToolCatalogError,
+    RuntimeToolCatalog,
+    ToolExposureMode,
 )
 
 from deskpet.permissions.runtime import (
@@ -54,6 +62,24 @@ SDK_TOOL_AUTHORITY_RECORD_VERSION = 2
 SDK_FULL_CATALOG_DISCLOSURE_POLICY = "full-direct-v1"
 SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY = "explicit-deferred-v1"
 SDK_PERMISSION_POLICY_VERSION = "sdk-product-policy-v1"
+logger = logging.getLogger(__name__)
+SDK_DIRECT_TOOL_KERNEL = frozenset(
+    {
+        "agent",
+        "agent_parallel",
+        "await_subagents",
+        "context_page_in",
+        "skill_invoke",
+        "spawn_subagents",
+        "spawn_team",
+        "todo_complete",
+        "todo_write",
+        "tool_activate",
+        "tool_describe",
+        "tool_search",
+        "workflow_spawn",
+    }
+)
 
 
 class SdkToolAuthorityMigrationUnavailable(RuntimeError):
@@ -183,6 +209,7 @@ class SdkRunToolAuthorityV1:
             "principal_id": self.principal_id,
             "catalog_generation": self.catalog_generation,
             "catalog_fingerprint": self.catalog_fingerprint,
+            "policy_fingerprint": self.prepared_tool_set.policy_fingerprint,
             "capability_hash": self.capability_hash,
             "scope_hash": self.scope_hash,
             "authority_fingerprint": self.authority_fingerprint,
@@ -212,9 +239,12 @@ class SdkRunToolAuthorityRegistry:
         self,
         *,
         scope_store: ToolCapabilityScopeStore | None = None,
+        resource_records: Sequence[RuntimeCapabilityRecord] = (),
     ) -> None:
         self.scope_store = scope_store or ToolCapabilityScopeStore()
         self._records: dict[str, SdkRunToolAuthorityV1] = {}
+        self._runtime_exposures: dict[str, CatalogRunToolExposure] = {}
+        self._resource_records = tuple(resource_records)
         self._terminal_listeners: list[
             Callable[[SdkRunToolAuthorityV1], None]
         ] = []
@@ -395,14 +425,19 @@ class SdkRunToolAuthorityRegistry:
             "catalog_fingerprint": catalog_fingerprint,
         }
         scope_id = f"sdk-tool-scope:{_canonical_sha256(scope_seed)}"
-        policy_fingerprint = _canonical_sha256(
-            {
-                "kind": "sdk-frozen-product-catalog",
-                "catalog_fingerprint": catalog_fingerprint,
-                "direct": sorted(set(names) - deferred),
-                "deferred": sorted(deferred),
-            }
-        )
+        policy_fingerprint = str(catalog.get("policy_fingerprint") or "").strip()
+        if not policy_fingerprint:
+            # Compatibility for historical durable records and isolated unit
+            # fixtures created before the physical policy fingerprint became
+            # part of RunStart authority.
+            policy_fingerprint = _canonical_sha256(
+                {
+                    "kind": "sdk-frozen-product-catalog",
+                    "catalog_fingerprint": catalog_fingerprint,
+                    "direct": sorted(set(names) - deferred),
+                    "deferred": sorted(deferred),
+                }
+            )
         prepared = PreparedToolSet.create(
             scope_id=scope_id,
             revision=1,
@@ -490,7 +525,150 @@ class SdkRunToolAuthorityRegistry:
             self.scope_store.purge(prepared.scope_id)
             raise RuntimeError("sdk_tool_scope_pin_failed")
         self._records[run_id] = record
+        runtime_records = []
+        for raw in raw_specs:
+            name = str(raw["name"])
+            frozen = frozen_specs[name]
+            source_namespace = (
+                frozen.source if frozen.source.startswith("mcp:") else "builtin"
+            )
+            runtime_records.append(
+                ExecutableToolRecord(
+                    capability_id=f"{source_namespace}:{name}",
+                    namespace=source_namespace,
+                    source=(
+                        frozen.source
+                        if frozen.source.startswith("mcp:")
+                        else "simple_harness"
+                    ),
+                    source_revision=catalog_fingerprint,
+                    exposure_mode=(
+                        ToolExposureMode.DEFERRED
+                        if name in deferred
+                        else ToolExposureMode.DIRECT
+                    ),
+                    provider_name=name,
+                    description=str(raw["description"]),
+                    input_schema=dict(raw["input_schema"]),
+                    search_terms=(
+                        frozen.permission_category,
+                        frozen.toolset,
+                        frozen.source,
+                    ),
+                )
+            )
+        self._runtime_exposures[run_id] = CatalogRunToolExposure(
+            RuntimeToolCatalog(
+                (*runtime_records, *self._resource_records),
+                generation=generation or 1,
+            )
+        )
         return record
+
+    def resolve_exposure(self, run_id: object) -> CatalogRunToolExposure:
+        key = run_id.value if isinstance(run_id, RunId) else str(run_id)
+        try:
+            return self._runtime_exposures[key]
+        except KeyError as exc:
+            raise RuntimeError("sdk_runtime_tool_exposure_unavailable") from exc
+
+    def is_tool_exposed(self, run_id: object, tool_name: str) -> bool:
+        """Return whether the SDK Run may currently project ``tool_name``.
+
+        The Runtime exposure checkpoint is the authority for dynamic catalog
+        activation.  The legacy ``PreparedToolSet`` remains the immutable
+        Run-start snapshot and therefore cannot by itself recognize Tools
+        activated after an Effect receipt settles.
+        """
+
+        key = run_id.value if isinstance(run_id, RunId) else str(run_id)
+        authority = self.resolve(key)
+        if authority.prepared_tool_set.has_direct(tool_name):
+            return True
+        exposure = self.resolve_exposure(key)
+        try:
+            specs = exposure.provider_specs(RunId(key))
+        except RuntimeToolCatalogError as exc:
+            if exc.code == "catalog_run_not_restored":
+                return False
+            raise
+        return any(spec.name == tool_name for spec in specs)
+
+    def validate_runtime_tool_admission(
+        self,
+        tool_name: str,
+        context: ToolExecutionContext,
+        live_spec: object,
+    ) -> bool:
+        """Validate an activated Tool at the legacy physical dispatch seam."""
+
+        authority = self.resolve(context.run_id)
+        if (
+            context.scope_id != authority.prepared_tool_set.scope_id
+            or context.session_id != authority.session_id
+            or context.request_id != authority.request_id
+        ):
+            logger.warning(
+                "sdk_dynamic_admission_denied tool=%s reason=context_identity_mismatch",
+                tool_name,
+            )
+            return False
+        frozen = authority.specs.get(str(tool_name))
+        if frozen is None:
+            logger.warning(
+                "sdk_dynamic_admission_denied tool=%s reason=missing_frozen_spec",
+                tool_name,
+            )
+            return False
+        if not self.is_tool_exposed(authority.run_id, tool_name):
+            logger.warning(
+                "sdk_dynamic_admission_denied tool=%s reason=not_exposed",
+                tool_name,
+            )
+            return False
+        source = str(getattr(live_spec, "source", ""))
+        if source.startswith("mcp:"):
+            # The SDK projection may remove provider-irrelevant JSON Schema
+            # annotations that its strict validator cannot represent.  Bind
+            # physical execution to the original MCP schema and incarnation
+            # instead of comparing that intentionally normalized schema hash.
+            live_execution_identity = _canonical_sha256(
+                {
+                    "name": str(getattr(live_spec, "name", "")),
+                    "source": source,
+                    "spec_version": str(getattr(live_spec, "spec_version", "v1")),
+                    "schema": dict(getattr(live_spec, "schema", {}) or {}),
+                    "runtime_provenance_ref": str(
+                        getattr(live_spec, "runtime_provenance_ref", "")
+                    ),
+                    "fixture_epoch": int(getattr(live_spec, "fixture_epoch", 0)),
+                    "fixture_spec_hash": str(
+                        getattr(live_spec, "fixture_spec_hash", "")
+                    ),
+                    "stable_handler_id": str(
+                        getattr(live_spec, "stable_handler_id", "")
+                    ),
+                }
+            )
+            identity_matches = live_execution_identity == frozen.execution_identity
+        else:
+            identity_matches = (
+                str(getattr(live_spec, "schema_hash", "")) == frozen.schema_hash
+            )
+        admitted = identity_matches and (
+            str(getattr(live_spec, "spec_version", "")) == frozen.spec_version
+        )
+        if not source.startswith("mcp:"):
+            admitted = admitted and (
+                str(getattr(live_spec, "permission_policy_version", ""))
+                == frozen.permission_policy_version
+            )
+        if not admitted:
+            logger.warning(
+                "sdk_dynamic_admission_denied tool=%s reason=physical_identity_mismatch",
+                tool_name,
+            )
+        return admitted
 
     def restore_run(
         self,
@@ -563,6 +741,9 @@ class SdkRunToolAuthorityRegistry:
         catalog = {
             "generation": generation,
             "content_fingerprint": fingerprint,
+            "policy_fingerprint": str(
+                run_start_record.get("policy_fingerprint") or ""
+            ),
             "specs": specs,
             "schema_fingerprints": {
                 item["name"]: canonical_hash(item["input_schema"])
@@ -690,6 +871,7 @@ class SdkRunToolAuthorityRegistry:
             raise ValueError("terminal_state must be completed, failed, or cancelled")
         record = self.resolve(run_id)
         self._records.pop(record.run_id, None)
+        self._runtime_exposures.pop(record.run_id, None)
         self.scope_store.unpin(
             record.prepared_tool_set.scope_id,
             session_id=record.session_id,
@@ -800,6 +982,60 @@ class SdkCapabilityBridgeAdapter:
         return proposal
 
 
+class SdkRuntimeCapabilityBridgeAdapter:
+    """Delegate discovery and activation to the SDK-owned Runtime catalog."""
+
+    def __init__(
+        self,
+        authorities: SdkRunToolAuthorityRegistry,
+        context_getter: Callable[[], ToolExecutionContext],
+    ) -> None:
+        self._authorities = authorities
+        self._context_getter = context_getter
+
+    def _binding(self) -> tuple[RunId, CatalogRunToolExposure]:
+        run_id = RunId(self._context_getter().run_id)
+        return run_id, self._authorities.resolve_exposure(run_id)
+
+    def search(self, query: str, *, limit: int = 10, cursor: int = 0) -> dict[str, Any]:
+        run_id, exposure = self._binding()
+        page = exposure.search(run_id, query, limit=limit, cursor=cursor)
+        return {
+            "matches": [item.to_json() for item in page.items],
+            "count": len(page.items),
+            "query": str(query),
+            "next_cursor": page.next_cursor,
+        }
+
+    def suggestions(self, capability_id: str, *, limit: int = 3) -> list[dict[str, Any]]:
+        query = str(capability_id).replace(":", " ")
+        return list(self.search(query, limit=limit)["matches"])
+
+    def describe(self, capability_id: str) -> dict[str, Any]:
+        run_id, exposure = self._binding()
+        value = exposure.describe(run_id, str(capability_id)).to_json()
+        descriptor = value["descriptor"]
+        if not isinstance(descriptor, dict):
+            raise TypeError("catalog_descriptor_invalid")
+        value["schema_hash"] = value["capability_hash"]
+        value["describe_nonce"] = value["nonce"]
+        value["capability_id"] = descriptor["capability_id"]
+        return value
+
+    def activate(
+        self, capability_id: str, schema_hash: str, describe_nonce: str
+    ) -> Any:
+        run_id, exposure = self._binding()
+        described = exposure.describe(run_id, str(capability_id))
+        if str(schema_hash) != described.capability_hash:
+            raise RuntimeError("activation_schema_hash_stale")
+        return exposure.prepare_activation(
+            run_id,
+            str(capability_id),
+            str(describe_nonce),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class _PreparedAuthorizationFacts:
     authority: SdkRunToolAuthorityV1
@@ -894,7 +1130,9 @@ class SdkPreparedAuthorizationPolicy:
     ) -> PreparedToolCall:
         name = prepared.call.name
         spec = authority.specs.get(name)
-        if spec is None or not authority.prepared_tool_set.has_direct(name):
+        if spec is None or not self._authorities.is_tool_exposed(
+            authority.run_id, name
+        ):
             raise RuntimeError("capability_denied")
         arguments = thaw_json(prepared.call.arguments)
         if not isinstance(arguments, Mapping):
@@ -946,6 +1184,11 @@ class SdkPreparedAuthorizationPolicy:
                 task_grant_id=None,
                 principal_id=authority.principal_id,
                 confirmed=True,
+                # Manual grants are immutable.  Bind their instance identity
+                # to the stable SDK effect so replay is idempotent while two
+                # different Tool effects in one Run cannot collide merely
+                # because they request the same resource category.
+                decision_id=prepared.effect_id.value,
             )
             self._policy_generation = plan.policy_state.generation
             if plan.action != "allow" or plan.committed_task_grant is None:
@@ -1067,14 +1310,16 @@ class SdkPreparedAuthorizationPolicy:
 
 
 __all__ = (
+    "SDK_DIRECT_TOOL_KERNEL",
     "SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY",
     "SDK_FULL_CATALOG_DISCLOSURE_POLICY",
     "SDK_PERMISSION_POLICY_VERSION",
     "SDK_TOOL_AUTHORITY_RECORD_KIND",
     "SDK_TOOL_AUTHORITY_RECORD_VERSION",
-    "SdkToolAuthorityMigrationUnavailable",
     "SdkCapabilityBridgeAdapter",
     "SdkPreparedAuthorizationPolicy",
     "SdkRunToolAuthorityRegistry",
     "SdkRunToolAuthorityV1",
+    "SdkRuntimeCapabilityBridgeAdapter",
+    "SdkToolAuthorityMigrationUnavailable",
 )

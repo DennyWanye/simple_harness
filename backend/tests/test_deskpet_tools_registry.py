@@ -19,6 +19,7 @@ at import) and fresh ``ToolRegistry()`` instances for isolated tests.
 from __future__ import annotations
 
 import json
+import threading
 
 import pytest
 
@@ -39,6 +40,52 @@ def _fake_schema(name: str, desc: str = "fake") -> dict:
             "required": ["x"],
         },
     }
+
+
+def test_mcp_source_batch_has_registration_barrier() -> None:
+    registry = ToolRegistry()
+    second_started = threading.Event()
+    allow_second = threading.Event()
+    reader_done = threading.Event()
+    observed: list[set[str]] = []
+
+    def _register(name: str) -> None:
+        registry.register(
+            name,
+            "mcp",
+            _fake_schema(name),
+            lambda _args, _task: "{}",
+            source="mcp:srv",
+            replace_allowed=True,
+        )
+
+    def _second() -> None:
+        second_started.set()
+        assert allow_second.wait(1)
+        _register("mcp_srv_two")
+
+    publisher = threading.Thread(
+        target=lambda: registry.publish_source_batch(
+            source="mcp:srv",
+            registrations=(lambda: _register("mcp_srv_one"), _second),
+        )
+    )
+    publisher.start()
+    assert second_started.wait(1)
+
+    def _read() -> None:
+        observed.append({spec.name for spec in registry.catalog_snapshot().specs})
+        reader_done.set()
+
+    reader = threading.Thread(target=_read)
+    reader.start()
+    assert not reader_done.wait(0.05)
+    allow_second.set()
+    publisher.join(1)
+    reader.join(1)
+
+    assert reader_done.is_set()
+    assert observed == [{"mcp_srv_one", "mcp_srv_two"}]
 
 
 @pytest.fixture

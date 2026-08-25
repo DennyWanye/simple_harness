@@ -1,0 +1,56 @@
+{
+  "source_cluster_ids": [
+    "cluster-activation-atomicity",
+    "cluster-durable-runtime-catalog",
+    "cluster-capability-kind-boundary",
+    "cluster-mcp-incarnation-and-race",
+    "cluster-black-box-evidence",
+    "cluster-immutable-release-rollback"
+  ],
+  "canonical_findings": [
+    {"id":"activation-effect-checkpoint-not-atomic","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-20","AC-23"],"assurance_contract_ids":["FAIL-12","FAIL-14"],"evidence":"Host mutation, effect settlement, context append and checkpoint CAS are separate; terminal effect replay skips handler.","status":"open","root_cause":"No durable receipt/replay protocol joins activation effect and exposure checkpoint."},
+    {"id":"runtime-catalog-durable-shape-and-resolver-missing","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-18","AC-20","AC-21","AC-23"],"assurance_contract_ids":["FAIL-10","FAIL-12","FAIL-13","FAIL-15"],"evidence":"Existing SQLite catalog stores ProviderToolSpec only and RuntimeServices/checkpoint lack Runtime catalog exposure owner.","status":"open","root_cause":"Runtime catalog/exposure lack one SQLite owner, migration and resolver."},
+    {"id":"heterogeneous-capability-kinds-conflated","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-18","AC-22","AC-23"],"assurance_contract_ids":["FAIL-10","FAIL-15"],"evidence":"Executable ToolRegistry cannot losslessly model Skill locators and Workflow profile keys.","status":"open","root_cause":"Tools, Skills and Workflows need discriminated discovery semantics."},
+    {"id":"skill-body-ingress-and-redaction-contract-undefined","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-22","AC-24"],"assurance_contract_ids":["FAIL-4","FAIL-10"],"evidence":"Current Skill body is ToolResult or SYSTEM, with no private bounded untrusted SDK contribution.","status":"open","root_cause":"Skill needs body-free receipt and private bounded untrusted contribution."},
+    {"id":"mcp-incarnation-not-frozen-per-run","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-21","AC-23"],"assurance_contract_ids":["FAIL-13","FAIL-14"],"evidence":"Frozen MCP handler dereferences current session and connect publishes per-tool after marking running.","status":"open","root_cause":"MCP lifecycle, atomic catalog publication and dispatch incarnation are split."},
+    {"id":"manual-oracles-lack-frozen-fixtures","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-21","AC-22"],"assurance_contract_ids":["FAIL-10","FAIL-13"],"evidence":"CAP-2 has no URL/title/readiness; CAP-3 has no document/hash/heading/locator oracle.","status":"open","root_cause":"CAP-2/3 lack immutable fixture/readiness/trace oracles."},
+    {"id":"immutable-release-has-no-prepublish-rollback-gate","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-24"],"assurance_contract_ids":["FAIL-16"],"evidence":"Plan orders publication before complete Host/UI candidate proof and lacks exact 0.4 backout tuple.","status":"open","root_cause":"Immutable release lacks reversible prepublish consumer proof and 0.4 rollback."}
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "activation-effect-checkpoint-not-atomic",
+    "runtime-catalog-durable-shape-and-resolver-missing",
+    "heterogeneous-capability-kinds-conflated",
+    "skill-body-ingress-and-redaction-contract-undefined",
+    "mcp-incarnation-not-frozen-per-run",
+    "manual-oracles-lack-frozen-fixtures",
+    "immutable-release-has-no-prepublish-rollback-gate"
+  ],
+  "decisions": [
+    {"canonical_finding_id":"activation-effect-checkpoint-not-atomic","source_finding_ids":["activation-effect-checkpoint-not-atomic"],"action":"spike","rationale":"Crash windows cross Host memory, effect ledger and checkpoint; test typed activation receipt replay before choosing transaction shape.","spike_ids":["SP-ACTIVATION-CRASH"]},
+    {"canonical_finding_id":"runtime-catalog-durable-shape-and-resolver-missing","source_finding_ids":["runtime-catalog-durable-shape-and-resolver-missing"],"action":"spike","rationale":"Exact v5-to-v6 migration and restart resolver must be proven with real SQLite state.","spike_ids":["SP-CATALOG-V6-RESTORE"]},
+    {"canonical_finding_id":"heterogeneous-capability-kinds-conflated","source_finding_ids":["heterogeneous-capability-kinds-conflated"],"action":"plan-change","rationale":"Define a closed kind union; only executable Tools project Provider schema."},
+    {"canonical_finding_id":"skill-body-ingress-and-redaction-contract-undefined","source_finding_ids":["skill-body-ingress-and-redaction-contract-undefined"],"action":"plan-change","rationale":"Add SDK private instruction contribution and body-free activation receipt with negative redaction tests."},
+    {"canonical_finding_id":"mcp-incarnation-not-frozen-per-run","source_finding_ids":["mcp-incarnation-not-frozen-per-run"],"action":"spike","rationale":"Prove incarnation fence and atomic all-or-none server publication under reconnect races.","spike_ids":["SP-MCP-INCARNATION"]},
+    {"canonical_finding_id":"manual-oracles-lack-frozen-fixtures","source_finding_ids":["manual-oracles-lack-frozen-fixtures"],"action":"spike","rationale":"Freeze exact HTML/Markdown fixtures then prove Tauri Vite, Playwright and attachment paths are observable.","spike_ids":["SP-BLACKBOX-FIXTURES"]},
+    {"canonical_finding_id":"immutable-release-has-no-prepublish-rollback-gate","source_finding_ids":["immutable-release-has-no-prepublish-rollback-gate"],"action":"plan-change","rationale":"Move complete installed Host/UI proof before publication and preserve exact 0.4 rollback tuple."}
+  ],
+  "conflicts": [
+    {"canonical_finding_id":"mcp-incarnation-not-frozen-per-run","resolution":"Specialist severity P0 supersedes primary P1 because same-schema reconnect can cross physical execution authority and violate AC-23."}
+  ],
+  "required_spikes": [
+    {"id":"SP-ACTIVATION-CRASH","purpose":"Fault-inject activation/effect/context/checkpoint windows and prove typed receipt replay."},
+    {"id":"SP-CATALOG-V6-RESTORE","purpose":"Migrate v5 catalog/active Run to v6 and prove exact static/progressive restart and handler fail-closed."},
+    {"id":"SP-MCP-INCARNATION","purpose":"Prove atomic complete publication and no cross-incarnation dispatch."},
+    {"id":"SP-BLACKBOX-FIXTURES","purpose":"Prove deterministic HTML/Markdown fixtures through Tauri Vite, Playwright and real UI attachment/Skill locator."}
+  ],
+  "plan_actions": [
+    "Make SQLite schema v6 runtime catalog envelope and ReAct exposure the sole durable owners with explicit v5 migration and legacy static mode.",
+    "Use typed activation receipt replay, not process-memory mutation, to restore exposure.",
+    "Split executable Tool, Skill resource and Workflow profile records; keep Provider names/profile keys distinct from capability IDs.",
+    "Add private bounded untrusted Skill contribution; ToolResult/public projections remain body-free.",
+    "Give MCP sessions opaque incarnation and atomically publish full server catalogs before running.",
+    "Commit deterministic CAP-2 HTML and CAP-3 Markdown fixtures with exact hashes/readiness/trace oracles.",
+    "Use final-version two-phase immutable release promotion and tested 0.4 rollback."
+  ]
+}

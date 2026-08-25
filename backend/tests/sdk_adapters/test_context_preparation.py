@@ -1,12 +1,13 @@
 import pytest
 
+from deskpet.sdk_adapters.context_authority import DefaultDenySnapshotRedactor
 from deskpet.sdk_adapters.context_preparation import (
     SdkAttachmentLimitExceeded,
     SdkContextPreparationService,
     SdkContextSources,
+    normalize_trusted_local_page_url,
     trusted_project_task_snapshot,
 )
-from deskpet.sdk_adapters.context_authority import DefaultDenySnapshotRedactor
 
 
 @pytest.mark.asyncio
@@ -164,3 +165,44 @@ def test_trusted_project_task_snapshot_rejects_missing_run_identity():
             request_id="request",
             workspace=None,
         )
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        (
+            "http://localhost:15193/capability-catalog-fixture.html",
+            "http://localhost:15193/capability-catalog-fixture.html",
+        ),
+        ("https://127.0.0.1:8443", "https://127.0.0.1:8443/"),
+        ("http://[::1]:5173/app", "http://[::1]:5173/app"),
+    ],
+)
+def test_normalize_trusted_local_page_url_accepts_loopback(raw, expected):
+    assert normalize_trusted_local_page_url(raw) == expected
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://example.com:443/app",
+        "http://user:password@localhost:5173/app",
+        "http://localhost/app",
+        "http://localhost:5173/app?token=secret",
+        "javascript:alert(1)",
+    ],
+)
+def test_normalize_trusted_local_page_url_rejects_untrusted_values(raw):
+    with pytest.raises(ValueError, match="local_page_url"):
+        normalize_trusted_local_page_url(raw)
+
+
+def test_trusted_project_task_snapshot_includes_validated_local_page_url():
+    trusted = trusted_project_task_snapshot(
+        task_scope_id="task-local",
+        root_run_id="root-local",
+        request_id="request-local",
+        workspace="/workspace",
+        local_page_url="http://localhost:15193/fixture.html",
+    )
+    assert trusted["local_page_url"] == "http://localhost:15193/fixture.html"

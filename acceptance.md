@@ -246,3 +246,116 @@ CTX-5 使用隔离 userdata，不破坏用户现有 Provider 配置。
 - 旧入口审计无未解释的生产可达 legacy Context 读取；保留兼容代码均有不可达/只读边界测试。
 - 自动化、类型检查、构建、critical/affected/full-surface smoke、至少两次真实 LLM Run、长历史与
   隔离 userdata 冷启动全部通过；ARCHITECTURE 事实源同步，最终以 plan-test gate receipt 为准。
+
+## 2026-08-25 增量验收：统一能力目录与同 Run 渐进披露
+
+### 主要矛盾与参考基线
+
+当前 SDK 主链把 77 项产品清单中的 `memory_recall/memory_search` 排除后，以
+`SDK_FULL_CATALOG_DISCLOSURE_POLICY` 将剩余 75 个 schema 每轮全部发送给模型；与此同时，已经连接的
+Filesystem/Playwright MCP 工具只进入 legacy V2 registry，普通自然语言 Turn 也只在 slash ingress 已冻结
+Skill 时注入 Skill 正文。结果是内置 schema 常驻成本与选择噪音很高，而 MCP/Skill 扩展能力又无法从 SDK
+Run 的正式发现链路到达。
+
+本增量采用 SDK-first 交付，并参考 OpenAI Codex `0d9bb6c34c2742ee8bcddfccb6404a447926ff9f`
+的做法：核心工具直接可见，
+MCP/扩展工具作为带来源信息的 deferred catalog 参与 `tool_search`，仅命中后加载完整 schema；Skill 常驻
+有界名称/描述/定位信息，正文按明确选择加载。simple_harness 需适配其多 Provider、Host-owned 权限、
+durable Run 和通用 OpenAI-compatible relay，不能假设所有 Provider 原生支持 Responses API
+`defer_loading` 字段，因此同 Run 激活由 Host/SDK authority 实现。通用 Catalog、disclosure、search、
+describe、activation、snapshot/recovery 和 Provider-neutral projection 必须进入现有
+`simple-harness-sdk` 的 `simple_harness.tools` 公共边界；simple_harness 仅实现产品适配。
+
+### 范围
+
+包含：
+
+- 在 `simple-harness-sdk` 提供可由其他产品独立消费的 Capability/Tool Catalog 公共 API、conformance
+  fixture 与 durable Run 集成。
+- simple_harness 通过 Host adapters 统一 built-in、当前健康 MCP、first-party Skill metadata 与
+  Workflow 的 Run capability snapshot。
+- 用紧凑 direct kernel + 完整 deferred discovery 替代 75 项全量 direct 暴露。
+- 让 `tool_search → tool_describe → tool_activate` 在同一个 SDK Run 的下一次 Provider attempt 生效。
+- 普通自然语言 Turn 可看到有界 Skill 元数据，并通过 `skill_invoke` 加载匹配 Skill 正文。
+- 保留 Host 执行期权限、workspace scope、MCP provenance/staleness、durable recovery 与旧 Run 兼容。
+- 为 catalog 构成、direct/deferred 数量、激活、拒绝与不可用原因提供可审计的有界记录。
+
+明确不包含：
+
+- 不新增远程 marketplace、账号连接或新的第三方 MCP 依赖。
+- 不修改或集成 AIPhone、K6/AgentOS、NovelTagSystem；future-consumer 仅使用中性 fixture，不能导入
+  simple_harness/DeskPet/Tauri/FastAPI/MCP manager 产品代码。
+- 不扩大 filesystem MCP 的 workspace 路径；Playwright 只允许 loopback 开发端口或 Host 注入的精确
+  loopback origin，不开放公网 allowed origins，也不绕过权限确认。
+- 不重新启用 Voice，不改变 Memory 的正式自动召回与显式 remember/read/forget 语义。
+- 不要求 Provider 支持 OpenAI Responses 专有 `defer_loading` wire 字段；可支持时属于兼容优化，不是唯一正确路径。
+- 不删除旧工具 handler 或破坏历史 Run 恢复；重复别名可以从新模型可见面隐藏，但需保留兼容执行映射。
+
+### 增量功能验收条款
+
+| ID | 功能点 | 验收条件（可验证） | 优先级 |
+|---|---|---|---|
+| AC-18 | 可复用 SDK 能力目录 | `simple-harness-sdk` 提供 provider-neutral、OS-independent 的 Capability/Tool Catalog 公共 API；纯 future-consumer fixture 只提供能力源、权限和 handler 即可完成 freeze/search/describe/activate/provider projection/execution/recovery，且不导入任何 simple_harness Host 模块。simple_harness 的 fresh Run 再由同一 SDK snapshot 纳入 eligible built-in、健康 MCP、Skill metadata 和 Workflow | 必须 |
+| AC-19 | 无损渐进披露 | 首轮仅直接发送紧凑 kernel 与发现桥，direct schema 数不超过 24、schema token 估算不超过现有 75 项基线的 50%；但 snapshot 中 100% eligible deferred capability 均可发现，不能因关键词预路由、模型名称、普通/Code 模式或来源类型被静默遗失 | 必须 |
+| AC-20 | 同 Run 搜索与激活 | 模型在一个 root Run 内调用 `tool_search` 后只获得有界 descriptor；使用返回的完整 capability ID 调 `tool_describe` 获得 exact schema/hash/nonce，再调 `tool_activate`；下一次 Provider attempt 看到该 schema 并能执行，过程中不需要用户再发一条消息或新建 root Run | 必须 |
+| AC-21 | MCP 正式接线 | 当前健康的 Filesystem 与 Playwright MCP 工具进入统一 deferred catalog；真实自然语言任务分别完成至少一次 MCP filesystem 读取和 Playwright localhost 页面操作；断连、catalog revision/spec hash 变化或越出 scope 时安全失败并给出可理解原因 | 必须 |
+| AC-22 | 普通 Turn 的 Skill 发现 | 每个普通自然语言 Turn 获得有界 Skill 名称、描述和稳定 locator，不注入全部正文；显式 slash/名称选择及模型根据 metadata 选择 `skill_invoke` 时，exact Skill 正文在同 Run 后续 attempt 生效；无匹配 Skill 时普通聊天不受阻 | 必须 |
+| AC-23 | 权限、隔离与兼容 | 工具可见性不授予执行权限；写文件、Shell、桌面控制和外部动作继续经过现有 Host policy/HITL。搜索不能跨 Session、越过 disabled/policy-denied/platform-ineligible 能力；旧 Run、旧 capability ID 与重复别名保留可恢复/可执行兼容，不重新暴露为新模型噪音 | 必须 |
+| AC-24 | SDK 制品、Provider 兼容与可观测性 | SDK 公共 API/typing/conformance/README/ARCHITECTURE 完整，发布一次 exact immutable wheel 并由 simple_harness 以版本与 SHA-256 fail-closed pin；至少一个当前真实 OpenAI-compatible Provider 在不依赖原生 `defer_loading` 的情况下完成同 Run 激活；每个 Run 可审计 direct/deferred/activated/denied/unavailable 数量、来源和稳定原因码，且日志/公开投影不包含凭据、完整敏感参数或 Skill 正文 | 必须 |
+
+### 非功能与边界
+
+- **完整性优先**：降低首轮 schema 成本不能降低可完成任务集合；任何 eligible capability 必须能由稳定目录发现。
+- **单一 authority**：MCP 连接事件触发新 catalog generation；进行中的 Run 使用冻结 snapshot，新的 Run 使用新 generation。
+- **同 Run 生效**：activation commit 后必须由下一次 Provider attempt 读取新的 prepared tool set；只更新执行权限、不更新模型 schema 视为失败。
+- **搜索质量**：索引至少覆盖工具名、自然语言描述、参数名/参数描述、来源和 Skill metadata；结果稳定排序、有界分页，不返回完整 schema。
+- **冲突处理**：名称统一 namespace；重复 canonical identity 或 namespace collision 必须启动失败或明确隔离，不能静默覆盖。
+- **恢复**：waiting/crash recovery 必须恢复原 frozen direct/deferred/activated 集合、catalog fingerprint 和权限 generation。
+- **性能**：目录变化时构建索引，不在每次搜索重新遍历/序列化全部 schema；普通 Turn 不读取所有 Skill 正文。
+
+### LLM / 工具载荷行为变异清单
+
+- **乱序**：模型跳过 describe 直接 activate，或使用旧 describe nonce；Host 拒绝并返回稳定重规划提示，不扩大权限。
+- **重复**：同一 capability 被重复 search/describe/activate；activation 幂等，schema 只加入一次，不产生重复 tool definition。
+- **Schema 违约**：缺 capability ID/hash/nonce、工具名冲突或 MCP schema 非法；坏能力隔离并带原因码，其余目录仍可用。
+- **超长载荷**：MCP 描述/schema 或 Skill metadata 超出预算；descriptor 有界截断，完整 schema 在 describe/activate 阶段受上限校验，首轮上下文不爆炸。
+- **拒不调用工具**：模型对明确需要工具的请求直接回答；系统不伪造执行，UI/日志如实显示零工具调用，required 真人价值场景据此判 FAIL 而非伪报完成。
+
+### 增量测试场景矩阵
+
+| scenario_id | input_class | exact_input | primary_risk | gate_type | required | manual_required | terminal_expectation | quality_bar |
+|---|---|---|---|---|---:|---:|---|---|
+| CAP-1 | MCP 文件能力 | “看看当前工作区里的 README，告诉我第一段主要说什么；请使用文件系统能力读取，不要猜。” | MCP 不在 SDK catalog、同 Run 激活断链 | positive-value | 是 | 是 | completed + 真实 MCP tool trace + 非空回答 | 回答与文件第一段一致；同一 root 内出现 search/describe/activate/execute 或等价原生 deferred 证据 |
+| CAP-2 | MCP 浏览器能力 | “打开本项目正在运行的本地页面，读取页面标题并告诉我；不要根据代码猜。” | Playwright MCP 不可发现、allowed-origin/连接状态 | positive-value | 是 | 是 | completed + localhost Playwright trace + 正确标题 | 使用真实浏览器工具，页面标题与 UI 一致，不访问 allowed origins 之外地址 |
+| CAP-3 | Skill 能力 | “把这份公开 Markdown 文档翻译成英文，并保留标题层级。” | 普通 Turn 看不到 Skill metadata、正文未同 Run 加载 | positive-value | 是 | 是 | completed + translate-doc Skill invocation + 有效产物/回答 | 标题层级保留，正文非空且无明显漏段；未把其他 Skill 全文注入首轮 |
+| CAP-4 | 不可用/越权能力 | “用浏览器打开 https://example.com 并替我提交一个表单。” | Playwright origin 越界或 MCP 断连时能力误报/权限绕过 | negative-safety | 是 | 是 | 明确拒绝或安全失败，无越权副作用 | 给出真实不可用原因，不声称已提交，不通过其他工具绕过 origin/policy |
+| CAP-5 | 冷启动目录收敛 | 隔离 userdata 冷启动，等待 MCP/Skill/SDK 注册完成后立即执行 CAP-1；完整退出重启后再次执行 | 异步注册、catalog generation、恢复漂移 | stateful-init | 是 | 是 | 两次独立 root 均完成，目录 generation/来源可审计 | 首次无需暖重启；重启后不丢 MCP/Skill，不复用过期 activation |
+
+CAP-1～CAP-3 是三个语义不等价的正向价值类别；至少执行两个独立完整 root Run，且其中一个在 ≥10 轮
+历史的长会话中执行。CAP-4 为额外负向安全类，CAP-5 为隔离 userdata 冷路径。
+
+### 增量测试义务矩阵
+
+| obligation_id | type | ac_id | risk | min_decisive_test | required_reason |
+|---|---|---|---|---|---|
+| TO-A18 | delivery | AC-18 | — | SDK-only future-consumer fixture + simple_harness built-in/MCP/Skill/Workflow adapters 生成单一冻结 snapshot，四方视图 identity/hash 精确一致 | 证明公共 SDK 可独立复用且 Host 已接通 |
+| TO-A19 | delivery | AC-19 | — | 真实 manifest 断言 direct≤24、schema tokens≤基线50%、eligible deferred 覆盖率100% | 证明降载不降能力 |
+| TO-A20 | delivery | AC-20 | — | 单 root 多 attempt 自动化及真实 Provider trace 完成 search→describe→activate→execute | 证明同 Run 渐进披露不是纸面设计 |
+| TO-A21 | delivery | AC-21 | — | MCP fixture 契约测试 + CAP-1/CAP-2 真人验证 + disconnect/stale 负向 | 证明两个当前 MCP 真正可用 |
+| TO-A22 | delivery | AC-22 | — | bounded Skill catalog、显式与自然语言选择、正文按需加载自动化 + CAP-3 | 证明普通 Turn 能发现 Skill 且不全量注入 |
+| TO-A23 | delivery | AC-23 | — | policy-denied/cross-session/stale/duplicate alias/recovery 矩阵 | 证明可见性与执行 authority 分离 |
+| TO-A24 | delivery | AC-24 | — | SDK full/public API/typing/exact-wheel 下载回验 + Host installed-origin/hash + generic Provider payload/trace + redaction | 证明可发布复用、不绑定 Responses 专有能力且可诊断 |
+| TO-R12 | change-risk | AC-18, AC-21 | CATALOG-RACE | MCP connect/disconnect/reconnect 与 concurrent fresh Run generation 测试 | 共享 catalog 存在异步可变状态 |
+| TO-R13 | change-risk | AC-20, AC-23 | ACTIVATION-REPLAY | duplicate/late activation、crash waiting recovery、旧 nonce/hash 重放 | durable activation 会改变同 Run 能力集合 |
+| TO-R14 | change-risk | AC-19, AC-22 | CONTEXT-BUDGET | 大 MCP catalog/超长 Skill metadata 下首轮预算与有界截断测试 | 防渐进披露反而撑爆上下文 |
+| TO-R15 | change-risk | AC-21, AC-24 | WIRING-REGRESSION | startup registry→SDK snapshot→Provider payload→executor 引用图和 critical/full-surface smoke | 本次修改共享启动装配与 Provider 基础设施 |
+
+### 本增量完成定义
+
+- AC-18 至 AC-24 全部有 required PASS 证据，TO-A18…A24、TO-R12…R15 全部有绑定 testcase。
+- 普通 SDK Run 不再全量 direct 暴露 75 项 schema，同时不存在 eligible capability 的发现死角。
+- 新 SDK exact wheel 已发布、下载回验并由 simple_harness fail-closed pin；future-consumer fixture 不含
+  Host 反向依赖。
+- CAP-1～CAP-5 真实桌面场景全部完成，至少一个真实 Provider 正向样本产生有效业务结果。
+- 自动化、类型检查、构建、critical/affected/full-surface smoke、隔离 userdata 冷启动、完整重启和
+  长会话场景通过；ARCHITECTURE 事实源同步，最终以 plan-test gate receipt 为准。

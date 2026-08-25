@@ -1,6 +1,28 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-21（SDK Context authority；Provider 可靠性；macOS IME）
+> 最后更新：2026-08-24（Provider 模型目录刷新）
+
+## 0.8 Provider 模型目录刷新（2026-08-24）
+
+- 会话模型选择器的目录仍以 backend `models_list_response` 为唯一权威，不复用设置弹窗临时探测结果、
+  不维护第二份硬编码模型列表。每次打开“模型与参数”弹窗都会重新请求当前 Provider 链的目录，响应到达后
+  共享 `sessionModelsStore` 会驱动已打开的下拉框即时更新。
+- Provider 新增、编辑、删除或重排后的 `providers_changed` 权威广播会同步触发目录刷新，避免控制通道初次
+  连接时 Provider 尚为空而把空 catalog 缓存到整个 socket 生命周期。弹窗按需刷新作为断线重连、跨页面
+  和历史缓存遗漏的补充恢复路径。
+- 中转站目录暂时只有 model id、没有结构化上下文能力元数据，因此所有具备 Context 能力的模型统一开放
+  128K / 256K / 512K / 1M 四个用户预算档位，默认选择 256K；图片、Embedding、语音等非 Context 模型
+  不显示。该值控制产品预算与压缩边界，不宣称 Provider 原生上限；Provider 拒绝超限请求的风险仍存在。
+- 消息页模型按钮只展示当前实际生效的模型名称（可附上下文长度），不展示“默认模型”“跟随 Provider”或
+  “Global Chain”等绑定实现概念。解析顺序为会话显式模型、最近实际运行模型、当前会话 Provider 的默认模型、
+  未固定 Provider 时的当前链目录默认模型；弹窗的空绑定选项同样直接使用实际模型名，并去除重复同名项。
+  头部不再展示面向开发者的 Session ID 标签；空会话时也不会残留只有边框和 padding 的孤立短横杠。
+- 自动化证据：Provider 设置既有聚焦回归 `23 passed`；临时上下文策略 backend `21 passed`、
+  模型按钮/弹窗/Provider 联合回归 `30 passed`；TypeScript `tsc -b --noEmit` PASS。当前源码 debug `.app`
+  的 macOS Computer Use 真测确认：冷启动顶部显示 `gpt-5.6-sol`，弹窗显示同名模型与默认 256K；筛选
+  `gpt-5.4` 后可真实选择 `gpt-5.4 · OpenAI`，取消后顶部恢复 `gpt-5.6-sol`。原始截图仅保存在 ignored
+  `.local-test-evidence/2026-08-24/model-display-real-ui/`。Session ID 标签移除另经重新构建的当前 debug `.app`
+  冷启动截图确认，证据在 ignored `.local-test-evidence/2026-08-24/header-empty-session-id-removal/`。
 
 ## 0.7 Provider 设置可靠性与 SDK 冷启动（2026-08-21）
 

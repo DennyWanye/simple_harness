@@ -50,7 +50,12 @@ import { PermissionPopup } from "../components/PermissionPopup";
 import { usePermissionRequests } from "../hooks/usePermissionRequests";
 import {
   formatContextWindow,
+  useSessionModelsStore,
 } from "../code-panel/sessionModelsStore";
+import {
+  effective_provider_model,
+  useProvidersStore,
+} from "../code-panel/providersStore";
 import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
 import { topicDisplayLabel } from "../chat/topicTitle";
@@ -185,6 +190,11 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
   const model_params = useSessionsStore(
     (s) => s.sessions[activeSid]?.model_params ?? null,
   );
+  const provider_id = useSessionsStore(
+    (s) => s.sessions[activeSid]?.provider_id ?? null,
+  );
+  const providers = useProvidersStore((s) => s.providers);
+  const catalog_default_model = useSessionModelsStore((s) => s.default_model);
   const selectTaskProjection = useCallback(
     (runId: string) => {
       const session = useSessionsStore.getState().sessions[activeSid];
@@ -228,8 +238,11 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
   // 生效的 provider 默认模型，让用户看到「当前真正在用的模型」。
   // Header authority is Session-local. A process-global catalog default may
   // belong to another Session/provider and must never masquerade as binding.
-  const eff_model = preferred_model?.trim() || contextUsage?.model?.trim() || "";
-  const is_following_default = !((preferred_model ?? "").trim());
+  const eff_model =
+    preferred_model?.trim() ||
+    contextUsage?.model?.trim() ||
+    effective_provider_model(provider_id, providers) ||
+    (!provider_id ? catalog_default_model.trim() : "");
   const ctx_window = contextUsage?.context_window && contextUsage.context_window > 0
     ? contextUsage.context_window
     : null;
@@ -753,39 +766,13 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
         >
           {activeTitle}
         </span>
-        <span
-          title="Session ID，可选中复制"
-          style={{
-            flexShrink: 0,
-            maxWidth: 150,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            userSelect: "all",
-            WebkitUserSelect: "all",
-            cursor: "text",
-            border: `1px solid ${dark.border}`,
-            borderRadius: tokens.radius.sm,
-            padding: "1px 5px",
-            background: dark.inset,
-            color: dark.textMuted,
-            fontFamily: tokens.font.mono,
-            fontSize: tokens.text.xs.size,
-            fontWeight: tokens.weight.regular,
-            lineHeight: 1.35,
-          }}
-        >
-          {activeSid}
-        </span>
         <button
           type="button"
           data-testid="chat-model-button"
           onClick={() => setShowModelModal(true)}
           title={
             eff_model
-              ? is_following_default
-                ? `模型与参数（当前 ${eff_model} · 跟随 provider 默认）`
-                : `模型与参数（当前 ${eff_model}）`
+              ? `模型与参数（当前 ${eff_model}）`
               : "选择模型与参数"
           }
           aria-label="模型与参数"
@@ -802,7 +789,7 @@ export function ChatView({ activeSid, secret }: ChatViewProps) {
               ? ctx_label
                 ? `${eff_model}-${ctx_label}`
                 : eff_model
-              : "默认模型"}
+              : "选择模型"}
           </span>
           <Icon name="edit" size={11} style={{ flexShrink: 0 }} />
         </button>

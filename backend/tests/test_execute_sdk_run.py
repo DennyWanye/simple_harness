@@ -229,9 +229,57 @@ async def test_sdk_preparation_bounds_long_history_and_marks_truncation():
         message["role"] == "system"
         and "成功完成的 Turn 结束后自动记录" in message["content"]
         and "不得调用 memory_write" in message["content"]
+        and "必须先调用 tool_search 搜索 Skill capability" in message["content"]
+        and "调用 skill_invoke" in message["content"]
+        and "用户不需要输入斜杠命令" in message["content"]
         for message in private["provider_messages"]
     )
     assert len(private["provider_messages"]) < 102
+
+
+@pytest.mark.asyncio
+async def test_sdk_preparation_freezes_host_local_page_url(monkeypatch):
+    from main import _prepare_sdk_context_snapshot
+
+    monkeypatch.setenv(
+        "DESKPET_LOCAL_PAGE_URL",
+        "http://localhost:15193/capability-catalog-fixture.html",
+    )
+    session_db = SimpleNamespace(get_recent_messages=AsyncMock(return_value=[]))
+    prepared = await _prepare_sdk_context_snapshot(
+        session_db=session_db,
+        session_id="session-local-page",
+        request_id="request-local-page",
+        root_run_id="root-local-page",
+        sdk_run_id="sdk-local-page",
+        turn_id="1",
+        text="打开当前项目页面",
+        provider_binding={
+            "context_window": 8_000,
+            "provider_id": "p",
+            "model_id": "m",
+        },
+        catalog={
+            "tool_count": 1,
+            "schema_token_count": 10,
+            "tool_names": ["tool_search"],
+            "generation": 1,
+            "content_fingerprint": "f" * 64,
+        },
+        attachment_blocks=(),
+        project="/workspace",
+        task_scope_id="task-local-page",
+        persona_text="DeskPet persona",
+    )
+    project_message = next(
+        message
+        for message in prepared.private_record()["provider_messages"]
+        if str(message.get("content", "")).startswith("Project/task snapshot")
+    )
+    assert (
+        '"local_page_url":"http://localhost:15193/'
+        'capability-catalog-fixture.html"'
+    ) in project_message["content"]
 
 
 @pytest.mark.asyncio
@@ -1056,6 +1104,46 @@ async def test_recovered_completed_run_projects_final_and_cleans_route(monkeypat
     assert sdk_run_id not in main._sdk_retained_presentations
     assert sdk_run_id not in _delivery_adapters
     assert root_run_id not in main._sdk_run_ids_by_root
+
+
+@pytest.mark.asyncio
+async def test_resumed_waiting_run_projects_next_authorization(monkeypatch):
+    import main
+
+    sdk_run_id = "sdk-resumed-waiting"
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    delivery = SimpleNamespace(finish=AsyncMock())
+    retained = (
+        delivery,
+        SimpleNamespace(present=AsyncMock()),
+        SimpleNamespace(),
+        SimpleNamespace(run_id="root-resumed-waiting"),
+    )
+    monkeypatch.setattr(
+        main,
+        "_sdk_ingress",
+        SimpleNamespace(
+            wait_idle=AsyncMock(),
+            query=Mock(
+                return_value=SimpleNamespace(
+                    state=SimpleNamespace(value="waiting")
+                )
+            ),
+        ),
+    )
+    projection = AsyncMock(return_value=1)
+    monkeypatch.setattr(main, "_project_open_sdk_authorizations", projection)
+    main._sdk_retained_presentations[sdk_run_id] = retained
+
+    await main._watch_retained_sdk_run(
+        sdk_run_id,
+        authorization_ws=websocket,
+    )
+
+    projection.assert_awaited_once_with(websocket, sdk_run_id=sdk_run_id)
+    delivery.finish.assert_not_awaited()
+    assert main._sdk_retained_presentations[sdk_run_id] is retained
+    main._sdk_retained_presentations.pop(sdk_run_id, None)
 
 
 @pytest.mark.asyncio

@@ -4,6 +4,28 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from deskpet.permissions.policy import AuthorizationPolicyState
+from deskpet.permissions.runtime import PreparedAuthorizationRuntime
+from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
+from deskpet.product_state.database import ProductStateDatabase
+from deskpet.product_state.task_grants import DurableTaskGrantAuthority
+from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+from deskpet.sdk_adapters.tool_authority import (
+    SDK_DIRECT_TOOL_KERNEL,
+    SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+    SDK_FULL_CATALOG_DISCLOSURE_POLICY,
+    SdkCapabilityBridgeAdapter,
+    SdkPreparedAuthorizationPolicy,
+    SdkRuntimeCapabilityBridgeAdapter,
+    SdkRunToolAuthorityRegistry,
+    SdkToolAuthorityMigrationUnavailable,
+)
+from deskpet.sdk_adapters.tools import (
+    ProductEffectExecutor,
+    ProductToolsAdapter,
+    SdkToolExecutorCatalogUnavailable,
+)
+from deskpet.tools.capabilities import ToolCapabilityScopeStore
 from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
 from simple_harness.execution.context_authority import DurableToolCatalogResolver
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
@@ -18,25 +40,14 @@ from simple_harness.tools import (
     ToolSpec,
 )
 
-from deskpet.permissions.policy import AuthorizationPolicyState
-from deskpet.permissions.runtime import PreparedAuthorizationRuntime
-from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
-from deskpet.product_state.database import ProductStateDatabase
-from deskpet.product_state.task_grants import DurableTaskGrantAuthority
-from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
-from deskpet.sdk_adapters.tool_authority import (
-    SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
-    SDK_FULL_CATALOG_DISCLOSURE_POLICY,
-    SdkCapabilityBridgeAdapter,
-    SdkPreparedAuthorizationPolicy,
-    SdkRunToolAuthorityRegistry,
-    SdkToolAuthorityMigrationUnavailable,
-)
-from deskpet.sdk_adapters.tools import (
-    ProductEffectExecutor,
-    ProductToolsAdapter,
-    SdkToolExecutorCatalogUnavailable,
-)
+
+def test_directory_picker_is_discoverable_not_in_the_direct_kernel() -> None:
+    assert "tool_search" in SDK_DIRECT_TOOL_KERNEL
+    assert {
+        "project_directory_select",
+        "workspace_prepare",
+        "workspace_recall",
+    }.isdisjoint(SDK_DIRECT_TOOL_KERNEL)
 
 
 @dataclass(frozen=True)
@@ -141,6 +152,40 @@ def _effect(run_id: str, *, effect_id: str = "effect-a") -> PreparedToolEffect:
             "root_run_id": f"root-{run_id}",
         },
     )
+
+
+def test_run_authority_writes_the_supplied_physical_scope_store() -> None:
+    physical_store = ToolCapabilityScopeStore()
+    registry = SdkRunToolAuthorityRegistry(scope_store=physical_store)
+
+    authority = _prepare(registry, "run-shared-store")
+
+    assert registry.scope_store is physical_store
+    assert physical_store.get(
+        authority.prepared_tool_set.scope_id,
+        session_id=authority.session_id,
+        request_id=authority.request_id,
+    ) is not None
+
+
+def test_run_authority_freezes_and_persists_physical_policy_fingerprint() -> None:
+    catalog, inventory = _catalog()
+    catalog["policy_fingerprint"] = "physical-policy-v7"
+    registry = SdkRunToolAuthorityRegistry()
+
+    authority = registry.prepare_run(
+        run_id="run-physical-policy",
+        session_id="session-a",
+        request_id="request-physical-policy",
+        root_run_id="root-physical-policy",
+        task_scope_id="task-physical-policy",
+        workspace_root=None,
+        catalog=catalog,
+        inventory=inventory,
+    )
+
+    assert authority.prepared_tool_set.policy_fingerprint == "physical-policy-v7"
+    assert authority.run_start_record()["policy_fingerprint"] == "physical-policy-v7"
 
 
 def _run_aware_executor_registry(
@@ -650,6 +695,69 @@ def test_real_capability_bridge_search_describe_activate_updates_exact_scope():
     ).capability_hash
 
 
+def test_sdk_runtime_catalog_activation_changes_next_projection_only_after_receipt():
+    registry = SdkRunToolAuthorityRegistry()
+    _prepare(registry, "run-a", deferred_names=("read_file",))
+    run_id = RunId("run-a")
+    exposure = registry.resolve_exposure(run_id)
+    exposure.restore(run_id, None)
+
+    def context():
+        return registry.resolve("run-a").execution_context()
+
+    bridge = SdkRuntimeCapabilityBridgeAdapter(registry, context)
+    searched = bridge.search("read file")
+    assert [item["capability_id"] for item in searched["matches"]] == [
+        "builtin:read_file"
+    ]
+    described = bridge.describe("builtin:read_file")
+    receipt = bridge.activate(
+        "builtin:read_file",
+        described["schema_hash"],
+        described["describe_nonce"],
+    )
+    assert [item.name for item in exposure.provider_specs(run_id)] == ["tool_search"]
+    exposure.observe_tool_result(run_id, "tool_activate", receipt.to_json())
+    assert [item.name for item in exposure.provider_specs(run_id)] == [
+        "read_file",
+        "tool_search",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_runtime_activated_tool_is_admitted_by_product_authorization():
+    authorities = SdkRunToolAuthorityRegistry()
+    _prepare(authorities, "run-a", deferred_names=("read_file",))
+    run_id = RunId("run-a")
+    exposure = authorities.resolve_exposure(run_id)
+    exposure.restore(run_id, None)
+    policy = SdkPreparedAuthorizationPolicy(
+        PreparedAuthorizationRuntime(
+            _AuthorizationStore("auto", 0), clock=lambda: 100.0
+        ),
+        authorities,
+        clock=lambda: 100.0,
+    )
+
+    with pytest.raises(RuntimeError, match="capability_denied"):
+        await policy.decide(_effect("run-a"), request=None)
+
+    def context():
+        return authorities.resolve("run-a").execution_context()
+
+    bridge = SdkRuntimeCapabilityBridgeAdapter(authorities, context)
+    described = bridge.describe("builtin:read_file")
+    receipt = bridge.activate(
+        "builtin:read_file",
+        described["schema_hash"],
+        described["describe_nonce"],
+    )
+    exposure.observe_tool_result(run_id, "tool_activate", receipt.to_json())
+
+    result = await policy.decide(_effect("run-a"), request=None)
+    assert result.decision.value == "allow"
+
+
 @pytest.mark.asyncio
 async def test_product_authorization_uses_exact_hashes_and_real_auto_grant(
     tmp_path: Path,
@@ -736,6 +844,29 @@ async def test_manual_policy_prepares_user_grant_and_waits_for_sdk_decision():
     identity = policy.identity_factory(prepared, result.request)
     assert identity.grant_fingerprint == facts.grant.fingerprint
     assert identity.decision_nonce == result.request.nonce
+
+
+@pytest.mark.asyncio
+async def test_manual_policy_uses_distinct_immutable_grants_per_effect():
+    authorities = SdkRunToolAuthorityRegistry()
+    _prepare(authorities, "run-a")
+    policy = SdkPreparedAuthorizationPolicy(
+        PreparedAuthorizationRuntime(
+            _AuthorizationStore("manual", 3), clock=lambda: 100.0
+        ),
+        authorities,
+        clock=lambda: 100.0,
+    )
+    first = _effect("run-a", effect_id="effect-manual-a")
+    second = _effect("run-a", effect_id="effect-manual-b")
+
+    await policy.decide(first, request=None)
+    await policy.decide(second, request=None)
+
+    assert (
+        policy.facts_for(first).grant.task_grant_id
+        != policy.facts_for(second).grant.task_grant_id
+    )
 
 
 @pytest.mark.asyncio

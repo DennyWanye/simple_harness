@@ -65,6 +65,42 @@ async def test_capability_scope_is_strictly_session_and_request_bound() -> None:
 
 
 @pytest.mark.asyncio
+async def test_dynamic_admission_allows_only_exact_run_local_tool() -> None:
+    registry, prepared, calls = _guarded_runtime()
+    deferred = ToolCapabilityResolver(registry).resolve_draft(
+        ToolExposureIntent(discoverable_selectors=("guarded_tool",)),
+        eligibility=ToolEligibilityContext("session-b", "request-b", "chat"),
+    ).finalize(scope_id="scope-b")
+    assert deferred.capability("guarded_tool") is None
+    assert registry.capability_scope_store is not None
+    registry.capability_scope_store.open(
+        deferred,
+        ToolEligibilityContext("session-b", "request-b", "chat"),
+    )
+    registry.set_dynamic_capability_admission_provider(
+        lambda name, context, spec: (
+            name == "guarded_tool"
+            and context.scope_id == "scope-b"
+            and context.session_id == "session-b"
+            and context.request_id == "request-b"
+            and spec.schema_hash == prepared.capability("guarded_tool").ref.schema_hash
+        )
+    )
+
+    result = await registry.execute_tool(
+        "guarded_tool",
+        {},
+        "session-b",
+        execution_context=ToolExecutionContext(
+            "scope-b", "session-b", "request-b", run_id="run-b"
+        ),
+    )
+
+    assert result["ok"] is True
+    assert calls == [{}]
+
+
+@pytest.mark.asyncio
 async def test_hot_replaced_tool_is_stale_and_handler_is_not_called() -> None:
     registry, _prepared, calls = _guarded_runtime()
     replacement_calls: list[dict] = []

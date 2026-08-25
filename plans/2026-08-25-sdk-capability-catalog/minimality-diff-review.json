@@ -1,0 +1,9 @@
+{
+  "schema": "plan-test/minimality-review/v1",
+  "review": "diff-review",
+  "decision": "LEAN",
+  "findings": [
+    "Removed stale pre-change SDK architecture claims that said Runtime Tool catalog and dynamic exposure were missing."
+  ],
+  "applied": true
+}

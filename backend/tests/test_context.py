@@ -59,6 +59,15 @@ def test_service_context_accepts_search_gateway_runtime():
     assert ctx.get("search_gateway") is gateway
 
 
+def test_service_context_accepts_legacy_frozen_skill_fallback():
+    ctx = ServiceContext()
+    resolver = object()
+
+    ctx.register("legacy_frozen_skill_instruction_resolver", resolver)
+
+    assert ctx.get("legacy_frozen_skill_instruction_resolver") is resolver
+
+
 def test_context_os_task_projection_hooks_are_registered_services():
     ctx = ServiceContext()
     project = object()

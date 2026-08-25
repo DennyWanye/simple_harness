@@ -7701,8 +7701,8 @@ requires-dist = [
     { name = "scrapling", extras = ["fetchers"], specifier = ">=0.4" },
     { name = "selectolax", specifier = ">=0.3" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
-    { name = "simple-harness-memory-sdk", path = "vendor/simple_harness_memory_sdk-0.5.0-py3-none-any.whl" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.4.0-py3-none-any.whl" },
+    { name = "simple-harness-memory-sdk", path = "vendor/simple_harness_memory_sdk-0.5.2-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.6.2-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tomli", specifier = ">=2.0" },
@@ -7721,8 +7721,8 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "simple-harness-memory-sdk"
-version = "0.5.0"
-source = { path = "vendor/simple_harness_memory_sdk-0.5.0-py3-none-any.whl" }
+version = "0.5.2"
+source = { path = "vendor/simple_harness_memory_sdk-0.5.2-py3-none-any.whl" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "numpy" },
@@ -7731,7 +7731,7 @@ dependencies = [
     { name = "structlog" },
 ]
 wheels = [
-    { filename = "simple_harness_memory_sdk-0.5.0-py3-none-any.whl", hash = "sha256:c274fa6b2db538c29897f684b3f2f85775cb4b3a6870018e83792ff90b51ea46" },
+    { filename = "simple_harness_memory_sdk-0.5.2-py3-none-any.whl", hash = "sha256:deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e" },
 ]
 
 [package.metadata]
@@ -7752,10 +7752,10 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.16.3" },
     { name = "sentence-transformers", marker = "extra == 'all'", specifier = ">=3.0" },
     { name = "sentence-transformers", marker = "extra == 'embeddings'", specifier = ">=3.0" },
-    { name = "simple-harness-sdk", specifier = ">=0.4,<0.5" },
-    { name = "simple-harness-sdk", marker = "extra == 'all'", specifier = ">=0.4,<0.5" },
-    { name = "simple-harness-sdk", marker = "extra == 'dev'", specifier = ">=0.4,<0.5" },
-    { name = "simple-harness-sdk", marker = "extra == 'harness'", specifier = ">=0.4,<0.5" },
+    { name = "simple-harness-sdk", specifier = ">=0.4,<0.7" },
+    { name = "simple-harness-sdk", marker = "extra == 'all'", specifier = ">=0.4,<0.7" },
+    { name = "simple-harness-sdk", marker = "extra == 'dev'", specifier = ">=0.4,<0.7" },
+    { name = "simple-harness-sdk", marker = "extra == 'harness'", specifier = ">=0.4,<0.7" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "torch", marker = "extra == 'all'", specifier = ">=2.7.1" },
     { name = "torch", marker = "extra == 'embeddings'", specifier = ">=2.7.1" },
@@ -7764,13 +7764,13 @@ provides-extras = ["all", "dev", "embeddings", "harness", "openai", "world"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.4.0"
-source = { path = "vendor/simple_harness_sdk-0.4.0-py3-none-any.whl" }
+version = "0.6.2"
+source = { path = "vendor/simple_harness_sdk-0.6.2-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.4.0-py3-none-any.whl", hash = "sha256:aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6" },
+    { filename = "simple_harness_sdk-0.6.2-py3-none-any.whl", hash = "sha256:ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e" },
 ]
 
 [package.metadata]

@@ -452,7 +452,15 @@ def build_explicit_product_tool_catalog(
 
         async def invoke(arguments, context, *, _name=name, _handler=handler, _mode=mode):
             adapted = adapt_model_arguments(_name, arguments)
-            old_context = _execution_context(context)
+            old_context = (
+                dependencies.execution_context_getter()
+                if _name == "skill_invoke"
+                else _execution_context(context)
+            )
+            if _name == "skill_invoke" and not isinstance(
+                old_context, ToolExecutionContext
+            ):
+                raise TypeError("skill_invoke requires authoritative ToolExecutionContext")
             call_id = active_product_tool_call_id().value
             resolved_handler, resolved_mode = (
                 _handler.resolve() if _mode == "lazy" else (_handler, _mode)

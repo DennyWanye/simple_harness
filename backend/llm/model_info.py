@@ -300,17 +300,36 @@ def supported_windows_for(model: str) -> list[int]:
     return sorted(set(int(w) for w in wins))
 
 
+# Temporary UI policy while relay /models responses expose ids but no
+# structured context capability metadata.  This is deliberately separate from
+# BUILTIN model facts: users may choose one of these operational budget tiers,
+# but we do not claim that every Provider/model natively supports every tier.
+TEMPORARY_USER_CONTEXT_WINDOWS: tuple[int, ...] = (
+    128_000,
+    256_000,
+    512_000,
+    1_000_000,
+)
+
+
+def user_selectable_windows_for(model: str) -> list[int]:
+    """Temporary user-controlled context budget tiers for a model id."""
+    if not str(model or "").strip():
+        return []
+    return list(TEMPORARY_USER_CONTEXT_WINDOWS)
+
+
 def save_global_window_override(model: str, context_window: int) -> bool:
     """把用户选择的上下文档位写入全局 ``model_overrides.toml``。
 
     读-改-写整个文件(结构只有 [models."<id>"] 段,手写序列化足够安全)。
     resolve() 的 global 层随即生效 —— 压缩阈值/预算/UI 全部跟着对齐。
-    选择必须 ∈ supported_windows_for(model)(调用方校验,这里再守一遍)。
+    选择必须 ∈ user_selectable_windows_for(model)(调用方校验,这里再守一遍)。
     成功 True;非法档位/IO 失败 False(不抛)。
     """
     try:
         window = int(context_window)
-        if window not in supported_windows_for(model):
+        if window not in user_selectable_windows_for(model):
             logger.warning(
                 "model_window_override_rejected model=%s window=%d not in supported",
                 model, window,

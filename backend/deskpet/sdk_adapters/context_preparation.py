@@ -8,9 +8,10 @@ from __future__ import annotations
 import base64
 import inspect
 import json
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from .context_authority import PreparedSdkContextSnapshotV1
 
@@ -50,6 +51,7 @@ def trusted_project_task_snapshot(
     root_run_id: str,
     request_id: str,
     workspace: str | None,
+    local_page_url: str | None = None,
 ) -> dict[str, Any]:
     """Build the trusted per-request project/task facts sent to the Provider."""
 
@@ -62,7 +64,35 @@ def trusted_project_task_snapshot(
     missing = [key for key, value in normalized.items() if not value]
     if missing:
         raise ValueError(f"trusted project/task snapshot missing {missing[0]}")
-    return {**normalized, "workspace": workspace}
+    snapshot: dict[str, Any] = {**normalized, "workspace": workspace}
+    if local_page_url is not None:
+        snapshot["local_page_url"] = normalize_trusted_local_page_url(
+            local_page_url
+        )
+    return snapshot
+
+
+def normalize_trusted_local_page_url(value: str) -> str:
+    """Accept one credential-free loopback HTTP(S) page URL."""
+
+    raw = str(value or "").strip()
+    try:
+        parsed = urlsplit(raw)
+        port = parsed.port
+    except ValueError as exc:
+        raise ValueError("local_page_url is invalid") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("local_page_url must be a credential-free loopback URL")
+    if port is None:
+        raise ValueError("local_page_url must include an explicit port")
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", "", ""))
 
 
 async def _resolve(value: object) -> object:
@@ -341,5 +371,6 @@ __all__ = (
     "SdkContextPreparationService",
     "SdkContextSourceUnavailable",
     "SdkContextSources",
+    "normalize_trusted_local_page_url",
     "trusted_project_task_snapshot",
 )

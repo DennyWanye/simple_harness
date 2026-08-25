@@ -1059,12 +1059,15 @@ class ToolRegistry:
         self._snapshot_spec_leases: dict[
             tuple[str, str], frozenset[str]
         ] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._catalog_revision = 0
         # The durable GrowthAuthorityRouter owns when this value advances.
         # Registry only provides the atomic, manifest-checked projection.
         self._authority_phase = "legacy"
         self._capability_scope_store: Optional[ToolCapabilityScopeStore] = None
+        self._dynamic_capability_admission_provider: Optional[
+            Callable[[str, ToolExecutionContext, ToolSpec], bool]
+        ] = None
         self._context_os_enabled_provider: Callable[[], bool] = lambda: False
         self._context_os_e2e_hooks: Optional[Any] = None
         self._mcp_catalog_stale_callback: Optional[Callable[[str], None]] = None
@@ -1142,6 +1145,14 @@ class ToolRegistry:
         self, store: Optional[ToolCapabilityScopeStore]
     ) -> None:
         self._capability_scope_store = store
+
+    def set_dynamic_capability_admission_provider(
+        self,
+        provider: Optional[Callable[[str, ToolExecutionContext, ToolSpec], bool]],
+    ) -> None:
+        """Wire the Run-local authority for post-start capability activation."""
+
+        self._dynamic_capability_admission_provider = provider
 
     @property
     def capability_scope_store(self) -> Optional[ToolCapabilityScopeStore]:
@@ -1589,6 +1600,60 @@ class ToolRegistry:
                 self._retire_spec_if_leased_locked(removed)
                 self._catalog_revision += 1
             return removed is not None
+
+    def publish_source_batch(
+        self,
+        *,
+        source: str,
+        registrations: Sequence[Callable[[], None]],
+    ) -> ToolCatalogSnapshot:
+        """Replace one source's complete Tool set with atomic visibility.
+
+        Registration callbacks must call this registry's normal ``register``
+        method.  The re-entrant registry lock prevents readers from observing
+        a partially published server catalog; any callback failure restores
+        the exact pre-publication state and revision.
+        """
+
+        if not source.startswith("mcp:"):
+            raise ToolCatalogMutationError("batch source must be an MCP source")
+        actions = tuple(registrations)
+        if any(not callable(action) for action in actions):
+            raise ToolCatalogMutationError("registrations must be callable")
+        with self._lock:
+            before_tools = dict(self._tools)
+            before_retired = dict(self._retired_specs)
+            before_revision = self._catalog_revision
+            try:
+                for name, spec in tuple(self._tools.items()):
+                    if spec.source == source:
+                        self._tools.pop(name)
+                        self._retire_spec_if_leased_locked(spec)
+                for action in actions:
+                    action()
+                if any(
+                    spec.source != source and before_tools.get(name) is not spec
+                    for name, spec in self._tools.items()
+                ):
+                    raise ToolCatalogMutationError(
+                        "batch registration published a foreign source"
+                    )
+            except Exception:
+                self._tools = before_tools
+                self._retired_specs = before_retired
+                self._catalog_revision = before_revision
+                raise
+            changed = self._tools != before_tools
+            self._catalog_revision = before_revision + int(changed)
+            specs = tuple(
+                replace(
+                    spec,
+                    schema=copy.deepcopy(spec.schema),
+                    requires_env=list(spec.requires_env),
+                )
+                for spec in self._tools.values()
+            )
+            return ToolCatalogSnapshot(self._catalog_revision, specs)
 
     def _fingerprint_is_leased_locked(self, fingerprint: str) -> bool:
         return any(
@@ -2452,14 +2517,44 @@ class ToolRegistry:
                 return {"ok": False, "result": None, "error": "capability_denied"}
             prepared = record.prepared.capability(name)
             if prepared is None:
-                return {"ok": False, "result": None, "error": "capability_denied"}
+                provider = self._dynamic_capability_admission_provider
+                try:
+                    dynamically_admitted = bool(
+                        provider(name, execution_context, spec)
+                    ) if provider is not None else False
+                except Exception as exc:  # noqa: BLE001 - admission is fail-closed
+                    logger.warning(
+                        "dynamic_capability_admission_failed tool=%s error_type=%s",
+                        name,
+                        type(exc).__name__,
+                    )
+                    dynamically_admitted = False
+                if not dynamically_admitted:
+                    logger.warning(
+                        "dynamic_capability_admission_denied tool=%s provider_bound=%s",
+                        name,
+                        provider is not None,
+                    )
+                    return {"ok": False, "result": None, "error": "capability_denied"}
             if active_policy.fingerprint != record.prepared.policy_fingerprint:
+                logger.warning(
+                    "tool_capability_stale tool=%s reason=policy_fingerprint "
+                    "active_policy_ref=%s prepared_policy_ref=%s",
+                    name,
+                    active_policy.fingerprint[:12],
+                    record.prepared.policy_fingerprint[:12],
+                )
                 return {"ok": False, "result": None, "error": "capability_stale"}
             if (
-                prepared.ref.schema_hash != spec.schema_hash
-                or prepared.ref.spec_version != spec.spec_version
-                or prepared.ref.permission_policy_version
-                != spec.permission_policy_version
+                (
+                    prepared is not None
+                    and (
+                        prepared.ref.schema_hash != spec.schema_hash
+                        or prepared.ref.spec_version != spec.spec_version
+                        or prepared.ref.permission_policy_version
+                        != spec.permission_policy_version
+                    )
+                )
                 or not spec.env_satisfied()
                 or not spec.is_visible(record.eligibility)
                 or spec.toolset in active_policy.disabled_toolsets
@@ -2469,6 +2564,10 @@ class ToolRegistry:
                     and spec.name not in active_policy.dangerous_allowlist
                 )
             ):
+                logger.warning(
+                    "tool_capability_stale tool=%s reason=spec_or_eligibility",
+                    name,
+                )
                 return {"ok": False, "result": None, "error": "capability_stale"}
 
         # WI-T5.1 v3：disabled_toolsets 双层挡 — strict 模式下 execute_tool

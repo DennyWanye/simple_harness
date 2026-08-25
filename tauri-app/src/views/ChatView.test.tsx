@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "./ChatView";
 import { useSessionsStore } from "../stores/sessionsStore";
 import { controlWS } from "../code-panel/controlWs";
+import { useProvidersStore } from "../code-panel/providersStore";
+import { useSessionModelsStore } from "../code-panel/sessionModelsStore";
 import { VOICE_UNAVAILABLE_MESSAGE } from "../voiceAvailability";
 
 vi.mock("../code-panel/controlWs", () => ({
@@ -75,6 +77,8 @@ describe("ChatView（WB-4）", () => {
     );
     listeners = [];
     useSessionsStore.setState({ companion_owner: null });
+    useProvidersStore.setState({ providers: [] });
+    useSessionModelsStore.getState().set_catalog([], "none", "");
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
     vi.mocked(controlWS.state).mockReturnValue("connected");
@@ -128,6 +132,28 @@ describe("ChatView（WB-4）", () => {
       .mock.calls.map(([m]) => m as { type: string; payload?: { session_id?: string } })
       .filter((m) => m.type === "session_messages_load");
     expect(hydration[0]?.payload?.session_id).toBe("default");
+  });
+
+  it("模型按钮直接显示当前 Provider 的模型名称", () => {
+    useProvidersStore.setState({
+      providers: [
+        {
+          id: "relay",
+          name: "Relay",
+          enabled: true,
+          default_model: "gpt-5.6-sol",
+          models: ["gpt-5.6-sol"],
+        },
+      ],
+    });
+
+    render(<ChatView activeSid="default" secret="s3cret" />);
+
+    const button = screen.getByTestId("chat-model-button");
+    expect(button.textContent).toContain("gpt-5.6-sol");
+    expect(button.textContent).not.toContain("默认模型");
+    expect(button.title).toBe("模型与参数（当前 gpt-5.6-sol）");
+    expect(screen.queryByTitle("Session ID，可选中复制")).toBeNull();
   });
 
   it("身份就绪后输入回车 → 发送走 controlWS 的 chat_v2", () => {

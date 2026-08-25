@@ -1976,6 +1976,11 @@ function dispatch(msg: any) {
       useProvidersStore.getState().set_providers(incoming);
       // Mirror into Phase 4 settings store so SettingsProviders re-renders.
       dispatchProviderEvent(msg);
+      // The model catalog is a derived view of the active Provider chain.
+      // Refresh it from the backend authority whenever that chain changes;
+      // otherwise a catalog fetched before Provider setup remains empty for
+      // the lifetime of the socket and the model picker only shows "default".
+      ws?.send(JSON.stringify({ type: "models_list" }));
       break;
     }
     case "settings_providers_list_response": {

@@ -4,11 +4,22 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
-
+from context import ServiceContext
+from deskpet.sdk_adapters.composition import (
+    OwnedResourceCloser,
+    ProductionRuntimeBuild,
+    ProductSdkRuntimeStack,
+    SdkRuntimeBuildInputs,
+    SdkRuntimeNotReady,
+    WorkflowFactoryResourceScope,
+    WorkflowRuntimeBuild,
+)
+from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
+from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_wheel_path
 from simple_harness import (
     ROOT_PROFILE_KEY,
     RuntimePorts,
@@ -17,20 +28,6 @@ from simple_harness import (
     build_runtime,
 )
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-
-from deskpet.sdk_adapters.composition import (
-    OwnedResourceCloser,
-    ProductSdkRuntimeStack,
-    ProductionRuntimeBuild,
-    SdkRuntimeBuildInputs,
-    SdkRuntimeNotReady,
-    WorkflowFactoryResourceScope,
-    WorkflowRuntimeBuild,
-)
-from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
-from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_wheel_path
-from context import ServiceContext
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WHEEL = sdk_wheel_path()
@@ -184,7 +181,7 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
     with sqlite3.connect(paths.execution_database) as connection:
         assert connection.execute(
             "SELECT max(version) FROM sdk_schema_migrations"
-        ).fetchone()[0] == 4
+        ).fetchone()[0] == 6
         tables = {
             row[0]
             for row in connection.execute(
@@ -222,6 +219,26 @@ def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> Non
     assert 'if str(spec.name) in {"memory_recall", "memory_search"}' in source
     assert "def resolve(self, generation, content_fingerprint):" in source
     assert ".resolve(generation, content_fingerprint)" in source
+
+
+def test_desktop_composition_shares_physical_capability_scope_store() -> None:
+    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+
+    assert (
+        'capability_scope_store = service_context.get("tool_capability_scope_store")'
+        in source
+    )
+    assert "scope_store=capability_scope_store" in source
+    assert source.index(
+        'capability_scope_store = service_context.get("tool_capability_scope_store")'
+    ) < source.index("scope_store=capability_scope_store")
+    assert 'frozen_catalog["policy_fingerprint"] = (' in source
+    assert "visibility_registry=live_tool_registry" in source
+    assert "reason=global_visibility_not_ready" in source
+    assert (
+        "deskpet_tool_registry_v2.read_policy_snapshot(strict=True).fingerprint"
+        in source
+    )
 
 
 @pytest.mark.asyncio

@@ -40,9 +40,11 @@ import hashlib
 import json
 import os
 import shutil
+import uuid
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Mapping, Optional
+from urllib.parse import urlsplit
 
 import structlog
 
@@ -151,6 +153,55 @@ def _expand_path(value: str) -> str:
     return os.path.expanduser(os.path.expandvars(out))
 
 
+def _prepare_server_config(entry: Mapping[str, Any]) -> dict[str, Any]:
+    """Freeze one server config, including a trusted local page origin."""
+
+    config = dict(entry)
+    if str(config.get("name") or "").strip() != "playwright":
+        return config
+    raw = os.environ.get("DESKPET_LOCAL_PAGE_URL", "").strip()
+    if not raw:
+        return config
+    from deskpet.sdk_adapters.context_preparation import (
+        normalize_trusted_local_page_url,
+    )
+
+    try:
+        parsed = urlsplit(normalize_trusted_local_page_url(raw))
+    except ValueError:
+        logger.warning(
+            "mcp_local_page_origin_rejected",
+            server="playwright",
+            reason="invalid_loopback_url",
+        )
+        return config
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    args = [str(value) for value in config.get("args", [])]
+    try:
+        flag_index = args.index("--allowed-origins")
+    except ValueError:
+        args.extend(("--allowed-origins", origin))
+    else:
+        if flag_index + 1 >= len(args):
+            args.append(origin)
+        else:
+            existing = [
+                item.strip()
+                for item in args[flag_index + 1].split(";")
+                if item.strip()
+            ]
+            if origin not in existing:
+                existing.append(origin)
+            args[flag_index + 1] = ";".join(existing)
+    config["args"] = args
+    logger.info(
+        "mcp_local_page_origin_injected",
+        server="playwright",
+        origin_count=len(args[args.index("--allowed-origins") + 1].split(";")),
+    )
+    return config
+
+
 # -------------------- per-server runtime record --------------------
 
 
@@ -171,6 +222,7 @@ class _ServerRuntime:
         "reconnect_task",
         "exit_stack",
         "execution_build_material",
+        "incarnation",
     )
 
     def __init__(self, name: str, config: dict[str, Any]) -> None:
@@ -184,6 +236,7 @@ class _ServerRuntime:
         self.reconnect_task: Optional[asyncio.Task[None]] = None
         self.exit_stack: Optional[AsyncExitStack] = None
         self.execution_build_material: Optional[_McpExecutionBuildMaterial] = None
+        self.incarnation: str = ""
 
 
 # -------------------- the manager --------------------
@@ -268,7 +321,10 @@ class MCPManager:
                 )
                 continue
 
-            runtime = _ServerRuntime(name=name, config=entry)
+            runtime = _ServerRuntime(
+                name=name,
+                config=_prepare_server_config(entry),
+            )
             self._servers[name] = runtime
             try:
                 await self._connect_once(runtime)
@@ -331,6 +387,15 @@ class MCPManager:
         """Snapshot of every known server's state, for UI / telemetry."""
         return {name: rt.state for name, rt in self._servers.items()}
 
+    def server_incarnations(self) -> dict[str, str]:
+        """Return only fully published, currently running incarnations."""
+
+        return {
+            name: runtime.incarnation
+            for name, runtime in self._servers.items()
+            if runtime.state == "running" and runtime.incarnation
+        }
+
     def plan_prepared_session(
         self,
         *,
@@ -373,6 +438,8 @@ class MCPManager:
         server_name: str,
         tool_name: str,
         args: dict[str, Any] | None,
+        *,
+        expected_incarnation: str | None = None,
     ) -> dict[str, Any]:
         """Invoke ``tool_name`` on ``server_name`` — fast-fail on dead
         sessions.
@@ -400,6 +467,17 @@ class MCPManager:
                 "server": server_name,
                 "state": runtime.state,
                 "retriable": True,
+            }
+        if (
+            expected_incarnation is not None
+            and runtime.incarnation != expected_incarnation
+        ):
+            return {
+                "error": "mcp_incarnation_stale",
+                "server": server_name,
+                "expected_incarnation": expected_incarnation,
+                "current_incarnation": runtime.incarnation,
+                "retriable": False,
             }
         if tool_name not in runtime.tool_names:
             # Strip namespace if caller already qualified it.
@@ -503,23 +581,18 @@ class MCPManager:
             await exit_stack.aclose()
             raise
 
-        # Save session + hand ownership of the stack to runtime so
-        # stop() can aclose it.
-        runtime.session = session
-        runtime.exit_stack = exit_stack
-        runtime.state = "running"
-        runtime.execution_build_material = _resolve_mcp_execution_build_material(
+        build_material = _resolve_mcp_execution_build_material(
             runtime.name,
             runtime.config,
         )
-
-        # Inject each tool into the registry.
         tools = getattr(tools_result, "tools", []) or []
-        if (
-            self._registry is not None
-            and runtime.execution_build_material is None
-        ):
+        if self._registry is not None and build_material is None:
+            runtime.session = session
+            runtime.exit_stack = exit_stack
+            runtime.execution_build_material = None
+            runtime.incarnation = ""
             runtime.tool_names = []
+            runtime.state = "running"
             logger.warning(
                 "mcp_server_build_identity_unavailable",
                 server=runtime.name,
@@ -528,70 +601,39 @@ class MCPManager:
                 note="tools withheld from durable registry",
             )
             return
-        registered: list[str] = []
-        for tool in tools:
-            qualified = f"mcp_{runtime.name}_{_tool_name(tool)}"
-            if self._registry is None:
-                registered.append(qualified)
-                continue
+
+        incarnation = uuid.uuid4().hex
+        registered = [f"mcp_{runtime.name}_{_tool_name(tool)}" for tool in tools]
+        if self._registry is not None:
+            actions = tuple(
+                lambda _tool=tool, _qualified=qualified: _register_mcp_tool(
+                    registry=self._registry,
+                    manager=self,
+                    runtime=runtime,
+                    tool=_tool,
+                    qualified=_qualified,
+                    build_material=build_material,
+                    incarnation=incarnation,
+                )
+                for tool, qualified in zip(tools, registered, strict=True)
+            )
             try:
-                annotations = getattr(tool, "annotations", None)
-                if hasattr(annotations, "model_dump"):
-                    annotations = annotations.model_dump()
-                annotations = annotations if isinstance(annotations, dict) else {}
-                meta = getattr(tool, "meta", None) or getattr(tool, "_meta", None)
-                if hasattr(meta, "model_dump"):
-                    meta = meta.model_dump()
-                if isinstance(meta, dict):
-                    annotations = {**annotations, **meta}
-                fixture_hash = str(annotations.get("fixture_spec_hash", "") or "")
-                e2e_hooks = getattr(self._registry, "context_os_e2e_hooks", None)
-                visible_when = None
-                visibility_scope = "global"
-                if fixture_hash and e2e_hooks is not None:
-                    visibility_scope = "session"
-                    visible_when = lambda context, _name=qualified, _hooks=e2e_hooks: (
-                        context is not None
-                        and _hooks.visible(session_id=context.session_id, tool=_name)
-                    )
-                build_identity = (
-                    None
-                    if runtime.execution_build_material is None
-                    else runtime.execution_build_material.for_tool(
-                        server_name=runtime.name,
-                        tool_name=_tool_name(tool),
-                    )
-                )
-                # WI-T4.1 v3: MCP server reconnect / hot-replace 合法场景，
-                # 显式 opt-in 避免 ToolNameConflictError 误抛。
-                self._registry.register(
-                    name=qualified,
-                    toolset="mcp",
-                    schema=_tool_to_schema(qualified, tool),
-                    handler=_make_tool_handler(self, runtime.name, tool),
-                    check_fn=_make_check_fn(self, runtime.name),
+                self._registry.publish_source_batch(
                     source=f"mcp:{runtime.name}",
-                    replace_allowed=True,
-                    visible_when=visible_when,
-                    visibility_scope=visibility_scope,
-                    fixture_epoch=int(annotations.get("fixture_epoch", 0) or 0),
-                    fixture_spec_hash=fixture_hash,
-                    fixture_spec_version=str(annotations.get("fixture_spec_version", "") or ""),
-                    fixture_remote_name=_tool_name(tool),
-                    stable_handler_id=(
-                        "" if build_identity is None else build_identity.handler_id
-                    ),
-                    execution_build_identity=build_identity,
+                    registrations=actions,
                 )
-                registered.append(qualified)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "mcp_tool_register_failed",
-                    server=runtime.name,
-                    tool=_tool_name(tool),
-                    error=repr(exc),
-                )
+            except Exception:
+                await exit_stack.aclose()
+                raise
+
+        # Publication is the registration barrier: no caller can observe a
+        # running incarnation until its complete Tool set is visible.
+        runtime.session = session
+        runtime.exit_stack = exit_stack
+        runtime.execution_build_material = build_material
+        runtime.incarnation = incarnation
         runtime.tool_names = registered
+        runtime.state = "running"
         logger.info(
             "mcp_server_connected",
             server=runtime.name,
@@ -647,6 +689,13 @@ class MCPManager:
         """Remove registered tool names from the registry."""
         if self._registry is None or not runtime.tool_names:
             runtime.tool_names = []
+            runtime.incarnation = ""
+            return
+        publish_batch = getattr(self._registry, "publish_source_batch", None)
+        if callable(publish_batch):
+            publish_batch(source=f"mcp:{runtime.name}", registrations=())
+            runtime.tool_names = []
+            runtime.incarnation = ""
             return
         # ToolRegistry doesn't expose a public unregister in this
         # project, but it stores ``_tools`` as a plain dict under a
@@ -669,6 +718,7 @@ class MCPManager:
                     error=repr(exc),
                 )
         runtime.tool_names = []
+        runtime.incarnation = ""
 
     # ------------------------------------------------------------------
     # Internal: reconnect loop
@@ -1037,7 +1087,11 @@ def _tool_to_schema(qualified: str, tool: Any) -> dict[str, Any]:
 
 
 def _make_tool_handler(
-    manager: "MCPManager", server_name: str, tool: Any
+    manager: "MCPManager",
+    server_name: str,
+    tool: Any,
+    *,
+    expected_incarnation: str | None = None,
 ) -> Callable[[dict[str, Any], str], Any]:
     """Build an async registry handler bound to the MCP session loop.
 
@@ -1050,7 +1104,12 @@ def _make_tool_handler(
 
     async def _handler(args: dict[str, Any], task_id: str) -> str:
         del task_id
-        result = await manager.mcp_call(server_name, tool_name, args)
+        result = await manager.mcp_call(
+            server_name,
+            tool_name,
+            args,
+            expected_incarnation=expected_incarnation,
+        )
         return json.dumps(result, ensure_ascii=False)
 
     return _handler
@@ -1071,6 +1130,65 @@ def _make_check_fn(
         )
 
     return _ready
+
+
+def _register_mcp_tool(
+    *,
+    registry: Any,
+    manager: "MCPManager",
+    runtime: _ServerRuntime,
+    tool: Any,
+    qualified: str,
+    build_material: _McpExecutionBuildMaterial,
+    incarnation: str,
+) -> None:
+    annotations = getattr(tool, "annotations", None)
+    if hasattr(annotations, "model_dump"):
+        annotations = annotations.model_dump()
+    annotations = annotations if isinstance(annotations, dict) else {}
+    meta = getattr(tool, "meta", None) or getattr(tool, "_meta", None)
+    if hasattr(meta, "model_dump"):
+        meta = meta.model_dump()
+    if isinstance(meta, dict):
+        annotations = {**annotations, **meta}
+    fixture_hash = str(annotations.get("fixture_spec_hash", "") or "")
+    e2e_hooks = getattr(registry, "context_os_e2e_hooks", None)
+    visible_when = None
+    visibility_scope = "global"
+    if fixture_hash and e2e_hooks is not None:
+        visibility_scope = "session"
+        visible_when = lambda context, _name=qualified, _hooks=e2e_hooks: (
+            context is not None
+            and _hooks.visible(session_id=context.session_id, tool=_name)
+        )
+    build_identity = build_material.for_tool(
+        server_name=runtime.name,
+        tool_name=_tool_name(tool),
+    )
+    registry.register(
+        name=qualified,
+        toolset="mcp",
+        schema=_tool_to_schema(qualified, tool),
+        handler=_make_tool_handler(
+            manager,
+            runtime.name,
+            tool,
+            expected_incarnation=incarnation,
+        ),
+        check_fn=_make_check_fn(manager, runtime.name),
+        source=f"mcp:{runtime.name}",
+        replace_allowed=True,
+        visible_when=visible_when,
+        visibility_scope=visibility_scope,
+        fixture_epoch=int(annotations.get("fixture_epoch", 0) or 0),
+        fixture_spec_hash=fixture_hash,
+        fixture_spec_version=str(
+            annotations.get("fixture_spec_version", "") or ""
+        ),
+        fixture_remote_name=_tool_name(tool),
+        stable_handler_id=build_identity.handler_id,
+        execution_build_identity=build_identity,
+    )
 
 
 def _serialize_call_result(result: Any) -> dict[str, Any]:

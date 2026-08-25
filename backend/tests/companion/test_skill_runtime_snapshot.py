@@ -395,9 +395,10 @@ def test_skill_matcher_cache_isolates_owner_version_and_hash() -> None:
 
 
 @pytest.mark.asyncio
-async def test_skill_invoke_emits_activation_intent_not_fake_receipt() -> None:
+async def test_skill_invoke_emits_activation_intent_not_fake_receipt(caplog) -> None:
     from deskpet.tools import skill_tools
 
+    caplog.set_level("INFO", logger="deskpet.tools.skill_tools")
     snapshot_ref = "snapshot-1"
 
     class _Resolver:
@@ -458,7 +459,42 @@ async def test_skill_invoke_emits_activation_intent_not_fake_receipt() -> None:
     assert result["scope_activation"]["activation_id"].startswith(
         "skill-scope-activation:"
     )
+    assert "loaded_skill_body_count=1" in caplog.text
+    assert "instruction_content_hash=" in caplog.text
+    assert "frozen body" not in caplog.text
     assert "activation_receipt" not in result
+
+
+@pytest.mark.asyncio
+async def test_skill_invoke_logs_privacy_safe_resolution_failure(caplog) -> None:
+    from deskpet.tools import skill_tools
+
+    class _Resolver:
+        async def resolve_frozen_instruction(self, **_kwargs):
+            raise RuntimeError("sdk_frozen_skill_metadata_invalid")
+
+    skill_tools.bind(skill_resolver=_Resolver())
+    try:
+        with pytest.raises(RuntimeError, match="sdk_frozen_skill_metadata_invalid"):
+            await skill_tools._handle(
+                {"skill_name": "translate-doc", "arguments": ["SECRET-BODY"]},
+                ToolExecutionContext(
+                    scope_id="base",
+                    session_id="session",
+                    request_id="request",
+                    run_id="sdk-run",
+                    root_run_id="sdk-run",
+                    capability_snapshot_ref="snapshot-1",
+                ),
+            )
+    finally:
+        skill_tools.bind(skill_resolver=None)
+
+    assert "sdk_skill_instruction_load_failed" in caplog.text
+    assert "skill=translate-doc" in caplog.text
+    assert "error_type=RuntimeError" in caplog.text
+    assert "stable_code=sdk_frozen_skill_metadata_invalid" in caplog.text
+    assert "SECRET-BODY" not in caplog.text
 
 
 @pytest.mark.asyncio

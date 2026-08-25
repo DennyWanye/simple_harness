@@ -140,10 +140,15 @@ export function buildModelOptionsFromCatalog(
   const opts: Array<{ value: string; label: string }> = [
     {
       value: "",
-      label: def ? `跟随 provider 默认（${def}）` : "跟随 provider 默认",
+      label: def || "选择模型",
     },
   ];
-  for (const m of catalog) opts.push({ value: m.id, label: m.label });
+  for (const m of catalog) {
+    // The empty binding and an explicit pin to the Provider's current default
+    // have the same visible effective model.  Show one clear model name rather
+    // than two options that expose internal binding semantics to users.
+    if (m.id !== def) opts.push({ value: m.id, label: m.label });
+  }
   const cur = (current_model ?? "").trim();
   if (cur && !opts.some((o) => o.value === cur)) {
     opts.push({ value: cur, label: `${cur}（自定义）` });

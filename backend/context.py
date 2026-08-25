@@ -29,6 +29,7 @@ _VALID_SERVICES = frozenset({
     "memory_identity_authority",  # validated product auth -> AgentIdentity
     "memory_facts_surface",  # principal-scoped official Memory facts UI adapter
     "frozen_skill_instruction_resolver",  # Run-catalog Skill projection
+    "legacy_frozen_skill_instruction_resolver",  # legacy-only fallback
     "managed_skill_discovery_projection",  # discovery-only managed Skill view
     "file_memory",         # Direct L1 handle (also reachable via manager.file_memory)
     "mcp_manager",         # MCPManager (stdio/sse/streamable_http clients)
@@ -195,6 +196,7 @@ class ServiceContext:
     memory_recall_query: Any | None = None
     memory_recall_scope_resolver: Any | None = None
     frozen_skill_instruction_resolver: Any | None = None
+    legacy_frozen_skill_instruction_resolver: Any | None = None
     managed_skill_discovery_projection: Any | None = None
     file_memory: Any | None = None
     mcp_manager: Any | None = None

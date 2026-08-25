@@ -7,15 +7,16 @@ import hashlib
 import json
 import logging
 import re
+import time
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
 import httpx
-
 from simple_harness.contracts import ContractValidationError
-from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.contracts.json import thaw_json
+from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.dispatch import (
     ProviderInvocationCoordinator,
     ProviderInvocationUnknownError,
@@ -33,11 +34,110 @@ from simple_harness.providers import (
     Secret,
 )
 
-
 _PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
 _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
 _PUBLIC_PROGRESS_ARGUMENT = "deskpet_public_progress"
 logger = logging.getLogger(__name__)
+
+
+def _opaque_ref(value: object) -> str:
+    """Return a bounded correlation value without exposing provider IDs/body data."""
+
+    return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()[:16]
+
+
+def _safe_media_type(value: object) -> str:
+    media_type = str(value or "").partition(";")[0].strip().lower()
+    if media_type == "application/json" or media_type.endswith("+json"):
+        return "json"
+    if media_type.startswith("text/"):
+        return "text"
+    return "other" if media_type else "missing"
+
+
+def _safe_finish_reason(value: object) -> str:
+    reason = str(value or "").strip().lower()
+    if reason in {"stop", "tool_calls", "length", "content_filter", "function_call"}:
+        return reason
+    return "other" if reason else "missing"
+
+
+def _provider_error_code(exc: BaseException) -> str:
+    return str(
+        getattr(getattr(exc, "code", None), "value", None)
+        or getattr(exc, "code", None)
+        or "provider_unclassified_error"
+    )
+
+
+def _provider_failure_stage(error_code: str, status_code: object) -> str:
+    if error_code == "provider_timeout":
+        return "http_timeout" if status_code == 408 else "transport_timeout"
+    if error_code == "provider_transport_error":
+        return "transport"
+    if error_code in {
+        "provider_authentication_failed",
+        "provider_payment_required",
+        "provider_rate_limited",
+        "provider_server_error",
+        "provider_request_rejected",
+    }:
+        return "http_status"
+    if error_code == "provider_protocol_error":
+        return "response_protocol"
+    return "adapter"
+
+
+def _request_diagnostic_summary(request: ProviderRequest) -> dict[str, object]:
+    roles = Counter(message.role.value for message in request.messages)
+    tool_names = sorted(tool.name for tool in request.tools)
+    tool_schema_bytes = sum(
+        len(
+            json.dumps(
+                thaw_json(tool.parameters),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        for tool in request.tools
+    )
+    return {
+        "message_count": len(request.messages),
+        "system_messages": roles.get("system", 0),
+        "user_messages": roles.get("user", 0),
+        "assistant_messages": roles.get("assistant", 0),
+        "tool_messages": roles.get("tool", 0),
+        "tool_count": len(tool_names),
+        "tool_names_digest": _opaque_ref("\n".join(tool_names)),
+        "tool_schema_bytes": tool_schema_bytes,
+        "max_output_tokens": request.max_output_tokens,
+        "temperature_set": request.temperature is not None,
+    }
+
+
+def _response_shape(payload: object) -> dict[str, object]:
+    choices = payload.get("choices") if isinstance(payload, Mapping) else None
+    choice = choices[0] if isinstance(choices, list) and choices else None
+    message = choice.get("message") if isinstance(choice, Mapping) else None
+    raw_calls = message.get("tool_calls") if isinstance(message, Mapping) else None
+    return {
+        "payload_mapping": isinstance(payload, Mapping),
+        "choices_kind": type(choices).__name__,
+        "choice_count": len(choices) if isinstance(choices, list) else -1,
+        "message_mapping": isinstance(message, Mapping),
+        "content_kind": (
+            type(message.get("content")).__name__
+            if isinstance(message, Mapping)
+            else "missing"
+        ),
+        "tool_calls_kind": type(raw_calls).__name__,
+        "tool_call_count": len(raw_calls) if isinstance(raw_calls, list) else -1,
+        "usage_mapping": isinstance(
+            payload.get("usage") if isinstance(payload, Mapping) else None,
+            Mapping,
+        ),
+    }
 
 
 class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
@@ -132,7 +232,42 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         payload: Any,
         response: httpx.Response,
     ) -> ProviderResponse:
-        parsed = super()._parse_response(request, payload, response)
+        request_ref = _opaque_ref(request.request_id.value)
+        shape = _response_shape(payload)
+        logger.info(
+            "product_provider_http_response_received "
+            "request_ref=%s status_code=%s response_bytes=%s media_type=%s "
+            "provider_request_ref=%s payload_mapping=%s choices_kind=%s "
+            "choice_count=%s message_mapping=%s content_kind=%s "
+            "tool_calls_kind=%s tool_call_count=%s usage_mapping=%s",
+            request_ref,
+            response.status_code,
+            len(response.content),
+            _safe_media_type(response.headers.get("content-type")),
+            _opaque_ref(response.headers.get("x-request-id"))
+            if response.headers.get("x-request-id")
+            else "missing",
+            shape["payload_mapping"],
+            shape["choices_kind"],
+            shape["choice_count"],
+            shape["message_mapping"],
+            shape["content_kind"],
+            shape["tool_calls_kind"],
+            shape["tool_call_count"],
+            shape["usage_mapping"],
+        )
+        try:
+            parsed = super()._parse_response(request, payload, response)
+        except Exception as exc:
+            logger.warning(
+                "product_provider_response_parse_failed "
+                "request_ref=%s status_code=%s error_type=%s error_code=%s",
+                request_ref,
+                response.status_code,
+                type(exc).__name__,
+                _provider_error_code(exc),
+            )
+            raise
         if not isinstance(payload, Mapping):
             return parsed
         choices = payload.get("choices")
@@ -341,6 +476,7 @@ class ProductProviderAdapter:
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
         )
+        self._timeout_seconds = float(timeout)
         self._target = ProviderTarget(
             provider_id,
             frozen_model,
@@ -356,6 +492,31 @@ class ProductProviderAdapter:
     async def invoke(
         self, request: ProviderRequest, *, cancel: CancelToken
     ) -> ProviderResponse:
+        started_at = time.monotonic()
+        request_ref = _opaque_ref(request.request_id.value)
+        summary = _request_diagnostic_summary(request)
+        logger.info(
+            "product_provider_attempt_started "
+            "request_ref=%s provider_id=%s model=%s endpoint_ref=%s timeout_seconds=%s "
+            "message_count=%s system_messages=%s user_messages=%s assistant_messages=%s "
+            "tool_messages=%s tool_count=%s tool_names_digest=%s tool_schema_bytes=%s "
+            "max_output_tokens=%s temperature_set=%s",
+            request_ref,
+            self.target.provider_id,
+            self.target.model,
+            self.target.endpoint_identity[:16],
+            self._timeout_seconds,
+            summary["message_count"],
+            summary["system_messages"],
+            summary["user_messages"],
+            summary["assistant_messages"],
+            summary["tool_messages"],
+            summary["tool_count"],
+            summary["tool_names_digest"],
+            summary["tool_schema_bytes"],
+            summary["max_output_tokens"],
+            summary["temperature_set"],
+        )
         try:
             response = await self._delegate.invoke(
                 request,
@@ -367,6 +528,11 @@ class ProductProviderAdapter:
             # asyncio cancellation so the SDK driver cannot reconcile a user
             # stop as an unknown physical handoff and move the durable Run
             # back to waiting.
+            logger.info(
+                "product_provider_attempt_cancelled request_ref=%s elapsed_ms=%s stage=cancel",
+                request_ref,
+                round((time.monotonic() - started_at) * 1000),
+            )
             raise asyncio.CancelledError() from None
         except ContractValidationError as exc:
             # OpenAI-compatible payload parsing constructs typed SDK values
@@ -376,10 +542,14 @@ class ProductProviderAdapter:
             # provider protocol taxonomy so the coordinator settles the Run as
             # failed instead of leaving it in sdk_run_waiting forever.
             logger.warning(
-                "product_provider_contract_violation error_code=%s",
-                getattr(getattr(exc, "code", None), "value", None)
-                or getattr(exc, "code", None)
-                or "",
+                "product_provider_attempt_failed "
+                "request_ref=%s elapsed_ms=%s stage=response_contract "
+                "error_type=%s error_code=%s status_code=missing retryable=%s",
+                request_ref,
+                round((time.monotonic() - started_at) * 1000),
+                type(exc).__name__,
+                _provider_error_code(exc),
+                bool(getattr(exc, "retryable", False)),
             )
             raise ProviderProtocolError(private_cause=exc) from None
         except Exception as exc:
@@ -387,17 +557,40 @@ class ProductProviderAdapter:
             # after a physical handoff into an unknown outcome.  Keep a safe,
             # payload-free breadcrumb so provider response contract drift can
             # be diagnosed without logging prompts, responses, or secrets.
-            logger.exception(
-                "product_provider_invoke_failed error_type=%s error_code=%s",
+            error_code = _provider_error_code(exc)
+            status_code = getattr(exc, "status_code", None)
+            logger.warning(
+                "product_provider_attempt_failed "
+                "request_ref=%s elapsed_ms=%s stage=%s error_type=%s "
+                "error_code=%s status_code=%s retryable=%s",
+                request_ref,
+                round((time.monotonic() - started_at) * 1000),
+                _provider_failure_stage(error_code, status_code),
                 type(exc).__name__,
-                getattr(getattr(exc, "code", None), "value", None)
-                or getattr(exc, "code", None)
-                or "",
+                error_code,
+                status_code if status_code is not None else "missing",
+                bool(getattr(exc, "retryable", False)),
             )
             raise
         response = _extract_public_progress(response)
         response = _retain_tool_calls_in_message(response)
         await self._capture_public_tool_narration(request, response)
+        logger.info(
+            "product_provider_attempt_succeeded "
+            "request_ref=%s elapsed_ms=%s finish_reason=%s tool_call_count=%s "
+            "content_empty=%s usage_present=%s response_model_matches=%s "
+            "provider_request_ref=%s",
+            request_ref,
+            round((time.monotonic() - started_at) * 1000),
+            _safe_finish_reason(response.finish_reason),
+            len(response.tool_calls),
+            not bool(response.message.content.strip()),
+            response.usage is not None,
+            response.model == self.target.model,
+            _opaque_ref(response.provider_request_id)
+            if response.provider_request_id
+            else "missing",
+        )
         return response
 
     async def _capture_public_tool_narration(

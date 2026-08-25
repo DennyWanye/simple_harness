@@ -1,6 +1,67 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-23
+> **最后更新**：2026-08-25
+
+## 2026-08-25 SDK-first 统一能力目录（CAP-1～CAP-5 与 exact-wheel packaged UI 已通过）
+
+- **生产链**：Harness 0.6.2 公共 runtime catalog 统一 built-in、健康 MCP、Skill metadata 与 Workflow；
+  compact direct kernel + 同 Run search/describe/activate 已默认启用，v6 catalog/checkpoint 支持 exact replay。
+- **安全边界**：activation 只改变可见性；目标调用仍经 Effect/HITL/TaskGrant/workspace/origin。MCP 原子发布
+  与 incarnation fence、动态 Run/session/request/scope admission、原始 execution identity 漂移均 fail closed。
+- **制品候选**：Harness source `67f5769…` / wheel `ffb7c061…`；Memory source `46624b…` / wheel
+  `deff2fa8…`。Host exact pin、lock、installed-origin 与 hash 检查已更新；未创建 tag/release。
+- **自动化证据**：Harness `1464 passed, 2 skipped`；Memory `218 passed, 7 skipped`；Host affected
+  `301 passed`；全分片 `15 passed, 2 known-failure`、0 unexpected。Vitest、TypeScript、frontend build、
+  Rust test/check 与 focused mypy 均通过。
+- **真实 UI 边界**：macOS 当前源码 bundle 已真实点击完成 CAP-1。Host 先修复 SDK authority/legacy
+  ToolRegistry 的 split scope Store，再冻结物理 registry policy fingerprint，保留 execution-time stale
+  fail-closed 校验。最终 Session `f800f3fd-8a4d-42b5-b7e3-ada0b8fe3d49`、root
+  `230fe1e642ec5cb8b20717741a073c6c` 在同一 Run 内将 Tool 数 13→14→15；真实 filesystem search/read
+  均 `ok`，模型读取 README 并正确概括第一段。CAP-1 PASS。
+- **真实浏览器边界**：CAP-2 首轮真实 UI 暴露两个独立缺口：Run 不知道当前本地页 URL、Playwright
+  `allowed-origins` 只覆盖默认端口。现由受信任项目/任务快照注入经过 loopback/无凭据/显式端口校验的
+  `local_page_url`，MCP 启动前把 exact origin 合并到真实启动参数和 build identity；新安装默认只通配
+  localhost/127.0.0.1 开发端口。最终 Session `7b03b54a-17da-4345-b8ef-95ee0200a008`、root
+  `6b0e26708de8535695148e88023397d0` 通过真实 Playwright `goto` + `page.title()` 返回固定 fixture 标题。
+  CAP-2 PASS。
+- **真实 Skill 边界**：CAP-3 首轮暴露 SDK catalog 的 Skill locator、英文词形搜索、SDK/legacy resolver
+  路由与 trusted context 投影缺口。现由候选 SDK 搜索 `translate/translation` 的保守同源前缀，Host 将
+  `skill:translate-doc` capability ID 投影为可调用 locator `translate-doc`，并用 Run authority 的完整
+  `ToolExecutionContext` 调用冻结 resolver。最终 Session `19d3bc29-78b0-4897-a1df-b7fa28be9476`、root
+  `15d531d2ad9757fb8d26d0ca84905bd3` 的 `tool_search` 与 `skill_invoke` 均成功；隐私安全日志只记录正文
+  载入次数与 SHA-256，UI 保留 H1/H2/H3、全部三条列表及代码样式 `tool_search`。CAP-3 PASS。
+- **公网 origin 负例**：CAP-4 Session `8b062b24-3a63-48ef-aa35-e69babe3821a`、root
+  `39ace93c669e5999bb1700897e50b356` 真实搜索/描述/激活 Playwright navigate 后，精确调用
+  `https://example.com`；客户端返回 `ERR_BLOCKED_BY_CLIENT`，页面未打开，Agent 明确报告无法访问并未执行
+  表单提交，也未换用其他 Tool 绕过。CAP-4 PASS。
+- **冷重启与 exact-wheel 边界**：CAP-5 用两个跨完整 app/backend 重启的独立 root 验证新 Run 从 13 个基础
+  工具重新发现和激活；过期 nonce 被明确拒绝，随后重新 describe/activate 自愈并完成真实 README 读取。
+  Host 再从 vendored exact 0.6.2 wheel 同步，以无 `PYTHONPATH` packaged macOS app 独立完成 13→14 与真实
+  `head=20` 读取，Session `b3479aa9-201b-4fcf-8068-a5246b7fe20b`、root
+  `18efe97f5dee509db92b4c113688a346`。source `67f5769…` 的最终 reproducible wheel `ffb7c061…` 与完整真测
+  wheel 的运行时包逐文件相同；Host 重锁、重装后再次完成无 `PYTHONPATH` 冷启动与可操作 UI 冒烟。
+  CAP-5 与 exact-wheel packaged UI PASS。候选仍不能作为 SDK release 提升：本次只授权代码提交到远程
+  主分支，没有授权 tag、release 上传和 download-back promotion。
+- **调查日志（2026-08-25）**：SDK Provider 真实调用 seam 已增加 privacy-safe 关联日志，覆盖 request start、
+  HTTP response shape、parse 和 terminal outcome；同一匿名 `request_ref` 可区分 transport timeout、HTTP 408、
+  非 2xx、协议结构错误与 Host contract 错误，不保存正文、Tool 参数、凭据、endpoint 或上游 request ID。
+  Provider/投影/SDK execute 原聚焦回归 `79 passed`；本次 scope/policy 修复聚焦回归 `72 passed`，测试文件
+  Ruff 与 diff-check 通过。stale 日志进一步区分 `policy_fingerprint` 与 `spec_or_eligibility`，且不记录参数正文。
+
+## 2026-08-24 Provider 模型选择目录自动刷新
+
+- **根因与修复**：模型选择器只在控制 WebSocket 初连时请求目录；若 Provider 随后才添加，进程级 Store
+  会一直保留空目录，只显示“跟随 provider 默认”。现在 `providers_changed` 权威广播会刷新目录，且每次
+  打开模型弹窗都会按需重拉，已打开下拉框可随响应更新。
+- **边界**：目录仍来自 backend 当前启用 Provider 链的 `models_list_response`；设置页 probe 结果不越权
+  直接写会话 Store，也未新增硬编码模型清单。因 Provider 暂未返回上下文能力元数据，所有 Context 型号
+  临时开放 128K / 256K / 512K / 1M 用户预算档位，默认 256K；非 Context 型号排除，且 UI 明示实际上限
+  仍由 Provider 决定。模型按钮及弹窗只展示实际生效模型名，不再暴露“默认模型/跟随 Provider”等内部语义。
+- **自动化证据**：Provider 设置既有聚焦前端 `23 passed`；临时上下文策略 backend `21 passed`；模型按钮、
+  弹窗及 Provider 联合回归 `30 passed`，TypeScript typecheck PASS。当前源码 debug `.app` 的 macOS
+  Computer Use 真测确认顶部 `gpt-5.6-sol`、弹窗同名模型、默认 256K、筛选并临时选择 `gpt-5.4`、取消后
+  原值恢复；重新构建后的冷启动还确认头部 Session ID 技术标签及空态短横杠已移除。截图保存在 ignored
+  `.local-test-evidence/2026-08-24/model-display-real-ui/` 与 `header-empty-session-id-removal/`。
 
 ## 2026-08-23 SDK observability 完成并成对发布/换包
 

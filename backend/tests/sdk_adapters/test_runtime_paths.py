@@ -32,7 +32,7 @@ def test_exact_candidate_identity_and_execution_path(tmp_path: Path) -> None:
 
     assert verified == identity
     assert paths.execution_database == (
-        tmp_path / "user-data/data/simple-harness-sdk/execution-v1.sqlite3"
+        tmp_path / "user-data/data/simple-harness-sdk/execution-v6.sqlite3"
     )
     assert paths.execution_database.parent.is_dir()
 
@@ -69,7 +69,7 @@ def test_runtime_path_rejects_home_repo_evidence_and_symlink_escape(
 
 def test_runtime_path_has_no_product_or_session_database_alias(tmp_path: Path) -> None:
     paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
-    assert paths.execution_database.name == "execution-v1.sqlite3"
+    assert paths.execution_database.name == "execution-v6.sqlite3"
     assert paths.execution_database not in {
         paths.user_data_root / "data/product_state.db",
         paths.user_data_root / "data/state.db",

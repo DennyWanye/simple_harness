@@ -19,6 +19,7 @@ Coverage:
 """
 from __future__ import annotations
 
+import importlib.machinery
 import json
 import sys
 import time
@@ -26,7 +27,6 @@ import types
 from pathlib import Path
 
 import pytest
-
 from deskpet.tools import browser_use_tool as but
 from deskpet.tools.registry import registry
 
@@ -86,8 +86,12 @@ def fake_browser_use(monkeypatch: pytest.MonkeyPatch):
             calls["api_key"] = api_key
 
     pkg = types.ModuleType("browser_use")
+    pkg.__spec__ = importlib.machinery.ModuleSpec("browser_use", loader=None)
     pkg.Agent = _FakeAgent  # type: ignore[attr-defined]
     llm_mod = types.ModuleType("browser_use.llm")
+    llm_mod.__spec__ = importlib.machinery.ModuleSpec(
+        "browser_use.llm", loader=None
+    )
     llm_mod.ChatOpenAI = _FakeChatOpenAI  # type: ignore[attr-defined]
     pkg.llm = llm_mod  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "browser_use", pkg)
@@ -118,6 +122,26 @@ def test_tool_is_registered():
     assert "run_browser_task" in registry.list_tools()
     spec = registry.get("run_browser_task")
     assert spec is not None and spec.toolset == "e2e"
+
+
+def test_tool_hidden_from_catalog_without_independent_runtime_key():
+    spec = registry.get("run_browser_task")
+    assert spec is not None
+    assert spec.is_visible() is False
+
+
+def test_tool_visible_when_legacy_runtime_is_ready(
+    tmp_path: Path, fake_browser_use
+):
+    _write_cfg(
+        tmp_path,
+        "[desktop_automation]\n"
+        "browser_use_enabled = true\n"
+        "api_key = 'k-test'\n",
+    )
+    spec = registry.get("run_browser_task")
+    assert spec is not None
+    assert spec.is_visible() is True
 
 
 def test_tool_declares_browser_job_resource_scope():

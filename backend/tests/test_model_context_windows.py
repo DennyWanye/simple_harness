@@ -42,6 +42,32 @@ def test_gpt55_supported_windows_include_1m(isolated_user_data):
     assert wins == sorted(wins)
 
 
+def test_all_model_ids_get_temporary_user_selectable_windows(isolated_user_data):
+    from llm.model_info import user_selectable_windows_for
+
+    assert user_selectable_windows_for("gpt-5.6-sol") == [
+        128_000,
+        256_000,
+        512_000,
+        1_000_000,
+    ]
+    assert user_selectable_windows_for("custom-relay-chat-model") == [
+        128_000,
+        256_000,
+        512_000,
+        1_000_000,
+    ]
+
+
+def test_gpt56_sol_override_round_trips(isolated_user_data):
+    assert save_global_window_override("gpt-5.6-sol", 1_000_000) is True
+    assert resolve("gpt-5.6-sol").context_window == 1_000_000
+
+
+def test_temporary_override_rejects_values_outside_user_tiers(isolated_user_data):
+    assert save_global_window_override("gpt-5.6-sol", 400_000) is False
+
+
 def test_save_override_takes_effect(isolated_user_data):
     """用户选 1M → 写全局 override → resolve 立即生效(source=global)。"""
     assert save_global_window_override("gpt-5.5", 1_000_000) is True
@@ -62,9 +88,9 @@ def test_save_override_rejects_unsupported(isolated_user_data):
 def test_save_override_preserves_other_models(isolated_user_data):
     """写 gpt-5.5 不抹掉文件里其它模型的 override。"""
     assert save_global_window_override("gpt-5.5", 1_000_000) is True
-    assert save_global_window_override("deepseek-v4-pro", 400_000) is True
+    assert save_global_window_override("deepseek-v4-pro", 512_000) is True
     assert resolve("gpt-5.5").context_window == 1_000_000
-    assert resolve("deepseek-v4-pro").context_window == 400_000
+    assert resolve("deepseek-v4-pro").context_window == 512_000
 
 
 def test_unknown_model_single_window(isolated_user_data):
@@ -76,10 +102,12 @@ def test_unknown_model_single_window(isolated_user_data):
 def test_catalog_carries_supported_windows(isolated_user_data):
     from llm.model_catalog import build_catalog
 
-    cat = build_catalog(["gpt-5.5", "totally-unknown-model"])
+    cat = build_catalog(["gpt-5.5", "totally-unknown-model", "gpt-image-1"])
     by_id = {m["id"]: m for m in cat}
-    assert 1_000_000 in by_id["gpt-5.5"]["supported_windows"]
-    assert by_id["totally-unknown-model"]["supported_windows"] == []
+    expected = [128_000, 256_000, 512_000, 1_000_000]
+    assert by_id["gpt-5.5"]["supported_windows"] == expected
+    assert by_id["totally-unknown-model"]["supported_windows"] == expected
+    assert by_id["gpt-image-1"]["supported_windows"] == []
 
 
 def test_catalog_window_follows_override(isolated_user_data):

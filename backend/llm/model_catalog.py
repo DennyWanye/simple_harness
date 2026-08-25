@@ -214,12 +214,16 @@ def build_catalog(model_ids: list[str]) -> list[dict[str, Any]]:
         if not mid or mid in seen:
             continue
         seen.add(mid)
-        # 2026-06-12: 档位列表 — UI「上下文窗口」从只读 chip 变为按型号
-        # 可选下拉(>1 档才可选)。BUILTIN 没档位表的型号 → 单档不可调。
+        # Temporary product policy: every context-capable model gets the same
+        # user-controlled operational budget tiers while relay /models only
+        # exposes ids.  Non-context models (image/embedding/audio) remain
+        # excluded.  This is not presented as Provider capability metadata.
         try:
             from llm import model_info as _mi
             _supported = (
-                _mi.supported_windows_for(mid) if mid in _mi.BUILTIN else []
+                _mi.user_selectable_windows_for(mid)
+                if model_param_caps(mid)["context"]
+                else []
             )
         except Exception:  # noqa: BLE001
             _supported = []

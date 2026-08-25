@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import subprocess
 import sys
@@ -11,7 +10,25 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-
+from deskpet.product_state.database import ProductStateDatabase
+from deskpet.sdk_adapters.capability_host import (
+    ProductCapabilityHostAdapter,
+    ProductCapabilityOperationReceipts,
+)
+from deskpet.sdk_adapters.context import ProductContextAdapter
+from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
+from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
+    ProductProviderInvocationCoordinator,
+    _ProductOpenAICompatibleProvider,
+)
+from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
+from deskpet.sdk_adapters.tools import (
+    PRODUCT_TOOL_NAMES,
+    ProductToolRegistration,
+    active_product_tool_context,
+    build_product_tool_registry,
+)
 from simple_harness import CallId, RequestId, RunId, fingerprint_json
 from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
 from simple_harness.execution.dispatch import (
@@ -25,36 +42,16 @@ from simple_harness.providers import (
     ProviderPaymentRequiredError,
     ProviderProtocolError,
     ProviderRateLimitError,
+    ProviderReconciliationState,
     ProviderRequest,
     ProviderResponse,
     ProviderServerError,
     ProviderTimeoutError,
-    ProviderReconciliationState,
     ProviderToolCall,
     ProviderToolSpec,
 )
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1
-
-from deskpet.product_state.database import ProductStateDatabase
-from deskpet.sdk_adapters.capability_host import (
-    ProductCapabilityHostAdapter,
-    ProductCapabilityOperationReceipts,
-)
-from deskpet.sdk_adapters.context import ProductContextAdapter
-from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
-from deskpet.sdk_adapters.provider import (
-    _ProductOpenAICompatibleProvider,
-    ProductProviderAdapter,
-    ProductProviderInvocationCoordinator,
-)
-from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
-from deskpet.sdk_adapters.tools import (
-    PRODUCT_TOOL_NAMES,
-    ProductToolRegistration,
-    active_product_tool_context,
-    build_product_tool_registry,
-)
 
 
 def test_provider_restores_cooperative_task_cancellation() -> None:
@@ -1017,6 +1014,184 @@ def test_provider_contract_violation_is_definite_protocol_failure() -> None:
             await client.aclose()
 
     asyncio.run(case())
+
+
+@pytest.mark.asyncio
+async def test_provider_diagnostics_correlate_success_without_payload_leak(
+    caplog,
+) -> None:
+    secret = "secret-diagnostic-canary"
+    prompt_canary = "prompt-diagnostic-canary"
+    response_canary = "response-diagnostic-canary"
+    argument_canary = "argument-diagnostic-canary"
+
+    async def respond(request: httpx.Request) -> httpx.Response:
+        assert prompt_canary in request.content.decode()
+        return httpx.Response(
+            200,
+            headers={
+                "content-type": "application/json; charset=utf-8",
+                "x-request-id": "upstream-diagnostic-canary",
+            },
+            json={
+                "id": "provider-body-id-canary",
+                "model": "model-a",
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": response_canary,
+                            "tool_calls": [
+                                {
+                                    "id": "call-diagnostic",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "file_read",
+                                        "arguments": json.dumps({"path": argument_canary}),
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": 8,
+                    "completion_tokens": 4,
+                    "total_tokens": 12,
+                },
+            },
+        )
+
+    caplog.set_level("INFO", logger="deskpet.sdk_adapters.provider")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    adapter = ProductProviderAdapter(
+        Registry(secret),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda provider, model: (1, 1, "price-v1"),
+    )
+    try:
+        response = await adapter.invoke(
+            ProviderRequest(
+                RequestId("run-diagnostic:provider-turn:3"),
+                (Message(MessageRole.USER, prompt_canary),),
+                tools=(
+                    ProviderToolSpec(
+                        "file_read",
+                        "Read a file without exposing arguments.",
+                        {
+                            "type": "object",
+                            "properties": {"path": {"type": "string"}},
+                        },
+                    ),
+                ),
+            ),
+            cancel=CancelToken(),
+        )
+    finally:
+        await client.aclose()
+
+    assert response.message.content == response_canary
+    log_text = caplog.text
+    assert "product_provider_attempt_started" in log_text
+    assert "product_provider_http_response_received" in log_text
+    assert "status_code=200" in log_text
+    assert "choice_count=1" in log_text
+    assert "tool_call_count=1" in log_text
+    assert "product_provider_attempt_succeeded" in log_text
+    assert "finish_reason=tool_calls" in log_text
+    assert "usage_present=True" in log_text
+    for private_value in (
+        secret,
+        prompt_canary,
+        response_canary,
+        argument_canary,
+        "upstream-diagnostic-canary",
+        "provider-body-id-canary",
+    ):
+        assert private_value not in log_text
+
+
+@pytest.mark.asyncio
+async def test_provider_diagnostics_classify_transport_timeout_without_leak(
+    caplog,
+) -> None:
+    secret = "secret-timeout-canary"
+
+    async def timeout(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("body-timeout-canary", request=request)
+
+    caplog.set_level("INFO", logger="deskpet.sdk_adapters.provider")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(timeout))
+    adapter = ProductProviderAdapter(
+        Registry(secret),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda provider, model: (1, 1, "price-v1"),
+    )
+    try:
+        with pytest.raises(ProviderTimeoutError):
+            await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-timeout:provider-turn:4"),
+                    (Message(MessageRole.USER, "prompt-timeout-canary"),),
+                ),
+                cancel=CancelToken(),
+            )
+    finally:
+        await client.aclose()
+
+    log_text = caplog.text
+    assert "product_provider_attempt_failed" in log_text
+    assert "stage=transport_timeout" in log_text
+    assert "error_code=provider_timeout" in log_text
+    assert "status_code=missing" in log_text
+    assert secret not in log_text
+    assert "body-timeout-canary" not in log_text
+    assert "prompt-timeout-canary" not in log_text
+
+
+@pytest.mark.asyncio
+async def test_provider_diagnostics_classify_response_shape_failure(caplog) -> None:
+    async def malformed(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json"},
+            json={"choices": [], "private": "protocol-body-canary"},
+        )
+
+    caplog.set_level("INFO", logger="deskpet.sdk_adapters.provider")
+    client = httpx.AsyncClient(transport=httpx.MockTransport(malformed))
+    adapter = ProductProviderAdapter(
+        Registry("secret-protocol-canary"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda provider, model: (1, 1, "price-v1"),
+    )
+    try:
+        with pytest.raises(ProviderProtocolError):
+            await adapter.invoke(
+                ProviderRequest(
+                    RequestId("run-protocol:provider-turn:5"),
+                    (Message(MessageRole.USER, "protocol-prompt-canary"),),
+                ),
+                cancel=CancelToken(),
+            )
+    finally:
+        await client.aclose()
+
+    log_text = caplog.text
+    assert "product_provider_http_response_received" in log_text
+    assert "status_code=200" in log_text
+    assert "choice_count=0" in log_text
+    assert "product_provider_response_parse_failed" in log_text
+    assert "stage=response_protocol" in log_text
+    assert "error_code=provider_protocol_error" in log_text
+    assert "protocol-body-canary" not in log_text
+    assert "protocol-prompt-canary" not in log_text
+    assert "secret-protocol-canary" not in log_text
 
 
 @pytest.mark.parametrize(

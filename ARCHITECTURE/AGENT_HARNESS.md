@@ -1,12 +1,55 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-23
+> 最后更新：2026-08-25
 > 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
 
-### Harness 0.3 / Memory 0.4 官方一等组合（2026-08-22，当前）
+### SDK-first 统一能力目录（2026-08-25，当前）
+
+前台 ReAct Run 使用 Harness `0.6.2` 的公共 `RuntimeToolCatalog` 与 per-Run
+`CatalogRunToolExposure`。Host 将 built-in、健康 MCP、Skill metadata 和 Workflow profile 映射到单一冻结
+目录；fresh Run 只直出 compact kernel，其余 executable Tool 经
+`tool_search -> tool_describe -> tool_activate` 在同一 Run 渐进披露。Provider ready attempt 每轮重新读取
+exposure，reserved attempt、restart 与 terminal-effect replay 使用 durable v6 catalog/checkpoint。
+
+目录只拥有发现和可见性。真实执行继续走 EffectExecutor、prepared authorization/HITL、TaskGrant、
+workspace/origin scope 和 physical handler identity。动态 MCP admission 精确绑定 Run/session/request/scope
+以及 MCP incarnation/execution identity，不把 activation receipt 当作 grant。测试阶段该能力默认开启。
+
+Provider 调查日志由 Host `ProductProviderAdapter` 在真实 SDK invocation seam 统一生成：匿名
+`request_ref` 串联 attempt start、HTTP response shape、parse failure 与 terminal outcome；阶段码明确区分
+`transport_timeout`、`http_timeout`、`http_status`、`response_protocol`、`response_contract` 和 `adapter`。
+允许记录 model、状态码、耗时、消息/Tool 数量、schema bytes、Tool 名称集合摘要和响应结构计数；禁止记录
+API key、endpoint URL、prompt/response 正文、Tool 参数及上游 request ID 原文。
+
+当前 exact candidate bytes：Harness `0.6.2` / source `67f5769…` / wheel `ffb7c061…`；Memory `0.5.2` /
+source `46624b…` / wheel `deff2fa8…`。自动化与分片基线已绿。2026-08-25 CAP-1 真 UI 修复先让 SDK
+authority 与 legacy ToolRegistry 共用启动期 scope Store，再把物理 registry 的真实 policy fingerprint 冻结进
+RunStart authority；严格 stale 校验仍保留。最终 Run 在同一 root 中完成 search/describe/activate，Provider
+工具数 13→14→15，真实 `mcp_filesystem_search_files` 与 `mcp_filesystem_read_text_file` 均成功，并基于
+README 正文返回正确摘要。CAP-1 已通过；其余 gate 状态见下文，完整 UI acceptance 和发布仍未关闭。
+2026-08-25 随后完成 CAP-2：Host 把经校验的 loopback `DESKPET_LOCAL_PAGE_URL` 冻结为项目/任务事实，
+Playwright MCP 启动前将其精确 origin 合并进 allowlist（参数与 execution build identity 同源）；默认配置仅允许
+`localhost/127.0.0.1` 的开发端口，不开放公网。真实 UI Session
+`7b03b54a-17da-4345-b8ef-95ee0200a008` 经 search/describe/activate 后实际导航固定 15193 fixture，读取并返回
+`Simple Harness Capability Catalog Fixture`。CAP-1/CAP-2 已通过。
+2026-08-25 CAP-3 随后关闭：SDK Run 的 `skill_invoke` 改用 Run authority 生成的完整
+`ToolExecutionContext`，不再由 Host 重建并遗漏 `capability_snapshot_ref`；冻结 Skill resolver 先查 SDK
+Run catalog，仅在没有 SDK Run 时回退 legacy catalog。候选 SDK catalog 搜索对保守英文词形前缀做匹配，
+而 capability ID 与可调用 locator 分离。真实 UI Session
+`19d3bc29-78b0-4897-a1df-b7fa28be9476` 搜索并调用 `translate-doc`，日志确认正文只加载一次，最终 H1/H2/H3
+及三条列表完整翻译。CAP-4 真实 UI Run 又验证公网导航在 Playwright 客户端以
+`ERR_BLOCKED_BY_CLIENT` 安全失败，页面未打开且没有表单提交副作用。CAP-5 的完整 app/backend 重启对
+验证新 root 从 13 个基础工具重新发现和激活；过期 nonce 被拒绝后重新 describe/activate 自愈，最终到 16 个
+工具并读取 README。Host 随后从 vendored exact 0.6.2 wheel 同步，在无 `PYTHONPATH` 的 packaged macOS app
+中再次完成 13→14 与真实 README 读取。source `67f5769…` 的最终 reproducible wheel `ffb7c061…` 与完整
+真测 wheel 的运行时包逐文件相同；Host 重锁、重装后又完成无 `PYTHONPATH` 冷启动与可操作 UI 冒烟。
+CAP-1～CAP-5、exact-wheel consumer 与 packaged UI 均通过；候选仍未 tag/release，因为本次只授权代码提交
+到远程主分支，没有授权 SDK tag、release 上传和 download-back promotion。
+
+### Harness 0.3 / Memory 0.4 官方一等组合（2026-08-22，历史）
 
 前台 root 与 continuation 已从 0.2 consumer-prepared 过渡到 Harness 0.3 官方 Agent Memory
 production composition：产品只提供可信 `AgentIdentity`、一个 borrowed `MemoryManager` 与 read-only

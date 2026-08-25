@@ -1,0 +1,11 @@
+{
+  "schema": "plan-test/minimality-review/v1",
+  "review": "plan-pass",
+  "decision": "LEAN",
+  "findings": [
+    "Task 3 owns consumer/public API/type/import/artifact-manifest checks; Task 6 solely owns final version, full build, release and installed-wheel verification.",
+    "Checkpoint persists only catalog identity/digest, exposure revision and activated identity; direct/deferred are derived from the frozen v6 envelope.",
+    "Task 3 updates README/API documentation; Task 6 performs the single final ARCHITECTURE and PROJECT_STATUS writeback."
+  ],
+  "applied": true
+}

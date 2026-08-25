@@ -112,11 +112,29 @@ export function ChangeModelModal({
   const ctx_window = contextWindowForModel(ctx_model, catalog);
   const ctx_options = supportedWindowsForModel(ctx_model, catalog);
   const [ctx_choice, set_ctx_choice] = useState<number | null>(null);
+
+  // Refresh on every open instead of trusting the process-lifetime cache.
+  // A Provider can be added or edited after the control socket connected,
+  // and the initial catalog request may therefore have legitimately returned
+  // an empty list.  The response updates the shared store and React fills the
+  // already-open selector without requiring a reconnect or app restart.
+  useEffect(() => {
+    controlWS.send({ type: "models_list" });
+  }, []);
+
   // 切换模型 → 档位选择回到该模型当前值
   useEffect(() => {
     set_ctx_choice(null);
   }, [model]);
-  const ctx_selected = ctx_choice ?? ctx_window;
+  // Preserve an already-saved supported tier.  A legacy/heuristic value such
+  // as 400K is not one of the temporary user tiers, so present 256K as the
+  // default choice and persist it when the user saves the dialog.
+  const ctx_default_choice = ctx_options.includes(ctx_window ?? -1)
+    ? ctx_window
+    : ctx_options.includes(256_000)
+      ? 256_000
+      : null;
+  const ctx_selected = ctx_choice ?? ctx_default_choice ?? "";
 
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -139,10 +157,11 @@ export function ChangeModelModal({
     if (caps.effort) params.effort = effort;
     // 上下文档位变化 → 持久化为该模型的全局 override(非 per-session 参数:
     // 窗口是模型属性,backend 压缩阈值/预算据此对齐),然后刷新 catalog。
+    const effective_ctx_choice = ctx_choice ?? ctx_default_choice;
     if (
-      ctx_choice != null &&
-      ctx_choice !== ctx_window &&
-      ctx_options.includes(ctx_choice)
+      effective_ctx_choice != null &&
+      effective_ctx_choice !== ctx_window &&
+      ctx_options.includes(effective_ctx_choice)
     ) {
       // 完整协议(p4_ipc): {scope, model, fields} — 2026-06-13 修复:
       // 之前发的简版 {model, context_window} 走了一个抢路由的重复
@@ -153,7 +172,7 @@ export function ChangeModelModal({
           scope: "global",
           // 用生效模型(含 default_model 兜底),否则跟随默认时拿空 id 被后端拒。
           model: ctx_model,
-          fields: { context_window: ctx_choice },
+          fields: { context_window: effective_ctx_choice },
         },
       });
       controlWS.send({ type: "models_list" });
@@ -234,11 +253,10 @@ export function ChangeModelModal({
               </option>
             ))}
           </select>
-          {/* 当前真正生效的模型：固定了就是它,否则是 provider 默认。 */}
+          {/* Always show the effective model name; binding mechanics stay internal. */}
           {(model.trim() || default_model.trim()) && (
             <span style={hintStyle}>
               当前生效：{model.trim() || default_model.trim()}
-              {!model.trim() && default_model.trim() ? "（provider 默认）" : ""}
             </span>
           )}
 
@@ -286,7 +304,7 @@ export function ChangeModelModal({
                 ))}
               </select>
               <span style={hintStyle}>
-                档位为该模型支持的窗口；选择对所有会话生效
+                临时用户预算档位（默认 256K）；实际上限仍由 provider 决定，选择对所有会话生效
               </span>
             </>
           )}

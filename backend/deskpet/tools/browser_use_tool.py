@@ -13,15 +13,14 @@ OpenAI-compatible endpoint) as the decision loop.
 Why this module looks the way it does
 --------------------------------------
 
-* **Strangler-Fig feature flag.** The whole capability is gated behind
+* **Truthful catalog exposure.** The whole capability is gated behind
   ``[code_e2e].browser_use_enabled`` in ``config.toml`` (default
-  **false**). The tool is *always registered* (so ``tool_search`` can
-  surface it and the agent gets a clear, actionable error rather than an
-  "unknown tool"), but every dispatch short-circuits with
-  ``{"ok": false, "error": "disabled", "hint": ...}`` until the flag is
-  flipped. OFF = zero effect: the optional ``browser_use`` import and the
-  Chromium download only ever happen *inside a dispatched run with the
-  flag on*, never at import time.
+  **false**). The tool stays registered for direct diagnostics, but catalog
+  discovery exposes it only when the flag, optional dependency, and its
+  independent LLM credential source are ready. This prevents a
+  Provider-Registry-backed chat from selecting a legacy browser handler that
+  cannot actually start. OFF = zero effect: the optional ``browser_use``
+  import and Chromium launch only happen inside a dispatched run.
 
 * **Async fire-and-quick-return.** browser-use runs are long (30s–3min).
   The repo's only existing async worker (``memory/vector_worker.py``) is
@@ -60,6 +59,7 @@ Conventions mirrored from the existing tool layer
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import logging
 import os
@@ -67,15 +67,15 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import platformdirs
 
 from deskpet.types.task_grants import ResourceSelector
 
-from .capabilities import ToolExecutionContext
 from ._config import _candidate_paths
+from .capabilities import ToolExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -139,14 +139,14 @@ def _load_automation_section(*, force: bool = False) -> dict[str, Any]:
     if isinstance(section, dict):
         _cfg_cache = dict(section)
     else:
-        _cfg_cache = dict((raw.get("code_e2e") or {}))
+        _cfg_cache = dict(raw.get("code_e2e") or {})
     return _cfg_cache
 
 
 _load_code_e2e_section = _load_automation_section
 
 
-_cfg_cache: Optional[dict[str, Any]] = None
+_cfg_cache: dict[str, Any] | None = None
 
 
 def reset_cache() -> None:
@@ -226,6 +226,26 @@ def _resolve_creds() -> dict[str, str]:
     return {"base_url": base_url, "model": model, "api_key": api_key}
 
 
+def _runtime_readiness_reason() -> str:
+    """Return a privacy-safe catalog readiness code for this legacy handler."""
+    if not _is_enabled():
+        return "disabled"
+    try:
+        dependency_ready = importlib.util.find_spec("browser_use") is not None
+    except (ImportError, ValueError):
+        dependency_ready = False
+    if not dependency_ready:
+        return "dependency_missing"
+    if not _resolve_creds()["api_key"]:
+        return "credential_missing"
+    return "ready"
+
+
+def _is_catalog_visible(*_args: Any, **_kwargs: Any) -> bool:
+    """Fail closed: discovery must advertise only an executable capability."""
+    return _runtime_readiness_reason() == "ready"
+
+
 # ---------------------------------------------------------------------
 # Non-local guard
 # ---------------------------------------------------------------------
@@ -276,7 +296,7 @@ def _persist_job(job_id: str, state: dict[str, Any]) -> None:
         logger.debug("browser_use: persist job %s failed: %s", job_id, exc)
 
 
-def _load_job(job_id: str) -> Optional[dict[str, Any]]:
+def _load_job(job_id: str) -> dict[str, Any] | None:
     with _jobs_lock:
         state = _jobs.get(job_id)
     if state is not None:
@@ -417,7 +437,7 @@ def _run_browser_job(
             error=f"browser task exceeded {timeout_s:.0f}s timeout",
             hint="Increase `timeout_s` or simplify the task.",
         )
-    except Exception as exc:  # noqa: BLE001 — worker thread must never raise
+    except Exception as exc:
         logger.exception("browser_use job %s failed", job_id)
         _set_job(job_id, status="error", error=f"{type(exc).__name__}: {exc}")
 
@@ -527,6 +547,16 @@ def _handle_result(job_id: str) -> str:
 
 
 def _handle_run_browser_task(args: dict[str, Any], task_id: str) -> str:
+    readiness_reason = _runtime_readiness_reason()
+    logger.info(
+        "browser_task_preflight task_id=%s readiness=%s action=%s "
+        "has_start_url=%s allow_external=%s",
+        task_id,
+        readiness_reason,
+        str(args.get("action", "start") or "start").strip().lower(),
+        bool(str(args.get("start_url", "") or "").strip()),
+        bool(args.get("allow_external", False)),
+    )
     # Strangler-Fig: flag OFF → registered but inert.
     if not _is_enabled():
         return _err(
@@ -573,6 +603,10 @@ def _handle_run_browser_task(args: dict[str, Any], task_id: str) -> str:
 
     creds = _resolve_creds()
     if not creds["api_key"]:
+        logger.info(
+            "browser_task_start_rejected task_id=%s reason=credential_missing",
+            task_id,
+        )
         return _err(
             "no LLM api_key resolved",
             hint=(
@@ -660,6 +694,8 @@ def register_static_tools(registry) -> None:
     registry.register(
         "run_browser_task", "e2e", _SCHEMA, _handle_run_browser_task,
         permission_category="network", dangerous=True,
+        visible_when=_is_catalog_visible,
+        visibility_scope="global",
         resource_scope_resolver=_browser_task_resources,
         resource_scope_resolver_id="builtin:run_browser_task:job",
         resource_scope_resolver_version="v1",

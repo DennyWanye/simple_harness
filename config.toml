@@ -533,7 +533,7 @@ enabled = false
 [[mcp.servers]]
 name = "playwright"
 command = "npx"
-args = ["@playwright/mcp@latest", "--isolated", "--browser", "chromium", "--allowed-origins", "http://localhost;http://127.0.0.1"]
+args = ["@playwright/mcp@latest", "--isolated", "--browser", "chromium", "--allowed-origins", "http://localhost:*;http://127.0.0.1:*"]
 transport = "stdio"
 enabled = true
 
@@ -718,4 +718,3 @@ llm_input_token_budget = 120000
 llm_output_token_budget = 32000
 llm_cost_budget_micros = 20000000
 io_operation_budget = 256
-

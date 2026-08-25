@@ -125,6 +125,11 @@ async def test_real_product_sdk_production_composition_starts(
         "search_gateway": _ProductionSearchGateway(),
         "authorization_runtime": object(),
         "capability_store": _ProductionCapabilityStore(),
+        # Production bootstrap publishes both resolver seams before the SDK
+        # runtime stack is composed. This smoke test does not invoke a Skill,
+        # but it must still model that complete dependency graph.
+        "frozen_skill_instruction_resolver": object(),
+        "legacy_frozen_skill_instruction_resolver": object(),
     }
     publications = (
         "sdk_runtime_ready",
@@ -194,7 +199,8 @@ def test_sdk_runtime_has_no_placeholder_capability_or_authorization_authority():
     assert "_MinimalCapabilityBridge" not in source
     assert "_SdkAuthorizationPolicy" not in source
     assert '"0" * 64' not in source
-    assert "SdkCapabilityBridgeAdapter" in source
+    assert "SdkRuntimeCapabilityBridgeAdapter" in source
+    assert "tool_exposure_resolver=tool_authorities.resolve_exposure" in source
     assert "SdkPreparedAuthorizationPolicy" in source
     assert "SdkRunToolAuthorityRegistry" in source
     assert "ProductEffectExecutor" in source
@@ -216,7 +222,8 @@ def test_sdk_tool_authority_is_reachable_for_fresh_waiting_terminal_and_recovery
     assert "catalog=frozen_catalog" not in build
     assert "inventory=tool_inventory" not in build
     assert "_sdk_tool_authority_registry.prepare_run" in foreground
-    assert "SDK_FULL_CATALOG_DISCLOSURE_POLICY" in foreground
+    assert "SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY" in foreground
+    assert "SDK_DIRECT_TOOL_KERNEL" in foreground
     assert "tool_authority.run_start_record()" in execute
     assert "_sdk_tool_authority_registry.mark_waiting" in execute
     assert "_sdk_tool_authority_registry.mark_terminal" in execute
