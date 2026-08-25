@@ -108,10 +108,15 @@ class _CatalogSearchGateway:
 
 def _product_tools(root: Path):
     page_store = ContextPageInStore()
+    workspace = str(root.resolve())
     execution_context = SimpleNamespace(
         session_id="conformance-session",
         request_id="conformance-request",
         scope_id="conformance-scope",
+        root_run_id="conformance-root-run",
+        workspace=workspace,
+        write_scope_root=workspace,
+        owner_key="conformance-project",
     )
     dependencies = ToolCatalogDependencies(
         todo_session_db=_CatalogTodoStore(),
