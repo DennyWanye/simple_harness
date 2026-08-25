@@ -1,536 +1,254 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
 
-/**
- * SessionList（T7，WB-5 / B3）— 会话列表侧栏组件。
- *
- * 从 MessagePanelRoot.tsx 的 header 会话下拉抽出并「列表化」改造：
- * 协议不变（sessions_list / chat_v2+new_session / session_rename /
- * session_delete），同功能移入侧栏「会话」展开区。
- *
- * 抽取物（plan T7 标识符清单）：loadSessions、sessions_list_response/
- * session_deleted/session_renamed 监听 effect、switchToSession（含
- * hydration 归 ChatView，见 T8）、startNewTopic、deleteSession、
- * finishRename、switchToDefault、随迁编辑/确认 state、下拉 JSX 列表化。
- * 真语音块（toggleRecording/audioMessage）不迁（T8 口径一致）。
- *
- * activeSid 的单一所有者是 App（switchActiveSid：ensure + set_active +
- * setState）；本组件通过 onSwitchSid 回调上抛，不自持会话指针。
- *
- * 样式纪律（WB-11）：颜色一律取自 theme/tokens + dark 套件，零硬编码色值。
- */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import { Virtuoso } from "react-virtuoso";
 
+import { controlWS } from "../code-panel/controlWs";
+import { projectRequest, responsePayload, type ProjectCatalogResponse, type ProjectSessionsResponse, type SessionCreateResponse } from "../chat/projectSessionProtocol";
+import { useSessionsStore } from "../stores/sessionsStore";
+import type { ProjectDescriptor, ProjectSessionDescriptor, ProjectScope } from "../types/projectSessions";
+import { projectScopeKey } from "../types/projectSessions";
+import { topicDisplayLabel } from "../chat/topicTitle";
+import { formatRelativeSec } from "../relativeTime";
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
-import { controlWS, CONTROL_SESSION_ID } from "../code-panel/controlWs";
-import { useSessionsStore } from "../stores/sessionsStore";
+import { ProjectPickerDialog } from "./ProjectPickerDialog";
 import { ConfirmDialog } from "../code-panel/ConfirmDialog";
-import { createClientTurnIdentity } from "../ws/clientTurnIdentity";
-import {
-  MAX_TITLE_LEN,
-  normalizeTopicTitle,
-  topicDisplayLabel,
-} from "../chat/topicTitle";
-import { formatRelativeSec } from "../relativeTime";
+import { MAX_TITLE_LEN, normalizeTopicTitle } from "../chat/topicTitle";
 
-type IncomingCtrlMsg = {
-  type?: string;
-  payload?: { sessions?: unknown; session_id?: string; title?: string } & Record<string, unknown>;
-};
+export type SessionEntry = ProjectSessionDescriptor;
+export interface SessionListProps { activeSid: string; onSwitchSid: (sid: string) => void; }
 
-export type SessionEntry = {
-  session_id: string;
-  turn_count: number;
-  last_message_at: number;
-  preview: string;
-  /** User-set custom title (empty = unnamed → fall back to preview). */
-  title?: string;
-};
+type FlatRow =
+  | { kind: "project"; project: ProjectDescriptor }
+  | { kind: "scope"; scope: ProjectScope; label: string }
+  | { kind: "session"; session: ProjectSessionDescriptor; scope: ProjectScope }
+  | { kind: "load"; scope: ProjectScope }
+  | { kind: "catalog-load" }
+  | { kind: "empty"; scope: ProjectScope };
 
-export interface SessionListProps {
-  activeSid: string;
-  /** 会话切换上抛（App.switchActiveSid：ensure + set_active + setState）。 */
-  onSwitchSid: (sid: string) => void;
-}
+const PAGE_SIZE = 50;
 
 export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
-  const [sessionList, setSessionList] = useState<SessionEntry[]>([]);
-  // 「重命名话题」内联编辑：一次只编辑一行。
+  const catalog = useSessionsStore((s) => s.project_catalog);
+  const pages = useSessionsStore((s) => s.project_session_pages);
+  const companionIdentityReady = useSessionsStore((s) => s.companion_owner !== null);
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["projectless"]));
+  const [picker, setPicker] = useState<{ sourceSid: string | null } | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [editingSid, setEditingSid] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
-  const [pendingDelete, setPendingDelete] = useState<SessionEntry | null>(null);
-  const [newTopicPending, setNewTopicPending] = useState(false);
-  // The central dispatcher persists the latest identity fence in zustand.
-  // Reading that authority avoids a cold-start race where the one-shot ready
-  // broadcast arrives before this sidebar mounts.
-  const companionIdentityReady = useSessionsStore(
-    (state) => state.companion_owner !== null,
-  );
-  // Enter/Esc 会把 editingSid 置空 → input 卸载触发 onBlur；用这个标记让那次
-  // 善后 blur 不要再二次提交。startRename 时清零，避免污染下一次编辑。
-  const skipBlurRef = useRef(false);
-  const renameInputRef = useRef<HTMLInputElement | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ProjectSessionDescriptor | null>(null);
+  const pendingCreates = useRef(new Set<string>());
+  const acceptedCreates = useRef(new Set<string>());
+  const pendingCatalog = useRef(new Map<string, boolean>());
+  const pendingPages = useRef(new Map<string, { scope: ProjectScope; append: boolean }>());
 
-  // ── 会话数据链路 ────────────────────────────────────────────────
-  const loadSessions = useCallback(() => {
-    controlWS.send({ type: "sessions_list" });
+  const requestCatalog = useCallback((cursor: string | null = null) => {
+    useSessionsStore.getState().begin_project_catalog(Boolean(cursor));
+    const request = projectRequest("project_catalog_page", { cursor, limit: PAGE_SIZE });
+    pendingCatalog.current.set(request.request_id, Boolean(cursor));
+    controlWS.send(request);
   }, []);
 
-  // 监听后端 sessions_list_response / session_deleted / session_renamed；
-  // 挂载时拉一次清单（原「面板打开时」语义 → 侧栏常驻改为 mount 时）。
-  useEffect(() => {
-    const off = controlWS.on_message((msg: IncomingCtrlMsg) => {
-      if (msg?.type === "sessions_list_response") {
-        const arr = Array.isArray(msg?.payload?.sessions) ? msg.payload.sessions : [];
-        setSessionList(arr);
-      } else if (msg?.type === "session_deleted") {
-        // 后端确认删除 → 重新拉清单保持一致。
-        loadSessions();
-      } else if (msg?.type === "session_renamed" && msg?.payload?.ok) {
-        // 后端确认 → 用规范化后的 title 校正本地(防 trim/clamp 漂移)。
-        const sid = msg.payload.session_id as string;
-        const title = (msg.payload.title as string) ?? "";
-        setSessionList((prev) =>
-          prev.map((x) => (x.session_id === sid ? { ...x, title } : x)),
-        );
-      }
+  const requestSessions = useCallback((scope: ProjectScope, cursor: string | null = null) => {
+    useSessionsStore.getState().begin_project_sessions(projectScopeKey(scope));
+    const request = projectRequest("project_sessions_page", {
+      scope_kind: scope.scope_kind,
+      project_id: scope.scope_kind === "project" ? scope.project_id : null,
+      cursor,
+      limit: PAGE_SIZE,
+      pinned_session_id: activeSid || null,
     });
-    loadSessions();
-    return off;
-  }, [loadSessions]);
+    pendingPages.current.set(request.request_id, { scope, append: Boolean(cursor) });
+    controlWS.send(request);
+  }, [activeSid]);
 
-  // 会话指针同步（MessagePanelRoot :574-609 迁移）：chat 通道（controlWS）
-  // 上的 session_switched/task_session_started 及带 session_id 的消息
-  // 驱动 activeSid 上抛；同时消解 newTopicPending。
-  useEffect(() => {
-    return controlWS.on_message((msg: IncomingCtrlMsg) => {
-      const p = msg?.payload || {};
-      if (
-        msg?.type === "session_switched" ||
-        msg?.type === "task_session_started" ||
-        msg?.type === "chat_v2_run_started" ||
-        msg?.type === "chat_v2_error"
-      ) {
-        setNewTopicPending(false);
-      }
-      let nextSid = "";
-      if (msg?.type === "session_switched" || msg?.type === "task_session_started") {
-        nextSid = typeof p.new_sid === "string" ? p.new_sid : "";
-        // 新会话诞生 → 刷新清单（侧栏常驻，不能等下次手动展开）。
-        loadSessions();
-      } else if (
-        msg?.type === "chat_response" ||
-        msg?.type === "chat_v2_final" ||
-        msg?.type === "tool_call" ||
-        msg?.type === "tool_result" ||
-        msg?.type === "ppt_outline_proposed"
-      ) {
-        // 一轮对话收尾后必须再刷一次清单。后端 list_sessions_with_preview 是
-        // "FROM messages GROUP BY session_id" —— 会话在清单里的存在条件是
-        // **已有消息**，而上面 session_switched 的刷新时刻新会话还是空的，
-        // 必然拉不到它。少了这一次刷新，新建的会话在本次运行内永远不进侧栏，
-        // 切走就再也回不去（r4 S05 真机实测）。顺带让 preview/条数/时间保持新鲜。
-        if (msg?.type === "chat_response" || msg?.type === "chat_v2_final") {
-          loadSessions();
-        }
-        const payloadSid = typeof p.session_id === "string" ? p.session_id : "";
-        if (payloadSid && payloadSid !== CONTROL_SESSION_ID) {
-          nextSid = payloadSid;
-        }
-      }
-      if (!nextSid) return;
-      const store = useSessionsStore.getState();
-      store.ensure(nextSid);
-      store.set_active(nextSid);
-      onSwitchSid(nextSid);
-    });
-  }, [loadSessions, onSwitchSid]);
-
-  const switchToSession = useCallback((sid: string) => {
-    onSwitchSid(sid);
-  }, [onSwitchSid]);
-
-  const startNewTopic = useCallback(() => {
-    if (!companionIdentityReady || newTopicPending) return;
-    const identity = createClientTurnIdentity();
-    setNewTopicPending(true);
-    const sent = controlWS.send({
-      type: "chat_v2",
-      payload: {
-        session_id: activeSid,
-        new_session: true,
-        text: "",
-        request_id: identity.request_id,
-        turn_id: identity.turn_id,
-      },
-    });
-    if (sent) return;
-    setNewTopicPending(false);
-    // 空态（activeSid === ""）没有会话可承载错误气泡；往空 key 里 push
-    // 会在 store 里凭空造出一条 id 为 "" 的幽灵会话。
-    if (activeSid) {
-      useSessionsStore.getState().push_message(activeSid, {
-        role: "error",
-        text: "新话题创建失败：控制通道未连接，请稍后重试。",
-      });
+  const refreshAll = useCallback(() => {
+    requestCatalog();
+    requestSessions({ scope_kind: "projectless", project_id: null });
+    for (const key of expanded) {
+      if (key.startsWith("project:")) requestSessions({ scope_kind: "project", project_id: key.slice(8) });
     }
-  }, [activeSid, companionIdentityReady, newTopicPending]);
+  }, [expanded, requestCatalog, requestSessions]);
 
-  const deleteSession = useCallback(
-    (sid: string) => {
-      controlWS.send({ type: "session_delete", payload: { session_id: sid } });
-      // 乐观移除。删掉当前会话后不再有保留会话可回落：改为落到剩下的最近一条，
-      // 一条不剩就进空态（activeSid = ""）—— 空态下在输入框直接发消息会由
-      // InputBar 走「新建会话再投递」，不复活任何固定 sid。
-      setSessionList((prev) => prev.filter((s) => s.session_id !== sid));
-      if (sid === activeSid) {
-        // 副作用留在 updater 之外：StrictMode 会重复调用 state updater。
-        const fallback = [...sessionList]
-          .filter((s) => s.session_id !== sid)
-          .sort((a, b) => (b.last_message_at || 0) - (a.last_message_at || 0))[0];
-        onSwitchSid(fallback?.session_id ?? "");
-      }
-    },
-    [activeSid, onSwitchSid, sessionList],
-  );
-
-  // ── 重命名话题 ───────────────────────────────────────────────────
-  const startRename = useCallback((s: SessionEntry) => {
-    skipBlurRef.current = false; // clear any stale blur-skip from a prior edit
-    setEditingSid(s.session_id);
-    setDraftTitle((s.title || "").trim());
-  }, []);
-
-  // commit=false → 取消(不改)。commit=true → trim/clamp 后若有变化才发 ws +
-  // 乐观更新；空串表示清除自定义名(后端删行、回退 preview)。
-  const finishRename = useCallback(
-    (sid: string, commit: boolean) => {
-      skipBlurRef.current = true; // the unmount-blur that follows must not re-commit
-      setEditingSid(null);
-      if (!commit) return;
-      const next = normalizeTopicTitle(draftTitle);
-      const current = (
-        sessionList.find((x) => x.session_id === sid)?.title || ""
-      ).trim();
-      if (next === current) return; // unchanged → no-op
-      setSessionList((prev) =>
-        prev.map((x) => (x.session_id === sid ? { ...x, title: next } : x)),
-      );
-      controlWS.send({
-        type: "session_rename",
-        payload: { session_id: sid, title: next },
-      });
-    },
-    [draftTitle, sessionList],
-  );
-
-  // 进入编辑后聚焦 + 选中文本。
   useEffect(() => {
-    if (editingSid !== null) {
-      const el = renameInputRef.current;
-      el?.focus();
-      el?.select();
+    requestCatalog();
+    requestSessions({ scope_kind: "projectless", project_id: null });
+  }, [requestCatalog, requestSessions]);
+
+  useEffect(() => controlWS.on_message((message: unknown) => {
+    const generic = message as { type?: string };
+    if (generic?.type === "session_deleted" || generic?.type === "session_renamed") {
+      refreshAll();
+      return;
     }
-  }, [editingSid]);
+    const catalogResponse = responsePayload<ProjectCatalogResponse>(message, "project_catalog_page_response");
+    if (catalogResponse) {
+      const append = pendingCatalog.current.get(catalogResponse.request_id);
+      if (append === undefined) return;
+      pendingCatalog.current.delete(catalogResponse.request_id);
+      if (!catalogResponse.payload.ok) {
+        if (catalogResponse.payload.error.code === "stale_cursor") return requestCatalog();
+        return useSessionsStore.getState().fail_project_catalog(catalogResponse.payload.error.message);
+      }
+      useSessionsStore.getState().apply_project_catalog_page({ request_id: catalogResponse.request_id, ...catalogResponse.payload }, append);
+      return;
+    }
+    const sessionsResponse = responsePayload<ProjectSessionsResponse>(message, "project_sessions_page_response");
+    if (sessionsResponse) {
+      const payload = sessionsResponse.payload;
+      const pending = pendingPages.current.get(sessionsResponse.request_id);
+      if (!pending) return;
+      pendingPages.current.delete(sessionsResponse.request_id);
+      if (!payload.ok) {
+        if (payload.error.code === "stale_cursor") return requestSessions(pending.scope);
+        useSessionsStore.getState().fail_project_sessions(projectScopeKey(pending.scope), payload.error.message);
+        return;
+      }
+      useSessionsStore.getState().apply_project_session_page({ request_id: sessionsResponse.request_id, ...payload }, pending.append);
+      return;
+    }
+    const createResponse = responsePayload<SessionCreateResponse>(message, "session_create_response");
+    if (!createResponse || !pendingCreates.current.has(createResponse.request_id)) return;
+    if (!createResponse.payload.ok) {
+      pendingCreates.current.delete(createResponse.request_id);
+      setError(createResponse.payload.error.message);
+      return;
+    }
+    const session = createResponse.payload.session;
+    if (acceptedCreates.current.has(session.session_id)) return;
+    acceptedCreates.current.add(session.session_id);
+    pendingCreates.current.delete(createResponse.request_id);
+    useSessionsStore.getState().ensure(session.session_id);
+    onSwitchSid(session.session_id);
+    setPicker(null);
+    refreshAll();
+  }), [onSwitchSid, refreshAll, requestCatalog, requestSessions]);
 
-  // WB-5：时间倒序展示（后端序不作假设，本地保证）。
-  const sortedSessions = useMemo(
-    () =>
-      [...sessionList].sort(
-        (a, b) => (b.last_message_at ?? 0) - (a.last_message_at ?? 0),
-      ),
-    [sessionList],
-  );
+  const createSession = useCallback((projectId: string | null, sourceSid: string | null = null) => {
+    if (!companionIdentityReady) return;
+    const request = projectRequest("session_create", {
+      project_id: projectId,
+      source_session_id: sourceSid,
+      execution_kind: projectId ? "project_root" : undefined,
+    });
+    pendingCreates.current.add(request.request_id);
+    setError(null);
+    if (!controlWS.send(request)) {
+      pendingCreates.current.delete(request.request_id);
+      setError("控制通道未连接，请稍后重试。");
+    }
+  }, [companionIdentityReady]);
 
-  return (
-    <div
-      data-testid="session-list"
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        flex: 1,
-        gap: tokens.space.xs,
-        fontFamily: tokens.font.ui,
-      }}
-    >
-      {/* 新建会话入口（WB-5） */}
-      <button
-        type="button"
-        data-testid="session-new-topic"
-        onClick={startNewTopic}
-        disabled={!companionIdentityReady || newTopicPending}
-        title={
-          companionIdentityReady
-            ? "新建会话"
-            : "正在恢复身份，稍候可新建会话"
-        }
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: tokens.space.xs,
-          width: "100%",
-          boxSizing: "border-box",
-          padding: `${tokens.space.xs + 2}px ${tokens.space.sm}px`,
-          borderRadius: tokens.radius.md,
-          border: `1px dashed ${dark.borderStrong}`,
-          background: "transparent",
-          color:
-            companionIdentityReady && !newTopicPending
-              ? dark.accent
-              : dark.textFaint,
-          fontFamily: tokens.font.ui,
-          fontSize: tokens.text.sm.size,
-          fontWeight: tokens.weight.medium,
-          cursor:
-            companionIdentityReady && !newTopicPending
-              ? "pointer"
-              : "not-allowed",
-          flexShrink: 0,
-          opacity: newTopicPending ? 0.6 : 1,
+  const toggleProject = (projectId: string) => {
+    const key = `project:${projectId}`;
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+    if (!expanded.has(key) && !pages[key]) requestSessions({ scope_kind: "project", project_id: projectId });
+  };
+
+  const rows = useMemo<FlatRow[]>(() => {
+    const result: FlatRow[] = [];
+    for (const project of catalog.projects) {
+      const scope: ProjectScope = { scope_kind: "project", project_id: project.project_id };
+      const key = projectScopeKey(scope);
+      result.push({ kind: "project", project });
+      if (!expanded.has(key)) continue;
+      const page = pages[key];
+      if (!page || page.sessions.length === 0) result.push({ kind: "empty", scope });
+      for (const session of page?.sessions ?? []) result.push({ kind: "session", session, scope });
+      if (page?.next_cursor) result.push({ kind: "load", scope });
+    }
+    if (catalog.next_cursor) result.push({ kind: "catalog-load" });
+    const projectless: ProjectScope = { scope_kind: "projectless", project_id: null };
+    result.push({ kind: "scope", scope: projectless, label: "无项目会话" });
+    const page = pages.projectless;
+    if (!page || page.sessions.length === 0) result.push({ kind: "empty", scope: projectless });
+    for (const session of page?.sessions ?? []) result.push({ kind: "session", session, scope: projectless });
+    if (page?.next_cursor) result.push({ kind: "load", scope: projectless });
+    return result;
+  }, [catalog.next_cursor, catalog.projects, expanded, pages]);
+
+  const renderRow = (_index: number, row: FlatRow) => {
+    if (row.kind === "project") {
+      const key = `project:${row.project.project_id}`;
+      return <div data-testid={`project-group-${row.project.project_id}`} style={groupStyle}>
+        <button type="button" onClick={() => toggleProject(row.project.project_id)} aria-expanded={expanded.has(key)} style={groupButtonStyle}>
+          <span>{expanded.has(key) ? "▾" : "▸"}</span><span style={ellipsisStyle}>{row.project.display_name}</span>
+          {row.project.availability === "missing" && <span data-testid={`project-missing-${row.project.project_id}`} style={{ color: tokens.color.warning.fg }}>目录不可用</span>}
+        </button>
+        <button type="button" aria-label={`在 ${row.project.display_name} 中新建 Session`} onClick={() => createSession(row.project.project_id)} style={tinyButtonStyle}>＋</button>
+      </div>;
+    }
+    if (row.kind === "scope") return <div style={groupStyle}><strong>{row.label}</strong></div>;
+    if (row.kind === "empty") return <div data-testid={`session-empty-${projectScopeKey(row.scope)}`} style={emptyStyle}>暂无 Session</div>;
+    if (row.kind === "catalog-load") return <button type="button" onClick={() => requestCatalog(catalog.next_cursor)} style={loadStyle}>加载更多项目</button>;
+    if (row.kind === "load") {
+      const page = pages[projectScopeKey(row.scope)];
+      return <button type="button" onClick={() => requestSessions(row.scope, page?.next_cursor ?? null)} style={loadStyle}>加载更多会话</button>;
+    }
+    const selected = row.session.session_id === activeSid;
+    const editing = row.session.session_id === editingSid;
+    return <div data-testid={`session-row-${row.session.session_id}`} style={{ ...sessionRowStyle, background: selected ? dark.card : "transparent", borderLeftColor: selected ? dark.accent : "transparent" }}>
+      {editing ? <input
+        autoFocus
+        aria-label="重命名话题"
+        data-testid={`session-rename-input-${row.session.session_id}`}
+        maxLength={MAX_TITLE_LEN}
+        value={draftTitle}
+        onChange={(event) => setDraftTitle(event.target.value)}
+        onBlur={() => finishRename(row.session)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") finishRename(row.session);
+          if (event.key === "Escape") setEditingSid(null);
         }}
-      >
-        {newTopicPending ? "创建中…" : "＋ 新建会话"}
-      </button>
+        style={{ ...sessionButtonStyle, border: `1px solid ${dark.accent}` }}
+      /> : <button type="button" data-testid={`session-switch-${row.session.session_id}`} onClick={() => onSwitchSid(row.session.session_id)} onDoubleClick={() => { setEditingSid(row.session.session_id); setDraftTitle(row.session.title ?? ""); }} style={sessionButtonStyle}>
+          <span style={ellipsisStyle}>{topicDisplayLabel(row.session)}</span>
+          <small style={{ color: dark.textMuted }}>{row.session.turn_count === 0 ? "新建" : row.session.activity_at > 0 ? formatRelativeSec(row.session.activity_at) : ""}</small>
+        </button>}
+      {row.scope.scope_kind === "projectless" && <button type="button" data-testid={`session-continue-${row.session.session_id}`} title="在项目中继续" aria-label="在项目中继续" onClick={() => setPicker({ sourceSid: row.session.session_id })} style={tinyButtonStyle}>↗</button>}
+      <button type="button" aria-label="删除会话" onClick={() => setPendingDelete(row.session)} style={tinyButtonStyle}>×</button>
+    </div>;
+  };
 
-      {/* 会话清单 — 时间倒序，可切换/重命名/删除 */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: "auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 2,
-        }}
-      >
-        {sortedSessions.length === 0 && (
-          <div
-            data-testid="session-list-empty"
-            style={{
-              padding: `${tokens.space.sm}px ${tokens.space.sm}px`,
-              color: dark.textFaint,
-              fontSize: tokens.text.sm.size,
-              lineHeight: tokens.text.sm.lh,
-            }}
-          >
-            暂无历史会话。点击上方「新建会话」开始第一段对话，或直接在右侧输入框发消息。
-          </div>
-        )}
-        {sortedSessions.map((s) => {
-          const selected = s.session_id === activeSid;
-          const autoLabel = s.preview || s.session_id;
-          const label = topicDisplayLabel({
-            title: s.title,
-            preview: s.preview,
-            session_id: s.session_id,
-          });
-          const isEditing = editingSid === s.session_id;
-          const age = formatRelativeSec(s.last_message_at);
-          return (
-            <div
-              key={s.session_id}
-              data-testid={`session-row-${s.session_id}`}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: tokens.space.xs,
-                padding: `${tokens.space.xs + 2}px ${tokens.space.sm}px`,
-                borderRadius: tokens.radius.md,
-                background: selected ? dark.card : "transparent",
-                borderLeft: selected
-                  ? `3px solid ${dark.accent}`
-                  : "3px solid transparent",
-                flexShrink: 0,
-              }}
-            >
-              {isEditing ? (
-                <input
-                  ref={renameInputRef}
-                  value={draftTitle}
-                  maxLength={MAX_TITLE_LEN}
-                  placeholder={autoLabel}
-                  aria-label="重命名话题"
-                  data-testid={`session-rename-input-${s.session_id}`}
-                  onClick={(e) => e.stopPropagation()}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      finishRename(s.session_id, true);
-                    } else if (e.key === "Escape") {
-                      e.preventDefault();
-                      finishRename(s.session_id, false);
-                    }
-                  }}
-                  onBlur={() => {
-                    if (skipBlurRef.current) {
-                      skipBlurRef.current = false;
-                      return;
-                    }
-                    finishRename(s.session_id, true);
-                  }}
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    fontSize: tokens.text.base.size,
-                    padding: `${tokens.space.xs}px ${tokens.space.xs + 3}px`,
-                    borderRadius: tokens.radius.sm,
-                    border: `1px solid ${dark.accent}`,
-                    background: dark.bgSolid,
-                    color: dark.text,
-                    outline: "none",
-                    fontFamily: tokens.font.ui,
-                  }}
-                />
-              ) : (
-                <>
-                  <div
-                    onClick={() => switchToSession(s.session_id)}
-                    onDoubleClick={(e) => {
-                      e.stopPropagation();
-                      startRename(s);
-                    }}
-                    title="单击切换 · 双击重命名"
-                    data-testid={`session-switch-${s.session_id}`}
-                    style={{ flex: 1, minWidth: 0, cursor: "pointer" }}
-                  >
-                    <div
-                      style={{
-                        color: selected ? dark.accent : dark.text,
-                        fontSize: tokens.text.base.size,
-                        fontWeight: selected
-                          ? tokens.weight.semibold
-                          : tokens.weight.medium,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {label}
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: tokens.space.xs,
-                        color: dark.textMuted,
-                        fontSize: tokens.text.xs.size,
-                        marginTop: 2,
-                        minWidth: 0,
-                      }}
-                    >
-                      <span style={{ flexShrink: 0 }}>{s.turn_count} 条</span>
-                      {age && (
-                        <span
-                          style={{ flexShrink: 0 }}
-                          title={new Date(s.last_message_at * 1000).toLocaleString()}
-                        >
-                          {age}
-                        </span>
-                      )}
-                      <span
-                        title="Session ID，可选中复制"
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                          flexShrink: 1,
-                          minWidth: 0,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                          userSelect: "all",
-                          WebkitUserSelect: "all",
-                          cursor: "text",
-                          color: dark.textFaint,
-                          fontFamily: tokens.font.mono,
-                        }}
-                      >
-                        {s.session_id}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      startRename(s);
-                    }}
-                    title="重命名话题"
-                    aria-label="重命名话题"
-                    data-testid={`session-rename-btn-${s.session_id}`}
-                    style={rowIconBtnStyle}
-                  >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setPendingDelete(s);
-                    }}
-                    title="删除该会话"
-                    aria-label="删除该会话"
-                    data-testid={`session-delete-btn-${s.session_id}`}
-                    style={rowIconBtnStyle}
-                  >
-                    ×
-                  </button>
-                </>
-              )}
-            </div>
-          );
-        })}
-      </div>
+  const finishRename = (session: ProjectSessionDescriptor) => {
+    const title = normalizeTopicTitle(draftTitle);
+    setEditingSid(null);
+    if (title === (session.title ?? "").trim()) return;
+    controlWS.send({ type: "session_rename", payload: { session_id: session.session_id, title } });
+  };
 
-      {pendingDelete && (
-        <ConfirmDialog
-          title="删除会话"
-          message={
-            <>
-              确定要删除会话{" "}
-              <strong>{topicDisplayLabel({
-                title: pendingDelete.title,
-                preview: pendingDelete.preview,
-                session_id: pendingDelete.session_id,
-              })}</strong>
-              吗？
-              <br />
-              <span style={{ color: dark.textMuted, userSelect: "text" }}>
-                {pendingDelete.session_id}
-              </span>
-            </>
-          }
-          confirm_label="删除"
-          cancel_label="取消"
-          variant="danger"
-          onCancel={() => setPendingDelete(null)}
-          onConfirm={() => {
-            const sid = pendingDelete.session_id;
-            setPendingDelete(null);
-            deleteSession(sid);
-          }}
-        />
-      )}
+  const confirmDelete = () => {
+    if (!pendingDelete) return;
+    controlWS.send({ type: "session_delete", payload: { session_id: pendingDelete.session_id } });
+    if (pendingDelete.session_id === activeSid) onSwitchSid("");
+    setPendingDelete(null);
+  };
+
+  return <div data-testid="session-list" style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1, gap: tokens.space.xs }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: tokens.space.xs }}>
+      <button type="button" data-testid="session-new-topic" disabled={!companionIdentityReady} onClick={() => createSession(null)} style={primaryButtonStyle}>＋ 新建普通会话</button>
+      <button type="button" data-testid="project-add" disabled={!companionIdentityReady} onClick={() => setPicker({ sourceSid: null })} aria-label="添加项目" style={primaryButtonStyle}>⌘＋</button>
     </div>
-  );
+    {error && <div role="alert" style={{ color: tokens.color.danger.fg, fontSize: tokens.text.sm.size }}>{error}</div>}
+    <div style={{ flex: 1, minHeight: 0 }}><Virtuoso data={rows} computeItemKey={(_index, row) => row.kind === "session" ? `s:${row.session.session_id}` : row.kind === "project" ? `p:${row.project.project_id}` : `${row.kind}:${row.kind === "empty" || row.kind === "load" || row.kind === "scope" ? projectScopeKey(row.scope) : "catalog"}`} itemContent={renderRow} /></div>
+    {picker && <ProjectPickerDialog open onClose={() => setPicker(null)} onProjectSelected={(projectId) => createSession(projectId, picker.sourceSid)} />}
+    {pendingDelete && <ConfirmDialog title="删除会话？" message="该会话将从历史列表移除，项目和项目文件不会被删除。" confirm_label="删除" onConfirm={confirmDelete} onCancel={() => setPendingDelete(null)} />}
+  </div>;
 }
 
-// 行内小图标按钮（✎ / ×）— 低对比、悬停走内联事件避免样式表依赖。
-const rowIconBtnStyle: CSSProperties = {
-  flexShrink: 0,
-  width: 20,
-  height: 20,
-  borderRadius: tokens.radius.sm,
-  border: "none",
-  background: "transparent",
-  color: dark.textMuted,
-  cursor: "pointer",
-  fontSize: tokens.text.base.size,
-  lineHeight: "18px",
-  padding: 0,
-};
-
-export default SessionList;
+const ellipsisStyle: React.CSSProperties = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+const primaryButtonStyle: React.CSSProperties = { padding: `${tokens.space.xs + 2}px ${tokens.space.sm}px`, borderRadius: tokens.radius.md, border: `1px dashed ${dark.borderStrong}`, background: "transparent", color: dark.accent, cursor: "pointer" };
+const groupStyle: React.CSSProperties = { minHeight: 36, display: "flex", alignItems: "center", gap: tokens.space.xs, padding: `${tokens.space.xs}px ${tokens.space.sm}px`, color: dark.text };
+const groupButtonStyle: React.CSSProperties = { flex: 1, minWidth: 0, display: "flex", gap: tokens.space.xs, alignItems: "center", border: 0, background: "transparent", color: "inherit", cursor: "pointer", textAlign: "left" };
+const tinyButtonStyle: React.CSSProperties = { border: 0, background: "transparent", color: dark.accent, cursor: "pointer", padding: tokens.space.xs };
+const sessionRowStyle: React.CSSProperties = { minHeight: 44, display: "flex", alignItems: "center", padding: `2px ${tokens.space.sm}px 2px ${tokens.space.md}px`, borderLeft: "3px solid transparent" };
+const sessionButtonStyle: React.CSSProperties = { flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 2, border: 0, background: "transparent", color: dark.text, cursor: "pointer", textAlign: "left" };
+const emptyStyle: React.CSSProperties = { padding: `${tokens.space.sm}px ${tokens.space.lg}px`, color: dark.textFaint, fontSize: tokens.text.sm.size };
+const loadStyle: React.CSSProperties = { width: "100%", border: 0, background: "transparent", color: dark.accent, cursor: "pointer", padding: tokens.space.sm };

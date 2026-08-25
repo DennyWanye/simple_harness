@@ -1612,6 +1612,10 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
 
   apply_project_catalog_page(page, append = false) {
     set((state) => {
+      if (
+        state.project_catalog.revision !== null &&
+        page.catalog_revision < state.project_catalog.revision
+      ) return state;
       const sameRevision = state.project_catalog.revision === page.catalog_revision;
       const base = append && sameRevision ? state.project_catalog.projects : [];
       return {
@@ -1654,6 +1658,9 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
     } as Parameters<typeof projectScopeKey>[0]);
     set((state) => {
       const current = state.project_session_pages[scopeKey];
+      if (current?.revision !== null && current?.revision !== undefined && page.catalog_revision < current.revision) {
+        return state;
+      }
       const sameRevision = current?.revision === page.catalog_revision;
       const base = append && sameRevision ? current.sessions : [];
       return {
