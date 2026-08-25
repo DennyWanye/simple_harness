@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Run-frozen Skill instruction resolution for SDK and legacy Runs."""
 
 from __future__ import annotations
