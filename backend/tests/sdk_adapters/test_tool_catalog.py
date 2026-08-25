@@ -38,6 +38,8 @@ async def test_real_catalog_unrelated_manifest_change_preserves_tool_execution_i
         session_id="session-stable",
         request_id="request-stable",
         scope_id="scope-stable",
+        workspace=str(tmp_path),
+        write_scope_root=str(tmp_path),
     )
     product_catalog = build_explicit_product_tool_catalog(
         _catalog_dependencies(ContextPageInStore(), runtime_context)
@@ -611,7 +613,8 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
     )
 
     runtime_context = SimpleNamespace(
-        session_id="session-1", request_id="request-1", scope_id="scope-1"
+        session_id="session-1", request_id="request-1", scope_id="scope-1",
+        workspace=str(tmp_path), write_scope_root=str(tmp_path),
     )
     registry, _ = build_product_tool_registry(
         build_explicit_product_tool_catalog(
@@ -768,7 +771,10 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
 
     dependencies = _catalog_dependencies(
         ContextPageInStore(),
-        SimpleNamespace(session_id="session-1", request_id="request-1", scope_id="scope-1"),
+        SimpleNamespace(
+            session_id="session-1", request_id="request-1", scope_id="scope-1",
+            workspace="/workspace", write_scope_root="/workspace",
+        ),
     )
     dependencies = type(dependencies)(
         dependencies.todo_session_db,
@@ -817,7 +823,10 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     from simple_harness import CallId, RequestId, RunId, thaw_json
     from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 
-    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.sdk_adapters.tools import (
+        PROJECTLESS_SAFE_TOOL_NAMES,
+        build_product_tool_registry,
+    )
     from deskpet.tool_catalog import build_explicit_product_tool_catalog
     from deskpet.tools.context_page_in_tools import ContextPageInStore
 
@@ -829,6 +838,8 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
         session_id="session-1",
         request_id="request-1",
         scope_id="scope-1",
+        workspace=str(workspace),
+        write_scope_root=str(tmp_path),
     )
     page_store = ContextPageInStore()
     page_ref = page_store.put(
@@ -844,6 +855,17 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     )
     registry, inventory = build_product_tool_registry(catalog.registrations)
     by_name = {item.name: item for item in inventory}
+    assert len(by_name) == 77
+    assert {
+        name
+        for name, item in by_name.items()
+        if item.projectless_admission == "safe"
+    } == PROJECTLESS_SAFE_TOOL_NAMES
+    assert all(
+        item.projectless_admission == "requires_project"
+        for name, item in by_name.items()
+        if name not in PROJECTLESS_SAFE_TOOL_NAMES
+    )
     assert by_name["read_file"].dispatch_kind == "sync"
     assert by_name["process_list"].dispatch_kind == "async"
     assert by_name["context_page_in"].dispatch_kind == "context"
@@ -932,7 +954,9 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
     configure_project_group_transport(transport)
     try:
         runtime_context = SimpleNamespace(
-            session_id="session-1", request_id="request-1", scope_id="scope-1"
+            session_id="session-1", request_id="request-1", scope_id="scope-1",
+            workspace=str(tmp_path / "allowed"),
+            write_scope_root=str(tmp_path / "allowed"),
         )
         catalog = build_explicit_product_tool_catalog(
             _catalog_dependencies(ContextPageInStore(), runtime_context)
@@ -981,7 +1005,7 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
         configure_project_group_transport(None)
 
 
-def test_sdk_tool_context_without_metadata_uses_app_workspace(
+def test_sdk_tool_context_without_authoritative_workspace_fails_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import asyncio
@@ -1018,10 +1042,11 @@ def test_sdk_tool_context_without_metadata_uses_app_workspace(
                 CancellationToken(),
             ),
         )
-        assert result.outcome is ToolOutcome.SUCCEEDED
+        assert result.outcome is ToolOutcome.FAILED
+        assert result.error_code == "tool_handler_failed"
 
     asyncio.run(case())
-    assert (profile / "workspace" / "sdk-bound.txt").read_text() == "bound"
+    assert not (profile / "workspace" / "sdk-bound.txt").exists()
 
 
 def test_memory_recall_and_search_dispatch_to_live_memory_sdk_for_ordinary_run(

@@ -58,7 +58,7 @@ from deskpet.workflows.effects import PreparedToolCall
 
 
 SDK_TOOL_AUTHORITY_RECORD_KIND = "deskpet.sdk-tool-authority"
-SDK_TOOL_AUTHORITY_RECORD_VERSION = 2
+SDK_TOOL_AUTHORITY_RECORD_VERSION = 3
 SDK_FULL_CATALOG_DISCLOSURE_POLICY = "full-direct-v1"
 SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY = "explicit-deferred-v1"
 SDK_PERMISSION_POLICY_VERSION = "sdk-product-policy-v1"
@@ -110,6 +110,60 @@ def _required(value: object, name: str) -> str:
     return text
 
 
+def _v2_record_hashes(record: Mapping[str, Any]) -> tuple[str, str]:
+    """Recompute the pre-workspace-binding hashes for a durable v2 record."""
+
+    inventory = []
+    for raw in record.get("inventory", ()):
+        inventory.append(
+            {
+                key: raw[key]
+                for key in (
+                    "name",
+                    "dispatch_kind",
+                    "permission_category",
+                    "source",
+                    "version",
+                    "execution_identity",
+                    "permission_policy_version",
+                    "dangerous",
+                )
+            }
+        )
+    authority_fingerprint = _canonical_sha256(
+        {
+            "disclosure_policy": record["disclosure_policy"],
+            "direct": sorted(record["direct_names"]),
+            "deferred": sorted(record["deferred_names"]),
+            "inventory": inventory,
+            "principal_id": record["principal_id"],
+        }
+    )
+    scope_seed = {
+        key: record[key]
+        for key in (
+            "run_id",
+            "session_id",
+            "request_id",
+            "root_run_id",
+            "task_scope_id",
+            "catalog_generation",
+            "catalog_fingerprint",
+        )
+    }
+    scope_hash = _canonical_sha256(
+        {
+            **scope_seed,
+            "prepared_scope_id": f"sdk-tool-scope:{_canonical_sha256(scope_seed)}",
+            "prepared_schema_fingerprint": record["capability_hash"],
+            "authority_fingerprint": authority_fingerprint,
+            "workspace_root": record.get("workspace_root"),
+            "workspace_binding_version": int(record.get("binding_version", 0)),
+        }
+    )
+    return authority_fingerprint, scope_hash
+
+
 def _field(value: object, name: str, default: object = "") -> object:
     if isinstance(value, Mapping):
         return value.get(name, default)
@@ -127,6 +181,7 @@ class _FrozenCapabilitySpec:
     source: str
     toolset: str
     execution_identity: str
+    projectless_admission: str = "requires_project"
     dangerous: bool = False
 
     def env_satisfied(self) -> bool:
@@ -154,6 +209,8 @@ class SdkRunToolAuthorityV1:
     dispatch_kinds: Mapping[str, str]
     specs: Mapping[str, _FrozenCapabilitySpec]
     disclosure_policy: str
+    workspace_resolution: Mapping[str, Any]
+    workspace_identity_validator: Callable[[Mapping[str, Any]], None] | None = None
     lease_state: str = "active"
 
     def __post_init__(self) -> None:
@@ -185,6 +242,18 @@ class SdkRunToolAuthorityV1:
             capability_snapshot_ref=self.catalog_fingerprint,
         )
 
+    def assert_workspace_current(self) -> None:
+        kind = str(self.workspace_resolution.get("kind") or "")
+        if kind in {"legacy", "projectless"}:
+            return
+        if kind == "missing":
+            raise RuntimeError("workspace_unavailable")
+        if kind != "project_bound":
+            raise RuntimeError("workspace_resolution_invalid")
+        if self.workspace_identity_validator is None:
+            raise RuntimeError("workspace_identity_validator_unavailable")
+        self.workspace_identity_validator(self.workspace_resolution)
+
     def run_start_record(self) -> dict[str, Any]:
         """Return the private durable metadata needed for exact restart.
 
@@ -206,6 +275,7 @@ class SdkRunToolAuthorityV1:
             "task_scope_id": self.task_work_context.task_scope_id,
             "workspace_root": self.task_work_context.workspace_root,
             "binding_version": self.task_work_context.binding_version,
+            "workspace_resolution": dict(self.workspace_resolution),
             "principal_id": self.principal_id,
             "catalog_generation": self.catalog_generation,
             "catalog_fingerprint": self.catalog_fingerprint,
@@ -225,6 +295,7 @@ class SdkRunToolAuthorityV1:
                     "version": spec.spec_version,
                     "execution_identity": spec.execution_identity,
                     "permission_policy_version": spec.permission_policy_version,
+                    "projectless_admission": spec.projectless_admission,
                     "dangerous": spec.dangerous,
                 }
                 for name, spec in self.specs.items()
@@ -240,14 +311,28 @@ class SdkRunToolAuthorityRegistry:
         *,
         scope_store: ToolCapabilityScopeStore | None = None,
         resource_records: Sequence[RuntimeCapabilityRecord] = (),
+        workspace_identity_validator: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> None:
         self.scope_store = scope_store or ToolCapabilityScopeStore()
         self._records: dict[str, SdkRunToolAuthorityV1] = {}
         self._runtime_exposures: dict[str, CatalogRunToolExposure] = {}
         self._resource_records = tuple(resource_records)
+        self._workspace_identity_validator = workspace_identity_validator
         self._terminal_listeners: list[
             Callable[[SdkRunToolAuthorityV1], None]
         ] = []
+
+    def bind_workspace_identity_validator(
+        self, validator: Callable[[Mapping[str, Any]], None]
+    ) -> None:
+        if not callable(validator):
+            raise TypeError("workspace identity validator must be callable")
+        if (
+            self._workspace_identity_validator is not None
+            and self._workspace_identity_validator is not validator
+        ):
+            raise RuntimeError("workspace identity validator is already bound")
+        self._workspace_identity_validator = validator
 
     def add_terminal_listener(
         self, listener: Callable[[SdkRunToolAuthorityV1], None]
@@ -269,6 +354,7 @@ class SdkRunToolAuthorityRegistry:
         deferred_names: Iterable[str] = (),
         disclosure_policy: str | None = None,
         binding_version: int = 1,
+        workspace_resolution: Mapping[str, Any] | None = None,
     ) -> SdkRunToolAuthorityV1:
         run_id = _required(run_id, "run_id")
         session_id = _required(session_id, "session_id")
@@ -276,6 +362,45 @@ class SdkRunToolAuthorityRegistry:
         root_run_id = _required(root_run_id, "root_run_id")
         task_scope_id = _required(task_scope_id, "task_scope_id")
         principal_id = _required(principal_id, "principal_id")
+        if workspace_resolution is None:
+            normalized_workspace_resolution: dict[str, Any] = {
+                "kind": "legacy",
+                "effective_root": workspace_root,
+                "binding_version": binding_version,
+            }
+        else:
+            normalized_workspace_resolution = {
+                str(key): value for key, value in workspace_resolution.items()
+            }
+            kind = _required(
+                normalized_workspace_resolution.get("kind"),
+                "workspace_resolution.kind",
+            )
+            if kind not in {"project_bound", "projectless", "missing", "legacy"}:
+                raise ValueError("unsupported workspace resolution kind")
+            effective_root = normalized_workspace_resolution.get("effective_root")
+            if effective_root != workspace_root:
+                raise ValueError("workspace resolution differs from effective root")
+            if kind == "projectless" and workspace_root is not None:
+                raise ValueError("projectless workspace cannot carry a root")
+            if kind == "missing":
+                raise RuntimeError("workspace_unavailable")
+            if kind == "project_bound":
+                for field in (
+                    "project_id",
+                    "execution_kind",
+                    "project_identity",
+                    "execution_identity",
+                ):
+                    _required(
+                        normalized_workspace_resolution.get(field),
+                        f"workspace_resolution.{field}",
+                    )
+                if int(normalized_workspace_resolution.get("project_revision", 0)) < 1:
+                    raise ValueError("workspace project revision must be positive")
+                if self._workspace_identity_validator is None:
+                    raise RuntimeError("workspace_identity_validator_unavailable")
+            normalized_workspace_resolution["binding_version"] = binding_version
         catalog_fingerprint = _required(
             catalog.get("content_fingerprint"), "catalog_fingerprint"
         )
@@ -364,6 +489,16 @@ class SdkRunToolAuthorityRegistry:
             )
             if not isinstance(dangerous, bool):
                 raise TypeError(f"{name}.dangerous must be a boolean")
+            projectless_admission = str(
+                _field(inventory_item, "projectless_admission", "requires_project")
+            )
+            if projectless_admission not in {"safe", "requires_project"}:
+                raise ValueError(f"{name}.projectless_admission is invalid")
+            if (
+                normalized_workspace_resolution["kind"] == "projectless"
+                and projectless_admission != "safe"
+            ):
+                raise RuntimeError("projectless_catalog_contains_project_tool")
             function_schema = {
                 "name": name,
                 "description": description,
@@ -410,6 +545,7 @@ class SdkRunToolAuthorityRegistry:
                 source=source,
                 toolset=dispatch,
                 execution_identity=execution_identity,
+                projectless_admission=projectless_admission,
                 dangerous=dangerous,
             )
             permissions[name] = permission
@@ -473,11 +609,15 @@ class SdkRunToolAuthorityRegistry:
                         "permission_policy_version": (
                             frozen_specs[name].permission_policy_version
                         ),
+                        "projectless_admission": frozen_specs[
+                            name
+                        ].projectless_admission,
                         "dangerous": frozen_specs[name].dangerous,
                     }
                     for name in names
                 ],
                 "principal_id": principal_id,
+                "workspace_resolution": normalized_workspace_resolution,
             }
         )
         scope_hash = _canonical_sha256(
@@ -488,6 +628,7 @@ class SdkRunToolAuthorityRegistry:
                 "authority_fingerprint": authority_fingerprint,
                 "workspace_root": workspace_root,
                 "workspace_binding_version": binding_version,
+                "workspace_resolution": normalized_workspace_resolution,
             }
         )
         record = SdkRunToolAuthorityV1(
@@ -507,6 +648,8 @@ class SdkRunToolAuthorityRegistry:
             dispatch_kinds=dispatch_kinds,
             specs=frozen_specs,
             disclosure_policy=disclosure_policy,
+            workspace_resolution=normalized_workspace_resolution,
+            workspace_identity_validator=self._workspace_identity_validator,
         )
         current = self._records.get(run_id)
         if current is not None:
@@ -698,7 +841,7 @@ class SdkRunToolAuthorityRegistry:
             raise SdkToolAuthorityMigrationUnavailable(
                 run_start_record.get("run_id"), record_version
             )
-        if record_version != SDK_TOOL_AUTHORITY_RECORD_VERSION:
+        if record_version not in {2, SDK_TOOL_AUTHORITY_RECORD_VERSION}:
             raise ValueError("sdk_tool_authority_record_version_unsupported")
         generation = int(_field(run_binding, "catalog_generation", -1))
         fingerprint = _required(
@@ -738,6 +881,16 @@ class SdkRunToolAuthorityRegistry:
             }
             for item in snapshot_specs
         ]
+        raw_inventory = run_start_record.get("inventory")
+        if not isinstance(raw_inventory, list) or not raw_inventory:
+            raise ValueError("sdk_tool_authority_inventory_missing")
+        inventory_names = {
+            _required(_field(item, "name"), "inventory.name")
+            for item in raw_inventory
+        }
+        specs = [item for item in specs if item["name"] in inventory_names]
+        if {item["name"] for item in specs} != inventory_names:
+            raise RuntimeError("sdk_tool_catalog_projection_unavailable")
         catalog = {
             "generation": generation,
             "content_fingerprint": fingerprint,
@@ -750,9 +903,6 @@ class SdkRunToolAuthorityRegistry:
                 for item in specs
             },
         }
-        raw_inventory = run_start_record.get("inventory")
-        if not isinstance(raw_inventory, list) or not raw_inventory:
-            raise ValueError("sdk_tool_authority_inventory_missing")
         direct_names = run_start_record.get("direct_names")
         deferred_names = run_start_record.get("deferred_names")
         if not isinstance(direct_names, list) or not isinstance(deferred_names, list):
@@ -791,14 +941,37 @@ class SdkRunToolAuthorityRegistry:
                 run_start_record.get("disclosure_policy"), "disclosure_policy"
             ),
             binding_version=int(run_start_record.get("binding_version", 0)),
+            workspace_resolution=(
+                run_start_record.get("workspace_resolution")
+                if record_version >= 3
+                else {
+                    "kind": "legacy",
+                    "effective_root": run_start_record.get("workspace_root"),
+                    "binding_version": int(
+                        run_start_record.get("binding_version", 0)
+                    ),
+                }
+            ),
         )
-        if (
-            restored.authority_fingerprint != expected_authority_fingerprint
-            or restored.capability_hash
-            != _required(run_start_record.get("capability_hash"), "capability_hash")
-            or restored.scope_hash
-            != _required(run_start_record.get("scope_hash"), "scope_hash")
-        ):
+        expected_capability_hash = _required(
+            run_start_record.get("capability_hash"), "capability_hash"
+        )
+        expected_scope_hash = _required(
+            run_start_record.get("scope_hash"), "scope_hash"
+        )
+        hashes_match = (
+            restored.authority_fingerprint == expected_authority_fingerprint
+            and restored.capability_hash == expected_capability_hash
+            and restored.scope_hash == expected_scope_hash
+        )
+        if record_version == 2:
+            v2_authority_hash, v2_scope_hash = _v2_record_hashes(run_start_record)
+            hashes_match = (
+                expected_authority_fingerprint == v2_authority_hash
+                and expected_scope_hash == v2_scope_hash
+                and restored.capability_hash == expected_capability_hash
+            )
+        if not hashes_match:
             self.mark_terminal(restored.run_id, "failed")
             raise RuntimeError("sdk_tool_authority_hash_mismatch")
         return (
@@ -1160,6 +1333,7 @@ class SdkPreparedAuthorizationPolicy:
         request: AuthorizationRequest | None,
     ) -> AuthorizationResult:
         authority = self._authorities.resolve(prepared.run_id)
+        authority.assert_workspace_current()
         call = self._prepared_call(prepared, authority)
         context = authority.execution_context(
             call_id=prepared.call.call_id.value,

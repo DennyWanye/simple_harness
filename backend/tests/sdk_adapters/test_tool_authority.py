@@ -22,6 +22,7 @@ from deskpet.sdk_adapters.tool_authority import (
     SdkRuntimeCapabilityBridgeAdapter,
     SdkRunToolAuthorityRegistry,
     SdkToolAuthorityMigrationUnavailable,
+    _v2_record_hashes,
 )
 from deskpet.sdk_adapters.tools import (
     ProductEffectExecutor,
@@ -61,6 +62,7 @@ class _Inventory:
     source: str = "real-tool-manifest"
     version: str = "v1"
     execution_identity: str = "execution-identity-v1"
+    projectless_admission: str = "requires_project"
 
 
 class _AuthorizationStore:
@@ -189,6 +191,85 @@ def test_run_authority_freezes_and_persists_physical_policy_fingerprint() -> Non
 
     assert authority.prepared_tool_set.policy_fingerprint == "physical-policy-v7"
     assert authority.run_start_record()["policy_fingerprint"] == "physical-policy-v7"
+
+
+def test_projectless_authority_accepts_only_explicit_safe_projection() -> None:
+    catalog, _ = _catalog()
+    safe_catalog = {
+        **catalog,
+        "specs": [catalog["specs"][0]],
+        "schema_fingerprints": {
+            "tool_search": catalog["schema_fingerprints"]["tool_search"]
+        },
+    }
+    safe_inventory = (
+        _Inventory(
+            "tool_search",
+            "control",
+            "read_file",
+            projectless_admission="safe",
+        ),
+    )
+    registry = SdkRunToolAuthorityRegistry()
+
+    authority = registry.prepare_run(
+        run_id="run-projectless",
+        session_id="session-projectless",
+        request_id="request-projectless",
+        root_run_id="root-projectless",
+        task_scope_id="task-projectless",
+        workspace_root=None,
+        workspace_resolution={"kind": "projectless", "effective_root": None},
+        catalog=safe_catalog,
+        inventory=safe_inventory,
+    )
+
+    assert set(authority.specs) == {"tool_search"}
+    assert authority.run_start_record()["workspace_resolution"]["kind"] == "projectless"
+    with pytest.raises(RuntimeError, match="projectless_catalog_contains_project_tool"):
+        registry.prepare_run(
+            run_id="run-projectless-unsafe",
+            session_id="session-projectless",
+            request_id="request-projectless-unsafe",
+            root_run_id="root-projectless-unsafe",
+            task_scope_id="task-projectless-unsafe",
+            workspace_root=None,
+            workspace_resolution={"kind": "projectless", "effective_root": None},
+            catalog=catalog,
+            inventory=_catalog()[1],
+        )
+
+
+def test_project_bound_authority_revalidates_identity() -> None:
+    observed: list[dict] = []
+
+    def validate(resolution):
+        observed.append(dict(resolution))
+
+    registry = SdkRunToolAuthorityRegistry(workspace_identity_validator=validate)
+    catalog, inventory = _catalog()
+    authority = registry.prepare_run(
+        run_id="run-project",
+        session_id="session-project",
+        request_id="request-project",
+        root_run_id="root-project",
+        task_scope_id="task-project",
+        workspace_root="/workspace",
+        workspace_resolution={
+            "kind": "project_bound",
+            "project_id": "project-1",
+            "execution_kind": "project_root",
+            "effective_root": "/workspace",
+            "project_identity": "identity-project",
+            "execution_identity": "identity-execution",
+            "project_revision": 1,
+        },
+        catalog=catalog,
+        inventory=inventory,
+    )
+
+    authority.assert_workspace_current()
+    assert observed == [authority.workspace_resolution]
 
 
 def _run_aware_executor_registry(
@@ -465,6 +546,14 @@ def test_pre_change_v1_is_unmigratable_without_identity_but_v2_and_fresh_survive
             inventory=_catalog()[1],
         )
         v2_record = v2_source.run_start_record()
+        v2_record["schema_version"] = 2
+        v2_record.pop("workspace_resolution")
+        for item in v2_record["inventory"]:
+            item.pop("projectless_admission")
+        (
+            v2_record["authority_fingerprint"],
+            v2_record["scope_hash"],
+        ) = _v2_record_hashes(v2_record)
         assert v2_record["schema_version"] == 2
         restarted = SdkRunToolAuthorityRegistry()
 

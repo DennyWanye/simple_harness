@@ -45,7 +45,35 @@ window_key window_list workflow_spawn workspace_prepare workspace_recall write_f
 )
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
+ProjectlessAdmission = Literal["safe", "requires_project"]
 ProductHandler = Callable[[Mapping[str, JsonValue], ToolContext], Any]
+
+
+# Projectless Sessions are ordinary chat.  Keep only tools whose physical
+# handlers do not discover, read, mutate, launch, delegate into, or prepare a
+# local workspace.  Every other built-in is fail-closed by the dataclass
+# default below; dynamic MCP tools use the same default.
+PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
+    {
+        "context_page_in",
+        "gold_price_lookup",
+        "memory_forget",
+        "memory_read",
+        "memory_recall",
+        "memory_search",
+        "memory_write",
+        "todo_complete",
+        "todo_write",
+        "tool_activate",
+        "tool_describe",
+        "tool_search",
+        "web_crawl",
+        "web_extract_article",
+        "web_fetch",
+        "web_read_sitemap",
+        "web_search",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +85,7 @@ class ProductToolRegistration:
     dispatch_kind: DispatchKind
     permission_category: str
     metadata: Mapping[str, JsonValue]
+    projectless_admission: ProjectlessAdmission = "requires_project"
 
     def __post_init__(self) -> None:
         if self.name not in PRODUCT_TOOL_NAMES:
@@ -69,6 +98,8 @@ class ProductToolRegistration:
             raise ValueError("permission_category is required")
         if not callable(self.handler):
             raise TypeError("handler must be callable")
+        if self.projectless_admission not in {"safe", "requires_project"}:
+            raise ValueError("projectless_admission must be total and fail-closed")
         if not self.metadata.get("source") or not self.metadata.get("version"):
             raise ValueError("Tool source and version metadata are required")
 
@@ -81,6 +112,7 @@ class ProductToolInventoryEntry:
     source: str
     version: str
     execution_identity: str
+    projectless_admission: ProjectlessAdmission = "requires_project"
 
 
 _current_call_id: contextvars.ContextVar[CallId | None] = contextvars.ContextVar(
@@ -213,6 +245,16 @@ class ProductToolsAdapter(ToolRegistry):
         ):
             raise SdkToolExecutorCatalogUnavailable(name)
 
+    def assert_workspace_current(self, run_id: object) -> None:
+        resolve = getattr(self._run_authorities, "resolve", None)
+        if not callable(resolve):
+            raise RuntimeError("sdk_run_authority_unavailable")
+        authority = resolve(run_id)
+        check = getattr(authority, "assert_workspace_current", None)
+        if not callable(check):
+            raise RuntimeError("workspace_identity_check_unavailable")
+        check()
+
     def get(self, name: str):
         run_id = _validation_run_id.get()
         if run_id is not None:
@@ -231,6 +273,17 @@ class ProductToolsAdapter(ToolRegistry):
             if self._run_authorities is not None
             else None
         )
+        if self._run_authorities is not None:
+            resolve = getattr(self._run_authorities, "resolve", None)
+            if not callable(resolve):
+                raise SdkToolExecutorCatalogUnavailable(call.name)
+            authority = resolve(context.run_id)
+            if (
+                str(getattr(authority, "run_id", "")) != context.run_id.value
+                or str(getattr(authority, "request_id", ""))
+                != context.request_id.value
+            ):
+                raise RuntimeError("sdk_tool_context_identity_mismatch")
         token = _current_call_id.set(call.call_id)
         context_token = _current_tool_context.set(context)
         try:
@@ -266,6 +319,7 @@ class ProductEffectExecutor(EffectExecutor):
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
+        self._registry.assert_workspace_current(context.run_id)
         token = _validation_run_id.set(context.run_id.value)
         try:
             return await super().execute(**kwargs)
@@ -410,6 +464,7 @@ def build_product_tool_registry(
             str(item.metadata["source"]),
             str(item.metadata["version"]),
             execution_identities[item.name],
+            item.projectless_admission,
         )
         for item in ordered
     )
@@ -505,10 +560,52 @@ def extend_product_registry_with_mcp(
                 source=source,
                 version=str(getattr(legacy, "spec_version", "v1")),
                 execution_identity=identity,
+                projectless_admission="requires_project",
             )
         )
         existing.add(name)
     return tuple(extended)
+
+
+def filter_sdk_catalog_for_workspace(
+    catalog: Mapping[str, Any],
+    inventory: Sequence[ProductToolInventoryEntry],
+    *,
+    workspace_resolution_kind: str,
+) -> tuple[dict[str, Any], tuple[ProductToolInventoryEntry, ...]]:
+    """Return the per-Run model/tool projection for one workspace tag.
+
+    The durable catalog generation/fingerprint continue to identify the full
+    source snapshot.  A projectless Run records its filtered inventory, so
+    restart can deterministically reapply the same projection before exact
+    authority reconstruction.
+    """
+
+    kind = str(workspace_resolution_kind).strip()
+    if kind in {"project_bound", "legacy"}:
+        return dict(catalog), tuple(inventory)
+    if kind == "missing":
+        raise RuntimeError("workspace_unavailable")
+    if kind != "projectless":
+        raise ValueError("unsupported workspace resolution kind")
+    allowed = {
+        item.name for item in inventory if item.projectless_admission == "safe"
+    }
+    selected_inventory = tuple(item for item in inventory if item.name in allowed)
+    selected_specs = tuple(
+        item for item in catalog.get("specs", ()) if str(item.get("name")) in allowed
+    )
+    if {str(item.get("name")) for item in selected_specs} != allowed:
+        raise RuntimeError("projectless_tool_projection_incomplete")
+    selected = dict(catalog)
+    selected["specs"] = list(selected_specs)
+    selected["tool_names"] = sorted(allowed)
+    schema_fingerprints = catalog.get("schema_fingerprints")
+    if isinstance(schema_fingerprints, Mapping):
+        selected["schema_fingerprints"] = {
+            name: schema_fingerprints[name] for name in allowed
+        }
+    return selected, selected_inventory
 
 
 __all__ = (
@@ -522,4 +619,6 @@ __all__ = (
     "active_product_tool_context",
     "build_product_tool_registry",
     "extend_product_registry_with_mcp",
+    "filter_sdk_catalog_for_workspace",
+    "PROJECTLESS_SAFE_TOOL_NAMES",
 )

@@ -9,13 +9,14 @@ import importlib
 import inspect
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping
 
 from simple_harness import JsonValue, thaw_json
 from simple_harness.tools import ToolContext
 
 from deskpet.sdk_adapters.tools import (
+    PROJECTLESS_SAFE_TOOL_NAMES,
     ProductToolRegistration,
     active_product_tool_call_id,
 )
@@ -45,6 +46,43 @@ _ASYNC_TOOLS = frozenset(
         "workspace_recall",
     }
 )
+
+
+def _authoritative_execution_context(
+    base: Any, sdk_context: ToolContext
+) -> ToolExecutionContext:
+    """Attach the SDK call identity to an injected host workspace binding."""
+
+    call_id = active_product_tool_call_id().value
+    if isinstance(base, ToolExecutionContext):
+        return replace(
+            base,
+            request_id=sdk_context.request_id.value,
+            run_id=sdk_context.run_id.value,
+            call_id=call_id,
+            effect_id=call_id,
+        )
+    if base is None:
+        raise RuntimeError("authoritative_tool_execution_context_unavailable")
+    for field in ("scope_id", "session_id", "request_id"):
+        if not str(getattr(base, field, "") or "").strip():
+            raise RuntimeError("authoritative_tool_execution_context_incomplete")
+    return ToolExecutionContext(
+        scope_id=str(base.scope_id),
+        session_id=str(base.session_id),
+        request_id=sdk_context.request_id.value,
+        root_run_id=str(getattr(base, "root_run_id", "") or sdk_context.run_id.value),
+        run_id=sdk_context.run_id.value,
+        call_id=call_id,
+        effect_id=call_id,
+        workspace=str(base.workspace) if getattr(base, "workspace", None) else None,
+        write_scope_root=(
+            str(base.write_scope_root)
+            if getattr(base, "write_scope_root", None)
+            else None
+        ),
+        owner_key=str(getattr(base, "owner_key", "") or ""),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,38 +244,6 @@ def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict
         if isinstance(creation_time, bool) or not isinstance(creation_time, (int, float)) or creation_time <= 0:
             raise ValueError("creation_time must be greater than zero")
     return adapted
-
-
-def _execution_context(context: ToolContext) -> ToolExecutionContext:
-    metadata = thaw_json(context.metadata)
-    call_id = active_product_tool_call_id().value
-    workspace = str(metadata["workspace"]) if metadata.get("workspace") else None
-    write_scope_root = (
-        str(metadata["write_scope_root"])
-        if metadata.get("write_scope_root")
-        else None
-    )
-    if workspace is None and write_scope_root is None:
-        # SDK 0.1.4's ReAct driver currently constructs ToolContext without
-        # propagating host workspace metadata. Keep product file tools bound
-        # to the same app-owned default workspace instead of falling through
-        # to the backend process working directory.
-        from agent.write_scope import resolve_workspace_root
-
-        workspace = str(resolve_workspace_root())
-        write_scope_root = workspace
-    return ToolExecutionContext(
-        scope_id=str(metadata.get("scope_id") or context.run_id.value),
-        session_id=str(metadata.get("session_id") or context.request_id.value),
-        request_id=context.request_id.value,
-        root_run_id=str(metadata.get("root_run_id") or context.run_id.value),
-        run_id=context.run_id.value,
-        call_id=call_id,
-        effect_id=call_id,
-        workspace=workspace,
-        write_scope_root=write_scope_root,
-        owner_key=str(metadata.get("owner_key") or ""),
-    )
 
 
 def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable[..., Any], str]]:
@@ -455,11 +461,17 @@ def build_explicit_product_tool_catalog(
 
         async def invoke(arguments, context, *, _name=name, _handler=handler, _mode=mode):
             adapted = adapt_model_arguments(_name, arguments)
-            old_context = (
-                dependencies.execution_context_getter()
-                if _name == "skill_invoke"
-                else _execution_context(context)
+            old_context = _authoritative_execution_context(
+                dependencies.execution_context_getter(), context
             )
+            if (
+                _name not in PROJECTLESS_SAFE_TOOL_NAMES
+                and (
+                    old_context.workspace is None
+                    or old_context.write_scope_root is None
+                )
+            ):
+                raise RuntimeError("project_workspace_binding_required")
             if _name == "skill_invoke" and not isinstance(
                 old_context, ToolExecutionContext
             ):
@@ -490,6 +502,9 @@ def build_explicit_product_tool_catalog(
                 handler=invoke,
                 dispatch_kind=_dispatch_kind(name, handler),  # type: ignore[arg-type]
                 permission_category=str(item["permission_category"]),
+                projectless_admission=(
+                    "safe" if name in PROJECTLESS_SAFE_TOOL_NAMES else "requires_project"
+                ),
                 metadata={
                     **thaw_json(item),
                     "source": "real-tool-manifest",
