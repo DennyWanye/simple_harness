@@ -33,6 +33,7 @@ from deskpet.memory.migrator import (
     read_user_version,
 )
 from deskpet.memory.storage import ensure_owner_only_state_db
+from deskpet.memory.project_session_upgrade import run_project_session_upgrade
 
 log = logging.getLogger(__name__)
 
@@ -112,6 +113,7 @@ async def initialize_state_db(db_path: str | Path) -> None:
             log.info("state.db migrations applied: %s", applied)
         else:
             log.debug("state.db migrations already up-to-date")
+        await run_project_session_upgrade(db_path, backup_path=bak_path)
     except (MigrationError, Exception) as exc:  # noqa: BLE001  # 故意 broad
         # 任何迁移异常都走回滚。包括 sqlite3.Error / OSError / 自定义。
         log.error("state.db migration failed: %s; attempting rollback", exc)

@@ -33,7 +33,7 @@ async def test_dev_reset_rebuilds_three_databases_and_removes_sidecars(tmp_path,
     assert all(not Path(f"{path}-shm").exists() for path in (state, execution, memory))
     with sqlite3.connect(state) as db:
         assert db.execute("SELECT count(*) FROM product_memory_outbox").fetchone()[0] == 0
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 31
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 32
     with sqlite3.connect(execution) as db:
         assert db.execute("SELECT max(version) FROM sdk_schema_migrations").fetchone()[0] == 6
 
