@@ -1013,7 +1013,11 @@ class SessionCreationService:
                         (source_session_id,),
                     )).fetchone()
                 frozen_provider = tuple(provider_row) if provider_row is not None else (None,) * 5
-                if provider_row is not None and self._provider_binding_validator is not None:
+                if (
+                    provider_row is not None
+                    and provider_row[0] is not None
+                    and self._provider_binding_validator is not None
+                ):
                     try:
                         self._provider_binding_validator(
                             str(provider_row[0]),
@@ -1083,6 +1087,11 @@ class SessionCreationService:
                 if deleted is not None and deleted[0] is not None:
                     await db.rollback()
                     return
+                await self._fault("before_delete_writes")
+                await db.execute(
+                    "UPDATE project_session_catalog_state SET catalog_revision="
+                    "catalog_revision+1 WHERE singleton=1"
+                )
                 await db.execute("DELETE FROM messages WHERE session_id=?", (sid,))
                 await db.execute("DELETE FROM session_titles WHERE session_id=?", (sid,))
                 await db.execute(
@@ -1101,7 +1110,10 @@ class SessionCreationService:
                 else:
                     await db.execute("UPDATE companion_session_owners SET status='tombstoned',updated_at=? WHERE session_id=? AND status='active'", (now, sid))
                 await db.execute("UPDATE session_creation_receipts SET lifecycle='deleted',deleted_at=? WHERE session_id=? AND lifecycle='active'", (now, sid))
+                await self._fault("after_delete_tombstones")
+                await self._fault("before_delete_commit")
                 await db.commit()
+                await self._fault("after_delete_commit")
 
 
 __all__ = [

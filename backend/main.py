@@ -7459,12 +7459,19 @@ async def _build_product_sdk_runtime_stack(
     )
     project_bindings = service_context.get("project_binding_service")
     if project_bindings is not None:
+        from deskpet.sdk_adapters.runtime_paths import (
+            ProductRuntimePathsAdapter,
+            durable_sdk_run_start_exists,
+        )
+
+        sdk_execution_db = ProductRuntimePathsAdapter(
+            _paths.user_data_dir()
+        ).execution_database
+
         async def _has_durable_sdk_run_start(run_id: str) -> bool:
-            if workflow_service is None:
-                return False
-            return (
-                await workflow_service.execution_uow.read_run_start_snapshot(run_id)
-            ) is not None
+            return await asyncio.to_thread(
+                durable_sdk_run_start_exists, sdk_execution_db, run_id
+            )
 
         reconciled_project_claims = await project_bindings.reconcile_orphan_run_claims(
             _has_durable_sdk_run_start
@@ -10766,6 +10773,34 @@ async def _prepare_sdk_context_snapshot(
         workspace_resolution=project_resolution,
         local_page_url=_trusted_local_page_url_from_env(),
     )
+    project_rule_instructions: tuple[str, ...] = ()
+    if str(project_resolution.get("kind") or "") == "project_bound":
+        from deskpet.agent.assembler.bundle import AssemblyPolicy
+        from deskpet.agent.assembler.components.base import ComponentContext
+        from deskpet.agent.assembler.components.project_rules import (
+            ProjectRulesComponent,
+        )
+
+        execution_root = str(project_resolution["effective_root"])
+        rule_slice = await ProjectRulesComponent().provide(
+            ComponentContext(
+                task_type="chat",
+                policy=AssemblyPolicy(task_type="chat", prefer=["project_rules"]),
+                user_message=text,
+                config={
+                    "workspace_context": {
+                        "verified": True,
+                        "root": execution_root,
+                        "active_path": execution_root,
+                    }
+                },
+            )
+        )
+        project_rule_instructions = tuple(
+            str(fragment.content)
+            for fragment in rule_slice.fragments
+            if str(fragment.content).strip()
+        )
     context_window = int(provider_binding["context_window"])
     compact_at = max(1, int(context_window * 0.8))
     reserved = (
@@ -10779,6 +10814,7 @@ async def _prepare_sdk_context_snapshot(
         + sum(
             _sdk_text_tokens(item.get("instruction")) for item in skill_items
         )
+        + sum(_sdk_text_tokens(item) for item in project_rule_instructions)
         + sum(_sdk_text_tokens(item) for item in attachment_blocks)
         + _sdk_text_tokens(project_snapshot)
         + 256
@@ -10823,6 +10859,7 @@ async def _prepare_sdk_context_snapshot(
         provider_binding=provider_binding,
         catalog=catalog,
         project_task_snapshot=project_snapshot,
+        project_rule_instructions=project_rule_instructions,
         attachment_blocks=attachment_blocks,
         context_query_id=context_query_id,
         memory_result_id=memory_result_id,

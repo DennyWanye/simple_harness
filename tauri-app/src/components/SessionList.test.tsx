@@ -28,6 +28,7 @@ describe("SessionList project catalog", () => {
     listeners = [];
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
+    vi.mocked(controlWS.state).mockReturnValue("connected");
     vi.mocked(controlWS.on_message).mockImplementation((listener: (message: unknown) => void) => { listeners.push(listener); return () => { listeners = listeners.filter((value) => value !== listener); }; });
     useSessionsStore.setState({
       companion_owner: { profile_id: "local", profile_generation: 1 },
@@ -99,5 +100,26 @@ describe("SessionList project catalog", () => {
       project_id: "p1",
       cursor: null,
     });
+  });
+
+  it("refreshes bounded catalog and pages after reconnect", () => {
+    vi.useFakeTimers();
+    let state: "disconnected" | "connected" = "disconnected";
+    vi.mocked(controlWS.state).mockImplementation(() => state);
+    render(<SessionList activeSid="s1" onSwitchSid={() => {}} />);
+    vi.mocked(controlWS.send).mockClear();
+
+    state = "connected";
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(request("project_catalog_page").payload).toMatchObject({
+      cursor: null,
+      pinned_session_id: "s1",
+    });
+    expect(request("project_sessions_page").payload).toMatchObject({
+      scope_kind: "projectless",
+      cursor: null,
+    });
+    vi.useRealTimers();
   });
 });

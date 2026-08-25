@@ -4,12 +4,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 import pytest
 
 from deskpet.sdk_adapters.runtime_paths import (
     ProductRuntimePathsAdapter,
     SdkCandidateIdentity,
+    durable_sdk_run_start_exists,
     verify_sdk_candidate,
 )
 from deskpet.sdk_adapters.sdk_candidate import (
@@ -76,3 +78,27 @@ def test_runtime_path_has_no_product_or_session_database_alias(tmp_path: Path) -
         paths.user_data_root / "data/workflow.db",
         paths.user_data_root / "data/sessions.db",
     }
+
+
+def test_durable_run_start_probe_reads_only_sdk_execution_database(
+    tmp_path: Path,
+) -> None:
+    paths = ProductRuntimePathsAdapter(tmp_path / "user-data")
+    with sqlite3.connect(paths.execution_database) as db:
+        db.execute(
+            "CREATE TABLE run_start_snapshots(run_id TEXT PRIMARY KEY, snapshot_json TEXT)"
+        )
+        db.execute(
+            "INSERT INTO run_start_snapshots(run_id,snapshot_json) VALUES('sdk-waiting','{}')"
+        )
+    workflow_db = paths.user_data_root / "data/workflow.db"
+    with sqlite3.connect(workflow_db) as db:
+        db.execute(
+            "CREATE TABLE run_start_snapshots(run_id TEXT PRIMARY KEY, snapshot_json TEXT)"
+        )
+        db.execute(
+            "INSERT INTO run_start_snapshots(run_id,snapshot_json) VALUES('legacy-only','{}')"
+        )
+
+    assert durable_sdk_run_start_exists(paths.execution_database, "sdk-waiting")
+    assert not durable_sdk_run_start_exists(paths.execution_database, "legacy-only")

@@ -1,5 +1,12 @@
 {
   "verdict": "LEAN",
+  "disposition": {
+    "min-diff-1": "retained: Task 1 explicitly requires the typed SessionProjectBinding domain record and WorkspaceResolution plan terminology",
+    "min-diff-2": "applied",
+    "min-diff-3": "applied",
+    "min-diff-4": "applied",
+    "min-diff-5": "applied"
+  },
   "findings": [
     {
       "id": "min-diff-1",

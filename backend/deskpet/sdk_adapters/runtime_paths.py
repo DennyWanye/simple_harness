@@ -10,6 +10,7 @@ import hashlib
 from importlib import metadata
 import json
 from pathlib import Path
+import sqlite3
 from urllib.parse import unquote, urlparse
 
 
@@ -97,8 +98,27 @@ class ProductRuntimePathsAdapter:
         return self._execution_database
 
 
+def durable_sdk_run_start_exists(execution_database: str | Path, run_id: str) -> bool:
+    """Read the SDK-owned RunStart authority without opening a second UoW."""
+
+    path = Path(execution_database)
+    if not path.is_file():
+        return False
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
+        table = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' "
+            "AND name='run_start_snapshots'"
+        ).fetchone()
+        if table is None:
+            return False
+        return db.execute(
+            "SELECT 1 FROM run_start_snapshots WHERE run_id=?", (str(run_id),)
+        ).fetchone() is not None
+
+
 __all__ = (
     "ProductRuntimePathsAdapter",
     "SdkCandidateIdentity",
+    "durable_sdk_run_start_exists",
     "verify_sdk_candidate",
 )

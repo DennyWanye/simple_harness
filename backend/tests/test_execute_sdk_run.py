@@ -286,6 +286,47 @@ async def test_sdk_preparation_freezes_host_local_page_url(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sdk_preparation_loads_rules_from_verified_execution_root(tmp_path):
+    from main import _prepare_sdk_context_snapshot
+
+    root = tmp_path / "workspace"
+    root.mkdir()
+    (root / "AGENTS.md").write_text("Use the project-scoped build command.", encoding="utf-8")
+    session_db = SimpleNamespace(get_recent_messages=AsyncMock(return_value=[]))
+    prepared = await _prepare_sdk_context_snapshot(
+        session_db=session_db,
+        session_id="session-rules",
+        request_id="request-rules",
+        root_run_id="root-rules",
+        sdk_run_id="sdk-rules",
+        turn_id="1",
+        text="implement the change",
+        provider_binding={"context_window": 8_000, "provider_id": "p", "model_id": "m"},
+        catalog={"tool_count": 1, "schema_token_count": 10, "tool_names": ["read_file"], "generation": 1, "content_fingerprint": "f" * 64},
+        attachment_blocks=(),
+        project={
+            "kind": "project_bound",
+            "project_id": "project-rules",
+            "project_name": "workspace",
+            "project_root": str(root),
+            "effective_root": str(root),
+            "execution_kind": "project_root",
+            "project_revision": 1,
+            "binding_version": 1,
+        },
+        task_scope_id="task-rules",
+        persona_text="Simple Harness persona",
+    )
+    private = prepared.private_record()
+    assert any(
+        message.get("role") == "system"
+        and "Use the project-scoped build command." in str(message.get("content"))
+        for message in private["provider_messages"]
+    )
+    assert private["sections"]["project_rules"]["count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_sdk_preparation_rejects_required_content_over_context_window():
     from main import _prepare_sdk_context_snapshot
 

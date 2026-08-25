@@ -91,7 +91,13 @@ async def test_atomic_create_replay_projectless_explicit_and_delete_terminal(tmp
             "WHERE base_session_id=?",
             (plain["session"]["session_id"],),
         ).fetchone() == (None, None, 1)
-    result = await creation.create_conversation_session(
+    creation_with_production_validator = SessionCreationService(
+        binding_service,
+        provider_binding_validator=lambda *_args: (_ for _ in ()).throw(
+            AssertionError("NULL provider binding must not be validated")
+        ),
+    )
+    result = await creation_with_production_validator.create_conversation_session(
         request_id="create-1", project_id=project.project_id,
         source_session_id=plain["session"]["session_id"],
         execution_kind="explicit", execution_root=str(execution_dir),
@@ -259,22 +265,48 @@ async def test_creation_precommit_fault_matrix_leaves_no_rows(
 
     session_db = SessionDB(db_path)
     await session_db.initialize()
+    root = tmp_path / "fault-project"
+    root.mkdir()
+    binding_service = ProjectBindingService(
+        db_path, write_lock=session_db._write_lock
+    )
+    project, _ = await binding_service.register_project(
+        str(root), "selected_folder"
+    )
+    frozen = SimpleNamespace(
+        owner=SimpleNamespace(profile_id="fault-owner", profile_generation=1),
+        binding_epoch=1,
+    )
 
     def crash(point: str):
         if point == stage:
             raise RuntimeError(f"crash:{stage}")
 
     creation = SessionCreationService(
-        ProjectBindingService(db_path, write_lock=session_db._write_lock),
+        binding_service,
         session_db=session_db,
+        owner_identity_resolver=lambda: frozen,
         fault_inject=crash,
     )
     with pytest.raises(RuntimeError, match=f"crash:{stage}"):
-        await creation.create_conversation_session(request_id=f"fault-{stage}")
+        await creation.create_conversation_session(
+            request_id=f"fault-{stage}", project_id=project.project_id
+        )
     with sqlite3.connect(db_path) as db:
-        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 0
-        assert db.execute("SELECT count(*) FROM code_session_provider").fetchone()[0] == 0
-        assert db.execute("SELECT count(*) FROM session_creation_receipts").fetchone()[0] == 0
+        for table in (
+            "sessions",
+            "session_catalog_entries",
+            "session_delivery_state",
+            "memory_user_bindings",
+            "companion_session_owners",
+            "companion_projection_routes",
+            "companion_projection_route_outbox",
+            "session_project_bindings",
+            "code_session_provider",
+            "session_context_usage_state_v2",
+            "session_creation_receipts",
+        ):
+            assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio
@@ -299,6 +331,94 @@ async def test_creation_after_commit_fault_replays_single_terminal_result(
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
         assert db.execute("SELECT count(*) FROM session_creation_receipts").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_creation_holds_provider_mutation_lock_through_commit(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    provider_lock = asyncio.Lock()
+    entered = asyncio.Event()
+    release = asyncio.Event()
+
+    async def pause_before_commit(stage: str) -> None:
+        if stage == "before_commit":
+            entered.set()
+            await release.wait()
+
+    service = SessionCreationService(
+        ProjectBindingService(db_path),
+        provider_mutation_lock=provider_lock,
+        fault_inject=pause_before_commit,
+    )
+    create_task = asyncio.create_task(
+        service.create_conversation_session(request_id="provider-lock-race")
+    )
+    await entered.wait()
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(provider_lock.acquire(), timeout=0.02)
+    release.set()
+    await create_task
+    await asyncio.wait_for(provider_lock.acquire(), timeout=0.2)
+    provider_lock.release()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage", ["before_delete_writes", "after_delete_tombstones", "before_delete_commit"]
+)
+async def test_delete_precommit_fault_rolls_back_all_tombstones(
+    tmp_path: Path, stage: str
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+
+    def crash(point: str):
+        if point == stage:
+            raise RuntimeError(f"crash:{stage}")
+
+    service = ProjectBindingService(db_path)
+    normal = SessionCreationService(service)
+    created = await normal.create_conversation_session(request_id=f"delete-{stage}")
+    sid = created["session"]["session_id"]
+    crashing = SessionCreationService(service, fault_inject=crash)
+    with pytest.raises(RuntimeError, match=f"crash:{stage}"):
+        await crashing.mark_deleted(sid)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT deleted_at,epoch FROM session_delivery_state WHERE session_id=?", (sid,)
+        ).fetchone() == (None, 0)
+        assert db.execute(
+            "SELECT lifecycle FROM session_creation_receipts WHERE session_id=?", (sid,)
+        ).fetchone()[0] == "active"
+
+
+@pytest.mark.asyncio
+async def test_delete_after_commit_fault_replay_is_idempotent(tmp_path: Path) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+
+    def crash(stage: str):
+        if stage == "after_delete_commit":
+            raise RuntimeError("delete-ack-lost")
+
+    service = ProjectBindingService(db_path)
+    normal = SessionCreationService(service)
+    created = await normal.create_conversation_session(request_id="delete-ack")
+    sid = created["session"]["session_id"]
+    with pytest.raises(RuntimeError, match="delete-ack-lost"):
+        await SessionCreationService(service, fault_inject=crash).mark_deleted(sid)
+    with sqlite3.connect(db_path) as db:
+        epoch = db.execute(
+            "SELECT epoch FROM session_delivery_state WHERE session_id=?", (sid,)
+        ).fetchone()[0]
+    await normal.mark_deleted(sid)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT epoch FROM session_delivery_state WHERE session_id=?", (sid,)
+        ).fetchone()[0] == epoch
 
 
 @pytest.mark.asyncio
@@ -351,6 +471,34 @@ async def test_catalog_pages_zero_message_pinned_stale_and_relocate(tmp_path: Pa
     other = tmp_path.resolve() / "other"; other.mkdir()
     with pytest.raises(ProjectSessionError, match="project_identity_mismatch"):
         await service.relocate_project(project.project_id, str(other), 2)
+
+
+@pytest.mark.asyncio
+async def test_zero_message_delete_bumps_catalog_once_and_stales_cursor(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    service = ProjectBindingService(db_path)
+    creation = SessionCreationService(service)
+    first = await creation.create_conversation_session(request_id="zero-delete-1")
+    await creation.create_conversation_session(request_id="zero-delete-2")
+    page = await service.list_session_page(scope_kind="projectless", limit=1)
+    assert page["next_cursor"]
+    with sqlite3.connect(db_path) as db:
+        before = db.execute(
+            "SELECT catalog_revision FROM project_session_catalog_state"
+        ).fetchone()[0]
+    await creation.mark_deleted(first["session"]["session_id"])
+    with sqlite3.connect(db_path) as db:
+        after = db.execute(
+            "SELECT catalog_revision FROM project_session_catalog_state"
+        ).fetchone()[0]
+    assert after == before + 1
+    with pytest.raises(ProjectSessionError, match="stale_cursor"):
+        await service.list_session_page(
+            scope_kind="projectless", cursor=page["next_cursor"]
+        )
 
 
 @pytest.mark.asyncio

@@ -219,6 +219,7 @@ class SdkContextPreparationService:
         provider_binding: Mapping[str, Any],
         catalog: Mapping[str, Any],
         project_task_snapshot: Mapping[str, Any] | None = None,
+        project_rule_instructions: Sequence[str] = (),
         attachment_blocks: Sequence[Mapping[str, Any]] = (),
         context_query_id: str | None = None,
         memory_result_id: str | None = None,
@@ -310,6 +311,19 @@ class SdkContextPreparationService:
             "count": len(skill_texts),
             "estimated_tokens": sum(_text_tokens(item) for item in skill_texts),
             "availability": "estimated" if self._sources.skills is not None else "unavailable",
+        }
+        rules = tuple(
+            str(item).strip()
+            for item in project_rule_instructions
+            if str(item).strip()
+        )
+        for instruction in rules:
+            messages.append({"role": "system", "content": instruction})
+        sections["project_rules"] = {
+            "label": "Project rules",
+            "count": len(rules),
+            "estimated_tokens": sum(_text_tokens(item) for item in rules),
+            "availability": "estimated" if rules else "unavailable",
         }
         if project:
             messages.append({
