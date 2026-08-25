@@ -455,6 +455,17 @@ class ProjectBindingService:
 
         async with self._write_lock:
             async with aiosqlite.connect(self._db_path) as db:
+                claim_tables = {
+                    str(row[0])
+                    for row in await (await db.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name IN "
+                        "('project_run_admissions','session_handoff_consumptions')"
+                    )).fetchall()
+                }
+                if claim_tables != {
+                    "project_run_admissions", "session_handoff_consumptions"
+                }:
+                    return {"admissions_removed": 0, "handoffs_removed": 0}
                 admissions = [
                     str(row[0])
                     for row in await (await db.execute(
