@@ -516,6 +516,25 @@ async def test_delete_after_commit_fault_replay_is_idempotent(tmp_path: Path) ->
             "SELECT status FROM companion_projection_routes WHERE target_session_id=?",
             (sid,),
         ).fetchone()[0] == "tombstoned"
+    assert await service.list_deleted_session_ids() == (sid,)
+    attempts: list[str] = []
+
+    async def fail_once(session_id: str) -> None:
+        attempts.append(session_id)
+        if len(attempts) == 1:
+            raise RuntimeError("workflow-db-unavailable")
+
+    assert await service.reconcile_deleted_session_runs(fail_once) == {
+        "attempted": 1,
+        "completed": 0,
+        "failed": 1,
+    }
+    assert await service.reconcile_deleted_session_runs(fail_once) == {
+        "attempted": 1,
+        "completed": 1,
+        "failed": 0,
+    }
+    assert attempts == [sid, sid]
 
 
 @pytest.mark.asyncio
@@ -661,6 +680,164 @@ async def test_v31_backfill_resumes_after_chunk_commit_and_is_noop(tmp_path: Pat
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT outcome_digest FROM project_session_backfill_state").fetchone()[0] == before
         assert db.execute("SELECT count(*) FROM session_project_bindings").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_v31_full_state_fixture_is_conserved_and_classified(tmp_path: Path) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    old_migrations = tmp_path.resolve() / "migrations-v31"
+    old_migrations.mkdir()
+    for source in DEFAULT_MIGRATIONS_DIR.glob("*.sql"):
+        if not source.name.startswith("024_"):
+            shutil.copy2(source, old_migrations / source.name)
+    await ensure_v9(db_path, migrations_dir=old_migrations)
+    shared_root = tmp_path / "shared-project"
+    conflict_root = tmp_path / "prebound-project"
+    shared_root.mkdir()
+    conflict_root.mkdir()
+    session_ids = {
+        name: str(uuid.uuid4())
+        for name in ("active", "duplicate", "missing", "deleted", "archived", "prebound")
+    }
+    with sqlite3.connect(db_path) as db:
+        db.executemany(
+            "INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
+            [
+                (sid, float(index), f'{{"fixture":"{name}"}}')
+                for index, (name, sid) in enumerate(session_ids.items(), 1)
+            ],
+        )
+        db.execute(
+            "INSERT INTO messages(id,session_id,role,content,created_at) VALUES(1,?,'user','active-message',10)",
+            (session_ids["active"],),
+        )
+        db.execute(
+            "INSERT INTO messages_archive(id,session_id,role,content,created_at,archived_at) "
+            "VALUES(2,?,'assistant','archived-message',11,12)",
+            (session_ids["archived"],),
+        )
+        db.execute(
+            "INSERT INTO session_titles(session_id,title,updated_at) VALUES(?, 'fixture-title', 13)",
+            (session_ids["active"],),
+        )
+        roots = {
+            "active": shared_root,
+            "duplicate": shared_root,
+            "missing": tmp_path / "missing-project",
+            "deleted": shared_root,
+            "archived": shared_root,
+            "prebound": shared_root,
+        }
+        db.executemany(
+            "INSERT INTO code_sessions(base_session_id,code_session_id,project_root,project_name,created_at,last_active_at) "
+            "VALUES(?,?,?,?,20,21)",
+            [
+                (sid, f"code-{name}", str(roots[name]), f"project-{name}")
+                for name, sid in session_ids.items()
+            ],
+        )
+        db.execute(
+            "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,model_params,"
+            "provider_incarnation_id,provider_config_revision,binding_epoch,updated_at) "
+            "VALUES(?, 'provider-fixture', 'model-fixture', '{}', 'incarnation-fixture', 7, 3, 22)",
+            (session_ids["active"],),
+        )
+        db.executemany(
+            "INSERT INTO session_delivery_state(session_id,epoch,deleted_at,reason) VALUES(?,?,?,?)",
+            [
+                (session_ids["active"], 0, None, None),
+                (session_ids["deleted"], 2, 23.0, "deleted"),
+            ],
+        )
+        db.execute("INSERT OR IGNORE INTO memory_users(user_id,created_at) VALUES('fixture-user',24)")
+        db.execute(
+            "INSERT INTO memory_user_bindings(session_id,user_id,created_at) VALUES(?,'fixture-user',25)",
+            (session_ids["active"],),
+        )
+        db.execute(
+            "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,profile_generation,"
+            "binding_epoch,status,scope_version,created_at,updated_at) "
+            "VALUES(?,'companion_profile','fixture-profile',1,1,'active',1,26,26)",
+            (session_ids["active"],),
+        )
+        db.execute(
+            "INSERT INTO companion_owner_scope_versions VALUES('fixture-profile',1,1,26)"
+        )
+        db.execute(
+            "INSERT INTO companion_projection_routes(profile_id,profile_generation,binding_epoch,target_session_id,"
+            "target_epoch,route_version,status,created_at,updated_at) "
+            "VALUES('fixture-profile',1,1,?,0,1,'active',27,27)",
+            (session_ids["active"],),
+        )
+
+        conserved_tables = (
+            "sessions", "messages", "messages_archive", "session_titles",
+            "code_sessions", "code_session_provider", "session_delivery_state",
+            "memory_users", "memory_user_bindings", "companion_session_owners",
+            "companion_owner_scope_versions", "companion_projection_routes",
+        )
+
+        def snapshot(table: str) -> tuple[tuple[object, ...], ...]:
+            columns = [
+                str(row[1]) for row in db.execute(f"PRAGMA table_info({table})")
+            ]
+            ordering = ",".join(f'"{column}"' for column in columns)
+            return tuple(db.execute(f"SELECT * FROM {table} ORDER BY {ordering}"))
+
+        before = {table: snapshot(table) for table in conserved_tables}
+
+    await ensure_v9(db_path)
+    prebound_project_id = str(uuid.uuid4())
+    with sqlite3.connect(db_path) as db:
+        from deskpet.session.project_binding import _filesystem_identity
+
+        identity = _filesystem_identity(conflict_root.resolve())
+        db.execute(
+            "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+            "project_revision,created_at,updated_at,last_opened_at) VALUES(?,?,?,'folder',?,1,30,30,30)",
+            (prebound_project_id, "prebound", str(conflict_root.resolve()), identity),
+        )
+        db.execute(
+            "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,binding_version,created_at) "
+            "VALUES(?,?,'project_root',1,30)",
+            (session_ids["prebound"], prebound_project_id),
+        )
+    await run_project_session_upgrade(db_path)
+
+    with sqlite3.connect(db_path) as db:
+        after = {table: snapshot(table) for table in conserved_tables}
+        assert after == before
+        outcomes = dict(db.execute(
+            "SELECT base_session_id,outcome FROM project_session_backfill_outcomes"
+        ))
+        assert outcomes[session_ids["missing"]] == "missing"
+        assert outcomes[session_ids["prebound"]] == "prebound"
+        for name in ("active", "duplicate", "deleted", "archived"):
+            assert outcomes[session_ids[name]] == "migrated"
+        shared_projects = db.execute(
+            "SELECT count(DISTINCT project_id) FROM session_project_bindings "
+            "WHERE session_id IN (?,?,?,?)",
+            tuple(session_ids[name] for name in ("active", "duplicate", "deleted", "archived")),
+        ).fetchone()[0]
+        assert shared_projects == 1
+        assert db.execute(
+            "SELECT project_id FROM session_project_bindings WHERE session_id=?",
+            (session_ids["prebound"],),
+        ).fetchone()[0] == prebound_project_id
+        completed_digest = db.execute(
+            "SELECT outcome_digest FROM project_session_backfill_state"
+        ).fetchone()[0]
+        binding_count = db.execute(
+            "SELECT count(*) FROM session_project_bindings"
+        ).fetchone()[0]
+    await run_project_session_upgrade(db_path)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT outcome_digest FROM project_session_backfill_state"
+        ).fetchone()[0] == completed_digest
+        assert db.execute(
+            "SELECT count(*) FROM session_project_bindings"
+        ).fetchone()[0] == binding_count
 
 
 @pytest.mark.asyncio

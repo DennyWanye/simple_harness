@@ -3333,6 +3333,26 @@ async def lifespan(app: FastAPI):
         # Runtime adapters must all be registered before the production
         # registry is sealed and any durable recovery is allowed to run.
         service_context.register("workflow_service", _workflow_service)
+        # state.db owns the durable deletion fence while workflow.db owns Runs.
+        # Replay that cross-database boundary before workflow recovery so a
+        # crash after tombstone commit cannot resurrect work on the next boot.
+        if _project_binding_service is not None:
+            async def _cancel_deleted_session_runs(session_id: str) -> object:
+                return await _workflow_service.cancel_runs_for_session(
+                    session_id,
+                    reason="session_deleted_startup_reconcile",
+                )
+
+            _delete_reconcile = (
+                await _project_binding_service.reconcile_deleted_session_runs(
+                    _cancel_deleted_session_runs
+                )
+            )
+            if _delete_reconcile["failed"]:
+                logger.warning(
+                    "session_delete_cancel_reconcile_incomplete",
+                    **_delete_reconcile,
+                )
         from deskpet.execution.harness_public_read_service import (
             HarnessPublicReadService,
         )

@@ -505,6 +505,33 @@ class ProjectBindingService:
             "handoffs_removed": len(orphan_handoffs),
         }
 
+    async def list_deleted_session_ids(self) -> tuple[str, ...]:
+        """Return durable deletion fences for startup Run-cancel replay."""
+
+        async with aiosqlite.connect(self._db_path) as db:
+            rows = await (await db.execute(
+                "SELECT session_id FROM session_delivery_state "
+                "WHERE deleted_at IS NOT NULL ORDER BY session_id"
+            )).fetchall()
+        return tuple(str(row[0]) for row in rows)
+
+    async def reconcile_deleted_session_runs(
+        self,
+        cancel_runs: Callable[[str], Awaitable[object]],
+    ) -> dict[str, int]:
+        """Idempotently replay the state.db -> workflow.db delete boundary."""
+
+        attempted = completed = failed = 0
+        for session_id in await self.list_deleted_session_ids():
+            attempted += 1
+            try:
+                await cancel_runs(session_id)
+            except Exception:  # noqa: BLE001 - retry remains durable for next boot
+                failed += 1
+            else:
+                completed += 1
+        return {"attempted": attempted, "completed": completed, "failed": failed}
+
     @staticmethod
     def validate_workspace_identity(resolution: Mapping[str, Any]) -> None:
         """Re-stat both frozen roots without consulting mutable Session state."""
