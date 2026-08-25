@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 31  # Official Harness/Memory SDK product bindings
+TARGET_SCHEMA_VERSION = 32  # Project-scoped immutable sessions
 _V17_MIGRATION = "009_memory_v2_v17.sql"
 _V17_SCHEMA_VERSION = 17
 _V18_MIGRATION = "010_context_os_v18.sql"
@@ -86,6 +86,8 @@ _AGENT_RUNTIME_MEMORY_MIGRATION = "022_agent_runtime_memory_v30.sql"
 _AGENT_RUNTIME_MEMORY_SCHEMA_VERSION = 30
 _OFFICIAL_MEMORY_INTEGRATION_MIGRATION = "023_official_memory_integration_v31.sql"
 _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION = 31
+_PROJECT_SCOPED_SESSIONS_MIGRATION = "024_project_scoped_sessions_v32.sql"
+_PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION = 32
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -102,6 +104,7 @@ MIGRATION_STEPS: dict[str, int] = {
     ),
     _AGENT_RUNTIME_MEMORY_MIGRATION: _AGENT_RUNTIME_MEMORY_SCHEMA_VERSION,
     _OFFICIAL_MEMORY_INTEGRATION_MIGRATION: _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION,
+    _PROJECT_SCOPED_SESSIONS_MIGRATION: _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION,
 }
 
 
@@ -128,6 +131,25 @@ async def _execute_transactional_script(
             await db.execute(statement)
     if pending.strip():
         raise sqlite3.OperationalError("incomplete migration statement")
+
+
+def _contains_forbidden_transaction_control(sql: str) -> bool:
+    """Inspect complete statements without mistaking trigger bodies for BEGIN.
+
+    A trigger's ``BEGIN ... END`` is part of a single ``CREATE TRIGGER``
+    statement and is safe inside the runner-owned transaction.
+    """
+
+    pending = ""
+    for line in sql.splitlines(keepends=True):
+        pending += line
+        if not sqlite3.complete_statement(pending):
+            continue
+        statement = re.sub(r"\A(?:\s*--[^\n]*(?:\n|\Z))*", "", pending).lstrip().lower()
+        pending = ""
+        if re.match(r"(?:begin|commit|rollback)\b|pragma\s+user_version\b", statement):
+            return True
+    return bool(pending.strip())
 
 
 class MigrationError(RuntimeError):
@@ -417,11 +439,7 @@ async def run_migrations(
                 applied_now.append(version)
                 continue
             if version in MIGRATION_STEPS:
-                lowered = sql.lower()
-                if re.search(
-                    r"\b(?:begin|commit|rollback)\b|pragma\s+user_version",
-                    lowered,
-                ):
+                if _contains_forbidden_transaction_control(sql):
                     raise MigrationError(
                         f"migration {version} contains forbidden transaction control"
                     )
