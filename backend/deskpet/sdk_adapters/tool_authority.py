@@ -1190,6 +1190,19 @@ class SdkRuntimeCapabilityBridgeAdapter:
         descriptor = value["descriptor"]
         if not isinstance(descriptor, dict):
             raise TypeError("catalog_descriptor_invalid")
+        projection = value.get("projection")
+        if not isinstance(projection, dict):
+            raise TypeError("catalog_projection_invalid")
+        # The SDK projection carries its own provider-input-schema hash while
+        # activation is intentionally bound to the broader capability hash.
+        # Exposing both values under the same ``schema_hash`` label made real
+        # models occasionally copy projection.schema_hash into tool_activate,
+        # which correctly failed closed but looked like an authorization hang.
+        # The provider hash is not an activation input, so omit it from the
+        # model-facing projection and expose exactly one schema_hash to copy.
+        value["projection"] = {
+            key: item for key, item in projection.items() if key != "schema_hash"
+        }
         value["schema_hash"] = value["capability_hash"]
         value["describe_nonce"] = value["nonce"]
         value["capability_id"] = descriptor["capability_id"]

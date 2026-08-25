@@ -118,7 +118,9 @@ _DESCRIBE_SCHEMA: dict[str, Any] = {
     "description": (
         "Return the exact schema for one deferred capability in this request. "
         "Copy capability_search.matches[].capability_id exactly. A bare tool "
-        "name is accepted only when it has one unique match."
+        "name is accepted only when it has one unique match. To activate, copy "
+        "the returned top-level capability_id, schema_hash, and describe_nonce "
+        "exactly into tool_activate."
     ),
     "parameters": {
         "type": "object",
@@ -137,13 +139,26 @@ _DESCRIBE_SCHEMA: dict[str, Any] = {
 
 _ACTIVATE_SCHEMA: dict[str, Any] = {
     "name": "tool_activate",
-    "description": "Activate a previously described capability for the next model iteration.",
+    "description": (
+        "Activate a previously described capability for the next model iteration. "
+        "Copy the three top-level activation fields returned by tool_describe "
+        "exactly; never derive or substitute a hash from the nested projection."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
-            "capability_id": {"type": "string"},
-            "schema_hash": {"type": "string"},
-            "describe_nonce": {"type": "string"},
+            "capability_id": {
+                "type": "string",
+                "description": "Exact top-level capability_id from tool_describe.",
+            },
+            "schema_hash": {
+                "type": "string",
+                "description": "Exact top-level schema_hash from tool_describe.",
+            },
+            "describe_nonce": {
+                "type": "string",
+                "description": "Exact top-level describe_nonce from tool_describe.",
+            },
         },
         "required": ["capability_id", "schema_hash", "describe_nonce"],
     },

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,6 +36,8 @@ from simple_harness.execution.context_authority import DurableToolCatalogResolve
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.providers import ProviderToolSpec
 from simple_harness.tools import (
+    AuthorizationDecision,
+    AuthorizationReceipt,
     CancellationToken,
     FunctionTool,
     PreparedToolEffect,
@@ -803,6 +806,8 @@ def test_sdk_runtime_catalog_activation_changes_next_projection_only_after_recei
         "builtin:read_file"
     ]
     described = bridge.describe("builtin:read_file")
+    assert described["schema_hash"] == described["capability_hash"]
+    assert "schema_hash" not in described["projection"]
     receipt = bridge.activate(
         "builtin:read_file",
         described["schema_hash"],
@@ -814,6 +819,28 @@ def test_sdk_runtime_catalog_activation_changes_next_projection_only_after_recei
         "read_file",
         "tool_search",
     ]
+
+
+def test_sdk_runtime_catalog_describe_exposes_one_unambiguous_activation_hash():
+    registry = SdkRunToolAuthorityRegistry()
+    _prepare(registry, "run-a", deferred_names=("read_file",))
+    run_id = RunId("run-a")
+    exposure = registry.resolve_exposure(run_id)
+    exposure.restore(run_id, None)
+
+    def context():
+        return registry.resolve("run-a").execution_context()
+
+    described = SdkRuntimeCapabilityBridgeAdapter(registry, context).describe(
+        "builtin:read_file"
+    )
+
+    assert described["capability_id"] == "builtin:read_file"
+    assert described["schema_hash"] == described["capability_hash"]
+    assert len(described["schema_hash"]) == 64
+    assert json.dumps(described, sort_keys=True).count('"schema_hash"') == 1
+    assert "schema_hash" not in described["projection"]
+    assert described["projection"]["provider_name"] == "read_file"
 
 
 @pytest.mark.asyncio
@@ -848,6 +875,121 @@ async def test_runtime_activated_tool_is_admitted_by_product_authorization():
 
     result = await policy.decide(_effect("run-a"), request=None)
     assert result.decision.value == "allow"
+
+
+@pytest.mark.asyncio
+async def test_unambiguous_write_activation_survives_manual_authorization(
+    tmp_path: Path,
+):
+    from deskpet.sdk_adapters.context_authority import canonical_sha256
+
+    write_schema = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
+    }
+    catalog, _ = _catalog()
+    catalog["specs"] = [
+        catalog["specs"][0],
+        {
+            "name": "write_file",
+            "description": "Write one file",
+            "input_schema": write_schema,
+        },
+    ]
+    catalog["schema_fingerprints"] = {
+        item["name"]: canonical_sha256(item["input_schema"])
+        for item in catalog["specs"]
+    }
+    catalog["content_fingerprint"] = canonical_sha256(catalog["specs"])
+    authorities = SdkRunToolAuthorityRegistry()
+    authority = authorities.prepare_run(
+        run_id="run-write",
+        session_id="session-a",
+        request_id="request-run-write",
+        root_run_id="root-run-write",
+        task_scope_id="task-run-write",
+        workspace_root=str(tmp_path),
+        catalog=catalog,
+        inventory=(
+            _Inventory("tool_search", "control", "read_file"),
+            _Inventory("write_file", "async", "write_file"),
+        ),
+        deferred_names=("write_file",),
+    )
+    run_id = RunId("run-write")
+    exposure = authorities.resolve_exposure(run_id)
+    exposure.restore(run_id, None)
+    prepared = PreparedToolEffect(
+        EffectId("effect-write"),
+        run_id,
+        ToolCall(
+            CallId("call-write"),
+            "write_file",
+            {"path": str(tmp_path / "output.txt"), "content": "ok"},
+        ),
+        ToolSpec("write_file", "Write one file", write_schema),
+        {"session_id": "session-a", "root_run_id": "root-run-write"},
+    )
+    policy = SdkPreparedAuthorizationPolicy(
+        PreparedAuthorizationRuntime(
+            _AuthorizationStore("manual", 3), clock=lambda: 100.0
+        ),
+        authorities,
+        clock=lambda: 100.0,
+    )
+
+    with pytest.raises(RuntimeError, match="capability_denied"):
+        await policy.decide(prepared, request=None)
+
+    bridge = SdkRuntimeCapabilityBridgeAdapter(
+        authorities, lambda: authority.execution_context()
+    )
+    described = bridge.describe("builtin:write_file")
+    assert json.dumps(described, sort_keys=True).count('"schema_hash"') == 1
+    receipt = bridge.activate(
+        described["capability_id"],
+        described["schema_hash"],
+        described["describe_nonce"],
+    )
+    exposure.observe_tool_result(run_id, "tool_activate", receipt.to_json())
+    assert authorities.is_tool_exposed(run_id, "write_file")
+
+    database = ProductStateDatabase(tmp_path / "product.db")
+    database.initialize()
+    repository = AuthorizationSagaRepository(database, owner_id="test-sdk")
+    grants = DurableTaskGrantAuthority(
+        database,
+        policy_generation_provider=policy.current_policy_generation,
+    )
+    adapter = ProductAuthorizationAdapter(
+        repository,
+        policy=policy,
+        identity_factory=policy.identity_factory,
+        grant_authority=grants,
+        grant_factory=policy.grant_factory,
+        clock=lambda: 100.0,
+    )
+
+    pending = await adapter.prepare(prepared)
+    assert pending.decision is AuthorizationDecision.REQUIRE_USER
+    assert pending.request is not None
+    await adapter.bind_decision(
+        prepared,
+        pending.request,
+        AuthorizationDecision.ALLOW,
+        AuthorizationReceipt("sdk:decision", "a" * 64, "a" * 64),
+    )
+    grant = policy.facts_for(prepared).grant
+    assert grants.assert_active(
+        grant.task_grant_id,
+        version=grant.version,
+        policy_generation=grant.policy_generation,
+        now=100.0,
+    ).task_grant_id == grant.task_grant_id
 
 
 @pytest.mark.asyncio
