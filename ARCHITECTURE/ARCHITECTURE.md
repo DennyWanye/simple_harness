@@ -1,4 +1,4 @@
-<!-- last-calibrated: 3c678e71d811b0951620dbff9fb0b3d9e6989e67 -->
+<!-- last-calibrated: 91d22247947c152c1bf5393a840553b6172628cc -->
 
 # simple_harness Long-Running Agent Architecture Baseline
 
@@ -374,7 +374,7 @@ The primary local database is `state.db`, managed by `deskpet.memory.session_db.
 |---|---|---|---|
 | Sessions and messages | `sessions`, `messages`, FTS/optional vec tables | Durable | Records conversation, not executable node state. |
 | Code todos | `code_todos` | Durable | Full-list replacement; no node attempt/result/checkpoint model. |
-| Code project binding | `code_sessions` | Durable | Identifies project/session only. |
+| Legacy Code-mode project mapping | `code_sessions` | Durable compatibility data | Retired Code-mode map keyed by `base_session_id`; its upsert can replace `project_root`, so it is not an immutable ordinary-Session project authority. |
 | Awaiting code plan | `session_plans` | Durable record | The actual waiter is an in-memory `Future`; restart reloads the card but cannot resume the suspended coroutine. |
 | Goals and goal tasks | `session_goals`, goal task tables | Durable | Completion tracking, not general workflow execution. |
 | Team tasks/messages/permissions | Per-team SQLite files | Durable data | Worker coroutines and reclaim logic are process-local. |
@@ -389,7 +389,34 @@ Additional stores include facts/workspace/skill memory and feedback tables in `s
 
 `SessionDB` already provides WAL, busy timeout, an application write lock, retry with backoff, and idempotent migrations. It is the natural physical store for workflow metadata, but the graph core must depend on a storage protocol rather than directly on `SessionDB`.
 
-The persistence layer currently has a version-contract defect that must be resolved before adding workflow tables: the configured target schema version is ahead of the highest effective migration/test baseline, while several memory-v2 tables are still created lazily by business modules. A single migration owner is required before the durable store becomes authoritative.
+### 3.3 当前 Session / Run / workspace authority（2026-08-25）
+
+当前产品可持久保存多个 UUID conversation Sessions，前端只选中其中一个；每条普通用户消息在所选
+Session 中启动一个 fresh root Run。`sessions` 表本身只有 `id/created_at/metadata`，没有正式
+`project_id` 或 `execution_root`。`list_sessions_with_preview()` 从 `messages` 聚合，因此零消息 Session
+不会进入现有列表，响应也只有标题、预览、计数和时间。
+
+当前路径状态分为四层，不能互相冒充 authority：
+
+1. `code_sessions.project_root` 是已退休 Code mode 的兼容映射；同一个 `base_session_id` 的 upsert
+   会覆盖路径。
+2. `execution_task_work_contexts.workspace_root` 是每个 root Run 的 durable workspace；Run 内从
+   provisional `task_default/existing` 到 `user_path` 的一次 rebind 受版本、child 和 write-effect fence
+   约束。
+3. `get_latest_session_project_context()` 不是 Session binding，只是从该 Session 最近一个
+   `user_path` Run（再回退最近 Run workspace）派生的 read model；后续 fresh Run 仍可能产生不同目录。
+4. Run 启动把该派生值冻结进 `HostContext.workspace/write_scope_root`，再投影给 Tool Context 与 Persona
+   的“当前工作区”。当派生值为空时，Host 目前还可能从全局 companion workspace 配置取得默认写入根。
+
+因此当前代码尚不存在 Project 实体、不可变 Session→Project binding 或 project-root/execution-root
+双字段模型。新 Session 的现行 `chat_v2 + new_session` 路径只生成 UUID 并继承 Provider/Model binding，
+不继承正式项目绑定。Project-scoped Session 若实施，必须让新的 Session binding 成为 Run workspace 的
+单向上游；legacy Code mapping 与 latest-Run 查询只能作为迁移输入，不能形成并列写 authority。
+
+持久化 version contract 的旧阻断事实已过期：当前 `migrator.py` 的
+`TARGET_SCHEMA_VERSION=31`，注册迁移覆盖至 `023`/v31；memory-v2 的 lazy-schema split 已由 v17 正式迁移
+收口，canonical tables 归 migration runner 所有。后续新增 Project/Session 表仍必须继续遵守同一 migration
+owner、`user_version`/marker 对账与 crash-safe backup/restore 边界，但不再把已关闭的 lazy ownership 当作前置缺陷。
 
 ## 4. Long-Running Workflows Today
 

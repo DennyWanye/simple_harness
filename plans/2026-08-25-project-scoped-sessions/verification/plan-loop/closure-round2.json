@@ -1,0 +1,123 @@
+{
+  "review_mode": "diff",
+  "findings": [
+    {
+      "id": "relocation-and-explicit-root-lack-run-time-identity-fence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-4",
+        "AC-6",
+        "AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-AUTHORITY",
+        "FAIL-MISSING-ROOT"
+      ],
+      "evidence": "plan.md now defines explicit-root execution_identity, WorkspaceResolutionV1 in private authority record v3, expected Project-revision CAS at root-Run admission, rejection of relocation while any bound root Run is nonterminal, identity checks before authorization and ProductEffectExecutor dispatch, and identity-match plus revision-CAS relocation. Task 4 also specifies active-Run relocation, external move/replace, re-stat race and restart tests.",
+      "status": "resolved",
+      "root_cause": "The revised plan pairs immutable Session binding with a versioned physical workspace identity and an executable Run-admission/effect/relocation concurrency fence."
+    },
+    {
+      "id": "projectless-dispatch-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-3",
+        "AC-4",
+        "AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-AUTHORITY",
+        "FAIL-MISSING-ROOT"
+      ],
+      "evidence": "plan.md Task 4 forces built-in and MCP wrappers through the private run_id authority getter, persists distinct project_bound/projectless/missing tags, deletes the new product path global fallback, requires total projectless_admission metadata for all 77 tools, defaults dynamic MCP tools to requires_project, freezes the filtered catalog before Provider snapshot and retains a physical no-root fence. spike-results.md H-3 records the existing private seam wiring test as 3 passed.",
+      "status": "resolved",
+      "root_cause": "The revised plan removes ambiguity around absent ToolContext metadata and makes durable private Run authority plus exhaustive catalog classification the only projectless dispatch contract."
+    },
+    {
+      "id": "filesystem-identity-portability-remains-an-unproven-release-gate",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-1",
+        "AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-PATH-ID",
+        "FAIL-MISSING-ROOT"
+      ],
+      "evidence": "spike-results.md H-1 records actual macOS symlink and same-volume rename results. plan.md Tasks 1 and 9 now specify a checked-in Windows JSON probe, exact equivalent/rename/different-directory/junction oracle, separate Project-root and explicit-root executions, and a mandatory release stop condition when identity is zero, unstable or colliding. No Windows PASS is claimed; the missing target result is explicitly deferred to a fail-closed plan-task release gate.",
+      "status": "resolved",
+      "root_cause": "The planning defect is closed by freezing the supported identity oracle and making unresolved Windows behavior a mandatory executable stop gate rather than an assumed success."
+    },
+    {
+      "id": "session-create-idempotency-and-provider-lease-not-durable",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-2",
+        "AC-3"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TXN"
+      ],
+      "evidence": "plan.md adds session_creation_receipts with request_id, intent_hash, unique session_id and retained terminal result; Task 2 freezes provider-registry mutation lock then SessionDB write lock then one BEGIN IMMEDIATE transaction, generates the UUID inside it, writes every Session/owner/delivery/Provider/binding/handoff/route/receipt row through connection-taking helpers, and makes commit the sole visibility point. It specifies lost-ACK replay, conflicting intent, Provider mutation races and per-write crash injection oracles.",
+      "status": "resolved",
+      "root_cause": "The revised plan defines one durable request-keyed Session creation transition under the existing Provider-to-SessionDB lock order."
+    },
+    {
+      "id": "deleted-binding-lifecycle-conflict",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-2",
+        "AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TXN",
+        "FAIL-REGRESSION"
+      ],
+      "evidence": "plan.md now defines active/deleted receipt lifecycle, one tombstone transaction, retained Session/Memory/Provider/binding/handoff/receipt provenance, active-delivery plus active-owner list filtering, idempotent delete replay, terminal session_deleted response after deletion, no Session-ID reuse, and prohibition of generic ensure_session revival. Binding FKs use RESTRICT and ordinary delete cannot update or delete the immutable binding.",
+      "status": "resolved",
+      "root_cause": "The revised plan makes DELETED terminal across visibility, ownership, routing, Provider and immutable provenance instead of partially reviving one Session identity."
+    },
+    {
+      "id": "sidebar-cursor-active-predicate-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-5",
+        "AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-SIDEBAR",
+        "FAIL-REGRESSION"
+      ],
+      "evidence": "plan.md lines 269-271 order Sessions by last-message activity and Projects by last_opened_at, and place catalog_revision in every cursor. However lines 132-133 only require revision bumps for visible Project/Session create, delete, relocate and backfill completion. They do not cover message appends or last_opened_at updates, even though those mutate the cursor ordering keys. A message or selection between page requests can therefore move a row across the boundary without producing stale_cursor, causing duplicate or skipped Sessions despite the new keyset protocol.",
+      "status": "open",
+      "root_cause": "The revision fence is not coupled to every mutation of the Project and Session ordering keys. The plan must either bump catalog_revision in the same transaction as message-activity and last_opened_at changes, or define a snapshot-watermark cursor whose ordering cannot change during traversal, and add interleaved-mutation pagination tests."
+    },
+    {
+      "id": "v32-backfill-precondition-and-partial-failure-recovery-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-REGRESSION"
+      ],
+      "evidence": "ARCHITECTURE/ARCHITECTURE.md section 3.3 now records v17-v31 migration ownership as the current fact. plan.md Task 8 adds an executable v31 prerequisite, a startup-blocking ProjectSessionUpgradeCoordinator, verified pre-v32 backup and manifest before DDL, durable phase/high-water/chunk/outcome state, transactionally advanced bindings/counters/cursor, completion conservation and digest gates, idempotent completed startup, guarded hash-checked restore with no down-migration, and crash injection before and after every schema/backfill boundary.",
+      "status": "resolved",
+      "root_cause": "The revised plan gives schema installation and semantic conversion one fail-closed startup protocol with a backup lifetime, resumable checkpoints, completion oracle and explicit restore path."
+    }
+  ]
+}

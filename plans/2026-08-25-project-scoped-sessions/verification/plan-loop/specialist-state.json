@@ -1,0 +1,48 @@
+{
+  "cluster_id": "cluster-session-create-and-delete-state-machine",
+  "parent_finding_ids": [
+    "session-create-idempotency-and-provider-lease-not-durable",
+    "deleted-binding-lifecycle-conflict"
+  ],
+  "specialty": "data-state",
+  "findings": [
+    {
+      "id": "session-create-idempotency-and-provider-lease-not-durable",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-2",
+        "AC-3"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TXN"
+      ],
+      "evidence": "Confirmed and refined. TaskSessionManager allocates the target UUID only in process memory before persistence (backend/deskpet/session/task_scope.py:21-34,51-61). Current creation is three separately committed state.db operations: ensure_session writes sessions + memory_user_bindings + session_delivery_state and can reactivate a tombstone (backend/deskpet/memory/session_db.py:1350-1394); bind_session_owner_if_absent commits owner + scope version separately (1471-1571); set_companion_default_route commits route + route outbox separately (2935-3042). main.py then performs Provider inheritance as a fourth commit before publishing switch events (backend/main.py:9717-9759,14357-14371,14462-14533). Provider inheritance does hold provider_registry._mutation_lock across its own SessionDB transaction (backend/llm/provider_registry.py:1047-1072), but that transaction only copies code_session_provider/context usage (backend/deskpet/memory/session_db.py:4473-4552); it cannot roll back the already-created Session/owner/route. There is no durable creation request receipt, so a lost ACK followed by retry generates another UUID after restart.",
+      "status": "open",
+      "root_cause": "Session creation is an orchestration of transaction-owning methods plus an in-memory UUID decision, rather than one durable request-keyed state transition under the existing provider-registry-to-SessionDB lock order."
+    },
+    {
+      "id": "deleted-binding-lifecycle-conflict",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-2",
+        "AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-TXN",
+        "FAIL-REGRESSION"
+      ],
+      "evidence": "Confirmed and refined. Current delete is a durable tombstone, not physical Session deletion: one BEGIN IMMEDIATE deletes ingress/messages/title, increments delivery epoch, and tombstones owner/route, while retaining sessions and provider rows (backend/deskpet/memory/session_db.py:4206-4256). Owner identity cannot be changed or reactivated (backend/deskpet/companion/companion_message_projection.py:272-297), yet ensure_session explicitly clears delivery.deleted_at on conflict (backend/deskpet/memory/session_db.py:1384-1390), producing a partially revived same-id state that the owner fence rejects. The planned binding UPDATE trigger does not decide DELETE/retention, and the legacy provider table has no Session FK (backend/deskpet/memory/migrations/007_p5s2_code_session_provider.sql:20-29).",
+      "status": "open",
+      "root_cause": "The plan has no canonical terminal DELETED state spanning delivery, owner, Project binding, Provider binding and idempotency receipt, so generic ensure/upsert semantics can revive only a subset of one Session identity."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Required target state machine: (1) session_create requires a globally unique request_id and canonical intent_hash; no compatibility path may allocate a Session without one. (2) SessionCreationService first resolves filesystem/Project input outside locks, freezes trusted owner, then acquires provider_registry.mutation_lock followed by SessionDB._write_lock, matching the existing registry-to-DB order. Inside one PRAGMA foreign_keys=ON; BEGIN IMMEDIATE transaction it reads session_creation_receipts by request_id. Existing same hash returns its stored terminal result; different hash returns request_id_conflict. If absent, it generates the UUID inside this transaction, verifies that no sessions/delivery/owner/binding row exists for that UUID, validates the source Provider incarnation/config revision against the still-locked registry, and writes sessions, memory user/binding, delivery active epoch 0, immutable companion owner, owner scope version, frozen code_session_provider plus context-usage binding, session_project_binding or explicit projectless kind, bounded handoff/provenance, active companion route plus route outbox when the UI switch requires it, and finally session_creation_receipts(request_id PRIMARY KEY, intent_hash, session_id UNIQUE, result_json, lifecycle='active', created_at, deleted_at). Commit is the sole visibility point; only after commit may switch/list ACK be published. Any exception before commit leaves none of these rows. Holding the Provider mutation lock through commit removes the proposed post-commit validation/tombstone path; do not call inherit_session_binding or other transaction-owning repository methods from inside creation—factor connection-taking tx helpers instead. (3) Lost ACK: replay with the same request_id/hash returns the committed session_id/result after reconnect or restart and emits no new route/outbox; crash before commit has no receipt and retry performs one clean create. Same request_id/different hash is permanent conflict. A different request_id that names/replays an existing session_id is rejected; server-generated IDs are never reused. (4) Delete uses one state.db BEGIN IMMEDIATE under the existing workflow session lock: require active delivery/owner, delete messages/title/ingress as today, increment delivery epoch, tombstone owner and route and append its outbox, retain sessions, memory binding, Provider binding, session_project_binding, handoff and creation receipt, and set receipt lifecycle='deleted'/deleted_at. The immutable Project binding is retained as provenance and can never be deleted/replaced by ordinary delete; lists filter on active delivery + active owner. Workflow Run cancellation occurs after this durable fence and is restart-reconcilable; a crash cannot make late writes pass because epoch/tombstone committed first. Delete replay is idempotent and returns the same deleted epoch. (5) Same create request after deletion returns terminal session_deleted with the original session_id, never reactivates it; generic ensure_session must not be used by product Session creation and must stop clearing tombstones for an existing product Session. Restart derives only ACTIVE or DELETED from durable rows—there is no durable PENDING state because claim and result commit together. (6) FK/retention: session_project_bindings.session_id REFERENCES sessions(id) ON DELETE RESTRICT, project_id REFERENCES projects(project_id) ON DELETE RESTRICT, source_session_id REFERENCES sessions(id) ON DELETE RESTRICT; session_creation_receipts.session_id REFERENCES sessions(id) ON DELETE RESTRICT. Projects and Sessions are not physically deleted by ordinary delete. Existing memory_user_bindings ON DELETE CASCADE is harmless because physical Session deletion is outside this operation. Retain receipts and bindings for the lifetime of state.db (only explicit full-data reset may purge in dependency order). (7) Decisive fault matrix must inject after every listed insert/update and before commit, after commit before ACK, concurrent duplicate requests, Provider remove/update waiting on the registry lock, delete before/after durable fence, delete ACK loss, create replay after delete, same-id/different-request replay, and process restart after each committed terminal state. Every pre-commit case must show zero rows across all creation tables; every post-commit/lost-ACK case must replay exactly one identical result."
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "AC-1",
+    "AC-2",
+    "AC-3",
+    "AC-4",
+    "AC-5",
+    "AC-6",
+    "AC-7",
+    "AC-8"
+  ],
+  "protected_assets": [
+    {
+      "id": "ASSET-1",
+      "description": "用户项目文件及项目执行目录边界"
+    },
+    {
+      "id": "ASSET-2",
+      "description": "Session 历史、项目归属、标题与排序"
+    },
+    {
+      "id": "ASSET-3",
+      "description": "迁移前的本地 Project、Code Session 与 Session 数据"
+    }
+  ],
+  "trusted_assumptions": [
+    {
+      "id": "TRUST-1",
+      "description": "本地 OS、用户账户和绝对系统路径工具可信"
+    },
+    {
+      "id": "TRUST-2",
+      "description": "用户通过系统文件夹选择器明确选择希望注册或重新定位的目录"
+    }
+  ],
+  "in_scope_failures": [
+    {
+      "id": "FAIL-PATH-ID",
+      "description": "等价路径被识别为不同项目或不同路径被错误合并"
+    },
+    {
+      "id": "FAIL-TXN",
+      "description": "Project 与 Session 创建失败后留下孤儿或半绑定状态"
+    },
+    {
+      "id": "FAIL-AUTHORITY",
+      "description": "UI、旧 Code Session、Run 或工具使用不同工作目录 authority"
+    },
+    {
+      "id": "FAIL-SIDEBAR",
+      "description": "项目分组刷新后 Session 消失、重复或误归组"
+    },
+    {
+      "id": "FAIL-MISSING-ROOT",
+      "description": "目录不存在时仍允许开发工具执行或重新定位到无关项目"
+    },
+    {
+      "id": "FAIL-REGRESSION",
+      "description": "迁移导致历史消息、标题、排序、归档、Memory 或 resume 回归"
+    }
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {
+      "id": "OOS-1",
+      "description": "恶意宿主机、内核或用户主动篡改本地数据库"
+    },
+    {
+      "id": "OOS-2",
+      "description": "跨设备项目同步、Git clone 和自动 worktree 生命周期管理"
+    }
+  ],
+  "maximum_acceptable_impact": "错误操作最多使一次 Session 创建或项目重新定位失败；不得修改项目文件、丢失历史或让执行越过持久绑定的 execution_root。"
+}

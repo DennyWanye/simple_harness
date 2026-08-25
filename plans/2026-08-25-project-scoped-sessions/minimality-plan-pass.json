@@ -1,0 +1,82 @@
+{
+  "verdict": "LEAN",
+  "findings": [
+    {
+      "id": "min-1",
+      "tag": "delete",
+      "target": "Task 3：过渡期旧 flat sessions[] 响应",
+      "current": "计划在新的 revisioned Project/Session keyset API 之外，同期继续生成一份旧 flat sessions[] projection，并在同一 slice 切换后再删除。",
+      "replacement": "桌面前后端按同一构建交付，直接让 sessionsStore、SessionList 和 WS 类型原子切换到新的 bounded pages；仅保留旧入站 new_session 命令到 SessionCreationService 的兼容路由，不再生成重复的 flat 列表响应。",
+      "preserves_acceptance": [
+        "AC-2",
+        "AC-5",
+        "AC-8"
+      ],
+      "risk_impact": "保留同一 active predicate、catalog revision、keyset cursor、pinned descriptor 和 stale_cursor 测试；不影响 FAIL-SIDEBAR 或历史数据迁移。",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-2",
+      "tag": "reuse",
+      "target": "Task 6：SessionList windowing",
+      "current": "计划要求列表 windowing 和 mounted rows 上限，但未绑定具体复用实现，执行时可能新增自定义虚拟列表逻辑。",
+      "replacement": "直接复用已安装的 react-virtuoso 4.18.6 以及 tauri-app/src/code-panel/MessageStream.tsx 的稳定 key、可视窗口和测试模式；SessionList 只实现 Project 分组数据适配，不新增虚拟化依赖或自定义 windowing engine。",
+      "preserves_acceptance": [
+        "AC-5"
+      ],
+      "risk_impact": "保留 500×200 fixture、React Profiler、list update p95 和 mounted rows required gates。",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-3",
+      "tag": "delete",
+      "target": "Task 6：Project 隐藏若加入",
+      "current": "计划包含“Project 隐藏若加入”的可选 catalog visibility 行为，但 acceptance 和 behavior contract 均未要求隐藏 Project。",
+      "replacement": "从本 release 删除 Project hide 状态、命令、store 分支和测试设想；只实现项目分组、Session 删除和 missing 状态。未来如用户批准隐藏语义，再以独立验收项加入。",
+      "preserves_acceptance": [
+        "AC-1",
+        "AC-5",
+        "AC-7"
+      ],
+      "risk_impact": "none",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-4",
+      "tag": "inline",
+      "target": "Task 8：ProjectSessionUpgradeCoordinator",
+      "current": "计划命名了一个新的 upgrade coordinator，容易演化为只有单一调用方的 class、factory 或额外 service 文件，而 durable phase/cursor/counters 已由 project_session_backfill_state 持有。",
+      "replacement": "在现有 backend/deskpet/memory/schema.py 启动迁移入口内增加一个 run_project_session_upgrade 函数，复用 migrator.py 的 backup_db、迁移注册和现有启动阻塞路径；所有可恢复状态仍只存 project_session_backfill_state，guarded restore command 和全部 crash/restart/backup gates保持不变，不新增 coordinator class/interface/factory。",
+      "preserves_acceptance": [
+        "AC-8"
+      ],
+      "risk_impact": "迁移恢复、backup hash、quick_check、startup fail-closed、幂等 backfill 和 restore required tests全部保留。",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-5",
+      "tag": "merge",
+      "target": "Task 1/4：WorkspaceResolutionV1 与 SDK authority record v3 的重复序列化",
+      "current": "计划同时要求 WorkspaceResolutionV1 自己实现序列化、恢复和指纹契约，又要求 sdk_adapters/tool_authority.py 的 durable authority record v3持久化同一组 project/execution 字段，存在两套可漂移的 durable codec。",
+      "replacement": "WorkspaceResolution 保持为 ProjectBindingService 返回的 frozen tagged in-memory value；将其字段一次性并入现有 SdkRunToolAuthorityV1.run_start_record()/restore_run() 的 v3 codec和 authority_fingerprint。TaskWorkContext 继续承载 effective workspace，ProjectBindingService 负责 admission/identity 校验，不再为 WorkspaceResolution 建第二套独立持久化 codec。",
+      "preserves_acceptance": [
+        "AC-2",
+        "AC-4",
+        "AC-6",
+        "AC-7"
+      ],
+      "risk_impact": "保留 immutable Session binding、request/run identity validation、restart recovery、project revision CAS、两次 physical identity re-stat 和 no-global-fallback tests；减少 FAIL-AUTHORITY 的双编码漂移面。",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    }
+  ]
+}

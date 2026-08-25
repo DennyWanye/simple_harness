@@ -1,0 +1,39 @@
+{
+  "cluster_id": "cluster-sidebar-pagination-and-visibility",
+  "parent_finding_ids": [
+    "sidebar-cursor-active-predicate-missing"
+  ],
+  "specialty": "performance-third-party",
+  "findings": [
+    {
+      "id": "sidebar-cursor-active-predicate-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-5",
+        "AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-SIDEBAR",
+        "FAIL-REGRESSION"
+      ],
+      "evidence": "Confirmed and refined. Current SessionDB.list_sessions_with_preview() (backend/deskpet/memory/session_db.py:4351-4386) is message-backed and orders only by MAX(messages.created_at); backend/main.py:13205-13252 then runs session_terminal_projection_gate.ensure_current() for every returned row and applies _is_companion_history_session_id(), which admits task-* or UUID-like ids. clear()/tombstone_session() (session_db.py:3741-3853,4206-4257) retain sessions rows while setting session_delivery_state.deleted_at and companion_session_owners.status=tombstoned. Therefore a sessions-row-based read must freeze this logical predicate before pagination: delivery is live (LEFT JOIN delivery, d.deleted_at IS NULL so legacy rows without delivery remain eligible); owner is not tombstoned (o.session_id IS NULL OR o.status='active'); a zero-message row is eligible only when it has an active product owner, while an ownerless legacy row still requires EXISTS(messages); and the legacy task-/UUID classifier must be represented inside the queryable projection (for example a migration-classified product-history bit), not applied after LIMIT. Freeze session order as activity_at=COALESCE(last_message_at,s.created_at) DESC, session_id ASC and Project order as last_opened_at DESC, project_id ASC. Use separate bounded keyset pages: project headers default 50/max 100 and one Project-or-projectless Session scope default 50/max 100; cursor fields are schema_version, catalog_revision, scope_kind, project_id|null, activity_at, session_id. A cursor with a stale catalog_revision must return stale_cursor and force refresh rather than silently duplicate/skip. Return the currently selected visible Project header and selected Session descriptor as explicit pinned records even when outside the requested page; they do not consume the page limit and the client deduplicates by id. Projection consistency runs only for the selected descriptor plus the bounded page, never for all 100k rows. Temporary 100k-row SQLite measurement with bindings(project_id,session_id), message(session_id,created_at), delivery and owner indexes returned a 51-row Project page at median 0.190 ms, p95 0.196 ms, max 0.208 ms; EXPLAIN used the binding, sessions, delivery, owner and message indexes and temp B-trees only for the bounded 200-session group/order. A serialization probe measured 500 Project summaries at 49,294 bytes, a 50-Session page at 11,114 bytes, and an unbounded 100k-Session response at 19,288,904 bytes. A React server-render proxy measured 50 rows at 2.91 ms/0.16 MiB heap, 500 at 2.91 ms/1.74 MiB, and 100k at 180.58 ms/127.8 MiB, confirming that the plan must require windowing rather than mapping the full response. Required implementation evidence must add SQL predicate fixtures for active/tombstoned/ownerless/zero-message/internal ids; cursor tie/stale-revision/lost-ACK refresh tests; selected-outside-page inclusion and dedupe tests; query-plan plus p50/p95 at 100k; payload budgets (catalog and each Session page <=128 KiB, total response <=256 KiB); and an actual browser React Profiler test proving mounted Session rows remain <=150 and list update p95 <=50 ms while scrolling 500 Projects x 200 Sessions.",
+      "status": "open",
+      "root_cause": "The plan changes list membership from message-backed history to durable Session rows and increases cardinality to 100,000, but it has no queryable product-visibility predicate, mutation revision, keyset contract, selected-item pinning rule, response budget or UI windowing bound. Applying legacy filters after LIMIT or rendering projects[] with all nested Sessions would respectively hide/duplicate Sessions or create an unbounded payload and DOM."
+    }
+  ],
+  "cross_cluster_refs": [
+    {
+      "cross_cluster_ref": "cluster-session-create-and-delete-state-machine",
+      "finding_ids": [
+        "deleted-binding-lifecycle-conflict"
+      ],
+      "reason": "The catalog_revision bump and active predicate must commit in the same create/delete/tombstone transaction; otherwise a deleted Session can remain in a valid cursor page or a zero-message created Session can be absent despite a successful ACK."
+    }
+  ],
+  "conclusion": {
+    "status": "refined",
+    "summary": "The parent finding is confirmed. The executable closure is a hierarchical, revisioned keyset protocol with a query-time active/product predicate, pinned selected records, hard page/payload limits and real UI windowing measurements; the current plan's single nested projects[] response and generic pagination wording are insufficient."
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "run_id": "plan-loop-20260825-project-scoped-sessions",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "fixture_only": false,
+  "source_request_text": "为 simple_harness 增加以本地文件夹为 Project 根目录的 Session：Project 可包含多个 Session；项目 Session 创建后不可改根；保留无项目普通聊天，并可通过有界 handoff 在选定 Project 中新建 Session；侧栏按 Project 分组，右侧只读显示 Project 信息；区分 project_root 与 execution_root，本期不自动管理 worktree。",
+  "acceptance_file": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/acceptance.md",
+  "behavior_contract": {
+    "path": "/Users/denny/projects/simple_harness/plans/2026-08-25-project-scoped-sessions/behavior-contract.md",
+    "status": "awaiting-user-final-review"
+  },
+  "behavior_changes": [
+    "项目 Session 的工作目录 authority 从 latest Run / legacy code_sessions / global fallback 收敛为 immutable Session Project Binding",
+    "无项目普通聊天不再获得本地项目开发工具；继续开发时在选定 Project 中创建新 Session",
+    "Session 列表从消息驱动的扁平列表扩展为 Project 分组，并保留无项目分组和零消息 Session"
+  ],
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "rationale": "本次交付判定的是持久化绑定、目录 authority 与 UI 状态，不以输入语义类别改变验收结果。",
+      "decided_by": "user"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "rationale": "Project 与 Session 状态由确定性数据库和协议命令驱动，不由 LLM 结构化输出推进。",
+      "decided_by": "agent"
+    },
+    "stateful_init": {
+      "value": false,
+      "rationale": "目标行为依赖本地数据库与文件系统，不依赖异步远端注册、登录态或远程配置初始化。",
+      "decided_by": "agent"
+    }
+  },
+  "executor_engine": "current-session-engine",
+  "auditor_engine": "current-session-engine",
+  "challenger_engine": "current-session-engine",
+  "release_unit": {
+    "type": "plan-only",
+    "path": "plans/2026-08-25-project-scoped-sessions/plan.md"
+  },
+  "active_run_required": false,
+  "structured_audit_required": false,
+  "scenarios": []
+}

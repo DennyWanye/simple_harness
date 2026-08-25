@@ -1,7 +1,7 @@
 # simple_harness Agent Harness 架构
 
 > 最后更新：2026-08-25
-> 范围：单主 Session、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
+> 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
@@ -191,9 +191,10 @@ authority。清单中为历史会话兼容而保留的 `memory_forget/read/searc
 兼容处理器明确返回 `memory_sdk_unavailable`；它们不会重新引入已删除的旧内存存储栈，也不会再
 因处理器模块缺失导致整个 Agent 工具目录构建或运行时调用崩溃。
 
-simple_harness 现在只有一个主 Session。每条普通新消息都创建一个独立顶层 Run，顶层 Profile
-固定为 `agent.general`；运行中的任务收到继续消息时，消息进入该 root 的 durable FIFO，
-不会暗中新建 root。
+simple_harness 当前可持久保存多个 UUID conversation Sessions，产品窗口同一时刻只选择其中一个作为
+当前主会话。每条普通新消息都在所选 Session 中创建一个独立顶层 Run，顶层 Profile 固定为
+`agent.general`；当前 SDK 生产文字入口的后续普通消息同样创建 fresh root，历史 durable continuation
+FIFO 只保留在下文的旧链路记录中。
 
 `RunKernel` 不读取用户原文来猜领域，也不靠正则选择 Driver。通用父 Agent 在真实模型轮次中
 直接回答、调用工具，或调用 `workflow_spawn` 选择一个 child Profile。Host 校验 Profile
@@ -236,6 +237,22 @@ flowchart LR
 一个主 Session 可以同时拥有多个彼此隔离的顶层 Run。任务窗口只是这些 Run 的 UI 投影；
 打开、切换或关闭窗口不改变 Driver、Profile、工具集、授权或运行状态。当前没有 Code 模式
 与普通模式之分。
+
+### 当前 Session 到 workspace 的真实边界（2026-08-25）
+
+普通 Session 目前没有不可变项目绑定。新建话题只由 `TaskSessionManager` 生成 UUID，Host 在发布
+`session_switched/task_session_started` 前继承 Provider/Model binding；请求中没有 `project_id`，
+`sessions` schema 也没有项目或 execution-root 字段。
+
+每个 root Run 的 `TaskWorkContext` 才拥有 durable `workspace_root + workspace_source +
+binding_version`。下一 fresh Run 启动前，Host 会通过 execution UoW 查询该 Session 最近的
+`user_path` workspace 并把它当作 inherited workspace；这是“最近 Run 派生值”，不是不可变 Session
+项目事实。若查不到，Host 当前仍可使用全局 companion workspace 作为 `write_scope_root`，所以“无项目
+会话不能访问本地项目文件”也不是当前行为。
+
+已退休 Code mode 的 `code_sessions` 仍保存独立、可覆盖的 `base_session_id -> project_root` 映射，仅供
+历史兼容。它与 root-local `TaskWorkContext`、latest-Run Session 派生查询共同构成当前多源路径状态，
+但都不能单独宣称为普通 Session 的 Project authority。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

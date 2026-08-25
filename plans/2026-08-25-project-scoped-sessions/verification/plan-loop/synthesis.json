@@ -1,0 +1,156 @@
+{
+  "source_cluster_ids": [
+    "cluster-workspace-authority-and-relocation-fence",
+    "cluster-session-create-and-delete-state-machine",
+    "cluster-sidebar-pagination-and-visibility",
+    "cluster-v32-backfill-release-recovery"
+  ],
+  "canonical_findings": [
+    {
+      "id": "relocation-and-explicit-root-lack-run-time-identity-fence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-4", "AC-6", "AC-7"],
+      "assurance_contract_ids": ["FAIL-AUTHORITY", "FAIL-MISSING-ROOT"],
+      "evidence": "Project relocation can change canonical_root while a nonterminal Run retains only an old path/revision, and explicit execution_root has no independent filesystem identity or physical-effect recheck.",
+      "status": "open",
+      "root_cause": "Immutable Session binding is not paired with a versioned WorkspaceResolution record and a Run-admission/effect/relocation concurrency fence."
+    },
+    {
+      "id": "projectless-dispatch-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-3", "AC-4", "AC-7"],
+      "assurance_contract_ids": ["FAIL-AUTHORITY", "FAIL-MISSING-ROOT"],
+      "evidence": "The private run_id-to-authority getter exists and its contextvar/MCP wiring spike passed 3 tests, but built-ins can still call _execution_context and recover the global root; the 77-tool catalog has no exhaustive projectless admission field.",
+      "status": "open",
+      "root_cause": "Missing ToolContext metadata is still ambiguous between legacy-unknown and explicit projectless, and not every wrapper is forced through the durable private Run authority."
+    },
+    {
+      "id": "filesystem-identity-portability-remains-an-unproven-release-gate",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-1", "AC-7"],
+      "assurance_contract_ids": ["FAIL-PATH-ID", "FAIL-MISSING-ROOT"],
+      "evidence": "The macOS symlink and same-volume rename spike passed, but no Windows result exists and explicit execution roots need the same identity oracle.",
+      "status": "open",
+      "root_cause": "The supported filesystem identity boundary and executable Windows oracle are not frozen as a release gate."
+    },
+    {
+      "id": "session-create-idempotency-and-provider-lease-not-durable",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-2", "AC-3"],
+      "assurance_contract_ids": ["FAIL-TXN"],
+      "evidence": "Current creation allocates UUID in memory and commits Session, owner, route and Provider inheritance separately; no durable request receipt makes lost-ACK replay stable.",
+      "status": "open",
+      "root_cause": "There is no request-keyed creation state transition under the existing provider-registry-to-SessionDB lock order."
+    },
+    {
+      "id": "deleted-binding-lifecycle-conflict",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-2", "AC-8"],
+      "assurance_contract_ids": ["FAIL-TXN", "FAIL-REGRESSION"],
+      "evidence": "Delete currently tombstones delivery/owner but retains Session; ensure_session can clear the delivery tombstone while owner reactivation is forbidden, and the proposed binding trigger defines neither retention nor replay.",
+      "status": "open",
+      "root_cause": "ACTIVE and DELETED are not canonical terminal states spanning delivery, owner, route, Provider, Project binding and idempotency receipt."
+    },
+    {
+      "id": "sidebar-cursor-active-predicate-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-5", "AC-8"],
+      "assurance_contract_ids": ["FAIL-SIDEBAR", "FAIL-REGRESSION"],
+      "evidence": "The current list applies message-backed and product-history filters after repository lookup; an unbounded 100k response measured about 19.3 MB and the current plan defines no catalog revision, keyset cursor, pinned selection, payload or mounted-row bounds.",
+      "status": "open",
+      "root_cause": "The target changes both visibility authority and cardinality without a query-time active/product predicate and bounded hierarchical protocol."
+    },
+    {
+      "id": "v32-backfill-precondition-and-partial-failure-recovery-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-8"],
+      "assurance_contract_ids": ["FAIL-REGRESSION"],
+      "evidence": "The old lazy-schema prerequisite is stale because v17-v31 are migration-owned, but a post-v32 application backfill would run outside initialize_state_db backup/restore with no phase, cursor or completion digest.",
+      "status": "open",
+      "root_cause": "Schema installation and semantic legacy conversion have separate startup owners and no durable upgrade state machine or backup lifetime spanning both."
+    }
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "relocation-and-explicit-root-lack-run-time-identity-fence",
+    "projectless-dispatch-contract-missing",
+    "filesystem-identity-portability-remains-an-unproven-release-gate",
+    "session-create-idempotency-and-provider-lease-not-durable",
+    "deleted-binding-lifecycle-conflict",
+    "sidebar-cursor-active-predicate-missing",
+    "v32-backfill-precondition-and-partial-failure-recovery-undefined"
+  ],
+  "decisions": [
+    {
+      "canonical_finding_id": "relocation-and-explicit-root-lack-run-time-identity-fence",
+      "source_finding_ids": ["relocation-and-explicit-root-lack-run-time-identity-fence"],
+      "action": "plan-change",
+      "rationale": "Add WorkspaceResolutionV1/v3 authority persistence, explicit-root identity, Project revision CAS, nonterminal-Run relocation rejection and two physical identity checks."
+    },
+    {
+      "canonical_finding_id": "projectless-dispatch-contract-missing",
+      "source_finding_ids": ["projectless-dispatch-contract-missing"],
+      "action": "plan-change",
+      "rationale": "Force built-in and MCP wrappers through the private run_id authority getter and make projectless admission a total fail-closed manifest field; the seam feasibility spike already passed."
+    },
+    {
+      "canonical_finding_id": "filesystem-identity-portability-remains-an-unproven-release-gate",
+      "source_finding_ids": ["filesystem-identity-portability-remains-an-unproven-release-gate"],
+      "action": "plan-change",
+      "rationale": "Freeze an executable cross-platform probe/oracle and keep Windows proof as a mandatory plan-task stop gate; macOS evidence is already recorded."
+    },
+    {
+      "canonical_finding_id": "session-create-idempotency-and-provider-lease-not-durable",
+      "source_finding_ids": ["session-create-idempotency-and-provider-lease-not-durable"],
+      "action": "plan-change",
+      "rationale": "Add durable request receipts and one provider-lock then SessionDB transaction whose commit is the only visibility point."
+    },
+    {
+      "canonical_finding_id": "deleted-binding-lifecycle-conflict",
+      "source_finding_ids": ["deleted-binding-lifecycle-conflict"],
+      "action": "plan-change",
+      "rationale": "Define ACTIVE/DELETED lifecycle, retain immutable binding/receipt provenance, forbid Session ID revival and make delete replay idempotent."
+    },
+    {
+      "canonical_finding_id": "sidebar-cursor-active-predicate-missing",
+      "source_finding_ids": ["sidebar-cursor-active-predicate-missing"],
+      "action": "plan-change",
+      "rationale": "Replace the nested unbounded response with revisioned Project and per-scope Session keyset pages, pinned selection, hard payload and DOM bounds."
+    },
+    {
+      "canonical_finding_id": "v32-backfill-precondition-and-partial-failure-recovery-undefined",
+      "source_finding_ids": ["v32-backfill-precondition-and-partial-failure-recovery-undefined"],
+      "action": "plan-change",
+      "rationale": "Correct the stale architecture fact and add a startup-blocking resumable backfill ledger plus verified backup/restore boundary and crash matrix."
+    }
+  ],
+  "conflicts": [
+    {
+      "canonical_finding_id": "v32-backfill-precondition-and-partial-failure-recovery-undefined",
+      "resolution": "Primary evidence treated the version-contract issue as current; specialist code/test evidence shows v17-v31 ownership is already closed. Preserve only the still-open post-v32 backfill recovery defect and correct the architecture fact."
+    }
+  ],
+  "required_spikes": [],
+  "plan_actions": [
+    "Revise target schema and Task 2 with session_creation_receipts and terminal lifecycle.",
+    "Revise Task 3 to a hierarchical revisioned keyset protocol with active/product SQL predicate and hard budgets.",
+    "Revise Task 4 with WorkspaceResolutionV1, private authority getter, tool admission inventory and relocation/effect fences.",
+    "Revise Tasks 1 and 9 with a checked-in cross-platform identity probe and Windows stop gate.",
+    "Revise Task 8 with a startup-blocking ProjectSessionUpgradeCoordinator, verified backup manifest, chunk cursor and restore command.",
+    "Link recorded macOS, performance and private authority wiring spike results from the plan."
+  ]
+}

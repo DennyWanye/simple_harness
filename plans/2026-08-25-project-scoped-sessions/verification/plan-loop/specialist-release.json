@@ -1,0 +1,37 @@
+{
+  "cluster_id": "cluster-v32-backfill-release-recovery",
+  "parent_finding_ids": [
+    "v32-backfill-precondition-and-partial-failure-recovery-undefined"
+  ],
+  "specialty": "release-rollback",
+  "findings": [
+    {
+      "id": "v32-backfill-precondition-and-partial-failure-recovery-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-8"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-REGRESSION"
+      ],
+      "evidence": "The architecture prerequisite quoted by the primary is stale rather than an unresolved current code defect: backend/deskpet/memory/migrator.py:56-105 has TARGET_SCHEMA_VERSION=31 and registered migration steps through 023/v31; backend/deskpet/memory/memory_v2_schema.py:4-9 and 252-276 state that v17 closed the lazy-schema split and enumerate the formal owner, while compatibility lazy ensures remain at 586-678. A focused real run, `backend/.venv/bin/python -m pytest -q backend/tests/test_agent_storage_reset.py::test_dev_reset_rebuilds_three_databases_and_removes_sidecars`, passed 1 test and backend/tests/test_agent_storage_reset.py:34-38 asserts fresh state.db user_version=31. The actual release gap remains: plan.md:199 only registers atomic v32 DDL, then plan.md:285-292 runs semantic backfill later as an application operation with no phase/checkpoint/outcome state. backend/deskpet/memory/schema.py:71-115 creates a backup only while user_version is below TARGET_SCHEMA_VERSION and only wraps ensure_v9; after v32 commits, the next startup skips that backup, and lines 115-136 restore only exceptions raised inside schema migration. Therefore a crash or error after v32 commit but during backfill is outside the existing backup/restore boundary. The development reset at backend/scripts/reset_agent_data.py:67-98 deletes and recreates all stores and is not a user-data recovery mechanism.",
+      "status": "open",
+      "root_cause": "The plan splits schema installation and semantic legacy conversion across two startup owners but defines neither a durable upgrade state machine nor one backup lifetime spanning both phases. As a result, user_version=32 can coexist with partially migrated bindings, with no authoritative rule for startup gating, resume, or exact restore. The stale architecture prerequisite obscures this narrower but still blocking recovery defect."
+    }
+  ],
+  "cross_cluster_refs": [
+    {
+      "cross_cluster_ref": "cluster-session-create-and-delete-state-machine",
+      "finding_ids": [
+        "session-create-idempotency-and-provider-lease-not-durable"
+      ],
+      "reason": "The backfill coordinator must hold startup closed against new Session creation, and its chunk transaction must use the same immutable-binding conflict rule as the create state machine; otherwise migration retry and live create can race for the same Session binding. This is a dependency, not a duplicate finding."
+    }
+  ],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Refined required closure: (1) correct the stale ARCHITECTURE statement and add an executable v31 prerequisite asserting user_version=31, durable marker 023, TARGET_SCHEMA_VERSION=max(MIGRATION_STEPS)=31, canonical v17 tables and no project tables; register 024 in MIGRATION_STEPS=32 and assert exact v32 physical objects plus marker/user_version reconciliation. (2) Add one ProjectSessionUpgradeCoordinator before WebSocket/Session-create acceptance. The v32 DDL must create a project_session_backfill_state ledger with phase pending|scanning|applying|verifying|completed|failed, frozen source high-water key, last committed base_session_id cursor, source/migrated/skipped-invalid/skipped-conflict counts, outcome digest, backup filename/hash, timestamps and low-sensitivity error code. Quiesce writers, checkpoint WAL, create and quick_check plus SHA-256-verify a pre-v32 backup/manifest before mutation, and retain it through semantic completion. Let the runner atomically commit DDL+024 marker+user_version; then process candidates in deterministic bounded chunks where Project/binding/outcome/cursor advance share one transaction, existing bindings always win, and incomplete phase keeps startup fail-closed. Completion transaction verifies count conservation, one outcome per frozen source, no duplicates/overwrites, final digest, then opens APIs. (3) Crash-inject before/after backup, inside DDL before commit, after v32 commit, during scan, before/after chunk commits, before completion, and after completion before startup ACK; each restart must prove rollback, exact cursor resume, or no-op completion. (4) Add a guarded support restore command, not reset_agent_data.py, such as `backend/.venv/bin/python backend/scripts/restore_state_db_backup.py --state-db <absolute-state.db> --backup <absolute-backup> --expected-sha256 <digest> --confirm RESTORE-STATE-DB`; require stopped service, reject symlinks/broad paths, validate hash/quick_check, quarantine current DB, atomically replace, handle WAL/SHM after validation, and recheck source user_version/marker digest. Document that binary rollback after v32 first restores this backup; no down-migration. (5) Build the two-run fixture from real v31 migrations with valid, missing, duplicate, pre-bound conflict, active, deleted and archived Sessions. Canonically snapshot sessions, messages, messages_archive, titles, Memory identity/bindings, Provider binding epoch/model params, delivery/owner/projection state and ordering. Run 1 validates outcomes and unchanged non-project authorities; Run 2 must add no Project, binding, outcome, backup, marker or counter and preserve byte-identical snapshots/digest. Repeat through crash points and prove restore reproduces the original v31 snapshots."
+  }
+}

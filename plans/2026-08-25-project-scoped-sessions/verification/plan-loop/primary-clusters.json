@@ -1,0 +1,78 @@
+{
+  "primary_contradiction": {
+    "id": "pc-immutable-binding-versus-mutable-filesystem-lifecycle",
+    "summary": "The plan makes Session Project Binding immutable, but the physical filesystem, Project location, active Runs, deletion state and protocol retries remain mutable; the missing versioned lifecycle fences allow those mutable states to bypass the intended single workspace authority.",
+    "acceptance_ids": ["AC-2", "AC-4", "AC-7", "AC-8"]
+  },
+  "challenge_clusters": [
+    {
+      "cluster_id": "cluster-workspace-authority-and-relocation-fence",
+      "parent_finding_ids": [
+        "relocation-and-explicit-root-lack-run-time-identity-fence",
+        "projectless-dispatch-contract-missing",
+        "filesystem-identity-portability-remains-an-unproven-release-gate"
+      ],
+      "specialty": "architecture",
+      "question": "Can one tagged Session workspace resolution remain the sole authority through active-Run relocation, explicit execution roots, projectless dispatch and supported filesystem identity changes without modifying the public Harness SDK?",
+      "required_evidence": [
+        "Host-to-SdkRunToolAuthority-to-ProductToolsAdapter-to-physical-handler call chain",
+        "complete workspace-required versus projectless-safe tool inventory",
+        "active Run plus Project relocation concurrency trace",
+        "macOS symlink/same-volume rename/different-directory raw spike",
+        "Windows equivalent-path and identity probe plan with executable command"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-session-create-and-delete-state-machine",
+      "parent_finding_ids": [
+        "session-create-idempotency-and-provider-lease-not-durable",
+        "deleted-binding-lifecycle-conflict"
+      ],
+      "specialty": "data-state",
+      "question": "What exact durable state machine and transaction boundary makes create, retry, Provider validation, deletion and same-id replay preserve an immutable binding without visible half states?",
+      "required_evidence": [
+        "all current tables and transaction-owning methods touched by Session creation",
+        "Provider registry mutation-lock lifetime versus SQLite transaction lifetime",
+        "durable request-id claim/result schema and retention rule",
+        "foreign-key and ON DELETE policy for projects and bindings",
+        "failure injection matrix for every write and lost ACK",
+        "deleted Session replay and restart state transitions"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-sidebar-pagination-and-visibility",
+      "parent_finding_ids": [
+        "sidebar-cursor-active-predicate-missing"
+      ],
+      "specialty": "performance-third-party",
+      "question": "What bounded read protocol preserves current product-history visibility while making zero-message Sessions visible and keeping a 500 by 200 dataset within query, payload and UI limits?",
+      "required_evidence": [
+        "exact active/product-session SQL predicate including delivery and owner state",
+        "stable project and session sort keys plus cursor definitions",
+        "selected Session inclusion behavior across pages",
+        "100k-row EXPLAIN QUERY PLAN and p50/p95 benchmark",
+        "serialized page byte size and React virtualization/render measurement"
+      ],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-v32-backfill-release-recovery",
+      "parent_finding_ids": [
+        "v32-backfill-precondition-and-partial-failure-recovery-undefined"
+      ],
+      "specialty": "release-rollback",
+      "question": "How must schema v32 and semantic legacy backfill be phased so the documented persistence-version prerequisite is closed and any crash yields either a safely resumable or exactly restorable database?",
+      "required_evidence": [
+        "current user_version and durable migration marker reconciliation",
+        "inventory of lazily created tables relevant to the new transaction",
+        "backfill phase/checkpoint/outcome representation",
+        "crash injection before, during and after schema/backfill commits",
+        "backup creation, validation and restore commands",
+        "two-run mixed legacy/new fixture comparison for messages titles Memory Provider delivery and ordering"
+      ],
+      "specialist_required": true
+    }
+  ]
+}

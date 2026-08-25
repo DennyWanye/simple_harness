@@ -1,0 +1,92 @@
+{
+  "review_mode": "breadth",
+  "coverage": {
+    "acceptance_coverage": true,
+    "entry_and_trust_chain": true,
+    "data_flow_and_persistence": true,
+    "identity_permissions_concurrency_cleanup": true,
+    "failure_and_recovery": true,
+    "tests_and_evidence": true,
+    "release_and_rollback": true,
+    "trusted_boundary_stop": true
+  },
+  "findings": [
+    {
+      "id": "relocation-and-explicit-root-lack-run-time-identity-fence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-4", "AC-6", "AC-7"],
+      "assurance_contract_ids": ["FAIL-AUTHORITY", "FAIL-MISSING-ROOT"],
+      "evidence": "plan.md:102-121 stores filesystem_identity only on Project, while explicit execution_root has no independent identity; plan.md:226-227 relocates by updating Project revision and plan.md:234-245 validates/freezes root only before Run. backend/deskpet/sdk_adapters/tool_authority.py:163-186 and 452-490 freeze workspace_root/binding_version into Run authority without a stated Project-revision or filesystem-identity recheck at each physical effect.",
+      "status": "open",
+      "root_cause": "The model freezes a path string for a Run but does not define an execution-root identity plus relocation concurrency fence, so an active Run can retain the old path after Project relocation and an explicit path can resolve to a replaced unrelated directory, exceeding the maximum acceptable write boundary."
+    },
+    {
+      "id": "session-create-idempotency-and-provider-lease-not-durable",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-2", "AC-3"],
+      "assurance_contract_ids": ["FAIL-TXN"],
+      "evidence": "plan.md:202-214 requires one transaction and repeated-request-id idempotency, but the proposed projects/session_project_bindings schema at plan.md:83-121 has no durable request-id claim/result record. Current backend/deskpet/memory/session_db.py:1350-1394, 1471-1555 and 4473-4554 persist session/delivery/memory, owner and Provider inheritance through separate transaction-owning methods; backend/llm/provider_registry.py:1047-1072 holds a registry mutation lock only around the existing separate DB call. The plan's post-commit Provider revalidation and tombstone path does not define retry replay semantics.",
+      "status": "open",
+      "root_cause": "The plan states atomicity and idempotency as outcomes but lacks one durable creation operation boundary joining the existing transaction owners with a request claim and stable replay result."
+    },
+    {
+      "id": "projectless-dispatch-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-3", "AC-4", "AC-7"],
+      "assurance_contract_ids": ["FAIL-AUTHORITY", "FAIL-MISSING-ROOT"],
+      "evidence": "backend/main.py:7939-7964 falls back from workspace=None to companion.workspace_root; backend/deskpet/tool_catalog/providers.py:211-228 independently falls back when SDK ToolContext lacks workspace metadata, with its comment documenting that current ReAct ToolContext omits Host workspace metadata. plan.md:238-246 says to add typed provenance and exclude workspace-required tools but does not name the dispatch seam that resolves SdkRunToolAuthority by ToolContext.run_id or provide a complete workspace-required tool classification. H-3 remains unexecuted.",
+      "status": "open",
+      "root_cause": "Projectless is represented at the Host plan boundary, while the current physical wrapper interprets missing metadata as permission to recover a global root; without an explicit end-to-end tagged resolution contract and catalog classification, None remains ambiguous."
+    },
+    {
+      "id": "sidebar-cursor-active-predicate-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-5", "AC-8"],
+      "assurance_contract_ids": ["FAIL-SIDEBAR", "FAIL-REGRESSION"],
+      "evidence": "plan.md:221-228 proposes projects[] containing sessions plus projectless_sessions[] and mentions pagination tests, but defines no project/session cursor, stable ordering key, page limits, selected-session inclusion rule or exact active predicate. Current backend/deskpet/memory/session_db.py:4351-4386 lists message-backed rows, while backend/main.py:13205-13252 additionally applies projection consistency and _is_companion_history_session_id filtering; switching directly to all durable sessions risks exposing tombstoned/non-product rows. The 500x200 benchmark in plan.md:296-300 measures query latency but not a 100,000-session response or UI render bound.",
+      "status": "open",
+      "root_cause": "The target read model changes both visibility authority and cardinality without freezing a paginated protocol and the predicates that preserve current deletion/history filtering."
+    },
+    {
+      "id": "deleted-binding-lifecycle-conflict",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-2", "AC-8"],
+      "assurance_contract_ids": ["FAIL-TXN", "FAIL-REGRESSION"],
+      "evidence": "behavior-contract.md B-9 requires deleting or retiring Session Project Binding; plan.md:118-121 makes binding rows immutable and plan.md:285-292 does not specify whether deletion retains or deletes them in the same tombstone transaction. Current backend/deskpet/memory/session_db.py:4206-4256 retains sessions rows while tombstoning delivery/owner, and ensure_session at 1350-1394 revives delivery state on reuse. The new list starts from active sessions, so retained versus deleted bindings have different restore and replay consequences.",
+      "status": "open",
+      "root_cause": "Creation immutability, deletion tombstoning, possible same-id replay and list visibility have no single lifecycle state machine or foreign-key/delete policy."
+    },
+    {
+      "id": "v32-backfill-precondition-and-partial-failure-recovery-undefined",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-8"],
+      "assurance_contract_ids": ["FAIL-REGRESSION"],
+      "evidence": "ARCHITECTURE/ARCHITECTURE.md:416 states the persistence version-contract/lazy-table ownership defect must be resolved before adding workflow tables. plan.md:189-200 adds v32, while plan.md:283-292 places legacy backfill after schema migration and asks for migration-failure backup rollback without defining a prerequisite assertion, backfill transaction/checkpoint/outcome schema, backup owner, or exact restore boundary. backend/deskpet/memory/migrator.py has runner-owned migration markers/user_version, whereas the proposed application backfill is outside that recorded migration transaction.",
+      "status": "open",
+      "root_cause": "Schema installation and semantic backfill are split across owners without a durable phase protocol proving that partial startup failure can resume or restore without mixed bindings."
+    },
+    {
+      "id": "filesystem-identity-portability-remains-an-unproven-release-gate",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-1", "AC-7"],
+      "assurance_contract_ids": ["FAIL-PATH-ID", "FAIL-MISSING-ROOT"],
+      "evidence": "plan.md:85-100 selects sha256(platform+st_dev+st_ino) as Project identity and plan.md:182-185 marks macOS/Windows behavior as H-1 requiring real evidence. No raw spike evidence is present, and the current plan cannot yet establish the required symlink/case/equivalent-path and same-project relocation behavior on both target platforms.",
+      "status": "open",
+      "root_cause": "The sole dedupe and relocation identity primitive is platform-dependent and is still an assumption, so the registration and recovery state machine cannot be finalized until its supported filesystem boundary is measured and documented."
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "cluster_id": "cluster-workspace-authority-and-relocation-fence",
+  "parent_finding_ids": [
+    "relocation-and-explicit-root-lack-run-time-identity-fence",
+    "projectless-dispatch-contract-missing",
+    "filesystem-identity-portability-remains-an-unproven-release-gate"
+  ],
+  "specialty": "architecture",
+  "findings": [
+    {
+      "id": "relocation-and-explicit-root-lack-run-time-identity-fence",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-4",
+        "AC-6",
+        "AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-AUTHORITY",
+        "FAIL-MISSING-ROOT"
+      ],
+      "evidence": "Confirmed and refined. plan.md Task 4 freezes only effective root plus Project revision, while session_project_bindings gives an explicit execution_root no filesystem identity. backend/deskpet/types/task_work_context.py TaskWorkContext persists only workspace_root/workspace_source/binding_version; backend/deskpet/sdk_adapters/tool_authority.py prepare_run/run_start_record/restore_run freezes and restores only workspace_root plus binding_version, and ProductEffectExecutor currently validates tool executable identity but not physical workspace identity. backend/deskpet/workflows/store/execution_uow.py persists nonterminal execution_runs and root-local contexts, so it can supply an app-owned relocation fence without changing the SDK: a relocation transaction can join Project-bound Sessions to nonterminal root Runs, and Run admission can CAS an expected Project revision.",
+      "status": "open",
+      "root_cause": "The proposed durable authority has no complete WorkspaceResolution tag (project_id, execution_kind, effective root, execution identity, Project revision) and no lifecycle rule serializing root-Run admission/physical effects against relocation. The executable constraint is: add immutable execution_identity for explicit roots; persist WorkspaceResolutionV1 in the private Run authority record and its fingerprint; make root-Run admission assert the current Project revision; reject project_relocate with project_runs_active while any bound root Run is created/queued/running/waiting/cancel_requested; re-stat both Project and effective execution identities before authorization and again immediately before ProductEffectExecutor dispatch; then relocate by identity-match plus revision CAS and allow only fresh Runs to use the new path. An externally moved/replaced root makes the next effect fail workspace_binding_stale. This conservative state machine covers active Runs without attempting unsafe live cwd mutation and remains entirely in app-owned UoW/authority/adapters."
+    },
+    {
+      "id": "projectless-dispatch-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-3",
+        "AC-4",
+        "AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-AUTHORITY",
+        "FAIL-MISSING-ROOT"
+      ],
+      "evidence": "Confirmed but the public-SDK concern is resolved by an existing private seam. backend/deskpet/sdk_adapters/tools.py ProductToolsAdapter.invoke stores the current SDK ToolContext in a contextvar; backend/main.py::_build_product_sdk_runtime_stack already defines execution_context_getter() as tool_authorities.resolve(active_product_tool_context().run_id).execution_context(...), and MCP plus skill paths use it. In contrast, backend/deskpet/tool_catalog/providers.py::_execution_context reads optional public ToolContext metadata and calls resolve_workspace_root() when both roots are absent. The same providers module builds all 77 registrations from one manifest but has no exhaustive projectless-safe/workspace-required classification, so omission is still ambiguous and discovery could expose a file-capable tool.",
+      "status": "open",
+      "root_cause": "The product wrapper bypasses its already authoritative run_id-to-private-authority lookup for most built-ins, and the catalog has no total fail-closed workspace-admission classification. The executable constraint is: make every built-in and MCP wrapper obtain ToolExecutionContext only from the injected private authority getter, assert run_id/request_id agreement with the incoming ToolContext, and delete the global fallback from the new SDK product path; persist workspace_resolution_kind=project_bound|projectless|missing in authority record v3 so restart cannot turn projectless into legacy-unknown; add required manifest metadata projectless_admission=safe|requires_project for every one of the 77 tools, reject catalog construction on an unclassified item, default dynamic MCP tools to requires_project, and build/freeze a per-Run filtered catalog before Provider snapshot and authority preparation. The physical handler retains a no-root rejection. A generated inventory test must prove every visible projectless tool is classified safe and that file, shell, process, artifact, project-directory, child/delegation and workspace discovery paths are absent. No public simple_harness SDK type or protocol change is required."
+    },
+    {
+      "id": "filesystem-identity-portability-remains-an-unproven-release-gate",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": [
+        "AC-1",
+        "AC-7"
+      ],
+      "assurance_contract_ids": [
+        "FAIL-PATH-ID",
+        "FAIL-MISSING-ROOT"
+      ],
+      "evidence": "Refined by verification/spike-results.md H-1: on the actual macOS host, sha256(platform+st_dev+st_ino) matched a real directory and symlink and survived same-volume rename, so that part is no longer hypothetical. No Windows raw result exists. The plan only says the target machine will reverify, but does not freeze an executable probe or acceptance oracle for case variants, dot-dot/separator variants, same-volume rename, a different directory, and optional junction/symlink behavior. The explicit execution root also needs its own identity probe, not merely the Project identity.",
+      "status": "open",
+      "root_cause": "Windows identity behavior remains a release-gating environmental assumption. Add a disposable verification/spikes/windows_path_identity_probe.py that emits canonical path, os.stat st_dev/st_ino and the selected opaque identity for: original directory, case-variant path, dot-dot/separator-equivalent path, same-volume renamed directory, different directory, and a junction/symlink when privileges permit; execute on the target with `py -3 verification/spikes/windows_path_identity_probe.py --json`. The oracle is equivalent spellings equal, rename equal, different directory unequal, and unsupported junction explicitly SKIP rather than PASS. Run the same probe once for Project root and once for explicit execution root. If st_dev/st_ino is zero, unstable, or collides, the plan's existing stop condition must fire and return to user review for a Windows file-ID/volume-serial implementation or removal of relocation on that filesystem."
+    }
+  ],
+  "cross_cluster_refs": [
+    {
+      "cross_cluster_ref": "cluster-session-create-and-delete-state-machine",
+      "finding_ids": [
+        "session-create-idempotency-and-provider-lease-not-durable"
+      ],
+      "reason": "The workspace fence requires root-Run admission to persist and CAS the exact Project revision before authority publication; the owning transaction/state-machine specialist must ensure this is not split into a stale read followed by an unfenced Run insert."
+    }
+  ],
+  "conclusion": {
+    "status": "needs-spike",
+    "summary": "A single tagged Session workspace authority is executable without changing the public Harness SDK because the app already resolves private Run authority from ToolContext.run_id. Closure requires plan revisions for WorkspaceResolutionV1 plus private authority record v3, explicit-root identity, root-Run/relocation CAS and nonterminal-Run rejection, two physical identity checks, exhaustive fail-closed projectless catalog metadata, and a real Windows path-identity probe. The macOS identity assumption is supported; the Windows probe and an end-to-end projectless wrapper/catalog wiring spike remain required."
+  }
+}
