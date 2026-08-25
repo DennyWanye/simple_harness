@@ -1,0 +1,467 @@
+{
+  "acceptance_file": "plans/2026-08-25-project-scoped-sessions/acceptance.md",
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "这是确定性的项目与 Session CRUD、导航和工作目录绑定，结果不随自然语言语义变化。",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "没有 LLM 结构化载荷直接驱动项目注册、绑定、迁移或右侧 Inspector 状态机。",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "功能不依赖异步远程注册或首次登录；本地迁移和重启已由明确验收场景独立覆盖。",
+      "value": false
+    }
+  },
+  "auditor_engine": "opus-4.8",
+  "behavior_contract": "plans/2026-08-25-project-scoped-sessions/behavior-contract.md",
+  "challenger_engine": "current",
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S-PS-01",
+        "S-PS-02",
+        "S-PS-03",
+        "S-PS-04",
+        "S-PS-05",
+        "S-PS-06",
+        "S-PS-07",
+        "S-PS-08"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "ca3b3666aca28a23a638987d878f174ed1c95c3a17ef01b13c23e6bf688e56df",
+      "assurance_contract": "86f53fc953b36b680015de77b92f332f34ed2a9e724e1207fe751467829cda97",
+      "reuse_report": "96e1386c45b2695c4d84eb95903c7681e14e0760b55e9a2a7cd583685ee185dd",
+      "testcase_inventory": "976c73c67eb479d82ba9732b0c59466679f004801f33ff972ec49b4f619bf2d8",
+      "verification_spec": "76bf86453c1319812a0b330c3189bbbe9686b94b56fa6cc4df40f04f8a0da81b"
+    },
+    "input_paths": {
+      "acceptance": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/acceptance.md",
+      "assurance_contract": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/assurance-contract.json",
+      "reuse_report": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/verification/testcase-reuse-report.json",
+      "testcase_inventory": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/index.json",
+      "verification_spec": "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/plans/2026-08-25-project-scoped-sessions/verification/verification-spec.json"
+    },
+    "seal_sha256": "43c3e4df01a44b3e768bab8df3368c3172ea32e4517921367929a2566c5c30b5",
+    "selected_testcase_ids": [
+      "TC-PS-01",
+      "TC-PS-02",
+      "TC-PS-03",
+      "TC-PS-04",
+      "TC-PS-05",
+      "TC-PS-06",
+      "TC-PS-07",
+      "TC-PS-08"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "executor_engine": "current",
+  "release_unit": {
+    "high_risk_subsystem_count": 3,
+    "must_ac_count": 8,
+    "plan_lines": 430,
+    "surface_categories": [
+      "UI",
+      "Session",
+      "Harness"
+    ],
+    "task_count": 9
+  },
+  "repo_root": ".",
+  "scenarios": [
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe",
+          "windows-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "path_identity_result",
+          "project_count"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "contract",
+      "impact_paths": [
+        "backend/deskpet/session/project_binding.py",
+        "backend/deskpet/memory/session_db.py",
+        "backend/main.py",
+        "tauri-app/src/components/ProjectPickerDialog.tsx",
+        "tauri-app/src-tauri/src/commands.rs",
+        "tauri-app/src-tauri/src/lib.rs"
+      ],
+      "input_class": "deterministic-project-picker",
+      "min_root_runs": 1,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "platform-identity"
+      ],
+      "scenario_id": "S-PS-01",
+      "testcase_ids": [
+        "TC-PS-01"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "binding_persisted",
+          "idempotent_session_count",
+          "recovered_state"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "temporal-fault",
+      "impact_paths": [
+        "backend/deskpet/memory/session_db.py",
+        "backend/llm/provider_registry.py",
+        "backend/main.py",
+        "tauri-app/src/stores/sessionsStore.ts",
+        "tauri-app/src/components/SessionList.tsx"
+      ],
+      "input_class": "deterministic-session-create",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "temporal-fault"
+      ],
+      "scenario_id": "S-PS-02",
+      "testcase_ids": [
+        "TC-PS-02"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "projectless_fail_closed",
+          "new_session_created",
+          "handoff_bounded"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "backend/deskpet/memory/session_db.py",
+        "backend/main.py",
+        "backend/deskpet/types/task_work_context.py",
+        "backend/deskpet/tool_catalog/providers.py",
+        "backend/deskpet/sdk_adapters/context_preparation.py",
+        "tauri-app/src/views/ChatView.tsx"
+      ],
+      "input_class": "deterministic-projectless",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "history-upgrade"
+      ],
+      "scenario_id": "S-PS-03",
+      "testcase_ids": [
+        "TC-PS-03"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "authority_roots_equal",
+          "conflict_rejected",
+          "recovered_state"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "backend/main.py",
+        "backend/deskpet/types/task_work_context.py",
+        "backend/deskpet/sdk_adapters/tool_authority.py",
+        "backend/deskpet/sdk_adapters/tools.py",
+        "backend/deskpet/tool_catalog/providers.py",
+        "backend/deskpet/agent/assembler/components/project_rules.py"
+      ],
+      "input_class": "deterministic-authority-conflict",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "temporal-fault"
+      ],
+      "scenario_id": "S-PS-04",
+      "testcase_ids": [
+        "TC-PS-04"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "grouping_consistent",
+          "pagination_p95_ms",
+          "inspector_read_only"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "contract",
+      "impact_paths": [
+        "backend/deskpet/memory/session_db.py",
+        "backend/main.py",
+        "tauri-app/src/types/messages.ts",
+        "tauri-app/src/stores/sessionsStore.ts",
+        "tauri-app/src/components/SessionList.tsx",
+        "tauri-app/src/components/ProjectInspector.tsx",
+        "tauri-app/src/views/ChatView.tsx"
+      ],
+      "input_class": "deterministic-sidebar",
+      "min_root_runs": 1,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "concurrency"
+      ],
+      "scenario_id": "S-PS-05",
+      "testcase_ids": [
+        "TC-PS-05"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "execution_only_write",
+          "project_group_preserved"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/deskpet/session/project_binding.py",
+        "backend/main.py",
+        "backend/deskpet/types/task_work_context.py",
+        "backend/deskpet/sdk_adapters/context_preparation.py",
+        "backend/deskpet/sdk_adapters/tool_authority.py",
+        "backend/deskpet/sdk_adapters/tools.py",
+        "tauri-app/src/components/ProjectInspector.tsx"
+      ],
+      "input_class": "deterministic-root-split",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "fresh"
+      ],
+      "scenario_id": "S-PS-06",
+      "testcase_ids": [
+        "TC-PS-06"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "missing_root_fail_closed",
+          "unrelated_rejected",
+          "recovered_state"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "temporal-fault",
+      "impact_paths": [
+        "backend/deskpet/session/project_binding.py",
+        "backend/deskpet/memory/session_db.py",
+        "backend/main.py",
+        "backend/deskpet/sdk_adapters/tool_authority.py",
+        "tauri-app/src/components/ProjectInspector.tsx",
+        "tauri-app/src/components/SessionList.tsx"
+      ],
+      "input_class": "deterministic-relocation",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "temporal-fault"
+      ],
+      "scenario_id": "S-PS-07",
+      "testcase_ids": [
+        "TC-PS-07"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "migration-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "history_preserved",
+          "migration_idempotent",
+          "recovered_state"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "history-upgrade",
+      "impact_paths": [
+        "backend/deskpet/memory/migrations/024_project_scoped_sessions_v32.sql",
+        "backend/deskpet/memory/migrator.py",
+        "backend/deskpet/memory/session_db.py",
+        "backend/main.py",
+        "backend/scripts/restore_state_db_backup.py",
+        "tauri-app/src/stores/sessionsStore.ts",
+        "tauri-app/src/components/SessionList.tsx"
+      ],
+      "input_class": "deterministic-migration",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "history-upgrade",
+        "temporal-fault"
+      ],
+      "scenario_id": "S-PS-08",
+      "testcase_ids": [
+        "TC-PS-08"
+      ],
+      "ui": true
+    }
+  ],
+  "source_request_text": "实现以本地 Project 为根目录创建不可改绑 Session，保留无项目会话，并完成分组 UI、单一执行 authority、目录恢复和旧数据迁移。",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-01-project-registration.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-02-session-create-restart-idempotency.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-03-projectless-handoff-fail-closed.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-04-workspace-authority.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-05-sidebar-inspector-pagination.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-06-project-execution-root-split.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-07-missing-root-relocate.md",
+    "/private/tmp/simple-harness-project-sessions.FRc9DS/verification/testcase/2026-08-25-project-scoped-sessions/TC-PS-08-legacy-migration-regression.md"
+  ],
+  "thresholds": {
+    "max_high_risk_subsystems": 3,
+    "max_must_ac": 8,
+    "max_plan_lines": 2000,
+    "max_surface_categories": 3,
+    "max_tasks": 10
+  }
+}

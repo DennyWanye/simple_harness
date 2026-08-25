@@ -1,0 +1,18 @@
+{
+  "source": "user-confirmed acceptance.md applicability declaration",
+  "input_sensitive": {
+    "value": false,
+    "rationale": "这是确定性的项目与 Session CRUD、导航和工作目录绑定，结果不随自然语言语义变化。",
+    "decided_by": "user"
+  },
+  "llm_payload_driven": {
+    "value": false,
+    "rationale": "没有 LLM 结构化载荷直接驱动项目注册、绑定、迁移或右侧 Inspector 状态机。",
+    "decided_by": "user"
+  },
+  "stateful_init": {
+    "value": false,
+    "rationale": "功能不依赖异步远程注册或首次登录；本地迁移和重启已由明确验收场景独立覆盖。",
+    "decided_by": "user"
+  }
+}

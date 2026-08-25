@@ -1,0 +1,2249 @@
+{
+  "schema_version": "1.0",
+  "testcases": [
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-DFADA86DC556",
+      "obligations": [],
+      "path": "2026-06-07-da-youhua-cross-layer-regression-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-07-da-youhua-cross-layer-regression-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-638657C93A4A",
+      "obligations": [],
+      "path": "2026-06-15-deep-search-phase2/deep-search-phase2-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-15-deep-search-phase2/deep-search-phase2-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-35F34C1D6F88",
+      "obligations": [],
+      "path": "2026-06-16-compaction-bestpractice-phase1/compaction-phase1-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-16-compaction-bestpractice-phase1/compaction-phase1-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-94DE516FE766",
+      "obligations": [],
+      "path": "2026-06-16-effective-llm-model/effective-llm-model-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-16-effective-llm-model/effective-llm-model-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-11E8ADD9C195",
+      "obligations": [],
+      "path": "2026-06-16-js-render-cdp-edge/js-render-cdp-edge-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-16-js-render-cdp-edge/js-render-cdp-edge-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-D1242AAE8CA4",
+      "obligations": [],
+      "path": "2026-06-20-agent-loop-batch-a/batch-a-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-agent-loop-batch-a/batch-a-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-6E64F6A5C3E6",
+      "obligations": [],
+      "path": "2026-06-20-agent-loop-batch-b/batch-b-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-agent-loop-batch-b/batch-b-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-065CF41EECF9",
+      "obligations": [],
+      "path": "2026-06-20-agent-loop-batch-c/batch-c-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-agent-loop-batch-c/batch-c-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-B020A1FABF8E",
+      "obligations": [],
+      "path": "2026-06-20-deepresearch-search-reliability/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-deepresearch-search-reliability/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-93791F243D54",
+      "obligations": [],
+      "path": "2026-06-20-deepresearch-upgrade/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-deepresearch-upgrade/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-38E759513995",
+      "obligations": [],
+      "path": "2026-06-20-task-drift-fix/RESULTS.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-task-drift-fix/RESULTS.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-24495A3063D3",
+      "obligations": [],
+      "path": "2026-06-20-task-drift-fix/task-drift-fix-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-20-task-drift-fix/task-drift-fix-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-4186527BA06B",
+      "obligations": [],
+      "path": "2026-06-21-deepresearch-subagent-fanout/manual-test-phase1-wi8.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-deepresearch-subagent-fanout/manual-test-phase1-wi8.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-E3AB504D2FB2",
+      "obligations": [],
+      "path": "2026-06-21-deepresearch-subagent-fanout/manual-test-phase2-fanout.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-deepresearch-subagent-fanout/manual-test-phase2-fanout.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-FDC5DA0DDD00",
+      "obligations": [],
+      "path": "2026-06-21-task-drift-v2-phaseA/RESULTS.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-task-drift-v2-phaseA/RESULTS.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-13A5A5F26D1D",
+      "obligations": [],
+      "path": "2026-06-21-task-drift-v2-phaseA/phaseA-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-task-drift-v2-phaseA/phaseA-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-E17AF2330478",
+      "obligations": [],
+      "path": "2026-06-21-task-drift-v2-phaseB/RESULTS.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-task-drift-v2-phaseB/RESULTS.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-76E9172774FD",
+      "obligations": [],
+      "path": "2026-06-21-task-drift-v2-phaseB/phaseB-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-task-drift-v2-phaseB/phaseB-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-8F3263F08E57",
+      "obligations": [],
+      "path": "2026-06-21-task-drift-v2-phaseCD/RESULTS.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-21-task-drift-v2-phaseCD/RESULTS.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-5429F2E02072",
+      "obligations": [],
+      "path": "2026-06-22-context-agent-opt-P0/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-22-context-agent-opt-P0/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-C231BEA2A32D",
+      "obligations": [],
+      "path": "2026-06-22-context-agent-opt-P1/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-22-context-agent-opt-P1/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-D39213559E0E",
+      "obligations": [],
+      "path": "2026-06-22-context-agent-opt-P2/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-22-context-agent-opt-P2/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-197B39FB58A5",
+      "obligations": [],
+      "path": "2026-06-22-ppt-pro/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-22-ppt-pro/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-1E6807CD2A0D",
+      "obligations": [],
+      "path": "2026-06-24-problem-pipeline-maoxuan/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-24-problem-pipeline-maoxuan/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-A4D3D135AE86",
+      "obligations": [],
+      "path": "2026-06-25-problem-pipeline-production/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-25-problem-pipeline-production/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-0B6DA54F53BD",
+      "obligations": [],
+      "path": "2026-06-25-problem-pipeline-ship/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-25-problem-pipeline-ship/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-8C31B403132A",
+      "obligations": [],
+      "path": "2026-06-26-bugb-phase1/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-26-bugb-phase1/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-13EFC69AE9F4",
+      "obligations": [],
+      "path": "2026-06-26-bugb-phase2/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-26-bugb-phase2/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-92E419B92F93",
+      "obligations": [],
+      "path": "2026-06-26-bugb-phase3-final/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-26-bugb-phase3-final/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-7511AAE77475",
+      "obligations": [],
+      "path": "2026-06-26-relay-provider-integration/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-26-relay-provider-integration/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-0F0F888B4297",
+      "obligations": [],
+      "path": "2026-06-26-relay-provider-phaseA-wiC/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-26-relay-provider-phaseA-wiC/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-27015E079DE9",
+      "obligations": [],
+      "path": "2026-06-26-relay-provider-phaseB-registry/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-26-relay-provider-phaseB-registry/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-BD470FDA3115",
+      "obligations": [],
+      "path": "2026-06-27-enable-flags/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-27-enable-flags/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-623F30A49A23",
+      "obligations": [],
+      "path": "2026-06-27-factextractor-dedup/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-27-factextractor-dedup/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CCC0F7759682",
+      "obligations": [],
+      "path": "2026-06-28-userdata-path-binding/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-06-28-userdata-path-binding/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CD2D89E6E074",
+      "obligations": [],
+      "path": "2026-07-08-agent-harness-hardening/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-08-agent-harness-hardening/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-A5E8C5560007",
+      "obligations": [],
+      "path": "2026-07-08-deepresearch-source-packs/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-08-deepresearch-source-packs/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-77147514D5DB",
+      "obligations": [],
+      "path": "2026-07-09-file-tool-scan-optimization/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-09-file-tool-scan-optimization/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-BCBE7DDD7812",
+      "obligations": [],
+      "path": "2026-07-10-durable-graph-workflows-trace/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-10-durable-graph-workflows-trace/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-F48CF4E9012F",
+      "obligations": [],
+      "path": "2026-07-11-native-workflow-engine/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-11-native-workflow-engine/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-A11B026AB1C4",
+      "obligations": [],
+      "path": "2026-07-11-ppt-layout-progress-ui/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-11-ppt-layout-progress-ui/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CE636BE223BB",
+      "obligations": [],
+      "path": "2026-07-11-ppt-session-progress-full-page/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-11-ppt-session-progress-full-page/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-DF42BBCE8FF0",
+      "obligations": [],
+      "path": "2026-07-12-context-continuity/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-12-context-continuity/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-945C039C218A",
+      "obligations": [],
+      "path": "2026-07-12-deepresearch-agent-reach/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-12-deepresearch-agent-reach/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-FBE4E1AB8323",
+      "obligations": [],
+      "path": "2026-07-12-deepresearch-quality-session-report/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-12-deepresearch-quality-session-report/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-83DACBD20353",
+      "obligations": [],
+      "path": "2026-07-14-search-gateway-deepresearch/testcase.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-14-search-gateway-deepresearch/testcase.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-2561A03CA8E4",
+      "obligations": [],
+      "path": "2026-07-15-deepresearch-wide-topic-reliability/deepresearch-wide-topic-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-15-deepresearch-wide-topic-reliability/deepresearch-wide-topic-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-F9755DA97478",
+      "obligations": [],
+      "path": "2026-07-15-search-quality-cooldown-support/search-quality-cooldown-support-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-15-search-quality-cooldown-support/search-quality-cooldown-support-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-72FC09ECC144",
+      "obligations": [],
+      "path": "2026-07-16-deepresearch-playwright-quality/RESULTS.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-16-deepresearch-playwright-quality/RESULTS.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-1D0353087550",
+      "obligations": [],
+      "path": "2026-07-16-deepresearch-playwright-quality/automated-benchmark-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-16-deepresearch-playwright-quality/automated-benchmark-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-15C749A90863",
+      "obligations": [],
+      "path": "2026-07-16-deepresearch-playwright-quality/desktop-ui-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-16-deepresearch-playwright-quality/desktop-ui-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-EC3F3E9774B5",
+      "obligations": [],
+      "path": "2026-07-16-deepresearch-playwright-quality/idempotency-review.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-16-deepresearch-playwright-quality/idempotency-review.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-D63D686A9B7C",
+      "obligations": [],
+      "path": "2026-07-16-deepresearch-playwright-quality/win11-isolated-install-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-16-deepresearch-playwright-quality/win11-isolated-install-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-EB70D4A0124B",
+      "obligations": [],
+      "path": "2026-07-17-deepresearch-answer-contract-stability/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-17-deepresearch-answer-contract-stability/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CF2B3CEE928F",
+      "obligations": [],
+      "path": "2026-07-22-harness-main-thread-r7/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-22-harness-main-thread-r7/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-E0242856F9AB",
+      "obligations": [],
+      "path": "2026-07-22-harness-main-thread-r7/results.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-22-harness-main-thread-r7/results.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-FC50477B3433",
+      "obligations": [],
+      "path": "2026-07-24-human-anchored-companion-growth/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-24-human-anchored-companion-growth/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-A48A2DC10836",
+      "obligations": [],
+      "path": "2026-07-24-universal-action-capability-platform/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-07-24-universal-action-capability-platform/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-E88B0289CA4F",
+      "obligations": [],
+      "path": "2026-08-03-session-model-run-visibility/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-03-session-model-run-visibility/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-9B0F84C00649",
+      "obligations": [],
+      "path": "2026-08-13-simple-harness-sdk/black-box-fixtures.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/black-box-fixtures.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-953208212893",
+      "obligations": [],
+      "path": "2026-08-13-simple-harness-sdk/challenger-iteration-1.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/challenger-iteration-1.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-01F20EC63FA1",
+      "obligations": [],
+      "path": "2026-08-13-simple-harness-sdk/challenger-iteration-2.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/challenger-iteration-2.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-8CF2622FA8BA",
+      "obligations": [],
+      "path": "2026-08-13-simple-harness-sdk/full-surface-smoke.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/full-surface-smoke.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-5D779C053407",
+      "obligations": [],
+      "path": "2026-08-13-simple-harness-sdk/manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-6B41DA523B01",
+      "obligations": [],
+      "path": "2026-08-13-simple-harness-sdk/value-smoke.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-13-simple-harness-sdk/value-smoke.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-A0FEDCBB9160",
+      "obligations": [],
+      "path": "2026-08-16-simple-harness-sdk-v0.1.1/slice-a-black-box.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-16-simple-harness-sdk-v0.1.1/slice-a-black-box.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-F76B3A19C98F",
+      "obligations": [],
+      "path": "2026-08-16-simple-harness-sdk-v0.1.1/slice-b-black-box.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-16-simple-harness-sdk-v0.1.1/slice-b-black-box.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-59C6F2F147AC",
+      "obligations": [],
+      "path": "2026-08-16-simple-harness-sdk-v0.1.1/slice-c-cutover-oracle.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-16-simple-harness-sdk-v0.1.1/slice-c-cutover-oracle.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-2F6FE09E27AE",
+      "obligations": [],
+      "path": "2026-08-19-sdk-usability-optimization/cold-1-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-19-sdk-usability-optimization/cold-1-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-C007DC615A22",
+      "obligations": [],
+      "path": "2026-08-19-sdk-usability-optimization/surface-smoke.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-19-sdk-usability-optimization/surface-smoke.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-921DC8DF182A",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-1-tool-task.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-1-tool-task.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-72B5165A93A4",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-2-no-tool-answer.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-2-no-tool-answer.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-F07760F59C10",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-3-failed-tool.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-3-failed-tool.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-BCFFA5DF961C",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-4-long-context-follow-up.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-4-long-context-follow-up.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-8BCC2693CE59",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-5-cold-recovery.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-5-cold-recovery.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-38167CD583E1",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-6-malformed-events.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-6-malformed-events.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-D6CA176F9EB8",
+      "obligations": [],
+      "path": "2026-08-20-agent-activity-timeline/S-7-contract-and-regression.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-agent-activity-timeline/S-7-contract-and-regression.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-443118FD888F",
+      "obligations": [],
+      "path": "2026-08-20-sdk-thinking-process/testcases.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-20-sdk-thinking-process/testcases.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-AD83AE55B9F1",
+      "obligations": [],
+      "path": "2026-08-21-sdk-context-authority-cutover/core-value-smoke-inputs.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-21-sdk-context-authority-cutover/core-value-smoke-inputs.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-5CF4733EF8C8",
+      "obligations": [],
+      "path": "2026-08-21-sdk-context-authority-cutover/testcases.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-21-sdk-context-authority-cutover/testcases.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-52CABC7BAE2B",
+      "obligations": [],
+      "path": "2026-08-23-sdk-observability/fixtures.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-23-sdk-observability/fixtures.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-C8856961BCEC",
+      "obligations": [],
+      "path": "2026-08-23-sdk-observability/testcases.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-23-sdk-observability/testcases.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "project picker",
+      "id": "TC-PS-01",
+      "obligations": [
+        "TO-A1",
+        "TO-R5"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-01-project-registration.md",
+      "preconditions": [],
+      "purpose": "Verify Git-root preview, explicit child registration, folder registration, deduplication, and path identity",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "project",
+        "registration",
+        "path-identity"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "new project session",
+      "id": "TC-PS-02",
+      "obligations": [
+        "TO-A2",
+        "TO-R1"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-02-session-create-restart-idempotency.md",
+      "preconditions": [],
+      "purpose": "Verify atomic immutable project Session creation, restart persistence, transaction rollback, and lost-ACK replay",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "session",
+        "restart",
+        "idempotency"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "ordinary chat",
+      "id": "TC-PS-03",
+      "obligations": [
+        "TO-A3"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-03-projectless-handoff-fail-closed.md",
+      "preconditions": [],
+      "purpose": "Verify projectless chat remains usable while local development fails closed and project continuation creates a new Session",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "projectless",
+        "handoff",
+        "fail-closed"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "project chat run",
+      "id": "TC-PS-04",
+      "obligations": [
+        "TO-A4",
+        "TO-R2"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-04-workspace-authority.md",
+      "preconditions": [],
+      "purpose": "Verify every fresh Run and physical file operation derives one immutable execution root from the Session binding",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "integration",
+      "tags": [
+        "workspace-authority",
+        "tools",
+        "fail-closed"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "session sidebar",
+      "id": "TC-PS-05",
+      "obligations": [
+        "TO-A5",
+        "TO-R3"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-05-sidebar-inspector-pagination.md",
+      "preconditions": [],
+      "purpose": "Verify grouped sidebar, read-only inspector, same-project creation, pagination consistency, and concurrent catalog mutation",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "sidebar",
+        "inspector",
+        "pagination"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "project session inspector",
+      "id": "TC-PS-06",
+      "obligations": [
+        "TO-A6"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-06-project-execution-root-split.md",
+      "preconditions": [],
+      "purpose": "Verify project grouping and all physical execution remain distinct when project_root differs from execution_root",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "project-root",
+        "execution-root",
+        "worktree-fixture"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "project inspector relocation",
+      "id": "TC-PS-07",
+      "obligations": [
+        "TO-A7"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-07-missing-root-relocate.md",
+      "preconditions": [],
+      "purpose": "Verify missing project roots remain visible, tools fail closed, and relocation only accepts the same project identity",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "missing-root",
+        "relocate",
+        "fail-closed"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "application startup migration",
+      "id": "TC-PS-08",
+      "obligations": [
+        "TO-A8",
+        "TO-R4"
+      ],
+      "path": "2026-08-25-project-scoped-sessions/TC-PS-08-legacy-migration-regression.md",
+      "preconditions": [],
+      "purpose": "Verify idempotent legacy migration preserves Session history and affected existing behavior",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "integration",
+      "tags": [
+        "migration",
+        "regression",
+        "restart"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CEC8B31190F2",
+      "obligations": [],
+      "path": "2026-08-25-sdk-capability-catalog/fixtures/cap-3-source.zh.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-25-sdk-capability-catalog/fixtures/cap-3-source.zh.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-C85B8602F960",
+      "obligations": [],
+      "path": "2026-08-25-sdk-capability-catalog/testcases.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: 2026-08-25-sdk-capability-catalog/testcases.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-C133277DE434",
+      "obligations": [],
+      "path": "goal-completion/FP-1-目标持久化-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: goal-completion/FP-1-目标持久化-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-26A5F44E3EED",
+      "obligations": [],
+      "path": "goal-completion/FP-2-抗漂移-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: goal-completion/FP-2-抗漂移-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-53F622F14BAE",
+      "obligations": [],
+      "path": "goal-completion-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: goal-completion-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-214E1D9B2FF6",
+      "obligations": [],
+      "path": "status-file-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: status-file-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-C0B5D47FA289",
+      "obligations": [],
+      "path": "tool-layer-RESULTS.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: tool-layer-RESULTS.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-4C188D47CC11",
+      "obligations": [],
+      "path": "tool-layer-RIGOROUS-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: tool-layer-RIGOROUS-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-9CCE6295AD3C",
+      "obligations": [],
+      "path": "tool-layer-manual-test.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: tool-layer-manual-test.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-141609BD42FE",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-01-window-form.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-01-window-form.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-5F5E73057FDC",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-02-single-window.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-02-single-window.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-8DF664AAC60C",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-03-workbench-layout.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-03-workbench-layout.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-404B4C3B02A6",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-04-chat-roundtrip-companion.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-04-chat-roundtrip-companion.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CF5B7E73EF5C",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-05-session-list.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-05-session-list.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-29441499FCB9",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-06-skills-view.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-06-skills-view.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-6E9323FCD905",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-07-artifacts-view.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-07-artifacts-view.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-77D5463BF7B4",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-08-settings-view.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-08-settings-view.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-01E71BF30056",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-09-pet-code-removal.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-09-pet-code-removal.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-BB4C30FA17BF",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-10-window-geometry.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-10-window-geometry.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-120C8EF62562",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-11-theme-variables.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-11-theme-variables.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-AD6F6BF81380",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-12-tests-build-green.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-12-tests-build-green.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-0ADCEE6C9990",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-13-error-state-backend-not-ready.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-13-error-state-backend-not-ready.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-6283F4ACA4B7",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-14-tray-menu.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-14-tray-menu.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-7C953303FAC3",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-15-empty-states.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-15-empty-states.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-BEA9A70FB842",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-16-close-exit-paths.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-16-close-exit-paths.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-B08FF441A503",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-17-scale-long-text.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-17-scale-long-text.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "",
+      "generated_legacy_metadata": true,
+      "id": "LEGACY-CA184A465634",
+      "obligations": [],
+      "path": "workbench-ui/TC-WB-18-session-delete-edge.md",
+      "preconditions": [],
+      "purpose": "Review legacy testcase metadata: workbench-ui/TC-WB-18-session-delete-edge.md",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "needs-review",
+      "surface": "unknown",
+      "tags": [
+        "legacy",
+        "needs-metadata"
+      ],
+      "type": "hybrid"
+    }
+  ]
+}

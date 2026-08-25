@@ -1,0 +1,9 @@
+{
+  "round": 2,
+  "scope": "diff and open-obligation closure after round 1",
+  "inputs_complete": true,
+  "open_findings_from_prior_round": 0,
+  "new_required_obligations": [],
+  "findings": [],
+  "verdict": "PASS"
+}
