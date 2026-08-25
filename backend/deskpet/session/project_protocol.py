@@ -57,6 +57,7 @@ async def handle_project_session_command(
             result = await bindings.list_project_page(
                 cursor=payload.get("cursor"), limit=payload.get("limit"),
                 pinned_project_id=payload.get("pinned_project_id"),
+                pinned_session_id=payload.get("pinned_session_id"),
             )
         elif command == "project_sessions_page":
             result = await bindings.list_session_page(

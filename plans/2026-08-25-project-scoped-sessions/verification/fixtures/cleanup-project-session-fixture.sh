@@ -22,4 +22,3 @@ fi
 rm -rf -- "$fixture_root"
 printf 'removed marked fixture only: %s\n' "$fixture_root"
 printf 'raw evidence under .local-test-evidence was not removed\n'
-

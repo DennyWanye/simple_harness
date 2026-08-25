@@ -19,4 +19,3 @@ case "$lane" in
 esac
 
 printf '%s\n' 'Draft only: execute each UI entry with real Computer Use and write raw evidence to .local-test-evidence.'
-

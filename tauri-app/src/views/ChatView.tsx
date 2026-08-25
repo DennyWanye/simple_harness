@@ -60,6 +60,7 @@ import {
 import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
 import { topicDisplayLabel } from "../chat/topicTitle";
+import { projectRequest } from "../chat/projectSessionProtocol";
 import { VOICE_UNAVAILABLE_MESSAGE } from "../voiceAvailability";
 import {
   DEFAULT_HIDE_TOOL_TRACE,
@@ -112,11 +113,6 @@ type WorkflowRetryDeferred = {
 function workflowRetryError(message: string, code: string, definitive: boolean): Error {
   return Object.assign(new Error(message), { code, definitive });
 }
-
-type IncomingCtrlMsg = {
-  type?: string;
-  payload?: { sessions?: unknown; session_id?: string; title?: string } & Record<string, unknown>;
-};
 
 export interface ChatViewProps {
   activeSid: string;
@@ -250,32 +246,13 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
     : null;
   const ctx_label = formatContextWindow(ctx_window);
 
-  // ── 会话标题（sessions_list 旁听；SessionList 常驻同一单例通道，
-  //    其挂载/刷新请求的响应这里同样收到）──────────────────────────
-  const [sessionMeta, setSessionMeta] = useState<
-    Record<string, { title?: string; preview?: string }>
-  >({});
-  useEffect(() => controlWS.on_message((msg: IncomingCtrlMsg) => {
-    if (msg?.type === "sessions_list_response") {
-      const arr = Array.isArray(msg?.payload?.sessions) ? msg.payload.sessions : [];
-      const next: Record<string, { title?: string; preview?: string }> = {};
-      for (const s of arr) {
-        if (s?.session_id) {
-          next[String(s.session_id)] = { title: s.title, preview: s.preview };
-        }
-      }
-      setSessionMeta(next);
-    } else if (msg?.type === "session_renamed" && msg?.payload?.ok) {
-      const sid = String(msg.payload.session_id || "");
-      if (sid) {
-        setSessionMeta((prev) => ({
-          ...prev,
-          [sid]: { ...prev[sid], title: String(msg.payload?.title ?? "") },
-        }));
-      }
-    }
-  }), []);
-  const activeMeta = sessionMeta[activeSid];
+  const projectSessionPages = useSessionsStore((state) => state.project_session_pages);
+  const activeMeta = useMemo(
+    () => Object.values(projectSessionPages)
+      .flatMap((page) => page.sessions)
+      .find((session) => session.session_id === activeSid),
+    [activeSid, projectSessionPages],
+  );
   // 空态（无会话）时 topicDisplayLabel 会退回空串，标题栏就成了一片空白 ——
   // 给一句明确的引导，告诉用户直接打字就能开始。
   const activeTitle = activeSid
@@ -721,10 +698,15 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
   const wsState = useControlWsState();
   const backendReady = secret !== "";
   const retryConnect = useCallback(() => {
-    // controlWS 无显式 reconnect API：send 在断开态会入队并内部触发
-    // schedule_reconnect，用无副作用的 sessions_list 作为重连触发器。
-    controlWS.send({ type: "sessions_list" });
-  }, []);
+    // A valid bounded read is side-effect free and also triggers the channel's
+    // internal reconnect queue. SessionList refreshes all expanded scopes once
+    // the state returns to connected.
+    controlWS.send(projectRequest("project_catalog_page", {
+      cursor: null,
+      limit: 50,
+      pinned_session_id: activeSid || null,
+    }));
+  }, [activeSid]);
 
   return (
     <section

@@ -5002,57 +5002,10 @@ class SessionDB:
         project_root: str,
         project_name: str,
     ) -> None:
-        """P4-S25 B4: persist the project enrollment so it survives restart.
+        """Reject new writes to the retired legacy project authority."""
 
-        Called from CodeModeManager.enter(). last_active_at refreshes on
-        every call so newest projects rise to the top of dashboards.
-        """
-        if not self._initialized:
-            await self.initialize()
-
-        async def _do() -> None:
-            async with self._write_lock:
-                async with aiosqlite.connect(self._db_path) as db:
-                    await db.execute("PRAGMA busy_timeout=5000")
-                    metadata = json.dumps(
-                        {
-                            "origin": "code_mode",
-                            "project_root": project_root,
-                            "project_name": project_name,
-                        }
-                    )
-                    await db.execute(
-                        "INSERT INTO sessions(id, created_at, metadata) "
-                        "VALUES (?, ?, ?) "
-                        "ON CONFLICT(id) DO NOTHING",
-                        (base_session_id, time.time(), metadata),
-                    )
-                    await db.execute(
-                        "INSERT INTO session_delivery_state("
-                        "session_id, epoch, deleted_at, reason) "
-                        "VALUES (?, 0, NULL, NULL) "
-                        "ON CONFLICT(session_id) DO UPDATE SET "
-                        "deleted_at=NULL, reason=NULL",
-                        (base_session_id,),
-                    )
-                    await db.execute(
-                        """
-                        INSERT INTO code_sessions(
-                            base_session_id, code_session_id,
-                            project_root, project_name,
-                            created_at, last_active_at
-                        ) VALUES (?, ?, ?, ?, julianday('now'), julianday('now'))
-                        ON CONFLICT(base_session_id) DO UPDATE SET
-                            code_session_id = excluded.code_session_id,
-                            project_root    = excluded.project_root,
-                            project_name    = excluded.project_name,
-                            last_active_at  = julianday('now')
-                        """,
-                        (base_session_id, code_session_id, project_root, project_name),
-                    )
-                    await db.commit()
-
-        await self._with_retry(_do)
+        del base_session_id, code_session_id, project_root, project_name
+        raise RuntimeError("code_session_authority_retired")
 
     # ── FEAT-A4 (superpowers): plan-confirm 硬门 awaiting plan sidecar ──
     # F5/HMR rehydration 从 SessionDB 重载会丢前端临时的 awaiting plan

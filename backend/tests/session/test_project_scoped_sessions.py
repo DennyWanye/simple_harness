@@ -100,6 +100,13 @@ async def test_atomic_create_replay_projectless_explicit_and_delete_terminal(tmp
     assert isinstance(resolution, ProjectBoundWorkspace)
     assert resolution.project_root == str(project_dir)
     assert resolution.effective_root == str(execution_dir)
+    first_handoff = await binding_service.claim_handoff(
+        result["session"]["session_id"], "run-first"
+    )
+    assert first_handoff and first_handoff["source_session_id"] == plain["session"]["session_id"]
+    assert await binding_service.claim_handoff(
+        result["session"]["session_id"], "run-second"
+    ) is None
     with pytest.raises(ProjectSessionError, match="request_id_conflict"):
         await creation.create_conversation_session(request_id="create-1", project_id=None)
     await creation.mark_deleted(result["session"]["session_id"])
@@ -152,6 +159,47 @@ async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
             "WHERE request_id='atomic-owner-1'"
         ).fetchone() == (sid, "active")
 
+    project_root = tmp_path / "owner-project"
+    explicit_root = tmp_path / "owner-explicit"
+    project_root.mkdir(); explicit_root.mkdir()
+    project, _ = await service.register_project(str(project_root), "selected_folder")
+    explicit = await creation.create_conversation_session(
+        request_id="atomic-explicit-replay",
+        project_id=project.project_id,
+        execution_kind="explicit",
+        execution_root=str(explicit_root),
+    )
+    frozen.binding_epoch = 3
+    explicit_root.rename(tmp_path / "owner-explicit-moved")
+    replay = await creation.create_conversation_session(
+        request_id="atomic-explicit-replay",
+        project_id=project.project_id,
+        execution_kind="explicit",
+        execution_root=str(explicit_root),
+    )
+    assert replay["replayed"] is True
+    assert replay["session"]["session_id"] == explicit["session"]["session_id"]
+
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,"
+            "model_params,provider_incarnation_id,provider_config_revision,updated_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (sid, "provider-1", "model-1", "{}", "incarnation-1", 7, 1.0),
+        )
+    stale_provider = SessionCreationService(
+        service,
+        session_db=session_db,
+        owner_identity_resolver=lambda: frozen,
+        provider_binding_validator=lambda *_args: (_ for _ in ()).throw(
+            RuntimeError("provider_binding_stale")
+        ),
+    )
+    with pytest.raises(ProjectSessionError, match="provider_binding_stale"):
+        await stale_provider.create_conversation_session(
+            request_id="stale-provider-create", source_session_id=sid
+        )
+
     async def fail_after_all_writes(_db, _sid, _intent):
         raise RuntimeError("fault_after_route_outbox")
 
@@ -168,7 +216,7 @@ async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
             "SELECT count(*) FROM session_creation_receipts "
             "WHERE request_id='atomic-owner-fail'"
         ).fetchone()[0] == 0
-        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
 
 
 @pytest.mark.asyncio
@@ -186,14 +234,36 @@ async def test_catalog_pages_zero_message_pinned_stale_and_relocate(tmp_path: Pa
                                            pinned_session_id=first["session"]["session_id"])
     assert len(page["items"]) == 1 and page["next_cursor"]
     assert page["pinned"]["session_id"] == first["session"]["session_id"]
+    second_page = await service.list_session_page(
+        scope_kind="project", project_id=project.project_id, limit=1,
+        cursor=page["next_cursor"], pinned_session_id=first["session"]["session_id"],
+    )
+    assert second_page["pinned"]["session_id"] == first["session"]["session_id"]
     await create.create_conversation_session(request_id="s3", project_id=project.project_id)
     with pytest.raises(ProjectSessionError, match="stale_cursor"):
         await service.list_session_page(scope_kind="project", project_id=project.project_id,
                                         cursor=page["next_cursor"])
+    current = {
+        "kind": "project_bound", "session_id": first["session"]["session_id"],
+        "project_id": project.project_id, "project_root": str(root),
+        "effective_root": str(root), "execution_kind": "project_root",
+        "project_identity": project.filesystem_identity,
+        "execution_identity": project.filesystem_identity, "project_revision": 1,
+    }
+    forged_root = tmp_path / "forged-root"; forged_root.mkdir()
+    with pytest.raises((RuntimeError, ProjectSessionError), match="workspace_binding_stale"):
+        await service.admit_run(
+            {**current, "project_root": str(forged_root), "effective_root": str(forged_root)},
+            "run-forged",
+        )
+    await service.admit_run(current, "run-active")
     moved = tmp_path.resolve() / "moved"
     root.rename(moved)
     missing = await service.resolve_session(first["session"]["session_id"])
     assert isinstance(missing, ProjectMissingWorkspace)
+    with pytest.raises(ProjectSessionError, match="project_runs_active"):
+        await service.relocate_project(project.project_id, str(moved), 1)
+    await service.release_run("run-active")
     relocated = await service.relocate_project(project.project_id, str(moved), 1)
     assert relocated.canonical_root == str(moved) and relocated.project_revision == 2
     other = tmp_path.resolve() / "other"; other.mkdir()

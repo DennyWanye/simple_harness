@@ -40,4 +40,3 @@ revision: 1
 - 步骤 1～7 全部满足；Windows 必测项未执行则本用例 NOT_RUN。
 - UI primary：选择器、预览、确认结果、错误态截图；每个动作前记录坐标/动作/期望。
 - runtime primary：每次注册的 request/session/project correlation、规范化结果和项目计数；不得记录不透明 filesystem identity 原值或凭据。
-

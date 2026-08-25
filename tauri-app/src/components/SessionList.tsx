@@ -7,6 +7,7 @@ import { Virtuoso } from "react-virtuoso";
 import { controlWS } from "../code-panel/controlWs";
 import { projectRequest, responsePayload, type ProjectCatalogResponse, type ProjectSessionsResponse, type SessionCreateResponse } from "../chat/projectSessionProtocol";
 import { useSessionsStore } from "../stores/sessionsStore";
+import { useControlWsState } from "../hooks/useControlWsState";
 import type { ProjectDescriptor, ProjectSessionDescriptor, ProjectScope } from "../types/projectSessions";
 import { projectScopeKey } from "../types/projectSessions";
 import { topicDisplayLabel } from "../chat/topicTitle";
@@ -44,13 +45,19 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   const acceptedCreates = useRef(new Set<string>());
   const pendingCatalog = useRef(new Map<string, boolean>());
   const pendingPages = useRef(new Map<string, { scope: ProjectScope; append: boolean }>());
+  const wsState = useControlWsState();
+  const previousWsState = useRef(wsState);
 
   const requestCatalog = useCallback((cursor: string | null = null) => {
     useSessionsStore.getState().begin_project_catalog(Boolean(cursor));
-    const request = projectRequest("project_catalog_page", { cursor, limit: PAGE_SIZE });
+    const request = projectRequest("project_catalog_page", {
+      cursor,
+      limit: PAGE_SIZE,
+      pinned_session_id: activeSid || null,
+    });
     pendingCatalog.current.set(request.request_id, Boolean(cursor));
     controlWS.send(request);
-  }, []);
+  }, [activeSid]);
 
   const requestSessions = useCallback((scope: ProjectScope, cursor: string | null = null) => {
     useSessionsStore.getState().begin_project_sessions(projectScopeKey(scope));
@@ -94,6 +101,9 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
         return useSessionsStore.getState().fail_project_catalog(catalogResponse.payload.error.message);
       }
       useSessionsStore.getState().apply_project_catalog_page({ request_id: catalogResponse.request_id, ...catalogResponse.payload }, append);
+      if (catalogResponse.payload.pinned && activeSid) {
+        requestSessions({ scope_kind: "project", project_id: catalogResponse.payload.pinned.project_id });
+      }
       return;
     }
     const sessionsResponse = responsePayload<ProjectSessionsResponse>(message, "project_sessions_page_response");
@@ -126,6 +136,12 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     setPicker(null);
     refreshAll();
   }), [onSwitchSid, refreshAll, requestCatalog, requestSessions]);
+
+  useEffect(() => {
+    const previous = previousWsState.current;
+    previousWsState.current = wsState;
+    if (wsState === "connected" && previous !== "connected") refreshAll();
+  }, [refreshAll, wsState]);
 
   const createSession = useCallback((projectId: string | null, sourceSid: string | null = null) => {
     if (!companionIdentityReady) return;

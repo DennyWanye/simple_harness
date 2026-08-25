@@ -753,8 +753,7 @@ function App() {
         }
         break;
       }
-      case "session_messages_error":
-      case "sessions_list_error": {
+      case "session_messages_error": {
         const p: any = (lastMessage as any).payload || {};
         if (
           p.session_id &&

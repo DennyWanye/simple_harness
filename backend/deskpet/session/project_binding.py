@@ -21,7 +21,7 @@ import uuid
 from contextlib import AsyncExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal, TypeAlias
+from typing import Any, Awaitable, Callable, Literal, Mapping, TypeAlias
 
 import aiosqlite
 
@@ -339,6 +339,112 @@ class ProjectBindingService:
             handoff=json.loads(row[4]) if row[4] else None,
         )
 
+    async def claim_handoff(
+        self, session_id: str, first_run_id: str
+    ) -> dict[str, Any] | None:
+        """Return a bounded handoff only to the target Session's first Run."""
+
+        sid = str(session_id or "").strip()
+        run_id = str(first_run_id or "").strip()
+        if not sid or not run_id:
+            raise ProjectSessionError("invalid_request")
+        async with self._write_lock:
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                row = await (await db.execute(
+                    "SELECT handoff_json FROM session_project_bindings WHERE session_id=?",
+                    (sid,),
+                )).fetchone()
+                if row is None or not row[0]:
+                    await db.rollback()
+                    return None
+                existing = await (await db.execute(
+                    "SELECT first_run_id FROM session_handoff_consumptions WHERE session_id=?",
+                    (sid,),
+                )).fetchone()
+                if existing is None:
+                    await db.execute(
+                        "INSERT INTO session_handoff_consumptions(session_id,first_run_id,consumed_at) "
+                        "VALUES(?,?,?)",
+                        (sid, run_id, time.time()),
+                    )
+                elif str(existing[0]) != run_id:
+                    await db.rollback()
+                    return None
+                await db.commit()
+                return json.loads(str(row[0]))
+
+    async def admit_run(
+        self, resolution: Mapping[str, Any], run_id: str
+    ) -> None:
+        """CAS one verified Project revision into the active-Run fence."""
+
+        if str(resolution.get("kind")) != "project_bound":
+            return
+        self.validate_workspace_identity(resolution)
+        async with self._write_lock:
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                row = await (await db.execute(
+                    "SELECT b.project_id,p.project_revision,p.canonical_root,p.filesystem_identity,"
+                    "b.execution_kind,b.execution_root,b.execution_identity "
+                    "FROM session_project_bindings b "
+                    "JOIN projects p ON p.project_id=b.project_id WHERE b.session_id=?",
+                    (str(resolution["session_id"]),),
+                )).fetchone()
+                if row is None:
+                    raise ProjectSessionError("workspace_binding_stale")
+                if (
+                    str(row[0]) != str(resolution["project_id"])
+                    or int(row[1]) != int(resolution["project_revision"])
+                    or str(row[2]) != str(resolution["project_root"])
+                    or str(row[3]) != str(resolution["project_identity"])
+                    or str(row[4]) != str(resolution["execution_kind"])
+                    or (
+                        str(row[2]) if str(row[4]) == "project_root" else str(row[5])
+                    ) != str(resolution["effective_root"])
+                    or (
+                        str(row[3]) if str(row[4]) == "project_root" else str(row[6])
+                    ) != str(resolution["execution_identity"])
+                ):
+                    raise ProjectSessionError("workspace_binding_stale")
+                self.validate_workspace_identity(resolution)
+                existing = await (await db.execute(
+                    "SELECT session_id,project_id,project_revision,state "
+                    "FROM project_run_admissions WHERE run_id=?",
+                    (str(run_id),),
+                )).fetchone()
+                expected = (
+                    str(resolution["session_id"]),
+                    str(resolution["project_id"]),
+                    int(resolution["project_revision"]),
+                )
+                if existing is not None:
+                    if tuple(existing[:3]) != expected:
+                        raise ProjectSessionError("workspace_binding_stale")
+                    await db.execute(
+                        "UPDATE project_run_admissions SET state='active',released_at=NULL "
+                        "WHERE run_id=?",
+                        (str(run_id),),
+                    )
+                else:
+                    await db.execute(
+                        "INSERT INTO project_run_admissions(run_id,session_id,project_id,"
+                        "project_revision,state,admitted_at) VALUES(?,?,?,?,'active',?)",
+                        (str(run_id), *expected, time.time()),
+                    )
+                await db.commit()
+
+    async def release_run(self, run_id: str) -> None:
+        async with self._write_lock:
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute(
+                    "UPDATE project_run_admissions SET state='released',released_at=? "
+                    "WHERE run_id=? AND state='active'",
+                    (time.time(), str(run_id)),
+                )
+                await db.commit()
+
     @staticmethod
     def validate_workspace_identity(resolution: Mapping[str, Any]) -> None:
         """Re-stat both frozen roots without consulting mutable Session state."""
@@ -376,6 +482,13 @@ class ProjectBindingService:
             async with aiosqlite.connect(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 await self._require_upgrade_complete(db)
+                admitted = await (await db.execute(
+                    "SELECT 1 FROM project_run_admissions "
+                    "WHERE project_id=? AND state='active' LIMIT 1",
+                    (project_id,),
+                )).fetchone()
+                if admitted is not None:
+                    raise ProjectSessionError("project_runs_active")
                 for run_table in ("execution_runs", "workflow_runs"):
                     exists = await (await db.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
@@ -451,6 +564,7 @@ class ProjectBindingService:
     async def list_project_page(
         self, *, cursor: str | None = None, limit: int | None = None,
         pinned_project_id: str | None = None,
+        pinned_session_id: str | None = None,
     ) -> dict[str, Any]:
         size = self._page_limit(limit)
         decoded = _decode_cursor(cursor) if cursor else None
@@ -470,6 +584,12 @@ class ProjectBindingService:
                 " ORDER BY last_opened_at DESC,project_id ASC LIMIT ?", (*params, size + 1)
             )).fetchall()
             pinned_row = None
+            if not pinned_project_id and pinned_session_id:
+                binding_row = await (await db.execute(
+                    "SELECT project_id FROM session_project_bindings WHERE session_id=?",
+                    (pinned_session_id,),
+                )).fetchone()
+                pinned_project_id = str(binding_row[0]) if binding_row else None
             if pinned_project_id:
                 pinned_row = await (await db.execute(
                     "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
@@ -525,7 +645,7 @@ class ProjectBindingService:
                 cursor_sql = " AND (COALESCE(ma.last_message_at,s.created_at) < ? OR " \
                     "(COALESCE(ma.last_message_at,s.created_at)=? AND s.id>?))"
                 params.extend([decoded["activity_at"], decoded["activity_at"], decoded["session_id"]])
-            projection = """
+            base_projection = """
               SELECT s.id session_id,s.created_at,b.project_id,b.execution_kind,b.execution_root,
                      b.source_session_id,p.canonical_root,p.filesystem_identity,
                      b.execution_identity,t.title,ma.turn_count,ma.last_message_at,ma.preview
@@ -541,13 +661,16 @@ class ProjectBindingService:
                 LEFT JOIN session_delivery_state d ON d.session_id=s.id
                 LEFT JOIN companion_session_owners o ON o.session_id=s.id
                WHERE """ + scope_sql + " AND d.deleted_at IS NULL AND (o.status IS NULL OR o.status='active') " \
-                "AND (r.lifecycle='active' OR o.status='active' OR (r.request_id IS NULL AND ma.turn_count>0))" + cursor_sql
-            rows = await (await db.execute(projection +
+                "AND (r.lifecycle='active' OR o.status='active' OR (r.request_id IS NULL AND ma.turn_count>0))"
+            rows = await (await db.execute(base_projection + cursor_sql +
                 " ORDER BY COALESCE(ma.last_message_at,s.created_at) DESC,s.id ASC LIMIT ?", (*params, size + 1)
             )).fetchall()
             pinned = None
             if pinned_session_id:
-                pinned = await (await db.execute(projection + " AND s.id=? LIMIT 1", (*([project_id] if scope_kind == "project" else []), pinned_session_id))).fetchone()
+                pinned = await (await db.execute(
+                    base_projection + " AND s.id=? LIMIT 1",
+                    (*([project_id] if scope_kind == "project" else []), pinned_session_id),
+                )).fetchone()
         items = [self._session_descriptor(row) for row in rows[:size]]
         next_cursor = None
         if len(rows) > size and items:
@@ -593,12 +716,14 @@ class SessionCreationService:
         provider_mutation_lock: asyncio.Lock | None = None,
         session_db: Any = None,
         owner_identity_resolver: Callable[[], Any] | None = None,
+        provider_binding_validator: Callable[[str, str, int], None] | None = None,
         tx_participants: tuple[Callable[[aiosqlite.Connection, str, dict[str, Any]], Awaitable[None]], ...] = (),
     ) -> None:
         self._bindings = binding_service
         self._provider_lock = provider_mutation_lock
         self._session_db = session_db
         self._owner_identity_resolver = owner_identity_resolver
+        self._provider_binding_validator = provider_binding_validator
         self._tx_participants = tx_participants
 
     async def _build_handoff(self, db: aiosqlite.Connection, source_sid: str) -> dict[str, Any]:
@@ -637,6 +762,37 @@ class SessionCreationService:
             raise ProjectSessionError("invalid_request")
         if project_id is None and execution_kind == "explicit":
             raise ProjectSessionError("invalid_request")
+        requested_execution_root = (
+            os.path.abspath(os.path.expanduser(str(execution_root)))
+            if execution_kind == "explicit" and execution_root
+            else None
+        )
+        intent = {
+            "schema_version": 1,
+            "project_id": project_id,
+            "source_session_id": source_session_id,
+            "execution_kind": execution_kind,
+            "execution_root": requested_execution_root,
+        }
+        intent_hash = hashlib.sha256(
+            _canonical_json(intent).encode("utf-8")
+        ).hexdigest()
+        # Lost-ACK replay must not touch a path that may have moved since the
+        # original commit, nor depend on a later owner binding epoch.
+        async with aiosqlite.connect(self._bindings._db_path) as replay_db:
+            receipt = await (await replay_db.execute(
+                "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts "
+                "WHERE request_id=?",
+                (request,),
+            )).fetchone()
+        if receipt is not None:
+            if str(receipt[0]) != intent_hash:
+                raise ProjectSessionError("request_id_conflict")
+            if str(receipt[2]) == "deleted":
+                raise ProjectSessionError("session_deleted")
+            result = json.loads(receipt[1])
+            result["replayed"] = True
+            return result
         explicit_path: str | None = None
         explicit_identity: str | None = None
         if execution_kind == "explicit":
@@ -661,10 +817,6 @@ class SessionCreationService:
                 "profile_generation": int(owner.profile_generation),
                 "binding_epoch": int(frozen_owner.binding_epoch),
             }
-        intent = {"schema_version": 1, "project_id": project_id,
-                  "source_session_id": source_session_id, "execution_kind": execution_kind,
-                  "execution_root": explicit_path, "owner": owner_snapshot}
-        intent_hash = hashlib.sha256(_canonical_json(intent).encode("utf-8")).hexdigest()
         async with AsyncExitStack() as stack:
             if self._provider_lock is not None:
                 await stack.enter_async_context(self._provider_lock)
@@ -794,6 +946,17 @@ class SessionCreationService:
                         (source_session_id,),
                     )).fetchone()
                     if provider_row is not None:
+                        if self._provider_binding_validator is not None:
+                            try:
+                                self._provider_binding_validator(
+                                    str(provider_row[0]),
+                                    str(provider_row[3]),
+                                    int(provider_row[4]),
+                                )
+                            except Exception as exc:
+                                raise ProjectSessionError(
+                                    "provider_binding_stale"
+                                ) from exc
                         await db.execute(
                             "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,model_params,"
                             "provider_incarnation_id,provider_config_revision,binding_epoch,updated_at) "

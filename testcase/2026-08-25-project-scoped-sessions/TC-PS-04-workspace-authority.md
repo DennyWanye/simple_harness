@@ -36,4 +36,3 @@ revision: 1
 
 - 步骤 1～5 全部满足；物理输出目录树前后 hash/清单必须证明无越界写入。
 - primary evidence 至少包含真实 UI 提交截图、root/Session correlation 日志、各 authority 值摘要和三棵目录的前后文件清单。
-

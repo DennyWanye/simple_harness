@@ -30,4 +30,3 @@ printf '{"fixture":"project-scoped-sessions","version":1}\n' > "$fixture_root/.p
 printf 'export DESKPET_USER_DATA_DIR=%q\n' "$fixture_root/userdata"
 printf 'export PROJECT_SESSION_FIXTURE_ROOT=%q\n' "$fixture_root"
 printf 'raw evidence target: .local-test-evidence/<date>/<run-id>/\n'
-

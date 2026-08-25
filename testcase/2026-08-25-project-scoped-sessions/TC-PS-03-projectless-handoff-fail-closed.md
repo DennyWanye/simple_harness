@@ -36,4 +36,3 @@ revision: 1
 - 步骤 1～5 全部满足；任何无项目本地文件访问成功均为 FAIL。
 - UI primary：新旧 Session 分组、交接可见内容与重启恢复截图。
 - runtime primary：新旧 Session/root 关联、工具 admission 负向结果、交接字段/大小上限检查与敏感 canary 扫描。
-

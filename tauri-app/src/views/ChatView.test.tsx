@@ -220,7 +220,10 @@ describe("ChatView（WB-4）", () => {
     vi.mocked(controlWS.send).mockClear();
     fireEvent.click(screen.getByTestId("chat-conn-retry"));
     // 重试入口通过 send 触发内部 schedule_reconnect。
-    expect(controlWS.send).toHaveBeenCalledWith({ type: "sessions_list" });
+    expect(controlWS.send).toHaveBeenCalledWith(expect.objectContaining({
+      type: "project_catalog_page",
+      payload: expect.objectContaining({ pinned_session_id: "default" }),
+    }));
   });
 
   it("后端未就绪（secret 为空）显示等待状态条", () => {

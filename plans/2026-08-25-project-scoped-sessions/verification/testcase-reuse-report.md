@@ -22,4 +22,3 @@
 The machine source is `testcase-reuse-report.json`. All 13 decisions are `create-new` because no candidate is active and
 none has the required Project Binding oracle. The eight new cases avoid duplication by combining TO-R1/R2/R3/R4/R5 with
 their closest delivery chains TC-PS-02/04/05/08/01.
-

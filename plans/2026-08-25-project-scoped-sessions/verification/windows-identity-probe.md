@@ -15,4 +15,3 @@ py -3 plans/2026-08-25-project-scoped-sessions/verification/spikes/windows_path_
 execution root，以及可选 junction。等价表示与 rename 必须 identity 相同；不同目录必须不同。junction 若平台或权限
 不支持可明确 `SKIP`，其余断言任一失败都停止交付。输出不得包含凭据；记录脚本 SHA-256、OS build、Python 版本、
 原始 JSON SHA-256 和退出码。
-

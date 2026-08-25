@@ -16,4 +16,3 @@
 
 `min_root_runs` 表示证明该场景所需的独立 root/attempt 数，不代表输入语义类别；本功能三维 applicability
 均为 false。Windows path identity 是 S-PS-01 的 release stop gate，不能用 macOS 结果替代。
-

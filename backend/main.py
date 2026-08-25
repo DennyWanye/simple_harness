@@ -2617,6 +2617,7 @@ if _session_db is not None:
             if _companion_identity_gate is not None
             else None
         ),
+        provider_binding_validator=None,
     )
 else:
     _project_binding_service = None
@@ -3020,6 +3021,17 @@ async def lifespan(app: FastAPI):
         )
         service_context.register("provider_registry", _provider_registry)
         if _project_binding_service is not None:
+            def _validate_created_session_provider(
+                provider_id: str, incarnation: str, revision: int
+            ) -> None:
+                entry = _provider_registry.get_entry(provider_id)
+                if (
+                    entry is None
+                    or str(entry.incarnation_id) != incarnation
+                    or int(entry.config_revision) != revision
+                ):
+                    raise RuntimeError("provider_binding_stale")
+
             _session_creation_service = _SessionCreationService(
                 _project_binding_service,
                 provider_mutation_lock=_provider_registry.mutation_lock,
@@ -3029,6 +3041,7 @@ async def lifespan(app: FastAPI):
                     if _companion_identity_gate is not None
                     else None
                 ),
+                provider_binding_validator=_validate_created_session_provider,
             )
             service_context.register(
                 "session_creation_service", _session_creation_service
@@ -7444,6 +7457,12 @@ async def _build_product_sdk_runtime_stack(
             None,
         ),
     )
+    project_bindings = service_context.get("project_binding_service")
+    if project_bindings is not None:
+        def _release_project_run(authority: Any) -> None:
+            asyncio.create_task(project_bindings.release_run(authority.run_id))
+
+        tool_authorities.add_terminal_listener(_release_project_run)
     from deskpet.sdk_adapters.skill_resolver import (
         SdkThenLegacyFrozenSkillResolver,
     )
@@ -8915,7 +8934,7 @@ async def _run_product_harness_chat(
             "execution_identity": workspace_binding.execution_identity,
             "project_revision": workspace_binding.project_revision,
             "binding_version": workspace_binding.binding_version,
-            "handoff": workspace_binding.handoff,
+            "handoff": None,
         }
     elif workspace_binding.kind == "projectless":
         workspace = None
@@ -9175,6 +9194,8 @@ async def _run_product_harness_chat(
         tool_registry=deskpet_tool_registry_v2,
     )
     session = None
+    workspace_admitted = False
+    workspace_admission_retained = False
     try:
         from deskpet.sdk_adapters.context_authority import (
             DefaultDenySnapshotRedactor,
@@ -9191,6 +9212,12 @@ async def _run_product_harness_chat(
         sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
             session_id, request_id, str(turn_id)
         ).value
+        if workspace_resolution["kind"] == "project_bound":
+            await binding_service.admit_run(workspace_resolution, sdk_run_id)
+            workspace_admitted = True
+            workspace_resolution["handoff"] = await binding_service.claim_handoff(
+                session_id, sdk_run_id
+            )
         if sdk_run_id in _sdk_unavailable_tool_authority_runs:
             raise RuntimeError("sdk_tool_authority_unavailable")
         provider_authority = await _freeze_sdk_provider_authority(
@@ -9343,6 +9370,7 @@ async def _run_product_harness_chat(
         if context_run_state in {"completed", "failed", "cancelled"}:
             await context_sources.consume(context_binding_id)
         else:
+            workspace_admission_retained = context_run_state == "waiting"
             await context_sources.mark_staged(context_binding_id)
     except PreflightBlocked as block:
         await _commit_product_preflight_block(
@@ -9388,6 +9416,15 @@ async def _run_product_harness_chat(
         except Exception:
             pass
     finally:
+        if workspace_admitted and not workspace_admission_retained:
+            try:
+                await binding_service.release_run(sdk_run_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "project_run_admission_release_failed",
+                    run_id=sdk_run_id,
+                    error_type=type(exc).__name__,
+                )
         if session is not None:
             await session.close()
         if (

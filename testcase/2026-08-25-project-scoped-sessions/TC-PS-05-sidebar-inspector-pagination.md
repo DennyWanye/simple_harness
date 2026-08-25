@@ -37,4 +37,3 @@ revision: 1
 
 - 步骤 1～6 全部满足；步骤 1～4 必须真人 UI，步骤 5 必须保存分页响应摘要、catalog revision 与延迟原始样本。
 - 原始截图、录屏、剪贴板核对、性能样本与运行日志写入 `.local-test-evidence`。
-

@@ -36,4 +36,3 @@ revision: 1
 
 - 步骤 1～6 全部满足；任何缺失状态的物理工具执行成功或无关目录被接受均为 FAIL。
 - primary evidence：缺失/拒绝/恢复 UI 截图、目录前后 identity probe、project revision、Session 集合及目录清单。
-

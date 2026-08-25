@@ -39,4 +39,3 @@ revision: 1
 - 步骤 1～7 全部满足；步骤 4 必须是真实完全重启，步骤 5～7 必须有持久结果计数证据。
 - UI primary：空 Session 即时可见、菜单无编辑入口、重启后恢复截图。
 - runtime primary：创建请求标识、Session/Project 身份、事务前后行数和 lost-ACK 两次响应摘要。
-

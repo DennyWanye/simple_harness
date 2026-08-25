@@ -106,10 +106,9 @@ class CodeModeManager:
         Returns the resulting state; caller can read ``code_session_id``
         for routing.
 
-        P4-S25 B4: also fire-and-forget persists to SessionDB so the
-        project survives restart. Caller doesn't await the persist —
-        we want UI feedback (state returned) to be instant; the DB
-        write is sub-ms anyway.
+        v32 retirement boundary: this compatibility manager is in-memory for
+        existing code-mode UI only. New durable workspace authority is created
+        exclusively through Project-scoped Sessions.
         """
         with self._lock:
             project_root = project_root.resolve()
@@ -120,23 +119,6 @@ class CodeModeManager:
                 project_name=project_root.name,
             )
             self._states[base_session_id] = state
-        # Schedule persistence outside the sync lock.
-        if self._sdb is not None:
-            import asyncio as _asyncio
-            _coro = self._sdb.upsert_code_session(
-                base_session_id=base_session_id,
-                code_session_id=state.code_session_id or "",
-                project_root=str(state.project_root or ""),
-                project_name=state.project_name,
-            )
-            try:
-                _asyncio.get_running_loop().create_task(_coro)
-            except RuntimeError:
-                # No loop yet (early init); skip — load_persisted on
-                # next start will re-add via list_code_sessions, but
-                # this row won't be in DB. Acceptable: enter is
-                # always called from within an asyncio handler.
-                _coro.close()
         return state
 
     def exit(self, base_session_id: str) -> None:

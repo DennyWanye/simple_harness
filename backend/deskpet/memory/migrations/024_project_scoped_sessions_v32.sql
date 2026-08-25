@@ -36,6 +36,24 @@ CREATE TABLE session_project_bindings (
 CREATE INDEX idx_session_project_bindings_project
     ON session_project_bindings(project_id, created_at DESC, session_id ASC);
 
+CREATE TABLE session_handoff_consumptions (
+    session_id   TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE RESTRICT,
+    first_run_id TEXT NOT NULL UNIQUE,
+    consumed_at  REAL NOT NULL
+);
+
+CREATE TABLE project_run_admissions (
+    run_id           TEXT PRIMARY KEY,
+    session_id       TEXT NOT NULL REFERENCES sessions(id) ON DELETE RESTRICT,
+    project_id       TEXT NOT NULL REFERENCES projects(project_id) ON DELETE RESTRICT,
+    project_revision INTEGER NOT NULL,
+    state            TEXT NOT NULL CHECK(state IN ('active','released')),
+    admitted_at      REAL NOT NULL,
+    released_at      REAL
+);
+CREATE INDEX idx_project_run_admissions_active
+    ON project_run_admissions(project_id,state);
+
 CREATE TRIGGER session_project_binding_no_update
 BEFORE UPDATE ON session_project_bindings
 BEGIN

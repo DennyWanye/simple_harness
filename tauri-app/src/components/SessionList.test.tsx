@@ -12,7 +12,9 @@ import { useSessionsStore } from "../stores/sessionsStore";
 vi.mock("react-virtuoso", () => ({
   Virtuoso: ({ data, itemContent }: { data: unknown[]; itemContent: (index: number, row: unknown) => React.ReactNode }) => <div>{data.map((row, index) => <React.Fragment key={index}>{itemContent(index, row)}</React.Fragment>)}</div>,
 }));
-vi.mock("../code-panel/controlWs", () => ({ controlWS: { send: vi.fn(() => true), on_message: vi.fn() } }));
+vi.mock("../code-panel/controlWs", () => ({ controlWS: {
+  send: vi.fn(() => true), on_message: vi.fn(), state: vi.fn(() => "connected"),
+} }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 let listeners: Array<(message: unknown) => void> = [];

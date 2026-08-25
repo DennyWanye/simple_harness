@@ -34,4 +34,3 @@ revision: 1
 
 - 步骤 1～4 全部满足。
 - primary evidence：Inspector 与分组截图、三个 root run 身份、两个目录前后清单和写入结果 hash。
-
