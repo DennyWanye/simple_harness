@@ -2600,6 +2600,23 @@ _workspace_mem_store = None
 _nudge_queue = None
 service_context.register("context_assembler", None)
 service_context.register("session_db", _session_db)
+if _session_db is not None:
+    from deskpet.session.project_binding import (
+        ProjectBindingService as _ProjectBindingService,
+        SessionCreationService as _SessionCreationService,
+    )
+
+    _project_binding_service = _ProjectBindingService(
+        _state_db_path, write_lock=_session_db._write_lock
+    )
+    _session_creation_service = _SessionCreationService(
+        _project_binding_service, session_db=_session_db
+    )
+else:
+    _project_binding_service = None
+    _session_creation_service = None
+service_context.register("project_binding_service", _project_binding_service)
+service_context.register("session_creation_service", _session_creation_service)
 service_context.register("vector_worker", None)
 service_context.register("embedder", None)
 service_context.register("skill_loader", _skill_loader)
@@ -2925,7 +2942,7 @@ async def lifespan(app: FastAPI):
     logger.info("preloading models...")
     from llm.resolution import ProviderRoutingReadiness
 
-    global _provider_registry, _memory_backend
+    global _provider_registry, _memory_backend, _session_creation_service
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
     if _memory_backend is None:
@@ -2996,6 +3013,15 @@ async def lifespan(app: FastAPI):
             registry_digest=_provider_registry.snapshot_digest(),
         )
         service_context.register("provider_registry", _provider_registry)
+        if _project_binding_service is not None:
+            _session_creation_service = _SessionCreationService(
+                _project_binding_service,
+                provider_mutation_lock=_provider_registry.mutation_lock,
+                session_db=_session_db,
+            )
+            service_context.register(
+                "session_creation_service", _session_creation_service
+            )
         _provider_readiness.mark_ready()
         logger.info(
             "provider_routing_ready providers=%d",
@@ -13202,53 +13228,34 @@ async def control_channel(ws: WebSocket):
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("context_breakdown_send_failed err=%s", exc)
 
+            elif msg_type in {
+                "project_preview_register", "project_register", "session_create",
+                "project_catalog_page", "project_sessions_page", "project_inspect",
+                "project_relocate",
+            }:
+                from deskpet.session.project_protocol import (
+                    handle_project_session_command as _handle_project_session_command,
+                )
+
+                _project_response = await _handle_project_session_command(
+                    raw,
+                    bindings=service_context.get("project_binding_service"),
+                    creation=service_context.get("session_creation_service"),
+                )
+                if _project_response is not None:
+                    await ws.send_json(_project_response)
+
             elif msg_type == "sessions_list":
-                # 消息面板「历史会话」下拉：列主 Session 及其普通任务历史。
-                _sl_sdb = service_context.get("session_db")
-                _sl_out: list = []
-                if _sl_sdb is not None:
-                    try:
-                        _sl_rows = await _sl_sdb.list_sessions_with_preview()
-                        _sl_gate = service_context.get(
-                            "session_terminal_projection_gate"
-                        )
-                        if _sl_gate is not None:
-                            await asyncio.gather(
-                                *(
-                                    _sl_gate.ensure_current(
-                                        str(_row.get("session_id") or "")
-                                    )
-                                    for _row in _sl_rows
-                                    if str(_row.get("session_id") or "")
-                                )
-                            )
-                            # Projection changes previews. Read again only
-                            # after every session crossed the consistency gate.
-                            _sl_rows = (
-                                await _sl_sdb.list_sessions_with_preview()
-                            )
-                        for _sr in _sl_rows:
-                            _ssid = _sr.get("session_id") or ""
-                            if _is_companion_history_session_id(_ssid):
-                                _sl_out.append(_sr)
-                    except Exception as _sl_exc:  # noqa: BLE001
-                        logger.warning(
-                            "sessions_list_consistency_failed",
-                            error=str(_sl_exc),
-                        )
-                        await ws.send_json({
-                            "type": "sessions_list_error",
-                            "payload": {
-                                "code": "product_view_not_current",
-                                "error": (
-                                    "会话列表暂时无法确认是最新状态，请稍后重试。"
-                                ),
-                            },
-                        })
-                        continue
+                # The bounded Project catalog and per-scope Session pages are
+                # the sole read model.  Returning a second flat projection
+                # would let clients regroup paths and recreate split authority.
                 await ws.send_json({
-                    "type": "sessions_list_response",
-                    "payload": {"sessions": _sl_out},
+                    "type": "sessions_list_error",
+                    "request_id": raw.get("request_id"),
+                    "payload": {
+                        "code": "protocol_replaced",
+                        "error": "use project_catalog_page and project_sessions_page",
+                    },
                 })
 
             elif msg_type == "session_delete":
@@ -13260,15 +13267,24 @@ async def control_channel(ws: WebSocket):
                 if _sd_sdb is not None and _sd_sid:
                     try:
                         _sd_workflows = service_context.get("workflow_service")
+                        _sd_creation = service_context.get(
+                            "session_creation_service"
+                        )
                         if _sd_workflows is not None:
                             async with _sd_workflows.session_lock(_sd_sid):
-                                await _sd_sdb.clear(_sd_sid)
+                                if _sd_creation is not None:
+                                    await _sd_creation.mark_deleted(_sd_sid)
+                                else:
+                                    await _sd_sdb.clear(_sd_sid)
                                 await _sd_workflows.cancel_runs_for_session(
                                     _sd_sid,
                                     reason="session_deleted",
                                 )
                         else:
-                            await _sd_sdb.clear(_sd_sid)
+                            if _sd_creation is not None:
+                                await _sd_creation.mark_deleted(_sd_sid)
+                            else:
+                                await _sd_sdb.clear(_sd_sid)
                         _sd_attempts = service_context.get("context_attempt_store")
                         if _sd_attempts is not None:
                             _sd_attempts.purge_session(_sd_sid)
@@ -14354,6 +14370,38 @@ async def control_channel(ws: WebSocket):
                             or None,
                         )
                     continue
+                if _scope_decision.created:
+                    _legacy_creation = service_context.get(
+                        "session_creation_service"
+                    )
+                    _legacy_request_id = str(
+                        _payload.get("request_id")
+                        or raw.get("request_id")
+                        or uuid.uuid4()
+                    )
+                    try:
+                        _legacy_created = (
+                            await _legacy_creation.create_conversation_session(
+                                request_id=f"legacy-new-session:{_legacy_request_id}",
+                                project_id=None,
+                                source_session_id=_base_msg_sid,
+                            )
+                        )
+                        _msg_sid = str(
+                            _legacy_created["session"]["session_id"]
+                        )
+                    except Exception as _legacy_create_exc:  # noqa: BLE001
+                        await ws.send_json({
+                            "type": "chat_v2_error",
+                            "payload": {
+                                "error": "新会话创建失败，请重试。",
+                                "code": str(getattr(_legacy_create_exc, "code", "session_create_failed")),
+                                "retryable": True,
+                                "session_id": _base_msg_sid,
+                                "request_id": _legacy_request_id,
+                            },
+                        })
+                        continue
                 _identity_gate = service_context.get(
                     "companion_identity_gate"
                 )
@@ -14472,13 +14520,8 @@ async def control_channel(ws: WebSocket):
                         if _inherit_sdb is None:
                             raise RuntimeError("session_db_unavailable")
                         _inherited_model_binding = (
-                            await service_context.get(
-                                "provider_registry"
-                            ).inherit_session_binding(
-                                _inherit_sdb,
-                                source_session_id=_base_msg_sid,
-                                target_session_id=_msg_sid,
-                                expected_binding_epoch=0,
+                            await _inherit_sdb.get_session_provider_binding(
+                                _msg_sid
                             )
                         )
                     except Exception as _model_inherit_exc:  # noqa: BLE001
