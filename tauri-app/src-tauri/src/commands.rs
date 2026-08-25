@@ -20,6 +20,7 @@ use serde_json::Value;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 use crate::process_manager::BackendProcess;
 
@@ -230,4 +231,42 @@ pub async fn open_directory_dialog(app: AppHandle) -> Result<Option<String>, Str
     Ok(selected
         .and_then(|path| path.into_path().ok())
         .map(|path| path.to_string_lossy().to_string()))
+}
+
+/// Open a user-visible Project directory. This command is navigation only;
+/// it does not bind or authorize a Session workspace.
+#[tauri::command]
+pub fn open_project_directory(app: AppHandle, path: String) -> Result<(), String> {
+    let directory = validate_project_directory(&path)?;
+    app.opener()
+        .open_path(directory.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|error| format!("[open_failed] {error}"))
+}
+
+fn validate_project_directory(path: &str) -> Result<std::path::PathBuf, String> {
+    let directory = std::path::PathBuf::from(path);
+    if !directory.is_absolute() {
+        return Err("[path_not_absolute] project directory must be absolute".to_string());
+    }
+    if !directory.exists() {
+        return Err("[path_not_found] project directory does not exist".to_string());
+    }
+    if !directory.is_dir() {
+        return Err("[path_not_directory] project path is not a directory".to_string());
+    }
+    Ok(directory)
+}
+
+#[cfg(test)]
+mod project_directory_tests {
+    use super::validate_project_directory;
+
+    #[test]
+    fn project_directory_requires_absolute_existing_directory() {
+        assert!(validate_project_directory("relative/path").unwrap_err().contains("path_not_absolute"));
+        let current = std::env::current_dir().unwrap();
+        assert_eq!(validate_project_directory(current.to_str().unwrap()).unwrap(), current);
+        let file = current.join("Cargo.toml");
+        assert!(validate_project_directory(file.to_str().unwrap()).unwrap_err().contains("path_not_directory"));
+    }
 }

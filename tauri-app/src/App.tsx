@@ -1012,7 +1012,7 @@ function App() {
             </div>
           ) : undefined
         }
-        chatProps={{ activeSid, secret }}
+        chatProps={{ activeSid, secret, onSwitchSid: switchActiveSid }}
         sessionProps={{ activeSid, onSwitchSid: switchActiveSid }}
         routeKind={routeKind}
         moreActions={{
