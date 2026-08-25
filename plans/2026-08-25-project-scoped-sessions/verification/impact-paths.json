@@ -1,0 +1,15 @@
+{
+  "source": "verification-spec.json scenarios[].impact_paths",
+  "policy": "fail-closed: an unmapped or truncated changed path requires the full required scenario set",
+  "scenario_count": 8,
+  "scenarios": {
+    "S-PS-01": ["backend/deskpet/session/project_binding.py","backend/deskpet/memory/session_db.py","backend/main.py","tauri-app/src/components/ProjectPickerDialog.tsx","tauri-app/src-tauri/src/commands.rs","tauri-app/src-tauri/src/lib.rs"],
+    "S-PS-02": ["backend/deskpet/memory/session_db.py","backend/llm/provider_registry.py","backend/main.py","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx"],
+    "S-PS-03": ["backend/deskpet/memory/session_db.py","backend/main.py","backend/deskpet/types/task_work_context.py","backend/deskpet/tool_catalog/providers.py","backend/deskpet/sdk_adapters/context_preparation.py","tauri-app/src/views/ChatView.tsx"],
+    "S-PS-04": ["backend/main.py","backend/deskpet/types/task_work_context.py","backend/deskpet/sdk_adapters/tool_authority.py","backend/deskpet/sdk_adapters/tools.py","backend/deskpet/tool_catalog/providers.py","backend/deskpet/agent/assembler/components/project_rules.py"],
+    "S-PS-05": ["backend/deskpet/memory/session_db.py","backend/main.py","tauri-app/src/types/messages.ts","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx","tauri-app/src/components/ProjectInspector.tsx","tauri-app/src/views/ChatView.tsx"],
+    "S-PS-06": ["backend/deskpet/session/project_binding.py","backend/main.py","backend/deskpet/types/task_work_context.py","backend/deskpet/sdk_adapters/context_preparation.py","backend/deskpet/sdk_adapters/tool_authority.py","backend/deskpet/sdk_adapters/tools.py","tauri-app/src/components/ProjectInspector.tsx"],
+    "S-PS-07": ["backend/deskpet/session/project_binding.py","backend/deskpet/memory/session_db.py","backend/main.py","backend/deskpet/sdk_adapters/tool_authority.py","tauri-app/src/components/ProjectInspector.tsx","tauri-app/src/components/SessionList.tsx"],
+    "S-PS-08": ["backend/deskpet/memory/migrations/024_project_scoped_sessions_v32.sql","backend/deskpet/memory/migrator.py","backend/deskpet/memory/session_db.py","backend/main.py","backend/scripts/restore_state_db_backup.py","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx"]
+  }
+}

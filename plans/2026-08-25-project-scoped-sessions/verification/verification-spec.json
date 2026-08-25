@@ -1,0 +1,108 @@
+{
+  "acceptance_file": "plans/2026-08-25-project-scoped-sessions/acceptance.md",
+  "assurance_contract": "plans/2026-08-25-project-scoped-sessions/assurance-contract.json",
+  "testcase_inventory": "testcase/index.json",
+  "reuse_report": "plans/2026-08-25-project-scoped-sessions/verification/testcase-reuse-report.json",
+  "obligations": [
+    {"obligation_id":"TO-A1","ac_ids":["AC-1"]},
+    {"obligation_id":"TO-A2","ac_ids":["AC-2"]},
+    {"obligation_id":"TO-A3","ac_ids":["AC-3"]},
+    {"obligation_id":"TO-A4","ac_ids":["AC-4"]},
+    {"obligation_id":"TO-A5","ac_ids":["AC-5"]},
+    {"obligation_id":"TO-A6","ac_ids":["AC-6"]},
+    {"obligation_id":"TO-A7","ac_ids":["AC-7"]},
+    {"obligation_id":"TO-A8","ac_ids":["AC-8"]},
+    {"obligation_id":"TO-R1","ac_ids":["AC-2"]},
+    {"obligation_id":"TO-R2","ac_ids":["AC-4"]},
+    {"obligation_id":"TO-R3","ac_ids":["AC-5"]},
+    {"obligation_id":"TO-R4","ac_ids":["AC-8"]},
+    {"obligation_id":"TO-R5","ac_ids":["AC-1"]}
+  ],
+  "scenarios": [
+    {
+      "scenario_id":"S-PS-01","required":true,"testcase_ids":["TC-PS-01"],"ui":true,
+      "gate_type":"contract","required_lanes":["fresh","platform-identity"],"min_root_runs":1,
+      "input_class":"deterministic-project-picker","cold_start":false,"expected_run_created":false,
+      "impact_paths":["backend/deskpet/session/project_binding.py","backend/deskpet/memory/session_db.py","backend/main.py","tauri-app/src/components/ProjectPickerDialog.tsx","tauri-app/src-tauri/src/commands.rs","tauri-app/src-tauri/src/lib.rs"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe","windows-probe"],"required_artifact_kinds":["ui-capture","execution-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["path_identity_result","project_count"]}
+    },
+    {
+      "scenario_id":"S-PS-02","required":true,"testcase_ids":["TC-PS-02"],"ui":true,
+      "gate_type":"temporal-fault","required_lanes":["fresh","temporal-fault"],"min_root_runs":2,
+      "input_class":"deterministic-session-create","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/memory/session_db.py","backend/llm/provider_registry.py","backend/main.py","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["binding_persisted","idempotent_session_count","recovered_state"]}
+    },
+    {
+      "scenario_id":"S-PS-03","required":true,"testcase_ids":["TC-PS-03"],"ui":true,
+      "gate_type":"negative-safety","required_lanes":["fresh","history-upgrade"],"min_root_runs":2,
+      "input_class":"deterministic-projectless","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/memory/session_db.py","backend/main.py","backend/deskpet/types/task_work_context.py","backend/deskpet/tool_catalog/providers.py","backend/deskpet/sdk_adapters/context_preparation.py","tauri-app/src/views/ChatView.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["projectless_fail_closed","new_session_created","handoff_bounded"]}
+    },
+    {
+      "scenario_id":"S-PS-04","required":true,"testcase_ids":["TC-PS-04"],"ui":true,
+      "gate_type":"negative-safety","required_lanes":["fresh","temporal-fault"],"min_root_runs":3,
+      "input_class":"deterministic-authority-conflict","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/main.py","backend/deskpet/types/task_work_context.py","backend/deskpet/sdk_adapters/tool_authority.py","backend/deskpet/sdk_adapters/tools.py","backend/deskpet/tool_catalog/providers.py","backend/deskpet/agent/assembler/components/project_rules.py"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["authority_roots_equal","conflict_rejected","recovered_state"]}
+    },
+    {
+      "scenario_id":"S-PS-05","required":true,"testcase_ids":["TC-PS-05"],"ui":true,
+      "gate_type":"contract","required_lanes":["fresh","concurrency"],"min_root_runs":1,
+      "input_class":"deterministic-sidebar","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/memory/session_db.py","backend/main.py","tauri-app/src/types/messages.ts","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx","tauri-app/src/components/ProjectInspector.tsx","tauri-app/src/views/ChatView.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["grouping_consistent","pagination_p95_ms","inspector_read_only"]}
+    },
+    {
+      "scenario_id":"S-PS-06","required":true,"testcase_ids":["TC-PS-06"],"ui":true,
+      "gate_type":"positive-value","required_lanes":["fresh"],"min_root_runs":3,
+      "input_class":"deterministic-root-split","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/session/project_binding.py","backend/main.py","backend/deskpet/types/task_work_context.py","backend/deskpet/sdk_adapters/context_preparation.py","backend/deskpet/sdk_adapters/tool_authority.py","backend/deskpet/sdk_adapters/tools.py","tauri-app/src/components/ProjectInspector.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log","business-result"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["business_terminal","execution_only_write","project_group_preserved"]}
+    },
+    {
+      "scenario_id":"S-PS-07","required":true,"testcase_ids":["TC-PS-07"],"ui":true,
+      "gate_type":"temporal-fault","required_lanes":["fresh","temporal-fault"],"min_root_runs":2,
+      "input_class":"deterministic-relocation","cold_start":false,"expected_run_created":false,
+      "impact_paths":["backend/deskpet/session/project_binding.py","backend/deskpet/memory/session_db.py","backend/main.py","backend/deskpet/sdk_adapters/tool_authority.py","tauri-app/src/components/ProjectInspector.tsx","tauri-app/src/components/SessionList.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["missing_root_fail_closed","unrelated_rejected","recovered_state"]}
+    },
+    {
+      "scenario_id":"S-PS-08","required":true,"testcase_ids":["TC-PS-08"],"ui":true,
+      "gate_type":"history-upgrade","required_lanes":["history-upgrade","temporal-fault"],"min_root_runs":2,
+      "input_class":"deterministic-migration","cold_start":false,"expected_run_created":false,
+      "impact_paths":["backend/deskpet/memory/migrations/024_project_scoped_sessions_v32.sql","backend/deskpet/memory/migrator.py","backend/deskpet/memory/session_db.py","backend/main.py","backend/scripts/restore_state_db_backup.py","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","migration-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["history_preserved","migration_idempotent","recovered_state"]}
+    }
+  ],
+  "manifest": {
+    "repo_root": ".",
+    "source_request_text": "实现以本地 Project 为根目录创建不可改绑 Session，保留无项目会话，并完成分组 UI、单一执行 authority、目录恢复和旧数据迁移。",
+    "behavior_contract": "plans/2026-08-25-project-scoped-sessions/behavior-contract.md",
+    "applicability": {
+      "input_sensitive":{"value":false,"rationale":"这是确定性的项目与 Session CRUD、导航和工作目录绑定，结果不随自然语言语义变化。","decided_by":"user"},
+      "llm_payload_driven":{"value":false,"rationale":"没有 LLM 结构化载荷直接驱动项目注册、绑定、迁移或右侧 Inspector 状态机。","decided_by":"user"},
+      "stateful_init":{"value":false,"rationale":"功能不依赖异步远程注册或首次登录；本地迁移和重启已由明确验收场景独立覆盖。","decided_by":"user"}
+    },
+    "executor_engine":"current",
+    "auditor_engine":"opus-4.8",
+    "challenger_engine":"current",
+    "release_unit": {
+      "must_ac_count":8,
+      "task_count":9,
+      "plan_lines":430,
+      "high_risk_subsystem_count":3,
+      "surface_categories":["UI","Session","Harness"]
+    },
+    "thresholds": {
+      "max_must_ac":8,
+      "max_tasks":10,
+      "max_plan_lines":2000,
+      "max_high_risk_subsystems":3,
+      "max_surface_categories":3
+    },
+    "active_run_required":true,
+    "structured_audit_required":true
+  }
+}

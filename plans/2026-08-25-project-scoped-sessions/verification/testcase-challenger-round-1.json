@@ -1,0 +1,10 @@
+{
+  "round": 1,
+  "scope": "MUST AC coverage, change-risk coverage, candidate reuse, executable steps, and minimal sufficiency",
+  "inputs_complete": true,
+  "required_testcases": 8,
+  "delivery_bound": 8,
+  "risk_bound_without_duplicate_case": 5,
+  "findings": [],
+  "verdict": "PASS"
+}
