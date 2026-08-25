@@ -7459,6 +7459,21 @@ async def _build_product_sdk_runtime_stack(
     )
     project_bindings = service_context.get("project_binding_service")
     if project_bindings is not None:
+        async def _has_durable_sdk_run_start(run_id: str) -> bool:
+            if workflow_service is None:
+                return False
+            return (
+                await workflow_service.execution_uow.read_run_start_snapshot(run_id)
+            ) is not None
+
+        reconciled_project_claims = await project_bindings.reconcile_orphan_run_claims(
+            _has_durable_sdk_run_start
+        )
+        if any(reconciled_project_claims.values()):
+            logger.warning(
+                "project_run_claims_reconciled %s", reconciled_project_claims
+            )
+
         def _release_project_run(authority: Any) -> None:
             asyncio.create_task(project_bindings.release_run(authority.run_id))
 
@@ -9135,12 +9150,10 @@ async def _run_product_harness_chat(
         attachment_blocks=tuple(user_attachment_blocks),
         provider_ref=str(getattr(provider, "model", "") or "") or None,
         capability_ref=f"catalog:{deskpet_tool_registry_v2.catalog_snapshot().revision}",
-        # ``workspace`` above is inherited from the Session's last confirmed
-        # project.  Keep it on the trusted HostContext only.  Passing it as a
-        # TurnInput workspace_ref incorrectly labels the inherited directory
-        # as a fresh user selection, which prevents the native project picker
-        # from rebinding this new root Run to another explicitly chosen path.
-        workspace_ref=None,
+        # This value comes only from the immutable Session binding resolution;
+        # the frontend cannot override it.  Passing the verified root lets
+        # ProjectRules and TaskWorkContext consume the same Run authority.
+        workspace_ref=workspace,
         root_run_id=root_ref.run_id,
         task_scope_id=task_scope_id,
         active_execution_budget_seconds=_chat_turn_timeout_s(),

@@ -5,6 +5,7 @@ import hashlib
 import shutil
 import sqlite3
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -84,6 +85,12 @@ async def test_atomic_create_replay_projectless_explicit_and_delete_terminal(tmp
     assert created
     plain = await creation.create_conversation_session(request_id="plain-1")
     assert isinstance(await binding_service.resolve_session(plain["session"]["session_id"]), ProjectlessWorkspace)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT provider_id,preferred_model,binding_epoch FROM code_session_provider "
+            "WHERE base_session_id=?",
+            (plain["session"]["session_id"],),
+        ).fetchone() == (None, None, 1)
     result = await creation.create_conversation_session(
         request_id="create-1", project_id=project.project_id,
         source_session_id=plain["session"]["session_id"],
@@ -110,6 +117,17 @@ async def test_atomic_create_replay_projectless_explicit_and_delete_terminal(tmp
     with pytest.raises(ProjectSessionError, match="request_id_conflict"):
         await creation.create_conversation_session(request_id="create-1", project_id=None)
     await creation.mark_deleted(result["session"]["session_id"])
+    with sqlite3.connect(db_path) as db:
+        deleted_epoch = db.execute(
+            "SELECT epoch FROM session_delivery_state WHERE session_id=?",
+            (result["session"]["session_id"],),
+        ).fetchone()[0]
+    await creation.mark_deleted(result["session"]["session_id"])
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT epoch FROM session_delivery_state WHERE session_id=?",
+            (result["session"]["session_id"],),
+        ).fetchone()[0] == deleted_epoch
     with pytest.raises(ProjectSessionError, match="session_deleted"):
         await creation.create_conversation_session(
             request_id="create-1", project_id=project.project_id,
@@ -182,10 +200,10 @@ async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
 
     with sqlite3.connect(db_path) as db:
         db.execute(
-            "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,"
-            "model_params,provider_incarnation_id,provider_config_revision,updated_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (sid, "provider-1", "model-1", "{}", "incarnation-1", 7, 1.0),
+            "UPDATE code_session_provider SET provider_id=?,preferred_model=?,model_params=?,"
+            "provider_incarnation_id=?,provider_config_revision=?,updated_at=? "
+            "WHERE base_session_id=?",
+            ("provider-1", "model-1", "{}", "incarnation-1", 7, 1.0, sid),
         )
     stale_provider = SessionCreationService(
         service,
@@ -200,14 +218,15 @@ async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
             request_id="stale-provider-create", source_session_id=sid
         )
 
-    async def fail_after_all_writes(_db, _sid, _intent):
-        raise RuntimeError("fault_after_route_outbox")
+    def fail_after_all_writes(stage: str):
+        if stage == "before_receipt":
+            raise RuntimeError("fault_after_route_outbox")
 
     failing = SessionCreationService(
         service,
         session_db=session_db,
         owner_identity_resolver=lambda: frozen,
-        tx_participants=(fail_after_all_writes,),
+        fault_inject=fail_after_all_writes,
     )
     with pytest.raises(RuntimeError, match="fault_after_route_outbox"):
         await failing.create_conversation_session(request_id="atomic-owner-fail")
@@ -217,6 +236,69 @@ async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
             "WHERE request_id='atomic-owner-fail'"
         ).fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage",
+    [
+        "after_session_core",
+        "after_owner_route",
+        "after_binding_provider",
+        "before_receipt",
+        "after_receipt",
+        "before_commit",
+    ],
+)
+async def test_creation_precommit_fault_matrix_leaves_no_rows(
+    tmp_path: Path, stage: str
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    from deskpet.memory.session_db import SessionDB
+
+    session_db = SessionDB(db_path)
+    await session_db.initialize()
+
+    def crash(point: str):
+        if point == stage:
+            raise RuntimeError(f"crash:{stage}")
+
+    creation = SessionCreationService(
+        ProjectBindingService(db_path, write_lock=session_db._write_lock),
+        session_db=session_db,
+        fault_inject=crash,
+    )
+    with pytest.raises(RuntimeError, match=f"crash:{stage}"):
+        await creation.create_conversation_session(request_id=f"fault-{stage}")
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM code_session_provider").fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM session_creation_receipts").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_creation_after_commit_fault_replays_single_terminal_result(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+
+    def crash(stage: str):
+        if stage == "after_commit":
+            raise RuntimeError("lost-ack")
+
+    service = ProjectBindingService(db_path)
+    crashing = SessionCreationService(service, fault_inject=crash)
+    with pytest.raises(RuntimeError, match="lost-ack"):
+        await crashing.create_conversation_session(request_id="lost-ack")
+    replay = await SessionCreationService(service).create_conversation_session(
+        request_id="lost-ack"
+    )
+    assert replay["replayed"] is True
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
+        assert db.execute("SELECT count(*) FROM session_creation_receipts").fetchone()[0] == 1
 
 
 @pytest.mark.asyncio
@@ -269,6 +351,40 @@ async def test_catalog_pages_zero_message_pinned_stale_and_relocate(tmp_path: Pa
     other = tmp_path.resolve() / "other"; other.mkdir()
     with pytest.raises(ProjectSessionError, match="project_identity_mismatch"):
         await service.relocate_project(project.project_id, str(other), 2)
+
+
+@pytest.mark.asyncio
+async def test_startup_reconciles_only_run_claims_without_durable_start(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    service = ProjectBindingService(db_path)
+    creation = SessionCreationService(service)
+    source = await creation.create_conversation_session(request_id="source")
+    root = tmp_path.resolve() / "project"
+    root.mkdir()
+    project, _ = await service.register_project(str(root), "selected_folder")
+    target = await creation.create_conversation_session(
+        request_id="target",
+        project_id=project.project_id,
+        source_session_id=source["session"]["session_id"],
+    )
+    resolution = await service.resolve_session(target["session"]["session_id"])
+    assert isinstance(resolution, ProjectBoundWorkspace)
+    await service.admit_run({**asdict(resolution), "kind": "project_bound"}, "orphan-run")
+    assert await service.claim_handoff(target["session"]["session_id"], "orphan-run")
+
+    reconciled = await service.reconcile_orphan_run_claims(
+        lambda _run_id: asyncio.sleep(0, result=False)
+    )
+    assert reconciled == {"admissions_removed": 1, "handoffs_removed": 1}
+    assert await service.claim_handoff(target["session"]["session_id"], "durable-run")
+
+    retained = await service.reconcile_orphan_run_claims(
+        lambda run_id: asyncio.sleep(0, result=run_id == "durable-run")
+    )
+    assert retained == {"admissions_removed": 0, "handoffs_removed": 0}
 
 
 @pytest.mark.asyncio
@@ -343,3 +459,57 @@ async def test_semantic_upgrade_crash_resume_and_guarded_restore(tmp_path: Path)
     assert quarantine.is_file()
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 31
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault_stage",
+    ["before_scan", "after_scan_commit", "after_chunk_commit", "after_completion_commit"],
+)
+async def test_semantic_upgrade_fault_boundaries_resume_exactly_once(
+    tmp_path: Path, fault_stage: str
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    old_migrations = tmp_path.resolve() / "migrations-v31"
+    old_migrations.mkdir()
+    for source in DEFAULT_MIGRATIONS_DIR.glob("*.sql"):
+        if not source.name.startswith("024_"):
+            shutil.copy2(source, old_migrations / source.name)
+    await ensure_v9(db_path, migrations_dir=old_migrations)
+    sid = str(uuid.uuid4())
+    root = tmp_path.resolve() / "legacy"
+    root.mkdir()
+    with sqlite3.connect(db_path) as db:
+        db.execute("INSERT INTO sessions(id,created_at) VALUES(?,1)", (sid,))
+        db.execute(
+            "INSERT INTO code_sessions(base_session_id,code_session_id,project_root,"
+            "project_name,created_at,last_active_at) VALUES(?,?,?,?,1,1)",
+            (sid, "code", str(root), "legacy"),
+        )
+    backup = tmp_path.resolve() / "state.db.pre-v32.bak"
+    shutil.copy2(db_path, backup)
+    await ensure_v9(db_path)
+    fired = False
+
+    def crash(point: str) -> None:
+        nonlocal fired
+        if point == fault_stage and not fired:
+            fired = True
+            raise RuntimeError(f"crash:{fault_stage}")
+
+    with pytest.raises(RuntimeError, match=f"crash:{fault_stage}"):
+        await run_project_session_upgrade(
+            db_path, backup_path=backup, fault_inject=crash
+        )
+    await run_project_session_upgrade(db_path, backup_path=backup)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT phase FROM project_session_backfill_state"
+        ).fetchone()[0] == "completed"
+        assert db.execute(
+            "SELECT count(*) FROM session_project_bindings WHERE session_id=?", (sid,)
+        ).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT count(*) FROM project_session_backfill_outcomes "
+            "WHERE base_session_id=?", (sid,)
+        ).fetchone()[0] == 1

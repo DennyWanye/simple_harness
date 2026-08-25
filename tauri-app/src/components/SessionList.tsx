@@ -18,8 +18,9 @@ import { ProjectPickerDialog } from "./ProjectPickerDialog";
 import { ConfirmDialog } from "../code-panel/ConfirmDialog";
 import { MAX_TITLE_LEN, normalizeTopicTitle } from "../chat/topicTitle";
 
-export type SessionEntry = ProjectSessionDescriptor;
 export interface SessionListProps { activeSid: string; onSwitchSid: (sid: string) => void; }
+
+export const PROJECT_GROUP_REFRESH_EVENT = "simple-harness:project-group-refresh";
 
 type FlatRow =
   | { kind: "project"; project: ProjectDescriptor }
@@ -142,6 +143,20 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     previousWsState.current = wsState;
     if (wsState === "connected" && previous !== "connected") refreshAll();
   }, [refreshAll, wsState]);
+
+  useEffect(() => {
+    const refreshProjectGroup = (event: Event) => {
+      const projectId = String(
+        (event as CustomEvent<{ projectId?: string }>).detail?.projectId ?? "",
+      ).trim();
+      requestCatalog();
+      if (projectId) {
+        requestSessions({ scope_kind: "project", project_id: projectId });
+      }
+    };
+    window.addEventListener(PROJECT_GROUP_REFRESH_EVENT, refreshProjectGroup);
+    return () => window.removeEventListener(PROJECT_GROUP_REFRESH_EVENT, refreshProjectGroup);
+  }, [requestCatalog, requestSessions]);
 
   const createSession = useCallback((projectId: string | null, sourceSid: string | null = null) => {
     if (!companionIdentityReady) return;

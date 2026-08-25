@@ -10,6 +10,7 @@ import { ProjectPickerDialog } from "./ProjectPickerDialog";
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import "./ProjectInspector.css";
+import { PROJECT_GROUP_REFRESH_EVENT } from "./SessionList";
 
 export function ProjectInspector({ activeSid, onSwitchSid }: { activeSid: string; onSwitchSid: (sid: string) => void }) {
   const pages = useSessionsStore((s) => s.project_session_pages);
@@ -51,7 +52,9 @@ export function ProjectInspector({ activeSid, onSwitchSid }: { activeSid: string
       if (!relocated.payload.ok) return setError(relocated.payload.error.message);
       const currentGit = inspection?.git ?? null;
       useSessionsStore.getState().apply_project_inspection({ request_id: relocated.request_id, project: relocated.payload.project, git: currentGit });
-      controlWS.send(projectRequest("project_catalog_page", { cursor: null, limit: 50, pinned_project_id: relocated.payload.project.project_id }));
+      window.dispatchEvent(new CustomEvent(PROJECT_GROUP_REFRESH_EVENT, {
+        detail: { projectId: relocated.payload.project.project_id },
+      }));
     }
   }), [inspection?.git, onSwitchSid]);
 

@@ -5,7 +5,7 @@ import React from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SessionList } from "./SessionList";
+import { PROJECT_GROUP_REFRESH_EVENT, SessionList } from "./SessionList";
 import { controlWS } from "../code-panel/controlWs";
 import { useSessionsStore } from "../stores/sessionsStore";
 
@@ -83,5 +83,21 @@ describe("SessionList project catalog", () => {
     emit(response); emit(response);
     expect(onSwitch).toHaveBeenCalledTimes(1);
     expect(onSwitch).toHaveBeenCalledWith("born");
+  });
+
+  it("tracks the catalog and whole-group refresh requested after relocate", () => {
+    render(<SessionList activeSid="s1" onSwitchSid={() => {}} />);
+    vi.mocked(controlWS.send).mockClear();
+
+    act(() => window.dispatchEvent(new CustomEvent(PROJECT_GROUP_REFRESH_EVENT, {
+      detail: { projectId: "p1" },
+    })));
+
+    expect(request("project_catalog_page").payload).toMatchObject({ cursor: null });
+    expect(request("project_sessions_page").payload).toMatchObject({
+      scope_kind: "project",
+      project_id: "p1",
+      cursor: null,
+    });
   });
 });

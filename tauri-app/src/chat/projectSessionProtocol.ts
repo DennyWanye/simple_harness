@@ -10,8 +10,6 @@ import type {
   ProjectSessionPage,
 } from "../types/projectSessions";
 
-export const PROJECT_PROTOCOL_VERSION = 1;
-
 export type ProjectProtocolErrorCode =
   | "invalid_request" | "path_empty" | "path_not_absolute" | "path_not_found"
   | "path_not_directory" | "path_unreadable" | "git_probe_timeout"

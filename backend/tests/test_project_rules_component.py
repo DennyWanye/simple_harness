@@ -202,8 +202,8 @@ async def test_rule_changes_are_reread_next_turn(tmp_path) -> None:
     assert "version two" in str(second.fragments[0].content)
 
 
-def test_default_factory_registers_rules_only_for_code_policy() -> None:
+def test_default_factory_registers_rules_for_verified_project_sessions() -> None:
     assembler = build_default_assembler()
     assert "project_rules" in assembler._registry.names()
     assert "project_rules" in assembler._policies["code"].prefer
-    assert "project_rules" not in assembler._policies["chat"].prefer
+    assert "project_rules" in assembler._policies["chat"].prefer

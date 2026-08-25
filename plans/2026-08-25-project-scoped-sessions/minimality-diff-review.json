@@ -1,0 +1,81 @@
+{
+  "verdict": "LEAN",
+  "findings": [
+    {
+      "id": "min-diff-1",
+      "tag": "delete",
+      "target": "backend/deskpet/session/project_binding.py:70-80,119-122,1031-1035",
+      "current": "SessionProjectBinding dataclass is never constructed or imported, while ProjectWorkspaceResolution and WorkspaceResolution are two exported names for the same union and only WorkspaceResolution is used locally.",
+      "replacement": "Delete the unused SessionProjectBinding dataclass and its __all__ entry; keep the plan-named ProjectWorkspaceResolution union as the sole alias, use it as resolve_session()'s return annotation, and delete the duplicate WorkspaceResolution alias/export.",
+      "preserves_acceptance": [
+        "AC-2",
+        "AC-4",
+        "AC-6",
+        "AC-7"
+      ],
+      "risk_impact": "none; the durable binding table, typed project/projectless/missing variants, identity checks and authority record remain unchanged.",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-diff-2",
+      "tag": "delete",
+      "target": "backend/deskpet/session/project_binding.py:219-228,478-479",
+      "current": "ProjectBindingService exposes an optional has_active_project_runs callback and stores/checks it, but no production or test construction passes the callback. The implemented durable project_run_admissions query remains the actual relocation fence.",
+      "replacement": "Remove the unused constructor parameter, instance field and conditional callback invocation. Keep the project_run_admissions active-state query, execution/workflow run checks, expected project revision CAS and all active-run relocation tests as the single implemented fence.",
+      "preserves_acceptance": [
+        "AC-4",
+        "AC-7"
+      ],
+      "risk_impact": "No current runtime path changes because the callback is always None; FAIL-AUTHORITY and active-run relocation controls remain backed by durable state.",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-diff-3",
+      "tag": "inline",
+      "target": "backend/deskpet/session/project_binding.py:706-727,988-989 and backend/tests/session/test_project_scoped_sessions.py",
+      "current": "SessionCreationService adds a generic tuple of asynchronous tx_participants, but production never supplies a participant; the only caller is a test that throws after writes to exercise transaction rollback.",
+      "replacement": "Replace the speculative participant plug-in surface with one optional test fault callback such as fault_inject(stage), invoked at the same before-receipt point. Keep TO-R1's rollback assertion and other required crash/lost-ACK tests, without exposing an unused arbitrary transaction extension mechanism.",
+      "preserves_acceptance": [
+        "AC-2",
+        "AC-8"
+      ],
+      "risk_impact": "TO-R1 fault injection remains deterministic; transaction boundaries, request receipts, provider lock order and atomic commit behavior are unchanged.",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-diff-4",
+      "tag": "delete",
+      "target": "tauri-app/src/chat/projectSessionProtocol.ts:13 and tauri-app/src/components/SessionList.tsx:21",
+      "current": "PROJECT_PROTOCOL_VERSION and the exported SessionEntry alias have no consumers. Protocol schema version is already carried by ProjectCatalogPage/ProjectSessionPage literal fields, and SessionList directly uses ProjectSessionDescriptor.",
+      "replacement": "Delete both unused exports. Continue using the schema_version: 1 transport fields and ProjectSessionDescriptor directly; do not add replacement wrappers or aliases.",
+      "preserves_acceptance": [
+        "AC-2",
+        "AC-5"
+      ],
+      "risk_impact": "none",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    },
+    {
+      "id": "min-diff-5",
+      "tag": "delete",
+      "target": "plans/2026-08-25-project-scoped-sessions/verification/fixtures/surface-smoke-draft.sh",
+      "current": "The script is unreferenced and only prints prose lane labels plus an explicit 'Draft only' message; it executes no smoke checks and produces no decision evidence.",
+      "replacement": "Delete the draft script and drive the required critical/affected/full-surface decisions from verification/verification-spec.json, verification/impact-paths.json and TC-PS-01 through TC-PS-08. Keep TO-R4 and all real automated/UI smoke execution and evidence requirements unchanged.",
+      "preserves_acceptance": [
+        "AC-8"
+      ],
+      "risk_impact": "FAIL-REGRESSION coverage is preserved by the executable verification routes and required testcase documents; only a non-executable duplicate checklist is removed.",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    }
+  ]
+}

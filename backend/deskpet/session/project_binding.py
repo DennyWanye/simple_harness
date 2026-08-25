@@ -221,11 +221,9 @@ class ProjectBindingService:
         db_path: str | Path,
         *,
         write_lock: asyncio.Lock | None = None,
-        has_active_project_runs: Callable[[str], Awaitable[bool]] | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._write_lock = write_lock or asyncio.Lock()
-        self._has_active_project_runs = has_active_project_runs
 
     async def preview_registration(self, selected_path: str, mode: str) -> RegistrationPreview:
         return await asyncio.to_thread(resolve_registration, selected_path, mode)  # type: ignore[arg-type]
@@ -445,6 +443,57 @@ class ProjectBindingService:
                 )
                 await db.commit()
 
+    async def reconcile_orphan_run_claims(
+        self, has_durable_run_start: Callable[[str], Awaitable[bool]]
+    ) -> dict[str, int]:
+        """Drop only pre-RunStart crash residue before runtime ingress opens.
+
+        A handoff reservation remains permanent once its deterministic first
+        Run has a durable RunStart.  Active relocation fences without such a
+        record are safe to remove because no recoverable Run can own them.
+        """
+
+        async with self._write_lock:
+            async with aiosqlite.connect(self._db_path) as db:
+                admissions = [
+                    str(row[0])
+                    for row in await (await db.execute(
+                        "SELECT run_id FROM project_run_admissions WHERE state='active'"
+                    )).fetchall()
+                ]
+                handoffs = [
+                    (str(row[0]), str(row[1]))
+                    for row in await (await db.execute(
+                        "SELECT session_id,first_run_id FROM session_handoff_consumptions"
+                    )).fetchall()
+                ]
+            orphan_admissions = [
+                run_id for run_id in admissions
+                if not await has_durable_run_start(run_id)
+            ]
+            orphan_handoffs = [
+                (session_id, run_id) for session_id, run_id in handoffs
+                if not await has_durable_run_start(run_id)
+            ]
+            async with aiosqlite.connect(self._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                if orphan_admissions:
+                    await db.executemany(
+                        "DELETE FROM project_run_admissions WHERE run_id=? AND state='active'",
+                        ((run_id,) for run_id in orphan_admissions),
+                    )
+                if orphan_handoffs:
+                    await db.executemany(
+                        "DELETE FROM session_handoff_consumptions "
+                        "WHERE session_id=? AND first_run_id=?",
+                        orphan_handoffs,
+                    )
+                await db.commit()
+        return {
+            "admissions_removed": len(orphan_admissions),
+            "handoffs_removed": len(orphan_handoffs),
+        }
+
     @staticmethod
     def validate_workspace_identity(resolution: Mapping[str, Any]) -> None:
         """Re-stat both frozen roots without consulting mutable Session state."""
@@ -475,8 +524,6 @@ class ProjectBindingService:
     ) -> ProjectRecord:
         candidate = _strict_directory(new_path)
         candidate_identity = _filesystem_identity(candidate)
-        if self._has_active_project_runs and await self._has_active_project_runs(project_id):
-            raise ProjectSessionError("project_runs_active")
         now = time.time()
         async with self._write_lock:
             async with aiosqlite.connect(self._db_path) as db:
@@ -707,8 +754,7 @@ class SessionCreationService:
     """Atomic, replay-safe product Session creation.
 
     Optional ``provider_mutation_lock`` preserves the registry→state.db lock
-    order.  ``tx_participants`` are connection-taking callbacks for existing
-    provider/memory/route repositories; they run before the sole commit.
+    order. ``fault_inject`` is a test-only crash-boundary probe.
     """
 
     def __init__(
@@ -717,14 +763,21 @@ class SessionCreationService:
         session_db: Any = None,
         owner_identity_resolver: Callable[[], Any] | None = None,
         provider_binding_validator: Callable[[str, str, int], None] | None = None,
-        tx_participants: tuple[Callable[[aiosqlite.Connection, str, dict[str, Any]], Awaitable[None]], ...] = (),
+        fault_inject: Callable[[str], Awaitable[None] | None] | None = None,
     ) -> None:
         self._bindings = binding_service
         self._provider_lock = provider_mutation_lock
         self._session_db = session_db
         self._owner_identity_resolver = owner_identity_resolver
         self._provider_binding_validator = provider_binding_validator
-        self._tx_participants = tx_participants
+        self._fault_inject = fault_inject
+
+    async def _fault(self, stage: str) -> None:
+        if self._fault_inject is None:
+            return
+        result = self._fault_inject(stage)
+        if result is not None:
+            await result
 
     async def _build_handoff(self, db: aiosqlite.Connection, source_sid: str) -> dict[str, Any]:
         exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (source_sid,))).fetchone()
@@ -861,6 +914,7 @@ class SessionCreationService:
                     await self._session_db._ensure_memory_binding_in_transaction(
                         db, session_id=sid, user_id="deskpet-local-owner-v1"
                     )
+                await self._fault("after_session_core")
                 if owner_snapshot is not None:
                     await db.execute(
                         "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,"
@@ -923,6 +977,7 @@ class SessionCreationService:
                             target_epoch=0,
                             now=now,
                         )
+                await self._fault("after_owner_route")
                 if project is not None:
                     await db.execute(
                         "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,"
@@ -939,35 +994,36 @@ class SessionCreationService:
                     "turn_count": 0, "activity_at": now, "created_at": now,
                     "availability": "available" if project_id else "projectless"}
                 result = {"session": descriptor, "replayed": False}
+                provider_row = None
                 if source_session_id:
                     provider_row = await (await db.execute(
                         "SELECT provider_id,preferred_model,model_params,provider_incarnation_id,"
                         "provider_config_revision FROM code_session_provider WHERE base_session_id=?",
                         (source_session_id,),
                     )).fetchone()
-                    if provider_row is not None:
-                        if self._provider_binding_validator is not None:
-                            try:
-                                self._provider_binding_validator(
-                                    str(provider_row[0]),
-                                    str(provider_row[3]),
-                                    int(provider_row[4]),
-                                )
-                            except Exception as exc:
-                                raise ProjectSessionError(
-                                    "provider_binding_stale"
-                                ) from exc
-                        await db.execute(
-                            "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,model_params,"
-                            "provider_incarnation_id,provider_config_revision,binding_epoch,updated_at) "
-                            "VALUES(?,?,?,?,?,?,1,?)",
-                            (sid, *tuple(provider_row), now),
+                frozen_provider = tuple(provider_row) if provider_row is not None else (None,) * 5
+                if provider_row is not None and self._provider_binding_validator is not None:
+                    try:
+                        self._provider_binding_validator(
+                            str(provider_row[0]),
+                            str(provider_row[3]),
+                            int(provider_row[4]),
                         )
-                        if self._session_db is not None:
-                            await self._session_db.advance_context_usage_binding_state_tx(
-                                db, session_id=sid, binding_epoch=1,
-                                provider_id=provider_row[0], model_id=provider_row[1],
-                            )
+                    except Exception as exc:
+                        raise ProjectSessionError("provider_binding_stale") from exc
+                await db.execute(
+                    "INSERT INTO code_session_provider(base_session_id,provider_id,preferred_model,model_params,"
+                    "provider_incarnation_id,provider_config_revision,binding_epoch,updated_at) "
+                    "VALUES(?,?,?,?,?,?,1,?)",
+                    (sid, *frozen_provider, now),
+                )
+                if self._session_db is not None:
+                    await self._session_db.advance_context_usage_binding_state_tx(
+                        db, session_id=sid, binding_epoch=1,
+                        provider_id=frozen_provider[0], model_id=frozen_provider[1],
+                    )
+                await self._fault("after_binding_provider")
+                if source_session_id:
                     owner_row = await (await db.execute(
                         "SELECT owner_kind,profile_id,profile_generation,binding_epoch "
                         "FROM companion_session_owners WHERE session_id=? AND status='active'",
@@ -985,13 +1041,15 @@ class SessionCreationService:
                             "scope_version=scope_version+1,updated_at=excluded.updated_at",
                             (owner_row[1], owner_row[2], now),
                         )
-                for participant in self._tx_participants:
-                    await participant(db, sid, intent)
+                await self._fault("before_receipt")
                 await db.execute(
                     "INSERT INTO session_creation_receipts(request_id,intent_hash,session_id,result_json,lifecycle,created_at) "
                     "VALUES(?,?,?,?, 'active', ?)", (request, intent_hash, sid, _canonical_json(result), now)
                 )
+                await self._fault("after_receipt")
+                await self._fault("before_commit")
                 await db.commit()
+                await self._fault("after_commit")
                 return result
             except Exception:
                 await db.rollback()
@@ -1007,6 +1065,13 @@ class SessionCreationService:
                 exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))).fetchone()
                 if exists is None:
                     raise ProjectSessionError("session_not_found")
+                deleted = await (await db.execute(
+                    "SELECT deleted_at FROM session_delivery_state WHERE session_id=?",
+                    (sid,),
+                )).fetchone()
+                if deleted is not None and deleted[0] is not None:
+                    await db.rollback()
+                    return
                 await db.execute("DELETE FROM messages WHERE session_id=?", (sid,))
                 await db.execute("DELETE FROM session_titles WHERE session_id=?", (sid,))
                 await db.execute(

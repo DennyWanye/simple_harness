@@ -142,6 +142,12 @@ def build_default_assembler(
         # code-only component reachable. It still fail-closes before any disk
         # access unless the workspace root came from a verified host context.
         code_policy.prefer = [*code_policy.prefer, "project_rules"]
+    chat_policy = policies.get("chat")
+    if chat_policy is not None and "project_rules" not in chat_policy.prefer:
+        # Project-scoped conversation Sessions are the primary development
+        # ingress. The component remains zero-I/O for projectless Sessions
+        # because only a verified Host workspace can make it eligible.
+        chat_policy.prefer = [*chat_policy.prefer, "project_rules"]
 
     classifier = TaskClassifier(
         embedder=embedder,
