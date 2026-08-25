@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
+from typing import Callable
 
 from deskpet.memory.migrator import (
     MigrationError,
@@ -42,7 +43,11 @@ class InitializeError(RuntimeError):
     """L2 初始化失败——调用方需降级启动（无 L2/L3）。"""
 
 
-async def initialize_state_db(db_path: str | Path) -> None:
+async def initialize_state_db(
+    db_path: str | Path,
+    *,
+    fault_inject: Callable[[str], None] | None = None,
+) -> None:
     """确保 ``db_path`` 指向一个 v9+ 的 state.db。
 
     行为顺序（故意冗长，便于 bug 定位）：
@@ -99,7 +104,11 @@ async def initialize_state_db(db_path: str | Path) -> None:
     bak_path: Path | None = None
     if need_backup:
         try:
+            if fault_inject:
+                fault_inject("before_backup")
             bak_path = await backup_db(db_path)
+            if fault_inject:
+                fault_inject("after_backup")
             log.info("state.db backed up before migration: %s", bak_path)
         except OSError as exc:
             # 备份失败通常是磁盘满 / 权限问题。不强行迁移（否则迁失败就
@@ -108,12 +117,14 @@ async def initialize_state_db(db_path: str | Path) -> None:
             raise InitializeError(f"cannot backup state.db: {exc}") from exc
 
     try:
-        applied = await ensure_v9(db_path)
+        applied = await ensure_v9(db_path, fault_inject=fault_inject)
         if applied:
             log.info("state.db migrations applied: %s", applied)
         else:
             log.debug("state.db migrations already up-to-date")
-        await run_project_session_upgrade(db_path, backup_path=bak_path)
+        await run_project_session_upgrade(
+            db_path, backup_path=bak_path, fault_inject=fault_inject
+        )
     except (MigrationError, Exception) as exc:  # noqa: BLE001  # 故意 broad
         # 任何迁移异常都走回滚。包括 sqlite3.Error / OSError / 自定义。
         log.error("state.db migration failed: %s; attempting rollback", exc)

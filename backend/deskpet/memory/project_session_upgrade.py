@@ -194,6 +194,8 @@ async def run_project_session_upgrade(
         )).fetchall()
         digest = hashlib.sha256(json.dumps([list(row) for row in outcomes], separators=(",", ":")).encode()).hexdigest()
         now = time.time()
+        if fault_inject:
+            fault_inject("before_completion_commit")
         await db.execute(
             "UPDATE project_session_backfill_state SET phase='completed',outcome_digest=?,completed_at=?,updated_at=?,error_code=NULL WHERE singleton=1",
             (digest, now, now),

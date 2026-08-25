@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import shutil
 import sqlite3
 import uuid
@@ -14,7 +15,7 @@ import pytest
 
 from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, ensure_v9
 from deskpet.memory.project_session_upgrade import run_project_session_upgrade
-from deskpet.memory.schema import initialize_state_db
+from deskpet.memory.schema import InitializeError, initialize_state_db
 from deskpet.session.project_binding import (
     ProjectBindingService,
     ProjectBoundWorkspace,
@@ -273,6 +274,10 @@ async def test_creation_precommit_fault_matrix_leaves_no_rows(
     project, _ = await binding_service.register_project(
         str(root), "selected_folder"
     )
+    with sqlite3.connect(db_path) as db:
+        catalog_revision_before = db.execute(
+            "SELECT catalog_revision FROM project_session_catalog_state WHERE singleton=1"
+        ).fetchone()[0]
     frozen = SimpleNamespace(
         owner=SimpleNamespace(profile_id="fault-owner", profile_generation=1),
         binding_epoch=1,
@@ -299,6 +304,7 @@ async def test_creation_precommit_fault_matrix_leaves_no_rows(
             "session_delivery_state",
             "memory_user_bindings",
             "companion_session_owners",
+            "companion_owner_scope_versions",
             "companion_projection_routes",
             "companion_projection_route_outbox",
             "session_project_bindings",
@@ -307,6 +313,40 @@ async def test_creation_precommit_fault_matrix_leaves_no_rows(
             "session_creation_receipts",
         ):
             assert db.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
+        assert db.execute(
+            "SELECT catalog_revision FROM project_session_catalog_state WHERE singleton=1"
+        ).fetchone()[0] == catalog_revision_before
+
+
+@pytest.mark.asyncio
+async def test_concurrent_duplicate_creation_replays_or_rejects_intent_change(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    binding_service = ProjectBindingService(db_path)
+    creation = SessionCreationService(binding_service)
+    root = tmp_path / "duplicate-project"
+    root.mkdir()
+    project, _ = await binding_service.register_project(str(root), "selected_folder")
+
+    first, second = await asyncio.gather(
+        creation.create_conversation_session(
+            request_id="duplicate-request", project_id=project.project_id
+        ),
+        creation.create_conversation_session(
+            request_id="duplicate-request", project_id=project.project_id
+        ),
+    )
+    assert first["session"]["session_id"] == second["session"]["session_id"]
+    assert sorted((first["replayed"], second["replayed"])) == [False, True]
+    with pytest.raises(ProjectSessionError, match="request_id_conflict"):
+        await creation.create_conversation_session(request_id="duplicate-request")
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
+        assert db.execute(
+            "SELECT count(*) FROM session_creation_receipts"
+        ).fetchone()[0] == 1
 
 
 @pytest.mark.asyncio
@@ -379,11 +419,33 @@ async def test_delete_precommit_fault_rolls_back_all_tombstones(
         if point == stage:
             raise RuntimeError(f"crash:{stage}")
 
-    service = ProjectBindingService(db_path)
-    normal = SessionCreationService(service)
+    from deskpet.memory.session_db import SessionDB
+
+    session_db = SessionDB(db_path)
+    await session_db.initialize()
+    owner = SimpleNamespace(
+        owner=SimpleNamespace(profile_id="delete-owner", profile_generation=1),
+        binding_epoch=1,
+    )
+    service = ProjectBindingService(db_path, write_lock=session_db._write_lock)
+    normal = SessionCreationService(
+        service, session_db=session_db, owner_identity_resolver=lambda: owner
+    )
     created = await normal.create_conversation_session(request_id=f"delete-{stage}")
     sid = created["session"]["session_id"]
-    crashing = SessionCreationService(service, fault_inject=crash)
+    with sqlite3.connect(db_path) as db:
+        outbox_before = db.execute(
+            "SELECT count(*) FROM companion_projection_route_outbox"
+        ).fetchone()[0]
+        revision_before = db.execute(
+            "SELECT catalog_revision FROM project_session_catalog_state WHERE singleton=1"
+        ).fetchone()[0]
+    crashing = SessionCreationService(
+        service,
+        session_db=session_db,
+        owner_identity_resolver=lambda: owner,
+        fault_inject=crash,
+    )
     with pytest.raises(RuntimeError, match=f"crash:{stage}"):
         await crashing.mark_deleted(sid)
     with sqlite3.connect(db_path) as db:
@@ -393,6 +455,19 @@ async def test_delete_precommit_fault_rolls_back_all_tombstones(
         assert db.execute(
             "SELECT lifecycle FROM session_creation_receipts WHERE session_id=?", (sid,)
         ).fetchone()[0] == "active"
+        assert db.execute(
+            "SELECT status FROM companion_session_owners WHERE session_id=?", (sid,)
+        ).fetchone()[0] == "active"
+        assert db.execute(
+            "SELECT status FROM companion_projection_routes WHERE target_session_id=?",
+            (sid,),
+        ).fetchone()[0] == "active"
+        assert db.execute(
+            "SELECT count(*) FROM companion_projection_route_outbox"
+        ).fetchone()[0] == outbox_before
+        assert db.execute(
+            "SELECT catalog_revision FROM project_session_catalog_state WHERE singleton=1"
+        ).fetchone()[0] == revision_before
 
 
 @pytest.mark.asyncio
@@ -404,12 +479,27 @@ async def test_delete_after_commit_fault_replay_is_idempotent(tmp_path: Path) ->
         if stage == "after_delete_commit":
             raise RuntimeError("delete-ack-lost")
 
-    service = ProjectBindingService(db_path)
-    normal = SessionCreationService(service)
+    from deskpet.memory.session_db import SessionDB
+
+    session_db = SessionDB(db_path)
+    await session_db.initialize()
+    owner = SimpleNamespace(
+        owner=SimpleNamespace(profile_id="delete-ack-owner", profile_generation=1),
+        binding_epoch=1,
+    )
+    service = ProjectBindingService(db_path, write_lock=session_db._write_lock)
+    normal = SessionCreationService(
+        service, session_db=session_db, owner_identity_resolver=lambda: owner
+    )
     created = await normal.create_conversation_session(request_id="delete-ack")
     sid = created["session"]["session_id"]
     with pytest.raises(RuntimeError, match="delete-ack-lost"):
-        await SessionCreationService(service, fault_inject=crash).mark_deleted(sid)
+        await SessionCreationService(
+            service,
+            session_db=session_db,
+            owner_identity_resolver=lambda: owner,
+            fault_inject=crash,
+        ).mark_deleted(sid)
     with sqlite3.connect(db_path) as db:
         epoch = db.execute(
             "SELECT epoch FROM session_delivery_state WHERE session_id=?", (sid,)
@@ -419,6 +509,13 @@ async def test_delete_after_commit_fault_replay_is_idempotent(tmp_path: Path) ->
         assert db.execute(
             "SELECT epoch FROM session_delivery_state WHERE session_id=?", (sid,)
         ).fetchone()[0] == epoch
+        assert db.execute(
+            "SELECT status FROM companion_session_owners WHERE session_id=?", (sid,)
+        ).fetchone()[0] == "tombstoned"
+        assert db.execute(
+            "SELECT status FROM companion_projection_routes WHERE target_session_id=?",
+            (sid,),
+        ).fetchone()[0] == "tombstoned"
 
 
 @pytest.mark.asyncio
@@ -607,6 +704,112 @@ async def test_semantic_upgrade_crash_resume_and_guarded_restore(tmp_path: Path)
     assert quarantine.is_file()
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 31
+
+
+@pytest.mark.asyncio
+async def test_v32_startup_checkpoints_wal_and_validates_backup_manifest(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    old_migrations = tmp_path.resolve() / "migrations-v31"
+    old_migrations.mkdir()
+    for source in DEFAULT_MIGRATIONS_DIR.glob("*.sql"):
+        if not source.name.startswith("024_"):
+            shutil.copy2(source, old_migrations / source.name)
+    await ensure_v9(db_path, migrations_dir=old_migrations)
+    sid = str(uuid.uuid4())
+    writer = sqlite3.connect(db_path)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("INSERT INTO sessions(id,created_at) VALUES(?,1)", (sid,))
+    writer.commit()
+    assert db_path.with_name(f"{db_path.name}-wal").exists()
+    await initialize_state_db(db_path)
+    writer.close()
+
+    backups = sorted(tmp_path.glob("state.db.bak.*"))
+    backups = [path for path in backups if not path.name.endswith(".manifest.json")]
+    assert len(backups) == 1
+    backup = backups[0]
+    manifest_path = backup.with_name(f"{backup.name}.manifest.json")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest == {
+        "format": "simple_harness.state-db-backup.v1",
+        "source_name": "state.db",
+        "backup_name": backup.name,
+        "sha256": hashlib.sha256(backup.read_bytes()).hexdigest(),
+        "size_bytes": backup.stat().st_size,
+        "user_version": 31,
+    }
+    with sqlite3.connect(backup) as snapshot:
+        assert snapshot.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+        assert snapshot.execute(
+            "SELECT count(*) FROM sessions WHERE id=?", (sid,)
+        ).fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault_stage",
+    [
+        "before_backup",
+        "after_backup",
+        "before_ddl_commit",
+        "after_ddl_commit",
+        "before_scan",
+        "after_scan_commit",
+        "after_chunk_commit",
+        "before_completion_commit",
+        "after_completion_commit",
+    ],
+)
+async def test_v32_startup_fault_matrix_restores_then_restarts_exactly_once(
+    tmp_path: Path, fault_stage: str
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    old_migrations = tmp_path.resolve() / "migrations-v31"
+    old_migrations.mkdir()
+    for source in DEFAULT_MIGRATIONS_DIR.glob("*.sql"):
+        if not source.name.startswith("024_"):
+            shutil.copy2(source, old_migrations / source.name)
+    await ensure_v9(db_path, migrations_dir=old_migrations)
+    sid = str(uuid.uuid4())
+    root = tmp_path.resolve() / "legacy"
+    root.mkdir()
+    with sqlite3.connect(db_path) as db:
+        db.execute("INSERT INTO sessions(id,created_at) VALUES(?,1)", (sid,))
+        db.execute(
+            "INSERT INTO code_sessions(base_session_id,code_session_id,project_root,"
+            "project_name,created_at,last_active_at) VALUES(?,?,?,?,1,1)",
+            (sid, "code", str(root), "legacy"),
+        )
+    fired = False
+
+    def crash(point: str) -> None:
+        nonlocal fired
+        if point == fault_stage and not fired:
+            fired = True
+            raise RuntimeError(f"crash:{fault_stage}")
+
+    expected_error = (
+        RuntimeError
+        if fault_stage in {"before_backup", "after_backup"}
+        else InitializeError
+    )
+    with pytest.raises(expected_error, match=f"crash:{fault_stage}"):
+        await initialize_state_db(db_path, fault_inject=crash)
+    await initialize_state_db(db_path)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 32
+        assert db.execute(
+            "SELECT phase FROM project_session_backfill_state"
+        ).fetchone()[0] == "completed"
+        assert db.execute(
+            "SELECT count(*) FROM session_project_bindings WHERE session_id=?", (sid,)
+        ).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT count(*) FROM project_session_backfill_outcomes "
+            "WHERE base_session_id=?", (sid,)
+        ).fetchone()[0] == 1
 
 
 @pytest.mark.asyncio

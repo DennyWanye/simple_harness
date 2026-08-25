@@ -29,12 +29,15 @@ Ref:
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
+import os
 import re
-import shutil
 import sqlite3
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 import aiosqlite
 
@@ -201,11 +204,8 @@ def _prune_old_backups(db_path: Path, keep: int = MAX_BACKUPS) -> int:
     Ordering: sort by **filename** descending rather than by mtime.
     The filename embeds a UTC ISO8601 timestamp (see
     ``_safe_timestamp``) which is lexicographically sortable. Sorting
-    by mtime would be wrong because ``shutil.copy2`` preserves the
-    SOURCE's mtime on the backup — so a brand-new bak created from a
-    state.db that hasn't been written to since boot could look
-    "older" than pre-existing baks with newer mtimes. The name sort
-    is unambiguous.
+    by mtime would be wrong because backup metadata may preserve source
+    timestamps. The embedded timestamp makes filename ordering unambiguous.
     """
     parent = db_path.parent
     name = db_path.name
@@ -218,6 +218,7 @@ def _prune_old_backups(db_path: Path, keep: int = MAX_BACKUPS) -> int:
     for old in candidates[keep:]:
         try:
             old.unlink()
+            old.with_name(f"{old.name}.manifest.json").unlink(missing_ok=True)
             pruned += 1
         except OSError:
             # Locked / disappeared mid-iteration — fine, try next.
@@ -228,7 +229,7 @@ def _prune_old_backups(db_path: Path, keep: int = MAX_BACKUPS) -> int:
 async def backup_db(db_path: str | Path) -> Path:
     """复制 ``db_path`` 到 ``<db_path>.bak.<timestamp>`` 并返回备份路径。
 
-    同步 ``shutil.copy2``（保留 mtime）。不存在原库时返回 None？**不**
+    使用 SQLite online backup API 生成一致快照。不存在原库时返回 None？**不**
     ——本函数约定只在"库已存在要迁移"时调用，调用方先检查 exists 再调。
 
     失败（权限、磁盘满）直接 raise OSError，由上层处理。
@@ -243,9 +244,49 @@ async def backup_db(db_path: str | Path) -> Path:
     if not db_path.exists():
         raise FileNotFoundError(f"cannot backup: {db_path} does not exist")
     bak_path = db_path.with_name(f"{db_path.name}.bak.{_safe_timestamp()}")
-    # shutil.copy2 保留 mtime；SQLite WAL 附属文件（-wal/-shm）可以不 copy
-    # 因为迁移时要求库处于干净 close 状态，WAL 已 checkpoint 回主文件。
-    shutil.copy2(db_path, bak_path)
+    manifest_path = bak_path.with_name(f"{bak_path.name}.manifest.json")
+
+    # A state database may have committed pages only in WAL even when the main
+    # process is between requests.  Make that state explicit, fail if another
+    # writer prevents a complete checkpoint, then use SQLite's online backup
+    # API rather than copying the main file by assumption.
+    source = sqlite3.connect(db_path)
+    destination: sqlite3.Connection | None = None
+    try:
+        checkpoint = source.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if checkpoint is None or int(checkpoint[0]) != 0:
+            raise OSError(f"state.db WAL checkpoint remained busy: {checkpoint}")
+        destination = sqlite3.connect(bak_path)
+        source.backup(destination)
+        destination.commit()
+        destination.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        destination.execute("PRAGMA journal_mode=DELETE")
+    finally:
+        if destination is not None:
+            destination.close()
+        source.close()
+
+    with sqlite3.connect(f"file:{bak_path}?mode=ro", uri=True) as check_db:
+        quick_check = check_db.execute("PRAGMA quick_check").fetchone()
+        user_version = int(check_db.execute("PRAGMA user_version").fetchone()[0])
+    if quick_check is None or str(quick_check[0]).lower() != "ok":
+        bak_path.unlink(missing_ok=True)
+        raise OSError(f"state.db backup quick_check failed: {quick_check}")
+    digest = hashlib.sha256(bak_path.read_bytes()).hexdigest()
+    manifest = {
+        "format": "simple_harness.state-db-backup.v1",
+        "source_name": db_path.name,
+        "backup_name": bak_path.name,
+        "sha256": digest,
+        "size_bytes": bak_path.stat().st_size,
+        "user_version": user_version,
+    }
+    temporary_manifest = manifest_path.with_name(f".{manifest_path.name}.tmp")
+    temporary_manifest.write_text(
+        json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    os.replace(temporary_manifest, manifest_path)
     pruned = _prune_old_backups(db_path)
     if pruned:
         log.debug("pruned %d stale state.db backups", pruned)
@@ -274,6 +315,8 @@ async def read_user_version(db_path: str | Path) -> int:
 async def run_migrations(
     db_path: str | Path,
     migrations_dir: Path | None = None,
+    *,
+    fault_inject: Callable[[str], None] | None = None,
 ) -> list[str]:
     """顺序执行所有未应用的迁移文件，返回本次应用的版本列表。
 
@@ -454,7 +497,11 @@ async def run_migrations(
                     await db.execute(
                         f"PRAGMA user_version={MIGRATION_STEPS[version]}"
                     )
+                    if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
+                        fault_inject("before_ddl_commit")
                     await db.commit()
+                    if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
+                        fault_inject("after_ddl_commit")
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
                     log.error(
@@ -568,6 +615,8 @@ async def run_migrations(
 async def ensure_v9(
     db_path: str | Path,
     migrations_dir: Path | None = None,
+    *,
+    fault_inject: Callable[[str], None] | None = None,
 ) -> list[str]:
     """启动守门：保证 ``db_path`` 的 schema 至少在 v9。
 
@@ -608,4 +657,6 @@ async def ensure_v9(
             TARGET_SCHEMA_VERSION,
         )
 
-    return await run_migrations(db_path, migrations_dir=migrations_dir)
+    return await run_migrations(
+        db_path, migrations_dir=migrations_dir, fault_inject=fault_inject
+    )
