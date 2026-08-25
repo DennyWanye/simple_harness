@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Integration tests for _execute_sdk_run function."""
 from types import SimpleNamespace
 

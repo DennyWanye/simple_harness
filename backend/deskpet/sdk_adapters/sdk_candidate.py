@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Single source of truth for the vendored SDK wheel identity.
 
 Every consumer (startup assembly, desktop bridge, conformance host, audit

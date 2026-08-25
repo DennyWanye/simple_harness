@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Explicit development-only reset for DeskPet's complete agent storage set."""
 
 from __future__ import annotations

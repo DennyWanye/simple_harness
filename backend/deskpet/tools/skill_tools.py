@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 DennyWanye
+# SPDX-License-Identifier: BUSL-1.1
+
 """Frozen Skill instruction activation through trusted Run context."""
 
 from __future__ import annotations
