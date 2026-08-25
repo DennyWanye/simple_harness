@@ -15,12 +15,19 @@ def test_tool_component_has_no_domain_regex_surface_mutation() -> None:
 
 def test_main_disables_legacy_deepresearch_starter_before_activation() -> None:
     source = (Path(__file__).parents[1] / "main.py").read_text(encoding="utf-8")
+    recovery_source = (
+        Path(__file__).parents[1]
+        / "deskpet"
+        / "workflows"
+        / "startup_recovery.py"
+    ).read_text(encoding="utf-8")
 
     binding = source.index(
         "_workflow_research_tools.set_deepresearch_workflow_starter(None)"
     )
-    activation = source.index("await _workflow_service.activate_runtime", binding)
-    assert binding < activation
+    recovery = source.index("await activate_and_recover_workflows(", binding)
+    assert binding < recovery
+    assert "await workflow_service.activate_runtime(" in recovery_source
     assert "async def _start_deepresearch_graph" not in source
 
 
