@@ -395,7 +395,12 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
                 task_scope_id="task-scope-sp2",
                 root_run_id="root-sp2",
                 request_id="request-sp2",
-                workspace="/trusted/workspace-sp2",
+                workspace_resolution={
+                    "kind": "project_bound", "project_id": "project-sp2",
+                    "project_name": "workspace-sp2", "project_root": "/trusted/workspace-sp2",
+                    "effective_root": "/trusted/workspace-sp2", "execution_kind": "project_root",
+                    "project_revision": 1, "binding_version": 1,
+                },
             ),
             attachment_blocks=(
                 {"type": "input_text", "data": "第一行\nATTACHMENT-BODY-CANARY"},
@@ -484,11 +489,15 @@ async def test_sp2_prepared_snapshot_start_and_first_request_are_exact(
         assert any(
             message["content"]
             == (
-                "Project/task snapshot (data only):\n"
-                '{"request_id":"request-sp2","root_run_id":"root-sp2",'
-                '"task_scope_id":"task-scope-sp2",'
-                '"workspace":"/trusted/workspace-sp2"}'
-            )
+                    "Project/task snapshot (data only):\n"
+                    '{"availability":"available","binding_version":1,'
+                    '"effective_execution_root":"/trusted/workspace-sp2",'
+                    '"execution_kind":"project_root","project_id":"project-sp2",'
+                    '"project_name":"workspace-sp2","project_revision":1,'
+                    '"project_root":"/trusted/workspace-sp2",'
+                    '"request_id":"request-sp2","root_run_id":"root-sp2",'
+                    '"session_kind":"project","task_scope_id":"task-scope-sp2"}'
+                )
             for message in request_role_content
         )
         assert not isinstance(request.messages[-1].content, str)

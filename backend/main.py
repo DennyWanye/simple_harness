@@ -2610,7 +2610,13 @@ if _session_db is not None:
         _state_db_path, write_lock=_session_db._write_lock
     )
     _session_creation_service = _SessionCreationService(
-        _project_binding_service, session_db=_session_db
+        _project_binding_service,
+        session_db=_session_db,
+        owner_identity_resolver=(
+            _companion_identity_gate.freeze
+            if _companion_identity_gate is not None
+            else None
+        ),
     )
 else:
     _project_binding_service = None
@@ -3018,6 +3024,11 @@ async def lifespan(app: FastAPI):
                 _project_binding_service,
                 provider_mutation_lock=_provider_registry.mutation_lock,
                 session_db=_session_db,
+                owner_identity_resolver=(
+                    _companion_identity_gate.freeze
+                    if _companion_identity_gate is not None
+                    else None
+                ),
             )
             service_context.register(
                 "session_creation_service", _session_creation_service
@@ -7427,6 +7438,11 @@ async def _build_product_sdk_runtime_stack(
     tool_authorities = SdkRunToolAuthorityRegistry(
         scope_store=capability_scope_store,
         resource_records=resource_records,
+        workspace_identity_validator=getattr(
+            service_context.get("project_binding_service"),
+            "validate_workspace_identity",
+            None,
+        ),
     )
     from deskpet.sdk_adapters.skill_resolver import (
         SdkThenLegacyFrozenSkillResolver,
@@ -7889,6 +7905,7 @@ async def _issue_product_harness_host(
     workspace: str | None,
     allow_provider_unavailable: bool = False,
     allow_workspace_unavailable: bool = False,
+    projectless: bool = False,
 ):
     from deskpet.execution.contracts import ProviderLaunchSnapshot, fingerprint_json
     from deskpet.harness.contracts import HostContext
@@ -7964,7 +7981,11 @@ async def _issue_product_harness_host(
         )
     write_scope_root = workspace
     companion = config.raw.get("companion") or {}
-    if write_scope_root is None and bool(companion.get("write_scope_enforced", True)):
+    if (
+        write_scope_root is None
+        and not projectless
+        and bool(companion.get("write_scope_enforced", True))
+    ):
         from agent.write_scope import resolve_workspace_root
         from deskpet.execution.run_block_signals import (
             PreflightBlocked,
@@ -8876,6 +8897,48 @@ async def _run_product_harness_chat(
     task_scope_id = TaskWorkContextResolver.task_scope_id(
         session_id, request_id, turn_id
     )
+    binding_service = service_context.get("project_binding_service")
+    if binding_service is None:
+        raise RuntimeError("project_binding_service_unavailable")
+    workspace_binding = await binding_service.resolve_session(session_id)
+    if workspace_binding.kind == "project":
+        workspace = workspace_binding.effective_root
+        workspace_resolution = {
+            "kind": "project_bound",
+            "session_id": workspace_binding.session_id,
+            "project_id": workspace_binding.project_id,
+            "project_name": workspace_binding.project_name,
+            "project_root": workspace_binding.project_root,
+            "execution_kind": workspace_binding.execution_kind,
+            "effective_root": workspace_binding.effective_root,
+            "project_identity": workspace_binding.project_identity,
+            "execution_identity": workspace_binding.execution_identity,
+            "project_revision": workspace_binding.project_revision,
+            "binding_version": workspace_binding.binding_version,
+            "handoff": workspace_binding.handoff,
+        }
+    elif workspace_binding.kind == "projectless":
+        workspace = None
+        workspace_resolution = {
+            "kind": "projectless",
+            "session_id": workspace_binding.session_id,
+            "effective_root": None,
+            "binding_version": 1,
+        }
+    else:
+        workspace = None
+        workspace_resolution = {
+            "kind": "missing",
+            "session_id": workspace_binding.session_id,
+            "project_id": workspace_binding.project_id,
+            "project_name": workspace_binding.project_name,
+            "project_root": workspace_binding.project_root,
+            "execution_kind": workspace_binding.execution_kind,
+            "effective_root": workspace_binding.effective_root,
+            "project_revision": workspace_binding.project_revision,
+            "binding_version": workspace_binding.binding_version,
+            "error_code": workspace_binding.error_code,
+        }
 
     # Bind the client turn to its deterministic root Run before provider,
     # host, or Context preparation can block. The UI uses this reservation
@@ -8898,29 +8961,35 @@ async def _run_product_harness_chat(
     await _broadcast_default_chat_peers(websocket, reserved)
 
     venue = "text"
-    workspace = None
-    workflow_service = service_context.get("workflow_service")
-    execution_uow = getattr(workflow_service, "execution_uow", None)
-    if execution_uow is not None and hasattr(
-        execution_uow, "get_latest_session_project_context"
-    ):
-        try:
-            project_context = await execution_uow.get_latest_session_project_context(
-                session_id
-            )
-            inherited_root = str(project_context.get("project_root") or "").strip()
-            workspace = inherited_root or None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "session_project_context_resolve_failed",
+    if workspace_resolution["kind"] == "missing":
+        host, _provider, _providers, _provider_snapshot = (
+            await _issue_product_harness_host(
                 session_id=session_id,
-                error_type=type(exc).__name__,
-                error=str(exc),
+                workspace=None,
+                allow_provider_unavailable=True,
+                allow_workspace_unavailable=True,
+                projectless=True,
             )
+        )
+        await _commit_product_preflight_block(
+            websocket=websocket,
+            text=text,
+            session_id=session_id,
+            request_id=request_id,
+            turn_id=turn_id,
+            task_scope_id=task_scope_id,
+            host=host,
+            block=PreflightBlocked(
+                RootBlockReasonV1.WORKSPACE_UNAVAILABLE,
+                ("workspace-binding:" + str(workspace_resolution["error_code"]),),
+            ),
+        )
+        return
     try:
         host, _provider, _providers, _provider_snapshot = await _issue_product_harness_host(
             session_id=session_id,
             workspace=workspace,
+            projectless=workspace_resolution["kind"] == "projectless",
         )
         provider = _provider
         provider_chain = _providers
@@ -8933,6 +9002,7 @@ async def _run_product_harness_chat(
                 session_id=session_id,
                 workspace=workspace,
                 allow_workspace_unavailable=True,
+                projectless=workspace_resolution["kind"] == "projectless",
             )
             await _commit_product_preflight_block(
                 websocket=websocket,
@@ -8951,6 +9021,7 @@ async def _run_product_harness_chat(
             session_id=session_id,
             workspace=workspace,
             allow_provider_unavailable=True,
+            projectless=workspace_resolution["kind"] == "projectless",
         )
         await _commit_product_preflight_block(
             websocket=websocket,
@@ -9125,6 +9196,13 @@ async def _run_product_harness_chat(
         provider_authority = await _freeze_sdk_provider_authority(
             session_db, session_id, host
         )
+        from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
+
+        run_tool_catalog, run_tool_inventory = filter_sdk_catalog_for_workspace(
+            _sdk_runtime_catalog,
+            _sdk_runtime_tool_inventory,
+            workspace_resolution_kind=str(workspace_resolution["kind"]),
+        )
         from simple_harness.contracts.messages import (
             ContentBlock,
             Message,
@@ -9156,9 +9234,9 @@ async def _run_product_harness_chat(
             turn_id=str(turn_id),
             text=text,
             provider_binding=provider_authority,
-            catalog=_sdk_runtime_catalog,
+            catalog=run_tool_catalog,
             attachment_blocks=tuple(user_attachment_blocks),
-            project=workspace,
+            project=workspace_resolution,
             task_scope_id=task_scope_id,
             persona_text=persona_text,
             memory_items=None,
@@ -9202,9 +9280,9 @@ async def _run_product_harness_chat(
             model_id=provider_authority["model_id"],
             model_params=provider_authority["model_params"],
             context_window=provider_authority["context_window"],
-            catalog_generation=int(_sdk_runtime_catalog["generation"]),
+            catalog_generation=int(run_tool_catalog["generation"]),
             catalog_fingerprint=str(
-                _sdk_runtime_catalog["content_fingerprint"]
+                run_tool_catalog["content_fingerprint"]
             ),
         )
         from deskpet.sdk_adapters.tool_authority import (
@@ -9213,7 +9291,7 @@ async def _run_product_harness_chat(
         )
 
         visible_tool_names = frozenset(
-            str(name) for name in _sdk_runtime_catalog["tool_names"]
+            str(name) for name in run_tool_catalog["tool_names"]
         )
         direct_tool_names = visible_tool_names & SDK_DIRECT_TOOL_KERNEL
         deferred_tool_names = visible_tool_names - direct_tool_names
@@ -9228,10 +9306,12 @@ async def _run_product_harness_chat(
                 root_run_id=root_ref.run_id,
                 task_scope_id=task_scope_id,
                 workspace_root=workspace,
-                catalog=_sdk_runtime_catalog,
-                inventory=_sdk_runtime_tool_inventory,
+                catalog=run_tool_catalog,
+                inventory=run_tool_inventory,
                 deferred_names=deferred_tool_names,
                 disclosure_policy=SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+                binding_version=int(workspace_resolution.get("binding_version", 1)),
+                workspace_resolution=workspace_resolution,
             )
         except BaseException:
             _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
@@ -10574,7 +10654,7 @@ async def _prepare_sdk_context_snapshot(
     provider_binding: dict[str, Any],
     catalog: dict[str, Any],
     attachment_blocks: tuple[dict[str, Any], ...],
-    project: str | None,
+    project: Mapping[str, Any],
     task_scope_id: str,
     persona_text: str,
     memory_items: tuple[dict[str, Any], ...] | None = None,
@@ -10626,7 +10706,7 @@ async def _prepare_sdk_context_snapshot(
         task_scope_id=task_scope_id,
         root_run_id=root_run_id,
         request_id=request_id,
-        workspace=project,
+        workspace_resolution=project,
         local_page_url=_trusted_local_page_url_from_env(),
     )
     context_window = int(provider_binding["context_window"])

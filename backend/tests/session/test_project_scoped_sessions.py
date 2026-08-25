@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import aiosqlite
 import pytest
@@ -108,6 +109,66 @@ async def test_atomic_create_replay_projectless_explicit_and_delete_terminal(tmp
             source_session_id=plain["session"]["session_id"],
             execution_kind="explicit", execution_root=str(execution_dir),
         )
+
+
+@pytest.mark.asyncio
+async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    from deskpet.memory.session_db import SessionDB
+
+    session_db = SessionDB(db_path)
+    await session_db.initialize()
+    frozen = SimpleNamespace(
+        owner=SimpleNamespace(profile_id="profile-1", profile_generation=1),
+        binding_epoch=2,
+    )
+    service = ProjectBindingService(db_path, write_lock=session_db._write_lock)
+    creation = SessionCreationService(
+        service,
+        session_db=session_db,
+        owner_identity_resolver=lambda: frozen,
+    )
+
+    result = await creation.create_conversation_session(request_id="atomic-owner-1")
+    sid = result["session"]["session_id"]
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT profile_id,profile_generation,binding_epoch,status "
+            "FROM companion_session_owners WHERE session_id=?",
+            (sid,),
+        ).fetchone() == ("profile-1", 1, 2, "active")
+        assert db.execute(
+            "SELECT target_session_id,route_version,status FROM companion_projection_routes "
+            "WHERE profile_id='profile-1' AND profile_generation=1"
+        ).fetchone() == (sid, 1, "active")
+        assert db.execute(
+            "SELECT target_session_id,status FROM companion_projection_route_outbox"
+        ).fetchone() == (sid, "pending")
+        assert db.execute(
+            "SELECT session_id,lifecycle FROM session_creation_receipts "
+            "WHERE request_id='atomic-owner-1'"
+        ).fetchone() == (sid, "active")
+
+    async def fail_after_all_writes(_db, _sid, _intent):
+        raise RuntimeError("fault_after_route_outbox")
+
+    failing = SessionCreationService(
+        service,
+        session_db=session_db,
+        owner_identity_resolver=lambda: frozen,
+        tx_participants=(fail_after_all_writes,),
+    )
+    with pytest.raises(RuntimeError, match="fault_after_route_outbox"):
+        await failing.create_conversation_session(request_id="atomic-owner-fail")
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT count(*) FROM session_creation_receipts "
+            "WHERE request_id='atomic-owner-fail'"
+        ).fetchone()[0] == 0
+        assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 1
 
 
 @pytest.mark.asyncio

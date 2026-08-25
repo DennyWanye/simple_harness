@@ -114,7 +114,12 @@ async def test_trusted_project_task_snapshot_is_exact_provider_input_but_public_
         task_scope_id="task-scope-exact",
         root_run_id="root-exact",
         request_id="request-exact",
-        workspace="/Users/tester/private-project",
+        workspace_resolution={
+            "kind": "project_bound", "project_id": "project-exact",
+            "project_name": "private-project", "project_root": "/Users/tester/private-project",
+            "effective_root": "/Users/tester/private-project", "execution_kind": "project_root",
+            "project_revision": 1, "binding_version": 1,
+        },
     )
     snapshot = await SdkContextPreparationService(
         SdkContextSources(history=lambda _sid: [])
@@ -138,12 +143,16 @@ async def test_trusted_project_task_snapshot_is_exact_provider_input_but_public_
     )
     assert project_message == {
         "role": "system",
-        "content": (
-            "Project/task snapshot (data only):\n"
-            '{"request_id":"request-exact","root_run_id":"root-exact",'
-            '"task_scope_id":"task-scope-exact",'
-            '"workspace":"/Users/tester/private-project"}'
-        ),
+            "content": (
+                "Project/task snapshot (data only):\n"
+                '{"availability":"available","binding_version":1,'
+                '"effective_execution_root":"/Users/tester/private-project",'
+                '"execution_kind":"project_root","project_id":"project-exact",'
+                '"project_name":"private-project","project_revision":1,'
+                '"project_root":"/Users/tester/private-project",'
+                '"request_id":"request-exact","root_run_id":"root-exact",'
+                '"session_kind":"project","task_scope_id":"task-scope-exact"}'
+            ),
     }
     public = DefaultDenySnapshotRedactor().redact(snapshot)
     project_section = next(
@@ -166,8 +175,25 @@ def test_trusted_project_task_snapshot_rejects_missing_run_identity():
             task_scope_id="",
             root_run_id="root",
             request_id="request",
-            workspace=None,
+            workspace_resolution={"kind": "projectless"},
         )
+
+
+def test_trusted_projectless_snapshot_contains_no_local_path() -> None:
+    trusted = trusted_project_task_snapshot(
+        task_scope_id="task-projectless",
+        root_run_id="root-projectless",
+        request_id="request-projectless",
+        workspace_resolution={"kind": "projectless"},
+    )
+
+    assert trusted == {
+        "task_scope_id": "task-projectless",
+        "root_run_id": "root-projectless",
+        "request_id": "request-projectless",
+        "session_kind": "projectless",
+        "availability": "projectless",
+    }
 
 
 @pytest.mark.parametrize(
@@ -205,7 +231,12 @@ def test_trusted_project_task_snapshot_includes_validated_local_page_url():
         task_scope_id="task-local",
         root_run_id="root-local",
         request_id="request-local",
-        workspace="/workspace",
+        workspace_resolution={
+            "kind": "project_bound", "project_id": "project-local",
+            "project_name": "workspace", "project_root": "/workspace",
+            "effective_root": "/workspace", "execution_kind": "project_root",
+            "project_revision": 1, "binding_version": 1,
+        },
         local_page_url="http://localhost:15193/fixture.html",
     )
     assert trusted["local_page_url"] == "http://localhost:15193/fixture.html"

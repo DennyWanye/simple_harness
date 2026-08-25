@@ -50,7 +50,7 @@ def trusted_project_task_snapshot(
     task_scope_id: str,
     root_run_id: str,
     request_id: str,
-    workspace: str | None,
+    workspace_resolution: Mapping[str, Any],
     local_page_url: str | None = None,
 ) -> dict[str, Any]:
     """Build the trusted per-request project/task facts sent to the Provider."""
@@ -64,7 +64,33 @@ def trusted_project_task_snapshot(
     missing = [key for key, value in normalized.items() if not value]
     if missing:
         raise ValueError(f"trusted project/task snapshot missing {missing[0]}")
-    snapshot: dict[str, Any] = {**normalized, "workspace": workspace}
+    kind = str(workspace_resolution.get("kind") or "")
+    if kind == "project_bound":
+        snapshot: dict[str, Any] = {
+            **normalized,
+            "session_kind": "project",
+            "project_id": str(workspace_resolution["project_id"]),
+            "project_name": str(workspace_resolution["project_name"]),
+            "project_root": str(workspace_resolution["project_root"]),
+            "effective_execution_root": str(
+                workspace_resolution["effective_root"]
+            ),
+            "execution_kind": str(workspace_resolution["execution_kind"]),
+            "project_revision": int(workspace_resolution["project_revision"]),
+            "binding_version": int(workspace_resolution["binding_version"]),
+            "availability": "available",
+        }
+        handoff = workspace_resolution.get("handoff")
+        if isinstance(handoff, Mapping):
+            snapshot["handoff"] = dict(handoff)
+    elif kind == "projectless":
+        snapshot = {
+            **normalized,
+            "session_kind": "projectless",
+            "availability": "projectless",
+        }
+    else:
+        raise ValueError("trusted project/task snapshot requires an available binding")
     if local_page_url is not None:
         snapshot["local_page_url"] = normalize_trusted_local_page_url(
             local_page_url

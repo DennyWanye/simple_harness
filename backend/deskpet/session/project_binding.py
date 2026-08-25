@@ -339,6 +339,31 @@ class ProjectBindingService:
             handoff=json.loads(row[4]) if row[4] else None,
         )
 
+    @staticmethod
+    def validate_workspace_identity(resolution: Mapping[str, Any]) -> None:
+        """Re-stat both frozen roots without consulting mutable Session state."""
+
+        kind = str(resolution.get("kind") or "")
+        if kind in {"legacy", "projectless"}:
+            return
+        if kind != "project_bound":
+            raise RuntimeError("workspace_unavailable")
+        try:
+            project_identity = _filesystem_identity(
+                _strict_directory(str(resolution["project_root"]))
+            )
+            execution_identity = _filesystem_identity(
+                _strict_directory(str(resolution["effective_root"]))
+            )
+        except (KeyError, ProjectSessionError) as exc:
+            raise RuntimeError("workspace_unavailable") from exc
+        if (
+            project_identity != str(resolution.get("project_identity") or "")
+            or execution_identity
+            != str(resolution.get("execution_identity") or "")
+        ):
+            raise RuntimeError("workspace_binding_stale")
+
     async def relocate_project(
         self, project_id: str, new_path: str, expected_project_revision: int
     ) -> ProjectRecord:
@@ -351,6 +376,22 @@ class ProjectBindingService:
             async with aiosqlite.connect(self._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
                 await self._require_upgrade_complete(db)
+                for run_table in ("execution_runs", "workflow_runs"):
+                    exists = await (await db.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                        (run_table,),
+                    )).fetchone()
+                    if exists is None:
+                        continue
+                    active = await (await db.execute(
+                        f"SELECT 1 FROM session_project_bindings b "
+                        f"JOIN {run_table} r ON r.session_id=b.session_id "
+                        "WHERE b.project_id=? AND r.status IN "
+                        "('created','queued','running','waiting','cancel_requested') LIMIT 1",
+                        (project_id,),
+                    )).fetchone()
+                    if active is not None:
+                        raise ProjectSessionError("project_runs_active")
                 row = await (await db.execute(
                     "SELECT filesystem_identity FROM projects WHERE project_id=?", (project_id,)
                 )).fetchone()
@@ -551,11 +592,13 @@ class SessionCreationService:
         self, binding_service: ProjectBindingService, *,
         provider_mutation_lock: asyncio.Lock | None = None,
         session_db: Any = None,
+        owner_identity_resolver: Callable[[], Any] | None = None,
         tx_participants: tuple[Callable[[aiosqlite.Connection, str, dict[str, Any]], Awaitable[None]], ...] = (),
     ) -> None:
         self._bindings = binding_service
         self._provider_lock = provider_mutation_lock
         self._session_db = session_db
+        self._owner_identity_resolver = owner_identity_resolver
         self._tx_participants = tx_participants
 
     async def _build_handoff(self, db: aiosqlite.Connection, source_sid: str) -> dict[str, Any]:
@@ -604,9 +647,23 @@ class SessionCreationService:
             except ProjectSessionError as exc:
                 raise ProjectSessionError("execution_root_not_directory") from exc
             explicit_path, explicit_identity = os.fspath(path), _filesystem_identity(path)
+        frozen_owner = (
+            self._owner_identity_resolver()
+            if self._owner_identity_resolver is not None
+            else None
+        )
+        owner_snapshot = None
+        if frozen_owner is not None:
+            owner = frozen_owner.owner
+            owner_snapshot = {
+                "owner_kind": "companion_profile",
+                "profile_id": str(owner.profile_id),
+                "profile_generation": int(owner.profile_generation),
+                "binding_epoch": int(frozen_owner.binding_epoch),
+            }
         intent = {"schema_version": 1, "project_id": project_id,
                   "source_session_id": source_session_id, "execution_kind": execution_kind,
-                  "execution_root": explicit_path}
+                  "execution_root": explicit_path, "owner": owner_snapshot}
         intent_hash = hashlib.sha256(_canonical_json(intent).encode("utf-8")).hexdigest()
         async with AsyncExitStack() as stack:
             if self._provider_lock is not None:
@@ -652,6 +709,68 @@ class SessionCreationService:
                     await self._session_db._ensure_memory_binding_in_transaction(
                         db, session_id=sid, user_id="deskpet-local-owner-v1"
                     )
+                if owner_snapshot is not None:
+                    await db.execute(
+                        "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,"
+                        "profile_generation,binding_epoch,status,scope_version,created_at,updated_at) "
+                        "VALUES(?,?,?,?,?,'active',1,?,?)",
+                        (
+                            sid,
+                            owner_snapshot["owner_kind"],
+                            owner_snapshot["profile_id"],
+                            owner_snapshot["profile_generation"],
+                            owner_snapshot["binding_epoch"],
+                            now,
+                            now,
+                        ),
+                    )
+                    await db.execute(
+                        "INSERT INTO companion_owner_scope_versions(profile_id,profile_generation,scope_version,updated_at) "
+                        "VALUES(?,?,1,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
+                        "scope_version=scope_version+1,updated_at=excluded.updated_at",
+                        (
+                            owner_snapshot["profile_id"],
+                            owner_snapshot["profile_generation"],
+                            now,
+                        ),
+                    )
+                    route_row = await (await db.execute(
+                        "SELECT route_version FROM companion_projection_routes "
+                        "WHERE profile_id=? AND profile_generation=?",
+                        (
+                            owner_snapshot["profile_id"],
+                            owner_snapshot["profile_generation"],
+                        ),
+                    )).fetchone()
+                    route_version = int(route_row[0]) + 1 if route_row else 1
+                    await db.execute(
+                        "INSERT INTO companion_projection_routes(profile_id,profile_generation,binding_epoch,"
+                        "target_session_id,target_epoch,route_version,status,created_at,updated_at) "
+                        "VALUES(?,?,?,?,0,?,'active',?,?) ON CONFLICT(profile_id,profile_generation) DO UPDATE SET "
+                        "binding_epoch=excluded.binding_epoch,target_session_id=excluded.target_session_id,"
+                        "target_epoch=excluded.target_epoch,route_version=excluded.route_version,status='active',"
+                        "updated_at=excluded.updated_at",
+                        (
+                            owner_snapshot["profile_id"],
+                            owner_snapshot["profile_generation"],
+                            owner_snapshot["binding_epoch"],
+                            sid,
+                            route_version,
+                            now,
+                            now,
+                        ),
+                    )
+                    if self._session_db is not None:
+                        await self._session_db._insert_companion_route_outbox(
+                            db,
+                            profile_id=owner_snapshot["profile_id"],
+                            profile_generation=owner_snapshot["profile_generation"],
+                            route_version=route_version,
+                            event_kind="route_changed",
+                            target_session_id=sid,
+                            target_epoch=0,
+                            now=now,
+                        )
                 if project is not None:
                     await db.execute(
                         "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,"
@@ -691,7 +810,7 @@ class SessionCreationService:
                         "FROM companion_session_owners WHERE session_id=? AND status='active'",
                         (source_session_id,),
                     )).fetchone()
-                    if owner_row is not None:
+                    if owner_snapshot is None and owner_row is not None:
                         await db.execute(
                             "INSERT INTO companion_session_owners(session_id,owner_kind,profile_id,profile_generation,"
                             "binding_epoch,status,scope_version,created_at,updated_at) "
