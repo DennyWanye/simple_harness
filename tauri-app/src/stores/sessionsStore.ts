@@ -23,6 +23,14 @@ import type {
   WorkflowDeliveryAggregate,
 } from "../types/messages";
 import { canonicalJson } from "../context/contextAuthority";
+import type {
+  ProjectCatalogPage,
+  ProjectCatalogState,
+  ProjectInspection,
+  ProjectSessionPage,
+  ProjectSessionPageState,
+} from "../types/projectSessions";
+import { dedupeById, projectScopeKey } from "../types/projectSessions";
 
 export type { ContextUsageSnapshot } from "../types/messages";
 
@@ -397,8 +405,19 @@ interface SessionsStore {
   // Concurrency limiter inflight count (for status rendering)
   inflight_count: number;
   inflight_max: number;
+  /** Bounded backend-owned catalog projection; paths are display-only. */
+  project_catalog: ProjectCatalogState;
+  project_session_pages: Record<string, ProjectSessionPageState>;
+  project_inspections: Record<string, ProjectInspection>;
 
   set_active(sid: string): void;
+  begin_project_catalog(append?: boolean): void;
+  apply_project_catalog_page(page: ProjectCatalogPage, append?: boolean): void;
+  fail_project_catalog(error: string): void;
+  begin_project_sessions(scopeKey: string): void;
+  apply_project_session_page(page: ProjectSessionPage, append?: boolean): void;
+  fail_project_sessions(scopeKey: string, error: string): void;
+  apply_project_inspection(inspection: ProjectInspection): void;
   ensure(sid: string, init?: Partial<SessionState>): void;
   upsert(sid: string, patch: Partial<SessionState>): void;
   upsert_context_usage(snapshot: ContextUsageSnapshot): boolean;
@@ -1571,6 +1590,112 @@ export const useSessionsStore = create<SessionsStore>((set) => ({
   companion_provisional_streams: {},
   inflight_count: 0,
   inflight_max: 2,
+  project_catalog: {
+    revision: null,
+    projects: [],
+    next_cursor: null,
+    loading: false,
+    error: null,
+  },
+  project_session_pages: {},
+  project_inspections: {},
+
+  begin_project_catalog(append = false) {
+    set((state) => ({
+      project_catalog: {
+        ...(append ? state.project_catalog : { ...state.project_catalog, projects: [], next_cursor: null }),
+        loading: true,
+        error: null,
+      },
+    }));
+  },
+
+  apply_project_catalog_page(page, append = false) {
+    set((state) => {
+      const sameRevision = state.project_catalog.revision === page.catalog_revision;
+      const base = append && sameRevision ? state.project_catalog.projects : [];
+      return {
+        project_catalog: {
+          revision: page.catalog_revision,
+          projects: dedupeById([...base, ...page.items], page.pinned, (p) => p.project_id),
+          next_cursor: page.next_cursor,
+          loading: false,
+          error: null,
+        },
+      };
+    });
+  },
+
+  fail_project_catalog(error) {
+    set((state) => ({ project_catalog: { ...state.project_catalog, loading: false, error } }));
+  },
+
+  begin_project_sessions(scopeKey) {
+    set((state) => ({
+      project_session_pages: {
+        ...state.project_session_pages,
+        [scopeKey]: {
+          ...(state.project_session_pages[scopeKey] ?? {
+            revision: null,
+            sessions: [],
+            next_cursor: null,
+          }),
+          loading: true,
+          error: null,
+        },
+      },
+    }));
+  },
+
+  apply_project_session_page(page, append = false) {
+    const scopeKey = projectScopeKey({
+      scope_kind: page.scope.kind,
+      project_id: page.scope.project_id,
+    } as Parameters<typeof projectScopeKey>[0]);
+    set((state) => {
+      const current = state.project_session_pages[scopeKey];
+      const sameRevision = current?.revision === page.catalog_revision;
+      const base = append && sameRevision ? current.sessions : [];
+      return {
+        project_session_pages: {
+          ...state.project_session_pages,
+          [scopeKey]: {
+            revision: page.catalog_revision,
+            sessions: dedupeById([...base, ...page.items], page.pinned, (s) => s.session_id),
+            next_cursor: page.next_cursor,
+            loading: false,
+            error: null,
+          },
+        },
+      };
+    });
+  },
+
+  fail_project_sessions(scopeKey, error) {
+    set((state) => ({
+      project_session_pages: {
+        ...state.project_session_pages,
+        [scopeKey]: {
+          ...(state.project_session_pages[scopeKey] ?? {
+            revision: null,
+            sessions: [],
+            next_cursor: null,
+          }),
+          loading: false,
+          error,
+        },
+      },
+    }));
+  },
+
+  apply_project_inspection(inspection) {
+    set((state) => ({
+      project_inspections: {
+        ...state.project_inspections,
+        [inspection.project.project_id]: inspection,
+      },
+    }));
+  },
 
   set_active(sid) {
     // Auto-create slot if frontend asks to switch to an unknown sid
