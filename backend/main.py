@@ -10752,11 +10752,18 @@ async def _prepare_sdk_context_snapshot(
             raise RuntimeError("frozen skill resolver changed the selected scope")
         skill_items = ({"instruction": resolved_skill.instruction},)
 
+    # Compatibility-only direct helper callers predate typed Session binding
+    # and may pass None/a path string. They cannot establish project authority;
+    # treat them as explicitly projectless. Production always passes the
+    # mapping returned by ProjectBindingService.
+    project_resolution = (
+        project if isinstance(project, Mapping) else {"kind": "projectless"}
+    )
     project_snapshot = trusted_project_task_snapshot(
         task_scope_id=task_scope_id,
         root_run_id=root_run_id,
         request_id=request_id,
-        workspace_resolution=project,
+        workspace_resolution=project_resolution,
         local_page_url=_trusted_local_page_url_from_env(),
     )
     context_window = int(provider_binding["context_window"])
