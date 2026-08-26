@@ -141,11 +141,16 @@ def _prepare(
     )
 
 
-def _effect(run_id: str, *, effect_id: str = "effect-a") -> PreparedToolEffect:
+def _effect(
+    run_id: str,
+    *,
+    effect_id: str = "effect-a",
+    call_id: str = "call-a",
+) -> PreparedToolEffect:
     return PreparedToolEffect(
         EffectId(effect_id),
         RunId(run_id),
-        ToolCall(CallId("call-a"), "read_file", {"path": "/tmp/input.txt"}),
+        ToolCall(CallId(call_id), "read_file", {"path": "/tmp/input.txt"}),
         ToolSpec(
             "read_file",
             "Read one file",
@@ -1053,6 +1058,47 @@ async def test_product_authorization_uses_exact_hashes_and_real_auto_grant(
     authorities.mark_terminal("run-a", "completed")
     with pytest.raises(RuntimeError, match="facts are unavailable"):
         policy.facts_for(prepared)
+
+
+@pytest.mark.asyncio
+async def test_auto_policy_uses_distinct_immutable_grants_for_repeated_tool_effects(
+    tmp_path: Path,
+) -> None:
+    authorities = SdkRunToolAuthorityRegistry()
+    _prepare(authorities, "run-a")
+    clock_values = iter((100.0, 100.0, 101.0, 101.0))
+    policy = SdkPreparedAuthorizationPolicy(
+        PreparedAuthorizationRuntime(
+            _AuthorizationStore("auto", 0), clock=lambda: next(clock_values)
+        ),
+        authorities,
+        clock=lambda: 101.0,
+    )
+    database = ProductStateDatabase(tmp_path / "product.db")
+    database.initialize()
+    adapter = ProductAuthorizationAdapter(
+        AuthorizationSagaRepository(database, owner_id="test-sdk"),
+        policy=policy,
+        identity_factory=policy.identity_factory,
+        grant_authority=DurableTaskGrantAuthority(
+            database,
+            policy_generation_provider=policy.current_policy_generation,
+        ),
+        grant_factory=policy.grant_factory,
+        clock=lambda: 101.0,
+    )
+    first = _effect("run-a", effect_id="effect-a", call_id="call-a")
+    second = _effect("run-a", effect_id="effect-b", call_id="call-b")
+
+    first_result = await adapter.prepare(first)
+    second_result = await adapter.prepare(second)
+
+    assert first_result.decision is AuthorizationDecision.ALLOW
+    assert second_result.decision is AuthorizationDecision.ALLOW
+    assert (
+        policy.facts_for(first).grant.task_grant_id
+        != policy.facts_for(second).grant.task_grant_id
+    )
 
 
 @pytest.mark.asyncio

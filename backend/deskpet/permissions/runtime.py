@@ -493,7 +493,7 @@ class PreparedAuthorizationRuntime:
                     grant_instance_id=(
                         decision_id
                         if confirmed and state.mode != "auto"
-                        else None
+                        else context.effect_id
                     ),
                 )
             else:
@@ -510,7 +510,7 @@ class PreparedAuthorizationRuntime:
                     grant_instance_id=(
                         decision_id
                         if confirmed and state.mode != "auto"
-                        else None
+                        else context.effect_id
                     ),
                 )
             candidate = proposal
