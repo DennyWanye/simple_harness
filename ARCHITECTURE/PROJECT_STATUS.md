@@ -2,6 +2,19 @@
 
 > **最后更新**：2026-08-26
 
+## 2026-08-26 Project-scoped Sessions v33 全新安装式重置验收
+
+- state.db 升到 v33；从任意旧 schema 升级时，不迁移历史 Session，而是在产品入口开放前一次性清空旧
+  Project、Session、消息、Run、上下文和会话派生投影。全局 Provider/默认模型/应用设置/Keychain/账单/
+  Skills/Plugins 与磁盘项目、产物文件明确保留；Windows 不在本轮范围。
+- 自动化覆盖 fresh v33、v9/v17/v23/v31/v32 代表升级路径和十个迁移故障边界，证明崩溃后 fail closed 且
+  重启可幂等完成。后端全量首轮为 `5835 passed, 47 skipped, 1 deselected, 3 failed`；其中两个相关失败已修复
+  并聚焦复测通过，剩余一个是与本改动无关的既有 process-list query 失败。前端 `76 files / 624 tests` 与
+  TypeScript、当前 debug `.app` 构建通过。
+- macOS 当前 debug `.app` 从 v32 fixture 启动后侧栏为空；无重新登录即调用真实 `deepseek-v4-flash` 返回
+  `V33-RESET-OK`。随后 UI 新建的 Project/Session/消息/Run 跨完整重启保留；真实终端以绑定目录为 `pwd`，
+  相对读取与写入只落在该目录。S-PS-08 已通过；完整 release 仍受 S-PS-01/02/03/05 与最终 gate/audit 阻塞。
+
 ## 2026-08-26 Project-scoped Sessions Project/execution root 分离验收
 
 - TC-PS-06 在 macOS 当前 debug `.app` 通过三个 fresh root Run：Session 始终归入 `project-root` 组，
@@ -9,7 +22,7 @@
   和两次写入只使用 execution root，Project-only canary 的相对读取失败。
 - 完整 app/backend 重启后第三个 Run 仍保持 split；Project root 无新增执行输出，未自动创建、发现或删除
   worktree。聚焦 backend `109 passed`、frontend `3 passed`。S-PS-06 已通过；完整 release 仍受
-  S-PS-01/02/03/05/08 与既有 gate/audit 问题阻塞。
+  S-PS-01/02/03/05 与既有 gate/audit 问题阻塞。
 
 ## 2026-08-26 Project-scoped Sessions 单一 workspace authority 验收
 
@@ -18,7 +31,7 @@
   retired Code Session、latest-Run 和模型文本冲突路径均不能改根，三个冲突目录无副作用。
 - 缺失根目录时 Provider/Tool 计数均为零且无禁写文件；恢复相同 filesystem identity 并完整重启后，fresh
   Run 仍写入同一绑定根。聚焦自动化 `75 passed`。缺失根错误 turn 的跨重启历史显示保留为独立观察项；
-  TC-PS-04 的物理执行边界已通过，整个 release 仍受 S-PS-01/02/03/05/08 阻塞。
+  TC-PS-04 的物理执行边界已通过，整个 release 仍受 S-PS-01/02/03/05 阻塞。
 
 ## 2026-08-26 Project-scoped Sessions missing-root / relocation 验收
 

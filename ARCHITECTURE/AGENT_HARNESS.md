@@ -244,7 +244,7 @@ flowchart LR
 
 ### 当前 Session 到 workspace 的真实边界（2026-08-25）
 
-项目 Session 现在由 state.db v32 的 immutable `session_project_bindings` 唯一决定 workspace；新建时
+项目 Session 现在由 state.db v33 的 immutable `session_project_bindings` 唯一决定 workspace；新建时
 `SessionCreationService` 在同一事务中持久化 Session、Project binding、Provider snapshot、request receipt
 和 catalog revision。重复 request replay 返回同一个 Session，冲突 intent 被拒绝。无 binding row 的普通
 Session 是显式 projectless，本地开发能力 fail closed；“在项目中继续”只能创建带 bounded handoff 和
@@ -258,8 +258,11 @@ terminal/file/MCP/project-rules 等所有物理消费者只按 `run_id` 读取�
 
 普通 Project Session 的 `execution_kind=project_root`，有效执行根随 Project 的受控同身份 relocation 更新；
 `explicit` binding 可保存与 `project_root` 不同的 execution root，供测试 fixture/未来 worktree 使用。
-relocation 以 project revision CAS 并在 active root Run 存在时拒绝，Session binding 不变。legacy Code
-mapping 只供 v32 backfill，startup recovery 顺序为 migration/backfill → deleted-run reconcile → SDK ingress。
+relocation 以 project revision CAS 并在 active root Run 存在时拒绝，Session binding 不变。v33 不再把
+legacy Code mapping backfill 为新 binding：从任意旧 schema 升级时，startup 在所有 Session/Memory/Workflow/
+SDK ingress 前一次性清空旧 Project、Session、消息、Run、上下文和会话派生投影；全局 Provider、默认模型、
+应用设置、Keychain、账单、Skills/Plugins 以及真实项目/产物文件不在清理范围。清理使用可恢复 phase ledger，
+完成后才开放新数据写入。
 
 验证边界：authority/迁移/恢复自动化与 macOS 当前构建的注册、分组、projectless、Inspector、重启恢复核心
 路径已通过。真实 `deepseek-v4-flash` Session 进一步证明 `builtin:run_shell` 的 cwd、`builtin:read_file` 和
@@ -280,6 +283,11 @@ authority/Rules/preflight/Session 自动化为 `75 passed`。缺失根错误 tur
 Run 仍保持同一边界。聚焦 backend `109 passed`、frontend `3 passed`，没有自动 worktree 生命周期副作用。
 Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余
 真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
+
+2026-08-26 TC-PS-08 已在 macOS 当前 debug `.app` 验证 v32 旧数据升级到 v33 空状态、全局配置/凭据可继续
+调用真实 Provider、磁盘项目文件保留，以及升级后新 Project/Session/消息/Run 跨完整重启保持。真实 root
+Run `201db422…` 的无 `cd` 相对命令返回绑定目录为 cwd，读取和写入也只落在该目录。自动化覆盖 fresh v33、
+v9/v17/v23/v31/v32 升级与十个 crash boundary 的 fail-closed/retry；Windows 不在本轮范围。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

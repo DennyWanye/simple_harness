@@ -391,8 +391,8 @@ Additional stores include facts/workspace/skill memory and feedback tables in `s
 
 ### 3.3 当前 Session / Run / workspace authority（2026-08-25）
 
-当前 schema v32 由 `projects`、immutable `session_project_bindings`、创建 receipt、catalog revision 与
-semantic backfill state 组成 Project-scoped Session 的 durable authority。项目 Session 在创建事务中一次性
+当前 schema v33 由 `projects`、immutable `session_project_bindings`、创建 receipt 与 catalog revision
+组成 Project-scoped Session 的 durable authority。项目 Session 在创建事务中一次性
 绑定 `project_id` 与 `execution_kind`；binding row 禁止更新或删除。零消息 Session 也从 catalog 查询返回，
 不再依赖 `messages` 聚合才进入侧栏。无 binding row 的 Session 是显式 typed projectless，不会继承最近 Run、
 旧 Code Session 或全局 companion workspace。
@@ -405,9 +405,11 @@ fresh root Run 只通过 `ProjectBindingService` 解析 `WorkspaceResolutionV1`�
 
 Project relocation 只允许在无活跃 root Run 时，以 expected project revision CAS 将 Project 的
 `canonical_root` 更新到 filesystem identity 相同的新目录；Session binding 本身保持不变，选择无关目录
-会被拒绝。`code_sessions.project_root` 与 latest-Run workspace 只作为 v32 backfill 输入或历史兼容读取，
-不再参与新 Session/Run 写 authority。迁移在会话入口开放前完成，带 crash-safe backup、manifest/hash、
-逻辑验证和 guarded restore；当前 `TARGET_SCHEMA_VERSION=32`、迁移文件为 `024_project_scoped_sessions_v32.sql`。
+会被拒绝。`code_sessions.project_root` 与 latest-Run workspace 不再 backfill 或兼容恢复为新 Session authority。
+迁移在会话入口开放前完成；v33 的 `025_legacy_session_reset_v33.sql` 配合外部 store coordinator，一次性删除
+升级前全部 Project、Session、消息、Run、上下文和会话派生数据，完成 phase ledger 后才开放 Memory、Workflow、
+Companion 与 SDK ingress。全局 Provider/默认模型/应用设置/Keychain/账单/Skills/Plugins 和磁盘项目/产物文件
+明确保留；这是产品逻辑清理，不承诺取证级安全擦除。当前 `TARGET_SCHEMA_VERSION=33`。
 
 验证边界：当前代码/自动化、100k catalog 性能探针和 macOS 当前 debug `.app` 的注册、分组、Inspector、
 projectless 与重启恢复核心路径已通过。真实 `deepseek-v4-flash` Run 已实际调用终端、文件读取和文件写入：

@@ -22,6 +22,12 @@
   读写均被拒绝且无越界落盘。原始截图分别在 ignored
   `.local-test-evidence/2026-08-25/project-scoped-sessions-ui/current-debug-bundle/` 和
   `.local-test-evidence/2026-08-25/project-scoped-sessions-real-model/`；Windows 已移为后续非阻断工作。
+- 2026-08-26 当前 debug `.app` 又以 v32 旧数据 fixture 验证 v33 一次性重置：首次启动先清空旧
+  Project/Session/消息及其 Run/上下文/投影数据，侧栏显示空状态；全局 Provider 配置、Keychain 凭据引用和
+  磁盘项目文件保持。随后从 UI 新建 `real-project` Session，真实 `deepseek-v4-flash` 返回
+  `V33-RESET-OK`；完整 app/backend 重启后新 Project、Session、消息和 context usage 均恢复。相同 Session
+  还真实执行相对路径 `pwd`、`cat preserve.txt` 和测试文件写入，cwd 与落盘位置都只在绑定目录。
+  原始证据位于 ignored `.local-test-evidence/2026-08-26/run-20260826-v33-reset/s-ps-08-bundle/`。
 - 2026-08-26 当前 debug `.app` 进一步完成 missing-root relocation 全链：目录缺失后两个 Session/历史仍可见，
   开发请求显示友好阻断且不创建 Provider/Tool effect；无关目录被 `project_identity_mismatch` 拒绝；活跃 Run
   期间不提供 relocation，重启恢复后该 Run 以 `workspace_unavailable` 终止；同身份目录恢复后两个 Session ID、
