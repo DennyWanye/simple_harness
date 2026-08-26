@@ -274,8 +274,11 @@ binding、历史与 Inspector 保持。TC-PS-04 又以五个真实 root Run 对�
 前端、retired Code Session、latest-Run 与模型文本冲突路径均未覆盖 binding，三个冲突目录 canary hash
 不变且无新增文件；目录缺失时 Provider/Tool 计数均为零，完整重启后 fresh Run 仍写回同一绑定根。聚焦
 authority/Rules/preflight/Session 自动化为 `75 passed`。缺失根错误 turn 的跨重启消息历史显示仍作为独立
-持久化观察项保留，不影响已证明的物理 fail-closed 边界。
-identity/history 不变。Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余
+持久化观察项保留，不影响已证明的物理 fail-closed 边界。TC-PS-06 再用 explicit binding 证明归属与执行
+可以安全分离：三个真实 root Run 的 Project ID/revision 保持，左侧与 Inspector 继续显示 Project root，
+终端 cwd、相对读取和两次写入只落在不同的 execution root；Project-only 文件不可见，完整重启后第三个
+Run 仍保持同一边界。聚焦 backend `109 passed`、frontend `3 passed`，没有自动 worktree 生命周期副作用。
+Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余
 真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）

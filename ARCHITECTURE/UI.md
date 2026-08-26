@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-26（Project-scoped Session missing-root / restart 验收）
+> 最后更新：2026-08-26（Project-scoped Session project/execution split 验收）
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 
@@ -28,6 +28,12 @@
   历史和只读 Inspector 均跨完整重启保持。`SessionList` 还修复了冷启动响应早于 listener 安装造成的偶发侧栏
   空白竞态。原始证据位于 ignored `.local-test-evidence/2026-08-26/project-scoped-sessions-missing-root/`。
   其余冻结 UI 场景仍未全部执行，release DoD 继续为 BLOCKED。
+- TC-PS-06 随后用 `execution_kind=explicit` 的公开 fixture 真测 `project_root != execution_root`：Session 在
+  左侧始终归入 `project-root` 分组，展开 Inspector 同时显示两个不同绝对路径；三个真实
+  `deepseek-v4-flash` root Run（含完整 app/backend 重启后一次）均以 execution root 为 `pwd`，只在那里
+  读取 canary 和写入输出。Project-only canary 的相对读取返回不存在，Project root 无新增文件，也未自动
+  创建、发现或删除 worktree。原始证据位于 ignored
+  `.local-test-evidence/2026-08-26/project-scoped-sessions-root-split/`。
 - 当前 debug `.app` 还真实验证了授权模式切换：关闭“Agent 全开模式”后，search、describe、activate 与最终
   `write_file` 逐项弹窗，点击允许后写入成功；重新开启后，同一链路无弹窗成功。两轮模型都复制唯一的顶层
   `schema_hash`，最终文件只位于当前 Project root。原始截图留在 ignored

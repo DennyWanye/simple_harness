@@ -10,8 +10,10 @@
 - 2026-08-26：TC-PS-04 已在 macOS 当前 debug `.app` 完成五个真实 `deepseek-v4-flash` root Run：终端
   cwd/读取/写入统一落在 Session Binding 根，前端、legacy、latest-Run 和模型文本冲突路径均不能改根，
   Project Rules 只从绑定根加载；目录缺失时 Provider/Tool 零副作用 fail closed，完整重启后仍回到同一根。
-  TC-PS-07 也已完成 missing-root、无关目录拒绝、活跃 Run 恢复和同身份 relocation 两条 lane；其余
-  required 场景仍未完成，所以计划整体保持 `BLOCKED`，不得宣布 release 完成。
+  TC-PS-06 又以 `project_root != execution_root` fixture 完成三个真实 root Run：左侧归组和 Inspector 保留
+  Project root，终端 cwd、读取与两次写入只使用 explicit execution root，Project-only 文件相对读取失败，
+  完整重启后边界不变；TC-PS-07 也已完成 missing-root、无关目录拒绝、活跃 Run 恢复和同身份 relocation
+  两条 lane。其余 required 场景仍未完成，所以计划整体保持 `BLOCKED`，不得宣布 release 完成。
 
 ## 主要矛盾
 

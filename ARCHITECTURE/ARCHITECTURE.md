@@ -416,7 +416,11 @@ projectless 与重启恢复核心路径已通过。真实 `deepseek-v4-flash` Ru
 项目内写入，未改变 Session binding 或物理 workspace 校验。2026-08-26 TC-PS-04 进一步以五个真实 root
 Run 证明 terminal cwd、Host/write scope、Project Rules 和物理文件根一致；前端、legacy、latest-Run 与模型
 文本冲突路径全部无效，缺失目录在 Provider/Tool 零副作用时 fail closed，完整重启后 fresh Run 仍使用同一
-binding。相关聚焦自动化 `75 passed`；缺失根错误 turn 的历史恢复显示另列为持久化观察项。Windows 已按用户 2026-08-25 决定移出本轮
+binding。相关聚焦自动化 `75 passed`；缺失根错误 turn 的历史恢复显示另列为持久化观察项。TC-PS-06
+又以 distinct filesystem identities 的 explicit binding 验证：Project 分组/Inspector 始终使用
+`project_root`，三个真实 root Run 的 terminal/read/write 只使用 `execution_root`；Project-only canary
+相对读取失败，完整重启后 split 不变，且无自动 worktree 副作用。聚焦 backend `109 passed`、frontend
+`3 passed`。Windows 已按用户 2026-08-25 决定移出本轮
 目标平台。2026-08-26 TC-PS-07 又在真实 macOS 当前构建验证：missing-root preflight 在 Provider/Tool effect
 之前提交 durable failed SDK root；无关目录 relocation 被拒绝；活跃 Run 不切根并在重启 recovery 后以
 `workspace_unavailable` 收敛；同身份 relocation 后 Project revision 原子更新、两个 Session 与历史跨重启
