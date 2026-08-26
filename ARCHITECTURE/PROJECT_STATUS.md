@@ -19,7 +19,9 @@
 - 独立 full-audit 首轮发现 S-PS-01/S-PS-05 的逐步证据与 producer-native 打包不足。补测已覆盖外部非 Git
   目录、删除目录错误、复制/Finder、同项目新建和窄屏 Inspector；实现同时补上不可读目录拒绝与 rename
   catalog revision fence。500 × 200 fixture 的新增/删除/重命名分页验证旧游标拒绝，刷新后无重复、遗漏或
-  误归组；专项回归 `72 passed`。
+  误归组；专项回归 `73 passed`。第二轮审计再要求去重与证据身份逐项可复算，现以生产
+  `register_project` 连续注册真实路径、`..` 路径和 symlink，证明三次都返回同一 Project、Projects 总数恒为 1；
+  同一原生 UI 新建 Session 的 state/workflow/SDK 数据库查询证明 Provider、execution 与 workflow Run 全为 0。
 
 ## 2026-08-26 Project-scoped Sessions v33 全新安装式重置验收
 

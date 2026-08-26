@@ -71,6 +71,34 @@ def test_registration_git_root_dedupe_identity_and_explicit_folder(tmp_path: Pat
 
 
 @pytest.mark.asyncio
+async def test_register_project_returns_existing_project_for_equivalent_git_aliases(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path.resolve() / "repo"
+    child = root / "src"
+    child.mkdir(parents=True)
+    import subprocess
+    subprocess.run(["git", "init", str(root)], check=True, capture_output=True)
+    alias = tmp_path.resolve() / "repo-alias"
+    alias.symlink_to(child, target_is_directory=True)
+
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    service = ProjectBindingService(db_path)
+    first, first_created = await service.register_project(str(child), "git_root")
+    dotted, dotted_created = await service.register_project(
+        str(child / ".." / "src"), "git_root"
+    )
+    linked, linked_created = await service.register_project(str(alias), "git_root")
+
+    assert [first_created, dotted_created, linked_created] == [True, False, False]
+    assert dotted.project_id == first.project_id
+    assert linked.project_id == first.project_id
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
 async def test_registration_folder_errors_and_macos_rename_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
