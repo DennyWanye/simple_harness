@@ -411,7 +411,8 @@ Project relocation 只允许在无活跃 root Run 时，以 expected project rev
 Companion 与 SDK ingress。全局 Provider/默认模型/应用设置/Keychain/账单/Skills/Plugins 和磁盘项目/产物文件
 明确保留；这是产品逻辑清理，不承诺取证级安全擦除。当前 `TARGET_SCHEMA_VERSION=33`。
 state.db 历史可选 `facts` 表按存在性清空；workflow/sdk product-state 的 Capability 清理限定于 Run catalog、
-runtime 与 snapshot/lease 表；companion 采用精确 Run 表 allowlist，保留 candidate package、capability governance、
+runtime 与 snapshot/lease 表；companion 采用精确会话派生表 allowlist，清除 Run/job、growth event、偏好证据、
+消息决策回执、Memory scope 和 notification/outbox，同时保留 candidate package、capability governance、
 growth authority、profiles 和 reminders，避免以“除少数表外全部删除”的反向清单误伤 Skills/Plugins。
 workflow 的 `execution_runtime_state`、candidate draft receipt/material 属于全局 authority，同样保留；Run 表上的
 immutable delete trigger 仅在清理事务内临时移除，随后按原 DDL 恢复，保证正常运行期的不变性约束继续有效。

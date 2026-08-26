@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import deskpet.memory.project_session_reset as project_session_reset
 from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, ensure_v9
 from deskpet.memory.project_session_reset import RESET_MANIFEST, _clear_selected_tables
 from deskpet.memory.schema import InitializeError, initialize_state_db
@@ -84,6 +85,32 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             "manifest_hash,run_id,state,heartbeat_at,created_at) "
             "VALUES('legacy-lease','pack','1','manifest','legacy-run','ready',1,1)"
         )
+        hash64 = "a" * 64
+        db.execute(
+            "INSERT INTO execution_candidate_draft_receipts VALUES("
+            "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "keep-receipt",
+                "launch",
+                "child",
+                hash64,
+                "proposal",
+                hash64,
+                hash64,
+                hash64,
+                hash64,
+                hash64,
+                hash64,
+                hash64,
+                hash64,
+                hash64,
+                "now",
+            ),
+        )
+        db.execute(
+            "INSERT INTO execution_candidate_draft_materials VALUES(?,?,?,?,?,?,?,?)",
+            ("keep-receipt", b"draft", hash64, hash64, hash64, hash64, hash64, "now"),
+        )
 
     companion_path = data_dir / "companion.db"
     CompanionStore(companion_path)
@@ -122,6 +149,37 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             "('p',1,'legacy-run','request','legacy-root',0,'snapshot','hash','all','start',"
             "'active','test',1,'n','n')"
         )
+        db.execute(
+            "INSERT INTO growth_events VALUES("
+            "'p',1,'legacy-event','event-hash','conversation','legacy-message',"
+            "'legacy-context','legacy-run',NULL,'{\"session_id\":\"legacy-session\"}',"
+            "'live','test',1,'n','n')"
+        )
+        db.execute(
+            "INSERT INTO preferences VALUES("
+            "'p',1,'legacy-preference','{\"message\":\"legacy-message\"}',NULL,NULL,NULL,"
+            "'inferred',1,NULL,'test',1,'n','n')"
+        )
+        db.execute(
+            "INSERT INTO preference_evidence VALUES("
+            "'p',1,'legacy-preference','legacy-event','legacy-context',1.0,'test',1,'n')"
+        )
+        db.execute(
+            "INSERT INTO owner_memory_read_scopes VALUES("
+            "'p',1,'legacy-scope','scope-hash',1,1,'set-hash',1,"
+            "'[\"legacy-session\"]','test',1,'n')"
+        )
+        db.execute(
+            "INSERT INTO preference_turn_decision_receipts VALUES("
+            "'p',1,'legacy-message','message-hash','input-hash','{}','decision-hash',"
+            "'interpreter','1','test',1,'n')"
+        )
+        db.execute(
+            "INSERT INTO jobs(profile_id,profile_generation,job_id,kind,dedupe_key,"
+            "payload_json,payload_hash,status,reason_code,schema_version,created_at,updated_at) "
+            "VALUES('p',1,'legacy-job','reflection','legacy-job',"
+            "'{\"run_id\":\"legacy-run\"}','payload-hash','queued','test',1,'n','n')"
+        )
     seed_db(
         "sdk-product-state.db",
         (
@@ -135,6 +193,13 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             "INSERT INTO capability_versions VALUES('keep-version')",
         ),
     )
+    seed_db(
+        "billing.db",
+        (
+            "CREATE TABLE billing_sentinel(value TEXT)",
+            "INSERT INTO billing_sentinel VALUES('keep')",
+        ),
+    )
     for name in RESET_MANIFEST["delete_databases"]:
         path = data_dir / name
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -146,6 +211,10 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
     blob_dir.mkdir(parents=True)
     (blob_dir / "legacy-run.bin").write_bytes(b"delete-me")
     (user_data / "config.toml").write_text("default_model = 'keep'\n", encoding="utf-8")
+    for relative in ("skills/keep.txt", "plugins/keep.txt"):
+        path = user_data / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("keep", encoding="utf-8")
     real_project = tmp_path / "real-project"
     real_project.mkdir()
     (real_project / "source.txt").write_text("keep", encoding="utf-8")
@@ -182,6 +251,46 @@ def test_selected_table_cleanup_restores_immutable_delete_trigger(tmp_path: Path
         db.execute("INSERT INTO execution_rows VALUES('new')")
         with pytest.raises(sqlite3.IntegrityError, match="immutable"):
             db.execute("DELETE FROM execution_rows")
+
+
+def test_selected_table_cleanup_rolls_back_trigger_and_rows_on_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "trigger-rollback.db"
+    with sqlite3.connect(path) as db:
+        db.executescript(
+            """
+            CREATE TABLE execution_a(id TEXT PRIMARY KEY);
+            CREATE TABLE execution_b(id TEXT PRIMARY KEY);
+            CREATE TRIGGER execution_a_no_delete
+            BEFORE DELETE ON execution_a
+            BEGIN SELECT RAISE(ABORT,'immutable'); END;
+            INSERT INTO execution_a VALUES('a');
+            INSERT INTO execution_b VALUES('b');
+            """
+        )
+
+    original_quote = project_session_reset._quote_identifier
+    calls = 0
+
+    def fail_during_second_delete(value: str) -> str:
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise RuntimeError("injected_delete_failure")
+        return original_quote(value)
+
+    monkeypatch.setattr(
+        project_session_reset, "_quote_identifier", fail_during_second_delete
+    )
+    with pytest.raises(RuntimeError, match="injected_delete_failure"):
+        _clear_selected_tables(path, select=lambda name: name.startswith("execution_"))
+
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT id FROM execution_a").fetchone()[0] == "a"
+        assert db.execute("SELECT id FROM execution_b").fetchone()[0] == "b"
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            db.execute("DELETE FROM execution_a")
 
 
 @pytest.mark.asyncio
@@ -270,6 +379,12 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
         assert db.execute(
             "SELECT generation,phase FROM execution_runtime_state WHERE singleton_id=1"
         ).fetchone() == (0, "legacy")
+        assert db.execute(
+            "SELECT receipt_id FROM execution_candidate_draft_receipts"
+        ).fetchone()[0] == "keep-receipt"
+        assert db.execute(
+            "SELECT receipt_id FROM execution_candidate_draft_materials"
+        ).fetchone()[0] == "keep-receipt"
     with sqlite3.connect(user_data / "data" / "companion.db") as db:
         for table in RESET_MANIFEST["companion.db"]["delete_tables"]:
             assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
@@ -288,6 +403,10 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
         assert db.execute("SELECT id FROM capability_versions").fetchone()[0] == "keep-version"
     for name in RESET_MANIFEST["delete_databases"]:
         assert not (user_data / "data" / name).exists()
+    with sqlite3.connect(user_data / "data" / "billing.db") as db:
+        assert db.execute("SELECT value FROM billing_sentinel").fetchone()[0] == "keep"
+    assert (user_data / "skills" / "keep.txt").read_text(encoding="utf-8") == "keep"
+    assert (user_data / "plugins" / "keep.txt").read_text(encoding="utf-8") == "keep"
     assert not (user_data / "workflows" / "blobs").exists()
     assert (user_data / "config.toml").read_text(encoding="utf-8") == "default_model = 'keep'\n"
     assert (tmp_path / "real-project" / "source.txt").read_text(encoding="utf-8") == "keep"

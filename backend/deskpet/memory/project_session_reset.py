@@ -87,8 +87,18 @@ _WORKFLOW_PRESERVED_TABLES = frozenset(
 # inverse "everything except ..." selector can destroy global capabilities.
 _COMPANION_RUN_TABLES = frozenset(
     {
+        "candidate_evidence",
         "companion_run_bindings",
+        "delegated_task_grants",
+        "growth_events",
         "job_execution_waits",
+        "jobs",
+        "notifications",
+        "outbox",
+        "owner_memory_read_scopes",
+        "preference_evidence",
+        "preference_turn_decision_receipts",
+        "preferences",
         "run_growth_dependency_evidence",
         "run_growth_dependency_items",
         "run_growth_snapshots",

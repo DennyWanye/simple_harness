@@ -22,6 +22,10 @@
   `product_sdk_runtime_ready` 与 ingress open；真实 `deepseek-v4-flash` root Run `be702419…` 返回
   `V33-CURRENT-HEAD-OK`，完整重启后新 Session 与两条消息仍可见。数据库确认 reset completed、runtime
   `(generation=1, phase=open)`、旧 Run 哨兵为零、candidate package 保留且迁移备份已删除。
+- 最终独立审计又复现 companion 混合表残留旧 Session/message/Run payload；现已把 growth event、偏好/证据、
+  消息决策回执、owner Memory scope、jobs、notification/outbox 等加入精确清理清单。真实 schema 测试写入这些
+  哨兵后全部归零，并反向确认 billing、Skills/Plugins 文件、candidate draft/package 与 runtime state 保留；
+  专项 `19 passed`、组合回归 `59 passed`，trigger 异常路径会完整回滚数据与不变性 trigger。
 - macOS 当前 debug `.app` 从 v32 fixture 启动后侧栏为空；无重新登录即调用真实 `deepseek-v4-flash` 返回
   `V33-RESET-OK`。随后 UI 新建的 Project/Session/消息/Run 跨完整重启保留；真实终端以绑定目录为 `pwd`，
   相对读取与写入只落在该目录。S-PS-08 已通过；完整 release 仍受 S-PS-01/02/03/05 与最终 gate/audit 阻塞。

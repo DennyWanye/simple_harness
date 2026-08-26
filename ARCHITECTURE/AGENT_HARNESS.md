@@ -263,8 +263,9 @@ legacy Code mapping backfill 为新 binding：从任意旧 schema 升级时，st
 SDK ingress 前一次性清空旧 Project、Session、消息、Run、上下文和会话派生投影；全局 Provider、默认模型、
 应用设置、Keychain、账单、Skills/Plugins 以及真实项目/产物文件不在清理范围。清理使用可恢复 phase ledger，
 完成后才开放新数据写入。`facts` 作为历史可选表按存在性清空；workflow 与 SDK product-state 精确清除
-Run catalog/runtime/snapshot lease；companion 只清 Run binding、job wait 与 run-growth snapshot/dependency，
-保留 candidate package、capability activation/version、growth authority、profiles 与 reminders。workflow 的
+Run catalog/runtime/snapshot lease；companion 精确清除 Run binding、job/wait、growth event、偏好/证据、
+消息决策回执、owner Memory scope、notification/outbox 与 run-growth snapshot/dependency，同时保留 candidate
+package、capability activation/version、growth authority、profiles 与 reminders。workflow 的
 `execution_runtime_state` 及 candidate draft receipt/material 也是全局运行/安装 authority，重置必须保留；
 清空带 immutable delete trigger 的 Run 表时只在同一事务内临时移除并原样恢复 trigger。
 
@@ -292,8 +293,8 @@ Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻
 调用真实 Provider、磁盘项目文件保留，以及升级后新 Project/Session/消息/Run 跨完整重启保持。真实 root
 Run `201db422…` 的无 `cd` 相对命令返回绑定目录为 cwd，读取和写入也只落在该目录。自动化覆盖 fresh v33、
 v9/v17/v23/v31/v32 升级与十个 crash boundary 的 fail-closed/retry；Windows 不在本轮范围。
-真实 schema 聚焦回归追加为 `58 passed`，并以 runtime state、candidate package 与 growth authority 哨兵锁定
-全局运行配置和 Skills/Plugins 保留边界；专项 v33 重置为 `18 passed`。
+真实 schema 聚焦回归追加为 `59 passed`，并以 runtime state、candidate draft/package、billing、Skills/Plugins
+文件与 growth authority 哨兵锁定全局保留边界；专项 v33 重置为 `19 passed`，含 trigger 异常回滚验证。
 2026-08-27 当前 HEAD `8631ddcc` 又以完整 v32 隔离 user-data 通过真实启动：首次进入为空，SDK Runtime/
 ingress 正常开放，真实 `deepseek-v4-flash` root Run `be702419…` 成功返回；完整重启后新 Session 与两条消息
 仍在，证明 reset completed 后不会再次删除升级后数据。
