@@ -71,6 +71,16 @@ _CAPABILITY_RUN_PREFIXES = (
     "capability_snapshot_lease_",
     "capability_lease_runtime_",
 )
+_WORKFLOW_PRESERVED_TABLES = frozenset(
+    {
+        "workflow_schema_migrations",
+        "execution_runtime_state",
+        # These immutable receipts/materials are the durable source for an
+        # installed Skill/Plugin candidate, not conversation history.
+        "execution_candidate_draft_receipts",
+        "execution_candidate_draft_materials",
+    }
+)
 
 # Companion contains durable Skills/Plugins/growth governance beside ephemeral
 # conversation Runs.  Reset only the exact Run-owned projection tables; an
@@ -106,7 +116,7 @@ RESET_MANIFEST = {
             *_CAPABILITY_RUN_PREFIXES,
         ),
         "delete_tables": ("task_grants",),
-        "preserve_tables": ("workflow_schema_migrations",),
+        "preserve_tables": tuple(sorted(_WORKFLOW_PRESERVED_TABLES)),
     },
     "companion.db": {
         "delete_tables": tuple(sorted(_COMPANION_RUN_TABLES)),
@@ -170,10 +180,23 @@ def _clear_selected_tables(
             )
             if select(str(row[0]))
         ]
+        trigger_rows = [
+            (str(row[0]), str(row[1]))
+            for row in db.execute(
+                "SELECT name,sql FROM sqlite_master WHERE type='trigger' "
+                "AND tbl_name IN (%s) AND sql IS NOT NULL ORDER BY name"
+                % ",".join("?" for _ in tables),
+                tables,
+            )
+        ] if tables else []
         db.execute("BEGIN IMMEDIATE")
         try:
+            for trigger, _ in trigger_rows:
+                db.execute(f"DROP TRIGGER {_quote_identifier(trigger)}")
             for table in tables:
                 db.execute(f"DELETE FROM {_quote_identifier(table)}")
+            for _, ddl in trigger_rows:
+                db.execute(ddl)
             db.commit()
         except Exception:
             db.rollback()
@@ -194,7 +217,7 @@ def _clear_external_stores(data_dir: Path) -> None:
     _clear_selected_tables(
         data_dir / "workflow.db",
         select=lambda name: (
-            name != "workflow_schema_migrations"
+            name not in _WORKFLOW_PRESERVED_TABLES
             and (
                 name.startswith("execution_")
                 or name.startswith("workflow_")

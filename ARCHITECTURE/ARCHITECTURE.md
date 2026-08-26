@@ -413,6 +413,8 @@ Companion 与 SDK ingress。全局 Provider/默认模型/应用设置/Keychain/�
 state.db 历史可选 `facts` 表按存在性清空；workflow/sdk product-state 的 Capability 清理限定于 Run catalog、
 runtime 与 snapshot/lease 表；companion 采用精确 Run 表 allowlist，保留 candidate package、capability governance、
 growth authority、profiles 和 reminders，避免以“除少数表外全部删除”的反向清单误伤 Skills/Plugins。
+workflow 的 `execution_runtime_state`、candidate draft receipt/material 属于全局 authority，同样保留；Run 表上的
+immutable delete trigger 仅在清理事务内临时移除，随后按原 DDL 恢复，保证正常运行期的不变性约束继续有效。
 
 验证边界：当前代码/自动化、100k catalog 性能探针和 macOS 当前 debug `.app` 的注册、分组、Inspector、
 projectless 与重启恢复核心路径已通过。真实 `deepseek-v4-flash` Run 已实际调用终端、文件读取和文件写入：

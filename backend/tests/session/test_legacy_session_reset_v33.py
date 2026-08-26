@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, ensure_v9
-from deskpet.memory.project_session_reset import RESET_MANIFEST
+from deskpet.memory.project_session_reset import RESET_MANIFEST, _clear_selected_tables
 from deskpet.memory.schema import InitializeError, initialize_state_db
 from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
 from deskpet.companion.store import CompanionStore
@@ -65,6 +65,10 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
     workflow_path = data_dir / "workflow.db"
     await initialize_workflow_db(workflow_path)
     with sqlite3.connect(workflow_path) as db:
+        runtime_state_before = db.execute(
+            "SELECT generation,phase FROM execution_runtime_state WHERE singleton_id=1"
+        ).fetchone()
+        assert runtime_state_before == (0, "legacy")
         db.execute(
             "INSERT INTO workflow_start_requests VALUES"
             "('legacy-key',?,'request','turn','profile','capability','legacy-run',1)",
@@ -158,6 +162,28 @@ def test_reset_manifest_matches_v33_state_sql() -> None:
     assert deleted == set(RESET_MANIFEST["state.db"]["empty_tables"])
 
 
+def test_selected_table_cleanup_restores_immutable_delete_trigger(tmp_path: Path) -> None:
+    path = tmp_path / "triggered.db"
+    with sqlite3.connect(path) as db:
+        db.executescript(
+            """
+            CREATE TABLE execution_rows(id TEXT PRIMARY KEY);
+            CREATE TRIGGER execution_rows_no_delete
+            BEFORE DELETE ON execution_rows
+            BEGIN SELECT RAISE(ABORT,'immutable'); END;
+            INSERT INTO execution_rows VALUES('legacy');
+            """
+        )
+
+    _clear_selected_tables(path, select=lambda name: name == "execution_rows")
+
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM execution_rows").fetchone()[0] == 0
+        db.execute("INSERT INTO execution_rows VALUES('new')")
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            db.execute("DELETE FROM execution_rows")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("expected_version", "last_migration"),
@@ -241,6 +267,9 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
         ).fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM capability_runtime_leases").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM workflow_schema_migrations").fetchone()[0] > 0
+        assert db.execute(
+            "SELECT generation,phase FROM execution_runtime_state WHERE singleton_id=1"
+        ).fetchone() == (0, "legacy")
     with sqlite3.connect(user_data / "data" / "companion.db") as db:
         for table in RESET_MANIFEST["companion.db"]["delete_tables"]:
             assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
