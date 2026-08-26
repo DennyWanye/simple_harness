@@ -2,6 +2,15 @@
 
 > **最后更新**：2026-08-26
 
+## 2026-08-26 Project-scoped Sessions 单一 workspace authority 验收
+
+- TC-PS-04 在 macOS 当前 debug `.app` 通过 fresh、temporal-fault 所需 root Runs：真实
+  `deepseek-v4-flash` 的终端 cwd、读取、写入与 Project Rules 全部来自 immutable Session Binding；前端、
+  retired Code Session、latest-Run 和模型文本冲突路径均不能改根，三个冲突目录无副作用。
+- 缺失根目录时 Provider/Tool 计数均为零且无禁写文件；恢复相同 filesystem identity 并完整重启后，fresh
+  Run 仍写入同一绑定根。聚焦自动化 `75 passed`。缺失根错误 turn 的跨重启历史显示保留为独立观察项；
+  TC-PS-04 的物理执行边界已通过，整个 release 仍受 S-PS-01/02/03/05/06/08 阻塞。
+
 ## 2026-08-26 Project-scoped Sessions missing-root / relocation 验收
 
 - TC-PS-07 在 macOS 当前 debug `.app` 的 fresh、temporal-fault 两条 lane 通过：缺失目录在 Provider/Tool
@@ -1650,7 +1659,7 @@
 
 | 模块 | 状态 | 关键文档 |
 |---|---|---|
-| **Project-scoped Sessions** | 🟡 **生产接线、自动化与真实模型 authority 验收推进，release 验收仍 BLOCKED** — state.db v32 已提供 Project、immutable Session binding、创建 receipt、catalog/backfill state；fresh Run 的 Host/TaskWorkContext/SDK Tool authority 统一从 binding 冻结根目录，projectless 与缺失根 fail closed。左侧 Project 分组、Project Picker、只读 Inspector、同项目新建和 projectless handoff 已默认启用。聚焦完成度审计 PASS，100k catalog 性能 p95 低于 42ms；macOS 当前 debug `.app` 真人通过 Git-root 预览、分组、普通/项目 Session、Inspector 与重启恢复。真实 `deepseek-v4-flash` Run 的终端、文件读取、文件写入在绑定根内成功，`../unrelated` 读写被拒绝且无越界落盘；重复 `schema_hash` 歧义修复后，逐项手动授权与全自动两轮均完成真实 activate 和项目内写入。2026-08-26 TC-PS-07 两条 lane PASS：missing-root 在 Provider/Tool 物理执行前提交 durable failed root，UI 友好阻断；无关目录拒绝；活跃 Run 不切根并经重启 recovery 收敛；同身份 relocation 后两个 Session/历史/Inspector 跨重启保持；侧栏冷启动 listener 竞态已修。Windows 已由用户移为后续非阻断工作；其余冻结真人场景未执行，故仍不得宣布 AC-1～AC-8 全绿。 | [plan](../plans/2026-08-25-project-scoped-sessions/plan.md) · [架构](./ARCHITECTURE.md#33-当前-session--run--workspace-authority2026-08-25) · [UI](./UI.md#09-project-scoped-session-ui2026-08-25) |
+| **Project-scoped Sessions** | 🟡 **生产接线、自动化与真实模型 authority 验收推进，release 验收仍 BLOCKED** — state.db v32 已提供 Project、immutable Session binding、创建 receipt、catalog/backfill state；fresh Run 的 Host/TaskWorkContext/SDK Tool authority 统一从 binding 冻结根目录，projectless 与缺失根 fail closed。左侧 Project 分组、Project Picker、只读 Inspector、同项目新建和 projectless handoff 已默认启用。聚焦完成度审计 PASS，100k catalog 性能 p95 低于 42ms；macOS 当前 debug `.app` 真人通过 Git-root 预览、分组、普通/项目 Session、Inspector 与重启恢复。真实 `deepseek-v4-flash` Run 的终端、文件读取、文件写入在绑定根内成功，`../unrelated` 读写被拒绝且无越界落盘；重复 `schema_hash` 歧义修复后，逐项手动授权与全自动两轮均完成真实 activate 和项目内写入。2026-08-26 TC-PS-04 PASS：五个真实 root Run 证明 terminal/文件/Rules 同根，前端、legacy、latest-Run、模型文本冲突不能改根，missing-root 零 Provider/Tool 副作用，完整重启后仍回绑定根；聚焦自动化 `75 passed`。TC-PS-07 两条 lane 也已 PASS：无关目录拒绝、活跃 Run recovery、同身份 relocation 与跨重启保持；侧栏冷启动 listener 竞态已修。缺失根错误 turn 的历史恢复显示另列观察项。Windows 已由用户移为后续非阻断工作；S-PS-01/02/03/05/06/08 尚未全部通过，故仍不得宣布 AC-1～AC-8 全绿。 | [plan](../plans/2026-08-25-project-scoped-sessions/plan.md) · [架构](./ARCHITECTURE.md#33-当前-session--run--workspace-authority2026-08-25) · [UI](./UI.md#09-project-scoped-session-ui2026-08-25) |
 | **前端 UI / 暗色主题** | 🟡 **Workbench 单窗工作台已实现，r14 实质审计补测中** —— 透明桌宠壳、Live2D/sprite Canvas 与独立消息窗均已移除；当前为侧栏 + Chat/Skills/Artifacts/Settings 四视图。2026-08-11：账户 AuthAdapter/登录注册事件/侧栏账户入口和 Live2D 锁依赖、表情动作消息链全部删除；Vitest `533 passed`、Rust `74 passed`、companion `647 passed / 10 skipped`、MCP `21 passed`、typecheck/build/check 全绿；`kimi-k3` 真实出站 HTTP 200 并回显 `KIMI3_OK`，r12 的 402 阻塞已解除。r13 形式门达到 `READY_FOR_AUDIT`，但独立实质审计否决了设置持久化、几何异常分支、运行期断连、删除即时态和冷启动性能的证据充分性，故未 finalize；r14 正重新冻结并补真机 primary evidence。已退役的单钥匙 Keychain 模块、renderer IPC/binding 与 Rust `keyring` 依赖已移除；最新 `.app` 干净启动和打开设置页均无 macOS 授权弹窗。 | [UI 架构](./UI.md) · [workbench-ui](../plans/2026-08-04-workbench-ui/) |
 | **DeepResearch v7 简化编排 / bundled Playwright** | ✅ **本轮 required 范围 PASS** — 新 run 默认 v7；六节点 manager graph 拆 2～6 个方向，每方向独立 child，弱结果诊断后最多续跑一次，再统一综合。单卡显示真实方向/状态/attempt/来源数，内部 attempt 不重复；标准文件卡四个动作、既有 `DeepResearch` 目录保存及同 userdata 重启恢复均经真机验证。完整多类别语义矩阵保留为后续候选。 | [架构](./DeepResearch.md) · [plan](../plans/2026-07-19-deepresearch-simplification/plan.md) · [results](../plans/2026-07-19-deepresearch-simplification/spike/result.md) |
 | **语音管线** (Realtime/VAD/ASR/LLM/TTS) | 🟡 **旧链已安全关闭，Realtime 待接入** — `[voice].enabled=false` 出厂默认生效；普通启动不再导入、创建或加载 Silero VAD、faster-whisper、EdgeTTS/CosyVoice，两个前端窗口不连 `/ws/audio`、不申请麦克风，按钮明确提示等待 Realtime。误连返回 `voice_temporarily_disabled`，`/health.voice` 可观测。旧实现只保留显式开发兼容，不是生产入口；待 relay 提供 WebRTC/Realtime 契约后，新的 Realtime 入口必须进入完整 `ProductTurnPreparer`。 | [Harness 架构](./AGENT_HARNESS.md) · [Context OS V1 plan §12](../plans/2026-07-13-context-os-v1/plan.md) |

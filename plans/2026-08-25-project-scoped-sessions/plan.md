@@ -7,9 +7,11 @@
 - `plan-bs` challenge 已 `CONVERGED`（3 轮）；Ponytail minimality 建议已应用；用户已于 2026-08-25 确认行为契约与本计划。
 - `BEHAVIOR_POLICY = preserve-approved`。
 - 流程档位：FULL（新增持久化 schema/迁移，修改 Session 创建、共享 workspace authority 和桌面 UI）。
-- 2026-08-26：TC-PS-07 已在 macOS 当前 debug `.app` 完成 missing-root fail-closed、无关目录拒绝、
-  活跃 Run 恢复、同身份 relocation、真实模型绑定根读写与完整重启两条 lane；其余 required 场景仍未完成，
-  所以计划整体保持 `BLOCKED`，不得宣布 release 完成。
+- 2026-08-26：TC-PS-04 已在 macOS 当前 debug `.app` 完成五个真实 `deepseek-v4-flash` root Run：终端
+  cwd/读取/写入统一落在 Session Binding 根，前端、legacy、latest-Run 和模型文本冲突路径均不能改根，
+  Project Rules 只从绑定根加载；目录缺失时 Provider/Tool 零副作用 fail closed，完整重启后仍回到同一根。
+  TC-PS-07 也已完成 missing-root、无关目录拒绝、活跃 Run 恢复和同身份 relocation 两条 lane；其余
+  required 场景仍未完成，所以计划整体保持 `BLOCKED`，不得宣布 release 完成。
 
 ## 主要矛盾
 

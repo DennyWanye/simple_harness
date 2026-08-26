@@ -270,6 +270,11 @@ mapping 只供 v32 backfill，startup recovery 顺序为 migration/backfill → 
 invocation 或 Tool effect 的前提下提交 durable failed SDK root，并向 UI 投影稳定的 workspace-unavailable
 提示；同身份 relocation 使用 revision CAS，选择无关目录失败，活跃 Run 不允许切根。重启 recovery 会把
 目录已移走的在途 SDK Run 收敛到 failed terminal 并释放本项目 admission；恢复后两个 Session 的
+binding、历史与 Inspector 保持。TC-PS-04 又以五个真实 root Run 对账终端 cwd、物理写入和 Project Rules：
+前端、retired Code Session、latest-Run 与模型文本冲突路径均未覆盖 binding，三个冲突目录 canary hash
+不变且无新增文件；目录缺失时 Provider/Tool 计数均为零，完整重启后 fresh Run 仍写回同一绑定根。聚焦
+authority/Rules/preflight/Session 自动化为 `75 passed`。缺失根错误 turn 的跨重启消息历史显示仍作为独立
+持久化观察项保留，不影响已证明的物理 fail-closed 边界。
 identity/history 不变。Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余
 真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
 
