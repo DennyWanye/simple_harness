@@ -1,7 +1,7 @@
 {
   "acceptance_sha256": "ed2d9933d0c9bfb38daf6b9cbaa50166e8ab5b62f30257e1fbf7f4922c4fff54",
-  "candidate_content_digest": "afe02eefb5c75986b5036b359b60c838923a3ca05225a07505e9e8f461a359d6",
+  "candidate_content_digest": "c537bdc178503bd1166fe3a3a2dde3be12f498beaec6c2a6cb45737d319ebf66",
   "run_dir": "plans/2026-08-25-project-scoped-sessions/verification/run-20260826-v33-reset",
   "run_id": "run-20260826-232622",
-  "updated_at": "2026-08-26T23:27:03+0800"
+  "updated_at": "2026-08-27T00:47:58+0800"
 }
