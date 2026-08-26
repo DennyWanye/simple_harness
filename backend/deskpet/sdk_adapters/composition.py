@@ -20,6 +20,7 @@ from simple_harness import (
     build_runtime,
 )
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.execution.uow import RunState
 
 from .runtime_paths import (
     ProductRuntimePathsAdapter,
@@ -246,6 +247,7 @@ class ProductSdkRuntimeStack:
         self._ready_publisher = ready_publisher or (lambda _ready: None)
         self._clock = clock
         self._lock = asyncio.Lock()
+        self._preflight_lock = asyncio.Lock()
         self._ready: SdkRuntimeReady | None = None
         self._runtime: Runtime | None = None
         self._database: Database | None = None
@@ -423,6 +425,118 @@ class ProductSdkRuntimeStack:
 
     def query(self, run_id: str):  # type: ignore[no-untyped-def]
         return self.require_ready().client.query(RunId(run_id))
+
+    async def commit_preflight_blocked_root(
+        self,
+        *,
+        execution_session_id: str,
+        run_id: str,
+        request_id: str,
+        turn_id: str,
+        task_scope_id: str,
+        text: str,
+        reason_code: str,
+        evidence_refs: tuple[str, ...],
+    ):  # type: ignore[no-untyped-def]
+        """Create one durable failed Root without entering provider/tool execution."""
+
+        self.require_ready()
+        uow = self._uow
+        if uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        reason = str(reason_code).strip()
+        refs = tuple(str(item).strip() for item in evidence_refs)
+        if not reason or not refs or any(not item for item in refs):
+            raise ValueError("preflight block requires reason and evidence refs")
+        snapshot = {
+            "schema_version": 1,
+            "profile_key": ROOT_PROFILE_KEY,
+            "driver_kind": "react",
+            "turn_id": turn_id,
+            "task_scope_id": task_scope_id,
+            "tool_catalog_generation": 0,
+            "input": {"text": text},
+            "preflight_block": {
+                "reason_code": reason,
+                "evidence_refs": list(refs),
+            },
+        }
+        terminal_payload = {
+            "kind": "final",
+            "explanation_code": reason,
+            "route_availability": "unavailable",
+            "provider_invocation_created": False,
+            "evidence_refs": list(refs),
+        }
+        async with self._preflight_lock:
+            self.require_ready()
+            owner_row = uow.database.connection.execute(
+                "SELECT user_id FROM execution_sessions WHERE session_id=?",
+                (execution_session_id,),
+            ).fetchone()
+            user_id = (
+                str(owner_row["user_id"])
+                if owner_row is not None
+                else "harness-system"
+            )
+            existing = uow.read_run(run_id)
+            if existing is not None and existing.state is RunState.FAILED:
+                # Re-run the SDK idempotency check so a reused identity with a
+                # different request or snapshot still fails closed.
+                uow.create_with_start_snapshot(
+                    execution_session_id=execution_session_id,
+                    run_id=run_id,
+                    request_id=request_id,
+                    profile_key=ROOT_PROFILE_KEY,
+                    driver_kind="react",
+                    snapshot=snapshot,
+                    event_id=f"{run_id}:created",
+                    now=float(self._clock()),
+                    user_id=user_id,
+                )
+                return existing
+
+            now = float(self._clock())
+            uow.create_with_start_snapshot(
+                execution_session_id=execution_session_id,
+                run_id=run_id,
+                request_id=request_id,
+                profile_key=ROOT_PROFILE_KEY,
+                driver_kind="react",
+                snapshot=snapshot,
+                event_id=f"{run_id}:created",
+                now=now,
+                user_id=user_id,
+            )
+            active, execution_lease = uow.claim_runtime_activation(
+                run_id=run_id,
+                owner_id=f"product-preflight:{run_id}",
+                namespace="runtime.kernel",
+                now=now,
+                lease_ttl_seconds=30.0,
+            )
+            fence = None
+            try:
+                fence = await uow.acquire(RunId(run_id), execution_lease, now=now)
+                result = uow.commit_root_terminal_with_deliveries(
+                    run_id=run_id,
+                    expected_version=active.version,
+                    terminal_state=RunState.FAILED,
+                    event_id=f"{run_id}:preflight-blocked",
+                    terminal_payload=terminal_payload,
+                    deliveries=(),
+                    fence=fence,
+                    execution_lease=execution_lease,
+                    terminal_fence_receipt_ref=f"preflight-block:{run_id}",
+                    now=now,
+                )
+                return result.run
+            except BaseException:
+                if fence is not None:
+                    await uow.release(fence)
+                raise
+            finally:
+                uow.release_runtime_lease(execution_lease, now=float(self._clock()))
 
     def list_open_authorization_decisions(
         self,

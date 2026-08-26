@@ -8766,36 +8766,35 @@ async def _commit_product_preflight_block(
     host: Any,
     block: Any,
 ) -> None:
-    """Route a typed preflight failure through the trusted Kernel builder."""
+    """Commit and project a typed failure without provider or Tool execution."""
 
     from deskpet.execution.contracts import root_idempotency_key, RunRef
 
-    if _sdk_ingress is None:
+    if _sdk_ingress is None or _sdk_runtime_stack is None:
         raise RuntimeError("SDK Runtime is unavailable")
-    handle = await _sdk_ingress.require_ready().client.start_blocked(
-        {
-            "text": text,
-            "request_id": request_id,
-            "turn_id": turn_id,
-            "venue": "text",
-            "payload": {
-                "root_run_id": RunRef(
-                    uuid.uuid5(uuid.NAMESPACE_URL, f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}").hex,
-                    session_id,
-                ).run_id,
-                "task_scope_id": task_scope_id,
-                "route_availability": "unavailable",
-            },
-        },
-        host,
+    del host
+    root_run_id = RunRef(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"deskpet:{root_idempotency_key(session_id, request_id, turn_id)}",
+        ).hex,
+        session_id,
+    ).run_id
+    await _sdk_runtime_stack.commit_preflight_blocked_root(
+        execution_session_id=session_id,
+        run_id=root_run_id,
+        request_id=request_id,
+        turn_id=turn_id,
+        task_scope_id=task_scope_id,
+        text=text,
         reason_code=block.reason_code.value,
-        evidence_refs=block.evidence_refs,
+        evidence_refs=tuple(block.evidence_refs),
     )
     started = {
         "type": "chat_v2_run_started",
         "payload": {
             "session_id": session_id,
-            "run_id": handle.run_id,
+            "run_id": root_run_id,
             "request_id": request_id,
             "turn_id": turn_id,
             "task_scope_id": task_scope_id,
@@ -8804,8 +8803,31 @@ async def _commit_product_preflight_block(
     }
     await websocket.send_json(started)
     await _broadcast_default_chat_peers(websocket, started)
-    async for _event in handle.events:
-        pass
+    public_messages = {
+        "workspace_unavailable": "项目目录不可用，请重新定位同一项目后再试。",
+        "provider_binding_unavailable": "模型服务尚未就绪，请检查当前会话的模型设置后再试。",
+        "capability_unavailable": "当前请求所需能力暂不可用，请检查工具设置后再试。",
+    }
+    await _send_chat_error(
+        websocket,
+        {
+            "type": "chat_v2_error",
+            "payload": {
+                "session_id": session_id,
+                "run_id": root_run_id,
+                "request_id": request_id,
+                "turn_id": turn_id,
+                "task_scope_id": task_scope_id,
+                "error": public_messages.get(
+                    block.reason_code.value,
+                    "请求暂时无法执行，请检查当前会话设置后再试。",
+                ),
+                "code": block.reason_code.value,
+            },
+        },
+        session_id=session_id,
+        request_id=request_id,
+    )
 
 
 async def _run_sdk_desktop_chat(

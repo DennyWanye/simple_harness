@@ -51,6 +51,32 @@ describe("SessionList project catalog", () => {
     expect(screen.getByText("新建")).toBeTruthy();
   });
 
+  it("installs response handling before an immediate catalog reply", async () => {
+    vi.mocked(controlWS.send).mockImplementation((value: unknown) => {
+      const sent = value as { type: string; request_id: string };
+      if (sent.type === "project_catalog_page") {
+        listeners.forEach((listener) => listener({
+          type: "project_catalog_page_response",
+          request_id: sent.request_id,
+          payload: {
+            ok: true,
+            schema_version: 1,
+            catalog_revision: 8,
+            items: [project],
+            next_cursor: null,
+            pinned: project,
+          },
+        }));
+      }
+      return true;
+    });
+
+    render(<SessionList activeSid="s1" onSwitchSid={() => {}} />);
+
+    await waitFor(() => expect(screen.getByTestId("project-missing-p1")).toBeTruthy());
+    expect(useSessionsStore.getState().project_catalog.loading).toBe(false);
+  });
+
   it("stale cursor discards continuation and requests the first page", () => {
     render(<SessionList activeSid="" onSwitchSid={() => {}} />);
     const first = request("project_catalog_page");

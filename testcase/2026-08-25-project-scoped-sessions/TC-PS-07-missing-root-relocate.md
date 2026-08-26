@@ -36,3 +36,21 @@ revision: 1
 
 - 步骤 1～6 全部满足；任何缺失状态的物理工具执行成功或无关目录被接受均为 FAIL。
 - primary evidence：缺失/拒绝/恢复 UI 截图、目录前后 identity probe、project revision、Session 集合及目录清单。
+
+## 2026-08-26 实际执行结果
+
+- 结论：`PASS`（macOS 当前 debug `.app`，fresh 与 temporal-fault 两条 lane）。
+- 缺失目录后两个 Session 和历史仍可见；开发请求在 Provider/Tool 物理执行前生成 durable failed SDK root，
+  UI 显示“项目目录不可用，请重新定位同一项目后再试”。该 root 的 `provider_invocations=0`、
+  `execution_effects=0`，禁止文件没有生成，两侧 canary hash 未变。
+- 系统目录选择器选中无关目录后返回 `project_identity_mismatch`，Project path/revision 未改变；活跃 root Run
+  存在时 Inspector 不提供 relocation，重启恢复把该 Run 终止为 `workspace_unavailable` 并释放本项目 admission。
+- 同身份 relocation 后 Project revision 为 4，两个原 Session ID 保持不变；完整重启后分组、历史和只读
+  Inspector 根目录均恢复。真实 `deepseek-v4-flash` 分别完成绑定根内绝对路径 `read_file` 和 `write_file`，
+  无关目录只保留原 canary。
+- 原始证据仅在 ignored `.local-test-evidence/2026-08-26/project-scoped-sessions-missing-root/`；gate 账本
+  `run-20260825-190455` 记录 2 个 root runs 与 5 份 primary evidence。完整 release 仍受其他 required
+  场景未执行阻塞，本 testcase 的 PASS 不等于 AC-1～AC-8 全绿。
+- 观察到两个独立后续项：相对路径 `read_file` 返回 `tool_failed`，但同一绑定根绝对路径读取成功；同一轮并行
+  激活多个工具时曾出现 immutable TaskGrant 冲突。本 testcase 依靠分开的真实 root runs 证明文件读写边界，
+  不把这两个观察项写成已解决。

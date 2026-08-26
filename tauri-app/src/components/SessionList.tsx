@@ -81,11 +81,6 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     }
   }, [expanded, requestCatalog, requestSessions]);
 
-  useEffect(() => {
-    requestCatalog();
-    requestSessions({ scope_kind: "projectless", project_id: null });
-  }, [requestCatalog, requestSessions]);
-
   useEffect(() => controlWS.on_message((message: unknown) => {
     const generic = message as { type?: string };
     if (generic?.type === "session_deleted" || generic?.type === "session_renamed") {
@@ -137,6 +132,14 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
     setPicker(null);
     refreshAll();
   }), [activeSid, onSwitchSid, refreshAll, requestCatalog, requestSessions]);
+
+  // Install the response listener before issuing the initial local-WS reads.
+  // The desktop backend can answer within the same effect flush; requesting
+  // first would leave the catalog permanently loading with an empty sidebar.
+  useEffect(() => {
+    requestCatalog();
+    requestSessions({ scope_kind: "projectless", project_id: null });
+  }, [requestCatalog, requestSessions]);
 
   useEffect(() => {
     const previous = previousWsState.current;

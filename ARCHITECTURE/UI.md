@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-25（Project-scoped Session 当前 UI）
+> 最后更新：2026-08-26（Project-scoped Session missing-root / restart 验收）
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 
@@ -21,8 +21,13 @@
   `deepseek-v4-flash` 模型调用 `builtin:run_shell/read_file/write_file`：绑定根内成功，`../unrelated`
   读写均被拒绝且无越界落盘。原始截图分别在 ignored
   `.local-test-evidence/2026-08-25/project-scoped-sessions-ui/current-debug-bundle/` 和
-  `.local-test-evidence/2026-08-25/project-scoped-sessions-real-model/`；Windows 已移为后续非阻断工作，
-  missing-root relocation 与完整冻结 UI 矩阵尚未完成，release DoD 仍为 BLOCKED。
+  `.local-test-evidence/2026-08-25/project-scoped-sessions-real-model/`；Windows 已移为后续非阻断工作。
+- 2026-08-26 当前 debug `.app` 进一步完成 missing-root relocation 全链：目录缺失后两个 Session/历史仍可见，
+  开发请求显示友好阻断且不创建 Provider/Tool effect；无关目录被 `project_identity_mismatch` 拒绝；活跃 Run
+  期间不提供 relocation，重启恢复后该 Run 以 `workspace_unavailable` 终止；同身份目录恢复后两个 Session ID、
+  历史和只读 Inspector 均跨完整重启保持。`SessionList` 还修复了冷启动响应早于 listener 安装造成的偶发侧栏
+  空白竞态。原始证据位于 ignored `.local-test-evidence/2026-08-26/project-scoped-sessions-missing-root/`。
+  其余冻结 UI 场景仍未全部执行，release DoD 继续为 BLOCKED。
 - 当前 debug `.app` 还真实验证了授权模式切换：关闭“Agent 全开模式”后，search、describe、activate 与最终
   `write_file` 逐项弹窗，点击允许后写入成功；重新开启后，同一链路无弹窗成功。两轮模型都复制唯一的顶层
   `schema_hash`，最终文件只位于当前 Project root。原始截图留在 ignored

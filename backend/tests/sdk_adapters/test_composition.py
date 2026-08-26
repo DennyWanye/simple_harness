@@ -194,6 +194,69 @@ async def test_start_reconcile_recover_query_close_and_schema_independence(
     )
 
 
+@pytest.mark.asyncio
+async def test_preflight_block_creates_idempotent_failed_root_without_driver(
+    tmp_path: Path,
+) -> None:
+    stack = ProductSdkRuntimeStack(
+        paths=ProductRuntimePathsAdapter(tmp_path / "user-data"),
+        candidate_identity=IDENTITY,
+        dependency_loader=_inputs,
+        clock=lambda: 10.0,
+    )
+    await stack.start()
+    assert stack._uow is not None
+    stack._uow.create_with_start_snapshot(
+        execution_session_id="session-missing-root",
+        run_id="prior-run",
+        request_id="prior-request",
+        profile_key=ROOT_PROFILE_KEY,
+        driver_kind="react",
+        snapshot={"schema_version": 1},
+        event_id="prior-run:created",
+        now=9.0,
+        user_id="existing-user",
+    )
+
+    first = await stack.commit_preflight_blocked_root(
+        execution_session_id="session-missing-root",
+        run_id="run-missing-root",
+        request_id="request-missing-root",
+        turn_id="turn-missing-root",
+        task_scope_id="scope-missing-root",
+        text="read project-canary.txt",
+        reason_code="workspace_unavailable",
+        evidence_refs=("workspace-binding:project_root_missing",),
+    )
+    replay = await stack.commit_preflight_blocked_root(
+        execution_session_id="session-missing-root",
+        run_id="run-missing-root",
+        request_id="request-missing-root",
+        turn_id="turn-missing-root",
+        task_scope_id="scope-missing-root",
+        text="read project-canary.txt",
+        reason_code="workspace_unavailable",
+        evidence_refs=("workspace-binding:project_root_missing",),
+    )
+
+    assert first.state.value == replay.state.value == "failed"
+    assert stack.query("run-missing-root").state.value == "failed"
+    snapshot = stack._uow.read_start_snapshot("run-missing-root")
+    assert snapshot is not None
+    assert snapshot["preflight_block"] == {
+        "reason_code": "workspace_unavailable",
+        "evidence_refs": ["workspace-binding:project_root_missing"],
+    }
+    event = stack._uow.database.connection.execute(
+        "SELECT payload_json FROM run_events "
+        "WHERE run_id=? AND kind='run.failed'",
+        ("run-missing-root",),
+    ).fetchone()
+    assert event is not None
+    assert '"provider_invocation_created":false' in str(event["payload_json"])
+    await stack.close()
+
+
 def test_composition_does_not_import_legacy_generic_authority() -> None:
     source = (
         Path(__file__).resolve().parents[2]

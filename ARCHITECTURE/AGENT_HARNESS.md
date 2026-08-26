@@ -1,6 +1,6 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-25
+> 最后更新：2026-08-26
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
@@ -266,8 +266,12 @@ mapping 只供 v32 backfill，startup recovery 顺序为 migration/backfill → 
 `builtin:write_file` 都落在 immutable binding 指向的 Project root；对 `../unrelated` 的读写均返回
 `tool_failed`，物理检查确认越界文件未创建且其他 canary hash 不变。修复重复 hash 后，手动授权 Run
 `0c16b1f9…` 与全自动 Run `494ecb93…` 都完成真实激活和项目内写入，持久化 describe 响应各只有一个顶层
-`schema_hash`。Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余真人路径
-尚未完成，因此 release DoD 仍为 BLOCKED。
+`schema_hash`。2026-08-26 的 missing-root 真实故障链进一步确认：dispatch preflight 会在不创建 Provider
+invocation 或 Tool effect 的前提下提交 durable failed SDK root，并向 UI 投影稳定的 workspace-unavailable
+提示；同身份 relocation 使用 revision CAS，选择无关目录失败，活跃 Run 不允许切根。重启 recovery 会把
+目录已移走的在途 SDK Run 收敛到 failed terminal 并释放本项目 admission；恢复后两个 Session 的
+identity/history 不变。Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余
+真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

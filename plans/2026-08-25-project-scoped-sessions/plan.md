@@ -7,6 +7,9 @@
 - `plan-bs` challenge 已 `CONVERGED`（3 轮）；Ponytail minimality 建议已应用；用户已于 2026-08-25 确认行为契约与本计划。
 - `BEHAVIOR_POLICY = preserve-approved`。
 - 流程档位：FULL（新增持久化 schema/迁移，修改 Session 创建、共享 workspace authority 和桌面 UI）。
+- 2026-08-26：TC-PS-07 已在 macOS 当前 debug `.app` 完成 missing-root fail-closed、无关目录拒绝、
+  活跃 Run 恢复、同身份 relocation、真实模型绑定根读写与完整重启两条 lane；其余 required 场景仍未完成，
+  所以计划整体保持 `BLOCKED`，不得宣布 release 完成。
 
 ## 主要矛盾
 
