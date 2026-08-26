@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 32  # Project-scoped immutable sessions
+TARGET_SCHEMA_VERSION = 33  # One-time reset before project-scoped sessions ship
 _V17_MIGRATION = "009_memory_v2_v17.sql"
 _V17_SCHEMA_VERSION = 17
 _V18_MIGRATION = "010_context_os_v18.sql"
@@ -91,6 +91,8 @@ _OFFICIAL_MEMORY_INTEGRATION_MIGRATION = "023_official_memory_integration_v31.sq
 _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION = 31
 _PROJECT_SCOPED_SESSIONS_MIGRATION = "024_project_scoped_sessions_v32.sql"
 _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION = 32
+_LEGACY_SESSION_RESET_MIGRATION = "025_legacy_session_reset_v33.sql"
+_LEGACY_SESSION_RESET_SCHEMA_VERSION = 33
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -108,6 +110,7 @@ MIGRATION_STEPS: dict[str, int] = {
     _AGENT_RUNTIME_MEMORY_MIGRATION: _AGENT_RUNTIME_MEMORY_SCHEMA_VERSION,
     _OFFICIAL_MEMORY_INTEGRATION_MIGRATION: _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION,
     _PROJECT_SCOPED_SESSIONS_MIGRATION: _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION,
+    _LEGACY_SESSION_RESET_MIGRATION: _LEGACY_SESSION_RESET_SCHEMA_VERSION,
 }
 
 
@@ -499,9 +502,13 @@ async def run_migrations(
                     )
                     if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
                         fault_inject("before_ddl_commit")
+                    if version == _LEGACY_SESSION_RESET_MIGRATION and fault_inject:
+                        fault_inject("before_legacy_reset_commit")
                     await db.commit()
                     if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
                         fault_inject("after_ddl_commit")
+                    if version == _LEGACY_SESSION_RESET_MIGRATION and fault_inject:
+                        fault_inject("after_legacy_reset_commit")
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
                     log.error(
@@ -577,7 +584,19 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            _PROVIDER_FAULT_CORRELATION_SCHEMA_VERSION
+            _LEGACY_SESSION_RESET_SCHEMA_VERSION
+            if _LEGACY_SESSION_RESET_MIGRATION in durable_markers
+            else _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION
+            if _PROJECT_SCOPED_SESSIONS_MIGRATION in durable_markers
+            else _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION
+            if _OFFICIAL_MEMORY_INTEGRATION_MIGRATION in durable_markers
+            else _AGENT_RUNTIME_MEMORY_SCHEMA_VERSION
+            if _AGENT_RUNTIME_MEMORY_MIGRATION in durable_markers
+            else _SDK_PROVIDER_PROJECTION_SEQUENCE_SCHEMA_VERSION
+            if _SDK_PROVIDER_PROJECTION_SEQUENCE_MIGRATION in durable_markers
+            else _SDK_CONTEXT_AUTHORITY_SCHEMA_VERSION
+            if _SDK_CONTEXT_AUTHORITY_MIGRATION in durable_markers
+            else _PROVIDER_FAULT_CORRELATION_SCHEMA_VERSION
             if _PROVIDER_FAULT_CORRELATION_MIGRATION in durable_markers
             else _MESSAGE_ARCHIVE_PROJECTION_SCHEMA_VERSION
             if _MESSAGE_ARCHIVE_PROJECTION_MIGRATION in durable_markers

@@ -70,15 +70,28 @@
     },
     {
       "scenario_id":"S-PS-08","required":true,"testcase_ids":["TC-PS-08"],"ui":true,
-      "gate_type":"history-upgrade","required_lanes":["history-upgrade","temporal-fault"],"min_root_runs":2,
-      "input_class":"deterministic-migration","cold_start":false,"expected_run_created":false,
-      "impact_paths":["backend/deskpet/memory/migrations/024_project_scoped_sessions_v32.sql","backend/deskpet/memory/migrator.py","backend/deskpet/memory/session_db.py","backend/main.py","backend/scripts/restore_state_db_backup.py","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx"],
-      "evidence_contract":{"producer_types":["computer-use","migration-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["history_preserved","migration_idempotent","recovered_state"]}
+      "gate_type":"history-upgrade","required_lanes":["history-upgrade","temporal-fault"],"min_root_runs":10,
+      "input_class":"deterministic-reset","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/memory/migrations/025_legacy_session_reset_v33.sql","backend/deskpet/memory/project_session_reset.py","backend/deskpet/memory/migrator.py","backend/deskpet/memory/schema.py","backend/deskpet/memory/session_db.py","backend/deskpet/session/project_binding.py","backend/main.py","tauri-app/src/stores/sessionsStore.ts","tauri-app/src/components/SessionList.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","migration-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log","business-result"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["legacy_data_removed","configuration_preserved","new_data_survives_restart","recovered_state","tested_version_paths","tested_fault_points","provider_call_succeeded","keychain_credential_preserved","post_upgrade_run_completed"]}
     }
   ],
   "manifest": {
     "repo_root": ".",
-    "source_request_text": "实现以本地 Project 为根目录创建不可改绑 Session，保留无项目会话，并完成分组 UI、单一执行 authority、目录恢复和旧数据迁移。",
+    "source_request_text": "实现以本地 Project 为根目录创建不可改绑 Session，保留无项目会话，并完成分组 UI、单一执行 authority、目录恢复；升级时删除全部旧 Session、消息、Project 及会话派生数据，按全新安装处理。",
+    "behavior_changes": [
+      {
+        "behavior_change_id": "BC-PS-20260826-LEGACY-RESET",
+        "old_behavior": "升级时迁移并保留旧 Session、消息、Project、标题、排序与 Memory",
+        "new_behavior": "升级到 v33 时一次性删除旧 Session、消息、Project、Run/上下文/投影与对话派生 Memory，同时保留全局 Provider、默认模型、应用设置、Keychain 和真实项目文件",
+        "approval": {
+          "user_message_sha256": "acd6d5578596808c29494a1b6fafa1fb22d94f77118a9297d5631663551b8501",
+          "acceptance_revision": "2026-08-26-v2",
+          "scope": "AC-8, TO-A8, TO-R4, TC-PS-08",
+          "expiry": "project-scoped-sessions-v33-delivery"
+        }
+      }
+    ],
     "behavior_contract": "plans/2026-08-25-project-scoped-sessions/behavior-contract.md",
     "applicability": {
       "input_sensitive":{"value":false,"rationale":"这是确定性的项目与 Session CRUD、导航和工作目录绑定，结果不随自然语言语义变化。","decided_by":"user"},
@@ -89,6 +102,9 @@
     "auditor_engine":"opus-4.8",
     "challenger_engine":"current",
     "release_unit": {
+      "slice_id":"project-scoped-sessions-v33-reset",
+      "parent_program":"project-scoped-sessions",
+      "scope_hash":"b3940cdd721c5163ff3abb8b421adab61888c820c8346cd0c1a712fde76fde47",
       "must_ac_count":8,
       "task_count":9,
       "plan_lines":430,

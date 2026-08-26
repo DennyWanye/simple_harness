@@ -1719,10 +1719,10 @@
       ],
       "path": "2026-08-25-project-scoped-sessions/TC-PS-08-legacy-migration-regression.md",
       "preconditions": [],
-      "purpose": "Verify idempotent legacy migration preserves Session history and affected existing behavior",
+      "purpose": "Verify the v33 one-time reset removes all pre-upgrade conversation data without deleting global configuration or new post-upgrade data",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 3,
       "status": "active",
       "surface": "integration",
       "tags": [

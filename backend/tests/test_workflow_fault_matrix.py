@@ -432,10 +432,13 @@ async def test_effect_commit_is_idempotent_and_stale_writer_cannot_replace_outco
 @pytest.mark.asyncio
 async def test_session_tombstone_fences_late_delivery_and_outbox_retries_once(tmp_path):
     workflow_path = tmp_path / "workflow.db"
-    store, run_id, _, _ = await _claimed_run(workflow_path, "delivery")
-    await store.bind_session_refs(run_id, (("delivery", "session-late", 0),))
+    # Production startup completes the one-time state reset before workflow
+    # storage opens.  Creating the run first would correctly classify it as
+    # pre-upgrade data and delete it.
     session_db = SessionDB(tmp_path / "state.db")
     await session_db.initialize()
+    store, run_id, _, _ = await _claimed_run(workflow_path, "delivery")
+    await store.bind_session_refs(run_id, (("delivery", "session-late", 0),))
     outbox = WorkflowOutbox(store)
     event = await outbox.ensure_event(
         run_id=run_id,

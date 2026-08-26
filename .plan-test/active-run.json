@@ -1,7 +1,7 @@
 {
-  "acceptance_sha256": "ca3b3666aca28a23a638987d878f174ed1c95c3a17ef01b13c23e6bf688e56df",
-  "candidate_content_digest": "dd0f530bd33240ae6d737570b1bcfc7e53b793bc63fdc88f4971201e32a72801",
-  "run_dir": "plans/2026-08-25-project-scoped-sessions/verification/run-20260825",
-  "run_id": "run-20260825-190455",
-  "updated_at": "2026-08-26T15:54:26+0800"
+  "acceptance_sha256": "ed2d9933d0c9bfb38daf6b9cbaa50166e8ab5b62f30257e1fbf7f4922c4fff54",
+  "candidate_content_digest": "afe02eefb5c75986b5036b359b60c838923a3ca05225a07505e9e8f461a359d6",
+  "run_dir": "plans/2026-08-25-project-scoped-sessions/verification/run-20260826-v33-reset",
+  "run_id": "run-20260826-232622",
+  "updated_at": "2026-08-26T23:26:25+0800"
 }

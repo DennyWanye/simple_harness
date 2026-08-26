@@ -230,7 +230,8 @@ class ProjectBindingService:
 
     async def _require_upgrade_complete(self, db: aiosqlite.Connection) -> None:
         row = await (await db.execute(
-            "SELECT phase FROM project_session_backfill_state WHERE singleton=1"
+            "SELECT phase FROM legacy_session_reset_state "
+            "WHERE singleton=1 AND policy_version=1"
         )).fetchone()
         if row is None or str(row[0]) != "completed":
             raise ProjectSessionError("upgrade_incomplete")

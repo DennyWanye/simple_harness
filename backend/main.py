@@ -2952,6 +2952,11 @@ async def lifespan(app: FastAPI):
     global _provider_registry, _memory_backend, _session_creation_service
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
+    # v33 reset preflight must finish before MemoryManager, workflow,
+    # companion, or SDK execution databases are opened.
+    from deskpet.memory.schema import initialize_state_db
+
+    await initialize_state_db(_state_db_path)
     if _memory_backend is None:
         from paths import resolve_model_dir
         from simple_harness_memory import MemoryManager

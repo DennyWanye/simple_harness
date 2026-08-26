@@ -17,11 +17,11 @@
     },
     {
       "id": "ASSET-2",
-      "description": "Session 历史、项目归属、标题与排序"
+      "description": "升级后新建的 Session 历史、项目归属、标题与排序"
     },
     {
       "id": "ASSET-3",
-      "description": "迁移前的本地 Project、Code Session 与 Session 数据"
+      "description": "全局 Provider、默认模型、应用设置、Keychain 与真实项目文件"
     }
   ],
   "trusted_assumptions": [
@@ -56,8 +56,8 @@
       "description": "目录不存在时仍允许开发工具执行或重新定位到无关项目"
     },
     {
-      "id": "FAIL-REGRESSION",
-      "description": "迁移导致历史消息、标题、排序、归档、Memory 或 resume 回归"
+      "id": "FAIL-RESET",
+      "description": "一次性重置遗留旧会话数据、暴露半清理状态、误删全局配置或在后续启动再次删除新数据"
     }
   ],
   "in_scope_adversaries": [],
@@ -71,5 +71,5 @@
       "description": "跨设备项目同步、Git clone 和自动 worktree 生命周期管理"
     }
   ],
-  "maximum_acceptable_impact": "错误操作最多使一次 Session 创建或项目重新定位失败；不得修改项目文件、丢失历史或让执行越过持久绑定的 execution_root。"
+  "maximum_acceptable_impact": "旧会话域数据按用户批准全部删除；不得修改项目文件、全局 Provider/模型/应用设置，也不得让执行越过持久绑定的 execution_root。"
 }

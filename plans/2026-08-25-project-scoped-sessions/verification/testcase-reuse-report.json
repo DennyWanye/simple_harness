@@ -17,11 +17,11 @@
     {"obligation_id":"TO-A5","decision":"create-new","candidates":["LEGACY-CF5B7E73EF5C"],"selected_testcases":["TC-PS-05@rev1"],"reason":"旧侧栏用例仅覆盖扁平 Session 列表，不覆盖 Project 分组与只读 Inspector。"},
     {"obligation_id":"TO-A6","decision":"create-new","candidates":[],"selected_testcases":["TC-PS-06@rev1"],"reason":"现有候选没有 project_root 与 execution_root 分离 fixture 的行为 oracle。"},
     {"obligation_id":"TO-A7","decision":"create-new","candidates":["LEGACY-CCC0F7759682"],"selected_testcases":["TC-PS-07@rev1"],"reason":"现有候选没有缺失目录可见、物理 fail-closed 与同身份 relocation 链。"},
-    {"obligation_id":"TO-A8","decision":"create-new","candidates":["LEGACY-E88B0289CA4F"],"selected_testcases":["TC-PS-08@rev1"],"reason":"现有候选未覆盖 legacy Code Session 到 Project Binding 的幂等语义迁移。"},
+    {"obligation_id":"TO-A8","decision":"create-new","candidates":["LEGACY-E88B0289CA4F"],"selected_testcases":["TC-PS-08@rev3"],"reason":"用户批准将旧历史迁移反转为 v33 一次性清空；现有候选未覆盖跨库 reset、配置保留与升级后新数据不再删除。"},
     {"obligation_id":"TO-R1","decision":"create-new","candidates":[],"selected_testcases":["TC-PS-02@rev1"],"reason":"复用创建主链并增加事务中断与 lost-ACK 断言，避免独立重复用例。"},
     {"obligation_id":"TO-R2","decision":"create-new","candidates":[],"selected_testcases":["TC-PS-04@rev1"],"reason":"复用 authority 主链加入前端、legacy、latest-Run 冲突输入。"},
     {"obligation_id":"TO-R3","decision":"create-new","candidates":["LEGACY-CF5B7E73EF5C"],"selected_testcases":["TC-PS-05@rev1"],"reason":"复用侧栏主链加入分页期间并发 catalog 变化和一致性 fence。"},
-    {"obligation_id":"TO-R4","decision":"create-new","candidates":["LEGACY-CA184A465634"],"selected_testcases":["TC-PS-08@rev1"],"reason":"复用迁移主链核对聊天、标题、归档、删除、Memory、Provider 与 resume。"},
+    {"obligation_id":"TO-R4","decision":"create-new","candidates":["LEGACY-CA184A465634"],"selected_testcases":["TC-PS-08@rev3"],"reason":"复用 reset 主链覆盖 v33 commit、外库清理与 completion 前后的中断恢复。"},
     {"obligation_id":"TO-R5","decision":"create-new","candidates":["LEGACY-CCC0F7759682"],"selected_testcases":["TC-PS-01@rev2"],"reason":"复用注册主链加入本轮目标平台 macOS 的 symlink、rename 和不同目录 identity probe；Windows 按用户确认移为后续。"}
   ]
 }

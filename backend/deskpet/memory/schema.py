@@ -27,14 +27,16 @@ from pathlib import Path
 from typing import Callable
 
 from deskpet.memory.migrator import (
-    MigrationError,
     TARGET_SCHEMA_VERSION,
     backup_db,
     ensure_v9,
     read_user_version,
 )
 from deskpet.memory.storage import ensure_owner_only_state_db
-from deskpet.memory.project_session_upgrade import run_project_session_upgrade
+from deskpet.memory.project_session_reset import (
+    finalize_legacy_session_reset,
+    run_legacy_session_reset,
+)
 
 log = logging.getLogger(__name__)
 
@@ -65,10 +67,10 @@ async def initialize_state_db(
            * 上层据此决定进入降级模式
 
     Notes：
-      * 本函数 **不** 关心 sqlite-vec / messages_vec —— 那些由
-        SessionDB.initialize() 负责，且失败只 warn 不 raise。
-      * 单独承担"备份 + 回滚"职责，不做任何 schema 读写校验。校验放在
-        SessionDB 的启动自检（tables_exist 等）。
+      * v33 reset 需要在 MemoryManager 打开前清理 ``messages_vec``，因此
+        这里会为该一次性步骤加载 sqlite-vec；失败时 fail closed。
+      * 普通迁移仍由本函数承担备份 + 回滚；v33 已提交后的跨库存储清理
+        不恢复旧库，而是依照 durable phase 在下次启动继续。
     """
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -122,11 +124,11 @@ async def initialize_state_db(
             log.info("state.db migrations applied: %s", applied)
         else:
             log.debug("state.db migrations already up-to-date")
-        await run_project_session_upgrade(
-            db_path, backup_path=bak_path, fault_inject=fault_inject
-        )
-    except (MigrationError, Exception) as exc:  # noqa: BLE001  # 故意 broad
-        # 任何迁移异常都走回滚。包括 sqlite3.Error / OSError / 自定义。
+    except Exception as exc:  # noqa: BLE001
+        # Only schema migration failures restore the old state.db.  Once v33
+        # commits, external-store deletion is intentionally irreversible and
+        # must resume from its durable reset phase instead of reviving an old
+        # state.db beside partially-cleared stores.
         log.error("state.db migration failed: %s; attempting rollback", exc)
         if bak_path is not None and bak_path.exists():
             try:
@@ -147,3 +149,14 @@ async def initialize_state_db(
         else:
             log.warning("state.db had no backup to restore (fresh install)")
         raise InitializeError(f"state.db initialization failed: {exc}") from exc
+
+    try:
+        await run_legacy_session_reset(
+            db_path, backup_path=bak_path, fault_inject=fault_inject
+        )
+        # Complete the reset before MemoryManager, workflow recovery, WebSocket
+        # ingress, or any Session API can open an old conversation-owned store.
+        await finalize_legacy_session_reset(db_path, fault_inject=fault_inject)
+    except Exception as exc:  # noqa: BLE001
+        log.error("legacy Session reset incomplete: %s", exc)
+        raise InitializeError(f"legacy Session reset incomplete: {exc}") from exc

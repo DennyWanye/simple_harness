@@ -5,7 +5,9 @@
 ## 状态
 
 - `plan-bs` challenge 已 `CONVERGED`（3 轮）；Ponytail minimality 建议已应用；用户已于 2026-08-25 确认行为契约与本计划。
-- `BEHAVIOR_POLICY = preserve-approved`。
+- `BEHAVIOR_POLICY = preserve-approved`。2026-08-26 用户批准将 AC-8 从“保留并迁移旧历史”改为
+  “删除升级前全部 Session、消息和 Project 数据，按全新安装处理”；批准消息 SHA-256：
+  `acd6d5578596808c29494a1b6fafa1fb22d94f77118a9297d5631663551b8501`。
 - 流程档位：FULL（新增持久化 schema/迁移，修改 Session 创建、共享 workspace authority 和桌面 UI）。
 - 2026-08-26：TC-PS-04 已在 macOS 当前 debug `.app` 完成五个真实 `deepseek-v4-flash` root Run：终端
   cwd/读取/写入统一落在 Session Binding 根，前端、legacy、latest-Run 和模型文本冲突路径均不能改根，
@@ -141,9 +143,9 @@ created_at
 - `project_session_catalog_state(singleton, catalog_revision)`：每次会改变 catalog membership 或排序键的
   Project/Session 创建、删除、relocate、message append/clear、Project activation 的 `last_opened_at` 更新与
   backfill completion，都在拥有该变更的同一事务 bump，作为 keyset cursor 的失效 fence。
-- `project_session_backfill_state(singleton, phase pending|scanning|applying|verifying|completed|failed,
-  source_high_water, last_base_session_id, counters, outcome_digest, backup_path, backup_sha256, timestamps,
-  error_code)`：v32 semantic backfill 的 durable startup gate；未 completed 时不开放 WebSocket/Session create。
+- `legacy_session_reset_state(singleton, policy_version, phase state_cleared|external_stores_cleared|completed,
+  backup_path, updated_at, completed_at, error_code)`：v33 一次性重置的 durable startup gate；未 completed 时不开放
+  WebSocket/Session/Run。它替代并退休 v32 semantic backfill 运行链。
 - `WorkspaceResolution` 是 ProjectBindingService 返回的 frozen tagged in-memory value；其字段只在现有
   `SdkRunToolAuthorityV1.run_start_record()/restore_run()` 的 authority record v3 codec 中持久化一次：
   `kind/project_id/execution_kind/effective_root/project_identity/execution_identity/project_revision/binding_version`。
@@ -170,10 +172,12 @@ created_at
 
 | 文件 | 职责 | 本次改动 |
 |------|------|----------|
-| `backend/deskpet/memory/migrations/024_project_scoped_sessions_v32.sql` | state.db schema | 新建 Project/binding、creation receipt、catalog/backfill state、索引与 immutable trigger |
-| `backend/deskpet/memory/migrator.py` | migration registry | 注册 v32 原子迁移 |
+| `backend/deskpet/memory/migrations/024_project_scoped_sessions_v32.sql` | state.db schema | 保留已发布迁移历史，不再修改或执行语义 backfill |
+| `backend/deskpet/memory/migrations/025_legacy_session_reset_v33.sql` | state.db reset | 原子清空 state.db 会话域旁表，创建 durable reset state，临时处理 immutable delete trigger |
+| `backend/deskpet/memory/project_session_reset.py` | 跨库 reset coordinator | 分阶段清理 workflow/companion/SDK execution/Memory、向量与旧备份，完成前 fail closed |
+| `backend/deskpet/memory/migrator.py` | migration registry | 注册 v33 原子迁移并补齐版本恢复链 |
 | `backend/deskpet/session/project_binding.py`（新） | typed domain/service | 路径规范化、Git root 预览、filesystem identity、binding resolve/relocate |
-| `backend/deskpet/memory/session_db.py` | state.db repository | Project CRUD、原子 Session creation、分组列表、handoff、legacy backfill |
+| `backend/deskpet/memory/session_db.py` | state.db repository | Project CRUD、原子 Session creation、分组列表、handoff；reset 完成后正常服务新数据 |
 | `backend/llm/provider_registry.py` | Provider binding validation | 为 SessionCreationService 提供冻结 source model snapshot/复验入口 |
 | `backend/deskpet/session/task_scope.py` | UUID scope decision | 保留旧 chat compatibility；不再拥有 Project 选择 |
 | `backend/main.py` | WS ingress/composition | 新 project/session commands；new_session 路由；Run workspace authority cutover |
@@ -191,7 +195,7 @@ created_at
 | `tauri-app/src/views/ChatView.tsx` | 主聊天布局 | 固定 Inspector rail/窄屏只读条；projectless“在项目中继续” |
 | `tauri-app/src-tauri/src/commands.rs`、`lib.rs` | native directory UI | 复用 folder picker；增加受控打开项目目录 command（若 opener 不能直接复用） |
 | `verification/spikes/windows_path_identity_probe.py` | 后续 Windows probe | Project/explicit root 等价路径、rename、不同目录与可选 junction JSON oracle；不阻断本轮 macOS 验收 |
-| `backend/scripts/restore_state_db_backup.py` | guarded support recovery | v32 semantic backfill 失败后的 hash/quick_check/停服恢复；不是 down-migration |
+| `backend/scripts/restore_state_db_backup.py` | guarded support recovery | 保留为通用离线恢复工具；v33 reset 完成后不保留含旧会话的迁移备份 |
 | `backend/tests/**`、`tauri-app/src/**/*.test.tsx`、`src-tauri` tests | 自动化证据 | AC/风险绑定测试 |
 | `ARCHITECTURE/*.md` | 当前事实源 | 实现验收后同步生产链与状态（执行阶段完成，不在 plan-bs 提前写目标为事实） |
 
@@ -367,30 +371,30 @@ probe 代码继续保留，未来恢复 Windows 支持时重新升为 gate。
 - native open/reveal command 只接受存在目录，错误返回 UI；不把 Project path 写日志。
 - 验证：React layout/interaction、Rust command unit；missing→valid relocate 与 mismatch error 状态。
 
-### Task 8 — crash-safe v32 semantic upgrade 与旧 authority 退休  [覆盖 AC-8]
+### Task 8 — crash-safe v33 一次性旧会话域重置  [覆盖 AC-8]
 
-- 改动文件：startup composition、`session_db.py`、`code_mode/state.py`、migration tests/reset script。
-- 先增加 executable v31 prerequisite：`user_version=31`、durable marker=023、
-  `TARGET_SCHEMA_VERSION=max(MIGRATION_STEPS)=31`、v17 canonical tables 存在且 Project tables 不存在；再注册
-  024/v32，并验证 physical objects/marker/user_version 精确对账。
-- 在现有 `backend/deskpet/memory/schema.py::initialize_state_db()` 启动阻塞链内增加单一
-  `run_project_session_upgrade()` 函数，复用 `migrator.py::backup_db` 与迁移注册；不新增单实现 coordinator
-  class/interface/factory。该函数停写、checkpoint WAL，生成 pre-v32 backup+manifest，`quick_check` 与 SHA-256
-  通过后才执行 DDL；backup 保留到 semantic completion。
-- DDL 创建 backfill state；冻结 code_sessions source high-water，按 `base_session_id` 稳定有界分块。每个 chunk
-  在同一事务写 Project/binding/低敏 outcome/counters/cursor/catalog revision；已有 binding 永远胜出，无效/缺失/
-  冲突保持 projectless，不猜 latest Run。未 completed 时 API fail closed。
-- completion transaction 验证 source=count conservation、每个 frozen source 一个 outcome、无 overwrite/duplicate、
-  outcome digest 后开放启动。重复 completed startup 是 no-op，不新增 Project/binding/outcome/backup/marker/counter。
-- 增加 guarded restore command：要求服务停止、绝对窄路径、拒绝 symlink、expected SHA-256、`quick_check`、明确
-  `--confirm RESTORE-STATE-DB`；先 quarantine 当前 DB，再原子替换并处理 WAL/SHM，复验 v31 marker/digest。
-  二进制回滚必须先 restore backup，不提供 down-migration，`reset_agent_data.py` 不能当恢复手段。
-- `code_sessions` 不删除，停止新 ordinary Session 写入；retired manager 仅保留旧读取/删除兼容到后续清理。
-- `scripts/reset_agent_data.py` 的开发期显式 reset 清单加入新表，但不新增用户运行时 wipe。
-- 验证：在 backup 前后、DDL commit 前后、scan/chunk commit 前后、completion/ACK 前后 crash inject；每次重启
-  必须精确 rollback/resume/no-op。真实 v31 fixture 含 valid/missing/duplicate/pre-bound conflict/active/deleted/
-  archived；两次运行逐项比对 sessions/messages/archive/title/Memory/Provider/delivery/owner/projection/ordering 与
-  digest，restore 复现 byte-identical v31 snapshot。
+- 改动文件：新增 migration 025 与 `project_session_reset.py`；修改 `migrator.py`、`schema.py`、
+  `session_db.py`、`project_binding.py`、startup composition 和 migration/reset tests。
+- 024/v32 保持不可变历史；新增 025/v33，保证已到 v32 的测试安装也一定执行。025 在 runner-owned transaction
+  内先临时移除 binding delete trigger，按 FK 子→父顺序清空 state.db 的 Project/Session/message/Run/context/
+  projection/Memory 派生表，重建 trigger，退休 backfill state/outcomes，并写 `legacy_session_reset_state.phase=state_cleared`。
+- `initialize_state_db()` 在任何 Memory/Workflow/Companion/SDK runtime 打开前运行唯一 reset coordinator：
+  幂等清理 workflow.db 的 execution/workflow/trace/session 数据、companion.db 的 Session/Run/job 投影、SDK execution
+  DB、SDK product state 的 Run 授权状态、memory.db 与 workflow blobs；Provider registry、默认模型、应用配置、
+  Keychain、用户 skills/plugins、billing 和真实项目/产物文件不进入删除清单。
+- 可执行 `RESET_MANIFEST` 是实现与测试共用的精确删除/保留清单。`memory.db` 只承载 Memory SDK 的对话认知
+  数据，因此整库删除；`workflows/blobs` 全部是有 workflow run/effect owner 的内部 blob，公开产物与用户项目文件
+  位于清单之外。各外库在自身事务边界清理，整个外库阶段可安全重复执行，不使用容易漂移的逐库 receipt。
+- 全部外库完成后写 `phase=external_stores_cleared`；随后同一启动前置流程加载 sqlite-vec、清空 orphan
+  `messages_vec`、执行 foreign-key/哨兵/空表校验并写 `phase=completed`。任一步失败都阻止 Memory/Workflow/
+  Companion/SDK runtime 与产品入口启动；重启幂等重跑未完成阶段，不把跨库过程伪装成单事务。成功后删除本次及
+  既有 `state.db.bak.*`/manifest。
+- `ProjectBindingService` 只接受 v33 reset completed；启动不再调用 `run_project_session_upgrade()`，旧
+  `code_sessions`/backfill 不再作为任何读取兼容 authority。这里承诺产品级逻辑删除，不承诺取证级介质擦除。
+- 验证四条版本路径：v31→v33、v32→v33、fresh v0→v33、completed v33 二次启动。故障点覆盖 v33 commit 前后、
+  外库阶段事务前后、vector/completion 前后；核对所有删除清单为零、`foreign_key_check` 为空、旧哨兵不可
+  resume/recall，配置/项目文件 hash 不变。真实 macOS 登录态还要用原 Keychain 项完成一次 Provider 调用且日志不
+  输出 secret。最后新建 Project/Session/message 并重启，证明不会每次启动重复 wipe。
 
 ### Task 9 — 验收、真实 UI、架构事实回写与提交态门  [覆盖 AC-1～AC-8]
 
@@ -435,4 +439,5 @@ probe 代码继续保留，未来恢复 Windows 支持时重新升为 gate。
 - H-1 无法在目标平台提供稳定 same-volume identity：回到用户 review，选择“写项目 marker”或“取消 relocate”；
   不用目录内容猜测伪装强 identity。
 - Projectless 仍能在任一新 Run/Tool seam 回退全局 workspace：AC-3/4 未完成，不得用 UI 隐藏代替修复。
-- migration 不能证明消息/标题/Memory/Provider/delivery 状态不丢：停止在备份恢复状态，不进入 UI rollout。
+- v33 reset 不能证明旧 Session/message/Project/Run/对话派生 Memory 全部不可见，或不能证明 Provider/模型/应用
+  设置与真实项目文件未变：保持 fail closed，不进入 UI 验收。
