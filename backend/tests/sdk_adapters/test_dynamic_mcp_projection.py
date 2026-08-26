@@ -10,8 +10,10 @@ from simple_harness import CallId, RequestId, RunId, thaw_json
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext
 
 from deskpet.sdk_adapters.tools import (
+    ProductToolInventoryEntry,
     ProductToolsAdapter,
     extend_product_registry_with_mcp,
+    filter_sdk_catalog_for_workspace,
 )
 from deskpet.sdk_adapters.context_authority import canonical_sha256
 from deskpet.sdk_adapters.tool_authority import (
@@ -81,6 +83,57 @@ class _LegacyMcpRegistry:
     async def execute_tool(self, name, params, *_args, **_kwargs):
         self.calls.append((name, dict(params)))
         return {"ok": True, "result": '{"text":"hello"}', "error": None}
+
+
+def test_project_bound_catalog_excludes_process_wide_filesystem_mcp() -> None:
+    catalog = {
+        "generation": 1,
+        "content_fingerprint": "catalog-a",
+        "tool_names": ["read_file", "mcp_filesystem_read_text"],
+        "tool_count": 2,
+        "schema_token_count": 20,
+        "schema_fingerprints": {
+            "read_file": "schema-read",
+            "mcp_filesystem_read_text": "schema-mcp",
+        },
+        "specs": [
+            {
+                "name": "read_file",
+                "description": "Read from the Run workspace",
+                "input_schema": {"type": "object"},
+            },
+            {
+                "name": "mcp_filesystem_read_text",
+                "description": "Read from the process-wide MCP workspace",
+                "input_schema": {"type": "object"},
+            },
+        ],
+    }
+    inventory = (
+        ProductToolInventoryEntry(
+            "read_file", "async", "read_file", "builtin", "v1", "read-id"
+        ),
+        ProductToolInventoryEntry(
+            "mcp_filesystem_read_text",
+            "async",
+            "read_file",
+            "mcp:filesystem",
+            "v1",
+            "mcp-id",
+        ),
+    )
+
+    projected, projected_inventory = filter_sdk_catalog_for_workspace(
+        catalog,
+        inventory,
+        workspace_resolution_kind="project_bound",
+    )
+
+    assert [item.name for item in projected_inventory] == ["read_file"]
+    assert projected["tool_names"] == ["read_file"]
+    assert projected["tool_count"] == 1
+    assert list(projected["schema_fingerprints"]) == ["read_file"]
+    assert [item["name"] for item in projected["specs"]] == ["read_file"]
 
 
 @pytest.mark.asyncio

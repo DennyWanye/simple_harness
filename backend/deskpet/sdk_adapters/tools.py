@@ -75,6 +75,13 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
     }
 )
 
+# The process-wide filesystem MCP is rooted at the application's userdata
+# workspace.  It cannot be rebound to an immutable per-Session execution root,
+# so exposing it to a project-bound Run would create a second, unrelated file
+# authority.  Project Runs use the product file/terminal tools whose handlers
+# consume the frozen Run workspace instead.
+PROJECT_BOUND_UNSCOPED_MCP_SOURCES = frozenset({"mcp:filesystem"})
+
 
 @dataclass(frozen=True, slots=True)
 class ProductToolRegistration:
@@ -582,8 +589,36 @@ def filter_sdk_catalog_for_workspace(
     """
 
     kind = str(workspace_resolution_kind).strip()
-    if kind in {"project_bound", "legacy"}:
+    if kind == "legacy":
         return dict(catalog), tuple(inventory)
+    if kind == "project_bound":
+        selected_inventory = tuple(
+            item
+            for item in inventory
+            if item.source not in PROJECT_BOUND_UNSCOPED_MCP_SOURCES
+        )
+        allowed = {item.name for item in selected_inventory}
+        selected_specs = tuple(
+            item
+            for item in catalog.get("specs", ())
+            if str(item.get("name")) in allowed
+        )
+        if {str(item.get("name")) for item in selected_specs} != allowed:
+            raise RuntimeError("project_tool_projection_incomplete")
+        selected = dict(catalog)
+        selected["specs"] = list(selected_specs)
+        selected["tool_names"] = [str(item.get("name")) for item in selected_specs]
+        selected["tool_count"] = len(selected_specs)
+        selected["schema_token_count"] = sum(
+            max(1, len(repr(item.get("input_schema", {}))) // 4)
+            for item in selected_specs
+        )
+        schema_fingerprints = catalog.get("schema_fingerprints")
+        if isinstance(schema_fingerprints, Mapping):
+            selected["schema_fingerprints"] = {
+                name: schema_fingerprints[name] for name in allowed
+            }
+        return selected, selected_inventory
     if kind == "missing":
         raise RuntimeError("workspace_unavailable")
     if kind != "projectless":
