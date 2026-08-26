@@ -4422,6 +4422,10 @@ class SessionDB:
                         await db.execute(
                             "DELETE FROM session_titles WHERE session_id = ?", (sid,)
                         )
+                    await db.execute(
+                        "UPDATE project_session_catalog_state SET "
+                        "catalog_revision=catalog_revision+1 WHERE singleton=1"
+                    )
                     await db.commit()
 
         await self._with_retry(_do)

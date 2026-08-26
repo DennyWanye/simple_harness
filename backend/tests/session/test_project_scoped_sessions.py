@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import ast
+import os
 import sqlite3
 import uuid
 from dataclasses import asdict
@@ -67,6 +68,50 @@ def test_registration_git_root_dedupe_identity_and_explicit_folder(tmp_path: Pat
     assert default.root_kind == "git"
     assert explicit.canonical_root == str(child)
     assert resolve_registration(str(alias), "selected_folder").filesystem_identity == explicit.filesystem_identity
+
+
+@pytest.mark.asyncio
+async def test_registration_folder_errors_and_macos_rename_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    service = ProjectBindingService(db_path)
+    plain = tmp_path.resolve() / "plain"
+    different = tmp_path.resolve() / "different"
+    plain.mkdir(); different.mkdir()
+
+    project, created = await service.register_project(str(plain), "selected_folder")
+    assert created and project.root_kind == "folder"
+    assert project.canonical_root == str(plain)
+    with sqlite3.connect(db_path) as db:
+        baseline = db.execute("SELECT COUNT(*) FROM projects").fetchone()[0]
+
+    file_path = tmp_path.resolve() / "not-a-directory.txt"
+    file_path.write_text("x", encoding="utf-8")
+    deleted = tmp_path.resolve() / "deleted"
+    deleted.mkdir(); deleted.rmdir()
+    for invalid in ("", str(file_path), str(deleted)):
+        with pytest.raises(ProjectSessionError):
+            await service.register_project(invalid, "selected_folder")
+    original_access = os.access
+    monkeypatch.setattr(
+        os,
+        "access",
+        lambda path, mode: False if Path(path) == plain else original_access(path, mode),
+    )
+    with pytest.raises(ProjectSessionError, match="path_unreadable"):
+        resolve_registration(str(plain), "selected_folder")
+    monkeypatch.undo()
+
+    moved = tmp_path.resolve() / "plain-renamed"
+    plain.rename(moved)
+    renamed = resolve_registration(str(moved), "selected_folder")
+    other = resolve_registration(str(different), "selected_folder")
+    assert renamed.filesystem_identity == project.filesystem_identity
+    assert other.filesystem_identity != project.filesystem_identity
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("SELECT COUNT(*) FROM projects").fetchone()[0] == baseline
 
 
 @pytest.mark.asyncio
@@ -714,6 +759,35 @@ async def test_zero_message_delete_bumps_catalog_once_and_stales_cursor(
         await service.list_session_page(
             scope_kind="projectless", cursor=page["next_cursor"]
         )
+
+
+@pytest.mark.asyncio
+async def test_session_rename_bumps_catalog_and_stales_cursor(tmp_path: Path) -> None:
+    from deskpet.memory.session_db import SessionDB
+
+    db_path = tmp_path.resolve() / "state.db"
+    session_db = SessionDB(db_path)
+    await session_db.initialize()
+    service = ProjectBindingService(db_path, write_lock=session_db._write_lock)
+    creation = SessionCreationService(service, session_db=session_db)
+    first = await creation.create_conversation_session(request_id="rename-1")
+    await creation.create_conversation_session(request_id="rename-2")
+    page = await service.list_session_page(scope_kind="projectless", limit=1)
+    assert page["next_cursor"]
+
+    await session_db.set_session_title(first["session"]["session_id"], "Renamed")
+
+    with pytest.raises(ProjectSessionError, match="stale_cursor"):
+        await service.list_session_page(
+            scope_kind="projectless", cursor=page["next_cursor"]
+        )
+    refreshed = await service.list_session_page(scope_kind="projectless", limit=50)
+    renamed = next(
+        item for item in refreshed["items"]
+        if item["session_id"] == first["session"]["session_id"]
+    )
+    assert renamed["title"] == "Renamed"
+    await session_db.close()
 
 
 @pytest.mark.asyncio

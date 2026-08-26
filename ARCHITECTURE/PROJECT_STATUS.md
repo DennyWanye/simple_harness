@@ -16,6 +16,10 @@
   全部通过，100,000 Session 性能 catalog p95 1.878 ms / page p95 41.137 ms。
 - 完整 17 分片回归为 14 PASS + 3 个精确登记的既有失败，0 unexpected failure。原始证据保持在 ignored
   `.local-test-evidence/`，最终 gate ledger 位于 plan verification run 目录。
+- 独立 full-audit 首轮发现 S-PS-01/S-PS-05 的逐步证据与 producer-native 打包不足。补测已覆盖外部非 Git
+  目录、删除目录错误、复制/Finder、同项目新建和窄屏 Inspector；实现同时补上不可读目录拒绝与 rename
+  catalog revision fence。500 × 200 fixture 的新增/删除/重命名分页验证旧游标拒绝，刷新后无重复、遗漏或
+  误归组；专项回归 `72 passed`。
 
 ## 2026-08-26 Project-scoped Sessions v33 全新安装式重置验收
 
@@ -1715,7 +1719,7 @@
 
 | 模块 | 状态 | 关键文档 |
 |---|---|---|
-| **Project-scoped Sessions** | ✅ **macOS release scope PASS** — state.db v33 提供 Project、immutable Session binding、创建 receipt 与 catalog authority；升级前 Session/消息/Project 按全新安装清空，全局 Provider/设置/Keychain 与磁盘文件保留。S-PS-01～S-PS-08 的当前 UI、真实 Provider、fault/restart 与 machine root lane 全部通过；25 个 machine root Run 绿，100k Session page p95 41.137 ms。真实 terminal/read/write 只使用绑定 execution root，project-bound catalog 不暴露 process-wide `mcp:filesystem`。完整 17 分片为 14 PASS + 3 个冻结既有失败，0 unexpected。Windows 是未来独立范围。 | [plan](../plans/2026-08-25-project-scoped-sessions/plan.md) · [结果](../testcase/2026-08-25-project-scoped-sessions/results/2026-08-25-plan-task.md) · [架构](./ARCHITECTURE.md#33-当前-session--run--workspace-authority2026-08-25) · [UI](./UI.md#09-project-scoped-session-ui2026-08-25) |
+| **Project-scoped Sessions** | ✅ **macOS release scope PASS** — state.db v33 提供 Project、immutable Session binding、创建 receipt 与 catalog authority；升级前 Session/消息/Project 按全新安装清空，全局 Provider/设置/Keychain 与磁盘文件保留。S-PS-01～S-PS-08 的当前 UI、真实 Provider、fault/restart 与 machine root lane 全部通过；100k Session page p95 低于 43 ms。真实 terminal/read/write 只使用绑定 execution root，project-bound catalog 不暴露 process-wide `mcp:filesystem`。独立审计补测外部非 Git/错误路径、复制/Finder、窄屏和分页间新增/删除/重命名；不可读目录 fail closed，rename 推进 catalog revision。完整 17 分片为 14 PASS + 3 个冻结既有失败，0 unexpected。Windows 是未来独立范围。 | [plan](../plans/2026-08-25-project-scoped-sessions/plan.md) · [结果](../testcase/2026-08-25-project-scoped-sessions/results/2026-08-25-plan-task.md) · [架构](./ARCHITECTURE.md#33-当前-session--run--workspace-authority2026-08-25) · [UI](./UI.md#09-project-scoped-session-ui2026-08-25) |
 | **前端 UI / 暗色主题** | 🟡 **Workbench 单窗工作台已实现，r14 实质审计补测中** —— 透明桌宠壳、Live2D/sprite Canvas 与独立消息窗均已移除；当前为侧栏 + Chat/Skills/Artifacts/Settings 四视图。2026-08-11：账户 AuthAdapter/登录注册事件/侧栏账户入口和 Live2D 锁依赖、表情动作消息链全部删除；Vitest `533 passed`、Rust `74 passed`、companion `647 passed / 10 skipped`、MCP `21 passed`、typecheck/build/check 全绿；`kimi-k3` 真实出站 HTTP 200 并回显 `KIMI3_OK`，r12 的 402 阻塞已解除。r13 形式门达到 `READY_FOR_AUDIT`，但独立实质审计否决了设置持久化、几何异常分支、运行期断连、删除即时态和冷启动性能的证据充分性，故未 finalize；r14 正重新冻结并补真机 primary evidence。已退役的单钥匙 Keychain 模块、renderer IPC/binding 与 Rust `keyring` 依赖已移除；最新 `.app` 干净启动和打开设置页均无 macOS 授权弹窗。 | [UI 架构](./UI.md) · [workbench-ui](../plans/2026-08-04-workbench-ui/) |
 | **DeepResearch v7 简化编排 / bundled Playwright** | ✅ **本轮 required 范围 PASS** — 新 run 默认 v7；六节点 manager graph 拆 2～6 个方向，每方向独立 child，弱结果诊断后最多续跑一次，再统一综合。单卡显示真实方向/状态/attempt/来源数，内部 attempt 不重复；标准文件卡四个动作、既有 `DeepResearch` 目录保存及同 userdata 重启恢复均经真机验证。完整多类别语义矩阵保留为后续候选。 | [架构](./DeepResearch.md) · [plan](../plans/2026-07-19-deepresearch-simplification/plan.md) · [results](../plans/2026-07-19-deepresearch-simplification/spike/result.md) |
 | **语音管线** (Realtime/VAD/ASR/LLM/TTS) | 🟡 **旧链已安全关闭，Realtime 待接入** — `[voice].enabled=false` 出厂默认生效；普通启动不再导入、创建或加载 Silero VAD、faster-whisper、EdgeTTS/CosyVoice，两个前端窗口不连 `/ws/audio`、不申请麦克风，按钮明确提示等待 Realtime。误连返回 `voice_temporarily_disabled`，`/health.voice` 可观测。旧实现只保留显式开发兼容，不是生产入口；待 relay 提供 WebRTC/Realtime 契约后，新的 Realtime 入口必须进入完整 `ProductTurnPreparer`。 | [Harness 架构](./AGENT_HARNESS.md) · [Context OS V1 plan §12](../plans/2026-07-13-context-os-v1/plan.md) |

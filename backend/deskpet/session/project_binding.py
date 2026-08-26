@@ -152,6 +152,8 @@ def _strict_directory(raw_path: str) -> Path:
         raise ProjectSessionError("path_unreadable") from exc
     if not resolved.is_dir():
         raise ProjectSessionError("path_not_directory")
+    if not os.access(resolved, os.R_OK | os.X_OK):
+        raise ProjectSessionError("path_unreadable")
     return resolved
 
 

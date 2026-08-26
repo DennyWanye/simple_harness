@@ -441,6 +441,9 @@ binding。相关聚焦自动化 `75 passed`；缺失根错误 turn 的历史恢�
 当前 debug `.app` 和真实 `deepseek-v4-flash` 证明注册、持久化、handoff、authority、侧栏性能、root split、
 relocation 与 v33 reset 全部通过。真实模型测试还修复了自动 Tool effect 的 TaskGrant identity 冲突，以及
 process-wide `mcp:filesystem` 错误进入 project-bound catalog 的越界风险。Windows 仍是未来独立范围。
+最终独立审计又补齐目录错误与 catalog 并发边界：注册会显式拒绝不可读/不可搜索目录，空路径、文件、
+已删除目录均不产生半 Project/Session；Session 标题变化推进 catalog revision，使分页间新增、删除或重命名
+都令旧游标 fail closed。500 × 200 并发变更探针刷新后得到唯一、完整且归组正确的 200 条结果。
 
 ## 4. Long-Running Workflows Today
 

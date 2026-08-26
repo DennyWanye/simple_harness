@@ -292,6 +292,9 @@ S-PS-01～S-PS-08 的全部 macOS required lane：25 个 machine root Run、当�
 共同覆盖注册、重启/幂等、projectless handoff、单一 authority、侧栏/Inspector、root split、relocation 和
 v33 reset。真实模型路径发现并修复自动 Tool effect 的 TaskGrant identity 冲突，以及 project-bound catalog
 错误暴露 process-wide `mcp:filesystem` 的问题；最终 Run 的 terminal/read/write 只使用绑定执行根。
+独立审计补测还确认外部非 Git Project、删除目录错误态、新建同项目 Session、复制/Finder 与窄屏 Inspector；
+目录注册现在显式拒绝不可读/不可搜索路径，Session rename 会推进 catalog revision，旧分页游标不会跨
+新增、删除或重命名静默混合快照。
 
 2026-08-26 TC-PS-08 已在 macOS 当前 debug `.app` 验证 v32 旧数据升级到 v33 空状态、全局配置/凭据可继续
 调用真实 Provider、磁盘项目文件保留，以及升级后新 Project/Session/消息/Run 跨完整重启保持。真实 root

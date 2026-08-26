@@ -49,6 +49,9 @@
   重置以及完整重启恢复。最新真实模型 Run `c2a0022…` 在 relocation 后仍以绑定目录执行 `pwd`、读和写；
   distinct execution-root fixture 的三个当前 Run 只使用 execution root。project-bound Run 不再暴露进程级
   `mcp:filesystem`，避免其固定根绕过 Session authority；非文件 MCP 不受影响。Windows 不在本轮范围。
+- 最终独立审计补测真实点击了外部非 Git 目录注册、删除目录错误态、新建同项目 Session、复制路径、Finder
+  打开和窄屏 Inspector。后端同时把 Session rename 纳入 catalog revision fence；500 × 200 fixture 在分页间
+  新增、删除、重命名后会拒绝旧游标，刷新后的 200 条结果无重复、遗漏或误归组。
 
 ## 0.8 Provider 模型目录刷新（2026-08-24）
 
