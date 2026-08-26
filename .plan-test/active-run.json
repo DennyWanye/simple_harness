@@ -1,7 +1,7 @@
 {
   "acceptance_sha256": "ed2d9933d0c9bfb38daf6b9cbaa50166e8ab5b62f30257e1fbf7f4922c4fff54",
-  "candidate_content_digest": "89d846771ff2b561aad8f927259f3fef891b219c9bffb3cfbdea325a3ce11183",
+  "candidate_content_digest": "7c0f9e83594f65a4b85a85fc310a3a380890283296a1065757dfbaf6848c63d8",
   "run_dir": "plans/2026-08-25-project-scoped-sessions/verification/run-20260827-final",
   "run_id": "run-20260827-011749",
-  "updated_at": "2026-08-27T02:04:39+0800"
+  "updated_at": "2026-08-27T02:33:25+0800"
 }
