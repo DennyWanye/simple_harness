@@ -262,7 +262,9 @@ relocation 以 project revision CAS 并在 active root Run 存在时拒绝，Ses
 legacy Code mapping backfill 为新 binding：从任意旧 schema 升级时，startup 在所有 Session/Memory/Workflow/
 SDK ingress 前一次性清空旧 Project、Session、消息、Run、上下文和会话派生投影；全局 Provider、默认模型、
 应用设置、Keychain、账单、Skills/Plugins 以及真实项目/产物文件不在清理范围。清理使用可恢复 phase ledger，
-完成后才开放新数据写入。
+完成后才开放新数据写入。`facts` 作为历史可选表按存在性清空；workflow 与 SDK product-state 精确清除
+Run catalog/runtime/snapshot lease；companion 只清 Run binding、job wait 与 run-growth snapshot/dependency，
+保留 candidate package、capability activation/version、growth authority、profiles 与 reminders。
 
 验证边界：authority/迁移/恢复自动化与 macOS 当前构建的注册、分组、projectless、Inspector、重启恢复核心
 路径已通过。真实 `deepseek-v4-flash` Session 进一步证明 `builtin:run_shell` 的 cwd、`builtin:read_file` 和
@@ -288,6 +290,7 @@ Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻
 调用真实 Provider、磁盘项目文件保留，以及升级后新 Project/Session/消息/Run 跨完整重启保持。真实 root
 Run `201db422…` 的无 `cd` 相对命令返回绑定目录为 cwd，读取和写入也只落在该目录。自动化覆盖 fresh v33、
 v9/v17/v23/v31/v32 升级与十个 crash boundary 的 fail-closed/retry；Windows 不在本轮范围。
+真实 schema 聚焦回归为 `72 passed`，并以 candidate package 与 growth authority 哨兵锁定 Skills/Plugins 保留边界。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

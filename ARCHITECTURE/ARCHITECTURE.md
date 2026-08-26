@@ -410,6 +410,9 @@ Project relocation 只允许在无活跃 root Run 时，以 expected project rev
 升级前全部 Project、Session、消息、Run、上下文和会话派生数据，完成 phase ledger 后才开放 Memory、Workflow、
 Companion 与 SDK ingress。全局 Provider/默认模型/应用设置/Keychain/账单/Skills/Plugins 和磁盘项目/产物文件
 明确保留；这是产品逻辑清理，不承诺取证级安全擦除。当前 `TARGET_SCHEMA_VERSION=33`。
+state.db 历史可选 `facts` 表按存在性清空；workflow/sdk product-state 的 Capability 清理限定于 Run catalog、
+runtime 与 snapshot/lease 表；companion 采用精确 Run 表 allowlist，保留 candidate package、capability governance、
+growth authority、profiles 和 reminders，避免以“除少数表外全部删除”的反向清单误伤 Skills/Plugins。
 
 验证边界：当前代码/自动化、100k catalog 性能探针和 macOS 当前 debug `.app` 的注册、分组、Inspector、
 projectless 与重启恢复核心路径已通过。真实 `deepseek-v4-flash` Run 已实际调用终端、文件读取和文件写入：

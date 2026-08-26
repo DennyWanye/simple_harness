@@ -65,18 +65,23 @@ _STATE_EMPTY_TABLES = (
     "workspace_state",
 )
 
-_COMPANION_PRESERVED_TABLES = frozenset(
+_CAPABILITY_RUN_PREFIXES = (
+    "capability_run_catalog_",
+    "capability_runtime_",
+    "capability_snapshot_lease_",
+    "capability_lease_runtime_",
+)
+
+# Companion contains durable Skills/Plugins/growth governance beside ephemeral
+# conversation Runs.  Reset only the exact Run-owned projection tables; an
+# inverse "everything except ..." selector can destroy global capabilities.
+_COMPANION_RUN_TABLES = frozenset(
     {
-        "companion_schema",
-        "companion_settings",
-        "preferences",
-        "profile_bindings",
-        "profile_control_commands",
-        "profile_control_leases",
-        "profiles",
-        "reminder_mutation_receipts",
-        "reminder_occurrences",
-        "reminders",
+        "companion_run_bindings",
+        "job_execution_waits",
+        "run_growth_dependency_evidence",
+        "run_growth_dependency_items",
+        "run_growth_snapshots",
     }
 )
 
@@ -86,6 +91,7 @@ _COMPANION_PRESERVED_TABLES = frozenset(
 RESET_MANIFEST = {
     "state.db": {
         "empty_tables": _STATE_EMPTY_TABLES,
+        "optional_empty_tables": ("facts",),
         "drop_tables": (
             "project_session_backfill_outcomes",
             "project_session_backfill_state",
@@ -93,21 +99,21 @@ RESET_MANIFEST = {
         "preserve": "global configuration and schema authorities",
     },
     "workflow.db": {
-        "delete_prefixes": ("execution_", "workflow_", "trace_"),
+        "delete_prefixes": (
+            "execution_",
+            "workflow_",
+            "trace_",
+            *_CAPABILITY_RUN_PREFIXES,
+        ),
         "delete_tables": ("task_grants",),
         "preserve_tables": ("workflow_schema_migrations",),
     },
     "companion.db": {
-        "preserve_tables": tuple(sorted(_COMPANION_PRESERVED_TABLES)),
-        "delete": "every other application table",
+        "delete_tables": tuple(sorted(_COMPANION_RUN_TABLES)),
+        "preserve": "profiles, reminders, Skills/Plugins, candidates, and growth governance",
     },
     "sdk-product-state.db": {
-        "delete_prefixes": (
-            "capability_run_catalog_",
-            "capability_runtime_",
-            "capability_snapshot_lease_",
-            "capability_lease_runtime_",
-        ),
+        "delete_prefixes": _CAPABILITY_RUN_PREFIXES,
         "delete_tables": ("authorization_sagas", "task_grants"),
     },
     "delete_databases": (
@@ -182,6 +188,10 @@ def _clear_selected_tables(
 
 def _clear_external_stores(data_dir: Path) -> None:
     _clear_selected_tables(
+        data_dir / "state.db",
+        select=lambda name: name in RESET_MANIFEST["state.db"]["optional_empty_tables"],
+    )
+    _clear_selected_tables(
         data_dir / "workflow.db",
         select=lambda name: (
             name != "workflow_schema_migrations"
@@ -189,22 +199,20 @@ def _clear_external_stores(data_dir: Path) -> None:
                 name.startswith("execution_")
                 or name.startswith("workflow_")
                 or name.startswith("trace_")
+                or name.startswith(_CAPABILITY_RUN_PREFIXES)
                 or name == "task_grants"
             )
         ),
     )
     _clear_selected_tables(
         data_dir / "companion.db",
-        select=lambda name: name not in _COMPANION_PRESERVED_TABLES,
+        select=lambda name: name in _COMPANION_RUN_TABLES,
     )
     _clear_selected_tables(
         data_dir / "sdk-product-state.db",
         select=lambda name: (
             name in {"authorization_sagas", "task_grants"}
-            or name.startswith("capability_run_catalog_")
-            or name.startswith("capability_runtime_")
-            or name.startswith("capability_snapshot_lease_")
-            or name.startswith("capability_lease_runtime_")
+            or name.startswith(_CAPABILITY_RUN_PREFIXES)
         ),
     )
     _unlink_database(

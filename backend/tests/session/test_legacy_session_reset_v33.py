@@ -11,6 +11,9 @@ import pytest
 from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, ensure_v9
 from deskpet.memory.project_session_reset import RESET_MANIFEST
 from deskpet.memory.schema import InitializeError, initialize_state_db
+from deskpet.memory.memory_v2_schema import ensure_memory_v2_tables
+from deskpet.companion.store import CompanionStore
+from deskpet.workflows.store.schema import initialize_workflow_db
 
 
 async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
@@ -24,6 +27,10 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             shutil.copy2(source, old_migrations / source.name)
     db_path = data_dir / "state.db"
     await ensure_v9(db_path, migrations_dir=old_migrations)
+    # facts was historically lazy/optional.  This fixture models an install
+    # that used conversation Memory; representative-version tests below also
+    # cover old databases where the table never existed.
+    await ensure_memory_v2_tables(db_path)
 
     session_id = str(uuid.uuid4())
     project_id = str(uuid.uuid4())
@@ -33,6 +40,10 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             "INSERT INTO messages(id,session_id,role,content,created_at) "
             "VALUES(1,?,'user','legacy-message',2)",
             (session_id,),
+        )
+        db.execute(
+            "INSERT INTO facts(category,subject,key,value,created_at,updated_at) "
+            "VALUES('conversation','legacy','sentinel','delete-me',1,1)"
         )
         db.execute(
             "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,"
@@ -51,26 +62,62 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             for statement in statements:
                 db.execute(statement)
 
-    seed_db(
-        "workflow.db",
-        (
-            "CREATE TABLE workflow_schema_migrations(version TEXT)",
-            "INSERT INTO workflow_schema_migrations VALUES('keep')",
-            "CREATE TABLE execution_runs(id TEXT)",
-            "INSERT INTO execution_runs VALUES('legacy-run')",
-            "CREATE TABLE task_grants(id TEXT)",
-            "INSERT INTO task_grants VALUES('legacy-grant')",
-        ),
-    )
-    seed_db(
-        "companion.db",
-        (
-            "CREATE TABLE companion_settings(key TEXT, value TEXT)",
-            "INSERT INTO companion_settings VALUES('appearance','keep')",
-            "CREATE TABLE session_events(id TEXT)",
-            "INSERT INTO session_events VALUES('legacy-event')",
-        ),
-    )
+    workflow_path = data_dir / "workflow.db"
+    await initialize_workflow_db(workflow_path)
+    with sqlite3.connect(workflow_path) as db:
+        db.execute(
+            "INSERT INTO workflow_start_requests VALUES"
+            "('legacy-key',?,'request','turn','profile','capability','legacy-run',1)",
+            (session_id,),
+        )
+        db.execute(
+            "INSERT INTO capability_run_catalog_snapshots VALUES"
+            "('legacy-stamp','owner','{}','scope-hash','{}','vector-hash',"
+            "'entry-hash',0,1)"
+        )
+        db.execute(
+            "INSERT INTO capability_runtime_leases(lease_id,pack_id,version,"
+            "manifest_hash,run_id,state,heartbeat_at,created_at) "
+            "VALUES('legacy-lease','pack','1','manifest','legacy-run','ready',1,1)"
+        )
+
+    companion_path = data_dir / "companion.db"
+    CompanionStore(companion_path)
+    with sqlite3.connect(companion_path) as db:
+        db.execute(
+            "INSERT INTO profiles(profile_id,generation,identity_namespace_hash,status,"
+            "reason_code,schema_version,created_at,updated_at) "
+            "VALUES('p',1,'identity','active','test',1,'n','n')"
+        )
+        db.execute(
+            "INSERT INTO candidate_packages(profile_id,profile_generation,package_id,"
+            "candidate_mode,pack_id,version,candidate_content_hash,candidate_manifest_hash,"
+            "candidate_package_hash,archive_hash,source_facts_json,target_facts_json,"
+            "effect_topology_hash,governance_domain,content_state,blob_cleanup_state,"
+            "reason_code,schema_version,created_at,updated_at) VALUES"
+            "('p',1,'pkg','genesis','pack','1','content','manifest','package','archive',"
+            "'{}','{}','effects','companion_growth','live','live','test',1,'n','n')"
+        )
+        db.execute(
+            "INSERT INTO run_growth_snapshots(profile_id,profile_generation,snapshot_id,"
+            "request_id,run_id,snapshot_generation,snapshot_hash,status,reason_code,"
+            "schema_version,created_at,updated_at) "
+            "VALUES('p',1,'snapshot','request','legacy-run',0,'hash','prepared','test',1,'n','n')"
+        )
+        db.execute(
+            "INSERT INTO run_growth_dependency_items(profile_id,profile_generation,"
+            "snapshot_id,dependency_kind,dependency_id,content_hash,reason_code,"
+            "schema_version,created_at) "
+            "VALUES('p',1,'snapshot','preference','pref','content','test',1,'n')"
+        )
+        db.execute(
+            "INSERT INTO companion_run_bindings(profile_id,profile_generation,run_id,"
+            "request_id,root_run_id,snapshot_generation,snapshot_id,snapshot_hash,"
+            "all_generations_root_hash,start_fingerprint,status,reason_code,schema_version,"
+            "created_at,updated_at) VALUES"
+            "('p',1,'legacy-run','request','legacy-root',0,'snapshot','hash','all','start',"
+            "'active','test',1,'n','n')"
+        )
     seed_db(
         "sdk-product-state.db",
         (
@@ -78,6 +125,10 @@ async def _build_v32_fixture(tmp_path: Path) -> tuple[Path, Path, str]:
             "INSERT INTO authorization_sagas VALUES('legacy-saga')",
             "CREATE TABLE global_preferences(key TEXT, value TEXT)",
             "INSERT INTO global_preferences VALUES('model','keep')",
+            "CREATE TABLE capability_runtime_leases(id TEXT)",
+            "INSERT INTO capability_runtime_leases VALUES('legacy-runtime')",
+            "CREATE TABLE capability_versions(id TEXT)",
+            "INSERT INTO capability_versions VALUES('keep-version')",
         ),
     )
     for name in RESET_MANIFEST["delete_databases"]:
@@ -133,11 +184,24 @@ async def test_representative_legacy_versions_upgrade_to_empty_v33(
             "VALUES(1,?,'user','legacy-v31',2)",
             (session_id,),
         )
+        facts_exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='facts'"
+        ).fetchone()
+        if facts_exists:
+            db.execute(
+                "INSERT INTO facts(category,subject,key,value,created_at,updated_at) "
+                "VALUES('conversation','legacy','sentinel','delete-me',1,1)"
+            )
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 33
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0
+        facts_exists = db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='facts'"
+        ).fetchone()
+        if facts_exists:
+            assert db.execute("SELECT COUNT(*) FROM facts").fetchone()[0] == 0
         assert db.execute(
             "SELECT phase FROM legacy_session_reset_state"
         ).fetchone()[0] == "completed"
@@ -164,25 +228,35 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
         for table in RESET_MANIFEST["state.db"]["empty_tables"]:
             assert table in existing
             assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
+        for table in RESET_MANIFEST["state.db"]["optional_empty_tables"]:
+            assert table in existing
+            assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
         for table in RESET_MANIFEST["state.db"]["drop_tables"]:
             assert table not in existing
 
     with sqlite3.connect(user_data / "data" / "workflow.db") as db:
-        assert db.execute("SELECT COUNT(*) FROM execution_runs").fetchone()[0] == 0
-        assert db.execute("SELECT COUNT(*) FROM task_grants").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM workflow_start_requests").fetchone()[0] == 0
         assert db.execute(
-            "SELECT version FROM workflow_schema_migrations"
-        ).fetchone()[0] == "keep"
+            "SELECT COUNT(*) FROM capability_run_catalog_snapshots"
+        ).fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM capability_runtime_leases").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM workflow_schema_migrations").fetchone()[0] > 0
     with sqlite3.connect(user_data / "data" / "companion.db") as db:
-        assert db.execute("SELECT COUNT(*) FROM session_events").fetchone()[0] == 0
+        for table in RESET_MANIFEST["companion.db"]["delete_tables"]:
+            assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
         assert db.execute(
-            "SELECT value FROM companion_settings WHERE key='appearance'"
-        ).fetchone()[0] == "keep"
+            "SELECT candidate_package_hash FROM candidate_packages"
+        ).fetchone()[0] == "package"
+        assert db.execute(
+            "SELECT phase FROM growth_authority_state WHERE authority_key='growth'"
+        ).fetchone()[0] == "legacy"
     with sqlite3.connect(user_data / "data" / "sdk-product-state.db") as db:
         assert db.execute("SELECT COUNT(*) FROM authorization_sagas").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM capability_runtime_leases").fetchone()[0] == 0
         assert db.execute(
             "SELECT value FROM global_preferences WHERE key='model'"
         ).fetchone()[0] == "keep"
+        assert db.execute("SELECT id FROM capability_versions").fetchone()[0] == "keep-version"
     for name in RESET_MANIFEST["delete_databases"]:
         assert not (user_data / "data" / name).exists()
     assert not (user_data / "workflows" / "blobs").exists()
@@ -252,3 +326,20 @@ async def test_reset_faults_fail_closed_then_resume(
             "SELECT phase FROM legacy_session_reset_state"
         ).fetchone()[0] == "completed"
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+        for table in RESET_MANIFEST["state.db"]["empty_tables"]:
+            assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
+        for table in RESET_MANIFEST["state.db"]["optional_empty_tables"]:
+            if db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone():
+                assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
+
+    # A third startup must not re-run the reset or erase valid post-upgrade data.
+    new_session_id = str(uuid.uuid4())
+    with sqlite3.connect(db_path) as db:
+        db.execute("INSERT INTO sessions(id,created_at) VALUES(?,10)", (new_session_id,))
+    await initialize_state_db(db_path)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM sessions WHERE id=?", (new_session_id,)
+        ).fetchone()[0] == 1

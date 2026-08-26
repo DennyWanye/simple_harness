@@ -11,6 +11,10 @@
   重启可幂等完成。后端全量首轮为 `5835 passed, 47 skipped, 1 deselected, 3 failed`；其中两个相关失败已修复
   并聚焦复测通过，剩余一个是与本改动无关的既有 process-list query 失败。前端 `76 files / 624 tests` 与
   TypeScript、当前 debug `.app` 构建通过。
+- 独立复核发现并修复三项范围缺口：历史可选 `facts` 现在按存在性清空；workflow.db 也清除 Capability Run/
+  runtime/snapshot lease；companion 从反向整库清理改为精确 Run 表 allowlist，因此 candidate package、capability
+  governance、growth authority、profiles 与 reminders 会保留。真实 workflow/companion schema 聚焦回归
+  `72 passed`，含十个故障点第三次启动保留新数据。
 - macOS 当前 debug `.app` 从 v32 fixture 启动后侧栏为空；无重新登录即调用真实 `deepseek-v4-flash` 返回
   `V33-RESET-OK`。随后 UI 新建的 Project/Session/消息/Run 跨完整重启保留；真实终端以绑定目录为 `pwd`，
   相对读取与写入只落在该目录。S-PS-08 已通过；完整 release 仍受 S-PS-01/02/03/05 与最终 gate/audit 阻塞。
