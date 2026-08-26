@@ -298,6 +298,9 @@ v9/v17/v23/v31/v32 升级与十个 crash boundary 的 fail-closed/retry；Window
 2026-08-27 当前 HEAD `8631ddcc` 又以完整 v32 隔离 user-data 通过真实启动：首次进入为空，SDK Runtime/
 ingress 正常开放，真实 `deepseek-v4-flash` root Run `be702419…` 成功返回；完整重启后新 Session 与两条消息
 仍在，证明 reset completed 后不会再次删除升级后数据。
+companion 残留修复后的实现 `9424da77` 又从完整 v32 fixture 首次启动，旧 message/session/run payload 哨兵
+归零；真实 Provider root Run `8f55d96b…`、`2dc7cebb…` 完成，正式新建 Session `15410cb4…` 的标题与两条消息
+跨完整重启保持，且升级后新的 growth event/outbox 可继续写入。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

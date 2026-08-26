@@ -26,6 +26,10 @@
   消息决策回执、owner Memory scope、jobs、notification/outbox 等加入精确清理清单。真实 schema 测试写入这些
   哨兵后全部归零，并反向确认 billing、Skills/Plugins 文件、candidate draft/package 与 runtime state 保留；
   专项 `19 passed`、组合回归 `59 passed`，trigger 异常路径会完整回滚数据与不变性 trigger。
+- 最新实现 `9424da77` 用完整 v32 隔离 user-data 再走真实 UI：首次启动左侧无旧 Session，旧 state 与 companion
+  哨兵均为零；SDK Runtime/ingress 开放，真实 `deepseek-v4-flash` Run `8f55d96b…`、`2dc7cebb…` 均完成。
+  通过“新建普通会话”创建的 Session `15410cb4…` 在完整重启后仍显示标题、用户消息与模型回复；升级后新
+  growth event/outbox 可正常产生，证明旧数据清除和新数据继续工作同时成立。
 - macOS 当前 debug `.app` 从 v32 fixture 启动后侧栏为空；无重新登录即调用真实 `deepseek-v4-flash` 返回
   `V33-RESET-OK`。随后 UI 新建的 Project/Session/消息/Run 跨完整重启保留；真实终端以绑定目录为 `pwd`，
   相对读取与写入只落在该目录。S-PS-08 已通过；完整 release 仍受 S-PS-01/02/03/05 与最终 gate/audit 阻塞。
