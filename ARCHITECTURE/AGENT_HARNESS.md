@@ -252,7 +252,8 @@ Session 是显式 projectless，本地开发能力 fail closed；“在项目中
 
 每个 fresh root Run 先由 `ProjectBindingService` 返回 tagged `WorkspaceResolutionV1`，再冻结为
 `TaskWorkContext.workspace_root`、Host `workspace/write_scope_root` 以及 SDK Run tool authority v3。
-terminal/file/MCP/project-rules 等所有物理消费者只按 `run_id` 读取该 app-private authority；前端临时路径、
+terminal/file/project-rules 等所有物理消费者只按 `run_id` 读取该 app-private authority；project-bound Run
+不暴露使用进程级固定根的动态 `mcp:filesystem`，浏览器与非文件 MCP 不受影响；前端临时路径、
 模型文本、latest-Run workspace 和 retired `code_sessions` 均不能覆盖它。projectless、目录缺失、identity
 漂移或缺 authority 时在 dispatch 前 fail closed，不使用全局默认 workspace。
 
@@ -286,8 +287,11 @@ authority/Rules/preflight/Session 自动化为 `75 passed`。缺失根错误 tur
 可以安全分离：三个真实 root Run 的 Project ID/revision 保持，左侧与 Inspector 继续显示 Project root，
 终端 cwd、相对读取和两次写入只落在不同的 execution root；Project-only 文件不可见，完整重启后第三个
 Run 仍保持同一边界。聚焦 backend `109 passed`、frontend `3 passed`，没有自动 worktree 生命周期副作用。
-Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作；冻结 testcase 的其余
-真人路径尚未完成，因此 release DoD 仍为 BLOCKED。
+Windows 已按用户 2026-08-25 的范围决定移为后续非阻断工作。2026-08-27 最终 gate 已完成冻结 testcase
+S-PS-01～S-PS-08 的全部 macOS required lane：25 个 machine root Run、当前 debug `.app` 与真实 Provider
+共同覆盖注册、重启/幂等、projectless handoff、单一 authority、侧栏/Inspector、root split、relocation 和
+v33 reset。真实模型路径发现并修复自动 Tool effect 的 TaskGrant identity 冲突，以及 project-bound catalog
+错误暴露 process-wide `mcp:filesystem` 的问题；最终 Run 的 terminal/read/write 只使用绑定执行根。
 
 2026-08-26 TC-PS-08 已在 macOS 当前 debug `.app` 验证 v32 旧数据升级到 v33 空状态、全局配置/凭据可继续
 调用真实 Provider、磁盘项目文件保留，以及升级后新 Project/Session/消息/Run 跨完整重启保持。真实 root

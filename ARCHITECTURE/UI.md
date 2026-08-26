@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-26（Project-scoped Session project/execution split 验收）
+> 最后更新：2026-08-27（Project-scoped Sessions macOS release 验收完成）
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 
@@ -33,7 +33,7 @@
   期间不提供 relocation，重启恢复后该 Run 以 `workspace_unavailable` 终止；同身份目录恢复后两个 Session ID、
   历史和只读 Inspector 均跨完整重启保持。`SessionList` 还修复了冷启动响应早于 listener 安装造成的偶发侧栏
   空白竞态。原始证据位于 ignored `.local-test-evidence/2026-08-26/project-scoped-sessions-missing-root/`。
-  其余冻结 UI 场景仍未全部执行，release DoD 继续为 BLOCKED。
+  其余冻结 UI 场景已于 2026-08-27 在同一最终 gate 中补齐，macOS release UI DoD 为 PASS。
 - TC-PS-06 随后用 `execution_kind=explicit` 的公开 fixture 真测 `project_root != execution_root`：Session 在
   左侧始终归入 `project-root` 分组，展开 Inspector 同时显示两个不同绝对路径；三个真实
   `deepseek-v4-flash` root Run（含完整 app/backend 重启后一次）均以 execution root 为 `pwd`，只在那里
@@ -44,6 +44,11 @@
   `write_file` 逐项弹窗，点击允许后写入成功；重新开启后，同一链路无弹窗成功。两轮模型都复制唯一的顶层
   `schema_hash`，最终文件只位于当前 Project root。原始截图留在 ignored
   `.local-test-evidence/2026-08-25/project-scoped-sessions-manual-activation-fix/`。
+- 2026-08-27 最终 gate 补齐 S-PS-01～S-PS-08：当前 debug `.app` 完成 Project 注册、同项目新建、
+  projectless bounded handoff、侧栏/Inspector/复制/打开/Finder、缺失根与同身份 relocation、v33 全新安装式
+  重置以及完整重启恢复。最新真实模型 Run `c2a0022…` 在 relocation 后仍以绑定目录执行 `pwd`、读和写；
+  distinct execution-root fixture 的三个当前 Run 只使用 execution root。project-bound Run 不再暴露进程级
+  `mcp:filesystem`，避免其固定根绕过 Session authority；非文件 MCP 不受影响。Windows 不在本轮范围。
 
 ## 0.8 Provider 模型目录刷新（2026-08-24）
 

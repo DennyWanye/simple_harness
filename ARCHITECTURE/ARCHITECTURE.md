@@ -399,8 +399,9 @@ Additional stores include facts/workspace/skill memory and feedback tables in `s
 
 fresh root Run 只通过 `ProjectBindingService` 解析 `WorkspaceResolutionV1`。`project_root` 表示项目归属；
 `execution_root` 表示物理执行边界，允许测试 fixture/未来 worktree 两者不同。解析结果冻结进
-`TaskWorkContext`、Host workspace/write scope 和 SDK Run tool-authority v3 fingerprint；built-in、MCP、
-终端、文件工具及 `ProjectRulesComponent` 都从同一 app-private Run authority 取根。目录缺失、identity
+`TaskWorkContext`、Host workspace/write scope 和 SDK Run tool-authority v3 fingerprint；built-in 终端、
+文件工具及 `ProjectRulesComponent` 都从同一 app-private Run authority 取根。project-bound Run 不投影
+进程级固定根的动态 `mcp:filesystem`；浏览器与非文件 MCP 保持原有目录能力。目录缺失、identity
 漂移或 projectless 本地开发请求在物理执行前 fail closed，不能回退其他路径来源。
 
 Project relocation 只允许在无活跃 root Run 时，以 expected project revision CAS 将 Project 的
@@ -436,7 +437,10 @@ binding。相关聚焦自动化 `75 passed`；缺失根错误 turn 的历史恢�
 目标平台。2026-08-26 TC-PS-07 又在真实 macOS 当前构建验证：missing-root preflight 在 Provider/Tool effect
 之前提交 durable failed SDK root；无关目录 relocation 被拒绝；活跃 Run 不切根并在重启 recovery 后以
 `workspace_unavailable` 收敛；同身份 relocation 后 Project revision 原子更新、两个 Session 与历史跨重启
-保持。完整发布验收仍被其余冻结真人场景阻塞，不能把本节生产接线事实解读为完整 release gate 已通过。
+保持。2026-08-27 最终 gate 已补齐 S-PS-01～S-PS-08 的全部 macOS required lane；25 个 machine root Run、
+当前 debug `.app` 和真实 `deepseek-v4-flash` 证明注册、持久化、handoff、authority、侧栏性能、root split、
+relocation 与 v33 reset 全部通过。真实模型测试还修复了自动 Tool effect 的 TaskGrant identity 冲突，以及
+process-wide `mcp:filesystem` 错误进入 project-bound catalog 的越界风险。Windows 仍是未来独立范围。
 
 ## 4. Long-Running Workflows Today
 
