@@ -1,7 +1,10 @@
 {
   "acceptance_sha256": "ed2d9933d0c9bfb38daf6b9cbaa50166e8ab5b62f30257e1fbf7f4922c4fff54",
-  "candidate_content_digest": "7c0f9e83594f65a4b85a85fc310a3a380890283296a1065757dfbaf6848c63d8",
+  "candidate_content_digest": "840aabbb39519df335107755bfb2dde4f04626b169e896dc3cd13d1d949a7957",
+  "latest_valid_receipt_digest": "a8fc11a29aa43efa7e586313af4d510751f1ea1514f883da9947b6f654b74750",
+  "latest_valid_receipt_path": "plans/2026-08-25-project-scoped-sessions/verification/run-20260827-final/gate-receipt.json",
+  "receipt_finalized_at": "2026-08-27T03:49:01+0800",
   "run_dir": "plans/2026-08-25-project-scoped-sessions/verification/run-20260827-final",
   "run_id": "run-20260827-011749",
-  "updated_at": "2026-08-27T02:33:25+0800"
+  "updated_at": "2026-08-27T03:20:25+0800"
 }
