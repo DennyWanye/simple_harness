@@ -17,8 +17,11 @@
   `72 passed`，含十个故障点第三次启动保留新数据。
 - 2026-08-27 当前 HEAD 真实启动复核发现 workflow 全局 `execution_runtime_state` 曾被清空并导致启动失败；
   已把 runtime state 与 candidate draft receipt/material 加入精确保留清单，并在同一事务内临时移除、随后恢复
-  Run 表 immutable delete trigger。专项重置 `18 passed`，相关真实 schema 组合回归 `58 passed`；当前 HEAD
-  的新一轮真实启动复核仍需完成后才更新最终 UI 结论。
+  Run 表 immutable delete trigger。专项重置 `18 passed`，相关真实 schema 组合回归 `58 passed`。
+- 修复后的当前 HEAD `8631ddcc` 再以完整 v32 隔离 user-data 首次启动：旧 Session/消息/Project 清空，
+  `product_sdk_runtime_ready` 与 ingress open；真实 `deepseek-v4-flash` root Run `be702419…` 返回
+  `V33-CURRENT-HEAD-OK`，完整重启后新 Session 与两条消息仍可见。数据库确认 reset completed、runtime
+  `(generation=1, phase=open)`、旧 Run 哨兵为零、candidate package 保留且迁移备份已删除。
 - macOS 当前 debug `.app` 从 v32 fixture 启动后侧栏为空；无重新登录即调用真实 `deepseek-v4-flash` 返回
   `V33-RESET-OK`。随后 UI 新建的 Project/Session/消息/Run 跨完整重启保留；真实终端以绑定目录为 `pwd`，
   相对读取与写入只落在该目录。S-PS-08 已通过；完整 release 仍受 S-PS-01/02/03/05 与最终 gate/audit 阻塞。

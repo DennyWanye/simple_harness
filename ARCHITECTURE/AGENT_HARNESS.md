@@ -294,6 +294,9 @@ Run `201db422…` 的无 `cd` 相对命令返回绑定目录为 cwd，读取和�
 v9/v17/v23/v31/v32 升级与十个 crash boundary 的 fail-closed/retry；Windows 不在本轮范围。
 真实 schema 聚焦回归追加为 `58 passed`，并以 runtime state、candidate package 与 growth authority 哨兵锁定
 全局运行配置和 Skills/Plugins 保留边界；专项 v33 重置为 `18 passed`。
+2026-08-27 当前 HEAD `8631ddcc` 又以完整 v32 隔离 user-data 通过真实启动：首次进入为空，SDK Runtime/
+ingress 正常开放，真实 `deepseek-v4-flash` root Run `be702419…` 成功返回；完整重启后新 Session 与两条消息
+仍在，证明 reset completed 后不会再次删除升级后数据。
 
 ### 当前 SDK 多轮消息与继续输入（2026-08-20）
 

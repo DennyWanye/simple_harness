@@ -415,6 +415,8 @@ runtime 与 snapshot/lease 表；companion 采用精确 Run 表 allowlist，保�
 growth authority、profiles 和 reminders，避免以“除少数表外全部删除”的反向清单误伤 Skills/Plugins。
 workflow 的 `execution_runtime_state`、candidate draft receipt/material 属于全局 authority，同样保留；Run 表上的
 immutable delete trigger 仅在清理事务内临时移除，随后按原 DDL 恢复，保证正常运行期的不变性约束继续有效。
+当前 HEAD `8631ddcc` 的完整 v32 隔离启动证据确认：旧会话域为空、SDK Runtime/Provider 仍可用，真实
+`deepseek-v4-flash` Run 完成，且完整重启后新建 Session 与消息保持。
 
 验证边界：当前代码/自动化、100k catalog 性能探针和 macOS 当前 debug `.app` 的注册、分组、Inspector、
 projectless 与重启恢复核心路径已通过。真实 `deepseek-v4-flash` Run 已实际调用终端、文件读取和文件写入：

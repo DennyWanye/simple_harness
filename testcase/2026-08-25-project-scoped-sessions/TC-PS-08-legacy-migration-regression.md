@@ -12,7 +12,7 @@ tags:
   - regression
   - restart
 entrypoint: application startup migration
-revision: 3
+revision: 4
 ---
 
 # TC-PS-08 — v33 升级一次性清空与新数据保留
@@ -40,14 +40,16 @@ revision: 3
 |---|---|---|
 | `state.db` | Session、message/archive/title、Project/Binding、creation receipt/tombstone、Run admission/handoff、context、projection/outbox、每 Session Provider binding、对话 Memory identity | schema authority、全局配置文件 |
 | `messages_vec` | 所有旧向量与旧消息检索命中 | sqlite-vec 能在 reset 后为新消息正常工作 |
-| `workflow.db` / workflow blobs | execution/workflow/trace/task grant 行及其内部 blobs | workflow schema/evaluation 定义 |
-| `companion.db` | Session/Run/job/projection 及对话派生候选数据 | Companion 全局设置、profile、reminder |
-| SDK execution / product state | execution DB、Run catalog/runtime/lease、authorization saga/task grant | SDK 非 Run 全局配置 |
+| `workflow.db` / workflow blobs | Run-owned execution/workflow/trace/task grant 行及其内部 blobs | workflow schema/evaluation 定义、`execution_runtime_state`、candidate draft receipt/material |
+| `companion.db` | Session/Run/job/projection 与 run-growth snapshot/dependency | Companion 全局设置、profile、reminder、candidate package、capability/growth governance |
+| SDK execution / product state | execution DB、Run catalog/runtime/lease、authorization saga/task grant | SDK 非 Run 全局配置、capability activation/version |
 | `memory.db` | 整个旧对话认知库及 sidecar/lock | 升级后新建 Memory 可正常持久化 |
 | state backup | `state.db.bak.*` 与 manifest | 无 |
 | 文件系统 | 无：不得删除真实项目/产物 | Provider/默认模型/应用设置、Keychain、skills/plugins、billing、真实项目/产物文件 |
 
 实现与自动化测试必须共同引用 `project_session_reset.RESET_MANIFEST` 作为精确清单；本表冻结产品级数据类别，二者有差异即失败。
+带 immutable delete trigger 的 Run 表必须在单一清理事务中临时移除并按原 DDL 恢复；升级后插入新行并尝试删除，
+仍应被恢复后的 trigger 拒绝。
 
 ## 故障恢复矩阵
 
