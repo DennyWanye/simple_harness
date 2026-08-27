@@ -24,3 +24,10 @@
 
 远程 fixture URL/commit 由测试运行时 JSON 提供；若未准备，SI-M4 保持 `NOT_RUN`，不得改用本地 `file://` 或任意公网仓库冒充。
 
+本轮已锁定一个真实 HTTPS 负向 fixture，用于 UI 的“无 Skill 候选”整批拒绝路径：
+
+- URL：`https://github.com/octocat/Hello-World`
+- exact commit：`7fd1a60b01f91b314f59955a4e4d4e80d8edf11d`
+- GitHub zipball SHA-256（2026-08-28 取证）：`1d00ca0c50603bfc454289be251e2f1d53437d3f2ac463ac3cf01a6a0db93ce2`
+- archive 成员：根目录与 `README`，无 `SKILL.md`
+- 预期：`skill_candidate_not_found`（若生产层沿用 source 内部码，可映射自 `skill_source_empty`），且 Project/catalog hash 不变。

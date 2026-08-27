@@ -16,10 +16,9 @@
 - [x] verification spec 编译成功，`case_sets.full=5`。
 - [x] scenario/evidence/impact/applicability 草案齐备；SI-M5 impact 留空以 fail-closed 触发全量复测。
 - [x] malicious fixture 规范、环境准备器、核心 smoke inputs、full-surface checker 已存盘。
-- [ ] 真实 HTTPS GitHub malicious fixture URL/exact commit 待执行轨提供；此前 SI-M4 必须 NOT_RUN。
+- [x] 真实 HTTPS GitHub 负向 fixture 已锁定：`octocat/Hello-World@7fd1a60b01f91b314f59955a4e4d4e80d8edf11d`，用于无 `SKILL.md` 的零副作用拒绝路径。
 - [ ] 昂贵真实 UI 执行、gate init/testcase lock 在实现汇合与候选冻结后进行。
 
 ## Black-box 边界声明
 
 本轨仅使用 acceptance、assurance contract、plan、testcase inventory/候选原文和 plan-test gate 公共格式；没有读取业务实现源码、git diff 或执行代理中间产物。impact paths 只来自冻结 plan 的文件影响清单；不确定的 full-surface scenario 留空而非猜测。
-
