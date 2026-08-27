@@ -2828,6 +2828,50 @@ class CapabilityStoreTx:
         self._store = store
         self._db = db
 
+    async def put_publish_intent_members_in_transaction(
+        self,
+        publish_intent_id: str,
+        members: Sequence[CapabilityPublishIntentMember],
+    ) -> tuple[CapabilityPublishIntentMember, ...]:
+        """Freeze batch members in the caller-owned publish-intent transaction."""
+
+        if tuple(member.ordinal for member in members) != tuple(range(len(members))):
+            raise CapabilityStoreError(
+                "invalid_publish_intent_members",
+                "member ordinals must be dense and ordered",
+            )
+        existing = await (await self._db.execute(
+            "SELECT * FROM capability_publish_intent_members "
+            "WHERE publish_intent_id=? ORDER BY ordinal",
+            (publish_intent_id,),
+        )).fetchall()
+        if existing:
+            current = tuple(CapabilityPublishIntentMember(
+                publish_intent_id=str(row["publish_intent_id"]),
+                operation_id=str(row["operation_id"]), ordinal=int(row["ordinal"]),
+                old_binding=_json_object(
+                    None if row["old_binding_json"] is None else str(row["old_binding_json"])
+                ),
+                new_binding=_json_object(str(row["new_binding_json"])) or {},
+            ) for row in existing)
+            if current != tuple(members):
+                raise CapabilityStoreConflict(
+                    "publish_intent_members_conflict", "publish members changed"
+                )
+            return current
+        for member in members:
+            if member.publish_intent_id != publish_intent_id:
+                raise CapabilityStoreError(
+                    "invalid_publish_intent_members", "publish intent differs"
+                )
+            await self._db.execute(
+                "INSERT INTO capability_publish_intent_members VALUES(?,?,?,?,?)",
+                (member.publish_intent_id, member.operation_id, member.ordinal,
+                 None if member.old_binding is None else canonical_json(dict(member.old_binding)),
+                 canonical_json(dict(member.new_binding))),
+            )
+        return tuple(members)
+
     async def state(self) -> CapabilityStoreState:
         return await self._store._state_tx(self._db)
 
