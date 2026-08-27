@@ -86,7 +86,7 @@ def run_check_probes(connection: sqlite3.Connection, *, version: int) -> None:
             pass
         else:
             raise RuntimeError("operation kind/phase CHECK probe accepted invalid values")
-        if version == 2:
+        if version >= 2:
             values = (
                 "__schema_probe_intent__",
                 "effect",
