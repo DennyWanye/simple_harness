@@ -3182,6 +3182,17 @@ class CapabilityStoreTx:
             )).fetchone()
             return None if row is None else _skill_install_intent_from_row(row)
 
+    async def get_skill_install_intent_for_effect(
+        self, effect_id: str, call_id: str
+    ) -> CapabilitySkillInstallIntent | None:
+        async with self.read_connection() as db:
+            row = await (await db.execute(
+                "SELECT * FROM capability_skill_install_intents "
+                "WHERE effect_id=? AND call_id=?",
+                (effect_id, call_id),
+            )).fetchone()
+            return None if row is None else _skill_install_intent_from_row(row)
+
     async def _skill_install_members_tx(self, db: aiosqlite.Connection, intent_id: str) -> tuple[CapabilitySkillInstallMember, ...]:
         rows = await (await db.execute(
             "SELECT * FROM capability_skill_install_members WHERE intent_id=? ORDER BY ordinal", (intent_id,)
@@ -3247,6 +3258,52 @@ class CapabilityStoreTx:
     async def cas_skill_install_intent(self, intent_id: str, **kwargs: Any) -> CapabilitySkillInstallIntent:
         async with self.write_transaction() as db:
             return await self._cas_skill_install_intent_tx(db, intent_id, **kwargs)
+
+    async def bind_skill_install_confirmation(
+        self,
+        intent_id: str,
+        *,
+        expected_state_version: int,
+        confirmation_nonce: str,
+        confirmation_version: int,
+    ) -> CapabilitySkillInstallIntent:
+        """CAS-bind the SDK-owned final confirmation identity before handoff."""
+
+        if not confirmation_nonce or confirmation_version < 0:
+            raise CapabilityStoreError(
+                "invalid_skill_install_confirmation", "confirmation identity is invalid"
+            )
+        async with self.write_transaction() as db:
+            cursor = await db.execute(
+                """UPDATE capability_skill_install_intents
+                   SET confirmation_nonce=?,confirmation_version=?,
+                       state_version=state_version+1,updated_at=?
+                   WHERE intent_id=? AND state_version=?
+                     AND status='awaiting_confirmation'""",
+                (confirmation_nonce, confirmation_version, self._clock(),
+                 intent_id, expected_state_version),
+            )
+            if cursor.rowcount != 1:
+                current = await (await db.execute(
+                    "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                    (intent_id,),
+                )).fetchone()
+                if current is not None:
+                    value = _skill_install_intent_from_row(current)
+                    if (
+                        value.confirmation_nonce == confirmation_nonce
+                        and value.confirmation_version == confirmation_version
+                    ):
+                        return value
+                raise CapabilityStoreConflict(
+                    "skill_install_confirmation_cas_conflict",
+                    "install confirmation identity changed",
+                )
+            row = await (await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                (intent_id,),
+            )).fetchone()
+            return _skill_install_intent_from_row(row)
 
     async def _handoff_skill_install_intent_tx(
         self, db: aiosqlite.Connection, intent_id: str, *, expected_state_version: int,
@@ -8525,12 +8582,14 @@ class CapabilityStore:
 # self-owned transaction APIs without duplicating the CAS implementation.
 for _skill_install_method in (
     "_create_skill_install_intent_tx", "create_skill_install_intent",
-    "get_skill_install_intent", "_skill_install_members_tx",
+    "get_skill_install_intent", "get_skill_install_intent_for_effect",
+    "_skill_install_members_tx",
     "skill_install_members", "pending_skill_install_intents",
     "_cas_skill_install_intent_tx", "cas_skill_install_intent",
     "_handoff_skill_install_intent_tx", "handoff_skill_install_intent",
     "operation_members", "put_operation_evidence",
     "put_publish_intent_members", "publish_intent_members", "operation_evidence",
+    "bind_skill_install_confirmation",
 ):
     setattr(CapabilityStore, _skill_install_method, getattr(CapabilityStoreTx, _skill_install_method))
 
