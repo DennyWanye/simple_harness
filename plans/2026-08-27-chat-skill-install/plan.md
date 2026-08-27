@@ -122,6 +122,10 @@ chat capability_install_skill / Settings Skill Store
   exact pack/content digest 的幂等重放例外。不做隐式 precedence，不依赖查询排序选胜者。
 - intent 持久化到 Capability SQLite；confirmation token 绑定 normalized URL、resolved commit、
   pack list/digest、Project identity/revision、expiry，消费一次后不可跨 Project 重放。
+- intent 同时是 preflight/decision settlement 的唯一 durable aggregate，显式状态覆盖
+  `staging -> awaiting_confirmation -> publishing -> published_pending_runtime_verification -> succeeded`，
+  以及 `stage_failed|denied|expired` 各自的 `*_cleanup_pending` 中间态。只有 install service 可把
+  opaque staging ref 解析为其固定 root 下的路径并删除；授权层永不接触文件路径。
 - 验证：单/多 repo、排序稳定、重复名、空 repo、symlink/submodule/traversal/超限、
   ref 漂移、确认后篡改、过期/重放/拒绝。
 
@@ -152,18 +156,54 @@ chat capability_install_skill / Settings Skill Store
   receipt，不接收模型或 UI boolean，不新建第二张 confirmation state table。
 - receipt 消费用 CAS 一次性核对 nonce/version/principal/project/digest/expiry；approve 绑定
   batch idempotency，deny/expiry 持久 settle 并精确清理 staging，重复/跨渠道响应返回同一结算结果。
-- 只注册一个 model-visible `skill_install`（创建 intent + 正常 `skill_install` dangerous HITL
-  Effect）并加入 SDK product catalog；用户决定由现有 Host permission/effect continuation 直接
-  调用 service 内部 `confirm(intent_id, host_receipt)`，不暴露 model-visible confirm，不授予 shell。
+- 只注册一个 model-visible `skill_install` 并加入 SDK product catalog。产品
+  `SdkPreparedAuthorizationPolicy` 注入 optional `ProjectSkillInstallPreflightPort`：仅该 Tool 在 SDK
+  async authorization prepare 阶段先 stage，按 `(run_id,effect_id,args_hash,project_scope_key)` 幂等冻结
+  intent，并把 opaque artifact ref、exact digest 与有界成员摘要写入 durable
+  `AuthorizationRequest.metadata`；其他 Tool 的 port 默认为 `None`，零额外 I/O/行为变化。
+- preflight port 返回 tagged `SkillInstallPreflightOutcome`：`Ready` 携带 intent/artifact/digest、
+  有界清单/权限摘要和 expiry；`Rejected` 携带 durable failure receipt ref、stable code、公开消息、
+  retryable 与 opaque correlation。Rejected 先 CAS 到 `stage_failed_cleanup_pending`，精确清理后落
+  `stage_failed`，再映射为 `AuthorizationResult(DENY)`；不得创建确认卡或让异常逃逸成泛化成功文本。
+- SDK 用户决定后继续复用现有 decision bind + effect handoff。唯一 Tool handler 不接收模型 receipt
+  参数，而以 trusted run/call/effect IDs 通过 `AuthorizedPreflightReceiptResolver` 联查 SDK durable
+  decision、Product authorization saga 的 `HANDOFF_COMMITTED` 状态与 install intent，签发 typed
+  `AuthorizedSkillInstallReceipt` 后调用 `confirm_authorized`。receipt 覆盖 nonce/version、principal、
+  Project/digest/expiry 与 decision/handoff 的 SDK+Host hashes；不暴露 model-visible confirm，不授予 shell。
+- receipt 使用公共 immutable envelope + channel discriminator。`chat` variant 必须包含真实
+  run/call/effect 与 SDK/Product decision/handoff hashes 并证明 saga=`HANDOFF_COMMITTED`；`settings`
+  variant 必须缺省这些 SDK 字段，改含 Host-authenticated UI decision event/window receipt。两者都以
+  stage 已冻结的 principal、Project scope、nonce/version、source revision、member digest 和 expiry
+  校验并 CAS 同一 intent；exact replay 返回原 settlement，冲突 decision/channel/digest fail closed。
+- `ProductAuthorizationAdapter` 在 durable saga CAS 后向 install service 发送仅含 opaque identity 的
+  deny/decision-expiry terminal evidence；service 独占 `*_cleanup_pending` CAS 与删除。没有 SDK terminal
+  callback 的 OPEN decision（含 Run 被取消）不制造授权事实，由有界 intent expiry reconciler 在
+  startup 及 stage/status/confirm 前结算并清理；过期后 handler 永远无法发布。
+- 恢复不依赖 `_facts`：adapter 先以 unique effect+call 查询现有 saga；cache miss 时仅从恢复的 frozen
+  Run authority、saga request JSON 与 durable grant 复建 exact prepared facts，逐项核对 args/schema/
+  capability/catalog/scope/policy generation/grant fingerprint/artifact hash。已持久化 artifact 禁止重跑
+  current policy 或重解析 branch HEAD；缺失/歧义/错配标 unknown/quarantined，禁止 handler 和成功文案。
+- saga 创建前，unique durable install artifact 是唯一 recovery authority：以 stable operation/effect/call
+  选择恰好一个 artifact，核对 frozen source/commit/member/Project/Run/catalog/capability/schema/scope/
+  prepared-call/grant bindings 后，幂等创建 saga 并 prepare/reuse exact grant。artifact-only、active-grant/
+  saga-absent、saga-persisted/SDK-decision-absent 三个边界均不得重新解析 HEAD、创建第二 intent、publish
+  或 dispatch；后者必须重绑原 nonce/version/receipt CAS。artifact 缺失/歧义/损坏/错配在任何 mutation
+  前结构化失败；orphan grant 只有 stored/JSON fingerprint、version、generation、artifact binding 全等才复用。
 - completion gate：只有 service 的 succeeded receipt 才能声称安装成功；denied/failed/unknown 禁止
   用文本绕过。
 - 验证：tool search/describe/activate，schema violation/out-of-order/duplicate/long payload/refusal/bypass。
 
 ### Task 5 — Settings/Capability Center 薄 adapter 归并 [AC-SI-3, AC-SI-6]
 
-- `backend/main.py` 的 `skill_install_from_url/confirm` 调用同一 service；删除 multi 自动
-  `finalize_batch`。Capability Center install surface 同样路由到该 service，不再返回
-  `model_driven_action_required`。
+- `backend/main.py` 的 `skill_install_from_url` 调用同一 service 的 stage；删除 multi 自动
+  `finalize_batch`。Settings approve/deny 先进入 Host-owned Settings decision adapter，由它把真实 UI
+  action 与 authenticated principal、Project、intent digest、nonce/version 绑定为同一个
+  `AuthorizedSkillInstallReceipt` 类型，再调用 `confirm_authorized/cancel_authorized`；service 永不接收
+  `approved: bool`。Capability Center 不再返回 `model_driven_action_required`。
+- Settings decision adapter 只能使用 Host 已认证的本地主窗口/账户身份，并以 stage 返回的 opaque
+  intent + one-time nonce 在后端重新取得冻结 Project/principal；不得信任 UI/query 提供的 Session、
+  Project 或 scope。若现有生产通道不能证明这个绑定，confirm/cancel 稳定返回
+  `settings_install_authorization_unavailable`，实现线必须回 A2 增加最小 Host bridge，不能降级。
 - `SkillStorePanel` 显示冻结 Project 名称/身份、resolved revision、排序 Skill 列表、权限类别、
   digest 摘要与过期；一次 approve/deny 适用整批。
 - 旧 `<userdata>/skills` inventory 继续可诊断，但不作为新 Run authority，不隐式迁移。
@@ -201,6 +241,28 @@ chat capability_install_skill / Settings Skill Store
   保留 scenario ID、相对索引和 SHA-256。
 - 验收绿后同一交付更新 `ARCHITECTURE/ARCHITECTURE.md`、`AGENT_HARNESS.md`、`UI.md`、
   `PROJECT_STATUS.md` 与本 plan results。启动一个新鲜当前构建供用户测试，不修改原 userdata。
+
+## A2-001 回炉与关键假设 spike（2026-08-28）
+
+- 执行中证实原 plan 漏掉授权 owner seam：ToolRegistry 先校验 grant，之后才调用 handler；因此
+  handler 内 stage 会让用户确认未知的 exact batch，而 UI boolean/handler 自签 receipt 又违反
+  Host authority。该缺陷已按 `owner-missing` 写入 plan-test 账本并停止 Task 2～5 受影响线。
+- 可丢弃真代码 spike 使用现有 `SdkPreparedAuthorizationPolicy`、`ProductAuthorizationAdapter`、
+  authorization saga、durable grant 与 SDK ToolRegistry，实际观测顺序为
+  `async_stage -> confirmation_prepared -> decision_bound -> handoff_bound -> host_receipt_resolved -> handler`，
+  测试 `1 passed in 0.17s`。
+- 结论：采用 Task 4/5 所述 Host-owned optional preflight + receipt resolver 是范围可控的结构修正；
+  无需第二个 Tool、无需修改 vendor SDK、无需新建 decision/receipt journal。完整本地证据：
+  `.local-test-evidence/2026-08-27/chat-skill-install-plan-loop/a2-001-preflight-spike.md`，源报告
+  SHA-256 `21b13c137a3cc833950cabf7242907d5d0ce2a7cfa21f4d48b3a1189b556e17b`。
+- production rehydration spike 进一步在清空 adapter/policy/registry/`_facts` 后，以 persisted saga、
+  verified durable grant 与 restored frozen Run authority 完成 exact resume，且证明 recovery 不调用
+  current policy；missing saga、scope mismatch、corrupt indexed grant fingerprint 均 fail closed，
+  `2 passed in 0.21s`。实现须新增 public verified grant lookup、narrow `restore_facts`、durable-first
+  adapter replay 与完整 crash matrix。证据：`.local-test-evidence/2026-08-27/chat-skill-install-plan-loop/
+  spike-auth-preflight-rehydration.md`；测试 SHA-256
+  `42605ef563eb70f34d31f71dd19beb104e0f3a670c32049e0325f87421abd183`；最终 `6 passed in 0.18s`，
+  额外覆盖 artifact-only、orphan grant、pre-SDK-decision 与四类 mutation-before-stop 反例。
 
 ## 停止条件
 
