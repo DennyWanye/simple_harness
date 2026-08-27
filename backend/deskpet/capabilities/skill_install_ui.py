@@ -12,7 +12,9 @@ settling an intent. A UI boolean is never forwarded as authorization.
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import inspect
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -114,15 +116,43 @@ class ProjectSkillInstallUIAdapter:
                 "The managed Project Skill installer is unavailable.",
                 retryable=True,
             )
-        result = await _await(
-            stage(
-                repository_url=source_url,
-                requested_ref="HEAD",
-                project=project.as_mapping(),
-                principal_id=str(principal_id or "").strip(),
-                channel="settings",
+        from deskpet.capabilities.skill_install import SkillInstallProjectAuthority
+        from deskpet.capabilities.contracts import canonical_project_identity_scope_key
+
+        principal = str(principal_id or "").strip()
+        if not principal:
+            raise ProjectSkillInstallUIError(
+                "settings_install_authorization_unavailable",
+                "Settings cannot resolve an authenticated Host principal.",
             )
+        identity = {
+            "domain": "settings-skill-install-stage-v1",
+            "url": source_url,
+            "project": project.as_mapping(),
+            "principal_id": principal,
+        }
+        stable = hashlib.sha256(
+            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        authority = SkillInstallProjectAuthority(
+            project_id=project.project_id,
+            project_revision=project.project_revision,
+            project_identity=project.project_identity,
+            project_scope_key=canonical_project_identity_scope_key(
+                project.project_id, project.project_revision, project.project_identity
+            ),
+            principal_id=principal,
         )
+        result = await _await(stage(
+            url=source_url,
+            requested_ref="HEAD",
+            project=authority,
+            run_id=f"settings:{stable}",
+            root_run_id=f"settings:{stable}",
+            call_id=f"settings-call:{stable}",
+            effect_id=f"settings-effect:{stable}",
+            channel="settings",
+        ))
         return _safe_projection(result)
 
     async def settle(
@@ -200,13 +230,10 @@ class ProjectSkillInstallUIAdapter:
                 f"The managed installer does not support {method_name}.",
                 retryable=True,
             )
-        result = await _await(
-            settle(
-                intent_id=normalized_intent,
-                digest=normalized_digest,
-                decision_receipt=receipt,
-            )
-        )
+        # The service consumes only the Host-issued receipt.  Principal and
+        # Project authority were rebound by the request-scoped Host authorizer;
+        # UI payload identity is never forwarded as authority.
+        result = await _await(settle(receipt))
         return _safe_projection(result)
 
     async def status(

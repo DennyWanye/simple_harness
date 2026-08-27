@@ -29,12 +29,12 @@ class _Service:
         self.calls.append(("stage", kwargs))
         return {"intent_id": "intent-1", "status": "awaiting_confirmation"}
 
-    async def confirm_authorized(self, **kwargs):
-        self.calls.append(("confirm_authorized", kwargs))
+    async def confirm_authorized(self, receipt):
+        self.calls.append(("confirm_authorized", receipt))
         return {"intent_id": "intent-1", "status": "succeeded"}
 
-    async def cancel_authorized(self, **kwargs):
-        self.calls.append(("cancel_authorized", kwargs))
+    async def cancel_authorized(self, receipt):
+        self.calls.append(("cancel_authorized", receipt))
         return {"intent_id": "intent-1", "status": "denied"}
 
 
@@ -64,24 +64,17 @@ async def test_stage_uses_only_frozen_project_context() -> None:
     )
 
     assert result["intent_id"] == "intent-1"
-    assert service.calls == [
-        (
-            "stage",
-            {
-                "repository_url": "https://github.com/o/r",
-                "requested_ref": "HEAD",
-                "project": {
-                    "project_id": "project-a",
-                    "project_name": "Project A",
-                    "project_revision": 3,
-                    "project_identity": "identity-a",
-                    "project_root": "/tmp/project-a",
-                },
-                "principal_id": "session:session-a",
-                "channel": "settings",
-            },
-        )
-    ]
+    assert len(service.calls) == 1
+    name, call = service.calls[0]
+    assert name == "stage"
+    assert call["url"] == "https://github.com/o/r"
+    assert call["requested_ref"] == "HEAD"
+    assert call["channel"] == "settings"
+    assert call["project"].project_id == "project-a"
+    assert call["project"].principal_id == "session:session-a"
+    assert call["run_id"] == call["root_run_id"]
+    assert call["call_id"].startswith("settings-call:")
+    assert call["effect_id"].startswith("settings-effect:")
 
 
 @pytest.mark.asyncio
@@ -104,21 +97,9 @@ async def test_ui_decision_is_exchanged_for_host_receipt() -> None:
         "decision_version": 2,
         "decision": "approve",
     }]
-    assert service.calls == [
-        (
-            "confirm_authorized",
-            {
-                "intent_id": "intent-1",
-                "digest": "digest-1",
-                "decision_receipt": {
-                    "kind": "settings",
-                    "receipt_id": "host-receipt-1",
-                    "decision": "approve",
-                },
-            },
-        )
-    ]
-    assert "decision" not in service.calls[0][1]
+    assert service.calls == [("confirm_authorized", {
+        "kind": "settings", "receipt_id": "host-receipt-1", "decision": "approve"
+    })]
 
 
 @pytest.mark.asyncio
@@ -151,7 +132,7 @@ async def test_deny_is_settled_with_a_host_receipt() -> None:
     assert result["status"] == "denied"
     assert authorizer.calls[0]["decision"] == "deny"
     assert service.calls[0][0] == "cancel_authorized"
-    assert "decision_receipt" in service.calls[0][1]
+    assert service.calls[0][1]["kind"] == "settings"
 
 
 def test_projectless_binding_is_rejected() -> None:
