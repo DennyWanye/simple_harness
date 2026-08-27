@@ -1,0 +1,49 @@
+{
+  "run_id": "plan-loop-20260827-chat-skill-install",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "fixture_only": false,
+  "source_request_text": "修复 simple_harness 对聊天请求‘请你安装这个 skill 到当前项目：https://github.com/DennyWanye/plan-test-skill’的理解与执行，使其通过正式 Project-scoped managed Capability 链路安装并能在新 Run 中真正使用，不得通过 shell 写入 .claude/skills 或 .codex/skills。",
+  "acceptance_file": "/Users/denny/projects/simple_harness/plans/2026-08-27-chat-skill-install/acceptance.md",
+  "behavior_contract": {
+    "path": "/Users/denny/projects/simple_harness/plans/2026-08-27-chat-skill-install/acceptance.md",
+    "status": "user-approved"
+  },
+  "behavior_changes": [
+    "当前项目安装从模型 shell copy 或 legacy userdata finalize 收敛为 Project-scoped Manager publish/bind",
+    "单 Skill 和多 Skill 仓库都在一次用户确认后原子发布",
+    "安装成功从目录写入改为 Manager receipt、Project catalog refresh 和新 Run exact hash resolve/page-in"
+  ],
+  "applicability": {
+    "input_sensitive": {
+      "value": true,
+      "rationale": "自然语言中的安装意图、当前项目指代与 URL 组合直接决定 typed Tool 路由。",
+      "decided_by": "user"
+    },
+    "llm_payload_driven": {
+      "value": true,
+      "rationale": "模型必须搜索、激活并正确调用 stage/confirm Tool，且需要防止 schema 违规与文本绕过。",
+      "decided_by": "user"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "验收包含持久化 staged intent、Manager publish/binding、Project catalog 及冷重启后可用性。",
+      "decided_by": "user"
+    }
+  },
+  "executor_engine": "current-session-engine",
+  "auditor_engine": "current-session-engine",
+  "challenger_engine": "current-session-engine",
+  "release_unit": {
+    "slice_id": "chat-skill-install",
+    "parent_program": "project-scoped-capability-install",
+    "scope_hash": "pending-plan-loop-freeze",
+    "must_ac_count": 6,
+    "task_count": 7,
+    "plan_lines": 250,
+    "high_risk_subsystem_count": 3,
+    "surface_categories": ["Capability", "Harness", "UI"]
+  },
+  "active_run_required": false,
+  "structured_audit_required": false,
+  "scenarios": []
+}

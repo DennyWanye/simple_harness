@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "inputs": [
+    {"id":"SMOKE-SI-CHAT-BATCH-ZH","surface":"project-chat","input":"请你安装这个skill到当前项目：https://github.com/DennyWanye/plan-test-skill","expected":"typed skill_install stages one exact three-member batch and asks once"},
+    {"id":"SMOKE-SI-CHAT-SINGLE-MIXED","surface":"project-chat","input":"Install this skill into this project: ${SINGLE_SKILL_GITHUB_URL}","expected":"one candidate, one confirmation, exact Project scope"},
+    {"id":"SMOKE-SI-NATURAL-NO-KEYWORD","surface":"project-chat","input":"把这个 GitHub 仓库里的工作方法加到眼前这个项目里，以后新对话也要能用：${SINGLE_SKILL_GITHUB_URL}","expected":"routes to typed installer without requiring the literal install/skill keywords"},
+    {"id":"SMOKE-SI-SETTINGS","surface":"settings-url-add","input":"${SINGLE_SKILL_GITHUB_URL}","expected":"same staged fields, permission card, receipt and runtime verification as chat"},
+    {"id":"SMOKE-SI-RUNTIME","surface":"project-chat-new-run","input":"/plan-test 请概述你会执行的阶段，不要实施代码","expected":"exact installed Skill pages in from the frozen Run catalog"}
+  ]
+}

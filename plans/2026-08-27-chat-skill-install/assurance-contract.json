@@ -1,0 +1,40 @@
+{
+  "profile": "standard",
+  "acceptance_ids": [
+    "AC-SI-1",
+    "AC-SI-2",
+    "AC-SI-3",
+    "AC-SI-4",
+    "AC-SI-5",
+    "AC-SI-6"
+  ],
+  "protected_assets": [
+    {"id": "ASSET-SI-1", "description": "Project filesystem and exact Project identity boundary"},
+    {"id": "ASSET-SI-2", "description": "User Skill and Capability inventory integrity"},
+    {"id": "ASSET-SI-3", "description": "Human installation confirmation authority"},
+    {"id": "ASSET-SI-4", "description": "Runtime catalog and immutable Skill content identity"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-SI-1", "description": "Developer account, OS kernel and system absolute-path tools are trusted"},
+    {"id": "TRUST-SI-2", "description": "Existing Capability Manager, permission gate and durable stores enforce their documented contracts"},
+    {"id": "TRUST-SI-3", "description": "GitHub HTTPS transport and resolved public repository revision are trusted inputs after validation"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-SI-1", "description": "Agent cannot discover the official installer and falls back to shell directory guessing"},
+    {"id": "FAIL-SI-2", "description": "Installed files are not published into the managed runtime catalog"},
+    {"id": "FAIL-SI-3", "description": "Project-scoped installation leaks into another Project or user-global scope"},
+    {"id": "FAIL-SI-4", "description": "Malformed or malicious repository content escapes staging validation"},
+    {"id": "FAIL-SI-5", "description": "Batch, retry or confirmation replay leaves partial or duplicate durable state"},
+    {"id": "FAIL-SI-6", "description": "UI or model claims success before receipt, catalog refresh and runtime resolution"}
+  ],
+  "in_scope_adversaries": [
+    {"id": "ADV-SI-1", "description": "Untrusted public Skill repository attempting path traversal, symlink or manifest abuse"},
+    {"id": "ADV-SI-2", "description": "LLM output attempting to bypass typed installation through generic shell actions"}
+  ],
+  "out_of_scope_conditions": [
+    {"id": "OOS-SI-1", "description": "Private GitHub repository authentication and credential lifecycle"},
+    {"id": "OOS-SI-2", "description": "Hostile host, compromised developer account or compromised OS kernel"},
+    {"id": "OOS-SI-3", "description": "Non-GitHub Skill distribution sources and marketplace recommendation quality"}
+  ],
+  "maximum_acceptable_impact": "A failed attempt may leave bounded removable staging and a durable failure receipt, but must not modify Project source files, publish partial runtime capability state, or affect another Project."
+}

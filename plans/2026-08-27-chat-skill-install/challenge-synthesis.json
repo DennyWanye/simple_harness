@@ -1,0 +1,53 @@
+{
+  "source_cluster_ids": [
+    "cluster-raw-git-canonicalization-boundary",
+    "cluster-project-runtime-skill-projection",
+    "cluster-batch-publish-recovery",
+    "cluster-install-confirmation-authority",
+    "cluster-project-binding-upgrade-semantics"
+  ],
+  "canonical_findings": [
+    {"id":"raw-skill-source-cannot-pass-current-git-pack-staging","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-3","AC-SI-4"],"assurance_contract_ids":["FAIL-SI-4","FAIL-SI-5"],"evidence":"GitPackSource requires a canonical manifest before returning raw content.","status":"open","root_cause":"Raw transport and canonical validation are conflated."},
+    {"id":"resolved-git-commit-is-not-returned-by-source-contract","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-3","AC-SI-4"],"assurance_contract_ids":["FAIL-SI-5"],"evidence":"The source result keeps requested ref and discards exact commit metadata.","status":"open","root_cause":"Resolved immutable source identity is missing."},
+    {"id":"git-transport-materialization-is-not-resource-bounded","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-3","AC-SI-4"],"assurance_contract_ids":["FAIL-SI-4"],"evidence":"Limits run after Git clone and checkout.","status":"open","root_cause":"Transport is not bounded before materialization."},
+    {"id":"git-tree-modes-are-lost-before-canonical-validation","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-3","AC-SI-4"],"assurance_contract_ids":["FAIL-SI-4"],"evidence":"Git tree modes are discarded before validation.","status":"open","root_cause":"Pre-materialization tree inspection is absent."},
+    {"id":"project-skill-runtime-projection-remains-first-party-only","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-2","AC-SI-5","AC-SI-6"],"assurance_contract_ids":["FAIL-SI-2","FAIL-SI-3","FAIL-SI-6"],"evidence":"Run Skill resources and resolver are process-global first-party projections.","status":"open","root_cause":"Manager bindings do not feed a per-Run Project Skill projection."},
+    {"id":"batch-atomicity-lacks-one-durable-commit-contract","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-3","AC-SI-4","AC-SI-5"],"assurance_contract_ids":["FAIL-SI-5","FAIL-SI-6"],"evidence":"Existing lifecycle is singular and separately durable across files, DB and registry.","status":"open","root_cause":"No multi-pack durable aggregate exists."},
+    {"id":"confirmation-authority-is-not-bound-to-install-intent","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-3","AC-SI-4"],"assurance_contract_ids":["FAIL-SI-5","FAIL-SI-6"],"evidence":"Current Settings confirmation is an adapter boolean against in-memory state.","status":"open","root_cause":"No shared durable host confirmation receipt exists."},
+    {"id":"project-revision-binding-lifecycle-is-undefined","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-SI-2","AC-SI-4","AC-SI-5"],"assurance_contract_ids":["FAIL-SI-3","FAIL-SI-5"],"evidence":"Project relocation advances revision without a Capability binding transition.","status":"open","root_cause":"Revision-aware scope lacks defined predecessor semantics."}
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "raw-skill-source-cannot-pass-current-git-pack-staging",
+    "resolved-git-commit-is-not-returned-by-source-contract",
+    "git-transport-materialization-is-not-resource-bounded",
+    "git-tree-modes-are-lost-before-canonical-validation",
+    "project-skill-runtime-projection-remains-first-party-only",
+    "batch-atomicity-lacks-one-durable-commit-contract",
+    "confirmation-authority-is-not-bound-to-install-intent",
+    "project-revision-binding-lifecycle-is-undefined"
+  ],
+  "decisions": [
+    {"canonical_finding_id":"raw-skill-source-cannot-pass-current-git-pack-staging","source_finding_ids":["raw-skill-source-cannot-pass-current-git-pack-staging"],"action":"plan-change","rationale":"Split raw transport from canonical pack validation."},
+    {"canonical_finding_id":"resolved-git-commit-is-not-returned-by-source-contract","source_finding_ids":["resolved-git-commit-is-not-returned-by-source-contract"],"action":"plan-change","rationale":"Return host-issued exact commit and raw tree digest evidence."},
+    {"canonical_finding_id":"git-transport-materialization-is-not-resource-bounded","source_finding_ids":["git-transport-materialization-is-not-resource-bounded"],"action":"spike","rationale":"Static reading cannot prove a hard cross-platform Git transport byte/disk ceiling.","spike_ids":["SPIKE-SI-RAW-TRANSPORT"]},
+    {"canonical_finding_id":"git-tree-modes-are-lost-before-canonical-validation","source_finding_ids":["git-tree-modes-are-lost-before-canonical-validation"],"action":"plan-change","rationale":"Inspect exact tree modes before streaming regular blobs."},
+    {"canonical_finding_id":"project-skill-runtime-projection-remains-first-party-only","source_finding_ids":["project-skill-runtime-projection-remains-first-party-only"],"action":"spike","rationale":"Prove a Manager-backed per-Run Project Skill projection and cold-start resolver seam.","spike_ids":["SPIKE-SI-PROJECTION"]},
+    {"canonical_finding_id":"batch-atomicity-lacks-one-durable-commit-contract","source_finding_ids":["batch-atomicity-lacks-one-durable-commit-contract"],"action":"plan-change","rationale":"Define one BatchInstallAggregate across all authoritative projections."},
+    {"canonical_finding_id":"confirmation-authority-is-not-bound-to-install-intent","source_finding_ids":["confirmation-authority-is-not-bound-to-install-intent"],"action":"plan-change","rationale":"Define one durable host-owned install decision and receipt."},
+    {"canonical_finding_id":"project-revision-binding-lifecycle-is-undefined","source_finding_ids":["project-revision-binding-lifecycle-is-undefined"],"action":"plan-change","rationale":"Fail closed on revision advance; no implicit migration within approved scope."}
+  ],
+  "conflicts": [],
+  "required_spikes": [
+    {"id":"SPIKE-SI-RAW-TRANSPORT","question":"Can Git CLI enforce a hard pre-materialization network/object-store ceiling cross-platform?","fallback":"Use bounded GitHub archive download pinned to resolved commit, then validate archive before extraction."},
+    {"id":"SPIKE-SI-PROJECTION","question":"Can current Hub/Store and resolver contracts project a Project-bound instruction pack into a fresh Run without process-global mutation?","fallback":"Add a Manager-backed ProjectSkillProjection and Run-scoped composite resolver."}
+  ],
+  "plan_actions": [
+    "Split source transport and canonicalization contracts.",
+    "Add BatchInstallAggregate state machine.",
+    "Add InstallConfirmationDecision/Receipt.",
+    "Define revision advance as fail-closed with reinstall in current scope.",
+    "Add per-Run Project Skill projection and resolver fence.",
+    "Run and record both required spikes before closure."
+  ]
+}

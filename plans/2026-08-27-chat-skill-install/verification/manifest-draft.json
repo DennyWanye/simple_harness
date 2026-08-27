@@ -1,0 +1,315 @@
+{
+  "acceptance_file": "plans/2026-08-27-chat-skill-install/acceptance.md",
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "自然语言安装意图由 Provider 识别并选择 typed tool，结果随表达和仓库形态变化。",
+      "value": true
+    },
+    "llm_payload_driven": {
+      "decided_by": "agent",
+      "rationale": "模型工具调用及其结构化参数直接驱动 stage、确认卡和安装状态机推进。",
+      "value": true
+    },
+    "stateful_init": {
+      "decided_by": "agent",
+      "rationale": "安装依赖首次登录、Project 注册、持久 binding、Manager rehydrate 与冷启动 catalog。",
+      "value": true
+    }
+  },
+  "auditor_engine": "opus-4.8",
+  "challenger_engine": "claude",
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "SI-M1",
+        "SI-M2",
+        "SI-M3",
+        "SI-M4",
+        "SI-M5"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "41366153b1a297c8d552847a78166d7dffc10c9a4fc7591d7232353c8bbf8b5f",
+      "assurance_contract": "e7217279a693003ef59b17a05cc2be75c551b3450f5e652bdd62bb56a7cc15df",
+      "reuse_report": "1e05a3e11ac01b6f2f447f2711f8a4a5f3aca346a3e26b66050104a991df263f",
+      "testcase_inventory": "8ce8e49aa1c063dc5d0da79a55e20a89c0e9fa18a36801364f97016b5283e4ac",
+      "verification_spec": "c3cf200e5c3394d4d2f29185e908b250de2bccce8fd8827e845a797c8be606e9"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple_harness/plans/2026-08-27-chat-skill-install/acceptance.md",
+      "assurance_contract": "/Users/denny/projects/simple_harness/plans/2026-08-27-chat-skill-install/assurance-contract.json",
+      "reuse_report": "/Users/denny/projects/simple_harness/plans/2026-08-27-chat-skill-install/verification/testcase-reuse-report.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple_harness/plans/2026-08-27-chat-skill-install/verification/verification-spec.json"
+    },
+    "seal_sha256": "06d2f66bc6f2c01ccf98cb3a81049103493ab6d31598bca56ae3349f3d783c46",
+    "selected_testcase_ids": [
+      "TC-SI-01",
+      "TC-SI-02",
+      "TC-SI-03",
+      "TC-SI-04",
+      "TC-SI-05"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "executor_engine": "current",
+  "release_unit": {
+    "high_risk_subsystem_count": 3,
+    "must_ac_count": 6,
+    "parent_program": "managed-capability-growth",
+    "plan_lines": 236,
+    "scope_hash": "e97c9f5169b6810eaffc7ccd1a9e5eb76e2950287a537d418ef9a2030aec5623",
+    "slice_id": "chat-project-skill-install",
+    "surface_categories": [
+      "UI",
+      "Harness",
+      "Permission"
+    ],
+    "task_count": 7
+  },
+  "repo_root": ".",
+  "scenarios": [
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "typed_installer_first",
+          "batch_member_count",
+          "runtime_hash_match"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/deskpet/sdk_adapters/**",
+        "backend/deskpet/tools/capabilities.py",
+        "backend/main.py",
+        "tauri-app/src/components/SkillStorePanel.tsx"
+      ],
+      "input_class": "natural-zh-multi-skill",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "long-context"
+      ],
+      "scenario_id": "SI-M1",
+      "testcase_ids": [
+        "TC-SI-01"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "project_a_visible",
+          "project_b_absent",
+          "projectless_absent",
+          "idempotent_receipt"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/deskpet/session/**",
+        "backend/deskpet/sdk_adapters/**",
+        "backend/main.py"
+      ],
+      "input_class": "mixed-en-single-skill",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "scope-isolation"
+      ],
+      "scenario_id": "SI-M2",
+      "testcase_ids": [
+        "TC-SI-02"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "denied_zero_publish",
+          "replay_rejected",
+          "success_claim_blocked"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/deskpet/sdk_adapters/**",
+        "backend/main.py",
+        "tauri-app/src/components/SkillStorePanel.tsx"
+      ],
+      "input_class": "natural-zh-deny-confirmation",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "adversarial-payload"
+      ],
+      "scenario_id": "SI-M3",
+      "testcase_ids": [
+        "TC-SI-03"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "all_old_or_all_new",
+          "structured_error",
+          "recovered_state",
+          "no_project_write"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "temporal-fault",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/main.py"
+      ],
+      "input_class": "malicious-repository-and-fault",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "temporal-fault",
+        "adversarial-payload"
+      ],
+      "scenario_id": "SI-M4",
+      "testcase_ids": [
+        "TC-SI-04"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "cold_start_install_succeeded",
+          "restart_hash_match",
+          "settings_chat_parity",
+          "critical_surfaces_green"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [],
+      "input_class": "cold-start-settings-regression",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "cold-start",
+        "restart",
+        "regression"
+      ],
+      "scenario_id": "SI-M5",
+      "testcase_ids": [
+        "TC-SI-05"
+      ],
+      "ui": true
+    }
+  ],
+  "source_request_text": "修复聊天无法正确安装 GitHub Skill 到当前 Project 的问题，并完成自动化与真实 macOS UI 验证。",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/Users/denny/projects/simple_harness/testcase/2026-08-27-chat-skill-install/TC-SI-01-chat-batch-runtime.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-27-chat-skill-install/TC-SI-02-single-project-isolation.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-27-chat-skill-install/TC-SI-03-confirm-deny-replay.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-27-chat-skill-install/TC-SI-04-malicious-atomic-recovery.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-27-chat-skill-install/TC-SI-05-cold-settings-regression.md"
+  ],
+  "thresholds": {
+    "max_high_risk_subsystems": 3,
+    "max_must_ac": 8,
+    "max_plan_lines": 2000,
+    "max_surface_categories": 3,
+    "max_tasks": 10
+  }
+}

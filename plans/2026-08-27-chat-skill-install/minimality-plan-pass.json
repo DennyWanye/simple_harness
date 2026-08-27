@@ -1,0 +1,11 @@
+{
+  "verdict": "LEAN",
+  "findings": [
+    {"id":"min-1","tag":"inline","target":"Task 4 model-visible confirm","replacement":"Only expose skill_install; Host continuation owns confirm.","applied":true},
+    {"id":"min-2","tag":"merge","target":"install intent and confirmation decision","replacement":"Use one durable install intent row and CAS settlement.","applied":true},
+    {"id":"min-3","tag":"reuse","target":"batch aggregate journal","replacement":"Extend existing Manager operation/publish-intent instead of a second journal.","applied":true},
+    {"id":"min-4","tag":"reuse","target":"ProjectSkillProjection","replacement":"Extend ProductCapabilityCatalogSourceAdapter at the per-Run seam.","applied":true},
+    {"id":"min-5","tag":"delete","target":"resolver rename","replacement":"Keep historical class name; change admission and comments only.","applied":true},
+    {"id":"min-6","tag":"merge","target":"RuntimeUsabilityReceipt","replacement":"Write verification facts back to the existing install operation receipt.","applied":true}
+  ]
+}

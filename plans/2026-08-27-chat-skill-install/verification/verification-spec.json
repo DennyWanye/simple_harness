@@ -1,0 +1,80 @@
+{
+  "acceptance_file": "plans/2026-08-27-chat-skill-install/acceptance.md",
+  "assurance_contract": "plans/2026-08-27-chat-skill-install/assurance-contract.json",
+  "testcase_inventory": "testcase/index.json",
+  "reuse_report": "plans/2026-08-27-chat-skill-install/verification/testcase-reuse-report.json",
+  "obligations": [
+    {"obligation_id":"TO-SI-1","ac_ids":["AC-SI-1"]},
+    {"obligation_id":"TO-SI-2","ac_ids":["AC-SI-2"]},
+    {"obligation_id":"TO-SI-3","ac_ids":["AC-SI-3"]},
+    {"obligation_id":"TO-SI-4","ac_ids":["AC-SI-4"]},
+    {"obligation_id":"TO-SI-5","ac_ids":["AC-SI-5"]},
+    {"obligation_id":"TO-SI-6","ac_ids":["AC-SI-6"]},
+    {"obligation_id":"TO-SI-R1","ac_ids":["AC-SI-1"]},
+    {"obligation_id":"TO-SI-R2","ac_ids":["AC-SI-2"]},
+    {"obligation_id":"TO-SI-R3","ac_ids":["AC-SI-3"]},
+    {"obligation_id":"TO-SI-R4","ac_ids":["AC-SI-6"]}
+  ],
+  "scenarios": [
+    {
+      "scenario_id":"SI-M1","required":true,"testcase_ids":["TC-SI-01"],"ui":true,
+      "gate_type":"positive-value","required_lanes":["fresh","long-context"],"min_root_runs":2,
+      "input_class":"natural-zh-multi-skill","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/capabilities/**","backend/deskpet/sdk_adapters/**","backend/deskpet/tools/capabilities.py","backend/main.py","tauri-app/src/components/SkillStorePanel.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log","business-result"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["business_terminal","typed_installer_first","batch_member_count","runtime_hash_match"]}
+    },
+    {
+      "scenario_id":"SI-M2","required":true,"testcase_ids":["TC-SI-02"],"ui":true,
+      "gate_type":"positive-value","required_lanes":["fresh","scope-isolation"],"min_root_runs":3,
+      "input_class":"mixed-en-single-skill","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/capabilities/**","backend/deskpet/session/**","backend/deskpet/sdk_adapters/**","backend/main.py"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe"],"required_artifact_kinds":["ui-capture","execution-log","business-result"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["business_terminal","project_a_visible","project_b_absent","projectless_absent","idempotent_receipt"]}
+    },
+    {
+      "scenario_id":"SI-M3","required":true,"testcase_ids":["TC-SI-03"],"ui":true,
+      "gate_type":"negative-safety","required_lanes":["fresh","adversarial-payload"],"min_root_runs":2,
+      "input_class":"natural-zh-deny-confirmation","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/capabilities/**","backend/deskpet/sdk_adapters/**","backend/main.py","tauri-app/src/components/SkillStorePanel.tsx"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["denied_zero_publish","replay_rejected","success_claim_blocked"]}
+    },
+    {
+      "scenario_id":"SI-M4","required":true,"testcase_ids":["TC-SI-04"],"ui":true,
+      "gate_type":"temporal-fault","required_lanes":["fresh","temporal-fault","adversarial-payload"],"min_root_runs":2,
+      "input_class":"malicious-repository-and-fault","cold_start":false,"expected_run_created":true,
+      "impact_paths":["backend/deskpet/capabilities/**","backend/main.py"],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","fault-recovery-log"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["all_old_or_all_new","structured_error","recovered_state","no_project_write"]}
+    },
+    {
+      "scenario_id":"SI-M5","required":true,"testcase_ids":["TC-SI-05"],"ui":true,
+      "gate_type":"positive-value","required_lanes":["cold-start","restart","regression"],"min_root_runs":3,
+      "input_class":"cold-start-settings-regression","cold_start":true,"expected_run_created":true,
+      "impact_paths":[],
+      "evidence_contract":{"producer_types":["computer-use","runtime-probe","gate-exec"],"required_artifact_kinds":["ui-capture","execution-log","business-result"],"required_identity":["root_run_id","session_id"],"required_timestamps":true,"required_business_facts":["business_terminal","cold_start_install_succeeded","restart_hash_match","settings_chat_parity","critical_surfaces_green"]}
+    }
+  ],
+  "manifest": {
+    "repo_root": ".",
+    "source_request_text": "修复聊天无法正确安装 GitHub Skill 到当前 Project 的问题，并完成自动化与真实 macOS UI 验证。",
+    "applicability": {
+      "input_sensitive":{"value":true,"rationale":"自然语言安装意图由 Provider 识别并选择 typed tool，结果随表达和仓库形态变化。","decided_by":"user"},
+      "llm_payload_driven":{"value":true,"rationale":"模型工具调用及其结构化参数直接驱动 stage、确认卡和安装状态机推进。","decided_by":"agent"},
+      "stateful_init":{"value":true,"rationale":"安装依赖首次登录、Project 注册、持久 binding、Manager rehydrate 与冷启动 catalog。","decided_by":"agent"}
+    },
+    "executor_engine":"current",
+    "auditor_engine":"opus-4.8",
+    "challenger_engine":"claude",
+    "release_unit": {
+      "slice_id":"chat-project-skill-install",
+      "parent_program":"managed-capability-growth",
+      "scope_hash":"e97c9f5169b6810eaffc7ccd1a9e5eb76e2950287a537d418ef9a2030aec5623",
+      "must_ac_count":6,
+      "task_count":7,
+      "plan_lines":236,
+      "high_risk_subsystem_count":3,
+      "surface_categories":["UI","Harness","Permission"]
+    },
+    "thresholds":{"max_must_ac":8,"max_tasks":10,"max_plan_lines":2000,"max_high_risk_subsystems":3,"max_surface_categories":3},
+    "active_run_required":true,
+    "structured_audit_required":true
+  }
+}

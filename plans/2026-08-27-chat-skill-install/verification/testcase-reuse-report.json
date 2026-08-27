@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "inventory": "index.json",
+  "candidate_reviewed": [
+    "LEGACY-A48A2DC10836",
+    "LEGACY-C85B8602F960",
+    "LEGACY-29441499FCB9",
+    "TC-PS-01",
+    "TC-PS-02",
+    "TC-PS-03",
+    "TC-PS-04",
+    "TC-PS-06",
+    "TC-PS-07"
+  ],
+  "decisions": [
+    {"obligation_id":"TO-SI-1","decision":"create-new","candidates":["LEGACY-C85B8602F960"],"selected_testcases":["TC-SI-01@rev1"],"reason":"既有 Capability catalog 用例只验证已存在 Skill 的发现，不验证 GitHub stage、typed installer 路由或 success-claim gate。"},
+    {"obligation_id":"TO-SI-2","decision":"create-new","candidates":["TC-PS-03","TC-PS-04","TC-PS-06"],"selected_testcases":["TC-SI-02@rev1"],"reason":"既有 Project authority oracle 没有 managed Skill binding、三域 catalog 与同路径异 identity 隔离，需要新建扩展用例。"},
+    {"obligation_id":"TO-SI-3","decision":"create-new","candidates":["LEGACY-A48A2DC10836"],"selected_testcases":["TC-SI-01@rev1","TC-SI-03@rev1"],"reason":"旧能力安装用例没有 single/batch exact digest、一次 HITL、deny/expiry/cross-channel replay 合约。"},
+    {"obligation_id":"TO-SI-4","decision":"create-new","candidates":["LEGACY-A48A2DC10836"],"selected_testcases":["TC-SI-04@rev1"],"reason":"旧损坏包用例不是 active 且未覆盖不可信 Git archive、batch 全旧或全新、故障点恢复与 lost-ACK 幂等。"},
+    {"obligation_id":"TO-SI-5","decision":"create-new","candidates":["LEGACY-C85B8602F960"],"selected_testcases":["TC-SI-01@rev1","TC-SI-05@rev1"],"reason":"旧 frozen catalog/page-in 用例是 needs-review，且没有 Manager receipt 后新 verification Run 的 exact hash 证明及冷重启恢复。"},
+    {"obligation_id":"TO-SI-6","decision":"create-new","candidates":["LEGACY-29441499FCB9","LEGACY-C85B8602F960"],"selected_testcases":["TC-SI-05@rev1"],"reason":"旧 SkillsView 与 catalog 用例不是 active 且仅覆盖页面可达和 first-party 能力，缺 Settings/chat 同服务及关键历史入口 smoke。"},
+    {"obligation_id":"TO-SI-R1","decision":"create-new","candidates":[],"selected_testcases":["TC-SI-01@rev1","TC-SI-03@rev1"],"reason":"无既有 testcase 验证模型尝试 shell/纯文本旁路时完成声明被拦截。"},
+    {"obligation_id":"TO-SI-R2","decision":"create-new","candidates":["TC-PS-03","TC-PS-04","TC-PS-06"],"selected_testcases":["TC-SI-02@rev1"],"reason":"既有 Project authority 用例没有共享 Skill catalog、同名及 revision 可见性，需要新建本 slice 用例。"},
+    {"obligation_id":"TO-SI-R3","decision":"create-new","candidates":[],"selected_testcases":["TC-SI-03@rev1"],"reason":"高风险安装确认的 digest/scope/principal/expiry/一次性消费没有现成 oracle。"},
+    {"obligation_id":"TO-SI-R4","decision":"create-new","candidates":["TC-PS-02","TC-PS-07","LEGACY-C85B8602F960"],"selected_testcases":["TC-SI-05@rev1"],"reason":"既有完整重启用例没有 fresh login、Manager rehydrate 和 Settings/capability/shell 回归，需要新建本 slice 用例。"}
+  ]
+}

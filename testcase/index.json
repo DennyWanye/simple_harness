@@ -1771,6 +1771,127 @@
       "type": "hybrid"
     },
     {
+      "entrypoint": "bound Project chat",
+      "id": "TC-SI-01",
+      "obligations": [
+        "TO-SI-1",
+        "TO-SI-3",
+        "TO-SI-5",
+        "TO-SI-R1"
+      ],
+      "path": "2026-08-27-chat-skill-install/TC-SI-01-chat-batch-runtime.md",
+      "preconditions": [],
+      "purpose": "Verify a natural chat request installs a multi-Skill GitHub repository through the typed installer and proves exact runtime page-in",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-install",
+        "chat",
+        "batch",
+        "runtime",
+        "permission"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "bound Project chat",
+      "id": "TC-SI-02",
+      "obligations": [
+        "TO-SI-2",
+        "TO-SI-3",
+        "TO-SI-R2"
+      ],
+      "path": "2026-08-27-chat-skill-install/TC-SI-02-single-project-isolation.md",
+      "preconditions": [],
+      "purpose": "Verify a single Skill install is bound to one exact Project identity and remains absent from another Project and projectless runs",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-install",
+        "project-scope",
+        "isolation",
+        "single"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "chat and Settings URL install",
+      "id": "TC-SI-03",
+      "obligations": [
+        "TO-SI-3",
+        "TO-SI-R1",
+        "TO-SI-R3"
+      ],
+      "path": "2026-08-27-chat-skill-install/TC-SI-03-confirm-deny-replay.md",
+      "preconditions": [],
+      "purpose": "Verify the human owns one exact batch confirmation and deny, expiry, mutation, duplicate, and cross-channel replay fail closed",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-install",
+        "confirmation",
+        "deny",
+        "replay"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "typed installer and bound Project chat",
+      "id": "TC-SI-04",
+      "obligations": [
+        "TO-SI-4"
+      ],
+      "path": "2026-08-27-chat-skill-install/TC-SI-04-malicious-atomic-recovery.md",
+      "preconditions": [],
+      "purpose": "Verify malicious repositories and every batch publish fault leave all-old or all-new state with structured recovery",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "integration",
+      "tags": [
+        "skill-install",
+        "malicious",
+        "atomicity",
+        "recovery",
+        "idempotency"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "fresh app and Settings Skill Store",
+      "id": "TC-SI-05",
+      "obligations": [
+        "TO-SI-5",
+        "TO-SI-6",
+        "TO-SI-R4"
+      ],
+      "path": "2026-08-27-chat-skill-install/TC-SI-05-cold-settings-regression.md",
+      "preconditions": [],
+      "purpose": "Verify cold-start persistence, Settings service parity, and unaffected first-party capability permission project and shell surfaces",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-install",
+        "cold-start",
+        "settings",
+        "regression"
+      ],
+      "type": "hybrid"
+    },
+    {
       "entrypoint": "",
       "generated_legacy_metadata": true,
       "id": "LEGACY-C133277DE434",
