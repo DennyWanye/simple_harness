@@ -66,12 +66,41 @@ interface Props {
   onOpenCapabilityCenter?: () => void;
 }
 
-interface StagedSkill {
-  staging_id: string;
+interface StagedSkillMember {
   name: string;
-  manifest: Record<string, unknown>;
+  description?: string;
+  manifest?: Record<string, unknown>;
   permission_categories: PermissionCategory[];
+  manifest_hash?: string;
+  content_hash?: string;
 }
+
+interface StagedSkill {
+  intent_id: string;
+  digest: string;
+  decision_nonce: string;
+  decision_version: number;
+  repository_url: string;
+  resolved_commit: string;
+  expires_at?: string | number;
+  project: {
+    project_id: string;
+    project_name?: string;
+    project_revision: number;
+    project_identity?: string;
+  };
+  members: StagedSkillMember[];
+}
+
+const errorMessage = (payload: Record<string, unknown>, fallback: string) => {
+  const error = payload.error;
+  if (error && typeof error === "object") {
+    const structured = error as { code?: unknown; message?: unknown };
+    const message = String(structured.message || fallback);
+    return structured.code ? `${String(structured.code)}：${message}` : message;
+  }
+  return String(payload.message || error || payload.reason || fallback);
+};
 
 const SENSITIVE_CATS: PermissionCategory[] = [
   "shell",
@@ -134,35 +163,86 @@ export const SkillStorePanel: React.FC<Props> = ({
       } else if (t === "skill_install_pending") {
         setLoading(false);
         if (payload.ok) {
+          const members = (payload.members as StagedSkillMember[]) || [];
+          const intentId = String(payload.intent_id || payload.staging_id || "");
+          const digest = String(payload.digest || payload.list_digest || "");
+          const decisionNonce = String(payload.decision_nonce || "");
+          const decisionVersion = Number(payload.decision_version || 0);
+          if (!intentId || !digest || !decisionNonce || decisionVersion < 1 || members.length === 0) {
+            setAlert({
+              level: "error",
+              message: "skill_install_contract_invalid：安装清单缺少 intent、digest 或成员，未创建确认卡。",
+            });
+            setStaged(null);
+            return;
+          }
           setStaged({
-            staging_id: payload.staging_id as string,
-            name: payload.name as string,
-            manifest: payload.manifest as Record<string, unknown>,
-            permission_categories:
-              (payload.permission_categories as PermissionCategory[]) || [],
+            intent_id: intentId,
+            digest,
+            decision_nonce: decisionNonce,
+            decision_version: decisionVersion,
+            repository_url: String(payload.repository_url || payload.url || ""),
+            resolved_commit: String(payload.resolved_commit || ""),
+            expires_at: payload.expires_at as string | number | undefined,
+            project: (payload.project as StagedSkill["project"]) || {
+              project_id: "",
+              project_revision: 0,
+            },
+            members,
           });
         } else {
           setAlert({
             level: "error",
-            message: String(payload.error || "安装失败"),
+            message: errorMessage(payload, "安装准备失败"),
           });
         }
       } else if (t === "skill_install_confirm_response") {
         setLoading(false);
-        if (payload.ok) {
+        const status = String(payload.status || "");
+        const runtimeVerified = payload.runtime_verified === true;
+        if (payload.ok && status === "succeeded" && runtimeVerified) {
           setStaged(null);
           setUrlInput("");
           setAlert({
             level: "info",
-            message: `已安装：${payload.name as string}`,
+            message: `安装成功：${String(payload.installed_count || payload.member_count || 0)} 个 Skill 已通过新 Run 验证`,
           });
           channel.send({ type: "skill_list_installed" });
           setTab("installed");
+        } else if (payload.ok && status === "denied") {
+          setStaged(null);
+          setAlert({ level: "info", message: "已取消安装，Project catalog 未改变。" });
+        } else if (payload.ok) {
+          setAlert({
+            level: "warning",
+            message: `安装尚未完成（${status || "处理中"}），通过 runtime 验证前不会显示成功。`,
+          });
+          const pendingIntentId = String(payload.intent_id || "");
+          if (pendingIntentId) {
+            channel.send({
+              type: "skill_install_status",
+              payload: { intent_id: pendingIntentId },
+            });
+          }
         } else {
           setAlert({
             level: "error",
-            message: String(payload.error || payload.reason || "安装失败"),
+            message: errorMessage(payload, "安装失败"),
           });
+        }
+      } else if (t === "skill_install_status_response") {
+        setLoading(false);
+        const status = String(payload.status || "");
+        if (payload.ok && status === "succeeded" && payload.runtime_verified === true) {
+          setStaged(null);
+          setUrlInput("");
+          setAlert({ level: "info", message: "安装成功：Project 新 Run 已验证所有 Skill。" });
+          channel.send({ type: "skill_list_installed" });
+          setTab("installed");
+        } else if (!payload.ok) {
+          setAlert({ level: "error", message: errorMessage(payload, "状态查询失败") });
+        } else {
+          setAlert({ level: "warning", message: `安装状态：${status || "处理中"}` });
         }
       } else if (t === "skill_uninstall_response") {
         setLoading(false);
@@ -178,36 +258,6 @@ export const SkillStorePanel: React.FC<Props> = ({
             message: String(payload.error || "卸载失败"),
           });
         }
-      } else if (t === "skill_install_batch_completed") {
-        // Multi-skill marketplace install — backend recursively found
-        // SKILL.md files under the repo and installed every valid one.
-        // Skip the per-skill confirm step (user asked "全部安装好").
-        setLoading(false);
-        setStaged(null);
-        const installed = (payload.installed as Array<{ name: string; path: string }>) || [];
-        const errors = (payload.errors as Array<{ name?: string; path?: string; error: string }>) || [];
-        const installedCount = installed.length;
-        const errorCount = errors.length;
-        const sampleNames = installed.slice(0, 5).map((s) => s.name).join("、");
-        let level: "info" | "warning" | "error" = "info";
-        let message = "";
-        if (installedCount > 0 && errorCount === 0) {
-          message = `已安装 ${installedCount} 个 skill：${sampleNames}${
-            installedCount > 5 ? ` 等` : ""
-          }`;
-          level = "info";
-        } else if (installedCount > 0 && errorCount > 0) {
-          message = `已安装 ${installedCount} 个，${errorCount} 个跳过（manifest 不合法 / 工具未允许）`;
-          level = "warning";
-        } else {
-          message = `安装失败：${errorCount} 个候选 skill 全部不通过校验`;
-          level = "error";
-        }
-        setAlert({ level, message });
-        setUrlInput("");
-        // Refresh installed list so the new skills show up immediately.
-        channel.send({ type: "skill_list_installed" });
-        setTab("installed");
       }
     });
     return () => off();
@@ -246,7 +296,13 @@ export const SkillStorePanel: React.FC<Props> = ({
       setLoading(true);
       channel.send({
         type: "skill_install_confirm",
-        payload: { staging_id: staged.staging_id, approve },
+        payload: {
+          intent_id: staged.intent_id,
+          digest: staged.digest,
+          decision_nonce: staged.decision_nonce,
+          decision_version: staged.decision_version,
+          decision: approve ? "approve" : "deny",
+        },
       });
     },
     [channel, staged]
@@ -264,9 +320,11 @@ export const SkillStorePanel: React.FC<Props> = ({
 
   const sensitiveBadges = useMemo(() => {
     if (!staged) return [];
-    return staged.permission_categories.filter((c) =>
-      SENSITIVE_CATS.includes(c)
-    );
+    return Array.from(
+      new Set(
+        staged.members.flatMap((member) => member.permission_categories || [])
+      )
+    ).filter((c) => SENSITIVE_CATS.includes(c));
   }, [staged]);
 
   if (!open) return null;
@@ -919,7 +977,7 @@ const ConfirmModal: React.FC<{
             color: dark.text,
           }}
         >
-          {staged.name}
+          安装 {staged.members.length} 个 Skill 到当前 Project
         </h3>
         <p
           style={{
@@ -930,8 +988,53 @@ const ConfirmModal: React.FC<{
             lineHeight: 1.55,
           }}
         >
-          {(staged.manifest.description as string) || "(无描述)"}
+          {staged.project.project_name || staged.project.project_id} · revision {staged.project.project_revision}
         </p>
+        <div
+          style={{
+            ...bannerStyle("info"),
+            fontSize: tokens.text.xs.size,
+            fontFamily: tokens.font.mono,
+            wordBreak: "break-all",
+            marginBottom: tokens.space.sm,
+          }}
+        >
+          <div>{staged.repository_url}</div>
+          <div>commit: {staged.resolved_commit || "(未提供)"}</div>
+          <div>digest: {staged.digest || "(未提供)"}</div>
+          {staged.expires_at ? <div>expires: {String(staged.expires_at)}</div> : null}
+        </div>
+        <div
+          aria-label="待安装 Skill 清单"
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: tokens.space.xs,
+            maxHeight: 220,
+            overflow: "auto",
+          }}
+        >
+          {staged.members.map((member) => (
+            <div key={`${member.name}:${member.manifest_hash || member.content_hash || ""}`} style={cardStyle}>
+              <strong>{member.name}</strong>
+              {member.description ? (
+                <div style={{ color: dark.textMuted, marginTop: 2 }}>{member.description}</div>
+              ) : null}
+              {(member.permission_categories || []).length ? (
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                  {member.permission_categories.map((category) => (
+                    <span
+                      key={category}
+                      style={badgeStyle(SENSITIVE_CATS.includes(category) ? "error" : "warning")}
+                    >
+                      {category}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
         {dangerous && (
           <div
             style={{
@@ -957,7 +1060,7 @@ const ConfirmModal: React.FC<{
               color: dark.textMuted,
             }}
           >
-            查看 manifest.json
+            查看冻结安装摘要
           </summary>
           <pre
             style={{
@@ -973,7 +1076,7 @@ const ConfirmModal: React.FC<{
               margin: `${tokens.space.xs}px 0 0`,
             }}
           >
-            {JSON.stringify(staged.manifest, null, 2)}
+            {JSON.stringify(staged, null, 2)}
           </pre>
         </details>
         <div
