@@ -384,7 +384,24 @@ class RunKernel(KernelTerminalLifecycle):
             if self._terminal_projection is not None
             else None
         )
-        if self._root_profile_key is not None:
+        reserved = prepared.reserved_root_profile
+        if reserved is not None:
+            if self._profiles is None:
+                raise RuntimeError("reserved root profile registry is unavailable")
+            selected_profile = self._profiles.resolve(
+                reserved.profile_key,
+                generation=reserved.catalog_generation,
+                launch_policy="reserved_control",
+                available_capabilities=host.available_capabilities,
+            )
+            if (
+                selected_profile.driver_kind != reserved.driver_kind
+                or reserved.purpose != "skill.install.verify"
+            ):
+                raise ValueError("reserved root profile selection differs from registration")
+            selected_profile_key = selected_profile.profile_key
+            selected_driver_kind = selected_profile.driver_kind
+        elif self._root_profile_key is not None:
             if self._profiles is None:
                 raise RuntimeError("fixed root profile registry is unavailable")
             selected_profile = self._profiles.resolve(
