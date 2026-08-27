@@ -7,6 +7,8 @@ import inspect
 import json
 import time
 from dataclasses import replace
+from dataclasses import dataclass
+from typing import Protocol
 
 from simple_harness.tools import (
     AuthorizationDecision,
@@ -23,6 +25,24 @@ from deskpet.product_state.authorization_saga import (
 )
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.types.task_grants import TaskGrant
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizationTerminalEvidence:
+    authorization_id: str
+    run_id: str
+    call_id: str
+    effect_id: str
+    principal_id: str
+    terminal_kind: str
+    saga_version: int
+    reason_hash: str
+
+
+class AuthorizationTerminalLifecyclePort(Protocol):
+    def settle_authorization_terminal(
+        self, evidence: AuthorizationTerminalEvidence
+    ) -> object: ...
 def _hash(value: object) -> str:
     return hashlib.sha256(
         json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
@@ -40,6 +60,7 @@ class ProductAuthorizationAdapter:
         grant_factory,
         clock=time.time,
         fault=None,
+        terminal_lifecycle: AuthorizationTerminalLifecyclePort | None = None,
     ) -> None:
         self._repository = repository
         self._policy = policy
@@ -48,6 +69,7 @@ class ProductAuthorizationAdapter:
         self._grant_factory = grant_factory
         self._clock = clock
         self._fault = fault
+        self._terminal_lifecycle = terminal_lifecycle
 
     async def prepare(self, prepared: PreparedToolEffect) -> AuthorizationResult:
         # Product policies expose the Host authorization port as
@@ -176,7 +198,7 @@ class ProductAuthorizationAdapter:
                 now=self._clock(),
             )
         else:
-            self._repository.abort(
+            terminal = self._repository.abort(
                 record.identity.authorization_id,
                 expected_version=bound.version,
                 reason_hash=_hash({"decision": decision.value, "nonce": request.nonce}),
@@ -187,6 +209,14 @@ class ProductAuthorizationAdapter:
                 version=record.identity.grant_version,
                 policy_generation=record.identity.policy_generation,
                 now=self._clock(),
+            )
+            terminal_kind = "denied"
+            if request.expires_at is not None and self._clock() >= request.expires_at:
+                terminal_kind = "expired"
+            self._emit_terminal(
+                terminal,
+                terminal_kind=terminal_kind,
+                reason_hash=_hash({"decision": decision.value, "nonce": request.nonce}),
             )
         return AuthorizationReceipt(receipt_ref, host_hash, sdk_receipt.receipt_hash)
 
@@ -290,10 +320,11 @@ class ProductAuthorizationAdapter:
     ) -> None:
         record = self._record(prepared)
         now = self._clock()
-        getattr(self._repository, operation)(
+        reason_hash = _hash({"operation": operation, "reason": reason})
+        terminal = getattr(self._repository, operation)(
             record.identity.authorization_id,
             expected_version=record.version,
-            reason_hash=_hash({"operation": operation, "reason": reason}),
+            reason_hash=reason_hash,
             now=now,
         )
         grant_operation = "expire" if operation == "expire" else "revoke"
@@ -302,6 +333,32 @@ class ProductAuthorizationAdapter:
             version=record.identity.grant_version,
             policy_generation=record.identity.policy_generation,
             now=now,
+        )
+        self._emit_terminal(
+            terminal,
+            terminal_kind={
+                "abort": "cancelled",
+                "expire": "expired",
+                "revoke": "revoked",
+            }[operation],
+            reason_hash=reason_hash,
+        )
+
+    def _emit_terminal(self, record, *, terminal_kind: str, reason_hash: str) -> None:
+        if self._terminal_lifecycle is None:
+            return
+        identity = record.identity
+        self._terminal_lifecycle.settle_authorization_terminal(
+            AuthorizationTerminalEvidence(
+                authorization_id=identity.authorization_id,
+                run_id=identity.run_id,
+                call_id=identity.call_id,
+                effect_id=identity.effect_id,
+                principal_id=identity.principal_id,
+                terminal_kind=terminal_kind,
+                saga_version=record.version,
+                reason_hash=reason_hash,
+            )
         )
 
     def _record(self, prepared: PreparedToolEffect):
@@ -337,4 +394,8 @@ class ProductAuthorizationAdapter:
             raise RuntimeError("TaskGrant identity differs from authorization identity")
 
 
-__all__ = ("ProductAuthorizationAdapter",)
+__all__ = (
+    "AuthorizationTerminalEvidence",
+    "AuthorizationTerminalLifecyclePort",
+    "ProductAuthorizationAdapter",
+)

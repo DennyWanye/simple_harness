@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any
+from typing import Any, Protocol
 
 from simple_harness import RunId, thaw_json
 from simple_harness.tools import (
@@ -1237,6 +1237,42 @@ class _PreparedAuthorizationFacts:
     grant: TaskGrant
 
 
+@dataclass(frozen=True, slots=True)
+class SkillInstallPreflightReady:
+    intent_id: str
+    artifact_ref: str
+    content_digest: str
+    member_digest: str
+    member_summary: tuple[Mapping[str, Any], ...]
+    permission_summary: tuple[str, ...]
+    expires_at: float
+
+
+@dataclass(frozen=True, slots=True)
+class SkillInstallPreflightRejected:
+    failure_receipt_ref: str
+    code: str
+    public_message: str
+    retryable: bool
+    correlation_id: str
+
+
+SkillInstallPreflightOutcome = (
+    SkillInstallPreflightReady | SkillInstallPreflightRejected
+)
+
+
+class ProjectSkillInstallPreflightPort(Protocol):
+    async def stage_authorization_preflight(
+        self,
+        *,
+        prepared: PreparedToolEffect,
+        context: ToolExecutionContext,
+        args_hash: str,
+        principal_id: str,
+    ) -> SkillInstallPreflightOutcome: ...
+
+
 class SdkPreparedAuthorizationPolicy:
     """Map SDK effects onto the product prepared authorization runtime."""
 
@@ -1247,11 +1283,13 @@ class SdkPreparedAuthorizationPolicy:
         *,
         clock: Callable[[], float] = time.time,
         initial_policy_generation: int | None = None,
+        skill_install_preflight: ProjectSkillInstallPreflightPort | None = None,
     ) -> None:
         self._runtime = runtime
         self._authorities = authorities
         self._clock = clock
         self._facts: dict[tuple[str, str], _PreparedAuthorizationFacts] = {}
+        self._skill_install_preflight = skill_install_preflight
         if initial_policy_generation is not None and initial_policy_generation < 0:
             raise ValueError("initial_policy_generation must be non-negative")
         self._policy_generation = initial_policy_generation
@@ -1394,6 +1432,27 @@ class SdkPreparedAuthorizationPolicy:
             self._facts[(authority.run_id, prepared.effect_id.value)] = (
                 _PreparedAuthorizationFacts(authority, call, plan, grant)
             )
+            preflight: SkillInstallPreflightReady | None = None
+            if (
+                call.tool_name == "skill_install"
+                and self._skill_install_preflight is not None
+            ):
+                outcome = await self._skill_install_preflight.stage_authorization_preflight(
+                    prepared=prepared,
+                    context=context,
+                    args_hash=call.args_hash,
+                    principal_id=authority.principal_id,
+                )
+                if isinstance(outcome, SkillInstallPreflightRejected):
+                    return AuthorizationResult(
+                        AuthorizationDecision.DENY,
+                        reason_code=outcome.code,
+                        public_message=outcome.public_message,
+                        receipt_ref=outcome.failure_receipt_ref,
+                    )
+                if not isinstance(outcome, SkillInstallPreflightReady):
+                    raise TypeError("skill install preflight returned an invalid outcome")
+                preflight = outcome
             nonce = request.nonce if request is not None else _canonical_sha256(
                 {
                     "effect_id": prepared.effect_id.value,
@@ -1413,6 +1472,19 @@ class SdkPreparedAuthorizationPolicy:
                         "scope_hash": authority.scope_hash,
                         "grant_source": grant.source,
                         "policy_generation": grant.policy_generation,
+                        **(
+                            {}
+                            if preflight is None
+                            else {
+                                "skill_install_artifact_ref": preflight.artifact_ref,
+                                "skill_install_intent_id": preflight.intent_id,
+                                "skill_install_content_digest": preflight.content_digest,
+                                "skill_install_member_digest": preflight.member_digest,
+                                "skill_install_member_summary": list(preflight.member_summary),
+                                "skill_install_permission_summary": list(preflight.permission_summary),
+                                "skill_install_expires_at": preflight.expires_at,
+                            }
+                        ),
                     },
                 ),
             )
@@ -1453,6 +1525,37 @@ class SdkPreparedAuthorizationPolicy:
         if facts.authority.run_id != prepared.run_id.value:
             raise RuntimeError("SDK prepared authorization facts crossed Run scope")
         return facts
+
+    def restore_facts(
+        self,
+        prepared: PreparedToolEffect,
+        *,
+        authority: SdkRunToolAuthorityV1,
+        call: PreparedToolCall,
+        plan: PreparedAuthorizationPlan,
+        grant: TaskGrant,
+    ) -> None:
+        """Restore already-verified frozen authorization facts without policy IO."""
+
+        if authority.run_id != prepared.run_id.value:
+            raise RuntimeError("restored authority crossed Run scope")
+        if call.stable_call_id != prepared.call.call_id.value:
+            raise RuntimeError("restored call identity differs")
+        if call.tool_name != prepared.call.name:
+            raise RuntimeError("restored Tool name differs")
+        arguments = thaw_json(prepared.call.arguments)
+        if not isinstance(arguments, Mapping):
+            raise TypeError("SDK Tool arguments must be an object")
+        expected = self._prepared_call(prepared, authority)
+        if expected != call:
+            raise RuntimeError("restored prepared call differs from frozen authority")
+        if plan.committed_task_grant != grant:
+            raise RuntimeError("restored plan grant differs")
+        if grant.principal_id != authority.principal_id:
+            raise RuntimeError("restored grant principal differs")
+        self._facts[(authority.run_id, prepared.effect_id.value)] = (
+            _PreparedAuthorizationFacts(authority, call, plan, grant)
+        )
 
     def grant_factory(
         self,
@@ -1510,10 +1613,14 @@ __all__ = (
     "SDK_PERMISSION_POLICY_VERSION",
     "SDK_TOOL_AUTHORITY_RECORD_KIND",
     "SDK_TOOL_AUTHORITY_RECORD_VERSION",
+    "ProjectSkillInstallPreflightPort",
     "SdkCapabilityBridgeAdapter",
     "SdkPreparedAuthorizationPolicy",
     "SdkRunToolAuthorityRegistry",
     "SdkRunToolAuthorityV1",
     "SdkRuntimeCapabilityBridgeAdapter",
     "SdkToolAuthorityMigrationUnavailable",
+    "SkillInstallPreflightOutcome",
+    "SkillInstallPreflightReady",
+    "SkillInstallPreflightRejected",
 )
