@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Iterable
 
 from deskpet.types.task_grants import TaskGrant
 
@@ -128,6 +128,35 @@ class DurableTaskGrantAuthority:
         if current.status != "active":
             raise TaskGrantConflict(f"TaskGrant is {current.status}, not active")
         return current.grant
+
+    def read_verified(
+        self,
+        task_grant_id: str,
+        *,
+        version: int,
+        policy_generation: int,
+        fingerprint: str,
+        allowed_statuses: Iterable[str] = ("prepared", "active"),
+    ) -> DurableTaskGrant:
+        """Read one immutable durable grant through the public recovery seam.
+
+        Recovery callers must provide every indexed identity component instead
+        of reaching through ``_read`` and trusting a row selected only by id.
+        This method deliberately does not activate or otherwise mutate the
+        grant.
+        """
+
+        current = self._read(task_grant_id)
+        self._identity(current.grant, version, policy_generation)
+        self._assert_current_policy(policy_generation)
+        if current.grant.fingerprint != str(fingerprint):
+            raise TaskGrantConflict("TaskGrant fingerprint drifted")
+        allowed = frozenset(str(item) for item in allowed_statuses)
+        if current.status not in allowed:
+            raise TaskGrantConflict(
+                f"TaskGrant is {current.status}, expected one of {sorted(allowed)}"
+            )
+        return current
 
     def revoke(
         self, task_grant_id: str, *, version: int, policy_generation: int, now: float

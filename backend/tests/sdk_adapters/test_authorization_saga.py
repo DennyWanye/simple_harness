@@ -359,6 +359,32 @@ def test_task_grant_policy_generation_expiry_and_reopen_are_fail_closed(tmp_path
     reopened.close()
 
 
+def test_task_grant_public_recovery_lookup_verifies_full_identity(tmp_path) -> None:
+    database = ProductStateDatabase(tmp_path / "task-grant-recovery.db")
+    database.initialize()
+    set_policy_generation(database)
+    authority = DurableTaskGrantAuthority(database)
+    expected = grant()
+    authority.prepare(expected, now=1.0)
+
+    recovered = authority.read_verified(
+        expected.task_grant_id,
+        version=expected.version,
+        policy_generation=expected.policy_generation,
+        fingerprint=expected.fingerprint,
+    )
+    assert recovered.grant == expected
+    assert recovered.status == "prepared"
+    with pytest.raises(TaskGrantConflict, match="fingerprint"):
+        authority.read_verified(
+            expected.task_grant_id,
+            version=expected.version,
+            policy_generation=expected.policy_generation,
+            fingerprint="0" * 64,
+        )
+    database.close()
+
+
 def test_product_capability_store_rejects_foreign_transaction(tmp_path) -> None:
     async def case() -> None:
         database = ProductStateDatabase(tmp_path / "product-capability.db")
@@ -420,6 +446,60 @@ def test_authorization_adapter_terminal_paths_revoke_physical_permission(
         getattr(adapter, operation)(prepared, reason="test terminal")
         assert repository.read("authorization-1").state is saga_state
         assert authority._read("grant-1").status == grant_state
+        database.close()
+
+    asyncio.run(case())
+
+
+def test_authorization_adapter_emits_terminal_only_after_durable_cas(tmp_path) -> None:
+    class Lifecycle:
+        def __init__(self, repository):
+            self.repository = repository
+            self.events = []
+
+        def settle_authorization_terminal(self, evidence):
+            assert self.repository.read(evidence.authorization_id).state is (
+                AuthorizationSagaState.ABORTED
+            )
+            self.events.append(evidence)
+
+    async def case() -> None:
+        database = ProductStateDatabase(tmp_path / "adapter-terminal-evidence.db")
+        database.initialize()
+        set_policy_generation(database)
+        repository = AuthorizationSagaRepository(database)
+        lifecycle = Lifecycle(repository)
+        prepared = PreparedToolEffect(
+            EffectId("effect-1"),
+            RunId("run-1"),
+            ToolCall(CallId("call-1"), "write_file", {"path": "note.txt"}),
+            ToolSpec(
+                "write_file",
+                "Write a file.",
+                {"type": "object", "properties": {}, "additionalProperties": False},
+            ),
+            {},
+        )
+        adapter = ProductAuthorizationAdapter(
+            repository,
+            policy=lambda _effect: AuthorizationResult(
+                AuthorizationDecision.REQUIRE_USER,
+                reason_code="user_confirmation_required",
+                request=AuthorizationRequest("Allow write?", "nonce-1"),
+            ),
+            identity_factory=lambda _prepared, _request: identity(),
+            grant_authority=DurableTaskGrantAuthority(database),
+            grant_factory=lambda _prepared, _result: grant(),
+            clock=lambda: 10.0,
+            terminal_lifecycle=lifecycle,
+        )
+        await adapter.prepare(prepared)
+        adapter.cancel(prepared, reason="user")
+        assert len(lifecycle.events) == 1
+        assert lifecycle.events[0].terminal_kind == "cancelled"
+        adapter.cancel(prepared, reason="user")
+        assert len(lifecycle.events) == 2
+        assert lifecycle.events[1] == lifecycle.events[0]
         database.close()
 
     asyncio.run(case())
