@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import dataclass
-from typing import Any, Literal, Mapping, Sequence, cast
+from dataclasses import InitVar, dataclass
+from typing import Any, Iterable, Literal, Mapping, Sequence, cast
 
 from simple_harness import FrozenJsonValue, freeze_json, thaw_json
 from simple_harness.tools import (
@@ -24,6 +24,11 @@ from simple_harness.tools import (
     ToolExposureMode as SdkToolExposureMode,
     WorkflowProfileRecord,
 )
+
+from deskpet.capabilities.contracts import fingerprint_json
+
+
+_RUN_VERIFICATION_EVIDENCE_ISSUER = object()
 
 
 CapabilitySourceKind = Literal["builtin", "mcp", "skill", "workflow"]
@@ -217,6 +222,115 @@ class ProductCapabilitySourceProjection:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class SkillRunPageInMember:
+    skill_name: str
+    pack_id: str
+    version: str
+    manifest_hash: str
+    content_hash: str
+    scope_hash: str
+
+    def __post_init__(self) -> None:
+        _required(self.skill_name, "skill_name")
+        _required(self.pack_id, "pack_id")
+        _required(self.version, "version")
+        _digest(self.manifest_hash, "manifest_hash")
+        _digest(self.content_hash, "content_hash")
+        _digest(self.scope_hash, "scope_hash")
+
+    def to_json(self) -> dict[str, str]:
+        return {
+            "skill_name": self.skill_name,
+            "pack_id": self.pack_id,
+            "version": self.version,
+            "manifest_hash": self.manifest_hash,
+            "content_hash": self.content_hash,
+            "scope_hash": self.scope_hash,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SkillRunPageInVerificationEvidence:
+    """Body-free proof that one ready fresh Run paged exact Skill bytes."""
+
+    run_id: str
+    owner_key: str
+    project_scope_key: str
+    capability_snapshot_ref: str
+    run_catalog_content_stamp: str
+    process_catalog_stamp: str
+    members: tuple[SkillRunPageInMember, ...]
+    evidence_hash: str
+    _issuer: InitVar[object] = None
+
+    def __post_init__(self, _issuer: object) -> None:
+        if _issuer is not _RUN_VERIFICATION_EVIDENCE_ISSUER:
+            raise ValueError("skill_run_verification_evidence_host_only")
+        _required(self.run_id, "run_id")
+        _required(self.owner_key, "owner_key")
+        _required(self.project_scope_key, "project_scope_key")
+        _digest(self.capability_snapshot_ref, "capability_snapshot_ref")
+        _digest(self.run_catalog_content_stamp, "run_catalog_content_stamp")
+        _digest(self.process_catalog_stamp, "process_catalog_stamp")
+        members = tuple(sorted(self.members, key=lambda item: item.skill_name))
+        if not members or len({item.skill_name for item in members}) != len(members):
+            raise ValueError("skill_run_verification_members_invalid")
+        object.__setattr__(self, "members", members)
+        if self.evidence_hash != fingerprint_json(self._payload()):
+            raise ValueError("skill_run_verification_evidence_hash_mismatch")
+
+    def _payload(self) -> Mapping[str, Any]:
+        return {
+            "schema": "skill-run-page-in-verification/v1",
+            "run_id": self.run_id,
+            "owner_key": self.owner_key,
+            "project_scope_key": self.project_scope_key,
+            "capability_snapshot_ref": self.capability_snapshot_ref,
+            "run_catalog_content_stamp": self.run_catalog_content_stamp,
+            "process_catalog_stamp": self.process_catalog_stamp,
+            "members": [item.to_json() for item in self.members],
+        }
+
+    def to_json(self) -> dict[str, Any]:
+        return {**self._payload(), "evidence_hash": self.evidence_hash}
+
+    @classmethod
+    def issue(
+        cls,
+        *,
+        run_id: str,
+        owner_key: str,
+        project_scope_key: str,
+        capability_snapshot_ref: str,
+        run_catalog_content_stamp: str,
+        process_catalog_stamp: str,
+        members: Sequence[SkillRunPageInMember],
+    ) -> "SkillRunPageInVerificationEvidence":
+        ordered = tuple(sorted(members, key=lambda item: item.skill_name))
+        payload = {
+            "schema": "skill-run-page-in-verification/v1",
+            "run_id": run_id,
+            "owner_key": owner_key,
+            "project_scope_key": project_scope_key,
+            "capability_snapshot_ref": capability_snapshot_ref,
+            "run_catalog_content_stamp": run_catalog_content_stamp,
+            "process_catalog_stamp": process_catalog_stamp,
+            "members": [item.to_json() for item in ordered],
+        }
+        return cls(
+            run_id=run_id,
+            owner_key=owner_key,
+            project_scope_key=project_scope_key,
+            capability_snapshot_ref=capability_snapshot_ref,
+            run_catalog_content_stamp=run_catalog_content_stamp,
+            process_catalog_stamp=process_catalog_stamp,
+            members=ordered,
+            evidence_hash=fingerprint_json(payload),
+            _issuer=_RUN_VERIFICATION_EVIDENCE_ISSUER,
+        )
+
+
 class ProductCapabilityCatalogSourceAdapter:
     """Collect one deterministic, body-free view of all four Host sources."""
 
@@ -277,6 +391,183 @@ class ProductCapabilityCatalogSourceAdapter:
             for item in workflow_facts
         )
         return tuple(sorted(records, key=lambda item: item.capability_id))
+
+    async def sdk_project_resource_records_from_lease(
+        self,
+        *,
+        store: Any,
+        lease: Any,
+        owner_key: str,
+        project_scope_key: str | None,
+    ) -> tuple[SkillResourceRecord, ...]:
+        """Project Skill records derived from one frozen Run lease only.
+
+        First-party records remain owned by the process catalog.  This method
+        adds only exact Project bindings captured by the existing Run-catalog
+        owner, so another Project or a projectless Run observes no records.
+        """
+
+        from pathlib import Path
+
+        from deskpet.capabilities.manifest import load_and_validate_pack
+        from deskpet.companion.skills import (
+            FirstPartySkillPack,
+            ManagedSkillDiscoveryProjection,
+        )
+
+        entries = lease.project_pack_entries(
+            owner_key=owner_key,
+            project_scope_key=project_scope_key,
+        )
+        if not entries:
+            return ()
+        inventory: list[FirstPartySkillPack] = []
+        seen_names: set[str] = set()
+        for entry in entries:
+            pack_id = _required(entry.get("pack_id"), "run_pack.pack_id")
+            version = _required(entry.get("version"), "run_pack.version")
+            manifest_hash = _digest(
+                entry.get("manifest_hash"), "run_pack.manifest_hash"
+            )
+            record = await store.get_version(pack_id, version, manifest_hash)
+            if record is None:
+                raise RuntimeError("run_project_skill_version_missing")
+            descriptor = record.descriptor
+            if (
+                str(descriptor.capability_id) != pack_id
+                or str(descriptor.version) != version
+                or str(descriptor.manifest_hash) != manifest_hash
+            ):
+                raise RuntimeError("run_project_skill_version_mismatch")
+            validation = load_and_validate_pack(record.install_path)
+            manifest = validation.manifest
+            if (
+                manifest.id != pack_id
+                or manifest.version != version
+                or manifest.manifest_hash != manifest_hash
+                or not manifest.skills
+            ):
+                raise RuntimeError("run_project_skill_manifest_mismatch")
+            root = Path(record.install_path).resolve(strict=True)
+            for skill in manifest.skills:
+                collision_key = skill.id.casefold()
+                if collision_key in seen_names:
+                    raise RuntimeError("run_project_skill_name_collision")
+                seen_names.add(collision_key)
+                skill_path = (root / skill.path).resolve(strict=True)
+                try:
+                    skill_path.relative_to(root)
+                except ValueError as exc:
+                    raise RuntimeError("run_project_skill_path_escape") from exc
+                content_hash = hashlib.sha256(skill_path.read_bytes()).hexdigest()
+                inventory.append(
+                    FirstPartySkillPack(
+                        pack_id=pack_id,
+                        skill_id=skill.id,
+                        version=version,
+                        manifest_hash=manifest_hash,
+                        content_hash=content_hash,
+                        allowed_tools=skill.allowed_tools,
+                        skill_path=skill_path,
+                        pack_root=root,
+                    )
+                )
+        projection = ManagedSkillDiscoveryProjection(
+            inventory,
+            owner_key=owner_key,
+        )
+        records = self.sdk_resource_records(skills=projection.list_metas())
+        if any(not isinstance(item, SkillResourceRecord) for item in records):
+            raise RuntimeError("run_project_skill_projection_invalid")
+        return cast(tuple[SkillResourceRecord, ...], records)
+
+    async def verify_fresh_run_page_in(
+        self,
+        *,
+        lease: Any,
+        resolver: Any,
+        owner_key: str,
+        project_scope_key: str,
+        records: Sequence[SkillResourceRecord],
+        expected_skill_names: Iterable[str],
+    ) -> "SkillRunPageInVerificationEvidence":
+        """Prove exact Skill bytes are resolvable by a bound, ready fresh Run.
+
+        The application service owns creation and terminal settlement of the
+        canonical zero-Provider/zero-Effect Run.  This seam performs the
+        decisive Run-local page-in and returns body-free evidence suitable for
+        CAS attachment to that service's existing operation receipt.
+        """
+
+        await lease.require_ready()
+        project_entries = lease.project_pack_entries(
+            owner_key=owner_key,
+            project_scope_key=project_scope_key,
+        )
+        frozen_pack_identities = {
+            (
+                str(item.get("pack_id") or ""),
+                str(item.get("version") or ""),
+                str(item.get("manifest_hash") or ""),
+            )
+            for item in project_entries
+        }
+        by_name = {record.skill_locator: record for record in records}
+        names = tuple(sorted(set(str(item) for item in expected_skill_names)))
+        if not names or set(names) != set(by_name):
+            raise RuntimeError("skill_run_verification_member_set_mismatch")
+        members: list[SkillRunPageInMember] = []
+        for name in names:
+            record = by_name[name]
+            metadata = thaw_json(record.metadata)  # type: ignore[arg-type]
+            if not isinstance(metadata, dict):
+                raise RuntimeError("skill_run_verification_metadata_invalid")
+            resolved = await resolver.resolve_frozen_instruction(
+                run_id=lease.run_id,
+                skill_name=name,
+                arguments=(),
+            )
+            expected = {
+                "pack_id": str(metadata.get("pack_id") or ""),
+                "version": str(metadata.get("version") or ""),
+                "manifest_hash": str(metadata.get("manifest_hash") or ""),
+                "content_hash": record.content_hash,
+                "scope_hash": str(metadata.get("scope_hash") or ""),
+            }
+            if (
+                expected["pack_id"],
+                expected["version"],
+                expected["manifest_hash"],
+            ) not in frozen_pack_identities:
+                raise RuntimeError("skill_run_verification_project_scope_mismatch")
+            if any(str(resolved.get(key) or "") != value for key, value in expected.items()):
+                raise RuntimeError("skill_run_verification_identity_mismatch")
+            if (
+                str(resolved.get("capability_snapshot_ref") or "")
+                != lease.snapshot_ref
+                or str(resolved.get("run_catalog_content_stamp") or "")
+                != lease.run_catalog_content_stamp
+            ):
+                raise RuntimeError("skill_run_verification_catalog_mismatch")
+            members.append(
+                SkillRunPageInMember(
+                    skill_name=name,
+                    pack_id=expected["pack_id"],
+                    version=expected["version"],
+                    manifest_hash=expected["manifest_hash"],
+                    content_hash=expected["content_hash"],
+                    scope_hash=expected["scope_hash"],
+                )
+            )
+        return SkillRunPageInVerificationEvidence.issue(
+            run_id=lease.run_id,
+            owner_key=owner_key,
+            project_scope_key=project_scope_key,
+            capability_snapshot_ref=lease.snapshot_ref,
+            run_catalog_content_stamp=lease.run_catalog_content_stamp,
+            process_catalog_stamp=lease.process_catalog_stamp,
+            members=members,
+        )
 
     def compose(
         self,
@@ -580,4 +871,6 @@ __all__ = (
     "ProductExecutableSourceFact",
     "ProductSkillSourceFact",
     "ProductWorkflowSourceFact",
+    "SkillRunPageInMember",
+    "SkillRunPageInVerificationEvidence",
 )

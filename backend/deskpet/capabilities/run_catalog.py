@@ -516,6 +516,61 @@ class PreparedRunCatalogLease:
             run_id=self.run_id,
         )
 
+    async def require_ready(self) -> None:
+        """Fence consumers to this exact bound process projection."""
+
+        await self._ready_gate.require_ready(
+            intent_id=self.lease_intent_id,
+            intent_hash=self.lease_intent_hash,
+            process_catalog_stamp=self.process_catalog_stamp,
+        )
+
+    def project_pack_entries(
+        self,
+        *,
+        owner_key: str,
+        project_scope_key: str | None,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Return only this frozen Run's exact Project instruction packs.
+
+        The lease, rather than a fresh Store query, is the visibility
+        authority.  This prevents a publish racing Run preparation from
+        producing SDK discovery records from a different binding generation.
+        Projectless Runs have no Project projection by construction.
+        """
+
+        expected_owner = str(owner_key).strip()
+        if not expected_owner:
+            raise ValueError("project Skill owner_key is required")
+        expected_scope = str(project_scope_key or "").strip()
+        if not expected_scope:
+            return ()
+        result: list[Mapping[str, Any]] = []
+        for entry in self.lease_entries:
+            if str(entry.get("entry_kind") or "") != "pack":
+                continue
+            selected = entry.get("selected_binding")
+            if not isinstance(selected, Mapping):
+                raise RuntimeError("run_catalog_project_binding_missing")
+            if str(selected.get("scope") or "") != "project":
+                continue
+            if (
+                str(selected.get("owner_key") or "") != expected_owner
+                or str(selected.get("scope_key") or "") != expected_scope
+            ):
+                continue
+            result.append(entry)
+        return tuple(
+            sorted(
+                result,
+                key=lambda item: (
+                    str(item.get("pack_id") or ""),
+                    str(item.get("version") or ""),
+                    str(item.get("manifest_hash") or ""),
+                ),
+            )
+        )
+
 
 def _tx_db(transaction: Any) -> Any:
     db = getattr(transaction, "_db", None)
@@ -1056,7 +1111,12 @@ class SqliteRunCatalogLeasePreparer:
 
 
 class FirstPartyFrozenSkillResolver:
-    """Resolve a Skill only through the exact catalog captured for one Run."""
+    """Resolve first-party or managed Skills from one exact Run catalog.
+
+    The historical class name is retained for compatibility.  Selection is
+    authority-neutral: the frozen binding owner and immutable pack version in
+    the Run lease decide which Skill bytes may be paged in.
+    """
 
     def __init__(self, *, store: Any, inventory: Sequence[Any]) -> None:
         from deskpet.skills.loader import SkillPackSnapshotResolver
