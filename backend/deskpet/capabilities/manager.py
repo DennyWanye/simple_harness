@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import io
 import inspect
+import json
 import os
 import shutil
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence
@@ -33,10 +36,15 @@ from .package_limits import (
     ValidatedCapabilityPackageRefV1,
 )
 from .source import CapabilitySourceResolver, PackSourceRequest, StagedPack
+from .skill_source import CanonicalSkillBatch
 from .store import (
     CAPABILITY_OPERATION_PHASES,
     CapabilityOperationRecord,
     CapabilityPublishIntent,
+    CapabilityPublishIntentMember,
+    CapabilitySkillInstallHandoff,
+    CapabilitySkillInstallIntent,
+    CapabilitySkillInstallMember,
     CapabilityStore,
     CapabilityStoreConflict,
     CapabilityVersionRecord,
@@ -373,6 +381,16 @@ class CapabilityUninstallResult:
     process_projection_fingerprint: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class CapabilityBatchInstallResult:
+    operation: CapabilityOperationRecord
+    bindings: tuple[CapabilityBinding, ...]
+    install_root: Path
+    registry_revision: int
+    manager_receipt_hash: str
+    committed_set_stamp: str
+
+
 def _operation_id(idempotency_key: str) -> str:
     if not idempotency_key.strip():
         raise CapabilityManagerError(
@@ -554,7 +572,11 @@ class CapabilityPackManager:
             return
         status = (
             "unknown"
-            if latest.phase in {"publish_intent", "catalog_swapped", "bound"}
+            if latest.phase in {
+                "publish_intent", "catalog_swapped", "bound",
+                "batch_publish_intent", "batch_files_materialized",
+                "batch_catalog_swapped",
+            }
             else "failed"
         )
         await self.store.fail_operation(
@@ -868,6 +890,283 @@ class CapabilityPackManager:
                 process_projection_fingerprint
             ),
         }
+
+    async def publish_skill_install_batch(
+        self, *, intent: CapabilitySkillInstallIntent,
+        handoff: CapabilitySkillInstallHandoff, staging_root: Path,
+        members: Sequence[CapabilitySkillInstallMember],
+    ) -> Mapping[str, JsonValue]:
+        if handoff.intent_id != intent.intent_id or handoff.member_set_stamp != intent.member_set_stamp:
+            raise CapabilityManagerError("batch_handoff_mismatch", "handoff differs from install intent")
+        if tuple(member.ordinal for member in members) != tuple(range(len(members))):
+            raise CapabilityManagerError("batch_member_order_invalid", "members are not densely ordered")
+        root = staging_root.resolve(strict=True)
+        packs = []
+        selected = []
+        for member in members:
+            raw_ref = member.member.get("archive_ref")
+            raw_validated = member.member.get("validated_ref")
+            if not isinstance(raw_ref, str) or not isinstance(raw_validated, Mapping):
+                raise CapabilityManagerError("batch_archive_metadata_missing", member.normalized_name)
+            archive_path = (root / raw_ref).resolve(strict=True)
+            try:
+                archive_path.relative_to(root)
+            except ValueError as exc:
+                raise CapabilityManagerError("batch_archive_ref_unsafe", raw_ref) from exc
+            archive_bytes = await asyncio.to_thread(archive_path.read_bytes)
+            validated_ref = ValidatedCapabilityPackageRefV1.issue(
+                source_kind=str(raw_validated["source_kind"]), limits=self.package_validator.limits,
+                archive_hash=str(raw_validated["archive_hash"]),
+                manifest_hash=str(raw_validated["manifest_hash"]),
+                file_set_hash=str(raw_validated["file_set_hash"]),
+                entry_count=int(raw_validated["entry_count"]),
+                total_uncompressed_bytes=int(raw_validated["total_uncompressed_bytes"]),
+            )
+            expected_archive_hash = str(member.member.get("archive_hash") or member.source_digest)
+            if hashlib.sha256(archive_bytes).hexdigest() != expected_archive_hash:
+                raise CapabilityManagerError("batch_archive_hash_mismatch", member.normalized_name)
+            actual_ref = await asyncio.to_thread(
+                self.package_validator.validate_zip_archive, archive_bytes,
+                source_kind=validated_ref.source_kind,
+            )
+            if actual_ref != validated_ref:
+                raise CapabilityManagerError("batch_validated_ref_mismatch", member.normalized_name)
+            with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as package:
+                manifest_payload = json.loads(package.read("deskpet-pack.json"))
+            actual_tools = tuple(sorted(
+                str(tool["provider_name"])
+                for tool in manifest_payload.get("entries", {}).get("tools", [])
+            ))
+            raw_allowed = member.member.get("allowed_tools")
+            if raw_allowed is not None and tuple(sorted(str(item) for item in raw_allowed)) != actual_tools:
+                raise CapabilityManagerError("batch_allowed_tools_mismatch", member.normalized_name)
+            selected_ref = str(member.member.get("selected_subdirectory") or member.normalized_name)
+            selected.append(selected_ref)
+            from .skill_source import CanonicalSkillPack
+            packs.append(CanonicalSkillPack(
+                member.normalized_name, selected_ref, archive_bytes, expected_archive_hash,
+                member.manifest_hash, member.content_hash, validated_ref,
+            ))
+        from .skill_source import ResolvedSkillSourceEvidence
+        source = dict(intent.source)
+        evidence = ResolvedSkillSourceEvidence.issue(
+            normalized_url=str(source.get("normalized_url") or source.get("url") or "https://github.com/unknown/unknown"),
+            requested_ref=str(source.get("requested_ref") or "main"), exact_commit=intent.exact_commit,
+            archive_hash=intent.archive_hash, raw_file_set_digest=intent.raw_tree_hash,
+            selected_subdirectories=selected,
+        )
+        result = await self._publish_canonical_skill_install_batch(
+            CanonicalSkillBatch(evidence, tuple(packs), intent.member_set_stamp),
+            operation_id=handoff.operation_id, project_scope_key=intent.project_scope_key,
+            owner_key=intent.principal_id, committed_set_stamp=intent.member_set_stamp,
+        )
+        return {
+            "operation_id": result.operation.operation_id,
+            "manager_receipt_hash": result.manager_receipt_hash,
+            "committed_set_stamp": result.committed_set_stamp,
+            "registry_revision": result.registry_revision,
+            "binding_ids": [binding.binding_id for binding in result.bindings],
+        }
+
+    async def _publish_canonical_skill_install_batch(
+        self,
+        batch: CanonicalSkillBatch,
+        *,
+        operation_id: str,
+        project_scope_key: str,
+        owner_key: str,
+        committed_set_stamp: str,
+        expected_binding_generations: Mapping[str, int] | None = None,
+    ) -> CapabilityBatchInstallResult:
+        """Validate and atomically publish one frozen canonical Skill batch.
+
+        The source boundary supplies only canonical archives and their issued
+        package refs.  Candidate construction, registry mutation, binding CAS,
+        and the Manager receipt remain Manager-owned.
+        """
+
+        await self.initialize()
+        operation = await self.store.get_operation(operation_id)
+        if operation is None or operation.kind != "skill_install_batch":
+            raise CapabilityManagerError("batch_operation_missing", operation_id)
+        if operation.requested_scope != "project" or operation.requested_scope_key != project_scope_key:
+            raise CapabilityManagerError("batch_project_scope_mismatch", "batch operation belongs to another Project")
+        if str(operation.request.get("member_set_stamp") or "") != committed_set_stamp:
+            raise CapabilityManagerError("batch_set_stamp_mismatch", "confirmed member set changed")
+        receipt_evidence = await self.store.get_phase_evidence(operation_id, "batch_committed")
+        if operation.status == "succeeded" and receipt_evidence is not None:
+            bindings: list[CapabilityBinding] = []
+            for member in await self.store.operation_members(operation_id):
+                binding = await self.store.get_binding(
+                    "project", project_scope_key, member.pack_id, owner_key=owner_key
+                )
+                if binding is None:
+                    raise CapabilityManagerError("batch_committed_binding_missing", member.pack_id)
+                bindings.append(binding)
+            return CapabilityBatchInstallResult(
+                operation, tuple(bindings), Path(str(receipt_evidence["install_root"])),
+                int(receipt_evidence["registry_revision"]),
+                str(receipt_evidence["manager_receipt_hash"]), committed_set_stamp,
+            )
+        if operation.status != "running" or operation.phase != "batch_staged":
+            raise CapabilityManagerError("batch_reconciliation_required", f"batch is {operation.status}/{operation.phase}")
+
+        durable_members = await self.store.operation_members(operation_id)
+        if len(durable_members) != len(batch.packs):
+            raise CapabilityManagerError("batch_member_count_mismatch", "confirmed member count changed")
+        staging_root = self.layout.staging_path(operation_id)
+        if staging_root.exists():
+            await self._remove_exact_tree(staging_root)
+        staging_root.mkdir(parents=True)
+        validations: list[PackValidationResult] = []
+        candidates: list[CapabilityCandidate] = []
+        try:
+            for ordinal, (frozen, durable) in enumerate(zip(batch.packs, durable_members, strict=True)):
+                if frozen.skill_name != durable.normalized_name or frozen.manifest_hash != durable.manifest_hash or frozen.content_digest != durable.content_hash:
+                    raise CapabilityManagerError("batch_member_identity_mismatch", f"member {ordinal} differs from confirmation")
+                member_root = staging_root / f"{ordinal:04d}-{durable.normalized_name}"
+                issued = await asyncio.to_thread(
+                    self.package_validator.materialize_zip, frozen.archive_bytes, member_root,
+                    source_kind=frozen.validated_ref.source_kind,
+                )
+                if issued != frozen.validated_ref:
+                    raise CapabilityManagerError("batch_validated_ref_mismatch", durable.normalized_name)
+                validation = load_and_validate_pack(member_root, environment=self.environment)
+                if validation.manifest.id != durable.pack_id or validation.manifest.version != durable.version or validation.manifest.manifest_hash != durable.manifest_hash:
+                    raise CapabilityManagerError("batch_manifest_identity_mismatch", durable.normalized_name)
+                candidate = await self.publisher.prepare_candidate(
+                    validation, install_root=member_root, operation_id=operation_id
+                )
+                if len(candidate.tool_spec_fingerprints) != len(validation.manifest.tools):
+                    raise CapabilityManagerError("candidate_tool_mismatch", durable.normalized_name)
+                validations.append(validation)
+                candidates.append(candidate)
+                await self._fault(f"after:batch_member_prepared:{ordinal}")
+            operation = await self._commit_phase(
+                operation_id, "batch_prepared",
+                {"member_count": len(durable_members), "committed_set_stamp": committed_set_stamp},
+            )
+            await self._fault("after:batch_prepared")
+        except Exception as exc:
+            await self._record_operation_failure(operation_id, exc)
+            raise
+
+        expected_revisions = {candidate.expected_registry_revision for candidate in candidates}
+        if len(expected_revisions) != 1:
+            raise CapabilityManagerError("batch_registry_revision_mismatch", "members were prepared against different registry revisions")
+        runtime_payload: object | None = None
+        if all(isinstance(candidate.runtime_payload, tuple) for candidate in candidates):
+            runtime_payload = tuple(item for candidate in candidates for item in candidate.runtime_payload)  # type: ignore[union-attr]
+        combined = CapabilityCandidate(
+            expected_registry_revision=next(iter(expected_revisions), 0),
+            tool_spec_fingerprints=tuple(fp for candidate in candidates for fp in candidate.tool_spec_fingerprints),
+            old_specs=tuple(spec for candidate in candidates for spec in candidate.old_specs),
+            new_specs=tuple(spec for candidate in candidates for spec in candidate.new_specs),
+            publisher_state={"schema": "capability-batch-publisher-state-v1", "member_count": len(candidates)},
+            runtime_payload=runtime_payload,
+        )
+        batch_root = (self.layout.packs / "batches" / committed_set_stamp).resolve(strict=False)
+        generations = dict(expected_binding_generations or {})
+        async with self.publish_lock:
+            old_bindings: list[CapabilityBinding | None] = []
+            for member in durable_members:
+                binding = await self.store.get_binding("project", project_scope_key, member.pack_id, owner_key=owner_key)
+                actual = 0 if binding is None else binding.generation
+                if generations.get(member.pack_id, actual) != actual:
+                    raise CapabilityStoreConflict("binding_generation_conflict", member.pack_id)
+                generations[member.pack_id] = actual
+                old_bindings.append(binding)
+            intent_id = _intent_id(operation_id)
+            envelope: Mapping[str, JsonValue] = {
+                "schema": "capability-batch-binding-v1", "project_scope_key": project_scope_key,
+                "owner_key": owner_key, "member_set_digest": committed_set_stamp,
+                "expected_binding_generations": generations,
+            }
+            async with self.store.write_transaction() as db:
+                tx = self.store.bind(db)
+                await tx.create_publish_intent(
+                    intent_id=intent_id, operation_id=operation_id,
+                    expected_registry_revision=combined.expected_registry_revision,
+                    old_specs=combined.old_specs, new_specs=combined.new_specs,
+                    old_binding=None, new_binding=envelope,
+                )
+                await tx.put_publish_intent_members_in_transaction(intent_id, tuple(
+                    CapabilityPublishIntentMember(
+                        intent_id, operation_id, member.ordinal,
+                        None if old is None else old.to_dict(),
+                        {"scope": "project", "scope_key": project_scope_key, "owner_key": owner_key,
+                         "capability_id": member.pack_id, "version": member.version,
+                         "manifest_hash": member.manifest_hash, "active": True,
+                         "expected_generation": generations[member.pack_id]},
+                    ) for member, old in zip(durable_members, old_bindings, strict=True)
+                ))
+                await tx.commit_phase(operation_id, "batch_publish_intent", evidence={"intent_id": intent_id})
+            await self._fault("after:batch_publish_intent")
+            batch_root.parent.mkdir(parents=True, exist_ok=True)
+            if batch_root.exists():
+                await self._remove_batch_root(batch_root)
+            await asyncio.to_thread(os.replace, staging_root, batch_root)
+            async with self.store.write_transaction() as db:
+                tx = self.store.bind(db)
+                await tx.advance_publish_intent(intent_id, phase="batch_files_materialized")
+                await tx.commit_phase(operation_id, "batch_files_materialized", evidence={"batch_root": str(batch_root)})
+            await self._fault("after:batch_files_materialized")
+            publication = await self.publisher.publish(combined, operation_id=operation_id)
+            if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
+                raise CapabilityManagerError("publisher_fingerprint_mismatch", "batch ToolSpecs differ")
+            async with self.store.write_transaction() as db:
+                tx = self.store.bind(db)
+                await tx.advance_publish_intent(intent_id, phase="batch_catalog_swapped")
+                await tx.commit_phase(operation_id, "batch_catalog_swapped", evidence={"registry_revision": publication.registry_revision})
+            await self._fault("after:batch_catalog_swapped")
+            bindings: list[CapabilityBinding] = []
+            async with self.store.write_transaction() as db:
+                tx = self.store.bind(db)
+                for durable, validation, candidate in zip(durable_members, validations, candidates, strict=True):
+                    install_path = batch_root / f"{durable.ordinal:04d}-{durable.normalized_name}"
+                    await tx.record_version(CapabilityVersionRecord(
+                        validation.descriptor, install_path, "healthy", candidate.tool_spec_fingerprints,
+                        None, None, None, self.store.now(),
+                    ))
+                    binding = await tx.set_binding(
+                        scope="project", scope_key=project_scope_key, pack_id=durable.pack_id,
+                        version=durable.version, manifest_hash=durable.manifest_hash,
+                        expected_generation=generations[durable.pack_id], enabled=True,
+                        owner_key=owner_key, management_policy="user_managed",
+                    )
+                    bindings.append(binding)
+                    await db.execute(
+                        """UPDATE capability_operation_members SET committed_version=?,
+                           committed_manifest_hash=?,committed_set_stamp=?
+                           WHERE operation_id=? AND ordinal=?""",
+                        (durable.version,durable.manifest_hash,committed_set_stamp,operation_id,durable.ordinal),
+                    )
+                receipt_payload = {
+                    "schema": "capability-batch-manager-receipt-v1", "operation_id": operation_id,
+                    "project_scope_key": project_scope_key, "owner_key": owner_key,
+                    "committed_set_stamp": committed_set_stamp, "registry_revision": publication.registry_revision,
+                    "members": [{"pack_id": m.pack_id,"version": m.version,"manifest_hash": m.manifest_hash,
+                                 "content_hash": m.content_hash,"binding_generation": b.generation}
+                                for m,b in zip(durable_members,bindings,strict=True)],
+                }
+                receipt_hash = fingerprint_json(receipt_payload)
+                await tx.advance_publish_intent(intent_id, phase="batch_committed", status="committed")
+                operation = await tx.commit_phase(operation_id, "batch_committed", evidence={
+                    **receipt_payload, "manager_receipt_hash": receipt_hash, "install_root": str(batch_root)
+                })
+            await self._fault("after:batch_committed")
+        return CapabilityBatchInstallResult(operation, tuple(bindings), batch_root,
+                                            publication.registry_revision, receipt_hash, committed_set_stamp)
+
+    async def _remove_batch_root(self, target: Path) -> None:
+        target = target.resolve(strict=False)
+        root = (self.layout.packs / "batches").resolve(strict=False)
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise CapabilityManagerError("unsafe_cleanup_target", str(target)) from exc
+        if target.exists():
+            await asyncio.to_thread(shutil.rmtree, target)
 
     async def install(
         self,
@@ -2096,6 +2395,10 @@ class CapabilityPackManager:
         await self.initialize()
         recovered: list[CapabilityOperationRecord] = []
         for operation in await self.store.list_recoverable_operations():
+            if operation.kind == "skill_install_batch":
+                async with self.publish_lock:
+                    recovered.append(await self._recover_skill_install_batch(operation))
+                continue
             staging = self.layout.staging_path(operation.operation_id)
             if operation.phase in {"planned", "staged", "verified"}:
                 if staging.exists():
@@ -2132,6 +2435,114 @@ class CapabilityPackManager:
                     await self._recover_publish_operation(operation)
                 )
         return tuple(recovered)
+
+    async def _recover_skill_install_batch(
+        self, operation: CapabilityOperationRecord
+    ) -> CapabilityOperationRecord:
+        staging = self.layout.staging_path(operation.operation_id)
+        stamp = str(operation.request.get("member_set_stamp") or "")
+        batch_root = (self.layout.packs / "batches" / stamp).resolve(strict=False)
+        if operation.phase in {"batch_staged", "batch_prepared"}:
+            if staging.exists():
+                await self._remove_exact_tree(staging)
+            return await self.store.fail_operation(
+                operation.operation_id, status="cancelled",
+                error={"code": "recovered_pre_publish", "phase": operation.phase},
+            )
+        intent = await self.store.get_publish_intent_for_operation(operation.operation_id)
+        if intent is None:
+            return await self.store.fail_operation(
+                operation.operation_id, status="unknown",
+                error={"code": "batch_publish_intent_missing", "phase": operation.phase},
+            )
+        try:
+            reconciliation = await self.publisher.reconcile(intent)
+        except Exception as exc:
+            return await self.store.fail_operation(
+                operation.operation_id, status="unknown",
+                error={"code": str(getattr(exc, "code", "batch_reconcile_failed")), "phase": operation.phase},
+            )
+        if reconciliation.status == "rolled_back":
+            if staging.exists():
+                await self._remove_exact_tree(staging)
+            if batch_root.exists():
+                await self._remove_batch_root(batch_root)
+            await self.store.advance_publish_intent(
+                intent.intent_id, phase=intent.phase, status="rolled_back"
+            )
+            return await self.store.fail_operation(
+                operation.operation_id, status="failed",
+                error={"code": "batch_publish_rolled_back", "phase": operation.phase},
+            )
+        if reconciliation.status != "published":
+            return await self.store.fail_operation(
+                operation.operation_id, status="unknown",
+                error={"code": "batch_publish_outcome_unknown", "phase": operation.phase},
+            )
+        # A full-new registry with an absent or partial content root cannot be
+        # made authoritative; fence it rather than guessing member state.
+        members = await self.store.operation_members(operation.operation_id)
+        roots = tuple(batch_root / f"{m.ordinal:04d}-{m.normalized_name}" for m in members)
+        if not batch_root.is_dir() or not all(root.is_dir() for root in roots):
+            return await self.store.fail_operation(
+                operation.operation_id, status="unknown",
+                error={"code": "batch_materialization_mixed", "phase": operation.phase},
+            )
+        publish_members = await self.store.publish_intent_members(intent.intent_id)
+        if len(publish_members) != len(members):
+            return await self.store.fail_operation(
+                operation.operation_id, status="unknown",
+                error={"code": "batch_publish_members_mixed", "phase": operation.phase},
+            )
+        validations = [load_and_validate_pack(root, environment=self.environment) for root in roots]
+        candidates = [await self.publisher.prepare_candidate(v, install_root=root, operation_id=operation.operation_id)
+                      for v, root in zip(validations, roots, strict=True)]
+        bindings: list[CapabilityBinding] = []
+        async with self.store.write_transaction() as db:
+            tx = self.store.bind(db)
+            for member, published, validation, candidate, root in zip(
+                members, publish_members, validations, candidates, roots, strict=True
+            ):
+                expected = int(published.new_binding.get("expected_generation") or 0)
+                await tx.record_version(CapabilityVersionRecord(
+                    validation.descriptor, root, "healthy", candidate.tool_spec_fingerprints,
+                    None, None, None, self.store.now(),
+                ))
+                binding = await tx.set_binding(
+                    scope="project", scope_key=operation.requested_scope_key or "",
+                    pack_id=member.pack_id, version=member.version,
+                    manifest_hash=member.manifest_hash, expected_generation=expected,
+                    owner_key=str(published.new_binding.get("owner_key") or ""),
+                    management_policy="user_managed",
+                )
+                bindings.append(binding)
+                await db.execute(
+                    """UPDATE capability_operation_members SET committed_version=?,
+                       committed_manifest_hash=?,committed_set_stamp=?
+                       WHERE operation_id=? AND ordinal=?""",
+                    (member.version,member.manifest_hash,stamp,operation.operation_id,member.ordinal),
+                )
+            registry_revision = int(reconciliation.registry_revision or intent.expected_registry_revision)
+            receipt_payload = {
+                "schema": "capability-batch-manager-receipt-v1", "operation_id": operation.operation_id,
+                "project_scope_key": operation.requested_scope_key or "",
+                "owner_key": str(publish_members[0].new_binding.get("owner_key") or ""),
+                "committed_set_stamp": stamp,
+                "registry_revision": registry_revision,
+                "members": [{"pack_id": m.pack_id,"version": m.version,"manifest_hash": m.manifest_hash,
+                             "content_hash": m.content_hash,"binding_generation": b.generation}
+                            for m,b in zip(members,bindings,strict=True)],
+            }
+            receipt_hash = fingerprint_json(receipt_payload)
+            if intent.phase == "batch_files_materialized":
+                await tx.advance_publish_intent(intent.intent_id, phase="batch_catalog_swapped")
+                await tx.commit_phase(operation.operation_id, "batch_catalog_swapped",
+                                      evidence={"registry_revision": registry_revision, "recovered": True})
+            await tx.advance_publish_intent(intent.intent_id, phase="batch_committed", status="committed")
+            return await tx.commit_phase(operation.operation_id, "batch_committed", evidence={
+                **receipt_payload, "manager_receipt_hash": receipt_hash,
+                "install_root": str(batch_root), "recovered": True,
+            })
 
     async def rehydrate_active_bindings(
         self,
