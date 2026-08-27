@@ -39,7 +39,7 @@ office_pick_file pdf_export ppt_create process_list process_start process_stop
 process_wait project_directory_select project_group_send read_file register_artifacts
 run_browser_task run_shell scrapling_fetch screen_capture screen_click screen_key
 screen_move screen_scroll screen_type skill_invoke spawn_subagents spawn_team
-todo_complete todo_write tool_activate tool_describe tool_search web_crawl
+skill_install todo_complete todo_write tool_activate tool_describe tool_search web_crawl
 web_extract_article web_fetch web_read_sitemap web_search window_capture window_focus
 window_key window_list workflow_spawn workspace_prepare workspace_recall write_file""".split()
 )
