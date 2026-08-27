@@ -606,9 +606,6 @@ try:
         staging_dir=_staging_dir,
         known_tools=set(deskpet_tool_registry_v2.list_tools()),
     )
-    # In-memory pending stage map — UI confirms by staging_id.
-    _skill_staged: dict[str, "Any"] = {}
-
     # P4-S20 Stage D — plugin system.
     from deskpet.plugins import PluginManager as _PluginManager
     _plugins_dir = _paths.user_data_dir() / "plugins"
@@ -644,7 +641,6 @@ except Exception as _v2_exc:  # noqa: BLE001 — non-fatal, log + degrade
     permission_gate_v2 = None
     skill_registry_client = None
     skill_installer = None
-    _skill_staged = {}
     plugin_manager = None
 
 service_context.register(
@@ -12270,6 +12266,77 @@ async def _handle_memory_message(
         })
 
 
+def _skill_install_error_payload(exc: Exception) -> dict[str, Any]:
+    code = str(getattr(exc, "code", "") or "skill_install_failed")
+    if isinstance(exc, ValueError) and str(exc).startswith("skill_install_"):
+        code = str(exc)
+    return {
+        "ok": False,
+        "error": {
+            "code": code,
+            "message": str(exc),
+            "retryable": bool(getattr(exc, "retryable", False)),
+        },
+        # Compatibility text for older clients. It mirrors the structured
+        # message and carries no authority or install state.
+        "error_code": code,
+        "message": str(exc),
+    }
+
+
+async def _settings_skill_install_adapter(ws: WebSocket):
+    from deskpet.capabilities.skill_install_ui import (
+        ProjectSkillInstallUIAdapter,
+        ProjectSkillInstallUIError,
+        TrustedProjectInstallContext,
+    )
+
+    service = service_context.get("project_skill_install_service")
+    if service is None:
+        raise ProjectSkillInstallUIError(
+            "skill_install_service_unavailable",
+            "The managed Project Skill installer is unavailable.",
+            retryable=True,
+        )
+    authorizer_factory = service_context.get(
+        "project_skill_install_settings_authorizer"
+    )
+    bind_request = getattr(authorizer_factory, "bind_control_request", None)
+    if not callable(bind_request):
+        raise ProjectSkillInstallUIError(
+            "settings_install_authorization_unavailable",
+            "Settings cannot establish trusted Host window authority in this build.",
+            retryable=True,
+        )
+    # The authorizer owns request/window authentication. Query parameters and
+    # UI payload fields are deliberately not supplied as identity inputs.
+    bound_authorizer = await bind_request(ws)
+    resolve_binding = getattr(bound_authorizer, "resolve_project_binding", None)
+    if not callable(resolve_binding):
+        raise ProjectSkillInstallUIError(
+            "settings_install_authorization_unavailable",
+            "Settings cannot resolve a trusted Project from this Host window.",
+            retryable=True,
+        )
+    binding = await resolve_binding()
+    project = TrustedProjectInstallContext.from_binding(binding)
+    principal_id = str(getattr(bound_authorizer, "principal_id", "") or "").strip()
+    if not principal_id:
+        raise ProjectSkillInstallUIError(
+            "settings_install_authorization_unavailable",
+            "Settings cannot resolve an authenticated Host principal.",
+            retryable=True,
+        )
+    # This is deliberately a separate Host adapter. The legacy PermissionGate
+    # returns only an in-memory decision and cannot mint the durable receipt
+    # required by ProjectSkillInstallService.confirm/cancel.
+    return (
+        ProjectSkillInstallUIAdapter(service=service, authorizer=bound_authorizer),
+        project,
+        principal_id,
+    )
+
+
 @app.websocket("/ws/control")
 async def control_channel(ws: WebSocket):
     await ws.accept()
@@ -13087,8 +13154,30 @@ async def control_channel(ws: WebSocket):
                     })
                     continue
                 try:
+                    if msg_type == "capability_install":
+                        _si_adapter, _si_project, _si_principal = (
+                            await _settings_skill_install_adapter(ws)
+                        )
+                        _si_result = await _si_adapter.stage(
+                            url=str(
+                                payload.get("source_url")
+                                or payload.get("url")
+                                or ""
+                            ),
+                            project=_si_project,
+                            principal_id=_si_principal,
+                        )
+                        await ws.send_json({
+                            "type": "capability_action_response",
+                            "payload": {
+                                "ok": True,
+                                "action": action,
+                                "status": "awaiting_confirmation",
+                                "install": _si_result,
+                            },
+                        })
+                        continue
                     if msg_type in {
-                        "capability_install",
                         "capability_activate",
                         "capability_repair",
                     }:
@@ -13299,108 +13388,83 @@ async def control_channel(ws: WebSocket):
                 })
 
             elif msg_type == "skill_install_from_url":
-                # P4-S20 Stage C + post-ship: support both
-                #   (a) single-skill mode (root has SKILL.md / manifest.json,
-                #       or URL has a subpath) → original pending+confirm flow
-                #   (b) multi-skill mode (root has NEITHER → recursive
-                #       discovery of every SKILL.md, batch install all,
-                #       skip per-skill confirm because the user explicitly
-                #       asked to "装能找到的所有 skill")
+                # Managed Project install only. The legacy marketplace
+                # installer remains a diagnostic inventory, never the runtime
+                # authority for URL installs.
                 payload = raw.get("payload", {}) or {}
-                url = payload.get("url", "")
-                if skill_installer is None:
+                try:
+                    _si_adapter, _si_project, _si_principal = (
+                        await _settings_skill_install_adapter(ws)
+                    )
+                    _si_result = await _si_adapter.stage(
+                        url=str(payload.get("url") or ""),
+                        project=_si_project,
+                        principal_id=_si_principal,
+                    )
                     await ws.send_json({
                         "type": "skill_install_pending",
-                        "payload": {"ok": False, "error": "marketplace not initialized"},
+                        "request_id": raw.get("request_id"),
+                        "payload": {"ok": True, **_si_result},
                     })
-                    continue
-                try:
-                    batch = await skill_installer.stage_recursive(url)
-                    if not batch.multi:
-                        # Single-skill mode → preserve original UX (user
-                        # sees the manifest, clicks "确认安装").
-                        staged = batch.staged[0]
-                        _skill_staged[staged.staging_id] = staged
-                        await ws.send_json({
-                            "type": "skill_install_pending",
-                            "payload": {
-                                "ok": True,
-                                "staging_id": staged.staging_id,
-                                "name": staged.name,
-                                "manifest": staged.manifest,
-                                "permission_categories": list(staged.permission_categories),
-                            },
-                        })
-                    else:
-                        # Multi-skill mode → finalize EVERY staged sub-skill
-                        # immediately. Per-skill failures (staging or
-                        # finalize) come back in the errors list.
-                        result = skill_installer.finalize_batch(batch)
-                        try:
-                            loader = service_context.get("skill_loader")
-                            if loader is not None and hasattr(loader, "reload"):
-                                loader.reload()
-                        except Exception as exc:  # noqa: BLE001
-                            logger.warning(
-                                "skill_loader_reload_failed_batch",
-                                error=str(exc),
-                            )
-                        await ws.send_json({
-                            "type": "skill_install_batch_completed",
-                            "payload": {
-                                "ok": True,
-                                "installed": result["installed"],
-                                "errors": result["errors"],
-                                "installed_count": len(result["installed"]),
-                                "error_count": len(result["errors"]),
-                            },
-                        })
                 except Exception as exc:  # noqa: BLE001
                     await ws.send_json({
                         "type": "skill_install_pending",
-                        "payload": {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                        "request_id": raw.get("request_id"),
+                        "payload": _skill_install_error_payload(exc),
                     })
 
             elif msg_type == "skill_install_confirm":
-                # P4-S20 Stage C — finalize or cancel a staged install.
                 payload = raw.get("payload", {}) or {}
-                staging_id = payload.get("staging_id", "")
-                approve = bool(payload.get("approve", False))
-                if skill_installer is None or staging_id not in _skill_staged:
-                    await ws.send_json({
-                        "type": "skill_install_confirm_response",
-                        "payload": {"ok": False, "error": "no such staging_id"},
-                    })
-                    continue
-                staged = _skill_staged.pop(staging_id)
-                if not approve:
-                    skill_installer.cancel(staged)
-                    await ws.send_json({
-                        "type": "skill_install_confirm_response",
-                        "payload": {"ok": False, "reason": "user denied"},
-                    })
-                    continue
                 try:
-                    final_path = skill_installer.finalize(staged)
-                    # Trigger SkillLoader hot-reload best-effort
-                    try:
-                        loader = service_context.get("skill_loader")
-                        if loader is not None and hasattr(loader, "reload"):
-                            loader.reload()
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("skill_loader_reload_failed", error=str(exc))
+                    _si_adapter, _si_project, _si_principal = (
+                        await _settings_skill_install_adapter(ws)
+                    )
+                    _si_decision = str(payload.get("decision") or "").strip()
+                    if _si_decision not in {"approve", "deny"}:
+                        raise ValueError("skill_install_decision_invalid")
+                    _si_result = await _si_adapter.settle(
+                        intent_id=str(
+                            payload.get("intent_id")
+                            or payload.get("staging_id")
+                            or ""
+                        ),
+                        digest=str(payload.get("digest") or ""),
+                        decision_nonce=str(payload.get("decision_nonce") or ""),
+                        decision_version=int(payload.get("decision_version") or 0),
+                        decision=_si_decision,
+                    )
                     await ws.send_json({
                         "type": "skill_install_confirm_response",
-                        "payload": {
-                            "ok": True,
-                            "name": staged.name,
-                            "path": str(final_path),
-                        },
+                        "request_id": raw.get("request_id"),
+                        "payload": {"ok": True, **_si_result},
                     })
                 except Exception as exc:  # noqa: BLE001
                     await ws.send_json({
                         "type": "skill_install_confirm_response",
-                        "payload": {"ok": False, "error": f"{type(exc).__name__}: {exc}"},
+                        "request_id": raw.get("request_id"),
+                        "payload": _skill_install_error_payload(exc),
+                    })
+
+            elif msg_type == "skill_install_status":
+                payload = raw.get("payload", {}) or {}
+                try:
+                    _si_adapter, _si_project, _si_principal = (
+                        await _settings_skill_install_adapter(ws)
+                    )
+                    _si_result = await _si_adapter.status(
+                        intent_id=str(payload.get("intent_id") or ""),
+                        project=_si_project,
+                    )
+                    await ws.send_json({
+                        "type": "skill_install_status_response",
+                        "request_id": raw.get("request_id"),
+                        "payload": {"ok": True, **_si_result},
+                    })
+                except Exception as exc:  # noqa: BLE001
+                    await ws.send_json({
+                        "type": "skill_install_status_response",
+                        "request_id": raw.get("request_id"),
+                        "payload": _skill_install_error_payload(exc),
                     })
 
             elif msg_type == "skill_uninstall":
