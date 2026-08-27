@@ -144,8 +144,8 @@ async def test_stage_is_exact_idempotent_and_confirm_requires_typed_receipt(tmp_
         content_digest=intent.member_set_stamp,
         project_scope_key=intent.project_scope_key,
         principal_id=intent.principal_id,
-        decision_nonce=intent.confirmation_nonce,
-        decision_version=intent.confirmation_version,
+        decision_nonce="sdk-final-nonce",
+        decision_version=7,
         expires_at=intent.expires_at,
         approved=True,
         run_id="run-1", call_id="call-1", effect_id="effect-1",
@@ -157,6 +157,11 @@ async def test_stage_is_exact_idempotent_and_confirm_requires_typed_receipt(tmp_
     result = await service.confirm_authorized(receipt)
     assert result["status"] == "succeeded"
     assert publisher.calls == 1
+    rebound = await store.get_skill_install_intent(intent.intent_id)
+    assert rebound is not None
+    assert (rebound.confirmation_nonce, rebound.confirmation_version) == (
+        "sdk-final-nonce", 7
+    )
     assert (await service.confirm_authorized(receipt))["status"] == "succeeded"
     assert publisher.calls == 1
     database.close()

@@ -59,6 +59,13 @@ async def test_install_intent_members_are_immutable_and_state_is_cas(tmp_path) -
         "si-1", expected_state_version=1, status="awaiting_confirmation"
     )
     assert (awaiting.status, awaiting.state_version) == ("awaiting_confirmation", 2)
+    bound = await store.bind_skill_install_confirmation(
+        "si-1", expected_state_version=2,
+        confirmation_nonce="sdk-final", confirmation_version=4,
+    )
+    assert (bound.confirmation_nonce, bound.confirmation_version, bound.state_version) == (
+        "sdk-final", 4, 3
+    )
     with pytest.raises(CapabilityStoreConflict) as caught:
         await store.cas_skill_install_intent(
             "si-1", expected_state_version=1, status="denied_cleanup_pending"
@@ -66,7 +73,7 @@ async def test_install_intent_members_are_immutable_and_state_is_cas(tmp_path) -
     assert caught.value.code == "skill_install_intent_cas_conflict"
     with pytest.raises(CapabilityStoreConflict) as invalid:
         await store.cas_skill_install_intent(
-            "si-1", expected_state_version=2, status="succeeded"
+            "si-1", expected_state_version=3, status="succeeded"
         )
     assert invalid.value.code == "skill_install_intent_transition_conflict"
 

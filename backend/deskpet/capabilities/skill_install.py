@@ -26,6 +26,10 @@ from .store import (
     CapabilityStoreConflict,
 )
 from deskpet.sdk_adapters.authorization import AuthorizationTerminalEvidence
+from deskpet.product_state.authorization_saga import (
+    AuthorizationSagaRepository,
+    AuthorizationSagaState,
+)
 from deskpet.sdk_adapters.tool_authority import (
     SkillInstallPreflightReady,
     SkillInstallPreflightRejected,
@@ -150,6 +154,77 @@ class SkillInstallRuntimeVerifier(Protocol):
         manager_receipt: Mapping[str, JsonValue],
         members: Sequence[CapabilitySkillInstallMember],
     ) -> Mapping[str, JsonValue]: ...
+
+
+class AuthorizedPreflightReceiptResolver:
+    """Resolve only a durable SDK decision plus committed Host handoff."""
+
+    def __init__(self, store: CapabilityStore, repository: AuthorizationSagaRepository) -> None:
+        self.store = store
+        self.repository = repository
+
+    async def resolve_chat(
+        self, *, context: ToolExecutionContext, principal_id: str
+    ) -> AuthorizedSkillInstallReceipt:
+        record = self.repository.read_for_effect(context.effect_id, context.call_id)
+        if record is None or record.state is not AuthorizationSagaState.HANDOFF_COMMITTED:
+            raise ProjectSkillInstallError(
+                "skill_install_authorization_not_committed",
+                "Skill installation authorization handoff is not committed",
+            )
+        identity = record.identity
+        if (
+            identity.tool_name != "skill_install"
+            or identity.run_id != context.run_id
+            or identity.root_run_id != context.root_run_id
+            or identity.principal_id != principal_id
+        ):
+            raise ProjectSkillInstallError(
+                "skill_install_authorization_scope_mismatch",
+                "Skill installation authorization belongs to another request",
+            )
+        intent = await self.store.get_skill_install_intent_for_effect(
+            context.effect_id, context.call_id
+        )
+        if intent is None or intent.run_id != context.run_id:
+            raise ProjectSkillInstallError(
+                "skill_install_intent_not_found", "Authorized install intent is unavailable"
+            )
+        project_scope_key = canonical_project_identity_scope_key(
+            context.project_id, context.project_revision, context.project_identity
+        )
+        if intent.project_scope_key != project_scope_key or intent.principal_id != principal_id:
+            raise ProjectSkillInstallError(
+                "skill_install_project_scope_mismatch",
+                "Authorized install intent belongs to another Project",
+            )
+        required = (
+            record.bound_decision_nonce,
+            record.decision_sdk_receipt_hash,
+            record.decision_host_receipt_hash,
+            record.handoff_sdk_receipt_hash,
+            record.handoff_host_receipt_hash,
+        )
+        if any(value is None for value in required):
+            raise ProjectSkillInstallError(
+                "skill_install_authorization_receipt_incomplete",
+                "Authorization receipt is incomplete",
+            )
+        return AuthorizedSkillInstallReceipt(
+            channel="chat", intent_id=intent.intent_id,
+            content_digest=intent.member_set_stamp,
+            project_scope_key=intent.project_scope_key,
+            principal_id=intent.principal_id,
+            decision_nonce=str(record.bound_decision_nonce),
+            decision_version=int(record.bound_decision_version or 0),
+            expires_at=intent.expires_at, approved=True,
+            run_id=identity.run_id, call_id=identity.call_id,
+            effect_id=identity.effect_id,
+            decision_sdk_receipt_hash=str(record.decision_sdk_receipt_hash),
+            decision_host_receipt_hash=str(record.decision_host_receipt_hash),
+            handoff_sdk_receipt_hash=str(record.handoff_sdk_receipt_hash),
+            handoff_host_receipt_hash=str(record.handoff_host_receipt_hash),
+        )
 
 
 class ProjectSkillInstallService:
@@ -352,6 +427,20 @@ class ProjectSkillInstallService:
         intent = await self.store.get_skill_install_intent(receipt.intent_id)
         if intent is None:
             raise ProjectSkillInstallError("skill_install_intent_not_found", "Install intent not found")
+        self._verify_receipt(intent, receipt, allow_sdk_nonce_bind=True)
+        if (
+            intent.status == "awaiting_confirmation"
+            and (
+                intent.confirmation_nonce != receipt.decision_nonce
+                or intent.confirmation_version != receipt.decision_version
+            )
+        ):
+            intent = await self.store.bind_skill_install_confirmation(
+                intent.intent_id,
+                expected_state_version=intent.state_version,
+                confirmation_nonce=receipt.decision_nonce,
+                confirmation_version=receipt.decision_version,
+            )
         self._verify_receipt(intent, receipt)
         if not receipt.approved:
             return await self.cancel_authorized(receipt)
@@ -512,14 +601,14 @@ class ProjectSkillInstallService:
             expires_at=intent.expires_at,
         )
 
-    def _verify_receipt(self, intent, receipt):
+    def _verify_receipt(self, intent, receipt, *, allow_sdk_nonce_bind: bool = False):
         expected = {
             "intent": intent.intent_id == receipt.intent_id,
             "digest": intent.member_set_stamp == receipt.content_digest,
             "scope": intent.project_scope_key == receipt.project_scope_key,
             "principal": intent.principal_id == receipt.principal_id,
-            "nonce": intent.confirmation_nonce == receipt.decision_nonce,
-            "version": intent.confirmation_version == receipt.decision_version,
+            "nonce": allow_sdk_nonce_bind or intent.confirmation_nonce == receipt.decision_nonce,
+            "version": allow_sdk_nonce_bind or intent.confirmation_version == receipt.decision_version,
             "expiry": intent.expires_at == receipt.expires_at and float(self.clock()) < intent.expires_at,
             "channel": intent.channel == receipt.channel,
         }
@@ -560,6 +649,7 @@ class ProjectSkillInstallService:
 
 
 __all__ = (
+    "AuthorizedPreflightReceiptResolver",
     "AuthorizedSkillInstallReceipt",
     "ProjectSkillInstallError",
     "ProjectSkillInstallService",
