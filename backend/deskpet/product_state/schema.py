@@ -1,28 +1,34 @@
-"""Schema v1 for the product-owned state database."""
+"""Frozen v1 and current v2 schemas for product-owned state."""
 
 from __future__ import annotations
 
 from deskpet.capabilities.store import (
     CAPABILITY_SCHEMA_SQL as _CAPABILITY_SCHEMA_SQL,
+    CAPABILITY_SCHEMA_V1_SQL as _CAPABILITY_SCHEMA_V1_SQL,
     CAPABILITY_SCHEMA_V2_STATEMENTS,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Capability v2 remains product-owned.  During detachment its final DDL is
 # reused verbatim, except TaskGrant receives the new durable lifecycle states.
-CAPABILITY_SCHEMA_SQL = _CAPABILITY_SCHEMA_SQL.replace(
-    "status TEXT NOT NULL CHECK(status IN ('active','revoked'))",
-    "status TEXT NOT NULL CHECK(status IN ('prepared','active','expired','revoked'))",
-).replace(
-    "    created_at REAL NOT NULL,\n    revoked_at REAL\n);\nCREATE INDEX IF NOT EXISTS idx_task_grants_root_active",
-    "    creator_principal_id TEXT NOT NULL DEFAULT 'legacy',\n"
-    "    prepared_at REAL,\n"
-    "    activated_at REAL,\n"
-    "    expires_at REAL,\n"
-    "    created_at REAL NOT NULL,\n"
-    "    revoked_at REAL\n);\nCREATE INDEX IF NOT EXISTS idx_task_grants_root_active",
-)
+def _product_capability_schema(value: str) -> str:
+    return value.replace(
+        "status TEXT NOT NULL CHECK(status IN ('active','revoked'))",
+        "status TEXT NOT NULL CHECK(status IN ('prepared','active','expired','revoked'))",
+    ).replace(
+        "    created_at REAL NOT NULL,\n    revoked_at REAL\n);\nCREATE INDEX IF NOT EXISTS idx_task_grants_root_active",
+        "    creator_principal_id TEXT NOT NULL DEFAULT 'legacy',\n"
+        "    prepared_at REAL,\n"
+        "    activated_at REAL,\n"
+        "    expires_at REAL,\n"
+        "    created_at REAL NOT NULL,\n"
+        "    revoked_at REAL\n);\nCREATE INDEX IF NOT EXISTS idx_task_grants_root_active",
+    )
+
+
+CAPABILITY_SCHEMA_V1_SQL = _product_capability_schema(_CAPABILITY_SCHEMA_V1_SQL)
+CAPABILITY_SCHEMA_SQL = _product_capability_schema(_CAPABILITY_SCHEMA_SQL)
 
 PRODUCT_SCHEMA_SQL = """
 CREATE TABLE product_schema_meta (
@@ -82,6 +88,17 @@ ON authorization_sagas(effect_id, call_id);
 """
 
 SCHEMA_V1_PARTS = (
+    CAPABILITY_SCHEMA_V1_SQL,
+    *CAPABILITY_SCHEMA_V2_STATEMENTS,
+    """
+    UPDATE capability_schema_state
+    SET schema_version=2, updated_at=CAST(strftime('%s','now') AS REAL)
+    WHERE singleton_id=1 AND schema_version=1;
+    """,
+    PRODUCT_SCHEMA_SQL,
+)
+
+SCHEMA_V2_PARTS = (
     CAPABILITY_SCHEMA_SQL,
     *CAPABILITY_SCHEMA_V2_STATEMENTS,
     """
@@ -92,4 +109,11 @@ SCHEMA_V1_PARTS = (
     PRODUCT_SCHEMA_SQL,
 )
 
-__all__ = ("SCHEMA_V1_PARTS", "SCHEMA_VERSION")
+__all__ = (
+    "CAPABILITY_SCHEMA_SQL",
+    "CAPABILITY_SCHEMA_V1_SQL",
+    "PRODUCT_SCHEMA_SQL",
+    "SCHEMA_V1_PARTS",
+    "SCHEMA_V2_PARTS",
+    "SCHEMA_VERSION",
+)

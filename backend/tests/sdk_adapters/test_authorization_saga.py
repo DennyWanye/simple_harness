@@ -125,10 +125,10 @@ def test_database_first_open_reopen_and_failed_initialize_rolls_back(tmp_path) -
     database = ProductStateDatabase(path)
     database.initialize()
     set_policy_generation(database)
-    assert database.schema_version == 1
+    assert database.schema_version == 2
     assert database.connection.execute("PRAGMA synchronous").fetchone()[0] == 2
     assert database.connection.execute("PRAGMA busy_timeout").fetchone()[0] == 5000
-    assert database.connection.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert database.connection.execute("PRAGMA user_version").fetchone()[0] == 2
     assert {
         "capability_versions",
         "authorization_policy_state",
@@ -139,7 +139,7 @@ def test_database_first_open_reopen_and_failed_initialize_rolls_back(tmp_path) -
 
     reopened = ProductStateDatabase(path)
     reopened.initialize()
-    assert reopened.schema_version == 1
+    assert reopened.schema_version == 2
     reopened.close()
 
     broken = ProductStateDatabase(tmp_path / "broken.db")
