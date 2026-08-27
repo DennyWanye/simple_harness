@@ -1286,7 +1286,7 @@ def test_tool_adapter_has_exact_explicit_inventory_and_six_dispatch_shapes() -> 
     ]
     registry, inventory = build_product_tool_registry(registrations)
     assert tuple(item.name for item in inventory) == PRODUCT_TOOL_NAMES
-    assert len(registry.specs) == 77
+    assert len(registry.specs) == len(PRODUCT_TOOL_NAMES)
     context = ToolContext(
         RunId("run-1"), RequestId("request-1"), CancellationToken()
     )

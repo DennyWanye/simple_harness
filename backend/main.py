@@ -2828,6 +2828,20 @@ async def _initialize_capability_runtime() -> None:
         store=store,
         inventory=first_party_skill_inventory,
     )
+    from deskpet.capabilities.skill_install import (
+        BindableSkillInstallRuntimeVerifier,
+        ProjectSkillInstallService,
+    )
+    from deskpet.capabilities.skill_source import BoundedGitHubSkillSource
+
+    skill_install_runtime_verifier = BindableSkillInstallRuntimeVerifier()
+    project_skill_install_service = ProjectSkillInstallService(
+        store=store,
+        source=BoundedGitHubSkillSource(),
+        staging_root=platform.manager.layout.root / "skill-install-intents",
+        batch_publisher=platform.manager,
+        runtime_verifier=skill_install_runtime_verifier,
+    )
     from deskpet.skills.loader import SkillPackSnapshotResolver
 
     skill_pack_snapshot_resolver = SkillPackSnapshotResolver(
@@ -2871,6 +2885,12 @@ async def _initialize_capability_runtime() -> None:
     )
     service_context.register("capability_store", store)
     service_context.register("capability_platform", platform)
+    service_context.register(
+        "project_skill_install_service", project_skill_install_service
+    )
+    service_context.register(
+        "skill_install_runtime_verifier", skill_install_runtime_verifier
+    )
     service_context.register(
         "capability_center",
         CapabilityCenterService(
@@ -7534,9 +7554,13 @@ async def _build_product_sdk_runtime_stack(
 
         tool_context = active_product_tool_context()
         run_id = tool_context.run_id.value
+        effect = getattr(tool_context, "effect_id", None)
+        effect_id = str(getattr(effect, "value", effect) or "")
+        if not effect_id:
+            raise RuntimeError("SDK product Tool effect identity is unavailable")
         return tool_authorities.resolve(run_id).execution_context(
             call_id=active_product_tool_call_id().value,
-            effect_id=active_product_tool_call_id().value,
+            effect_id=effect_id,
         )
 
     capability_bridge = SdkRuntimeCapabilityBridgeAdapter(
@@ -7556,8 +7580,40 @@ async def _build_product_sdk_runtime_stack(
         memory_identity_resolver=memory_identity_resolver,
     )
 
+    # Authorization state must exist before the Skill install registration is
+    # frozen, because its physical handler resolves only durable Product saga
+    # receipts and never accepts a model-provided approval token.
+    from deskpet.product_state.database import ProductStateDatabase
+    from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
+    from deskpet.capabilities.skill_install import AuthorizedPreflightReceiptResolver
+
+    sdk_product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
+    sdk_product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
+    product_state_db = ProductStateDatabase(sdk_product_state_db_path)
+    product_state_db.initialize()
+    repository = AuthorizationSagaRepository(
+        product_state_db, owner_id=f"sdk-runtime-g{generation}"
+    )
+    project_skill_install_service = service_context.get(
+        "project_skill_install_service"
+    )
+    if project_skill_install_service is None:
+        raise RuntimeError("SDK Runtime requires ProjectSkillInstallService")
+    skill_install_receipts = AuthorizedPreflightReceiptResolver(
+        capability_store, repository
+    )
+
+    async def skill_install_handler(_arguments, _context):
+        trusted = execution_context_getter()
+        authority = tool_authorities.resolve(trusted.run_id)
+        receipt = await skill_install_receipts.resolve_chat(
+            context=trusted, principal_id=authority.principal_id
+        )
+        return await project_skill_install_service.confirm_authorized(receipt)
+
     catalog = build_explicit_product_tool_catalog(dependencies)
     from dataclasses import replace as dataclass_replace
+    from deskpet.sdk_adapters.tools import ProductToolRegistration
 
     projected_registrations = tuple(
         dataclass_replace(
@@ -7574,9 +7630,25 @@ async def _build_product_sdk_runtime_stack(
         else item
         for item in catalog.registrations
     )
-    tools_adapter, tool_inventory = build_product_tool_registry(
-        projected_registrations
-    )
+    projected_registrations = (*projected_registrations, ProductToolRegistration(
+        name="skill_install",
+        description="Install Skills from one public GitHub repository into the current Project.",
+        input_schema={
+            "type": "object",
+            "properties": {"url": {"type": "string", "format": "uri"}},
+            "required": ["url"],
+            "additionalProperties": False,
+        },
+        handler=skill_install_handler,
+        dispatch_kind="async",
+        permission_category="skill_install",
+        metadata={
+            "source": "product-skill-install",
+            "version": "1",
+            "stable_handler_id": "core.skill_install.v1",
+        },
+    ))
+    tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
     from deskpet.tools import registry as live_tool_registry
 
     tool_inventory = extend_product_registry_with_mcp(
@@ -7610,22 +7682,14 @@ async def _build_product_sdk_runtime_stack(
         raise RuntimeError("SDK catalog is missing product inventory entries")
 
     # Build authorization system
-    from deskpet.product_state.database import ProductStateDatabase
-    from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
     from deskpet.product_state.task_grants import DurableTaskGrantAuthority
     import time
 
-    # Create product state database for SDK Runtime
-    sdk_product_state_db_path = _paths.user_data_dir() / "data" / "sdk-product-state.db"
-    sdk_product_state_db_path.parent.mkdir(parents=True, exist_ok=True)
-    product_state_db = ProductStateDatabase(sdk_product_state_db_path)
-    product_state_db.initialize()
-    # Create authorization saga repository
-    repository = AuthorizationSagaRepository(product_state_db, owner_id=f"sdk-runtime-g{generation}")
     authorization_policy = SdkPreparedAuthorizationPolicy(
         authorization_runtime,
         tool_authorities,
         initial_policy_generation=initial_authorization_policy.generation,
+        skill_install_preflight=project_skill_install_service,
     )
 
     # Build authorization adapter
@@ -7641,6 +7705,7 @@ async def _build_product_sdk_runtime_stack(
         ),
         grant_factory=authorization_policy.grant_factory,
         clock=time.time,
+        terminal_lifecycle=project_skill_install_service,
     )
 
     # Build reconciliation adapter

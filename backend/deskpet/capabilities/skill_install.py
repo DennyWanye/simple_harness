@@ -156,6 +156,26 @@ class SkillInstallRuntimeVerifier(Protocol):
     ) -> Mapping[str, JsonValue]: ...
 
 
+class BindableSkillInstallRuntimeVerifier:
+    """Fail-closed composition holder for the canonical fresh-Run owner."""
+
+    def __init__(self) -> None:
+        self._delegate: SkillInstallRuntimeVerifier | None = None
+
+    def bind(self, delegate: SkillInstallRuntimeVerifier) -> None:
+        if self._delegate is not None and self._delegate is not delegate:
+            raise RuntimeError("skill install runtime verifier is already bound")
+        self._delegate = delegate
+
+    async def verify_skill_install(self, **kwargs: Any) -> Mapping[str, JsonValue]:
+        if self._delegate is None:
+            raise ProjectSkillInstallError(
+                "skill_install_runtime_verifier_unavailable",
+                "Fresh-Run Skill verification is unavailable",
+            )
+        return await self._delegate.verify_skill_install(**kwargs)
+
+
 class AuthorizedPreflightReceiptResolver:
     """Resolve only a durable SDK decision plus committed Host handoff."""
 
@@ -651,6 +671,7 @@ class ProjectSkillInstallService:
 __all__ = (
     "AuthorizedPreflightReceiptResolver",
     "AuthorizedSkillInstallReceipt",
+    "BindableSkillInstallRuntimeVerifier",
     "ProjectSkillInstallError",
     "ProjectSkillInstallService",
     "SkillInstallBatchPublisher",
