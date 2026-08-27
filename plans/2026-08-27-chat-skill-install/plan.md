@@ -95,6 +95,47 @@ chat capability_install_skill / Settings Skill Store
 
 ## 任务清单（按依赖排序）
 
+### Task 0 — Product state v1→v2 原子 migration [AC-SI-4, AC-SI-6]
+
+- `ProductStateDatabase` 是唯一 schema/migration owner。保留 immutable v1 DDL/hash 常量；initialize
+  识别严格有效的 v1 后，以单个 `BEGIN IMMEDIATE` 创建 v2 Skill-install aggregate/child/index，完成
+  FK/row-count/manifest 校验，最后更新 schema meta 与 `PRAGMA user_version=2` 再 commit。任一 fault
+  rollback 后必须仍是完整可 reopen 的 v1；成功后重复 initialize 幂等。v1 binary 看见 v2 明确拒绝，
+  不自动降级；应用回退只允许恢复 migration 前备份。
+- migration 开始前，owner 先对严格有效 v1 使用 SQLite `Connection.backup` 生成同 userdata filesystem
+  的一致快照（无需把 WAL checkpoint 当先决条件），以 exact v1 validator + quick_check 校验、SHA-256、
+  `0600`、file/parent fsync 后原子 rename；任何一步失败都在 DDL 前终止。成功或 migration rollback 后
+  至少保留最新 verified pre-v2 backup。恢复只能由 app/DB 全停后的显式 offline tooling 执行：核 hash/
+  权限/v1 manifest，先保存现 v2 recovery artifact，再同盘原子替换并只清匹配 stale WAL/SHM；禁止自动降级。
+- 新增唯一 `capability_skill_install_intents` aggregate，冻结 stable preflight identity、effect/call/run/
+  channel、Project scope、principal、source/exact commit/archive/raw/member/permission hashes、nonce/version/
+  expiry/state_version，带完整 lifecycle CHECK、settlement/cleanup/verification refs 与 CAS API；按
+  effect+call 唯一，按 status+expiry 查询。它不是第二套 Manager/decision journal，而是本功能唯一 intent owner。
+- child rows 保存 ordered immutable install members 与 operation members；normalized name 在 intent 内唯一，
+  operation committed member 行 FK 到 exact capability version，committed-set stamp 覆盖有序全集。现有
+  publish intent 保持 aggregate header，并新增逐 member old/new binding child；append-only operation evidence
+  记录 materialization、catalog swap、cleanup 与 runtime verification，使用稳定 idempotency key。
+- intent 与 Manager operation 通过 handoff row 一对一（intent 可在确认前为 0 operation，确认后恰好 1）；
+  staged member 只 FK intent，handoff transaction CAS 消费确认并原子创建/reuse operation + exact ordered
+  operation-member rows。publish-intent member child FK operation member；terminal transaction 才写 committed
+  binding/version refs。每一跳重算 canonical staged/operation/committed set stamp，要求 count、ordinal、
+  normalized name、pack/version/manifest/content/source digest 全等，缺失/额外/重复均在外部 mutation 前拒绝。
+- transactionally rebuild 现有 `capability_operations` 与 `capability_publish_intents` 为 v2 superset：保留
+  所有 legacy kind/phase/row，新增 `skill_install_batch` 及 `batch_staged -> batch_prepared ->
+  batch_publish_intent -> batch_files_materialized -> batch_catalog_swapped -> batch_committed`。publish intent
+  同步 batch phase，binding envelope 带 schema discriminator；legacy 与 batch recovery 分支互斥。operation
+  仍是唯一 Manager phase owner，phase evidence 只存 immutable proof，不决定当前 phase。
+- 复用现有 versions、bindings、owner stamp、operation receipt 与 transaction owner；不修改旧 receipt，
+  verification attestation 关联它，只有 attestation CAS 完整后 intent 才 succeeded。旧 userdata 的
+  operations/bindings/receipts 原样保留，不迁移 legacy userdata Skill。
+- migration 测试：fresh v2、真实 v1 fixture reopen、每个 DDL/copy/manifest/user_version fault rollback、
+  v2 reopen 幂等、partial/corrupt/user_version mismatch fail closed、旧数据逐 hash 保持、downgrade 拒绝。
+- schema integrity 不再只信 expected DDL hash/table names：维护 immutable structured v1/v2 manifest，按对象名
+  排序采集 `table_xinfo`、`index_list/index_xinfo`、`foreign_key_list` 与允许的 table/index/view/trigger 清单，
+  canonical JSON fingerprint；CHECK 用 SAVEPOINT 内的 valid/invalid named probes 验证。迁移 commit 前与每次
+  reopen 都核 semantic live fingerprint、CHECK probes、foreign_key_check/quick_check；missing/altered/
+  unexpected object、伪造旧 manifest、partial v2 均 fail closed。
+
 ### Task 1 — Project identity-aware Capability scope [AC-SI-2, AC-SI-5]
 
 - 改动：扩展 `ToolExecutionContext`、所有 Host/SDK context factory 与 `CapabilityScope`，生成
@@ -141,7 +182,8 @@ chat capability_install_skill / Settings Skill Store
   一个 SQLite transaction 写入全部 version/binding/owner stamp/receipt/committed。
 - operation receipt 记录 exact pack id/version/manifest/content hash、Project scope key、binding generation、
   catalog revision 和 committed set stamp；幂等重放返回同一结果。
-- 不新建独立 aggregate table/journal；复用 Manager lock、operation receipt、recovery 和 idempotency owner。
+- batch lifecycle 只写 Task 0 的唯一 install-intent aggregate 与受约束 child/evidence；不再新建第二套
+  Manager/decision journal，继续复用 Manager lock、operation receipt、recovery 和 idempotency owner。
 - 崩溃点覆盖每个 batch phase 与每个 member prepare；恢复检查 operation + publisher
   fingerprint：full-new 幂等补交 DB，full-old 删除未提交 batch root 并 rollback，
   mixed/unverifiable 保持 unknown 且 catalog read fenced。
@@ -263,6 +305,19 @@ chat capability_install_skill / Settings Skill Store
   spike-auth-preflight-rehydration.md`；测试 SHA-256
   `42605ef563eb70f34d31f71dd19beb104e0f3a670c32049e0325f87421abd183`；最终 `6 passed in 0.18s`，
   额外覆盖 artifact-only、orphan grant、pre-SDK-decision 与四类 mutation-before-stop 反例。
+
+## A2-002 schema 回炉与 migration spike（2026-08-28）
+
+- 执行证实现有 Product schema v1 无法约束 finalized intent/batch CAS，且运行时加表会被 strict manifest
+  reopen 拒绝；已按 `owner-missing` 停止 Task 2～4 并回到 Phase 2。
+- disposable ProductStateDatabase migration spike 在真实 populated v1 上覆盖 14 个 fault boundary，全部
+  rollback 后由真实 v1 validator reopen；成功/重复 v2 reopen、legacy hash、FK、downgrade/corruption
+  fail-closed 均通过，`19 passed in 0.16s`。证据：`.local-test-evidence/2026-08-27/
+  chat-skill-install-plan-loop/a2-002-migration-spike.md`，报告 SHA-256
+  `5261be2f360eb2bdfaabd54a73935e202212d5db4148f64baa32c6a7ff4cb3e3`。
+- 结论：采用 Task 0 的唯一 intent aggregate + existing Manager journals v2 superset rebuild；这不是第二套
+  publish/decision journal。schema migration、live semantic manifest、verified backup/offline restore 和 exact
+  relational handoff 必须同一 release unit 落地并完成旧 userdata reopen/crash proof。
 
 ## 停止条件
 
