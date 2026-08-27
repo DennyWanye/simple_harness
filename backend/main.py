@@ -2720,7 +2720,9 @@ async def _initialize_capability_runtime() -> None:
         snapshot = await platform.hub.snapshot(
             CapabilityScope.for_run(
                 context.root_run_id,
-                project_root=context.workspace or context.write_scope_root,
+                project_id=context.project_id or None,
+                project_revision=context.project_revision or None,
+                project_identity=context.project_identity or None,
             )
         )
         authority_cache[grant.task_grant_id] = (
@@ -7960,6 +7962,9 @@ async def _issue_product_harness_host(
     allow_provider_unavailable: bool = False,
     allow_workspace_unavailable: bool = False,
     projectless: bool = False,
+    project_id: str = "",
+    project_revision: int = 0,
+    project_identity: str = "",
 ):
     from deskpet.execution.contracts import ProviderLaunchSnapshot, fingerprint_json
     from deskpet.harness.contracts import HostContext
@@ -8098,6 +8103,9 @@ async def _issue_product_harness_host(
         trace_id=f"chat:{uuid.uuid4().hex}",
         workspace=workspace,
         write_scope_root=write_scope_root,
+        project_id=project_id,
+        project_revision=project_revision,
+        project_identity=project_identity,
     )
     return host, provider, providers, provider_snapshot
 
@@ -9066,6 +9074,9 @@ async def _run_product_harness_chat(
             session_id=session_id,
             workspace=workspace,
             projectless=workspace_resolution["kind"] == "projectless",
+            project_id=str(workspace_resolution.get("project_id") or ""),
+            project_revision=int(workspace_resolution.get("project_revision") or 0),
+            project_identity=str(workspace_resolution.get("project_identity") or ""),
         )
         provider = _provider
         provider_chain = _providers
@@ -9079,6 +9090,9 @@ async def _run_product_harness_chat(
                 workspace=workspace,
                 allow_workspace_unavailable=True,
                 projectless=workspace_resolution["kind"] == "projectless",
+                project_id=str(workspace_resolution.get("project_id") or ""),
+                project_revision=int(workspace_resolution.get("project_revision") or 0),
+                project_identity=str(workspace_resolution.get("project_identity") or ""),
             )
             await _commit_product_preflight_block(
                 websocket=websocket,
@@ -9098,6 +9112,9 @@ async def _run_product_harness_chat(
             workspace=workspace,
             allow_provider_unavailable=True,
             projectless=workspace_resolution["kind"] == "projectless",
+            project_id=str(workspace_resolution.get("project_id") or ""),
+            project_revision=int(workspace_resolution.get("project_revision") or 0),
+            project_identity=str(workspace_resolution.get("project_identity") or ""),
         )
         await _commit_product_preflight_block(
             websocket=websocket,

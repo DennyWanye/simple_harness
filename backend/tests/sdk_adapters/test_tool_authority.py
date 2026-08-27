@@ -278,6 +278,10 @@ def test_project_bound_authority_revalidates_identity() -> None:
 
     authority.assert_workspace_current()
     assert observed == [authority.workspace_resolution]
+    context = authority.execution_context()
+    assert context.project_id == "project-1"
+    assert context.project_revision == 1
+    assert context.project_identity == "identity-project"
 
 
 def _run_aware_executor_registry(

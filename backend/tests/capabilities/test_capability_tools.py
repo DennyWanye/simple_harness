@@ -46,6 +46,9 @@ def _context(
         scope_hash="b" * 64,
         trace_id="trace-1",
         workspace=workspace,
+        project_id="project-1" if workspace else "",
+        project_revision=1 if workspace else 0,
+        project_identity="filesystem-1" if workspace else "",
     )
 
 
@@ -174,7 +177,7 @@ async def test_install_derives_project_scope_and_host_idempotency(
     assert kind == "install"
     assert source.uri == str(tmp_path / "source")
     assert kwargs["root_run_id"] == "root-1"
-    assert str(kwargs["scope_key"]).startswith("project:")
+    assert str(kwargs["scope_key"]).startswith("project:v2:")
     assert str(kwargs["idempotency_key"]).startswith(
         "capability:install:root-1:effect-1:"
     )
