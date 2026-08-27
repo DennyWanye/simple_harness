@@ -8,9 +8,11 @@ from deskpet.capabilities.contracts import (
     CapabilityScope,
     CapabilityVersionDescriptor,
     CatalogStamp,
+    canonical_project_identity_scope_key,
     canonical_project_scope_key,
     provider_tool_name,
 )
+from deskpet.harness.context import HostContextFactory
 
 
 def _digest(seed: str) -> str:
@@ -38,10 +40,71 @@ def test_provider_name_is_deterministic_and_never_truncated() -> None:
 def test_project_scope_is_stable_without_writing_project(tmp_path) -> None:
     root = tmp_path / "项目 with spaces"
     first = canonical_project_scope_key(root)
-    second = CapabilityScope.for_run("root-1", project_root=root).project_key
-    assert first == second
+    legacy = CapabilityScope.for_run("root-1", project_root=root)
     assert first.startswith("project:")
+    assert legacy.project_key is None
     assert not root.exists()
+
+
+def test_project_scope_binds_frozen_identity_not_path() -> None:
+    first = canonical_project_identity_scope_key("project-1", 1, "fs-a")
+    restarted = CapabilityScope.for_run(
+        "run-restarted",
+        project_id="project-1",
+        project_revision=1,
+        project_identity="fs-a",
+    )
+    other_identity = canonical_project_identity_scope_key("project-2", 1, "fs-b")
+    relocated = canonical_project_identity_scope_key("project-1", 2, "fs-a")
+
+    assert restarted.project_key == first
+    assert first.startswith("project:v2:")
+    assert other_identity != first
+    assert relocated != first
+    assert ("project", first) in restarted.binding_keys()
+    assert ("project", relocated) not in restarted.binding_keys()
+
+
+def test_project_scope_rejects_partial_or_stale_identity() -> None:
+    with pytest.raises(CapabilityContractError, match="supplied together"):
+        CapabilityScope.for_run("run", project_id="project-1")
+    with pytest.raises(CapabilityContractError, match="positive integer"):
+        CapabilityScope.for_run(
+            "run",
+            project_id="project-1",
+            project_revision=0,
+            project_identity="fs-a",
+        )
+
+
+def test_host_factory_projects_identity_into_trusted_tool_context(tmp_path) -> None:
+    factory = HostContextFactory()
+    run = factory.create_run_context(
+        session_id="session",
+        root_run_id="root",
+        request_id="request",
+        turn_id="turn",
+        venue="text",
+        capability_hash="a" * 64,
+        provider_plan=(),
+        trace_id="trace",
+        principal_id="principal",
+        workspace=tmp_path,
+        project_id="project-1",
+        project_revision=3,
+        project_identity="filesystem-1",
+    )
+    context = factory.create_tool_context(
+        run,
+        run_id="run",
+        call_id="call",
+        effect_id="effect",
+    )
+    assert (
+        context.project_id,
+        context.project_revision,
+        context.project_identity,
+    ) == ("project-1", 3, "filesystem-1")
 
 
 def test_version_and_binding_validate_tool_mapping() -> None:

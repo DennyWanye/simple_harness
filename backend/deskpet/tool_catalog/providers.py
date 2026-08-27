@@ -82,6 +82,9 @@ def _authoritative_execution_context(
             else None
         ),
         owner_key=str(getattr(base, "owner_key", "") or ""),
+        project_id=str(getattr(base, "project_id", "") or ""),
+        project_revision=int(getattr(base, "project_revision", 0) or 0),
+        project_identity=str(getattr(base, "project_identity", "") or ""),
     )
 
 

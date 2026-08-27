@@ -608,7 +608,9 @@ class ProductVenueRunAdapter:
                 binding_epoch = int(frozen_owner.binding_epoch)
             scope = CapabilityScope.for_run(
                 root_ref.run_id,
-                project_root=work_context.workspace_root,
+                project_id=host.project_id or None,
+                project_revision=host.project_revision or None,
+                project_identity=host.project_identity or None,
                 user_key=owner_key,
             )
             prepared_catalog_lease = await platform.prepare_run_catalog_lease(

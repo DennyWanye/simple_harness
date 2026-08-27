@@ -45,7 +45,9 @@ def _require_context(context: ToolExecutionContext | None) -> ToolExecutionConte
 def _scope_for(context: ToolExecutionContext) -> CapabilityScope:
     return CapabilityScope.for_run(
         context.root_run_id,
-        project_root=context.workspace or context.write_scope_root,
+        project_id=context.project_id or None,
+        project_revision=context.project_revision or None,
+        project_identity=context.project_identity or None,
     )
 
 

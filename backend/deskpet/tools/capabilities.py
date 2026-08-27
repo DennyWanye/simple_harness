@@ -433,6 +433,9 @@ class ToolExecutionContext:
     venue: str = "text"
     workspace: Optional[str] = None
     write_scope_root: Optional[str] = None
+    project_id: str = ""
+    project_revision: int = 0
+    project_identity: str = ""
     capability_hash: str = ""
     scope_hash: str = ""
     provider_plan: tuple[str, ...] = ()

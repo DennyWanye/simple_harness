@@ -14,6 +14,8 @@ from deskpet.capabilities.contracts import (
     PendingPublishError,
     RegistryCatalogSnapshot,
     RegistryToolDescriptor,
+    canonical_project_identity_scope_key,
+    canonical_project_scope_key,
 )
 from deskpet.capabilities.hub import (
     CapabilityHub,
@@ -282,6 +284,49 @@ async def test_scope_precedence_is_run_project_user_builtin(tmp_path) -> None:
         descriptor = (await hub.snapshot(scope)).get("renderer")
         assert descriptor is not None
         assert descriptor.version.version == expected_version
+
+
+@pytest.mark.asyncio
+async def test_new_run_fails_closed_for_legacy_and_prior_revision_bindings(
+    tmp_path,
+) -> None:
+    path = await initialize_capability_database(tmp_path / "workflow.db")
+    store = CapabilityStore(path)
+    descriptor = _version("project_skill", "1.0.0")
+    legacy_key = canonical_project_scope_key(tmp_path / "same-path")
+    revision_one_key = canonical_project_identity_scope_key(
+        "project-1", 1, "filesystem-1"
+    )
+    entries = tuple(
+        CapabilityCatalogEntry(
+            descriptor,
+            (_binding(descriptor, scope="project", scope_key=key),),
+        )
+        for key in (legacy_key, revision_one_key)
+    )
+    hub = CapabilityHub(
+        store=store,
+        registry_source=_RegistrySource(RegistryCatalogSnapshot(0, ())),
+        legacy_source=StaticCapabilityEntrySource(entries, revision=1),
+    )
+
+    relocated_scope = CapabilityScope.for_run(
+        "run-2",
+        project_id="project-1",
+        project_revision=2,
+        project_identity="filesystem-1",
+    )
+    assert (await hub.snapshot(relocated_scope)).get("project_skill") is None
+
+    restarted_revision_one = CapabilityScope.for_run(
+        "run-restarted",
+        project_id="project-1",
+        project_revision=1,
+        project_identity="filesystem-1",
+    )
+    assert (
+        await hub.snapshot(restarted_revision_one)
+    ).get("project_skill") is not None
 
 
 @pytest.mark.asyncio

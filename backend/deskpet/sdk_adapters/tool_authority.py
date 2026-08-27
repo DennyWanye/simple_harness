@@ -232,6 +232,13 @@ class SdkRunToolAuthorityV1:
             turn_id=turn_id,
             workspace=self.task_work_context.workspace_root,
             write_scope_root=self.task_work_context.workspace_root,
+            project_id=str(self.workspace_resolution.get("project_id") or ""),
+            project_revision=int(
+                self.workspace_resolution.get("project_revision") or 0
+            ),
+            project_identity=str(
+                self.workspace_resolution.get("project_identity") or ""
+            ),
             capability_hash=self.capability_hash,
             scope_hash=self.scope_hash,
             run_id=self.run_id,

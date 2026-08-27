@@ -38,6 +38,9 @@ class HostContextFactory:
         parent_run_id: str | None = None,
         workspace: str | Path | None = None,
         write_scope_root: str | Path | None = None,
+        project_id: str = "",
+        project_revision: int = 0,
+        project_identity: str = "",
         scope_hash: str = "",
         owner_key: str | None = None,
         profile_generation: int = 0,
@@ -47,6 +50,10 @@ class HostContextFactory:
             raise ValueError(f"unsupported execution venue: {venue}")
         resolved_workspace = str(Path(workspace).resolve()) if workspace else None
         resolved_write_root = str(Path(write_scope_root).resolve()) if write_scope_root else None
+        project_values = (project_id, project_revision, project_identity)
+        if any(bool(value) for value in project_values):
+            if not project_id or not project_identity or project_revision < 1:
+                raise ValueError("complete Project identity is required")
         resolved_scope_hash = scope_hash or canonical_hash(
             {
                 "session_id": session_id,
@@ -96,6 +103,9 @@ class HostContextFactory:
                 "root": resolved_workspace,
                 "write_scope_root": resolved_write_root,
                 "scope_hash": resolved_scope_hash,
+                "project_id": project_id,
+                "project_revision": project_revision,
+                "project_identity": project_identity,
             },
             capability_hash=capability_hash,
             provider_plan=frozen_provider_plan,
@@ -128,6 +138,9 @@ class HostContextFactory:
         root = workspace.get("root")
         write_root = workspace.get("write_scope_root")
         scope_hash = str(workspace.get("scope_hash") or "")
+        project_id = str(workspace.get("project_id") or "")
+        project_revision = int(workspace.get("project_revision") or 0)
+        project_identity = str(workspace.get("project_identity") or "")
         providers = run_context.provider_plan.get("providers", ())
         return ToolExecutionContext(
             scope_id=scope_id or scope_hash,
@@ -140,6 +153,9 @@ class HostContextFactory:
             venue=run_context.venue,
             workspace=str(root) if root is not None else None,
             write_scope_root=str(write_root) if write_root is not None else None,
+            project_id=project_id,
+            project_revision=project_revision,
+            project_identity=project_identity,
             capability_hash=run_context.capability_hash,
             scope_hash=scope_hash,
             provider_plan=tuple(str(item) for item in providers),

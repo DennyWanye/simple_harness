@@ -144,7 +144,12 @@ def provider_tool_name(pack_id: str, logical_tool_id: str) -> str:
 
 
 def canonical_project_scope_key(project_root: str | Path) -> str:
-    """Hash a canonical project root without writing into the user project."""
+    """Return the legacy path-only key for diagnostics and recovery.
+
+    New Runs must use :func:`canonical_project_identity_scope_key`.  A path is
+    mutable and can be reused by another Project, so this key is deliberately
+    never produced by ``CapabilityScope.for_run`` as an authoritative binding.
+    """
 
     resolved = Path(project_root).expanduser().resolve(strict=False)
     canonical = unicodedata.normalize("NFC", str(resolved))
@@ -153,6 +158,35 @@ def canonical_project_scope_key(project_root: str | Path) -> str:
     if resolved.drive:
         canonical = canonical.casefold()
     return f"project:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
+def canonical_project_identity_scope_key(
+    project_id: str,
+    project_revision: int,
+    project_identity: str,
+) -> str:
+    """Return the opaque v2 binding key for one frozen Project identity."""
+
+    normalized_id = _required_text(project_id, "project_id")
+    normalized_identity = _required_text(project_identity, "project_identity")
+    if (
+        not isinstance(project_revision, int)
+        or isinstance(project_revision, bool)
+        or project_revision < 1
+    ):
+        raise CapabilityContractError(
+            "invalid_project_revision",
+            "project_revision must be a positive integer",
+        )
+    digest = fingerprint_json(
+        {
+            "domain": "project-capability-scope-v2",
+            "project_id": normalized_id,
+            "project_identity": normalized_identity,
+            "project_revision": project_revision,
+        }
+    )
+    return f"project:v2:{digest}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,13 +414,26 @@ class CapabilityScope:
         root_run_id: str,
         *,
         project_root: str | Path | None = None,
+        project_id: str | None = None,
+        project_revision: int | None = None,
+        project_identity: str | None = None,
         user_key: str = "default",
     ) -> "CapabilityScope":
+        identity_values = (project_id, project_revision, project_identity)
+        if any(value is not None for value in identity_values) and not all(
+            value is not None for value in identity_values
+        ):
+            raise CapabilityContractError(
+                "incomplete_project_identity",
+                "project_id, project_revision and project_identity must be supplied together",
+            )
         return cls(
             run_key=_required_text(root_run_id, "root_run_id"),
             project_key=(
-                canonical_project_scope_key(project_root)
-                if project_root is not None
+                canonical_project_identity_scope_key(
+                    str(project_id), int(project_revision), str(project_identity)
+                )
+                if project_id is not None
                 else None
             ),
             user_key=user_key,
@@ -1104,6 +1151,7 @@ __all__ = [
     "SCOPE_PRECEDENCE",
     "canonical_json",
     "canonical_project_scope_key",
+    "canonical_project_identity_scope_key",
     "fingerprint_json",
     "provider_tool_name",
 ]

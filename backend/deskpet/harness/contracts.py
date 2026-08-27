@@ -378,6 +378,9 @@ class HostContext:
     trace_id: str
     workspace: str | None = None
     write_scope_root: str | None = None
+    project_id: str = ""
+    project_revision: int = 0
+    project_identity: str = ""
     # provider_id, model_id, incarnation_id, config_revision, binding_epoch.
     # Legacy two-item tuples remain accepted by HostContextFactory.
     provider_bindings: tuple[tuple[Any, ...], ...] = ()
