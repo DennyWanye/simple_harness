@@ -23,7 +23,7 @@ import sysconfig
 from pathlib import Path
 
 import PyInstaller.building.build_main as _pyi_build_main
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 # Playwright driver + the exact product-owned browser are collected through one
 # shared helper.  It validates the package/browser pins and fails the build
@@ -174,6 +174,11 @@ hiddenimports += _mypyc_modules
 # (source, dest-inside-bundle) tuples. Use collect_data_files() for
 # installed packages; hardcode relative paths for our own repo files.
 datas: list[tuple[str, str]] = []
+datas += copy_metadata("simple-harness-sdk")
+datas += [
+    ("vendor/simple_harness_sdk-0.6.3-py3-none-any.whl", "vendor"),
+    ("vendor/simple_harness_sdk-0.6.3.candidate-manifest.json", "vendor"),
+]
 _playwright_datas, _playwright_hiddenimports = collect_playwright_bundle(_repo_root)
 datas += _playwright_datas
 hiddenimports += _playwright_hiddenimports
