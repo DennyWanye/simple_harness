@@ -151,7 +151,13 @@ def _attempts(product_database: Path) -> tuple[VerificationAttemptIdentity, ...]
     connection = sqlite3.connect(product_database)
     connection.row_factory = sqlite3.Row
     try:
-        ProductStateDatabase._validate_v3_connection(connection)
+        version = int(connection.execute(
+            "SELECT schema_version FROM product_schema_meta WHERE singleton=1"
+        ).fetchone()[0])
+        if version == 4:
+            ProductStateDatabase._validate_v4_connection(connection)
+        else:
+            ProductStateDatabase._validate_v3_connection(connection)
         rows = connection.execute(
             "SELECT attempt_id,intent_id,status,expected_run_id,verifier_session_id,"
             "request_id,turn_id FROM capability_skill_install_verification_attempts "
@@ -171,7 +177,10 @@ def _verify_run_dispositions(
     for attempt in attempts:
         disposition = probe(attempt)
         if disposition is None:
-            if attempt.status not in {"prepared", "terminal_failed", "superseded"}:
+            if attempt.status not in {
+                "prepared", "allocated", "terminal_failed", "superseded",
+                "attested", "quarantined",
+            }:
                 raise HostControlDowngradeError(
                     f"verifier Run is missing for launched attempt {attempt.attempt_id}"
                 )
@@ -340,6 +349,55 @@ def execute_host_control_downgrade(
     )
 
 
+def execute_product_v4_to_v3_downgrade(
+    *,
+    product_database: str | Path,
+    execution_database: str | Path,
+    product_pre_v4_backup: str | Path,
+    ingress_closed: bool,
+    app_stopped: bool,
+    run_probe: VerifierRunProbe,
+    sdk_reopen_probe: Sdk062ReopenProbe,
+) -> DowngradeReceipt:
+    """Offline dual-database rollback to the immutable ProductState v3 image."""
+
+    if not ingress_closed or not app_stopped:
+        raise HostControlDowngradeError("ingress and application must be stopped")
+    product = Path(product_database).resolve(strict=True)
+    execution = Path(execution_database).resolve(strict=True)
+    pre_v4 = Path(product_pre_v4_backup).resolve(strict=True)
+    _require_offline(product)
+    _require_offline(execution)
+    attempts = _attempts(product)
+    _verify_run_dispositions(attempts, run_probe)
+    execution_backup = _immutable_sqlite_backup(
+        execution, kind="pre-product-v3-downgrade"
+    )
+    product_recovery = _immutable_sqlite_backup(
+        product, kind="pre-product-v3-restore"
+    )
+    compatible, detail = sdk_reopen_probe(execution_backup)
+    if not compatible:
+        raise HostControlDowngradeError(f"SDK reopen proof failed: {detail}")
+    try:
+        restore_migration_backup_offline(
+            database_path=product,
+            backup_path=pre_v4,
+            expected_source_version=3,
+            validate=ProductStateDatabase._validate_v3_connection,
+        )
+    except ProductStateBackupError as exc:
+        raise HostControlDowngradeError("ProductState v3 restore failed") from exc
+    return DowngradeReceipt(
+        outcome="restored",
+        product_recovery_artifact=product_recovery,
+        execution_backup=execution_backup,
+        execution_quarantine=None,
+        attempt_count=len(attempts),
+        sdk_probe_detail=detail,
+    )
+
+
 __all__ = (
     "DowngradeReceipt",
     "HostControlDowngradeError",
@@ -348,5 +406,6 @@ __all__ = (
     "VerifierRunDisposition",
     "VerifierRunProbe",
     "execute_host_control_downgrade",
+    "execute_product_v4_to_v3_downgrade",
     "pinned_sdk_062_reopen_probe",
 )

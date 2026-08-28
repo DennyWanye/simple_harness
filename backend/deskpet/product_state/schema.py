@@ -8,7 +8,7 @@ from deskpet.capabilities.store import (
     CAPABILITY_SCHEMA_V2_STATEMENTS,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Capability v2 remains product-owned.  During detachment its final DDL is
 # reused verbatim, except TaskGrant receives the new durable lifecycle states.
@@ -211,6 +211,88 @@ SCHEMA_V2_PARTS = (
 
 SCHEMA_V3_PARTS = (*SCHEMA_V2_PARTS, VERIFICATION_V3_COLUMNS_SQL, VERIFICATION_V3_SCHEMA_SQL)
 
+VERIFICATION_V4_SCHEMA_SQL = VERIFICATION_V3_SCHEMA_SQL.replace(
+    "'prepared','launching','running','terminal_succeeded','terminal_failed',\n        'unknown','superseded'",
+    "'allocated','start_submitted','run_durable','catalog_ready',\n        'page_in_proven','terminal_observed','lease_released','attested',\n        'terminal_failed','unknown','superseded','quarantined'",
+).replace(
+    "    run_catalog_content_stamp TEXT,\n",
+    "    lease_intent_id TEXT,\n"
+    "    lease_intent_hash TEXT,\n"
+    "    capability_snapshot_ref TEXT,\n"
+    "    run_catalog_content_stamp TEXT,\n"
+    "    process_catalog_stamp TEXT,\n"
+    "    projection_receipt_id TEXT,\n"
+    "    projection_receipt_hash TEXT,\n"
+).replace(
+    "    evidence_hash TEXT,\n",
+    "    evidence_hash TEXT,\n"
+    "    release_receipt_id TEXT,\n"
+    "    release_receipt_hash TEXT,\n"
+    "    release_owner_event_hash TEXT,\n"
+    "    migration_classification TEXT,\n"
+    "    migration_classification_hash TEXT,\n",
+    1,
+).replace(
+    "WHERE status IN ('prepared','launching','running','unknown');",
+    "WHERE status IN ('allocated','start_submitted','run_durable','catalog_ready',\n"
+    "                 'page_in_proven','terminal_observed','lease_released','unknown');",
+).replace(
+    "    UNIQUE(intent_id,attempt_generation),",
+    "    CHECK((lease_intent_id IS NULL)=(lease_intent_hash IS NULL)),\n"
+    "    CHECK((projection_receipt_id IS NULL)=(projection_receipt_hash IS NULL)),\n"
+    "    CHECK((terminal_event_id IS NULL)=(terminal_event_hash IS NULL)),\n"
+    "    CHECK((release_receipt_id IS NULL)=(release_receipt_hash IS NULL)),\n"
+    "    CHECK(status NOT IN ('run_durable','catalog_ready','page_in_proven',\n"
+    "                         'terminal_observed','lease_released','attested')\n"
+    "          OR actual_run_id IS NOT NULL OR migration_classification='attested'),\n"
+    "    CHECK(status NOT IN ('catalog_ready','page_in_proven','terminal_observed',\n"
+    "                         'lease_released','attested')\n"
+    "          OR (lease_intent_id IS NOT NULL AND capability_snapshot_ref IS NOT NULL\n"
+    "              AND run_catalog_content_stamp IS NOT NULL\n"
+    "              AND process_catalog_stamp IS NOT NULL\n"
+    "              AND projection_receipt_id IS NOT NULL)\n"
+    "          OR migration_classification='attested'),\n"
+    "    CHECK(status NOT IN ('page_in_proven','terminal_observed','lease_released','attested')\n"
+    "          OR evidence_hash IS NOT NULL OR migration_classification='attested'),\n"
+    "    CHECK(status NOT IN ('terminal_observed','lease_released','attested')\n"
+    "          OR terminal_event_id IS NOT NULL OR migration_classification='attested'),\n"
+    "    CHECK(status NOT IN ('lease_released','attested')\n"
+    "          OR (release_receipt_id IS NOT NULL AND release_owner_event_hash IS NOT NULL)\n"
+    "          OR migration_classification='attested'),\n"
+    "    UNIQUE(intent_id,attempt_generation),",
+    1,
+).replace(
+    "'runtime_v3','legacy_v2'",
+    "'runtime_v3','legacy_v2','v3_grandfathered_attested'",
+).replace(
+    "        OR\n        (provenance='legacy_v2'",
+    "        OR\n        (provenance='v3_grandfathered_attested' AND runtime_proof_valid=1\n"
+    "         AND attempt_id IS NOT NULL AND evidence_hash IS NOT NULL)\n"
+    "        OR\n        (provenance='legacy_v2'",
+    1,
+)
+
+VERIFICATION_V4_QUARANTINE_SQL = """
+CREATE TABLE capability_skill_install_verification_migration_quarantine (
+    record_kind TEXT NOT NULL CHECK(record_kind IN ('attempt','attestation','intent')),
+    record_id TEXT NOT NULL,
+    intent_id TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    source_hash TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    PRIMARY KEY(record_kind,record_id)
+);
+CREATE INDEX capability_skill_install_verification_quarantine_intent
+ON capability_skill_install_verification_migration_quarantine(intent_id,record_kind,record_id);
+"""
+
+SCHEMA_V4_PARTS = (
+    *SCHEMA_V2_PARTS,
+    VERIFICATION_V3_COLUMNS_SQL,
+    VERIFICATION_V4_SCHEMA_SQL,
+    VERIFICATION_V4_QUARANTINE_SQL,
+)
+
 __all__ = (
     "CAPABILITY_SCHEMA_SQL",
     "CAPABILITY_SCHEMA_V1_SQL",
@@ -218,5 +300,8 @@ __all__ = (
     "SCHEMA_V1_PARTS",
     "SCHEMA_V2_PARTS",
     "SCHEMA_V3_PARTS",
+    "SCHEMA_V4_PARTS",
     "SCHEMA_VERSION",
+    "VERIFICATION_V4_QUARANTINE_SQL",
+    "VERIFICATION_V4_SCHEMA_SQL",
 )
