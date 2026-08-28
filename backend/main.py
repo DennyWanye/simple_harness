@@ -2886,6 +2886,17 @@ async def _initialize_capability_runtime() -> None:
     )
     service_context.register("capability_store", store)
     service_context.register("capability_platform", platform)
+    from deskpet.capabilities.project_skill_discovery import (
+        ProjectSkillDiscoveryService,
+    )
+    service_context.register(
+        "project_skill_discovery_service",
+        ProjectSkillDiscoveryService(
+            store=store,
+            hub=platform.hub,
+            environment=platform.environment,
+        ),
+    )
     service_context.register(
         "project_skill_install_service", project_skill_install_service
     )
@@ -12063,8 +12074,47 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
     }
 
 
+async def _slash_skill_catalog_for_session(session_id: str = ""):
+    """Resolve one session's builtin + exact Project Skill command catalog."""
+
+    builtin = (
+        service_context.get("managed_skill_discovery_projection")
+        or service_context.get("skill_loader")
+    )
+    sid = str(session_id or "").strip()
+    discovery = service_context.get("project_skill_discovery_service")
+    bindings = service_context.get("project_binding_service")
+    if not sid or discovery is None or bindings is None:
+        return builtin
+    try:
+        workspace = await bindings.resolve_session(sid)
+        if workspace.kind != "project":
+            return builtin
+        from deskpet.capabilities.contracts import CapabilityScope
+        from deskpet.capabilities.project_skill_discovery import (
+            CompositeSkillDiscoveryProjection,
+        )
+
+        scope = CapabilityScope.for_run(
+            f"slash-catalog:{sid}",
+            project_id=workspace.project_id,
+            project_revision=workspace.project_revision,
+            project_identity=workspace.project_identity,
+            user_key="sdk-runtime",
+        )
+        project = await discovery.projection_for_scope(scope)
+        return CompositeSkillDiscoveryProjection((builtin, project))
+    except Exception as exc:  # noqa: BLE001 - project Skills fail closed
+        logger.warning(
+            "project_slash_skill_catalog_failed session_id=%s error=%s",
+            sid,
+            str(exc)[:200],
+        )
+        return builtin
+
+
 @app.get("/api/skills/list")
-async def api_skills_list():
+async def api_skills_list(session_id: str = ""):
     """WI-A4 v1 — InputBar 拉 skill 列表给 / autocomplete.
 
     Returns:
@@ -12085,10 +12135,7 @@ async def api_skills_list():
         {"name": "goal clear", "description": "清除当前 goal"},
     ]
     skills: list[dict[str, str]] = []
-    _sl = (
-        service_context.get("managed_skill_discovery_projection")
-        or service_context.get("skill_loader")
-    )
+    _sl = await _slash_skill_catalog_for_session(session_id)
     if _sl is not None:
         try:
             for s in _sl.list_skills():
@@ -12106,7 +12153,7 @@ async def api_skills_list():
 
 
 @app.get("/api/commands/help")
-async def api_commands_help():
+async def api_commands_help(session_id: str = ""):
     """WI-T2-B5 v2 — InputBar autocomplete 拉所有可用 slash command 列表.
 
     Returns:
@@ -12153,10 +12200,7 @@ async def api_commands_help():
 
     # Skills — list_skills 返回 SkillMeta 的 dict 形式；args_schema 从
     # frontmatter 解析（如果有），否则给空 list（用户自由输入参数）
-    _sl = (
-        service_context.get("managed_skill_discovery_projection")
-        or service_context.get("skill_loader")
-    )
+    _sl = await _slash_skill_catalog_for_session(session_id)
     if _sl is not None:
         try:
             for s in _sl.list_skills():
@@ -12188,7 +12232,7 @@ async def api_commands_help():
 
 
 @app.get("/api/commands/{name}/schema")
-async def api_command_schema(name: str):
+async def api_command_schema(name: str, session_id: str = ""):
     """WI-T2-B5 v2 — 单命令 arg schema 详情（autocomplete arg-hint 用）.
 
     Returns:
@@ -12217,10 +12261,7 @@ async def api_command_schema(name: str):
         return {"name": name_lower, **b}
 
     # Skill lookup
-    _sl = (
-        service_context.get("managed_skill_discovery_projection")
-        or service_context.get("skill_loader")
-    )
+    _sl = await _slash_skill_catalog_for_session(session_id)
     if _sl is not None:
         try:
             for s in _sl.list_skills():
@@ -14063,11 +14104,8 @@ async def control_channel(ws: WebSocket):
                 else:
                     try:
                         from deskpet.commands import dispatch_slash_command
-                        _slash_skill_loader = (
-                            service_context.get(
-                                "managed_skill_discovery_projection"
-                            )
-                            or service_context.get("skill_loader")
+                        _slash_skill_loader = await (
+                            _slash_skill_catalog_for_session(target_sid)
                         )
                         _slash_skill_catalog = _slash_skill_loader
                         _slash_goal_store = service_context.get("session_goal_store")

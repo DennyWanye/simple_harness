@@ -236,8 +236,10 @@ class ManagedSkillDiscoveryProjection:
         inventory: Iterable[FirstPartySkillPack],
         *,
         owner_key: str = "builtin",
+        scope_label: str = "built-in",
     ) -> None:
         self._owner_key = owner_key
+        self._scope_label = scope_label
         self._inventory: dict[str, FirstPartySkillPack] = {}
         self._metas: dict[str, ManagedSkillMeta] = {}
         self._bodies: dict[str, str] = {}
@@ -276,7 +278,7 @@ class ManagedSkillDiscoveryProjection:
                 description=str(frontmatter.get("description") or item.skill_id),
                 version=item.version,
                 author=str(frontmatter.get("author") or "deskpet"),
-                scope="built-in",
+                scope=scope_label,
                 path=str(item.skill_path),
                 task_types=tuple(str(v) for v in frontmatter.get("task_types") or ()),
                 when_to_use=str(frontmatter.get("when_to_use") or ""),

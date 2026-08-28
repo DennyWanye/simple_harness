@@ -63,6 +63,7 @@ def test_service_context_accepts_project_skill_install_runtime():
     ctx = ServiceContext()
     bindings = {
         "project_skill_install_service": object(),
+        "project_skill_discovery_service": object(),
         "skill_install_runtime_verifier": object(),
         "skill_install_verification_driver_factory": object(),
     }

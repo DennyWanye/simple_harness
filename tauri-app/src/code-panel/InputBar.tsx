@@ -69,26 +69,20 @@ function pushHistory(entry: string) {
   while (_slashInputHistory.length > HISTORY_MAX) _slashInputHistory.shift();
 }
 
-// commands 缓存 (页面级；后端可 reload skill 触发刷新)
-// 2026-06-26 修复"输入 /g 无候选"：原实现把**失败/空**结果也缓存进
-// _cachedCommands/_cachedCommandsPromise → boot 早期后端没起来 fetch 空一次后，
-// 模块级缓存永久为空、再也不重试。改为**只缓存非空成功结果**，空/失败时返回空但
-// 不污染缓存 → 下次（首次输入 "/"）可重拉。
-let _cachedCommands: SlashCommand[] | null = null;
-
-async function fetchCommands(): Promise<SlashCommand[]> {
-  if (_cachedCommands !== null && _cachedCommands.length > 0) return _cachedCommands;
+async function fetchCommands(sessionId?: string): Promise<SlashCommand[]> {
   try {
     // WI-T2-B fix v2.1: backend 绝对 URL，复用 backendPort.ts 单一源.
     // 相对路径在 Tauri WebView2 (tauri://) 或 vite dev 跨 5473→8400 都失效；
     // 必须显式 http://127.0.0.1:${BACKEND_PORT}/api/... 走 CORS.
+    const query = sessionId
+      ? `?session_id=${encodeURIComponent(sessionId)}`
+      : "";
     const resp = await fetch(
-      `http://127.0.0.1:${BACKEND_PORT}/api/commands/help`,
+      `http://127.0.0.1:${BACKEND_PORT}/api/commands/help${query}`,
     );
     if (!resp.ok) return [];
     const data = await resp.json();
     const out: SlashCommand[] = Array.isArray(data.commands) ? data.commands : [];
-    if (out.length > 0) _cachedCommands = out; // 只缓存非空，失败可重试
     return out;
   } catch {
     return [];
@@ -145,10 +139,18 @@ export function InputBar({
     selectedProjection?.status === "running" ||
     selectedProjection?.status === "waiting";
 
-  // 挂载时 fetch commands (一次性；缓存命中即返)
+  // Commands are session-scoped and installs can complete while this view is
+  // mounted. Fetch on session changes; opening slash autocomplete refreshes
+  // again so a newly installed Project Skill is visible immediately.
   useEffect(() => {
-    fetchCommands().then(setAllCommands).catch(() => setAllCommands([]));
-  }, []);
+    let current = true;
+    fetchCommands(sid).then((commands) => {
+      if (current) setAllCommands(commands);
+    }).catch(() => {
+      if (current) setAllCommands([]);
+    });
+    return () => { current = false; };
+  }, [sid]);
 
   useEffect(
     () => () => {
@@ -425,12 +427,7 @@ export function InputBar({
     setHistoryIdx(null);
     // 状态机：开/关 dropdown + arg hint
     if (v.startsWith("/")) {
-      // 兜底重拉：boot 早期 fetch 失败导致 allCommands 为空时，输入 "/" 触发重试。
-      if (allCommands.length === 0) {
-        fetchCommands().then((cs) => {
-          if (cs.length) setAllCommands(cs);
-        }).catch(() => {});
-      }
+      fetchCommands(sid).then(setAllCommands).catch(() => {});
       const firstWord = v.slice(1).split(/\s+/)[0] ?? "";
       const hasSpace = v.length > firstWord.length + 1;
       if (!hasSpace) {
@@ -820,16 +817,14 @@ function StatusPill({ status }: { status: string }) {
   return <span style={{ color: m.color }}>{m.label}</span>;
 }
 
-// Exports for test (history + cache reset)
+// Exports for test
 export const _testing = {
   pushHistory,
   getHistory: () => [..._slashInputHistory],
   clearHistory: () => {
     _slashInputHistory.length = 0;
   },
-  resetCache: () => {
-    _cachedCommands = null;
-  },
+  fetchCommands,
   filterCommands,
   HISTORY_MAX,
 };

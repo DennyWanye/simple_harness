@@ -12,6 +12,7 @@
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -90,6 +91,59 @@ def test_help_includes_skills(client_flag_on):
     names = [c["name"] for c in body["commands"]]
     assert "ppt-generate" in names
     assert "deep-research" in names
+
+
+def test_help_uses_session_scoped_project_skill_catalog(monkeypatch):
+    import main as main_module
+
+    monkeypatch.setattr(
+        main_module.config.features, "slash_commands", True, raising=True,
+    )
+    builtin = MagicMock()
+    builtin.list_metas.return_value = []
+    project = MagicMock()
+    project.list_metas.return_value = [
+        SimpleNamespace(
+            name=name,
+            to_dict=lambda name=name: {
+                "name": name,
+                "description": f"Project command {name}",
+            },
+        )
+        for name in ("plan-bs", "plan-task", "plan-test")
+    ]
+
+    class Bindings:
+        async def resolve_session(self, session_id):
+            assert session_id == "project-session"
+            return SimpleNamespace(
+                kind="project",
+                project_id="project-a",
+                project_revision=1,
+                project_identity="identity-a",
+            )
+
+    class Discovery:
+        async def projection_for_scope(self, scope):
+            assert scope.project_key is not None
+            return project
+
+    services = {
+        "managed_skill_discovery_projection": builtin,
+        "project_binding_service": Bindings(),
+        "project_skill_discovery_service": Discovery(),
+    }
+    monkeypatch.setattr(
+        main_module.service_context,
+        "get",
+        lambda key: services.get(key),
+    )
+    response = TestClient(main_module.app).get(
+        "/api/commands/help?session_id=project-session"
+    )
+    assert response.status_code == 200
+    names = [item["name"] for item in response.json()["commands"]]
+    assert names[-3:] == ["plan-bs", "plan-task", "plan-test"]
 
 
 def test_help_parses_str_args_schema(client_flag_on):

@@ -14,6 +14,49 @@ import { ArgHintBar } from "../ArgHintBar";
 // Auto cleanup（替代 @testing-library/jest-dom/vitest 自动 cleanup）
 afterEach(() => cleanup());
 
+describe("fetchCommands", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("requests the current session-scoped command catalog", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ commands: [{ name: "plan-test", description: "Plan" }] }),
+    } as Response);
+
+    const commands = await _testing.fetchCommands("session/a");
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/api/commands/help?session_id=session%2Fa"),
+    );
+    expect(commands.map((item) => item.name)).toEqual(["plan-test"]);
+  });
+
+  it("does not retain a stale pre-install catalog", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ commands: [{ name: "help", description: "Help" }] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ commands: [
+          { name: "help", description: "Help" },
+          { name: "plan-bs", description: "Plan BS" },
+          { name: "plan-task", description: "Plan Task" },
+          { name: "plan-test", description: "Plan Test" },
+        ] }),
+      } as Response);
+
+    await _testing.fetchCommands("project-session");
+    const refreshed = await _testing.fetchCommands("project-session");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(refreshed.map((item) => item.name)).toEqual([
+      "help", "plan-bs", "plan-task", "plan-test",
+    ]);
+  });
+});
+
 // ─── _testing helpers ─────────────────────────────
 
 describe("filterCommands", () => {

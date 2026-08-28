@@ -22,7 +22,9 @@ Run 使用相同 trusted workspace admission、Capability Hub snapshot、owner-a
 2026-08-29 macOS 隔离 debug App 已用真实 UI 完成 `plan-test-skill@4d8c803ba03b…` 安装；第四次
 verification attempt attested，Capability Center 从当前 Project Session 显示三个 Project Skill 均健康。前三次
 失败 attempt 被 durable 保留并 supersede，分别对应本轮已修复的 start fingerprint、resolver composition 与
-owner propagation 缺陷。
+owner propagation 缺陷。slash help/schema/dispatch 现复用当前 Session 的同一 Project catalog 投影，selection
+仍产出 exact `PreparedSkillInvocationScopeV1` 并交给 frozen resolver，不按 live name 重新选版本。真 UI 输入
+`/plan-` 已显示 `plan-bs`、`plan-task`、`plan-test`；projectless 对照不含三项。
 
 ### SDK-first 统一能力目录（2026-08-25，当前）
 

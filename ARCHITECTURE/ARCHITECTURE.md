@@ -23,10 +23,15 @@
 - Capability Center 的 `capability_list` 必须携带当前 `session_id`，后端通过
   `SessionProjectBinding` 重新取得可信 Project identity，再用 `scope + owner_key` 查询；无 workspace 时
   fail closed。这样 Settings 显示的 Project Skill 与新 Run 实际冻结的目录是同一个事实源。
+- slash command 的 help/schema/dispatch 三个入口同样先解析可信 `SessionProjectBinding`，再由
+  `ProjectSkillDiscoveryService` 从 Capability Hub/Store 的有效 `sdk-runtime` Project binding 构造只读
+  immutable projection；它不扫描安装目录，也不创建第二份 catalog authority。InputBar 每次打开 slash
+  autocomplete 都带当前 `session_id` 重拉，因此安装完成后无需重启页面，也不会沿用模块级旧缓存。
 - 当前 macOS 隔离 debug App 已真实完成 `DennyWanye/plan-test-skill` exact commit
   `4d8c803ba03b1a60d62dfd7133c173265dfbbf1f` 的三成员安装。intent 为 `succeeded`，第 4 次验证 attempt
   `attested`；Capability Center 显示 `plan-bs`、`plan-task`、`plan-test` 均为 Project scope、健康、同一版本
-  `0.0.0+git.4d8c803ba03b`。本证据只关闭本次真实故障链；完整恶意 fixture、跨 Project 与 full-surface
+  `0.0.0+git.4d8c803ba03b`；当前 Project 会话输入 `/plan-` 的真 UI 下拉同时显示三项，projectless API
+  对照为零项。本证据只关闭本次真实故障链；完整恶意 fixture、跨 Project 与 full-surface
   验收仍按 plan 独立执行。
 
 ## SDK-first Tool / Capability 目录（2026-08-29 校准）

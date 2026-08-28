@@ -10,10 +10,14 @@
   composition 的真实崩溃/恢复缺口已修复。
 - Capability Hub 的 `owner_key` 现进入 Store snapshot、cache partition 和 per-Run lease；Capability Center
   通过当前 Session 的可信 Project binding 查询同一目录，不再把全局 catalog 当成 Project Skill 事实源。
+- `/api/skills/list`、slash help/schema 与 WebSocket dispatch 现统一读取当前 Session 的 Project Skill
+  projection；InputBar 去掉永久缓存并在打开 slash 下拉时重拉。真 UI 输入 `/plan-` 已同时显示三个已安装
+  指令，projectless API 对照为零项。
 - macOS 隔离 debug App 已真实安装 `DennyWanye/plan-test-skill@4d8c803ba03b…`；durable intent
   `succeeded`、第 4 次 verification attempt `attested`，三个成员在 Skills UI 均显示 Project scope 与健康。
   后端最终聚焦回归 67 passed；扩大改动文件组合 203 passed / 1 个已登记的非本轮 Context budget 基线失败。
-  前端 8 passed，TypeScript/Vite build 和 exact Tauri debug bundle 通过。
+  本次 slash/安装相关后端最终组合 86 passed，前端 slash + ChatView 31 passed；
+  TypeScript/Vite build 和注入隔离端口 8241 的 exact Tauri debug bundle 通过。
 - 本轮关闭用户复现的授权/恢复/安装/可见性链，不把它外推为整个安装 plan 的 release：恶意 archive、跨
   Project 隔离、全部 crash boundary 与 full-surface 矩阵仍按
   [`results.md`](../plans/2026-08-27-chat-skill-install/results.md) 的剩余 gate 执行。

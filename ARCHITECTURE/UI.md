@@ -14,6 +14,10 @@
   显示 `plan-bs`、`plan-task`、`plan-test` 均为“健康”，版本
   `0.0.0+git.4d8c803ba03b`，详情 Scope 为 `project` 并展示 exact source commit、64 个文件 hash 与 manifest
   SHA。该 UI 证据证明当前 Project 可见性，不外推尚未执行的跨 Project/full-surface 矩阵。
+- 消息 InputBar 不再使用模块级永久命令缓存。挂载/Session 切换会按当前 `session_id` 拉取命令，输入 `/`
+  打开下拉时再次刷新，因此刚安装的 Project Skill 立即可见。当前 exact debug App 已真点击 Project 会话并
+  输入 `/plan-`，下拉同时显示 `plan-bs`、`plan-task`、`plan-test`；输入未发送，原始截图留在 ignored
+  `.local-test-evidence/2026-08-29/project-skill-slash-catalog/`。
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 

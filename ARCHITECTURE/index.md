@@ -8,7 +8,9 @@
 同一个 durable intent 必须再完成 canonical `skill.install.verify` Run，证明新 Run 能从 exact owner +
 Project scope 的 frozen catalog 解析正文，才可结算为 `succeeded`。Capability Center 以当前 Session 的可信
 Project binding 查询，projectless 或其他 Project 不继承。macOS 隔离 debug App 已完成目标仓库
-`4d8c803ba03b…` 的真实安装与 UI 可见性验证；本轮是该故障链的验收证据，不替代 plan 中尚未执行的完整
+`4d8c803ba03b…` 的真实安装与 UI 可见性验证；消息输入栏的 slash catalog 也从同一可信 Session/Hub/Store
+投影读取，打开 `/` 时按当前 Session 重新拉取，不缓存安装前旧目录，`/plan-` 已真 UI 显示三个成员且
+projectless 会话不泄漏。本轮是该故障链的验收证据，不替代 plan 中尚未执行的完整
 恶意仓库、跨 Project 和全 surface 矩阵。详情见 [`ARCHITECTURE.md`](ARCHITECTURE.md)、
 [`AGENT_HARNESS.md`](AGENT_HARNESS.md)、[`UI.md`](UI.md) 与
 [`plans/2026-08-27-chat-skill-install/results.md`](../plans/2026-08-27-chat-skill-install/results.md)。

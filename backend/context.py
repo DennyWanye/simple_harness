@@ -125,6 +125,7 @@ _VALID_SERVICES = frozenset({
     "capability_store",
     "capability_platform",
     "project_skill_install_service",
+    "project_skill_discovery_service",
     "skill_install_runtime_verifier",
     "skill_install_verification_driver_factory",
     "capability_center",
@@ -265,6 +266,7 @@ class ServiceContext:
     # startup. Keep these live collaborators explicit so the fail-closed
     # registry validates production wiring instead of rejecting valid startup.
     project_skill_install_service: Any | None = None
+    project_skill_discovery_service: Any | None = None
     skill_install_runtime_verifier: Any | None = None
     skill_install_verification_driver_factory: Any | None = None
     capability_center: Any | None = None
