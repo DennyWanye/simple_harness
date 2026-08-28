@@ -210,6 +210,77 @@ async def test_run_catalog_lease_binds_and_releases_in_execution_transactions(
 
 
 @pytest.mark.asyncio
+async def test_sdk_root_catalog_activation_is_idempotent_after_durable_start(
+    tmp_path,
+) -> None:
+    uow = SqliteExecutionUnitOfWork(tmp_path / "execution.db")
+    await uow.initialize()
+    store = CapabilityStore(uow, clock=lambda: 100.0)
+    await store.initialize()
+    registry = _registry()
+    platform = CapabilityPlatform(
+        registry=registry,
+        store=store,
+        user_data_root=tmp_path / "capabilities",
+        register_control_surface=False,
+        first_party_pack_roots=(),
+    )
+    platform.run_catalog_lease_preparer = SqliteRunCatalogLeasePreparer(
+        store=store,
+        registry=registry,
+        hub=platform.hub,
+        process_instance_id="process-sdk-root",
+    )
+    prepared_tools = (
+        ToolCapabilityResolver(registry)
+        .resolve_draft(
+            ToolExposureIntent(required_direct_names=("fixture_read",)),
+            eligibility=ToolEligibilityContext(
+                session_id="session-sdk",
+                request_id="request-sdk",
+                task_type="host_control",
+            ),
+        )
+        .finalize(scope_id="scope-sdk")
+    )
+    lease = await platform.prepare_run_catalog_lease(
+        scope=CapabilityScope.for_run("run-sdk", user_key="owner-sdk"),
+        owner_key="owner-sdk",
+        prepared_tool_set=prepared_tools,
+        prepared_tool_set_fingerprint="d" * 64,
+        run_id="run-sdk",
+        root_run_id="run-sdk",
+        request_id="request-sdk",
+        turn_id="turn-sdk",
+        owner_operation_id="verify:attempt-sdk",
+    )
+    values = dict(
+        lease_intent_id=lease.lease_intent_id,
+        lease_intent_hash=lease.lease_intent_hash,
+        capability_snapshot_ref=lease.snapshot_ref,
+        run_catalog_content_stamp=lease.run_catalog_content_stamp,
+        run_id=lease.run_id,
+        root_run_id=lease.root_run_id,
+        start_fingerprint="e" * 64,
+        prepared_lease=lease,
+    )
+
+    first, replay = await asyncio.gather(
+        platform.activate_sdk_root_snapshot_after_start(**values),
+        platform.activate_sdk_root_snapshot_after_start(**values),
+    )
+
+    assert first.lease_intent_id == replay.lease_intent_id == lease.lease_intent_id
+    await first.require_ready()
+    state = await store.read_snapshot_projection_state(lease.lease_intent_id)
+    assert state is not None
+    assert state.intent_status == "bound"
+    assert state.projection_status == "ready"
+    await platform.retire_run_catalog_ready(lease.run_id)
+    await uow.close()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("source", "tool_name"),
     (

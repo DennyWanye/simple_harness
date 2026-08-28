@@ -2300,6 +2300,154 @@ class CapabilityPlatform:
         )
         return lease
 
+    async def activate_sdk_root_snapshot_after_start(
+        self,
+        *,
+        lease_intent_id: str,
+        lease_intent_hash: str,
+        capability_snapshot_ref: str,
+        run_catalog_content_stamp: str,
+        run_id: str,
+        root_run_id: str,
+        start_fingerprint: str,
+        prepared_lease: PreparedRunCatalogLease | None = None,
+    ) -> PreparedRunCatalogLease:
+        """Adopt and READY one SDK root lease after its durable RunStart.
+
+        SDK execution and ProductState use separate SQLite databases, so this
+        is deliberately an idempotent second saga commit rather than a claim
+        of cross-database atomicity.  Recovery calls the same method without
+        the process-local ``prepared_lease``.
+        """
+
+        identity = {
+            "lease_intent_id": str(lease_intent_id).strip(),
+            "lease_intent_hash": str(lease_intent_hash).strip(),
+            "capability_snapshot_ref": str(capability_snapshot_ref).strip(),
+            "run_catalog_content_stamp": str(run_catalog_content_stamp).strip(),
+            "run_id": str(run_id).strip(),
+            "root_run_id": str(root_run_id).strip(),
+            "start_fingerprint": str(start_fingerprint).strip(),
+        }
+        if any(not value for value in identity.values()):
+            raise ValueError("complete SDK root catalog identity is required")
+        async with self.store.write_transaction() as db:
+            adopted = await self.store.bind(db).adopt_snapshot_lease_intent_in_tx(
+                identity["lease_intent_id"],
+                intent_hash=identity["lease_intent_hash"],
+                owner_record_ref=f"sdk-execution-run-start:{identity['run_id']}",
+                owner_record_hash=identity["start_fingerprint"],
+                start_fingerprint=identity["start_fingerprint"],
+            )
+        if (
+            adopted.intent_id != identity["lease_intent_id"]
+            or adopted.intent_hash != identity["lease_intent_hash"]
+            or adopted.status != "bound"
+            or adopted.start_fingerprint != identity["start_fingerprint"]
+        ):
+            raise RuntimeError("sdk_root_catalog_adoption_receipt_mismatch")
+        state = await self.store.read_snapshot_projection_state(
+            identity["lease_intent_id"]
+        )
+        if (
+            state is None
+            or state.lease_intent_hash != identity["lease_intent_hash"]
+            or state.intent_status != "bound"
+            or state.start_fingerprint != identity["start_fingerprint"]
+            or state.run_catalog_content_stamp
+            != identity["run_catalog_content_stamp"]
+        ):
+            raise RuntimeError("sdk_root_catalog_projection_not_bound")
+        lease = prepared_lease
+        if lease is not None and (
+            lease.lease_intent_id != identity["lease_intent_id"]
+            or lease.lease_intent_hash != identity["lease_intent_hash"]
+            or lease.snapshot_ref != identity["capability_snapshot_ref"]
+            or lease.run_catalog_content_stamp
+            != identity["run_catalog_content_stamp"]
+            or lease.run_id != identity["run_id"]
+            or lease.root_run_id != identity["root_run_id"]
+        ):
+            raise RuntimeError("sdk_root_prepared_lease_mismatch")
+        if lease is None:
+            (
+                content,
+                _process,
+                _owner_key,
+                prepared_envelope,
+                prepared_hash,
+                _generation_vector,
+                tool_fingerprints,
+            ) = await self._load_child_catalog_source(
+                snapshot_ref=identity["capability_snapshot_ref"],
+                lease_intent_id=identity["lease_intent_id"],
+            )
+            if content.fingerprint != identity["run_catalog_content_stamp"]:
+                raise RuntimeError("sdk_root_catalog_content_mismatch")
+            pin = PendingProcessPinToken(
+                hub=self.hub,
+                snapshot_ref=identity["capability_snapshot_ref"],
+                run_id=identity["run_id"],
+                lease_intent_id=identity["lease_intent_id"],
+                tool_spec_fingerprints=tool_fingerprints,
+            )
+            await pin.install()
+            await self.snapshot_lease_ready_gate.register_pending(
+                intent_id=identity["lease_intent_id"],
+                run_id=identity["run_id"],
+                pin=pin,
+            )
+            pin.commit()
+            lease = PreparedRunCatalogLease(
+                snapshot_ref=identity["capability_snapshot_ref"],
+                run_catalog_content_stamp=content.fingerprint,
+                process_catalog_stamp=state.process_catalog_stamp,
+                lease_intent_id=identity["lease_intent_id"],
+                lease_intent_hash=identity["lease_intent_hash"],
+                prepared_tool_set_fingerprint=str(
+                    prepared_envelope.get("external_ref") or prepared_hash
+                ),
+                run_id=identity["run_id"],
+                root_run_id=identity["root_run_id"],
+                entry_set_hash=content.entry_set_hash,
+                expected_entry_count=len(content.entries),
+                prepared_tool_set_capture_hash=prepared_hash,
+                prepared_tool_set_envelope=prepared_envelope,
+                lease_entries=tuple(item.to_dict() for item in content.entries),
+                projection_receipt_id=state.projection_receipt_id,
+                projection_receipt_hash=state.projection_receipt_hash,
+                process_instance_id=state.process_instance_id,
+                _store=self.store,
+                _hub=self.hub,
+                _ready_gate=self.snapshot_lease_ready_gate,
+                _pin=pin,
+            )
+        elif not lease._pin.installed:
+            await lease._pin.install()
+            await self.snapshot_lease_ready_gate.register_pending(
+                intent_id=lease.lease_intent_id,
+                run_id=lease.run_id,
+                pin=lease._pin,
+            )
+            lease._pin.commit()
+        self._prepared_child_catalog_leases[identity["run_id"]] = lease
+        activated = await self.store.activate_snapshot_projection_ready(
+            identity["lease_intent_id"],
+            intent_hash=identity["lease_intent_hash"],
+            start_fingerprint=identity["start_fingerprint"],
+            process_instance_id=state.process_instance_id,
+            process_catalog_stamp=state.process_catalog_stamp,
+            pin_token_hash=lease._pin.token_hash,
+        )
+        await self.snapshot_lease_ready_gate.activate(
+            intent_id=identity["lease_intent_id"],
+            intent_hash=identity["lease_intent_hash"],
+            process_catalog_stamp=state.process_catalog_stamp,
+            projection_receipt_hash=activated.projection_receipt_hash,
+        )
+        await lease.require_ready()
+        return lease
+
     async def retire_run_catalog_ready(self, run_id: str) -> None:
         lease = self._prepared_child_catalog_leases.pop(run_id, None)
         if lease is None:
