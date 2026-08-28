@@ -28,6 +28,7 @@ from deskpet.capabilities.store import (
     initialize_capability_database,
 )
 from deskpet.tools.registry import ToolRegistry
+from deskpet.tools.build_identity import ExecutionBuildIdentity
 
 
 def _hash(value: str) -> str:
@@ -287,6 +288,52 @@ async def test_scope_precedence_is_run_project_user_builtin(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_owner_key_reaches_store_snapshot_and_partitions_cache(tmp_path) -> None:
+    path = await initialize_capability_database(tmp_path / "workflow.db")
+    store = CapabilityStore(path, clock=lambda: 100.0)
+    scope = CapabilityScope(project_key="project-1", user_key="profile-1")
+    for owner_key, capability_id in (
+        ("owner-alpha", "alpha-skill"),
+        ("owner-beta", "beta-skill"),
+    ):
+        descriptor = _version(capability_id, "1.0.0")
+        await store.record_version(
+            CapabilityVersionRecord(
+                descriptor=descriptor,
+                install_path=tmp_path / "packs" / capability_id,
+                validation_status="healthy",
+                expected_tool_fingerprints=(),
+                parent_version=None,
+                parent_manifest_hash=None,
+                derived_from_receipt_ref=None,
+                created_at=100.0,
+            )
+        )
+        await store.set_binding(
+            owner_key=owner_key,
+            management_policy="user_managed",
+            scope="project",
+            scope_key="project-1",
+            pack_id=capability_id,
+            version="1.0.0",
+            manifest_hash=descriptor.manifest_hash,
+            expected_generation=0,
+        )
+    hub = CapabilityHub(
+        store=store,
+        registry_source=_RegistrySource(RegistryCatalogSnapshot(0, ())),
+    )
+
+    alpha = await hub.snapshot(scope, owner_key="owner-alpha")
+    beta = await hub.snapshot(scope, owner_key="owner-beta")
+
+    assert alpha.get("alpha-skill") is not None
+    assert alpha.get("beta-skill") is None
+    assert beta.get("beta-skill") is not None
+    assert beta.get("alpha-skill") is None
+
+
+@pytest.mark.asyncio
 async def test_new_run_fails_closed_for_legacy_and_prior_revision_bindings(
     tmp_path,
 ) -> None:
@@ -419,6 +466,13 @@ async def test_pending_publish_blocks_snapshot_until_reconciled(tmp_path) -> Non
 @pytest.mark.asyncio
 async def test_tool_registry_adapter_reads_one_immutable_catalog_snapshot() -> None:
     registry = ToolRegistry()
+    build = ExecutionBuildIdentity(
+        provider="fixture",
+        handler_id="fixture.echo.v1",
+        build_digest=_hash("build"),
+        sources_manifest_hash=_hash("sources"),
+        artifacts=(("fixture.py", _hash("fixture.py")),),
+    )
     registry.register(
         "fixture_echo",
         "fixture",
@@ -429,6 +483,8 @@ async def test_tool_registry_adapter_reads_one_immutable_catalog_snapshot() -> N
         },
         lambda _args: {"ok": True},
         permission_category="read_file",
+        stable_handler_id=build.handler_id,
+        execution_build_identity=build,
     )
 
     snapshot = await ToolRegistryCatalogSource(registry).snapshot()
@@ -436,3 +492,23 @@ async def test_tool_registry_adapter_reads_one_immutable_catalog_snapshot() -> N
     assert len(snapshot.tools) == 1
     assert snapshot.tools[0].provider_name == "fixture_echo"
     assert snapshot.tools[0].description == "Echo a fixture"
+
+
+@pytest.mark.asyncio
+async def test_registry_source_excludes_tools_without_durable_build_identity() -> None:
+    registry = ToolRegistry()
+    registry.register(
+        "product_only_bridge",
+        "fixture",
+        {
+            "name": "product_only_bridge",
+            "description": "not a durable Run tool",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        lambda _args: {"ok": True},
+        permission_category="read_file",
+    )
+
+    snapshot = await ToolRegistryCatalogSource(registry).snapshot()
+
+    assert snapshot.tools == ()

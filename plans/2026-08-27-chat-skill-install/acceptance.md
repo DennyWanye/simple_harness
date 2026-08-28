@@ -1,5 +1,8 @@
 # 验收标准：聊天安装 Project-scoped Skill
 
+> 2026-08-29 执行状态：用户复现的聊天安装、授权恢复、verification Run 与当前 Project Capability Center
+> 可见性已通过；完整 AC-SI-1～6 仍为 PARTIAL。逐项证据与剩余 gate 见 [`results.md`](results.md)。
+
 ## 范围
 
 ### 包含

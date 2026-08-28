@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any, Protocol
 
@@ -22,6 +23,8 @@ from deskpet.tools.capabilities import PreparedToolSet
 from .capability_catalog import ProductCapabilityCatalogSourceAdapter
 from .composition import ProductSdkRuntimeStack
 from .ingress import SdkRuntimeIngress
+
+logger = logging.getLogger(__name__)
 
 SKILL_INSTALL_VERIFICATION_PURPOSE = "skill.install.verify"
 _UNRESOLVED_ATTEMPT_STATES = frozenset(
@@ -318,13 +321,14 @@ class SkillInstallVerificationRunService:
                     else {"code": evidence.reason_code or "verification_failed"}
                 ),
             )
-        if evidence.status != "terminal_succeeded":
-            raise RuntimeError(evidence.reason_code or "skill_install_verification_failed")
         reconciler = SdkTerminalCapabilityReleaseReconciler(
             store=self.store,
             platform=self.platform,
             runtime_stack=self.runtime_stack,
         )
+        if evidence.status != "terminal_succeeded":
+            await reconciler.reconcile_one(attempt)
+            raise RuntimeError(evidence.reason_code or "skill_install_verification_failed")
         attempt = await reconciler.reconcile_one(attempt)
         intent = await self.store.get_skill_install_intent(intent_id)
         if intent is None:
@@ -392,7 +396,7 @@ class _SkillInstallVerificationDriver:
                 run_catalog_content_stamp=attempt.run_catalog_content_stamp,
                 run_id=attempt.expected_run_id,
                 root_run_id=attempt.expected_run_id,
-                start_fingerprint=invocation.start.start_fingerprint,
+                start_fingerprint=fingerprint_json(invocation.start.to_json()),
                 prepared_lease=self.service._prepared_leases.get(attempt.attempt_id),
             )
             if attempt.status == "run_durable":
@@ -442,6 +446,11 @@ class _SkillInstallVerificationDriver:
                 },
             )
         except Exception as exc:  # noqa: BLE001 - bounded terminal algebra
+            logger.exception(
+                "skill_install_verification_driver_failed attempt_id=%s error_type=%s",
+                attempt.attempt_id,
+                type(exc).__name__,
+            )
             return _route_failure(
                 f"verification_driver_{type(exc).__name__.lower()}"
             )

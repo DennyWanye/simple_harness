@@ -5761,12 +5761,30 @@ async def _project_open_sdk_authorizations(
         return 0
     count = 0
     for decision in decisions:
+        root_run_id = str(decision.run_id or "").strip()
+        durable_sdk_run_id = str(decision.sdk_run_id or "").strip()
+        if not root_run_id or not durable_sdk_run_id:
+            logger.warning(
+                "sdk_authorization_projection_route_missing",
+                decision_id=decision.decision_id,
+            )
+            continue
+        existing_sdk_run_id = _sdk_run_ids_by_root.setdefault(
+            root_run_id, durable_sdk_run_id
+        )
+        if existing_sdk_run_id != durable_sdk_run_id:
+            logger.error(
+                "sdk_authorization_projection_route_conflict",
+                decision_id=decision.decision_id,
+                root_run_id=root_run_id,
+            )
+            continue
         frame = {
             "type": "permission_request",
             "payload": {
                 "session_id": decision.session_id,
-                "run_id": decision.run_id,
-                "sdk_run_id": decision.sdk_run_id,
+                "run_id": root_run_id,
+                "sdk_run_id": durable_sdk_run_id,
                 "task_scope_id": decision.task_scope_id,
                 "turn_id": decision.turn_id,
                 "request_id": decision.request_id,
@@ -7654,7 +7672,10 @@ async def _build_product_sdk_runtime_stack(
         description="Install Skills from one public GitHub repository into the current Project.",
         input_schema={
             "type": "object",
-            "properties": {"url": {"type": "string", "format": "uri"}},
+            # The SDK intentionally supports a bounded JSON-Schema subset and
+            # rejects the optional `format` keyword. Source resolution performs
+            # the authoritative public-GitHub URL validation.
+            "properties": {"url": {"type": "string"}},
             "required": ["url"],
             "additionalProperties": False,
         },
@@ -9796,6 +9817,72 @@ async def _activate_product_sdk_runtime(
     # Create ingress facade
     ingress = SdkRuntimeIngress(stack)
 
+    # Complete the Project-scoped Skill-install composition only after the SDK
+    # stack is ready.  The bindable holders were published with the Capability
+    # runtime so the root driver could be frozen without a cyclic constructor;
+    # the live verification service now joins that driver to the same execution
+    # database/Manager owner used by install intent, publish, and attestation.
+    from deskpet.sdk_adapters.capability_catalog import (
+        ProductCapabilityCatalogSourceAdapter,
+    )
+    from deskpet.sdk_adapters.skill_install_verification import (
+        SdkTerminalCapabilityReleaseReconciler,
+        SkillInstallVerificationRunService,
+    )
+
+    capability_store = service_context.get("capability_store")
+    capability_platform = service_context.get("capability_platform")
+    skill_snapshot_resolver = service_context.get(
+        "legacy_frozen_skill_instruction_resolver"
+    )
+    skill_install_runtime_verifier = service_context.get(
+        "skill_install_runtime_verifier"
+    )
+    skill_install_driver_factory = service_context.get(
+        "skill_install_verification_driver_factory"
+    )
+    project_skill_install_service = service_context.get(
+        "project_skill_install_service"
+    )
+    if any(
+        item is None
+        for item in (
+            capability_store,
+            capability_platform,
+            skill_snapshot_resolver,
+            skill_install_runtime_verifier,
+            skill_install_driver_factory,
+            project_skill_install_service,
+        )
+    ):
+        await stack.close()
+        raise RuntimeError("Project Skill-install verification composition unavailable")
+    if not callable(
+        getattr(skill_snapshot_resolver, "resolve_frozen_instruction", None)
+    ):
+        await stack.close()
+        raise RuntimeError(
+            "Project Skill-install Run-frozen resolver unavailable"
+        )
+    skill_install_verification = SkillInstallVerificationRunService(
+        store=capability_store,
+        platform=capability_platform,
+        catalog_source=ProductCapabilityCatalogSourceAdapter(),
+        resolver=skill_snapshot_resolver,
+        ingress=ingress,
+        runtime_stack=stack,
+        tool_catalog_generation=lambda: state.generation,
+    )
+    skill_install_runtime_verifier.bind(skill_install_verification)
+    skill_install_driver_factory.bind(
+        skill_install_verification.driver_for_attempt
+    )
+    await SdkTerminalCapabilityReleaseReconciler(
+        store=capability_store,
+        platform=capability_platform,
+        runtime_stack=stack,
+    ).reconcile_pending()
+
     _sdk_runtime_stack = stack
     _sdk_ingress = ingress
     _sdk_runtime_catalog = service_context.get("sdk_runtime_catalog")
@@ -9880,6 +9967,17 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
 
     # Open SDK ingress
     _sdk_ingress.open()
+
+    # Manager publication may have committed before a crash or a bounded
+    # verification failure.  Resume those internal SDK Runs only after the
+    # product's single ingress is accepting starts; no repeated user
+    # authorization is needed because the durable handoff already settled.
+    project_skill_install_service = service_context.get(
+        "project_skill_install_service"
+    )
+    if project_skill_install_service is None:
+        raise RuntimeError("Project Skill-install recovery service unavailable")
+    await project_skill_install_service.reconcile_pending_runtime_verifications()
 
     logger.info(
         "companion_runtime_adapter_ready product_ingress=open phase=%s sdk_version=%s",
@@ -10757,10 +10855,11 @@ Simple Harness 会在每个成功完成的 Turn 结束后自动记录可复用�
 
 _SDK_SKILL_DISCOVERY_PROMPT = """\
 专业 Skill 使用规则：
-1. 当用户请求或附件明显可能匹配某个已安装的专业 Skill 时，必须先调用 tool_search 搜索 Skill capability，再开始完成任务；用户不需要输入斜杠命令或 Skill 名称。
-2. 如果搜索结果包含 kind=skill_resource 的匹配项，必须复制该结果返回的精确 selection_key，并调用 skill_invoke，将 selection_key 作为 skill_name 加载冻结的 Skill 正文。不得只根据 Skill 名称、触发词、描述或常识猜测正文并直接回答。
-3. 加载成功后遵循返回的 instruction 完成任务；Skill 只增加任务说明和更窄的工具范围，不会扩大权限，后续工具仍按正常授权流程执行。
-4. 如果搜索没有返回匹配 Skill，或者请求明显不需要专业 Skill，则继续正常处理；不要编造 locator，也不要反复搜索同一个查询。\
+1. 当用户明确要求把一个公开 GitHub 仓库中的 Skill 安装到当前 Project 时，直接调用 skill_install 并传入原始 URL。不要调用 agent、web、file 或 shell 去研究、下载、复制或手工安装，也不要先用 tool_search 查找安装工具；skill_install 会完成受信来源解析、预览、确认、发布和运行时验证。
+2. 当用户请求或附件明显可能匹配某个已安装的专业 Skill 时，必须先调用 tool_search 搜索 Skill capability，再开始完成任务；用户不需要输入斜杠命令或 Skill 名称。
+3. 如果搜索结果包含 kind=skill_resource 的匹配项，必须复制该结果返回的精确 selection_key，并调用 skill_invoke，将 selection_key 作为 skill_name 加载冻结的 Skill 正文。不得只根据 Skill 名称、触发词、描述或常识猜测正文并直接回答。
+4. 加载成功后遵循返回的 instruction 完成任务；Skill 只增加任务说明和更窄的工具范围，不会扩大权限，后续工具仍按正常授权流程执行。
+5. 如果搜索没有返回匹配 Skill，或者请求明显不需要专业 Skill，则继续正常处理；不要编造 locator，也不要反复搜索同一个查询。\
 """
 
 
@@ -13165,7 +13264,42 @@ async def control_channel(ws: WebSocket):
                     })
                     continue
                 try:
-                    capabilities = await center.list_capabilities()
+                    payload = raw.get("payload", {}) or {}
+                    target_session_id = str(
+                        payload.get("session_id") or ""
+                    ).strip()
+                    capability_scope = None
+                    capability_owner_key = None
+                    if target_session_id:
+                        project_bindings = service_context.get(
+                            "project_binding_service"
+                        )
+                        if project_bindings is None:
+                            raise RuntimeError(
+                                "Project binding service is unavailable"
+                            )
+                        workspace = await project_bindings.resolve_session(
+                            target_session_id
+                        )
+                        if workspace.kind == "project":
+                            from deskpet.capabilities.contracts import (
+                                CapabilityScope,
+                            )
+
+                            capability_owner_key = "sdk-runtime"
+                            capability_scope = CapabilityScope.for_run(
+                                f"capability-center:{target_session_id}",
+                                project_id=workspace.project_id,
+                                project_revision=workspace.project_revision,
+                                project_identity=workspace.project_identity,
+                                user_key=capability_owner_key,
+                            )
+                        elif workspace.kind == "missing":
+                            raise RuntimeError(workspace.error_code)
+                    capabilities = await center.list_capabilities(
+                        capability_scope,
+                        owner_key=capability_owner_key,
+                    )
                     await ws.send_json({
                         "type": "capability_list_response",
                         "payload": {"capabilities": capabilities},

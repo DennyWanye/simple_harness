@@ -7702,7 +7702,7 @@ requires-dist = [
     { name = "selectolax", specifier = ">=0.3" },
     { name = "silero-vad", specifier = ">=5.1.2,<6" },
     { name = "simple-harness-memory-sdk", path = "vendor/simple_harness_memory_sdk-0.5.2-py3-none-any.whl" },
-    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.6.3-py3-none-any.whl" },
+    { name = "simple-harness-sdk", path = "vendor/simple_harness_sdk-0.6.4-py3-none-any.whl" },
     { name = "sqlite-vec", specifier = ">=0.1" },
     { name = "structlog", specifier = ">=24.0" },
     { name = "tomli", specifier = ">=2.0" },
@@ -7764,13 +7764,13 @@ provides-extras = ["all", "dev", "embeddings", "harness", "openai", "world"]
 
 [[package]]
 name = "simple-harness-sdk"
-version = "0.6.3"
-source = { path = "vendor/simple_harness_sdk-0.6.3-py3-none-any.whl" }
+version = "0.6.4"
+source = { path = "vendor/simple_harness_sdk-0.6.4-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
 ]
 wheels = [
-    { filename = "simple_harness_sdk-0.6.3-py3-none-any.whl", hash = "sha256:c0ce056b79db74cec12a5155cc58fa0e12d6907cbb6b4833eb0dff916d71e31b" },
+    { filename = "simple_harness_sdk-0.6.4-py3-none-any.whl", hash = "sha256:ecb6e85c65e9140c6838666f59f38239557e15cf410c1afe023ffd06bfb35be7" },
 ]
 
 [package.metadata]

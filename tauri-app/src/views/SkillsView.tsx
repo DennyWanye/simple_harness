@@ -18,9 +18,11 @@ import type { ControlChannel } from "../ws/ControlChannel";
 export interface SkillsViewProps {
   /** App 的 permissionChannel（connected 时的 ControlChannel）。 */
   channel: Pick<ControlChannel, "send" | "onMessage"> | null;
+  /** 当前 Session；后端据此解析可信 Project scope，不接收前端身份字段。 */
+  sessionId?: string | null;
 }
 
-export const SkillsView: React.FC<SkillsViewProps> = ({ channel }) => {
+export const SkillsView: React.FC<SkillsViewProps> = ({ channel, sessionId }) => {
   // 互跳 state 本地化（T6 合同声明；T10 实装）。
   const [mode, setMode] = useState<"center" | "legacy-store">("center");
   return (
@@ -41,6 +43,7 @@ export const SkillsView: React.FC<SkillsViewProps> = ({ channel }) => {
           open
           variant="page"
           channel={channel}
+          sessionId={sessionId}
           onOpenLegacySkillStore={() => setMode("legacy-store")}
         />
       ) : (

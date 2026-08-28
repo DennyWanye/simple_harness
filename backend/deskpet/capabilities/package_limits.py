@@ -280,6 +280,22 @@ class ValidatedCapabilityPackageRefV1:
                 "validated_ref_receipt_hash_mismatch"
             )
 
+    def to_evidence(self) -> dict[str, str | int]:
+        """Return the complete durable representation of this host-issued ref."""
+
+        return {
+            "source_kind": self.source_kind,
+            "policy_version": self.policy_version,
+            "baseline_hash": self.baseline_hash,
+            "policy_hash": self.policy_hash,
+            "archive_hash": self.archive_hash,
+            "manifest_hash": self.manifest_hash,
+            "file_set_hash": self.file_set_hash,
+            "entry_count": self.entry_count,
+            "total_uncompressed_bytes": self.total_uncompressed_bytes,
+            "validation_receipt_hash": self.validation_receipt_hash,
+        }
+
     @classmethod
     def issue(
         cls,

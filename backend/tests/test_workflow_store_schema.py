@@ -112,6 +112,62 @@ async def test_v30_makes_execution_db_the_skill_verification_owner(
 
 
 @pytest.mark.asyncio
+async def test_v31_preserves_skill_intents_and_accepts_sdk_version_zero(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "workflow-v30.db"
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 30)
+    await workflow_schema.initialize_workflow_db(path)
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """INSERT INTO capability_skill_install_intents(
+                intent_id,effect_id,call_id,root_run_id,run_id,channel,
+                project_scope_key,principal_id,source_json,exact_commit,
+                archive_hash,raw_tree_hash,member_set_stamp,permission_set_hash,
+                confirmation_nonce,confirmation_version,expires_at,status,
+                state_version,settlement_ref,cleanup_ref,verification_ref,error_json,
+                created_at,updated_at,verification_attempt_generation,
+                current_verification_attempt_id,migrated_verification_provenance
+            ) VALUES(
+                'intent-1','effect-1','call-1','root-1','run-1','chat',
+                'project:v2:test','user-1','{}',?, 'archive','tree','members',
+                'permissions','preflight',1,200,'awaiting_confirmation',2,
+                NULL,NULL,NULL,NULL,100,100,0,NULL,NULL
+            )""",
+            ("a" * 40,),
+        )
+        await db.commit()
+
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 31)
+    await workflow_schema.initialize_workflow_db(path)
+
+    async with aiosqlite.connect(path) as db:
+        workflow_version = await (await db.execute("PRAGMA user_version")).fetchone()
+        capability_version = await (
+            await db.execute(
+                "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
+            )
+        ).fetchone()
+        await db.execute(
+            "UPDATE capability_skill_install_intents "
+            "SET confirmation_nonce='sdk-initial',confirmation_version=0 "
+            "WHERE intent_id='intent-1'"
+        )
+        row = await (
+            await db.execute(
+                "SELECT confirmation_nonce,confirmation_version "
+                "FROM capability_skill_install_intents WHERE intent_id='intent-1'"
+            )
+        ).fetchone()
+        foreign_key_errors = await (await db.execute("PRAGMA foreign_key_check")).fetchall()
+
+    assert workflow_version == (31,)
+    assert capability_version == (4,)
+    assert row == ("sdk-initial", 0)
+    assert foreign_key_errors == []
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "fault_point", ("after_capability_schema", "after_marker", "after_user_version")
 )

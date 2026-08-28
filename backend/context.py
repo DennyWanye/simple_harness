@@ -119,11 +119,14 @@ _VALID_SERVICES = frozenset({
     "sdk_tool_authority_registry",
     "sdk_runtime_tool_inventory",
     "sdk_prepared_authorization_policy",
-    # Capability-pack, policy, TaskGrant, and authorization saga state are
-    # product-owned in data/product_state.db.  They must never bind the SDK
-    # execution database; the platform separately owns local worker lifetimes.
+    # Capability-pack execution state, including the complete Project-scoped
+    # Skill-install aggregate, is owned by the execution/Manager database.
+    # ProductState contributes only the immutable authorization receipt.
     "capability_store",
     "capability_platform",
+    "project_skill_install_service",
+    "skill_install_runtime_verifier",
+    "skill_install_verification_driver_factory",
     "capability_center",
     "capability_builder_host",
     "authorization_runtime",
@@ -258,6 +261,12 @@ class ServiceContext:
     sdk_prepared_authorization_policy: Any | None = None
     capability_store: Any | None = None
     capability_platform: Any | None = None
+    # Project-scoped Skill installation is composed during capability-runtime
+    # startup. Keep these live collaborators explicit so the fail-closed
+    # registry validates production wiring instead of rejecting valid startup.
+    project_skill_install_service: Any | None = None
+    skill_install_runtime_verifier: Any | None = None
+    skill_install_verification_driver_factory: Any | None = None
     capability_center: Any | None = None
     capability_builder_host: Any | None = None
     authorization_runtime: Any | None = None

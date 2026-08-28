@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import time
@@ -36,6 +37,9 @@ from .store import (
     CapabilityStore,
     CapabilityStoreConflict,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ProjectSkillInstallError(RuntimeError):
@@ -357,14 +361,7 @@ class ProjectSkillInstallService:
                             "selected_subdirectory": pack.selected_subdirectory,
                             "archive_ref": archive_name,
                             "archive_hash": pack.archive_hash,
-                            "validated_ref": {
-                                name: getattr(pack.validated_ref, name)
-                                for name in (
-                                    "source_kind", "archive_hash", "manifest_hash",
-                                    "file_set_hash", "entry_count",
-                                    "total_uncompressed_bytes", "limits_hash",
-                                )
-                            },
+                            "validated_ref": pack.validated_ref.to_evidence(),
                             "allowed_tools": list(allowed),
                         },
                     )
@@ -554,6 +551,105 @@ class ProjectSkillInstallService:
                 status="expired",
                 cleanup_ref=f"cleanup:{intent.intent_id}",
             )
+
+    async def reconcile_pending_runtime_verifications(
+        self,
+    ) -> tuple[Mapping[str, JsonValue], ...]:
+        """Resume Manager-committed installs after a crash or verifier failure.
+
+        Authorization and publication are already durably settled at this
+        point.  Recovery therefore reuses the immutable verification attempt,
+        or reconstructs its Manager receipt from committed phase evidence; it
+        never asks the user to authorize the same installation again.
+        """
+
+        outcomes: list[Mapping[str, JsonValue]] = []
+        for pending_intent in await self.store.pending_skill_install_intents():
+            if pending_intent.status != "published_pending_runtime_verification":
+                continue
+            intent = pending_intent
+            superseded_once = False
+            while True:
+                try:
+                    attempt = await self.store.get_current_skill_install_verification_attempt(
+                        intent.intent_id
+                    )
+                    if (
+                        attempt is not None
+                        and attempt.status in {"terminal_failed", "unknown"}
+                    ):
+                        if superseded_once:
+                            raise ProjectSkillInstallError(
+                                "skill_install_runtime_verification_retry_exhausted",
+                                "Fresh-Run Skill verification retry was exhausted",
+                            )
+                        attempt = await self.store.supersede_skill_install_verification_attempt(
+                            intent.intent_id,
+                            expected_intent_state_version=intent.state_version,
+                            attempt_id=attempt.attempt_id,
+                            expected_attempt_state_version=attempt.state_version,
+                            verifier_session_id=attempt.verifier_session_id,
+                        )
+                        superseded_once = True
+                        intent = await self._require_intent(intent.intent_id)
+                    if attempt is not None:
+                        manager_receipt: Mapping[str, JsonValue] = {
+                            "operation_id": attempt.manager_operation_id,
+                            "manager_receipt_hash": attempt.manager_receipt_hash,
+                            "committed_set_stamp": attempt.committed_set_stamp,
+                        }
+                    else:
+                        operation_id = f"skill-install-batch:{intent.member_set_stamp}"
+                        evidence = await self.store.get_phase_evidence(
+                            operation_id, "batch_committed"
+                        )
+                        if evidence is None:
+                            raise ProjectSkillInstallError(
+                                "skill_install_manager_receipt_missing",
+                                "Committed Skill installation has no Manager receipt",
+                            )
+                        manager_receipt = {
+                            "operation_id": operation_id,
+                            "manager_receipt_hash": str(
+                                evidence.get("manager_receipt_hash") or ""
+                            ),
+                            "committed_set_stamp": str(
+                                evidence.get("committed_set_stamp") or ""
+                            ),
+                        }
+                    members = await self.store.skill_install_members(intent.intent_id)
+                    result = await self.runtime_verifier.verify_skill_install(
+                        intent=intent,
+                        manager_receipt=manager_receipt,
+                        members=members,
+                    )
+                    await self._remove_stage(intent.intent_id)
+                    outcomes.append(dict(result))
+                    logger.info(
+                        "skill_install_runtime_verification_recovered intent_id=%s",
+                        intent.intent_id,
+                    )
+                    break
+                except Exception as exc:  # noqa: BLE001 - durable retry remains pending
+                    current = await self.store.get_current_skill_install_verification_attempt(
+                        intent.intent_id
+                    )
+                    if (
+                        not superseded_once
+                        and current is not None
+                        and current.status in {"terminal_failed", "unknown"}
+                    ):
+                        intent = await self._require_intent(intent.intent_id)
+                        continue
+                    logger.warning(
+                        "skill_install_runtime_verification_recovery_failed "
+                        "intent_id=%s error_type=%s error=%s",
+                        intent.intent_id,
+                        type(exc).__name__,
+                        exc,
+                    )
+                    break
+        return tuple(outcomes)
 
     def settle_authorization_terminal(self, evidence: AuthorizationTerminalEvidence) -> object:
         # ProductAuthorizationAdapter is synchronous at the terminal seam.  It

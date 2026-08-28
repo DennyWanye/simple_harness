@@ -65,7 +65,7 @@ from .refresh_contracts import (
     refresh_intent_from_dict,
 )
 
-CAPABILITY_SCHEMA_VERSION = 3
+CAPABILITY_SCHEMA_VERSION = 4
 CAPABILITY_OPERATION_PHASES: tuple[str, ...] = (
     "planned",
     "staged",
@@ -2734,7 +2734,7 @@ async def migrate_capability_schema_v1_to_v2(
             "unsupported_capability_schema",
             f"capability schema is {version}, expected {CAPABILITY_SCHEMA_VERSION}",
         )
-    if version in {2, 3}:
+    if version in {2, 3, 4}:
         columns = await _capability_table_columns(db, "capability_bindings")
         required = {
             "owner_key",
@@ -2906,7 +2906,7 @@ async def migrate_capability_schema_v2_to_v3(
             "capability_schema_missing", "capability schema state is absent"
         )
     version = int(state[0])
-    if version == 3:
+    if version in {3, 4}:
         columns = await _capability_table_columns(
             db, "capability_skill_install_intents"
         )
@@ -2964,6 +2964,117 @@ async def migrate_capability_schema_v2_to_v3(
     await migrate_capability_schema_v2_to_v3(db)
 
 
+async def migrate_capability_schema_v3_to_v4(
+    db: aiosqlite.Connection,
+) -> None:
+    """Accept the SDK's zero-based authorization decision version.
+
+    The v3 table accidentally required ``confirmation_version > 0`` even
+    though the SDK's first durable decision is version zero.  Rebuild only the
+    intent table so the persisted value remains the exact SDK identity rather
+    than an offset or translated surrogate.
+
+    Callers migrating a database that can contain child rows must temporarily
+    disable SQLite foreign-key enforcement around the surrounding transaction,
+    then run ``foreign_key_check`` before commit.
+    """
+
+    state = await (
+        await db.execute(
+            "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
+        )
+    ).fetchone()
+    if state is None:
+        raise CapabilitySchemaMissing(
+            "capability_schema_missing", "capability schema state is absent"
+        )
+    version = int(state[0])
+    if version == 4:
+        row = await (
+            await db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' "
+                "AND name='capability_skill_install_intents'"
+            )
+        ).fetchone()
+        normalized = "" if row is None or row[0] is None else str(row[0]).replace(" ", "")
+        if "CHECK(confirmation_version>=0)" not in normalized:
+            raise CapabilitySchemaMissing(
+                "capability_schema_v4_incomplete",
+                "Skill-install confirmation version still rejects SDK version zero",
+            )
+        return
+    if version != 3:
+        raise CapabilitySchemaMissing(
+            "unsupported_capability_schema",
+            f"cannot migrate capability schema {version} to 4",
+        )
+
+    table_row = await (
+        await db.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' "
+            "AND name='capability_skill_install_intents'"
+        )
+    ).fetchone()
+    if table_row is None or table_row[0] is None:
+        raise CapabilitySchemaMissing(
+            "capability_schema_v3_incomplete",
+            "Skill-install intent table is absent",
+        )
+    original_sql = str(table_row[0])
+    if "CHECK(confirmation_version>0)" not in original_sql.replace(" ", ""):
+        raise CapabilitySchemaMissing(
+            "capability_schema_v3_incomplete",
+            "Skill-install confirmation version constraint is unexpected",
+        )
+    dependent_sql = tuple(
+        (str(row[0]), str(row[1]), str(row[2]))
+        for row in await (
+            await db.execute(
+                "SELECT type,name,sql FROM sqlite_master "
+                "WHERE type IN ('index','trigger') AND sql IS NOT NULL "
+                "AND sql LIKE '%capability_skill_install_intents%' "
+                "ORDER BY type,name"
+            )
+        ).fetchall()
+    )
+    columns = tuple(
+        str(row[1])
+        for row in await (
+            await db.execute("PRAGMA table_info(capability_skill_install_intents)")
+        ).fetchall()
+    )
+    column_list = ",".join(columns)
+    replacement_sql = original_sql.replace(
+        "CREATE TABLE capability_skill_install_intents",
+        "CREATE TABLE capability_skill_install_intents_v4",
+        1,
+    ).replace(
+        "CHECK(confirmation_version>0)",
+        "CHECK(confirmation_version>=0)",
+        1,
+    )
+    await db.execute(replacement_sql)
+    await db.execute(
+        f"INSERT INTO capability_skill_install_intents_v4({column_list}) "
+        f"SELECT {column_list} FROM capability_skill_install_intents"
+    )
+    for object_type, name, _sql in dependent_sql:
+        await db.execute(f"DROP {object_type.upper()} {name}")
+    await db.execute("DROP TABLE capability_skill_install_intents")
+    await db.execute(
+        "ALTER TABLE capability_skill_install_intents_v4 "
+        "RENAME TO capability_skill_install_intents"
+    )
+    for _object_type, _name, sql in dependent_sql:
+        await db.execute(sql)
+    await db.execute(
+        "UPDATE capability_schema_state SET schema_version=4,updated_at=? "
+        "WHERE singleton_id=1 AND schema_version=3",
+        (time.time(),),
+    )
+    await migrate_capability_schema_v3_to_v4(db)
+
+
 async def install_capability_schema(db: aiosqlite.Connection) -> None:
     """Install idempotent DDL on a caller-owned execution DB connection.
 
@@ -2988,6 +3099,7 @@ async def initialize_capability_database(path: str | Path) -> Path:
         await install_capability_schema(db)
         await migrate_capability_schema_v1_to_v2(db)
         await migrate_capability_schema_v2_to_v3(db)
+        await migrate_capability_schema_v3_to_v4(db)
         await db.commit()
     return db_path
 
@@ -9213,4 +9325,5 @@ __all__ = [
     "install_capability_schema",
     "migrate_capability_schema_v1_to_v2",
     "migrate_capability_schema_v2_to_v3",
+    "migrate_capability_schema_v3_to_v4",
 ]

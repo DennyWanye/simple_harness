@@ -1,11 +1,25 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-25
-> 代码基线：simple_harness `3c678e71` + 当前工作树；当前依赖固定 Harness 0.6.2 / Memory 0.5.2 exact wheels
-> 状态：SDK v0.6.2 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
+> 最后校准：2026-08-29
+> 代码基线：simple_harness 当前工作树；当前依赖固定 Harness 0.6.4 candidate / Memory 0.5.2 exact wheels
+> 状态：SDK v0.6.4 candidate 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
 > 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
 
-## 2026-08-25 SDK-first runtime capability catalog（候选已消费）
+## 2026-08-29 SDK 0.6.4 authorization recovery candidate（已消费）
+
+- 开发前已刷新 `origin/main`；上游最新正式 tip/tag 为 `01ad478` / `v0.6.3`。本地 SDK main 在其上追加
+  `98da321`、`650a214`、`21f3c7a` 三个已验证提交，形成 0.6.4 candidate，不冒充远端 release。
+- Host vendored exact wheel SHA-256
+  `ecb6e85c65e9140c6838666f59f38239557e15cf410c1afe023ffd06bfb35be7`，source
+  `21f3c7a45ff71058db08538173054b3b1979a0a4`；candidate manifest SHA-256
+  `07bbda9f932be2339f965c90e0ffa9355fa95e22d2bd9b87d0a8c67034e28100`。
+- 本 candidate 修复 skill-install authorization metadata 在 nonce reissue 与 durable decision recovery 中保留
+  tuple/immutable nested value 的问题。SDK 内部可以保持 immutable 表达，Host JSON boundary 得到递归 thaw
+  后的 list/dict；恢复继续绑定同一 decision/request identity。
+- `pyproject.toml`、`uv.lock`、candidate identity、installed origin 与 frozen bundle 都钉到同一 0.6.4 bytes。
+  发布 tag、GitHub release 与远端 main 推送不在本轮授权范围。
+
+## 2026-08-25 SDK-first runtime capability catalog（0.6.2 历史候选）
 
 - Harness 0.6.2 提供产品中立的 typed runtime catalog、Run-local exposure、search/describe/activation receipt、
   dynamic ReAct projection 与 v6 durable catalog/recovery；future-consumer fixture 不 import Host。

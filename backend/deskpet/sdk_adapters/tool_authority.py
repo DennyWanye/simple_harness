@@ -70,6 +70,11 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         "await_subagents",
         "context_page_in",
         "skill_invoke",
+        # Project Skill installation is a core product control surface, not a
+        # generic deferred capability. Its one-field schema is cheap to expose
+        # directly and the physical effect remains confirmation-only through
+        # the durable install saga.
+        "skill_install",
         "spawn_subagents",
         "spawn_team",
         "todo_complete",

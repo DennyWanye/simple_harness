@@ -59,6 +59,19 @@ def test_service_context_accepts_search_gateway_runtime():
     assert ctx.get("search_gateway") is gateway
 
 
+def test_service_context_accepts_project_skill_install_runtime():
+    ctx = ServiceContext()
+    bindings = {
+        "project_skill_install_service": object(),
+        "skill_install_runtime_verifier": object(),
+        "skill_install_verification_driver_factory": object(),
+    }
+
+    for name, runtime in bindings.items():
+        ctx.register(name, runtime)
+        assert ctx.get(name) is runtime
+
+
 def test_service_context_accepts_legacy_frozen_skill_fallback():
     ctx = ServiceContext()
     resolver = object()

@@ -306,7 +306,11 @@ def _retain_tool_calls_in_message(response: ProviderResponse) -> ProviderRespons
         {
             "id": call.call_id.value,
             "name": call.name,
-            "arguments": dict(call.arguments),
+            # ProviderToolCall freezes nested JSON objects/arrays as
+            # mappingproxy/tuple. Message freezes metadata again, so a shallow
+            # dict() copy leaves unsupported frozen containers below the first
+            # level. Thaw the full JSON tree before crossing that contract.
+            "arguments": thaw_json(call.arguments),
         }
         for call in response.tool_calls
     ]
@@ -340,7 +344,9 @@ def _extract_public_progress(response: ProviderResponse) -> ProviderResponse:
     narration = ""
     cleaned_calls: list[ProviderToolCall] = []
     for call in response.tool_calls:
-        arguments = dict(call.arguments)
+        thawed_arguments = thaw_json(call.arguments)
+        assert isinstance(thawed_arguments, dict)
+        arguments = thawed_arguments
         raw_progress = arguments.pop(_PUBLIC_PROGRESS_ARGUMENT, "")
         candidate = (
             _public_progress_text(raw_progress)
@@ -575,8 +581,23 @@ class ProductProviderAdapter:
                 bool(getattr(exc, "retryable", False)),
             )
             raise
-        response = _extract_public_progress(response)
-        response = _retain_tool_calls_in_message(response)
+        try:
+            response = _extract_public_progress(response)
+            response = _retain_tool_calls_in_message(response)
+        except ContractValidationError as exc:
+            # Local normalization is still part of the Provider response
+            # contract. A deterministic JSON-shape failure must settle as a
+            # definite protocol error, never as an unknown physical handoff.
+            logger.warning(
+                "product_provider_attempt_failed "
+                "request_ref=%s elapsed_ms=%s stage=response_contract "
+                "error_type=%s error_code=%s status_code=missing retryable=false",
+                request_ref,
+                round((time.monotonic() - started_at) * 1000),
+                type(exc).__name__,
+                _provider_error_code(exc),
+            )
+            raise ProviderProtocolError(private_cause=exc) from None
         await self._capture_public_tool_narration(request, response)
         logger.info(
             "product_provider_attempt_succeeded "

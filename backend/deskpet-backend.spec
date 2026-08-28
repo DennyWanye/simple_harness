@@ -176,8 +176,8 @@ hiddenimports += _mypyc_modules
 datas: list[tuple[str, str]] = []
 datas += copy_metadata("simple-harness-sdk")
 datas += [
-    ("vendor/simple_harness_sdk-0.6.3-py3-none-any.whl", "vendor"),
-    ("vendor/simple_harness_sdk-0.6.3.candidate-manifest.json", "vendor"),
+    ("vendor/simple_harness_sdk-0.6.4-py3-none-any.whl", "vendor"),
+    ("vendor/simple_harness_sdk-0.6.4.candidate-manifest.json", "vendor"),
 ]
 _playwright_datas, _playwright_hiddenimports = collect_playwright_bundle(_repo_root)
 datas += _playwright_datas

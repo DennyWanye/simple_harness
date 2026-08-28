@@ -1912,7 +1912,9 @@ class CapabilityPlatform:
             async with self.catalog_gate.read(
                 self.hub._gate_keys(scope, owner_key)
             ):
-                snapshot, entries = await self.hub._snapshot_locked(scope)
+                snapshot, entries = await self.hub._snapshot_locked(
+                    scope, owner_key=owner_key
+                )
                 return await preparer.prepare_captured_run_catalog(
                     snapshot=snapshot,
                     selected_entries=entries,

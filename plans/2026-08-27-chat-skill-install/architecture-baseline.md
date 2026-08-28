@@ -1,5 +1,10 @@
 # Chat Skill Install 架构基线
 
+> 2026-08-29 状态说明：下文“原始链路”是实施前基线。当前实现已收敛到
+> `ProjectSkillInstallService`、Manager-owned Project binding 与 canonical verification Run；当前生产事实和
+> 验收边界见 [`results.md`](results.md) 及 `ARCHITECTURE/`。保留本文件用于解释为何不能继续修补 legacy
+> directory installer。
+
 ## 校准范围
 
 - 旧锚点：`91d22247947c152c1bf5393a840553b6172628cc`

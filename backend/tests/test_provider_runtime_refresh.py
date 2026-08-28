@@ -107,6 +107,9 @@ async def test_real_product_sdk_production_composition_starts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from deskpet.memory.session_db import SessionDB
+    from deskpet.sdk_adapters.skill_install_verification import (
+        BindableSkillInstallVerificationDriverFactory,
+    )
     from simple_harness_memory import MemoryManager
 
     data_dir = tmp_path / "data"
@@ -125,6 +128,10 @@ async def test_real_product_sdk_production_composition_starts(
         "search_gateway": _ProductionSearchGateway(),
         "authorization_runtime": object(),
         "capability_store": _ProductionCapabilityStore(),
+        "project_skill_install_service": object(),
+        "skill_install_verification_driver_factory": (
+            BindableSkillInstallVerificationDriverFactory()
+        ),
         # Production bootstrap publishes both resolver seams before the SDK
         # runtime stack is composed. This smoke test does not invoke a Skill,
         # but it must still model that complete dependency graph.

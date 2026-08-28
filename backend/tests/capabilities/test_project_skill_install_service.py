@@ -4,8 +4,6 @@ import io
 import json
 import zipfile
 from pathlib import Path
-from types import SimpleNamespace
-
 import pytest
 
 from deskpet.capabilities.contracts import fingerprint_json
@@ -14,6 +12,10 @@ from deskpet.capabilities.skill_install import (
     ProjectSkillInstallError,
     ProjectSkillInstallService,
     SkillInstallProjectAuthority,
+)
+from deskpet.capabilities.package_limits import (
+    CapabilityPackageLimitsV1,
+    ValidatedCapabilityPackageRefV1,
 )
 from deskpet.capabilities.skill_source import (
     CanonicalSkillBatch,
@@ -54,14 +56,14 @@ def _batch() -> CanonicalSkillBatch:
         archive_hash="d" * 64,
         manifest_hash="e" * 64,
         content_digest="f" * 64,
-        validated_ref=SimpleNamespace(
+        validated_ref=ValidatedCapabilityPackageRefV1.issue(
             source_kind="git",
+            limits=CapabilityPackageLimitsV1(),
             archive_hash="d" * 64,
             manifest_hash="e" * 64,
             file_set_hash="1" * 64,
             entry_count=2,
             total_uncompressed_bytes=len(archive),
-            limits_hash="2" * 64,
         ),
     )
     return CanonicalSkillBatch(evidence=evidence, packs=(pack,), batch_digest="3" * 64)
@@ -151,6 +153,26 @@ class Verifier:
         return {"run_id": attempt.expected_run_id, "verification_ref": attestation.verification_ref}
 
 
+class AllocatingFailVerifier:
+    def __init__(self, store):
+        self.store = store
+
+    async def verify_skill_install(self, **kwargs):
+        intent = kwargs["intent"]
+        receipt = kwargs["manager_receipt"]
+        await self.store.allocate_skill_install_verification_attempt(
+            intent.intent_id,
+            expected_state_version=intent.state_version,
+            manager_operation_id=receipt["operation_id"],
+            manager_receipt_hash=receipt["manager_receipt_hash"],
+            committed_set_stamp=intent.member_set_stamp,
+            project_scope_key=intent.project_scope_key,
+            expected_member_set_stamp=intent.member_set_stamp,
+            verifier_session_id="verification-session",
+        )
+        raise RuntimeError("verification interrupted")
+
+
 def _project() -> SkillInstallProjectAuthority:
     return SkillInstallProjectAuthority(
         project_id="project-1",
@@ -217,6 +239,19 @@ async def test_stage_is_exact_idempotent_and_confirm_requires_typed_receipt(tmp_
     assert source.calls == 1
     intent = await store.get_skill_install_intent(ready.intent_id)
     assert intent is not None
+    members = await store.skill_install_members(intent.intent_id)
+    assert set(members[0].member["validated_ref"]) == {
+        "source_kind",
+        "policy_version",
+        "baseline_hash",
+        "policy_hash",
+        "archive_hash",
+        "manifest_hash",
+        "file_set_hash",
+        "entry_count",
+        "total_uncompressed_bytes",
+        "validation_receipt_hash",
+    }
     receipt = AuthorizedSkillInstallReceipt(
         channel="chat", intent_id=intent.intent_id,
         content_digest=intent.member_set_stamp,
@@ -241,6 +276,59 @@ async def test_stage_is_exact_idempotent_and_confirm_requires_typed_receipt(tmp_
         "sdk-final-nonce", 7
     )
     assert (await service.confirm_authorized(receipt))["status"] == "succeeded"
+    assert publisher.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_pending_runtime_verification_resumes_without_new_authorization(
+    tmp_path,
+) -> None:
+    clock = lambda: 100.0
+    _database, store, publisher, service = await _service(
+        tmp_path, Source(), clock
+    )
+    service.runtime_verifier = AllocatingFailVerifier(store)
+    ready = await service.stage(
+        url="https://github.com/acme/skills",
+        project=_project(),
+        run_id="run-1",
+        root_run_id="root-1",
+        call_id="call-1",
+        effect_id="effect-1",
+    )
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    receipt = AuthorizedSkillInstallReceipt(
+        channel="chat",
+        intent_id=intent.intent_id,
+        content_digest=intent.member_set_stamp,
+        project_scope_key=intent.project_scope_key,
+        principal_id=intent.principal_id,
+        decision_nonce="sdk-initial",
+        decision_version=0,
+        expires_at=intent.expires_at,
+        approved=True,
+        run_id="run-1",
+        call_id="call-1",
+        effect_id="effect-1",
+        decision_sdk_receipt_hash="5" * 64,
+        decision_host_receipt_hash="6" * 64,
+        handoff_sdk_receipt_hash="7" * 64,
+        handoff_host_receipt_hash="8" * 64,
+    )
+    with pytest.raises(RuntimeError, match="verification interrupted"):
+        await service.confirm_authorized(receipt)
+    pending = await store.get_skill_install_intent(intent.intent_id)
+    assert pending is not None
+    assert pending.status == "published_pending_runtime_verification"
+    assert pending.confirmation_version == 0
+
+    service.runtime_verifier = Verifier(store)
+    recovered = await service.reconcile_pending_runtime_verifications()
+
+    assert len(recovered) == 1
+    succeeded = await store.get_skill_install_intent(intent.intent_id)
+    assert succeeded is not None and succeeded.status == "succeeded"
     assert publisher.calls == 1
 
 

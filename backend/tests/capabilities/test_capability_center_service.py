@@ -105,7 +105,10 @@ class _StaticHub:
     def __init__(self, snapshot: CapabilityCatalogSnapshot) -> None:
         self._snapshot = snapshot
 
-    async def snapshot(self, _scope: CapabilityScope) -> CapabilityCatalogSnapshot:
+    async def snapshot(
+        self, _scope: CapabilityScope, *, owner_key: str | None = None
+    ) -> CapabilityCatalogSnapshot:
+        self.owner_key = owner_key
         return self._snapshot
 
 
@@ -163,6 +166,27 @@ async def test_capability_center_redacts_projection_and_only_advertises_real_act
             "available_actions": ["uninstall"],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_capability_center_threads_project_owner_to_hub(
+    tmp_path: Path,
+) -> None:
+    store = await _store(tmp_path)
+    snapshot = await _installed_snapshot(store, tmp_path)
+    hub = _StaticHub(snapshot)
+    service = CapabilityCenterService(
+        store=store,
+        manager=_SlowManager(store),  # type: ignore[arg-type]
+        hub=hub,
+    )
+
+    await service.list_capabilities(
+        CapabilityScope(project_key="project-1", user_key="sdk-runtime"),
+        owner_key="sdk-runtime",
+    )
+
+    assert hub.owner_key == "sdk-runtime"
 
 
 @pytest.mark.asyncio

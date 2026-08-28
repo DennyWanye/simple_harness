@@ -2,6 +2,10 @@
 
 # Plan：聊天与设置共享的 Project-scoped Skill 安装
 
+> 2026-08-29 实施更新：用户决定不再按 `plan-test` 编排执行，但本定稿 plan 继续作为设计与剩余验收边界。
+> 当前故障链实现、真实 UI 证据及未关闭 gate 统一记录在 [`results.md`](results.md)；不得把本轮局部 PASS
+> 解释为 AC-SI-1～6 的完整 release。
+
 ## 主要矛盾
 
 - 决定成败的核心问题：把 raw GitHub Skill repo 转成 Manager-owned immutable

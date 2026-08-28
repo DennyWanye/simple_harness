@@ -100,9 +100,14 @@ class CapabilityCenterService:
         return CapabilityScope()
 
     async def list_capabilities(
-        self, scope: CapabilityScope | None = None
+        self,
+        scope: CapabilityScope | None = None,
+        *,
+        owner_key: str | None = None,
     ) -> list[dict[str, Any]]:
-        snapshot = await self.hub.snapshot(scope or self.default_scope())
+        snapshot = await self.hub.snapshot(
+            scope or self.default_scope(), owner_key=owner_key
+        )
         projected = project_capability_snapshot(snapshot)
         for descriptor, item in zip(
             snapshot.descriptors,

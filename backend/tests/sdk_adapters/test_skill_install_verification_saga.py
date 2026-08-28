@@ -61,7 +61,13 @@ class _Ingress:
                     execution_session_id=attempt.verifier_session_id,
                     request_id=attempt.request_id,
                 ),
-                start=SimpleNamespace(start_fingerprint="7" * 64),
+                start=SimpleNamespace(
+                    to_json=lambda: {
+                        "schema_version": 6,
+                        "start_mode": "host_control",
+                        "turn_id": attempt.turn_id,
+                    }
+                ),
             ),
             context=None,
             cancel=None,

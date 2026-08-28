@@ -159,7 +159,7 @@ dependencies = [
     # 2026-08-21: vendored exact Agent Runtime candidate bytes.
     # Wheel identity single source of truth:
     # deskpet/sdk_adapters/sdk_candidate.py
-    "simple-harness-sdk==0.6.3",
+    "simple-harness-sdk==0.6.4",
     "simple-harness-memory-sdk==0.5.2",
 ]
 
@@ -174,7 +174,7 @@ dependencies = [
 # Production (vendored immutable candidate):
 # Development (path dependency):
 # simple-harness-memory-sdk = { path = "../../simple-harness-memory-sdk", editable = true }
-simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.6.3-py3-none-any.whl" }
+simple-harness-sdk = { path = "vendor/simple_harness_sdk-0.6.4-py3-none-any.whl" }
 simple-harness-memory-sdk = { path = "vendor/simple_harness_memory_sdk-0.5.2-py3-none-any.whl" }
 
 [project.optional-dependencies]

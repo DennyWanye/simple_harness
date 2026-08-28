@@ -1019,7 +1019,10 @@ function App() {
           onTrace: () => setTraceOpen(true),
           onFeedback: () => setFeedbackOpen(true),
         }}
-        skillsProps={{ channel: permissionChannel }}
+        skillsProps={{
+          channel: permissionChannel,
+          sessionId: activeSid || null,
+        }}
         settingsProps={{
           getChannel: getControlChannel,
           lastMessage,

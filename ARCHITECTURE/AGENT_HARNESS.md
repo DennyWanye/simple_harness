@@ -1,14 +1,32 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-27
+> 最后更新：2026-08-29
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
 
+### Project-scoped Skill 安装与验证 Run（2026-08-29，当前）
+
+`skill_install` 是 SDK catalog 中唯一 model-visible 安装 Tool，但执行 owner 位于 Host 的
+`ProjectSkillInstallService`。SDK prepared authorization 先冻结 exact source/member/Project 摘要，再由真实
+UI 决定；durable SDK decision、Product saga handoff 与 Host receipt 全等后才进入 handler。恢复路径从持久
+artifact/grant/saga 重建，不依赖进程内 `_facts`，也不重跑 branch HEAD。
+
+Manager commit 后 service 创建零 Provider、零 Effect 的 canonical `skill.install.verify` Run。该 Run 和普通
+Run 使用相同 trusted workspace admission、Capability Hub snapshot、owner-aware Store query、catalog lease
+及 frozen instruction resolver；只有全部成员按 exact manifest/content/scope hash page-in 并持久化 attestation
+后，install intent 才能从 `published_pending_runtime_verification` 进入 `succeeded`。启动恢复只 supersede/release
+失败或未知 verification attempt，并复用原 Manager receipt 续验，因此不会重复授权或发布。
+
+2026-08-29 macOS 隔离 debug App 已用真实 UI 完成 `plan-test-skill@4d8c803ba03b…` 安装；第四次
+verification attempt attested，Capability Center 从当前 Project Session 显示三个 Project Skill 均健康。前三次
+失败 attempt 被 durable 保留并 supersede，分别对应本轮已修复的 start fingerprint、resolver composition 与
+owner propagation 缺陷。
+
 ### SDK-first 统一能力目录（2026-08-25，当前）
 
-前台 ReAct Run 使用 Harness `0.6.2` 的公共 `RuntimeToolCatalog` 与 per-Run
+前台 ReAct Run 使用 Harness `0.6.4` candidate 的公共 `RuntimeToolCatalog` 与 per-Run
 `CatalogRunToolExposure`。Host 将 built-in、健康 MCP、Skill metadata 和 Workflow profile 映射到单一冻结
 目录；fresh Run 只直出 compact kernel，其余 executable Tool 经
 `tool_search -> tool_describe -> tool_activate` 在同一 Run 渐进披露。Provider ready attempt 每轮重新读取
@@ -28,7 +46,7 @@ Provider 调查日志由 Host `ProductProviderAdapter` 在真实 SDK invocation 
 允许记录 model、状态码、耗时、消息/Tool 数量、schema bytes、Tool 名称集合摘要和响应结构计数；禁止记录
 API key、endpoint URL、prompt/response 正文、Tool 参数及上游 request ID 原文。
 
-当前 exact candidate bytes：Harness `0.6.2` / source `67f5769…` / wheel `ffb7c061…`；Memory `0.5.2` /
+当前 exact candidate bytes：Harness `0.6.4` / source `21f3c7a…` / wheel `ecb6e85…`；Memory `0.5.2` /
 source `46624b…` / wheel `deff2fa8…`。自动化与分片基线已绿。2026-08-25 CAP-1 真 UI 修复先让 SDK
 authority 与 legacy ToolRegistry 共用启动期 scope Store，再把物理 registry 的真实 policy fingerprint 冻结进
 RunStart authority；严格 stale 校验仍保留。最终 Run 在同一 root 中完成 search/describe/activate，Provider

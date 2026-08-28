@@ -79,6 +79,28 @@ async def test_install_intent_members_are_immutable_and_state_is_cas(tmp_path) -
 
 
 @pytest.mark.asyncio
+async def test_install_intent_accepts_sdk_initial_decision_version_zero(tmp_path) -> None:
+    path = await initialize_capability_database(tmp_path / "workflow.db")
+    store = CapabilityStore(path, clock=lambda: 101.0)
+    await store.create_skill_install_intent(_intent(), _members())
+    awaiting = await store.cas_skill_install_intent(
+        "si-1", expected_state_version=1, status="awaiting_confirmation"
+    )
+
+    bound = await store.bind_skill_install_confirmation(
+        "si-1",
+        expected_state_version=awaiting.state_version,
+        confirmation_nonce="sdk-initial",
+        confirmation_version=0,
+    )
+
+    assert (bound.confirmation_nonce, bound.confirmation_version) == (
+        "sdk-initial",
+        0,
+    )
+
+
+@pytest.mark.asyncio
 async def test_confirmation_handoff_creates_one_exact_batch(tmp_path) -> None:
     path = await initialize_capability_database(tmp_path / "workflow.db")
     store = CapabilityStore(path, clock=lambda: 101.0)

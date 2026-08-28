@@ -57,6 +57,10 @@ def test_directory_picker_is_discoverable_not_in_the_direct_kernel() -> None:
     }.isdisjoint(SDK_DIRECT_TOOL_KERNEL)
 
 
+def test_skill_install_is_a_direct_confirm_only_product_control() -> None:
+    assert "skill_install" in SDK_DIRECT_TOOL_KERNEL
+
+
 @dataclass(frozen=True)
 class _Inventory:
     name: str

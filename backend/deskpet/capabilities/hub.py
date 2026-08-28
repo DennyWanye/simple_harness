@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
 import time
 from dataclasses import replace
@@ -33,6 +34,9 @@ from .contracts import (
 )
 from .catalog_gate import CapabilityCatalogGate, CatalogGateKey
 from .store import CapabilityStore
+
+
+logger = logging.getLogger(__name__)
 
 
 class RegistryCatalogSource(Protocol):
@@ -99,6 +103,18 @@ class ToolRegistryCatalogSource:
                 getattr(spec, "visibility_scope", "global") == "global"
                 and not spec.is_visible()
             ):
+                continue
+            # CapabilityHub feeds durable Run-catalog leases.  Advertising a
+            # callable that has no execution build identity only defers the
+            # same rejection until Fresh-Run preparation and can make an
+            # unrelated Skill publication fail.  Keep such product-only or
+            # legacy bridges in their owning surface, but out of this durable
+            # execution catalog.
+            if getattr(spec, "execution_build_identity", None) is None:
+                logger.info(
+                    "capability_registry_tool_excluded_missing_build_identity name=%s",
+                    spec.name,
+                )
                 continue
             exact_fingerprints[str(spec.name)] = tool_spec_fingerprint(spec)
             schema_hash = str(getattr(spec, "schema_hash", "") or "")
@@ -564,7 +580,7 @@ class CapabilityHub:
         self.max_snapshot_retries = max_snapshot_retries
         self._clock = clock
         self._cache: dict[
-            tuple[str, str],
+            tuple[str, str, str],
             tuple[CapabilityCatalogSnapshot, tuple[CapabilityCatalogEntry, ...]],
         ] = {}
 
@@ -600,7 +616,10 @@ class CapabilityHub:
         )
 
     async def _snapshot_locked(
-        self, scope: CapabilityScope
+        self,
+        scope: CapabilityScope,
+        *,
+        owner_key: str | None = None,
     ) -> tuple[CapabilityCatalogSnapshot, tuple[CapabilityCatalogEntry, ...]]:
         for _attempt in range(self.max_snapshot_retries):
             before = await self._read_vector()
@@ -609,7 +628,9 @@ class CapabilityHub:
                 raise PendingPublishError(
                     "capability publish intent must be reconciled before catalog read"
                 )
-            store_entries = await self.store.visible_entries(scope)
+            store_entries = await self.store.visible_entries(
+                scope, owner_key=owner_key
+            )
             after = await self._read_vector()
             if self._vector_identity(before) != self._vector_identity(after):
                 continue
@@ -629,7 +650,11 @@ class CapabilityHub:
                 skill_revision=skills.revision,
                 mcp_revision=mcp_revision,
             )
-            cache_key = (stamp.fingerprint, scope.canonical)
+            cache_key = (
+                stamp.fingerprint,
+                scope.canonical,
+                str(owner_key or ""),
+            )
             cached = self._cache.get(cache_key)
             if cached is not None:
                 return cached
@@ -724,7 +749,9 @@ class CapabilityHub:
             async with self.catalog_gate.read(
                 self._gate_keys(scope, owner_key)
             ):
-                snapshot, _entries = await self._snapshot_locked(scope)
+                snapshot, _entries = await self._snapshot_locked(
+                    scope, owner_key=owner_key
+                )
                 return snapshot
 
     async def snapshot_for_atomic_lease(
@@ -737,7 +764,7 @@ class CapabilityHub:
         """
 
         async with self.catalog_gate.read(self._gate_keys(scope, owner_key)):
-            return await self._snapshot_locked(scope)
+            return await self._snapshot_locked(scope, owner_key=owner_key)
 
     async def mirror_snapshot_lease(
         self,
@@ -790,7 +817,9 @@ class CapabilityHub:
             async with self.catalog_gate.read(
                 self._gate_keys(scope, owner_key)
             ):
-                snapshot, entries = await self._snapshot_locked(scope)
+                snapshot, entries = await self._snapshot_locked(
+                    scope, owner_key=owner_key
+                )
                 await self.store.acquire_snapshot_lease(
                     snapshot_ref=snapshot.snapshot_ref,
                     run_id=run_id,

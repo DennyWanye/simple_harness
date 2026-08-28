@@ -9,7 +9,7 @@ from typing import Callable
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 30
+WORKFLOW_SCHEMA_VERSION = 31
 _INITIALIZE_LOCKS: dict[str, asyncio.Lock] = {}
 
 _SCHEMA_V2 = r"""
@@ -305,6 +305,8 @@ async def _initialize_workflow_db_unlocked(path: str | Path) -> Path:
                     await _migrate_v28_to_v29_public_run_projection(db)
                 elif current == 29:
                     await _migrate_v29_to_v30_capability_skill_verification(db)
+                elif current == 30:
+                    await _migrate_v30_to_v31_skill_confirmation_version(db)
                 else:  # pragma: no cover - guarded by the version constant
                     raise RuntimeError(f"no workflow.db migration from schema {current}")
                 row = await (await db.execute("PRAGMA user_version")).fetchone()
@@ -3860,3 +3862,50 @@ async def _migrate_v29_to_v30_capability_skill_verification(
         if db.in_transaction:
             await db.rollback()
         raise
+
+
+async def _migrate_v30_to_v31_skill_confirmation_version(
+    db: aiosqlite.Connection,
+    *,
+    fault_injector: Callable[[str], None] | None = None,
+) -> None:
+    """Align the Manager's stored confirmation identity with SDK version zero."""
+
+    from deskpet.capabilities.store import migrate_capability_schema_v3_to_v4
+
+    def fault(point: str) -> None:
+        if fault_injector is not None:
+            fault_injector(point)
+
+    # SQLite table rebuilds that retain child rows require enforcement to be
+    # disabled before BEGIN.  The migration remains atomic and validates all
+    # relationships before commit.
+    if db.in_transaction:
+        await db.commit()
+    await db.execute("PRAGMA foreign_keys=OFF")
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        await migrate_capability_schema_v3_to_v4(db)
+        fault("after_capability_schema")
+        foreign_key_errors = await (
+            await db.execute("PRAGMA foreign_key_check")
+        ).fetchall()
+        if foreign_key_errors:
+            raise RuntimeError(
+                "workflow.db v31 capability foreign key verification failed: "
+                f"{foreign_key_errors[0]}"
+            )
+        await db.execute(
+            "INSERT INTO workflow_schema_migrations(version,applied_at) VALUES(31,?)",
+            (time.time(),),
+        )
+        fault("after_marker")
+        await db.execute("PRAGMA user_version=31")
+        fault("after_user_version")
+        await db.commit()
+    except BaseException:
+        if db.in_transaction:
+            await db.rollback()
+        raise
+    finally:
+        await db.execute("PRAGMA foreign_keys=ON")

@@ -310,7 +310,8 @@ async def test_prepare_run_catalog_lease_captures_hub_exactly_once() -> None:
         def _gate_keys(self, scope, owner_key):
             return (key,)
 
-        async def _snapshot_locked(self, scope):
+        async def _snapshot_locked(self, scope, *, owner_key=None):
+            assert owner_key == "owner-a"
             calls.append("snapshot")
             return "snapshot-1", ("entry-1",)
 

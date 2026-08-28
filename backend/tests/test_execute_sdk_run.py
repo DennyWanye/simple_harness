@@ -1009,6 +1009,68 @@ async def test_execute_sdk_run_waiting_retains_delivery_and_identity(monkeypatch
     ]
 
 
+@pytest.mark.asyncio
+async def test_open_authorization_replay_restores_durable_run_route(monkeypatch):
+    import main
+
+    root_run_id = "root-replayed-authorization"
+    sdk_run_id = "sdk-replayed-authorization"
+    decision = SimpleNamespace(
+        sdk_run_id=sdk_run_id,
+        run_id=root_run_id,
+        session_id="session-replayed-authorization",
+        request_id="authorization:effect-replayed",
+        task_scope_id="scope-replayed",
+        turn_id="7",
+        decision_id="authorization:effect-replayed",
+        nonce="nonce-replayed",
+        version=0,
+        tool_name="skill_install",
+        prompt="Allow skill_install for this exact request?",
+        params={"url": "https://github.com/acme/skills"},
+        category="skill_install",
+        dangerous=True,
+        expires_at=200.0,
+    )
+    ingress = SimpleNamespace(
+        list_open_authorizations=lambda **_kwargs: (decision,)
+    )
+    websocket = SimpleNamespace(send_json=AsyncMock())
+    main._sdk_run_ids_by_root.clear()
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    monkeypatch.setattr(main, "_broadcast_default_chat_peers", AsyncMock())
+
+    projected = await main._project_open_sdk_authorizations(
+        websocket,
+        session_id="session-replayed-authorization",
+        rehydrated=True,
+    )
+
+    assert projected == 1
+    assert main._sdk_run_ids_by_root[root_run_id] == sdk_run_id
+    assert websocket.send_json.await_args.args[0]["payload"] == {
+        "session_id": "session-replayed-authorization",
+        "run_id": root_run_id,
+        "sdk_run_id": sdk_run_id,
+        "task_scope_id": "scope-replayed",
+        "turn_id": "7",
+        "request_id": "authorization:effect-replayed",
+        "decision_id": "authorization:effect-replayed",
+        "nonce": "nonce-replayed",
+        "version": 0,
+        "category": "skill_install",
+        "summary": "Allow skill_install for this exact request?",
+        "params": {
+            "url": "https://github.com/acme/skills",
+            "tool_name": "skill_install",
+        },
+        "default_action": "prompt",
+        "dangerous": True,
+        "expires_at": 200.0,
+        "rehydrated": True,
+    }
+
+
 def test_restore_sdk_delivery_route_requires_and_preserves_identity(monkeypatch):
     import main
 

@@ -1,6 +1,22 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-27
+> **最后更新**：2026-08-29
+
+## 2026-08-29 Project-scoped managed Skill 安装故障链修复与 macOS 真 UI 验收
+
+- 聊天/Settings 安装已收敛到 `ProjectSkillInstallService` 单一 application owner；SDK prepared
+  authorization、Product saga、Host receipt、Manager batch publish 与 canonical verification Run 共用一个
+  durable intent。嵌套 tuple JSON、nonce reissue、durable decision lookup、失败 attempt recovery 与 resolver
+  composition 的真实崩溃/恢复缺口已修复。
+- Capability Hub 的 `owner_key` 现进入 Store snapshot、cache partition 和 per-Run lease；Capability Center
+  通过当前 Session 的可信 Project binding 查询同一目录，不再把全局 catalog 当成 Project Skill 事实源。
+- macOS 隔离 debug App 已真实安装 `DennyWanye/plan-test-skill@4d8c803ba03b…`；durable intent
+  `succeeded`、第 4 次 verification attempt `attested`，三个成员在 Skills UI 均显示 Project scope 与健康。
+  后端最终聚焦回归 67 passed；扩大改动文件组合 203 passed / 1 个已登记的非本轮 Context budget 基线失败。
+  前端 8 passed，TypeScript/Vite build 和 exact Tauri debug bundle 通过。
+- 本轮关闭用户复现的授权/恢复/安装/可见性链，不把它外推为整个安装 plan 的 release：恶意 archive、跨
+  Project 隔离、全部 crash boundary 与 full-surface 矩阵仍按
+  [`results.md`](../plans/2026-08-27-chat-skill-install/results.md) 的剩余 gate 执行。
 
 ## 2026-08-27 Project-scoped Sessions macOS release 验收完成
 
@@ -1702,6 +1718,7 @@
 | Worktree / 分支 | 负责模块 | 状态 | 文档 |
 |---|---|---|---|
 | **master** | 主线 — beta-100 ready 集成线 | ✅ 活跃，持续 merge | `README.md` |
+| `fix/skill-install-single-owner` | Project-scoped managed Skill 单一 owner、授权恢复、verification Run 与 Capability Center scope | 🟡 当前 worktree 已完成本次故障链实现和 macOS 真 UI 验收，待评审后合入 master | [plan/results](../plans/2026-08-27-chat-skill-install/results.md) |
 | `feat/companion-code-v2` | Slash 命令 + /goal + 多 agent team + 工具 partition + prompt cache | ✅ 全套实现 + 真桌宠 E2E PASS；**已 merge master**（`84b8ce0` merge superpowers B3；分支 tip 0 commits ahead of master）；功能 flag 默认 OFF | [plans/2026-05-25-companion-code-skill-upgrade/](../plans/2026-05-25-companion-code-skill-upgrade/) |
 | `feat/fun-interactions-2026-05-31` | 12 个趣味交互（drag squash / tap burst / dizzy spin / time-of-day mood） | ✅ 已 merge 到 master (2f54960) | — |
 | `fix/restore-ui-pack-2026-05-31` | UI 修复恢复（工作树 reset 丢失的 6 项） | ✅ 已 merge (fd55c9f) | — |
@@ -1732,7 +1749,7 @@
 | **DeepResearch v4 技术情报 + 可审计聊天进度** | ✅ **2026-07-15 完成并默认 ON** — 新 run 默认进入 immutable `deep_research/v4`，v1/v2/v3 保留历史与在途恢复；provider limiter/permit 复验/empty-aware rescue 消除宽 fan-out cooldown 连坐。宽主题使用稳定 taxonomy、实体去重和页面噪声过滤；报告采用质量优先的 3～8 项发布门，固定提供一页式执行摘要、组合建议、分主题核心变化/价值/成熟度/风险/日期/逐项引用与方法局限；证据质量不足时摘要和正文都只能“先补证据再决定 PoC”。`zero_candidates`/`insufficient_evidence` 不生成假报告或 Artifact；Session 13 阶段显示每一步“动作 + 结果 + 降级原因”并提供幂等 retry。Xiaomi 同进程最终连续 run `43e851a0...` 与 `59975eb1...` 均为 5 项/5 引用并通过当前 17 项专业报告门；旧 `66720bcf...` 及建议口径不一致的早期样本均降级。报告聚焦 `114 passed`；后端最后代码全量 `4643 passed / 10 known failures` 无新增；前端 `811 passed`、tsc/build PASS。 | [架构](./SEARCH_GATEWAY_DEEPRESEARCH.md#16-宽主题技术情报-v4-与专业报告2026-07-15) · [results](../plans/2026-07-15-deepresearch-wide-topic-reliability/results.md) · [testcase](../testcase/2026-07-15-deepresearch-wide-topic-reliability/deepresearch-wide-topic-manual-test.md) |
 | **fake-completion VerifyGate** | ✅ 接电；**出厂默认 strict**（`config.py:293` `verify_gate_mode="strict"`，2026-06-23 `7fd79c83` shadow→strict）（+9 claim patterns 含 code 场景）;strict 真机不误杀 + 单测 31/31;**2026-06-22 修 shipped bug：ephemeral 救援子代理从不读 `[tools.verifier].ephemeral_subagent_model`→恒复用主 LLM**（`build_agent` 注入处直接 `local_llm or cloud_llm`）→新增 `_resolve_ephemeral_provider`（`backend/main.py`）按配置克隆专用 model provider（缺省/失败回退主 LLM）+ 15 单测全绿 + 真机 boot-log 实证 `model='sonnet' base='gpt-5.5'`（`772c4291`） | [v3 §WI-T2.1](../plans/2026-05-24-tool-layer-optimization-v3/00-PRD.md) + [verify strict 报告](../plans/2026-06-02-superpowers-code-workflow/evidence/E2E-report-verify-strict.md) + [ephemeral 真机验证](../plans/manual-results-2026-06-22-ephemeral-model/RESULTS.md) |
 | **历史 Code 模式工作流纪律** (superpowers 全套) | ⚪ **仅保留历史证据/兼容读取，不是当前产品模式** — 旧 persona、plan 卡、偏好与 verify strict 的实现和既有 E2E 证据仍可追溯；2026-07-24 起新生产记录不再通过 Code mode、`task_type="code"` 或 code-only tool exposure 选择 persona/Profile/Driver/workspace。代码类请求与其他请求一样从 `agent.general` 开始，由模型显式 `workflow_spawn` 合法 child Profile。 | [历史 spec](../plans/2026-06-02-superpowers-code-workflow/05-LOCKED-spec.md) · [当前 Harness](./AGENT_HARNESS.md) |
-| **技能系统** (17 个 first-party Capability Skill Pack + 自动披露 + marketplace) | ✅ 生产能力基础可用 — first-party Skill 只经 immutable Capability Pack 与 Manager-backed snapshot resolver 提供；`skill_invoke`/slash 使用同一次 Run catalog capture 和 typed frozen scope，Personal Workflow 通过固定解释器与 Effect/UoW 执行。Task 13 已删除进程内 `ToolPathRecorder`、旧 Codifier/CandidateProposal、Presenter/Voice codify 回调和裸 candidate confirm；成长候选改走 durable evidence → candidate → evaluation → activation saga。legacy user Skill 仅作为 migration source/只读兼容面，不再拥有成长写 authority。 | [当前架构事实](./ARCHITECTURE.md#16-伴生智能体成长能力现状) · [Companion 模块](./COMPANION_GROWTH.md) |
+| **技能系统** (17 个 first-party Capability Skill Pack + Project-scoped managed Skill + 自动披露) | 🟡 **本次 managed install 故障链 PASS，完整 release gate 待执行** — first-party 与 managed Skill 都只经 immutable Capability Pack、Manager binding、owner-aware Hub snapshot 和 per-Run frozen catalog 提供。聊天/Settings 共用单一 install service，真实 UI 授权后以 canonical verification Run 证明 exact page-in 才能成功。`plan-test-skill@4d8c803…` 的三成员 macOS 安装/恢复/UI 可见性已通过；跨 Project、恶意 fixture、全部 crash boundary 与 full-surface 矩阵尚未据此宣称通过。legacy user Skill 仅作只读兼容。 | [当前架构事实](./ARCHITECTURE.md#project-scoped-managed-skill-安装2026-08-29) · [plan/results](../plans/2026-08-27-chat-skill-install/results.md) |
 | **Companion 长期成长** | ✅ **2026-07-27 Task 0～16 完成并默认生效** — `companion.db` v6、state.db v21、workflow.db v23，模型语义成长判定、唯一 Router、trusted control lease、PreferenceResolver、Runtime、动作策略、owner-aware Capability、candidate/evaluation/activation、失败吸收与重规划、Personal Workflow、V2 Reminder、durable 通知/history 与详情 UI 均已进入唯一 production path。旧 Codifier/ToolPath/Reminder writer 已退休。真实主消息页 S-1～S-5/S-8 `6/6 PASS`，确定性 S-6/S-7/S-9 `3/3 PASS`；deterministic smoke `DECISION: SHIP`。 | [模块架构](./COMPANION_GROWTH.md) · [真人结果](../plans/2026-07-24-human-anchored-companion-growth/evidence/manual-results.md) · [plan](../plans/2026-07-24-human-anchored-companion-growth/plan.md) |
 | **Agent Harness / 主消息页运行观察** | ✅ **schema v3 语义运行视图与 Session 模型一致性已完成** — workflow/state 完整事实经一致 read cut、keyset 和纯 reducer 生成 Root aggregate 与最多七类实际阶段；blocked 只认结构化 signal，完整 child failure/replacement/root terminal 链显示已接管并完成。左图、消息 activity、右侧 steps 共用一个 Session/root snapshot store；工具使用 default-deny 有界投影并分层折叠，raw payload 不进公共 contract。真实历史 Root 只读复跑为 366 facts/6 phases/29 logical tools/23 shell，projection complete。跨会话 full-surface 后端 29/前端 116，child provider 接线联测 66；S-SRV-1～5 Windows 真机矩阵全部 PASS。 | [Harness 架构](./AGENT_HARNESS.md) · [AgentLoop](./AgentLoop.md) · [testcase](../testcase/2026-08-03-session-model-run-visibility/manual-test.md) |
 | **Agent Runtime SDK Context 消费者** | ✅ **0.2.0 consumer-prepared 与 simple_harness 真人回归完成** — private projection-v2 stage 冻结 Persona/历史/Skill/Memory/附件；公开 snapshot default-deny。文本附件双 fresh root、长历史、缺失文件、冷重启与停止恢复均经 macOS `.app` 真人操作通过；budget-only cancel receipt 不再阻塞 ordered projection cursor。 | [Harness 架构](./AGENT_HARNESS.md) · ignored `.local-test-evidence/2026-08-21/sdk-context-consumer-regression/RESULTS.md` |
@@ -1775,6 +1792,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-08-29 | **Project-scoped managed Skill 当前故障链 PASS 🟡** — 修复 JSON tuple、授权 decision 恢复、verification attempt 恢复、resolver composition、owner-aware catalog 与 Capability Center Session scope；macOS 隔离 App 真实安装 `plan-test-skill@4d8c803…`，intent succeeded、verification attested，三成员 UI 均健康。完整安装 release gate 仍待执行。 |
 | 2026-08-21 | **Agent Runtime SDK 0.2/0.3 simple_harness 真人消费者回归完成 ✅** — CTX-1～CTX-5 与 Provider/Session/Context/附件/历史重启/停止 critical surface smoke 全部 PASS；补齐消息页文本附件到 consumer-prepared private stage、公开 default-deny Context 摘要和 Provider wire lowering。真人停止发现并修复 budget-only `unknown` 回执毒化投影游标，重启后 cursor 24→27、下一真实 DeepSeek Run 完成并回到空闲。 |
 | 2026-08-04 | **桌面游戏操作与小窗口 Context 稳定性修复 ✅** — 桌面输入按全局资源 lane 跨批次/Run 串行；`window_key` 支持有界单事务序列和纯暂停步；截图 base64 提升为有预算的多模态附件；AgentLoop 按冻结模型窗口压缩并在 provider 预检超限时做一次目标保真 rescue。最终自动化与 Windows 真机复测通过，Run `9dd6243c...` 仅一次三步按键调用并截图完成。 |
 | 2026-07-30 | **Harness Inspector 用户时间线 ✅** — 默认页改为“Agent 执行过程”，只显示当前状态、用户需要做什么和按顺序更新的轻量步骤；工具步骤按需展开真实参数，技术账本默认折叠。相关前端 39 passed、production build 与唯一主实例真机交互通过。 |

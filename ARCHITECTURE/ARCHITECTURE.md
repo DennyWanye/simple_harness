@@ -1,10 +1,37 @@
-<!-- last-calibrated: 91d22247947c152c1bf5393a840553b6172628cc -->
+<!-- last-calibrated: 2026-08-29 -->
 
 # simple_harness Long-Running Agent Architecture Baseline
 
-## SDK-first Tool / Capability 目录（2026-08-25）
+## Project-scoped managed Skill 安装（2026-08-29）
 
-- Host 当前 vendor Harness `0.6.2`（wheel SHA-256 `92f5be18…`）与 Memory `0.5.2`
+- 聊天 `skill_install` 与 Settings 安装入口只做 Host adapter；唯一 application owner 是
+  `ProjectSkillInstallService`。它持有 durable install intent、冻结 GitHub exact commit、排序成员集、
+  Project identity、确认 nonce/version、Manager receipt 和 runtime verification refs。模型参数、前端
+  `approved: bool`、legacy 目录复制与通用 shell 都不能成为发布 authority。
+- SDK prepared authorization 在物理 handler 前完成 bounded source preflight。确认卡绑定冻结摘要；SDK
+  decision、Product authorization saga 与 Host handoff 全部持久化后，resolver 才签发 typed receipt。恢复时
+  嵌套 tuple/immutable metadata 必须 thaw 为 JSON list/dict；nonce reissue 和 durable decision lookup 复用同一
+  request identity，不能因进程重启产生 `Decision was not found` 或第二次发布。
+- Capability Manager 批量发布并绑定 `owner_key=sdk-runtime` 与 versioned Project scope。Hub 的 snapshot、
+  cache key、Store query 和 per-Run lease 全程携带同一 owner；owner 不是只用于互斥锁。目录中缺少
+  `execution_build_identity` 的 legacy ToolRegistry entry 不进入 SDK catalog。
+- Manager committed 不等于可对用户宣称成功。service 启动或查询时恢复
+  `published_pending_runtime_verification`，通过 canonical `skill.install.verify` Run 获取新的 Project-scoped
+  catalog lease，按 manifest/content hash page-in 全部成员；attestation 与 release receipt 持久化后 intent 才
+  CAS 到 `succeeded`。失败或未知 attempt 会先被 supersede/release，再以同一 Manager receipt 幂等续验，
+  不重新授权、下载或发布。
+- Capability Center 的 `capability_list` 必须携带当前 `session_id`，后端通过
+  `SessionProjectBinding` 重新取得可信 Project identity，再用 `scope + owner_key` 查询；无 workspace 时
+  fail closed。这样 Settings 显示的 Project Skill 与新 Run 实际冻结的目录是同一个事实源。
+- 当前 macOS 隔离 debug App 已真实完成 `DennyWanye/plan-test-skill` exact commit
+  `4d8c803ba03b1a60d62dfd7133c173265dfbbf1f` 的三成员安装。intent 为 `succeeded`，第 4 次验证 attempt
+  `attested`；Capability Center 显示 `plan-bs`、`plan-task`、`plan-test` 均为 Project scope、健康、同一版本
+  `0.0.0+git.4d8c803ba03b`。本证据只关闭本次真实故障链；完整恶意 fixture、跨 Project 与 full-surface
+  验收仍按 plan 独立执行。
+
+## SDK-first Tool / Capability 目录（2026-08-29 校准）
+
+- Host 当前 vendor Harness `0.6.4` candidate（source `21f3c7a…`，wheel SHA-256 `ecb6e85…`）与 Memory `0.5.2`
   （`deff2fa8…`）。SDK 公共 `RuntimeToolCatalog` 统一表达 executable Tool、Skill resource 与 Workflow
   profile；Host 只提供 source metadata、权限事实和 physical handler。
 - fresh Run 使用 `explicit-deferred-v1`：固定的小型 direct kernel 包含

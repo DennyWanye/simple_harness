@@ -55,6 +55,7 @@ function capabilityMatchesFilters(
 interface Props {
   open: boolean;
   channel: CapabilityChannel | null;
+  sessionId?: string | null;
   /**
    * 渲染形态（D5 宿主模式）：
    * - "overlay"（默认）：既有浮层 —— fixed backdrop + 居中 dialog；
@@ -104,6 +105,7 @@ function readCachedAuthorizationMode(): CapabilityAuthorizationMode {
 export function CapabilityCenterPanel({
   open,
   channel,
+  sessionId = null,
   variant = "overlay",
   onClose,
   onOpenLegacySkillStore,
@@ -128,7 +130,10 @@ export function CapabilityCenterPanel({
   // interval, background polling loop, or second job/progress protocol.
   useEffect(() => {
     if (!open || !channel) return undefined;
-    channel.send({ type: "capability_list", payload: {} });
+    channel.send({
+      type: "capability_list",
+      payload: { session_id: sessionId || null },
+    });
     channel.send({ type: "capability_operations_list", payload: {} });
     channel.send({ type: "permission_auto_mode_get", payload: {} });
 
@@ -172,7 +177,7 @@ export function CapabilityCenterPanel({
       }
     });
     return off;
-  }, [open, channel]);
+  }, [open, channel, sessionId]);
 
   const visibleCapabilities = useMemo(() => {
     return capabilities.filter((capability) =>

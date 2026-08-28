@@ -1,6 +1,19 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-27（Project-scoped Sessions macOS release 验收完成）
+> 最后更新：2026-08-29（Project-scoped managed Skill 安装故障链验收）
+
+## 1.0 Project-scoped Capability Center（2026-08-29）
+
+- Skills 视图把当前 `session_id` 传给 Capability Center；后端不信任前端给出的 Project/scope，而是从
+  durable Session binding 重建可信 Project identity，再查询 exact `owner_key=sdk-runtime` + Project scope。
+  Session 切换会重新加载目录，projectless 或 workspace 不可用时不会回退到全局 managed Skill。
+- 安装授权仍是 action-time 用户决定：Agent 可以自主操作其余开发 UI，但不能替用户点击外部 GitHub 代码的
+  “允许一次/始终允许”。拒绝、过期或重启后的决定由同一 durable request/nonce 结算，不应重复弹出，也不应
+  出现 `Decision was not found`。
+- 隔离 macOS debug App 的真实安装完成后，Capability 数量从全局 125 变为当前 Project 的 128；列表和详情
+  显示 `plan-bs`、`plan-task`、`plan-test` 均为“健康”，版本
+  `0.0.0+git.4d8c803ba03b`，详情 Scope 为 `project` 并展示 exact source commit、64 个文件 hash 与 manifest
+  SHA。该 UI 证据证明当前 Project 可见性，不外推尚未执行的跨 Project/full-surface 矩阵。
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 

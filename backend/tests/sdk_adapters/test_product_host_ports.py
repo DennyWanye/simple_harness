@@ -172,6 +172,50 @@ async def test_tool_turn_without_public_content_does_not_make_second_provider_ca
 
 
 @pytest.mark.asyncio
+async def test_nested_tool_arguments_survive_provider_history_normalization() -> None:
+    client = httpx.AsyncClient()
+    adapter = ProductProviderAdapter(
+        Registry("secret"),
+        provider_id="relay",
+        client=client,
+        price_resolver=lambda provider, model: (1, 1, "price-v1"),
+    )
+    response = ProviderResponse(
+        RequestId("run-nested:provider-turn:1"),
+        Message(MessageRole.ASSISTANT, ""),
+        tool_calls=(
+            ProviderToolCall(
+                CallId("call-nested"),
+                "skill_install",
+                {
+                    "source": {
+                        "url": "https://github.com/example/skill",
+                        "ref": None,
+                    },
+                    "skill_names": ["one", "two"],
+                },
+            ),
+        ),
+    )
+    adapter._delegate.invoke = AsyncMock(return_value=response)  # noqa: SLF001
+    try:
+        actual = await adapter.invoke(
+            ProviderRequest(
+                RequestId("run-nested:provider-turn:1"),
+                (Message(MessageRole.USER, "install"),),
+            ),
+            cancel=CancelToken(),
+        )
+    finally:
+        await client.aclose()
+
+    retained = actual.message.metadata["provider_tool_calls"][0]
+    assert retained["arguments"]["source"]["ref"] is None
+    assert tuple(retained["arguments"]["skill_names"]) == ("one", "two")
+    assert actual.tool_calls[0].arguments["source"]["url"].endswith("/skill")
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("raw_progress", [None, "", "   ", 7, {"text": "fake"}])
 async def test_non_text_or_blank_public_progress_is_removed_without_narration(
     raw_progress,
