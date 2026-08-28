@@ -3,30 +3,15 @@
 
 from __future__ import annotations
 
-import sqlite3
 import hashlib
 import json
+import sqlite3
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-
-from deskpet.memory.identity import (
-    MemorySessionRebind,
-    ProductMemoryIdentityResolver,
-    ValidatedLocalMemoryIdentityAuthority,
-)
-from deskpet.memory.session_db import SessionDB
-from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
-from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
-from deskpet.sdk_adapters.memory_faults import DevMemoryFaultPort, wrap_dev_memory_faults
-from deskpet.sdk_adapters.sdk_candidate import (
-    SDK_MEMORY_WHEEL_SHA256,
-    SDK_WHEEL_SHA256,
-)
-from deskpet.migrations.sdk_v4_cutover import recover_product_sdk_pair_v4
-from deskpet.tool_catalog.providers import ToolCatalogDependencies, _dynamic_handlers
+from simple_harness import CallId, RequestId, RunId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.runtime import (
     AgentIdentity,
@@ -37,7 +22,6 @@ from simple_harness.runtime import (
     MemoryScopeKind,
     MemoryScopeRef,
 )
-from simple_harness import CallId, RequestId, RunId
 from simple_harness.tools import CancellationToken, ToolContext
 from simple_harness_memory import (
     MemoryIdempotencyConflict,
@@ -45,6 +29,25 @@ from simple_harness_memory import (
     MemoryOwnershipConflict,
     MemoryPrincipal,
 )
+
+from deskpet.memory.identity import (
+    MemorySessionRebind,
+    ProductMemoryIdentityResolver,
+    ValidatedLocalMemoryIdentityAuthority,
+)
+from deskpet.memory.session_db import SessionDB
+from deskpet.migrations.sdk_v4_cutover import recover_product_sdk_pair_v4
+from deskpet.sdk_adapters.context_provider import ProductConversationContextProvider
+from deskpet.sdk_adapters.context_source import ProductContextSourceRepository
+from deskpet.sdk_adapters.memory_faults import (
+    DevMemoryFaultPort,
+    wrap_dev_memory_faults,
+)
+from deskpet.sdk_adapters.sdk_candidate import (
+    SDK_MEMORY_WHEEL_SHA256,
+    SDK_WHEEL_SHA256,
+)
+from deskpet.tool_catalog.providers import ToolCatalogDependencies, _dynamic_handlers
 
 
 @pytest.mark.asyncio
@@ -374,7 +377,7 @@ async def test_dev_fault_wrapper_is_one_shot_and_fail_closed(monkeypatch, tmp_pa
 
 def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
     assert SDK_WHEEL_SHA256 == (
-        "ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e"
+        "c0ce056b79db74cec12a5155cc58fa0e12d6907cbb6b4833eb0dff916d71e31b"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
         "deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e"

@@ -449,11 +449,16 @@ def build_product_tool_registry(
         if registration.name in by_name:
             raise ValueError(f"duplicate product Tool: {registration.name}")
         by_name[registration.name] = registration
-    missing = tuple(name for name in PRODUCT_TOOL_NAMES if name not in by_name)
+    # The checked-in pre-cutover catalog remains a reusable 77-tool fixture.
+    # ``skill_install`` is the single Product-owned post-cutover registration
+    # and is appended only by production composition after its durable Host
+    # dependencies exist.
+    required = tuple(name for name in PRODUCT_TOOL_NAMES if name != "skill_install")
+    missing = tuple(name for name in required if name not in by_name)
     extra = tuple(sorted(set(by_name) - set(PRODUCT_TOOL_NAMES)))
     if missing or extra:
         raise ValueError(f"product Tool inventory mismatch: missing={missing}, extra={extra}")
-    ordered = tuple(by_name[name] for name in PRODUCT_TOOL_NAMES)
+    ordered = tuple(by_name[name] for name in PRODUCT_TOOL_NAMES if name in by_name)
     sdk_tools = tuple(_sdk_tool(item) for item in ordered)
     execution_identities = {
         registration.name: _product_tool_execution_identity(registration, tool)

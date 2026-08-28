@@ -14,14 +14,14 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import logging
 import hashlib
 import inspect
 import json
+import logging
 import os
 import re
-import signal
 import shutil
+import signal
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -38,21 +38,25 @@ from deskpet.companion.identity_gate import (
     IdentityReadyGate,
 )
 from deskpet.execution.ports import CurrentExecutionScopeLease
-from deskpet.types.task_grants import ResourceSelector
-from deskpet.tools.capabilities import PreparedToolSet, ToolExecutionContext
 from deskpet.tools.build_identity import ExecutionBuildIdentity
+from deskpet.tools.capabilities import PreparedToolSet, ToolExecutionContext
 from deskpet.tools.registry import ToolRegistry, ToolSpec, tool_spec_fingerprint
+from deskpet.types.task_grants import ResourceSelector
 from deskpet.workflows.contracts import EffectKind, EffectPolicy
 from deskpet.workflows.effects import NormalizedToolOutcome
 
 from .brokered_planner import BrokeredEffectPlanner, ResourceAuthorizer
 from .catalog_gate import CapabilityCatalogGate, CatalogGateKey
+from .configured_catalog import (
+    CompositeCapabilityEntrySource,
+    ConfiguredCapabilityCatalogSource,
+)
 from .contracts import (
+    EMPTY_OWNER_BINDING_SET_STAMP,
     CapabilityBinding,
     CapabilityCatalogEntry,
     CapabilityScope,
     CapabilityVersionDescriptor,
-    EMPTY_OWNER_BINDING_SET_STAMP,
     JsonValue,
     OwnerBindingSetStamp,
     OwnerScopeKey,
@@ -86,25 +90,24 @@ from .manager import (
 )
 from .manifest import (
     CommandDependency,
-    PackEnvironment,
     PackCompatibilityError,
+    PackEnvironment,
     PackManifestError,
     PackValidationResult,
     ToolEntry,
     load_and_validate_pack,
+    windows_extended_path,
 )
 from .publisher import (
     ToolRegistryCapabilityPublisher,
     capability_registry_source,
     capability_spec_version,
 )
-from .search import CapabilitySearch, SemanticEmbedder
-from .source import CapabilitySourceResolver, PackSourceRequest
-from .configured_catalog import (
-    CompositeCapabilityEntrySource,
-    ConfiguredCapabilityCatalogSource,
+from .run_catalog import (
+    PendingProcessPinToken,
+    PreparedRunCatalogLease,
+    SnapshotLeaseReadyGate,
 )
-from .manifest import windows_extended_path
 from .runtime_prepare import (
     CapabilityRuntimeSetCoordinator,
     PreparedRuntimeAdapter,
@@ -113,11 +116,8 @@ from .runtime_prepare import (
     RuntimeLaunchAuthorization,
     RuntimeSetLedgerPort,
 )
-from .run_catalog import (
-    PendingProcessPinToken,
-    PreparedRunCatalogLease,
-    SnapshotLeaseReadyGate,
-)
+from .search import CapabilitySearch, SemanticEmbedder
+from .source import CapabilitySourceResolver, PackSourceRequest
 from .store import CapabilityStore
 from .tool_proxy import BrokeredPlanEnvelope, LocalToolDefinition, LocalToolProxy
 from .tools import CapabilityToolService, register_capability_tools

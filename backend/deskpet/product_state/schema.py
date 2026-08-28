@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from deskpet.capabilities.store import (
     CAPABILITY_SCHEMA_SQL as _CAPABILITY_SCHEMA_SQL,
+)
+from deskpet.capabilities.store import (
     CAPABILITY_SCHEMA_V1_SQL as _CAPABILITY_SCHEMA_V1_SQL,
+)
+from deskpet.capabilities.store import (
     CAPABILITY_SCHEMA_V2_STATEMENTS,
 )
 
@@ -261,7 +265,16 @@ VERIFICATION_V4_SCHEMA_SQL = VERIFICATION_V3_SCHEMA_SQL.replace(
     "          OR migration_classification='attested'),\n"
     "    UNIQUE(intent_id,attempt_generation),",
     1,
-).replace("'runtime_v3','legacy_v2'", "'runtime_v3','legacy_v2','v3_grandfathered_attested'")
+).replace(
+    "'runtime_v3','legacy_v2'",
+    "'runtime_v3','legacy_v2','v3_grandfathered_attested'",
+).replace(
+    "        OR\n        (provenance='legacy_v2'",
+    "        OR\n        (provenance='v3_grandfathered_attested' AND runtime_proof_valid=1\n"
+    "         AND attempt_id IS NOT NULL AND evidence_hash IS NOT NULL)\n"
+    "        OR\n        (provenance='legacy_v2'",
+    1,
+)
 
 VERIFICATION_V4_QUARANTINE_SQL = """
 CREATE TABLE capability_skill_install_verification_migration_quarantine (

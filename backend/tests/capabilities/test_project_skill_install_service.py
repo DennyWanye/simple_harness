@@ -85,12 +85,69 @@ class Publisher:
     async def publish_skill_install_batch(self, **kwargs):
         self.calls += 1
         assert [member.pack_id for member in kwargs["members"]] == ["alpha"]
-        return {"manager_receipt_hash": "4" * 64, "operation_id": kwargs["handoff"].operation_id}
+        return {
+            "manager_receipt_hash": "4" * 64,
+            "operation_id": kwargs["handoff"].operation_id,
+            "committed_set_stamp": kwargs["intent"].member_set_stamp,
+        }
 
 
 class Verifier:
+    def __init__(self, store):
+        self.store = store
+
     async def verify_skill_install(self, **kwargs):
-        return {"run_id": "verify-run", "member_set_stamp": kwargs["intent"].member_set_stamp}
+        intent = kwargs["intent"]
+        receipt = kwargs["manager_receipt"]
+        attempt = await self.store.allocate_skill_install_verification_attempt(
+            intent.intent_id,
+            expected_state_version=intent.state_version,
+            manager_operation_id=receipt["operation_id"],
+            manager_receipt_hash=receipt["manager_receipt_hash"],
+            committed_set_stamp=intent.member_set_stamp,
+            project_scope_key=intent.project_scope_key,
+            expected_member_set_stamp=intent.member_set_stamp,
+            verifier_session_id="verification-session",
+        )
+        phases = (
+            ("start_submitted", {
+                "lease_intent_id": "lease-test",
+                "lease_intent_hash": "a" * 64,
+                "capability_snapshot_ref": "b" * 64,
+                "run_catalog_content_stamp": "c" * 64,
+                "process_catalog_stamp": "d" * 64,
+                "projection_receipt_id": "projection-test",
+                "projection_receipt_hash": "e" * 64,
+            }),
+            ("run_durable", {"actual_run_id": attempt.expected_run_id}),
+            ("catalog_ready", {}),
+            ("page_in_proven", {"evidence_hash": "f" * 64}),
+            ("terminal_observed", {
+                "terminal_event_id": "terminal-test",
+                "terminal_event_hash": "1" * 64,
+            }),
+            ("lease_released", {
+                "release_receipt_id": "release-test",
+                "release_receipt_hash": "2" * 64,
+                "release_owner_event_hash": "3" * 64,
+            }),
+        )
+        for status, fields in phases:
+            attempt = await self.store.cas_skill_install_verification_attempt(
+                attempt.attempt_id,
+                expected_state_version=attempt.state_version,
+                status=status,
+                **fields,
+            )
+        current = await self.store.get_skill_install_intent(intent.intent_id)
+        attestation = await self.store.attach_skill_install_verification_attestation(
+            intent.intent_id,
+            expected_intent_state_version=current.state_version,
+            attempt_id=attempt.attempt_id,
+            expected_attempt_state_version=attempt.state_version,
+            attestation={"schema": "test", "evidence_hash": "4" * 64},
+        )
+        return {"run_id": attempt.expected_run_id, "verification_ref": attestation.verification_ref}
 
 
 def _project() -> SkillInstallProjectAuthority:
@@ -113,7 +170,7 @@ async def _service(tmp_path: Path, source: Source, clock):
         source=source,  # type: ignore[arg-type]
         staging_root=tmp_path / "staging",
         batch_publisher=publisher,
-        runtime_verifier=Verifier(),
+        runtime_verifier=Verifier(store),
         clock=clock,
         confirmation_ttl_seconds=10,
     )

@@ -12,6 +12,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal, Mapping, Protocol, Sequence
 
+from deskpet.product_state.authorization_saga import (
+    AuthorizationSagaRepository,
+    AuthorizationSagaState,
+)
+from deskpet.sdk_adapters.authorization import AuthorizationTerminalEvidence
+from deskpet.sdk_adapters.tool_authority import (
+    SkillInstallPreflightReady,
+    SkillInstallPreflightRejected,
+)
+from deskpet.tools.capabilities import ToolExecutionContext
+
 from .contracts import (
     JsonValue,
     canonical_project_identity_scope_key,
@@ -25,16 +36,6 @@ from .store import (
     CapabilityStore,
     CapabilityStoreConflict,
 )
-from deskpet.sdk_adapters.authorization import AuthorizationTerminalEvidence
-from deskpet.product_state.authorization_saga import (
-    AuthorizationSagaRepository,
-    AuthorizationSagaState,
-)
-from deskpet.sdk_adapters.tool_authority import (
-    SkillInstallPreflightReady,
-    SkillInstallPreflightRejected,
-)
-from deskpet.tools.capabilities import ToolExecutionContext
 
 
 class ProjectSkillInstallError(RuntimeError):
@@ -492,13 +493,13 @@ class ProjectSkillInstallService:
         verification = await self.runtime_verifier.verify_skill_install(
             intent=pending, manager_receipt=manager_receipt, members=members
         )
-        verification_ref = fingerprint_json(dict(verification))
-        succeeded = await self.store.cas_skill_install_intent(
-            pending.intent_id,
-            expected_state_version=pending.state_version,
-            status="succeeded",
-            verification_ref=verification_ref,
-        )
+        succeeded = await self._require_intent(pending.intent_id)
+        if succeeded.status != "succeeded" or not succeeded.verification_ref:
+            raise ProjectSkillInstallError(
+                "skill_install_runtime_verification_incomplete",
+                "Fresh-Run Skill verification did not settle the install intent",
+            )
+        verification_ref = succeeded.verification_ref
         await self._remove_stage(succeeded.intent_id)
         return {
             "status": "succeeded",
