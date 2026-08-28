@@ -186,5 +186,4 @@ async def test_real_store_capability_and_sdk_saga_reaches_attested(tmp_path) -> 
         final_attempt.lease_intent_id
     )
     assert release is not None
-    assert release.status == "committed"
-    await store.close()
+    assert release.status == "released"

@@ -172,7 +172,7 @@ class _RejectedVerificationDriver:
 
 
 class SkillInstallVerificationRunService:
-    """Sole executor for the durable Product/Capability/SDK verification saga."""
+    """Execute the install verification saga on its single execution owner."""
 
     def __init__(
         self,
@@ -185,6 +185,8 @@ class SkillInstallVerificationRunService:
         runtime_stack: ProductSdkRuntimeStack,
         tool_catalog_generation: Callable[[], int],
     ) -> None:
+        if bool(getattr(store, "product_owned", False)):
+            raise RuntimeError("skill_install_verification_execution_owner_required")
         self.store = store
         self.platform = platform
         self.catalog_source = catalog_source

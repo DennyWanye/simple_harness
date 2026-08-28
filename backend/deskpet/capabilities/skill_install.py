@@ -260,6 +260,11 @@ class ProjectSkillInstallService:
         clock=time.time,
         confirmation_ttl_seconds: float = 300.0,
     ) -> None:
+        if store.product_owned:
+            raise ProjectSkillInstallError(
+                "skill_install_execution_owner_required",
+                "Skill installation must use the execution-owned Capability store",
+            )
         self.store = store
         self.source = source
         self.staging_root = Path(staging_root).resolve(strict=False)

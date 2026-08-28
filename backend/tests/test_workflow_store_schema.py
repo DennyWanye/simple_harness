@@ -67,6 +67,96 @@ async def test_workflow_schema_is_complete_and_idempotent(tmp_path):
     } <= names
 
 
+@pytest.mark.asyncio
+async def test_v30_makes_execution_db_the_skill_verification_owner(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "workflow-v29.db"
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 29)
+    await workflow_schema.initialize_workflow_db(path)
+
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 30)
+    await workflow_schema.initialize_workflow_db(path)
+
+    async with aiosqlite.connect(path) as db:
+        workflow_version = await (await db.execute("PRAGMA user_version")).fetchone()
+        capability_version = await (
+            await db.execute(
+                "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
+            )
+        ).fetchone()
+        columns = await (
+            await db.execute("PRAGMA table_info(capability_skill_install_intents)")
+        ).fetchall()
+        tables = {
+            str(row[0])
+            for row in await (
+                await db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ).fetchall()
+        }
+
+    assert workflow_version == (30,)
+    assert capability_version == (3,)
+    assert {
+        "verification_attempt_generation",
+        "current_verification_attempt_id",
+        "migrated_verification_provenance",
+    } <= {str(row[1]) for row in columns}
+    assert {
+        "capability_skill_install_verification_attempts",
+        "capability_skill_install_verification_attestations",
+        "capability_skill_install_verification_migration_quarantine",
+    } <= tables
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault_point", ("after_capability_schema", "after_marker", "after_user_version")
+)
+async def test_v30_skill_verification_migration_rolls_back_atomically(
+    tmp_path, monkeypatch, fault_point
+):
+    path = tmp_path / f"workflow-v29-{fault_point}.db"
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 29)
+    await workflow_schema.initialize_workflow_db(path)
+
+    async with aiosqlite.connect(path) as db:
+        def fail(point: str) -> None:
+            if point == fault_point:
+                raise RuntimeError(f"fault:{point}")
+
+        with pytest.raises(RuntimeError, match=f"fault:{fault_point}"):
+            await workflow_schema._migrate_v29_to_v30_capability_skill_verification(
+                db, fault_injector=fail
+            )
+
+    async with aiosqlite.connect(path) as db:
+        workflow_version = await (await db.execute("PRAGMA user_version")).fetchone()
+        capability_version = await (
+            await db.execute(
+                "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
+            )
+        ).fetchone()
+        attempt_table = await (
+            await db.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' "
+                "AND name='capability_skill_install_verification_attempts'"
+            )
+        ).fetchone()
+        columns = await (
+            await db.execute("PRAGMA table_info(capability_skill_install_intents)")
+        ).fetchall()
+    assert workflow_version == (29,)
+    assert capability_version == (2,)
+    assert attempt_table is None
+    assert "current_verification_attempt_id" not in {str(row[1]) for row in columns}
+
+    monkeypatch.setattr(workflow_schema, "WORKFLOW_SCHEMA_VERSION", 30)
+    await workflow_schema.initialize_workflow_db(path)
+
+
 async def _drop_v5_execution_schema(db) -> None:
     # Rebuild a real pre-v5 fixture.  As later execution migrations are added,
     # leaving their tables behind while only lowering user_version creates an

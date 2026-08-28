@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from deskpet.capabilities.store import CapabilityStore, CapabilityStoreConflict
+from deskpet.capabilities.store import (
+    CapabilityStore,
+    CapabilityStoreConflict,
+    initialize_capability_database,
+)
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.downgrade import execute_product_v4_to_v3_downgrade
 from deskpet.product_state.schema import SCHEMA_V3_PARTS
@@ -111,12 +115,13 @@ def test_v3_unattested_success_is_quarantined(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_v4_phase_cas_freezes_receipts_and_rejects_skips(tmp_path: Path) -> None:
-    path = tmp_path / "product.db"
-    owner = ProductStateDatabase(path)
-    owner.initialize()
-    _intent(owner.connection, "one", status="published_pending_runtime_verification")
-    owner.connection.commit()
-    owner.close()
+    path = tmp_path / "execution.db"
+    await initialize_capability_database(path)
+    connection = sqlite3.connect(path)
+    connection.row_factory = sqlite3.Row
+    _intent(connection, "one", status="published_pending_runtime_verification")
+    connection.commit()
+    connection.close()
     store = CapabilityStore(path)
     attempt = await store.allocate_skill_install_verification_attempt(
         "one", expected_state_version=1, manager_operation_id="operation",

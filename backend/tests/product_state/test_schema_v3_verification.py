@@ -8,7 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from deskpet.capabilities.store import CapabilityStore, CapabilityStoreConflict
+from deskpet.capabilities.store import (
+    CapabilityStore,
+    CapabilityStoreConflict,
+    initialize_capability_database,
+)
 from deskpet.product_state.backup import restore_migration_backup_offline
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.schema import SCHEMA_V2_PARTS
@@ -98,18 +102,23 @@ def test_ambiguous_v2_pending_fails_closed_and_rolls_back(tmp_path: Path) -> Non
     database.close()
 
 
-def _insert_v3_pending(path: Path) -> None:
-    database = ProductStateDatabase(path)
-    database.initialize()
-    _insert_intent(database.connection, "pending", "published_pending_runtime_verification", settlement="receipt")
-    database.connection.commit()
-    database.close()
+async def _insert_execution_pending(path: Path) -> None:
+    await initialize_capability_database(path)
+    connection = sqlite3.connect(path)
+    _insert_intent(
+        connection,
+        "pending",
+        "published_pending_runtime_verification",
+        settlement="receipt",
+    )
+    connection.commit()
+    connection.close()
 
 
 @pytest.mark.asyncio
 async def test_attempt_allocation_cas_and_atomic_supersession(tmp_path: Path) -> None:
-    path = tmp_path / "product.db"
-    _insert_v3_pending(path)
+    path = tmp_path / "execution.db"
+    await _insert_execution_pending(path)
     store = CapabilityStore(path, clock=lambda: 10.0)
     arguments = dict(
         expected_state_version=1, manager_operation_id="operation",

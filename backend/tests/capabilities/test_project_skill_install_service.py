@@ -11,6 +11,7 @@ import pytest
 from deskpet.capabilities.contracts import fingerprint_json
 from deskpet.capabilities.skill_install import (
     AuthorizedSkillInstallReceipt,
+    ProjectSkillInstallError,
     ProjectSkillInstallService,
     SkillInstallProjectAuthority,
 )
@@ -20,7 +21,7 @@ from deskpet.capabilities.skill_source import (
     CapabilitySourceError,
     ResolvedSkillSourceEvidence,
 )
-from deskpet.capabilities.store import CapabilityStore
+from deskpet.capabilities.store import CapabilityStore, initialize_capability_database
 from deskpet.product_state.database import ProductStateDatabase
 
 
@@ -161,8 +162,7 @@ def _project() -> SkillInstallProjectAuthority:
 
 
 async def _service(tmp_path: Path, source: Source, clock):
-    database = ProductStateDatabase(tmp_path / "product.db")
-    database.initialize()
+    database = await initialize_capability_database(tmp_path / "execution.db")
     store = CapabilityStore(database, clock=clock)
     publisher = Publisher()
     service = ProjectSkillInstallService(
@@ -175,6 +175,27 @@ async def _service(tmp_path: Path, source: Source, clock):
         confirmation_ttl_seconds=10,
     )
     return database, store, publisher, service
+
+
+def test_product_state_is_not_a_skill_install_execution_owner(tmp_path) -> None:
+    product = ProductStateDatabase(tmp_path / "product.db")
+    product.initialize()
+    product_store = CapabilityStore(product)
+    with pytest.raises(
+        ProjectSkillInstallError, match="execution-owned Capability store"
+    ):
+        ProjectSkillInstallService(
+            store=product_store,
+            source=Source(),  # type: ignore[arg-type]
+            staging_root=tmp_path / "staging",
+            batch_publisher=Publisher(),
+            runtime_verifier=Verifier(product_store),
+        )
+    count = product.connection.execute(
+        "SELECT COUNT(*) FROM capability_skill_install_intents"
+    ).fetchone()
+    assert int(count[0]) == 0
+    product.close()
 
 
 @pytest.mark.asyncio
@@ -221,7 +242,6 @@ async def test_stage_is_exact_idempotent_and_confirm_requires_typed_receipt(tmp_
     )
     assert (await service.confirm_authorized(receipt))["status"] == "succeeded"
     assert publisher.calls == 1
-    database.close()
 
 
 @pytest.mark.asyncio
@@ -238,7 +258,6 @@ async def test_expiry_uses_cleanup_pending_cas_and_removes_exact_stage(tmp_path)
     intent = await store.get_skill_install_intent(ready.intent_id)
     assert intent is not None and intent.status == "expired"
     assert not service._stage_path(ready.intent_id).exists()
-    database.close()
 
 
 @pytest.mark.asyncio
@@ -255,4 +274,3 @@ async def test_source_failure_is_durable_structured_and_has_no_stage(tmp_path) -
     intent = await store.get_skill_install_intent(intent_id)
     assert intent is not None and intent.status == "stage_failed"
     assert intent.settlement_ref == rejected.failure_receipt_ref
-    database.close()

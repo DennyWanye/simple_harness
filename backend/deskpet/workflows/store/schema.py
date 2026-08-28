@@ -9,7 +9,7 @@ from typing import Callable
 
 import aiosqlite
 
-WORKFLOW_SCHEMA_VERSION = 29
+WORKFLOW_SCHEMA_VERSION = 30
 _INITIALIZE_LOCKS: dict[str, asyncio.Lock] = {}
 
 _SCHEMA_V2 = r"""
@@ -303,6 +303,8 @@ async def _initialize_workflow_db_unlocked(path: str | Path) -> Path:
                     await _migrate_v27_to_v28_existing_workspace_rebind(db)
                 elif current == 28:
                     await _migrate_v28_to_v29_public_run_projection(db)
+                elif current == 29:
+                    await _migrate_v29_to_v30_capability_skill_verification(db)
                 else:  # pragma: no cover - guarded by the version constant
                     raise RuntimeError(f"no workflow.db migration from schema {current}")
                 row = await (await db.execute("PRAGMA user_version")).fetchone()
@@ -3813,6 +3815,45 @@ async def _migrate_v28_to_v29_public_run_projection(
         fault("after_marker")
         fault("before_user_version")
         await db.execute("PRAGMA user_version=29")
+        fault("after_user_version")
+        await db.commit()
+    except BaseException:
+        if db.in_transaction:
+            await db.rollback()
+        raise
+
+
+async def _migrate_v29_to_v30_capability_skill_verification(
+    db: aiosqlite.Connection,
+    *,
+    fault_injector: Callable[[str], None] | None = None,
+) -> None:
+    """Move the complete Skill-install verification aggregate to execution.db."""
+
+    from deskpet.capabilities.store import migrate_capability_schema_v2_to_v3
+
+    def fault(point: str) -> None:
+        if fault_injector is not None:
+            fault_injector(point)
+
+    try:
+        await db.execute("BEGIN IMMEDIATE")
+        await migrate_capability_schema_v2_to_v3(db)
+        fault("after_capability_schema")
+        foreign_key_errors = await (
+            await db.execute("PRAGMA foreign_key_check")
+        ).fetchall()
+        if foreign_key_errors:
+            raise RuntimeError(
+                "workflow.db v30 capability foreign key verification failed: "
+                f"{foreign_key_errors[0]}"
+            )
+        await db.execute(
+            "INSERT INTO workflow_schema_migrations(version,applied_at) VALUES(30,?)",
+            (time.time(),),
+        )
+        fault("after_marker")
+        await db.execute("PRAGMA user_version=30")
         fault("after_user_version")
         await db.commit()
     except BaseException:

@@ -17,6 +17,7 @@ import inspect
 import hashlib
 import json
 import math
+import sqlite3
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -64,7 +65,7 @@ from .refresh_contracts import (
     refresh_intent_from_dict,
 )
 
-CAPABILITY_SCHEMA_VERSION = 2
+CAPABILITY_SCHEMA_VERSION = 3
 CAPABILITY_OPERATION_PHASES: tuple[str, ...] = (
     "planned",
     "staged",
@@ -2733,7 +2734,7 @@ async def migrate_capability_schema_v1_to_v2(
             "unsupported_capability_schema",
             f"capability schema is {version}, expected {CAPABILITY_SCHEMA_VERSION}",
         )
-    if version == CAPABILITY_SCHEMA_VERSION:
+    if version in {2, 3}:
         columns = await _capability_table_columns(db, "capability_bindings")
         required = {
             "owner_key",
@@ -2859,8 +2860,108 @@ async def migrate_capability_schema_v1_to_v2(
     await db.execute(
         """UPDATE capability_schema_state SET schema_version=?,updated_at=?
            WHERE singleton_id=1 AND schema_version=1""",
-        (CAPABILITY_SCHEMA_VERSION, now),
+        (2, now),
     )
+
+
+async def _execute_capability_schema_script(
+    db: aiosqlite.Connection,
+    script: str,
+) -> None:
+    """Execute complete SQL statements without committing the caller's transaction."""
+
+    pending = ""
+    for line in script.splitlines(keepends=True):
+        pending += line
+        if sqlite3.complete_statement(pending):
+            statement = pending.strip()
+            pending = ""
+            if statement:
+                await db.execute(statement)
+    if pending.strip():
+        raise CapabilitySchemaMissing(
+            "capability_schema_script_incomplete",
+            "capability verification schema contains an incomplete statement",
+        )
+
+
+async def migrate_capability_schema_v2_to_v3(
+    db: aiosqlite.Connection,
+) -> None:
+    """Make the execution database the sole Skill-install verification owner.
+
+    ProductState v4 retains its historical physical tables for compatibility,
+    but production installation, Manager publication, SDK Run evidence, and
+    verification settlement all use this execution-owned Capability schema.
+    The caller owns the surrounding transaction.
+    """
+
+    state = await (
+        await db.execute(
+            "SELECT schema_version FROM capability_schema_state WHERE singleton_id=1"
+        )
+    ).fetchone()
+    if state is None:
+        raise CapabilitySchemaMissing(
+            "capability_schema_missing", "capability schema state is absent"
+        )
+    version = int(state[0])
+    if version == 3:
+        columns = await _capability_table_columns(
+            db, "capability_skill_install_intents"
+        )
+        required_columns = {
+            "verification_attempt_generation",
+            "current_verification_attempt_id",
+            "migrated_verification_provenance",
+        }
+        tables = {
+            str(row[0])
+            for row in await (
+                await db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            ).fetchall()
+        }
+        required_tables = {
+            "capability_skill_install_verification_attempts",
+            "capability_skill_install_verification_attestations",
+            "capability_skill_install_verification_migration_quarantine",
+        }
+        if not required_columns.issubset(columns) or not required_tables.issubset(
+            tables
+        ):
+            raise CapabilitySchemaMissing(
+                "capability_schema_v3_incomplete",
+                "execution Skill-install verification schema is incomplete",
+            )
+        return
+    if version != 2:
+        raise CapabilitySchemaMissing(
+            "unsupported_capability_schema",
+            f"cannot migrate capability schema {version} to 3",
+        )
+
+    # Import lazily to avoid the ProductState schema's historical dependency
+    # on the frozen Capability v1/v2 DDL during module initialization.
+    from deskpet.product_state.schema import (
+        VERIFICATION_V3_COLUMNS_SQL,
+        VERIFICATION_V4_QUARANTINE_SQL,
+        VERIFICATION_V4_SCHEMA_SQL,
+    )
+
+    for script in (
+        VERIFICATION_V3_COLUMNS_SQL,
+        VERIFICATION_V4_SCHEMA_SQL,
+        VERIFICATION_V4_QUARANTINE_SQL,
+    ):
+        await _execute_capability_schema_script(db, script)
+    await db.execute(
+        "UPDATE capability_schema_state SET schema_version=3,updated_at=? "
+        "WHERE singleton_id=1 AND schema_version=2",
+        (time.time(),),
+    )
+    await migrate_capability_schema_v2_to_v3(db)
 
 
 async def install_capability_schema(db: aiosqlite.Connection) -> None:
@@ -2886,6 +2987,7 @@ async def initialize_capability_database(path: str | Path) -> Path:
         await db.execute("PRAGMA busy_timeout=5000")
         await install_capability_schema(db)
         await migrate_capability_schema_v1_to_v2(db)
+        await migrate_capability_schema_v2_to_v3(db)
         await db.commit()
     return db_path
 
@@ -3594,10 +3696,11 @@ class CapabilityStore:
                     )
                 ).fetchone()
                 version = int(state[0]) if state else 0
-                if version != CAPABILITY_SCHEMA_VERSION:
+                expected_version = 2 if self.product_owned else CAPABILITY_SCHEMA_VERSION
+                if version != expected_version:
                     raise CapabilitySchemaMissing(
                         "unsupported_capability_schema",
-                        f"capability schema is {version}, expected {CAPABILITY_SCHEMA_VERSION}",
+                        f"capability schema is {version}, expected {expected_version}",
                     )
             self._initialized = True
 
@@ -9109,4 +9212,5 @@ __all__ = [
     "initialize_capability_database",
     "install_capability_schema",
     "migrate_capability_schema_v1_to_v2",
+    "migrate_capability_schema_v2_to_v3",
 ]
