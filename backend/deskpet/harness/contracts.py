@@ -142,44 +142,6 @@ def _checked_hash(value: str | None, name: str) -> str | None:
 
 
 @dataclass(frozen=True, slots=True)
-class ReservedRootProfileSelectionV1:
-    """Host-only selection of one non-model-visible Root profile."""
-
-    profile_key: str
-    catalog_generation: int
-    driver_kind: str
-    purpose: str
-    intent_id: str
-    operation_id: str
-    content_hash: str
-    schema_version: int = 1
-
-    def __post_init__(self) -> None:
-        if self.schema_version != 1:
-            raise ValueError("reserved Root profile selection schema is unsupported")
-        for name in (
-            "profile_key", "driver_kind", "purpose", "intent_id", "operation_id"
-        ):
-            if not str(getattr(self, name)).strip():
-                raise ValueError(f"{name} is required")
-        if self.catalog_generation < 1:
-            raise ValueError("reserved profile catalog generation must be positive")
-        _checked_hash(self.content_hash, "content_hash")
-
-    def to_dict(self) -> dict[str, JsonValue]:
-        return {
-            "schema_version": self.schema_version,
-            "profile_key": self.profile_key,
-            "catalog_generation": self.catalog_generation,
-            "driver_kind": self.driver_kind,
-            "purpose": self.purpose,
-            "intent_id": self.intent_id,
-            "operation_id": self.operation_id,
-            "content_hash": self.content_hash,
-        }
-
-
-@dataclass(frozen=True, slots=True)
 class PreparedRunContextV1:
     """Trusted start facts that user payload/JSON cannot construct.
 
@@ -188,7 +150,6 @@ class PreparedRunContextV1:
     """
 
     persistence_required: bool = False
-    reserved_root_profile: ReservedRootProfileSelectionV1 | None = None
     prepared_tool_ref: str | None = None
     prepared_tool_hash: str | None = None
     product_snapshot_ref: str | None = None
@@ -214,10 +175,6 @@ class PreparedRunContextV1:
     def __post_init__(self) -> None:
         if self.schema_version != 1:
             raise ValueError("PreparedRunContextV1 schema_version must be 1")
-        if self.reserved_root_profile is not None and not isinstance(
-            self.reserved_root_profile, ReservedRootProfileSelectionV1
-        ):
-            raise TypeError("reserved_root_profile must be Host-issued")
         for ref_name, hash_name in (
             ("prepared_tool_ref", "prepared_tool_hash"),
             ("product_snapshot_ref", "product_snapshot_hash"),
@@ -360,11 +317,6 @@ class PreparedRunContextV1:
             {
                 "schema_version": self.schema_version,
                 "persistence_required": self.persistence_required,
-                "reserved_root_profile": (
-                    None
-                    if self.reserved_root_profile is None
-                    else self.reserved_root_profile.to_dict()
-                ),
                 "prepared_tool_ref": self.prepared_tool_ref,
                 "prepared_tool_hash": self.prepared_tool_hash,
                 "product_snapshot_ref": self.product_snapshot_ref,
