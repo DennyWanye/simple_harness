@@ -4,11 +4,25 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import sqlite3
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from simple_harness import (
+    ROOT_PROFILE_KEY,
+    DriverResult,
+    RuntimePorts,
+    RuntimeProfile,
+    SqliteContextPort,
+    build_runtime,
+)
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.execution.uow import RunState
+
 from context import ServiceContext
+from deskpet.capabilities.store import CapabilitySkillInstallVerificationAttempt
 from deskpet.sdk_adapters.composition import (
     OwnedResourceCloser,
     ProductionRuntimeBuild,
@@ -18,16 +32,12 @@ from deskpet.sdk_adapters.composition import (
     WorkflowFactoryResourceScope,
     WorkflowRuntimeBuild,
 )
+from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
 from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_wheel_path
-from simple_harness import (
-    ROOT_PROFILE_KEY,
-    RuntimePorts,
-    RuntimeProfile,
-    SqliteContextPort,
-    build_runtime,
+from deskpet.sdk_adapters.skill_install_verification import (
+    skill_install_verification_authority_hash,
 )
-from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WHEEL = sdk_wheel_path()
@@ -46,8 +56,19 @@ class _Noop:
 
 
 class _Driver:
-    async def invoke(self, value):  # pragma: no cover - ingress remains closed
-        raise AssertionError(f"driver must not run during startup: {value!r}")
+    async def start(self, invocation, *, context, cancel):  # type: ignore[no-untyped-def]
+        del invocation, context, cancel
+        return DriverResult(
+            RunState.COMPLETED,
+            {
+                "schema": "skill-install-verification-final-v1",
+                "status": "succeeded",
+                "provider_invocation_count": 0,
+                "effect_count": 0,
+                "checkpoint_count": 0,
+                "continuation_count": 0,
+            },
+        )
 
 
 def _ports(database, uow, reconciliation):  # type: ignore[no-untyped-def]
@@ -398,6 +419,73 @@ async def test_runtime_start_failure_closes_dependency_resources_once_in_reverse
         await stack.start()
     assert closed == ["workflow", "product-state"]
     assert workflow.close_calls == product_state.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_host_control_ingress_yields_bounded_zero_side_state_evidence(
+    tmp_path: Path,
+) -> None:
+    attempt = CapabilitySkillInstallVerificationAttempt(
+        attempt_id="attempt-evidence",
+        intent_id="intent-evidence",
+        attempt_generation=1,
+        state_version=1,
+        status="prepared",
+        verifier_session_id="session-evidence",
+        request_id="request-evidence",
+        turn_id="turn-evidence",
+        expected_run_id="run-evidence",
+        actual_run_id=None,
+        manager_operation_id="operation-evidence",
+        manager_receipt_hash=hashlib.sha256(b"manager").hexdigest(),
+        committed_set_stamp=hashlib.sha256(b"committed").hexdigest(),
+        project_scope_key="scope-evidence",
+        expected_member_set_stamp=hashlib.sha256(b"members").hexdigest(),
+        run_catalog_content_stamp=None,
+        terminal_event_id=None,
+        terminal_event_hash=None,
+        evidence_hash=None,
+        superseded_by_attempt_id=None,
+        error=None,
+        created_at=1.0,
+        updated_at=1.0,
+        terminal_at=None,
+    )
+    stack = ProductSdkRuntimeStack(
+        paths=ProductRuntimePathsAdapter(tmp_path / "user-data"),
+        candidate_identity=IDENTITY,
+        dependency_loader=_inputs,
+    )
+    ingress = SdkRuntimeIngress(stack)
+    await stack.start()
+    ingress.open()
+    await ingress.start_skill_install_verification(
+        session_id=attempt.verifier_session_id,
+        run_id=attempt.expected_run_id,
+        request_id=attempt.request_id,
+        turn_id=attempt.turn_id,
+        user_id="host-user",
+        attempt_id=attempt.attempt_id,
+        attempt_generation=attempt.attempt_generation,
+        authority_hash=skill_install_verification_authority_hash(attempt),
+        input={"attempt_id": attempt.attempt_id},
+        tool_catalog_generation=1,
+    )
+    await ingress.wait_idle(attempt.expected_run_id)
+
+    evidence = stack.read_skill_install_verification_evidence(attempt)
+
+    assert evidence.status == "terminal_succeeded"
+    assert evidence.run_id == attempt.expected_run_id
+    assert evidence.terminal_event_id
+    assert evidence.terminal_event_hash
+    assert evidence.evidence_hash
+    mismatched = stack.read_skill_install_verification_evidence(
+        replace(attempt, project_scope_key="different-scope")
+    )
+    assert mismatched.status == "corrupt"
+    assert mismatched.reason_code == "start_authority_mismatch"
+    await stack.close()
 
 
 @pytest.mark.asyncio

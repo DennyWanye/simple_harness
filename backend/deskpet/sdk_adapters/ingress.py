@@ -11,7 +11,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from simple_harness import RunId, thaw_json
+from simple_harness import (
+    HostControlAuthorityV1,
+    HostControlRunStartV1,
+    RunId,
+    thaw_json,
+)
 from simple_harness.contracts import ExecutionSessionId, RequestId
 from simple_harness.runtime import RunStart
 
@@ -146,6 +151,54 @@ class SdkRuntimeIngress:
 
         return IngressStartReceipt(
             run_id=run_id.value,
+            generation=ready.generation,
+            session_id=session_id,
+            request_id=request_id,
+        )
+
+    async def start_skill_install_verification(
+        self,
+        *,
+        session_id: str,
+        run_id: str,
+        request_id: str,
+        turn_id: str,
+        user_id: str,
+        attempt_id: str,
+        attempt_generation: int,
+        authority_hash: str,
+        input: Mapping[str, Any],
+        tool_catalog_generation: int,
+        tool_catalog_fingerprint: str | None = None,
+        provider_budget_fingerprint: str | None = None,
+    ) -> IngressStartReceipt:
+        """Start one typed, non-model-visible Skill verification root."""
+
+        if not self._accepting:
+            raise SdkRuntimeNotReady("SDK Runtime ingress is not accepting new Runs")
+        ready = self._stack.require_ready()
+        started = HostControlRunStartV1(
+            ExecutionSessionId(session_id),
+            RunId(run_id),
+            RequestId(request_id),
+            turn_id,
+            dict(input),
+            tool_catalog_generation,
+            HostControlAuthorityV1(
+                "skill.install.verify",
+                attempt_id,
+                authority_hash,
+                attempt_generation,
+            ),
+            user_id,
+            tool_catalog_fingerprint,
+            provider_budget_fingerprint,
+        )
+        record = await ready.client.start_host_control(started)
+        if record.run_id != run_id:
+            raise RuntimeError("SDK Host control Run identity differs")
+        return IngressStartReceipt(
+            run_id=record.run_id,
             generation=ready.generation,
             session_id=session_id,
             request_id=request_id,

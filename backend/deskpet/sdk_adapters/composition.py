@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
+import json
+import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-import inspect
-import time
 from types import MappingProxyType
 from typing import TypeAlias
 
@@ -21,13 +23,13 @@ from simple_harness import (
 )
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import RunState
+from simple_harness.runtime import StartSnapshot
 
 from .runtime_paths import (
     ProductRuntimePathsAdapter,
     SdkCandidateIdentity,
     verify_sdk_candidate,
 )
-
 
 PortsFactory: TypeAlias = Callable[
     [Database, SqliteExecutionUnitOfWork], RuntimePorts
@@ -216,6 +218,17 @@ class SdkRuntimeReady:
 
 class SdkRuntimeNotReady(RuntimeError):
     """Raised by the closed ingress barrier before atomic ready publication."""
+
+
+@dataclass(frozen=True, slots=True)
+class SkillInstallVerificationEvidence:
+    status: str
+    run_id: str
+    terminal_event_id: str | None = None
+    terminal_event_hash: str | None = None
+    evidence_hash: str | None = None
+    payload: Mapping[str, object] | None = None
+    reason_code: str | None = None
 
 
 DependencyLoader: TypeAlias = Callable[
@@ -426,6 +439,128 @@ class ProductSdkRuntimeStack:
     def query(self, run_id: str):  # type: ignore[no-untyped-def]
         return self.require_ready().client.query(RunId(run_id))
 
+    def read_skill_install_verification_evidence(
+        self, expected_attempt: object
+    ) -> SkillInstallVerificationEvidence:
+        """Read and validate one Host-control terminal proof atomically."""
+
+        self.require_ready()
+        uow = self._uow
+        if uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        expected_run_id = str(getattr(expected_attempt, "expected_run_id", ""))
+        attempt_id = str(getattr(expected_attempt, "attempt_id", ""))
+        if not expected_run_id or not attempt_id:
+            raise ValueError("complete Skill verification attempt is required")
+        with uow.database.transaction() as connection:
+            run = connection.execute(
+                "SELECT * FROM runs WHERE run_id=?", (expected_run_id,)
+            ).fetchone()
+            if run is None:
+                return SkillInstallVerificationEvidence("not_started", expected_run_id)
+            snapshot_row = connection.execute(
+                "SELECT snapshot_json FROM run_start_snapshots WHERE run_id=?",
+                (expected_run_id,),
+            ).fetchone()
+            if snapshot_row is None:
+                return _corrupt_verification(expected_run_id, "start_snapshot_missing")
+            try:
+                snapshot = StartSnapshot.from_json(json.loads(str(snapshot_row[0])))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return _corrupt_verification(expected_run_id, "start_snapshot_corrupt")
+            authority = snapshot.host_control_authority
+            from .skill_install_verification import (
+                SKILL_INSTALL_VERIFICATION_PURPOSE,
+                skill_install_verification_authority_hash,
+            )
+
+            expected_authority_hash = skill_install_verification_authority_hash(
+                expected_attempt  # type: ignore[arg-type]
+            )
+            if (
+                snapshot.start_mode != "host_control"
+                or authority is None
+                or authority.purpose != SKILL_INSTALL_VERIFICATION_PURPOSE
+                or authority.authority_ref != attempt_id
+                or authority.authority_hash != expected_authority_hash
+                or authority.generation
+                != int(getattr(expected_attempt, "attempt_generation", -1))
+                or str(run["execution_session_id"])
+                != str(getattr(expected_attempt, "verifier_session_id", ""))
+                or str(run["request_id"])
+                != str(getattr(expected_attempt, "request_id", ""))
+                or snapshot.turn_id != str(getattr(expected_attempt, "turn_id", ""))
+            ):
+                return _corrupt_verification(expected_run_id, "start_authority_mismatch")
+            state = RunState(str(run["state"]))
+            if state not in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+                return SkillInstallVerificationEvidence("nonterminal", expected_run_id)
+            events = connection.execute(
+                "SELECT event_id,kind,payload_json FROM run_events "
+                "WHERE run_id=? AND kind IN ('run.completed','run.failed','run.cancelled')",
+                (expected_run_id,),
+            ).fetchall()
+            if len(events) != 1:
+                return _corrupt_verification(expected_run_id, "terminal_event_ambiguous")
+            event = events[0]
+            raw_payload = str(event["payload_json"])
+            if len(raw_payload.encode("utf-8")) > 4096:
+                return _corrupt_verification(expected_run_id, "terminal_payload_oversize")
+            try:
+                payload = json.loads(raw_payload)
+            except json.JSONDecodeError:
+                return _corrupt_verification(expected_run_id, "terminal_payload_corrupt")
+            if not isinstance(payload, dict):
+                return _corrupt_verification(expected_run_id, "terminal_payload_not_object")
+            counts = {
+                "provider_invocation_count": connection.execute(
+                    "SELECT COUNT(*) FROM provider_invocations WHERE run_id=?",
+                    (expected_run_id,),
+                ).fetchone()[0],
+                "effect_count": connection.execute(
+                    "SELECT COUNT(*) FROM execution_effects WHERE run_id=?",
+                    (expected_run_id,),
+                ).fetchone()[0],
+                "checkpoint_count": connection.execute(
+                    "SELECT COUNT(*) FROM workflow_checkpoints WHERE run_id=?",
+                    (expected_run_id,),
+                ).fetchone()[0],
+                "continuation_count": connection.execute(
+                    "SELECT COUNT(*) FROM continuations WHERE run_id=?",
+                    (expected_run_id,),
+                ).fetchone()[0],
+            }
+            if any(int(value) != 0 for value in counts.values()):
+                return _corrupt_verification(expected_run_id, "verification_side_effects_present")
+            if any(int(payload.get(name, -1)) != 0 for name in counts):
+                return _corrupt_verification(expected_run_id, "terminal_zero_count_mismatch")
+            event_hash = hashlib.sha256(raw_payload.encode("utf-8")).hexdigest()
+            evidence_payload = {
+                "schema": "skill-install-verification-evidence-v1",
+                "run_id": expected_run_id,
+                "attempt_id": attempt_id,
+                "terminal_event_id": str(event["event_id"]),
+                "terminal_event_hash": event_hash,
+                **counts,
+            }
+            evidence_hash = hashlib.sha256(
+                json.dumps(evidence_payload, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            succeeded = (
+                state is RunState.COMPLETED
+                and payload.get("schema") == "skill-install-verification-final-v1"
+                and payload.get("status") == "succeeded"
+            )
+            return SkillInstallVerificationEvidence(
+                "terminal_succeeded" if succeeded else "terminal_failed",
+                expected_run_id,
+                str(event["event_id"]),
+                event_hash,
+                evidence_hash,
+                payload,
+                None if succeeded else str(payload.get("reason_code") or "verification_failed"),
+            )
+
     async def commit_preflight_blocked_root(
         self,
         *,
@@ -620,6 +755,12 @@ async def build_product_runtime(
     return stack
 
 
+def _corrupt_verification(run_id: str, reason: str) -> SkillInstallVerificationEvidence:
+    return SkillInstallVerificationEvidence(
+        "corrupt", run_id, reason_code=reason
+    )
+
+
 __all__ = (
     "OwnedResourceCloser",
     "ProductSdkRuntimeStack",
@@ -627,6 +768,7 @@ __all__ = (
     "SdkRuntimeBuildInputs",
     "SdkRuntimeNotReady",
     "SdkRuntimeReady",
+    "SkillInstallVerificationEvidence",
     "WorkflowFactory",
     "WorkflowFactoryResourceScope",
     "WorkflowRuntimeBuild",

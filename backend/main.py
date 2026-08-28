@@ -2831,6 +2831,11 @@ async def _initialize_capability_runtime() -> None:
     from deskpet.capabilities.skill_source import BoundedGitHubSkillSource
 
     skill_install_runtime_verifier = BindableSkillInstallRuntimeVerifier()
+    from deskpet.sdk_adapters.skill_install_verification import (
+        BindableSkillInstallVerificationDriverFactory,
+    )
+
+    skill_install_driver_factory = BindableSkillInstallVerificationDriverFactory()
     project_skill_install_service = ProjectSkillInstallService(
         store=store,
         source=BoundedGitHubSkillSource(),
@@ -2886,6 +2891,9 @@ async def _initialize_capability_runtime() -> None:
     )
     service_context.register(
         "skill_install_runtime_verifier", skill_install_runtime_verifier
+    )
+    service_context.register(
+        "skill_install_verification_driver_factory", skill_install_driver_factory
     )
     service_context.register(
         "capability_center",
@@ -7540,6 +7548,21 @@ async def _build_product_sdk_runtime_stack(
         budget_policy=budget_policy,
         estimator=None,
         tool_exposure_resolver=tool_authorities.resolve_exposure,
+    )
+    from deskpet.sdk_adapters.skill_install_verification import (
+        ProductRootDriverRouter,
+        SkillInstallVerificationAttemptResolver,
+    )
+
+    verification_driver_factory = service_context.get(
+        "skill_install_verification_driver_factory"
+    )
+    if verification_driver_factory is None:
+        raise RuntimeError("Skill verification driver factory is unavailable")
+    driver = ProductRootDriverRouter(
+        react_driver=driver,
+        attempt_resolver=SkillInstallVerificationAttemptResolver(capability_store),
+        verification_driver_factory=verification_driver_factory,
     )
 
     def execution_context_getter():
