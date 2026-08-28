@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import shutil
+import site
 import sqlite3
+import subprocess
 import sys
 from pathlib import Path
 
@@ -179,5 +182,32 @@ def test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs(
 
     path = tmp_path / "sdk.sqlite3"
     Database.open(path).close()
-    accepted, detail = pinned_sdk_062_reopen_probe(sys.executable)(path)
-    assert accepted and '"sdk_version": "0.6.2"' in detail
+    environment = tmp_path / "sdk-062-venv"
+    uv = shutil.which("uv")
+    assert uv is not None
+    subprocess.run(
+        [uv, "venv", "--python", sys.executable, str(environment)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    python = environment / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    isolated_site = subprocess.run(
+        [str(python), "-c", "import site; print(site.getsitepackages()[0])"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    Path(isolated_site, "app-runtime-dependencies.pth").write_text(
+        site.getsitepackages()[0] + "\n", encoding="utf-8"
+    )
+    wheel = Path(__file__).resolve().parents[2] / "vendor/simple_harness_sdk-0.6.2-py3-none-any.whl"
+    subprocess.run(
+        [uv, "pip", "install", "--offline", "--python", str(python), "--no-deps", str(wheel)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    accepted, detail = pinned_sdk_062_reopen_probe(python)(path)
+    assert accepted, detail
+    assert '"sdk_version": "0.6.2"' in detail

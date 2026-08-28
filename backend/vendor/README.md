@@ -2,6 +2,15 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
+## Active Agent Runtime candidate: simple_harness_sdk-0.6.3-py3-none-any.whl
+
+**Source:** immutable release candidate from `simple-harness-sdk` commit `01ad47825108c217f078f4da080f45d78a0efb31`
+**SHA256:** `c0ce056b79db74cec12a5155cc58fa0e12d6907cbb6b4833eb0dff916d71e31b`
+**Candidate manifest:** `simple_harness_sdk-0.6.3.candidate-manifest.json` (`bcb380891f405c4ada7cb13eb57ac8129ef0062e00cc9a5910c9feb6fe0863bc`)
+**Vendored:** 2026-08-28
+
+The wheel, candidate manifest, installed distribution version, `direct_url.json`, source commit and frozen-bundle paths are verified by `deskpet.sdk_adapters.sdk_candidate`.
+
 ## Active candidate: simple_harness_sdk-0.1.5-py3-none-any.whl
 
 **Source:** local build from `simple-harness-sdk` commit `010d1c3`（SDK Context authority cutover）
