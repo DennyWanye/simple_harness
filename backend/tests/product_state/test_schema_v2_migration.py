@@ -96,7 +96,7 @@ def test_real_v1_migrates_idempotently_and_preserves_legacy_rows(tmp_path: Path)
     before = _legacy_hash(path)
     database = ProductStateDatabase(path)
     database.initialize()
-    assert database.schema_version == 3
+    assert database.schema_version == 4
     assert _legacy_hash(path) == before
     assert database.connection.execute("PRAGMA foreign_key_check").fetchone() is None
     backup = path.with_name(f"{path.name}.pre-v2.sqlite3")

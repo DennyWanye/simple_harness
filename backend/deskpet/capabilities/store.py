@@ -1574,10 +1574,21 @@ class CapabilitySkillInstallVerificationAttempt:
     committed_set_stamp: str
     project_scope_key: str
     expected_member_set_stamp: str
+    lease_intent_id: str | None
+    lease_intent_hash: str | None
+    capability_snapshot_ref: str | None
     run_catalog_content_stamp: str | None
+    process_catalog_stamp: str | None
+    projection_receipt_id: str | None
+    projection_receipt_hash: str | None
     terminal_event_id: str | None
     terminal_event_hash: str | None
     evidence_hash: str | None
+    release_receipt_id: str | None
+    release_receipt_hash: str | None
+    release_owner_event_hash: str | None
+    migration_classification: str | None
+    migration_classification_hash: str | None
     superseded_by_attempt_id: str | None
     error: Mapping[str, JsonValue] | None
     created_at: float
@@ -5388,6 +5399,23 @@ class CapabilityStore:
             )
             return _snapshot_lease_intent_from_row(rows[0])
 
+    async def get_snapshot_lease_release_receipt(
+        self, lease_intent_id: str
+    ) -> CapabilitySnapshotLeaseReleaseReceipt | None:
+        async with self.read_connection() as db:
+            rows = await _fetch_mappings(await db.execute(
+                "SELECT * FROM capability_snapshot_lease_release_receipts "
+                "WHERE lease_intent_id=?", (lease_intent_id,)
+            ))
+            if not rows:
+                return None
+            if len(rows) != 1:
+                raise CapabilityStoreConflict(
+                    "snapshot_release_receipt_conflict",
+                    "lease intent resolves to multiple release receipts",
+                )
+            return _snapshot_release_receipt_from_row(rows[0])
+
     async def activate_snapshot_projection_ready(
         self,
         lease_intent_id: str,
@@ -8636,6 +8664,7 @@ class CapabilityStore:
 
 
 def _verification_attempt_from_row(row: Mapping[str, Any]) -> CapabilitySkillInstallVerificationAttempt:
+    optional = lambda name: None if name not in row.keys() or row[name] is None else str(row[name])
     return CapabilitySkillInstallVerificationAttempt(
         attempt_id=str(row["attempt_id"]), intent_id=str(row["intent_id"]),
         attempt_generation=int(row["attempt_generation"]), state_version=int(row["state_version"]),
@@ -8648,10 +8677,19 @@ def _verification_attempt_from_row(row: Mapping[str, Any]) -> CapabilitySkillIns
         committed_set_stamp=str(row["committed_set_stamp"]),
         project_scope_key=str(row["project_scope_key"]),
         expected_member_set_stamp=str(row["expected_member_set_stamp"]),
-        run_catalog_content_stamp=None if row["run_catalog_content_stamp"] is None else str(row["run_catalog_content_stamp"]),
+        lease_intent_id=optional("lease_intent_id"), lease_intent_hash=optional("lease_intent_hash"),
+        capability_snapshot_ref=optional("capability_snapshot_ref"),
+        run_catalog_content_stamp=optional("run_catalog_content_stamp"),
+        process_catalog_stamp=optional("process_catalog_stamp"),
+        projection_receipt_id=optional("projection_receipt_id"),
+        projection_receipt_hash=optional("projection_receipt_hash"),
         terminal_event_id=None if row["terminal_event_id"] is None else str(row["terminal_event_id"]),
         terminal_event_hash=None if row["terminal_event_hash"] is None else str(row["terminal_event_hash"]),
-        evidence_hash=None if row["evidence_hash"] is None else str(row["evidence_hash"]),
+        evidence_hash=optional("evidence_hash"), release_receipt_id=optional("release_receipt_id"),
+        release_receipt_hash=optional("release_receipt_hash"),
+        release_owner_event_hash=optional("release_owner_event_hash"),
+        migration_classification=optional("migration_classification"),
+        migration_classification_hash=optional("migration_classification_hash"),
         superseded_by_attempt_id=None if row["superseded_by_attempt_id"] is None else str(row["superseded_by_attempt_id"]),
         error=_json_object(None if row["error_json"] is None else str(row["error_json"])),
         created_at=float(row["created_at"]), updated_at=float(row["updated_at"]),
@@ -8696,6 +8734,24 @@ async def _get_current_skill_install_verification_attempt(self, intent_id: str):
             "WHERE i.intent_id=?", (intent_id,),
         )).fetchone()
         return None if row is None else _verification_attempt_from_row(row)
+
+
+async def _list_pending_skill_install_verification_attempts(
+    self, *, limit: int = 100,
+):
+    if limit < 1 or limit > 1000:
+        raise ValueError("limit must be between 1 and 1000")
+    async with self.read_connection() as db:
+        rows = await (await db.execute(
+            "SELECT a.* FROM capability_skill_install_intents i JOIN "
+            "capability_skill_install_verification_attempts a "
+            "ON a.attempt_id=i.current_verification_attempt_id "
+            "WHERE a.status IN ('allocated','start_submitted','run_durable',"
+            "'catalog_ready','page_in_proven','terminal_observed','lease_released','unknown') "
+            "ORDER BY a.updated_at,a.intent_id,a.attempt_generation LIMIT ?",
+            (limit,),
+        )).fetchall()
+        return tuple(_verification_attempt_from_row(row) for row in rows)
 
 
 async def _get_skill_install_verification_attestation(self, intent_id: str):
@@ -8770,7 +8826,7 @@ async def _allocate_skill_install_verification_attempt(
             "attempt_id,intent_id,attempt_generation,state_version,status,verifier_session_id,"
             "request_id,turn_id,expected_run_id,manager_operation_id,manager_receipt_hash,"
             "committed_set_stamp,project_scope_key,expected_member_set_stamp,created_at,updated_at) "
-            "VALUES(?,?,?,1,'prepared',?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES(?,?,?,1,'allocated',?,?,?,?,?,?,?,?,?,?,?)",
             (attempt_id,intent_id,generation,verifier_session_id,request_id,turn_id,expected_run_id,
              manager_operation_id,manager_receipt_hash,committed_set_stamp,project_scope_key,
              expected_member_set_stamp,now,now),
@@ -8792,10 +8848,13 @@ async def _allocate_skill_install_verification_attempt(
 async def _cas_skill_install_verification_attempt(
     self, attempt_id: str, *, expected_state_version: int, status: str, **fields: Any,
 ):
-    transitions = {"prepared":{"launching","unknown","terminal_failed"},
-                   "launching":{"running","unknown","terminal_failed"},
-                   "running":{"terminal_succeeded","terminal_failed","unknown"},
-                   "unknown":{"launching","running","terminal_failed","superseded"},
+    transitions = {"allocated":{"start_submitted","unknown","terminal_failed"},
+                   "start_submitted":{"run_durable","unknown","terminal_failed"},
+                   "run_durable":{"catalog_ready","unknown","terminal_failed"},
+                   "catalog_ready":{"page_in_proven","unknown","terminal_failed"},
+                   "page_in_proven":{"terminal_observed","unknown","terminal_failed"},
+                   "terminal_observed":{"lease_released","unknown","terminal_failed"},
+                   "unknown":{"start_submitted","run_durable","catalog_ready","page_in_proven","terminal_observed","lease_released","terminal_failed","superseded"},
                    "terminal_failed":{"superseded"}}
     async with self.write_transaction() as db:
         row = await (await db.execute(
@@ -8806,8 +8865,38 @@ async def _cas_skill_install_verification_attempt(
         current = _verification_attempt_from_row(row)
         if current.state_version != expected_state_version or status not in transitions.get(current.status,set()):
             raise CapabilityStoreConflict("skill_install_verification_attempt_cas_conflict", "attempt transition conflict")
-        allowed = ("actual_run_id","run_catalog_content_stamp","terminal_event_id","terminal_event_hash","evidence_hash","superseded_by_attempt_id")
+        allowed = ("actual_run_id","lease_intent_id","lease_intent_hash","capability_snapshot_ref",
+                   "run_catalog_content_stamp","process_catalog_stamp","projection_receipt_id",
+                   "projection_receipt_hash","terminal_event_id","terminal_event_hash","evidence_hash",
+                   "release_receipt_id","release_receipt_hash","release_owner_event_hash",
+                   "superseded_by_attempt_id")
         values = [fields.get(name) for name in allowed]
+        for name in allowed:
+            supplied = fields.get(name)
+            existing = getattr(current, name)
+            if supplied is not None and existing is not None and str(supplied) != str(existing):
+                raise CapabilityStoreConflict(
+                    "skill_install_verification_attempt_fact_conflict",
+                    f"immutable verification fact differs: {name}",
+                )
+        effective = {
+            name: fields.get(name) if fields.get(name) is not None else getattr(current, name)
+            for name in allowed
+        }
+        required = {
+            "run_durable": ("actual_run_id",),
+            "catalog_ready": ("actual_run_id","lease_intent_id","lease_intent_hash",
+                              "capability_snapshot_ref","run_catalog_content_stamp",
+                              "process_catalog_stamp","projection_receipt_id","projection_receipt_hash"),
+            "page_in_proven": ("evidence_hash",),
+            "terminal_observed": ("terminal_event_id","terminal_event_hash"),
+            "lease_released": ("release_receipt_id","release_receipt_hash","release_owner_event_hash"),
+        }.get(status, ())
+        if any(not effective.get(name) for name in required):
+            raise CapabilityStoreConflict(
+                "skill_install_verification_attempt_fact_incomplete",
+                f"verification phase lacks required facts: {status}",
+            )
         now = self._clock()
         changed = await db.execute(
             "UPDATE capability_skill_install_verification_attempts SET status=?,state_version=state_version+1,"
@@ -8832,10 +8921,17 @@ async def _attach_skill_install_verification_attestation(
     async with self.write_transaction() as db:
         attempt = await (await db.execute("SELECT * FROM capability_skill_install_verification_attempts WHERE attempt_id=? AND intent_id=?",(attempt_id,intent_id))).fetchone()
         intent = await (await db.execute("SELECT * FROM capability_skill_install_intents WHERE intent_id=?",(intent_id,))).fetchone()
-        if attempt is None or intent is None or str(attempt["status"]) != "terminal_succeeded" or int(attempt["state_version"]) != expected_attempt_state_version or int(intent["state_version"]) != expected_intent_state_version or str(intent["current_verification_attempt_id"] or "") != attempt_id or not evidence_hash:
+        if attempt is None or intent is None or str(attempt["status"]) != "lease_released" or int(attempt["state_version"]) != expected_attempt_state_version or int(intent["state_version"]) != expected_intent_state_version or str(intent["current_verification_attempt_id"] or "") != attempt_id or not evidence_hash:
             raise CapabilityStoreConflict("skill_install_verification_attestation_cas_conflict", "attestation authority differs")
         now = self._clock()
         await db.execute("INSERT INTO capability_skill_install_verification_attestations(attestation_id,intent_id,attempt_id,provenance,runtime_proof_valid,verification_ref,evidence_hash,attestation_json,created_at) VALUES(?,?,?,'runtime_v3',1,?,?,?,?)",(attestation_id,intent_id,attempt_id,verification_ref,evidence_hash,canonical_json(dict(attestation)),now))
+        transitioned = await db.execute(
+            "UPDATE capability_skill_install_verification_attempts SET status='attested',"
+            "state_version=state_version+1,updated_at=? WHERE attempt_id=? AND state_version=? "
+            "AND status='lease_released'", (now,attempt_id,expected_attempt_state_version)
+        )
+        if transitioned.rowcount != 1:
+            raise CapabilityStoreConflict("skill_install_verification_attestation_cas_conflict", "attempt attestation CAS lost")
         changed = await db.execute("UPDATE capability_skill_install_intents SET status='succeeded',verification_ref=?,state_version=state_version+1,updated_at=? WHERE intent_id=? AND state_version=? AND current_verification_attempt_id=? AND status='published_pending_runtime_verification'",(verification_ref,now,intent_id,expected_intent_state_version,attempt_id))
         if changed.rowcount != 1:
             raise CapabilityStoreConflict("skill_install_verification_attestation_cas_conflict", "intent attestation CAS lost")
@@ -8912,7 +9008,7 @@ async def _supersede_skill_install_verification_attempt(
             "attempt_id,intent_id,attempt_generation,state_version,status,verifier_session_id,"
             "request_id,turn_id,expected_run_id,manager_operation_id,manager_receipt_hash,"
             "committed_set_stamp,project_scope_key,expected_member_set_stamp,created_at,updated_at) "
-            "VALUES(?,?,?,1,'prepared',?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES(?,?,?,1,'allocated',?,?,?,?,?,?,?,?,?,?,?)",
             (successor_id, intent_id, generation, verifier_session_id, request_id, turn_id,
              expected_run_id, old.manager_operation_id, old.manager_receipt_hash,
              old.committed_set_stamp, old.project_scope_key, old.expected_member_set_stamp,
@@ -8959,6 +9055,7 @@ for _skill_install_method in (
 for _name, _method in {
     "get_skill_install_verification_attempt": _get_skill_install_verification_attempt,
     "get_current_skill_install_verification_attempt": _get_current_skill_install_verification_attempt,
+    "list_pending_skill_install_verification_attempts": _list_pending_skill_install_verification_attempts,
     "get_skill_install_verification_attestation": _get_skill_install_verification_attestation,
     "allocate_skill_install_verification_attempt": _allocate_skill_install_verification_attempt,
     "cas_skill_install_verification_attempt": _cas_skill_install_verification_attempt,

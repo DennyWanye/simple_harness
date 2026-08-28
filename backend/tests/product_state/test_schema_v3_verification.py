@@ -60,7 +60,7 @@ def test_v2_backfill_is_conservative_and_backup_is_offline_restorable(tmp_path: 
 
     database = ProductStateDatabase(path)
     database.initialize()
-    assert database.schema_version == 3
+    assert database.schema_version == 4
     assert database.connection.execute(
         "SELECT migrated_verification_provenance FROM capability_skill_install_intents WHERE intent_id='done'"
     ).fetchone()[0] == "legacy_v2"

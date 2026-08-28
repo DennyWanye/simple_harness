@@ -47,7 +47,7 @@ def _v2(path: Path) -> Path:
     return backup
 
 
-def _attempt(path: Path, *, status: str = "running") -> None:
+def _attempt(path: Path, *, status: str = "unknown") -> None:
     connection = sqlite3.connect(path)
     connection.execute(
         "INSERT INTO capability_skill_install_intents("
@@ -133,7 +133,7 @@ def test_nonterminal_recoverable_or_mismatched_run_aborts_before_backup(
             run_probe=probe, sdk_062_probe=lambda _path: (True, "ok"),
         )
     assert not tuple(tmp_path.glob("execution.db.pre-sdk-062-downgrade.*"))
-    assert ProductStateDatabase(product).schema_version == 3
+    assert ProductStateDatabase(product).schema_version == 4
 
 
 def test_incompatible_sdk_aborts_or_requires_explicit_whole_database_quarantine(tmp_path: Path) -> None:
@@ -150,7 +150,7 @@ def test_incompatible_sdk_aborts_or_requires_explicit_whole_database_quarantine(
     with pytest.raises(HostControlDowngradeError, match="reopen proof failed"):
         execute_host_control_downgrade(**arguments)
     assert execution.exists()
-    assert ProductStateDatabase(product).schema_version == 3
+    assert ProductStateDatabase(product).schema_version == 4
 
     receipt = execute_host_control_downgrade(
         **arguments, allow_execution_quarantine=True
