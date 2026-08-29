@@ -1,0 +1,17 @@
+{
+  "verdict": "LEAN",
+  "findings": [
+    {
+      "id": "min-1",
+      "tag": "delete",
+      "target": "backend/deskpet/sdk_adapters/tool_authority.py",
+      "current": "Auto preflight temporarily stored metadata and a nonce that the trusted durable constructor did not consume.",
+      "replacement": "Store only intent id, content digest, member digest and expiry; the authorization saga constructor derives the durable nonce and receipt from authoritative identity.",
+      "preserves_acceptance": ["AC-9", "AC-10"],
+      "risk_impact": "none",
+      "scope_change": false,
+      "changes_user_behavior": false,
+      "lowers_assurance": false
+    }
+  ]
+}

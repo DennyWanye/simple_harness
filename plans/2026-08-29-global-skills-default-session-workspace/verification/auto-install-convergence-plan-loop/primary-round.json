@@ -1,0 +1,59 @@
+{
+  "review_mode": "breadth",
+  "coverage": {
+    "acceptance_coverage": true,
+    "entry_and_trust_chain": true,
+    "data_flow_and_persistence": true,
+    "identity_permissions_concurrency_cleanup": true,
+    "failure_and_recovery": true,
+    "tests_and_evidence": true,
+    "release_and_rollback": true,
+    "trusted_boundary_stop": true
+  },
+  "findings": [
+    {
+      "id": "auto-approved-receipt-construction-seam-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-9"],
+      "assurance_contract_ids": ["FAIL-8"],
+      "evidence": "AuthorizedPreflightReceiptResolver requires HANDOFF_COMMITTED plus bound decision and handoff hashes, while the Auto ALLOW path stages no intent and binds no decision. Task C4 does not yet freeze the trusted constructor, schema, nonce or replay CAS.",
+      "status": "open",
+      "root_cause": "The plan specifies the Auto outcome but not a trusted versioned receipt-construction protocol compatible with the existing authorization saga."
+    },
+    {
+      "id": "provider-unknown-waiting-cancel-state-machine-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "evidence": "The frontend resets only local state after timeout and session_health_check only acknowledges diagnostics; Task C5 lacks an authoritative status/version, cancel command, idempotency key and terminal acknowledgement protocol.",
+      "status": "open",
+      "root_cause": "The plan names a reconciliation seam without defining the cross-layer Run-state and cancellation protocol."
+    },
+    {
+      "id": "nonretryable-install-replay-suppression-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "evidence": "The service records stage_failed, but the plan does not define the canonical suppression identity, owning layer, or explicit retry transition.",
+      "status": "open",
+      "root_cause": "Retry suppression lacks one durable authority and exact identity/retry semantics."
+    },
+    {
+      "id": "incremental-auto-convergence-oracles-not-frozen",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["AC-9", "AC-10"],
+      "assurance_contract_ids": ["FAIL-8", "FAIL-9"],
+      "evidence": "TC-GS-09/10 do not yet name exact auto-receipt fields, waiting-state version, cancel payload/ack or timestamp source.",
+      "status": "open",
+      "root_cause": "The incremental acceptance expanded after the original frozen assets without exact low-level oracles."
+    }
+  ]
+}

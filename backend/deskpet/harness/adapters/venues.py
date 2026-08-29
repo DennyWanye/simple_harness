@@ -611,7 +611,9 @@ class ProductVenueRunAdapter:
                 project_id=host.project_id or None,
                 project_revision=host.project_revision or None,
                 project_identity=host.project_identity or None,
-                user_key=owner_key,
+                user_key=str(
+                    getattr(platform, "global_capability_scope_key", owner_key)
+                ),
             )
             prepared_catalog_lease = await platform.prepare_run_catalog_lease(
                 scope=scope,
@@ -765,6 +767,26 @@ class ProductVenueRunAdapter:
                 if selection_payload is None
                 else {selection_kind: dict(selection_payload)}
             )
+            global_skill_entries = tuple(
+                copy.deepcopy(dict(item))
+                for item in prepared_catalog_lease.lease_entries
+                if isinstance(item.get("selected_binding"), Mapping)
+                and str(item["selected_binding"].get("scope") or "") == "user"
+                and str(item["selected_binding"].get("scope_key") or "").startswith("user:v2:")
+            )
+            if global_skill_entries:
+                global_skill_payload = {
+                    "schema": "global-skill-run-lease-v2",
+                    "entries": list(global_skill_entries),
+                }
+                global_skill_hash = fingerprint_json(global_skill_payload)
+                global_skill_kind = "global_skill_catalog"
+                host_extensions[global_skill_kind] = HostExtensionRefV1(
+                    kind=global_skill_kind,
+                    ref=f"global-skill-lease:{global_skill_hash}",
+                    content_hash=global_skill_hash,
+                )
+                host_extension_payloads[global_skill_kind] = global_skill_payload
             capability_snapshot = {
                 "run_catalog_content_stamp": (
                     prepared_catalog_lease.run_catalog_content_stamp

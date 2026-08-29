@@ -272,28 +272,40 @@ class BoundedGitHubSkillSource:
         visible_skill_names: Iterable[str],
     ) -> CanonicalSkillBatch:
         api_root = f"https://{_API_HOST}/repos/{quote(owner)}/{quote(repo)}"
-        metadata = await self._get_bounded(
-            client,
-            f"{api_root}/commits/{quote(requested_ref, safe='')}",
-            byte_limit=self._limits.metadata_bytes,
-            response_kind="metadata",
-        )
-        try:
-            parsed = json.loads(metadata.decode("utf-8"))
-            exact_commit = str(parsed["sha"]).lower()
-        except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
-            raise CapabilitySourceError(
-                "github_commit_metadata_invalid",
-                "GitHub commit metadata did not contain an exact commit SHA",
-            ) from exc
-        if not _COMMIT_SHA.fullmatch(exact_commit):
-            raise CapabilitySourceError(
-                "github_commit_metadata_invalid",
-                "GitHub commit metadata did not contain an exact commit SHA",
+        if _COMMIT_SHA.fullmatch(requested_ref):
+            # A full commit SHA is already the immutable provenance identity.
+            # Avoid GitHub's rate-limited REST metadata/zipball endpoints and
+            # fetch the exact codeload object directly. Branches, tags and HEAD
+            # still resolve through commit metadata before any bytes are trusted.
+            exact_commit = requested_ref.lower()
+            archive_url = (
+                f"https://{_ARCHIVE_HOST}/{quote(owner)}/{quote(repo)}"
+                f"/zip/{exact_commit}"
             )
+        else:
+            metadata = await self._get_bounded(
+                client,
+                f"{api_root}/commits/{quote(requested_ref, safe='')}",
+                byte_limit=self._limits.metadata_bytes,
+                response_kind="metadata",
+            )
+            try:
+                parsed = json.loads(metadata.decode("utf-8"))
+                exact_commit = str(parsed["sha"]).lower()
+            except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise CapabilitySourceError(
+                    "github_commit_metadata_invalid",
+                    "GitHub commit metadata did not contain an exact commit SHA",
+                ) from exc
+            if not _COMMIT_SHA.fullmatch(exact_commit):
+                raise CapabilitySourceError(
+                    "github_commit_metadata_invalid",
+                    "GitHub commit metadata did not contain an exact commit SHA",
+                )
+            archive_url = f"{api_root}/zipball/{exact_commit}"
         archive = await self._get_bounded(
             client,
-            f"{api_root}/zipball/{exact_commit}",
+            archive_url,
             byte_limit=self._limits.archive_bytes,
             response_kind="archive",
         )

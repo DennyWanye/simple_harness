@@ -12,7 +12,7 @@ import inspect
 import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Literal
 
 from simple_harness import CallId, JsonValue, thaw_json
@@ -43,6 +43,12 @@ skill_install todo_complete todo_write tool_activate tool_describe tool_search w
 web_extract_article web_fetch web_read_sitemap web_search window_capture window_focus
 window_key window_list workflow_spawn workspace_prepare workspace_recall write_file""".split()
 )
+
+# Host-composed administrative tools are registered only after their durable
+# authorization/runtime services exist.  The static catalog can therefore be
+# built without them for conformance and recovery, while production wiring is
+# still checked against PRODUCT_TOOL_NAMES once the registration is appended.
+HOST_COMPOSED_TOOL_NAMES = frozenset({"skill_install"})
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
 ProjectlessAdmission = Literal["safe", "requires_project"]
@@ -120,6 +126,11 @@ class ProductToolInventoryEntry:
     version: str
     execution_identity: str
     projectless_admission: ProjectlessAdmission = "requires_project"
+    availability_reason: str | None = None
+
+    @property
+    def executable_eligible(self) -> bool:
+        return self.availability_reason is None
 
 
 _current_call_id: contextvars.ContextVar[CallId | None] = contextvars.ContextVar(
@@ -449,12 +460,11 @@ def build_product_tool_registry(
         if registration.name in by_name:
             raise ValueError(f"duplicate product Tool: {registration.name}")
         by_name[registration.name] = registration
-    # The checked-in pre-cutover catalog remains a reusable 77-tool fixture.
-    # ``skill_install`` is the single Product-owned post-cutover registration
-    # and is appended only by production composition after its durable Host
-    # dependencies exist.
-    required = tuple(name for name in PRODUCT_TOOL_NAMES if name != "skill_install")
-    missing = tuple(name for name in required if name not in by_name)
+    missing = tuple(
+        name
+        for name in PRODUCT_TOOL_NAMES
+        if name not in by_name and name not in HOST_COMPOSED_TOOL_NAMES
+    )
     extra = tuple(sorted(set(by_name) - set(PRODUCT_TOOL_NAMES)))
     if missing or extra:
         raise ValueError(f"product Tool inventory mismatch: missing={missing}, extra={extra}")
@@ -595,14 +605,22 @@ def filter_sdk_catalog_for_workspace(
 
     kind = str(workspace_resolution_kind).strip()
     if kind == "legacy":
-        return dict(catalog), tuple(inventory)
+        selected = dict(catalog)
+        selected["descriptor_specs"] = list(catalog.get("specs", ()))
+        return selected, tuple(inventory)
     if kind == "project_bound":
         selected_inventory = tuple(
-            item
+            replace(
+                item,
+                availability_reason=(
+                    item.availability_reason or "workspace_unscoped"
+                    if item.source in PROJECT_BOUND_UNSCOPED_MCP_SOURCES
+                    else item.availability_reason
+                ),
+            )
             for item in inventory
-            if item.source not in PROJECT_BOUND_UNSCOPED_MCP_SOURCES
         )
-        allowed = {item.name for item in selected_inventory}
+        allowed = {item.name for item in selected_inventory if item.executable_eligible}
         selected_specs = tuple(
             item
             for item in catalog.get("specs", ())
@@ -611,6 +629,7 @@ def filter_sdk_catalog_for_workspace(
         if {str(item.get("name")) for item in selected_specs} != allowed:
             raise RuntimeError("project_tool_projection_incomplete")
         selected = dict(catalog)
+        selected["descriptor_specs"] = list(catalog.get("specs", ()))
         selected["specs"] = list(selected_specs)
         selected["tool_names"] = [str(item.get("name")) for item in selected_specs]
         selected["tool_count"] = len(selected_specs)
@@ -628,16 +647,25 @@ def filter_sdk_catalog_for_workspace(
         raise RuntimeError("workspace_unavailable")
     if kind != "projectless":
         raise ValueError("unsupported workspace resolution kind")
-    allowed = {
-        item.name for item in inventory if item.projectless_admission == "safe"
-    }
-    selected_inventory = tuple(item for item in inventory if item.name in allowed)
+    selected_inventory = tuple(
+        replace(
+            item,
+            availability_reason=(
+                item.availability_reason
+                if item.projectless_admission == "safe"
+                else item.availability_reason or "workspace_unscoped"
+            ),
+        )
+        for item in inventory
+    )
+    allowed = {item.name for item in selected_inventory if item.executable_eligible}
     selected_specs = tuple(
         item for item in catalog.get("specs", ()) if str(item.get("name")) in allowed
     )
     if {str(item.get("name")) for item in selected_specs} != allowed:
         raise RuntimeError("projectless_tool_projection_incomplete")
     selected = dict(catalog)
+    selected["descriptor_specs"] = list(catalog.get("specs", ()))
     selected["specs"] = list(selected_specs)
     selected["tool_names"] = sorted(allowed)
     schema_fingerprints = catalog.get("schema_fingerprints")

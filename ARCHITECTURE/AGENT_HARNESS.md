@@ -1,6 +1,6 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-29
+> 最后更新：2026-08-30
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
@@ -42,14 +42,28 @@ hash；投影内部 input-schema hash 不再以同名字段重复暴露，避免
 授权和 workspace 校验均保持不变。真实 `deepseek-v4-flash` 已分别在逐项手动授权与 Agent 全开模式完成
 `search → describe → activate → write_file`，两次写入都只落在同一 immutable Project root。
 
+2026-08-29，user-global Skill 安装进入同一 SDK-first 目录：每个前台 Run 在 publish lock 内冻结 exact
+user-global Hub snapshot，并把 body-free Skill records 合并进 Run catalog。`skill` namespace 由统一的
+`product-skill-catalog` authority 管理，具体 pack owner 与版本/hash 留在 metadata；因此 builtin 与不同用户
+owner 可以共存而不会发生 namespace owner collision。真实 `deepseek-v4-flash` 已在冷重启后的旧 Session
+和新建默认 Session 中分别完成 `tool_search -> skill_invoke`，两次加载相同的 `plan-test` content hash。
+slash help/list/schema/dispatch 现从同一 user-global frozen snapshot 构造 collision-checked catalog；输入新的 `/`
+会重新拉取候选，slash frame 固定客户端 request/turn identity。Session owner 也改为在创建事务时动态冻结，
+避免启动装配早于 identity ready 时生成 ownerless Session；历史空 Session 仅可在 ingress 幂等绑定当前 owner。
+当前 macOS UI 已在显式选择目录的新 Session `21030143…` 中显示三项 `plan-*` Skill，并完成真实
+`/plan-test` Run `ea0488e47…`，日志确认 `sdk_skill_instruction_loaded` 与 `deepseek-v4-flash` HTTP 200。
+
 Provider 调查日志由 Host `ProductProviderAdapter` 在真实 SDK invocation seam 统一生成：匿名
 `request_ref` 串联 attempt start、HTTP response shape、parse failure 与 terminal outcome；阶段码明确区分
 `transport_timeout`、`http_timeout`、`http_status`、`response_protocol`、`response_contract` 和 `adapter`。
 允许记录 model、状态码、耗时、消息/Tool 数量、schema bytes、Tool 名称集合摘要和响应结构计数；禁止记录
 API key、endpoint URL、prompt/response 正文、Tool 参数及上游 request ID 原文。
 
-当前 exact candidate bytes：Harness `0.6.4` / source `21f3c7a…` / wheel `ecb6e85…`；Memory `0.5.2` /
-source `46624b…` / wheel `deff2fa8…`。自动化与分片基线已绿。2026-08-25 CAP-1 真 UI 修复先让 SDK
+当前产品 exact bytes：Service `0.3.12` / source `47f372a…` / wheel `710ae66b…`；Harness `0.6.4` /
+source `21f3c7a…` / wheel `ecb6e85c…`；Memory `0.5.2` / source `46624b…` / wheel `deff2fa8…`。Service
+release manifest 记录的构建时 Harness 成员仍是 `0.6.2`；产品消费端依据 Service 的 `>=0.4,<0.7`
+约束独立准入 `0.6.4` candidate。`0.6.4` 未 tag/release，不把这个混合消费组合写成官方 release unit。
+自动化与分片基线已绿。2026-08-25 CAP-1 真 UI 修复先让 SDK
 authority 与 legacy ToolRegistry 共用启动期 scope Store，再把物理 registry 的真实 policy fingerprint 冻结进
 RunStart authority；严格 stale 校验仍保留。最终 Run 在同一 root 中完成 search/describe/activate，Provider
 工具数 13→14→15，真实 `mcp_filesystem_search_files` 与 `mcp_filesystem_read_text_file` 均成功，并基于
@@ -230,13 +244,15 @@ Companion ingress outbox；生产 Text 入口不再为了 `growth_signal_kind` �
 IntentTriage。当前直接路径以 `none` 结算语义优先级，后续 reflection 仍可读取原始消息，
 但不能借成长分类抢先回答、澄清、计划或阻止主 Run。
 
-旧 Voice（VAD → ASR → Harness → TTS）入口已于 2026-07-28 暂时关闭：
+旧 Voice（VAD → ASR → Harness → TTS）入口已于 2026-07-28 关闭：
 `[voice].enabled=false` 是后端单一开关，默认启动不会导入、创建或加载
 Silero VAD、faster-whisper、EdgeTTS/CosyVoice；两个前端窗口都不建立
 `/ws/audio` 连接，也不申请麦克风。`/ws/audio` 对已鉴权的误连返回稳定
-`voice_temporarily_disabled`，`/health.voice` 显示 `realtime=pending`。
-后续 Realtime 必须作为新的产品入口接入 `ProductTurnPreparer`，不能重新启用
-绕过完整产品准备的旧 Voice 请求。
+`voice_temporarily_disabled`。2026-08-30 当前候选另行接入 `/ws/realtime-voice`：Service SDK `0.3.12`
+拥有本地 loopback protocol、provider transport 与 Realtime lifecycle，前端只在显式开始通话后连接和申请
+麦克风。它目前只承载 provider-native voice，不创建 Agent Run；真实 Provider 连续多轮 E2E 尚未重新验收。
+如果后续语音请求需要 Tool、Workflow 或产品 Context，则必须进入 `ProductTurnPreparer`/RunKernel，不能让
+transport 成为第二套 Agent authority。
 
 ## 用户看到的流程
 

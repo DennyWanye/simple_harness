@@ -1,0 +1,9 @@
+{"schema_version":"1.0","inventory":"index.json","candidate_reviewed":["TC-PS-01","TC-PS-02","TC-PS-04","TC-SI-04","TC-SI-05"],"decisions":[
+{"obligation_id":"TO-A1","decision":"create-new","candidates":["TC-PS-02","TC-PS-04"],"selected_testcases":["TC-GS-01@rev1","TC-GS-05@rev1"],"reason":"新增 native Documents automatic workspace，复用旧 binding/restart oracle但不继承历史 PASS。"},
+{"obligation_id":"TO-A2","decision":"create-new","candidates":["TC-PS-01","TC-PS-02"],"selected_testcases":["TC-GS-02@rev1"],"reason":"新增 selected/default/cancel 三态及无默认副作用 oracle。"},
+{"obligation_id":"TO-A6","decision":"create-new","candidates":["TC-PS-02","TC-SI-04"],"selected_testcases":["TC-GS-06@rev1","TC-GS-08@rev1"],"reason":"新增 workspace saga 故障与并发收敛。"},
+{"obligation_id":"TO-A7","decision":"create-new","candidates":["TC-PS-04","TC-SI-05"],"selected_testcases":["TC-GS-01@rev1","TC-GS-05@rev1"],"reason":"新增 ordinary Session 同一 durable production authority 与冷恢复。"},
+{"obligation_id":"TO-A8","decision":"create-new","candidates":["TC-PS-02"],"selected_testcases":["TC-GS-01@rev1","TC-GS-02@rev1"],"reason":"新增默认或选择工作目录与创建错误的可见状态。"},
+{"obligation_id":"TO-R1","decision":"create-new","candidates":["TC-PS-01","TC-PS-02","TC-PS-04"],"selected_testcases":["TC-GS-01@rev1","TC-GS-02@rev1","TC-GS-08@rev1"],"reason":"扩展 canonical identity 到 automatic allocation collision。"},
+{"obligation_id":"TO-R4","decision":"create-new","candidates":["TC-PS-02","TC-SI-04"],"selected_testcases":["TC-GS-06@rev1","TC-GS-08@rev1"],"reason":"新增 external mkdir saga 的 crash/lost-ACK oracle。"},
+{"obligation_id":"TO-R5","decision":"create-new","candidates":["TC-PS-04","TC-SI-05"],"selected_testcases":["TC-GS-05@rev1"],"reason":"当前 build 冷重启与真实 Provider smoke 必须重跑。"}]}

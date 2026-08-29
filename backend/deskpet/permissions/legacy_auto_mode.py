@@ -110,6 +110,26 @@ async def import_legacy_auto_mode_once(
             policy_state = await tx.compare_and_set_policy_mode(
                 observed.mode,
                 expected_generation=policy_state.generation,
+                provenance="legacy_import",
+            )
+        elif observed.outcome == "missing":
+            if (
+                policy_state.mode == "manual"
+                and policy_state.generation == 0
+                and policy_state.provenance == "needs_user_choice"
+                and policy_state.user_set_receipt_ref is None
+            ):
+                policy_state = await tx.compare_and_set_policy_mode(
+                    "auto",
+                    expected_generation=policy_state.generation,
+                    provenance="factory_default_migrated",
+                )
+        elif observed.outcome == "invalid":
+            # Ambiguous legacy evidence cannot silently enable automation.
+            policy_state = await tx.compare_and_set_policy_mode(
+                "manual",
+                expected_generation=policy_state.generation,
+                provenance="needs_user_choice",
             )
         record = LegacyAuthorizationImportRecord(
             source_key=LEGACY_AUTO_MODE_SOURCE_KEY,

@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 DEFAULT_MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 
 # v9 是 P4 的起手目标版本。spec "Schema Migration v8 → v9" 定义。
-TARGET_SCHEMA_VERSION = 33  # One-time reset before project-scoped sessions ship
+TARGET_SCHEMA_VERSION = 34
 _V17_MIGRATION = "009_memory_v2_v17.sql"
 _V17_SCHEMA_VERSION = 17
 _V18_MIGRATION = "010_context_os_v18.sql"
@@ -93,6 +93,8 @@ _PROJECT_SCOPED_SESSIONS_MIGRATION = "024_project_scoped_sessions_v32.sql"
 _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION = 32
 _LEGACY_SESSION_RESET_MIGRATION = "025_legacy_session_reset_v33.sql"
 _LEGACY_SESSION_RESET_SCHEMA_VERSION = 33
+_AUTOMATIC_SESSION_WORKSPACE_MIGRATION = "026_automatic_session_workspace_v34.sql"
+_AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION = 34
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -111,6 +113,7 @@ MIGRATION_STEPS: dict[str, int] = {
     _OFFICIAL_MEMORY_INTEGRATION_MIGRATION: _OFFICIAL_MEMORY_INTEGRATION_SCHEMA_VERSION,
     _PROJECT_SCOPED_SESSIONS_MIGRATION: _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION,
     _LEGACY_SESSION_RESET_MIGRATION: _LEGACY_SESSION_RESET_SCHEMA_VERSION,
+    _AUTOMATIC_SESSION_WORKSPACE_MIGRATION: _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION,
 }
 
 
@@ -584,7 +587,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            _LEGACY_SESSION_RESET_SCHEMA_VERSION
+            _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION
+            if _AUTOMATIC_SESSION_WORKSPACE_MIGRATION in durable_markers
+            else _LEGACY_SESSION_RESET_SCHEMA_VERSION
             if _LEGACY_SESSION_RESET_MIGRATION in durable_markers
             else _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION
             if _PROJECT_SCOPED_SESSIONS_MIGRATION in durable_markers

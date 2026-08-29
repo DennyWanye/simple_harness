@@ -37,7 +37,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
   const pages = useSessionsStore((s) => s.project_session_pages);
   const companionIdentityReady = useSessionsStore((s) => s.companion_owner !== null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(["projectless"]));
-  const [picker, setPicker] = useState<{ sourceSid: string | null } | null>(null);
+  const [picker, setPicker] = useState<{ sourceSid: string | null; allowDefault?: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingSid, setEditingSid] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
@@ -244,7 +244,7 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
         style={{ ...sessionButtonStyle, border: `1px solid ${dark.accent}` }}
       /> : <button type="button" data-testid={`session-switch-${row.session.session_id}`} onClick={() => onSwitchSid(row.session.session_id)} onDoubleClick={() => { setEditingSid(row.session.session_id); setDraftTitle(row.session.title ?? ""); }} style={sessionButtonStyle}>
           <span style={ellipsisStyle}>{topicDisplayLabel(row.session)}</span>
-          <small style={{ color: dark.textMuted }}>{row.session.turn_count === 0 ? "新建" : row.session.activity_at > 0 ? formatRelativeSec(row.session.activity_at) : ""}</small>
+          <small style={{ color: dark.textMuted }}>{row.session.workspace_kind === "automatic" ? `默认目录 · ${row.session.execution_root ?? ""}` : row.session.workspace_kind === "selected" ? `已选目录 · ${row.session.execution_root ?? ""}` : row.session.turn_count === 0 ? "新建" : row.session.activity_at > 0 ? formatRelativeSec(row.session.activity_at) : ""}</small>
         </button>}
       {row.scope.scope_kind === "projectless" && <button type="button" data-testid={`session-continue-${row.session.session_id}`} title="在项目中继续" aria-label="在项目中继续" onClick={() => setPicker({ sourceSid: row.session.session_id })} style={tinyButtonStyle}>↗</button>}
       <button type="button" aria-label="删除会话" onClick={() => setPendingDelete(row.session)} style={tinyButtonStyle}>×</button>
@@ -267,12 +267,12 @@ export function SessionList({ activeSid, onSwitchSid }: SessionListProps) {
 
   return <div data-testid="session-list" style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1, gap: tokens.space.xs }}>
     <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: tokens.space.xs }}>
-      <button type="button" data-testid="session-new-topic" disabled={!companionIdentityReady} onClick={() => createSession(null)} style={primaryButtonStyle}>＋ 新建普通会话</button>
+      <button type="button" data-testid="session-new-topic" disabled={!companionIdentityReady} onClick={() => setPicker({ sourceSid: null, allowDefault: true })} style={primaryButtonStyle}>＋ 新建普通会话</button>
       <button type="button" data-testid="project-add" disabled={!companionIdentityReady} onClick={() => setPicker({ sourceSid: null })} aria-label="添加项目" style={primaryButtonStyle}>⌘＋</button>
     </div>
     {error && <div role="alert" style={{ color: tokens.color.danger.fg, fontSize: tokens.text.sm.size }}>{error}</div>}
     <div style={{ flex: 1, minHeight: 0 }}><Virtuoso data={rows} computeItemKey={(_index, row) => row.kind === "session" ? `s:${row.session.session_id}` : row.kind === "project" ? `p:${row.project.project_id}` : `${row.kind}:${row.kind === "empty" || row.kind === "load" || row.kind === "scope" ? projectScopeKey(row.scope) : "catalog"}`} itemContent={renderRow} /></div>
-    {picker && <ProjectPickerDialog open onClose={() => setPicker(null)} onProjectSelected={(projectId) => createSession(projectId, picker.sourceSid)} />}
+    {picker && <ProjectPickerDialog open onClose={() => setPicker(null)} onProjectSelected={(projectId) => createSession(projectId, picker.sourceSid)} onDefaultSelected={picker.allowDefault ? () => createSession(null, picker.sourceSid) : undefined} />}
     {pendingDelete && <ConfirmDialog title="删除会话？" message="该会话将从历史列表移除，项目和项目文件不会被删除。" confirm_label="删除" onConfirm={confirmDelete} onCancel={() => setPendingDelete(null)} />}
   </div>;
 }

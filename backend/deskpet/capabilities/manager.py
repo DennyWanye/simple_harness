@@ -933,13 +933,20 @@ class CapabilityPackManager:
                 raise CapabilityManagerError("batch_validated_ref_mismatch", member.normalized_name)
             with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as package:
                 manifest_payload = json.loads(package.read("deskpet-pack.json"))
-            actual_tools = tuple(sorted(
+            provided_tools = tuple(sorted(
                 str(tool["provider_name"])
                 for tool in manifest_payload.get("entries", {}).get("tools", [])
             ))
+            actual_allowed_tools = tuple(sorted(
+                str(tool_name)
+                for skill in manifest_payload.get("entries", {}).get("skills", [])
+                for tool_name in skill.get("allowed_tools", ())
+            ))
             raw_allowed = member.member.get("allowed_tools")
-            if raw_allowed is not None and tuple(sorted(str(item) for item in raw_allowed)) != actual_tools:
+            if raw_allowed is not None and tuple(sorted(str(item) for item in raw_allowed)) != actual_allowed_tools:
                 raise CapabilityManagerError("batch_allowed_tools_mismatch", member.normalized_name)
+            if len(provided_tools) != len(set(provided_tools)):
+                raise CapabilityManagerError("batch_provided_tools_invalid", member.normalized_name)
             selected_ref = str(member.member.get("selected_subdirectory") or member.normalized_name)
             selected.append(selected_ref)
             from .skill_source import CanonicalSkillPack
@@ -957,16 +964,230 @@ class CapabilityPackManager:
         )
         result = await self._publish_canonical_skill_install_batch(
             CanonicalSkillBatch(evidence, tuple(packs), intent.member_set_stamp),
-            operation_id=handoff.operation_id, project_scope_key=intent.project_scope_key,
-            owner_key=intent.principal_id, committed_set_stamp=intent.member_set_stamp,
+            operation_id=handoff.operation_id, project_scope_key=intent.install_scope_key,
+            # The frozen Run catalog and durable binding must share the same
+            # opaque user owner.  principal_id authenticates the confirmation;
+            # it is never a catalog/binding namespace.
+            owner_key=(
+                intent.install_scope_key
+                if intent.install_scope == "user"
+                else intent.principal_id
+            ),
+            committed_set_stamp=intent.member_set_stamp,
         )
+        committed = await self.store.get_phase_evidence(
+            handoff.operation_id, "batch_committed"
+        )
+        if committed is None:
+            raise CapabilityManagerError(
+                "batch_manager_receipt_missing", handoff.operation_id
+            )
         return {
             "operation_id": result.operation.operation_id,
             "manager_receipt_hash": result.manager_receipt_hash,
             "committed_set_stamp": result.committed_set_stamp,
             "registry_revision": result.registry_revision,
             "binding_ids": [binding.binding_id for binding in result.bindings],
+            "owner_key": str(committed.get("owner_key") or ""),
+            "members": list(committed.get("members") or ()),
+            "publication_state": (
+                "pending_invisible"
+                if intent.install_scope == "user"
+                else "active"
+            ),
         }
+
+    async def activate_skill_install_batch(
+        self, *, intent: CapabilitySkillInstallIntent,
+        manager_receipt: Mapping[str, JsonValue],
+        members: Sequence[CapabilitySkillInstallMember],
+    ) -> Mapping[str, JsonValue]:
+        """Atomically expose a verified user-global batch.
+
+        Publication records exact version bytes first, without changing the
+        visible binding.  Only this post-verification CAS advances the frozen
+        owner catalog to the new versions.
+        """
+        if intent.install_scope != "user":
+            raise CapabilityManagerError("batch_activation_scope_invalid", intent.install_scope)
+        if str(manager_receipt.get("publication_state") or "") != "pending_invisible":
+            raise CapabilityManagerError("batch_activation_receipt_invalid", "publication is not pending")
+        receipt_members = {
+            str(item.get("pack_id") or ""): item
+            for item in manager_receipt.get("members", ())
+            if isinstance(item, Mapping)
+        }
+        bindings: list[CapabilityBinding] = []
+        operation_id = str(manager_receipt.get("operation_id") or "")
+        async with self.publish_lock:
+            existing = [
+                await self.store.get_binding(
+                    "user", intent.install_scope_key, member.pack_id,
+                    owner_key=intent.install_scope_key,
+                )
+                for member in members
+            ]
+            if all(
+                binding is not None
+                and binding.active
+                and binding.version == member.version
+                and binding.manifest_hash == member.manifest_hash
+                for binding, member in zip(existing, members, strict=True)
+            ):
+                bindings = [binding for binding in existing if binding is not None]
+            else:
+                for binding, member in zip(existing, members, strict=True):
+                    receipt_member = receipt_members.get(member.pack_id)
+                    if receipt_member is None:
+                        raise CapabilityManagerError(
+                            "batch_activation_receipt_incomplete", member.pack_id
+                        )
+                    expected_generation = int(
+                        receipt_member.get("expected_binding_generation") or 0
+                    )
+                    actual_generation = 0 if binding is None else binding.generation
+                    if actual_generation != expected_generation:
+                        raise CapabilityManagerError(
+                            "batch_activation_binding_conflict",
+                            "global binding changed before activation",
+                        )
+                candidates: list[CapabilityCandidate] = []
+                for member in members:
+                    record = await self.store.get_version(
+                        member.pack_id, member.version, member.manifest_hash
+                    )
+                    if record is None:
+                        raise CapabilityManagerError(
+                            "batch_activation_version_missing", member.pack_id
+                        )
+                    candidates.append(
+                        await self.publisher.prepare_installed(
+                            record,
+                            operation_id=str(manager_receipt.get("operation_id") or ""),
+                        )
+                    )
+                expected_revisions = {
+                    candidate.expected_registry_revision for candidate in candidates
+                }
+                if len(expected_revisions) != 1:
+                    raise CapabilityManagerError(
+                        "batch_activation_registry_revision_mismatch",
+                        "global candidates were prepared against different registries",
+                    )
+                runtime_payload: object | None = None
+                if all(isinstance(candidate.runtime_payload, tuple) for candidate in candidates):
+                    runtime_payload = tuple(
+                        item
+                        for candidate in candidates
+                        for item in candidate.runtime_payload  # type: ignore[union-attr]
+                    )
+                combined = CapabilityCandidate(
+                    expected_registry_revision=next(iter(expected_revisions), 0),
+                    tool_spec_fingerprints=tuple(
+                        fingerprint
+                        for candidate in candidates
+                        for fingerprint in candidate.tool_spec_fingerprints
+                    ),
+                    old_specs=tuple(
+                        spec for candidate in candidates for spec in candidate.old_specs
+                    ),
+                    new_specs=tuple(
+                        spec for candidate in candidates for spec in candidate.new_specs
+                    ),
+                    publisher_state={
+                        "schema": "global-skill-activation-candidate-v2",
+                        "member_count": len(candidates),
+                    },
+                    runtime_payload=runtime_payload,
+                )
+                activation_evidence: dict[str, JsonValue] = {
+                    "schema": "global-skill-activation-intent-v2",
+                    "owner_key": intent.install_scope_key,
+                    "members": [
+                        {
+                            "pack_id": member.pack_id,
+                            "version": member.version,
+                            "manifest_hash": member.manifest_hash,
+                            "expected_binding_generation": int(
+                                receipt_members[member.pack_id].get(
+                                    "expected_binding_generation"
+                                ) or 0
+                            ),
+                        }
+                        for member in members
+                    ],
+                }
+                async with self.store.write_transaction() as db:
+                    await db.execute(
+                        """INSERT INTO capability_operation_phase_evidence(
+                               operation_id,phase,idempotency_key,status,evidence_json,
+                               created_at,updated_at)
+                           VALUES(?, 'global_activation', ?, 'intent', ?, ?, ?)
+                           ON CONFLICT(operation_id,phase) DO UPDATE SET
+                               status='intent',evidence_json=excluded.evidence_json,
+                               updated_at=excluded.updated_at
+                           WHERE capability_operation_phase_evidence.status='failed'""",
+                        (
+                            operation_id,
+                            f"{operation_id}:global_activation",
+                            json.dumps(activation_evidence, sort_keys=True),
+                            self.store.now(), self.store.now(),
+                        ),
+                    )
+                publication = await self.publisher.publish(
+                    combined,
+                    operation_id=operation_id,
+                )
+                if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
+                    raise CapabilityManagerError(
+                        "publisher_fingerprint_mismatch", "batch ToolSpecs differ"
+                    )
+                await self._fault("after:global_activation_registry_publish")
+                async with self.store.write_transaction() as db:
+                    tx = self.store.bind(db)
+                    for member in members:
+                        receipt_member = receipt_members.get(member.pack_id)
+                        if receipt_member is None:
+                            raise CapabilityManagerError("batch_activation_receipt_incomplete", member.pack_id)
+                        expected_generation = int(receipt_member.get("expected_binding_generation") or 0)
+                        binding = await tx.set_binding(
+                            scope="user", scope_key=intent.install_scope_key,
+                            pack_id=member.pack_id, version=member.version,
+                            manifest_hash=member.manifest_hash,
+                            expected_generation=expected_generation, enabled=True,
+                            owner_key=intent.install_scope_key,
+                            management_policy="user_managed",
+                        )
+                        bindings.append(binding)
+                    committed_evidence = {
+                        **activation_evidence,
+                        "registry_revision": publication.registry_revision,
+                        "binding_ids": [binding.binding_id for binding in bindings],
+                    }
+                    await db.execute(
+                        """UPDATE capability_operation_phase_evidence
+                           SET status='committed',evidence_json=?,updated_at=?
+                           WHERE operation_id=? AND phase='global_activation'
+                             AND status='intent'""",
+                        (
+                            json.dumps(committed_evidence, sort_keys=True),
+                            self.store.now(), operation_id,
+                        ),
+                    )
+        payload: dict[str, JsonValue] = {
+            "schema": "global-skill-binding-activation-v2",
+            "publication_state": "active",
+            "owner_key": intent.install_scope_key,
+            "operation_id": str(manager_receipt.get("operation_id") or ""),
+            "binding_ids": [binding.binding_id for binding in bindings],
+            "binding_generations": [binding.generation for binding in bindings],
+            "registry_revision": (
+                publication.registry_revision
+                if "publication" in locals()
+                else int(manager_receipt.get("registry_revision") or 0)
+            ),
+        }
+        return {**payload, "activation_hash": fingerprint_json(payload)}
 
     async def _publish_canonical_skill_install_batch(
         self,
@@ -989,8 +1210,9 @@ class CapabilityPackManager:
         operation = await self.store.get_operation(operation_id)
         if operation is None or operation.kind != "skill_install_batch":
             raise CapabilityManagerError("batch_operation_missing", operation_id)
-        if operation.requested_scope != "project" or operation.requested_scope_key != project_scope_key:
-            raise CapabilityManagerError("batch_project_scope_mismatch", "batch operation belongs to another Project")
+        expected_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
+        if operation.requested_scope != expected_scope or operation.requested_scope_key != project_scope_key:
+            raise CapabilityManagerError("batch_owner_scope_mismatch", "batch operation belongs to another owner scope")
         if str(operation.request.get("member_set_stamp") or "") != committed_set_stamp:
             raise CapabilityManagerError("batch_set_stamp_mismatch", "confirmed member set changed")
         receipt_evidence = await self.store.get_phase_evidence(operation_id, "batch_committed")
@@ -998,11 +1220,12 @@ class CapabilityPackManager:
             bindings: list[CapabilityBinding] = []
             for member in await self.store.operation_members(operation_id):
                 binding = await self.store.get_binding(
-                    "project", project_scope_key, member.pack_id, owner_key=owner_key
+                    expected_scope, project_scope_key, member.pack_id, owner_key=owner_key
                 )
-                if binding is None:
+                if binding is None and expected_scope != "user":
                     raise CapabilityManagerError("batch_committed_binding_missing", member.pack_id)
-                bindings.append(binding)
+                if binding is not None:
+                    bindings.append(binding)
             return CapabilityBatchInstallResult(
                 operation, tuple(bindings), Path(str(receipt_evidence["install_root"])),
                 int(receipt_evidence["registry_revision"]),
@@ -1067,10 +1290,11 @@ class CapabilityPackManager:
         )
         batch_root = (self.layout.packs / "batches" / committed_set_stamp).resolve(strict=False)
         generations = dict(expected_binding_generations or {})
+        binding_scope = "user" if project_scope_key.startswith("user:v2:") else "project"
         async with self.publish_lock:
             old_bindings: list[CapabilityBinding | None] = []
             for member in durable_members:
-                binding = await self.store.get_binding("project", project_scope_key, member.pack_id, owner_key=owner_key)
+                binding = await self.store.get_binding(binding_scope, project_scope_key, member.pack_id, owner_key=owner_key)
                 actual = 0 if binding is None else binding.generation
                 if generations.get(member.pack_id, actual) != actual:
                     raise CapabilityStoreConflict("binding_generation_conflict", member.pack_id)
@@ -1078,7 +1302,12 @@ class CapabilityPackManager:
                 old_bindings.append(binding)
             intent_id = _intent_id(operation_id)
             envelope: Mapping[str, JsonValue] = {
-                "schema": "capability-batch-binding-v1", "project_scope_key": project_scope_key,
+                "schema": (
+                    "capability-batch-binding-v2"
+                    if binding_scope == "user" else "capability-batch-binding-v1"
+                ),
+                "project_scope_key": project_scope_key,
+                "scope": binding_scope, "scope_key": project_scope_key,
                 "owner_key": owner_key, "member_set_digest": committed_set_stamp,
                 "expected_binding_generations": generations,
             }
@@ -1094,7 +1323,7 @@ class CapabilityPackManager:
                     CapabilityPublishIntentMember(
                         intent_id, operation_id, member.ordinal,
                         None if old is None else old.to_dict(),
-                        {"scope": "project", "scope_key": project_scope_key, "owner_key": owner_key,
+                        {"scope": binding_scope, "scope_key": project_scope_key, "owner_key": owner_key,
                          "capability_id": member.pack_id, "version": member.version,
                          "manifest_hash": member.manifest_hash, "active": True,
                          "expected_generation": generations[member.pack_id]},
@@ -1111,13 +1340,30 @@ class CapabilityPackManager:
                 await tx.advance_publish_intent(intent_id, phase="batch_files_materialized")
                 await tx.commit_phase(operation_id, "batch_files_materialized", evidence={"batch_root": str(batch_root)})
             await self._fault("after:batch_files_materialized")
-            publication = await self.publisher.publish(combined, operation_id=operation_id)
-            if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
-                raise CapabilityManagerError("publisher_fingerprint_mismatch", "batch ToolSpecs differ")
+            if binding_scope == "user":
+                # User-global candidates remain private until the fresh-Run
+                # verifier accepts the exact installed versions.  In
+                # particular, do not mutate the process-wide executable Tool
+                # registry merely because the binding is still invisible.
+                publication = CapabilityPublication(
+                    registry_revision=combined.expected_registry_revision,
+                    tool_spec_fingerprints=combined.tool_spec_fingerprints,
+                    evidence={"publication_state": "deferred_pending_verification"},
+                )
+            else:
+                publication = await self.publisher.publish(combined, operation_id=operation_id)
+                if tuple(publication.tool_spec_fingerprints) != combined.tool_spec_fingerprints:
+                    raise CapabilityManagerError("publisher_fingerprint_mismatch", "batch ToolSpecs differ")
             async with self.store.write_transaction() as db:
                 tx = self.store.bind(db)
                 await tx.advance_publish_intent(intent_id, phase="batch_catalog_swapped")
-                await tx.commit_phase(operation_id, "batch_catalog_swapped", evidence={"registry_revision": publication.registry_revision})
+                await tx.commit_phase(operation_id, "batch_catalog_swapped", evidence={
+                    "registry_revision": publication.registry_revision,
+                    "publication_state": (
+                        "deferred_pending_verification"
+                        if binding_scope == "user" else "active"
+                    ),
+                })
             await self._fault("after:batch_catalog_swapped")
             bindings: list[CapabilityBinding] = []
             async with self.store.write_transaction() as db:
@@ -1128,13 +1374,14 @@ class CapabilityPackManager:
                         validation.descriptor, install_path, "healthy", candidate.tool_spec_fingerprints,
                         None, None, None, self.store.now(),
                     ))
-                    binding = await tx.set_binding(
-                        scope="project", scope_key=project_scope_key, pack_id=durable.pack_id,
-                        version=durable.version, manifest_hash=durable.manifest_hash,
-                        expected_generation=generations[durable.pack_id], enabled=True,
-                        owner_key=owner_key, management_policy="user_managed",
-                    )
-                    bindings.append(binding)
+                    if binding_scope == "project":
+                        binding = await tx.set_binding(
+                            scope=binding_scope, scope_key=project_scope_key, pack_id=durable.pack_id,
+                            version=durable.version, manifest_hash=durable.manifest_hash,
+                            expected_generation=generations[durable.pack_id], enabled=True,
+                            owner_key=owner_key, management_policy="user_managed",
+                        )
+                        bindings.append(binding)
                     await db.execute(
                         """UPDATE capability_operation_members SET committed_version=?,
                            committed_manifest_hash=?,committed_set_stamp=?
@@ -1142,12 +1389,33 @@ class CapabilityPackManager:
                         (durable.version,durable.manifest_hash,committed_set_stamp,operation_id,durable.ordinal),
                     )
                 receipt_payload = {
-                    "schema": "capability-batch-manager-receipt-v1", "operation_id": operation_id,
-                    "project_scope_key": project_scope_key, "owner_key": owner_key,
+                    "schema": (
+                        "capability-batch-manager-receipt-v2"
+                        if binding_scope == "user"
+                        else "capability-batch-manager-receipt-v1"
+                    ),
+                    "operation_id": operation_id,
+                    "project_scope_key": project_scope_key,
+                    "scope": binding_scope, "scope_key": project_scope_key,
+                    "owner_key": owner_key,
                     "committed_set_stamp": committed_set_stamp, "registry_revision": publication.registry_revision,
-                    "members": [{"pack_id": m.pack_id,"version": m.version,"manifest_hash": m.manifest_hash,
-                                 "content_hash": m.content_hash,"binding_generation": b.generation}
-                                for m,b in zip(durable_members,bindings,strict=True)],
+                    "publication_state": (
+                        "pending_invisible" if binding_scope == "user" else "active"
+                    ),
+                    "members": [
+                        {"pack_id": m.pack_id, "version": m.version,
+                         "manifest_hash": m.manifest_hash, "content_hash": m.content_hash,
+                         "expected_binding_generation": generations[m.pack_id],
+                         **(
+                             {"binding_generation": b.generation}
+                             if binding_scope == "project" else {}
+                         )}
+                        for m, b in zip(
+                            durable_members,
+                            bindings if binding_scope == "project" else [None] * len(durable_members),
+                            strict=True,
+                        )
+                    ],
                 }
                 receipt_hash = fingerprint_json(receipt_payload)
                 await tx.advance_publish_intent(intent_id, phase="batch_committed", status="committed")
@@ -2393,6 +2661,7 @@ class CapabilityPackManager:
         """Probe or reconcile every nonterminal operation without blind replay."""
 
         await self.initialize()
+        await self._recover_pending_global_activations()
         recovered: list[CapabilityOperationRecord] = []
         for operation in await self.store.list_recoverable_operations():
             if operation.kind == "skill_install_batch":
@@ -2435,6 +2704,86 @@ class CapabilityPackManager:
                     await self._recover_publish_operation(operation)
                 )
         return tuple(recovered)
+
+    async def _recover_pending_global_activations(self) -> None:
+        """Settle the durable registry-published/binding-not-yet-written window."""
+        async with self.store.read_connection() as db:
+            rows = await (
+                await db.execute(
+                    """SELECT operation_id,evidence_json
+                       FROM capability_operation_phase_evidence
+                       WHERE phase='global_activation' AND status='intent'
+                       ORDER BY created_at"""
+                )
+            ).fetchall()
+        for row in rows:
+            operation_id = str(row["operation_id"])
+            evidence = json.loads(str(row["evidence_json"]))
+            publish_intent = await self.store.get_publish_intent_for_operation(
+                operation_id
+            )
+            if publish_intent is None:
+                continue
+            reconciliation = await self.publisher.reconcile(publish_intent)
+            if reconciliation.status == "rolled_back":
+                # The registry still represents the old snapshot.  Preserve
+                # every old binding and durably close this activation attempt.
+                async with self.store.write_transaction() as db:
+                    await db.execute(
+                        """UPDATE capability_operation_phase_evidence
+                           SET status='failed',updated_at=?
+                           WHERE operation_id=? AND phase='global_activation'
+                             AND status='intent'""",
+                        (self.store.now(), operation_id),
+                    )
+                continue
+            if reconciliation.status != "published":
+                continue
+            owner_key = str(evidence.get("owner_key") or "")
+            members = evidence.get("members")
+            if not owner_key.startswith("user:v2:") or not isinstance(members, list):
+                continue
+            bindings: list[CapabilityBinding] = []
+            async with self.store.write_transaction() as db:
+                tx = self.store.bind(db)
+                for raw in members:
+                    if not isinstance(raw, Mapping):
+                        raise CapabilityManagerError(
+                            "global_activation_intent_invalid", operation_id
+                        )
+                    binding = await tx.set_binding(
+                        scope="user", scope_key=owner_key,
+                        pack_id=str(raw["pack_id"]), version=str(raw["version"]),
+                        manifest_hash=str(raw["manifest_hash"]),
+                        expected_generation=int(
+                            raw.get("expected_binding_generation") or 0
+                        ),
+                        enabled=True, owner_key=owner_key,
+                        management_policy="user_managed",
+                    )
+                    bindings.append(binding)
+                settled = {
+                    **evidence,
+                    "registry_revision": int(
+                        reconciliation.registry_revision or 0
+                    ),
+                    "binding_ids": [binding.binding_id for binding in bindings],
+                    "recovered": True,
+                }
+                await db.execute(
+                    """UPDATE capability_operation_phase_evidence
+                       SET status='committed',evidence_json=?,updated_at=?
+                       WHERE operation_id=? AND phase='global_activation'
+                         AND status='intent'""",
+                    (
+                        json.dumps(settled, sort_keys=True), self.store.now(),
+                        operation_id,
+                    ),
+                )
+
+    async def recover_pending_global_activations(self) -> None:
+        async with self.publish_lock:
+            await self._recover_pending_global_activations()
 
     async def _recover_skill_install_batch(
         self, operation: CapabilityOperationRecord

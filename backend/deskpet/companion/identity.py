@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,8 +44,11 @@ def _namespaced_hash(namespace: str, stable_id: str) -> str:
 def load_or_create_local_identity(user_data_dir: str | Path) -> HumanIdentity:
     root = Path(user_data_dir)
     root.mkdir(parents=True, exist_ok=True)
+    _validate_private_identity_directory(root)
     identity_path = root / "companion-local-identity.json"
-    if not identity_path.exists():
+    try:
+        os.lstat(identity_path)
+    except FileNotFoundError:
         stable_id = str(uuid.uuid4())
         payload = json.dumps(
             {"schema_version": 1, "local_identity_id": stable_id},
@@ -68,7 +72,7 @@ def load_or_create_local_identity(user_data_dir: str | Path) -> HumanIdentity:
             except BaseException:
                 identity_path.unlink(missing_ok=True)
                 raise
-    raw = json.loads(identity_path.read_text(encoding="utf-8"))
+    raw = json.loads(_read_validated_identity_file(identity_path))
     stable_id = str(raw["local_identity_id"])
     uuid.UUID(stable_id)
     digest = _namespaced_hash("local", stable_id)
@@ -77,6 +81,46 @@ def load_or_create_local_identity(user_data_dir: str | Path) -> HumanIdentity:
         identity_namespace_hash=digest,
         identity_kind="local",
     )
+
+
+def _validate_private_identity_directory(root: Path) -> None:
+    """Reject identity roots another local principal can replace files in."""
+
+    info = os.lstat(root)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        raise PermissionError("local identity directory must be a real directory")
+    if hasattr(os, "getuid"):
+        if info.st_uid != os.getuid():
+            raise PermissionError("local identity directory has another owner")
+        if info.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+            raise PermissionError("local identity directory is shared-writable")
+
+
+def _read_validated_identity_file(identity_path: Path) -> str:
+    """Open the identity without following links and validate the opened inode."""
+
+    before = os.lstat(identity_path)
+    if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
+        raise PermissionError("local identity must be a regular non-symlink file")
+    if hasattr(os, "getuid"):
+        if before.st_uid != os.getuid():
+            raise PermissionError("local identity has another owner")
+        if stat.S_IMODE(before.st_mode) != 0o600:
+            raise PermissionError("local identity must have mode 0600")
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(identity_path, flags)
+    try:
+        opened = os.fstat(descriptor)
+        if not stat.S_ISREG(opened.st_mode):
+            raise PermissionError("local identity must be a regular file")
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise PermissionError("local identity changed while opening")
+        with os.fdopen(descriptor, "r", encoding="utf-8") as stream:
+            descriptor = -1
+            return stream.read()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 class OwnerExecutableProjectionPort(Protocol):

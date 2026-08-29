@@ -244,12 +244,13 @@ async def test_legacy_auto_mode_imports_once_then_sqlite_is_authoritative(
     assert imported.record.imported_mode == "auto"
     assert (imported.policy_state.mode, imported.policy_state.generation) == (
         "auto",
-        1,
+        0,
     )
+    assert imported.policy_state.provenance == "legacy_import"
 
     sqlite_policy = await store.compare_and_set_policy_mode(
         "manual",
-        expected_generation=1,
+        expected_generation=0,
     )
     legacy_path.write_text('{\n  "enabled": true\n}', encoding="utf-8")
 
@@ -296,7 +297,16 @@ async def test_unusable_legacy_auto_mode_is_consumed_without_later_override(
     first = await import_legacy_auto_mode_once(store, legacy_path)
     assert first.record.outcome == expected_outcome
     assert first.record.error_code == expected_error
-    assert (first.policy_state.mode, first.policy_state.generation) == ("manual", 0)
+    expected = (
+        ("auto", 0, "factory_default")
+        if expected_outcome == "missing"
+        else ("manual", 0, "needs_user_choice")
+    )
+    assert (
+        first.policy_state.mode,
+        first.policy_state.generation,
+        first.policy_state.provenance,
+    ) == expected
 
     legacy_path.write_text('{"enabled": true}', encoding="utf-8")
     restarted = CapabilityStore(
@@ -306,4 +316,48 @@ async def test_unusable_legacy_auto_mode_is_consumed_without_later_override(
     second = await import_legacy_auto_mode_once(restarted, legacy_path)
     assert not second.consumed_now
     assert second.record == first.record
-    assert (second.policy_state.mode, second.policy_state.generation) == ("manual", 0)
+    assert (
+        second.policy_state.mode,
+        second.policy_state.generation,
+        second.policy_state.provenance,
+    ) == expected
+
+
+@pytest.mark.asyncio
+async def test_manual_generation_zero_missing_legacy_migrates_to_auto(tmp_path) -> None:
+    path = tmp_path / "execution.db"
+    await SqliteExecutionUnitOfWork(path).activate_runtime()
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """UPDATE authorization_policy_state
+               SET mode='manual',generation=0,provenance='needs_user_choice',
+                   user_set_receipt_ref=NULL"""
+        )
+        await db.commit()
+    store = CapabilityStore(path, clock=lambda: 300.0)
+    result = await import_legacy_auto_mode_once(
+        store, tmp_path / "missing-permissions-auto-mode.json"
+    )
+    assert (
+        result.policy_state.mode,
+        result.policy_state.generation,
+        result.policy_state.provenance,
+    ) == ("auto", 0, "factory_default_migrated")
+
+
+@pytest.mark.asyncio
+async def test_existing_generation_is_classified_user_explicit(tmp_path) -> None:
+    path = tmp_path / "execution.db"
+    await SqliteExecutionUnitOfWork(path).activate_runtime()
+    async with aiosqlite.connect(path) as db:
+        await db.execute(
+            """UPDATE authorization_policy_state
+               SET mode='manual',generation=3,provenance='needs_user_choice',
+                   user_set_receipt_ref=NULL"""
+        )
+        await db.commit()
+    state = await CapabilityStore(path, clock=lambda: 400.0).get_policy_state()
+    assert (state.mode, state.generation, state.provenance) == (
+        "manual", 3, "user_explicit"
+    )
+    assert state.user_set_receipt_ref == "policy-user-set:migrated:3"

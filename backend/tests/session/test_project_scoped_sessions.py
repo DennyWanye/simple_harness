@@ -34,7 +34,7 @@ async def test_v33_schema_reset_completes_and_binding_is_immutable(tmp_path: Pat
     db_path = tmp_path.resolve() / "state.db"
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 33
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 34
         assert db.execute(
             "SELECT phase FROM legacy_session_reset_state"
         ).fetchone()[0] == "completed"
@@ -312,6 +312,46 @@ async def test_create_commits_owner_route_outbox_and_receipt_as_one_unit(
             "WHERE request_id='atomic-owner-fail'"
         ).fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM sessions").fetchone()[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_create_resolves_owner_after_service_composition(
+    tmp_path: Path,
+) -> None:
+    """The identity gate may open after Session services are constructed."""
+
+    db_path = tmp_path.resolve() / "state.db"
+    await _ready_db(db_path)
+    from deskpet.memory.session_db import SessionDB
+
+    session_db = SessionDB(db_path)
+    await session_db.initialize()
+    current: dict[str, object | None] = {"owner": None}
+
+    def resolve_owner():
+        return current["owner"]
+
+    service = ProjectBindingService(db_path, write_lock=session_db._write_lock)
+    creation = SessionCreationService(
+        service,
+        session_db=session_db,
+        owner_identity_resolver=resolve_owner,
+    )
+    current["owner"] = SimpleNamespace(
+        owner=SimpleNamespace(profile_id="profile-late", profile_generation=4),
+        binding_epoch=7,
+    )
+
+    result = await creation.create_conversation_session(
+        request_id="late-identity-owner"
+    )
+    sid = result["session"]["session_id"]
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT profile_id,profile_generation,binding_epoch,status "
+            "FROM companion_session_owners WHERE session_id=?",
+            (sid,),
+        ).fetchone() == ("profile-late", 4, 7, "active")
 
 
 @pytest.mark.asyncio

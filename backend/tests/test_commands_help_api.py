@@ -12,8 +12,7 @@
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -93,59 +92,6 @@ def test_help_includes_skills(client_flag_on):
     assert "deep-research" in names
 
 
-def test_help_uses_session_scoped_project_skill_catalog(monkeypatch):
-    import main as main_module
-
-    monkeypatch.setattr(
-        main_module.config.features, "slash_commands", True, raising=True,
-    )
-    builtin = MagicMock()
-    builtin.list_metas.return_value = []
-    project = MagicMock()
-    project.list_metas.return_value = [
-        SimpleNamespace(
-            name=name,
-            to_dict=lambda name=name: {
-                "name": name,
-                "description": f"Project command {name}",
-            },
-        )
-        for name in ("plan-bs", "plan-task", "plan-test")
-    ]
-
-    class Bindings:
-        async def resolve_session(self, session_id):
-            assert session_id == "project-session"
-            return SimpleNamespace(
-                kind="project",
-                project_id="project-a",
-                project_revision=1,
-                project_identity="identity-a",
-            )
-
-    class Discovery:
-        async def projection_for_scope(self, scope):
-            assert scope.project_key is not None
-            return project
-
-    services = {
-        "managed_skill_discovery_projection": builtin,
-        "project_binding_service": Bindings(),
-        "project_skill_discovery_service": Discovery(),
-    }
-    monkeypatch.setattr(
-        main_module.service_context,
-        "get",
-        lambda key: services.get(key),
-    )
-    response = TestClient(main_module.app).get(
-        "/api/commands/help?session_id=project-session"
-    )
-    assert response.status_code == 200
-    names = [item["name"] for item in response.json()["commands"]]
-    assert names[-3:] == ["plan-bs", "plan-task", "plan-test"]
-
-
 def test_help_parses_str_args_schema(client_flag_on):
     r = client_flag_on.get("/api/commands/help")
     body = r.json()
@@ -173,6 +119,34 @@ def test_help_skill_no_args_returns_empty_list(client_flag_on):
     body = r.json()
     s = next(c for c in body["commands"] if c["name"] == "no-args-skill")
     assert s["args_schema"] == []
+
+
+def test_help_uses_current_global_skill_command_catalog(monkeypatch):
+    import main as main_module
+
+    monkeypatch.setattr(
+        main_module.config.features, "slash_commands", True, raising=True,
+    )
+    catalog = MagicMock()
+    catalog.list_skills.return_value = [
+        {
+            "name": "plan-test",
+            "description": "Plan, execute, and verify end to end.",
+            "scope": "global",
+        }
+    ]
+    current_catalog = AsyncMock(return_value=catalog)
+    monkeypatch.setattr(
+        main_module, "_current_slash_skill_catalog", current_catalog,
+    )
+
+    response = TestClient(main_module.app).get("/api/commands/help")
+
+    assert response.status_code == 200
+    assert "plan-test" in [
+        item["name"] for item in response.json()["commands"]
+    ]
+    current_catalog.assert_awaited_once_with()
 
 
 # ─── /api/commands/<name>/schema ───────────────────

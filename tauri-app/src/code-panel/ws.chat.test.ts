@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 import { useSessionsStore } from "../stores/sessionsStore";
 import {
   __test_dispatch,
+  __test_register_pending_run_status_query,
   __test_reset_companion_identity_status,
   CONNECT_TIMEOUT_MS,
   controlWS,
@@ -41,6 +42,87 @@ function resetStore() {
 
 describe("ws.dispatch chat final dedupe", () => {
   beforeEach(resetStore);
+
+  it("keeps active Run for authoritative waiting and ignores stale status ack", () => {
+    __test_dispatch({
+      type: "chat_v2_run_started",
+      payload: { session_id: "default", run_id: "root-wait", projection_version: 4 },
+    });
+    __test_register_pending_run_status_query(
+      "query-current", "default", "root-wait",
+    );
+    __test_dispatch({
+      type: "session_run_status_ack",
+      payload: {
+        query_id: "query-current", session_id: "default",
+        root_run_id: "root-wait", run_version: 5, state: "waiting",
+        waiting_reason: "sdk_recovery_pending", allowed_actions: ["resume", "cancel"],
+      },
+    });
+    let session = useSessionsStore.getState().sessions.default;
+    expect(session.active_run_id).toBe("root-wait");
+    expect(session.run_projections["root-wait"]).toMatchObject({
+      version: 5, status: "waiting", inflight: false,
+    });
+    __test_dispatch({
+      type: "session_run_status_ack",
+      payload: {
+        query_id: "query-stale", session_id: "default",
+        root_run_id: "root-wait", run_version: 3, state: "completed",
+      },
+    });
+    session = useSessionsStore.getState().sessions.default;
+    expect(session.run_projections["root-wait"].status).toBe("waiting");
+    expect(session.active_run_id).toBe("root-wait");
+  });
+
+  it("ignores a status acknowledgement that does not match its pending query", () => {
+    __test_dispatch({
+      type: "chat_v2_run_started",
+      payload: { session_id: "default", run_id: "root-match", projection_version: 2 },
+    });
+    __test_register_pending_run_status_query(
+      "query-match", "default", "root-match",
+    );
+    __test_dispatch({
+      type: "session_run_status_ack",
+      payload: {
+        query_id: "query-match", session_id: "other",
+        root_run_id: "root-match", run_version: 3, state: "completed",
+      },
+    });
+    expect(useSessionsStore.getState().sessions.default.active_run_id)
+      .toBe("root-match");
+  });
+
+  it("clears active Run only after a versioned terminal interrupt ack", () => {
+    __test_dispatch({
+      type: "chat_v2_run_started",
+      payload: { session_id: "default", run_id: "root-cancel", projection_version: 2 },
+    });
+    __test_dispatch({
+      type: "chat_v2_interrupted",
+      payload: {
+        session_id: "default", run_id: "root-cancel", run_version: 2,
+        state: "running", cancelled: false,
+      },
+    });
+    expect(useSessionsStore.getState().sessions.default.active_run_id)
+      .toBe("root-cancel");
+    __test_dispatch({
+      type: "chat_v2_interrupted",
+      payload: {
+        session_id: "default", run_id: "root-cancel", run_version: 3,
+        state: "cancelled", cancelled: true,
+        terminal_event_ref: "sdk-run:root-cancel:terminal:v3",
+      },
+    });
+    const session = useSessionsStore.getState().sessions.default;
+    expect(session.active_run_id).toBeNull();
+    expect(session.run_projections["root-cancel"]).toMatchObject({
+      version: 3, status: "cancelled", inflight: false,
+    });
+  });
 
   it("reports disconnected while the backend shared secret is unavailable", async () => {
     await vi.waitFor(() => expect(controlWS.state()).toBe("disconnected"));

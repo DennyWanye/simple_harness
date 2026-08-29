@@ -135,6 +135,11 @@ _VALID_SERVICES = frozenset({
     "capability_refresh_snapshots",
     "capability_refresh_staging",
     "capability_refresh_service",
+    # Shared Project-scoped Skill install application service. Capability
+    # bootstrap publishes it before the SDK Runtime freezes its tool catalog.
+    "project_skill_install_service",
+    "project_skill_install_settings_authorizer",
+    "skill_install_runtime_verifier",
     # Process-owned async retrieval gateway shared by web_search and research.
     "search_gateway",
     # --- Context OS V1 ------------------------------------------------------
@@ -276,6 +281,9 @@ class ServiceContext:
     capability_refresh_snapshots: Any | None = None
     capability_refresh_staging: Any | None = None
     capability_refresh_service: Any | None = None
+    project_skill_install_service: Any | None = None
+    project_skill_install_settings_authorizer: Any | None = None
+    skill_install_runtime_verifier: Any | None = None
     search_gateway: Any | None = None
     tool_capability_scope_store: Any | None = None
     tool_capability_resolver: Any | None = None

@@ -104,6 +104,7 @@ describe("SessionList project catalog", () => {
     const onSwitch = vi.fn();
     render(<SessionList activeSid="" onSwitchSid={onSwitch} />);
     fireEvent.click(screen.getByTestId("session-new-topic"));
+    fireEvent.click(screen.getByTestId("project-picker-default"));
     const create = request("session_create");
     expect(create.payload).toMatchObject({ project_id: null, source_session_id: null });
     const response = { type: "session_create_response", request_id: create.request_id, payload: { ok: true, session: { ...session, session_id: "born", project_id: null, session_kind: "projectless", execution_kind: null, execution_root: null, availability: "projectless" }, replayed: false } };

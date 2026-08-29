@@ -25,9 +25,116 @@ from __future__ import annotations
 
 import inspect
 import logging
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
 
 log = logging.getLogger(__name__)
+
+
+class FrozenSkillCommandCatalog:
+    """Slash-command view over one frozen SDK Skill record snapshot.
+
+    The records are body-free and already carry the exact Manager version
+    identity selected under the Capability publish lock.  Slash discovery and
+    activation can therefore share the same global catalog authority without
+    falling back to the legacy filesystem Skill projection.
+    """
+
+    def __init__(self, records: Iterable[Any]) -> None:
+        from deskpet.companion.skills import PreparedSkillInvocationScopeV1
+
+        self._skills: dict[str, dict[str, Any]] = {}
+        self._scopes: dict[str, PreparedSkillInvocationScopeV1] = {}
+        for record in records:
+            name = str(getattr(record, "skill_locator", "") or "").strip()
+            if not name:
+                raise ValueError("slash Skill record has no locator")
+            key = name.casefold()
+            if key in self._skills:
+                raise ValueError(f"duplicate slash Skill command: {name}")
+            metadata = getattr(record, "metadata", None)
+            if not isinstance(metadata, dict) and not hasattr(metadata, "get"):
+                raise TypeError("slash Skill record metadata must be a mapping")
+            scope = PreparedSkillInvocationScopeV1(
+                owner_key=str(metadata.get("owner_key") or ""),
+                pack_id=str(metadata.get("pack_id") or ""),
+                skill_id=name,
+                version=str(metadata.get("version") or ""),
+                manifest_hash=str(metadata.get("manifest_hash") or ""),
+                content_hash=str(getattr(record, "content_hash", "") or ""),
+                allowed_tools=tuple(
+                    str(item) for item in (metadata.get("allowed_tools") or ())
+                ),
+                scope_hash=str(metadata.get("scope_hash") or ""),
+            )
+            # Re-parse the serialized form to validate every required identity
+            # field and its canonical scope hash before exposing the command.
+            scope = PreparedSkillInvocationScopeV1.from_dict(scope.to_dict())
+            self._skills[key] = {
+                "name": name,
+                "description": str(
+                    getattr(record, "description", "") or name
+                ),
+                "allowed_tools": list(scope.allowed_tools),
+                "owner_key": scope.owner_key,
+                "pack_id": scope.pack_id,
+                "version": scope.version,
+                "manifest_hash": scope.manifest_hash,
+                "content_hash": scope.content_hash,
+                "scope_hash": scope.scope_hash,
+                "scope": "global",
+            }
+            self._scopes[key] = scope
+
+    def contains(self, name: str) -> bool:
+        return str(name).casefold() in self._skills
+
+    def resolve_selection(self, name: str):
+        try:
+            return self._scopes[str(name).casefold()]
+        except KeyError as exc:
+            raise KeyError(name) from exc
+
+    def list_skills(self) -> list[dict[str, Any]]:
+        return [dict(self._skills[key]) for key in sorted(self._skills)]
+
+
+class CompositeSkillCommandCatalog:
+    """Union multiple immutable Skill views with collision rejection."""
+
+    def __init__(self, *catalogs: Any) -> None:
+        self._catalogs = tuple(item for item in catalogs if item is not None)
+        self._owners: dict[str, Any] = {}
+        self._skills: dict[str, dict[str, Any]] = {}
+        for catalog in self._catalogs:
+            list_skills = getattr(catalog, "list_skills", None)
+            if not callable(list_skills):
+                raise TypeError("slash Skill catalog has no list_skills")
+            for raw in list_skills():
+                item = dict(raw)
+                name = str(item.get("name") or "").strip()
+                if not name:
+                    continue
+                key = name.casefold()
+                if key in self._owners:
+                    raise ValueError(f"slash Skill command collision: {name}")
+                self._owners[key] = catalog
+                self._skills[key] = item
+
+    def contains(self, name: str) -> bool:
+        return str(name).casefold() in self._owners
+
+    def resolve_selection(self, name: str):
+        key = str(name).casefold()
+        catalog = self._owners.get(key)
+        if catalog is None:
+            raise KeyError(name)
+        resolve = getattr(catalog, "resolve_selection", None)
+        if not callable(resolve):
+            raise TypeError("slash Skill catalog has no typed selection resolver")
+        return resolve(str(self._skills[key].get("name") or name))
+
+    def list_skills(self) -> list[dict[str, Any]]:
+        return [dict(self._skills[key]) for key in sorted(self._skills)]
 
 
 async def _maybe_await(value: Any) -> Any:

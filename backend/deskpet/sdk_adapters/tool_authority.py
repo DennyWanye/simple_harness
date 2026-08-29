@@ -328,6 +328,7 @@ class SdkRunToolAuthorityRegistry:
         self.scope_store = scope_store or ToolCapabilityScopeStore()
         self._records: dict[str, SdkRunToolAuthorityV1] = {}
         self._runtime_exposures: dict[str, CatalogRunToolExposure] = {}
+        self._unavailable_capabilities: dict[str, dict[str, str]] = {}
         self._resource_records = tuple(resource_records)
         self._workspace_identity_validator = workspace_identity_validator
         self._terminal_listeners: list[
@@ -367,6 +368,7 @@ class SdkRunToolAuthorityRegistry:
         disclosure_policy: str | None = None,
         binding_version: int = 1,
         workspace_resolution: Mapping[str, Any] | None = None,
+        resource_records: Sequence[RuntimeCapabilityRecord] | None = None,
     ) -> SdkRunToolAuthorityV1:
         run_id = _required(run_id, "run_id")
         session_id = _required(session_id, "session_id")
@@ -428,8 +430,16 @@ class SdkRunToolAuthorityRegistry:
             for item in inventory
         }
         names = tuple(_required(item.get("name"), "spec.name") for item in raw_specs)
-        if len(names) != len(set(names)) or set(names) != set(inventory_by_name):
+        if len(names) != len(set(names)) or not set(names).issubset(inventory_by_name):
             raise ValueError("SDK catalog and product inventory differ")
+        unavailable_inventory = {
+            name: item for name, item in inventory_by_name.items() if name not in names
+        }
+        if any(
+            not str(_field(item, "availability_reason", "") or "").strip()
+            for item in unavailable_inventory.values()
+        ):
+            raise ValueError("non-executable Tool descriptor lacks availability reason")
 
         deferred = frozenset(str(item) for item in deferred_names)
         unknown_deferred = deferred - set(names)
@@ -712,9 +722,48 @@ class SdkRunToolAuthorityRegistry:
                     ),
                 )
             )
+        descriptor_specs = catalog.get("descriptor_specs", raw_specs)
+        if not isinstance(descriptor_specs, list):
+            raise TypeError("catalog descriptor_specs must be a list")
+        descriptor_by_name = {
+            _required(item.get("name"), "descriptor.name"): item
+            for item in descriptor_specs
+            if isinstance(item, Mapping)
+        }
+        unavailable_capabilities: dict[str, str] = {}
+        for name, inventory_item in sorted(unavailable_inventory.items()):
+            raw = descriptor_by_name.get(name)
+            if raw is None or not isinstance(raw.get("input_schema"), Mapping):
+                raise ValueError(f"{name} descriptor projection is missing")
+            source = _required(_field(inventory_item, "source"), f"{name}.source")
+            reason = _required(
+                _field(inventory_item, "availability_reason"),
+                f"{name}.availability_reason",
+            )
+            source_namespace = source if source.startswith("mcp:") else "builtin"
+            capability_id = f"{source_namespace}:{name}"
+            runtime_records.append(
+                ExecutableToolRecord(
+                    capability_id=capability_id,
+                    namespace=source_namespace,
+                    source=source if source.startswith("mcp:") else "simple_harness",
+                    source_revision=catalog_fingerprint,
+                    exposure_mode=ToolExposureMode.DEFERRED,
+                    provider_name=name,
+                    description=_required(raw.get("description"), f"{name}.description"),
+                    input_schema=dict(raw["input_schema"]),
+                    search_terms=(f"unavailable:{reason}", source, reason),
+                )
+            )
+            unavailable_capabilities[capability_id] = reason
+        self._unavailable_capabilities[run_id] = unavailable_capabilities
         self._runtime_exposures[run_id] = CatalogRunToolExposure(
             RuntimeToolCatalog(
-                (*runtime_records, *self._resource_records),
+                (
+                    *runtime_records,
+                    *self._resource_records,
+                    *(() if resource_records is None else tuple(resource_records)),
+                ),
                 generation=generation or 1,
             )
         )
@@ -726,6 +775,10 @@ class SdkRunToolAuthorityRegistry:
             return self._runtime_exposures[key]
         except KeyError as exc:
             raise RuntimeError("sdk_runtime_tool_exposure_unavailable") from exc
+
+    def unavailable_reason(self, run_id: object, capability_id: str) -> str | None:
+        key = run_id.value if isinstance(run_id, RunId) else str(run_id)
+        return self._unavailable_capabilities.get(key, {}).get(str(capability_id))
 
     def is_tool_exposed(self, run_id: object, tool_name: str) -> bool:
         """Return whether the SDK Run may currently project ``tool_name``.
@@ -1224,6 +1277,9 @@ class SdkRuntimeCapabilityBridgeAdapter:
         self, capability_id: str, schema_hash: str, describe_nonce: str
     ) -> Any:
         run_id, exposure = self._binding()
+        unavailable = self._authorities.unavailable_reason(run_id, capability_id)
+        if unavailable is not None:
+            raise RuntimeError(f"tool_unavailable:{unavailable}")
         described = exposure.describe(run_id, str(capability_id))
         if str(schema_hash) != described.capability_hash:
             raise RuntimeError("activation_schema_hash_stale")
@@ -1260,6 +1316,25 @@ class SkillInstallPreflightRejected:
     public_message: str
     retryable: bool
     correlation_id: str
+    attempt_generation: int = 1
+    allowed_actions: tuple[str, ...] = ("change_source", "cancel")
+
+    def sdk_public_message(self) -> str:
+        return json.dumps(
+            {
+                "schema": "skill-install-preflight-rejection-v1",
+                "code": self.code,
+                "public_message": self.public_message,
+                "retryable": self.retryable,
+                "failure_receipt_ref": self.failure_receipt_ref,
+                "attempt_generation": self.attempt_generation,
+                "allowed_actions": list(self.allowed_actions),
+                "correlation_id": self.correlation_id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
 
 SkillInstallPreflightOutcome = (
@@ -1294,6 +1369,7 @@ class SdkPreparedAuthorizationPolicy:
         self._authorities = authorities
         self._clock = clock
         self._facts: dict[tuple[str, str], _PreparedAuthorizationFacts] = {}
+        self._auto_skill_approvals: dict[tuple[str, str], Mapping[str, Any]] = {}
         self._skill_install_preflight = skill_install_preflight
         if initial_policy_generation is not None and initial_policy_generation < 0:
             raise ValueError("initial_policy_generation must be non-negative")
@@ -1306,6 +1382,18 @@ class SdkPreparedAuthorizationPolicy:
             for identity, facts in self._facts.items()
             if facts.authority.run_id != authority.run_id
         }
+        self._auto_skill_approvals = {
+            identity: approval
+            for identity, approval in self._auto_skill_approvals.items()
+            if identity[0] != authority.run_id
+        }
+
+    def auto_skill_approval_for(
+        self, prepared: PreparedToolEffect
+    ) -> Mapping[str, Any] | None:
+        return self._auto_skill_approvals.get(
+            (prepared.run_id.value, prepared.effect_id.value)
+        )
 
     def current_policy_generation(self) -> int:
         if self._policy_generation is None:
@@ -1319,6 +1407,31 @@ class SdkPreparedAuthorizationPolicy:
         if self._policy_generation is not None and value < self._policy_generation:
             raise RuntimeError("authorization policy generation regressed")
         self._policy_generation = value
+
+    async def _stage_skill_preflight(
+        self, *, prepared: PreparedToolEffect, context: ToolExecutionContext,
+        call: PreparedToolCall, authority: SdkRunToolAuthorityV1,
+    ) -> SkillInstallPreflightReady | AuthorizationResult | None:
+        if call.tool_name != "skill_install":
+            return None
+        if self._skill_install_preflight is None:
+            return AuthorizationResult(
+                AuthorizationDecision.DENY,
+                reason_code="skill_install_preflight_unavailable",
+            )
+        outcome = await self._skill_install_preflight.stage_authorization_preflight(
+            prepared=prepared, context=context, args_hash=call.args_hash,
+            principal_id=authority.principal_id,
+        )
+        if isinstance(outcome, SkillInstallPreflightRejected):
+            return AuthorizationResult(
+                AuthorizationDecision.DENY, reason_code=outcome.code,
+                public_message=outcome.sdk_public_message(),
+                receipt_ref=outcome.failure_receipt_ref,
+            )
+        if not isinstance(outcome, SkillInstallPreflightReady):
+            raise TypeError("skill install preflight returned an invalid outcome")
+        return outcome
 
     @staticmethod
     def _resource_selectors(
@@ -1437,27 +1550,12 @@ class SdkPreparedAuthorizationPolicy:
             self._facts[(authority.run_id, prepared.effect_id.value)] = (
                 _PreparedAuthorizationFacts(authority, call, plan, grant)
             )
-            preflight: SkillInstallPreflightReady | None = None
-            if (
-                call.tool_name == "skill_install"
-                and self._skill_install_preflight is not None
-            ):
-                outcome = await self._skill_install_preflight.stage_authorization_preflight(
-                    prepared=prepared,
-                    context=context,
-                    args_hash=call.args_hash,
-                    principal_id=authority.principal_id,
-                )
-                if isinstance(outcome, SkillInstallPreflightRejected):
-                    return AuthorizationResult(
-                        AuthorizationDecision.DENY,
-                        reason_code=outcome.code,
-                        public_message=outcome.public_message,
-                        receipt_ref=outcome.failure_receipt_ref,
-                    )
-                if not isinstance(outcome, SkillInstallPreflightReady):
-                    raise TypeError("skill install preflight returned an invalid outcome")
-                preflight = outcome
+            preflight_outcome = await self._stage_skill_preflight(
+                prepared=prepared, context=context, call=call, authority=authority
+            )
+            if isinstance(preflight_outcome, AuthorizationResult):
+                return preflight_outcome
+            preflight = preflight_outcome
             nonce = request.nonce if request is not None else _canonical_sha256(
                 {
                     "effect_id": prepared.effect_id.value,
@@ -1515,6 +1613,23 @@ class SdkPreparedAuthorizationPolicy:
         self._facts[(authority.run_id, prepared.effect_id.value)] = (
             _PreparedAuthorizationFacts(authority, call, plan, grant)
         )
+        preflight_outcome = await self._stage_skill_preflight(
+            prepared=prepared, context=context, call=call, authority=authority
+        )
+        if isinstance(preflight_outcome, AuthorizationResult):
+            return preflight_outcome
+        if isinstance(preflight_outcome, SkillInstallPreflightReady):
+            preflight = preflight_outcome
+            self._auto_skill_approvals[(authority.run_id, prepared.effect_id.value)] = {
+                "skill_install_intent_id": preflight.intent_id,
+                "skill_install_content_digest": preflight.content_digest,
+                "skill_install_member_digest": preflight.member_digest,
+                "skill_install_expires_at": preflight.expires_at,
+            }
+            return AuthorizationResult(
+                AuthorizationDecision.ALLOW,
+                receipt_ref=f"product-policy:auto:{grant.policy_generation}:{grant.fingerprint}",
+            )
         return AuthorizationResult(
             AuthorizationDecision.ALLOW,
             receipt_ref=(

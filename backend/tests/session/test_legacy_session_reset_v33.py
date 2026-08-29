@@ -329,7 +329,7 @@ async def test_representative_legacy_versions_upgrade_to_empty_v33(
             )
     await initialize_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 33
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 34
         assert db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
         assert db.execute("SELECT COUNT(*) FROM messages").fetchone()[0] == 0
         facts_exists = db.execute(
@@ -350,7 +350,7 @@ async def test_v32_upgrade_deletes_legacy_data_and_preserves_global_files(
     await initialize_state_db(db_path)
 
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 33
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 34
         assert db.execute(
             "SELECT phase FROM legacy_session_reset_state"
         ).fetchone()[0] == "completed"

@@ -238,6 +238,32 @@ async def test_get_chain_empty_raises_no_provider_configured(empty_toml: Path, f
 
 
 @pytest.mark.asyncio
+async def test_process_only_provider_routes_without_persisting_or_keychain(
+    empty_toml: Path, fake_keyring
+):
+    from llm.provider_registry import LLMProviderRegistry
+
+    reg = LLMProviderRegistry(empty_toml)
+    entry = await reg.add_ephemeral_provider(
+        {
+            "id": "primary",
+            "name": "runtime relay",
+            "base_url": "https://relay.example/v1",
+            "models": ["runtime-model"],
+            "default_model": "runtime-model",
+            "api_key": "process-secret",
+        }
+    )
+
+    assert entry.source == "runtime-env"
+    assert reg.get_chain()[0]["id"] == "primary"
+    assert reg.resolve_api_key("primary") == "process-secret"
+    assert fake_keyring.store == {}
+    assert "[[llm.endpoints]]" not in empty_toml.read_text(encoding="utf-8")
+    assert LLMProviderRegistry(empty_toml).list_providers() == []
+
+
+@pytest.mark.asyncio
 async def test_get_chain_filters_disabled(empty_toml: Path, fake_keyring):
     """1.6 — get_chain() excludes disabled providers."""
     from llm.provider_registry import LLMProviderRegistry

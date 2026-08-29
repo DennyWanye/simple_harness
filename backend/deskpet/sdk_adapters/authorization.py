@@ -22,6 +22,7 @@ from deskpet.product_state.authorization_saga import (
     AuthorizationSagaIdentity,
     AuthorizationSagaRepository,
     AuthorizationSagaState,
+    auto_skill_approval_receipt,
 )
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
 from deskpet.types.task_grants import TaskGrant
@@ -103,6 +104,35 @@ class ProductAuthorizationAdapter:
         self._hit("after_product_prepare")
         self._grant_authority.prepare(grant, now=now)
         if result.decision is AuthorizationDecision.ALLOW:
+            if identity.tool_name == "skill_install":
+                approval_for = getattr(self._policy, "auto_skill_approval_for", None)
+                metadata = (
+                    dict(approval_for(prepared)) if callable(approval_for) else {}
+                )
+                required = (
+                    "skill_install_intent_id", "skill_install_content_digest",
+                    "skill_install_member_digest", "skill_install_expires_at",
+                )
+                if any(not metadata.get(name) for name in required):
+                    raise RuntimeError(
+                        "Auto Skill approval requires a completed trusted preflight"
+                    )
+                nonce, host_hash = auto_skill_approval_receipt(
+                    identity,
+                    intent_id=str(metadata["skill_install_intent_id"]),
+                    content_digest=str(metadata["skill_install_content_digest"]),
+                    member_set_stamp=str(metadata["skill_install_member_digest"]),
+                    expires_at=float(metadata["skill_install_expires_at"]),
+                )
+                record = self._repository.bind_auto_decision(
+                    identity.authorization_id,
+                    expected_version=record.version,
+                    decision_nonce=nonce,
+                    decision_version=identity.decision_version,
+                    host_receipt_hash=host_hash,
+                    now=now,
+                )
+                self._hit("product_auto_decision_bind")
             self._grant_authority.activate(
                 identity.grant_id,
                 version=identity.grant_version,
@@ -112,8 +142,12 @@ class ProductAuthorizationAdapter:
             return AuthorizationResult(
                 AuthorizationDecision.ALLOW,
                 receipt_ref=(
-                    f"product-authorization-prepared:{record.identity.authorization_id}:"
-                    f"{record.request_fingerprint}"
+                    (
+                        "product-auto-approved-skill-install-v1:"
+                        if identity.tool_name == "skill_install"
+                        else "product-authorization-prepared:"
+                    )
+                    + f"{record.identity.authorization_id}:{record.request_fingerprint}"
                 ),
             )
         if result.decision is AuthorizationDecision.DENY:

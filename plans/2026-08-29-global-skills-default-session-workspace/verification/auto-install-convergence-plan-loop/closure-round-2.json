@@ -1,0 +1,49 @@
+{
+  "review_mode": "diff",
+  "findings": [
+    {
+      "id": "auto-approved-receipt-construction-seam-unspecified",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-9"],
+      "assurance_contract_ids": ["FAIL-8"],
+      "evidence": "The amended plan defines auto-v1, the sole trusted constructor, common preflight, CAS decision binding before grant activation, genuine SDK effect/handoff reuse, exact provenance, replay conflicts and manual-v1 compatibility; TC-GS-09/10 freeze the oracles.",
+      "status": "resolved",
+      "root_cause": "The plan previously lacked a trusted versioned Auto receipt-construction protocol."
+    },
+    {
+      "id": "provider-unknown-waiting-cancel-state-machine-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "evidence": "Task C5 now defines authoritative versioned status query, matching non-stale UI acknowledgement, visible waiting, idempotent cancel and durable terminal race ordering; TC-GS-10 freezes these behaviors.",
+      "status": "resolved",
+      "root_cause": "The cross-layer state machine previously lacked a durable authoritative projection and cancel acknowledgement protocol."
+    },
+    {
+      "id": "nonretryable-install-replay-suppression-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "evidence": "Task C5 assigns source-input-derived failure identity, excludes transient Run IDs, replays the same nonretryable rejection and advances generation only by explicit idempotent retry; TC-GS-10 freezes resolve-count and replay oracles.",
+      "status": "resolved",
+      "root_cause": "Retry suppression previously lacked stable input identity and a durable generation owner."
+    },
+    {
+      "id": "incremental-auto-convergence-oracles-not-frozen",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["AC-9", "AC-10"],
+      "assurance_contract_ids": ["FAIL-8", "FAIL-9"],
+      "evidence": "TC-GS-09/10 revision 2 freeze receipt identity, saga states, failure payload/key, source count, query/cancel versions, stale acknowledgement, terminal races and monotonic five-second UI settlement.",
+      "status": "resolved",
+      "root_cause": "Incremental acceptance had expanded without exact low-level oracles."
+    }
+  ]
+}

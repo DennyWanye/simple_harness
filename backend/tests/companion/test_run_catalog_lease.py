@@ -10,9 +10,42 @@ import pytest
 from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.capabilities.platform import CapabilityPlatform
 from deskpet.capabilities.run_catalog import (
+    PreparedRunCatalogLease,
     SqliteRunCatalogLeasePreparer,
     _capture_prepared_tool_set,
 )
+
+
+def test_user_global_pack_projection_requires_exact_owner_and_scope() -> None:
+    scope_key = "user:v2:" + "9" * 64
+    lease = SimpleNamespace(lease_entries=(
+        {
+            "entry_kind": "pack", "pack_id": "global-proof", "version": "1",
+            "manifest_hash": "a" * 64,
+            "selected_binding": {
+                "scope": "user", "scope_key": scope_key, "owner_key": "principal-a",
+            },
+        },
+        {
+            "entry_kind": "pack", "pack_id": "project-only", "version": "1",
+            "manifest_hash": "b" * 64,
+            "selected_binding": {
+                "scope": "project", "scope_key": "project:v2:x",
+                "owner_key": "principal-a",
+            },
+        },
+    ))
+    entries = PreparedRunCatalogLease.user_global_pack_entries(
+        lease, owner_key="principal-a", user_scope_key=scope_key
+    )
+    assert [entry["pack_id"] for entry in entries] == ["global-proof"]
+    assert PreparedRunCatalogLease.user_global_pack_entries(
+        lease, owner_key="principal-b", user_scope_key=scope_key
+    ) == ()
+    with pytest.raises(ValueError, match="validated user-global"):
+        PreparedRunCatalogLease.user_global_pack_entries(
+            lease, owner_key="principal-a", user_scope_key="default"
+        )
 from deskpet.capabilities.store import CapabilityStore
 from deskpet.execution.contracts import fingerprint_json
 from deskpet.tools.build_identity import ExecutionBuildIdentity

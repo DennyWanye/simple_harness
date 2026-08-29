@@ -1,8 +1,10 @@
 # Simple Harness SDK 提取与消费架构
 
-> 最后校准：2026-08-29
-> 代码基线：simple_harness 当前工作树；当前依赖固定 Harness 0.6.4 candidate / Memory 0.5.2 exact wheels
-> 状态：SDK v0.6.4 candidate 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
+> 最后校准：2026-08-30
+> 代码基线：`origin/main@54197bf5` + 当前功能分支；当前依赖 Service 0.3.12 / Harness 0.6.4 candidate /
+> Memory 0.5.2 exact wheels（Service manifest 的构建时 Harness 成员为 0.6.2，不冒充官方三 SDK release unit）
+> 状态：SDK v0.6.4 candidate 是 foreground text 的唯一生产执行 authority；Realtime 使用独立 Service SDK client，
+> Companion/background
 > 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
 
 ## 2026-08-29 SDK 0.6.4 authorization recovery candidate（已消费）

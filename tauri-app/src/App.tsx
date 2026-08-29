@@ -31,15 +31,12 @@ import { FeedbackPanel } from "./components/FeedbackPanel";
 import { onboardingStatus, onboardingComplete } from "./bindings/onboarding";
 import { buildDiagnosticBundle } from "./bindings/diagnostics";
 import { updateCloudConfig } from "./bindings/config";
-import { useAudioChannel } from "./hooks/useAudioChannel";
-import { useAudioPlayer } from "./hooks/useAudioPlayer";
 import { useUpdateChecker } from "./hooks/useUpdateChecker";
 import { useAutostart } from "./hooks/useAutostart";
 import { useBackendLifecycle, type Lifecycle } from "./hooks/useBackendLifecycle";
 import { useSessionsStore } from "./stores/sessionsStore";
 import { BACKEND_PORT } from "./backendPort";
 import { chatErrorMessage } from "./chatErrorMessage";
-import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
 // 2026-08-09：relay（托管账号登录）整套移除。产品只有手动 provider
 // 一条路径（baseUrl + apiKey），身份走本地 profile。
 
@@ -325,8 +322,8 @@ function App() {
   const autostart = useAutostart();
   // T8：App 自建 messages 数组删除 —— 消息渲染统一由 sessionsStore →
   // ChatView(MessageStreamPanel) 承担（单一权威读模型）。
-  // T13：vadStatus 状态删除 —— 唯一读端（Toolbar 思考中/朗读/录音徽章）
-  // 随 Toolbar 退役；语音链路本身早已 fail-closed（VOICE_INPUT_ENABLED）。
+  // Realtime voice lifecycle lives in ChatView and starts only from its
+  // visible call button; App mount never opens a microphone or voice socket.
 
   const applySupervisorAlert = useSessionsStore((s) => s.apply_supervisor_alert);
   const ensureSession = useSessionsStore((s) => s.ensure);
@@ -621,25 +618,6 @@ function App() {
   // T6：能力中心 / SkillStore 浮层 open state 已拆除 —— 二者页面化为
   // SkillsView（T10 实装，互跳 state 本地化在视图内部）。
 
-  // Audio channel (voice pipeline)。T8：state(audioState) 的唯一读端
-  // （底部 mic 按钮 disabled 判定）随输入条退役，不再解构。
-  // T13：useAudioRecorder 摘除 —— T8 起已无 start/stop 调用点（录音
-  // 不可达），最后的读端（Toolbar 录音徽章）随 Toolbar 退役；语音重建
-  // 走中转站 Realtime（B9），不复用此旧管线。
-  const {
-    lastMessage: audioMessage,
-    getChannel,
-  } = useAudioChannel(BACKEND_PORT, secret, VOICE_INPUT_ENABLED);
-
-  // Audio player — P2-2-M2 起走 PCM16 24kHz 流式播放（jitter buffer →
-  // WebAudio 时间轴调度），不再需要等 tts_end 做整段 MP3 解码。
-  const {
-    isPlaying,
-    stop: stopPlayback,
-    reset: resetPlaybackBuffer,
-    bargeIn,
-  } = useAudioPlayer(getChannel());
-
   // Handle control channel messages (text chat + emotion/action drive)
   useEffect(() => {
     if (!lastMessage) return;
@@ -820,116 +798,14 @@ function App() {
     }
   }, [lastMessage, applySupervisorAlert, ensureSession, switchActiveSid]);
 
-  // Handle audio channel JSON messages
-  useEffect(() => {
-    if (!audioMessage) return;
-
-    switch (audioMessage.type) {
-      case "vad_event":
-        if (audioMessage.payload.status === "speech_start") {
-          // 前端 VAD 在后端 BargeInFilter 之前先触发：立刻淡出在播音频
-          // + 清 jitter buffer，避免给后端 TTS 打断事件到达前还在灌声。
-          if (isPlaying) {
-            bargeIn();
-          }
-          resetPlaybackBuffer();
-        }
-        break;
-
-      case "run_event": {
-        const p: any = audioMessage.payload || {};
-        const sid = String(p.session_id || activeSidRef.current);
-        const runId = String(p.run_id || "").trim();
-        const status = String(p.status || "").toLowerCase();
-        useSessionsStore.getState().ensure(sid);
-        if (runId) {
-          const terminal = ["completed", "failed", "cancelled"].includes(
-            status,
-          );
-          useSessionsStore.getState().upsert_run_projection(sid, runId, {
-            task_scope_id: String(p.task_scope_id || ""),
-            status:
-              status === "failed"
-                ? "failed"
-                : status === "cancelled"
-                  ? "cancelled"
-                  : terminal
-                    ? "completed"
-                    : "running",
-            inflight: !terminal,
-          });
-        }
-        break;
-      }
-
-      case "transcript":
-        // T8：自建 messages 数组已废——transcript 气泡渲染归 store→ChatView
-        // 链路。语音链路只经由 audio 通道，不走 control 通道的 chat_response
-        // —— 这里复用 assistant transcript 上捎带的 provider 字段来刷新路由
-        // 指示灯的颜色（green=local / blue=cloud），否则纯语音用户会一直
-        // 停在灰色 "connected"。
-        if (
-          audioMessage.payload.role === "assistant" &&
-          audioMessage.payload.provider
-        ) {
-          setRouteKind(audioMessage.payload.provider);
-        }
-        break;
-
-      // T4：tts_end 的口型驱动随桌宠删除；T13：其 vadStatus 更新随
-      // Toolbar 徽章退役 —— 分支整体移除，音频播放状态机不受影响。
-
-      // T4：tts_viseme / pet_milestone 分支删除 —— 均为桌宠口型/庆祝
-      // 驱动（桌宠删除例外清单）。音频播放本身不受影响。
-
-      case "tts_barge_in":
-        // P2-2: backend VAD detected user speech during TTS — stop playback.
-        console.log("[App] TTS barge-in — stopping playback");
-        bargeIn();
-        break;
-    }
-  }, [audioMessage, isPlaying, resetPlaybackBuffer, bargeIn]);
-
-  // T4：lip_sync 订阅 effect 删除 —— 仅驱动桌宠口型（音频播放由
-  // useAudioPlayer 独立消费二进制帧，不经此路径）。
-
   // T8：handleSend / handleSwitchDefault / slash 命令面板
   // （loadSlashCommands/slashCandidates/acceptSlash/handleKeyDown）删除
   // —— 发送与 slash 支持由 ChatView 内嵌 InputBar 全量承接
   // （InputBar 自带 SlashDropdown/ArgHintBar/输入历史，无需迁移）。
   // 回默认话题入口由 SessionList 的会话行承接（default 行常在）。
 
-  // Barge-in: stop local playback + notify backend to cancel in-flight LLM/TTS.
-  // Bound to a button (shown while TTS is playing) and to the Escape key.
-  const handleInterrupt = useCallback(() => {
-    stopPlayback();
-    resetPlaybackBuffer();
-    const ch = getControlChannel();
-    ch?.send({
-      type: "chat_v2_interrupt",
-      payload: {
-        session_id: activeSidRef.current,
-        run_id:
-          useSessionsStore.getState().sessions[activeSidRef.current]
-            ?.selected_run_id ??
-          useSessionsStore.getState().sessions[activeSidRef.current]
-            ?.active_run_id,
-      },
-    });
-  }, [stopPlayback, resetPlaybackBuffer, getControlChannel]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && isPlaying) {
-        handleInterrupt();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [isPlaying, handleInterrupt]);
-
-  // T8：toggleRecording 删除 —— 主窗 mic 按钮随底部输入条退役；语音
-  // 占位（禁用 mic + tooltip）在 ChatView 输入栏旁（B9）。
+  // Realtime voice is owned by ChatView so its microphone lifecycle remains
+  // tied to the visible single call control instead of App mount.
 
   // T4：PetStateMachine tick / supervisor 气泡派生与选择回调、
   // handleBubbleClickBackground（原消息面板打开命令的最后前端调用点，随 WB-2 移除）
@@ -1055,9 +931,7 @@ function App() {
       {/* T6：CapabilityCenterPanel / SkillStorePanel 浮层挂载已拆除 ——
           页面化为 SkillsView（T10 实装；互跳本地化在视图内部）。 */}
 
-      {/* T8：底部输入条（mic/打断/回默认/SlashDropdown/input/发送）整体
-          退役 —— 输入统一走 ChatView 内嵌 InputBar；mic 禁用占位在
-          ChatView（B9）；打断入口保留 Esc 快捷键（handleInterrupt）。 */}
+      {/* Text input and the single Realtime call control live in ChatView. */}
 
 
       {/* T13：Toolbar 退役（入口迁移矩阵）——记忆/Trace/反馈/账户入口

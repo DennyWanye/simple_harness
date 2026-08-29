@@ -1,0 +1,70 @@
+{
+  "cluster_id": "cluster-run-waiting-cancel-convergence",
+  "parent_finding_ids": [
+    "provider-unknown-waiting-cancel-state-machine-unspecified",
+    "nonretryable-install-replay-suppression-contract-missing"
+  ],
+  "specialty": "failure-recovery",
+  "findings": [
+    {
+      "id": "provider-unknown-waiting-cancel-state-machine-unspecified",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "status": "open",
+      "severity": "P1",
+      "root_cause": "The UI timeout path mutates local state without querying the durable versioned SDK Run or waiting for an authoritative terminal acknowledgement.",
+      "evidence": [
+        "The UI currently clears inflight and active_run_id before the backend acknowledges anything.",
+        "session_health_check only logs and acknowledges client claims; it neither queries nor mutates the SDK Run.",
+        "RunClient.query returns the durable versioned RunRecord and genuine WAITING may represent provider reconciliation."
+      ],
+      "minimal_protocol": {
+        "request": "Send session_run_status_query with query/session/root/sdk run IDs, observed version/status and stuck duration.",
+        "backend_rules": "Resolve and query the durable SDK Run; return a versioned projection with state, waiting reason, allowed actions, retryability and terminal event reference. Recognized waiting remains waiting; unowned waiting exposes cancel.",
+        "ui_ack_ordering": "Keep active_run_id until a matching non-stale authoritative acknowledgement. Apply terminal and clear inflight atomically; show waiting/recovery instead of fake progress or idle.",
+        "cancel_protocol": "chat_v2_interrupt carries an idempotent cancel command and expected run version; acknowledge only an observed terminal RunRecord and resolve races by durable Run version."
+      },
+      "required_tests": [
+        "Running health query never resets the UI locally.",
+        "Recognized waiting remains visible and cancellable.",
+        "Query timeout retains active_run_id and shows recovery.",
+        "Late stale acknowledgements are ignored.",
+        "Cancel replay and cancel/completion/reconciliation races produce exactly one terminal projection."
+      ]
+    },
+    {
+      "id": "nonretryable-install-replay-suppression-contract-missing",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "status": "open",
+      "severity": "P1",
+      "root_cause": "Stage-failure replay identity includes transient Run/call/effect IDs and cannot distinguish blind replay from an explicit retry generation.",
+      "evidence": [
+        "Existing stage-failure identity includes transient Run/call/effect IDs.",
+        "A fresh replay may call source resolution again before an exact-commit identity is known.",
+        "Intentional user retry is not distinguished from blind replay."
+      ],
+      "minimal_protocol": {
+        "failure_identity": "Fingerprint owner scope, normalized URL/ref and stable source input; exclude transient Run/call/effect IDs.",
+        "durable_record": "Persist stable code/message/retryable/receipt, attempt generation and terminal status. Same nonretryable generation replays without source work.",
+        "explicit_retry": "Only an explicit policy-permitted retry increments generation idempotently; unchanged intrinsically invalid input remains suppressed.",
+        "presentation": "Return stable public failure fields and allowed actions; stop install progress within five seconds and never automatically re-enter identical nonretryable staging."
+      },
+      "required_tests": [
+        "Same nonretryable failure calls source resolution once across replay/restart.",
+        "Duplicate retry commands are idempotent and changed input creates a new identity.",
+        "The UI settles within five seconds of rejection.",
+        "Failure versus cancel produces one terminal Run state."
+      ]
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Replace local timeout reset with authoritative versioned Run query/cancel convergence and give stage failures a stable input-derived identity plus explicit retry generation."
+  }
+}

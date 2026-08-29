@@ -85,19 +85,30 @@ class CapabilityCenterService:
         manager: CapabilityPackManager,
         hub: Any,
         notifier: CapabilityOperationNotifier | None = None,
+        default_user_key: str = "",
     ) -> None:
         self.store = store
         self.manager = manager
         self.hub = hub
         self._notifier = notifier
+        self._default_user_key = str(default_user_key or "").strip()
+        if self._default_user_key and not self._default_user_key.startswith(
+            "user:v2:"
+        ):
+            raise ValueError("default_user_key must be an opaque user:v2 key")
         self._tasks: dict[str, asyncio.Task[Any]] = {}
         self._task_lock = asyncio.Lock()
 
-    @staticmethod
-    def default_scope() -> CapabilityScope:
+    def default_scope(self) -> CapabilityScope:
         # The Capability Center is session-global.  Run/project bindings are
         # shown only when the caller supplies their already-resolved scope.
-        return CapabilityScope()
+        # User-global bindings are part of every Session and therefore must be
+        # included in the default snapshot used by the center itself.
+        return (
+            CapabilityScope(user_key=self._default_user_key)
+            if self._default_user_key
+            else CapabilityScope()
+        )
 
     async def list_capabilities(
         self,

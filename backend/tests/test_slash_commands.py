@@ -180,6 +180,58 @@ async def test_dispatch_managed_skill_keeps_typed_frozen_scope():
     assert res["prepared_skill_scope"] == Selection().to_dict()
 
 
+def test_frozen_global_skill_command_catalog_exposes_exact_scope():
+    from types import SimpleNamespace
+
+    from deskpet.capabilities.contracts import fingerprint_json
+    from deskpet.commands import FrozenSkillCommandCatalog
+
+    owner_key = "user:v2:" + "a" * 64
+    payload = {
+        "schema": "prepared_skill_invocation_scope/v1",
+        "owner_key": owner_key,
+        "pack_id": "plan-test-pack",
+        "skill_id": "plan-test",
+        "version": "1.2.3",
+        "manifest_hash": "b" * 64,
+        "content_hash": "c" * 64,
+        "allowed_tools": ["tool_search"],
+    }
+    scope_hash = fingerprint_json(payload)
+    catalog = FrozenSkillCommandCatalog(
+        [
+            SimpleNamespace(
+                skill_locator="plan-test",
+                description="Plan and test end to end.",
+                content_hash="c" * 64,
+                metadata={
+                    "owner_key": owner_key,
+                    "pack_id": "plan-test-pack",
+                    "version": "1.2.3",
+                    "manifest_hash": "b" * 64,
+                    "scope_hash": scope_hash,
+                    "allowed_tools": ["tool_search"],
+                },
+            )
+        ]
+    )
+
+    assert [item["name"] for item in catalog.list_skills()] == ["plan-test"]
+    assert catalog.resolve_selection("PLAN-TEST").scope_hash == scope_hash
+
+
+def test_composite_skill_command_catalog_rejects_name_collisions():
+    from deskpet.commands import CompositeSkillCommandCatalog
+
+    left = MagicMock()
+    left.list_skills.return_value = [{"name": "plan-test"}]
+    right = MagicMock()
+    right.list_skills.return_value = [{"name": "PLAN-TEST"}]
+
+    with pytest.raises(ValueError, match="collision"):
+        CompositeSkillCommandCatalog(left, right)
+
+
 # ─── FeaturesConfig 字段存在性 ─────────────────────────────
 
 

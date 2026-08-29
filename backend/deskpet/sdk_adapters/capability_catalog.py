@@ -352,8 +352,12 @@ class ProductCapabilityCatalogSourceAdapter:
             SkillResourceRecord(
                 capability_id=item.canonical_id,
                 namespace="skill",
-                source=f"skill-pack:{item.owner_key}",
-                source_revision=item.owner_key,
+                # RuntimeToolCatalog treats a namespace as one catalog
+                # authority.  Individual pack ownership remains frozen in
+                # metadata; using the pack owner here would make otherwise
+                # valid builtin + user-global records collide at Run start.
+                source="product-skill-catalog",
+                source_revision="product-skill-catalog-v1",
                 exposure_mode=SdkToolExposureMode.DEFERRED,
                 # ``capability_id`` is the catalog identity; ``skill_locator``
                 # is the exact opaque value accepted by skill_invoke.
@@ -480,6 +484,89 @@ class ProductCapabilityCatalogSourceAdapter:
         if any(not isinstance(item, SkillResourceRecord) for item in records):
             raise RuntimeError("run_project_skill_projection_invalid")
         return cast(tuple[SkillResourceRecord, ...], records)
+
+    async def sdk_global_resource_records_from_lease(
+        self,
+        *,
+        store: Any,
+        lease: Any,
+        owner_key: str,
+        user_scope_key: str,
+    ) -> tuple[SkillResourceRecord, ...]:
+        """Project the exact user-global bindings frozen into one Run lease."""
+
+        entries = lease.user_global_pack_entries(
+            owner_key=owner_key,
+            user_scope_key=user_scope_key,
+        )
+        if not entries:
+            return ()
+
+        class _FrozenLeaseView:
+            def project_pack_entries(self, **_kwargs: Any):
+                return entries
+
+        return await self.sdk_project_resource_records_from_lease(
+            store=store,
+            lease=_FrozenLeaseView(),
+            owner_key=owner_key,
+            project_scope_key=user_scope_key,
+        )
+
+    async def sdk_global_resource_records_from_snapshot(
+        self,
+        *,
+        store: Any,
+        snapshot: Any,
+        owner_key: str,
+        user_scope_key: str,
+    ) -> tuple[SkillResourceRecord, ...]:
+        """Project user-global Skills from one already-frozen Hub snapshot.
+
+        The caller must hold the Capability publish lock while obtaining the
+        snapshot and resolving these immutable version rows.  SDK Runs then
+        retain the returned body-free records in their own frozen catalog.
+        """
+
+        entries: list[dict[str, Any]] = []
+        for descriptor in tuple(getattr(snapshot, "descriptors", ()) or ()):
+            selected = next(
+                (
+                    binding
+                    for binding in tuple(
+                        getattr(descriptor, "visible_bindings", ()) or ()
+                    )
+                    if str(getattr(binding, "owner_key", "") or "") == owner_key
+                    and str(getattr(binding, "scope", "") or "") == "user"
+                    and str(getattr(binding, "scope_key", "") or "")
+                    == user_scope_key
+                    and bool(getattr(binding, "active", False))
+                ),
+                None,
+            )
+            if selected is None:
+                continue
+            version = descriptor.version
+            entries.append(
+                {
+                    "entry_kind": "pack",
+                    "pack_id": str(version.capability_id),
+                    "version": str(version.version),
+                    "manifest_hash": str(version.manifest_hash),
+                    "selected_binding": selected.to_dict(),
+                }
+            )
+
+        class _FrozenSnapshotView:
+            def user_global_pack_entries(self, **_kwargs: Any):
+                return tuple(entries)
+
+        return await self.sdk_global_resource_records_from_lease(
+            store=store,
+            lease=_FrozenSnapshotView(),
+            owner_key=owner_key,
+            user_scope_key=user_scope_key,
+        )
 
     async def verify_fresh_run_page_in(
         self,

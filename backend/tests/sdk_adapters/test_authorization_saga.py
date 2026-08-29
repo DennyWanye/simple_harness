@@ -302,6 +302,74 @@ def test_wrong_owner_fence_and_receipt_conflict_quarantine(tmp_path) -> None:
     database.close()
 
 
+@pytest.mark.asyncio
+async def test_auto_skill_decision_is_host_owned_durable_and_precedes_grant_activation(
+    tmp_path,
+) -> None:
+    database = ProductStateDatabase(tmp_path / "auto-skill.db")
+    database.initialize()
+    set_policy_generation(database)
+    repository = AuthorizationSagaRepository(database)
+    prepared = PreparedToolEffect(
+        EffectId("effect-1"), RunId("run-1"),
+        ToolCall(CallId("call-1"), "skill_install", {"url": "https://github.com/acme/skills"}),
+        ToolSpec("skill_install", "Install Skill", {
+            "type": "object", "properties": {"url": {"type": "string"}},
+            "required": ["url"], "additionalProperties": False,
+        }), {},
+    )
+    metadata = {
+        "approval_kind": "auto", "provenance_version": 1,
+        "skill_install_intent_id": "intent-1",
+        "skill_install_content_digest": "d" * 64,
+        "skill_install_member_digest": "e" * 64,
+        "skill_install_expires_at": 90.0,
+    }
+    base_identity = replace(
+        identity(decision_nonce=None), tool_name="skill_install",
+        arguments={"url": "https://github.com/acme/skills"},
+    )
+    class AutoPolicy:
+        def decide(self, _prepared, *, request=None):
+            return AuthorizationResult(
+                AuthorizationDecision.ALLOW, receipt_ref="policy:auto"
+            )
+
+        def auto_skill_approval_for(self, _prepared):
+            return metadata
+
+    adapter = ProductAuthorizationAdapter(
+        repository,
+        policy=AutoPolicy(),
+        identity_factory=lambda _prepared, _request: base_identity,
+        grant_authority=DurableTaskGrantAuthority(database),
+        grant_factory=lambda _prepared, _result: grant(),
+        clock=lambda: 10.0,
+    )
+    result = await adapter.prepare(prepared)
+    assert result.decision is AuthorizationDecision.ALLOW
+    stored = repository.read("authorization-1")
+    assert stored is not None
+    assert stored.state is AuthorizationSagaState.DECISION_BOUND
+    assert stored.decision_sdk_receipt_hash is None
+    assert stored.decision_host_receipt_hash is not None
+    assert stored.bound_decision_nonce is not None
+    assert DurableTaskGrantAuthority(database)._read("grant-1").status == "active"
+
+    sdk_handoff = receipt("sdk-auto-handoff")
+    await adapter.bind_effect_handoff(
+        prepared, result.receipt_ref or "",
+        AuthorizationReceipt("sdk:auto-handoff", sdk_handoff, sdk_handoff),
+    )
+    committed = repository.read("authorization-1")
+    assert committed is not None
+    assert committed.state is AuthorizationSagaState.HANDOFF_COMMITTED
+    assert committed.decision_sdk_receipt_hash is None
+    assert committed.effect_sdk_receipt_hash == sdk_handoff
+    assert committed.handoff_sdk_receipt_hash == sdk_handoff
+    database.close()
+
+
 @pytest.mark.parametrize(
     ("operation", "expected"),
     [

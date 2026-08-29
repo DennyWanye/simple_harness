@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "inventory": "index.json",
+  "candidate_reviewed": [
+    "TC-PS-01", "TC-PS-02", "TC-PS-03", "TC-PS-04", "TC-PS-05", "TC-PS-06", "TC-PS-07", "TC-PS-08",
+    "TC-SI-01", "TC-SI-02", "TC-SI-03", "TC-SI-04", "TC-SI-05"
+  ],
+  "decisions": [
+    {"obligation_id":"TO-A1","decision":"create-new","candidates":["TC-PS-02","TC-PS-04"],"selected_testcases":["TC-GS-01@rev1","TC-GS-05@rev1"],"reason":"复用 immutable binding、真实物理 root 与重启 oracle；新增普通 Session 自动分配到 native Documents/SimpleHarnessProjects 且 UI 分类仍为普通会话。"},
+    {"obligation_id":"TO-A2","decision":"create-new","candidates":["TC-PS-01","TC-PS-02"],"selected_testcases":["TC-GS-02@rev1"],"reason":"复用 native picker、canonical identity 与创建失败零半状态；新增 selected/default/cancel 三态及不创建默认目录断言。"},
+    {"obligation_id":"TO-A3","decision":"create-new","candidates":["TC-SI-01","TC-SI-02","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-08@rev1"],"reason":"复用 typed installer、receipt、目录对账与重放步骤；把旧 Project isolation oracle替换为批准的 user-global single authority，并增加并发幂等。"},
+    {"obligation_id":"TO-A4","decision":"create-new","candidates":["TC-SI-01","TC-SI-02","TC-SI-05"],"selected_testcases":["TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"复用 exact runtime page-in 与 cold restart oracle；新增旧/automatic/selected 三类 Session 同 generation 及 fresh-versus-in-flight 语义。"},
+    {"obligation_id":"TO-A5","decision":"create-new","candidates":["TC-SI-05","TC-PS-04"],"selected_testcases":["TC-GS-07@rev1"],"reason":"既有用例只验证 executable catalog 或 workspace fail-closed，没有完整 descriptor 可发现集合与 callable subset/authorization 分离。"},
+    {"obligation_id":"TO-A6","decision":"create-new","candidates":["TC-PS-02","TC-SI-04"],"selected_testcases":["TC-GS-06@rev1","TC-GS-08@rev1"],"reason":"复用 transaction/lost-ACK 与 all-old/all-new 故障 oracle；扩展为 shared global current pointer 和 automatic workspace saga 的完整故障矩阵。"},
+    {"obligation_id":"TO-A7","decision":"create-new","candidates":["TC-PS-04","TC-SI-01","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"复用 production chat、Settings、fresh Run 与 restart correlation；新增同一 user-global authority 且 legacy loader/dormant seam 不可作为成功证明。"},
+    {"obligation_id":"TO-A8","decision":"create-new","candidates":["TC-SI-01","TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-05@rev1"],"reason":"复用进行中/确认/成功/失败 UI 与 terminal receipt 时序；新增全局 scope、catalog generation、workspace kind 与 availability reason。"},
+    {"obligation_id":"TO-A9","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-09@rev1"],"reason":"既有 permission 用例没有 auto/factory_default provenance、用户显式覆盖迁移与冷重启保持。"},
+    {"obligation_id":"TO-R1","decision":"create-new","candidates":["TC-PS-01","TC-PS-02","TC-PS-04"],"selected_testcases":["TC-GS-01@rev1","TC-GS-02@rev1","TC-GS-08@rev1"],"reason":"复用 canonical identity、binding restart 与 lost-ACK；增加 automatic allocation 碰撞和 16 路并发。"},
+    {"obligation_id":"TO-R2","decision":"create-new","candidates":["TC-SI-01","TC-SI-02","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-04@rev1"],"reason":"复用 exact manifest/content runtime page-in；反转旧 Project scope并验证三个 Session 类共享 production snapshot。"},
+    {"obligation_id":"TO-R3","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-07@rev1","TC-GS-09@rev1"],"reason":"既有用例没有 descriptor discoverability 与 execution eligibility 的结构化分离，也没有 auto 默认 provenance。"},
+    {"obligation_id":"TO-R4","decision":"create-new","candidates":["TC-PS-02","TC-SI-04"],"selected_testcases":["TC-GS-06@rev1","TC-GS-08@rev1"],"reason":"复用 crash/lost-ACK/all-old-all-new oracle并扩展到 global generation CAS 与 workspace external mkdir saga。"},
+    {"obligation_id":"TO-R5","decision":"create-new","candidates":["TC-PS-04","TC-PS-05","TC-SI-05"],"selected_testcases":["TC-GS-05@rev1"],"reason":"复用 current-build cold restart与 critical surface smoke，但以本 program 的三类 Session、全局 Skill/Tool catalog和真实 Provider重跑，不继承历史 PASS。"}
+  ]
+}

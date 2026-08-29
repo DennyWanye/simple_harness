@@ -1,0 +1,5 @@
+{
+  "input_sensitive": {"value": false, "rationale": "目录选择、catalog、安装状态与权限 provenance 都是确定性产品状态，不依赖自然语言语义质量。", "decided_by": "user"},
+  "llm_payload_driven": {"value": false, "rationale": "全局 catalog 与 workspace authority 不由 LLM 自由结构载荷决定，聊天入口仍通过 typed host effect。", "decided_by": "user"},
+  "stateful_init": {"value": true, "rationale": "必须覆盖全新 user-data、旧 Session 迁移、全局 catalog rehydrate 与完整冷重启恢复。", "decided_by": "user"}
+}

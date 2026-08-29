@@ -1,0 +1,50 @@
+{
+  "run_id": "plan-loop-20260829-auto-install-convergence",
+  "repo_root": "/Users/denny/projects/simple_harness",
+  "fixture_only": false,
+  "source_request_text": "保持默认权限自动模式；Auto 下 Skill 安装完整预检并自动批准；安装失败后 SDK Run 与 UI 必须真实收敛。",
+  "acceptance_file": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/acceptance.md",
+  "behavior_contract": {
+    "path": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/behavior-contract.md",
+    "status": "user-approved"
+  },
+  "behavior_changes": [
+    {
+      "artifact": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/behavior-change-auto-skill-install.json",
+      "approval_hash": "6b84b0709b71298582d32cc57259dea8a3bcb7c9a2ed9841d23776f4ccacf226"
+    }
+  ],
+  "applicability": {
+    "input_sensitive": {
+      "value": false,
+      "rationale": "授权、安装和 Run 状态投影是确定性 typed 状态机，不以自然语言质量作为验收。",
+      "decided_by": "user-approved-contract"
+    },
+    "llm_payload_driven": {
+      "value": false,
+      "rationale": "Skill 安装参数来自 typed Tool call，最终授权与状态收敛由 Host 和 SDK 状态机决定。",
+      "decided_by": "user-approved-contract"
+    },
+    "stateful_init": {
+      "value": true,
+      "rationale": "修复必须覆盖全新 Auto policy、durable authorization saga 和冷启动后的 Run/catalog 状态。",
+      "decided_by": "user-approved-contract"
+    }
+  },
+  "executor_engine": "current-session-engine",
+  "auditor_engine": "current-session-engine",
+  "challenger_engine": "current-session-engine",
+  "release_unit": {
+    "slice_id": "auto-install-convergence",
+    "parent_program": "global-skills-default-session-workspace",
+    "scope_hash": "pending-plan-loop-freeze",
+    "must_ac_count": 2,
+    "task_count": 2,
+    "plan_lines": 30,
+    "high_risk_subsystem_count": 2,
+    "surface_categories": ["Harness", "Permission", "UI"]
+  },
+  "active_run_required": false,
+  "structured_audit_required": false,
+  "scenarios": []
+}

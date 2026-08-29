@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-29（Project-scoped managed Skill 安装故障链验收）
+> 最后更新：2026-08-30（Project Skill 历史链路、全局 Skill 与 Realtime 单一入口校准）
 
 ## 1.0 Project-scoped Capability Center（2026-08-29）
 
@@ -18,6 +18,11 @@
   打开下拉时再次刷新，因此刚安装的 Project Skill 立即可见。当前 exact debug App 已真点击 Project 会话并
   输入 `/plan-`，下拉同时显示 `plan-bs`、`plan-task`、`plan-test`；输入未发送，原始截图留在 ignored
   `.local-test-evidence/2026-08-29/project-skill-slash-catalog/`。
+2026-08-29 安装收敛复测：统一能力中心不再用空 user scope。当前源码 bundle 冷启动后显示能力 130 项，
+搜索 `plan-` 精确显示全局安装的 `plan-bs/plan-task/plan-test`，兼容“旧 Skill Store”的已安装页也显示相同
+三项。新建后的第二个普通 Session 输入 `/plan-` 同时出现三个命令；当前授权栏为 Auto，模型为
+`deepseek-v4-flash`。原始截图保存在 ignored
+`.local-test-evidence/2026-08-29/auto-skill-install-current-build/`。
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 
@@ -61,6 +66,11 @@
   `write_file` 逐项弹窗，点击允许后写入成功；重新开启后，同一链路无弹窗成功。两轮模型都复制唯一的顶层
   `schema_hash`，最终文件只位于当前 Project root。原始截图留在 ignored
   `.local-test-evidence/2026-08-25/project-scoped-sessions-manual-activation-fix/`。
+- 2026-08-29 当前 macOS `.app` 在用户选择目录 `/Users/denny/projects/生成视频` 新建 Session
+  `21030143…` 后，输入 `/plan-` 即显示 user-global `plan-bs/plan-task/plan-test`。候选不再依赖页面启动时的
+  永久缓存；每次开始新的 `/` 输入都会刷新后端同一 global catalog。点击 `/plan-test` 后 slash accepted
+  receipt、正文加载、真实 `deepseek-v4-flash` Provider Run 与终态消息均回到同一 Session。截图和日志位于
+  ignored `.local-test-evidence/2026-08-29/global-skills-default-workspace/`。
 - 2026-08-27 最终 gate 补齐 S-PS-01～S-PS-08：当前 debug `.app` 完成 Project 注册、同项目新建、
   projectless bounded handoff、侧栏/Inspector/复制/打开/Finder、缺失根与同身份 relocation、v33 全新安装式
   重置以及完整重启恢复。最新真实模型 Run `c2a0022…` 在 relocation 后仍以绑定目录执行 `pwd`、读和写；
@@ -300,7 +310,9 @@ simple_harness 的用户界面现在以暗色为默认外观。主窗口背景�
 
 - 主题层只负责视觉样式，不拥有业务状态、Harness 状态或权限决策。
 - 隐藏的 provider reasoning 不会因为 UI 改造而展示；消息页只显示用户可见的公开执行进度。
-- 语音按钮当前明确禁用，等待后续 Realtime 接入，不会偷偷启用旧语音链路。
+- 消息页当前只有一个电话式 Realtime 开始/挂断按钮；应用挂载不会申请麦克风或连接，显式点击后才创建
+  音频资源并连接 `/ws/realtime-voice`。旧 `/ws/audio` 不会恢复。自动化已覆盖开始、barge-in、挂断与清理，
+  真实 Provider 连续多轮通话仍待验收，因此 UI 接线不等于 release PASS。
 - 新页面应优先复用语义化 token 和共享组件样式，避免重新写独立的纯白背景。
 - 左侧运行图、消息流 Agent activity 和右侧 durable steps 现在按 `(session_id, root_run_id)`
   订阅同一个 `HarnessPublicSnapshotStore`。默认图直接渲染后端 semantic phases，不再从 raw
