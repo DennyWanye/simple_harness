@@ -4,6 +4,8 @@
 {"obligation_id":"TO-A7","decision":"create-new","candidates":["TC-SI-01","TC-SI-05"],"selected_testcases":["TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"fresh/continuation/cold recovery 使用同一 catalog authority。"},
 {"obligation_id":"TO-A8","decision":"create-new","candidates":["TC-SI-05"],"selected_testcases":["TC-GS-05@rev1","TC-GS-07@rev1"],"reason":"新增 global generation 与 availability reason 的可见状态。"},
 {"obligation_id":"TO-A9","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-09@rev1"],"reason":"新增 auto provenance、显式覆盖与冷重启保持。"},
+{"obligation_id":"TO-A10","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-10@rev2"],"reason":"新增稳定失败、显式 retry generation 与 Run/UI 有界收敛。"},
 {"obligation_id":"TO-R2","decision":"create-new","candidates":["TC-SI-01"],"selected_testcases":["TC-GS-04@rev1"],"reason":"证明 production global snapshot 接线。"},
 {"obligation_id":"TO-R3","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-07@rev1","TC-GS-09@rev1"],"reason":"可发现性不绕过 authorization/health/platform。"},
+{"obligation_id":"TO-R6","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-10@rev2"],"reason":"授权 saga、结构化错误、status/cancel 与前端收敛必须作为同一风险闭环。"},
 {"obligation_id":"TO-R5","decision":"create-new","candidates":["TC-SI-05"],"selected_testcases":["TC-GS-05@rev1"],"reason":"当前 build 冷重启与 full-surface smoke 重跑。"}]}

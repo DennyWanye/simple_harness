@@ -69,6 +69,16 @@
   首次发送前存在；真实 `/plan-test` Run `ea0488e47…` 捕获 3 个全局 Skill、加载 `plan-test` 正文并以
   `deepseek-v4-flash` 完成。
 - 默认权限状态为 `auto`，factory provenance 与 legacy migration 可区分；用户后续显式修改仍持久保留。
+- GitHub source 对完整 40 位 commit SHA 走 immutable codeload URL，避开 GitHub REST commit lookup 的匿名
+  rate limit；非 SHA ref 继续先经 REST 固定 commit，不能用 branch/HEAD 的可变 zipball 冒充固定来源。
+- 安装失败以稳定 source/ref/error identity 写入 durable failure receipt；Agent 自动重放会返回同一失败而不再
+  反复下载，只有用户显式 retry 才 CAS claim 下一 attempt generation，并以 settlement receipt 记录成功或失败。
+  前端 Run status query/cancel 使用 session/run/version fencing；查询 ack 暂时缺失只标记展示错误，不把仍在
+  执行的 Run 伪装成 idle，终态由权威版本帧清除。
+- Capability Center 默认 scope 现显式携带同一个 `user:v2:*` global owner，因此安装成功后统一能力中心、旧
+  Skill Store、slash catalog 和新 Run catalog 四个入口都看到同一三项 managed Skill；不是由 legacy
+  `<userdata>/skills` 目录或前端缓存拼出。当前 macOS 最新源码 bundle 中能力总数由 127 增至 130，搜索
+  `plan-` 显示 `plan-bs/plan-task/plan-test` 且均为健康；第二个普通 Session 的 `/plan-` 同时显示三项。
 
 ### Skill URL 安装切换前历史断层（2026-08-27，已关闭）
 
@@ -411,10 +421,13 @@ cannot override the model/ticket decision.
 Ingress transports still have transport-specific responsibilities, but no
 second agent owner:
 
-- The legacy `/ws/audio` Voice path is disabled by default and returns
-  `voice_temporarily_disabled`; startup does not load VAD/ASR/TTS. A future
-  Realtime ingress must enter the same `ProductTurnPreparer`, `RunKernel` and
-  Presenter as Text instead of reviving the old bypass.
+- The legacy `/ws/audio` Voice path remains disabled and returns
+  `voice_temporarily_disabled`; startup does not load VAD/ASR/TTS. The candidate
+  `/ws/realtime-voice` path uses the versioned Service SDK local protocol and
+  provider-native Realtime transport, starts only after an explicit UI action,
+  and does not create an Agent Run. Real-provider multi-turn E2E remains open.
+  If voice later gains Tools, Workflows or product Context, that agent work must
+  enter the same `ProductTurnPreparer`, `RunKernel` and Presenter as Text.
 - Slash/admin/control commands may perform explicit control-plane actions in
   `main.py`; any new agent execution still starts through RunKernel.
 - Direct Tauri shell commands that are not agent work remain outside the

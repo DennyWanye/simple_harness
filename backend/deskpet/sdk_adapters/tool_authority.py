@@ -1311,6 +1311,25 @@ class SkillInstallPreflightRejected:
     public_message: str
     retryable: bool
     correlation_id: str
+    attempt_generation: int = 1
+    allowed_actions: tuple[str, ...] = ("change_source", "cancel")
+
+    def sdk_public_message(self) -> str:
+        return json.dumps(
+            {
+                "schema": "skill-install-preflight-rejection-v1",
+                "code": self.code,
+                "public_message": self.public_message,
+                "retryable": self.retryable,
+                "failure_receipt_ref": self.failure_receipt_ref,
+                "attempt_generation": self.attempt_generation,
+                "allowed_actions": list(self.allowed_actions),
+                "correlation_id": self.correlation_id,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
 
 SkillInstallPreflightOutcome = (
@@ -1345,6 +1364,7 @@ class SdkPreparedAuthorizationPolicy:
         self._authorities = authorities
         self._clock = clock
         self._facts: dict[tuple[str, str], _PreparedAuthorizationFacts] = {}
+        self._auto_skill_approvals: dict[tuple[str, str], Mapping[str, Any]] = {}
         self._skill_install_preflight = skill_install_preflight
         if initial_policy_generation is not None and initial_policy_generation < 0:
             raise ValueError("initial_policy_generation must be non-negative")
@@ -1357,6 +1377,18 @@ class SdkPreparedAuthorizationPolicy:
             for identity, facts in self._facts.items()
             if facts.authority.run_id != authority.run_id
         }
+        self._auto_skill_approvals = {
+            identity: approval
+            for identity, approval in self._auto_skill_approvals.items()
+            if identity[0] != authority.run_id
+        }
+
+    def auto_skill_approval_for(
+        self, prepared: PreparedToolEffect
+    ) -> Mapping[str, Any] | None:
+        return self._auto_skill_approvals.get(
+            (prepared.run_id.value, prepared.effect_id.value)
+        )
 
     def current_policy_generation(self) -> int:
         if self._policy_generation is None:
@@ -1370,6 +1402,31 @@ class SdkPreparedAuthorizationPolicy:
         if self._policy_generation is not None and value < self._policy_generation:
             raise RuntimeError("authorization policy generation regressed")
         self._policy_generation = value
+
+    async def _stage_skill_preflight(
+        self, *, prepared: PreparedToolEffect, context: ToolExecutionContext,
+        call: PreparedToolCall, authority: SdkRunToolAuthorityV1,
+    ) -> SkillInstallPreflightReady | AuthorizationResult | None:
+        if call.tool_name != "skill_install":
+            return None
+        if self._skill_install_preflight is None:
+            return AuthorizationResult(
+                AuthorizationDecision.DENY,
+                reason_code="skill_install_preflight_unavailable",
+            )
+        outcome = await self._skill_install_preflight.stage_authorization_preflight(
+            prepared=prepared, context=context, args_hash=call.args_hash,
+            principal_id=authority.principal_id,
+        )
+        if isinstance(outcome, SkillInstallPreflightRejected):
+            return AuthorizationResult(
+                AuthorizationDecision.DENY, reason_code=outcome.code,
+                public_message=outcome.sdk_public_message(),
+                receipt_ref=outcome.failure_receipt_ref,
+            )
+        if not isinstance(outcome, SkillInstallPreflightReady):
+            raise TypeError("skill install preflight returned an invalid outcome")
+        return outcome
 
     @staticmethod
     def _resource_selectors(
@@ -1488,27 +1545,12 @@ class SdkPreparedAuthorizationPolicy:
             self._facts[(authority.run_id, prepared.effect_id.value)] = (
                 _PreparedAuthorizationFacts(authority, call, plan, grant)
             )
-            preflight: SkillInstallPreflightReady | None = None
-            if (
-                call.tool_name == "skill_install"
-                and self._skill_install_preflight is not None
-            ):
-                outcome = await self._skill_install_preflight.stage_authorization_preflight(
-                    prepared=prepared,
-                    context=context,
-                    args_hash=call.args_hash,
-                    principal_id=authority.principal_id,
-                )
-                if isinstance(outcome, SkillInstallPreflightRejected):
-                    return AuthorizationResult(
-                        AuthorizationDecision.DENY,
-                        reason_code=outcome.code,
-                        public_message=outcome.public_message,
-                        receipt_ref=outcome.failure_receipt_ref,
-                    )
-                if not isinstance(outcome, SkillInstallPreflightReady):
-                    raise TypeError("skill install preflight returned an invalid outcome")
-                preflight = outcome
+            preflight_outcome = await self._stage_skill_preflight(
+                prepared=prepared, context=context, call=call, authority=authority
+            )
+            if isinstance(preflight_outcome, AuthorizationResult):
+                return preflight_outcome
+            preflight = preflight_outcome
             nonce = request.nonce if request is not None else _canonical_sha256(
                 {
                     "effect_id": prepared.effect_id.value,
@@ -1566,6 +1608,23 @@ class SdkPreparedAuthorizationPolicy:
         self._facts[(authority.run_id, prepared.effect_id.value)] = (
             _PreparedAuthorizationFacts(authority, call, plan, grant)
         )
+        preflight_outcome = await self._stage_skill_preflight(
+            prepared=prepared, context=context, call=call, authority=authority
+        )
+        if isinstance(preflight_outcome, AuthorizationResult):
+            return preflight_outcome
+        if isinstance(preflight_outcome, SkillInstallPreflightReady):
+            preflight = preflight_outcome
+            self._auto_skill_approvals[(authority.run_id, prepared.effect_id.value)] = {
+                "skill_install_intent_id": preflight.intent_id,
+                "skill_install_content_digest": preflight.content_digest,
+                "skill_install_member_digest": preflight.member_digest,
+                "skill_install_expires_at": preflight.expires_at,
+            }
+            return AuthorizationResult(
+                AuthorizationDecision.ALLOW,
+                receipt_ref=f"product-policy:auto:{grant.policy_generation}:{grant.fingerprint}",
+            )
         return AuthorizationResult(
             AuthorizationDecision.ALLOW,
             receipt_ref=(

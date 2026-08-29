@@ -104,8 +104,10 @@ async def _installed_snapshot(
 class _StaticHub:
     def __init__(self, snapshot: CapabilityCatalogSnapshot) -> None:
         self._snapshot = snapshot
+        self.scopes: list[CapabilityScope] = []
 
-    async def snapshot(self, _scope: CapabilityScope) -> CapabilityCatalogSnapshot:
+    async def snapshot(self, scope: CapabilityScope) -> CapabilityCatalogSnapshot:
+        self.scopes.append(scope)
         return self._snapshot
 
 
@@ -163,6 +165,26 @@ async def test_capability_center_redacts_projection_and_only_advertises_real_act
             "available_actions": ["uninstall"],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_capability_center_default_snapshot_includes_user_global_scope(
+    tmp_path: Path,
+) -> None:
+    store = await _store(tmp_path)
+    snapshot = await _installed_snapshot(store, tmp_path)
+    hub = _StaticHub(snapshot)
+    global_owner_key = f"user:v2:{_sha('local-user')}"
+    service = CapabilityCenterService(
+        store=store,
+        manager=_SlowManager(store),  # type: ignore[arg-type]
+        hub=hub,
+        default_user_key=global_owner_key,
+    )
+
+    await service.list_capabilities()
+
+    assert hub.scopes == [CapabilityScope(user_key=global_owner_key)]
 
 
 @pytest.mark.asyncio

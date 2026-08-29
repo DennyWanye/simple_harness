@@ -2111,6 +2111,33 @@
       "type": "hybrid"
     },
     {
+      "entrypoint": "chat skill install and session health recovery",
+      "id": "TC-GS-10",
+      "obligations": [
+        "TO-A9",
+        "TO-A10",
+        "TO-R3",
+        "TO-R6"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
+      "preconditions": [],
+      "purpose": "Verify Auto Skill installation retains durable authorization evidence and every failure converges the SDK Run and UI",
+      "replacement": null,
+      "results": [
+        "2026-08-29-global-skills-default-session-workspace/results/2026-08-29-auto-install-convergence.md"
+      ],
+      "revision": 2,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-install",
+        "auto-authorization",
+        "error-contract",
+        "run-convergence"
+      ],
+      "type": "hybrid"
+    },
+    {
       "entrypoint": "",
       "generated_legacy_metadata": true,
       "id": "LEGACY-C133277DE434",

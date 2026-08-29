@@ -3350,6 +3350,146 @@ class CapabilityStoreTx:
         async with self.write_transaction() as db:
             return await self._cas_skill_install_intent_tx(db, intent_id, **kwargs)
 
+    async def claim_skill_install_retry(
+        self,
+        intent_id: str,
+        *,
+        failure_receipt_ref: str,
+        expected_attempt_generation: int,
+        retry_command_id: str,
+    ) -> tuple[CapabilitySkillInstallIntent, bool]:
+        """CAS-claim one explicit retry generation for a staged source failure."""
+
+        command_id = str(retry_command_id).strip()
+        receipt_ref = str(failure_receipt_ref).strip()
+        if not command_id or not receipt_ref or expected_attempt_generation < 1:
+            raise CapabilityStoreError(
+                "skill_install_retry_identity_invalid",
+                "Skill install retry identity is incomplete",
+            )
+        async with self.write_transaction() as db:
+            row = await (await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                (intent_id,),
+            )).fetchone()
+            if row is None:
+                raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
+            current = _skill_install_intent_from_row(row)
+            error = dict(current.error or {})
+            current_generation = int(error.get("attempt_generation") or 1)
+            if (
+                error.get("retry_command_id") == command_id
+                and current_generation == expected_attempt_generation + 1
+            ):
+                return current, False
+            if (
+                current.status != "stage_failed"
+                or not bool(error.get("retryable", False))
+                or current.settlement_ref != receipt_ref
+                or current_generation != expected_attempt_generation
+            ):
+                raise CapabilityStoreConflict(
+                    "skill_install_retry_cas_conflict",
+                    "Skill install retry no longer owns the expected failure generation",
+                )
+            next_error = {
+                **error,
+                "attempt_generation": current_generation + 1,
+                "retry_command_id": command_id,
+                "retry_state": "claimed",
+                "previous_failure_receipt_ref": receipt_ref,
+            }
+            cursor = await db.execute(
+                "UPDATE capability_skill_install_intents SET "
+                "state_version=state_version+1,error_json=?,updated_at=? "
+                "WHERE intent_id=? AND state_version=? AND status='stage_failed'",
+                (
+                    canonical_json(next_error),
+                    self._clock(),
+                    intent_id,
+                    current.state_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise CapabilityStoreConflict(
+                    "skill_install_retry_cas_conflict",
+                    "Skill install retry was claimed concurrently",
+                )
+            updated = await (await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                (intent_id,),
+            )).fetchone()
+            return _skill_install_intent_from_row(updated), True
+
+    async def settle_skill_install_retry(
+        self,
+        intent_id: str,
+        *,
+        expected_state_version: int,
+        retry_command_id: str,
+        attempt_generation: int,
+        retry_state: str,
+        error: Mapping[str, JsonValue],
+        failure_receipt_ref: str | None = None,
+        success_intent_id: str | None = None,
+    ) -> CapabilitySkillInstallIntent:
+        if retry_state not in {"failed", "succeeded"}:
+            raise CapabilityStoreError(
+                "skill_install_retry_state_invalid", "Retry terminal state is invalid"
+            )
+        async with self.write_transaction() as db:
+            row = await (await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                (intent_id,),
+            )).fetchone()
+            if row is None:
+                raise CapabilityStoreError("skill_install_intent_not_found", intent_id)
+            current = _skill_install_intent_from_row(row)
+            current_error = dict(current.error or {})
+            if (
+                current.status != "stage_failed"
+                or current.state_version != expected_state_version
+                or current_error.get("retry_command_id") != retry_command_id
+                or int(current_error.get("attempt_generation") or 0) != attempt_generation
+                or current_error.get("retry_state") != "claimed"
+            ):
+                raise CapabilityStoreConflict(
+                    "skill_install_retry_settlement_conflict",
+                    "Skill install retry settlement differs from its durable claim",
+                )
+            next_error = {
+                **current_error,
+                **dict(error),
+                "attempt_generation": attempt_generation,
+                "retry_command_id": retry_command_id,
+                "retry_state": retry_state,
+            }
+            if success_intent_id is not None:
+                next_error["success_intent_id"] = str(success_intent_id)
+            settlement_ref = failure_receipt_ref or current.settlement_ref
+            cursor = await db.execute(
+                "UPDATE capability_skill_install_intents SET "
+                "state_version=state_version+1,settlement_ref=?,error_json=?,updated_at=? "
+                "WHERE intent_id=? AND state_version=? AND status='stage_failed'",
+                (
+                    settlement_ref,
+                    canonical_json(next_error),
+                    self._clock(),
+                    intent_id,
+                    expected_state_version,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise CapabilityStoreConflict(
+                    "skill_install_retry_settlement_conflict",
+                    "Skill install retry settlement was committed concurrently",
+                )
+            updated = await (await db.execute(
+                "SELECT * FROM capability_skill_install_intents WHERE intent_id=?",
+                (intent_id,),
+            )).fetchone()
+            return _skill_install_intent_from_row(updated)
+
     async def bind_skill_install_confirmation(
         self,
         intent_id: str,
@@ -9354,6 +9494,7 @@ for _skill_install_method in (
     "_skill_install_members_tx",
     "skill_install_members", "pending_skill_install_intents",
     "_cas_skill_install_intent_tx", "cas_skill_install_intent",
+    "claim_skill_install_retry", "settle_skill_install_retry",
     "_handoff_skill_install_intent_tx", "handoff_skill_install_intent",
     "operation_members", "put_operation_evidence",
     "put_publish_intent_members", "publish_intent_members", "operation_evidence",

@@ -1,10 +1,10 @@
 {
-  "acceptance_sha256": "a5c4d7e675294a65eb8a9dd6a7c261f5379bc22bcaddfff2b282111e709da2bd",
-  "candidate_content_digest": "756faf31c948907852f82df41ac5747afc66cc35b1f7b5bb4909be2ebdfe1a8a",
-  "latest_valid_receipt_digest": "b2ee9a9cf7b3e04469e80c517447dfa2cc354c36916eef115805b631556a13bc",
-  "latest_valid_receipt_path": "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-c-final-run/gate-receipt.json",
-  "receipt_finalized_at": "2026-08-29T10:05:54+0800",
-  "run_dir": "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-c-final-run",
-  "run_id": "run-20260829-095502",
-  "updated_at": "2026-08-29T10:05:29+0800"
+  "acceptance_sha256": "ed2d9933d0c9bfb38daf6b9cbaa50166e8ab5b62f30257e1fbf7f4922c4fff54",
+  "candidate_content_digest": "840aabbb39519df335107755bfb2dde4f04626b169e896dc3cd13d1d949a7957",
+  "latest_valid_receipt_digest": "a8fc11a29aa43efa7e586313af4d510751f1ea1514f883da9947b6f654b74750",
+  "latest_valid_receipt_path": "plans/2026-08-25-project-scoped-sessions/verification/run-20260827-final/gate-receipt.json",
+  "receipt_finalized_at": "2026-08-27T03:49:01+0800",
+  "run_dir": "plans/2026-08-25-project-scoped-sessions/verification/run-20260827-final",
+  "run_id": "run-20260827-011749",
+  "updated_at": "2026-08-27T03:20:25+0800"
 }

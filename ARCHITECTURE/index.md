@@ -15,11 +15,23 @@ locator/content hash 读取冻结正文。Session 创建时动态冻结当前 Co
 `deepseek-v4-flash` 已在冷重启后的旧 Session、新建默认 Session及用户选择目录的新 Session 中完成该链路。详见
 [`ARCHITECTURE.md`](ARCHITECTURE.md) 顶部与 [`PROJECT_STATUS.md`](PROJECT_STATUS.md)。
 
+2026-08-29 安装收敛补充：完整 40 位 commit URL 直接使用 GitHub codeload，不再先消耗 GitHub REST
+`/commits` 限额；branch/tag/HEAD 仍必须经 REST 解析为 immutable commit。安装失败会产生结构化、可终止、
+可查询的 Run 结果，同一稳定 failure identity 不会被 Agent 盲目重放，只有显式 retry 才推进 durable attempt
+generation。统一能力中心与兼容 Skill Store 都从同一个 `user:v2:*` managed catalog 投影已安装项。
+
 2026-08-29 当前正式 SDK release unit：Service SDK 已更新到 `0.3.12`（wheel SHA-256
 `710ae66ba1cc0f0f838f816f3b98108100af560bfb210ed6834246d6d802f8c6`），其官方 compatibility BOM 固定
 Harness `0.6.2` 与 Memory `0.5.2` 的既有精确 wheel/hash。Harness 单仓已发布 `0.6.3`，但不属于 Service
 `0.3.12` 的受支持三 SDK release unit，因此当前产品不把它与 Service 强行混装。全新隔离 userdata 的当前
 macOS bundle 已冷启动到 SDK runtime open、Auto 权限、空 Session catalog 和 `deepseek-v4-flash`，并留给手测。
+
+2026-08-30 Realtime 消费端现状：旧 `/ws/audio` 与本地 VAD/ASR/TTS 链继续关闭；新的
+`/ws/realtime-voice` 由 Service SDK `0.3.12` 的 loopback protocol、Realtime client 和 provider transport
+负责，前端只有一个电话式开始/挂断入口，并且只在用户点击后申请麦克风、创建 AudioContext 和连接后端。
+本轮自动化覆盖本地鉴权、origin、PCM framing、barge-in、挂断和资源释放；真实 Provider 连续多轮通话尚未
+重新验收，因此该路径是已接线候选，不标记为 release PASS。它只承载 provider-native voice；若未来加入
+Agent Tool/Workflow，仍必须进入正式 `ProductTurnPreparer`/RunKernel authority。
 
 2026-08-27 当前 Project-scoped Sessions 事实：macOS 冻结场景 S-PS-01～S-PS-08 已全部通过。Session 在创建时绑定 Project，现有 Session 不能修改根目录；要在另一目录工作需基于目标 Project 新建 Session。终端、内置文件工具和 Project Rules 只使用冻结的 execution root，project-bound Run 不暴露进程级固定根的动态 `mcp:filesystem`。从旧 schema 升到 v33 会按全新安装清空升级前 Session、消息、Project 与会话派生数据，同时保留全局 Provider/设置/Keychain 和磁盘文件。Windows 是未来独立范围。详情见 [`ARCHITECTURE.md`](ARCHITECTURE.md)、[`AGENT_HARNESS.md`](AGENT_HARNESS.md)、[`UI.md`](UI.md) 与 [`PROJECT_STATUS.md`](PROJECT_STATUS.md)。
 

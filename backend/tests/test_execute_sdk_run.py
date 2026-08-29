@@ -1360,6 +1360,65 @@ async def test_cancel_product_run_translates_canonical_root_to_sdk_id(monkeypatc
     session_db.clear_session_plan_awaiting.assert_awaited_once_with("session-1")
 
 
+def test_authoritative_run_projection_uses_sdk_version_and_owned_waiting(monkeypatch):
+    import main
+
+    ingress = SimpleNamespace(
+        accepting=True,
+        query=Mock(return_value=SimpleNamespace(
+            state=SimpleNamespace(value="waiting"), version=7,
+        )),
+    )
+    monkeypatch.setattr(main, "_sdk_ingress", ingress)
+    main._sdk_run_ids_by_root["root-status"] = "sdk-status"
+    main._sdk_retained_presentations["sdk-status"] = (None, None, None, None)
+    try:
+        projection = main._authoritative_sdk_run_projection("root-status")
+    finally:
+        main._sdk_retained_presentations.pop("sdk-status", None)
+        main._sdk_run_ids_by_root.pop("root-status", None)
+
+    ingress.query.assert_called_once_with("sdk-status")
+    assert projection == {
+        "sdk_run_id": "sdk-status",
+        "run_version": 7,
+        "state": "waiting",
+        "waiting_reason": "sdk_recovery_pending",
+        "allowed_actions": ["resume", "cancel"],
+        "retryable": True,
+        "terminal_event_ref": None,
+    }
+
+
+def test_authoritative_run_projection_marks_unowned_waiting_cancel_only(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "_sdk_ingress", SimpleNamespace(
+        accepting=True,
+        query=Mock(return_value=SimpleNamespace(
+            state=SimpleNamespace(value="waiting"), version=3,
+        )),
+    ))
+    projection = main._authoritative_sdk_run_projection("sdk-unowned")
+    assert projection["waiting_reason"] == "unowned_waiting"
+    assert projection["allowed_actions"] == ["cancel"]
+
+
+def test_authoritative_run_projection_terminal_ref_is_versioned(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main, "_sdk_ingress", SimpleNamespace(
+        accepting=True,
+        query=Mock(return_value=SimpleNamespace(
+            state=SimpleNamespace(value="completed"), version=9,
+        )),
+    ))
+    projection = main._authoritative_sdk_run_projection("sdk-completed")
+    assert projection["state"] == "completed"
+    assert projection["run_version"] == 9
+    assert projection["terminal_event_ref"] == "sdk-run:sdk-completed:terminal:v9"
+
+
 @pytest.mark.asyncio
 async def test_waiting_plan_signal_uses_sdk_identity_and_resumes(monkeypatch):
     import main

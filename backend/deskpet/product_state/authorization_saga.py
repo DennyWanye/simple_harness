@@ -34,6 +34,40 @@ def _receipt_hash(value: str, name: str) -> str:
     return value
 
 
+def auto_skill_approval_payload(
+    identity: "AuthorizationSagaIdentity", *, intent_id: str,
+    content_digest: str, member_set_stamp: str, expires_at: float,
+) -> dict[str, Any]:
+    return {
+        "schema": "auto-approved-skill-install-v1",
+        "approval_kind": "auto", "provenance_version": 1,
+        "intent_id": _required(intent_id, "intent_id"),
+        "content_digest": _receipt_hash(content_digest, "content_digest"),
+        "member_set_stamp": _receipt_hash(member_set_stamp, "member_set_stamp"),
+        "principal_id": identity.principal_id,
+        "policy_generation": identity.policy_generation,
+        "grant_id": identity.grant_id,
+        "grant_version": identity.grant_version,
+        "grant_fingerprint": identity.grant_fingerprint,
+        "run_id": identity.run_id, "root_run_id": identity.root_run_id,
+        "call_id": identity.call_id, "effect_id": identity.effect_id,
+        "decision_version": identity.decision_version,
+        "expires_at": float(expires_at),
+    }
+
+
+def auto_skill_approval_receipt(
+    identity: "AuthorizationSagaIdentity", **kwargs: Any
+) -> tuple[str, str]:
+    payload = auto_skill_approval_payload(identity, **kwargs)
+    nonce = _hash({"domain": "auto-skill-decision-nonce-v1", **payload})
+    host_hash = _hash({
+        "domain": "auto-skill-host-decision-receipt-v1",
+        "decision_nonce": nonce, **payload,
+    })
+    return nonce, host_hash
+
+
 class AuthorizationSagaState(StrEnum):
     PREPARED = "prepared"
     DECISION_BOUND = "decision_bound"
@@ -224,6 +258,43 @@ class AuthorizationSagaRepository:
             prefix="decision",
             **kwargs,
         )
+
+    def bind_auto_decision(
+        self, authorization_id: str, *, expected_version: int,
+        decision_nonce: str, decision_version: int,
+        host_receipt_hash: str, now: float,
+    ) -> AuthorizationSagaRecord:
+        """Bind a Host-owned Auto decision without inventing an SDK receipt."""
+        decision_nonce = _required(decision_nonce, "decision_nonce")
+        host_receipt_hash = _receipt_hash(host_receipt_hash, "host_receipt_hash")
+        current = self._owned(authorization_id)
+        if current.state is AuthorizationSagaState.DECISION_BOUND:
+            if (
+                current.decision_sdk_receipt_hash is None
+                and current.decision_host_receipt_hash == host_receipt_hash
+                and current.bound_decision_nonce == decision_nonce
+                and current.bound_decision_version == decision_version
+            ):
+                return current
+            self._quarantine(authorization_id, now=self._time(now))
+            raise SagaConflict("auto decision conflicts with durable binding")
+        if current.state is not AuthorizationSagaState.PREPARED or current.version != expected_version:
+            self._quarantine(authorization_id, now=self._time(now))
+            raise SagaConflict("auto decision CAS conflict")
+        with self.database.connection:
+            changed = self.database.connection.execute(
+                "UPDATE authorization_sagas SET state='decision_bound',version=version+1,"
+                "decision_sdk_receipt_hash=NULL,decision_host_receipt_hash=?,"
+                "bound_decision_nonce=?,bound_decision_version=?,updated_at=? "
+                "WHERE authorization_id=? AND owner_id=? AND version=? AND state='prepared'",
+                (host_receipt_hash, decision_nonce, decision_version, self._time(now),
+                 authorization_id, self.owner_id, expected_version),
+            ).rowcount
+            if changed != 1:
+                raise SagaConflict("auto decision CAS conflict")
+        result = self.read(authorization_id)
+        assert result is not None
+        return result
 
     def bind_effect(self, authorization_id: str, **kwargs: Any) -> AuthorizationSagaRecord:
         return self._bind(
@@ -603,4 +674,6 @@ __all__ = (
     "AuthorizationSagaRepository",
     "AuthorizationSagaState",
     "SagaConflict",
+    "auto_skill_approval_payload",
+    "auto_skill_approval_receipt",
 )

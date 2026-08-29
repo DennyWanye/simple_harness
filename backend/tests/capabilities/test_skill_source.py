@@ -114,6 +114,33 @@ async def test_single_skill_is_exact_deterministic_and_validator_accepted() -> N
 
 
 @pytest.mark.asyncio
+async def test_full_commit_bypasses_rate_limited_github_api() -> None:
+    archive = _repo_archive({"SKILL.md": _skill("solo")})
+    requested_urls: list[str] = []
+
+    def direct_codeload_only(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if request.url.host == "api.github.com":
+            return httpx.Response(403, request=request)
+        assert request.url.host == "codeload.github.com"
+        assert request.url.path == f"/owner/repo/zip/{SHA}"
+        return httpx.Response(200, content=archive, request=request)
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(direct_codeload_only),
+        follow_redirects=False,
+    ) as client:
+        result = await BoundedGitHubSkillSource(client=client).resolve(
+            "https://github.com/owner/repo",
+            requested_ref=SHA.upper(),
+        )
+
+    assert result.evidence.requested_ref == SHA.upper()
+    assert result.evidence.exact_commit == SHA
+    assert requested_urls == [f"https://codeload.github.com/owner/repo/zip/{SHA}"]
+
+
+@pytest.mark.asyncio
 async def test_multi_skill_is_sorted_and_nested_roots_do_not_leak() -> None:
     result = await _resolve(
         _repo_archive(

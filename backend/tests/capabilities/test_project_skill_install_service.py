@@ -226,6 +226,9 @@ async def test_global_stage_can_retry_after_durable_source_failure(tmp_path) -> 
     ready = await service.stage(
         url="https://github.com/acme/skills", owner=owner, run_id="run-1",
         root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+        retry_failure_receipt_ref=failed.failure_receipt_ref,
+        retry_attempt_generation=failed.attempt_generation,
+        retry_command_id="retry-command-1",
     )
 
     intent = await store.get_skill_install_intent(ready.intent_id)
@@ -337,4 +340,156 @@ async def test_source_failure_is_durable_structured_and_has_no_stage(tmp_path) -
     intent = await store.get_skill_install_intent(intent_id)
     assert intent is not None and intent.status == "stage_failed"
     assert intent.settlement_ref == rejected.failure_receipt_ref
+    database.close()
+
+
+@pytest.mark.asyncio
+async def test_global_nonretryable_stage_failure_replays_across_restart_without_source_call(
+    tmp_path,
+) -> None:
+    source = Source(
+        error=CapabilitySourceError("github_skill_not_found", "no Skill found")
+    )
+    database, _store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="7" * 64
+    )
+    first = await service.stage(
+        url="https://github.com/acme/skills.git", owner=owner,
+        run_id="run-1", root_run_id="root-1", call_id="call-1",
+        effect_id="effect-1", visible_skill_names=("Beta", "alpha"),
+    )
+    assert source.calls == 1
+    database.close()
+
+    reopened = ProductStateDatabase(tmp_path / "product.db")
+    reopened.initialize()
+    restarted = ProjectSkillInstallService(
+        store=CapabilityStore(reopened, clock=lambda: 101.0),
+        source=source, staging_root=tmp_path / "staging",
+        batch_publisher=Publisher(), runtime_verifier=Verifier(),
+        clock=lambda: 101.0,
+    )
+    replay = await restarted.stage(
+        url="https://github.com/acme/skills", owner=owner,
+        run_id="run-2", root_run_id="root-2", call_id="call-2",
+        effect_id="effect-2", visible_skill_names=("alpha", "beta"),
+    )
+    assert replay == first
+    assert source.calls == 1
+    reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_global_stage_failure_changed_input_gets_new_identity_and_source_attempt(
+    tmp_path,
+) -> None:
+    source = Source(
+        error=CapabilitySourceError("github_skill_not_found", "no Skill found")
+    )
+    database, _store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="6" * 64
+    )
+    first = await service.stage(
+        url="https://github.com/acme/skills", owner=owner,
+        run_id="run-1", root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+        visible_skill_names=("alpha",),
+    )
+    changed = await service.stage(
+        url="https://github.com/acme/skills", owner=owner,
+        run_id="run-2", root_run_id="root-2", call_id="call-2", effect_id="effect-2",
+        visible_skill_names=("beta",),
+    )
+    assert first.failure_receipt_ref != changed.failure_receipt_ref
+    assert source.calls == 2
+    database.close()
+
+
+@pytest.mark.asyncio
+async def test_global_retry_requires_explicit_generation_and_deduplicates_command(
+    tmp_path,
+) -> None:
+    source = Source(
+        error=CapabilitySourceError("github_archive_http_error", "network failed")
+    )
+    database, _store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="5" * 64
+    )
+    request = {
+        "url": "https://github.com/acme/skills",
+        "owner": owner,
+        "run_id": "run-1",
+        "root_run_id": "root-1",
+        "call_id": "call-1",
+        "effect_id": "effect-1",
+    }
+    first = await service.stage(**request)
+    assert first.retryable is True
+    assert first.attempt_generation == 1
+    assert first.allowed_actions == ("retry", "change_source", "cancel")
+    assert json.loads(first.sdk_public_message()) == {
+        "allowed_actions": ["retry", "change_source", "cancel"],
+        "attempt_generation": 1,
+        "code": "github_archive_http_error",
+        "correlation_id": first.correlation_id,
+        "failure_receipt_ref": first.failure_receipt_ref,
+        "public_message": "network failed",
+        "retryable": True,
+        "schema": "skill-install-preflight-rejection-v1",
+    }
+
+    replay_without_retry = await service.stage(
+        **{**request, "run_id": "run-2", "call_id": "call-2", "effect_id": "effect-2"}
+    )
+    assert replay_without_retry == first
+    assert source.calls == 1
+
+    retry_args = {
+        "retry_failure_receipt_ref": first.failure_receipt_ref,
+        "retry_attempt_generation": 1,
+        "retry_command_id": "retry-command-1",
+    }
+    second = await service.stage(
+        **{**request, "run_id": "run-3", "call_id": "call-3", "effect_id": "effect-3"},
+        **retry_args,
+    )
+    assert second.retryable is True
+    assert second.attempt_generation == 2
+    assert second.failure_receipt_ref != first.failure_receipt_ref
+    assert source.calls == 2
+
+    duplicate = await service.stage(
+        **{**request, "run_id": "run-4", "call_id": "call-4", "effect_id": "effect-4"},
+        **retry_args,
+    )
+    assert duplicate == second
+    assert source.calls == 2
+
+    source.error = None
+    success_retry_args = {
+        "retry_failure_receipt_ref": second.failure_receipt_ref,
+        "retry_attempt_generation": 2,
+        "retry_command_id": "retry-command-2",
+    }
+    ready = await service.stage(
+        **{**request, "run_id": "run-5", "call_id": "call-5", "effect_id": "effect-5"},
+        **success_retry_args,
+    )
+    assert ready.intent_id.startswith("skill-install-global:")
+    assert source.calls == 3
+
+    success_duplicate = await service.stage(
+        **{**request, "run_id": "run-6", "call_id": "call-6", "effect_id": "effect-6"},
+        **success_retry_args,
+    )
+    assert success_duplicate == ready
+    assert source.calls == 3
     database.close()

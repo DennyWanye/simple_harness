@@ -2936,6 +2936,7 @@ async def _initialize_capability_runtime() -> None:
             manager=platform.manager,
             hub=platform.hub,
             notifier=_broadcast_control,
+            default_user_key=global_owner_key,
         ),
     )
     service_context.register("capability_builder_host", builder_host)
@@ -7682,12 +7683,56 @@ async def _build_product_sdk_runtime_stack(
     )
 
     async def skill_install_handler(_arguments, _context):
+        from deskpet.capabilities.skill_install import ProjectSkillInstallError
+        from simple_harness.tools import ToolResult
+
         trusted = execution_context_getter()
         authority = tool_authorities.resolve(trusted.run_id)
-        receipt = await skill_install_receipts.resolve_chat(
-            context=trusted, principal_id=authority.principal_id
-        )
-        return await project_skill_install_service.confirm_authorized(receipt)
+        try:
+            receipt = await skill_install_receipts.resolve_chat(
+                context=trusted, principal_id=authority.principal_id
+            )
+            return await project_skill_install_service.confirm_authorized(receipt)
+        except ProjectSkillInstallError as exc:
+            code = str(getattr(exc, "code", "skill_install_failed"))
+            retryable = bool(getattr(exc, "retryable", False))
+            public_messages = {
+                "skill_install_intent_not_found": "The Skill install request is no longer available.",
+                "skill_install_runtime_verifier_unavailable": "Skill verification is temporarily unavailable.",
+                "skill_pack_manifest_invalid": "The repository does not contain a valid Skill package.",
+            }
+            public_message = public_messages.get(
+                code, "Skill installation could not be completed safely."
+            )
+            failure_receipt_ref = hashlib.sha256(json.dumps(
+                {
+                    "schema": "skill-install-handler-failure-v1",
+                    "code": code,
+                    "principal_id": authority.principal_id,
+                    "tool_name": "skill_install",
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")).hexdigest()
+            allowed_actions = (
+                ["retry", "change_source", "cancel"]
+                if retryable
+                else ["change_source", "cancel"]
+            )
+            return ToolResult.failed(
+                _context.call_id,
+                code,
+                json.dumps({
+                    "schema": "skill-install-failure-v1",
+                    "code": code,
+                    "public_message": public_message,
+                    "retryable": retryable,
+                    "failure_receipt_ref": failure_receipt_ref,
+                    "attempt_generation": 1,
+                    "allowed_actions": allowed_actions,
+                }, sort_keys=True, separators=(",", ":")),
+                retryable=retryable,
+            )
 
     catalog = build_explicit_product_tool_catalog(dependencies)
     from dataclasses import replace as dataclass_replace
@@ -7713,7 +7758,12 @@ async def _build_product_sdk_runtime_stack(
         description="Install Skills from one public GitHub repository for all Sessions of the current user.",
         input_schema={
             "type": "object",
-            "properties": {"url": {"type": "string"}},
+            "properties": {
+                "url": {"type": "string"},
+                "retry_failure_receipt_ref": {"type": "string"},
+                "retry_attempt_generation": {"type": "integer", "minimum": 1},
+                "retry_command_id": {"type": "string"},
+            },
             "required": ["url"],
             "additionalProperties": False,
         },
@@ -8424,6 +8474,60 @@ async def _cancel_product_harness_run(
                 error=str(exc),
             )
     return True
+
+
+def _authoritative_sdk_run_projection(root_run_id: str, sdk_run_id: str = "") -> dict:
+    """Read one Run projection from the SDK authority, never UI/process state."""
+
+    resolved_sdk_run_id = str(
+        sdk_run_id or _sdk_run_ids_by_root.get(root_run_id, root_run_id)
+    ).strip()
+    if _sdk_ingress is None or not _sdk_ingress.accepting or not resolved_sdk_run_id:
+        return {
+            "sdk_run_id": resolved_sdk_run_id,
+            "run_version": 0,
+            "state": "unavailable",
+            "waiting_reason": "sdk_runtime_unavailable",
+            "allowed_actions": ["cancel"],
+            "retryable": True,
+            "terminal_event_ref": None,
+        }
+    record = _sdk_ingress.query(resolved_sdk_run_id)
+    if record is None:
+        return {
+            "sdk_run_id": resolved_sdk_run_id,
+            "run_version": 0,
+            "state": "unknown",
+            "waiting_reason": "run_not_found",
+            "allowed_actions": ["cancel"],
+            "retryable": False,
+            "terminal_event_ref": None,
+        }
+    raw_state = getattr(record, "state", record)
+    state = str(getattr(raw_state, "value", raw_state)).lower()
+    version = int(getattr(record, "version", 0) or 0)
+    terminal = state in {"completed", "failed", "cancelled"}
+    retained = resolved_sdk_run_id in _sdk_retained_presentations
+    waiting_reason = None
+    allowed_actions: list[str] = []
+    if state == "waiting":
+        waiting_reason = (
+            "sdk_recovery_pending" if retained else "unowned_waiting"
+        )
+        allowed_actions = ["resume", "cancel"] if retained else ["cancel"]
+    elif not terminal:
+        allowed_actions = ["cancel"]
+    return {
+        "sdk_run_id": resolved_sdk_run_id,
+        "run_version": version,
+        "state": state,
+        "waiting_reason": waiting_reason,
+        "allowed_actions": allowed_actions,
+        "retryable": state in {"waiting", "unknown", "unavailable"},
+        "terminal_event_ref": (
+            f"sdk-run:{resolved_sdk_run_id}:terminal:v{version}" if terminal else None
+        ),
+    }
 
 
 async def _product_harness_has_live_attached_child(
@@ -13091,33 +13195,24 @@ async def control_channel(ws: WebSocket):
                         "payload": {"ok": False, "error": str(exc)},
                     })
 
-            elif msg_type == "session_health_check":
-                # 2026-08-17: 前端健康检查报告 - 记录卡住会话的诊断信息
+            elif msg_type in {"session_run_status_query", "session_health_check"}:
                 payload = raw.get("payload", {}) or {}
                 target_sid = str(payload.get("session_id") or session_id)
-                stuck_status = payload.get("stuck_status", "unknown")
-                stuck_duration = payload.get("stuck_duration_ms", 0)
-                forced_reset = payload.get("forced_reset", False)
-
-                logger.warning(
-                    "session_health_check_received sid=%s stuck_status=%s duration_ms=%d forced_reset=%s",
-                    target_sid,
-                    stuck_status,
-                    stuck_duration,
-                    forced_reset,
+                root_run_id = str(
+                    payload.get("root_run_id") or payload.get("run_id") or ""
+                ).strip()
+                projection = _authoritative_sdk_run_projection(
+                    root_run_id, str(payload.get("sdk_run_id") or "")
                 )
-
-                # 响应确认（可选，前端不依赖此响应）
-                try:
-                    await ws.send_json({
-                        "type": "session_health_check_ack",
-                        "payload": {
-                            "session_id": target_sid,
-                            "acknowledged": True,
-                        },
-                    })
-                except Exception:
-                    pass
+                await ws.send_json({
+                    "type": "session_run_status_ack",
+                    "payload": {
+                        "query_id": str(payload.get("query_id") or ""),
+                        "session_id": target_sid,
+                        "root_run_id": root_run_id,
+                        **projection,
+                    },
+                })
 
             elif msg_type == "permission_response":
                 payload = raw.get("payload", {}) or {}
@@ -14201,16 +14296,38 @@ async def control_channel(ws: WebSocket):
             elif msg_type == "chat_v2_interrupt":
                 payload = raw.get("payload", {}) or {}
                 target_sid = payload.get("session_id") or session_id
-                target_run_id = str(payload.get("run_id") or "").strip()
-                cancelled = await _cancel_product_harness_run(
-                    target_sid, target_run_id, reason="user_interrupt"
+                target_run_id = str(
+                    payload.get("root_run_id") or payload.get("run_id") or ""
+                ).strip()
+                before = _authoritative_sdk_run_projection(
+                    target_run_id, str(payload.get("sdk_run_id") or "")
+                )
+                expected_version = payload.get("expected_run_version")
+                stale = (
+                    expected_version is not None
+                    and int(expected_version) != int(before["run_version"])
+                )
+                terminal_before = before["state"] in {
+                    "completed", "failed", "cancelled"
+                }
+                cancelled = False
+                if not stale and not terminal_before:
+                    cancelled = await _cancel_product_harness_run(
+                        target_sid, target_run_id,
+                        reason=str(payload.get("reason") or "user_interrupt"),
+                    )
+                after = _authoritative_sdk_run_projection(
+                    target_run_id, str(before.get("sdk_run_id") or "")
                 )
                 _interrupt_evt = {
                     "type": "chat_v2_interrupted",
                     "payload": {
+                        "cancel_command_id": str(payload.get("cancel_command_id") or ""),
                         "session_id": target_sid,
                         "run_id": target_run_id,
                         "cancelled": cancelled,
+                        "stale_expected_version": stale,
+                        **after,
                     },
                 }
                 await ws.send_json(_interrupt_evt)

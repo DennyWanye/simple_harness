@@ -1,6 +1,6 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-29
+> 最后更新：2026-08-30
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
@@ -222,13 +222,15 @@ Companion ingress outbox；生产 Text 入口不再为了 `growth_signal_kind` �
 IntentTriage。当前直接路径以 `none` 结算语义优先级，后续 reflection 仍可读取原始消息，
 但不能借成长分类抢先回答、澄清、计划或阻止主 Run。
 
-旧 Voice（VAD → ASR → Harness → TTS）入口已于 2026-07-28 暂时关闭：
+旧 Voice（VAD → ASR → Harness → TTS）入口已于 2026-07-28 关闭：
 `[voice].enabled=false` 是后端单一开关，默认启动不会导入、创建或加载
 Silero VAD、faster-whisper、EdgeTTS/CosyVoice；两个前端窗口都不建立
 `/ws/audio` 连接，也不申请麦克风。`/ws/audio` 对已鉴权的误连返回稳定
-`voice_temporarily_disabled`，`/health.voice` 显示 `realtime=pending`。
-后续 Realtime 必须作为新的产品入口接入 `ProductTurnPreparer`，不能重新启用
-绕过完整产品准备的旧 Voice 请求。
+`voice_temporarily_disabled`。2026-08-30 当前候选另行接入 `/ws/realtime-voice`：Service SDK `0.3.12`
+拥有本地 loopback protocol、provider transport 与 Realtime lifecycle，前端只在显式开始通话后连接和申请
+麦克风。它目前只承载 provider-native voice，不创建 Agent Run；真实 Provider 连续多轮 E2E 尚未重新验收。
+如果后续语音请求需要 Tool、Workflow 或产品 Context，则必须进入 `ProductTurnPreparer`/RunKernel，不能让
+transport 成为第二套 Agent authority。
 
 ## 用户看到的流程
 
