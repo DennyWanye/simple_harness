@@ -5,28 +5,41 @@
  * WI-T2-B v2 — Slash command UI vitest.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 
-import { _testing } from "../InputBar";
+vi.mock("../controlWs", () => ({
+  controlWS: {
+    send: vi.fn(() => true),
+    on_message: vi.fn(() => () => {}),
+    state: vi.fn(() => "connected"),
+  },
+}));
+
+import { InputBar, _testing } from "../InputBar";
 import { SlashDropdown, type SlashCommand } from "../SlashDropdown";
 import { ArgHintBar } from "../ArgHintBar";
+import { controlWS } from "../controlWs";
 
 // Auto cleanup（替代 @testing-library/jest-dom/vitest 自动 cleanup）
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  _testing.resetCache();
+});
 
 describe("fetchCommands", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it("requests the current session-scoped command catalog", async () => {
+  it("requests the user-global command catalog without a session filter", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       json: async () => ({ commands: [{ name: "plan-test", description: "Plan" }] }),
     } as Response);
 
-    const commands = await _testing.fetchCommands("session/a");
+    const commands = await _testing.fetchCommands(true);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/api/commands/help?session_id=session%2Fa"),
+      expect.stringMatching(/\/api\/commands\/help$/),
     );
     expect(commands.map((item) => item.name)).toEqual(["plan-test"]);
   });
@@ -47,8 +60,8 @@ describe("fetchCommands", () => {
         ] }),
       } as Response);
 
-    await _testing.fetchCommands("project-session");
-    const refreshed = await _testing.fetchCommands("project-session");
+    await _testing.fetchCommands(true);
+    const refreshed = await _testing.fetchCommands(true);
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(refreshed.map((item) => item.name)).toEqual([
@@ -121,6 +134,62 @@ describe("pushHistory", () => {
     for (let i = 0; i < 60; i++) _testing.pushHistory(`/cmd${i}`);
     expect(_testing.getHistory()).toHaveLength(_testing.HISTORY_MAX);
     expect(_testing.getHistory()[0]).toBe("/cmd10");
+  });
+});
+
+describe("global Skill command refresh", () => {
+  it("carries the client turn identity into slash dispatch", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ commands: [] }),
+    })));
+
+    render(<InputBar sessionId="slash-identity" placeholder="slash identity" />);
+    const input = screen.getByPlaceholderText("slash identity");
+    fireEvent.change(input, { target: { value: "/unknown argument" } });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(controlWS.send).toHaveBeenCalled());
+    const call = vi.mocked(controlWS.send).mock.calls.at(-1)?.[0];
+    expect(call).toMatchObject({
+      type: "slash_command",
+      payload: {
+        command: "unknown",
+        args: "argument",
+        session_id: "slash-identity",
+      },
+    });
+    if (!call?.payload) throw new Error("slash payload missing");
+    expect(call.payload.request_id).toMatch(/^request-/);
+    expect(call.payload.turn_id).toMatch(/^turn-/);
+  });
+
+  it("refreshes the global catalog when a new slash input begins", async () => {
+    let request = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      request += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          commands: request === 1
+            ? [{ name: "help", description: "help" }]
+            : [
+                { name: "help", description: "help" },
+                { name: "plan-test", description: "global plan skill" },
+              ],
+        }),
+      } as Response;
+    }));
+
+    render(<InputBar sessionId="slash-refresh" placeholder="slash" />);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByPlaceholderText("slash"), {
+      target: { value: "/" },
+    });
+
+    expect(await screen.findByTestId("slash-item-plan-test")).not.toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });
 

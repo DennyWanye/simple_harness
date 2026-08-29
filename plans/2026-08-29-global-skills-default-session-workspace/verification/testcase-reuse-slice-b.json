@@ -1,0 +1,9 @@
+{"schema_version":"1.0","inventory":"index.json","candidate_reviewed":["TC-SI-01","TC-SI-02","TC-SI-03","TC-SI-04","TC-SI-05"],"decisions":[
+{"obligation_id":"TO-A3","decision":"create-new","candidates":["TC-SI-01","TC-SI-02","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-08@rev1"],"reason":"反转旧 Project scope 为 user-global并增加并发幂等。"},
+{"obligation_id":"TO-A4","decision":"create-new","candidates":["TC-SI-01","TC-SI-02","TC-SI-05"],"selected_testcases":["TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"新增三类 Session 同 global generation 与真实 Provider page-in。"},
+{"obligation_id":"TO-A6","decision":"create-new","candidates":["TC-SI-04"],"selected_testcases":["TC-GS-06@rev1","TC-GS-08@rev1"],"reason":"扩展 all-old/all-new 到 global current pointer。"},
+{"obligation_id":"TO-A7","decision":"create-new","candidates":["TC-SI-01","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"两安装入口、fresh/continuation 与 cold recovery 共享 authority。"},
+{"obligation_id":"TO-A8","decision":"create-new","candidates":["TC-SI-01","TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-03@rev1","TC-GS-05@rev1"],"reason":"terminal global receipt/runtime proof 后才成功。"},
+{"obligation_id":"TO-R2","decision":"create-new","candidates":["TC-SI-01","TC-SI-02"],"selected_testcases":["TC-GS-03@rev1","TC-GS-04@rev1"],"reason":"production global snapshot wiring替代旧 Project binding。"},
+{"obligation_id":"TO-R4","decision":"create-new","candidates":["TC-SI-04"],"selected_testcases":["TC-GS-06@rev1","TC-GS-08@rev1"],"reason":"CAS race、故障与 lost-ACK 收敛。"},
+{"obligation_id":"TO-R5","decision":"create-new","candidates":["TC-SI-05"],"selected_testcases":["TC-GS-05@rev1"],"reason":"当前 build 冷重启与 full-surface smoke 重跑。"}]}

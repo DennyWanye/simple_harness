@@ -31,4 +31,21 @@ describe("ProjectPickerDialog", () => {
     fireEvent.click(screen.getByTestId("project-picker-explicit-child"));
     expect((vi.mocked(controlWS.send).mock.calls.at(-1)![0] as { payload: Record<string, unknown> }).payload.mode).toBe("selected_folder");
   });
+
+  it("uses the exact selected folder for an ordinary Session", async () => {
+    render(
+      <ProjectPickerDialog
+        open
+        onClose={() => {}}
+        onProjectSelected={() => {}}
+        onDefaultSelected={() => {}}
+      />,
+    );
+    await act(async () => fireEvent.click(screen.getByTestId("project-picker-choose")));
+    const request = vi.mocked(controlWS.send).mock.calls.at(-1)![0] as unknown as {
+      payload: Record<string, unknown>;
+    };
+    expect(request.payload.mode).toBe("selected_folder");
+    expect(screen.getByText("创建普通 Session")).toBeTruthy();
+  });
 });

@@ -19,6 +19,13 @@ from deskpet.types.task_grants import (
 )
 
 AuthorizationMode = Literal["manual", "auto"]
+AuthorizationPolicyProvenance = Literal[
+    "factory_default",
+    "factory_default_migrated",
+    "legacy_import",
+    "user_explicit",
+    "needs_user_choice",
+]
 StorageKind = Literal[
     "permission",
     "plan",
@@ -51,6 +58,9 @@ class AuthorizationPolicyState:
     mode: AuthorizationMode
     generation: int
     updated_at: float
+    provenance: AuthorizationPolicyProvenance = "needs_user_choice"
+    schema_generation: int = 2
+    user_set_receipt_ref: str | None = None
 
     def __post_init__(self) -> None:
         if self.mode not in {"manual", "auto"}:
@@ -65,6 +75,21 @@ class AuthorizationPolicyState:
             raise AuthorizationPolicyError(
                 "invalid_policy_timestamp", "updated_at must be finite"
             )
+        if self.provenance not in {
+            "factory_default", "factory_default_migrated", "legacy_import",
+            "user_explicit", "needs_user_choice",
+        }:
+            raise AuthorizationPolicyError(
+                "invalid_policy_provenance", "unknown authorization provenance"
+            )
+        if self.schema_generation != 2:
+            raise AuthorizationPolicyError(
+                "invalid_policy_schema_generation", "policy schema generation must be 2"
+            )
+        if self.provenance == "user_explicit" and not self.user_set_receipt_ref:
+            raise AuthorizationPolicyError(
+                "missing_user_policy_receipt", "explicit policy requires a receipt"
+            )
 
     def transition(
         self,
@@ -72,12 +97,14 @@ class AuthorizationPolicyState:
         *,
         expected_generation: int,
         now: float,
+        provenance: AuthorizationPolicyProvenance = "user_explicit",
+        user_set_receipt_ref: str | None = None,
     ) -> "AuthorizationPolicyState":
         """Return the CAS successor.
 
-        Every actual mode transition advances the generation.  The plan only
-        mandates Auto→Manual, but advancing both directions also prevents an
-        old Auto grant from becoming valid again after an Auto→Manual→Auto ABA.
+        Every explicit user transition advances the generation.  Factory and
+        legacy classification do not mint a user generation; provenance keeps
+        those migrations distinguishable without reviving an old Auto grant.
         """
 
         if expected_generation != self.generation:
@@ -89,10 +116,19 @@ class AuthorizationPolicyState:
             raise AuthorizationPolicyError(
                 "invalid_policy_mode", f"unknown authorization mode: {mode}"
             )
+        receipt = user_set_receipt_ref
+        if provenance == "user_explicit" and not receipt:
+            receipt = f"policy-user-set:{expected_generation + 1}"
         return AuthorizationPolicyState(
             mode=mode,
-            generation=self.generation + (mode != self.mode),
+            generation=self.generation + (
+                provenance == "user_explicit"
+                and (mode != self.mode or self.provenance != "user_explicit")
+            ),
             updated_at=now,
+            provenance=provenance,
+            schema_generation=2,
+            user_set_receipt_ref=receipt if provenance == "user_explicit" else None,
         )
 
 
@@ -417,6 +453,7 @@ __all__ = [
     "AuthorizationMode",
     "AuthorizationPolicy",
     "AuthorizationPolicyError",
+    "AuthorizationPolicyProvenance",
     "AuthorizationPolicyState",
     "AutoAction",
     "DECISION_AUTOMATION_RULES",

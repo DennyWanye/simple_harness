@@ -6,9 +6,10 @@ import zipfile
 from pathlib import Path
 import pytest
 
-from deskpet.capabilities.contracts import fingerprint_json
+from deskpet.capabilities.contracts import canonical_global_owner_key, fingerprint_json
 from deskpet.capabilities.skill_install import (
     AuthorizedSkillInstallReceipt,
+    GlobalSkillInstallAuthority,
     ProjectSkillInstallError,
     ProjectSkillInstallService,
     SkillInstallProjectAuthority,
@@ -84,15 +85,23 @@ class Source:
 class Publisher:
     def __init__(self):
         self.calls = 0
+        self.activation_calls = 0
+        self.operation_ids = []
 
     async def publish_skill_install_batch(self, **kwargs):
         self.calls += 1
+        self.operation_ids.append(kwargs["handoff"].operation_id)
         assert [member.pack_id for member in kwargs["members"]] == ["alpha"]
         return {
             "manager_receipt_hash": "4" * 64,
             "operation_id": kwargs["handoff"].operation_id,
             "committed_set_stamp": kwargs["intent"].member_set_stamp,
         }
+
+    async def activate_skill_install_batch(self, **kwargs):
+        self.activation_calls += 1
+        assert kwargs["intent"].install_scope_key.startswith("user:v2:")
+        return {"publication_state": "active", "activation_hash": "a" * 64}
 
 
 class Verifier:
@@ -333,6 +342,132 @@ async def test_pending_runtime_verification_resumes_without_new_authorization(
 
 
 @pytest.mark.asyncio
+async def test_global_stage_uses_stable_owner_and_content_idempotency(tmp_path) -> None:
+    clock = lambda: 100.0
+    source = Source()
+    database, store, _publisher, service = await _service(tmp_path, source, clock)
+    seed = "9" * 64
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash=seed
+    )
+    assert owner.global_owner_key == canonical_global_owner_key(seed)
+
+    first = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+    )
+    replay = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-2",
+        root_run_id="root-2", call_id="call-2", effect_id="effect-2",
+    )
+    assert replay == first
+    intent = await store.get_skill_install_intent(first.intent_id)
+    assert intent is not None
+    assert intent.schema_version == 2
+    assert intent.install_scope == "user"
+    assert intent.install_scope_key == owner.global_owner_key
+
+
+@pytest.mark.asyncio
+async def test_global_stage_can_retry_after_durable_source_failure(tmp_path) -> None:
+    source = Source(error=CapabilitySourceError("github_timeout", "temporary"))
+    database, store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="9" * 64
+    )
+    failed = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+    )
+    assert failed.code == "github_timeout"
+
+    source.error = None
+    ready = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+        retry_failure_receipt_ref=failed.failure_receipt_ref,
+        retry_attempt_generation=failed.attempt_generation,
+        retry_command_id="retry-command-1",
+    )
+
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    assert intent.status == "awaiting_confirmation"
+    assert intent.effect_id.startswith("effect-1:resolved:")
+
+
+@pytest.mark.asyncio
+async def test_global_confirm_scopes_operation_and_activates_only_after_verification(tmp_path) -> None:
+    database, store, publisher, service = await _service(tmp_path, Source(), lambda: 100.0)
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="host-principal", identity_namespace_hash="9" * 64
+    )
+    ready = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+        channel="settings",
+    )
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    receipt = AuthorizedSkillInstallReceipt(
+        channel="settings", intent_id=intent.intent_id,
+        content_digest=intent.member_set_stamp,
+        project_scope_key=owner.global_owner_key,
+        principal_id="host-principal", decision_nonce=intent.confirmation_nonce,
+        decision_version=intent.confirmation_version, expires_at=intent.expires_at,
+        approved=True, ui_decision_event_ref="ui-event", window_receipt_hash="w" * 64,
+    )
+    result = await service.confirm_authorized(receipt)
+    expected_domain = fingerprint_json({
+        "schema": "global-skill-install-operation-v2",
+        "owner_scope_key": owner.global_owner_key,
+        "exact_commit": intent.exact_commit,
+        "member_set_stamp": intent.member_set_stamp,
+    })
+    assert publisher.operation_ids == [f"skill-install-batch:{expected_domain}"]
+    assert publisher.activation_calls == 1
+    assert result["activation"]["publication_state"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_global_verification_failure_never_activates_binding(tmp_path) -> None:
+    database, store, publisher, service = await _service(tmp_path, Source(), lambda: 100.0)
+
+    class RejectingVerifier:
+        async def verify_skill_install(self, **_kwargs):
+            raise RuntimeError("fresh Run page-in rejected")
+
+    service.runtime_verifier = RejectingVerifier()
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="host-principal", identity_namespace_hash="8" * 64
+    )
+    ready = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-fail",
+        root_run_id="root-fail", call_id="call-fail", effect_id="effect-fail",
+        channel="settings",
+    )
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    receipt = AuthorizedSkillInstallReceipt(
+        channel="settings", intent_id=intent.intent_id,
+        content_digest=intent.member_set_stamp,
+        project_scope_key=owner.global_owner_key,
+        principal_id="host-principal", decision_nonce=intent.confirmation_nonce,
+        decision_version=intent.confirmation_version, expires_at=intent.expires_at,
+        approved=True, ui_decision_event_ref="ui-fail", window_receipt_hash="f" * 64,
+    )
+    with pytest.raises(RuntimeError, match="page-in rejected"):
+        await service.confirm_authorized(receipt)
+    assert publisher.calls == 1
+    assert publisher.activation_calls == 0
+    pending = await store.get_skill_install_intent(intent.intent_id)
+    assert pending is not None
+    assert pending.status == "published_pending_runtime_verification"
+
+
+@pytest.mark.asyncio
 async def test_expiry_uses_cleanup_pending_cas_and_removes_exact_stage(tmp_path) -> None:
     now = [100.0]
     database, store, _publisher, service = await _service(tmp_path, Source(), lambda: now[0])
@@ -362,3 +497,149 @@ async def test_source_failure_is_durable_structured_and_has_no_stage(tmp_path) -
     intent = await store.get_skill_install_intent(intent_id)
     assert intent is not None and intent.status == "stage_failed"
     assert intent.settlement_ref == rejected.failure_receipt_ref
+
+
+@pytest.mark.asyncio
+async def test_global_nonretryable_stage_failure_replays_across_restart_without_source_call(
+    tmp_path,
+) -> None:
+    source = Source(
+        error=CapabilitySourceError("github_skill_not_found", "no Skill found")
+    )
+    database, _store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="7" * 64
+    )
+    first = await service.stage(
+        url="https://github.com/acme/skills.git", owner=owner,
+        run_id="run-1", root_run_id="root-1", call_id="call-1",
+        effect_id="effect-1", visible_skill_names=("Beta", "alpha"),
+    )
+    assert source.calls == 1
+    reopened_store = CapabilityStore(database, clock=lambda: 101.0)
+    restarted = ProjectSkillInstallService(
+        store=reopened_store,
+        source=source, staging_root=tmp_path / "staging",
+        batch_publisher=Publisher(), runtime_verifier=Verifier(reopened_store),
+        clock=lambda: 101.0,
+    )
+    replay = await restarted.stage(
+        url="https://github.com/acme/skills", owner=owner,
+        run_id="run-2", root_run_id="root-2", call_id="call-2",
+        effect_id="effect-2", visible_skill_names=("alpha", "beta"),
+    )
+    assert replay == first
+    assert source.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_global_stage_failure_changed_input_gets_new_identity_and_source_attempt(
+    tmp_path,
+) -> None:
+    source = Source(
+        error=CapabilitySourceError("github_skill_not_found", "no Skill found")
+    )
+    database, _store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="6" * 64
+    )
+    first = await service.stage(
+        url="https://github.com/acme/skills", owner=owner,
+        run_id="run-1", root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+        visible_skill_names=("alpha",),
+    )
+    changed = await service.stage(
+        url="https://github.com/acme/skills", owner=owner,
+        run_id="run-2", root_run_id="root-2", call_id="call-2", effect_id="effect-2",
+        visible_skill_names=("beta",),
+    )
+    assert first.failure_receipt_ref != changed.failure_receipt_ref
+    assert source.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_global_retry_requires_explicit_generation_and_deduplicates_command(
+    tmp_path,
+) -> None:
+    source = Source(
+        error=CapabilitySourceError("github_archive_http_error", "network failed")
+    )
+    database, _store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="5" * 64
+    )
+    request = {
+        "url": "https://github.com/acme/skills",
+        "owner": owner,
+        "run_id": "run-1",
+        "root_run_id": "root-1",
+        "call_id": "call-1",
+        "effect_id": "effect-1",
+    }
+    first = await service.stage(**request)
+    assert first.retryable is True
+    assert first.attempt_generation == 1
+    assert first.allowed_actions == ("retry", "change_source", "cancel")
+    assert json.loads(first.sdk_public_message()) == {
+        "allowed_actions": ["retry", "change_source", "cancel"],
+        "attempt_generation": 1,
+        "code": "github_archive_http_error",
+        "correlation_id": first.correlation_id,
+        "failure_receipt_ref": first.failure_receipt_ref,
+        "public_message": "network failed",
+        "retryable": True,
+        "schema": "skill-install-preflight-rejection-v1",
+    }
+
+    replay_without_retry = await service.stage(
+        **{**request, "run_id": "run-2", "call_id": "call-2", "effect_id": "effect-2"}
+    )
+    assert replay_without_retry == first
+    assert source.calls == 1
+
+    retry_args = {
+        "retry_failure_receipt_ref": first.failure_receipt_ref,
+        "retry_attempt_generation": 1,
+        "retry_command_id": "retry-command-1",
+    }
+    second = await service.stage(
+        **{**request, "run_id": "run-3", "call_id": "call-3", "effect_id": "effect-3"},
+        **retry_args,
+    )
+    assert second.retryable is True
+    assert second.attempt_generation == 2
+    assert second.failure_receipt_ref != first.failure_receipt_ref
+    assert source.calls == 2
+
+    duplicate = await service.stage(
+        **{**request, "run_id": "run-4", "call_id": "call-4", "effect_id": "effect-4"},
+        **retry_args,
+    )
+    assert duplicate == second
+    assert source.calls == 2
+
+    source.error = None
+    success_retry_args = {
+        "retry_failure_receipt_ref": second.failure_receipt_ref,
+        "retry_attempt_generation": 2,
+        "retry_command_id": "retry-command-2",
+    }
+    ready = await service.stage(
+        **{**request, "run_id": "run-5", "call_id": "call-5", "effect_id": "effect-5"},
+        **success_retry_args,
+    )
+    assert ready.intent_id.startswith("skill-install-global:")
+    assert source.calls == 3
+
+    success_duplicate = await service.stage(
+        **{**request, "run_id": "run-6", "call_id": "call-6", "effect_id": "effect-6"},
+        **success_retry_args,
+    )
+    assert success_duplicate == ready
+    assert source.calls == 3

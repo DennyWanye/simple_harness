@@ -38,10 +38,10 @@ from playwright_bundle_spec_support import collect_playwright_bundle
 _execution_manifest_check = subprocess.run(
     [
         sys.executable,
-        str(_repo_root.parent / "scripts" / "generate_execution_build_manifest.py"),
+        str(_repo_root / "scripts" / "generate_execution_build_manifest.py"),
         "--check",
         "--repo-root",
-        str(_repo_root.parent),
+        str(_repo_root),
     ],
     check=False,
 )
@@ -193,7 +193,17 @@ for _pkg in ["scrapling", "browserforge", "apify_fingerprint_datapoints"]:
     except Exception:
         print(f"[spec] WARN: {_pkg} data not importable, skip")
 datas += collect_data_files("agent_reach")
+datas += collect_data_files("simple_harness_service")
+datas += copy_metadata("simple-harness-service-sdk")
 datas += [
+    (
+        "vendor/simple_harness_service_sdk-0.3.12-py3-none-any.whl",
+        "vendor",
+    ),
+    (
+        "vendor/simple_harness_service_sdk-0.3.12.candidate-manifest.json",
+        "vendor",
+    ),
     # P4-S22 fix: ship the canonical migrations directory under
     # ``deskpet/memory/migrations`` (where the actual v9/v10/v11 SQL
     # files live). The legacy ``memory/migrations`` only contains

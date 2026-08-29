@@ -1,0 +1,11 @@
+{
+  "schema": "approved-behavior-change-v1",
+  "change_id": "BC-AUTO-SKILL-INSTALL-2026-08-29",
+  "old_behavior": "skill_install was treated as confirm-only even when the factory permission mode was auto",
+  "new_behavior": "auto mode performs the full source preflight and records durable auto-approved authorization evidence before publish without a user click; manual mode still prompts",
+  "acceptance_revision": "AC-9+AC-10",
+  "scope": ["chat skill_install", "authorization saga", "SDK Run and desktop UI convergence"],
+  "approval_message_sha256": "6b84b0709b71298582d32cc57259dea8a3bcb7c9a2ed9841d23776f4ccacf226",
+  "approved_at": "2026-08-29",
+  "expires_at": null
+}

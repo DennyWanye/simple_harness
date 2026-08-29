@@ -4,6 +4,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::process::{Child, Command, Stdio};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -83,11 +84,32 @@ impl BackendControlSigner {
         Ok(hex_encode(pair.sign(payload).as_ref()))
     }
 
-    fn bootstrap_line(&self) -> Result<String, String> {
+    fn bootstrap_line(&self, documents_root: &Path) -> Result<String, String> {
+        let canonical = documents_root
+            .canonicalize()
+            .map_err(|e| format!("host_documents_unavailable:{e}"))?;
+        let metadata = canonical
+            .metadata()
+            .map_err(|e| format!("host_documents_unavailable:{e}"))?;
+        if !metadata.is_dir() {
+            return Err("host_documents_unavailable:not_directory".into());
+        }
+        #[cfg(unix)]
+        let identity_material = {
+            use std::os::unix::fs::MetadataExt;
+            let os_name = if cfg!(target_os = "macos") { "darwin" } else { std::env::consts::OS };
+            format!("v1\0{}\0{}\0{}", os_name, metadata.dev(), metadata.ino())
+        };
+        #[cfg(not(unix))]
+        let identity_material = format!("v1\0{}\0{}", std::env::consts::OS, canonical.display());
+        let documents_root_text = canonical.to_string_lossy().into_owned();
+        let documents_identity = sha256_hex(identity_material.as_bytes());
         serde_json::to_string(&ControlBootstrap {
-            schema: "window-control-bootstrap-v1",
+            schema: "host-bootstrap-v2",
             backend_process_instance_id: &self.backend_process_instance_id,
             public_key_hex: &self.public_key_hex,
+            documents_root: &documents_root_text,
+            documents_identity: &documents_identity,
         })
         .map(|value| format!("WINDOW_CONTROL_BOOTSTRAP={value}\n"))
         .map_err(|e| format!("window_control_bootstrap_encode_failed:{e}"))
@@ -99,6 +121,8 @@ struct ControlBootstrap<'a> {
     schema: &'static str,
     backend_process_instance_id: &'a str,
     public_key_hex: &'a str,
+    documents_root: &'a str,
+    documents_identity: &'a str,
 }
 
 /// 按 PID 杀进程（kill_child 的兜底路径，见 BackendProcess::child_pid）。
@@ -249,6 +273,7 @@ fn check_port_free(port: u16) -> Result<(), String> {
 
 fn spawn_once(
     launch: &BackendLaunch,
+    documents_root: &Path,
 ) -> Result<(Child, String, BackendControlSigner), String> {
     // P3-S8: port precheck. Have to do it here (not only in start_backend)
     // because the supervisor respawn path also goes through spawn_once —
@@ -283,7 +308,7 @@ fn spawn_once(
         .env("PYTHONUNBUFFERED", "1")
         // Non-secret transport marker. Manual/pytest backend launches omit it
         // and therefore never block while trying to read stdin.
-        .env("DESKPET_WINDOW_CONTROL_BOOTSTRAP", "stdin-v1");
+        .env("DESKPET_WINDOW_CONTROL_BOOTSTRAP", "stdin-v2");
 
     // 路径单一事实源：把 Rust 解析出的 userdata 钉给 backend，
     // 防 Rust/Python 双解析漂移（config.toml/state.db 落不同目录的根因）。
@@ -321,7 +346,7 @@ fn spawn_once(
     // in the Rust parent. The child reads this single line during Task 2
     // composition and EOF follows immediately when this handle is dropped.
     if let Some(mut stdin) = child.stdin.take() {
-        if let Err(e) = stdin.write_all(signer.bootstrap_line()?.as_bytes()) {
+        if let Err(e) = stdin.write_all(signer.bootstrap_line(documents_root)?.as_bytes()) {
             let _ = child.kill();
             return Err(format!("window_control_bootstrap_write_failed:{e}"));
         }
@@ -446,6 +471,8 @@ pub async fn start_backend(
             return Err(msg);
         }
     };
+    let documents_root = app.path().document_dir()
+        .map_err(|e| format!("host_documents_unavailable:{e}"))?;
 
     // P3-S5: log which branch resolved so e2e smoke scripts can grep
     // the dev log to confirm Bundled vs Dev path was picked. Use stderr
@@ -485,8 +512,9 @@ pub async fn start_backend(
 
     // Initial spawn runs on a blocking thread — the BufReader loop that
     // waits for SHARED_SECRET is blocking I/O.
+    let documents_for_spawn = documents_root.clone();
     let spawn_result = tauri::async_runtime::spawn_blocking(move || {
-        spawn_once(&launch_for_spawn)
+        spawn_once(&launch_for_spawn, &documents_for_spawn)
     })
     .await
     .map_err(|e| format!("Task join error: {e}"))?;
@@ -513,7 +541,7 @@ pub async fn start_backend(
 
     // Install the supervisor. It keeps its own Arc handles to the shared
     // atomics and the BackendProcess state (via AppHandle::state()).
-    install_supervisor(app, launch);
+    install_supervisor(app, launch, documents_root);
 
     Ok(secret)
 }
@@ -521,7 +549,7 @@ pub async fn start_backend(
 /// Background loop: wait for the current child to exit; if the user
 /// didn't ask for a shutdown, respawn. Emits lifecycle events so the
 /// frontend can re-fetch the secret and reconnect its WebSockets.
-fn install_supervisor(app: AppHandle, launch: BackendLaunch) {
+fn install_supervisor(app: AppHandle, launch: BackendLaunch, documents_root: PathBuf) {
     std::thread::spawn(move || {
         loop {
             // Wait for the current child to exit. We have to release the
@@ -575,7 +603,7 @@ fn install_supervisor(app: AppHandle, launch: BackendLaunch) {
                 std::thread::sleep(Duration::from_millis(RESTART_COOLDOWN_MS));
 
                 let started = Instant::now();
-                match spawn_once(&launch) {
+                match spawn_once(&launch, &documents_root) {
                     Ok((new_child, new_secret, new_signer)) => {
                         if let Ok(mut guard) = state.shared_secret.lock() {
                             *guard = Some(new_secret.clone());
@@ -755,9 +783,20 @@ mod tests {
         UnparsedPublicKey::new(&ED25519, public)
             .verify(payload, &signature)
             .unwrap();
-        let bootstrap = first.bootstrap_line().unwrap();
+        let bootstrap = first.bootstrap_line(Path::new("/tmp")).unwrap();
         assert!(bootstrap.contains(&first.public_key_hex));
         assert!(!bootstrap.contains(&hex_encode(&first.pkcs8)));
+    }
+
+    #[test]
+    fn documents_resolver_is_embedded_in_host_bootstrap_v2() {
+        let signer = BackendControlSigner::generate().unwrap();
+        let line = signer.bootstrap_line(Path::new("/tmp")).unwrap();
+        let payload = line.strip_prefix("WINDOW_CONTROL_BOOTSTRAP=").unwrap();
+        let value: serde_json::Value = serde_json::from_str(payload).unwrap();
+        assert_eq!(value["schema"], "host-bootstrap-v2");
+        assert_eq!(value["documents_root"], Path::new("/tmp").canonicalize().unwrap().to_string_lossy().as_ref());
+        assert_eq!(value["documents_identity"].as_str().unwrap().len(), 64);
     }
 }
 

@@ -1,6 +1,6 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-29
+> **最后更新**：2026-08-30
 
 ## 2026-08-29 Project-scoped managed Skill 安装故障链修复与 macOS 真 UI 验收
 
@@ -21,6 +21,64 @@
 - 本轮关闭用户复现的授权/恢复/安装/可见性链，不把它外推为整个安装 plan 的 release：恶意 archive、跨
   Project 隔离、全部 crash boundary 与 full-surface 矩阵仍按
   [`results.md`](../plans/2026-08-27-chat-skill-install/results.md) 的剩余 gate 执行。
+## 2026-08-30 Realtime 消费端接线与工作区整理复核
+
+- 新 `/ws/realtime-voice` 使用 Service SDK `0.3.12` 的受版本约束本地协议和 provider transport；旧
+  `/ws/audio`、Silero VAD、faster-whisper 与本地 TTS 继续关闭。前端仅保留一个电话式控制，应用挂载不会
+  申请麦克风或建立 Realtime 连接，只有显式点击开始才创建音频资源。
+- 当前工作树受影响后端回归 `376 passed`、前端全量 `82 files / 646 passed`，TypeScript `--noEmit`
+  通过；Realtime 专项包含本地鉴权、origin、PCM framing、barge-in、挂断和资源释放。
+- 真实 Provider 的连续多轮转写、音频播放、无终端 timeout 和正常挂断尚未在本次整理中重新验收，故
+  Realtime 仍标记为候选接线而不是 release PASS；如未来承载 Agent Tool/Workflow，必须接入正式
+  `ProductTurnPreparer`/RunKernel，不能让 voice transport 取得第二套 Agent authority。
+
+## 2026-08-30 当前 SDK consumer candidate 与已有干净实例边界
+
+- 当前消费组合为 Service SDK `0.3.12`、Harness SDK `0.6.4` candidate 和 Memory SDK `0.5.2`；
+  wheel SHA 分别为 `710ae66b…`、`ecb6e85c…`、`deff2fa8…`。Service release manifest 的构建时
+  Harness 成员仍是 `0.6.2`，但其包约束允许 `>=0.4,<0.7`；产品独立验证 0.6.4 candidate
+  manifest 和 installed origin。0.6.4 尚未发布，该组合不标记为官方 release unit。
+- Host 已从 Service `0.3.4` 更新到 `0.3.12`，同步 exact wheel、candidate manifest、依赖锁、冻结 bundle
+  清单与 executable candidate identity；candidate/runtime/Realtime/Skill/Session 聚焦回归 `70 passed`，
+  TypeScript + Vite + Tauri debug bundle 通过。
+- `SimpleHarnessCleanSDKTest.app` 的既有证据以新建空 userdata `userdata-OSJWfG` 完整冷启动：state schema v34、
+  Harness runtime `open/0.6.2`、权限 `auto`、Provider catalog HTTP 200、当前模型 `deepseek-v4-flash`；真实 UI
+  显示已连接、暂无 Session、空消息流；当次测试实例已在测试结束后关闭，原始截图位于 ignored
+  `.local-test-evidence/2026-08-29/manual-clean-latest-sdk/`。
+  这是 0.6.2 组合的历史 UI 证据，不替代本次 rebase 后 0.6.4 组合的重新验收。
+
+## 2026-08-29 全局 Skill、普通 Session 默认工作区与默认 Auto 权限验收
+
+- 普通 Session 未选目录时由 Host 在 `Documents/SimpleHarnessProjects/Session-<id>` 分配独立目录；用户
+  选择目录时沿用选择结果。state v34 保存不可变 binding，并以 marker/identity 约束补偿与启动恢复。
+- URL Skill 安装已切换到 user-global managed authority：Settings 与 Chat 共享 typed service，固定 commit/
+  digest，只有 Manager publish、fresh Run runtime verification 与 durable global activation 全部成功后才可见。
+  legacy `<userdata>/skills` 和项目级副本不再是成功判据。
+- Catalog Hub 对 `user:v2:*` scope 使用同一个 global owner 查询，因此旧 Session、新 Session、冷重启和
+  fresh Run 都看到同一组全局 Skill/Tool metadata；SDK Run 从 exact Hub snapshot 冻结 body-free records，
+  目标执行继续遵循权限与健康策略。
+- slash help/list/schema/dispatch 已归并到同一 user-global snapshot；前端新 `/` 输入会强制刷新候选并把
+  request/turn identity 传给 dispatch。Session owner 在创建事务时动态冻结，历史空 Session 仅能由当前 owner
+  幂等认领，解决“所选文件夹 Session 能看到 Skill 但真实调用 owner fence 失败”的缺口。
+- 新安装权限默认 `Auto`，legacy 显式选择保留；真实启动日志确认 `authorization_mode=auto`。
+- macOS 当前源码 bundle 真人验证：两个普通 Session 分别绑定 `Session-e01e277d`、`Session-6593da1b`；
+  固定 commit `3a094db39db5…` 安装的 `plan-bs/plan-task/plan-test` 在发布、冷重启和第二个 Session 中均可见。
+  之后用真实 `deepseek-v4-flash` 补齐执行证明：旧 Session `4b2f9fd2…` 与新建默认 Session
+  `2290a54a…` 均实际完成 `tool_search -> skill_invoke`，加载同一 `plan-test` content hash；新 Session 的
+  自动目录为 `Documents/SimpleHarnessProjects/Session-2290a54a`。最终当前 `.app` 又在用户选择目录
+  `/Users/denny/projects/生成视频` 新建 Session `21030143…`，发送前 owner 行已存在；`/plan-` 菜单显示
+  `plan-bs/plan-task/plan-test`，真实 `/plan-test` Run `ea0488e47…` 加载全局正文并由
+  `deepseek-v4-flash` 完成。专项后端 `54 passed`、前端全量 `82 files / 643 passed`、TypeScript 与 bundle
+  build 均通过。
+  测试原始证据位于 ignored `.local-test-evidence/2026-08-29/global-skills-default-workspace/`。
+- 安装卡住问题的当前收敛：真实 Run 在 GitHub REST 403 时约 41 秒内进入 terminal 并显示失败，不再无限
+  “安装中”；完整 commit `3a094db39db558dc72127938a377dccd8463c475` 改走 codeload 后成功安装三项。
+  stable failure suppression、显式 retry generation、权威 Run query/cancel 与 no-ack 非假 idle 均已落入
+  durable contract。统一能力中心补上 user-global default scope，当前 UI 能力数 127→130，搜索和旧 Store
+  均显示三项，新普通 Session 的 slash 菜单也显示三项。聚焦后端 `175 passed`、前端 `101 passed`、
+  TypeScript/Vite/Tauri debug build 与 `git diff --check` 通过；当次干净实例已完成验证并关闭，SDK 为 Harness
+  `0.6.2` / Memory `0.5.2` / Service `0.3.12`，模型 `deepseek-v4-flash`，权限 `auto`。原始证据位于 ignored
+  `.local-test-evidence/2026-08-29/auto-skill-install-current-build/`。
 
 ## 2026-08-27 Project-scoped Sessions macOS release 验收完成
 
@@ -1745,7 +1803,7 @@
 | **Project-scoped Sessions** | ✅ **macOS release scope PASS** — state.db v33 提供 Project、immutable Session binding、创建 receipt 与 catalog authority；升级前 Session/消息/Project 按全新安装清空，全局 Provider/设置/Keychain 与磁盘文件保留。S-PS-01～S-PS-08 的当前 UI、真实 Provider、fault/restart 与 machine root lane 全部通过；100k Session page p95 低于 43 ms。真实 terminal/read/write 只使用绑定 execution root，project-bound catalog 不暴露 process-wide `mcp:filesystem`。独立审计补测外部非 Git/错误路径、复制/Finder、窄屏和分页间新增/删除/重命名；不可读目录 fail closed，rename 推进 catalog revision。完整 17 分片为 14 PASS + 3 个冻结既有失败，0 unexpected。Windows 是未来独立范围。 | [plan](../plans/2026-08-25-project-scoped-sessions/plan.md) · [结果](../testcase/2026-08-25-project-scoped-sessions/results/2026-08-25-plan-task.md) · [架构](./ARCHITECTURE.md#33-当前-session--run--workspace-authority2026-08-25) · [UI](./UI.md#09-project-scoped-session-ui2026-08-25) |
 | **前端 UI / 暗色主题** | 🟡 **Workbench 单窗工作台已实现，r14 实质审计补测中** —— 透明桌宠壳、Live2D/sprite Canvas 与独立消息窗均已移除；当前为侧栏 + Chat/Skills/Artifacts/Settings 四视图。2026-08-11：账户 AuthAdapter/登录注册事件/侧栏账户入口和 Live2D 锁依赖、表情动作消息链全部删除；Vitest `533 passed`、Rust `74 passed`、companion `647 passed / 10 skipped`、MCP `21 passed`、typecheck/build/check 全绿；`kimi-k3` 真实出站 HTTP 200 并回显 `KIMI3_OK`，r12 的 402 阻塞已解除。r13 形式门达到 `READY_FOR_AUDIT`，但独立实质审计否决了设置持久化、几何异常分支、运行期断连、删除即时态和冷启动性能的证据充分性，故未 finalize；r14 正重新冻结并补真机 primary evidence。已退役的单钥匙 Keychain 模块、renderer IPC/binding 与 Rust `keyring` 依赖已移除；最新 `.app` 干净启动和打开设置页均无 macOS 授权弹窗。 | [UI 架构](./UI.md) · [workbench-ui](../plans/2026-08-04-workbench-ui/) |
 | **DeepResearch v7 简化编排 / bundled Playwright** | ✅ **本轮 required 范围 PASS** — 新 run 默认 v7；六节点 manager graph 拆 2～6 个方向，每方向独立 child，弱结果诊断后最多续跑一次，再统一综合。单卡显示真实方向/状态/attempt/来源数，内部 attempt 不重复；标准文件卡四个动作、既有 `DeepResearch` 目录保存及同 userdata 重启恢复均经真机验证。完整多类别语义矩阵保留为后续候选。 | [架构](./DeepResearch.md) · [plan](../plans/2026-07-19-deepresearch-simplification/plan.md) · [results](../plans/2026-07-19-deepresearch-simplification/spike/result.md) |
-| **语音管线** (Realtime/VAD/ASR/LLM/TTS) | 🟡 **旧链已安全关闭，Realtime 待接入** — `[voice].enabled=false` 出厂默认生效；普通启动不再导入、创建或加载 Silero VAD、faster-whisper、EdgeTTS/CosyVoice，两个前端窗口不连 `/ws/audio`、不申请麦克风，按钮明确提示等待 Realtime。误连返回 `voice_temporarily_disabled`，`/health.voice` 可观测。旧实现只保留显式开发兼容，不是生产入口；待 relay 提供 WebRTC/Realtime 契约后，新的 Realtime 入口必须进入完整 `ProductTurnPreparer`。 | [Harness 架构](./AGENT_HARNESS.md) · [Context OS V1 plan §12](../plans/2026-07-13-context-os-v1/plan.md) |
+| **语音管线** (Realtime/VAD/ASR/LLM/TTS) | 🟡 **Service SDK Realtime 已接线，真实 Provider E2E 待补** — 旧 `/ws/audio` 和本地 VAD/ASR/TTS 仍关闭；新 `/ws/realtime-voice` 使用 Service SDK `0.3.12`，前端显式点击后才申请麦克风并建立通话。协议、鉴权、PCM、barge-in、挂断和资源释放自动化已绿，但连续真实通话尚未重新验收，因此不标 release PASS。当前路径只承载 provider-native voice；若加入 Agent Tool/Workflow，必须进入正式 ProductTurnPreparer/RunKernel。 | [Harness 架构](./AGENT_HARNESS.md) · [Context OS V1 plan §12](../plans/2026-07-13-context-os-v1/plan.md) |
 | **桌宠 supervisor** (P5-S1) | ✅ 生产可用 | `README.md` §桌宠 supervisor |
 | **长期记忆 + 自动总结** (P4-S20-D / memory-v2) | ✅ Stage 1/2 ship；F1-F5 全修；严测 4 Phase（33 用例）；**2026-06-02 审计修复 #1-#4**：FATAL-A 自动 backfill 兜底 + FATAL-B 静默降级告警 + MemEval 字面vs改写召回（改写 Recall@5=1.0 证 dense 真工作）+ **出厂点亮 facts_extract/enhanced_retriever/cross_key_merge 语义事实记忆栈**（真机 E2E 待跑）| `README.md` §长期记忆 + [memory-system-status](../plans/2026-05-23-memory-system-status.md) + [严测 spec](../plans/2026-06-01-memory-system-rigorous-test-spec.md) + [审计+最佳实践](../plans/2026-06-02-memory-system-audit-and-best-practices.md) |
 | **工具层** (registry + 权限 + 熔断 + last-mile + v3) | ✅ 生产可用 — 2026-07-09 优化 `file_glob` 默认递归扫描：剪枝 `node_modules` / `__pycache__` / `.uv-cache` / `backend/assets` 等重型生成目录，返回 `skipped_dirs/skipped_count` 诊断元数据；显式 root 指向被跳过目录仍可访问，避免兼容性倒退；pytest `test_deskpet_tools_file.py` 33 passed。2026-07-08 补修 ArtifactCard 文件按钮：DeepResearch 报告目录加入 Tauri artifact 白名单，前端按钮增加 pending/success/error 状态反馈；真机点击 `打开` / `复制路径` / `在文件夹中显示` PASS。 | [tool-layer-optimization-v3](../plans/2026-05-24-tool-layer-optimization-v3/) · [file-glob 优化](../plans/2026-07-09-file-tool-scan-optimization/plan.md) |
@@ -1985,6 +2043,12 @@
 
 ### Follow-up backlog（待排期）
 
+- 🟡 **P2 — 启动身份恢复 UI 体验优化** — 当前消息输入框在 Companion identity-ready 前固定禁用并显示
+  “正在恢复身份…”，但现行身份已是零网络 I/O 的本地 profile；文案会被理解为远端重新登录，每次启动
+  的可感知等待也缺少阶段与失败解释。后续保留 `IdentityReadyGate` fail-closed 边界，先量化 backend ready、
+  control WebSocket、challenge/sign、profile bind 各阶段耗时，再实现延迟展示的低打扰快速路径、准确的
+  “正在准备会话…”慢路径、超时错误与重试入口，并以真实 UI 冷启动/重连验收。详见
+  [follow-up](../plans/2026-08-27-identity-restore-startup-ux-followup.md)。
 - 🟡 **P2 — Simple Harness SDK 消费端首次登录 cold-start 验收** — 本次 SDK 提取仍硬验收
   clean wheel 安装、纯净 import、显式 Runtime 生命周期、schema v1 首建/reopen，以及已有有效开发
   登录态下的真实桌面 Workflow E2E；但“清除桌面应用全部数据 -> 首次登录 -> 不经暖重启直接使用

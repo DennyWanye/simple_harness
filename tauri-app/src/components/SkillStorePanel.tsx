@@ -211,7 +211,7 @@ export const SkillStorePanel: React.FC<Props> = ({
           setTab("installed");
         } else if (payload.ok && status === "denied") {
           setStaged(null);
-          setAlert({ level: "info", message: "已取消安装，Project catalog 未改变。" });
+          setAlert({ level: "info", message: "已取消安装，全局 Skill catalog 未改变。" });
         } else if (payload.ok) {
           setAlert({
             level: "warning",
@@ -236,7 +236,7 @@ export const SkillStorePanel: React.FC<Props> = ({
         if (payload.ok && status === "succeeded" && payload.runtime_verified === true) {
           setStaged(null);
           setUrlInput("");
-          setAlert({ level: "info", message: "安装成功：Project 新 Run 已验证所有 Skill。" });
+          setAlert({ level: "info", message: "安装成功：所有会话的新 Run 均可使用这些 Skill。" });
           channel.send({ type: "skill_list_installed" });
           setTab("installed");
         } else if (!payload.ok) {
@@ -977,7 +977,7 @@ const ConfirmModal: React.FC<{
             color: dark.text,
           }}
         >
-          安装 {staged.members.length} 个 Skill 到当前 Project
+          全局安装 {staged.members.length} 个 Skill
         </h3>
         <p
           style={{
@@ -988,7 +988,7 @@ const ConfirmModal: React.FC<{
             lineHeight: 1.55,
           }}
         >
-          {staged.project.project_name || staged.project.project_id} · revision {staged.project.project_revision}
+          安装后可在所有会话中使用；实际工具执行仍遵循权限与可用性策略。
         </p>
         <div
           style={{

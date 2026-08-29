@@ -439,10 +439,9 @@ function UpdateSection() {
 // ----------------------------------------------------------------------
 // P4-S21 #13 — Auto mode toggle.
 //
-// When ON, the backend's PermissionGate auto-allows every DeskPet tool
-// category (read/write/shell/network/capability lifecycle). The backend is
-// authoritative; localStorage is only a display cache while reconnecting.
-// Windows UAC and third-party prompts remain external operating-system state.
+// The backend policy is authoritative; localStorage is only a display cache
+// while reconnecting. Auto handles only requests classified as auto-eligible:
+// deny, confirm-only, health and platform gates remain in force.
 // ----------------------------------------------------------------------
 function AutoModeToggle({
   getChannel,
@@ -452,8 +451,11 @@ function AutoModeToggle({
   lastMessage: IncomingMessage | null;
 }) {
   const [enabled, setEnabled] = useState<boolean>(() => {
-    try { return localStorage.getItem("deskpet.auto_mode") === "true"; }
-    catch { return false; }
+    try {
+      const cached = localStorage.getItem("deskpet.auto_mode");
+      return cached === null ? true : cached === "true";
+    }
+    catch { return true; }
   });
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -527,7 +529,7 @@ function AutoModeToggle({
           disabled={pending}
         />
         <span>
-          Agent 全开模式：所有 Agent 工具自动允许，不弹确认窗口
+          自动模式（推荐）：自动处理符合策略的请求
         </span>
       </label>
       <p style={{ fontSize: 11, color: dark.textMuted, margin: 0, lineHeight: 1.5 }}>

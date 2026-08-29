@@ -18,7 +18,24 @@ import { useSessionsStore } from "../stores/sessionsStore";
 import { controlWS } from "../code-panel/controlWs";
 import { useProvidersStore } from "../code-panel/providersStore";
 import { useSessionModelsStore } from "../code-panel/sessionModelsStore";
-import { VOICE_UNAVAILABLE_MESSAGE } from "../voiceAvailability";
+
+const realtimeVoiceMock = vi.hoisted(() => ({
+  start: vi.fn(async () => undefined),
+  hangUp: vi.fn(),
+}));
+
+vi.mock("../hooks/useRealtimeVoice", () => ({
+  useRealtimeVoice: () => ({
+    state: "idle",
+    errorCode: null,
+    transcript: "",
+    responseText: "",
+    isRecording: false,
+    isPlaying: false,
+    start: realtimeVoiceMock.start,
+    hangUp: realtimeVoiceMock.hangUp,
+  }),
+}));
 
 vi.mock("../code-panel/controlWs", () => ({
   controlWS: {
@@ -79,6 +96,8 @@ describe("ChatView（WB-4）", () => {
     useSessionsStore.setState({ companion_owner: null });
     useProvidersStore.setState({ providers: [] });
     useSessionModelsStore.getState().set_catalog([], "none", "");
+    realtimeVoiceMock.start.mockClear();
+    realtimeVoiceMock.hangUp.mockClear();
     vi.mocked(controlWS.send).mockClear();
     vi.mocked(controlWS.send).mockReturnValue(true);
     vi.mocked(controlWS.state).mockReturnValue("connected");
@@ -198,11 +217,14 @@ describe("ChatView（WB-4）", () => {
     expect(screen.getByPlaceholderText("输入消息，Enter 发送…")).toBeTruthy();
   });
 
-  it("mic 禁用占位存在（B9：tooltip 说明语音待 Realtime 接入）", () => {
+  it("只有一个电话式 Realtime 主按钮，点击才开始通话", () => {
     render(<ChatView activeSid="default" secret="s3cret" />);
-    const mic = screen.getByTestId("chat-mic-disabled") as HTMLButtonElement;
-    expect(mic.disabled).toBe(true);
-    expect(mic.title).toBe(VOICE_UNAVAILABLE_MESSAGE);
+    const call = screen.getByTestId("realtime-call-button") as HTMLButtonElement;
+    expect(call.disabled).toBe(false);
+    expect(call.textContent).toContain("开始通话");
+    expect(screen.queryByText("开始说话")).toBeNull();
+    fireEvent.click(call);
+    expect(realtimeVoiceMock.start).toHaveBeenCalledTimes(1);
   });
 
   it("Harness 巡检面板默认关，🐞 开关可打开", () => {

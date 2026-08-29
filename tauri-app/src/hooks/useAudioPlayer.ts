@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import type { AudioChannel } from "../ws/AudioChannel";
 
 const SAMPLE_RATE = 24000;
 // 收到多少个 PCM chunk 再开播 —— 缓冲 2 块 (≈340ms @ 170ms/块) 够对抗
@@ -21,7 +20,7 @@ const JITTER_BUFFER_SIZE = 2;
  * 接收侧约定：AudioChannel.onBinary 已剥掉 1 字节 type header，送进来
  * 的 ArrayBuffer 全是 PCM16 字节。
  */
-export function useAudioPlayer(channel: AudioChannel | null) {
+export function useAudioPlayer() {
   const [isPlaying, setIsPlaying] = useState(false);
   const ctxRef = useRef<AudioContext | null>(null);
   const gainRef = useRef<GainNode | null>(null);
@@ -38,12 +37,6 @@ export function useAudioPlayer(channel: AudioChannel | null) {
       // 强制 24kHz —— 避免浏览器默认 48kHz 时我们 createBuffer 的 PCM
       // 被误以为是 24kHz 半速播放导致"变声"。
       ctxRef.current = new AudioContext({ sampleRate: SAMPLE_RATE });
-      console.log(
-        "[AudioPlayer] AudioContext created @",
-        ctxRef.current.sampleRate,
-        "Hz, state:",
-        ctxRef.current.state,
-      );
     }
     return ctxRef.current;
   }, []);
@@ -62,9 +55,8 @@ export function useAudioPlayer(channel: AudioChannel | null) {
     if (ctx.state === "suspended") {
       try {
         await ctx.resume();
-        console.log("[AudioPlayer] AudioContext resumed:", ctx.state);
-      } catch (err) {
-        console.warn("[AudioPlayer] AudioContext resume failed:", err);
+      } catch {
+        throw new Error("audio_output_unavailable");
       }
     }
   }, [getCtx]);
@@ -137,7 +129,6 @@ export function useAudioPlayer(channel: AudioChannel | null) {
   }, []);
 
   const bargeIn = useCallback(() => {
-    console.log("[AudioPlayer] barge-in");
     const ctx = ctxRef.current;
     const gain = gainRef.current;
     if (ctx && gain) {
@@ -163,21 +154,27 @@ export function useAudioPlayer(channel: AudioChannel | null) {
     nextTimeRef.current = 0;
   }, []);
 
-  // 订阅二进制 PCM —— AudioChannel 已剥 1 字节 type header
-  useEffect(() => {
-    if (!channel) return;
-    return channel.onBinary((data) => onPCMChunk(data));
-  }, [channel, onPCMChunk]);
+  const completeOutput = useCallback(() => {
+    startedRef.current = false;
+  }, []);
 
-  // tts_end：让 startedRef 复位，下一段 utterance 重新等满 jitter buffer
-  useEffect(() => {
-    if (!channel) return;
-    return channel.onJson((msg) => {
-      if (msg.type === "tts_end") {
-        startedRef.current = false;
-      }
-    });
-  }, [channel]);
+  useEffect(
+    () => () => {
+      _clearState();
+      void ctxRef.current?.close();
+      ctxRef.current = null;
+      gainRef.current = null;
+    },
+    [_clearState],
+  );
 
-  return { isPlaying, stop, bargeIn, reset, primeContext };
+  return {
+    isPlaying,
+    stop,
+    bargeIn,
+    reset,
+    primeContext,
+    playPcm: onPCMChunk,
+    completeOutput,
+  };
 }

@@ -628,8 +628,11 @@ class CapabilityHub:
                 raise PendingPublishError(
                     "capability publish intent must be reconciled before catalog read"
                 )
+            effective_owner_key = owner_key
+            if effective_owner_key is None and scope.user_key.startswith("user:v2:"):
+                effective_owner_key = scope.user_key
             store_entries = await self.store.visible_entries(
-                scope, owner_key=owner_key
+                scope, owner_key=effective_owner_key
             )
             after = await self._read_vector()
             if self._vector_identity(before) != self._vector_identity(after):

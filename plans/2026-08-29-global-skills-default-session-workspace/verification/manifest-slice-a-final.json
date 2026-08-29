@@ -1,0 +1,316 @@
+{
+  "acceptance_file": "plans/2026-08-29-global-skills-default-session-workspace/acceptance-slice-a.md",
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "目录选择与持久化是确定性产品状态，不依赖自然语言语义。",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "workspace authority 不由 LLM 自由结构载荷决定。",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "必须覆盖全新 profile、旧 Session 恢复和完整冷重启。",
+      "value": true
+    }
+  },
+  "auditor_engine": "opus-4.8",
+  "challenger_engine": "current",
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S-GS-01",
+        "S-GS-02",
+        "S-GS-05",
+        "S-GS-06",
+        "S-GS-08"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "6eedd4a79ac91b7e3c4e680c34f707ff21e2fb5f4353e7c733438a91f76ce65f",
+      "assurance_contract": "ed3512b626e5a633cc3fb0f2c6b4746b53b9d63fb167952fbf4cc80b3f96f630",
+      "reuse_report": "d76b7cb13f05b14b5b0f0a7f9db7db1e78780d07359d85711d8747dc4b90a143",
+      "testcase_inventory": "c5a12183e4b48f0c93cd05d23b62f8b7a1db581e639f2262e87383cb9719bcce",
+      "verification_spec": "4c548e10f984f7d55f8ac5c102681e892d43e1f89fcde6f87299acdef0f304c9"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/acceptance-slice-a.md",
+      "assurance_contract": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/assurance-slice-a.json",
+      "reuse_report": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/testcase-reuse-slice-a.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/verification-spec-slice-a.json"
+    },
+    "seal_sha256": "655ad3730a8b1d2209eb61d0a535062eabc8185cb6c6ea8c6241044a71c1ac59",
+    "selected_testcase_ids": [
+      "TC-GS-01",
+      "TC-GS-02",
+      "TC-GS-05",
+      "TC-GS-06",
+      "TC-GS-08"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "executor_engine": "current",
+  "related_run_dirs": [
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-a-final-run",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-b-final-run",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-c-final-run"
+  ],
+  "release_unit": {
+    "high_risk_subsystem_count": 2,
+    "must_ac_count": 5,
+    "parent_program": "global-skills-default-session-workspace",
+    "plan_lines": 160,
+    "scope_hash": "pending-gate-init",
+    "slice_id": "global-skills-workspace-a",
+    "surface_categories": [
+      "UI",
+      "Session"
+    ],
+    "task_count": 3
+  },
+  "repo_root": ".",
+  "scenarios": [
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "workspace_created",
+          "canonical_roots_equal",
+          "restart_binding_stable"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "tauri-app/src-tauri/src/process_manager.rs",
+        "tauri-app/src-tauri/src/paths.rs",
+        "backend/deskpet/session/project_binding.py",
+        "backend/deskpet/session/project_protocol.py",
+        "tauri-app/src/components/SessionList.tsx",
+        "tauri-app/src/components/ProjectPickerDialog.tsx"
+      ],
+      "input_class": "deterministic-default-workspace",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "fresh",
+        "restart"
+      ],
+      "scenario_id": "S-GS-01",
+      "testcase_ids": [
+        "TC-GS-01"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log"
+        ],
+        "required_business_facts": [
+          "selected_root_used",
+          "cancel_defaulted",
+          "invalid_zero_delta"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "tauri-app/src-tauri/src/paths.rs",
+        "backend/deskpet/session/project_binding.py",
+        "backend/deskpet/session/project_protocol.py",
+        "tauri-app/src/components/ProjectPickerDialog.tsx"
+      ],
+      "input_class": "deterministic-folder-picker",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "selected",
+        "cancel",
+        "invalid"
+      ],
+      "scenario_id": "S-GS-02",
+      "testcase_ids": [
+        "TC-GS-02"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "legacy_projectless_migrated",
+          "legacy_skill_terminal_converged",
+          "legacy_skill_nonterminal_superseded",
+          "legacy_skill_conflict_fenced",
+          "workspace_binding_restored",
+          "new_process_incarnation",
+          "provider_call_succeeded"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "cold-start",
+      "impact_paths": [],
+      "input_class": "deterministic-cold-recovery",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "cold-start",
+        "restart",
+        "provider",
+        "legacy-projectless",
+        "legacy-skill-terminal",
+        "legacy-skill-nonterminal",
+        "legacy-skill-conflict"
+      ],
+      "scenario_id": "S-GS-05",
+      "testcase_ids": [
+        "TC-GS-05"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "recovered_state",
+          "no_half_session",
+          "prior_state_preserved",
+          "retry_converged"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "temporal-fault",
+      "impact_paths": [
+        "backend/deskpet/session/project_binding.py",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-workspace-faults",
+      "min_root_runs": 0,
+      "required": true,
+      "required_lanes": [
+        "temporal-fault",
+        "recovery"
+      ],
+      "scenario_id": "S-GS-06",
+      "testcase_ids": [
+        "TC-GS-06"
+      ],
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "unique_session_directories",
+          "no_orphan_allocation",
+          "replay_idempotent"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "concurrency",
+      "impact_paths": [
+        "backend/deskpet/session/project_binding.py",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-workspace-concurrency",
+      "min_root_runs": 0,
+      "required": true,
+      "required_lanes": [
+        "concurrency",
+        "lost-ack",
+        "replay"
+      ],
+      "scenario_id": "S-GS-08",
+      "testcase_ids": [
+        "TC-GS-08"
+      ],
+      "ui": false
+    }
+  ],
+  "source_request_text": "普通 Session 未选择目录时在 Documents/SimpleHarnessProjects 创建独占工作区，选择目录时使用所选目录。",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-01-default-workspace.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-02-selected-workspace.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md"
+  ],
+  "thresholds": {
+    "max_high_risk_subsystems": 3,
+    "max_must_ac": 8,
+    "max_plan_lines": 2000,
+    "max_surface_categories": 3,
+    "max_tasks": 10
+  }
+}

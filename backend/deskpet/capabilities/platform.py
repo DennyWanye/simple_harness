@@ -2644,6 +2644,11 @@ class CapabilityPlatform:
                 else False
             )
             rehydrated = await self.manager.rehydrate_active_bindings()
+            # A process crash can occur after a global candidate swaps the
+            # process registry but before its durable binding transaction.
+            # Rehydrate the old durable bindings first, then settle the
+            # durable activation intent against that authoritative snapshot.
+            await self.manager.recover_pending_global_activations()
             installed: list[CapabilityInstallResult] = []
             for pack_root in self.first_party_pack_roots:
                 try:

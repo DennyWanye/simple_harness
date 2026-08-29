@@ -94,11 +94,10 @@ const HEALTH_COLOR: Record<CapabilityDescriptor["health"], string> = {
 
 function readCachedAuthorizationMode(): CapabilityAuthorizationMode {
   try {
-    return localStorage.getItem("deskpet.auto_mode") === "true"
-      ? "auto"
-      : "manual";
+    const cached = localStorage.getItem("deskpet.auto_mode");
+    return cached === null || cached === "true" ? "auto" : "manual";
   } catch {
-    return "manual";
+    return "auto";
   }
 }
 

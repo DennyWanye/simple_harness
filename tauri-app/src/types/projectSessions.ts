@@ -29,6 +29,7 @@ export interface ProjectSessionDescriptor {
   session_id: string;
   project_id: string | null;
   session_kind: "project" | "projectless";
+  workspace_kind?: "automatic" | "selected" | "none";
   execution_kind: "project_root" | "explicit" | null;
   activity_at: number;
   created_at: number;

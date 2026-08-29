@@ -1,4 +1,4 @@
-<!-- last-calibrated: 2026-08-29 -->
+<!-- last-calibrated: 2026-08-30 -->
 
 # simple_harness Long-Running Agent Architecture Baseline
 
@@ -34,10 +34,13 @@
   对照为零项。本证据只关闭本次真实故障链；完整恶意 fixture、跨 Project 与 full-surface
   验收仍按 plan 独立执行。
 
-## SDK-first Tool / Capability 目录（2026-08-29 校准）
+## SDK-first Tool / Capability 目录（2026-08-30 校准）
 
-- Host 当前 vendor Harness `0.6.4` candidate（source `21f3c7a…`，wheel SHA-256 `ecb6e85…`）与 Memory `0.5.2`
-  （`deff2fa8…`）。SDK 公共 `RuntimeToolCatalog` 统一表达 executable Tool、Skill resource 与 Workflow
+- Host 当前 vendor Service `0.3.12`（wheel SHA-256 `710ae66b…`）、Harness `0.6.4` candidate
+  （`ecb6e85c…`）与 Memory `0.5.2`（`deff2fa8…`）。Service manifest 记录的构建时 Harness 是
+  `0.6.2`；消费端按 Service `>=0.4,<0.7` 约束独立准入 0.6.4，且不将其冒充为官方三 SDK
+  release unit。SDK 公共 `RuntimeToolCatalog` 统一表达 executable
+  Tool、Skill resource 与 Workflow
   profile；Host 只提供 source metadata、权限事实和 physical handler。
 - fresh Run 使用 `explicit-deferred-v1`：固定的小型 direct kernel 包含
   `tool_search/tool_describe/tool_activate` 与必要控制工具，其余 eligible built-in、健康 MCP 均可搜索而不在
@@ -66,6 +69,89 @@
   SDK Run authority 的完整 `ToolExecutionContext` 是 Skill snapshot identity 的唯一执行来源。
   CAP-4 真实公网负例也已在 Playwright 客户端以 `ERR_BLOCKED_BY_CLIENT` 安全失败，页面和表单均未产生
   外部副作用。CAP-1～CAP-4 可标为通过；CAP-5 仍未关闭，不得发布。
+
+### 全局 Skill URL 安装与普通 Session 工作区（2026-08-29）
+
+- 普通 Session 的工作目录是创建时冻结的 authority：未选择时由 Tauri Host 解析 macOS Documents，并在
+  `SimpleHarnessProjects/Session-<id>` 下分配唯一目录；选择目录时使用显式路径。v34 saga 先准备目录再提交
+  Session binding，失败补偿只删除 exact marker、identity 和空叶目录都匹配的自动目录，用户内容永不误删。
+- URL 安装只写 Manager-owned immutable Capability Pack。应用服务把 GitHub URL 解析为固定 commit、规范化
+  raw Skill pack、member-set digest 与权限摘要；Settings 确认由已认证 control connection 签发 typed receipt，
+  renderer 不能提交 principal/scope 作为 authority。
+- 用户全局 owner 为 `user:v2:<identity-namespace-hash>`。Manager 在同一 batch publish 后执行 fresh Run
+  page-in 验证，再以 durable activation intent 原子切换 user binding；崩溃恢复会补齐 registry/binding 边界。
+  pending 或 verification 失败版本不会进入 catalog，旧有效 catalog 保持不变。
+- `CapabilityHub` 对 `user:v2:*` scope 使用该 global owner 读取 bindings；因此所有既有/新建 Session 与冷重启
+  后的 fresh Run 共享 Skill/Tool 可发现集合。可发现不等于授权，真实调用仍经过 Host prepared authorization、
+  TaskGrant、workspace/origin scope 和 Tool health admission。
+- 前台 SDK Run 在 `CapabilityPlatform.publish_lock` 内取得 exact user-global Hub snapshot，解析 immutable
+  pack version 后，把 body-free `SkillResourceRecord` 冻结进该 Run catalog。所有 Skill record 由同一个
+  `product-skill-catalog` namespace authority 发布；具体 user/pack owner、version、manifest/content/scope
+  hash 保留在 per-record metadata，避免跨 owner 的 namespace collision，同时不改变执行授权。
+- `tool_search` 找到 locator 后，`skill_invoke` 只从该 Run catalog 与 exact snapshot resolver 读取正文；不存在
+  SDK Run 时才允许 legacy resolver 回退。2026-08-29 真实 `deepseek-v4-flash` 在重启后的既有 Session
+  `4b2f9fd2…` 和新建默认 Session `2290a54a…` 中均完成 search/invoke，日志记录相同正文 SHA-256
+  `32ac9804…`，且新 Session 绑定 `Documents/SimpleHarnessProjects/Session-2290a54a`。
+- slash `/api/commands/help`、`/api/skills/list`、schema 查询与 WebSocket dispatch 不再读取 legacy
+  first-party projection；它们在 publish lock 内复用当前 user-global Hub snapshot，并与 first-party catalog
+  做 collision-checked union。前端每次开始新的 `/` 输入强制刷新候选，slash frame 携带同一客户端
+  `request_id/turn_id`。因此安装、冷重启或切换到显式目录 Session 后，菜单和实际 Run 使用同一冻结 Skill。
+- `SessionCreationService` 不在应用装配时捕获可能尚未 ready 的 owner；创建事务发生时才调用当前
+  `IdentityReadyGate.freeze()` 并持久化 `companion_session_owners`。为兼容该缺陷产生的历史空 Session，
+  ingress 只可用 `bind_session_owner_if_absent` 幂等认领空/同 owner 数据，已有消息、墓碑或不同 owner 继续拒绝。
+  当前 macOS `.app` 在用户选择目录 `/Users/denny/projects/生成视频` 新建 Session `21030143…` 后，owner 行已在
+  首次发送前存在；真实 `/plan-test` Run `ea0488e47…` 捕获 3 个全局 Skill、加载 `plan-test` 正文并以
+  `deepseek-v4-flash` 完成。
+- 默认权限状态为 `auto`，factory provenance 与 legacy migration 可区分；用户后续显式修改仍持久保留。
+- GitHub source 对完整 40 位 commit SHA 走 immutable codeload URL，避开 GitHub REST commit lookup 的匿名
+  rate limit；非 SHA ref 继续先经 REST 固定 commit，不能用 branch/HEAD 的可变 zipball 冒充固定来源。
+- 安装失败以稳定 source/ref/error identity 写入 durable failure receipt；Agent 自动重放会返回同一失败而不再
+  反复下载，只有用户显式 retry 才 CAS claim 下一 attempt generation，并以 settlement receipt 记录成功或失败。
+  前端 Run status query/cancel 使用 session/run/version fencing；查询 ack 暂时缺失只标记展示错误，不把仍在
+  执行的 Run 伪装成 idle，终态由权威版本帧清除。
+- Capability Center 默认 scope 现显式携带同一个 `user:v2:*` global owner，因此安装成功后统一能力中心、旧
+  Skill Store、slash catalog 和新 Run catalog 四个入口都看到同一三项 managed Skill；不是由 legacy
+  `<userdata>/skills` 目录或前端缓存拼出。当前 macOS 最新源码 bundle 中能力总数由 127 增至 130，搜索
+  `plan-` 显示 `plan-bs/plan-task/plan-test` 且均为健康；第二个普通 Session 的 `/plan-` 同时显示三项。
+
+### Skill URL 安装切换前历史断层（2026-08-27，已关闭）
+
+- 设置页的 `skill_install_from_url` WebSocket 分支仍由 legacy marketplace
+  `SkillInstaller` 处理，stage/finalize 的目标是 `<userdata>/skills`；多 Skill 仓库还会在
+  stage 后直接 `finalize_batch`，没有共享的用户确认门。代码锚点：
+  `backend/main.py:586-610,13284-13382`。
+- 生产 `_SkillLoader` 显式以 `skill_dirs=[]` / `skill_scopes=[]` / `enable_watch=False`
+  启动；其注释也限定该 Loader 为 migration/test reader，不做 publish/bind/write。
+  Manager-owned immutable pack 仍是生产 Skill 正文与 Run scope 的唯一 authority。因此对旧目录
+  `reload()` 不能构成“已安装可用”证据。代码锚点：
+  `backend/main.py:2572-2593`、`backend/deskpet/skills/loader.py:4-25`、
+  `backend/deskpet/companion/skills.py:229-234`。
+- 普通聊天 Run 的 SDK runtime catalog 当前没有与设置页共享的 typed Skill URL
+  installer，所以模型在接到“安装到当前项目”时可以搜到 shell，却不能搜到正式
+  installer。底层并非没有 typed lifecycle：`capability_install` 已支持 `source_type=git`、
+  Manager 原子 publish/bind 和 operation receipt，也已注册进 process-wide ToolRegistry；但
+  SDK `PRODUCT_TOOL_NAMES` 只投影 `capability_build/capability_repair`，没有投影
+  `capability_install`。代码锚点：`backend/deskpet/capabilities/tools.py:372-445,652-704`、
+  `backend/deskpet/capabilities/platform.py:2455-2472`、`backend/deskpet/sdk_adapters/tools.py:31-44`。
+- 现有 `CapabilityScope.for_run(..., project_root=...)` 的 Project binding key 仅基于路径，
+  尚未携带 Project Session 已冻结的 `project_id + project_revision + project_identity`。
+  因此本次不只需要共享的编排服务和 adapter，还必须扩展 trusted execution context、
+  Capability scope/binding key 及 Hub/Store 查询与兼容语义。代码锚点：
+  `backend/deskpet/capabilities/tools.py:45-60,372-405`、
+  `backend/deskpet/session/project_binding.py:300-340,378-435`。
+- Git Capability source 已限制只写 staging，并有 subdirectory traversal、symlink 与 materialized
+  package validation 护栏（`backend/deskpet/capabilities/source.py:4-8,39-107,225-237`）。
+  但它只接收正式 Capability Pack；legacy `stage_recursive()` 接收 raw `SKILL.md` 树，
+  而 `finalize_batch()` 是允许部分成功的 best-effort copy。原始 Skill repo 到 immutable
+  Capability Pack 的 canonical conversion、单/多 Skill pack 粒度与 exact digest 还没有生产合约；
+  `finalize_batch()` 不能被复用为 publish primitive。
+- 当前系统也没有把 URL/revision/digest 绑定的 staged batch 发布到 exact
+  Project identity，更没有用新 Run 对 manifest/content hash 做 resolve/page-in 证明。
+  Capability Center 对 install/activate/repair 又显式返回 `model_driven_action_required`，而 legacy
+  Skill Store 直接写目录；修复必须归并为唯一 application service ownership，再由
+  chat 和 Settings 做薄 adapter，避免第三套入口。
+  这是跨 UI/chat/Capability 权威的结构性缺口，不能通过为提示词增加
+  `.claude/skills`、`.codex/skills` 或 shell copy 特例解决。
 
 ## SDK Context / Memory 官方一等集成（2026-08-22，依赖身份于 2026-08-25 校准）
 
@@ -369,10 +455,13 @@ cannot override the model/ticket decision.
 Ingress transports still have transport-specific responsibilities, but no
 second agent owner:
 
-- The legacy `/ws/audio` Voice path is disabled by default and returns
-  `voice_temporarily_disabled`; startup does not load VAD/ASR/TTS. A future
-  Realtime ingress must enter the same `ProductTurnPreparer`, `RunKernel` and
-  Presenter as Text instead of reviving the old bypass.
+- The legacy `/ws/audio` Voice path remains disabled and returns
+  `voice_temporarily_disabled`; startup does not load VAD/ASR/TTS. The candidate
+  `/ws/realtime-voice` path uses the versioned Service SDK local protocol and
+  provider-native Realtime transport, starts only after an explicit UI action,
+  and does not create an Agent Run. Real-provider multi-turn E2E remains open.
+  If voice later gains Tools, Workflows or product Context, that agent work must
+  enter the same `ProductTurnPreparer`, `RunKernel` and Presenter as Text.
 - Slash/admin/control commands may perform explicit control-plane actions in
   `main.py`; any new agent execution still starts through RunKernel.
 - Direct Tauri shell commands that are not agent work remain outside the

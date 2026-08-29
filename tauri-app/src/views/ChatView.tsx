@@ -13,13 +13,13 @@
  *  · CompanionDetailModal / ContextBreakdownModal / PermissionPopup 随迁
  *  · companion_identity_status 就绪促升（companion_action_ready）由本
  *    视图独家发送（SessionList 只读订阅，避免双发）
- *  · mic 禁用占位（B9：语音待中转站 Realtime 接入）
+ *  · 单一电话式 Realtime 入口（开始/挂断/错误重试）
  *  · 连接状态源 = controlWS.state()（chat_v2 实际通道，挑战轮 P1）；
  *    后端未就绪（App secret 未到位）显示状态条 + 重试入口
  *
- * 不迁：真语音块（toggleRecording/audioMessage，语音不在范围）、窗口
- * 三件套（拖拽/最大化/关闭，主窗普通化后由系统标题栏承担）、重复秘钥
- * 轮询（用 App 下传的 secret prop）。
+ * 不迁：Provider wire/凭证/session 状态机（由 backend + service-sdk
+ * 持有）、窗口三件套（拖拽/最大化/关闭，主窗普通化后由系统标题栏承担）、
+ * 重复秘钥轮询（用 App 下传的 secret prop）。
  *
  * 样式纪律（WB-11）：颜色一律取 theme/tokens + dark 套件，零硬编码色值。
  */
@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 
 import { tokens } from "../theme/tokens";
-import { dark, bannerStyle } from "../theme/components";
+import { dark, bannerStyle, buttonStyle } from "../theme/components";
 import { Icon } from "../components/Icon";
 import { ContextRing } from "../components/ContextRing";
 import { ContextBreakdownModal } from "../components/ContextBreakdownModal";
@@ -61,7 +61,8 @@ import { controlWS } from "../code-panel/controlWs";
 import { useControlWsState } from "../hooks/useControlWsState";
 import { topicDisplayLabel } from "../chat/topicTitle";
 import { projectRequest } from "../chat/projectSessionProtocol";
-import { VOICE_UNAVAILABLE_MESSAGE } from "../voiceAvailability";
+import { BACKEND_PORT } from "../backendPort";
+import { useRealtimeVoice } from "../hooks/useRealtimeVoice";
 import {
   DEFAULT_HIDE_TOOL_TRACE,
   isMessageVisibleForSelectedRun,
@@ -123,6 +124,7 @@ export interface ChatViewProps {
 
 export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatViewProps) {
   const permissionRequests = usePermissionRequests(controlWS);
+  const realtimeVoice = useRealtimeVoice(BACKEND_PORT, secret);
   const [filter, setFilter] = useState<StreamFilter>("all");
   const [showModelModal, setShowModelModal] = useState(false);
   // T8：Harness 巡检面板开关默认关（plan 修正；原消息面板默认开）。
@@ -930,7 +932,43 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             />
           </div>
 
-          {/* 输入栏 + mic 禁用占位（B9：语音待中转站 Realtime 接入）。 */}
+          {(realtimeVoice.state !== "idle" ||
+            realtimeVoice.transcript ||
+            realtimeVoice.responseText) && (
+            <div
+              data-testid="realtime-voice-status"
+              aria-live="polite"
+              style={{
+                margin: `0 ${tokens.space.md}px ${tokens.space.xs}px`,
+                ...bannerStyle(
+                  realtimeVoice.state === "error"
+                    ? "error"
+                    : realtimeVoice.state === "speaking"
+                      ? "success"
+                      : "info",
+                ),
+              }}
+            >
+              {realtimeVoice.state === "connecting" && "正在接通…"}
+              {realtimeVoice.state === "listening" && "正在聆听，可以直接说话"}
+              {realtimeVoice.state === "speaking" && "AI 正在回复，可直接打断"}
+              {realtimeVoice.state === "closing" && "正在挂断…"}
+              {realtimeVoice.state === "error" &&
+                `通话失败（${realtimeVoice.errorCode ?? "internal"}），点击重试`}
+              {realtimeVoice.transcript && (
+                <div style={{ marginTop: tokens.space.xs }}>
+                  你：{realtimeVoice.transcript}
+                </div>
+              )}
+              {realtimeVoice.responseText && (
+                <div style={{ marginTop: tokens.space.xs }}>
+                  AI：{realtimeVoice.responseText}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 文本输入保持可用；旁边只有一个电话式 Realtime 主按钮。 */}
           <div
             style={{
               display: "flex",
@@ -952,20 +990,59 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             </div>
             <button
               type="button"
-              data-testid="chat-mic-disabled"
-              disabled
-              title={VOICE_UNAVAILABLE_MESSAGE}
-              aria-label={VOICE_UNAVAILABLE_MESSAGE}
+              data-testid="realtime-call-button"
+              disabled={!secret || realtimeVoice.state === "closing"}
+              title={
+                !secret
+                  ? "后端启动中"
+                  : realtimeVoice.state === "idle"
+                    ? "开始语音通话"
+                    : realtimeVoice.state === "error"
+                      ? "重试语音通话"
+                      : "挂断语音通话"
+              }
+              aria-label={
+                realtimeVoice.state === "idle" || realtimeVoice.state === "error"
+                  ? "开始语音通话"
+                  : "挂断语音通话"
+              }
+              onClick={() => {
+                if (
+                  realtimeVoice.state === "idle" ||
+                  realtimeVoice.state === "error"
+                ) {
+                  void realtimeVoice.start();
+                } else {
+                  realtimeVoice.hangUp();
+                }
+              }}
               style={{
-                ...iconBtnStyle,
-                width: 34,
+                ...buttonStyle(
+                  realtimeVoice.state === "idle" || realtimeVoice.state === "error"
+                    ? "primary"
+                    : "danger",
+                  "sm",
+                  !secret || realtimeVoice.state === "closing",
+                ),
                 height: 34,
                 margin: `0 ${tokens.space.md}px ${tokens.space.md}px 0`,
-                color: dark.textFaint,
-                cursor: "not-allowed",
               }}
             >
-              <Icon name="mic-off" size={15} />
+              <Icon
+                name={
+                  realtimeVoice.state === "idle" || realtimeVoice.state === "error"
+                    ? "mic"
+                    : "stop"
+                }
+                size={15}
+              />
+              {realtimeVoice.state === "error"
+                ? "重试"
+                : realtimeVoice.state === "idle"
+                  ? "开始通话"
+                  : realtimeVoice.state === "closing"
+                    ? "挂断中"
+                    : "挂断"}
             </button>
           </div>
         </div>

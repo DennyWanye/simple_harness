@@ -15,9 +15,11 @@ import dataclasses
 import hashlib
 import inspect
 import json
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Literal
+from urllib.parse import urlsplit, urlunsplit
 
 
 class ProjectSkillInstallUIError(RuntimeError):
@@ -68,6 +70,22 @@ class TrustedProjectInstallContext:
         return dataclasses.asdict(self)
 
 
+@dataclass(frozen=True)
+class TrustedGlobalInstallContext:
+    principal_id: str
+    global_owner_key: str
+
+    def __post_init__(self) -> None:
+        if not self.principal_id.strip() or not self.global_owner_key.startswith("user:v2:"):
+            raise ProjectSkillInstallUIError(
+                "global_skill_identity_unavailable",
+                "Settings cannot resolve the local global Skill owner.",
+            )
+
+    def as_mapping(self) -> dict[str, Any]:
+        return dataclasses.asdict(self)
+
+
 def _safe_projection(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
         return dict(value)
@@ -90,6 +108,23 @@ async def _await(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
 
+def _split_github_tree_url(source_url: str) -> tuple[str, str]:
+    """Translate the URL form advertised by Settings into source arguments."""
+    parsed = urlsplit(source_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if (
+        parsed.scheme == "https"
+        and (parsed.hostname or "").lower() == "github.com"
+        and len(parts) >= 4
+        and parts[2] == "tree"
+    ):
+        repository_url = urlunsplit(
+            ("https", "github.com", f"/{parts[0]}/{parts[1]}", "", "")
+        )
+        return repository_url, parts[3]
+    return source_url, "HEAD"
+
+
 class ProjectSkillInstallUIAdapter:
     """Protocol adapter shared by Settings and Capability Center routes."""
 
@@ -101,8 +136,9 @@ class ProjectSkillInstallUIAdapter:
         self,
         *,
         url: str,
-        project: TrustedProjectInstallContext,
-        principal_id: str,
+        project: TrustedProjectInstallContext | None = None,
+        owner: TrustedGlobalInstallContext | None = None,
+        principal_id: str = "",
     ) -> dict[str, Any]:
         source_url = str(url or "").strip()
         if not source_url:
@@ -116,7 +152,15 @@ class ProjectSkillInstallUIAdapter:
                 "The managed Project Skill installer is unavailable.",
                 retryable=True,
             )
-        from deskpet.capabilities.skill_install import SkillInstallProjectAuthority
+        if (project is None) == (owner is None):
+            raise ProjectSkillInstallUIError(
+                "skill_install_authority_invalid",
+                "Exactly one Project or global Skill owner is required.",
+            )
+        from deskpet.capabilities.skill_install import (
+            GlobalSkillInstallAuthority,
+            SkillInstallProjectAuthority,
+        )
         from deskpet.capabilities.contracts import canonical_project_identity_scope_key
 
         principal = str(principal_id or "").strip()
@@ -128,32 +172,81 @@ class ProjectSkillInstallUIAdapter:
         identity = {
             "domain": "settings-skill-install-stage-v1",
             "url": source_url,
-            "project": project.as_mapping(),
+            "authority": (owner if owner is not None else project).as_mapping(),
             "principal_id": principal,
         }
         stable = hashlib.sha256(
             json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        authority = SkillInstallProjectAuthority(
-            project_id=project.project_id,
-            project_revision=project.project_revision,
-            project_identity=project.project_identity,
-            project_scope_key=canonical_project_identity_scope_key(
-                project.project_id, project.project_revision, project.project_identity
-            ),
-            principal_id=principal,
-        )
+        if owner is not None:
+            authority = GlobalSkillInstallAuthority(
+                principal_id=principal,
+                global_owner_key=owner.global_owner_key,
+            )
+            authority_argument = {"owner": authority}
+        else:
+            assert project is not None
+            authority = SkillInstallProjectAuthority(
+                project_id=project.project_id,
+                project_revision=project.project_revision,
+                project_identity=project.project_identity,
+                project_scope_key=canonical_project_identity_scope_key(
+                    project.project_id, project.project_revision, project.project_identity
+                ),
+                principal_id=principal,
+            )
+            authority_argument = {"project": authority}
+        repository_url, requested_ref = _split_github_tree_url(source_url)
         result = await _await(stage(
-            url=source_url,
-            requested_ref="HEAD",
-            project=authority,
+            url=repository_url,
+            requested_ref=requested_ref,
+            **authority_argument,
             run_id=f"settings:{stable}",
             root_run_id=f"settings:{stable}",
             call_id=f"settings-call:{stable}",
             effect_id=f"settings-effect:{stable}",
             channel="settings",
         ))
-        return _safe_projection(result)
+        projection = _safe_projection(result)
+        intent_id = str(projection.get("intent_id") or "")
+        store = getattr(self._service, "store", None)
+        get_intent = getattr(store, "get_skill_install_intent", None)
+        get_members = getattr(store, "skill_install_members", None)
+        if intent_id and callable(get_intent) and callable(get_members):
+            intent = await _await(get_intent(intent_id))
+            members = await _await(get_members(intent_id))
+            if intent is not None:
+                projection.update({
+                    "digest": intent.member_set_stamp,
+                    "decision_nonce": intent.confirmation_nonce,
+                    "decision_version": intent.confirmation_version,
+                    "repository_url": str(intent.source.get("normalized_url") or source_url),
+                    "resolved_commit": intent.exact_commit,
+                    "expires_at": intent.expires_at,
+                    "project": (
+                        {"project_id": project.project_id,
+                         "project_name": project.project_name,
+                         "project_revision": project.project_revision,
+                         "project_identity": project.project_identity}
+                        if project is not None
+                        else {"project_id": "", "project_name": "全局用户",
+                              "project_revision": 0}
+                    ),
+                    "members": [
+                        {
+                            "name": member.normalized_name,
+                            "version": member.version,
+                            "manifest_hash": member.manifest_hash,
+                            "content_hash": member.content_hash,
+                            "permission_categories": list(
+                                member.member.get("allowed_tools", ())
+                            ),
+                        }
+                        for member in members
+                    ],
+                })
+        return projection
+
 
     async def settle(
         self,
@@ -234,7 +327,17 @@ class ProjectSkillInstallUIAdapter:
         # Project authority were rebound by the request-scoped Host authorizer;
         # UI payload identity is never forwarded as authority.
         result = await _await(settle(receipt))
-        return _safe_projection(result)
+        projection = _safe_projection(result)
+        if str(projection.get("status") or "") == "succeeded":
+            verification_ref = str(projection.get("verification_ref") or "")
+            projection["runtime_verified"] = bool(verification_ref)
+            store = getattr(self._service, "store", None)
+            get_members = getattr(store, "skill_install_members", None)
+            if callable(get_members):
+                members = await _await(get_members(normalized_intent))
+                projection["installed_count"] = len(members)
+                projection["member_count"] = len(members)
+        return projection
 
     async def status(
         self, *, intent_id: str, project: TrustedProjectInstallContext
@@ -250,3 +353,107 @@ class ProjectSkillInstallUIAdapter:
             status(intent_id=str(intent_id or "").strip(), project=project.as_mapping())
         )
         return _safe_projection(result)
+
+
+class SettingsSkillInstallAuthorizerFactory:
+    """Bind Settings decisions to an authenticated local control connection."""
+
+    def __init__(self, *, store: Any, global_owner_key: str, clock=time.time) -> None:
+        self._store = store
+        self._global_owner_key = str(global_owner_key)
+        self._clock = clock
+        if not self._global_owner_key.startswith("user:v2:"):
+            raise ValueError("validated global owner key is required")
+
+    async def bind_control_request(self, ws: Any) -> "_BoundSettingsSkillInstallAuthorizer":
+        client = getattr(ws, "client", None)
+        client_host = str(getattr(client, "host", "local") or "local")
+        window_binding = hashlib.sha256(
+            json.dumps(
+                {
+                    "domain": "settings-skill-install-window-v2",
+                    "owner": self._global_owner_key,
+                    "client": client_host,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return _BoundSettingsSkillInstallAuthorizer(
+            store=self._store,
+            global_owner_key=self._global_owner_key,
+            principal_id=f"settings:{self._global_owner_key}",
+            window_binding=window_binding,
+            clock=self._clock,
+        )
+
+
+class _BoundSettingsSkillInstallAuthorizer:
+    def __init__(
+        self,
+        *,
+        store: Any,
+        global_owner_key: str,
+        principal_id: str,
+        window_binding: str,
+        clock: Any,
+    ) -> None:
+        self._store = store
+        self._global_owner_key = global_owner_key
+        self.principal_id = principal_id
+        self._window_binding = window_binding
+        self._clock = clock
+
+    async def issue_skill_install_receipt(
+        self,
+        *,
+        intent_id: str,
+        digest: str,
+        decision_nonce: str,
+        decision_version: int,
+        decision: str,
+    ) -> Any:
+        from deskpet.capabilities.skill_install import AuthorizedSkillInstallReceipt
+
+        intent = await self._store.get_skill_install_intent(str(intent_id))
+        now = float(self._clock())
+        if (
+            intent is None
+            or intent.install_scope != "user"
+            or intent.install_scope_key != self._global_owner_key
+            or intent.principal_id != self.principal_id
+            or intent.member_set_stamp != str(digest)
+            or intent.confirmation_nonce != str(decision_nonce)
+            or intent.confirmation_version != int(decision_version)
+            or intent.expires_at <= now
+        ):
+            raise ProjectSkillInstallUIError(
+                "settings_install_decision_scope_mismatch",
+                "The Settings decision no longer matches the staged global Skill install.",
+            )
+        event_ref = hashlib.sha256(
+            json.dumps(
+                {
+                    "domain": "settings-skill-install-decision-v2",
+                    "intent_id": intent.intent_id,
+                    "decision": str(decision),
+                    "decision_version": int(decision_version),
+                    "window": self._window_binding,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return AuthorizedSkillInstallReceipt(
+            channel="settings",
+            intent_id=intent.intent_id,
+            content_digest=intent.member_set_stamp,
+            project_scope_key=intent.install_scope_key,
+            principal_id=intent.principal_id,
+            decision_nonce=intent.confirmation_nonce,
+            decision_version=intent.confirmation_version,
+            expires_at=intent.expires_at,
+            approved=str(decision) == "approve",
+            ui_decision_event_ref=f"settings-ui:{event_ref}",
+            window_receipt_hash=self._window_binding,
+        )

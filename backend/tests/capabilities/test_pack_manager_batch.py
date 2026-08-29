@@ -50,13 +50,18 @@ def _canonical_pack(tmp_path, name: str) -> CanonicalSkillPack:
     )
 
 
-async def _stage_handoff(store, batch: CanonicalSkillBatch, staging_root):
+async def _stage_handoff(store, batch: CanonicalSkillBatch, staging_root, *, global_scope=False):
     intent_id = "install-intent-1"
     stamp = batch.batch_digest
     intent = CapabilitySkillInstallIntent(
         intent_id=intent_id,effect_id="effect-1",call_id="call-1",root_run_id="root-1",
-        run_id="run-1",channel="chat",project_scope_key="project:v1:p1:r1",
-        principal_id="user-1",source={"url": "https://github.com/acme/skills"},
+        run_id="run-1",channel="chat",project_scope_key=(
+            "user:v2:" + "9" * 64 if global_scope else "project:v1:p1:r1"
+        ),
+        principal_id="user-1",source={
+            "url": "https://github.com/acme/skills",
+            **({"schema": "global-skill-install-source-v2"} if global_scope else {}),
+        },
         exact_commit="a"*40,archive_hash=batch.evidence.archive_hash,
         raw_tree_hash=batch.evidence.raw_file_set_digest,member_set_stamp=stamp,
         permission_set_hash=_hash("permissions"),confirmation_nonce="nonce-1",
@@ -112,6 +117,149 @@ async def test_batch_publish_commits_all_members_and_replays_receipt(tmp_path) -
         intent=intent,handoff=handoff,staging_root=staging,members=members,
     )
     assert replay["manager_receipt_hash"] == result["manager_receipt_hash"]
+
+
+@pytest.mark.asyncio
+async def test_batch_publish_global_intent_is_invisible_until_activation(tmp_path) -> None:
+    publisher = _FakePublisher()
+    manager, store = await _manager(tmp_path, publisher=publisher)
+    batch = _batch(tmp_path)
+    staging = tmp_path / "service-staging"
+    intent, handoff, members = await _stage_handoff(
+        store, batch, staging, global_scope=True
+    )
+    original_registry_revision = publisher.revision
+    receipt = await manager.publish_skill_install_batch(
+        intent=intent, handoff=handoff, staging_root=staging, members=members,
+    )
+    assert receipt["publication_state"] == "pending_invisible"
+    assert publisher.revision == original_registry_revision
+    for pack_id in ("alpha", "beta"):
+        assert await store.get_binding(
+            "user", intent.install_scope_key, pack_id,
+            owner_key=intent.install_scope_key,
+        ) is None
+    activation = await manager.activate_skill_install_batch(
+        intent=intent, manager_receipt=receipt, members=members,
+    )
+    assert activation["publication_state"] == "active"
+    assert publisher.revision == original_registry_revision + 1
+    for pack_id in ("alpha", "beta"):
+        binding = await store.get_binding(
+            "user", intent.install_scope_key, pack_id,
+            owner_key=intent.install_scope_key,
+        )
+        assert binding is not None and binding.active
+        assert binding.owner_key == intent.install_scope_key
+
+
+@pytest.mark.asyncio
+async def test_failed_global_verification_leaves_registry_and_old_binding_unchanged(tmp_path) -> None:
+    publisher = _FakePublisher()
+    manager, store = await _manager(tmp_path, publisher=publisher)
+    batch = _batch(tmp_path)
+    staging = tmp_path / "service-staging"
+    intent, handoff, members = await _stage_handoff(
+        store, batch, staging, global_scope=True
+    )
+    original_revision = publisher.revision
+    await manager.publish_skill_install_batch(
+        intent=intent, handoff=handoff, staging_root=staging, members=members,
+    )
+    # Model an already-visible old owner binding.  A rejected verifier never
+    # calls activate, so neither that binding nor the executable registry may
+    # move to the pending candidate.
+    alpha = members[0]
+    old_binding = await store.set_binding(
+        scope="user", scope_key=intent.install_scope_key, pack_id=alpha.pack_id,
+        version=alpha.version, manifest_hash=alpha.manifest_hash,
+        expected_generation=0, enabled=True,
+        owner_key=intent.install_scope_key, management_policy="user_managed",
+    )
+    after_rejection = await store.get_binding(
+        "user", intent.install_scope_key, alpha.pack_id,
+        owner_key=intent.install_scope_key,
+    )
+    assert after_rejection == old_binding
+    assert publisher.revision == original_revision
+
+
+@pytest.mark.asyncio
+async def test_global_activation_recovers_fault_between_registry_and_binding(tmp_path) -> None:
+    def crash(point: str) -> None:
+        if point == "after:global_activation_registry_publish":
+            raise _Crash()
+
+    publisher = _FakePublisher()
+    publisher.reconcile_status = "published"
+    manager, store = await _manager(
+        tmp_path, publisher=publisher, fault_injector=crash
+    )
+    batch = _batch(tmp_path)
+    staging = tmp_path / "service-staging"
+    intent, handoff, members = await _stage_handoff(
+        store, batch, staging, global_scope=True
+    )
+    receipt = await manager.publish_skill_install_batch(
+        intent=intent, handoff=handoff, staging_root=staging, members=members,
+    )
+    with pytest.raises(_Crash):
+        await manager.activate_skill_install_batch(
+            intent=intent, manager_receipt=receipt, members=members,
+        )
+    assert await store.get_binding(
+        "user", intent.install_scope_key, "alpha",
+        owner_key=intent.install_scope_key,
+    ) is None
+
+    manager._fault_injector = None
+    await manager.recover()
+    for pack_id in ("alpha", "beta"):
+        binding = await store.get_binding(
+            "user", intent.install_scope_key, pack_id,
+            owner_key=intent.install_scope_key,
+        )
+        assert binding is not None and binding.active
+
+
+@pytest.mark.asyncio
+async def test_global_activation_fault_reconciles_old_registry_without_binding(tmp_path) -> None:
+    def crash(point: str) -> None:
+        if point == "after:global_activation_registry_publish":
+            raise _Crash()
+
+    publisher = _FakePublisher()  # reconciliation reports rolled_back
+    manager, store = await _manager(
+        tmp_path, publisher=publisher, fault_injector=crash
+    )
+    batch = _batch(tmp_path)
+    staging = tmp_path / "service-staging"
+    intent, handoff, members = await _stage_handoff(
+        store, batch, staging, global_scope=True
+    )
+    receipt = await manager.publish_skill_install_batch(
+        intent=intent, handoff=handoff, staging_root=staging, members=members,
+    )
+    with pytest.raises(_Crash):
+        await manager.activate_skill_install_batch(
+            intent=intent, manager_receipt=receipt, members=members,
+        )
+    manager._fault_injector = None
+    await manager.recover()
+    for pack_id in ("alpha", "beta"):
+        assert await store.get_binding(
+            "user", intent.install_scope_key, pack_id,
+            owner_key=intent.install_scope_key,
+        ) is None
+    async with store.read_connection() as db:
+        row = await (
+            await db.execute(
+                """SELECT status FROM capability_operation_phase_evidence
+                   WHERE operation_id=? AND phase='global_activation'""",
+                (receipt["operation_id"],),
+            )
+        ).fetchone()
+    assert row is not None and row["status"] == "failed"
 
 
 class _Crash(BaseException):

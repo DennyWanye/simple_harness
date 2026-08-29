@@ -571,6 +571,49 @@ class PreparedRunCatalogLease:
             )
         )
 
+    def user_global_pack_entries(
+        self,
+        *,
+        owner_key: str,
+        user_scope_key: str,
+    ) -> tuple[Mapping[str, Any], ...]:
+        """Return user-global packs captured by this immutable Run lease.
+
+        ``owner_key`` and ``user_scope_key`` are deliberately independent.
+        The former is the validated binding owner; the latter is the
+        domain-separated global Capability scope.  No default/profile guess is
+        accepted here.
+        """
+
+        expected_owner = str(owner_key).strip()
+        expected_scope = str(user_scope_key).strip()
+        if not expected_owner or not expected_scope.startswith("user:v2:"):
+            raise ValueError("validated user-global Skill authority is required")
+        result: list[Mapping[str, Any]] = []
+        for entry in self.lease_entries:
+            if str(entry.get("entry_kind") or "") != "pack":
+                continue
+            selected = entry.get("selected_binding")
+            if not isinstance(selected, Mapping):
+                raise RuntimeError("run_catalog_global_binding_missing")
+            if str(selected.get("scope") or "") != "user":
+                continue
+            if (
+                str(selected.get("owner_key") or "") == expected_owner
+                and str(selected.get("scope_key") or "") == expected_scope
+            ):
+                result.append(entry)
+        return tuple(
+            sorted(
+                result,
+                key=lambda item: (
+                    str(item.get("pack_id") or ""),
+                    str(item.get("version") or ""),
+                    str(item.get("manifest_hash") or ""),
+                ),
+            )
+        )
+
 
 def _tx_db(transaction: Any) -> Any:
     db = getattr(transaction, "_db", None)

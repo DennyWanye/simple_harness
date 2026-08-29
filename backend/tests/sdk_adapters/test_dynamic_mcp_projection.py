@@ -129,7 +129,11 @@ def test_project_bound_catalog_excludes_process_wide_filesystem_mcp() -> None:
         workspace_resolution_kind="project_bound",
     )
 
-    assert [item.name for item in projected_inventory] == ["read_file"]
+    assert [item.name for item in projected_inventory] == [
+        "read_file", "mcp_filesystem_read_text"
+    ]
+    assert projected_inventory[0].availability_reason is None
+    assert projected_inventory[1].availability_reason == "workspace_unscoped"
     assert projected["tool_names"] == ["read_file"]
     assert projected["tool_count"] == 1
     assert list(projected["schema_fingerprints"]) == ["read_file"]

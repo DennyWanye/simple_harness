@@ -30,7 +30,7 @@ class FakeChannel {
 
 afterEach(cleanup);
 
-describe("SkillStorePanel managed Project install", () => {
+describe("SkillStorePanel managed global install", () => {
   it("renders the exact batch and sends one digest-bound decision", () => {
     const channel = new FakeChannel();
     render(<SkillStorePanel open variant="page" channel={channel} />);
@@ -59,7 +59,8 @@ describe("SkillStorePanel managed Project install", () => {
       },
     }));
 
-    expect(screen.getByText("安装 2 个 Skill 到当前 Project")).toBeTruthy();
+    expect(screen.getByText("全局安装 2 个 Skill")).toBeTruthy();
+    expect(screen.getByText(/安装后可在所有会话中使用/)).toBeTruthy();
     expect(screen.getByText("plan-bs")).toBeTruthy();
     expect(screen.getByText("plan-test")).toBeTruthy();
     expect(screen.getByText(/commit: a{40}/)).toBeTruthy();
@@ -110,7 +111,7 @@ describe("SkillStorePanel managed Project install", () => {
       type: "skill_install_status_response",
       payload: { ok: true, status: "succeeded", runtime_verified: true },
     }));
-    expect(screen.getByText(/安装成功：Project 新 Run 已验证所有 Skill/)).toBeTruthy();
+    expect(screen.getByText(/安装成功：所有会话的新 Run 均可使用这些 Skill/)).toBeTruthy();
   });
 
   it("rejects an incomplete stage projection without a confirmation card", () => {

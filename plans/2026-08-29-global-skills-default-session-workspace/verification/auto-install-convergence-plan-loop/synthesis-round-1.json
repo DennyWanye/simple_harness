@@ -1,0 +1,94 @@
+{
+  "source_cluster_ids": [
+    "cluster-auto-approval-receipt-authority",
+    "cluster-run-waiting-cancel-convergence"
+  ],
+  "canonical_findings": [
+    {
+      "id": "auto-approved-receipt-construction-seam-unspecified",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-9"],
+      "assurance_contract_ids": ["FAIL-8"],
+      "evidence": "Auto ALLOW can currently reach HANDOFF_COMMITTED without a decision-bound provenance record, and the Auto branch skips Skill source preflight.",
+      "status": "open",
+      "root_cause": "Auto approval lacks a distinct versioned Host-owned saga transition compatible with genuine SDK effect and handoff evidence."
+    },
+    {
+      "id": "provider-unknown-waiting-cancel-state-machine-unspecified",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "evidence": "The UI clears its Run projection before a backend acknowledgement, while the health endpoint does not query or mutate the durable SDK Run.",
+      "status": "open",
+      "root_cause": "The cross-layer state machine lacks a versioned authoritative status projection and cancellation acknowledgement protocol."
+    },
+    {
+      "id": "nonretryable-install-replay-suppression-contract-missing",
+      "severity": "P1",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-10"],
+      "assurance_contract_ids": ["FAIL-9"],
+      "evidence": "Stage-failure identity includes transient Run/call/effect IDs, so blind replay is not distinguished from an explicit retry generation.",
+      "status": "open",
+      "root_cause": "Retry suppression lacks a stable source-input identity and one durable generation owner."
+    },
+    {
+      "id": "incremental-auto-convergence-oracles-not-frozen",
+      "severity": "P2",
+      "scope_relation": "in-scope",
+      "origin": "patch-induced",
+      "violated_acceptance_ids": ["AC-9", "AC-10"],
+      "assurance_contract_ids": ["FAIL-8", "FAIL-9"],
+      "evidence": "Incremental testcases do not yet name exact receipt, Run version, query/cancel acknowledgement and timestamp oracles.",
+      "status": "open",
+      "root_cause": "Acceptance expanded after the original oracle freeze without a corresponding low-level contract freeze."
+    }
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "auto-approved-receipt-construction-seam-unspecified",
+    "provider-unknown-waiting-cancel-state-machine-unspecified",
+    "nonretryable-install-replay-suppression-contract-missing",
+    "incremental-auto-convergence-oracles-not-frozen"
+  ],
+  "decisions": [
+    {
+      "canonical_finding_id": "auto-approved-receipt-construction-seam-unspecified",
+      "source_finding_ids": ["auto-approved-receipt-construction-seam-unspecified"],
+      "action": "plan-change",
+      "rationale": "Auto cannot reuse or fabricate a manual SDK decision. The plan must specify one versioned Host-owned auto-decision transition, common preflight, exact provenance, CAS replay and genuine effect/handoff evidence."
+    },
+    {
+      "canonical_finding_id": "provider-unknown-waiting-cancel-state-machine-unspecified",
+      "source_finding_ids": ["provider-unknown-waiting-cancel-state-machine-unspecified"],
+      "action": "plan-change",
+      "rationale": "The durable SDK Run is authoritative. The plan must replace local-only timeout reset with versioned status query, explicit waiting projection and idempotent authoritative cancellation."
+    },
+    {
+      "canonical_finding_id": "nonretryable-install-replay-suppression-contract-missing",
+      "source_finding_ids": ["nonretryable-install-replay-suppression-contract-missing"],
+      "action": "plan-change",
+      "rationale": "Stage failures need a source-input-derived identity and explicit retry generation so nonretryable replay does not repeat source work while a changed input remains a new request."
+    },
+    {
+      "canonical_finding_id": "incremental-auto-convergence-oracles-not-frozen",
+      "source_finding_ids": ["incremental-auto-convergence-oracles-not-frozen"],
+      "action": "plan-change",
+      "rationale": "TC-GS-09 and TC-GS-10 must name the exact receipt, Run version, query/cancel acknowledgement and timing oracles before implementation."
+    }
+  ],
+  "conflicts": [],
+  "required_spikes": [],
+  "plan_actions": [
+    "Specify auto-approved-skill-install-v1 and its trusted saga transition without changing manual-v1.",
+    "Run the same source preflight in Auto and Manual before authorization diverges.",
+    "Specify stable stage-failure identity plus explicit retry generation.",
+    "Specify authoritative versioned Run status query and idempotent cancel acknowledgement ordering.",
+    "Freeze exact receipt, failure, waiting, cancellation and five-second UI settlement oracles."
+  ]
+}

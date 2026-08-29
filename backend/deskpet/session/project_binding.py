@@ -18,6 +18,7 @@ import sqlite3
 import subprocess
 import time
 import uuid
+import re
 from contextlib import AsyncExitStack
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -662,9 +663,9 @@ class ProjectBindingService:
             if decoded and int(decoded.get("catalog_revision", -1)) != revision:
                 raise ProjectSessionError("stale_cursor")
             params: list[Any] = []
-            where = ""
+            where = "WHERE NOT EXISTS (SELECT 1 FROM project_origins po WHERE po.project_id=projects.project_id AND po.project_origin='automatic_session_workspace')"
             if decoded:
-                where = "WHERE (last_opened_at < ? OR (last_opened_at = ? AND project_id > ?))"
+                where += " AND (last_opened_at < ? OR (last_opened_at = ? AND project_id > ?))"
                 params.extend([decoded["last_opened_at"], decoded["last_opened_at"], decoded["project_id"]])
             rows = await (await db.execute(
                 "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
@@ -681,7 +682,8 @@ class ProjectBindingService:
             if pinned_project_id:
                 pinned_row = await (await db.execute(
                     "SELECT project_id,display_name,canonical_root,root_kind,filesystem_identity,"
-                    "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=?",
+                    "project_revision,created_at,updated_at,last_opened_at FROM projects WHERE project_id=? "
+                    "AND NOT EXISTS (SELECT 1 FROM project_origins po WHERE po.project_id=projects.project_id AND po.project_origin='automatic_session_workspace')",
                     (pinned_project_id,),
                 )).fetchone()
         page_rows, has_more = rows[:size], len(rows) > size
@@ -726,7 +728,8 @@ class ProjectBindingService:
             revision = await self.catalog_revision(db)
             if decoded and int(decoded.get("catalog_revision", -1)) != revision:
                 raise ProjectSessionError("stale_cursor")
-            scope_sql = ("b.project_id=?" if scope_kind == "project" else "b.session_id IS NULL")
+            scope_sql = ("b.project_id=? AND po.project_origin IS NULL" if scope_kind == "project" else
+                         "(b.session_id IS NULL OR po.project_origin='automatic_session_workspace')")
             params: list[Any] = [project_id] if scope_kind == "project" else []
             cursor_sql = ""
             if decoded:
@@ -735,12 +738,13 @@ class ProjectBindingService:
                 params.extend([decoded["activity_at"], decoded["activity_at"], decoded["session_id"]])
             base_projection = """
               SELECT s.id session_id,s.created_at,b.project_id,b.execution_kind,b.execution_root,
-                     b.source_session_id,p.canonical_root,p.filesystem_identity,
+                     b.source_session_id,p.canonical_root,p.filesystem_identity,po.project_origin,
                      b.execution_identity,t.title,ma.turn_count,ma.last_message_at,ma.preview
                 FROM sessions s
                 JOIN session_catalog_entries ce ON ce.session_id=s.id AND ce.product_kind='conversation'
                 LEFT JOIN session_project_bindings b ON b.session_id=s.id
                 LEFT JOIN projects p ON p.project_id=b.project_id
+                LEFT JOIN project_origins po ON po.project_id=p.project_id
                 LEFT JOIN session_titles t ON t.session_id=s.id
                 LEFT JOIN (SELECT session_id,COUNT(*) turn_count,MAX(created_at) last_message_at,
                      MIN(CASE WHEN role='user' AND content<>'' THEN content END) preview
@@ -782,8 +786,10 @@ class ProjectBindingService:
             except ProjectSessionError:
                 availability = "missing"
         preview = str(row["preview"] or "")[:60]
-        return {"session_id": str(row["session_id"]), "project_id": row["project_id"],
-                "session_kind": "project" if row["project_id"] else "projectless",
+        automatic = row["project_origin"] == "automatic_session_workspace"
+        return {"session_id": str(row["session_id"]), "project_id": None if automatic else row["project_id"],
+                "session_kind": "projectless" if automatic or not row["project_id"] else "project",
+                "workspace_kind": "automatic" if automatic else ("selected" if row["project_id"] else "none"),
                 "execution_kind": execution_kind, "execution_root": execution_root,
                 "source_session_id": row["source_session_id"], "title": str(row["title"] or ""),
                 "preview": preview, "turn_count": int(row["turn_count"] or 0),
@@ -805,6 +811,9 @@ class SessionCreationService:
         owner_identity_resolver: Callable[[], Any] | None = None,
         provider_binding_validator: Callable[[str, str, int], None] | None = None,
         fault_inject: Callable[[str], Awaitable[None] | None] | None = None,
+        documents_root: str | None = None,
+        documents_identity: str | None = None,
+        allow_test_projectless: bool = True,
     ) -> None:
         self._bindings = binding_service
         self._provider_lock = provider_mutation_lock
@@ -812,6 +821,9 @@ class SessionCreationService:
         self._owner_identity_resolver = owner_identity_resolver
         self._provider_binding_validator = provider_binding_validator
         self._fault_inject = fault_inject
+        self._documents_root = documents_root
+        self._documents_identity = documents_identity
+        self._allow_test_projectless = allow_test_projectless
 
     async def _fault(self, stage: str) -> None:
         if self._fault_inject is None:
@@ -819,6 +831,286 @@ class SessionCreationService:
         result = self._fault_inject(stage)
         if result is not None:
             await result
+
+    @staticmethod
+    def _owned_workspace_is_safe_to_remove(
+        *, leaf: Path, marker: Path, allocation_id: str, session_id: str,
+        directory_identity: str | None,
+    ) -> bool:
+        """Prove that an allocation still owns an otherwise-empty leaf.
+
+        All fences are intentional: a matching marker alone is insufficient
+        after the leaf has been replaced, and an identity match is
+        insufficient after the user has written content into the directory.
+        """
+
+        if not directory_identity:
+            return False
+        try:
+            if _filesystem_identity(_strict_directory(os.fspath(leaf))) != directory_identity:
+                return False
+            marker_value = json.loads(marker.read_text(encoding="utf-8"))
+            if marker_value != {"allocation_id": allocation_id, "session_id": session_id}:
+                return False
+            return {entry.name for entry in leaf.iterdir()} == {marker.name}
+        except (OSError, json.JSONDecodeError, ProjectSessionError):
+            return False
+
+    async def _reconcile_workspace_allocation(self, request_id: str) -> str:
+        """Reconcile one incomplete T1/T2 allocation durably.
+
+        Returns the resulting allocation state.  Safe orphan directories are
+        removed and reset to ``reserved`` so an idempotent retry can recreate
+        them.  Any ownership ambiguity is retained as
+        ``compensation_required`` and therefore fails closed.
+        """
+
+        async with self._bindings._write_lock:
+            async with aiosqlite.connect(self._bindings._db_path) as db:
+                row = await (await db.execute(
+                    "SELECT allocation_id,session_id,directory_path,owned_marker,"
+                    "directory_identity,state FROM workspace_allocations WHERE request_id=?",
+                    (request_id,),
+                )).fetchone()
+                if row is None:
+                    return "missing"
+                allocation_id, sid = str(row[0]), str(row[1])
+                leaf, marker = Path(str(row[2])), Path(str(row[3]))
+                identity, state = (str(row[4]) if row[4] else None), str(row[5])
+                if state in {"completed", "reserved", "failed"}:
+                    return state
+
+                # A committed aggregate is authoritative even if a crash left
+                # the marker behind before post-commit cleanup.
+                aggregate = await (await db.execute(
+                    "SELECT p.project_id,p.canonical_root,p.filesystem_identity "
+                    "FROM session_project_bindings b JOIN projects p ON p.project_id=b.project_id "
+                    "JOIN project_origins o ON o.project_id=p.project_id "
+                    "WHERE b.session_id=? AND o.project_origin='automatic_session_workspace'",
+                    (sid,),
+                )).fetchone()
+                now = time.time()
+                if (
+                    aggregate is not None
+                    and str(aggregate[1]) == os.fspath(leaf)
+                    and identity is not None
+                    and str(aggregate[2]) == identity
+                ):
+                    await db.execute(
+                        "UPDATE workspace_allocations SET project_id=?,state='completed',error_code=NULL,"
+                        "updated_at=?,completed_at=COALESCE(completed_at,?),"
+                        "reconciliation_attempts=reconciliation_attempts+1,last_reconciled_at=? "
+                        "WHERE request_id=?",
+                        (str(aggregate[0]), now, now, now, request_id),
+                    )
+                    await db.commit()
+                    try:
+                        marker.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    return "completed"
+
+                safe = self._owned_workspace_is_safe_to_remove(
+                    leaf=leaf, marker=marker, allocation_id=allocation_id,
+                    session_id=sid, directory_identity=identity,
+                )
+                next_state = "reserved" if safe else "compensation_required"
+                error = "workspace_compensated" if safe else "workspace_compensation_unsafe"
+                if safe:
+                    try:
+                        marker.unlink()
+                        leaf.rmdir()
+                    except OSError:
+                        next_state = "compensation_required"
+                        error = "workspace_compensation_failed"
+                await db.execute(
+                    "UPDATE workspace_allocations SET state=?,error_code=?,updated_at=?,"
+                    "reconciliation_attempts=reconciliation_attempts+1,last_reconciled_at=? "
+                    "WHERE request_id=?",
+                    (next_state, error, now, now, request_id),
+                )
+                await db.commit()
+                return next_state
+
+    async def reconcile_automatic_workspaces(self) -> dict[str, int]:
+        """Startup recovery entry point for every unfinished allocation."""
+
+        async with aiosqlite.connect(self._bindings._db_path) as db:
+            rows = await (await db.execute(
+                "SELECT request_id FROM workspace_allocations "
+                "WHERE state IN ('directory_created','compensation_required') "
+                "ORDER BY created_at,allocation_id"
+            )).fetchall()
+        counts = {"completed": 0, "reserved": 0, "compensation_required": 0}
+        for (request_id,) in rows:
+            state = await self._reconcile_workspace_allocation(str(request_id))
+            if state in counts:
+                counts[state] += 1
+        return counts
+
+    async def _prepare_automatic_workspace(
+        self, *, request_id: str, intent_hash: str, session_id: str | None = None
+    ) -> tuple[str, str, str]:
+        """Run T0/F1/T1 for an ordinary Session before product publication."""
+
+        if not self._documents_root or not self._documents_identity:
+            raise ProjectSessionError("host_documents_unavailable")
+        documents = _strict_directory(self._documents_root)
+        if _filesystem_identity(documents) != self._documents_identity:
+            raise ProjectSessionError("host_documents_identity_mismatch")
+        sid = str(session_id or uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-session:{request_id}"))
+        allocation_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-workspace:{request_id}"))
+        display_seed = re.sub(r"[^\w.-]+", "-", "Session", flags=re.UNICODE).strip("-.") or "Session"
+        leaf = documents / "SimpleHarnessProjects" / f"{display_seed}-{sid[:8]}"
+        marker = leaf / ".simple-harness-workspace.json"
+        now = time.time()
+        async with self._bindings._write_lock:
+            async with aiosqlite.connect(self._bindings._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                row = await (await db.execute(
+                    "SELECT intent_hash,session_id,directory_path,directory_identity,state "
+                    "FROM workspace_allocations WHERE request_id=?", (request_id,)
+                )).fetchone()
+                if row is None:
+                    await db.execute(
+                        "INSERT INTO workspace_allocations(allocation_id,request_id,intent_hash,session_id,"
+                        "directory_path,owned_marker,state,created_at,updated_at) "
+                        "VALUES(?,?,?,?,?,?,'reserved',?,?)",
+                        (allocation_id, request_id, intent_hash, sid, os.fspath(leaf), os.fspath(marker), now, now),
+                    )
+                    state = "reserved"
+                    identity = None
+                else:
+                    if str(row[0]) != intent_hash:
+                        raise ProjectSessionError("request_id_conflict")
+                    sid, leaf, identity, state = str(row[1]), Path(str(row[2])), row[3], str(row[4])
+                    marker = leaf / ".simple-harness-workspace.json"
+                await db.commit()
+        if state == "compensation_required":
+            state = await self._reconcile_workspace_allocation(request_id)
+            if state == "completed":
+                async with aiosqlite.connect(self._bindings._db_path) as db:
+                    completed = await (await db.execute(
+                        "SELECT session_id,directory_path,directory_identity FROM workspace_allocations "
+                        "WHERE request_id=? AND state='completed'", (request_id,)
+                    )).fetchone()
+                if completed is None:
+                    raise ProjectSessionError("workspace_allocation_stale")
+                return str(completed[0]), str(completed[1]), str(completed[2])
+            if state == "compensation_required":
+                raise ProjectSessionError("workspace_compensation_required")
+        if state == "directory_created":
+            # A concurrent owner may be between T1 and T2.  Retrying the same
+            # durable intent can safely join T2, but must never reclaim the
+            # leaf here.  Only startup reconciliation (when no request is
+            # active) is allowed to compensate a T1 orphan.
+            if not marker.is_file() or not identity:
+                raise ProjectSessionError("workspace_marker_missing")
+            if _filesystem_identity(_strict_directory(os.fspath(leaf))) != str(identity):
+                raise ProjectSessionError("workspace_directory_identity_mismatch")
+            return sid, os.fspath(leaf), str(identity)
+        await self._fault("workspace_after_reserve")
+        if state == "completed":
+            return sid, os.fspath(leaf), str(identity)
+        if state == "reserved":
+            try:
+                leaf.parent.mkdir(parents=True, exist_ok=True)
+                leaf.mkdir(exist_ok=False)
+                marker.write_text(_canonical_json({"allocation_id": allocation_id, "session_id": sid}), encoding="utf-8")
+            except FileExistsError as exc:
+                try:
+                    marker_value = json.loads(marker.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    raise ProjectSessionError("workspace_directory_conflict") from exc
+                if marker_value != {"allocation_id": allocation_id, "session_id": sid}:
+                    raise ProjectSessionError("workspace_directory_conflict") from exc
+            except OSError as exc:
+                async with aiosqlite.connect(self._bindings._db_path) as db:
+                    await db.execute(
+                        "UPDATE workspace_allocations SET state='failed',error_code='workspace_create_failed',updated_at=? WHERE request_id=?",
+                        (time.time(), request_id),
+                    )
+                    await db.commit()
+                raise ProjectSessionError("workspace_create_failed") from exc
+            await self._fault("workspace_after_mkdir")
+        if not marker.is_file():
+            raise ProjectSessionError("workspace_marker_missing")
+        identity = _filesystem_identity(_strict_directory(os.fspath(leaf)))
+        async with self._bindings._write_lock:
+            async with aiosqlite.connect(self._bindings._db_path) as db:
+                await db.execute("BEGIN IMMEDIATE")
+                cursor = await db.execute(
+                    "UPDATE workspace_allocations SET state='directory_created',directory_identity=?,updated_at=? "
+                    "WHERE request_id=? AND state IN ('reserved','directory_created')",
+                    (identity, time.time(), request_id),
+                )
+                if cursor.rowcount != 1:
+                    raise ProjectSessionError("workspace_allocation_stale")
+                await db.commit()
+        await self._fault("workspace_after_identity_fence")
+        return sid, os.fspath(leaf), identity
+
+    async def migrate_projectless_session(self, session_id: str) -> bool:
+        """Bind one legacy projectless Session before runtime admission.
+
+        The allocation row is the durable replay receipt. No Session/message
+        row is replaced, so existing conversation content remains untouched.
+        """
+
+        sid = str(session_id or "").strip()
+        if not sid:
+            raise ProjectSessionError("session_not_found")
+        current = await self._bindings.resolve_session(sid)
+        if current.kind != "projectless":
+            return False
+        request = f"automatic-workspace-migration:{sid}"
+        intent_hash = hashlib.sha256(
+            _canonical_json({"schema_version": 1, "session_id": sid, "kind": "legacy_projectless"}).encode("utf-8")
+        ).hexdigest()
+        _, root, identity = await self._prepare_automatic_workspace(
+            request_id=request, intent_hash=intent_hash, session_id=sid
+        )
+        project_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-project:{request}"))
+        now = time.time()
+        async with self._bindings._write_lock:
+            async with aiosqlite.connect(self._bindings._db_path) as db:
+                await db.execute("PRAGMA foreign_keys=ON")
+                await db.execute("BEGIN IMMEDIATE")
+                exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))).fetchone()
+                if exists is None:
+                    raise ProjectSessionError("session_not_found")
+                binding = await (await db.execute(
+                    "SELECT project_id FROM session_project_bindings WHERE session_id=?", (sid,)
+                )).fetchone()
+                if binding is not None:
+                    await db.rollback()
+                    return False
+                await db.execute(
+                    "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                    "project_revision,created_at,updated_at,last_opened_at) VALUES(?,?,?,?,?,1,?,?,?)",
+                    (project_id, f"Session {sid[:8]}", root, "folder", identity, now, now, now),
+                )
+                await db.execute(
+                    "INSERT INTO project_origins(project_id,project_origin) VALUES(?,'automatic_session_workspace')",
+                    (project_id,),
+                )
+                await db.execute(
+                    "INSERT INTO session_project_bindings(session_id,project_id,execution_kind,binding_version,created_at) "
+                    "VALUES(?,?,'project_root',1,?)", (sid, project_id, now),
+                )
+                cursor = await db.execute(
+                    "UPDATE workspace_allocations SET project_id=?,state='completed',updated_at=?,completed_at=? "
+                    "WHERE request_id=? AND state='directory_created'",
+                    (project_id, now, now, request),
+                )
+                if cursor.rowcount != 1:
+                    raise ProjectSessionError("workspace_allocation_stale")
+                await db.commit()
+        try:
+            (Path(root) / ".simple-harness-workspace.json").unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
 
     async def _build_handoff(self, db: aiosqlite.Connection, source_sid: str) -> dict[str, Any]:
         exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (source_sid,))).fetchone()
@@ -889,6 +1181,7 @@ class SessionCreationService:
             return result
         explicit_path: str | None = None
         explicit_identity: str | None = None
+        automatic_workspace: tuple[str, str, str] | None = None
         if execution_kind == "explicit":
             if not execution_root:
                 raise ProjectSessionError("execution_root_required")
@@ -897,6 +1190,10 @@ class SessionCreationService:
             except ProjectSessionError as exc:
                 raise ProjectSessionError("execution_root_not_directory") from exc
             explicit_path, explicit_identity = os.fspath(path), _filesystem_identity(path)
+        elif project_id is None and not self._allow_test_projectless:
+            automatic_workspace = await self._prepare_automatic_workspace(
+                request_id=request, intent_hash=intent_hash
+            )
         frozen_owner = (
             self._owner_identity_resolver()
             if self._owner_identity_resolver is not None
@@ -911,6 +1208,7 @@ class SessionCreationService:
                 "profile_generation": int(owner.profile_generation),
                 "binding_epoch": int(frozen_owner.binding_epoch),
             }
+        transaction_failure: Exception | None = None
         async with AsyncExitStack() as stack:
             if self._provider_lock is not None:
                 await stack.enter_async_context(self._provider_lock)
@@ -942,8 +1240,28 @@ class SessionCreationService:
                     if row is None:
                         raise ProjectSessionError("project_not_found")
                     project = self._bindings._project_from_row(row)
+                elif automatic_workspace is not None:
+                    sid, automatic_root, automatic_identity = automatic_workspace
+                    automatic_project_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness-project:{request}"))
+                    now = time.time()
+                    await db.execute(
+                        "INSERT INTO projects(project_id,display_name,canonical_root,root_kind,filesystem_identity,"
+                        "project_revision,created_at,updated_at,last_opened_at) "
+                        "VALUES(?,?,?,?,?,1,?,?,?)",
+                        (automatic_project_id, f"Session {sid[:8]}", automatic_root, "folder", automatic_identity, now, now, now),
+                    )
+                    await db.execute(
+                        "INSERT INTO project_origins(project_id,project_origin) VALUES(?,'automatic_session_workspace')",
+                        (automatic_project_id,),
+                    )
+                    project = ProjectRecord(
+                        automatic_project_id, f"Session {sid[:8]}", automatic_root, "folder",
+                        automatic_identity, 1, now, now, now,
+                    )
+                    project_id = automatic_project_id
                 handoff = await self._build_handoff(db, source_session_id) if source_session_id else None
-                now, sid = time.time(), str(uuid.uuid4())
+                now = time.time()
+                sid = automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
                 await db.execute("INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
                                  (sid, now, _canonical_json({"origin": "project_session_v1"})))
                 await db.execute("INSERT INTO session_catalog_entries(session_id,product_kind,created_at) VALUES(?, 'conversation', ?)", (sid, now))
@@ -1027,8 +1345,10 @@ class SessionCreationService:
                         (sid, project.project_id, execution_kind, explicit_path, explicit_identity,
                          source_session_id, _canonical_json(handoff) if handoff else None, now),
                     )
-                descriptor = {"session_id": sid, "project_id": project_id,
-                    "session_kind": "project" if project_id else "projectless",
+                is_automatic = automatic_workspace is not None
+                descriptor = {"session_id": sid, "project_id": None if is_automatic else project_id,
+                    "session_kind": "projectless" if is_automatic or not project_id else "project",
+                    "workspace_kind": "automatic" if is_automatic else ("selected" if project_id else "none"),
                     "execution_kind": execution_kind if project_id else None,
                     "execution_root": (project.canonical_root if project and execution_kind == "project_root" else explicit_path),
                     "source_session_id": source_session_id, "title": "", "preview": "",
@@ -1093,12 +1413,27 @@ class SessionCreationService:
                 )
                 await self._fault("after_receipt")
                 await self._fault("before_commit")
+                if automatic_workspace is not None:
+                    await db.execute(
+                        "UPDATE workspace_allocations SET project_id=?,state='completed',updated_at=?,completed_at=? "
+                        "WHERE request_id=? AND state='directory_created'",
+                        (project_id, now, now, request),
+                    )
                 await db.commit()
                 await self._fault("after_commit")
+                if automatic_workspace is not None:
+                    try:
+                        (Path(automatic_workspace[1]) / ".simple-harness-workspace.json").unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 return result
-            except Exception:
+            except Exception as exc:
                 await db.rollback()
-                raise
+                transaction_failure = exc
+        if transaction_failure is not None:
+            if automatic_workspace is not None:
+                await self._reconcile_workspace_allocation(request)
+            raise transaction_failure
 
     async def mark_deleted(self, session_id: str) -> None:
         sid, now = str(session_id or "").strip(), time.time()

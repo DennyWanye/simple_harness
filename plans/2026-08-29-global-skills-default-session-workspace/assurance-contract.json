@@ -1,0 +1,34 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9", "AC-10"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "Global managed Capability catalog and active immutable Skill packages"},
+    {"id": "ASSET-2", "description": "Durable Session workspace binding and canonical execution root"},
+    {"id": "ASSET-3", "description": "User files in selected and automatically created directories"},
+    {"id": "ASSET-4", "description": "Existing Tool authorization, confirmation, health, platform policy boundary, and persisted permission-mode intent"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "The current developer account, OS kernel, gate program, and absolute-path system programs are trusted"},
+    {"id": "TRUST-2", "description": "A directory explicitly confirmed through the native picker represents the user's workspace intent"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "A global Skill is incorrectly copied or bound to one Project or Session"},
+    {"id": "FAIL-2", "description": "A failed install exposes a partial package or replaces the last valid global catalog"},
+    {"id": "FAIL-3", "description": "Default workspace creation collides, drifts, or leaves a half-bound Session"},
+    {"id": "FAIL-4", "description": "Existing or newly created Sessions receive different Skill or Tool discoverable catalogs"},
+    {"id": "FAIL-5", "description": "Universal Tool discoverability bypasses execution authorization or availability policy"},
+    {"id": "FAIL-6", "description": "UI reports install success before a verifiable publish receipt and runtime visibility proof"},
+    {"id": "FAIL-7", "description": "Production traffic is accidentally wired through a legacy loader or dormant RunKernel seam"},
+    {"id": "FAIL-8", "description": "Default automatic permission mode bypasses Skill source validation or fails to preserve a user's explicit override"},
+    {"id": "FAIL-9", "description": "A failed Skill install leaves the durable SDK Run waiting without an explicit recovery or cancellation path while the UI falsely reports installation progress"}
+  ],
+  "in_scope_adversaries": [
+    {"id": "ADV-1", "description": "Malformed or malicious Skill Git content using traversal, symlinks, or an invalid manifest"}
+  ],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "The host OS, developer account, or deterministic gate is compromised"},
+    {"id": "OOS-2", "description": "Windows-specific real UI behavior"},
+    {"id": "OOS-3", "description": "A new cryptographic Skill supply-chain signing infrastructure"}
+  ],
+  "maximum_acceptable_impact": "A failure may reject only the current install operation or Session creation; it must not alter the prior valid global catalog, other Session bindings, or existing user files."
+}

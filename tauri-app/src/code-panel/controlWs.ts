@@ -34,6 +34,11 @@ import type { CompanionEvent } from "../types/messages";
 const RECONNECT_BASE_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 export const CONNECT_TIMEOUT_MS = 5000;
+const RUN_STATUS_ACK_TIMEOUT_MS = 5_000;
+const pendingRunStatusQueries = new Map<
+  string,
+  { sid: string; runId: string; timer: ReturnType<typeof setTimeout> }
+>();
 
 // ─── 控制连接身份（2026-08-04 Workbench UI 改版，B5）───────────────
 // 聊天通道（本模块单例 WS）的显式身份声明。改版前由 route hash 推断
@@ -1523,20 +1528,83 @@ function dispatch(msg: any) {
       break;
     }
     case "chat_v2_interrupted": {
-      // P4-S25 B3: backend cancelled in-flight task. Clear status so
-      // the button reverts to "发送" and user can type again.
-      const runId = String(msg.payload?.run_id || "").trim();
-      if (runId) {
+      const p = msg.payload || {};
+      const runId = String(p.run_id || p.root_run_id || "").trim();
+      const state = String(p.state || "").toLowerCase();
+      const version = Number(p.run_version || 0);
+      const terminal = ["completed", "failed", "cancelled"].includes(state);
+      const current = runId
+        ? store.sessions[sid]?.run_projections?.[runId]
+        : undefined;
+      if (runId && terminal && version >= (current?.version ?? 0)) {
         store.upsert_run_projection(sid, runId, {
-          status: "cancelled",
+          version,
+          status: state as "completed" | "failed" | "cancelled",
           inflight: false,
         });
         selectNewestInflightRunAfterTerminal(sid, runId);
-      } else {
+      } else if (
+        runId &&
+        version >= (current?.version ?? 0) &&
+        (state === "running" || state === "waiting")
+      ) {
+        store.upsert_run_projection(sid, runId, {
+          version,
+          status: state,
+          inflight: state === "running",
+        });
+        if (state === "waiting") {
+          store.upsert(sid, { active_run_id: runId });
+        }
+      }
+      break;
+    }
+    case "session_run_status_ack": {
+      const p = msg.payload || {};
+      const queryId = String(p.query_id || "");
+      const pending = pendingRunStatusQueries.get(queryId);
+      if (!pending) break;
+      const ackSid = String(p.session_id || sid);
+      const ackRunId = String(p.root_run_id || p.run_id || "").trim();
+      if (ackSid !== pending.sid || ackRunId !== pending.runId) break;
+      clearTimeout(pending.timer);
+      pendingRunStatusQueries.delete(queryId);
+      const runId = String(p.root_run_id || p.run_id || pending?.runId || "").trim();
+      if (!runId) break;
+      const current = store.sessions[sid]?.run_projections?.[runId];
+      const version = Number(p.run_version || 0);
+      if (version < (current?.version ?? 0)) break;
+      const state = String(p.state || "").toLowerCase();
+      if (["completed", "failed", "cancelled"].includes(state)) {
+        store.upsert_run_projection(sid, runId, {
+          version,
+          status: state as "completed" | "failed" | "cancelled",
+          inflight: false,
+        });
+        selectNewestInflightRunAfterTerminal(sid, runId);
+      } else if (state === "waiting") {
+        // WAITING is durable and actionable. Keep the active Run identity;
+        // the UI may offer resume/cancel without pretending the Run is idle.
+        store.upsert_run_projection(sid, runId, {
+          version,
+          status: "waiting",
+          inflight: false,
+        });
         store.upsert(sid, {
           status: "idle",
           inflight: false,
-          active_run_id: null,
+          active_run_id: runId,
+        });
+      } else if (["created", "queued", "running", "cancel_requested"].includes(state)) {
+        store.upsert_run_projection(sid, runId, {
+          version,
+          status: "running",
+          inflight: true,
+        });
+        store.upsert(sid, {
+          status: "running",
+          inflight: true,
+          active_run_id: runId,
         });
       }
       break;
@@ -2086,7 +2154,28 @@ const _OUTBOX_MAX = 50;
 
 export const controlWS: ControlWS = {
   send(msg) {
-    const identified = withClientTurnIdentity(msg);
+    let outbound = msg;
+    if (msg.type === "chat_v2_interrupt") {
+      const payload = { ...(msg.payload ?? {}) };
+      const sid = String(payload.session_id || useSessionsStore.getState().active_sid);
+      const session = useSessionsStore.getState().sessions[sid];
+      const runId = String(
+        payload.root_run_id || payload.run_id || session?.active_run_id || "",
+      );
+      const version = session?.run_projections?.[runId]?.version ?? 0;
+      outbound = {
+        ...msg,
+        payload: {
+          ...payload,
+          root_run_id: runId,
+          expected_run_version: payload.expected_run_version ?? version,
+          cancel_command_id:
+            payload.cancel_command_id ?? `cancel:${runId}:v${version}`,
+          reason: payload.reason ?? "user_interrupt",
+        },
+      };
+    }
+    const identified = withClientTurnIdentity(outbound);
     const serialized = JSON.stringify(identified);
     if (ws && ws.readyState === WebSocket.OPEN) {
       try {
@@ -2197,9 +2286,21 @@ export const controlWS: ControlWS = {
 // drive `dispatch` without spinning up a real WebSocket. Exported under a
 // `__test_` prefix to make the intent obvious at call sites.
 export const __test_dispatch = dispatch;
+export function __test_register_pending_run_status_query(
+  queryId: string,
+  sid: string,
+  runId: string,
+) {
+  const timer = setTimeout(() => undefined, 60_000);
+  pendingRunStatusQueries.set(queryId, { sid, runId, timer });
+}
 export function __test_reset_companion_identity_status() {
   latestCompanionIdentityStatus = null;
   G.__deskpet_companion_identity_status__ = null;
+  for (const pending of pendingRunStatusQueries.values()) {
+    clearTimeout(pending.timer);
+  }
+  pendingRunStatusQueries.clear();
 }
 
 // ─── Session Health Check (Bug #2 防御) ─────────────────────────────
@@ -2228,26 +2329,46 @@ function startSessionHealthCheck() {
 
       if (isStuck) {
         console.warn(
-          `[HealthCheck] Session ${session.base_session_id} stuck in ${session.status} for ${stuckDuration}ms, force reset to idle`
+          `[HealthCheck] Session ${session.base_session_id} requests authoritative Run status after ${stuckDuration}ms`
         );
 
-        // 强制重置状态
-        store.upsert(session.base_session_id, {
-          status: "idle",
-          inflight: false,
-          active_run_id: null,
-        });
-
-        // 发送诊断事件到后端（如果连接正常）
-        if (current_state === "connected") {
+        const runId = String(session.active_run_id || "").trim();
+        if (current_state === "connected" && runId) {
+          if ([...pendingRunStatusQueries.values()].some(
+            (pending) => pending.sid === session.base_session_id && pending.runId === runId,
+          )) return;
+          const projection = session.run_projections?.[runId];
+          const queryId = `run-status:${runId}:${Date.now()}`;
           controlWS.send({
-            type: "session_health_check",
+            type: "session_run_status_query",
             payload: {
+              query_id: queryId,
               session_id: session.base_session_id,
-              stuck_status: session.status,
+              root_run_id: runId,
+              sdk_run_id: "",
+              observed_run_version: projection?.version ?? 0,
+              observed_ui_status: session.status,
+              observed_inflight: session.inflight,
               stuck_duration_ms: stuckDuration,
-              forced_reset: true,
             },
+          });
+          const timer = setTimeout(() => {
+            pendingRunStatusQueries.delete(queryId);
+            const latest = useSessionsStore.getState().sessions[session.base_session_id];
+            if (latest?.active_run_id === runId) {
+              // Connection-recovery presentation only. Do not mutate the
+              // authoritative Run projection or release inflight ownership.
+              useSessionsStore.getState().upsert(session.base_session_id, {
+                status: "error",
+                inflight: latest.inflight,
+                active_run_id: runId,
+              });
+            }
+          }, RUN_STATUS_ACK_TIMEOUT_MS);
+          pendingRunStatusQueries.set(queryId, {
+            sid: session.base_session_id,
+            runId,
+            timer,
           });
         }
       }
