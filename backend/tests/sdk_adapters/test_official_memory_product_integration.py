@@ -177,10 +177,12 @@ async def test_invalid_identity_or_auth_snapshot_fails_before_llm(
     await session.initialize()
     await session.ensure_session("session-a")
     if identity_contents is not None:
-        (user_data / "companion-local-identity.json").write_text(
+        identity_path = user_data / "companion-local-identity.json"
+        identity_path.write_text(
             identity_contents,
             encoding="utf-8",
         )
+        identity_path.chmod(0o600)
 
     class InvalidAuth:
         async def current_snapshot(self):

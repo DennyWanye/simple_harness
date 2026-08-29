@@ -69,15 +69,19 @@ function pushHistory(entry: string) {
   while (_slashInputHistory.length > HISTORY_MAX) _slashInputHistory.shift();
 }
 
-// commands 缓存 (页面级；后端可 reload skill 触发刷新)
+// commands 缓存 (页面级；输入一个新的 "/" 时强制从本机全局 catalog 刷新)
 // 2026-06-26 修复"输入 /g 无候选"：原实现把**失败/空**结果也缓存进
 // _cachedCommands/_cachedCommandsPromise → boot 早期后端没起来 fetch 空一次后，
 // 模块级缓存永久为空、再也不重试。改为**只缓存非空成功结果**，空/失败时返回空但
 // 不污染缓存 → 下次（首次输入 "/"）可重拉。
 let _cachedCommands: SlashCommand[] | null = null;
 
-async function fetchCommands(): Promise<SlashCommand[]> {
-  if (_cachedCommands !== null && _cachedCommands.length > 0) return _cachedCommands;
+async function fetchCommands(forceRefresh = false): Promise<SlashCommand[]> {
+  if (
+    !forceRefresh &&
+    _cachedCommands !== null &&
+    _cachedCommands.length > 0
+  ) return _cachedCommands;
   try {
     // WI-T2-B fix v2.1: backend 绝对 URL，复用 backendPort.ts 单一源.
     // 相对路径在 Tauri WebView2 (tauri://) 或 vite dev 跨 5473→8400 都失效；
@@ -300,7 +304,13 @@ export function InputBar({
       });
       controlWS.send({
         type: "slash_command",
-        payload: { command: cmd, args, session_id: sid },
+        payload: {
+          command: cmd,
+          args,
+          session_id: sid,
+          request_id: identity.request_id,
+          turn_id: identity.turn_id,
+        },
       });
       return;
     }
@@ -425,9 +435,10 @@ export function InputBar({
     setHistoryIdx(null);
     // 状态机：开/关 dropdown + arg hint
     if (v.startsWith("/")) {
-      // 兜底重拉：boot 早期 fetch 失败导致 allCommands 为空时，输入 "/" 触发重试。
-      if (allCommands.length === 0) {
-        fetchCommands().then((cs) => {
+      // 每次开始一个新的 slash 输入都刷新本机全局 catalog。这样 Skill 在
+      // 页面挂载后安装、或切换到显式目录的新 Session 时不会沿用旧缓存。
+      if (v === "/" || allCommands.length === 0) {
+        fetchCommands(v === "/").then((cs) => {
           if (cs.length) setAllCommands(cs);
         }).catch(() => {});
       }

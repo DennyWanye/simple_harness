@@ -135,6 +135,59 @@ chat capability_install_skill / Settings Skill Store
   canonical JSON fingerprint；CHECK 用 SAVEPOINT 内的 valid/invalid named probes 验证。迁移 commit 前与每次
   reopen 都核 semantic live fingerprint、CHECK probes、foreign_key_check/quick_check；missing/altered/
   unexpected object、伪造旧 manifest、partial v2 均 fail closed。
+- Task 6 的 verification attempt 是在严格 v2 已发布后新增的 durable aggregate，因此生产 schema 升为 v3，
+  不得修改 `_V2_SEMANTIC_HASH` 或把新对象伪装成 v2。保留 immutable v2 DDL/hash/validator；v2→v3 在与
+  v1→v2 相同的 `ProductStateDatabase` owner 内执行，迁移前生成并校验 `pre-v3` SQLite backup（exact v2
+  semantic manifest + quick_check + SHA-256 + `0600` + file/parent fsync + atomic rename），然后单个
+  `BEGIN IMMEDIATE` 新建 verification-attempt/attestation child、重建 intent 表加入 current attempt pointer/
+  generation，并在 FK/row-count/semantic manifest/CHECK probe 全通过后最后写 schema meta 与
+  `PRAGMA user_version=3`。任一 fault rollback 后必须仍是完整可 reopen v2；重复 v3 initialize 幂等。
+- `SCHEMA_V1_PARTS`/`SCHEMA_V2_PARTS` 与对应 semantic hash byte-for-byte 冻结，新增独立
+  `SCHEMA_V3_PARTS`/`_V3_SEMANTIC_HASH`。fresh DB 直接创建 exact v3；v1 userdata 必须先按原合约提交并
+  reopen 验证 exact v2，再执行独立 v2→v3 edge。两条 edge 不合并 transaction：第一条失败仍是 v1；
+  第二条或 pre-v3 backup 失败则保留已提交 exact v2，下一次 initialize 从 v2 edge 幂等重试。
+- backup 改为 migration-edge versioned、content-addressed immutable generations：pre-v2 与 pre-v3 使用不同
+  artifact/sidecar schema，sidecar 冻结 database name、backup kind、source product/user version、exact semantic
+  hash、artifact filename/size/SHA-256。先发布并 fsync DB generation，再发布 sidecar；selector 只接受完整
+  matching pair，因此半发布 generation 不会覆盖最后一个 verified backup。保留现有 pre-v2 compatibility wrapper。
+- v2→v3 backfill 不伪造 Run/READY/terminal/member proof：所有旧列与生命周期事实逐 byte/hash 保持。
+  只有具备 exact settlement/Manager committed relations 的 `published_pending_runtime_verification` 得到 generation-1
+  `unknown` attempt（无 Run/terminal fields，由 startup recovery 查 deterministic Run 后裁决）；`publishing` 与旧
+  `unknown` 不分配 attempt。旧 `succeeded` 只写 `provenance=legacy_v2,runtime_proof_valid=0` compatibility attestation，
+  保留原 verification_ref，但不能满足任何新 v3 completion predicate。其他 stage/confirmation/cleanup/terminal
+  failure 状态 generation=0、current pointer=NULL。missing/ambiguous relation、非法旧 ref/status 使整次 migration rollback。
+- migration 先建 nullable child/columns，按 status matrix 校验并 backfill，再做 old-column row hash/count 对比，最后
+  安装 composite same-intent FK、attempt generation/Run identity unique、unresolved partial unique、status/provenance
+  CHECK/semantic probes；pending v3 必须指向唯一 unresolved attempt，non-legacy succeeded 必须指向 exact
+  terminal_succeeded attempt + `runtime_proof_valid=1` attestation。
+- v2 binary 看见 v3 明确拒绝；回退只允许 app/DB 全停后的显式 offline restore：验证 pre-v3 backup 的 hash、
+  权限与 exact v2 manifest，先保存当前 v3 recovery artifact，再同盘原子替换并只清匹配 stale WAL/SHM。
+  不自动 downgrade，也不删除 v3 attempt/attestation evidence。offline restore 还要先把 live v3 保存为独立
+  content-addressed pre-restore generation；验证 temp candidate 后再原子替换。测试覆盖真实 v2 每一种 intent status、
+  WAL-resident source、backup bytes 已发布但 sidecar 未发布、pre-v2/pre-v3 双 generation 保留、所有 DDL/copy/
+  manifest/meta/user_version fault、v2 legacy intent/operation/member 逐 hash 保持、partial/corrupt v3 fail closed、
+  v3 reopen、v2 downgrade refusal 与 verified offline restore。
+- loop008 的 cross-DB saga 是 immutable v3 之后新增的物理 contract，因此最终 ProductState schema 为 v4；
+  `SCHEMA_V1/2/3_PARTS` 与 hashes 保持 byte-for-byte，新增独立 v4 manifest/hash/validator。attempt v4 用正交
+  monotonic `phase`（allocated/lease_prepared/launching/run_started/lease_bound/lease_ready/running/terminal/
+  released/attested）与 `status`（active/unknown/quarantined/completed/failed/superseded），并增加 exact lease/
+  snapshot/catalog/process/projection/start/bind/READY/pin/terminal/release/attestation refs+SHA。phase-dependent CHECK
+  要求每组 facts 从对应 phase 起完整且更早 phase 为 NULL；completed 只能 attested+succeeded，failed/superseded
+  必须 released+failed。unresolved unique 覆盖 active/unknown/quarantined，runtime_v4 attestation 与 attempt 在同一
+  Product transaction 使用 deferred exact one-to-one FK。
+- v3→v4 是独立 `BEGIN IMMEDIATE` rebuild edge：先 exact-v3 validate 并发布 content-addressed pre-v4 backup，
+  再 rename/copy/classify attempts+attestations、重建 indexes/triggers/FKs，比较旧列 row count/canonical hashes，跑
+  CHECK probes/FK/quick/semantic fingerprint，最后写 manifest/meta/user_version=4。fresh 直接 v4；v1/v2/v3 每条
+  edge 分别 commit+reopen+backup 后前进；任一 v4 fault rollback 后仍是 exact reopenable v3。
+- v3 backfill 不伪造 cross-DB receipts：prepared→allocated；launching/running/unknown→unknown；valid failure/
+  supersession 保留 terminal meaning；只有 current intent、unique fact-complete runtime_v3 attestation 的 success 可
+  标 `legacy_v3_grandfathered_attested` terminal compatibility，禁止进入 fresh v4 saga/reconciler；其余 missing/
+  duplicate/orphan/mismatch 全 quarantine。legacy_v2 仍 compatibility-only，不创建 attempt。
+- v4→v3 rollback 是独立双 DB offline gate：关闭 ingress/Runtime、锁 Product+execution DB，只允许 never-started、
+  provably terminal-failed/no-live-lease、released exact receipt、attested exact evidence 或 safe superseded attempts；
+  任何 recoverable/unknown/terminal-unreleased/identity mismatch abort。先 content-addressed 保存 live v4+execution，
+  restore exact pre-v4 v3 后以 pinned SDK 0.6.3 在副本和 live DB double reopen，证明无 verifier redispatch/mutation；
+  replacement 后失败必须自动恢复 v4 recovery artifact。不得与既有 v3→v2/SDK0.6.2 downgrade 混用。
 
 ### Task 1 — Project identity-aware Capability scope [AC-SI-2, AC-SI-5]
 
@@ -270,6 +323,92 @@ chat capability_install_skill / Settings Skill Store
   `published_pending_runtime_verification` CAS 到 `succeeded`，Settings 才显示“安装成功”，
   chat completion gate 才允许返回 success。验证 Run 失败/崩溃则保持 pending/failed，可幂等重试，
   不回滚已提交 pack 也不误报可用。
+- 新增 Host-owned `SkillInstallVerificationRunService`，但生产 Run owner 只允许现有
+  `SdkRuntimeIngress -> ProductSdkRuntimeStack -> simple_harness Runtime`；不得构造 dormant
+  `deskpet.harness.RunKernel/KernelRunClient`、不得新增第二个 Kernel，也不得使用 legacy
+  `PreparedRunContextV1`/terminal extension。已做的 `ReservedRootProfileSelectionV1` seam 必须回退。
+- `ProjectSdkRuntimeStack` 组合唯一 `ProductRootDriverRouter` 作为现有 `agent.general` driver：router 包装原
+  `react` driver 与 internal verification driver。普通 Run 仍进入 react；verification 只在 ProductState 中
+  current unresolved attempt 的 deterministic session/request/turn/Run identity、Manager/Project/member stamps 与
+  persisted RunStart 全匹配时进入 verifier。payload/venue/mode/profile/布尔字段都不是 authority；ordinary
+  `SdkRuntimeIngress.start` 遇到 reserved attempt identity 必须拒绝，只有 typed、non-model-visible
+  `start_skill_install_verification(attempt_id)` 可启动。vendor Runtime 继续是唯一 create/recovery/terminal owner。
+- SDK 0.6.3 新增 frozen `HostControlAuthorityV1`、`HostControlRunStartV1` 与独立
+  `RunClient.start_host_control`；这是 Host control 的唯一 sanctioned entry，不从 input 推断。authority 固定
+  purpose/ref/hash/generation，start 固定 session/request/turn/Run、bounded driver input 与 catalog fingerprints，
+  不含 conversation/context/prepared fields。UoW 以独立 `host-control/v1` namespace 和覆盖全部字段的 canonical
+  intent hash 预约 identity；ordinary/control collision 双向 fail closed，exact replay 幂等。
+- StartSnapshot 升 schema v6 并持久化 `start_mode=host_control` 与 authority；v1-v5 一律 ordinary，非法混合拒绝。
+  Runtime 仅对 typed HOST_CONTROL 绕过 conversation Memory guards，仍走同一 admission/UoW/Kernel/driver/terminal；
+  不执行 context stage、Memory recall/release/outbox/committed-turn/conversation delivery。SDK recovery 从 v6 snapshot
+  恢复同一 authority，router 再与 ProductState current attempt 逐字段核对，missing/stale/superseded/mismatch 返回
+  bounded failed result，永不 delegate react。
+- `ProjectSkillInstallService` 是 verification attempt 的唯一分配/结算 owner；v3 aggregate 增加 normalized
+  attempt child 与 intent current-attempt pointer/generation。attempt 冻结 Manager receipt/committed set、Project、
+  member set 与 verifier session，按 canonical JSON 派生 attempt/request/turn/expected Run IDs；同 generation
+  重入只恢复同一 Run。intent+attempt state-version CAS 与 unresolved partial unique index 保证一次只有一个
+  prepared/launching/running/unknown attempt；只有已 terminal_failed 且 durable cleanup 完成的 attempt 可在同一
+  transaction 被 N+1 supersede，late terminal 永远不能结算当前 intent。
+- service 先分配 attempt 并把 exact Run catalog lease 只准备到 `PREPARED`，冻结 lease intent/hash、snapshot/
+  catalog/process/projection/prepared-tool-set/entry-set refs+hashes；不得在 SDK RunStart 前声称 READY。随后通过 typed
+  SDK ingress 启动 canonical Run。router 从 durable attempt + v6 StartSnapshot + frozen catalog facts 重建 verifier，
+  不依赖 process closure。verifier driver 的第一个 awaited step 是
+  `CapabilityPlatform.activate_host_control_catalog_after_sdk_start`：在 per-run lock 下验证 exact attempt/authority/
+  RunStart canonical hash，Store CAS adopt 为 bound，调用 `rehydrate_for_run(attempt_id,run_id)` 从 frozen rows 重建
+  current-process pin/ReadyGate，再以相同 fingerprint/token CAS projection READY 并复读确认。只有该 step 返回后，
+  driver 才能在 READY lease 上逐 member
+  调 `verify_fresh_run_page_in`，返回 vendor canonical `DriverResult`，由同一个 SDK Kernel 提交 terminal；它不调用
+  wrapped react、Provider port、Tool executor 或 Effect executor。崩溃在 Run create 与 driver 之间时，SDK recovery
+  仍以 deterministic Run identity 查询 durable attempt 并选 verifier，绝不落入 react；terminal 后 lease release 与
+  cleanup 按 attempt/Run idempotent reconciliation，late superseded attempt 不能结算 intent。
+- 新增唯一 `SdkTerminalCapabilityReleaseReconciler`，在 ProductState/Capability Store/typed SDK reader ready 后、
+  ingress open 前跑到 clean fixed point，terminal listener 只负责 wake。它扫描已 terminal 但无 release receipt 的
+  verifier attempt，验证 exact SDK terminal/root/start/lease/catalog refs+hashes 与 non-recoverable state，再调用现有
+  `release_snapshot_lease_intent_in_tx`；该 Capability transaction 原子 release member leases、生成 deterministic
+  receipt、retire projection/pin。commit 后才由 ProductState attempt CAS 回填 receipt；缺 listener、崩溃、并发与
+  重启只重放同一 receipt。nonterminal/recoverable、identity/hash mismatch、missing/duplicate receipt 或 projection/
+  lease 状态矛盾一律 quarantine 并保持 ingress closed，绝不提前 release 或推断 success。
+- verification attempt 使用 monotonic cross-DB saga phases：`ALLOCATED -> START_SUBMITTED -> RUN_DURABLE ->
+  CATALOG_READY -> PAGE_IN_PROVEN -> TERMINAL_OBSERVED -> LEASE_RELEASED -> ATTESTED`；失败分支
+  `TERMINAL_FAILED/UNKNOWN/SUPERSEDED` 不倒退。每个 phase CAS 要求 current intent pointer/generation、prior phase、
+  完整 phase-specific receipt hashes，exact replay 返回既有结果，changed/skipped/duplicate fact quarantine。
+  PAGE_IN evidence 必须作为 durable SDK observation 绑定 exact ordered members；内存值在 crash 后必须重做或从
+  durable observation 恢复。ATTESTED 才在一个 Product transaction 写 runtime_v3 attestation 并把 intent 置 succeeded。
+- `ProductSdkRuntimeStack.read_skill_install_verification_evidence(expected_attempt)` 是唯一 typed reader，在一个
+  execution DB read transaction 返回 `not_started/nonterminal/terminal_succeeded/terminal_failed/corrupt`。它校验
+  root/session/request/Run identity、RunStart snapshot hash 和 attempt/operation/Project/catalog/member stamps、唯一
+  canonical terminal event/state/payload hash/4KB bound，并统计该 Run provider invocation、effect、workflow checkpoint、
+  continuation 均为 0；任何 missing/duplicate/mismatch/nonzero 都 quarantine attempt，不能生成 success attestation。
+- SDK contract 作为 immutable `simple-harness-sdk==0.6.3` 单次 release unit：在 SDK repo reviewed clean commit
+  bump version，annotated `v0.6.3` tag；detached worktree 跑 full/focused tests、type/lint/provenance、双构建 byte-
+  reproducibility、release gate、BUILD_INFO/SBOM/NOTICE/SHA256SUMS。发布 exact bytes 后从 GitHub Release 下载回
+  fresh dir，逐 artifact hash+`cmp`；App 只接纳 download-back wheel，更新 vendor wheel/candidate manifest、
+  pyproject/uv.lock、`sdk_candidate.py` version/filename/SHA/source commit/manifest hash，强制 reinstall 并证明
+  `direct_url` 指向 exact vendor。冻结 backend bundle 必须包含并校验 wheel、manifest、dist-info；missing/tampered/
+  stale 0.6.2 在 ingress open 前 fail closed。原始 release 证据只放 `.local-test-evidence`。
+- rollback 是双 DB offline gate：先关 external ingress，通过当前 SDK 将所有 Host control Run durable terminalize，
+  typed evidence reader 证明无 recoverable verifier Run，再停 Runtime/App/SQLite locks；分别 content-addressed 备份
+  ProductState v3 与 SDK execution DB。恢复 exact pre-v3 ProductState 后，用 pinned 0.6.2 在隔离副本执行 open/
+  recovery/query/close 两次，必须无 verifier dispatch、无 mutation。任何 identity/terminal/lock/schema/WAL/backup
+  歧义均 abort；若 execution schema 对 0.6.2 不兼容，只允许整体 quarantine 后显式接受 fresh execution DB，
+  禁止选择性删改 Run rows。
+- canonical `run.final` 使用 body-free `SkillInstallVerificationFinalV1`，canonical JSON UTF-8 不得超过 4096 bytes，
+  只含 opaque attempt/operation/Project hashes、catalog/committed stamps、member count/root、verification result ref/hash、
+  status 与 provider launch/invocation/effect count=0。完整 member proof 写既有 operation attestation child rows，按冻结
+  ordinal 排序；leaf 覆盖 normalized-name/pack/version/manifest/content/scope/selection/page-in hashes，root 为 versioned
+  ordered leaf-hash vector 的 SHA-256。member cap/byte cap overflow、missing/duplicate ordinal、lookup/root mismatch 或非零
+  Provider/Effect 一律产生 bounded FAILED final，不截断后成功。
+- integration test 必须使用真实 SDK Runtime/UoW/client，断言 READY 先于 page-in、恰好一个 SUCCEEDED final、
+  provider launch rows=0、effects=0、terminal lease released；missing/mismatched member 或跨 Project 只产生
+  failed verification Run，install intent 保持 pending/failed 且 UI/模型不报成功。
+- crash/concurrency test 必须在三本 journal 的每个 durable commit 后停止并 reopen 两次：prepared/no Run、RunStart/
+  unbound、bound/no pin、pin/no READY、READY/no page-in、page-in/nonterminal、terminal/unreleased、released/no attestation、
+  attested replay，以及 released-before-terminal 等 corruption；两个 caller 只能得到同一 attempt/Run/bind/READY/
+  page-in/final/release/attestation。timeline 必须证明 RunStart < bind < pin < READY < first page-in < terminal < release。
+  另测 0/1/max/max+1
+  member、4096-byte 边界、reorder/duplicate/missing/corrupt leaf、superseded late event 与 changed Manager/Project stamps。
+- SDK conformance 另测 Agent Memory enabled 下 Host control 无 context stage、recall/release、memory outbox、committed
+  turn、conversation output、Provider/Effect/checkpoint/continuation，而相邻正常 conversation 仍保持完整 Memory lifecycle。
 - 添加无正文日志：intent/operation/run/project 的 opaque correlation、phase、reason code、latency；
   诊断导出不含 repo body/token。
 - 把 publish + catalog visibility 延迟纳入 2s 预算测试。
@@ -318,6 +457,66 @@ chat capability_install_skill / Settings Skill Store
 - 结论：采用 Task 0 的唯一 intent aggregate + existing Manager journals v2 superset rebuild；这不是第二套
   publish/decision journal。schema migration、live semantic manifest、verified backup/offline restore 和 exact
   relational handoff 必须同一 release unit 落地并完成旧 userdata reopen/crash proof。
+
+## A2-010 双数据库 owner 回炉（2026-08-28，覆盖此前冲突表述）
+
+- 组合测试已证明：生产 `CapabilityStore(workflow_service.execution_uow)` 与
+  `ProductStateDatabase(sdk-product-state.db)` 是两个 fenced SQLite owner。此前任何“Product confirmation
+  transaction 同时创建/reuse Manager operation/member”“Product handoff 用本地 FK 指向
+  `capability_operations`”以及给 `ProjectSkillInstallService` 注入单一通用 `store` 的表述均被本节废止。
+  精确失败证据为 `sqlite3.OperationalError: no such table:
+  capability_skill_install_verification_attempts`；反向把整个 Store 连到 ProductState 又缺 Manager catalog
+  schema，因此复制表或换连接都不是修复。
+- repository split：新增窄 `ProductSkillInstallRepository(ProductStateDatabase)`，只拥有 install
+  intent/member、confirmation consumption、Manager handoff outbox/observation、verification attempt/attestation；
+  禁止创建/推进 Manager operation、version、binding、publish intent、catalog/snapshot lease。现有
+  `CapabilityStore(execution_uow)` + `CapabilityManager` 继续唯一拥有上述 Manager/catalog/runtime aggregate，
+  仅通过 `CapabilityManagerSkillInstallGateway` 暴露 `ensure/read/recover` typed API。生产 composition 显式
+  注入两个具名依赖并断言 DB identity 不同；禁止 `ATTACH DATABASE`、跨库 FK、generic store alias。
+- ProductState schema 以新 v5 edge 实装，不修改 immutable v1-v4 DDL/hash。v5 把旧 Product-local handoff
+  转为 `ManagerHandoffRequestV1` outbox aggregate + dense ordered member children + imported Manager receipt
+  observation；`operation_id` 仅是 opaque correlation，另用 request hash 验证，绝不 FK 到 Product-local
+  shadow operation。v4 中历史 Manager-shaped/旧 handoff rows 保持 compatibility-only；repository 不暴露写
+  API。migration 只在 intent/member/receipt/terminal 事实唯一且完整时转换，否则 quarantine；旧 binary
+  拒绝 v5，rollback 继续走 verified offline backup，不做逐表 downgrade。
+- execution Capability schema 以独立 v3 edge 新增 Manager inbox/receipt authority，不改现有 v1/v2
+  manifest。`capability_skill_install_handoff_inbox` 以 request id/hash、operation id、Project/principal、member
+  stamp 唯一；Manager transaction 原子 admit/replay inbox、创建 deterministic operation + exact members、写
+  acceptance receipt。`skill_install_batch` operation 同库绑定 request；publish/recovery/terminal receipt 仍由
+  现有 Manager transaction 完成。execution 中历史 Product install/attempt 表物理保留但 production write API
+  返回 `legacy_skill_install_repository_disabled`。
+- deterministic handoff：Product confirmation transaction 校验 typed decision、nonce/version/expiry/
+  principal/Project/staged members，CAS 消费确认并一次性写 request+members+outbox wake marker；request id/hash
+  覆盖 schema、intent、confirmation receipt、Project/principal、operation、ordered member leaf 与 staging
+  archive refs/hashes。dispatcher 无业务状态，按 durable scan claim lease；Manager 对同 id+hash 精确 replay
+  同一 acceptance/terminal receipt，同 id 异 hash或同 operation 异 request 立即 quarantine。
+- startup 顺序固定为：两库 exact validate/init → execution Manager recovery → Product-to-Manager fixed-point
+  dispatch/read/recover/import → verification attempt/SDK terminal/release/attestation reconcilers fixed point →
+  duplicate/legacy authority audit → external ingress open。timeout 只保持 `HANDOFF_REQUESTED`/
+  `MANAGER_ACCEPTED`，不推断 failure；Manager committed 后 Product 只凭 typed terminal receipt、exact request hash、
+  Project/member/committed-set/binding/receipt facts 的 CAS observation 进入
+  `published_pending_runtime_verification`，绝不从文件、binding 或内存返回值推断成功。
+- compensation：deny/expiry 仅能在 outbox commit 前清 exact staging。Manager accepted 后 cancellation 变成
+  durable abort request，只有 Manager 能在不可逆 publish boundary 前 terminal-fail；catalog swap 后由 Manager
+  recovery/rollback 处理。Product 只有验证 terminal-failure receipt 后才可 cleanup；unknown/missing/ambiguous/
+  contradictory evidence 全部 quarantine 并保留 artifacts、保持 ingress closed。
+- duplicate authority fence：startup 记录并校验 cutover epoch 与 legacy table count/digest watermark；正常
+  stage/confirm/publish/recovery/verification 不得写 execution-side legacy Product tables，也不得写
+  Product-local Manager-shaped tables。同 intent/request 在两库出现、post-cutover legacy write 或 ambiguous legacy
+  active row 均 fail closed，不能按 newest 选胜者或自动 merge；只允许 read-only diagnostics 与显式 offline
+  reconciliation。
+- combined evidence：新增 production-like `CombinedSkillInstallRuntime`，以两个真实 SQLite 文件、真实 SDK
+  execution UoW/Runtime、CapabilityStore/Manager/Platform、ProductState/service/reconcilers 组合；fault wrapper 在
+  每个真实 async durable method 成功返回后模拟 kill，再从同路径 reopen，不能复用内存对象。至少覆盖 Product
+  outbox 后、Manager admit/publish 每 phase 后、Manager terminal 后、Product observation 后、attempt/lease/SDK
+  start/READY/page-in/terminal/release/attestation 各边界，以及两个 dispatcher/reconciler 并发和双重 recover。
+- 联合 oracle：成功必须同时满足 Product intent=`succeeded`、current attempt=`attested`、immutable attestation，
+  并反查 execution 中唯一同 request/operation Manager receipt、唯一 SDK terminal、唯一 Capability release 的
+  hashes 全等；缺一项即 non-success。额外证明两个 DB inode/path 不同、Manager operation/binding/version/member
+  各恰好一次、Provider/Effect/Memory/context/checkpoint/continuation side state 为 0、legacy row canonical hash
+  不变、恢复 fixed point 前 ordinary/tool ingress 返回 not-ready。
+- 本轮用户已批准该 owner 修订；实现顺序为 Product v5 repository → execution v3 Manager inbox/gateway →
+  dispatcher/reconciler/composition → 双 SQLite crash matrix → 既有 verification saga，再进入 UI gate。
 
 ## 停止条件
 

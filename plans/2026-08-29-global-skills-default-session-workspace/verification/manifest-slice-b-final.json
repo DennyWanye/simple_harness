@@ -1,0 +1,325 @@
+{
+  "acceptance_file": "plans/2026-08-29-global-skills-default-session-workspace/acceptance-slice-b.md",
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "安装输入固定为 exact HTTPS fixture，不以自然语言质量作为成功判据。",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "Chat 入口通过 typed host effect，catalog 状态不由 LLM payload 直接决定。",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "必须验证全新安装、global catalog publish 与冷启动 rehydrate。",
+      "value": true
+    }
+  },
+  "auditor_engine": "opus-4.8",
+  "challenger_engine": "current",
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S-GS-03",
+        "S-GS-04",
+        "S-GS-05",
+        "S-GS-06",
+        "S-GS-08"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "ae4cdf02b1c7f4b9b7bf243af53981289ad7d827ca84cc586ac781faa991a8a8",
+      "assurance_contract": "b687ee906b882a65db3e8327be8b0b613bcb9b23980dca25c91d5834959f154e",
+      "reuse_report": "e5ff25d95ae46daea2dfc4146cdb8f0cf50d4e2a4965ab6a0c941037859ddee4",
+      "testcase_inventory": "c5a12183e4b48f0c93cd05d23b62f8b7a1db581e639f2262e87383cb9719bcce",
+      "verification_spec": "a2c5fe990d807965b5dfba9a70bfec7f76fbc1b502ab51834e021d5cb50ad6c2"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/acceptance-slice-b.md",
+      "assurance_contract": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/assurance-slice-b.json",
+      "reuse_report": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/testcase-reuse-slice-b.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/verification-spec-slice-b.json"
+    },
+    "seal_sha256": "8e7332e2356430730e06d1139033c444067c1a588fa79779d920549cd91eaaa9",
+    "selected_testcase_ids": [
+      "TC-GS-03",
+      "TC-GS-04",
+      "TC-GS-05",
+      "TC-GS-06",
+      "TC-GS-08"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "executor_engine": "current",
+  "related_run_dirs": [
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-a-final-run",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-b-final-run",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-c-final-run"
+  ],
+  "release_unit": {
+    "high_risk_subsystem_count": 2,
+    "must_ac_count": 5,
+    "parent_program": "global-skills-default-session-workspace",
+    "plan_lines": 170,
+    "scope_hash": "pending-gate-init",
+    "slice_id": "global-skills-workspace-b",
+    "surface_categories": [
+      "UI",
+      "Harness"
+    ],
+    "task_count": 3
+  },
+  "repo_root": ".",
+  "scenarios": [
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "failure_visible",
+          "retry_available",
+          "failure_zero_delta",
+          "global_receipt_verified",
+          "runtime_visibility_verified",
+          "no_project_copy",
+          "idempotent_receipt"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/deskpet/tools/capabilities.py",
+        "backend/main.py",
+        "tauri-app/src/components/SkillStorePanel.tsx"
+      ],
+      "input_class": "deterministic-global-install",
+      "min_root_runs": 2,
+      "required": true,
+      "required_lanes": [
+        "settings",
+        "chat",
+        "idempotent-replay",
+        "invalid-skill-ui"
+      ],
+      "scenario_id": "S-GS-03",
+      "testcase_ids": [
+        "TC-GS-03"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "same_global_generation",
+          "exact_skill_page_in",
+          "provider_call_succeeded",
+          "fresh_run_advanced"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/deskpet/sdk_adapters/**",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-global-snapshot",
+      "min_root_runs": 4,
+      "required": true,
+      "required_lanes": [
+        "old-session",
+        "automatic",
+        "selected",
+        "in-flight"
+      ],
+      "scenario_id": "S-GS-04",
+      "testcase_ids": [
+        "TC-GS-04"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "legacy_projectless_migrated",
+          "legacy_skill_terminal_converged",
+          "legacy_skill_nonterminal_superseded",
+          "legacy_skill_conflict_fenced",
+          "catalog_restored_without_reinstall",
+          "exact_skill_page_in",
+          "provider_call_succeeded"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "cold-start",
+      "impact_paths": [],
+      "input_class": "deterministic-cold-recovery",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "cold-start",
+        "restart",
+        "provider",
+        "legacy-projectless",
+        "legacy-skill-terminal",
+        "legacy-skill-nonterminal",
+        "legacy-skill-conflict"
+      ],
+      "scenario_id": "S-GS-05",
+      "testcase_ids": [
+        "TC-GS-05"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "fault-recovery-log"
+        ],
+        "required_business_facts": [
+          "recovered_state",
+          "all_old_or_all_new",
+          "prior_catalog_preserved",
+          "retry_converged",
+          "no_project_write"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "temporal-fault",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-global-install-faults",
+      "min_root_runs": 0,
+      "required": true,
+      "required_lanes": [
+        "adversarial-payload",
+        "temporal-fault",
+        "recovery"
+      ],
+      "scenario_id": "S-GS-06",
+      "testcase_ids": [
+        "TC-GS-06"
+      ],
+      "ui": false
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "runtime-probe",
+          "gate-exec"
+        ],
+        "required_artifact_kinds": [
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "one_active_generation",
+          "stable_receipt",
+          "no_skill_copy"
+        ],
+        "required_identity": [
+          "root_run_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": false,
+      "gate_type": "concurrency",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-install-concurrency",
+      "min_root_runs": 0,
+      "required": true,
+      "required_lanes": [
+        "concurrency",
+        "lost-ack",
+        "replay"
+      ],
+      "scenario_id": "S-GS-08",
+      "testcase_ids": [
+        "TC-GS-08"
+      ],
+      "ui": false
+    }
+  ],
+  "source_request_text": "Skill 安装为当前用户全局 managed authority，所有 Session 可发现并调用，安装失败原子恢复。",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-03-global-install.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md"
+  ],
+  "thresholds": {
+    "max_high_risk_subsystems": 3,
+    "max_must_ac": 8,
+    "max_plan_lines": 2000,
+    "max_surface_categories": 3,
+    "max_tasks": 10
+  }
+}

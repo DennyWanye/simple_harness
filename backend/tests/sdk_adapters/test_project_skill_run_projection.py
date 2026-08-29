@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from deskpet.capabilities.manifest import load_and_validate_pack
+from deskpet.capabilities.contracts import CapabilityBinding
 from deskpet.capabilities.run_catalog import (
     FirstPartyFrozenSkillResolver,
     PreparedRunCatalogLease,
@@ -213,6 +214,49 @@ async def test_project_records_come_only_from_exact_frozen_project_lease(
     assert len(str(records[0].metadata["scope_hash"])) == 64
     assert other_project == ()
     assert projectless == ()
+
+
+@pytest.mark.asyncio
+async def test_global_records_come_from_exact_frozen_user_snapshot(
+    tmp_path: Path,
+) -> None:
+    record = _write_project_skill_pack(tmp_path / "global-pack")
+    owner_key = "user:v2:" + "9" * 64
+    binding = CapabilityBinding(
+        binding_id="global-binding",
+        capability_id=record.descriptor.capability_id,
+        version=record.descriptor.version,
+        manifest_hash=record.descriptor.manifest_hash,
+        scope="user",
+        scope_key=owner_key,
+        active=True,
+        generation=1,
+        owner_key=owner_key,
+        management_policy="user_managed",
+        management_generation=1,
+    )
+    snapshot = SimpleNamespace(
+        descriptors=(
+            SimpleNamespace(
+                version=record.descriptor,
+                visible_bindings=(binding,),
+            ),
+        )
+    )
+
+    records = await (
+        ProductCapabilityCatalogSourceAdapter()
+        .sdk_global_resource_records_from_snapshot(
+            store=_VersionStore(record),
+            snapshot=snapshot,
+            owner_key=owner_key,
+            user_scope_key=owner_key,
+        )
+    )
+
+    assert [item.skill_locator for item in records] == ["installed-skill"]
+    assert records[0].metadata["owner_key"] == owner_key
+    assert records[0].metadata["pack_id"] == "installed-skill"
 
 
 @pytest.mark.asyncio

@@ -8,9 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from deskpet.capabilities.contracts import fingerprint_json
+from deskpet.capabilities.contracts import canonical_global_owner_key, fingerprint_json
 from deskpet.capabilities.skill_install import (
     AuthorizedSkillInstallReceipt,
+    GlobalSkillInstallAuthority,
     ProjectSkillInstallService,
     SkillInstallProjectAuthority,
 )
@@ -55,12 +56,15 @@ def _batch() -> CanonicalSkillBatch:
         content_digest="f" * 64,
         validated_ref=SimpleNamespace(
             source_kind="git",
+            policy_version="capability-package-policy-v1",
+            baseline_hash="2" * 64,
+            policy_hash="3" * 64,
             archive_hash="d" * 64,
             manifest_hash="e" * 64,
             file_set_hash="1" * 64,
             entry_count=2,
             total_uncompressed_bytes=len(archive),
-            limits_hash="2" * 64,
+            validation_receipt_hash="4" * 64,
         ),
     )
     return CanonicalSkillBatch(evidence=evidence, packs=(pack,), batch_digest="3" * 64)
@@ -81,11 +85,19 @@ class Source:
 class Publisher:
     def __init__(self):
         self.calls = 0
+        self.activation_calls = 0
+        self.operation_ids = []
 
     async def publish_skill_install_batch(self, **kwargs):
         self.calls += 1
+        self.operation_ids.append(kwargs["handoff"].operation_id)
         assert [member.pack_id for member in kwargs["members"]] == ["alpha"]
         return {"manager_receipt_hash": "4" * 64, "operation_id": kwargs["handoff"].operation_id}
+
+    async def activate_skill_install_batch(self, **kwargs):
+        self.activation_calls += 1
+        assert kwargs["intent"].install_scope_key.startswith("user:v2:")
+        return {"publication_state": "active", "activation_hash": "a" * 64}
 
 
 class Verifier:
@@ -164,6 +176,133 @@ async def test_stage_is_exact_idempotent_and_confirm_requires_typed_receipt(tmp_
     )
     assert (await service.confirm_authorized(receipt))["status"] == "succeeded"
     assert publisher.calls == 1
+    database.close()
+
+
+@pytest.mark.asyncio
+async def test_global_stage_uses_stable_owner_and_content_idempotency(tmp_path) -> None:
+    clock = lambda: 100.0
+    source = Source()
+    database, store, _publisher, service = await _service(tmp_path, source, clock)
+    seed = "9" * 64
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash=seed
+    )
+    assert owner.global_owner_key == canonical_global_owner_key(seed)
+
+    first = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+    )
+    replay = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-2",
+        root_run_id="root-2", call_id="call-2", effect_id="effect-2",
+    )
+    assert replay == first
+    intent = await store.get_skill_install_intent(first.intent_id)
+    assert intent is not None
+    assert intent.schema_version == 2
+    assert intent.install_scope == "user"
+    assert intent.install_scope_key == owner.global_owner_key
+    database.close()
+
+
+@pytest.mark.asyncio
+async def test_global_stage_can_retry_after_durable_source_failure(tmp_path) -> None:
+    source = Source(error=CapabilitySourceError("github_timeout", "temporary"))
+    database, store, _publisher, service = await _service(
+        tmp_path, source, lambda: 100.0
+    )
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="user-1", identity_namespace_hash="9" * 64
+    )
+    failed = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+    )
+    assert failed.code == "github_timeout"
+
+    source.error = None
+    ready = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+    )
+
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    assert intent.status == "awaiting_confirmation"
+    assert intent.effect_id.startswith("effect-1:resolved:")
+    database.close()
+
+
+@pytest.mark.asyncio
+async def test_global_confirm_scopes_operation_and_activates_only_after_verification(tmp_path) -> None:
+    database, store, publisher, service = await _service(tmp_path, Source(), lambda: 100.0)
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="host-principal", identity_namespace_hash="9" * 64
+    )
+    ready = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-1",
+        root_run_id="root-1", call_id="call-1", effect_id="effect-1",
+        channel="settings",
+    )
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    receipt = AuthorizedSkillInstallReceipt(
+        channel="settings", intent_id=intent.intent_id,
+        content_digest=intent.member_set_stamp,
+        project_scope_key=owner.global_owner_key,
+        principal_id="host-principal", decision_nonce=intent.confirmation_nonce,
+        decision_version=intent.confirmation_version, expires_at=intent.expires_at,
+        approved=True, ui_decision_event_ref="ui-event", window_receipt_hash="w" * 64,
+    )
+    result = await service.confirm_authorized(receipt)
+    expected_domain = fingerprint_json({
+        "schema": "global-skill-install-operation-v2",
+        "owner_scope_key": owner.global_owner_key,
+        "exact_commit": intent.exact_commit,
+        "member_set_stamp": intent.member_set_stamp,
+    })
+    assert publisher.operation_ids == [f"skill-install-batch:{expected_domain}"]
+    assert publisher.activation_calls == 1
+    assert result["activation"]["publication_state"] == "active"
+    database.close()
+
+
+@pytest.mark.asyncio
+async def test_global_verification_failure_never_activates_binding(tmp_path) -> None:
+    database, store, publisher, service = await _service(tmp_path, Source(), lambda: 100.0)
+
+    class RejectingVerifier:
+        async def verify_skill_install(self, **_kwargs):
+            raise RuntimeError("fresh Run page-in rejected")
+
+    service.runtime_verifier = RejectingVerifier()
+    owner = GlobalSkillInstallAuthority.from_identity_seed(
+        principal_id="host-principal", identity_namespace_hash="8" * 64
+    )
+    ready = await service.stage(
+        url="https://github.com/acme/skills", owner=owner, run_id="run-fail",
+        root_run_id="root-fail", call_id="call-fail", effect_id="effect-fail",
+        channel="settings",
+    )
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    receipt = AuthorizedSkillInstallReceipt(
+        channel="settings", intent_id=intent.intent_id,
+        content_digest=intent.member_set_stamp,
+        project_scope_key=owner.global_owner_key,
+        principal_id="host-principal", decision_nonce=intent.confirmation_nonce,
+        decision_version=intent.confirmation_version, expires_at=intent.expires_at,
+        approved=True, ui_decision_event_ref="ui-fail", window_receipt_hash="f" * 64,
+    )
+    with pytest.raises(RuntimeError, match="page-in rejected"):
+        await service.confirm_authorized(receipt)
+    assert publisher.calls == 1
+    assert publisher.activation_calls == 0
+    pending = await store.get_skill_install_intent(intent.intent_id)
+    assert pending is not None
+    assert pending.status == "published_pending_runtime_verification"
     database.close()
 
 

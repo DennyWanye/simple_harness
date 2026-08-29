@@ -1,0 +1,59 @@
+{
+  "acceptance_sha256": "ae4cdf02b1c7f4b9b7bf243af53981289ad7d827ca84cc586ac781faa991a8a8",
+  "auditor_input_sha256": "a22c24f69e54906874a2123b2672679e84a9e9d8d60bebd6aca04ae90ef827bf",
+  "auditor_output_sha256": "66829f8c61160f732b6bf5c245251ef7582dcd55cf3d4ab83fccb2b60dc8a69d",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "6c3ab006bc64cc9679e79cef406e8520271a7c12772220a30233dc82a7409e9d",
+  "dirty_patch_sha256": "4ff70a0bd2353430c726b941cc9acd670a193fc7021d6c2e9dfddf2666884fcb",
+  "evidence_manifest_sha256": "b2fcad4e91b9a46b345d75b98174fc74a12bbd8dece2f3cb52757a18490e71af",
+  "evidence_summary": {
+    "distinct_artifacts": 30,
+    "distinct_root_runs": 21,
+    "records": 32,
+    "shared_artifact_sha256": [
+      "0399adb18725d75e53ebc842921a499fc775f451a5bc45a1b88e54b8559ec785"
+    ]
+  },
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-a-final-run",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-b-final-run",
+    "plans/2026-08-29-global-skills-default-session-workspace/verification/slice-c-final-run"
+  ],
+  "finalized_at": "2026-08-29T10:05:19+0800",
+  "fixture_only": false,
+  "head": "00cf185ec55ffa08468e0bc4b11e9e0e8631259f",
+  "ledger_sha256": "797d55c5438cc9e6adec2c6e195178c7852cb47c19a46d83bac31256022454c4",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "run-20260829-095451",
+  "scenario_statuses": {
+    "S-GS-03": "PASS",
+    "S-GS-04": "PASS",
+    "S-GS-05": "PASS",
+    "S-GS-06": "PASS",
+    "S-GS-08": "PASS"
+  },
+  "schema_version": "1.5.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "557e8829d5f5dc9c8b653bddcd253d3a188ba436c8d0752048df0cbb4bc87d16",
+  "tested_code_head": "00cf185ec55ffa08468e0bc4b11e9e0e8631259f",
+  "timing_summary": {
+    "declared_ms": 0,
+    "entries": 0,
+    "measured_ms": 0
+  },
+  "toolchain": {
+    "gate_path": "/Users/denny/.codex/skill-sources/plan-test-skill/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "ba1588b243f54dd720947b4d7b035073c3baa6c04fee18e2e483859ed36fb778",
+    "gate_version": "1.5.0",
+    "host": "Mac",
+    "platform": "Darwin-25.4.0-arm64",
+    "plugin_version": "0.5.1",
+    "python_version": "3.12.13",
+    "recorded_at": "2026-08-29T09:54:51+0800"
+  },
+  "validator_version": "1.5.0",
+  "waivers": []
+}

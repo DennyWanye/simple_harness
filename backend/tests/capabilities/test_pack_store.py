@@ -201,11 +201,15 @@ async def test_policy_and_task_grant_share_the_execution_database(tmp_path) -> N
     path = await initialize_capability_database(tmp_path / "workflow.db")
     store = CapabilityStore(path, clock=lambda: 101.0)
     state = await store.get_policy_state()
-    assert (state.mode, state.generation) == ("manual", 0)
-    auto = await store.compare_and_set_policy_mode(
-        "auto", expected_generation=0
+    assert (state.mode, state.generation, state.provenance) == (
+        "auto", 0, "factory_default"
     )
-    assert (auto.mode, auto.generation) == ("auto", 1)
+    auto = await store.compare_and_set_policy_mode(
+        "manual", expected_generation=0
+    )
+    assert (auto.mode, auto.generation, auto.provenance) == (
+        "manual", 1, "user_explicit"
+    )
 
     grant = TaskGrant(
         task_grant_id="grant-1",
@@ -216,7 +220,7 @@ async def test_policy_and_task_grant_share_the_execution_database(tmp_path) -> N
         ),
         permission_categories=("filesystem_write",),
         effect_kinds=("staged_file",),
-        source="policy:auto",
+        source="user",
         policy_generation=1,
         expires_at=500.0,
         version=1,

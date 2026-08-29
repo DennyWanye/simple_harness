@@ -1892,6 +1892,225 @@
       "type": "hybrid"
     },
     {
+      "entrypoint": "new ordinary session",
+      "id": "TC-GS-01",
+      "obligations": [
+        "TO-A1",
+        "TO-A7",
+        "TO-A8",
+        "TO-R1"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-01-default-workspace.md",
+      "preconditions": [],
+      "purpose": "Verify a fresh ordinary Session receives one durable automatic workspace under native Documents",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "ordinary-session",
+        "automatic-workspace",
+        "canonical-identity",
+        "restart"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "new ordinary session",
+      "id": "TC-GS-02",
+      "obligations": [
+        "TO-A2",
+        "TO-A8",
+        "TO-R1"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-02-selected-workspace.md",
+      "preconditions": [],
+      "purpose": "Verify selected directory precedence, picker cancellation fallback, and invalid-directory atomic failure",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "ordinary-session",
+        "selected-workspace",
+        "picker",
+        "atomicity"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "settings and chat skill install",
+      "id": "TC-GS-03",
+      "obligations": [
+        "TO-A3",
+        "TO-A7",
+        "TO-A8",
+        "TO-R2"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-03-global-install.md",
+      "preconditions": [],
+      "purpose": "Verify Settings and Chat publish one idempotent user-global Skill with no Project or Session copy",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-install",
+        "global-scope",
+        "receipt",
+        "idempotency"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "fresh chat run",
+      "id": "TC-GS-04",
+      "obligations": [
+        "TO-A4",
+        "TO-A7",
+        "TO-R2"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
+      "preconditions": [],
+      "purpose": "Verify old, automatic-workspace, and selected-workspace Sessions share and invoke one global Skill snapshot",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "skill-runtime",
+        "global-catalog",
+        "fresh-run",
+        "provider"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "application cold restart",
+      "id": "TC-GS-05",
+      "obligations": [
+        "TO-A1",
+        "TO-A4",
+        "TO-A7",
+        "TO-A8",
+        "TO-R5"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+      "preconditions": [],
+      "purpose": "Verify cold restart restores Session workspaces and the shared global Skill and Tool catalogs without reinstall",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "cold-start",
+        "restart",
+        "catalog",
+        "provider"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "supported test fault seam",
+      "id": "TC-GS-06",
+      "obligations": [
+        "TO-A6",
+        "TO-R4"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
+      "preconditions": [],
+      "purpose": "Verify workspace and global Skill failures expose no half state and retry converges safely",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "integration",
+      "tags": [
+        "fault-injection",
+        "atomicity",
+        "recovery",
+        "malicious-skill"
+      ],
+      "type": "scripted"
+    },
+    {
+      "entrypoint": "tool search and describe",
+      "id": "TC-GS-07",
+      "obligations": [
+        "TO-A5",
+        "TO-A8",
+        "TO-R3"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
+      "preconditions": [],
+      "purpose": "Verify every Session discovers one complete descriptor catalog while execution remains policy and availability gated",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "tool-catalog",
+        "descriptor",
+        "authorization",
+        "availability"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "public session-create and global-install services",
+      "id": "TC-GS-08",
+      "obligations": [
+        "TO-A3",
+        "TO-A6",
+        "TO-R1",
+        "TO-R4"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
+      "preconditions": [],
+      "purpose": "Verify concurrent default Session creation and exact Skill install replay are collision-safe and idempotent",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "integration",
+      "tags": [
+        "concurrency",
+        "idempotency",
+        "lost-ack",
+        "workspace"
+      ],
+      "type": "scripted"
+    },
+    {
+      "entrypoint": "new ordinary session and permission settings",
+      "id": "TC-GS-09",
+      "obligations": [
+        "TO-A9",
+        "TO-R3"
+      ],
+      "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
+      "preconditions": [],
+      "purpose": "Verify automatic permission is the fresh default, explicit overrides persist, and mandatory gates remain effective",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "permission",
+        "auto-default",
+        "provenance",
+        "authorization"
+      ],
+      "type": "hybrid"
+    },
+    {
       "entrypoint": "",
       "generated_legacy_metadata": true,
       "id": "LEGACY-C133277DE434",

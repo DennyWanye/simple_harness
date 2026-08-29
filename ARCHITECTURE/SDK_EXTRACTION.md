@@ -1,7 +1,8 @@
 # Simple Harness SDK 提取与消费架构
 
 > 最后校准：2026-08-25
-> 代码基线：simple_harness `3c678e71` + 当前工作树；当前依赖固定 Harness 0.6.2 / Memory 0.5.2 exact wheels
+> 代码基线：simple_harness `3c678e71` + 当前工作树；当前依赖固定 Service 0.3.12 / Harness 0.6.2 /
+> Memory 0.5.2 exact wheels（Service 0.3.12 compatibility BOM release unit）
 > 状态：SDK v0.6.2 是 foreground text 的唯一生产执行 authority；Voice 关闭，Companion/background
 > 使用独立 SDK client 入口。下文 v0.1.0-v0.1.3 release/切换叙述均为历史记录。
 

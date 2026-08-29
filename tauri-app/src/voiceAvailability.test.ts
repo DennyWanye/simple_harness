@@ -5,31 +5,23 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import {
-  VOICE_INPUT_ENABLED,
-  VOICE_UNAVAILABLE_MESSAGE,
-} from "./voiceAvailability";
+import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
 
 describe("voice availability", () => {
-  it("keeps the legacy path off and explains the Realtime replacement", () => {
-    expect(VOICE_INPUT_ENABLED).toBe(false);
-    expect(VOICE_UNAVAILABLE_MESSAGE).toContain("Realtime");
+  it("enables only the new Realtime product entry", () => {
+    expect(VOICE_INPUT_ENABLED).toBe(true);
   });
 
-  it("keeps App.tsx wired to the shared fail-closed switch", () => {
-    // T8（workbench-ui）：App 的底部输入条/mic 按钮退役，音频通道基础
-    // 设施保留 —— 通道开关必须仍走 voiceAvailability 单一源。
+  it("does not connect voice from App mount", () => {
     const source = readFileSync(resolve("src", "App.tsx"), "utf8");
-    expect(source).toContain(
-      "useAudioChannel(BACKEND_PORT, secret, VOICE_INPUT_ENABLED)",
-    );
+    expect(source).not.toContain("useAudioChannel(");
+    expect(source).not.toContain("useRealtimeVoice(");
   });
 
-  it("keeps the ChatView mic placeholder disabled with the shared message (B9)", () => {
+  it("keeps one phone-style call control in ChatView", () => {
     const source = readFileSync(resolve("src", "views", "ChatView.tsx"), "utf8");
-    expect(source).toContain("VOICE_UNAVAILABLE_MESSAGE");
-    expect(source).toContain('"mic-off"');
-    // 占位按钮必须是无条件禁用（真语音待中转站 Realtime 接入）。
-    expect(source).toMatch(/data-testid="chat-mic-disabled"\s+disabled/);
+    expect(source.match(/data-testid="realtime-call-button"/g)).toHaveLength(1);
+    expect(source).not.toContain("chat-mic-disabled");
+    expect(source).not.toContain("开始说话");
   });
 });

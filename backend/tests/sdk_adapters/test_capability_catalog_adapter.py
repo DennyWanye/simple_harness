@@ -318,3 +318,31 @@ def test_sdk_resource_records_are_body_free_and_deferred() -> None:
     assert matches.items[0].selection_key == "translate-doc"
     assert all(item.exposure_mode.value == "deferred" for item in records)
     assert catalog.snapshot.fingerprint != "0" * 64
+
+
+def test_sdk_skill_namespace_accepts_records_from_distinct_pack_owners() -> None:
+    from simple_harness.tools import RuntimeToolCatalog
+
+    builtin = _skill()
+    user_global = SimpleNamespace(
+        **{
+            **vars(builtin),
+            "name": "global-plan-test",
+            "owner_key": "user:v2:" + "9" * 64,
+            "pack_id": "global-plan-test",
+        }
+    )
+    records = ProductCapabilityCatalogSourceAdapter().sdk_resource_records(
+        skills=(builtin, user_global),
+    )
+
+    catalog = RuntimeToolCatalog(records, generation=1)
+
+    assert [item.skill_locator for item in catalog.snapshot.records] == [
+        "global-plan-test",
+        "translate-doc",
+    ]
+    assert {item.source for item in records} == {"product-skill-catalog"}
+    assert {item.source_revision for item in records} == {
+        "product-skill-catalog-v1"
+    }

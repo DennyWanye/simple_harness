@@ -1,0 +1,25 @@
+{
+  "primary_contradiction": {
+    "id": "auto-convenience-vs-durable-authority-and-terminal-truth",
+    "summary": "Auto must remove the click without removing or fabricating authorization evidence, while recovery must clear false progress without treating a genuine durable waiting Run as disposable UI state.",
+    "acceptance_ids": ["AC-9", "AC-10"]
+  },
+  "challenge_clusters": [
+    {
+      "cluster_id": "cluster-auto-approval-receipt-authority",
+      "parent_finding_ids": ["auto-approved-receipt-construction-seam-unspecified"],
+      "specialty": "security-privacy",
+      "question": "What exact SDK/Product sequence constructs, persists, replays and resolves a legitimate auto-approved Skill receipt without masquerading as a manual decision or bypassing preflight gates?",
+      "required_evidence": ["versioned approval provenance", "trusted constructor", "nonce and decision version", "bind sequence", "concurrent replay CAS", "manual compatibility"],
+      "specialist_required": true
+    },
+    {
+      "cluster_id": "cluster-run-waiting-cancel-convergence",
+      "parent_finding_ids": ["provider-unknown-waiting-cancel-state-machine-unspecified", "nonretryable-install-replay-suppression-contract-missing"],
+      "specialty": "failure-recovery",
+      "question": "How does the backend distinguish provider-unknown waiting from a stuck Run, suppress repeated nonretryable installs, and execute idempotent cancellation before UI clears inflight state?",
+      "required_evidence": ["Run status/version", "waiting reason and actions", "cancel identity", "terminal ack", "UI ack ordering", "retry identity", "race tests"],
+      "specialist_required": true
+    }
+  ]
+}

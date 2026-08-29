@@ -94,6 +94,8 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
         "sdk_context_source_repository",
         "memory_identity_resolver",
         "memory_facts_surface",
+        "project_skill_install_service",
+        "skill_install_runtime_verifier",
     )
     for name in names:
         marker = object()
@@ -130,6 +132,11 @@ async def test_real_product_sdk_production_composition_starts(
         # but it must still model that complete dependency graph.
         "frozen_skill_instruction_resolver": object(),
         "legacy_frozen_skill_instruction_resolver": object(),
+        "project_skill_install_service": SimpleNamespace(
+            confirm_authorized=AsyncMock(),
+            stage_authorization_preflight=AsyncMock(),
+            settle_authorization_terminal=lambda _evidence: None,
+        ),
     }
     publications = (
         "sdk_runtime_ready",

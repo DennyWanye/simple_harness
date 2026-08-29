@@ -2,6 +2,25 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
+## Active Realtime release unit (2026-08-29)
+
+- `simple_harness_service_sdk-0.3.12-py3-none-any.whl`
+  - GitHub release: `DennyWanye/simple-harness-service-sdk` tag `v0.3.12`
+  - source commit: `47f372adc641d8d3516599dd21cb94cf5955d6a7`
+  - SHA-256: `710ae66ba1cc0f0f838f816f3b98108100af560bfb210ed6834246d6d802f8c6`
+  - authority root: `b9675a5c64136bb9ba7064cc78b3cc39662f7f374629bcd4731a833bbff2873d`
+- `simple_harness_service_sdk-0.3.12.candidate-manifest.json`
+  - SHA-256: `9bfb8731a4e8aba2958fcd0999b888a1c25a0f223c2c6ee309500a02ecd213cd`
+- `simple_harness_sdk-0.6.2-py3-none-any.whl`
+  - SHA-256: `ffb7c0619851f3c936fcc1d0cf527d07f49e87770291b85e57fe87032ac02c2e`
+- `simple_harness_memory_sdk-0.5.2-py3-none-any.whl`
+  - SHA-256: `deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e`
+
+`backend/deskpet/sdk_adapters/sdk_candidate.py` is the executable identity
+authority. `uv.lock` records the service wheel hash and resolves the exact
+release unit from this directory; frozen builds also bundle the service wheel,
+candidate manifest, package data and distribution metadata.
+
 ## Active candidate: simple_harness_sdk-0.1.5-py3-none-any.whl
 
 **Source:** local build from `simple-harness-sdk` commit `010d1c3`（SDK Context authority cutover）

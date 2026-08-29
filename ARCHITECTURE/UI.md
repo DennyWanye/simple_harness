@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-27（Project-scoped Sessions macOS release 验收完成）
+> 最后更新：2026-08-29（所选目录 Session 的全局 Skill slash 发现与执行验收完成）
 
 ## 0.9 Project-scoped Session UI（2026-08-25）
 
@@ -44,6 +44,11 @@
   `write_file` 逐项弹窗，点击允许后写入成功；重新开启后，同一链路无弹窗成功。两轮模型都复制唯一的顶层
   `schema_hash`，最终文件只位于当前 Project root。原始截图留在 ignored
   `.local-test-evidence/2026-08-25/project-scoped-sessions-manual-activation-fix/`。
+- 2026-08-29 当前 macOS `.app` 在用户选择目录 `/Users/denny/projects/生成视频` 新建 Session
+  `21030143…` 后，输入 `/plan-` 即显示 user-global `plan-bs/plan-task/plan-test`。候选不再依赖页面启动时的
+  永久缓存；每次开始新的 `/` 输入都会刷新后端同一 global catalog。点击 `/plan-test` 后 slash accepted
+  receipt、正文加载、真实 `deepseek-v4-flash` Provider Run 与终态消息均回到同一 Session。截图和日志位于
+  ignored `.local-test-evidence/2026-08-29/global-skills-default-workspace/`。
 - 2026-08-27 最终 gate 补齐 S-PS-01～S-PS-08：当前 debug `.app` 完成 Project 注册、同项目新建、
   projectless bounded handoff、侧栏/Inspector/复制/打开/Finder、缺失根与同身份 relocation、v33 全新安装式
   重置以及完整重启恢复。最新真实模型 Run `c2a0022…` 在 relocation 后仍以绑定目录执行 `pwd`、读和写；

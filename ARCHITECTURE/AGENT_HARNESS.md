@@ -1,6 +1,6 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-27
+> 最后更新：2026-08-29
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
@@ -22,14 +22,26 @@ hash；投影内部 input-schema hash 不再以同名字段重复暴露，避免
 授权和 workspace 校验均保持不变。真实 `deepseek-v4-flash` 已分别在逐项手动授权与 Agent 全开模式完成
 `search → describe → activate → write_file`，两次写入都只落在同一 immutable Project root。
 
+2026-08-29，user-global Skill 安装进入同一 SDK-first 目录：每个前台 Run 在 publish lock 内冻结 exact
+user-global Hub snapshot，并把 body-free Skill records 合并进 Run catalog。`skill` namespace 由统一的
+`product-skill-catalog` authority 管理，具体 pack owner 与版本/hash 留在 metadata；因此 builtin 与不同用户
+owner 可以共存而不会发生 namespace owner collision。真实 `deepseek-v4-flash` 已在冷重启后的旧 Session
+和新建默认 Session 中分别完成 `tool_search -> skill_invoke`，两次加载相同的 `plan-test` content hash。
+slash help/list/schema/dispatch 现从同一 user-global frozen snapshot 构造 collision-checked catalog；输入新的 `/`
+会重新拉取候选，slash frame 固定客户端 request/turn identity。Session owner 也改为在创建事务时动态冻结，
+避免启动装配早于 identity ready 时生成 ownerless Session；历史空 Session 仅可在 ingress 幂等绑定当前 owner。
+当前 macOS UI 已在显式选择目录的新 Session `21030143…` 中显示三项 `plan-*` Skill，并完成真实
+`/plan-test` Run `ea0488e47…`，日志确认 `sdk_skill_instruction_loaded` 与 `deepseek-v4-flash` HTTP 200。
+
 Provider 调查日志由 Host `ProductProviderAdapter` 在真实 SDK invocation seam 统一生成：匿名
 `request_ref` 串联 attempt start、HTTP response shape、parse failure 与 terminal outcome；阶段码明确区分
 `transport_timeout`、`http_timeout`、`http_status`、`response_protocol`、`response_contract` 和 `adapter`。
 允许记录 model、状态码、耗时、消息/Tool 数量、schema bytes、Tool 名称集合摘要和响应结构计数；禁止记录
 API key、endpoint URL、prompt/response 正文、Tool 参数及上游 request ID 原文。
 
-当前 exact candidate bytes：Harness `0.6.2` / source `67f5769…` / wheel `ffb7c061…`；Memory `0.5.2` /
-source `46624b…` / wheel `deff2fa8…`。自动化与分片基线已绿。2026-08-25 CAP-1 真 UI 修复先让 SDK
+当前 exact candidate bytes：Service `0.3.12` / source `47f372a…` / wheel `710ae66b…`；Harness `0.6.2` /
+source `67f5769…` / wheel `ffb7c061…`；Memory `0.5.2` / source `46624b…` / wheel `deff2fa8…`。该组合来自
+Service release 的 compatibility BOM；单仓 Harness `0.6.3` 不属于此 release unit。自动化与分片基线已绿。2026-08-25 CAP-1 真 UI 修复先让 SDK
 authority 与 legacy ToolRegistry 共用启动期 scope Store，再把物理 registry 的真实 policy fingerprint 冻结进
 RunStart authority；严格 stale 校验仍保留。最终 Run 在同一 root 中完成 search/describe/activate，Provider
 工具数 13→14→15，真实 `mcp_filesystem_search_files` 与 `mcp_filesystem_read_text_file` 均成功，并基于

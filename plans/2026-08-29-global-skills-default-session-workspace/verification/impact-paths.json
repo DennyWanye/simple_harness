@@ -1,0 +1,11 @@
+{
+  "S-GS-01": ["tauri-app/src-tauri/src/process_manager.rs", "tauri-app/src-tauri/src/paths.rs", "backend/deskpet/session/project_binding.py", "backend/deskpet/session/project_protocol.py", "tauri-app/src/components/SessionList.tsx", "tauri-app/src/components/ProjectPickerDialog.tsx"],
+  "S-GS-02": ["tauri-app/src-tauri/src/paths.rs", "backend/deskpet/session/project_binding.py", "backend/deskpet/session/project_protocol.py", "tauri-app/src/components/ProjectPickerDialog.tsx"],
+  "S-GS-03": ["backend/deskpet/capabilities/**", "backend/deskpet/tools/capabilities.py", "backend/main.py", "tauri-app/src/components/SkillStorePanel.tsx"],
+  "S-GS-04": ["backend/deskpet/capabilities/**", "backend/deskpet/sdk_adapters/**", "backend/main.py"],
+  "S-GS-05": [],
+  "S-GS-06": ["backend/deskpet/session/project_binding.py", "backend/deskpet/capabilities/**", "backend/main.py"],
+  "S-GS-07": ["backend/deskpet/tool_catalog/**", "backend/deskpet/sdk_adapters/**", "backend/main.py"],
+  "S-GS-08": ["backend/deskpet/session/project_binding.py", "backend/deskpet/capabilities/**", "backend/main.py"],
+  "S-GS-09": ["backend/deskpet/authorization/**", "backend/deskpet/memory/**", "backend/main.py", "tauri-app/src/**"]
+}

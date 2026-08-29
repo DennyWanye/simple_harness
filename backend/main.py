@@ -40,7 +40,7 @@ from deskpet.companion.control_credentials import (
 # the marker and must never block on stdin; privileged Companion mutations
 # then remain fail-closed while all ordinary backend features keep working.
 _WINDOW_CONTROL_BOOTSTRAP: WindowControlBootstrap | None = None
-if os.environ.get("DESKPET_WINDOW_CONTROL_BOOTSTRAP") == "stdin-v1":
+if os.environ.get("DESKPET_WINDOW_CONTROL_BOOTSTRAP") in {"stdin-v1", "stdin-v2"}:
     try:
         _WINDOW_CONTROL_BOOTSTRAP = WindowControlBootstrap.parse_line(
             sys.stdin.readline().strip()
@@ -2596,6 +2596,21 @@ _workspace_mem_store = None
 _nudge_queue = None
 service_context.register("context_assembler", None)
 service_context.register("session_db", _session_db)
+
+
+def _freeze_current_session_owner():
+    """Resolve the trusted owner when creation runs, not during startup wiring.
+
+    Session services are composed before Companion identity opens. Capturing
+    ``None`` at that point left every later Project Session ownerless.
+    """
+
+    identity_gate = service_context.get("companion_identity_gate")
+    if identity_gate is None:
+        return None
+    return identity_gate.freeze()
+
+
 if _session_db is not None:
     from deskpet.session.project_binding import (
         ProjectBindingService as _ProjectBindingService,
@@ -2608,12 +2623,19 @@ if _session_db is not None:
     _session_creation_service = _SessionCreationService(
         _project_binding_service,
         session_db=_session_db,
-        owner_identity_resolver=(
-            _companion_identity_gate.freeze
-            if _companion_identity_gate is not None
+        owner_identity_resolver=_freeze_current_session_owner,
+        provider_binding_validator=None,
+        documents_root=(
+            _WINDOW_CONTROL_BOOTSTRAP.documents_root
+            if _WINDOW_CONTROL_BOOTSTRAP is not None
             else None
         ),
-        provider_binding_validator=None,
+        documents_identity=(
+            _WINDOW_CONTROL_BOOTSTRAP.documents_identity
+            if _WINDOW_CONTROL_BOOTSTRAP is not None
+            else None
+        ),
+        allow_test_projectless=False,
     )
 else:
     _project_binding_service = None
@@ -2719,6 +2741,7 @@ async def _initialize_capability_runtime() -> None:
                 project_id=context.project_id or None,
                 project_revision=context.project_revision or None,
                 project_identity=context.project_identity or None,
+                user_key=global_owner_key,
             )
         )
         authority_cache[grant.task_grant_id] = (
@@ -2826,17 +2849,35 @@ async def _initialize_capability_runtime() -> None:
     )
     from deskpet.capabilities.skill_install import (
         BindableSkillInstallRuntimeVerifier,
-        ProjectSkillInstallService,
+        GlobalSkillInstallService,
+        ManagerGlobalSkillRuntimeVerifier,
     )
+    from deskpet.capabilities.contracts import canonical_global_owner_key
+    from deskpet.companion.identity import load_or_create_local_identity
     from deskpet.capabilities.skill_source import BoundedGitHubSkillSource
 
     skill_install_runtime_verifier = BindableSkillInstallRuntimeVerifier()
-    project_skill_install_service = ProjectSkillInstallService(
+    global_owner_key = canonical_global_owner_key(
+        load_or_create_local_identity(_paths.user_data_dir()).identity_namespace_hash
+    )
+    await store.converge_legacy_project_skill_bindings(
+        global_owner_key=global_owner_key
+    )
+    platform.global_capability_scope_key = global_owner_key
+    project_skill_install_service = GlobalSkillInstallService(
         store=store,
         source=BoundedGitHubSkillSource(),
         staging_root=platform.manager.layout.root / "skill-install-intents",
         batch_publisher=platform.manager,
         runtime_verifier=skill_install_runtime_verifier,
+        global_owner_key=global_owner_key,
+    )
+    from deskpet.capabilities.skill_install_ui import SettingsSkillInstallAuthorizerFactory
+    service_context.register(
+        "project_skill_install_settings_authorizer",
+        SettingsSkillInstallAuthorizerFactory(
+            store=store, global_owner_key=global_owner_key
+        ),
     )
     from deskpet.skills.loader import SkillPackSnapshotResolver
 
@@ -2856,6 +2897,7 @@ async def _initialize_capability_runtime() -> None:
     _bind_frozen_skill_snapshot_resolver(skill_pack_snapshot_resolver)
     platform_box["platform"] = platform
     initialized = await platform.initialize()
+    skill_install_runtime_verifier.bind(ManagerGlobalSkillRuntimeVerifier(store))
     builder_host = CapabilityBuilderHost(
         uow,
         deskpet_tool_registry_v2,
@@ -2968,6 +3010,7 @@ async def lifespan(app: FastAPI):
     from llm.resolution import ProviderRoutingReadiness
 
     global _provider_registry, _memory_backend, _session_creation_service
+    global _realtime_voice_service
     _provider_readiness = ProviderRoutingReadiness()
     service_context.register("provider_routing_readiness", _provider_readiness)
     # v33 reset preflight must finish before MemoryManager, workflow,
@@ -3059,16 +3102,24 @@ async def lifespan(app: FastAPI):
                 _project_binding_service,
                 provider_mutation_lock=_provider_registry.mutation_lock,
                 session_db=_session_db,
-                owner_identity_resolver=(
-                    _companion_identity_gate.freeze
-                    if _companion_identity_gate is not None
+                owner_identity_resolver=_freeze_current_session_owner,
+                provider_binding_validator=_validate_created_session_provider,
+                documents_root=(
+                    _WINDOW_CONTROL_BOOTSTRAP.documents_root
+                    if _WINDOW_CONTROL_BOOTSTRAP is not None
                     else None
                 ),
-                provider_binding_validator=_validate_created_session_provider,
+                documents_identity=(
+                    _WINDOW_CONTROL_BOOTSTRAP.documents_identity
+                    if _WINDOW_CONTROL_BOOTSTRAP is not None
+                    else None
+                ),
+                allow_test_projectless=False,
             )
             service_context.register(
                 "session_creation_service", _session_creation_service
             )
+            await _session_creation_service.reconcile_automatic_workspaces()
         _provider_readiness.mark_ready()
         logger.info(
             "provider_routing_ready providers=%d",
@@ -5334,8 +5385,39 @@ async def lifespan(app: FastAPI):
         await _initialize_companion_projection_services()
         await _activate_companion_runtime_adapter_and_open_ingress()
         _initialize_companion_action_decision_service()
+    from deskpet.realtime_voice import (
+        RealtimeVoiceService,
+        allowed_realtime_origins,
+    )
+
+    try:
+        _realtime_vite_port = int(os.getenv("DESKPET_VITE_PORT", "5173"))
+    except ValueError:
+        _realtime_vite_port = 5173
+    _realtime_voice_service = RealtimeVoiceService(
+        shared_secret=SHARED_SECRET,
+        relay_endpoint_supplier=lambda: str(
+            getattr(local_llm, "base_url", config.llm.local.base_url)
+        ),
+        api_key_supplier=lambda: _current_cloud_api_key
+        or _resolve_cloud_api_key(),
+        allowed_origins=allowed_realtime_origins(_realtime_vite_port),
+    )
+    logger.info(
+        "realtime_voice_ready",
+        path="/ws/realtime-voice",
+        protocol_version="2026-08-27.1",
+    )
     logger.info("startup complete")
     yield
+    if _realtime_voice_service is not None:
+        try:
+            await _realtime_voice_service.close()
+            logger.info("realtime_voice_stopped")
+        except Exception:  # noqa: BLE001
+            logger.warning("realtime_voice_shutdown_failed")
+        finally:
+            _realtime_voice_service = None
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
     global _sdk_runtime_stack, _sdk_ingress
@@ -7628,10 +7710,10 @@ async def _build_product_sdk_runtime_stack(
     )
     projected_registrations = (*projected_registrations, ProductToolRegistration(
         name="skill_install",
-        description="Install Skills from one public GitHub repository into the current Project.",
+        description="Install Skills from one public GitHub repository for all Sessions of the current user.",
         input_schema={
             "type": "object",
-            "properties": {"url": {"type": "string", "format": "uri"}},
+            "properties": {"url": {"type": "string"}},
             "required": ["url"],
             "additionalProperties": False,
         },
@@ -7640,8 +7722,8 @@ async def _build_product_sdk_runtime_stack(
         permission_category="skill_install",
         metadata={
             "source": "product-skill-install",
-            "version": "1",
-            "stable_handler_id": "core.skill_install.v1",
+            "version": "2",
+            "stable_handler_id": "core.skill_install.v2",
         },
     ))
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
@@ -9045,6 +9127,13 @@ async def _run_product_harness_chat(
     binding_service = service_context.get("project_binding_service")
     if binding_service is None:
         raise RuntimeError("project_binding_service_unavailable")
+    creation_service = service_context.get("session_creation_service")
+    if creation_service is None:
+        raise RuntimeError("session_creation_service_unavailable")
+    # Admission is the migration fence for legacy projectless Sessions. Any
+    # allocation/persistence error propagates and prevents a projectless Tool
+    # catalog from being constructed for this Run.
+    await creation_service.migrate_projectless_session(session_id)
     workspace_binding = await binding_service.resolve_session(session_id)
     if workspace_binding.kind == "project":
         workspace = workspace_binding.effective_root
@@ -9207,6 +9296,19 @@ async def _run_product_harness_chat(
     )
     if retry_handle is None and session_db is not None and not is_sentinel:
         frozen_owner = _companion_identity_gate.freeze()
+        # New Sessions are bound atomically during creation. This idempotent
+        # admission also claims older empty ownerless Sessions created before
+        # the dynamic identity resolver fix; messageful or mismatched Sessions
+        # remain fail-closed inside SessionDB.
+        await session_db.bind_session_owner_if_absent(
+            session_id,
+            {
+                "profile_id": frozen_owner.owner.profile_id,
+                "profile_generation": frozen_owner.owner.profile_generation,
+                "binding_epoch": frozen_owner.binding_epoch,
+                "owner_kind": "companion_profile",
+            },
+        )
         # Semantic growth intent is interpreted by the active model inside
         # ProductTurnPreparer.  Ingress scheduling must not recreate a second
         # keyword/regex classifier.
@@ -9458,6 +9560,40 @@ async def _run_product_harness_chat(
         if not {"tool_search", "tool_describe", "tool_activate"} <= direct_tool_names:
             raise RuntimeError("SDK direct Tool kernel is incomplete")
 
+        global_skill_records = ()
+        capability_platform = service_context.get("capability_platform")
+        global_skill_service = service_context.get(
+            "project_skill_install_service"
+        )
+        if capability_platform is not None and global_skill_service is not None:
+            from deskpet.capabilities.contracts import CapabilityScope
+            from deskpet.sdk_adapters.capability_catalog import (
+                ProductCapabilityCatalogSourceAdapter,
+            )
+
+            global_owner_key = str(global_skill_service.global_owner_key)
+            global_scope = CapabilityScope(user_key=global_owner_key)
+            async with capability_platform.publish_lock:
+                global_snapshot, _global_entries = (
+                    await capability_platform.hub.snapshot_for_atomic_lease(
+                        global_scope
+                    )
+                )
+                global_skill_records = await (
+                    ProductCapabilityCatalogSourceAdapter()
+                    .sdk_global_resource_records_from_snapshot(
+                        store=capability_platform.store,
+                        snapshot=global_snapshot,
+                        owner_key=global_owner_key,
+                        user_scope_key=global_owner_key,
+                    )
+                )
+            logger.info(
+                "sdk_global_skill_catalog_captured count=%s skills=%s",
+                len(global_skill_records),
+                [record.skill_locator for record in global_skill_records],
+            )
+
         try:
             _sdk_tool_authority_registry.prepare_run(
                 run_id=sdk_run_id,
@@ -9472,6 +9608,7 @@ async def _run_product_harness_chat(
                 disclosure_policy=SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
                 binding_version=int(workspace_resolution.get("binding_version", 1)),
                 workspace_resolution=workspace_resolution,
+                resource_records=global_skill_records,
             )
         except BaseException:
             _sdk_provider_binding_resolver.mark_terminal(sdk_run_id, "failed")
@@ -11651,6 +11788,7 @@ async def _send_new_session_origin_user_echo(
 _voice_transports: weakref.WeakValueDictionary[str, object] = (
     weakref.WeakValueDictionary()
 )
+_realtime_voice_service = None
 
 
 # Opt-in dev mode: set DESKPET_DEV_MODE=1 to bypass shared-secret auth.
@@ -11743,22 +11881,32 @@ async def _seed_registry_from_runtime_overrides(registry) -> None:
     base_url = str(overrides.get("base_url") or "").strip()
     model = str(overrides.get("model") or "").strip()
     api_key = str(overrides.get("api_key") or "").strip()
-    if not base_url or not model or not api_key:
+    process_api_key = str(os.environ.get("DESKPET_CLOUD_API_KEY") or "").strip()
+    if not base_url or not model or not (api_key or process_api_key):
         # 三者缺一就不补：add_provider 强制要求 api_key，半成品条目只会让
         # 链路以更难懂的方式失败。
         return
+    fields = {
+        "id": "primary",
+        "name": _provider_display_name(base_url, "primary"),
+        "base_url": base_url,
+        "models": [model],
+        "default_model": model,
+        "api_key": api_key or process_api_key,
+        "enabled": True,
+        "priority": 1,
+        "source": "user",
+    }
+    if not api_key:
+        await registry.add_ephemeral_provider(fields)
+        logger.info(
+            "provider_registry_seeded_from_process_env base_url=%s model=%s",
+            base_url,
+            model,
+        )
+        return
     await registry.add_provider(
-        {
-            "id": "primary",
-            "name": _provider_display_name(base_url, "primary"),
-            "base_url": base_url,
-            "models": [model],
-            "default_model": model,
-            "api_key": api_key,
-            "enabled": True,
-            "priority": 1,
-            "source": "user",
-        }
+        fields
     )
     logger.info(
         "provider_registry_seeded_from_runtime base_url=%s model=%s", base_url, model
@@ -11941,6 +12089,52 @@ async def update_cloud_config(body: CloudConfigRequest, request: Request):
     }
 
 
+async def _current_slash_skill_catalog():
+    """Freeze the current user-global Skill command view atomically.
+
+    First-party Skills remain available, while managed user-global Skills are
+    derived from the same Hub snapshot and Manager version rows used by fresh
+    SDK Runs.  No Session or selected workspace participates in visibility.
+    """
+
+    from deskpet.commands import (
+        CompositeSkillCommandCatalog,
+        FrozenSkillCommandCatalog,
+    )
+
+    first_party = (
+        service_context.get("managed_skill_discovery_projection")
+        or service_context.get("skill_loader")
+    )
+    capability_platform = service_context.get("capability_platform")
+    global_skill_service = service_context.get("project_skill_install_service")
+    if capability_platform is None or global_skill_service is None:
+        return first_party
+
+    from deskpet.capabilities.contracts import CapabilityScope
+    from deskpet.sdk_adapters.capability_catalog import (
+        ProductCapabilityCatalogSourceAdapter,
+    )
+
+    owner_key = str(global_skill_service.global_owner_key)
+    scope = CapabilityScope(user_key=owner_key)
+    async with capability_platform.publish_lock:
+        snapshot, _entries = await capability_platform.hub.snapshot_for_atomic_lease(
+            scope
+        )
+        records = await (
+            ProductCapabilityCatalogSourceAdapter()
+            .sdk_global_resource_records_from_snapshot(
+                store=capability_platform.store,
+                snapshot=snapshot,
+                owner_key=owner_key,
+                user_scope_key=owner_key,
+            )
+        )
+    global_catalog = FrozenSkillCommandCatalog(records)
+    return CompositeSkillCommandCatalog(first_party, global_catalog)
+
+
 @app.get("/api/skills/list")
 async def api_skills_list():
     """WI-A4 v1 — InputBar 拉 skill 列表给 / autocomplete.
@@ -11963,10 +12157,7 @@ async def api_skills_list():
         {"name": "goal clear", "description": "清除当前 goal"},
     ]
     skills: list[dict[str, str]] = []
-    _sl = (
-        service_context.get("managed_skill_discovery_projection")
-        or service_context.get("skill_loader")
-    )
+    _sl = await _current_slash_skill_catalog()
     if _sl is not None:
         try:
             for s in _sl.list_skills():
@@ -12031,10 +12222,7 @@ async def api_commands_help():
 
     # Skills — list_skills 返回 SkillMeta 的 dict 形式；args_schema 从
     # frontmatter 解析（如果有），否则给空 list（用户自由输入参数）
-    _sl = (
-        service_context.get("managed_skill_discovery_projection")
-        or service_context.get("skill_loader")
-    )
+    _sl = await _current_slash_skill_catalog()
     if _sl is not None:
         try:
             for s in _sl.list_skills():
@@ -12095,10 +12283,7 @@ async def api_command_schema(name: str):
         return {"name": name_lower, **b}
 
     # Skill lookup
-    _sl = (
-        service_context.get("managed_skill_discovery_projection")
-        or service_context.get("skill_loader")
-    )
+    _sl = await _current_slash_skill_catalog()
     if _sl is not None:
         try:
             for s in _sl.list_skills():
@@ -12153,6 +12338,11 @@ async def health():
         ),
         "startup_errors": errors,
         "voice": _voice_runtime.health_payload(),
+        "realtime_voice": (
+            _realtime_voice_service.health_payload()
+            if _realtime_voice_service is not None
+            else {"enabled": False, "path": "/ws/realtime-voice"}
+        ),
     }
 
 
@@ -12353,14 +12543,14 @@ async def _settings_skill_install_adapter(ws: WebSocket):
     from deskpet.capabilities.skill_install_ui import (
         ProjectSkillInstallUIAdapter,
         ProjectSkillInstallUIError,
-        TrustedProjectInstallContext,
+        TrustedGlobalInstallContext,
     )
 
     service = service_context.get("project_skill_install_service")
     if service is None:
         raise ProjectSkillInstallUIError(
             "skill_install_service_unavailable",
-            "The managed Project Skill installer is unavailable.",
+            "The managed global Skill installer is unavailable.",
             retryable=True,
         )
     authorizer_factory = service_context.get(
@@ -12376,15 +12566,13 @@ async def _settings_skill_install_adapter(ws: WebSocket):
     # The authorizer owns request/window authentication. Query parameters and
     # UI payload fields are deliberately not supplied as identity inputs.
     bound_authorizer = await bind_request(ws)
-    resolve_binding = getattr(bound_authorizer, "resolve_project_binding", None)
-    if not callable(resolve_binding):
+    global_owner_key = str(getattr(service, "global_owner_key", "") or "").strip()
+    if not global_owner_key:
         raise ProjectSkillInstallUIError(
             "settings_install_authorization_unavailable",
-            "Settings cannot resolve a trusted Project from this Host window.",
+            "Settings cannot resolve the trusted global Skill owner.",
             retryable=True,
         )
-    binding = await resolve_binding()
-    project = TrustedProjectInstallContext.from_binding(binding)
     principal_id = str(getattr(bound_authorizer, "principal_id", "") or "").strip()
     if not principal_id:
         raise ProjectSkillInstallUIError(
@@ -12394,10 +12582,13 @@ async def _settings_skill_install_adapter(ws: WebSocket):
         )
     # This is deliberately a separate Host adapter. The legacy PermissionGate
     # returns only an in-memory decision and cannot mint the durable receipt
-    # required by ProjectSkillInstallService.confirm/cancel.
+    # required by GlobalSkillInstallService.confirm/cancel.
     return (
         ProjectSkillInstallUIAdapter(service=service, authorizer=bound_authorizer),
-        project,
+        TrustedGlobalInstallContext(
+            principal_id=principal_id,
+            global_owner_key=global_owner_key,
+        ),
         principal_id,
     )
 
@@ -13421,49 +13612,72 @@ async def control_channel(ws: WebSocket):
                 })
 
             elif msg_type == "skill_list_installed":
-                # P4-S20 Stage C — list user-installed skills.
-                if skill_installer is None:
+                # Managed user-global catalog is the only installed-Skill
+                # authority.  The legacy userdata/skills directory is not a
+                # success or visibility source.
+                _capability_platform = service_context.get("capability_platform")
+                _global_service = service_context.get("project_skill_install_service")
+                if _capability_platform is None or _global_service is None:
                     await ws.send_json({
                         "type": "skill_list_installed_response",
-                        "payload": {"skills": [], "error": "marketplace not initialized"},
+                        "payload": {"skills": [], "error": "global Skill catalog unavailable"},
                     })
                     continue
                 _installed = []
-                for sk in skill_installer.skills_dir.iterdir():
-                    if not sk.is_dir():
+                from deskpet.capabilities.contracts import CapabilityScope
+                from deskpet.capabilities.manifest import load_and_validate_pack
+
+                _global_scope_key = str(_global_service.global_owner_key)
+                _catalog_snapshot = await _capability_platform.hub.snapshot(
+                    CapabilityScope(user_key=_global_scope_key)
+                )
+                for _descriptor in _catalog_snapshot.descriptors:
+                    _binding = next(
+                        (
+                            item
+                            for item in _descriptor.visible_bindings
+                            if item.scope == "user"
+                            and item.scope_key == _global_scope_key
+                            and item.active
+                        ),
+                        None,
+                    )
+                    if _binding is None:
                         continue
-                    sm = sk / "SKILL.md"
-                    if not sm.exists():
+                    _record = await _capability_platform.store.get_version(
+                        _descriptor.version.capability_id,
+                        _descriptor.version.version,
+                        _descriptor.version.manifest_hash,
+                    )
+                    if _record is None:
                         continue
-                    try:
-                        from deskpet.skills.parser import parse_skill_md
-                        meta = parse_skill_md(sm)
+                    _manifest = load_and_validate_pack(_record.install_path).manifest
+                    for _skill in _manifest.skills:
                         _installed.append({
-                            "name": meta.name,
-                            "description": meta.description,
-                            "version": meta.version,
-                            "path": str(sk),
-                            "allowed_tools": list(meta.allowed_tools),
+                            "name": _skill.id,
+                            "description": _manifest.name,
+                            "version": _manifest.version,
+                            "scope": "global",
+                            "catalog_generation": _catalog_snapshot.stamp.catalog_generation,
+                            "allowed_tools": list(_skill.allowed_tools),
                         })
-                    except Exception as exc:  # noqa: BLE001
-                        logger.warning("skill_list_parse_failed", path=str(sm), error=str(exc))
                 await ws.send_json({
                     "type": "skill_list_installed_response",
                     "payload": {"skills": _installed},
                 })
 
             elif msg_type == "skill_install_from_url":
-                # Managed Project install only. The legacy marketplace
+                # Managed user-global install only. The legacy marketplace
                 # installer remains a diagnostic inventory, never the runtime
                 # authority for URL installs.
                 payload = raw.get("payload", {}) or {}
                 try:
-                    _si_adapter, _si_project, _si_principal = (
+                    _si_adapter, _si_owner, _si_principal = (
                         await _settings_skill_install_adapter(ws)
                     )
                     _si_result = await _si_adapter.stage(
                         url=str(payload.get("url") or ""),
-                        project=_si_project,
+                        owner=_si_owner,
                         principal_id=_si_principal,
                     )
                     await ws.send_json({
@@ -13907,10 +14121,7 @@ async def control_channel(ws: WebSocket):
                     try:
                         from deskpet.commands import dispatch_slash_command
                         _slash_skill_loader = (
-                            service_context.get(
-                                "managed_skill_discovery_projection"
-                            )
-                            or service_context.get("skill_loader")
+                            await _current_slash_skill_catalog()
                         )
                         _slash_skill_catalog = _slash_skill_loader
                         _slash_goal_store = service_context.get("session_goal_store")
@@ -15266,6 +15477,66 @@ async def control_channel(ws: WebSocket):
             _control_connections.pop(connection_registry_key, None)
         _chat_peer_groups.pop(connection_registry_key, None)
         logger.info("control channel disconnected", session_id=session_id)
+
+
+class _StarletteRealtimeSocket:
+    """Minimal adapter from Starlette frames to the SDK socket protocol."""
+
+    def __init__(self, websocket: WebSocket) -> None:
+        self._websocket = websocket
+        self._closed = False
+
+    async def recv(self) -> str | bytes:
+        message = await self._websocket.receive()
+        message_type = message.get("type")
+        if message_type == "websocket.disconnect":
+            raise EOFError
+        if message_type != "websocket.receive":
+            raise RuntimeError("local websocket frame invalid")
+        text = message.get("text")
+        data = message.get("bytes")
+        if isinstance(text, str) and data is None:
+            return text
+        if isinstance(data, bytes) and text is None:
+            return data
+        raise RuntimeError("local websocket frame invalid")
+
+    async def send(self, message: str | bytes) -> None:
+        if isinstance(message, str):
+            await self._websocket.send_text(message)
+        else:
+            await self._websocket.send_bytes(message)
+
+    async def close(self, code: int = 1000, reason: str = "") -> None:
+        if self._closed:
+            return
+        self._closed = True
+        await self._websocket.close(code=code, reason=reason)
+
+
+@app.websocket("/ws/realtime-voice")
+async def realtime_voice_channel(ws: WebSocket):
+    await ws.accept()
+    service = _realtime_voice_service
+    if service is None:
+        await ws.close(code=1013, reason="realtime unavailable")
+        return
+    from simple_harness_service.realtime.transports import LocalAdmissionError
+
+    peer_host = ws.client.host if ws.client is not None else ""
+    try:
+        await service.serve(
+            _StarletteRealtimeSocket(ws),
+            path=ws.url.path,
+            origin=ws.headers.get("origin"),
+            peer_host=peer_host,
+        )
+    except LocalAdmissionError as exc:
+        logger.info("realtime_voice_local_rejected", stable_code=exc.code)
+    except (EOFError, WebSocketDisconnect):
+        logger.info("realtime_voice_local_closed")
+    except Exception:  # noqa: BLE001
+        logger.warning("realtime_voice_local_failed", stable_code="internal")
 
 
 @app.websocket("/ws/audio")

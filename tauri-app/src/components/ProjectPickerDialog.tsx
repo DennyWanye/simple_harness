@@ -19,9 +19,10 @@ export interface ProjectPickerDialogProps {
   open: boolean;
   onClose: () => void;
   onProjectSelected: (projectId: string) => void;
+  onDefaultSelected?: () => void;
 }
 
-export function ProjectPickerDialog({ open, onClose, onProjectSelected }: ProjectPickerDialogProps) {
+export function ProjectPickerDialog({ open, onClose, onProjectSelected, onDefaultSelected }: ProjectPickerDialogProps) {
   const [selectedPath, setSelectedPath] = useState("");
   const [mode, setMode] = useState<"git_root" | "selected_folder">("git_root");
   const [preview, setPreview] = useState<ProjectRegistrationPreview | null>(null);
@@ -56,10 +57,11 @@ export function ProjectPickerDialog({ open, onClose, onProjectSelected }: Projec
     try {
       const path = await invoke<string | null>("open_directory_dialog");
       if (!path) return;
+      const nextMode = onDefaultSelected ? "selected_folder" : "git_root";
       setSelectedPath(path);
-      setMode("git_root");
+      setMode(nextMode);
       setPreview(null);
-      requestPreview(path, "git_root");
+      requestPreview(path, nextMode);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     }
@@ -122,8 +124,11 @@ export function ProjectPickerDialog({ open, onClose, onProjectSelected }: Projec
         {error && <div role="alert" style={{ color: tokens.color.danger.fg }}>{error}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: tokens.space.sm }}>
           <button type="button" onClick={onClose} style={buttonStyle}>取消</button>
+          {onDefaultSelected && <button type="button" data-testid="project-picker-default" onClick={onDefaultSelected} disabled={Boolean(pending)} style={buttonStyle}>
+            使用默认目录
+          </button>}
           <button type="button" data-testid="project-picker-confirm" onClick={register} disabled={!preview || Boolean(pending)} style={buttonStyle}>
-            {pending?.kind === "register" ? "创建中…" : "创建项目 Session"}
+            {pending?.kind === "register" ? "创建中…" : onDefaultSelected ? "创建普通 Session" : "创建项目 Session"}
           </button>
         </div>
       </div>

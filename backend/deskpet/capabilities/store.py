@@ -28,6 +28,7 @@ import aiosqlite
 
 from deskpet.permissions.policy import (
     AuthorizationMode,
+    AuthorizationPolicyProvenance,
     AuthorizationPolicyState,
 )
 from deskpet.types.task_grants import TaskGrant
@@ -384,11 +385,17 @@ CREATE TABLE IF NOT EXISTS authorization_policy_state (
     singleton_id INTEGER PRIMARY KEY CHECK(singleton_id=1),
     mode TEXT NOT NULL CHECK(mode IN ('manual','auto')),
     generation INTEGER NOT NULL CHECK(generation>=0),
-    updated_at REAL NOT NULL
+    updated_at REAL NOT NULL,
+    provenance TEXT NOT NULL DEFAULT 'needs_user_choice' CHECK(provenance IN (
+        'factory_default','factory_default_migrated','legacy_import',
+        'user_explicit','needs_user_choice'
+    )),
+    schema_generation INTEGER NOT NULL DEFAULT 2 CHECK(schema_generation=2),
+    user_set_receipt_ref TEXT
 );
 INSERT OR IGNORE INTO authorization_policy_state(
-    singleton_id,mode,generation,updated_at
-) VALUES(1,'manual',0,CAST(strftime('%s','now') AS REAL));
+    singleton_id,mode,generation,updated_at,provenance,schema_generation
+) VALUES(1,'auto',0,CAST(strftime('%s','now') AS REAL),'factory_default',2);
 
 CREATE TABLE IF NOT EXISTS authorization_policy_legacy_imports (
     source_key TEXT PRIMARY KEY,
@@ -594,6 +601,20 @@ CREATE TABLE IF NOT EXISTS capability_operation_evidence (
 )
 
 CAPABILITY_SCHEMA_V2_STATEMENTS: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS capability_legacy_global_convergence (
+        global_owner_key TEXT NOT NULL,
+        pack_id TEXT NOT NULL,
+        source_binding_set_stamp TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK(outcome IN (
+            'promoted','legacy_global_conflict'
+        )),
+        selected_identity_json TEXT,
+        conflict_json TEXT,
+        created_at REAL NOT NULL,
+        PRIMARY KEY(global_owner_key,pack_id)
+    )
+    """,
     """
     CREATE TABLE IF NOT EXISTS capability_owner_detail_versions (
         owner_key TEXT NOT NULL,
@@ -1555,6 +1576,18 @@ class CapabilitySkillInstallIntent:
     verification_attempt_generation: int = 0
     current_verification_attempt_id: str | None = None
     migrated_verification_provenance: str | None = None
+
+    @property
+    def schema_version(self) -> int:
+        return 2 if self.source.get("schema") == "global-skill-install-source-v2" else 1
+
+    @property
+    def install_scope(self) -> str:
+        return "user" if self.schema_version == 2 else "project"
+
+    @property
+    def install_scope_key(self) -> str:
+        return self.project_scope_key
 
 
 @dataclass(frozen=True, slots=True)
@@ -3393,7 +3426,8 @@ class CapabilityStoreTx:
             db, operation_id=operation_id, idempotency_key=idempotency_key,
             kind="skill_install_batch", request={"install_intent_id": intent_id,
             "member_set_stamp": intent.member_set_stamp}, root_run_id=intent.root_run_id,
-            requested_scope="project", requested_scope_key=intent.project_scope_key,
+            requested_scope=intent.install_scope,
+            requested_scope_key=intent.install_scope_key,
         )
         for member in members:
             await db.execute(
@@ -3506,9 +3540,13 @@ class CapabilityStoreTx:
         mode: AuthorizationMode,
         *,
         expected_generation: int,
+        provenance: AuthorizationPolicyProvenance = "user_explicit",
+        user_set_receipt_ref: str | None = None,
     ) -> AuthorizationPolicyState:
         return await self._store._compare_and_set_policy_mode_tx(
-            self._db, mode, expected_generation=expected_generation
+            self._db, mode, expected_generation=expected_generation,
+            provenance=provenance,
+            user_set_receipt_ref=user_set_receipt_ref,
         )
 
     async def get_legacy_authorization_import(
@@ -3588,7 +3626,65 @@ class CapabilityStore:
                         "unsupported_capability_schema",
                         f"capability schema is {version}, expected {CAPABILITY_SCHEMA_VERSION}",
                     )
+                await self._migrate_authorization_policy_provenance(db)
+                await db.commit()
             self._initialized = True
+
+    async def _migrate_authorization_policy_provenance(
+        self, db: aiosqlite.Connection
+    ) -> None:
+        """Add the v2 provenance columns and classify legacy rows once."""
+
+        columns = {
+            str(row[1])
+            for row in await (await db.execute(
+                "PRAGMA table_info(authorization_policy_state)"
+            )).fetchall()
+        }
+        if "provenance" not in columns:
+            await db.execute(
+                "ALTER TABLE authorization_policy_state ADD COLUMN provenance "
+                "TEXT NOT NULL DEFAULT 'needs_user_choice'"
+            )
+        if "schema_generation" not in columns:
+            await db.execute(
+                "ALTER TABLE authorization_policy_state ADD COLUMN schema_generation "
+                "INTEGER NOT NULL DEFAULT 2"
+            )
+        if "user_set_receipt_ref" not in columns:
+            await db.execute(
+                "ALTER TABLE authorization_policy_state ADD COLUMN user_set_receipt_ref TEXT"
+            )
+        await db.execute(
+            """UPDATE authorization_policy_state
+               SET provenance='user_explicit',
+                   user_set_receipt_ref=COALESCE(
+                       user_set_receipt_ref,'policy-user-set:migrated:' || generation
+                   )
+               WHERE generation>0 AND provenance='needs_user_choice'"""
+        )
+        await db.execute(
+            """UPDATE authorization_policy_state
+               SET provenance='legacy_import',user_set_receipt_ref=NULL
+               WHERE provenance='needs_user_choice' AND EXISTS (
+                   SELECT 1 FROM authorization_policy_legacy_imports
+                   WHERE outcome='imported'
+               )"""
+        )
+        await db.execute(
+            """UPDATE authorization_policy_state
+               SET mode='auto',
+                   provenance='factory_default_migrated',user_set_receipt_ref=NULL,
+                   updated_at=?
+               WHERE mode='manual' AND generation=0
+                 AND provenance='needs_user_choice'
+                 AND user_set_receipt_ref IS NULL
+                 AND EXISTS (
+                     SELECT 1 FROM authorization_policy_legacy_imports
+                     WHERE outcome='missing'
+                 )""",
+            (self._clock(),),
+        )
 
     def now(self) -> float:
         return self._clock()
@@ -4198,6 +4294,296 @@ class CapabilityStore:
     async def set_binding(self, **kwargs: Any) -> CapabilityBinding:
         async with self.write_transaction() as db:
             return await self._set_binding_tx(db, **kwargs)
+
+    async def converge_legacy_project_skill_bindings(
+        self, *, global_owner_key: str
+    ) -> tuple[Mapping[str, JsonValue], ...]:
+        """Deterministically promote exact legacy Project Skill bindings.
+
+        Every Project source for a pack participates in one frozen stamp.  A
+        promotion is legal only when version, manifest, member content and
+        durable install receipt all agree.  Promotion and retirement happen
+        in the same SQLite transaction; ambiguous state is recorded durably
+        and left untouched for an explicit reinstall/choice.
+        """
+
+        owner_key = str(global_owner_key).strip()
+        if not owner_key.startswith("user:v2:"):
+            raise CapabilityStoreError(
+                "invalid_global_owner_key", "validated user-global owner is required"
+            )
+        active_statuses = (
+            "staging", "awaiting_confirmation", "publishing",
+            "published_pending_runtime_verification", "succeeded", "unknown",
+        )
+        results: list[Mapping[str, JsonValue]] = []
+        async with self.write_transaction() as db:
+            rows = await (await db.execute(
+                f"""SELECT b.binding_id,b.owner_key,b.scope_key,b.pack_id,
+                           b.active_version AS version,
+                           b.active_manifest_hash AS manifest_hash,b.generation,
+                           i.intent_id,i.status,i.settlement_ref,i.verification_ref,
+                           i.member_set_stamp,m.ordinal,m.content_hash,
+                           h.operation_id,o.kind AS operation_kind,
+                           o.phase AS operation_phase,o.status AS operation_status,
+                           o.request_json,h.member_set_stamp AS handoff_member_set_stamp,
+                           pe.status AS evidence_status,pe.evidence_json,
+                           om.committed_version,om.committed_manifest_hash,
+                           om.committed_set_stamp
+                    FROM capability_bindings b
+                    JOIN capability_skill_install_members m
+                      ON m.pack_id=b.pack_id AND m.version=b.active_version
+                     AND m.manifest_hash=b.active_manifest_hash
+                    JOIN capability_skill_install_intents i
+                      ON i.intent_id=m.intent_id AND i.project_scope_key=b.scope_key
+                    LEFT JOIN capability_skill_install_handoffs h
+                      ON h.intent_id=i.intent_id
+                    LEFT JOIN capability_operations o
+                      ON o.operation_id=h.operation_id
+                    LEFT JOIN capability_operation_phase_evidence pe
+                      ON pe.operation_id=h.operation_id AND pe.phase='batch_committed'
+                    LEFT JOIN capability_operation_members om
+                      ON om.operation_id=h.operation_id AND om.ordinal=m.ordinal
+                    WHERE b.scope='project' AND b.enabled=1
+                      AND i.source_json NOT LIKE '%global-skill-install-source-v2%'
+                      AND i.status IN ({','.join('?' for _ in active_statuses)})
+                    ORDER BY b.pack_id,b.owner_key,b.scope_key,b.binding_id,i.intent_id""",
+                active_statuses,
+            )).fetchall()
+            by_pack: dict[str, list[Mapping[str, Any]]] = {}
+            for row in rows:
+                by_pack.setdefault(str(row["pack_id"]), []).append(row)
+            for pack_id, candidates in sorted(by_pack.items()):
+                frozen = []
+                for row in candidates:
+                    evidence = _json_object(
+                        None if row["evidence_json"] is None else str(row["evidence_json"])
+                    ) or {}
+                    evidence_members = tuple(
+                        item for item in evidence.get("members", ())
+                        if isinstance(item, Mapping)
+                    )
+                    operation_member_rows = await (await db.execute(
+                        """SELECT ordinal,normalized_name,pack_id,version,
+                                  manifest_hash,content_hash,source_digest,
+                                  committed_version,committed_manifest_hash,
+                                  committed_set_stamp
+                           FROM capability_operation_members
+                           WHERE operation_id=? ORDER BY ordinal""",
+                        (str(row["operation_id"] or ""),),
+                    )).fetchall()
+                    intent_member_rows = await (await db.execute(
+                        """SELECT ordinal,normalized_name,pack_id,version,
+                                  manifest_hash,content_hash,source_digest
+                           FROM capability_skill_install_members
+                           WHERE intent_id=? ORDER BY ordinal""",
+                        (str(row["intent_id"]),),
+                    )).fetchall()
+                    rebuilt_members = [
+                        {
+                            "pack_id": str(item["pack_id"]),
+                            "version": str(item["version"]),
+                            "manifest_hash": str(item["manifest_hash"]),
+                            "content_hash": str(item["content_hash"]),
+                        }
+                        for item in operation_member_rows
+                    ]
+                    intended_members = [
+                        {
+                            "pack_id": str(item["pack_id"]),
+                            "version": str(item["version"]),
+                            "manifest_hash": str(item["manifest_hash"]),
+                            "content_hash": str(item["content_hash"]),
+                        }
+                        for item in intent_member_rows
+                    ]
+                    receipt_member_identities = [
+                        {
+                            "pack_id": str(item.get("pack_id") or ""),
+                            "version": str(item.get("version") or ""),
+                            "manifest_hash": str(item.get("manifest_hash") or ""),
+                            "content_hash": str(item.get("content_hash") or ""),
+                        }
+                        for item in evidence_members
+                    ]
+                    full_member_set_valid = (
+                        rebuilt_members == intended_members == receipt_member_identities
+                        and tuple(int(item["ordinal"]) for item in operation_member_rows)
+                        == tuple(range(len(operation_member_rows)))
+                        and all(
+                            str(item["committed_version"] or "") == str(item["version"])
+                            and str(item["committed_manifest_hash"] or "") == str(item["manifest_hash"])
+                            and str(item["committed_set_stamp"] or "") == str(row["member_set_stamp"])
+                            for item in operation_member_rows
+                        )
+                    )
+                    expected_member = {
+                        "pack_id": str(row["pack_id"]),
+                        "version": str(row["version"]),
+                        "manifest_hash": str(row["manifest_hash"]),
+                        "content_hash": str(row["content_hash"]),
+                    }
+                    matching_members = [
+                        item for item in evidence_members
+                        if all(str(item.get(key) or "") == value for key, value in expected_member.items())
+                    ]
+                    receipt_payload = {
+                        key: value for key, value in evidence.items()
+                        if key not in {"manager_receipt_hash", "install_root"}
+                    }
+                    receipt_hash = str(evidence.get("manager_receipt_hash") or "")
+                    operation_request = _json_object(
+                        None if row["request_json"] is None else str(row["request_json"])
+                    ) or {}
+                    evidence_valid = all((
+                        str(row["status"]) == "succeeded",
+                        str(row["operation_kind"] or "") == "skill_install_batch",
+                        str(row["operation_phase"] or "") == "batch_committed",
+                        str(row["operation_status"] or "") == "succeeded",
+                        str(row["evidence_status"] or "") == "committed",
+                        str(evidence.get("schema") or "") == "capability-batch-manager-receipt-v1",
+                        str(evidence.get("operation_id") or "") == str(row["operation_id"] or ""),
+                        str(evidence.get("scope") or "") == "project",
+                        str(evidence.get("scope_key") or "") == str(row["scope_key"]),
+                        str(evidence.get("project_scope_key") or "") == str(row["scope_key"]),
+                        str(evidence.get("owner_key") or "") == str(row["owner_key"]),
+                        str(evidence.get("committed_set_stamp") or "") == str(row["member_set_stamp"]),
+                        str(row["handoff_member_set_stamp"] or "") == str(row["member_set_stamp"]),
+                        str(operation_request.get("member_set_stamp") or "") == str(row["member_set_stamp"]),
+                        str(evidence.get("publication_state") or "") == "active",
+                        len(matching_members) == 1,
+                        full_member_set_valid,
+                        str(row["committed_version"] or "") == str(row["version"]),
+                        str(row["committed_manifest_hash"] or "") == str(row["manifest_hash"]),
+                        str(row["committed_set_stamp"] or "") == str(row["member_set_stamp"]),
+                        len(receipt_hash) == 64,
+                        receipt_hash == fingerprint_json(receipt_payload),
+                        str(row["settlement_ref"] or "") == receipt_hash,
+                        bool(str(row["verification_ref"] or "")),
+                    ))
+                    frozen.append({
+                        "binding_id": str(row["binding_id"]),
+                        "owner_key": str(row["owner_key"]),
+                        "scope_key": str(row["scope_key"]),
+                        "generation": int(row["generation"]),
+                        "intent_id": str(row["intent_id"]),
+                        "intent_status": str(row["status"]),
+                        "version": str(row["version"]),
+                        "manifest_hash": str(row["manifest_hash"]),
+                        "content_hash": str(row["content_hash"]),
+                        "manager_receipt_hash": receipt_hash,
+                        "runtime_verification_ref": str(row["verification_ref"] or ""),
+                        "manager_evidence_valid": evidence_valid,
+                        "ordered_member_set_hash": fingerprint_json(rebuilt_members),
+                    })
+                source_stamp = fingerprint_json(frozen)
+                prior = await (await db.execute(
+                    """SELECT * FROM capability_legacy_global_convergence
+                       WHERE global_owner_key=? AND pack_id=?""",
+                    (owner_key, pack_id),
+                )).fetchone()
+                if prior is not None:
+                    if str(prior["source_binding_set_stamp"]) != source_stamp:
+                        raise CapabilityStoreConflict(
+                            "legacy_global_convergence_source_changed",
+                            f"legacy source set changed after decision for {pack_id}",
+                        )
+                    results.append({
+                        "pack_id": pack_id, "outcome": str(prior["outcome"]),
+                        "source_binding_set_stamp": source_stamp,
+                    })
+                    continue
+                identities = {
+                    (item["version"], item["manifest_hash"], item["content_hash"])
+                    for item in frozen
+                }
+                selected = next(iter(identities)) if len(identities) == 1 else None
+                existing = await (await db.execute(
+                    """SELECT b.*,v.derived_from_receipt_ref
+                       FROM capability_bindings b
+                       JOIN capability_versions v
+                         ON v.pack_id=b.pack_id AND v.version=b.active_version
+                        AND v.manifest_hash=b.active_manifest_hash
+                       WHERE b.owner_key=? AND b.scope='user' AND b.scope_key=?
+                         AND b.pack_id=?""",
+                    (owner_key, owner_key, pack_id),
+                )).fetchone()
+                conflict_reasons: list[str] = []
+                if selected is None:
+                    conflict_reasons.append("legacy_sources_differ")
+                if any(not item["manager_evidence_valid"] for item in frozen):
+                    conflict_reasons.append("legacy_manager_receipt_invalid")
+                if existing is not None and selected is not None and (
+                    str(existing["active_version"]), str(existing["active_manifest_hash"])
+                ) != selected[:2]:
+                    conflict_reasons.append("existing_global_binding_differs")
+                if existing is not None and selected is not None:
+                    receipt_hashes = {
+                        str(item["manager_receipt_hash"]) for item in frozen
+                    }
+                    existing_receipt = str(existing["derived_from_receipt_ref"] or "")
+                    # Version/manifest alone do not identify installed bytes.  The
+                    # immutable version row must point at one of the Manager
+                    # receipts just validated above; that receipt commits the
+                    # exact ordered content hashes.  No receipt means content is
+                    # unprovable, not "probably the same".
+                    if existing_receipt not in receipt_hashes:
+                        conflict_reasons.append("existing_global_content_or_receipt_differs")
+                if conflict_reasons:
+                    conflict = {"reasons": sorted(set(conflict_reasons)), "sources": frozen}
+                    await db.execute(
+                        """INSERT INTO capability_legacy_global_convergence(
+                           global_owner_key,pack_id,source_binding_set_stamp,outcome,
+                           selected_identity_json,conflict_json,created_at
+                           ) VALUES(?,?,?,'legacy_global_conflict',NULL,?,?)""",
+                        (owner_key, pack_id, source_stamp, canonical_json(conflict), self._clock()),
+                    )
+                    results.append({"pack_id": pack_id, "outcome": "legacy_global_conflict",
+                                    "source_binding_set_stamp": source_stamp})
+                    continue
+                assert selected is not None
+                await self._set_binding_tx(
+                    db, scope="user", scope_key=owner_key, pack_id=pack_id,
+                    version=selected[0], manifest_hash=selected[1],
+                    expected_generation=(0 if existing is None else int(existing["generation"])),
+                    owner_key=owner_key, management_policy="user_managed",
+                )
+                retired_binding_ids: set[str] = set()
+                for item in frozen:
+                    if item["binding_id"] in retired_binding_ids:
+                        continue
+                    cursor = await db.execute(
+                        """DELETE FROM capability_bindings
+                           WHERE binding_id=? AND generation=?""",
+                        (item["binding_id"], item["generation"]),
+                    )
+                    if cursor.rowcount != 1:
+                        raise CapabilityStoreConflict(
+                            "legacy_project_retirement_cas_conflict",
+                            f"legacy Project binding changed for {pack_id}",
+                        )
+                    retired_binding_ids.add(item["binding_id"])
+                    await self._touch_owner_detail_tx(
+                        db, OwnerScopeKey(item["owner_key"], "project", item["scope_key"])
+                    )
+                await self._bump_generation_tx(db, catalog=True, binding=True)
+                selected_json = {
+                    "version": selected[0], "manifest_hash": selected[1],
+                    "content_hash": selected[2],
+                    "manager_receipt_set_hash": fingerprint_json(sorted(
+                        str(item["manager_receipt_hash"]) for item in frozen
+                    )),
+                }
+                await db.execute(
+                    """INSERT INTO capability_legacy_global_convergence(
+                       global_owner_key,pack_id,source_binding_set_stamp,outcome,
+                       selected_identity_json,conflict_json,created_at
+                       ) VALUES(?,?,?,'promoted',?,NULL,?)""",
+                    (owner_key, pack_id, source_stamp, canonical_json(selected_json), self._clock()),
+                )
+                results.append({"pack_id": pack_id, "outcome": "promoted",
+                                "source_binding_set_stamp": source_stamp})
+        return tuple(results)
 
     async def get_binding(
         self,
@@ -8452,7 +8838,8 @@ class CapabilityStore:
     ) -> AuthorizationPolicyState:
         row = await (
             await db.execute(
-                """SELECT mode,generation,updated_at
+                """SELECT mode,generation,updated_at,provenance,
+                          schema_generation,user_set_receipt_ref
                    FROM authorization_policy_state WHERE singleton_id=1"""
             )
         ).fetchone()
@@ -8464,6 +8851,12 @@ class CapabilityStore:
             mode=str(row["mode"]),  # type: ignore[arg-type]
             generation=int(row["generation"]),
             updated_at=float(row["updated_at"]),
+            provenance=str(row["provenance"]),  # type: ignore[arg-type]
+            schema_generation=int(row["schema_generation"]),
+            user_set_receipt_ref=(
+                None if row["user_set_receipt_ref"] is None
+                else str(row["user_set_receipt_ref"])
+            ),
         )
 
     async def get_policy_state(self) -> AuthorizationPolicyState:
@@ -8476,19 +8869,27 @@ class CapabilityStore:
         mode: AuthorizationMode,
         *,
         expected_generation: int,
+        provenance: AuthorizationPolicyProvenance = "user_explicit",
+        user_set_receipt_ref: str | None = None,
     ) -> AuthorizationPolicyState:
         current = await self._get_policy_state_tx(db)
         successor = current.transition(
-            mode, expected_generation=expected_generation, now=self._clock()
+            mode, expected_generation=expected_generation, now=self._clock(),
+            provenance=provenance,
+            user_set_receipt_ref=user_set_receipt_ref,
         )
         cursor = await db.execute(
             """UPDATE authorization_policy_state
-               SET mode=?,generation=?,updated_at=?
+               SET mode=?,generation=?,updated_at=?,provenance=?,
+                   schema_generation=?,user_set_receipt_ref=?
                WHERE singleton_id=1 AND generation=?""",
             (
                 successor.mode,
                 successor.generation,
                 successor.updated_at,
+                successor.provenance,
+                successor.schema_generation,
+                successor.user_set_receipt_ref,
                 expected_generation,
             ),
         )
@@ -8503,10 +8904,14 @@ class CapabilityStore:
         mode: AuthorizationMode,
         *,
         expected_generation: int,
+        provenance: AuthorizationPolicyProvenance = "user_explicit",
+        user_set_receipt_ref: str | None = None,
     ) -> AuthorizationPolicyState:
         async with self.write_transaction() as db:
             return await self._compare_and_set_policy_mode_tx(
-                db, mode, expected_generation=expected_generation
+                db, mode, expected_generation=expected_generation,
+                provenance=provenance,
+                user_set_receipt_ref=user_set_receipt_ref,
             )
 
     async def _get_legacy_authorization_import_tx(

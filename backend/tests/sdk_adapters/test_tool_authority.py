@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
@@ -66,6 +66,7 @@ class _Inventory:
     version: str = "v1"
     execution_identity: str = "execution-identity-v1"
     projectless_admission: str = "requires_project"
+    availability_reason: str | None = None
 
 
 class _AuthorizationStore:
@@ -139,6 +140,44 @@ def _prepare(
         inventory=inventory,
         deferred_names=deferred_names,
     )
+
+
+def test_unavailable_descriptor_is_searchable_but_cannot_activate() -> None:
+    registry = SdkRunToolAuthorityRegistry()
+    catalog, inventory = _catalog()
+    catalog = {
+        **catalog,
+        "descriptor_specs": list(catalog["specs"]),
+        "specs": [catalog["specs"][0]],
+        "schema_fingerprints": {
+            "tool_search": catalog["schema_fingerprints"]["tool_search"]
+        },
+    }
+    inventory = (
+        inventory[0],
+        replace(inventory[1], availability_reason="workspace_unscoped"),
+    )
+    registry.prepare_run(
+        run_id="run-unavailable", session_id="session-a", request_id="request-a",
+        root_run_id="root-a", task_scope_id="task-a", workspace_root=None,
+        catalog=catalog, inventory=inventory,
+    )
+    run_id = RunId("run-unavailable")
+    exposure = registry.resolve_exposure(run_id)
+    exposure.restore(run_id, None)
+    bridge = SdkRuntimeCapabilityBridgeAdapter(
+        registry, lambda: registry.resolve(run_id).execution_context()
+    )
+    assert bridge.search("workspace_unscoped")["matches"][0]["capability_id"] == (
+        "builtin:read_file"
+    )
+    described = bridge.describe("builtin:read_file")
+    with pytest.raises(RuntimeError, match="tool_unavailable:workspace_unscoped"):
+        bridge.activate(
+            "builtin:read_file", described["schema_hash"],
+            described["describe_nonce"],
+        )
+    assert [item.name for item in exposure.provider_specs(run_id)] == ["tool_search"]
 
 
 def _effect(

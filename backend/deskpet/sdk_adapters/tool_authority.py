@@ -323,6 +323,7 @@ class SdkRunToolAuthorityRegistry:
         self.scope_store = scope_store or ToolCapabilityScopeStore()
         self._records: dict[str, SdkRunToolAuthorityV1] = {}
         self._runtime_exposures: dict[str, CatalogRunToolExposure] = {}
+        self._unavailable_capabilities: dict[str, dict[str, str]] = {}
         self._resource_records = tuple(resource_records)
         self._workspace_identity_validator = workspace_identity_validator
         self._terminal_listeners: list[
@@ -362,6 +363,7 @@ class SdkRunToolAuthorityRegistry:
         disclosure_policy: str | None = None,
         binding_version: int = 1,
         workspace_resolution: Mapping[str, Any] | None = None,
+        resource_records: Sequence[RuntimeCapabilityRecord] | None = None,
     ) -> SdkRunToolAuthorityV1:
         run_id = _required(run_id, "run_id")
         session_id = _required(session_id, "session_id")
@@ -423,8 +425,16 @@ class SdkRunToolAuthorityRegistry:
             for item in inventory
         }
         names = tuple(_required(item.get("name"), "spec.name") for item in raw_specs)
-        if len(names) != len(set(names)) or set(names) != set(inventory_by_name):
+        if len(names) != len(set(names)) or not set(names).issubset(inventory_by_name):
             raise ValueError("SDK catalog and product inventory differ")
+        unavailable_inventory = {
+            name: item for name, item in inventory_by_name.items() if name not in names
+        }
+        if any(
+            not str(_field(item, "availability_reason", "") or "").strip()
+            for item in unavailable_inventory.values()
+        ):
+            raise ValueError("non-executable Tool descriptor lacks availability reason")
 
         deferred = frozenset(str(item) for item in deferred_names)
         unknown_deferred = deferred - set(names)
@@ -707,9 +717,48 @@ class SdkRunToolAuthorityRegistry:
                     ),
                 )
             )
+        descriptor_specs = catalog.get("descriptor_specs", raw_specs)
+        if not isinstance(descriptor_specs, list):
+            raise TypeError("catalog descriptor_specs must be a list")
+        descriptor_by_name = {
+            _required(item.get("name"), "descriptor.name"): item
+            for item in descriptor_specs
+            if isinstance(item, Mapping)
+        }
+        unavailable_capabilities: dict[str, str] = {}
+        for name, inventory_item in sorted(unavailable_inventory.items()):
+            raw = descriptor_by_name.get(name)
+            if raw is None or not isinstance(raw.get("input_schema"), Mapping):
+                raise ValueError(f"{name} descriptor projection is missing")
+            source = _required(_field(inventory_item, "source"), f"{name}.source")
+            reason = _required(
+                _field(inventory_item, "availability_reason"),
+                f"{name}.availability_reason",
+            )
+            source_namespace = source if source.startswith("mcp:") else "builtin"
+            capability_id = f"{source_namespace}:{name}"
+            runtime_records.append(
+                ExecutableToolRecord(
+                    capability_id=capability_id,
+                    namespace=source_namespace,
+                    source=source if source.startswith("mcp:") else "simple_harness",
+                    source_revision=catalog_fingerprint,
+                    exposure_mode=ToolExposureMode.DEFERRED,
+                    provider_name=name,
+                    description=_required(raw.get("description"), f"{name}.description"),
+                    input_schema=dict(raw["input_schema"]),
+                    search_terms=(f"unavailable:{reason}", source, reason),
+                )
+            )
+            unavailable_capabilities[capability_id] = reason
+        self._unavailable_capabilities[run_id] = unavailable_capabilities
         self._runtime_exposures[run_id] = CatalogRunToolExposure(
             RuntimeToolCatalog(
-                (*runtime_records, *self._resource_records),
+                (
+                    *runtime_records,
+                    *self._resource_records,
+                    *(() if resource_records is None else tuple(resource_records)),
+                ),
                 generation=generation or 1,
             )
         )
@@ -721,6 +770,10 @@ class SdkRunToolAuthorityRegistry:
             return self._runtime_exposures[key]
         except KeyError as exc:
             raise RuntimeError("sdk_runtime_tool_exposure_unavailable") from exc
+
+    def unavailable_reason(self, run_id: object, capability_id: str) -> str | None:
+        key = run_id.value if isinstance(run_id, RunId) else str(run_id)
+        return self._unavailable_capabilities.get(key, {}).get(str(capability_id))
 
     def is_tool_exposed(self, run_id: object, tool_name: str) -> bool:
         """Return whether the SDK Run may currently project ``tool_name``.
@@ -1219,6 +1272,9 @@ class SdkRuntimeCapabilityBridgeAdapter:
         self, capability_id: str, schema_hash: str, describe_nonce: str
     ) -> Any:
         run_id, exposure = self._binding()
+        unavailable = self._authorities.unavailable_reason(run_id, capability_id)
+        if unavailable is not None:
+            raise RuntimeError(f"tool_unavailable:{unavailable}")
         described = exposure.describe(run_id, str(capability_id))
         if str(schema_hash) != described.capability_hash:
             raise RuntimeError("activation_schema_hash_stale")

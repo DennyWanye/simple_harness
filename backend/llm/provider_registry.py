@@ -350,6 +350,7 @@ class LLMProviderRegistry:
     def __init__(self, config_path: Path | str) -> None:
         self._config_path = Path(config_path)
         self._entries: list[ProviderEntry] = []
+        self._ephemeral_api_keys: dict[str, str] = {}
         self._mutation_lock = asyncio.Lock()
         self._load_from_toml()
         if self._assign_missing_incarnations():
@@ -444,6 +445,10 @@ class LLMProviderRegistry:
         other sections). The new block is appended at the end of the file
         — toml's array-of-tables semantics don't care about position.
         """
+        # Explicitly injected process credentials must remain process-only.
+        # Runtime rows participate in normal Session routing but are never
+        # serialized into the user's canonical provider configuration.
+        entries = [entry for entry in entries if entry.source != "runtime-env"]
         if not self._config_path.exists():
             # Brand-new file; just write the providers block + a header.
             content = "schema_version = 1\n\n" + _format_providers_section(entries)
@@ -511,6 +516,9 @@ class LLMProviderRegistry:
         """Look up the real api_key for a provider. Returns None if not
         set or keychain is unavailable. Callers should treat None as a
         configuration error and surface to the user via settings UI."""
+        ephemeral = self._ephemeral_api_keys.get(provider_id)
+        if ephemeral:
+            return ephemeral
         entry = self.get_entry(provider_id)
         if entry is not None and _KEYRING_AVAILABLE and keyring is not None:
             try:
@@ -615,6 +623,58 @@ class LLMProviderRegistry:
             logger.debug("versioned keychain delete ignored: %s", exc)
 
     # ───────── public mutators ─────────
+
+    async def add_ephemeral_provider(self, fields: dict[str, Any]) -> ProviderEntry:
+        """Register a process-only provider without TOML or Keychain writes."""
+        provider_id = str(fields.get("id", ""))
+        _validate_provider_id(provider_id)
+        raw_models = fields.get("models")
+        if isinstance(raw_models, list) and raw_models:
+            models = [str(model).strip() for model in raw_models if str(model).strip()]
+        elif fields.get("model"):
+            models = [str(fields["model"]).strip()]
+        else:
+            models = []
+        base_url = str(fields.get("base_url") or "").strip()
+        api_key = str(fields.get("api_key") or "")
+        if not base_url or not models:
+            raise ValueError("base_url and models are required for an ephemeral provider")
+        if not api_key:
+            raise ValueError("api_key is required for an ephemeral provider")
+        default_model_raw = fields.get("default_model")
+        default_model = (
+            str(default_model_raw)
+            if default_model_raw and str(default_model_raw) in models
+            else models[0]
+        )
+        identity_material = json.dumps(
+            {"id": provider_id, "base_url": base_url, "models": models},
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        entry = ProviderEntry(
+            id=provider_id,
+            name=str(fields.get("name") or provider_id),
+            base_url=base_url,
+            models=models,
+            default_model=default_model,
+            api_key_ref=f"process-env:{provider_id}",
+            priority=int(fields.get("priority", len(self._entries) + 1)),
+            enabled=bool(fields.get("enabled", True)),
+            source="runtime-env",
+            account_ref=str(fields.get("account_ref", "")),
+            incarnation_id=hashlib.sha256(identity_material.encode("utf-8")).hexdigest()[:32],
+            config_revision=1,
+        )
+        async with self._mutation_lock:
+            if any(existing.id == provider_id for existing in self._entries):
+                raise ValueError(
+                    f"provider id {provider_id!r} already exists (must be unique)"
+                )
+            self._entries = [*self._entries, entry]
+            self._ephemeral_api_keys[provider_id] = api_key
+        logger.info("provider_registry: added process-only provider %s", provider_id)
+        return entry
 
     async def add_provider(self, fields: dict[str, Any]) -> ProviderEntry:
         """Register a new provider. Atomically:

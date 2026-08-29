@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "signatures": [
+    "root-tests:exit=1",
+    "frontend-lint:exit=1",
+    "backend-m-r:exit=1",
+    "backend-sdk-adapters:exit=1"
+  ],
+  "failures": {
+    "root-tests": "3fcba2d77f91b5e5567d88d474c866d0c9be68990b0ad8dad522ba970668e0db",
+    "frontend-lint": "b35f4a2a0c57bbb9b5e4e64637c4f083c8914e3cd550a7029755f45e336d964b",
+    "backend-m-r": "2cafccf058b55f9b8196a314206a00cbed14dac610ebfbbc1c0cd5c2503add0f"
+  }
+}

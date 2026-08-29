@@ -38,6 +38,8 @@ class WindowControlCredentialError(RuntimeError):
 class WindowControlBootstrap:
     backend_process_instance_id: str
     public_key_hex: str
+    documents_root: str | None = None
+    documents_identity: str | None = None
 
     @classmethod
     def parse_line(cls, line: str) -> "WindowControlBootstrap":
@@ -46,16 +48,27 @@ class WindowControlBootstrap:
             raise WindowControlCredentialError("window_control_bootstrap_missing")
         try:
             value = json.loads(line[len(prefix) :])
-            if value["schema"] != "window-control-bootstrap-v1":
+            schema = value["schema"]
+            if schema not in {"window-control-bootstrap-v1", "host-bootstrap-v2"}:
                 raise ValueError("schema")
             instance_id = str(value["backend_process_instance_id"])
             public_key_hex = str(value["public_key_hex"])
             Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+            documents_root = value.get("documents_root")
+            documents_identity = value.get("documents_identity")
+            if schema == "host-bootstrap-v2":
+                if not isinstance(documents_root, str) or not documents_root.startswith("/"):
+                    raise ValueError("documents_root")
+                if not isinstance(documents_identity, str) or len(documents_identity) != 64:
+                    raise ValueError("documents_identity")
+            else:
+                documents_root = None
+                documents_identity = None
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise WindowControlCredentialError(
                 "window_control_bootstrap_malformed"
             ) from exc
-        return cls(instance_id, public_key_hex)
+        return cls(instance_id, public_key_hex, documents_root, documents_identity)
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,0 +1,48 @@
+{
+  "source_cluster_ids": [
+    "cluster-native-workspace-authority",
+    "cluster-global-owner-authority",
+    "cluster-workspace-saga-state",
+    "cluster-legacy-skill-convergence",
+    "cluster-release-schema-rollback",
+    "cluster-decisive-verification-design"
+  ],
+  "canonical_findings": [
+    {"id":"host-documents-resolver-transport-unspecified","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-1","AC-2","AC-6","AC-7"],"assurance_contract_ids":["FAIL-3","FAIL-7"],"evidence":"Rust parent-child stdin bootstrap exists; backend-to-Tauri resolver does not.","status":"open","root_cause":"native Documents authority lacks an executable production edge"},
+    {"id":"global-owner-identity-authority-unproven","severity":"P0","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-3","AC-4","AC-6","AC-7"],"assurance_contract_ids":["FAIL-1","FAIL-2","FAIL-4","FAIL-7"],"evidence":"identity_namespace_hash is stable but current loading does not prove OS ownership/mode/non-symlink.","status":"open","root_cause":"no authority proves both generation stability and OS-user isolation"},
+    {"id":"workspace-saga-commit-boundaries-contradict","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-1","AC-2","AC-6","AC-7"],"assurance_contract_ids":["FAIL-3","FAIL-7"],"evidence":"project_committed/session_committed contradict one atomic product transaction.","status":"open","root_cause":"saga states do not match transaction boundary"},
+    {"id":"legacy-project-skill-conflict-policy-missing","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-3","AC-4","AC-6","AC-7"],"assurance_contract_ids":["FAIL-1","FAIL-2","FAIL-4","FAIL-7"],"evidence":"N divergent Project bindings cannot deterministically collapse to one user binding.","status":"open","root_cause":"missing conflict-selection policy and atomic retirement"},
+    {"id":"schema-release-rollback-path-incomplete","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-1","AC-3","AC-6","AC-7","AC-9"],"assurance_contract_ids":["FAIL-2","FAIL-3","FAIL-7","FAIL-8"],"evidence":"three databases and filesystem/catalog lack one release-set recovery contract.","status":"open","root_cause":"coupled authorities lack whole-set backup and mixed-generation gate"},
+    {"id":"decisive-test-procedures-not-code-executable","severity":"P1","scope_relation":"in-scope","origin":"pre-existing","violated_acceptance_ids":["AC-1","AC-2","AC-3","AC-4","AC-5","AC-6","AC-7","AC-8","AC-9"],"assurance_contract_ids":["FAIL-1","FAIL-2","FAIL-3","FAIL-4","FAIL-5","FAIL-6","FAIL-7","FAIL-8"],"evidence":"required scenarios lack frozen testcase files, fixture and exact commands.","status":"open","root_cause":"verification is not yet reproducible and decisive"}
+  ],
+  "resolved_finding_ids": [],
+  "open_finding_ids": [
+    "host-documents-resolver-transport-unspecified",
+    "global-owner-identity-authority-unproven",
+    "workspace-saga-commit-boundaries-contradict",
+    "legacy-project-skill-conflict-policy-missing",
+    "schema-release-rollback-path-incomplete",
+    "decisive-test-procedures-not-code-executable"
+  ],
+  "decisions": [
+    {"canonical_finding_id":"host-documents-resolver-transport-unspecified","source_finding_ids":["host-documents-resolver-transport-unspecified"],"action":"spike","rationale":"Existing trusted direction is Tauri parent to child stdin; packaged proof is required before choosing bootstrap v2.","spike_ids":["SPIKE-NATIVE-DOCUMENTS-BOOTSTRAP"]},
+    {"canonical_finding_id":"global-owner-identity-authority-unproven","source_finding_ids":["global-owner-identity-authority-unproven"],"action":"spike","rationale":"identity_namespace_hash is stable but OS-user ownership validation is not proven.","spike_ids":["SPIKE-GLOBAL-OWNER-AUTHORITY"]},
+    {"canonical_finding_id":"workspace-saga-commit-boundaries-contradict","source_finding_ids":["workspace-saga-commit-boundaries-contradict"],"action":"plan-change","rationale":"Use T0/F1/T1/T2/F2 and keep product aggregate atomic."},
+    {"canonical_finding_id":"legacy-project-skill-conflict-policy-missing","source_finding_ids":["legacy-project-skill-conflict-policy-missing"],"action":"plan-change","rationale":"Exact-identical sources converge; divergent sources fail closed under frozen binding-set CAS."},
+    {"canonical_finding_id":"schema-release-rollback-path-incomplete","source_finding_ids":["schema-release-rollback-path-incomplete"],"action":"plan-change","rationale":"One compatibility generation needs three-DB backup and whole-set restore."},
+    {"canonical_finding_id":"decisive-test-procedures-not-code-executable","source_finding_ids":["decisive-test-procedures-not-code-executable"],"action":"plan-change","rationale":"Freeze TC-GS-01..09, pinned fixture and exact commands before implementation."}
+  ],
+  "conflicts": [],
+  "required_spikes": [
+    {"id":"SPIKE-NATIVE-DOCUMENTS-BOOTSTRAP","question":"Can native Documents resolution cross the existing trusted parent-child bootstrap before Python composition in the current packaged macOS build?","fallback":"Stop and request architecture approval if a new entitlement or backend-to-host RPC is required."},
+    {"id":"SPIKE-GLOBAL-OWNER-AUTHORITY","question":"Can identity_namespace_hash plus OS-owned file invariants form a profile-generation-stable and OS-user-isolated global owner key?","fallback":"Stop and request a different trusted owner identity design if current identity storage cannot prove isolation."}
+  ],
+  "plan_actions": [
+    "Replace backend-callable Documents resolver with versioned parent-child bootstrap after spike",
+    "Add GlobalOwnerIdentityAuthority only after spike evidence",
+    "Replace contradictory saga states with exact crash matrix",
+    "Add deterministic legacy binding conflict policy",
+    "Add one release generation and whole-set backup/restore",
+    "Freeze executable black-box testcase and fixture assets"
+  ]
+}

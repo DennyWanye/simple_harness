@@ -157,6 +157,10 @@ async def initialize_state_db(
         # Complete the reset before MemoryManager, workflow recovery, WebSocket
         # ingress, or any Session API can open an old conversation-owned store.
         await finalize_legacy_session_reset(db_path, fault_inject=fault_inject)
+        # v33 is a durable stop point because its external-store reset must
+        # finish before later schema generations become writable. Continue
+        # incremental migrations only after that fence is completed.
+        await ensure_v9(db_path, fault_inject=fault_inject)
     except Exception as exc:  # noqa: BLE001
         log.error("legacy Session reset incomplete: %s", exc)
         raise InitializeError(f"legacy Session reset incomplete: {exc}") from exc

@@ -1,0 +1,9 @@
+{"schema_version":"1.0","inventory":"index.json","candidate_reviewed":["TC-PS-04","TC-SI-01","TC-SI-03","TC-SI-05"],"decisions":[
+{"obligation_id":"TO-A4","decision":"create-new","candidates":["TC-SI-01","TC-SI-05"],"selected_testcases":["TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"三类 Session 同 global snapshot 且 cold recovery。"},
+{"obligation_id":"TO-A5","decision":"create-new","candidates":["TC-PS-04","TC-SI-05"],"selected_testcases":["TC-GS-07@rev1"],"reason":"新增完整 descriptor 与 eligible callable subset 分离。"},
+{"obligation_id":"TO-A7","decision":"create-new","candidates":["TC-SI-01","TC-SI-05"],"selected_testcases":["TC-GS-04@rev1","TC-GS-05@rev1"],"reason":"fresh/continuation/cold recovery 使用同一 catalog authority。"},
+{"obligation_id":"TO-A8","decision":"create-new","candidates":["TC-SI-05"],"selected_testcases":["TC-GS-05@rev1","TC-GS-07@rev1"],"reason":"新增 global generation 与 availability reason 的可见状态。"},
+{"obligation_id":"TO-A9","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-09@rev1"],"reason":"新增 auto provenance、显式覆盖与冷重启保持。"},
+{"obligation_id":"TO-R2","decision":"create-new","candidates":["TC-SI-01"],"selected_testcases":["TC-GS-04@rev1"],"reason":"证明 production global snapshot 接线。"},
+{"obligation_id":"TO-R3","decision":"create-new","candidates":["TC-SI-03","TC-SI-05"],"selected_testcases":["TC-GS-07@rev1","TC-GS-09@rev1"],"reason":"可发现性不绕过 authorization/health/platform。"},
+{"obligation_id":"TO-R5","decision":"create-new","candidates":["TC-SI-05"],"selected_testcases":["TC-GS-05@rev1"],"reason":"当前 build 冷重启与 full-surface smoke 重跑。"}]}

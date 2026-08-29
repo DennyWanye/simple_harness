@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import asyncio
 
 import pytest
@@ -49,6 +50,40 @@ def test_local_identity_survives_restart(tmp_path) -> None:
         (tmp_path / "companion-local-identity.json").read_text(encoding="utf-8")
     )
     assert raw["schema_version"] == 1
+
+
+def test_local_identity_rejects_symlink(tmp_path) -> None:
+    target = tmp_path / "target.json"
+    target.write_text(
+        json.dumps({"schema_version": 1, "local_identity_id": "9bb58825-8198-41a2-a158-ff0a23661656"}),
+        encoding="utf-8",
+    )
+    target.chmod(0o600)
+    (tmp_path / "companion-local-identity.json").symlink_to(target)
+    with pytest.raises(PermissionError, match="non-symlink"):
+        load_or_create_local_identity(tmp_path)
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership/mode contract")
+def test_local_identity_rejects_non_private_mode(tmp_path) -> None:
+    identity = tmp_path / "companion-local-identity.json"
+    identity.write_text(
+        json.dumps({"schema_version": 1, "local_identity_id": "9bb58825-8198-41a2-a158-ff0a23661656"}),
+        encoding="utf-8",
+    )
+    identity.chmod(0o640)
+    with pytest.raises(PermissionError, match="mode 0600"):
+        load_or_create_local_identity(tmp_path)
+
+
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership/mode contract")
+def test_local_identity_rejects_shared_writable_directory(tmp_path) -> None:
+    tmp_path.chmod(0o770)
+    try:
+        with pytest.raises(PermissionError, match="shared-writable"):
+            load_or_create_local_identity(tmp_path)
+    finally:
+        tmp_path.chmod(0o700)
 
 
 def test_identity_ready_gate_freezes_exact_owner_epoch() -> None:

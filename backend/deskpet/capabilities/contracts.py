@@ -189,6 +189,19 @@ def canonical_project_identity_scope_key(
     return f"project:v2:{digest}"
 
 
+def canonical_global_owner_key(identity_namespace_hash: str) -> str:
+    """Derive the opaque user-global Capability owner from local identity."""
+
+    seed = _sha256(identity_namespace_hash, "identity_namespace_hash")
+    digest = fingerprint_json(
+        {
+            "domain": "simple-harness-global-capability-owner-v2",
+            "identity_namespace_hash": seed,
+        }
+    )
+    return f"user:v2:{digest}"
+
+
 @dataclass(frozen=True, slots=True)
 class CatalogStamp:
     catalog_generation: int
@@ -1126,6 +1139,7 @@ __all__ = [
     "CatalogEntryKind",
     "CapabilityScope",
     "CapabilityScopeKind",
+    "canonical_global_owner_key",
     "CapabilitySearchHit",
     "CapabilitySearchReceipt",
     "CapabilityVersionDescriptor",

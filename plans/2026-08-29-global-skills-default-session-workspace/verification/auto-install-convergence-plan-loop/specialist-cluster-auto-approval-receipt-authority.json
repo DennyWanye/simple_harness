@@ -1,0 +1,45 @@
+{
+  "cluster_id": "cluster-auto-approval-receipt-authority",
+  "parent_finding_ids": ["auto-approved-receipt-construction-seam-unspecified"],
+  "specialty": "security-privacy",
+  "findings": [
+    {
+      "id": "auto-approved-receipt-construction-seam-unspecified",
+      "severity": "P0",
+      "scope_relation": "in-scope",
+      "origin": "pre-existing",
+      "violated_acceptance_ids": ["AC-9"],
+      "assurance_contract_ids": ["FAIL-8"],
+      "status": "open",
+      "root_cause": "Auto approval lacks a distinct versioned Host-owned saga transition; PREPARED can currently reach HANDOFF_COMMITTED without decision-bound provenance.",
+      "evidence": [
+        "Auto ALLOW currently reaches HANDOFF_COMMITTED without a decision-bound provenance record.",
+        "The resolver requires a durable decision plus handoff evidence, while the current Auto branch skips Skill source preflight.",
+        "Reusing the manual SDK decision callback would require fabricating an SDK decision receipt, which is prohibited."
+      ],
+      "minimal_legal_protocol": {
+        "preflight_order": "Both Auto and Manual execute the same Skill source preflight before either authorization branch can proceed.",
+        "trusted_constructor": "ProductAuthorizationAdapter plus AuthorizationSagaRepository exclusively constructs durable Auto approval provenance; policy code cannot fabricate an authorization receipt.",
+        "versioned_provenance": "Add auto-approved-skill-install-v1 with approval kind, install intent/content/member identity, principal, grant policy generation and fingerprint, full run/call/effect identity, timestamps and expiry covered by the receipt hash.",
+        "bind_sequence": "Auto CAS-binds a Host-owned auto decision before activating the exact grant, then reuses the genuine SDK effect/handoff callback. Manual-v1 remains unchanged.",
+        "replay_and_concurrency": "Identical nonce/version/provenance replays the same receipt; differing candidates conflict; resolver accepts only a fully handoff-committed exact-provenance saga.",
+        "rollback_and_compatibility": "Failure or cancellation revokes the exact grant and cleans the staged intent; historical manual rows and receipt hashes remain byte-compatible."
+      },
+      "required_tests": [
+        "Valid Auto Skill preflights, binds auto-v1 without UI, and resolves only after genuine effect/handoff binding.",
+        "Invalid source denies before auto binding and never publishes.",
+        "PREPARED or auto-decision-bound without handoff is rejected.",
+        "Fabricated or missing auto provenance is rejected.",
+        "Concurrent replay and restart return one stable receipt; mismatched digest/policy/principal conflicts.",
+        "Manual saga and denial/expiry behavior remain green."
+      ],
+      "sdk_callback_reuse": "Reuse bind_effect_handoff after adding the Auto decision-bound invariant; do not reuse bind_decision for Auto.",
+      "ui_automation_rejected": "Auto approval cannot synthesize a manual UI decision."
+    }
+  ],
+  "cross_cluster_refs": [],
+  "conclusion": {
+    "status": "refined",
+    "summary": "Auto approval requires a distinct versioned Host-owned saga transition followed by genuine SDK effect/handoff evidence."
+  }
+}

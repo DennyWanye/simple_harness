@@ -12,7 +12,7 @@
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -119,6 +119,34 @@ def test_help_skill_no_args_returns_empty_list(client_flag_on):
     body = r.json()
     s = next(c for c in body["commands"] if c["name"] == "no-args-skill")
     assert s["args_schema"] == []
+
+
+def test_help_uses_current_global_skill_command_catalog(monkeypatch):
+    import main as main_module
+
+    monkeypatch.setattr(
+        main_module.config.features, "slash_commands", True, raising=True,
+    )
+    catalog = MagicMock()
+    catalog.list_skills.return_value = [
+        {
+            "name": "plan-test",
+            "description": "Plan, execute, and verify end to end.",
+            "scope": "global",
+        }
+    ]
+    current_catalog = AsyncMock(return_value=catalog)
+    monkeypatch.setattr(
+        main_module, "_current_slash_skill_catalog", current_catalog,
+    )
+
+    response = TestClient(main_module.app).get("/api/commands/help")
+
+    assert response.status_code == 200
+    assert "plan-test" in [
+        item["name"] for item in response.json()["commands"]
+    ]
+    current_catalog.assert_awaited_once_with()
 
 
 # ─── /api/commands/<name>/schema ───────────────────

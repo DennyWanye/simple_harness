@@ -1,0 +1,277 @@
+{
+  "acceptance_file": "plans/2026-08-29-global-skills-default-session-workspace/acceptance-slice-c.md",
+  "active_run_required": true,
+  "applicability": {
+    "input_sensitive": {
+      "decided_by": "user",
+      "rationale": "descriptor、availability 与权限模式是确定性状态，不依赖自然语言表达。",
+      "value": false
+    },
+    "llm_payload_driven": {
+      "decided_by": "user",
+      "rationale": "执行 eligibility 与授权决策来自 host policy，不由 LLM payload 直接决定。",
+      "value": false
+    },
+    "stateful_init": {
+      "decided_by": "user",
+      "rationale": "必须覆盖 fresh provenance、用户覆盖持久化与完整冷重启恢复。",
+      "value": true
+    }
+  },
+  "auditor_engine": "opus-4.8",
+  "challenger_engine": "current",
+  "compiled_manifest": {
+    "case_sets": {
+      "full": [
+        "S-GS-04",
+        "S-GS-05",
+        "S-GS-07",
+        "S-GS-09"
+      ]
+    },
+    "input_hashes": {
+      "acceptance": "a5c4d7e675294a65eb8a9dd6a7c261f5379bc22bcaddfff2b282111e709da2bd",
+      "assurance_contract": "483dc4db37935028a504f8a17e9f1b5e261eb10927c6353547c803f2d1945760",
+      "reuse_report": "291b8459545a60dc00c251ea2c106aa282ceee7dcfe15b288eccf43fed88381b",
+      "testcase_inventory": "c5a12183e4b48f0c93cd05d23b62f8b7a1db581e639f2262e87383cb9719bcce",
+      "verification_spec": "966a151d9651d68827a6ca3a060eefd804dce6df2299182646c834a490f44c5f"
+    },
+    "input_paths": {
+      "acceptance": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/acceptance-slice-c.md",
+      "assurance_contract": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/assurance-slice-c.json",
+      "reuse_report": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/testcase-reuse-slice-c.json",
+      "testcase_inventory": "/Users/denny/projects/simple_harness/testcase/index.json",
+      "verification_spec": "/Users/denny/projects/simple_harness/plans/2026-08-29-global-skills-default-session-workspace/verification/verification-spec-slice-c.json"
+    },
+    "seal_sha256": "a3d93c16b80caa5ddf5b1140cb2a938b799e37f36e13e205bafe2d0be23391e8",
+    "selected_testcase_ids": [
+      "TC-GS-04",
+      "TC-GS-05",
+      "TC-GS-07",
+      "TC-GS-09"
+    ],
+    "tool_version": "1.5.0"
+  },
+  "executor_engine": "current",
+  "release_unit": {
+    "high_risk_subsystem_count": 2,
+    "must_ac_count": 5,
+    "parent_program": "global-skills-default-session-workspace",
+    "plan_lines": 160,
+    "scope_hash": "pending-gate-init",
+    "slice_id": "global-skills-workspace-c",
+    "surface_categories": [
+      "UI",
+      "Harness",
+      "Permission"
+    ],
+    "task_count": 3
+  },
+  "repo_root": ".",
+  "scenarios": [
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "business_terminal",
+          "same_global_generation",
+          "fresh_run_advanced",
+          "continuation_snapshot_stable"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "positive-value",
+      "impact_paths": [
+        "backend/deskpet/capabilities/**",
+        "backend/deskpet/sdk_adapters/**",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-global-snapshot",
+      "min_root_runs": 4,
+      "required": true,
+      "required_lanes": [
+        "old-session",
+        "automatic",
+        "selected",
+        "in-flight"
+      ],
+      "scenario_id": "S-GS-04",
+      "testcase_ids": [
+        "TC-GS-04"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "legacy_projectless_migrated",
+          "legacy_skill_terminal_converged",
+          "legacy_skill_nonterminal_superseded",
+          "legacy_skill_conflict_fenced",
+          "descriptor_digest_restored",
+          "permission_override_restored",
+          "provider_call_succeeded"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "cold-start",
+      "impact_paths": [],
+      "input_class": "deterministic-cold-recovery",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "cold-start",
+        "restart",
+        "provider",
+        "legacy-projectless",
+        "legacy-skill-terminal",
+        "legacy-skill-nonterminal",
+        "legacy-skill-conflict"
+      ],
+      "scenario_id": "S-GS-05",
+      "testcase_ids": [
+        "TC-GS-05"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": false,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "descriptor_sets_equal",
+          "callable_subset_eligible",
+          "unavailable_reason_honest",
+          "unauthorized_effects_zero"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "backend/deskpet/tool_catalog/**",
+        "backend/deskpet/sdk_adapters/**",
+        "backend/main.py"
+      ],
+      "input_class": "deterministic-descriptor-policy",
+      "min_root_runs": 3,
+      "required": true,
+      "required_lanes": [
+        "old-session",
+        "automatic",
+        "selected",
+        "authorization"
+      ],
+      "scenario_id": "S-GS-07",
+      "testcase_ids": [
+        "TC-GS-07"
+      ],
+      "ui": true
+    },
+    {
+      "cold_start": true,
+      "evidence_contract": {
+        "producer_types": [
+          "computer-use",
+          "runtime-probe"
+        ],
+        "required_artifact_kinds": [
+          "ui-capture",
+          "execution-log",
+          "business-result"
+        ],
+        "required_business_facts": [
+          "auto_factory_default",
+          "user_explicit_persisted",
+          "confirm_only_prompted",
+          "deny_effects_zero",
+          "unavailable_effects_zero"
+        ],
+        "required_identity": [
+          "root_run_id",
+          "session_id"
+        ],
+        "required_timestamps": true
+      },
+      "expected_run_created": true,
+      "gate_type": "negative-safety",
+      "impact_paths": [
+        "backend/deskpet/authorization/**",
+        "backend/deskpet/memory/**",
+        "backend/main.py",
+        "tauri-app/src/**"
+      ],
+      "input_class": "deterministic-permission-policy",
+      "min_root_runs": 4,
+      "required": true,
+      "required_lanes": [
+        "fresh-auto",
+        "auto-negative",
+        "continuation",
+        "user-override",
+        "restart-fresh"
+      ],
+      "scenario_id": "S-GS-09",
+      "testcase_ids": [
+        "TC-GS-09"
+      ],
+      "ui": true
+    }
+  ],
+  "source_request_text": "所有 Session 共享完整 Skill/Tool descriptor catalog，新普通 Session 权限默认自动且不绕过执行门禁。",
+  "structured_audit_required": true,
+  "testcase_files": [
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
+    "/Users/denny/projects/simple_harness/testcase/2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md"
+  ],
+  "thresholds": {
+    "max_high_risk_subsystems": 3,
+    "max_must_ac": 8,
+    "max_plan_lines": 2000,
+    "max_surface_categories": 3,
+    "max_tasks": 10
+  }
+}

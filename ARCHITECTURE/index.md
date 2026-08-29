@@ -2,6 +2,25 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-08-29 当前普通 Session 与 Skill 安装事实：未选择目录时，Host 在
+`Documents/SimpleHarnessProjects/Session-<id>` 分配独立工作目录；显式选择时使用用户选择目录，绑定在
+Session 创建后不可改。Settings/Chat Skill 安装共享一个 user-global managed authority，固定 Git commit
+与 digest，经确认、Manager 原子 publish、fresh Run 验证和 durable activation 后才进入所有 Session 的
+catalog；Skill/Tool 可发现集合为全局集合，实际执行仍经权限、健康与 scope 策略。新安装默认授权模式为
+Auto。SDK 前台 Run 会在 publish lock 内冻结 user-global Hub snapshot，把其中的 Skill metadata 投影到该
+Run 的 `RuntimeToolCatalog`；slash help/list/schema/dispatch 也从同一快照构造 catalog，前端每次开始新的
+`/` 输入都会刷新，避免安装或切换 Session 后继续使用旧缓存。`tool_search -> skill_invoke` 再按
+locator/content hash 读取冻结正文。Session 创建时动态冻结当前 Companion owner；旧的空 ownerless Session
+在首次 admission 时只允许幂等绑定当前 owner，非空或跨 owner 数据仍 fail closed。真实
+`deepseek-v4-flash` 已在冷重启后的旧 Session、新建默认 Session及用户选择目录的新 Session 中完成该链路。详见
+[`ARCHITECTURE.md`](ARCHITECTURE.md) 顶部与 [`PROJECT_STATUS.md`](PROJECT_STATUS.md)。
+
+2026-08-29 当前正式 SDK release unit：Service SDK 已更新到 `0.3.12`（wheel SHA-256
+`710ae66ba1cc0f0f838f816f3b98108100af560bfb210ed6834246d6d802f8c6`），其官方 compatibility BOM 固定
+Harness `0.6.2` 与 Memory `0.5.2` 的既有精确 wheel/hash。Harness 单仓已发布 `0.6.3`，但不属于 Service
+`0.3.12` 的受支持三 SDK release unit，因此当前产品不把它与 Service 强行混装。全新隔离 userdata 的当前
+macOS bundle 已冷启动到 SDK runtime open、Auto 权限、空 Session catalog 和 `deepseek-v4-flash`，并留给手测。
+
 2026-08-27 当前 Project-scoped Sessions 事实：macOS 冻结场景 S-PS-01～S-PS-08 已全部通过。Session 在创建时绑定 Project，现有 Session 不能修改根目录；要在另一目录工作需基于目标 Project 新建 Session。终端、内置文件工具和 Project Rules 只使用冻结的 execution root，project-bound Run 不暴露进程级固定根的动态 `mcp:filesystem`。从旧 schema 升到 v33 会按全新安装清空升级前 Session、消息、Project 与会话派生数据，同时保留全局 Provider/设置/Keychain 和磁盘文件。Windows 是未来独立范围。详情见 [`ARCHITECTURE.md`](ARCHITECTURE.md)、[`AGENT_HARNESS.md`](AGENT_HARNESS.md)、[`UI.md`](UI.md) 与 [`PROJECT_STATUS.md`](PROJECT_STATUS.md)。
 
 2026-08-25 当前 Tool/Capability 事实：simple_harness 已 vendor Harness 0.6.2（wheel SHA
