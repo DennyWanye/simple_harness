@@ -379,7 +379,7 @@ async def test_dev_fault_wrapper_is_one_shot_and_fail_closed(monkeypatch, tmp_pa
 
 def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
     assert SDK_WHEEL_SHA256 == (
-        "ecb6e85c65e9140c6838666f59f38239557e15cf410c1afe023ffd06bfb35be7"
+        "b9421ddf2b1d5a4a4a0920a2e878c1d3cf098ff6ef0af8975b9eb5c516037d7b"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
         "deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e"
@@ -389,6 +389,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "d27b2273ba6a0b75ddbc21781a10e15ed72fd163b9eecf5fd5bda9315695af2c",
         "cf629ceed1e419fccacabc220f66ba201120f21ed58d30af5c4f70da97dae147",
         "aaf8d79a71b75bde0d71157a635b841eb557ea8889e2824571cacd7d8a58ecb6",
+        "ecb6e85c65e9140c6838666f59f38239557e15cf410c1afe023ffd06bfb35be7",
     }
     assert SDK_MEMORY_WHEEL_SHA256 not in {
         "2fad089b111b8f6a1e6406e5b6f12167daf911371cfdd2e5c41e0e7a9818700f",

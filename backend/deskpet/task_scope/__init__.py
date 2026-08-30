@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: BUSL-1.1
 
+from .provisioning import (
+    TaskScopeProvisioner,
+    TaskScopeProvisionError,
+    TaskScopeProvisionReceipt,
+    TaskScopeProvisionRequest,
+)
 from .store import (
     CanonicalTaskScopeStore,
     CheckpointReceipt,
@@ -8,11 +14,11 @@ from .store import (
     TaskEventRecorder,
     TaskScopeConflict,
 )
-from .provisioning import (
-    TaskScopeProvisionError,
-    TaskScopeProvisionReceipt,
-    TaskScopeProvisionRequest,
-    TaskScopeProvisioner,
+from .workspace_bindings import (
+    WorkspaceBindingAuthorityStore,
+    WorkspaceBindingEffectAuthority,
+    WorkspaceBindingError,
+    canonical_workspace_root,
 )
 
 __all__ = [
@@ -26,4 +32,8 @@ __all__ = [
     "TaskScopeProvisionReceipt",
     "TaskScopeProvisionRequest",
     "TaskScopeProvisioner",
+    "WorkspaceBindingAuthorityStore",
+    "WorkspaceBindingEffectAuthority",
+    "WorkspaceBindingError",
+    "canonical_workspace_root",
 ]

@@ -2,11 +2,14 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
-2026-08-30 Human Memory Program 已完成 S4 Task 1–3 的 Host fresh epoch、永久 evidence、Canonical TaskScope
-Archive 与 recoverable task-home provisioning 基础；当前提供结构协议验证、权威归档、CAS revision、
-ExecutionEvidence ingress/watermark、terminal gate seam 和 POSIX no-follow/root-identity anchored committed provision
-receipt，不含正式 composition、
-workspace binding authority/阅读视图/search consumer/FIFO/UI，也不能作为产品成功
+2026-08-30 Human Memory Program 已完成 S4 Task 1–4 的 Host fresh epoch、永久 evidence、Canonical TaskScope
+Archive、recoverable task-home provisioning 与 append-only multi-root binding authority。state schema v38
+以 Host durable Manual decision 或 Host-issued Auto Run snapshot 生成 grant；binding receipt 持有 canonical
+sorted root-set commitment、exact parent/grant 与 immutable revision。POSIX root 在 commit/effect 前以
+no-follow fd 和 filesystem identity 重验，Windows 无等价实现时 fail-closed。schema-v2 route receipt 与
+`TaskExecutionEnvelope` 必须交叉绑定 exact binding-set receipt id/hash/revision，当前 Run 不能使用后续 append
+的新 root。provision receipt/proposed root 仍只是候选，不能自动升级为 authority。当前不含 Task 5
+阅读视图/search consumer/FIFO/UI，也不能作为产品成功
 声明。当前边界与证据见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
 
 2026-08-29 当前 Project-scoped managed Skill 安装事实：聊天和 Settings 统一进入

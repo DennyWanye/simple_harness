@@ -87,12 +87,9 @@ async def test_every_provision_boundary_restarts_to_same_directory(
             db.execute("SELECT state FROM task_scope_provisions").fetchone()[0]
             == "committed"
         )
-        assert (
-            db.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE name='task_workspace_bindings'"
-            ).fetchone()[0]
-            == 0
-        )
+        assert db.execute(
+            "SELECT COUNT(*) FROM task_workspace_binding_revisions"
+        ).fetchone()[0] == 0
         with pytest.raises(sqlite3.IntegrityError, match="identity_immutable"):
             db.execute("UPDATE task_scope_provisions SET task_home='/tmp/other'")
         with pytest.raises(sqlite3.IntegrityError, match="append_only"):
@@ -413,7 +410,7 @@ async def test_v37_migration_fault_restarts_with_one_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 37
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 38
         assert (
             db.execute("SELECT COUNT(*) FROM task_scope_provision_marker").fetchone()[0]
             == 1

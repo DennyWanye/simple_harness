@@ -2,9 +2,9 @@
 
 > **最后更新**：2026-08-30
 
-## 2026-08-30 Human Memory Program S4 Task 1–3 Host 权威归档与 Task Home
+## 2026-08-30 Human Memory Program S4 Task 1–4 Host 权威归档、Task Home 与多根权限
 
-- 在隔离 worktree 完成 fresh-only `human-memory-v1` state schema v35 基础、追加 v36 TaskScope Archive 和 v37
+- 在隔离 worktree 完成 fresh-only `human-memory-v1` state schema v35 基础、追加 v36 TaskScope Archive、v37
   recoverable provisioning；既有 migration checksum 不变，每步有独立 immutable marker。durable
   bootstrap 与每 subject 唯一 writable primary conversation/init receipt。普通 Host 仍以 v34 为默认生产 epoch；
   新 primary 入口对任何既有 v34/旧 marker 在写入前拒绝，不迁移、不删除旧 Session。
@@ -28,8 +28,16 @@
   所有边界 kill/retry；POSIX materialization 以 no-follow directory fd 锚定持久 root identity，并在 commit/reopen
   前复验 root/task-home，broken symlink 与 root rename/replace 不产生 receipt；无等价原语的平台 fail-closed。
   final receipt 前不产生权限。Task 3 专项 `18 passed`，Task 1–3 相关组合 `93 passed`。
-- 这是 S4 Task 1–3 的独立基础，不代表 S4 release unit 完成：Host 仍固定 Harness SDK 0.6.4；0.7 wheel pin 与
-  composition 在 S5 Task 8，多根 binding/README-STATUS 等阅读视图/search consumer、
+- v38 使用 exact Harness SDK 0.7.0 candidate（source `8f1027d2…`，wheel SHA-256 `b9421ddf…`）的 strict
+  `WorkspaceBindingProposal`、Manual challenge/decision、Host Auto snapshot、durable grant 与
+  `WorkspaceBindingSetReceipt`。root-set receipt 由 sorted unique root identity hashes 重算 canonical digest；
+  genesis 固定 empty-set parent，后续只允许 parent set 加一个 grant root。Manual nonce replay/changed-payload、
+  Auto forged/expired/stale、CAS 并发、commit 前后 crash/restart、同 root 跨 scope、symlink/公共父目录/
+  identity drift 和当前 Run 冻结旧 revision 均 fail-closed；provision candidate 不产生 binding authority。
+  project route 与 effect envelope 必须交叉绑定 exact receipt id/hash/revision/root membership。Task 4 专项
+  `12 passed`，TaskScope/Task 1–4/marker/candidate 组合 `67 passed`，SDK adapter `253 passed`。
+- 这是 S4 Task 1–4 的独立基础，不代表 S4 release unit 完成：production foreground composition 仍在 S5 Task 8，
+  README-STATUS 等阅读视图/search consumer、
   foreground FIFO、真实 Provider 接线与 UI 尚未实施。
 
 ## 2026-08-29 Project-scoped managed Skill 安装故障链修复与 macOS 真 UI 验收

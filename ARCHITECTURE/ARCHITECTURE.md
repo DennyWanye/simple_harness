@@ -2,16 +2,20 @@
 
 # simple_harness Long-Running Agent Architecture Baseline
 
-## Human Memory Program 实施前边界（2026-08-30）
+## Human Memory Program S4 Task 1–4 当前边界（2026-08-30）
 
-本节只记录 clean `e9582120` 的当前事实；占用中的主 worktree 未提交改动不在本基线内。
+本节记录 Human Memory Host 当前隔离实现事实；仍未接入的后续 composition/UI 不作完成声明。
 
-- 产品仍提供多 Session/Project 列表。`TaskSessionManager` 是进程内 `/new`、`/continue` 文本命令解析器，
-  把 TaskScope 等同为 effective session id；它没有 durable TaskScope archive、search/open、状态机、checkpoint、
-  六阅读视图或多 root binding。
-- 当前 `session_project_bindings` 是每 Session 一个 immutable Project/执行根；不是一个 TaskScope 的
-  append-only 多根 binding set。普通 Session 的自动目录默认位于 `Documents/SimpleHarnessProjects`，也不是
-  新 program 约定的 macOS/Linux 默认 `~/SimpleHarnessWorkSpace`。
+- fresh-only `human-memory-v1` state.db 已推进至 v38：v35 永久 evidence/唯一 primary conversation、v36
+  Canonical TaskScope Archive、v37 recoverable task_home provisioning、v38 append-only multi-root binding。
+  普通生产 Session/UI 尚未切换到该路径，不能把 schema 就绪当作 foreground composition 完成。
+- `WorkspaceBindingAuthorityStore` 只接受 SDK 0.7 strict DTO。Manual 必须命中 durable challenge/user decision；
+  Auto snapshot 由 Host port 签发并绑定 Run/subject/context/configuration/configured-root identity。公开 DTO/hash
+  自洽、provision receipt、proposed root、generic metadata 或模型声明 Auto 都不是 authority。
+- 每次 append 由 grant、exact parent、sorted unique root identity set 和 CAS base revision 构成 immutable
+  `WorkspaceBindingSetReceipt`；相同 root 可被不同 TaskScope 引用，同一 set 只能 append。route schema v2 与
+  `TaskExecutionEnvelope` 交叉绑定 exact receipt id/hash/revision，effect 执行前重验 frozen membership 和当前
+  filesystem identity；后续 append 不扩大当前 Run。POSIX 使用 no-follow fd，Windows 当前 fail-closed。
 - Host 启动 Memory SDK 时启用 fact worker 但未注入 LLM extractor，因此 SDK 使用默认正则 extractor。
 - 首轮与 continuation 的 Context 都从同 Session 历史按 Token 预算截断；没有固定最近 10 个完整因果组、
   五天 short-horizon index、TaskScope current state 与按需 typed long-term recall 的分区组装。
