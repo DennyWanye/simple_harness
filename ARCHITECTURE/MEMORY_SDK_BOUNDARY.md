@@ -42,6 +42,11 @@
   是已存在、非 symlink 的 exact directory；项目允许管理元数据时 task home 位于
   `.simple-harness/task-scopes/<id>`，否则落 private app-data。稳定 staging+marker+filesystem identity 让每个故障
   边界重启都收敛同一路径，不以第二目录掩盖失败。
+- POSIX materialization 持久冻结独立 `materialization_root` identity，并以 `O_DIRECTORY|O_NOFOLLOW` directory fd
+  逐级创建/打开父目录；staging marker 与 no-replace publish 全部锚定该 fd。Darwin 使用
+  `renameatx_np(RENAME_EXCL)`，Linux 使用 `renameat2(RENAME_NOREPLACE)`；缺少等价原语的平台稳定 fail-closed。
+  broken symlink、resolve 后 root rename/replace、receipt commit/reopen 前 root 或 task-home identity/containment 漂移
+  均不得生成 committed receipt。
 - Provision receipt 只有 final committed 才存在；reserved/filesystem_ready/failed 都不形成 workspace authority。
   当前只保存 `proposed_workspace_root` 候选，未创建 Task 4 binding 表或 revision。task home identity/request/path
   不可物理改写，transition event 和 committed receipt 永久 append-only。
@@ -57,9 +62,10 @@
 - Task 2 新增 archive/ingress 专项 `8 passed`；与 Task 1 memory/session/SessionDB 组合 `75 passed`，SDK
   adapters `253 passed`，真实 S1 source `ExecutionEvidence` + `TaskScopeMutationPlan` DTO interoperability probe
   PASS。上述均为自动化/源码协议证据，没有 UI、真实 Provider 或 production composition 声明。
-- Task 3 provisioning 专项 `14 passed`，Task 1–3 相关组合 `89 passed`，SDK adapters `253 passed`；覆盖全部七个
+- Task 3 provisioning 专项 `18 passed`，Task 1–3 相关组合 `93 passed`，SDK adapters `253 passed`；覆盖全部七个
   operational fault 边界、v37 migration commit 前/后、nonexistent/symlink/untrusted explicit path、permission
-  failure/retry、duplicate title、idempotency conflict、project/app-data metadata 和 no-binding/no-partial-authority。
+  failure/retry、duplicate title、idempotency conflict、project/app-data metadata、broken-link escape、managed/explicit
+  root replacement TOCTOU 和 no-binding/no-partial-authority。
 
 ## 1. 当前生产链路
 

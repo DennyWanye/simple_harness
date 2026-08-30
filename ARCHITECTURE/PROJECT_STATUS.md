@@ -25,7 +25,9 @@
   `ExecutionEvidence`/`TaskScopeMutationPlan` DTO interoperability probe PASS。
 - v37 provisioning 区分 managed root、task home 与 non-authoritative explicit workspace candidate；只接受 Host
   managed policy 或 trusted user/project-picker provenance。稳定 reservation/staging marker/filesystem identity 支持
-  所有边界 kill/retry；final receipt 前不产生权限。Task 3 专项 `14 passed`，Task 1–3 相关组合 `89 passed`。
+  所有边界 kill/retry；POSIX materialization 以 no-follow directory fd 锚定持久 root identity，并在 commit/reopen
+  前复验 root/task-home，broken symlink 与 root rename/replace 不产生 receipt；无等价原语的平台 fail-closed。
+  final receipt 前不产生权限。Task 3 专项 `18 passed`，Task 1–3 相关组合 `93 passed`。
 - 这是 S4 Task 1–3 的独立基础，不代表 S4 release unit 完成：Host 仍固定 Harness SDK 0.6.4；0.7 wheel pin 与
   composition 在 S5 Task 8，多根 binding/README-STATUS 等阅读视图/search consumer、
   foreground FIFO、真实 Provider 接线与 UI 尚未实施。

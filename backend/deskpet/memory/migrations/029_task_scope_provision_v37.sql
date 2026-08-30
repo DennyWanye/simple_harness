@@ -23,6 +23,8 @@ CREATE TABLE task_scope_provisions (
     managed_workspace_root TEXT,
     proposed_workspace_root TEXT,
     proposed_workspace_identity TEXT,
+    materialization_root TEXT NOT NULL,
+    materialization_root_identity TEXT NOT NULL CHECK (length(materialization_root_identity) = 64),
     task_home TEXT NOT NULL UNIQUE,
     staging_path TEXT NOT NULL UNIQUE,
     metadata_location TEXT NOT NULL CHECK (metadata_location IN ('managed', 'project', 'app_data')),
@@ -61,6 +63,8 @@ CREATE TABLE task_scope_provision_receipts (
     task_home_identity TEXT NOT NULL CHECK (length(task_home_identity) = 64),
     proposed_workspace_root TEXT,
     proposed_workspace_identity TEXT,
+    materialization_root TEXT NOT NULL,
+    materialization_root_identity TEXT NOT NULL CHECK (length(materialization_root_identity) = 64),
     metadata_location TEXT NOT NULL CHECK (metadata_location IN ('managed', 'project', 'app_data')),
     receipt_hash TEXT NOT NULL CHECK (length(receipt_hash) = 64),
     receipt_json TEXT NOT NULL,
@@ -82,6 +86,8 @@ WHEN NEW.provision_id <> OLD.provision_id
   OR NEW.trusted_provenance <> OLD.trusted_provenance
   OR NEW.managed_workspace_root IS NOT OLD.managed_workspace_root
   OR NEW.proposed_workspace_root IS NOT OLD.proposed_workspace_root
+  OR NEW.materialization_root <> OLD.materialization_root
+  OR NEW.materialization_root_identity <> OLD.materialization_root_identity
   OR NEW.task_home <> OLD.task_home
   OR NEW.staging_path <> OLD.staging_path
   OR NEW.metadata_location <> OLD.metadata_location

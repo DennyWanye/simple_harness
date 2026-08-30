@@ -4,7 +4,8 @@
 
 2026-08-30 Human Memory Program 已完成 S4 Task 1–3 的 Host fresh epoch、永久 evidence、Canonical TaskScope
 Archive 与 recoverable task-home provisioning 基础；当前提供结构协议验证、权威归档、CAS revision、
-ExecutionEvidence ingress/watermark、terminal gate seam 和 committed provision receipt，不含正式 composition、
+ExecutionEvidence ingress/watermark、terminal gate seam 和 POSIX no-follow/root-identity anchored committed provision
+receipt，不含正式 composition、
 workspace binding authority/阅读视图/search consumer/FIFO/UI，也不能作为产品成功
 声明。当前边界与证据见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
 
