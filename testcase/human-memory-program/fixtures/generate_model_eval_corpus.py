@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the frozen 200-query Human Memory evaluator corpus."""
+"""Generate the frozen 240-query Human Memory evaluator corpus."""
 
 from __future__ import annotations
 

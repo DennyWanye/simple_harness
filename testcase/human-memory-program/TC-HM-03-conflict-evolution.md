@@ -16,7 +16,7 @@ revision: 1
 
 - 已有 active 用户事实“常用 Python 3.11”，其证据和 revision 已记录。
 - 故障 seam、runner 与终态 oracle 以 `fixtures/fault-matrix.json` 的 `claim-supersede` lane 为准；fixture SHA-256
-  `c6ad25433d5fd5913708d5d2967fa85f98ad00511ec326e4b93ef7733535315f`。
+  `88fbc1ee38e557b3e6799ea505148ffb6b110019e890d467306bfa341d2735e4`。
 
 ## 步骤与预期
 

@@ -4,7 +4,7 @@ purpose: Verify Settings and Chat publish one idempotent user-global Skill with 
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [TO-A3, TO-A7, TO-A8, TO-R2]
+obligations: [TO-A3, TO-A7, TO-A8, TO-R2, HM-TO-R4]
 tags: [skill-install, global-scope, receipt, idempotency]
 entrypoint: settings and chat skill install
 revision: 1

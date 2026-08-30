@@ -4,7 +4,7 @@ purpose: Verify cold restart restores the primary conversation, TaskScopes, and 
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [TO-A1, TO-A4, TO-A7, TO-A8, TO-R5]
+obligations: [TO-A1, TO-A4, TO-A7, TO-A8, TO-R5, HM-TO-R4]
 tags: [cold-start, restart, catalog, provider]
 entrypoint: application cold restart
 revision: 2

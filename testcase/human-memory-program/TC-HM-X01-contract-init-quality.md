@@ -21,10 +21,10 @@ revision: 1
 Fixture lock：
 
 - `model-eval-corpus-spec.json` SHA-256 `226e75124dee43efeead8f270da532e7d89ee9d7b97799ec2f6948825b903482`
-- `generate_model_eval_corpus.py` SHA-256 `5333f28edcfc2c68c01909b34dc0a2a1584eadd850cf150818a17558eb5b1645`
-- `metric-formulas.json` SHA-256 `8553ece168f8825b8daeffd3935d709ec9758b79452b14dd2f31ab7fb887adec`
+- `generate_model_eval_corpus.py` SHA-256 `6b65efadef2282a4be0539b5aaf87ad4ac59d7e7840721298a2c5a6c37344e60`
+- `metric-formulas.json` SHA-256 `27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a`
 - `program-journey.json` SHA-256 `b462b84244153867962b08f4d2dde8a2d3293562a90b3aeee616f27acbeeee8f`
-- `fault-matrix.json` SHA-256 `c6ad25433d5fd5913708d5d2967fa85f98ad00511ec326e4b93ef7733535315f`
+- `fault-matrix.json` SHA-256 `88fbc1ee38e557b3e6799ea505148ffb6b110019e890d467306bfa341d2735e4`
 - 由上述固定 generator/spec 产生的 240-query corpus SHA-256
   `87482da2913963430a86c5b14d26bfa039a6fdbf09bc133f92ff1a7e5d110ae3`
 

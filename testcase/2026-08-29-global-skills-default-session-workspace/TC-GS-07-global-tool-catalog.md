@@ -4,7 +4,7 @@ purpose: Verify every standalone and TaskScope Run discovers one complete descri
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [TO-A5, TO-A8, TO-R3]
+obligations: [TO-A5, TO-A8, TO-R3, HM-TO-R4]
 tags: [tool-catalog, descriptor, authorization, availability]
 entrypoint: tool search and describe
 revision: 2

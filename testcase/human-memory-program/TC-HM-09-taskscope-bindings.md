@@ -17,7 +17,7 @@ revision: 1
 - 配置 workspace root 的真实后代两个、外部合法目录一个、workspace root 本身、公共父目录、文件、symlink 越界目录和可制造 filesystem identity drift 的目录。
 - 未配置 workspace 时另跑 macOS/Linux 默认 `~/SimpleHarnessWorkSpace` lane。
 - crash/retry 使用 `fixtures/fault-matrix.json` 的 `taskscope-init-binding` lane；fixture SHA-256
-  `c6ad25433d5fd5913708d5d2967fa85f98ad00511ec326e4b93ef7733535315f`。
+  `88fbc1ee38e557b3e6799ea505148ffb6b110019e890d467306bfa341d2735e4`。
 
 ## 步骤与预期
 

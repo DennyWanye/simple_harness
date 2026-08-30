@@ -42,6 +42,32 @@
     "generation_reserve": {"4096": 1024, "8192": 2048, "32768": 4096},
     "safety_margin": "max(256, floor(window_tokens * 0.10))",
     "effective_input_budget": "window_tokens - generation_reserve - safety_margin",
+    "partition_caps": {
+      "4096": {
+        "protected": {"items_max": 32, "bytes_max": 65536},
+        "recent_causal_groups": {"groups_max": 10, "items_max": 64, "bytes_max": 131072},
+        "task_scope_current": {"items_max": 24, "bytes_max": 65536},
+        "short_horizon": {"items_max": 8, "bytes_max": 32768},
+        "long_term": {"items_max": 12, "bytes_max": 65536},
+        "tools_skills_attachments": {"items_max": 32, "bytes_max": 131072}
+      },
+      "8192": {
+        "protected": {"items_max": 48, "bytes_max": 98304},
+        "recent_causal_groups": {"groups_max": 10, "items_max": 80, "bytes_max": 196608},
+        "task_scope_current": {"items_max": 40, "bytes_max": 98304},
+        "short_horizon": {"items_max": 16, "bytes_max": 65536},
+        "long_term": {"items_max": 24, "bytes_max": 98304},
+        "tools_skills_attachments": {"items_max": 48, "bytes_max": 262144}
+      },
+      "32768": {
+        "protected": {"items_max": 64, "bytes_max": 131072},
+        "recent_causal_groups": {"groups_max": 10, "items_max": 120, "bytes_max": 393216},
+        "task_scope_current": {"items_max": 64, "bytes_max": 196608},
+        "short_horizon": {"items_max": 32, "bytes_max": 131072},
+        "long_term": {"items_max": 48, "bytes_max": 196608},
+        "tools_skills_attachments": {"items_max": 96, "bytes_max": 524288}
+      }
+    },
     "pass": "actual_provider_input_tokens <= effective_input_budget AND every partition.item_count <= item_cap AND every partition.bytes <= byte_cap",
     "token_underestimate_allowed": false
   },

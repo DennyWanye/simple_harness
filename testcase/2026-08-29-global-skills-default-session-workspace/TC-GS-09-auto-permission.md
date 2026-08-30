@@ -4,7 +4,7 @@ purpose: Verify automatic permission is the fresh default, explicit overrides pe
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [TO-A9, TO-R3]
+obligations: [TO-A9, TO-R3, HM-TO-R4]
 tags: [permission, auto-default, provenance, authorization]
 entrypoint: primary conversation and permission settings
 revision: 3

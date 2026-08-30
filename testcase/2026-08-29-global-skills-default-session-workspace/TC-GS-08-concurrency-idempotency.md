@@ -4,7 +4,7 @@ purpose: Verify concurrent exact Skill installation and lost-ACK replay are coll
 status: active
 surface: integration
 type: scripted
-obligations: [TO-A3, TO-A6, TO-R1, TO-R4]
+obligations: [TO-A3, TO-A6, TO-R1, TO-R4, HM-TO-R2, HM-TO-R4]
 tags: [concurrency, idempotency, lost-ack, workspace]
 entrypoint: public global-install service
 revision: 2

@@ -4,7 +4,7 @@ purpose: Verify Auto Skill installation retains durable authorization evidence a
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [TO-A9, TO-A10, TO-R3, TO-R6]
+obligations: [TO-A9, TO-A10, TO-R3, TO-R6, HM-TO-R2, HM-TO-R4]
 tags: [skill-install, auto-authorization, error-contract, run-convergence]
 entrypoint: chat skill install and primary conversation health recovery
 revision: 3

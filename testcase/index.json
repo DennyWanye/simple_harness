@@ -1947,7 +1947,8 @@
         "TO-A3",
         "TO-A7",
         "TO-A8",
-        "TO-R2"
+        "TO-R2",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-03-global-install.md",
       "preconditions": [],
@@ -1971,7 +1972,8 @@
       "obligations": [
         "TO-A4",
         "TO-A7",
-        "TO-R2"
+        "TO-R2",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
       "preconditions": [],
@@ -1997,7 +1999,8 @@
         "TO-A4",
         "TO-A7",
         "TO-A8",
-        "TO-R5"
+        "TO-R5",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
       "preconditions": [],
@@ -2020,7 +2023,8 @@
       "id": "TC-GS-06",
       "obligations": [
         "TO-A6",
-        "TO-R4"
+        "TO-R4",
+        "HM-TO-R2"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
       "preconditions": [],
@@ -2044,7 +2048,8 @@
       "obligations": [
         "TO-A5",
         "TO-A8",
-        "TO-R3"
+        "TO-R3",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
       "preconditions": [],
@@ -2069,7 +2074,9 @@
         "TO-A3",
         "TO-A6",
         "TO-R1",
-        "TO-R4"
+        "TO-R4",
+        "HM-TO-R2",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
       "preconditions": [],
@@ -2092,7 +2099,8 @@
       "id": "TC-GS-09",
       "obligations": [
         "TO-A9",
-        "TO-R3"
+        "TO-R3",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
       "preconditions": [],
@@ -2117,7 +2125,9 @@
         "TO-A9",
         "TO-A10",
         "TO-R3",
-        "TO-R6"
+        "TO-R6",
+        "HM-TO-R2",
+        "HM-TO-R4"
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
       "preconditions": [],

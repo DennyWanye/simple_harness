@@ -4,7 +4,7 @@ purpose: Verify standalone and TaskScope Runs share and invoke one immutable glo
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [TO-A4, TO-A7, TO-R2]
+obligations: [TO-A4, TO-A7, TO-R2, HM-TO-R4]
 tags: [skill-runtime, global-catalog, fresh-run, provider]
 entrypoint: fresh chat run
 revision: 2

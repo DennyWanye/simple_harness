@@ -4,7 +4,7 @@ purpose: Verify workspace and global Skill failures expose no half state and ret
 status: active
 surface: integration
 type: scripted
-obligations: [TO-A6, TO-R4]
+obligations: [TO-A6, TO-R4, HM-TO-R2]
 tags: [fault-injection, atomicity, recovery, malicious-skill]
 entrypoint: supported test fault seam
 revision: 2

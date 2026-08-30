@@ -4,6 +4,49 @@
   "runner_contract": "Each runner command must exit non-zero when the expected terminal oracle is not met and must emit root_run_id plus before/after state hashes.",
   "lanes": [
     {
+      "id": "llm-plan-variants",
+      "testcases": ["TC-HM-08"],
+      "runner_command": "python3 -m pytest tests/faults/test_llm_plan_variants.py -q",
+      "payloads": [
+        {"id": "timeout", "fixture": "provider_timeout", "reason_code": "model_timeout"},
+        {"id": "refusal", "fixture": {"outcome": "refusal"}, "reason_code": "model_refusal"},
+        {"id": "no-plan", "fixture": {"outcome": "no_plan"}, "reason_code": "no_plan"},
+        {"id": "out-of-order", "fixture": {"operations": ["dependent-before-parent"]}, "reason_code": "invalid_dependency_order"},
+        {"id": "duplicate", "fixture": {"operations": ["same-id", "same-id"]}, "reason_code": "duplicate_operation"},
+        {"id": "missing-evidence", "fixture": {"evidence_refs": []}, "reason_code": "evidence_ref_required"},
+        {"id": "invalid-enum", "fixture": {"cognitive_type": "fact"}, "reason_code": "invalid_enum"},
+        {"id": "misplaced-field", "fixture": {"scope": {"evidence_refs": ["ev-1"]}}, "reason_code": "schema_violation"},
+        {"id": "dependency-cycle", "fixture": {"dependencies": [["a", "b"], ["b", "a"]]}, "reason_code": "dependency_cycle"},
+        {"id": "oversized", "fixture": {"text_bytes": 1048577}, "reason_code": "payload_limit_exceeded"}
+      ],
+      "seams": ["provider-result-received", "schema-validation", "dependency-validation", "operation-idempotency"],
+      "terminal_oracle": "raw evidence committed; zero partial state; zero scope expansion; stable reason code"
+    },
+    {
+      "id": "protocol-version-mismatch",
+      "testcases": ["TC-HM-08", "TC-HM-X01"],
+      "runner_command": "python3 -m pytest tests/faults/test_protocol_version_mismatch.py -q",
+      "payloads": [
+        {"id": "memory-newer", "memory_protocol": 2, "harness_protocol": 1, "host_protocol": 1},
+        {"id": "harness-newer", "memory_protocol": 1, "harness_protocol": 2, "host_protocol": 1},
+        {"id": "host-newer", "memory_protocol": 1, "harness_protocol": 1, "host_protocol": 2}
+      ],
+      "seams": ["consumer-handshake", "snapshot-decode", "operation-decode"],
+      "terminal_oracle": "protocol_version_mismatch before state write, provider send, or effect"
+    },
+    {
+      "id": "embedding-outbox-worker",
+      "testcases": ["TC-HM-08", "TC-HM-X01"],
+      "runner_command": "python3 -m pytest tests/faults/test_embedding_outbox_worker.py -q",
+      "payloads": [
+        {"id": "embedding-unavailable", "reason_code": "embedding_unavailable"},
+        {"id": "outbox-lost-ack", "reason_code": "replay_existing_receipt"},
+        {"id": "concurrent-workers", "workers": 4, "reason_code": "lease_single_commit"}
+      ],
+      "seams": ["embedding-call", "outbox-commit-before-ack", "job-lease", "worker-terminal"],
+      "terminal_oracle": "fail closed or stable fallback; raw evidence intact; one logical derived commit"
+    },
+    {
       "id": "claim-supersede",
       "testcases": ["TC-HM-03"],
       "runner_command": "python3 -m pytest tests/faults/test_claim_supersede.py -q",
