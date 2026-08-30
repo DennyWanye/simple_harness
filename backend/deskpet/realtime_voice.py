@@ -42,6 +42,10 @@ from deskpet.sdk_adapters.sdk_candidate import verify_service_candidate
 
 logger = structlog.get_logger(__name__)
 
+# The product entry is intentionally paused. Keep the implementation available
+# for focused SDK/protocol tests, but ordinary desktop startup must not expose
+# a live voice endpoint until this gate is explicitly reopened.
+REALTIME_VOICE_ENABLED = False
 REALTIME_PUBLIC_MODEL = "qwen3.5-omni-realtime"
 REALTIME_VOICE = "Tina"
 REALTIME_INSTRUCTIONS = (

@@ -1271,6 +1271,13 @@ class SdkRuntimeCapabilityBridgeAdapter:
         value["schema_hash"] = value["capability_hash"]
         value["describe_nonce"] = value["nonce"]
         value["capability_id"] = descriptor["capability_id"]
+        value["activation_required"] = True
+        value["next_action"] = (
+            "Call tool_activate now, copying the top-level capability_id, "
+            "schema_hash, and describe_nonce from this response exactly. "
+            "Do not call the described target tool until tool_activate "
+            "succeeds and the next model iteration exposes it."
+        )
         return value
 
     def activate(

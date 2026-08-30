@@ -231,13 +231,14 @@ class ProductDeliveryAdapter:
         try:
             from agent.agent_loop import ToolCallEvent
             from llm.types import ToolCall
+            from simple_harness import thaw_json
 
             await self._presenter.present(
                 ToolCallEvent(
                     tool_call=ToolCall(
                         id=call.call_id.value,
                         name=call.name,
-                        arguments=dict(call.arguments),
+                        arguments=thaw_json(call.arguments),
                     ),
                     iteration=iteration,
                 ),

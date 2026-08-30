@@ -142,6 +142,38 @@ async def test_snapshot_resolver_reads_exact_manager_root_and_hashes(
 
 
 @pytest.mark.asyncio
+async def test_snapshot_resolver_reads_declared_resource_relative_to_skill_entry(
+    tmp_path: Path,
+) -> None:
+    item, _scope = _copy_summarize_pack(tmp_path)
+    manifest_path = item.pack_root / "deskpet-pack.json"
+    manifest = json.loads(manifest_path.read_text("utf-8"))
+    resource = item.pack_root / "skills" / "shared" / "config.md"
+    resource.parent.mkdir(parents=True)
+    resource.write_text("shared config", encoding="utf-8")
+    manifest["files"].append(
+        {
+            "path": "skills/shared/config.md",
+            "sha256": hashlib.sha256(resource.read_bytes()).hexdigest(),
+        }
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, separators=(",", ":")),
+        encoding="utf-8",
+    )
+    item = inventory_first_party_skill_packs([item.pack_root.parent])[0]
+    scope = ManagedSkillDiscoveryProjection([item]).resolve_selection("summarize-day")
+    resolver = SkillPackSnapshotResolver(version_store=_VersionStore(item))
+
+    resolved_path, raw = await resolver.resolve_skill_resource(
+        scope, "../shared/config.md"
+    )
+
+    assert resolved_path == "skills/shared/config.md"
+    assert raw == b"shared config"
+
+
+@pytest.mark.asyncio
 async def test_snapshot_resolver_rejects_post_capture_mutation(
     tmp_path: Path,
 ) -> None:
@@ -466,6 +498,55 @@ async def test_skill_invoke_emits_activation_intent_not_fake_receipt(caplog) -> 
     assert "instruction_content_hash=" in caplog.text
     assert "frozen body" not in caplog.text
     assert "activation_receipt" not in result
+
+
+@pytest.mark.asyncio
+async def test_skill_invoke_reads_only_frozen_packaged_support_resource(caplog) -> None:
+    from deskpet.tools import skill_tools
+
+    caplog.set_level("INFO", logger="deskpet.tools.skill_tools")
+    snapshot_ref = "snapshot-resource"
+
+    class _Resolver:
+        async def resolve_frozen_resource(self, **kwargs):
+            assert kwargs == {
+                "run_id": "run-resource",
+                "skill_name": "plan-bs",
+                "relative_path": "../plan-test/config.md",
+            }
+            return {
+                "skill_id": "plan-bs",
+                "resource_path": "../plan-test/config.md",
+                "resolved_path": "skills/plan-test/config.md",
+                "content": "shared config",
+                "content_hash": "a" * 64,
+                "capability_snapshot_ref": snapshot_ref,
+            }
+
+    skill_tools.bind(skill_resolver=_Resolver())
+    try:
+        raw = await skill_tools._handle(
+            {
+                "skill_name": "plan-bs",
+                "resource_path": "../plan-test/config.md",
+            },
+            ToolExecutionContext(
+                scope_id="base",
+                session_id="session",
+                request_id="request",
+                run_id="run-resource",
+                root_run_id="run-resource",
+                capability_snapshot_ref=snapshot_ref,
+            ),
+        )
+    finally:
+        skill_tools.bind(skill_resolver=None)
+
+    result = json.loads(raw)
+    assert result["ok"] is True
+    assert result["content"] == "shared config"
+    assert result["resolved_path"] == "skills/plan-test/config.md"
+    assert "sdk_skill_resource_loaded" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -17,6 +17,7 @@ from simple_harness.tools import (
     AuthorizationResult,
     PreparedToolEffect,
 )
+from simple_harness import thaw_json
 
 from deskpet.product_state.authorization_saga import (
     AuthorizationSagaIdentity,
@@ -406,7 +407,11 @@ class ProductAuthorizationAdapter:
             or record.identity.effect_id != prepared.effect_id.value
             or record.identity.call_id != prepared.call.call_id.value
             or record.identity.tool_name != prepared.call.name
-            or _hash(record.identity.arguments) != _hash(dict(prepared.call.arguments))
+            # SDK ToolCall recursively freezes nested JSON containers.  A
+            # shallow dict() leaves MappingProxyType values inside arrays and
+            # objects, which crashes the JSON hash during effect handoff.
+            or _hash(record.identity.arguments)
+            != _hash(thaw_json(prepared.call.arguments))
         ):
             raise RuntimeError("prepared Tool effect differs from durable authorization identity")
         return record

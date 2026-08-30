@@ -2850,7 +2850,6 @@ async def _initialize_capability_runtime() -> None:
     from deskpet.capabilities.skill_install import (
         BindableSkillInstallRuntimeVerifier,
         GlobalSkillInstallService,
-        ManagerGlobalSkillRuntimeVerifier,
     )
     from deskpet.capabilities.contracts import canonical_global_owner_key
     from deskpet.companion.identity import load_or_create_local_identity
@@ -2902,7 +2901,6 @@ async def _initialize_capability_runtime() -> None:
     _bind_frozen_skill_snapshot_resolver(skill_pack_snapshot_resolver)
     platform_box["platform"] = platform
     initialized = await platform.initialize()
-    skill_install_runtime_verifier.bind(ManagerGlobalSkillRuntimeVerifier(store))
     builder_host = CapabilityBuilderHost(
         uow,
         deskpet_tool_registry_v2,
@@ -5406,6 +5404,7 @@ async def lifespan(app: FastAPI):
         await _activate_companion_runtime_adapter_and_open_ingress()
         _initialize_companion_action_decision_service()
     from deskpet.realtime_voice import (
+        REALTIME_VOICE_ENABLED,
         RealtimeVoiceService,
         allowed_realtime_origins,
     )
@@ -5414,20 +5413,28 @@ async def lifespan(app: FastAPI):
         _realtime_vite_port = int(os.getenv("DESKPET_VITE_PORT", "5173"))
     except ValueError:
         _realtime_vite_port = 5173
-    _realtime_voice_service = RealtimeVoiceService(
-        shared_secret=SHARED_SECRET,
-        relay_endpoint_supplier=lambda: str(
-            getattr(local_llm, "base_url", config.llm.local.base_url)
-        ),
-        api_key_supplier=lambda: _current_cloud_api_key
-        or _resolve_cloud_api_key(),
-        allowed_origins=allowed_realtime_origins(_realtime_vite_port),
-    )
-    logger.info(
-        "realtime_voice_ready",
-        path="/ws/realtime-voice",
-        protocol_version="2026-08-27.1",
-    )
+    if REALTIME_VOICE_ENABLED:
+        _realtime_voice_service = RealtimeVoiceService(
+            shared_secret=SHARED_SECRET,
+            relay_endpoint_supplier=lambda: str(
+                getattr(local_llm, "base_url", config.llm.local.base_url)
+            ),
+            api_key_supplier=lambda: _current_cloud_api_key
+            or _resolve_cloud_api_key(),
+            allowed_origins=allowed_realtime_origins(_realtime_vite_port),
+        )
+        logger.info(
+            "realtime_voice_ready",
+            path="/ws/realtime-voice",
+            protocol_version="2026-08-27.1",
+        )
+    else:
+        _realtime_voice_service = None
+        logger.info(
+            "realtime_voice_disabled",
+            path="/ws/realtime-voice",
+            reason="temporarily_disabled_by_product",
+        )
     logger.info("startup complete")
     yield
     if _realtime_voice_service is not None:
@@ -10069,6 +10076,25 @@ async def _activate_product_sdk_runtime(
     # Create ingress facade
     ingress = SdkRuntimeIngress(stack)
 
+    # The SDK runtime persists the authoritative model-visible Tool Catalog
+    # while the stack starts.  Skill-install verification Runs must bind to
+    # that exact generation/fingerprint pair; the product runtime generation
+    # is a different lifecycle counter and cannot be substituted here.
+    runtime_catalog = service_context.get("sdk_runtime_catalog")
+    if not isinstance(runtime_catalog, Mapping):
+        await stack.close()
+        raise RuntimeError("SDK runtime Tool Catalog identity unavailable")
+    runtime_catalog_generation = runtime_catalog.get("generation")
+    runtime_catalog_fingerprint = runtime_catalog.get("content_fingerprint")
+    if (
+        not isinstance(runtime_catalog_generation, int)
+        or runtime_catalog_generation < 1
+        or not isinstance(runtime_catalog_fingerprint, str)
+        or not runtime_catalog_fingerprint.strip()
+    ):
+        await stack.close()
+        raise RuntimeError("SDK runtime Tool Catalog identity is incomplete")
+
     # Complete the Project-scoped Skill-install composition only after the SDK
     # stack is ready.  The bindable holders were published with the Capability
     # runtime so the root driver could be frozen without a cyclic constructor;
@@ -10123,7 +10149,8 @@ async def _activate_product_sdk_runtime(
         resolver=skill_snapshot_resolver,
         ingress=ingress,
         runtime_stack=stack,
-        tool_catalog_generation=lambda: state.generation,
+        tool_catalog_generation=lambda: runtime_catalog_generation,
+        tool_catalog_fingerprint=lambda: runtime_catalog_fingerprint,
     )
     skill_install_runtime_verifier.bind(skill_install_verification)
     skill_install_driver_factory.bind(
@@ -11114,6 +11141,13 @@ _SDK_SKILL_DISCOVERY_PROMPT = """\
 5. 如果搜索没有返回匹配 Skill，或者请求明显不需要专业 Skill，则继续正常处理；不要编造 locator，也不要反复搜索同一个查询。\
 """
 
+_SDK_DEFERRED_TOOL_PROMPT = """\
+延迟工具使用规则：
+1. tool_search 只返回候选；必须复制结果中的完整 capability_id 调用 tool_describe，不得缩写或猜测 ID。
+2. tool_describe 成功后，下一步必须调用 tool_activate，并逐字复制其顶层 capability_id、schema_hash、describe_nonce。
+3. 在 tool_activate 成功、且下一轮模型输入正式出现目标工具之前，绝不能直接调用该目标工具；tool_describe 本身不等于激活。\
+"""
+
 
 def _trusted_local_page_url_from_env() -> str | None:
     """Resolve an optional host-provided local page without exposing raw input."""
@@ -11295,6 +11329,7 @@ async def _prepare_sdk_context_snapshot(
         + _sdk_text_tokens(_SDK_PUBLIC_WORK_NARRATION_PROMPT)
         + _sdk_text_tokens(_SDK_AUTOMATIC_MEMORY_PROMPT)
         + _sdk_text_tokens(_SDK_SKILL_DISCOVERY_PROMPT)
+        + _sdk_text_tokens(_SDK_DEFERRED_TOOL_PROMPT)
         + _sdk_text_tokens(persona_text)
         + _sdk_text_tokens(text)
         + sum(_sdk_text_tokens(item.get("text")) for item in (memory_items or ()))
@@ -11325,6 +11360,8 @@ async def _prepare_sdk_context_snapshot(
                 + _SDK_AUTOMATIC_MEMORY_PROMPT
                 + "\n\n"
                 + _SDK_SKILL_DISCOVERY_PROMPT
+                + "\n\n"
+                + _SDK_DEFERRED_TOOL_PROMPT
             ),
             memory=(
                 (lambda _session_id, _text: memory_items)
@@ -15182,6 +15219,13 @@ async def control_channel(ws: WebSocket):
                     _payload.get("session_id"),
                 )
                 _base_msg_sid = _msg_sid
+                from deskpet.session.task_scope import (
+                    source_session_for_created_conversation as _creation_source_sid,
+                )
+                _source_session_id = _creation_source_sid(
+                    _payload.get("session_id"),
+                    _base_msg_sid,
+                )
                 _scope_decision = _resolve_chat_task_scope(
                     base_sid=_msg_sid,
                     text=text,
@@ -15235,7 +15279,7 @@ async def control_channel(ws: WebSocket):
                             await _legacy_creation.create_conversation_session(
                                 request_id=f"legacy-new-session:{_legacy_request_id}",
                                 project_id=None,
-                                source_session_id=_base_msg_sid,
+                                source_session_id=_source_session_id,
                             )
                         )
                         _msg_sid = str(
@@ -15248,7 +15292,10 @@ async def control_channel(ws: WebSocket):
                                 "error": "新会话创建失败，请重试。",
                                 "code": str(getattr(_legacy_create_exc, "code", "session_create_failed")),
                                 "retryable": True,
-                                "session_id": _base_msg_sid,
+                                # Empty-state failures have no Session owner.
+                                # Keep this empty so App's global error banner
+                                # does not filter it as an inactive pseudo sid.
+                                "session_id": _source_session_id or "",
                                 "request_id": _legacy_request_id,
                             },
                         })

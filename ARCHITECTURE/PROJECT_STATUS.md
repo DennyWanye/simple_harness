@@ -2,6 +2,42 @@
 
 > **最后更新**：2026-08-30
 
+## 2026-08-30 空白会话安装、全局验证快照与语音临时关闭
+
+- 空白消息页创建普通 Session 时不再把 transport 占位 ID `message-panel-main/default` 当作 handoff
+  来源；未显式选择来源时使用 `source_session_id=None`。真实 UI 从空库输入 GitHub Skill 安装请求后，
+  已自动创建 `Documents/SimpleHarnessProjects/Session-ea1f1120`，不再出现目录创建后回滚且界面静默。
+- user-global 安装保持 `pending_invisible` 栅栏：Manager 发布的 exact version/hash 只覆盖到 verifier Run
+  的 immutable catalog lease，不提前写入当前全局 Hub。Fresh Run page-in 成功、terminal/release receipt
+  完整后，才原子激活三个 user binding。最终 intent=`succeeded`、attempt=`attested`，固定 commit
+  `3a094db39db5…` 的 `plan-bs/plan-task/plan-test` 已更新为
+  `0.0.0+git.3a094db39db5.simpleharness.pkg2`、generation 2 active。
+- 多 Skill 仓库按 `skills/<skill>/...` 保留 sibling 相对资源；Run-frozen `skill_invoke(resource_path=...)`
+  可读取 `../plan-test/config.md` 等声明文件且不能越出 pack。安装恢复现处理 Manager version 冲突、失败
+  handoff、SDK Tool Catalog stale、完整 members receipt、attempt supersession 以及 attestation 后尚未 activation
+  的崩溃窗口；失败不会再无限显示“安装中”，也不会把未激活版本冒充为全局可见。
+- 第二个新建普通 Session `966f71d8…` 的 `/plan-` 真人输入显示全局候选；两个 Session 的
+  `/api/commands/help` 都返回相同三项。启动日志同时确认 `authorization_mode=auto`。
+- TokenSeller 新 Session `ec89714c…` 真实重放用户原句 `/plan-bs ...`：全局 Skill 接受，冻结读取
+  `config.md`，Todo 写入与 `tool_search → tool_describe → tool_activate` 成功，最终只输出两个头脑风暴
+  澄清问题并回到 idle；未执行 TokenSeller 审计。原始截图位于 ignored
+  `.local-test-evidence/2026-08-30/global-skill-token-seller-ui/`。
+- Realtime voice 当前按用户要求临时关闭：前端不渲染通话按钮，后端不构造 Realtime service，启动日志为
+  `realtime_voice_disabled(reason=temporarily_disabled_by_product)`；`/ws/realtime-voice` 继续 fail closed。
+  干净实例保存在 ignored `.local-test-evidence/2026-08-30/skill-install-pass.LUnJ3F/` 并保持运行供测试。
+
+## 2026-08-30 Harness 0.6.4 冷启动 composition 回归修复
+
+- 合并后的首次真实启动先发现本机 backend venv 仍为 Harness `0.6.2`；已按 `backend/uv.lock` 同步到 vendored
+  `0.6.4` candidate，并确认 `HostControlAuthorityV1` 公共导出可用，Service/Memory 仍为 `0.3.12`/`0.5.2`。
+- 同步依赖后的冷启动进一步复现 `skill_install_runtime_verifier is already bound`：Capability 初始化提前绑定
+  Manager-only verifier，随后 SDK Runtime 尝试绑定正式 fresh-Run verifier 时失败。现已移除提前绑定，正式
+  verifier 只在 SDK stack ready 后绑定一次；fresh-Run page-in proof、durable attestation 与 fail-closed 语义保持。
+- SDK/Skill 安装聚焦回归 `23 passed`，TypeScript/Vite 与 Tauri debug `.app` 构建通过。隔离 userdata
+  `latest-main-user-test-fixed.YcRHAI` 的当前 debug `.app` 已真实冷启动：SDK `0.6.4` ingress open、权限
+  `auto`、Provider catalog HTTP 200、模型 `deepseek-v4-flash`，窗口显示“已连接”且保持运行供用户测试。
+  原始截图保存在 ignored `.local-test-evidence/2026-08-30/latest-main-user-test-fixed.YcRHAI/`。
+
 ## 2026-08-29 Project-scoped managed Skill 安装故障链修复与 macOS 真 UI 验收
 
 - 聊天/Settings 安装已收敛到 `ProjectSkillInstallService` 单一 application owner；SDK prepared
@@ -1854,6 +1890,7 @@
 
 | 日期 | 里程碑 |
 |---|---|
+| 2026-08-30 | **全局多 Skill 安装、恢复与 TokenSeller 普通 Session 真人调用 PASS 🟡** — `plan-test-skill@3a094db…` 以 `simpleharness.pkg2` 保留跨 Skill 资源，失败 verification 释放并 supersede、完整 Manager receipt 恢复、attestation 后全局 activation 幂等收口；三项 binding generation 2 active。真实 `deepseek-v4-flash` Session `ec89714c…` 完成 `/plan-bs` 资源读取、Todo、延迟 Tool 激活并只提出澄清问题。完整安装 release gate 仍待执行。 |
 | 2026-08-29 | **Project-scoped managed Skill 当前故障链 PASS 🟡** — 修复 JSON tuple、授权 decision 恢复、verification attempt 恢复、resolver composition、owner-aware catalog 与 Capability Center Session scope；macOS 隔离 App 真实安装 `plan-test-skill@4d8c803…`，intent succeeded、verification attested，三成员 UI 均健康。完整安装 release gate 仍待执行。 |
 | 2026-08-21 | **Agent Runtime SDK 0.2/0.3 simple_harness 真人消费者回归完成 ✅** — CTX-1～CTX-5 与 Provider/Session/Context/附件/历史重启/停止 critical surface smoke 全部 PASS；补齐消息页文本附件到 consumer-prepared private stage、公开 default-deny Context 摘要和 Provider wire lowering。真人停止发现并修复 budget-only `unknown` 回执毒化投影游标，重启后 cursor 24→27、下一真实 DeepSeek Run 完成并回到空闲。 |
 | 2026-08-04 | **桌面游戏操作与小窗口 Context 稳定性修复 ✅** — 桌面输入按全局资源 lane 跨批次/Run 串行；`window_key` 支持有界单事务序列和纯暂停步；截图 base64 提升为有预算的多模态附件；AgentLoop 按冻结模型窗口压缩并在 provider 预检超限时做一次目标保真 rescue。最终自动化与 Windows 真机复测通过，Run `9dd6243c...` 仅一次三步按键调用并截图完成。 |

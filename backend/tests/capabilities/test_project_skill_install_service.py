@@ -332,13 +332,106 @@ async def test_pending_runtime_verification_resumes_without_new_authorization(
     assert pending.status == "published_pending_runtime_verification"
     assert pending.confirmation_version == 0
 
-    service.runtime_verifier = Verifier(store)
+    attempt = await store.get_current_skill_install_verification_attempt(
+        intent.intent_id
+    )
+    assert attempt is not None
+
+    async def committed_evidence(operation_id, phase):
+        assert operation_id == attempt.manager_operation_id
+        assert phase == "batch_committed"
+        return {
+            "operation_id": operation_id,
+            "manager_receipt_hash": attempt.manager_receipt_hash,
+            "committed_set_stamp": attempt.committed_set_stamp,
+            "members": [{"pack_id": "alpha", "version": "1.0.0"}],
+        }
+
+    store.get_phase_evidence = committed_evidence
+
+    class RecordingVerifier(Verifier):
+        def __init__(self, current_store):
+            super().__init__(current_store)
+            self.manager_receipt = None
+
+        async def verify_skill_install(self, **kwargs):
+            self.manager_receipt = kwargs["manager_receipt"]
+            return await super().verify_skill_install(**kwargs)
+
+    verifier = RecordingVerifier(store)
+    service.runtime_verifier = verifier
     recovered = await service.reconcile_pending_runtime_verifications()
 
     assert len(recovered) == 1
     succeeded = await store.get_skill_install_intent(intent.intent_id)
     assert succeeded is not None and succeeded.status == "succeeded"
     assert publisher.calls == 1
+    assert verifier.manager_receipt["members"] == [
+        {"pack_id": "alpha", "version": "1.0.0"}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_manager_publish_failure_terminalizes_install_and_cleans_stage(
+    tmp_path,
+) -> None:
+    clock = lambda: 100.0
+    database, store, _publisher, service = await _service(
+        tmp_path, Source(), clock
+    )
+
+    class FailingPublisher(Publisher):
+        async def publish_skill_install_batch(self, **kwargs):
+            operation_id = kwargs["handoff"].operation_id
+            await store.fail_operation(
+                operation_id,
+                status="failed",
+                error={"code": "capability_version_conflict"},
+            )
+            raise RuntimeError("same capability version already exists")
+
+    service.batch_publisher = FailingPublisher()
+    ready = await service.stage(
+        url="https://github.com/acme/skills",
+        project=_project(),
+        run_id="run-1",
+        root_run_id="root-1",
+        call_id="call-1",
+        effect_id="effect-1",
+    )
+    intent = await store.get_skill_install_intent(ready.intent_id)
+    assert intent is not None
+    receipt = AuthorizedSkillInstallReceipt(
+        channel="chat",
+        intent_id=intent.intent_id,
+        content_digest=intent.member_set_stamp,
+        project_scope_key=intent.project_scope_key,
+        principal_id=intent.principal_id,
+        decision_nonce="sdk-failure",
+        decision_version=1,
+        expires_at=intent.expires_at,
+        approved=True,
+        run_id="run-1",
+        call_id="call-1",
+        effect_id="effect-1",
+        decision_sdk_receipt_hash="5" * 64,
+        decision_host_receipt_hash="6" * 64,
+        handoff_sdk_receipt_hash="7" * 64,
+        handoff_host_receipt_hash="8" * 64,
+    )
+
+    with pytest.raises(RuntimeError, match="same capability version"):
+        await service.confirm_authorized(receipt)
+
+    failed = await store.get_skill_install_intent(intent.intent_id)
+    assert failed is not None
+    assert failed.status == "stage_failed"
+    assert failed.error == {
+        "code": "capability_version_conflict",
+        "manager_operation_id": service._manager_operation_id(intent),
+        "manager_operation_status": "failed",
+    }
+    assert not service._stage_path(intent.intent_id).exists()
 
 
 @pytest.mark.asyncio

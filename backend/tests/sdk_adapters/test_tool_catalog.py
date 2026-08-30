@@ -156,7 +156,7 @@ def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
     manifest = load_tool_manifest()
     migrated, records = migrate_tool_schemas(manifest)
 
-    assert len(records) == 70
+    assert len(records) == 71
     specialized = {
         record.name
         for record in records
@@ -173,6 +173,7 @@ def test_schema_migrations_are_exact_closed_and_sdk_valid() -> None:
         "move_file",
         "ppt_create",
         "process_start",
+        "skill_invoke",
         "window_capture",
         "window_focus",
         "window_key",
@@ -498,6 +499,40 @@ def test_environment_schema_adapter_preserves_map_and_rejects_unsafe_entries() -
         )
 
 
+def test_model_argument_adapter_thaws_nested_sdk_containers() -> None:
+    from types import MappingProxyType
+
+    from deskpet.tool_catalog import adapt_model_arguments
+
+    frozen = MappingProxyType(
+        {
+            "items": (
+                MappingProxyType(
+                    {
+                        "content": "Inspect audit coverage",
+                        "activeForm": "Inspecting audit coverage",
+                        "status": "in_progress",
+                    }
+                ),
+            )
+        }
+    )
+
+    adapted = adapt_model_arguments("todo_write", frozen)
+
+    assert adapted == {
+        "items": [
+            {
+                "content": "Inspect audit coverage",
+                "activeForm": "Inspecting audit coverage",
+                "status": "in_progress",
+            }
+        ]
+    }
+    assert isinstance(adapted["items"], list)
+    assert isinstance(adapted["items"][0], dict)
+
+
 def test_all_specialized_schema_adapters_preserve_handler_values_and_reject_invalid() -> None:
     from deskpet.tool_catalog import adapt_model_arguments
 
@@ -815,6 +850,65 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
     assert calls[0][0] == {"run_ids": ["child-1"]}
     assert calls[0][2] == "join-call-1"
     assert calls[0][1].call_id == "join-call-1"
+
+
+@pytest.mark.asyncio
+async def test_sdk_todo_write_runs_sync_bridge_off_event_loop() -> None:
+    from simple_harness import CallId, RequestId, RunId, thaw_json
+    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import build_product_tool_registry
+    from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+
+    writes: list[tuple[str, list[dict[str, str]]]] = []
+
+    class TodoStore:
+        async def replace_session_todos(self, session_id, items):
+            writes.append((session_id, items))
+
+    execution_context = SimpleNamespace(
+        session_id="session-todo",
+        request_id="request-todo",
+        scope_id="scope-todo",
+        workspace="/workspace",
+        write_scope_root="/workspace",
+    )
+    base = _catalog_dependencies(ContextPageInStore(), execution_context)
+    dependencies = ToolCatalogDependencies(
+        todo_session_db=TodoStore(),
+        workflow_service_provider=base.workflow_service_provider,
+        context_page_store=base.context_page_store,
+        execution_context_getter=base.execution_context_getter,
+        memory_query=base.memory_query,
+        memory_scope_resolver=base.memory_scope_resolver,
+        capability_bridge_service=base.capability_bridge_service,
+        search_gateway=base.search_gateway,
+    )
+    registry, _ = build_product_tool_registry(
+        build_explicit_product_tool_catalog(dependencies).registrations
+    )
+    context = ToolContext(
+        RunId("run-todo"),
+        RequestId("request-todo"),
+        CancellationToken(),
+    )
+    items = [
+        {
+            "content": "Inspect audit coverage",
+            "activeForm": "Inspecting audit coverage",
+            "status": "in_progress",
+        }
+    ]
+
+    result = await registry.invoke(
+        ToolCall(CallId("todo-call-1"), "todo_write", {"items": items}),
+        context,
+    )
+
+    assert result.outcome is ToolOutcome.SUCCEEDED
+    assert thaw_json(result.value)["count"] == 1
+    assert writes == [("session-todo", items)]
 
 
 def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> None:

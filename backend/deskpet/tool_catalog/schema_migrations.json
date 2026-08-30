@@ -509,6 +509,14 @@
       "spec_version": "v1.sdk-schema-2"
     },
     {
+      "closed_object_paths": [],
+      "disposition": "optional_frozen_skill_resource_path",
+      "name": "skill_invoke",
+      "new_hash": "6c93d14e26824e1929a2b5a93a6a5a839a4a3806c56ecd4b261752f6de38056a",
+      "old_hash": "d5adc493493dd86570b0651f7f6c43341664a147270be78adfc3d509a8092470",
+      "spec_version": "core.skill_invoke.v3.sdk-schema-2"
+    },
+    {
       "closed_object_paths": [
         "$",
         "$.properties.subagents.items"

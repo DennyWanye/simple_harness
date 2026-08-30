@@ -209,6 +209,45 @@ async def test_projects_sdk_tool_call_and_result(delivery_adapter, mock_presente
 
 
 @pytest.mark.asyncio
+async def test_tool_call_projection_thaws_nested_sdk_arguments(
+    delivery_adapter, mock_presenter
+):
+    import json
+
+    from agent.agent_loop import ToolCallEvent
+    from simple_harness import CallId
+    from simple_harness.tools import ToolCall
+
+    call = ToolCall(
+        CallId("call-nested"),
+        "todo_write",
+        {
+            "items": [
+                {
+                    "content": "Inspect audit coverage",
+                    "activeForm": "Inspecting audit coverage",
+                    "status": "in_progress",
+                }
+            ]
+        },
+    )
+
+    await delivery_adapter.present_tool_call(call)
+
+    events = [item.args[0] for item in mock_presenter.present.await_args_list]
+    projected = next(event for event in events if isinstance(event, ToolCallEvent))
+    assert json.loads(json.dumps(projected.tool_call.arguments)) == {
+        "items": [
+            {
+                "content": "Inspect audit coverage",
+                "activeForm": "Inspecting audit coverage",
+                "status": "in_progress",
+            }
+        ]
+    }
+
+
+@pytest.mark.asyncio
 async def test_projects_public_narration_before_tool_with_stable_iteration(
     delivery_adapter, mock_presenter
 ):

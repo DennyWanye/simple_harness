@@ -63,6 +63,7 @@ import { topicDisplayLabel } from "../chat/topicTitle";
 import { projectRequest } from "../chat/projectSessionProtocol";
 import { BACKEND_PORT } from "../backendPort";
 import { useRealtimeVoice } from "../hooks/useRealtimeVoice";
+import { VOICE_INPUT_ENABLED } from "../voiceAvailability";
 import {
   DEFAULT_HIDE_TOOL_TRACE,
   isMessageVisibleForSelectedRun,
@@ -932,7 +933,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
             />
           </div>
 
-          {(realtimeVoice.state !== "idle" ||
+          {VOICE_INPUT_ENABLED && (realtimeVoice.state !== "idle" ||
             realtimeVoice.transcript ||
             realtimeVoice.responseText) && (
             <div
@@ -988,7 +989,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
                 sessionId={activeSid}
               />
             </div>
-            <button
+            {VOICE_INPUT_ENABLED && <button
               type="button"
               data-testid="realtime-call-button"
               disabled={!secret || realtimeVoice.state === "closing"}
@@ -1043,7 +1044,7 @@ export function ChatView({ activeSid, secret, onSwitchSid = () => {} }: ChatView
                   : realtimeVoice.state === "closing"
                     ? "挂断中"
                     : "挂断"}
-            </button>
+            </button>}
           </div>
         </div>
         <ProjectInspector activeSid={activeSid} onSwitchSid={onSwitchSid} />

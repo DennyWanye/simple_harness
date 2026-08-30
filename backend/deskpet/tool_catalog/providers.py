@@ -5,14 +5,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import inspect
 import json
 import re
 from dataclasses import dataclass, replace
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, cast
 
-from simple_harness import JsonValue, thaw_json
+from simple_harness import FrozenJsonValue, JsonValue, thaw_json
 from simple_harness.tools import ToolContext
 
 from deskpet.sdk_adapters.tools import (
@@ -192,7 +193,12 @@ def _import_callable(identity: str) -> Callable[..., Any]:
 def adapt_model_arguments(name: str, arguments: Mapping[str, JsonValue]) -> dict[str, Any]:
     """Translate the 0.1.1-safe wire schemas back to legacy handler values."""
 
-    adapted = dict(arguments)
+    # SDK ToolCall values are recursively frozen (mappingproxy/tuple).  Legacy
+    # Host handlers intentionally accept ordinary dict/list JSON containers,
+    # so detach the complete tree at this single admission boundary.
+    adapted = thaw_json(cast(FrozenJsonValue, arguments))
+    if not isinstance(adapted, dict):
+        raise TypeError("model Tool arguments must be a JSON object")
     if name in {"app_launch", "process_start"} and "environment" in adapted:
         entries = adapted["environment"]
         if not isinstance(entries, list) or len(entries) > 64:
@@ -267,7 +273,24 @@ def _dynamic_handlers(deps: ToolCatalogDependencies) -> dict[str, tuple[Callable
     await_handler, _ = build_sdk_await_subagents_tool(
         deps.workflow_service_provider
     )
-    todo_handler, _ = build_todo_write_tool(deps.todo_session_db)
+    sync_todo_handler, _ = build_todo_write_tool(deps.todo_session_db)
+
+    async def todo_handler(
+        arguments: dict[str, Any],
+        task_id: str = "",
+        *,
+        execution_context: ToolExecutionContext | None = None,
+    ) -> str:
+        # The legacy handler bridges its async SessionDB write from a worker
+        # thread.  The SDK invokes product handlers on its event loop, so run
+        # this one sync bridge off-loop instead of deadlocking that loop with
+        # run_coroutine_threadsafe(...).result().
+        return await asyncio.to_thread(
+            sync_todo_handler,
+            arguments,
+            task_id,
+            execution_context=execution_context,
+        )
     page_handler = build_context_page_in_handler(
         deps.context_page_store,
         execution_context_getter=deps.execution_context_getter,

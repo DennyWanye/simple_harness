@@ -575,6 +575,7 @@ class ProductCapabilityCatalogSourceAdapter:
         resolver: Any,
         owner_key: str,
         project_scope_key: str,
+        install_scope: str = "project",
         records: Sequence[SkillResourceRecord],
         expected_skill_names: Iterable[str],
     ) -> "SkillRunPageInVerificationEvidence":
@@ -587,17 +588,23 @@ class ProductCapabilityCatalogSourceAdapter:
         """
 
         await lease.require_ready()
-        project_entries = lease.project_pack_entries(
-            owner_key=owner_key,
-            project_scope_key=project_scope_key,
-        )
+        if install_scope == "user":
+            scoped_entries = lease.user_global_pack_entries(
+                owner_key=owner_key,
+                user_scope_key=project_scope_key,
+            )
+        else:
+            scoped_entries = lease.project_pack_entries(
+                owner_key=owner_key,
+                project_scope_key=project_scope_key,
+            )
         frozen_pack_identities = {
             (
                 str(item.get("pack_id") or ""),
                 str(item.get("version") or ""),
                 str(item.get("manifest_hash") or ""),
             )
-            for item in project_entries
+            for item in scoped_entries
         }
         by_name = {record.skill_locator: record for record in records}
         names = tuple(sorted(set(str(item) for item in expected_skill_names)))

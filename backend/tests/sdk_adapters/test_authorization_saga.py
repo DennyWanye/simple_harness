@@ -370,6 +370,88 @@ async def test_auto_skill_decision_is_host_owned_durable_and_precedes_grant_acti
     database.close()
 
 
+@pytest.mark.asyncio
+async def test_effect_handoff_hashes_nested_frozen_tool_arguments(tmp_path) -> None:
+    """Nested SDK ToolCall arguments must remain JSON-safe at Host handoff."""
+
+    database = ProductStateDatabase(tmp_path / "nested-handoff.db")
+    database.initialize()
+    set_policy_generation(database)
+    repository = AuthorizationSagaRepository(database)
+    arguments = {
+        "items": [
+            {
+                "content": "Inspect audit coverage",
+                "activeForm": "Inspecting audit coverage",
+                "status": "in_progress",
+            }
+        ]
+    }
+    prepared = PreparedToolEffect(
+        EffectId("effect-1"),
+        RunId("run-1"),
+        ToolCall(CallId("call-1"), "todo_write", arguments),
+        ToolSpec(
+            "todo_write",
+            "Replace the task list.",
+            {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "content": {"type": "string"},
+                                "activeForm": {"type": "string"},
+                                "status": {"type": "string"},
+                            },
+                            "required": ["content", "activeForm", "status"],
+                        },
+                    }
+                },
+                "required": ["items"],
+            },
+        ),
+        {},
+    )
+    base_identity = replace(
+        identity(decision_nonce=None),
+        tool_name="todo_write",
+        arguments=arguments,
+    )
+    adapter = ProductAuthorizationAdapter(
+        repository,
+        policy=lambda _prepared: AuthorizationResult(
+            AuthorizationDecision.ALLOW,
+            receipt_ref="policy:auto",
+        ),
+        identity_factory=lambda _prepared, _request: base_identity,
+        grant_authority=DurableTaskGrantAuthority(database),
+        grant_factory=lambda _prepared, _result: grant(),
+        clock=lambda: 10.0,
+    )
+
+    result = await adapter.prepare(prepared)
+    sdk_handoff_hash = receipt("sdk-nested-handoff")
+    handoff = await adapter.bind_effect_handoff(
+        prepared,
+        result.receipt_ref or "",
+        AuthorizationReceipt(
+            "sdk:nested-handoff",
+            sdk_handoff_hash,
+            sdk_handoff_hash,
+        ),
+    )
+
+    assert handoff.bound_sdk_receipt_hash == sdk_handoff_hash
+    stored = repository.read("authorization-1")
+    assert stored is not None
+    assert stored.state is AuthorizationSagaState.HANDOFF_COMMITTED
+    assert stored.identity.arguments == arguments
+    database.close()
+
+
 @pytest.mark.parametrize(
     ("operation", "expected"),
     [

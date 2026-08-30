@@ -97,6 +97,7 @@ def _lease(
     manifest_hash: str,
     owner_key: str = "project-owner",
     project_scope_key: str = "project:v2:a",
+    scope: str = "project",
 ) -> PreparedRunCatalogLease:
     entry = {
         "entry_kind": "pack",
@@ -109,7 +110,7 @@ def _lease(
             "capability_id": "installed-skill",
             "version": "1.0.0",
             "manifest_hash": manifest_hash,
-            "scope": "project",
+            "scope": scope,
             "scope_key": project_scope_key,
             "active": True,
             "generation": 3,
@@ -331,6 +332,72 @@ async def test_ready_fresh_run_pages_exact_content_and_returns_body_free_evidenc
             records=records,
             expected_skill_names=("installed-skill",),
         )
+
+
+@pytest.mark.asyncio
+async def test_ready_fresh_run_pages_global_content_from_user_lease(
+    tmp_path: Path,
+) -> None:
+    record = _write_project_skill_pack(tmp_path / "global-pack")
+    owner_key = "user:v2:" + "9" * 64
+    lease = _lease(
+        manifest_hash=record.descriptor.manifest_hash,
+        owner_key=owner_key,
+        project_scope_key=owner_key,
+        scope="user",
+    )
+    adapter = ProductCapabilityCatalogSourceAdapter()
+    projection_store = _VersionStore(record)
+    records = await adapter.sdk_global_resource_records_from_lease(
+        store=projection_store,
+        lease=lease,
+        owner_key=owner_key,
+        user_scope_key=owner_key,
+    )
+    prepared = PreparedToolSet.create(
+        scope_id="verification-tools",
+        revision=1,
+        registry_revision=1,
+        direct=(),
+        deferred=(),
+        activated=(),
+        denied_names=(),
+        policy_fingerprint="policy",
+        decisions=(),
+    )
+    row = {
+        "snapshot_ref": lease.snapshot_ref,
+        "run_catalog_content_stamp": lease.run_catalog_content_stamp,
+        "selected_owner_key": owner_key,
+        "pack_id": "installed-skill",
+        "version": "1.0.0",
+        "manifest_hash": record.descriptor.manifest_hash,
+        "prepared_tool_set_envelope_json": json.dumps(
+            {
+                "prepared": dump_prepared_tool_set(prepared),
+                "exact_tools": [],
+            }
+        ),
+    }
+    resolver = FirstPartyFrozenSkillResolver(
+        store=_VersionStore(record, row),
+        inventory=(),
+    )
+
+    evidence = await adapter.verify_fresh_run_page_in(
+        lease=lease,
+        resolver=resolver,
+        owner_key=owner_key,
+        project_scope_key=owner_key,
+        install_scope="user",
+        records=records,
+        expected_skill_names=("installed-skill",),
+    )
+
+    assert evidence.owner_key == owner_key
+    assert evidence.project_scope_key == owner_key
+    assert evidence.members[0].manifest_hash == record.descriptor.manifest_hash
+    assert lease._ready_gate.required is True
 
 
 def test_run_page_in_evidence_is_host_issued() -> None:

@@ -155,3 +155,18 @@ class TaskSessionManager:
 
 
 task_session_manager = TaskSessionManager()
+
+
+def source_session_for_created_conversation(
+    requested_session_id: object,
+    resolved_base_sid: str,
+) -> str | None:
+    """Return a real source Session only when the client selected one.
+
+    Empty-state ChatView turns intentionally send ``session_id: ""`` with
+    ``new_session: true``. The resolved base in that case is a transport peer
+    group, not a durable Session row, so it cannot own a handoff.
+    """
+
+    requested = str(requested_session_id or "").strip()
+    return str(resolved_base_sid).strip() if requested else None

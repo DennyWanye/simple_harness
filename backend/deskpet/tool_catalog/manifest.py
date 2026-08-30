@@ -155,6 +155,15 @@ def _migrate_schema(item: Mapping[str, Any]) -> tuple[dict[str, Any], tuple[str,
             "maxLength": 4096,
             "description": "Omit when no workspace is bound.",
         }
+    if name == "skill_invoke":
+        properties["resource_path"] = {
+            "type": "string",
+            "minLength": 1,
+            "description": (
+                "Read a packaged support file relative to this Skill's SKILL.md, "
+                "for example ../plan-test/config.md."
+            ),
+        }
     closed_object_paths = _close_object_contracts(schema["parameters"])
     return schema, closed_object_paths
 

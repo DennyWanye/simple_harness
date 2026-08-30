@@ -13,7 +13,12 @@ from typing import Any, Protocol
 from simple_harness import DriverResult, HostControlAuthorityV1, RuntimeDriver
 from simple_harness.execution.uow import RunState
 
-from deskpet.capabilities.contracts import CapabilityScope, fingerprint_json
+from deskpet.capabilities.contracts import (
+    CapabilityBinding,
+    CapabilityCatalogEntry,
+    CapabilityScope,
+    fingerprint_json,
+)
 from deskpet.capabilities.store import (
     CapabilitySkillInstallMember,
     CapabilitySkillInstallVerificationAttempt,
@@ -67,6 +72,125 @@ def skill_install_verification_authority_hash(
             "projection_receipt_hash": attempt.projection_receipt_hash,
         }
     )
+
+
+def _verification_capability_scope(
+    *,
+    run_id: str,
+    principal_id: str,
+    source: Mapping[str, Any],
+    install_scope: str = "project",
+    install_scope_key: str | None = None,
+) -> CapabilityScope:
+    """Build the verification Run scope without inventing project identity.
+
+    User-global installs deliberately have no project triple. Empty strings
+    and revision zero are not an absent authority; they form an invalid
+    project identity and fail before the Host-control Run can start.
+    """
+
+    if install_scope == "user":
+        global_owner_key = str(install_scope_key or "")
+        if not global_owner_key.startswith("user:v2:"):
+            raise RuntimeError("skill_install_verification_global_owner_invalid")
+        return CapabilityScope.for_run(run_id, user_key=global_owner_key)
+
+    project_id = source.get("project_id")
+    project_revision = source.get("project_revision")
+    project_identity = source.get("project_identity")
+    project_values = (project_id, project_revision, project_identity)
+    if not any(value not in (None, "") for value in project_values):
+        return CapabilityScope.for_run(run_id, user_key=principal_id)
+    if not all(value not in (None, "") for value in project_values):
+        raise RuntimeError("skill_install_verification_project_identity_incomplete")
+    return CapabilityScope.for_run(
+        run_id,
+        project_id=str(project_id),
+        project_revision=int(project_revision),
+        project_identity=str(project_identity),
+        user_key=principal_id,
+    )
+
+
+def _verification_owner_key(intent: Any) -> str:
+    return (
+        intent.install_scope_key
+        if str(getattr(intent, "install_scope", "")) == "user"
+        else intent.principal_id
+    )
+
+
+async def _verification_resource_records(
+    *, catalog_source: ProductCapabilityCatalogSourceAdapter,
+    store: Any,
+    lease: Any,
+    intent: Any,
+) -> tuple[Any, ...]:
+    """Route verification reads to the authority that owns the install."""
+
+    if str(getattr(intent, "install_scope", "")) == "user":
+        return await catalog_source.sdk_global_resource_records_from_lease(
+            store=store,
+            lease=lease,
+            owner_key=intent.install_scope_key,
+            user_scope_key=intent.install_scope_key,
+        )
+    return await catalog_source.sdk_project_resource_records_from_lease(
+        store=store,
+        lease=lease,
+        owner_key=intent.principal_id,
+        project_scope_key=intent.project_scope_key,
+    )
+
+
+async def _pending_global_verification_entries(
+    *,
+    store: Any,
+    intent: Any,
+    members: Sequence[CapabilitySkillInstallMember],
+    manager_receipt: Mapping[str, Any],
+) -> tuple[CapabilityCatalogEntry, ...]:
+    """Build a verifier-only overlay from exact pending Manager versions."""
+
+    receipt_members = {
+        str(item.get("pack_id") or ""): item
+        for item in tuple(manager_receipt.get("members") or ())
+        if isinstance(item, Mapping)
+    }
+    entries: list[CapabilityCatalogEntry] = []
+    for member in members:
+        record = await store.get_version(
+            member.pack_id, member.version, member.manifest_hash
+        )
+        receipt_member = receipt_members.get(member.pack_id)
+        if record is None or receipt_member is None:
+            raise RuntimeError("global_skill_verification_member_missing")
+        binding = CapabilityBinding(
+            binding_id=fingerprint_json(
+                {
+                    "schema": "global-skill-verification-binding-v1",
+                    "intent_id": intent.intent_id,
+                    "pack_id": member.pack_id,
+                    "version": member.version,
+                    "manifest_hash": member.manifest_hash,
+                }
+            ),
+            capability_id=member.pack_id,
+            version=member.version,
+            manifest_hash=member.manifest_hash,
+            scope="user",
+            scope_key=intent.install_scope_key,
+            active=True,
+            generation=int(
+                receipt_member.get("expected_binding_generation") or 0
+            )
+            + 1,
+            owner_key=intent.install_scope_key,
+            management_policy="user_managed",
+            management_generation=1,
+        )
+        entries.append(CapabilityCatalogEntry(record.descriptor, (binding,), ()))
+    return tuple(entries)
 
 
 class SkillInstallVerificationAttemptStore(Protocol):
@@ -187,6 +311,7 @@ class SkillInstallVerificationRunService:
         ingress: SdkRuntimeIngress,
         runtime_stack: ProductSdkRuntimeStack,
         tool_catalog_generation: Callable[[], int],
+        tool_catalog_fingerprint: Callable[[], str] | None = None,
     ) -> None:
         if bool(getattr(store, "product_owned", False)):
             raise RuntimeError("skill_install_verification_execution_owner_required")
@@ -197,6 +322,7 @@ class SkillInstallVerificationRunService:
         self.ingress = ingress
         self.runtime_stack = runtime_stack
         self.tool_catalog_generation = tool_catalog_generation
+        self.tool_catalog_fingerprint = tool_catalog_fingerprint or (lambda: "")
         self._prepared_leases: dict[str, Any] = {}
 
     async def verify_skill_install(
@@ -246,17 +372,31 @@ class SkillInstallVerificationRunService:
                     "registry_revision": catalog.revision,
                 }
             )
-            source = dict(intent.source)
-            scope = CapabilityScope.for_run(
-                attempt.expected_run_id,
-                project_id=str(source.get("project_id") or ""),
-                project_revision=int(source.get("project_revision") or 0),
-                project_identity=str(source.get("project_identity") or ""),
-                user_key=intent.principal_id,
+            scope = _verification_capability_scope(
+                run_id=attempt.expected_run_id,
+                principal_id=intent.principal_id,
+                source=dict(intent.source),
+                install_scope=intent.install_scope,
+                install_scope_key=intent.install_scope_key,
             )
-            lease = await self.platform.prepare_run_catalog_lease(
+            owner_key = _verification_owner_key(intent)
+            prepare_lease = self.platform.prepare_run_catalog_lease
+            prepare_kwargs: dict[str, Any] = {}
+            if intent.install_scope == "user":
+                prepare_lease = (
+                    self.platform.prepare_global_skill_verification_run_catalog_lease
+                )
+                prepare_kwargs["verification_entries"] = (
+                    await _pending_global_verification_entries(
+                        store=self.store,
+                        intent=intent,
+                        members=members,
+                        manager_receipt=manager_receipt,
+                    )
+                )
+            lease = await prepare_lease(
                 scope=scope,
-                owner_key=intent.principal_id,
+                owner_key=owner_key,
                 prepared_tool_set=prepared,
                 prepared_tool_set_fingerprint=external_ref,
                 run_id=attempt.expected_run_id,
@@ -264,6 +404,7 @@ class SkillInstallVerificationRunService:
                 request_id=attempt.request_id,
                 turn_id=attempt.turn_id,
                 owner_operation_id=attempt.attempt_id,
+                **prepare_kwargs,
             )
             attempt = await self.store.cas_skill_install_verification_attempt(
                 attempt.attempt_id,
@@ -290,6 +431,9 @@ class SkillInstallVerificationRunService:
                 authority_hash=skill_install_verification_authority_hash(attempt),
                 input={"attempt_id": attempt.attempt_id},
                 tool_catalog_generation=int(self.tool_catalog_generation()),
+                tool_catalog_fingerprint=(
+                    str(self.tool_catalog_fingerprint()).strip() or None
+                ),
             )
         await self.ingress.wait_idle(attempt.expected_run_id)
         return await self.reconcile_attempt(attempt.intent_id)
@@ -409,17 +553,18 @@ class _SkillInstallVerificationDriver:
             members = await self.service.store.skill_install_members(attempt.intent_id)
             if intent is None:
                 raise RuntimeError("verification_intent_missing")
-            records = await self.service.catalog_source.sdk_project_resource_records_from_lease(
+            records = await _verification_resource_records(
+                catalog_source=self.service.catalog_source,
                 store=self.service.store,
                 lease=lease,
-                owner_key=intent.principal_id,
-                project_scope_key=intent.project_scope_key,
+                intent=intent,
             )
             proof = await self.service.catalog_source.verify_fresh_run_page_in(
                 lease=lease,
                 resolver=self.service.resolver,
-                owner_key=intent.principal_id,
+                owner_key=_verification_owner_key(intent),
                 project_scope_key=intent.project_scope_key,
+                install_scope=intent.install_scope,
                 records=records,
                 expected_skill_names=tuple(
                     str(item.member.get("skill_name") or item.normalized_name)
@@ -446,14 +591,20 @@ class _SkillInstallVerificationDriver:
                 },
             )
         except Exception as exc:  # noqa: BLE001 - bounded terminal algebra
+            reason_code = (
+                str(exc)
+                if isinstance(exc, RuntimeError)
+                and str(exc)
+                and all(char.isalnum() or char in "_-.:" for char in str(exc))
+                else f"verification_driver_{type(exc).__name__.lower()}"
+            )
             logger.exception(
-                "skill_install_verification_driver_failed attempt_id=%s error_type=%s",
+                "skill_install_verification_driver_failed attempt_id=%s error_type=%s reason_code=%s",
                 attempt.attempt_id,
                 type(exc).__name__,
+                reason_code,
             )
-            return _route_failure(
-                f"verification_driver_{type(exc).__name__.lower()}"
-            )
+            return _route_failure(reason_code)
 
 
 class SdkTerminalCapabilityReleaseReconciler:
@@ -467,6 +618,7 @@ class SdkTerminalCapabilityReleaseReconciler:
     async def reconcile_pending(self) -> None:
         for attempt in await self.store.list_pending_skill_install_verification_attempts():
             if attempt.status in {
+                "start_submitted",
                 "run_durable",
                 "catalog_ready",
                 "page_in_proven",
@@ -480,7 +632,7 @@ class SdkTerminalCapabilityReleaseReconciler:
     ) -> CapabilitySkillInstallVerificationAttempt:
         evidence = self.runtime_stack.read_skill_install_verification_evidence(attempt)
         terminal_succeeded = evidence.status == "terminal_succeeded"
-        if attempt.status in {"run_durable", "catalog_ready"}:
+        if attempt.status in {"start_submitted", "run_durable", "catalog_ready"}:
             if evidence.status not in {"terminal_succeeded", "terminal_failed"}:
                 return attempt
             return await self._release_terminal_attempt(

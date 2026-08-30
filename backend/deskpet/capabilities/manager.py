@@ -1265,6 +1265,24 @@ class CapabilityPackManager:
                 validations.append(validation)
                 candidates.append(candidate)
                 await self._fault(f"after:batch_member_prepared:{ordinal}")
+            for validation in validations:
+                existing_version = await self.store.get_version(
+                    validation.manifest.id,
+                    validation.manifest.version,
+                )
+                if (
+                    existing_version is not None
+                    and (
+                        existing_version.descriptor.manifest_hash
+                        != validation.manifest.manifest_hash
+                        or existing_version.descriptor.fingerprint
+                        != validation.descriptor.fingerprint
+                    )
+                ):
+                    raise CapabilityStoreConflict(
+                        "capability_version_conflict",
+                        "same capability version already exists with different immutable data",
+                    )
             operation = await self._commit_phase(
                 operation_id, "batch_prepared",
                 {"member_count": len(durable_members), "committed_set_stamp": committed_set_stamp},
@@ -2846,6 +2864,36 @@ class CapabilityPackManager:
         validations = [load_and_validate_pack(root, environment=self.environment) for root in roots]
         candidates = [await self.publisher.prepare_candidate(v, install_root=root, operation_id=operation.operation_id)
                       for v, root in zip(validations, roots, strict=True)]
+        for validation in validations:
+            existing_version = await self.store.get_version(
+                validation.manifest.id,
+                validation.manifest.version,
+            )
+            if (
+                existing_version is not None
+                and (
+                    existing_version.descriptor.manifest_hash
+                    != validation.manifest.manifest_hash
+                    or existing_version.descriptor.fingerprint
+                    != validation.descriptor.fingerprint
+                )
+            ):
+                if batch_root.exists():
+                    await self._remove_batch_root(batch_root)
+                await self.store.advance_publish_intent(
+                    intent.intent_id,
+                    phase=intent.phase,
+                    status="rolled_back",
+                )
+                return await self.store.fail_operation(
+                    operation.operation_id,
+                    status="failed",
+                    error={
+                        "code": "capability_version_conflict",
+                        "phase": operation.phase,
+                        "recovered": True,
+                    },
+                )
         bindings: list[CapabilityBinding] = []
         async with self.store.write_transaction() as db:
             tx = self.store.bind(db)

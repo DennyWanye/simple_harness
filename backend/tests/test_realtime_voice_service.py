@@ -10,6 +10,7 @@ import pytest
 from deskpet.realtime_voice import (
     LOCAL_REALTIME_PATH,
     LOCAL_REALTIME_VERSION,
+    REALTIME_VOICE_ENABLED,
     _MetadataDiagnosticSink,
     RealtimeVoiceService,
     allowed_realtime_origins,
@@ -20,6 +21,10 @@ from simple_harness_service.realtime import (
     RealtimeDiagnosticStage,
 )
 from simple_harness_service.realtime.transports import LocalAdmissionError
+
+
+def test_realtime_voice_product_entry_is_temporarily_disabled():
+    assert REALTIME_VOICE_ENABLED is False
 
 
 class FakeSocket:

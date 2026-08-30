@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import json
 import uuid
 from dataclasses import dataclass
@@ -1263,6 +1264,62 @@ class FirstPartyFrozenSkillResolver:
                 intersection.effective_tool_refs_hash
             ),
         }
+
+    async def resolve_frozen_resource(
+        self,
+        *,
+        run_id: str,
+        skill_name: str,
+        relative_path: str,
+    ) -> Mapping[str, Any]:
+        async with self._store.read_connection() as db:
+            rows = await (
+                await db.execute(
+                    """SELECT i.snapshot_ref,e.selected_owner_key,e.pack_id,
+                              e.version,e.manifest_hash
+                       FROM capability_snapshot_lease_intents AS i
+                       JOIN capability_run_catalog_snapshot_entries AS e
+                         ON e.run_catalog_content_stamp=i.run_catalog_content_stamp
+                       JOIN capability_runtime_projection_receipts AS r
+                         ON r.lease_intent_id=i.lease_intent_id
+                        AND r.purpose='snapshot_pin' AND r.status='ready'
+                       WHERE i.run_id=? AND i.status='bound'
+                         AND e.entry_kind='pack'
+                       ORDER BY e.ordinal""",
+                    (run_id,),
+                )
+            ).fetchall()
+        for row in rows:
+            try:
+                scope = await self._snapshot_resolver.resolve_scope(
+                    owner_key=str(row["selected_owner_key"] or "builtin"),
+                    pack_id=str(row["pack_id"]),
+                    skill_id=skill_name,
+                    version=str(row["version"]),
+                    manifest_hash=str(row["manifest_hash"]),
+                )
+            except RuntimeError as exc:
+                if str(exc) == "frozen_skill_manifest_entry_missing":
+                    continue
+                raise
+            resolved_path, raw = await self._snapshot_resolver.resolve_skill_resource(
+                scope, relative_path
+            )
+            if len(raw) > 256 * 1024:
+                raise RuntimeError("frozen_skill_resource_too_large")
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError as exc:
+                raise RuntimeError("frozen_skill_resource_not_text") from exc
+            return {
+                "skill_id": skill_name,
+                "resource_path": relative_path,
+                "resolved_path": resolved_path,
+                "content": content,
+                "content_hash": hashlib.sha256(raw).hexdigest(),
+                "capability_snapshot_ref": str(row["snapshot_ref"]),
+            }
+        raise RuntimeError("frozen_skill_not_in_run_catalog")
 
 
 __all__ = [
