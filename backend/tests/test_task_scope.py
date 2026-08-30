@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from deskpet.session.task_scope import source_session_for_created_conversation
+
 
 def _manager(*session_ids: str):
     from deskpet.session.task_scope import TaskSessionManager
@@ -31,6 +33,21 @@ def test_resolve_payload_new_without_prefix_keeps_text():
     assert decision.created is True
     assert decision.reason == "explicit_new"
     assert decision.stripped_text == "research rust tokio"
+
+
+def test_empty_state_created_conversation_has_no_transport_pseudo_source():
+    assert source_session_for_created_conversation("", "default") is None
+    assert (
+        source_session_for_created_conversation(None, "message-panel-main")
+        is None
+    )
+
+
+def test_created_conversation_inherits_only_an_explicit_selected_session():
+    assert (
+        source_session_for_created_conversation("session-a", "session-a")
+        == "session-a"
+    )
 
 
 def test_resolve_payload_new_from_current_session_creates_another_flat_session():

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Mapping
 
 from simple_harness import RunId, thaw_json
@@ -94,6 +95,66 @@ class SdkThenLegacyFrozenSkillResolver:
             "allowed_tool_refs": facts,
             "effective_tool_ref_hashes": ref_hashes,
             "effective_tool_refs_hash": refs_hash,
+        }
+
+    async def resolve_frozen_resource(
+        self,
+        *,
+        run_id: str,
+        skill_name: str,
+        relative_path: str,
+    ) -> Mapping[str, Any]:
+        try:
+            authority = self._authorities.resolve(run_id)
+        except KeyError:
+            return await self._legacy_resolver.resolve_frozen_resource(
+                run_id=run_id,
+                skill_name=skill_name,
+                relative_path=relative_path,
+            )
+
+        exposure = self._authorities.resolve_exposure(RunId(run_id))
+        matches = tuple(
+            record
+            for record in exposure.catalog.snapshot.records
+            if isinstance(record, SkillResourceRecord)
+            and record.skill_locator == skill_name
+        )
+        if len(matches) != 1:
+            raise RuntimeError("sdk_frozen_skill_not_in_run_catalog")
+        record = matches[0]
+        metadata = thaw_json(record.metadata)  # type: ignore[arg-type]
+        if not isinstance(metadata, dict):
+            raise RuntimeError("sdk_frozen_skill_metadata_invalid")
+        scope = PreparedSkillInvocationScopeV1.from_dict(
+            {
+                "schema": "prepared_skill_invocation_scope/v1",
+                "owner_key": metadata.get("owner_key"),
+                "pack_id": metadata.get("pack_id"),
+                "skill_id": skill_name,
+                "version": metadata.get("version"),
+                "manifest_hash": metadata.get("manifest_hash"),
+                "content_hash": record.content_hash,
+                "allowed_tools": metadata.get("allowed_tools"),
+                "scope_hash": metadata.get("scope_hash"),
+            }
+        )
+        resolved_path, raw = await self._snapshot_resolver.resolve_skill_resource(
+            scope, relative_path
+        )
+        if len(raw) > 256 * 1024:
+            raise RuntimeError("frozen_skill_resource_too_large")
+        try:
+            content = raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise RuntimeError("frozen_skill_resource_not_text") from exc
+        return {
+            "skill_id": skill_name,
+            "resource_path": relative_path,
+            "resolved_path": resolved_path,
+            "content": content,
+            "content_hash": hashlib.sha256(raw).hexdigest(),
+            "capability_snapshot_ref": authority.catalog_fingerprint,
         }
 
     @staticmethod

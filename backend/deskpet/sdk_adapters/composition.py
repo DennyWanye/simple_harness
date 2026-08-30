@@ -532,8 +532,25 @@ class ProductSdkRuntimeStack:
             }
             if any(int(value) != 0 for value in counts.values()):
                 return _corrupt_verification(expected_run_id, "verification_side_effects_present")
-            if any(int(payload.get(name, -1)) != 0 for name in counts):
-                return _corrupt_verification(expected_run_id, "terminal_zero_count_mismatch")
+            verification_terminal = (
+                payload.get("schema") == "skill-install-verification-final-v1"
+                and payload.get("status") in {"succeeded", "failed"}
+            )
+            if verification_terminal:
+                if any(int(payload.get(name, -1)) != 0 for name in counts):
+                    return _corrupt_verification(
+                        expected_run_id, "terminal_zero_count_mismatch"
+                    )
+            elif state is RunState.COMPLETED:
+                # Only the verification Driver can legitimately complete this
+                # Host-control Run. A completed root without its bounded final
+                # contract is corrupt. SDK admission/runtime failures, however,
+                # use the SDK's own structured failed/cancelled envelope before
+                # the Driver starts; the authoritative DB counts above prove
+                # that those terminal paths remained side-effect free.
+                return _corrupt_verification(
+                    expected_run_id, "terminal_contract_mismatch"
+                )
             event_hash = hashlib.sha256(raw_payload.encode("utf-8")).hexdigest()
             evidence_payload = {
                 "schema": "skill-install-verification-evidence-v1",
@@ -558,7 +575,15 @@ class ProductSdkRuntimeStack:
                 event_hash,
                 evidence_hash,
                 payload,
-                None if succeeded else str(payload.get("reason_code") or "verification_failed"),
+                (
+                    None
+                    if succeeded
+                    else str(
+                        payload.get("reason_code")
+                        or payload.get("code")
+                        or "verification_failed"
+                    )
+                ),
             )
 
     async def commit_preflight_blocked_root(

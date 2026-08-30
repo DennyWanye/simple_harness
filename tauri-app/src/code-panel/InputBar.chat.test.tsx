@@ -236,6 +236,30 @@ describe("InputBar chat send", () => {
     expect((input as HTMLTextAreaElement).value).toBe("");
   });
 
+  it("空态可发送全局 Skill 安装请求并保留 new_session 语义", () => {
+    useSessionsStore.setState({ active_sid: "", sessions: {} });
+    render(<InputBar placeholder="chat" />);
+
+    const request =
+      "安装这个skill https://github.com/DennyWanye/plan-test-skill";
+    const input = screen.getByPlaceholderText("chat");
+    fireEvent.change(input, { target: { value: request } });
+    fireEvent.keyDown(input, {
+      key: "Enter",
+      shiftKey: false,
+      nativeEvent: { isComposing: false },
+    });
+
+    expect(controlWS.send).toHaveBeenCalledWith({
+      type: "chat_v2",
+      payload: expect.objectContaining({
+        text: request,
+        session_id: "",
+        new_session: true,
+      }),
+    });
+  });
+
   it("空态发送失败时保留输入内容", () => {
     vi.mocked(controlWS.send).mockReturnValue(false);
     useSessionsStore.setState({ active_sid: "", sessions: {} });

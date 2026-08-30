@@ -111,6 +111,21 @@ async def test_single_skill_is_exact_deterministic_and_validator_accepted() -> N
         manifest = json.loads(package.read("deskpet-pack.json"))
         assert manifest["source"]["revision"] == SHA
         assert manifest["entries"]["skills"][0]["id"] == "solo"
+        assert manifest["version"] == (
+            f"0.0.0+git.{SHA[:12]}.simpleharness.pkg2"
+        )
+
+
+@pytest.mark.asyncio
+async def test_declared_version_is_namespaced_by_packager_revision() -> None:
+    result = await _resolve(
+        _repo_archive(
+            {"SKILL.md": _skill("solo", extra="version: 1.2.3+upstream.4\n")}
+        )
+    )
+    with zipfile.ZipFile(io.BytesIO(result.packs[0].archive_bytes)) as package:
+        manifest = json.loads(package.read("deskpet-pack.json"))
+    assert manifest["version"] == "1.2.3+upstream.4.simpleharness.pkg2"
 
 
 @pytest.mark.asyncio
@@ -141,7 +156,7 @@ async def test_full_commit_bypasses_rate_limited_github_api() -> None:
 
 
 @pytest.mark.asyncio
-async def test_multi_skill_is_sorted_and_nested_roots_do_not_leak() -> None:
+async def test_multi_skill_preserves_sibling_resource_layout() -> None:
     result = await _resolve(
         _repo_archive(
             {
@@ -157,7 +172,33 @@ async def test_multi_skill_is_sorted_and_nested_roots_do_not_leak() -> None:
     assert [item.skill_name for item in result.packs] == ["alpha", "child", "zeta"]
     alpha = next(item for item in result.packs if item.skill_name == "alpha")
     with zipfile.ZipFile(io.BytesIO(alpha.archive_bytes)) as package:
-        assert "skills/child/SKILL.md" not in package.namelist()
+        assert "skills/alpha/SKILL.md" in package.namelist()
+        assert "skills/alpha/child/SKILL.md" in package.namelist()
+        assert "skills/alpha/child/private.md" in package.namelist()
+        assert "skills/zeta/note.md" in package.namelist()
+        manifest = json.loads(package.read("deskpet-pack.json"))
+        assert manifest["entries"]["skills"][0]["path"] == "skills/alpha/SKILL.md"
+
+
+@pytest.mark.asyncio
+async def test_multi_skill_relative_support_reference_survives_packaging() -> None:
+    result = await _resolve(
+        _repo_archive(
+            {
+                "skills/plan-bs/SKILL.md": _skill(
+                    "plan-bs", description="brainstorm"
+                )
+                + b"Read ../plan-test/config.md\n",
+                "skills/plan-test/SKILL.md": _skill("plan-test"),
+                "skills/plan-test/config.md": b"shared config",
+            }
+        )
+    )
+    plan_bs = next(item for item in result.packs if item.skill_name == "plan-bs")
+    with zipfile.ZipFile(io.BytesIO(plan_bs.archive_bytes)) as package:
+        assert package.read("skills/plan-test/config.md") == b"shared config"
+        manifest = json.loads(package.read("deskpet-pack.json"))
+        assert manifest["entries"]["skills"][0]["path"] == "skills/plan-bs/SKILL.md"
 
 
 @pytest.mark.asyncio

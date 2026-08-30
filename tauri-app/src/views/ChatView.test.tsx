@@ -5,7 +5,7 @@
  * ChatView 测试（T8，WB-4）。
  *
  * 覆盖：发送走 controlWS（chat_v2 实际通道）/ 会话切换 hydration 四连发 /
- * mic 禁用占位存在（B9）/ 连接状态条（controlWS.state() 为源）。
+ * Realtime 临时关闭时入口不可见 / 连接状态条（controlWS.state() 为源）。
  * controlWS 全 mock；重型子组件（消息流/巡检面板/上下文模态）stub 掉，
  * InputBar 用真件走真实发送路径。
  */
@@ -217,14 +217,11 @@ describe("ChatView（WB-4）", () => {
     expect(screen.getByPlaceholderText("输入消息，Enter 发送…")).toBeTruthy();
   });
 
-  it("只有一个电话式 Realtime 主按钮，点击才开始通话", () => {
+  it("产品开关关闭时不显示 Realtime 入口，也不启动语音客户端", () => {
     render(<ChatView activeSid="default" secret="s3cret" />);
-    const call = screen.getByTestId("realtime-call-button") as HTMLButtonElement;
-    expect(call.disabled).toBe(false);
-    expect(call.textContent).toContain("开始通话");
+    expect(screen.queryByTestId("realtime-call-button")).toBeNull();
     expect(screen.queryByText("开始说话")).toBeNull();
-    fireEvent.click(call);
-    expect(realtimeVoiceMock.start).toHaveBeenCalledTimes(1);
+    expect(realtimeVoiceMock.start).not.toHaveBeenCalled();
   });
 
   it("Harness 巡检面板默认关，🐞 开关可打开", () => {

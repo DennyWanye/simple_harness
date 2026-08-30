@@ -53,6 +53,41 @@ slash help/list/schema/dispatch 现从同一 user-global frozen snapshot 构造 
 当前 macOS UI 已在显式选择目录的新 Session `21030143…` 中显示三项 `plan-*` Skill，并完成真实
 `/plan-test` Run `ea0488e47…`，日志确认 `sdk_skill_instruction_loaded` 与 `deepseek-v4-flash` HTTP 200。
 
+2026-08-30 冷启动校准：`BindableSkillInstallRuntimeVerifier` 在 Capability runtime 初始化阶段保持未绑定，
+只在 `ProductSdkRuntimeStack.start()` 完成且正式 `SkillInstallVerificationRunService` 已接到同一 ingress 后绑定
+一次。不得用 Manager-only manifest verifier 抢占该 holder，否则随后正式 fresh-Run verifier 会因重复绑定让
+backend 启动失败，且即便允许覆盖也会模糊 runtime page-in proof 的唯一 owner。当前 0.6.4 debug `.app` 已在
+隔离 userdata 中完成真实冷启动，日志确认 SDK ingress open、权限 `auto`、Provider catalog HTTP 200，窗口显示
+`deepseek-v4-flash` 与“已连接”。
+
+2026-08-30 安装验证补充：user-global batch 在 fresh-Run proof 前仍是 `pending_invisible`，因此 verifier
+不能只冻结当前已激活 Hub catalog。Host 现在为该 verifier Run 构造 exact Manager-published version/hash 的
+verification-only immutable overlay lease；overlay 使用同一个 `user:v2:*` owner，但不会发布到前台 Run。
+page-in、SDK terminal、lease release 与 durable attestation 全部成功后，Manager 才原子写入 active user
+bindings。空白消息页创建 Session 时也不再把 transport 占位 ID 当成 source Session。真实
+`deepseek-v4-flash` UI 安装 `plan-test-skill@3a094db…` 已得到 intent `succeeded`、attempt `attested`，第二个
+新 Session 的 slash catalog 同时看到 `plan-bs/plan-task/plan-test`。
+
+2026-08-30 真实多 Skill 仓库校准补齐了运行时资源与恢复协议。canonical pack 现在保留
+`skills/<skill>/...` 的仓库内相对布局，`skill_invoke(resource_path=...)` 只从当前 Run 冻结的 exact
+manifest/version/content snapshot 读取文本资源，并做 pack 边界、256 KiB 与 content hash 校验；packager
+build identity 升为 `simpleharness.pkg2`，避免新 canonical bytes 与旧不可变版本冲突。SDK FrozenJson 在授权、
+交付与 legacy handler 边界统一递归 thaw，legacy 同步 handler 移到 worker thread，避免嵌套 `mappingproxy`
+序列化失败和事件循环自锁。安装恢复使用持久化的完整 Manager receipt（含 members），将 SDK admission
+终态失败作为零副作用可审计失败释放 lease、supersede 后续验；attestation 与全局 binding activation 之间的
+崩溃窗口也会在冷启动幂等收口。Skill 验证 Run 绑定 SDK 实际持久化 Tool Catalog 的 generation/fingerprint，
+不再混用产品 runtime generation。
+
+同日 macOS 真 UI 在 TokenSeller 新 Session `ec89714c…` 重放 `/plan-bs`：slash 固定到
+`plan-bs@0.0.0+git.3a094db39db5.simpleharness.pkg2`，先后读取 `../plan-test/config.md`，创建六步 Todo，
+并按 `tool_search → tool_describe → tool_activate` 激活 workspace 文件工具，最后只提出两个头脑风暴澄清
+问题并回到 idle。延迟 Tool 提示现在明确要求 describe 后必须 activate，防止 DeepSeek 直接调用尚未披露
+的目标 Tool 而触发 `capability_denied`；nonce/hash/授权与 workspace fence 均未放宽。
+
+Realtime voice 当前临时关闭：UI 不暴露开始通话入口，Host 不构造 Service SDK Realtime service；保留的
+WebSocket 路由在 disabled 状态 fail closed。重新开放前必须显式翻转前后端产品开关并重新做真实 Provider
+验收。
+
 Provider 调查日志由 Host `ProductProviderAdapter` 在真实 SDK invocation seam 统一生成：匿名
 `request_ref` 串联 attempt start、HTTP response shape、parse failure 与 terminal outcome；阶段码明确区分
 `transport_timeout`、`http_timeout`、`http_status`、`response_protocol`、`response_contract` 和 `adapter`。

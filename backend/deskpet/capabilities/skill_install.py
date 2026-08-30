@@ -468,6 +468,48 @@ class GlobalSkillInstallService:
         self.clock = clock
         self.confirmation_ttl_seconds = float(confirmation_ttl_seconds)
 
+    @staticmethod
+    def _manager_operation_id(intent: CapabilitySkillInstallIntent) -> str:
+        operation_domain = {
+            "schema": "global-skill-install-operation-v2",
+            "owner_scope_key": intent.install_scope_key,
+            "exact_commit": intent.exact_commit,
+            "member_set_stamp": intent.member_set_stamp,
+        }
+        return "skill-install-batch:" + fingerprint_json(operation_domain)
+
+    async def _reconcile_failed_manager_handoffs(self) -> None:
+        for pending in await self.store.pending_skill_install_intents():
+            if pending.status not in {"publishing", "unknown"}:
+                continue
+            operation = await self.store.get_operation(
+                self._manager_operation_id(pending)
+            )
+            if operation is None or operation.status not in {"failed", "cancelled"}:
+                continue
+            error = {
+                "code": str(
+                    dict(operation.error or {}).get("code")
+                    or "skill_install_manager_publish_failed"
+                ),
+                "manager_operation_id": operation.operation_id,
+                "manager_operation_status": operation.status,
+            }
+            cleanup_pending = await self.store.cas_skill_install_intent(
+                pending.intent_id,
+                expected_state_version=pending.state_version,
+                status="stage_failed_cleanup_pending",
+                error=error,
+            )
+            await self._remove_stage(pending.intent_id)
+            await self.store.cas_skill_install_intent(
+                pending.intent_id,
+                expected_state_version=cleanup_pending.state_version,
+                status="stage_failed",
+                cleanup_ref=f"cleanup:{pending.intent_id}",
+                error=error,
+            )
+
     async def stage(
         self,
         *,
@@ -497,6 +539,7 @@ class GlobalSkillInstallService:
         is_global = owner is not None
         retry_claim: CapabilitySkillInstallIntent | None = None
         await self.store.initialize()
+        await self._reconcile_failed_manager_handoffs()
         await self.reconcile_expired()
         identity = {
             "schema": "skill-install-preflight-v1",
@@ -857,13 +900,7 @@ class GlobalSkillInstallService:
         # The operation identity is the complete immutable install domain.  A
         # member set can legitimately be identical for two users or commits;
         # neither is an idempotent replay of the other.
-        operation_domain = {
-            "schema": "global-skill-install-operation-v2",
-            "owner_scope_key": intent.install_scope_key,
-            "exact_commit": intent.exact_commit,
-            "member_set_stamp": intent.member_set_stamp,
-        }
-        operation_id = f"skill-install-batch:{fingerprint_json(operation_domain)}"
+        operation_id = self._manager_operation_id(intent)
         handoff = await self.store.handoff_skill_install_intent(
             intent.intent_id,
             expected_state_version=intent.state_version,
@@ -876,12 +913,16 @@ class GlobalSkillInstallService:
         )
         intent = await self._require_intent(intent.intent_id)
         members = await self.store.skill_install_members(intent.intent_id)
-        manager_receipt = await self.batch_publisher.publish_skill_install_batch(
-            intent=intent,
-            handoff=handoff,
-            staging_root=self._stage_path(intent.intent_id),
-            members=members,
-        )
+        try:
+            manager_receipt = await self.batch_publisher.publish_skill_install_batch(
+                intent=intent,
+                handoff=handoff,
+                staging_root=self._stage_path(intent.intent_id),
+                members=members,
+            )
+        except Exception:
+            await self._reconcile_failed_manager_handoffs()
+            raise
         if intent.status == "published_pending_runtime_verification":
             pending = intent
         else:
@@ -1002,6 +1043,7 @@ class GlobalSkillInstallService:
         never asks the user to authorize the same installation again.
         """
 
+        await self._reconcile_failed_manager_handoffs()
         outcomes: list[Mapping[str, JsonValue]] = []
         for pending_intent in await self.store.pending_skill_install_intents():
             if pending_intent.status != "published_pending_runtime_verification":
@@ -1031,23 +1073,17 @@ class GlobalSkillInstallService:
                         )
                         superseded_once = True
                         intent = await self._require_intent(intent.intent_id)
-                    if attempt is not None:
-                        manager_receipt: Mapping[str, JsonValue] = {
-                            "operation_id": attempt.manager_operation_id,
-                            "manager_receipt_hash": attempt.manager_receipt_hash,
-                            "committed_set_stamp": attempt.committed_set_stamp,
-                        }
-                    else:
-                        operation_id = f"skill-install-batch:{intent.member_set_stamp}"
-                        evidence = await self.store.get_phase_evidence(
-                            operation_id, "batch_committed"
-                        )
-                        if evidence is None:
-                            raise ProjectSkillInstallError(
-                                "skill_install_manager_receipt_missing",
-                                "Committed Skill installation has no Manager receipt",
-                            )
+                    operation_id = (
+                        attempt.manager_operation_id
+                        if attempt is not None
+                        else self._manager_operation_id(intent)
+                    )
+                    evidence = await self.store.get_phase_evidence(
+                        operation_id, "batch_committed"
+                    )
+                    if evidence is not None:
                         manager_receipt = {
+                            **dict(evidence),
                             "operation_id": operation_id,
                             "manager_receipt_hash": str(
                                 evidence.get("manager_receipt_hash") or ""
@@ -1056,14 +1092,68 @@ class GlobalSkillInstallService:
                                 evidence.get("committed_set_stamp") or ""
                             ),
                         }
+                        if attempt is not None and (
+                            manager_receipt["manager_receipt_hash"]
+                            != attempt.manager_receipt_hash
+                            or manager_receipt["committed_set_stamp"]
+                            != attempt.committed_set_stamp
+                        ):
+                            raise ProjectSkillInstallError(
+                                "skill_install_manager_receipt_mismatch",
+                                "Committed Manager evidence differs from the verification attempt",
+                            )
+                    elif attempt is not None:
+                        # Compatibility for older/custom publishers that only
+                        # persisted the immutable attempt identity. Current
+                        # Manager publications always retain the full receipt,
+                        # including members needed by user-global activation.
+                        manager_receipt = {
+                            "operation_id": operation_id,
+                            "manager_receipt_hash": attempt.manager_receipt_hash,
+                            "committed_set_stamp": attempt.committed_set_stamp,
+                        }
+                    else:
+                        raise ProjectSkillInstallError(
+                            "skill_install_manager_receipt_missing",
+                            "Committed Skill installation has no Manager receipt",
+                        )
                     members = await self.store.skill_install_members(intent.intent_id)
                     result = await self.runtime_verifier.verify_skill_install(
                         intent=intent,
                         manager_receipt=manager_receipt,
                         members=members,
                     )
+                    activation: Mapping[str, JsonValue] | None = None
+                    if intent.install_scope == "user":
+                        activate = getattr(
+                            self.batch_publisher,
+                            "activate_skill_install_batch",
+                            None,
+                        )
+                        if activate is None:
+                            raise ProjectSkillInstallError(
+                                "global_skill_activation_fence_unavailable",
+                                "Global Skill publication cannot be made visible safely",
+                            )
+                        activation = await activate(
+                            intent=intent,
+                            manager_receipt=manager_receipt,
+                            members=members,
+                        )
+                        if str(activation.get("publication_state") or "") != "active":
+                            raise ProjectSkillInstallError(
+                                "global_skill_activation_unproven",
+                                "Global Skill binding activation was not proven",
+                            )
                     await self._remove_stage(intent.intent_id)
-                    outcomes.append(dict(result))
+                    outcomes.append({
+                        **dict(result),
+                        **(
+                            {"activation": dict(activation)}
+                            if activation is not None
+                            else {}
+                        ),
+                    })
                     logger.info(
                         "skill_install_runtime_verification_recovered intent_id=%s",
                         intent.intent_id,
@@ -1088,6 +1178,63 @@ class GlobalSkillInstallService:
                         exc,
                     )
                     break
+
+        # A crash can occur after the verifier attaches its attestation (and
+        # therefore marks the intent succeeded) but before the user-global
+        # binding CAS. Reconcile that narrow window from the committed Manager
+        # receipt. Existing active bindings are idempotent in the Manager.
+        list_succeeded = getattr(
+            self.store, "list_succeeded_global_skill_install_intents", None
+        )
+        if callable(list_succeeded):
+            for intent in await list_succeeded():
+                operation_id = self._manager_operation_id(intent)
+                if await self.store.get_phase_evidence(
+                    operation_id, "global_activation"
+                ) is not None:
+                    continue
+                try:
+                    evidence = await self.store.get_phase_evidence(
+                        operation_id, "batch_committed"
+                    )
+                    if evidence is None:
+                        raise ProjectSkillInstallError(
+                            "skill_install_manager_receipt_missing",
+                            "Committed global Skill installation has no Manager receipt",
+                        )
+                    manager_receipt = {
+                        **dict(evidence),
+                        "operation_id": operation_id,
+                    }
+                    members = await self.store.skill_install_members(intent.intent_id)
+                    activation = await self.batch_publisher.activate_skill_install_batch(
+                        intent=intent,
+                        manager_receipt=manager_receipt,
+                        members=members,
+                    )
+                    if str(activation.get("publication_state") or "") != "active":
+                        raise ProjectSkillInstallError(
+                            "global_skill_activation_unproven",
+                            "Recovered global Skill binding activation was not proven",
+                        )
+                    outcomes.append({
+                        "status": "succeeded",
+                        "intent_id": intent.intent_id,
+                        "activation": dict(activation),
+                        "recovered_after_attestation": True,
+                    })
+                    logger.info(
+                        "global_skill_activation_recovered intent_id=%s",
+                        intent.intent_id,
+                    )
+                except Exception as exc:  # noqa: BLE001 - durable receipt remains retryable
+                    logger.warning(
+                        "global_skill_activation_recovery_failed intent_id=%s "
+                        "error_type=%s error=%s",
+                        intent.intent_id,
+                        type(exc).__name__,
+                        exc,
+                    )
         return tuple(outcomes)
 
     def settle_authorization_terminal(self, evidence: AuthorizationTerminalEvidence) -> object:

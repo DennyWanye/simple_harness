@@ -1330,6 +1330,10 @@ function dispatch(msg: any) {
     }
     case "chat_v2_error": {
       const p = msg.payload || {};
+      // Empty-state creation failures have no durable Session to own an
+      // error bubble. App.tsx renders the same frame in its global banner;
+      // do not manufacture a store entry with the empty-string id.
+      if (!sid) break;
       const runId = String(p.run_id || "").trim();
       const taskScopeId = String(p.task_scope_id || "").trim();
       const requestId = String(p.request_id || "").trim();

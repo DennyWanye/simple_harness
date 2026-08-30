@@ -36,6 +36,14 @@ class FrozenSkillInstructionResolver(Protocol):
         arguments: tuple[str, ...],
     ) -> Mapping[str, Any]: ...
 
+    def resolve_frozen_resource(
+        self,
+        *,
+        run_id: str,
+        skill_name: str,
+        relative_path: str,
+    ) -> Mapping[str, Any]: ...
+
 
 _resolver: FrozenSkillInstructionResolver | None = None
 
@@ -79,6 +87,14 @@ _SCHEMA: dict[str, Any] = {
                 "items": {"type": "string"},
                 "default": [],
             },
+            "resource_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": (
+                    "Read a packaged support file relative to this Skill's SKILL.md, "
+                    "for example ../plan-test/config.md."
+                ),
+            },
         },
         "required": ["skill_name"],
         "additionalProperties": False,
@@ -99,18 +115,21 @@ async def _handle(
     task_id: str = "",
 ) -> str:
     del task_id
-    if set(args) - {"skill_name", "arguments"}:
+    if set(args) - {"skill_name", "arguments", "resource_path"}:
         return json.dumps(
             {"ok": False, "error": "skill_invoke_unknown_argument"},
             ensure_ascii=False,
         )
     name = args.get("skill_name")
     arguments = args.get("arguments", [])
+    resource_path = args.get("resource_path")
     if (
         not isinstance(name, str)
         or not name.strip()
         or not isinstance(arguments, list)
         or any(not isinstance(item, str) for item in arguments)
+        or (resource_path is not None and not isinstance(resource_path, str))
+        or (isinstance(resource_path, str) and not resource_path.strip())
     ):
         return json.dumps(
             {"ok": False, "error": "skill_name or arguments are invalid"},
@@ -137,6 +156,64 @@ async def _handle(
         return json.dumps(
             {"ok": False, "error": "skill_invoke_capability_snapshot_missing"},
             ensure_ascii=False,
+        )
+    if resource_path is not None:
+        try:
+            result = _resolver.resolve_frozen_resource(
+                run_id=run_id,
+                skill_name=name.strip(),
+                relative_path=resource_path.strip(),
+            )
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            raw_code = str(exc).strip()
+            stable_code = (
+                raw_code if _SAFE_RESOLUTION_ERROR.fullmatch(raw_code) else "unclassified"
+            )
+            log.exception(
+                "sdk_skill_resource_load_failed run_id=%s skill=%s "
+                "error_type=%s stable_code=%s",
+                run_id,
+                name.strip(),
+                type(exc).__name__,
+                stable_code,
+            )
+            raise
+        payload = dict(result)
+        required_resource = {
+            "skill_id",
+            "resource_path",
+            "resolved_path",
+            "content",
+            "content_hash",
+            "capability_snapshot_ref",
+        }
+        if (
+            set(payload) != required_resource
+            or str(payload["skill_id"]) != name.strip()
+            or str(payload["resource_path"]) != resource_path.strip()
+            or str(payload["capability_snapshot_ref"]) != snapshot_ref
+            or len(str(payload["content_hash"])) != 64
+            or not isinstance(payload["content"], str)
+        ):
+            return _reject_resolution(
+                run_id=run_id,
+                skill_name=name.strip(),
+                reason="frozen_skill_resource_resolution_invalid",
+            )
+        log.info(
+            "sdk_skill_resource_loaded run_id=%s skill=%s path=%s content_hash=%s",
+            run_id,
+            name.strip(),
+            payload["resolved_path"],
+            payload["content_hash"],
+        )
+        return json.dumps(
+            {"ok": True, "skill": name.strip(), **payload},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
     try:
         result = _resolver.resolve_frozen_instruction(
@@ -304,6 +381,15 @@ async def _handle(
             "ok": True,
             "skill": name.strip(),
             **payload,
+            "resource_access": {
+                "tool": "skill_invoke",
+                "skill_name": name.strip(),
+                "path_base": "relative to this Skill's SKILL.md",
+                "usage": (
+                    "Call skill_invoke again with skill_name and resource_path "
+                    "to read referenced packaged support files."
+                ),
+            },
             "scope_activation": activation,
         },
         ensure_ascii=False,

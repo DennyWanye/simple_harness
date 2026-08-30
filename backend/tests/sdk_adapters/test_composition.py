@@ -496,6 +496,33 @@ async def test_host_control_ingress_yields_bounded_zero_side_state_evidence(
     )
     assert mismatched.status == "corrupt"
     assert mismatched.reason_code == "start_authority_mismatch"
+
+    stale_attempt = replace(
+        attempt,
+        attempt_id="attempt-stale-catalog",
+        intent_id="intent-stale-catalog",
+        verifier_session_id="session-stale-catalog",
+        request_id="request-stale-catalog",
+        turn_id="turn-stale-catalog",
+        expected_run_id="run-stale-catalog",
+    )
+    await ingress.start_skill_install_verification(
+        session_id=stale_attempt.verifier_session_id,
+        run_id=stale_attempt.expected_run_id,
+        request_id=stale_attempt.request_id,
+        turn_id=stale_attempt.turn_id,
+        user_id="host-user",
+        attempt_id=stale_attempt.attempt_id,
+        attempt_generation=stale_attempt.attempt_generation,
+        authority_hash=skill_install_verification_authority_hash(stale_attempt),
+        input={"attempt_id": stale_attempt.attempt_id},
+        tool_catalog_generation=999,
+    )
+    await ingress.wait_idle(stale_attempt.expected_run_id)
+
+    stale_evidence = stack.read_skill_install_verification_evidence(stale_attempt)
+    assert stale_evidence.status == "terminal_failed"
+    assert stale_evidence.reason_code == "tool_catalog_stale"
     await stack.close()
 
 

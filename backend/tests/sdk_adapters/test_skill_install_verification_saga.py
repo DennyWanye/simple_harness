@@ -13,7 +13,10 @@ from deskpet.capabilities.store import (
     initialize_capability_database,
 )
 from deskpet.sdk_adapters.skill_install_verification import (
+    SdkTerminalCapabilityReleaseReconciler,
     SkillInstallVerificationRunService,
+    _verification_capability_scope,
+    _verification_resource_records,
 )
 from deskpet.tools.registry import ToolRegistry
 
@@ -48,8 +51,10 @@ class _Ingress:
         self.store = store
         self.stack = stack
         self.service = None
+        self.start_values = None
 
     async def start_skill_install_verification(self, **values):
+        self.start_values = values
         attempt = await self.store.get_skill_install_verification_attempt(
             values["attempt_id"]
         )
@@ -77,6 +82,88 @@ class _Ingress:
 
     async def wait_idle(self, _run_id):
         return None
+
+
+@pytest.mark.asyncio
+async def test_start_submitted_attempt_is_included_in_terminal_recovery() -> None:
+    attempt = SimpleNamespace(status="start_submitted")
+
+    class Store:
+        async def list_pending_skill_install_verification_attempts(self):
+            return (attempt,)
+
+    class RecordingReconciler(SdkTerminalCapabilityReleaseReconciler):
+        def __init__(self):
+            super().__init__(store=Store(), platform=object(), runtime_stack=object())
+            self.seen = []
+
+        async def reconcile_one(self, current):
+            self.seen.append(current)
+            return current
+
+    reconciler = RecordingReconciler()
+    await reconciler.reconcile_pending()
+
+    assert reconciler.seen == [attempt]
+
+
+def test_global_skill_verification_scope_uses_user_authority_only():
+    scope = _verification_capability_scope(
+        run_id="verify-run",
+        principal_id="sdk-runtime",
+        source={
+            "schema": "global-skill-install-source-v2",
+            "url": "https://github.com/org/repo",
+        },
+        install_scope="user",
+        install_scope_key="user:v2:" + "1" * 64,
+    )
+
+    assert scope.run_key == "verify-run"
+    assert scope.project_key is None
+    assert scope.user_key == "user:v2:" + "1" * 64
+
+
+def test_project_skill_verification_scope_requires_complete_identity():
+    with pytest.raises(
+        RuntimeError,
+        match="skill_install_verification_project_identity_incomplete",
+    ):
+        _verification_capability_scope(
+            run_id="verify-run",
+            principal_id="user-1",
+            source={"project_id": "project-1"},
+        )
+
+
+@pytest.mark.asyncio
+async def test_global_skill_verification_reads_the_user_global_lease_surface():
+    calls: list[str] = []
+
+    class Catalog:
+        async def sdk_global_resource_records_from_lease(self, **kwargs):
+            calls.append("global")
+            assert kwargs["user_scope_key"].startswith("user:v2:")
+            return ("plan-test",)
+
+        async def sdk_project_resource_records_from_lease(self, **_kwargs):
+            calls.append("project")
+            return ()
+
+    records = await _verification_resource_records(
+        catalog_source=Catalog(),
+        store=object(),
+        lease=object(),
+        intent=SimpleNamespace(
+            install_scope="user",
+            principal_id="owner-1",
+            project_scope_key="user:v2:" + "1" * 64,
+            install_scope_key="user:v2:" + "1" * 64,
+        ),
+    )
+
+    assert records == ("plan-test",)
+    assert calls == ["global"]
 
 
 @pytest.mark.asyncio
@@ -167,7 +254,8 @@ async def test_real_store_capability_and_sdk_saga_reaches_attested(tmp_path) -> 
         resolver=object(),
         ingress=ingress,
         runtime_stack=stack,
-        tool_catalog_generation=lambda: 1,
+        tool_catalog_generation=lambda: 7,
+        tool_catalog_fingerprint=lambda: "f" * 64,
     )
     ingress.service = service
 
@@ -182,6 +270,8 @@ async def test_real_store_capability_and_sdk_saga_reaches_attested(tmp_path) -> 
     )
 
     assert result["status"] == "succeeded"
+    assert ingress.start_values["tool_catalog_generation"] == 7
+    assert ingress.start_values["tool_catalog_fingerprint"] == "f" * 64
     final_intent = await store.get_skill_install_intent(intent.intent_id)
     final_attempt = await store.get_current_skill_install_verification_attempt(
         intent.intent_id

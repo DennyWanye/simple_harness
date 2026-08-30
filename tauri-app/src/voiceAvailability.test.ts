@@ -8,8 +8,8 @@ import { resolve } from "node:path";
 import { VOICE_INPUT_ENABLED } from "./voiceAvailability";
 
 describe("voice availability", () => {
-  it("enables only the new Realtime product entry", () => {
-    expect(VOICE_INPUT_ENABLED).toBe(true);
+  it("keeps the Realtime product entry temporarily disabled", () => {
+    expect(VOICE_INPUT_ENABLED).toBe(false);
   });
 
   it("does not connect voice from App mount", () => {
@@ -18,9 +18,10 @@ describe("voice availability", () => {
     expect(source).not.toContain("useRealtimeVoice(");
   });
 
-  it("keeps one phone-style call control in ChatView", () => {
+  it("guards the phone-style call control behind product availability", () => {
     const source = readFileSync(resolve("src", "views", "ChatView.tsx"), "utf8");
     expect(source.match(/data-testid="realtime-call-button"/g)).toHaveLength(1);
+    expect(source).toContain("VOICE_INPUT_ENABLED && <button");
     expect(source).not.toContain("chat-mic-disabled");
     expect(source).not.toContain("开始说话");
   });

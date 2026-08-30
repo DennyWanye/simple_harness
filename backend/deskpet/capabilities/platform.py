@@ -55,6 +55,8 @@ from .contracts import (
     EMPTY_OWNER_BINDING_SET_STAMP,
     CapabilityBinding,
     CapabilityCatalogEntry,
+    CapabilityCatalogSnapshot,
+    CapabilityDescriptor,
     CapabilityScope,
     CapabilityVersionDescriptor,
     JsonValue,
@@ -1918,6 +1920,97 @@ class CapabilityPlatform:
                 return await preparer.prepare_captured_run_catalog(
                     snapshot=snapshot,
                     selected_entries=entries,
+                    owner_key=owner_key,
+                    prepared_tool_set=prepared_tool_set,
+                    prepared_tool_set_fingerprint=prepared_tool_set_fingerprint,
+                    ready_gate=self.snapshot_lease_ready_gate,
+                    run_id=run_id,
+                    root_run_id=root_run_id,
+                    request_id=request_id,
+                    turn_id=turn_id,
+                    owner_operation_id=owner_operation_id,
+                )
+
+    async def prepare_global_skill_verification_run_catalog_lease(
+        self,
+        *,
+        scope: CapabilityScope,
+        owner_key: str,
+        verification_entries: Sequence[CapabilityCatalogEntry],
+        prepared_tool_set: PreparedToolSet,
+        prepared_tool_set_fingerprint: str,
+        run_id: str,
+        root_run_id: str,
+        request_id: str,
+        turn_id: str,
+        owner_operation_id: str,
+    ) -> PreparedRunCatalogLeaseV1:
+        """Freeze pending user-global packs into one verifier Run only.
+
+        Global publication deliberately remains invisible until fresh-Run
+        page-in succeeds.  The verifier therefore needs an immutable overlay
+        containing the exact Manager-published versions without mutating the
+        current Hub generation or exposing a user binding to foreground Runs.
+        """
+
+        preparer = self.run_catalog_lease_preparer
+        if preparer is None:
+            raise RuntimeError("run_catalog_lease_preparer_unavailable")
+        entries_to_add = tuple(verification_entries)
+        if not entries_to_add:
+            raise RuntimeError("global_skill_verification_entries_missing")
+        for entry in entries_to_add:
+            if len(entry.bindings) != 1:
+                raise RuntimeError("global_skill_verification_binding_invalid")
+            binding = entry.bindings[0]
+            if (
+                binding.scope != "user"
+                or not binding.active
+                or binding.owner_key != owner_key
+                or binding.scope_key != scope.user_key
+            ):
+                raise RuntimeError("global_skill_verification_authority_mismatch")
+
+        async with self.publish_lock:
+            async with self.catalog_gate.read(
+                self.hub._gate_keys(scope, owner_key)
+            ):
+                current, selected = await self.hub._snapshot_locked(
+                    scope, owner_key=owner_key
+                )
+                overlay_ids = {
+                    entry.version.capability_id for entry in entries_to_add
+                }
+                descriptors = [
+                    descriptor
+                    for descriptor in current.descriptors
+                    if descriptor.version.capability_id not in overlay_ids
+                ]
+                descriptors.extend(
+                    CapabilityDescriptor(
+                        version=entry.version,
+                        visible_bindings=entry.bindings,
+                        executable=False,
+                        installed=True,
+                        tool_spec_fingerprints=(),
+                        stamp=current.stamp,
+                    )
+                    for entry in entries_to_add
+                )
+                overlay_snapshot = CapabilityCatalogSnapshot(
+                    stamp=current.stamp,
+                    scope=current.scope,
+                    descriptors=tuple(descriptors),
+                    created_at=current.created_at,
+                )
+                overlay_selected = tuple(
+                    entry
+                    for entry in selected
+                    if entry.version.capability_id not in overlay_ids
+                ) + entries_to_add
+                return await preparer.prepare_captured_run_catalog(
+                    snapshot=overlay_snapshot,
+                    selected_entries=overlay_selected,
                     owner_key=owner_key,
                     prepared_tool_set=prepared_tool_set,
                     prepared_tool_set_fingerprint=prepared_tool_set_fingerprint,

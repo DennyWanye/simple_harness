@@ -51,6 +51,7 @@ _SEMVER = re.compile(
     r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
 )
 _EVIDENCE_ISSUER = object()
+_CANONICAL_PACKAGER_BUILD = "simpleharness.pkg2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -573,26 +574,42 @@ class BoundedGitHubSkillSource:
         ).encode("utf-8")
 
         skill_root = skill_path.parent
-        nested_roots = {
-            item.parent
-            for item in all_skill_paths
-            if item != skill_path and skill_root in item.parents
-        }
-        pack_files: dict[str, bytes] = {"skills/SKILL.md": skill_bytes}
+        skill_roots = tuple(sorted({item.parent for item in all_skill_paths}))
+        common_parts = list(skill_roots[0].parts) if skill_roots else []
+        for root in skill_roots[1:]:
+            shared_count = 0
+            for left, right in zip(common_parts, root.parts):
+                if left != right:
+                    break
+                shared_count += 1
+            common_parts = common_parts[:shared_count]
+        collection_root = PurePosixPath(*common_parts)
+
+        def packaged_path(path: PurePosixPath) -> str:
+            relative = (
+                path.relative_to(collection_root)
+                if collection_root.parts
+                else path
+            )
+            return f"skills/{relative.as_posix()}"
+
+        skill_entry_path = packaged_path(skill_path)
+        pack_files: dict[str, bytes] = {skill_entry_path: skill_bytes}
         for path, payload in repository_files.items():
-            if path == skill_path or skill_root not in path.parents:
+            if path == skill_path:
                 continue
-            if any(nested == path or nested in path.parents for nested in nested_roots):
+            if not any(root == path.parent or root in path.parents for root in skill_roots):
                 continue
-            relative = path.relative_to(skill_root).as_posix()
-            pack_files[f"skills/{relative}"] = payload
+            pack_files[packaged_path(path)] = payload
 
         version_value = str(frontmatter.get("version") or "").strip()
-        version = (
-            version_value
-            if _SEMVER.fullmatch(version_value)
-            else f"0.0.0+git.{exact_commit[:12]}"
-        )
+        if _SEMVER.fullmatch(version_value):
+            separator = "." if "+" in version_value else "+"
+            version = f"{version_value}{separator}{_CANONICAL_PACKAGER_BUILD}"
+        else:
+            version = (
+                f"0.0.0+git.{exact_commit[:12]}.{_CANONICAL_PACKAGER_BUILD}"
+            )
         file_rows = [
             {"path": path, "sha256": hashlib.sha256(payload).hexdigest()}
             for path, payload in sorted(pack_files.items())
@@ -617,7 +634,7 @@ class BoundedGitHubSkillSource:
                 "skills": [
                     {
                         "id": skill_name,
-                        "path": "skills/SKILL.md",
+                        "path": skill_entry_path,
                         "allowed_tools": list(allowed_tools),
                     }
                 ],

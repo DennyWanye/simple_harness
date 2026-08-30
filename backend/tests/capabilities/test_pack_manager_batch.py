@@ -7,6 +7,7 @@ import zipfile
 import pytest
 
 from deskpet.capabilities.manager import capability_operation_id
+from deskpet.capabilities.manifest import PackEnvironment, load_and_validate_pack
 from deskpet.capabilities.skill_source import (
     CanonicalSkillBatch,
     CanonicalSkillPack,
@@ -15,6 +16,8 @@ from deskpet.capabilities.skill_source import (
 from deskpet.capabilities.store import (
     CapabilitySkillInstallIntent,
     CapabilitySkillInstallMember,
+    CapabilityStoreConflict,
+    CapabilityVersionRecord,
 )
 
 from .test_pack_manager import _FakePublisher, _hash, _manager, _write_pack
@@ -117,6 +120,59 @@ async def test_batch_publish_commits_all_members_and_replays_receipt(tmp_path) -
         intent=intent,handoff=handoff,staging_root=staging,members=members,
     )
     assert replay["manager_receipt_hash"] == result["manager_receipt_hash"]
+
+
+@pytest.mark.asyncio
+async def test_batch_version_conflict_fails_before_publish_and_is_terminal(tmp_path) -> None:
+    publisher = _FakePublisher()
+    manager, store = await _manager(tmp_path, publisher=publisher)
+    old_root = tmp_path / "old-alpha"
+    _write_pack(old_root, version="1.0.0", revision="old")
+    manifest_path = old_root / "deskpet-pack.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["id"] = "alpha"
+    manifest["name"] = "Old Alpha"
+    manifest["entries"]["tools"][0]["provider_name"] = "alpha__check"
+    manifest_path.write_text(json.dumps(manifest))
+    validation = load_and_validate_pack(
+        old_root,
+        environment=PackEnvironment(
+            deskpet_version="0.6.0",
+            os="windows",
+            architecture="x86_64",
+            python_version="3.11.9",
+        ),
+    )
+    await store.record_version(
+        CapabilityVersionRecord(
+            validation.descriptor,
+            old_root,
+            "healthy",
+            (_hash("old-tool"),),
+            None,
+            None,
+            None,
+            store.now(),
+        )
+    )
+    batch = _batch(tmp_path)
+    staging = tmp_path / "service-staging"
+    intent, handoff, members = await _stage_handoff(store, batch, staging)
+
+    with pytest.raises(CapabilityStoreConflict, match="same capability version"):
+        await manager.publish_skill_install_batch(
+            intent=intent,
+            handoff=handoff,
+            staging_root=staging,
+            members=members,
+        )
+
+    operation = await store.get_operation(handoff.operation_id)
+    assert operation is not None
+    assert operation.status == "failed"
+    assert operation.phase == "batch_staged"
+    assert publisher.revision == 10
+    assert await store.get_publish_intent_for_operation(handoff.operation_id) is None
 
 
 @pytest.mark.asyncio

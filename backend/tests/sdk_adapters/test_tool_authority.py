@@ -893,6 +893,8 @@ def test_sdk_runtime_catalog_describe_exposes_one_unambiguous_activation_hash():
     assert json.dumps(described, sort_keys=True).count('"schema_hash"') == 1
     assert "schema_hash" not in described["projection"]
     assert described["projection"]["provider_name"] == "read_file"
+    assert described["activation_required"] is True
+    assert "Call tool_activate now" in described["next_action"]
 
 
 @pytest.mark.asyncio

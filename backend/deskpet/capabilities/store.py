@@ -3550,8 +3550,13 @@ class CapabilityStoreTx:
             "stage_failed_cleanup_pending": {"stage_failed"},
             "denied_cleanup_pending": {"denied"},
             "expired_cleanup_pending": {"expired"},
-            "publishing": {"published_pending_runtime_verification", "unknown"},
+            "publishing": {
+                "published_pending_runtime_verification",
+                "stage_failed_cleanup_pending",
+                "unknown",
+            },
             "published_pending_runtime_verification": {"succeeded", "unknown"},
+            "unknown": {"stage_failed_cleanup_pending"},
         }
         if status not in transitions.get(current.status, set()):
             raise CapabilityStoreConflict(
@@ -9514,6 +9519,26 @@ async def _list_pending_skill_install_verification_attempts(
         return tuple(_verification_attempt_from_row(row) for row in rows)
 
 
+async def _list_succeeded_global_skill_install_intents(
+    self, *, limit: int = 100,
+):
+    """Return attested global installs that may still need binding activation."""
+
+    if limit < 1 or limit > 1000:
+        raise ValueError("limit must be between 1 and 1000")
+    async with self.read_connection() as db:
+        rows = await (await db.execute(
+            "SELECT * FROM capability_skill_install_intents "
+            "WHERE status='succeeded' "
+            "AND current_verification_attempt_id IS NOT NULL "
+            "AND json_extract(source_json, '$.schema')="
+            "'global-skill-install-source-v2' "
+            "ORDER BY updated_at,intent_id LIMIT ?",
+            (limit,),
+        )).fetchall()
+        return tuple(_skill_install_intent_from_row(row) for row in rows)
+
+
 async def _get_skill_install_verification_attestation(self, intent_id: str):
     async with self.read_connection() as db:
         rows = await (await db.execute(
@@ -9817,6 +9842,7 @@ for _name, _method in {
     "get_skill_install_verification_attempt": _get_skill_install_verification_attempt,
     "get_current_skill_install_verification_attempt": _get_current_skill_install_verification_attempt,
     "list_pending_skill_install_verification_attempts": _list_pending_skill_install_verification_attempts,
+    "list_succeeded_global_skill_install_intents": _list_succeeded_global_skill_install_intents,
     "get_skill_install_verification_attestation": _get_skill_install_verification_attestation,
     "allocate_skill_install_verification_attempt": _allocate_skill_install_verification_attempt,
     "cas_skill_install_verification_attempt": _cas_skill_install_verification_attempt,

@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import posixpath
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -326,6 +327,27 @@ class SkillPackSnapshotResolver:
 
         root, manifest = await self._resolve_root(scope)
         return self._read_declared_file(root, manifest, relative_path)
+
+    async def resolve_skill_resource(
+        self,
+        scope: PreparedSkillInvocationScopeV1,
+        relative_path: str,
+    ) -> tuple[str, bytes]:
+        """Resolve one declared file relative to the frozen Skill entry."""
+
+        if not isinstance(relative_path, str) or not relative_path.strip():
+            raise RuntimeError("frozen_skill_resource_path_invalid")
+        root, manifest = await self._resolve_root(scope)
+        matches = tuple(item for item in manifest.skills if item.id == scope.skill_id)
+        if len(matches) != 1:
+            raise RuntimeError("frozen_skill_manifest_entry_missing")
+        skill_parent = posixpath.dirname(matches[0].path)
+        normalized = posixpath.normpath(
+            posixpath.join(skill_parent, relative_path.replace("\\", "/"))
+        )
+        if normalized == ".." or normalized.startswith("../") or normalized.startswith("/"):
+            raise RuntimeError("frozen_skill_resource_outside_pack")
+        return normalized, self._read_declared_file(root, manifest, normalized)
 
     async def _resolve_root(self, scope: PreparedSkillInvocationScopeV1):
         root, manifest = await self._resolve_record_root(

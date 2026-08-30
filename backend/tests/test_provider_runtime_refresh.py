@@ -103,6 +103,19 @@ def test_sdk_runtime_publications_are_declared_service_context_slots():
         assert services.get(name) is marker
 
 
+def test_skill_install_verifier_binds_only_after_sdk_runtime_is_ready():
+    import inspect
+
+    capability_bootstrap = inspect.getsource(main._initialize_capability_runtime)
+    sdk_activation = inspect.getsource(main._activate_product_sdk_runtime)
+
+    assert "skill_install_runtime_verifier.bind(" not in capability_bootstrap
+    assert (
+        "skill_install_runtime_verifier.bind(skill_install_verification)"
+        in sdk_activation
+    )
+
+
 @pytest.mark.asyncio
 async def test_real_product_sdk_production_composition_starts(
     tmp_path: Path,
