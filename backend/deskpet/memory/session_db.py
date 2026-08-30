@@ -381,6 +381,7 @@ class SessionDB:
             self._product_memory_dispatcher,
             None,
         )
+
         manager, self._memory_backend = self._memory_backend, None
         if dispatcher is not None:
             try:
@@ -396,6 +397,51 @@ class SessionDB:
             except Exception as exc:  # noqa: BLE001
                 log.warning("memory manager close failed: %s", exc)
         self._initialized = False
+
+    # ------------------------------------------------------------------
+    # Human Memory Program v1 (fresh-only; independent from legacy Session)
+    # ------------------------------------------------------------------
+
+    def _human_memory_program_store(self):
+        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+        return HumanMemoryProgramStore(self._db_path)
+
+    async def initialize_primary_conversation(self, subject: str):
+        """Create/replay the subject's sole writable primary conversation.
+
+        This entry does not initialize or inspect legacy Session state.  A v34
+        or older database is rejected by the fresh-only epoch guard.
+        """
+
+        return await self._human_memory_program_store().initialize_subject(subject)
+
+    async def open_primary_conversation(
+        self,
+        subject: str,
+        *,
+        requested_conversation_id: str | None = None,
+    ):
+        """Open only the canonical primary ID; legacy Session IDs fail closed."""
+
+        return await self._human_memory_program_store().open_primary_conversation(
+            subject,
+            requested_conversation_id=requested_conversation_id,
+        )
+
+    async def append_primary_evidence(self, envelope: Any, receipt: Any):
+        """Append evidence only after an accepted, hash-bound S1 receipt."""
+
+        return await self._human_memory_program_store().append_evidence(
+            envelope, receipt
+        )
+
+    async def list_primary_evidence(
+        self, subject: str, *, limit: int = 1000
+    ):
+        return await self._human_memory_program_store().list_evidence(
+            subject, limit=limit
+        )
 
     # ------------------------------------------------------------------
     # 记忆 SDK 委托（认知记忆；未接入时降级为空）

@@ -2,6 +2,23 @@
 
 > **最后更新**：2026-08-30
 
+## 2026-08-30 Human Memory Program S4 Task 1 Host 基础
+
+- 在隔离 worktree 完成 fresh-only `human-memory-v1` state schema v35、migration checksum/format marker、durable
+  bootstrap 与每 subject 唯一 writable primary conversation/init receipt。普通 Host 仍以 v34 为默认生产 epoch；
+  新 primary 入口对任何既有 v34/旧 marker 在写入前拒绝，不迁移、不删除旧 Session。
+- 新 Host evidence store 要求 S1 sanitization envelope+receipt 的严格结构、canonical hash 与绑定验证后，才在同一
+  事务按 receipt-first 顺序 append user/assistant/tool/provider/run evidence。Provider 仅接受 public allowlist，
+  `reasoning_content`/隐藏 reasoning/credential key 或 value canary 不进入新 schema；所有 raw/receipt/identity/marker 表禁止
+  physical UPDATE/DELETE。
+- 并发 cold init、v35 commit 前后 fault/restart、旧 v34 字节/row/marker 不变、五类 evidence、协议/Provider
+  fail-closed、幂等冲突和全 raw 表 UPDATE/DELETE 阻断已覆盖；提交态相关组合 `67 passed`、SDK adapters
+  `253 passed`。m–r 分片先跑 `1497 passed`，提交态复跑 `1496 passed, 26 skipped, 1 deselected, 1 failed`；
+  唯一失败为已登记且与本 slice 无依赖的环境型 process-list query 基线红。真实 S1 source DTO interoperability
+  probe PASS。
+- 这是 S4 Task 1 的独立基础，不代表 S4 release unit 完成：Host 仍固定 Harness SDK 0.6.4；0.7 wheel pin 与
+  composition 在 S5 Task 8，TaskScope Archive、多根绑定、foreground FIFO、真实 Provider ingress 与 UI 尚未实施。
+
 ## 2026-08-29 Project-scoped managed Skill 安装故障链修复与 macOS 真 UI 验收
 
 - 聊天/Settings 安装已收敛到 `ProjectSkillInstallService` 单一 application owner；SDK prepared

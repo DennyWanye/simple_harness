@@ -95,6 +95,8 @@ _LEGACY_SESSION_RESET_MIGRATION = "025_legacy_session_reset_v33.sql"
 _LEGACY_SESSION_RESET_SCHEMA_VERSION = 33
 _AUTOMATIC_SESSION_WORKSPACE_MIGRATION = "026_automatic_session_workspace_v34.sql"
 _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION = 34
+HUMAN_MEMORY_PROGRAM_MIGRATION = "027_human_memory_program_v35.sql"
+HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION = 35
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -114,6 +116,7 @@ MIGRATION_STEPS: dict[str, int] = {
     _PROJECT_SCOPED_SESSIONS_MIGRATION: _PROJECT_SCOPED_SESSIONS_SCHEMA_VERSION,
     _LEGACY_SESSION_RESET_MIGRATION: _LEGACY_SESSION_RESET_SCHEMA_VERSION,
     _AUTOMATIC_SESSION_WORKSPACE_MIGRATION: _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION,
+    HUMAN_MEMORY_PROGRAM_MIGRATION: HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
 }
 
 
@@ -323,6 +326,7 @@ async def run_migrations(
     migrations_dir: Path | None = None,
     *,
     fault_inject: Callable[[str], None] | None = None,
+    include_human_memory_program: bool = False,
 ) -> list[str]:
     """顺序执行所有未应用的迁移文件，返回本次应用的版本列表。
 
@@ -340,6 +344,11 @@ async def run_migrations(
     db_path.parent.mkdir(parents=True, exist_ok=True)
     migrations_dir = migrations_dir or DEFAULT_MIGRATIONS_DIR
     files = _discover(migrations_dir)
+    if not include_human_memory_program:
+        # v35 starts a new, fresh-only data epoch.  Ordinary state.db startup
+        # must never turn an existing v34 database into that epoch merely
+        # because a new SQL file is present on disk.
+        files = [p for p in files if p.name != HUMAN_MEMORY_PROGRAM_MIGRATION]
 
     applied_now: list[str] = []
     async with aiosqlite.connect(db_path) as db:
@@ -495,6 +504,17 @@ async def run_migrations(
                 try:
                     await db.execute("BEGIN IMMEDIATE")
                     await _execute_transactional_script(db, sql)
+                    if version == HUMAN_MEMORY_PROGRAM_MIGRATION:
+                        migration_sha256 = hashlib.sha256(
+                            sql.encode("utf-8")
+                        ).hexdigest()
+                        await db.execute(
+                            "INSERT INTO human_memory_program_marker("
+                            "singleton,format_epoch,schema_version,migration_id,"
+                            "migration_sha256,initialized_at) VALUES "
+                            "(1,'human-memory-v1',1,?,?,?)",
+                            (version, migration_sha256, time.time()),
+                        )
                     await db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) "
                         "VALUES (?, ?)",
@@ -507,11 +527,15 @@ async def run_migrations(
                         fault_inject("before_ddl_commit")
                     if version == _LEGACY_SESSION_RESET_MIGRATION and fault_inject:
                         fault_inject("before_legacy_reset_commit")
+                    if version == HUMAN_MEMORY_PROGRAM_MIGRATION and fault_inject:
+                        fault_inject("before_human_memory_program_commit")
                     await db.commit()
                     if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
                         fault_inject("after_ddl_commit")
                     if version == _LEGACY_SESSION_RESET_MIGRATION and fault_inject:
                         fault_inject("after_legacy_reset_commit")
+                    if version == HUMAN_MEMORY_PROGRAM_MIGRATION and fault_inject:
+                        fault_inject("after_human_memory_program_commit")
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
                     log.error(
@@ -587,7 +611,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION
+            HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
+            if HUMAN_MEMORY_PROGRAM_MIGRATION in durable_markers
+            else _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION
             if _AUTOMATIC_SESSION_WORKSPACE_MIGRATION in durable_markers
             else _LEGACY_SESSION_RESET_SCHEMA_VERSION
             if _LEGACY_SESSION_RESET_MIGRATION in durable_markers
@@ -641,6 +667,7 @@ async def ensure_v9(
     migrations_dir: Path | None = None,
     *,
     fault_inject: Callable[[str], None] | None = None,
+    include_human_memory_program: bool = False,
 ) -> list[str]:
     """启动守门：保证 ``db_path`` 的 schema 至少在 v9。
 
@@ -682,5 +709,8 @@ async def ensure_v9(
         )
 
     return await run_migrations(
-        db_path, migrations_dir=migrations_dir, fault_inject=fault_inject
+        db_path,
+        migrations_dir=migrations_dir,
+        fault_inject=fault_inject,
+        include_human_memory_program=include_human_memory_program,
     )

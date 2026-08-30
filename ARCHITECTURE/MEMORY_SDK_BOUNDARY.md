@@ -1,6 +1,6 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-08-23
+> 最后更新：2026-08-30
 > 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
 > Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`
 > 发布标记：Harness `v0.3.0` → `fbb156f`；Memory `v0.4.0` → `3d4247b`；主分支与 tags 已推送；
@@ -8,6 +8,29 @@
 
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
+
+## 2026-08-30 Human Memory Program Host evidence 基础（S4 Task 1）
+
+- Host 已新增 opt-in `human-memory-v1` / state schema v35 基础。该 epoch 只能从空数据库取得 durable
+  bootstrap marker 后初始化；普通 state.db 启动仍停在 v34，不会因为新 migration 文件存在而升级。任何既有
+  v34/更旧数据库从新的 primary 入口打开时，都在 backup、reset、migration 和业务写入之前稳定拒绝；不迁移、
+  不删除，也不展示旧 Session。
+- v35 对每个 authenticated subject 以 partial unique constraint 保证唯一 writable
+  `primary_conversation_id`，并在同一事务写 immutable init receipt。并发冷初始化、v35 commit 前/后故障和重启
+  均收敛到同一个 primary identity。
+- 新 `HumanMemoryProgramStore` 只接受具备 S1 `SanitizedEvidenceEnvelope` / `SanitizedEvidenceReceipt`
+  冻结结构、独立 canonical hash 校验和 receipt binding 的输入；receipt 先写，随后在同一事务 append
+  user/assistant/tool/provider/run evidence。Provider payload 使用 public allowlist；认证字段、credential value
+  canary、隐藏 reasoning 和私有扩展在持久化前 fail closed。raw evidence、sanitization receipt、primary identity、init/format marker 均有
+  SQLite `BEFORE UPDATE/DELETE` 拒绝 trigger，纠正与遗忘必须由后续 append-only lineage 表达。
+- 当前 Host 仍精确固定 Harness SDK 0.6.4；本基础以结构协议和真实 S1 source DTO 互操作 probe 验证，**不**把
+  fake receipt 当成生产集成。Harness 0.7 exact wheel pin、composition、真实 Provider ingress、TaskScope、FIFO、
+  动态 Context 与 UI 均仍是 S4 后续任务/S5/S6 范围，当前能力不作为产品成功声明或默认新入口。
+- 决定性回归：提交态新增/迁移/既有 Session 组合 `67 passed`，SDK adapters `253 passed`。受影响后端
+  m–r 分片先跑 `1497 passed`，提交态复跑为 `1496 passed, 26 skipped, 1 deselected, 1 failed`；唯一失败是
+  已登记的环境型 `test_process_list_with_query` process-name filter 基线红，与本 slice 无调用/文件依赖。真实 S1
+  DTO source interop probe PASS；没有 UI 或真实 Provider evidence 声明。原始本地 probe 数据仅保存在 ignored
+  `.local-test-evidence/`。
 
 ## 1. 当前生产链路
 

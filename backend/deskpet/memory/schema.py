@@ -21,12 +21,19 @@ Ref:
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import logging
 import shutil
+import sqlite3
+import time
 from pathlib import Path
 from typing import Callable
 
 from deskpet.memory.migrator import (
+    DEFAULT_MIGRATIONS_DIR,
+    HUMAN_MEMORY_PROGRAM_MIGRATION,
+    HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
     TARGET_SCHEMA_VERSION,
     backup_db,
     ensure_v9,
@@ -43,6 +50,164 @@ log = logging.getLogger(__name__)
 
 class InitializeError(RuntimeError):
     """L2 初始化失败——调用方需降级启动（无 L2/L3）。"""
+
+
+class HumanMemoryProgramEpochError(InitializeError):
+    """The requested database is not the fresh human-memory-v1 epoch."""
+
+    code = "human_memory_program_legacy_database_unsupported"
+
+
+_HUMAN_MEMORY_PROGRAM_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _human_memory_program_lock(db_path: Path) -> asyncio.Lock:
+    return _HUMAN_MEMORY_PROGRAM_LOCKS.setdefault(
+        str(db_path.resolve()), asyncio.Lock()
+    )
+
+
+def _migration_sha256() -> str:
+    migration = DEFAULT_MIGRATIONS_DIR / HUMAN_MEMORY_PROGRAM_MIGRATION
+    return hashlib.sha256(migration.read_bytes()).hexdigest()
+
+
+def _has_bootstrap_marker(db_path: Path) -> bool:
+    if not db_path.exists():
+        return False
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='human_memory_program_bootstrap'"
+            ).fetchone()
+            if row is None:
+                return False
+            marker = db.execute(
+                "SELECT format_epoch,origin FROM human_memory_program_bootstrap "
+                "WHERE singleton=1"
+            ).fetchone()
+    except sqlite3.Error:
+        return False
+    return marker == ("human-memory-v1", "fresh-empty-database")
+
+
+def _write_bootstrap_marker(db_path: Path) -> None:
+    with sqlite3.connect(db_path) as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS human_memory_program_bootstrap("
+            "singleton INTEGER PRIMARY KEY CHECK(singleton=1),"
+            "format_epoch TEXT NOT NULL CHECK(format_epoch='human-memory-v1'),"
+            "origin TEXT NOT NULL CHECK(origin='fresh-empty-database'),"
+            "created_at REAL NOT NULL)"
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO human_memory_program_bootstrap("
+            "singleton,format_epoch,origin,created_at) "
+            "VALUES (1,'human-memory-v1','fresh-empty-database',?)",
+            (time.time(),),
+        )
+        db.execute(
+            "CREATE TRIGGER IF NOT EXISTS human_memory_bootstrap_no_update "
+            "BEFORE UPDATE ON human_memory_program_bootstrap BEGIN "
+            "SELECT RAISE(ABORT,'human_memory_append_only'); END"
+        )
+        db.execute(
+            "CREATE TRIGGER IF NOT EXISTS human_memory_bootstrap_no_delete "
+            "BEFORE DELETE ON human_memory_program_bootstrap BEGIN "
+            "SELECT RAISE(ABORT,'human_memory_append_only'); END"
+        )
+        db.commit()
+
+
+def _validate_human_memory_program_marker(db_path: Path) -> None:
+    expected_sha256 = _migration_sha256()
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT format_epoch,schema_version,migration_id,migration_sha256 "
+                "FROM human_memory_program_marker WHERE singleton=1"
+            ).fetchone()
+            schema_marker = db.execute(
+                "SELECT 1 FROM schema_migrations WHERE version=?",
+                (HUMAN_MEMORY_PROGRAM_MIGRATION,),
+            ).fetchone()
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_program_marker_invalid"
+        ) from exc
+    expected = (
+        "human-memory-v1",
+        1,
+        HUMAN_MEMORY_PROGRAM_MIGRATION,
+        expected_sha256,
+    )
+    if (
+        row != expected
+        or schema_marker is None
+        or version != HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
+    ):
+        raise HumanMemoryProgramEpochError("human_memory_program_marker_invalid")
+
+
+async def initialize_human_memory_program_state_db(
+    db_path: str | Path,
+    *,
+    fault_inject: Callable[[str], None] | None = None,
+) -> None:
+    """Initialize or reopen the fresh-only ``human-memory-v1`` data epoch.
+
+    Existing v34 and older databases are rejected before a migration, backup,
+    reset, or delete path can touch them.  A durable bootstrap marker lets a
+    genuinely fresh database resume if a base or v35 commit is interrupted.
+    """
+
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    async with _human_memory_program_lock(path):
+        current = await read_user_version(path)
+        bootstrap = _has_bootstrap_marker(path)
+        if current == HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+            _validate_human_memory_program_marker(path)
+            return
+        if current > HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+            raise HumanMemoryProgramEpochError(
+                "human_memory_program_future_database_unsupported"
+            )
+        if current == 0 and not bootstrap:
+            if path.exists():
+                with sqlite3.connect(
+                    f"file:{path.resolve()}?mode=ro", uri=True
+                ) as db:
+                    user_tables = db.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' "
+                        "AND name NOT LIKE 'sqlite_%'"
+                    ).fetchall()
+                if user_tables:
+                    raise HumanMemoryProgramEpochError(
+                        HumanMemoryProgramEpochError.code
+                    )
+            _write_bootstrap_marker(path)
+            bootstrap = True
+        if not bootstrap:
+            raise HumanMemoryProgramEpochError(HumanMemoryProgramEpochError.code)
+
+        # The database was durably claimed while it was empty.  Existing base
+        # migrations may now finish/replay, followed by the opt-in v35 step.
+        await initialize_state_db(path, fault_inject=fault_inject)
+        try:
+            await ensure_v9(
+                path,
+                fault_inject=fault_inject,
+                include_human_memory_program=True,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise InitializeError(
+                f"human memory program initialization failed: {exc}"
+            ) from exc
+        _validate_human_memory_program_marker(path)
 
 
 async def initialize_state_db(
