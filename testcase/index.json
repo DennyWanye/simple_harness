@@ -1975,11 +1975,11 @@
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
       "preconditions": [],
-      "purpose": "Verify old, automatic-workspace, and selected-workspace Sessions share and invoke one global Skill snapshot",
-      "replacement": "TC-HM-02",
+      "purpose": "Verify standalone and TaskScope Runs share and invoke one immutable global Skill snapshot",
+      "replacement": null,
       "results": [],
-      "revision": 1,
-      "status": "superseded",
+      "revision": 2,
+      "status": "active",
       "surface": "desktop-ui",
       "tags": [
         "skill-runtime",
@@ -2001,11 +2001,11 @@
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
       "preconditions": [],
-      "purpose": "Verify cold restart restores Session workspaces and the shared global Skill and Tool catalogs without reinstall",
-      "replacement": "TC-HM-02",
+      "purpose": "Verify cold restart restores the primary conversation, TaskScopes, and shared global Skill and Tool catalogs without reinstall",
+      "replacement": null,
       "results": [],
-      "revision": 1,
-      "status": "superseded",
+      "revision": 2,
+      "status": "active",
       "surface": "desktop-ui",
       "tags": [
         "cold-start",
@@ -2025,10 +2025,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
       "preconditions": [],
       "purpose": "Verify workspace and global Skill failures expose no half state and retry converges safely",
-      "replacement": "TC-HM-08",
+      "replacement": null,
       "results": [],
-      "revision": 1,
-      "status": "superseded",
+      "revision": 2,
+      "status": "active",
       "surface": "integration",
       "tags": [
         "fault-injection",
@@ -2048,11 +2048,11 @@
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
       "preconditions": [],
-      "purpose": "Verify every Session discovers one complete descriptor catalog while execution remains policy and availability gated",
-      "replacement": "TC-HM-10",
+      "purpose": "Verify every standalone and TaskScope Run discovers one complete descriptor catalog while execution remains policy and availability gated",
+      "replacement": null,
       "results": [],
-      "revision": 1,
-      "status": "superseded",
+      "revision": 2,
+      "status": "active",
       "surface": "desktop-ui",
       "tags": [
         "tool-catalog",
@@ -2063,7 +2063,7 @@
       "type": "hybrid"
     },
     {
-      "entrypoint": "public session-create and global-install services",
+      "entrypoint": "public global-install service",
       "id": "TC-GS-08",
       "obligations": [
         "TO-A3",
@@ -2073,11 +2073,11 @@
       ],
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
       "preconditions": [],
-      "purpose": "Verify concurrent default Session creation and exact Skill install replay are collision-safe and idempotent",
-      "replacement": "TC-HM-X01",
+      "purpose": "Verify concurrent exact Skill installation and lost-ACK replay are collision-safe and idempotent",
+      "replacement": null,
       "results": [],
-      "revision": 1,
-      "status": "superseded",
+      "revision": 2,
+      "status": "active",
       "surface": "integration",
       "tags": [
         "concurrency",
@@ -2088,7 +2088,7 @@
       "type": "scripted"
     },
     {
-      "entrypoint": "new ordinary session and permission settings",
+      "entrypoint": "primary conversation and permission settings",
       "id": "TC-GS-09",
       "obligations": [
         "TO-A9",
@@ -2097,10 +2097,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
       "preconditions": [],
       "purpose": "Verify automatic permission is the fresh default, explicit overrides persist, and mandatory gates remain effective",
-      "replacement": "TC-HM-09",
+      "replacement": null,
       "results": [],
-      "revision": 2,
-      "status": "superseded",
+      "revision": 3,
+      "status": "active",
       "surface": "desktop-ui",
       "tags": [
         "permission",
@@ -2111,7 +2111,7 @@
       "type": "hybrid"
     },
     {
-      "entrypoint": "chat skill install and session health recovery",
+      "entrypoint": "chat skill install and primary conversation health recovery",
       "id": "TC-GS-10",
       "obligations": [
         "TO-A9",
@@ -2122,10 +2122,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
       "preconditions": [],
       "purpose": "Verify Auto Skill installation retains durable authorization evidence and every failure converges the SDK Run and UI",
-      "replacement": "TC-HM-08",
+      "replacement": null,
       "results": [],
-      "revision": 2,
-      "status": "superseded",
+      "revision": 3,
+      "status": "active",
       "surface": "desktop-ui",
       "tags": [
         "skill-install",

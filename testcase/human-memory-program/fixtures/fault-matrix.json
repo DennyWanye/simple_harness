@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "seed": "HM-FAULT-20260830-V1",
+  "runner_contract": "Each runner command must exit non-zero when the expected terminal oracle is not met and must emit root_run_id plus before/after state hashes.",
+  "lanes": [
+    {
+      "id": "claim-supersede",
+      "testcases": ["TC-HM-03"],
+      "runner_command": "python3 -m pytest tests/faults/test_claim_supersede.py -q",
+      "seams": ["after-new-claim", "after-old-status", "after-lineage", "commit-before-ack"],
+      "terminal_oracle": "all-old-or-all-new; exactly one active revision; lineage complete"
+    },
+    {
+      "id": "memory-mutation-plan",
+      "testcases": ["TC-HM-08"],
+      "runner_command": "python3 -m pytest tests/faults/test_memory_mutation_plan.py -q",
+      "seams": ["raw-evidence-commit", "invocation-evidence-commit", "validation-decision-commit", "state-mutation-commit", "outbox-commit", "commit-before-ack"],
+      "terminal_oracle": "raw evidence permanent; no partial plan; idempotent replay"
+    },
+    {
+      "id": "taskscope-init-binding",
+      "testcases": ["TC-HM-08", "TC-HM-09"],
+      "runner_command": "python3 -m pytest backend/tests/faults/test_taskscope_init_binding.py -q",
+      "seams": ["primary-conversation-create", "task-home-create", "taskscope-row", "binding-revision", "checkpoint", "commit-before-ack"],
+      "terminal_oracle": "one writable primary conversation; no half TaskScope; exact binding revision"
+    },
+    {
+      "id": "prospective-occurrence",
+      "testcases": ["TC-HM-04", "TC-HM-08"],
+      "runner_command": "python3 -m pytest backend/tests/faults/test_prospective_occurrence.py -q",
+      "seams": ["registration-commit", "occurrence-commit", "snapshot-commit", "ack-commit"],
+      "terminal_oracle": "one occurrence per trigger revision/event; pending not lost"
+    },
+    {
+      "id": "foreground-fifo-closure",
+      "testcases": ["TC-HM-08", "TC-HM-11"],
+      "runner_command": "python3 -m pytest backend/tests/faults/test_foreground_fifo_closure.py -q",
+      "seams": ["message-commit", "run-admission", "terminal-watermark", "objective-event-commit", "semantic-closure-commit", "projection-commit"],
+      "terminal_oracle": "max foreground run one; FIFO preserved; mutation-or-no-mutation closure complete"
+    }
+  ]
+}

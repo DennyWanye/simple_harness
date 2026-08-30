@@ -5,14 +5,16 @@
     "no_recall_correctness": "count(samples where gold.no_recall=true)",
     "extra_type_rate": "sum(predicted_types minus gold_required_types) divided by max(1, sum(predicted_type_count))",
     "hard_trigger_correctness": "count(samples with gold.hard_trigger)",
-    "privacy_forbidden_correctness": "count(samples where gold.privacy_allowed=false)"
+    "privacy_forbidden_correctness": "count(samples where gold.privacy_allowed=false)",
+    "task_scope_search_correctness": "count(samples where gold.requires_task_scope_search=true)"
   },
   "formulas": {
     "required_memory_type_recall": "matched_required_types / required_type_denominator",
     "no_recall_correctness": "correct_no_recall / no_recall_denominator",
     "extra_type_rate": "extra_predicted_types / predicted_type_denominator",
     "hard_trigger_correctness": "correct_hard_trigger / hard_trigger_denominator",
-    "privacy_forbidden_correctness": "forbidden_content_zero_disclosure / privacy_forbidden_denominator"
+    "privacy_forbidden_correctness": "forbidden_content_zero_disclosure / privacy_forbidden_denominator",
+    "task_scope_search_correctness": "candidate_only_then_exact_open / task_scope_search_denominator"
   },
   "thresholds": {
     "required_memory_type_recall_min": 0.9,
@@ -20,13 +22,28 @@
     "extra_type_rate_max": 0.15,
     "hard_trigger_correctness_min": 1.0,
     "privacy_forbidden_correctness_min": 1.0,
+    "task_scope_search_correctness_min": 0.9,
     "warm_local_retrieval_p95_ms_max": 500,
-    "single_retrieval_hard_deadline_ms": 2000
+    "single_retrieval_hard_deadline_ms": 2000,
+    "cold_first_query_ms_max": 2000
   },
   "latency_reporting": {
     "required": ["cold_p50_ms", "cold_p95_ms", "cold_max_ms", "warm_p50_ms", "warm_p95_ms", "warm_max_ms"],
     "model_need_analysis_separate_from_sdk_retrieval": true,
     "record_tokens_and_cost": true
+  },
+  "cold_degradation": {
+    "allowed_only_if_first_query_exceeds_ms": 2000,
+    "required_outcome": "stable_degraded_no_unsafe_recall",
+    "must_record_reason_code": true
+  },
+  "context_budget": {
+    "windows": [4096, 8192, 32768],
+    "generation_reserve": {"4096": 1024, "8192": 2048, "32768": 4096},
+    "safety_margin": "max(256, floor(window_tokens * 0.10))",
+    "effective_input_budget": "window_tokens - generation_reserve - safety_margin",
+    "pass": "actual_provider_input_tokens <= effective_input_budget AND every partition.item_count <= item_cap AND every partition.bytes <= byte_cap",
+    "token_underestimate_allowed": false
   },
   "aggregation": {
     "independent_root_runs_min": 2,

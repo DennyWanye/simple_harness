@@ -3,7 +3,7 @@
   "seed": 20260830,
   "generator": "generate_model_eval_corpus.py",
   "queries_per_class": 20,
-  "total_queries": 200,
+  "total_queries": 240,
   "expression_variants": [
     "standard-terminology",
     "natural-colloquial",
@@ -19,7 +19,9 @@
     {"id": "cross-scope", "required_types": ["semantic", "procedure"], "no_recall": false, "privacy_allowed": true},
     {"id": "no-match", "required_types": [], "no_recall": true, "privacy_allowed": true},
     {"id": "suppressed", "required_types": [], "no_recall": true, "hard_trigger": "suppression", "privacy_allowed": false},
-    {"id": "superseded-contested", "required_types": [], "no_recall": true, "hard_trigger": "state-eligibility", "privacy_allowed": false},
+    {"id": "superseded", "required_types": [], "no_recall": true, "hard_trigger": "state-eligibility", "privacy_allowed": false},
+    {"id": "contested", "required_types": [], "no_recall": true, "hard_trigger": "state-eligibility", "privacy_allowed": false},
+    {"id": "expired", "required_types": [], "no_recall": true, "hard_trigger": "time-eligibility", "privacy_allowed": false},
     {"id": "recipient-private", "required_types": [], "no_recall": true, "hard_trigger": "recipient-purpose", "privacy_allowed": false}
   ],
   "scoring_policy": {
