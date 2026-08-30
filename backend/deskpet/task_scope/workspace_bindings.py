@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import aiosqlite
 from simple_harness import (
@@ -57,6 +57,61 @@ class WorkspaceBindingEffectAuthority:
     root: CanonicalWorkspaceRoot
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentRunBindingAuthority:
+    """Exact Host-current Run/context/configuration state used by Auto binding."""
+
+    run_id: str
+    subject: str
+    run_revision: int
+    task_scope_id: str
+    binding_set_revision: int
+    context_snapshot_id: str
+    context_snapshot_revision: int
+    context_snapshot_hash: str
+    configured_workspace_root: CanonicalWorkspaceRoot
+    configuration_revision: int
+    binding_mode: WorkspaceBindingMode
+    lifecycle: str
+
+
+class CurrentRunBindingAuthorityPort(Protocol):
+    async def load_current_run_binding(
+        self, run_id: str
+    ) -> CurrentRunBindingAuthority | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class ManualWorkspaceChallengeAuthorityCheck:
+    proposal: WorkspaceBindingProposal
+    authorization_nonce: str
+    authorization_channel: WorkspaceBindingAuthorizationChannel
+    authorization_evidence_id: str
+    authorization_evidence_hash: str
+    interaction_event_id: str
+    issued_at_millis: int
+    not_before_millis: int
+    expires_at_millis: int
+
+
+@dataclass(frozen=True, slots=True)
+class ManualWorkspaceDecisionAuthorityCheck:
+    challenge: ManualWorkspaceBindingChallenge
+    decided_by_actor_id: str
+    decision: WorkspaceBindingAuthorizationDecision
+    decided_at_millis: int
+
+
+class ManualWorkspaceAuthorizationAuthorityPort(Protocol):
+    async def verify_manual_challenge(
+        self, check: ManualWorkspaceChallengeAuthorityCheck
+    ) -> None: ...
+
+    async def verify_manual_decision(
+        self, check: ManualWorkspaceDecisionAuthorityCheck
+    ) -> None: ...
+
+
 def canonical_workspace_root(path: str | Path, *, root_id: str) -> CanonicalWorkspaceRoot:
     """Capture one exact existing POSIX directory as a strict SDK root DTO."""
 
@@ -94,6 +149,9 @@ class WorkspaceBindingAuthorityStore:
         configured_workspace_root: str | Path | None = None,
         home_directory: str | Path | None = None,
         clock_millis: Callable[[], int] | None = None,
+        current_run_authority: CurrentRunBindingAuthorityPort | None = None,
+        manual_authorization_authority: ManualWorkspaceAuthorizationAuthorityPort
+        | None = None,
     ) -> None:
         self._db_path = Path(db_path)
         self._home = Path.home() if home_directory is None else Path(home_directory)
@@ -101,6 +159,8 @@ class WorkspaceBindingAuthorityStore:
             None if configured_workspace_root is None else Path(configured_workspace_root)
         )
         self._clock_millis = clock_millis or (lambda: int(time.time() * 1000))
+        self._current_run_authority = current_run_authority
+        self._manual_authorization_authority = manual_authorization_authority
 
     async def initialize(self) -> None:
         await initialize_human_memory_program_state_db(self._db_path)
@@ -176,6 +236,22 @@ class WorkspaceBindingAuthorityStore:
         not_before_millis: int,
         expires_at_millis: int,
     ) -> ManualWorkspaceBindingChallenge:
+        authority = self._manual_authorization_authority
+        if authority is None:
+            raise WorkspaceBindingError("workspace_binding_manual_authority_unavailable")
+        await authority.verify_manual_challenge(
+            ManualWorkspaceChallengeAuthorityCheck(
+                proposal,
+                authorization_nonce,
+                authorization_channel,
+                authorization_evidence_id,
+                authorization_evidence_hash,
+                interaction_event_id,
+                issued_at_millis,
+                not_before_millis,
+                expires_at_millis,
+            )
+        )
         await self.record_proposal(proposal)
         challenge_id = _uuid(f"workspace-binding-challenge:{proposal.proposal_hash}")
         host_ref = _uuid(f"workspace-binding-host-challenge:{challenge_id}")
@@ -252,6 +328,17 @@ class WorkspaceBindingAuthorityStore:
     ) -> ManualWorkspaceBindingAuthorizationReceipt:
         if decided_by_actor_id != challenge.subject:
             raise WorkspaceBindingError("workspace_binding_decision_actor_mismatch")
+        authority = self._manual_authorization_authority
+        if authority is None:
+            raise WorkspaceBindingError("workspace_binding_manual_authority_unavailable")
+        await authority.verify_manual_decision(
+            ManualWorkspaceDecisionAuthorityCheck(
+                challenge,
+                decided_by_actor_id,
+                decision,
+                decided_at_millis,
+            )
+        )
         receipt_id = _uuid(f"workspace-binding-decision:{challenge.challenge_hash}")
         host_ref = _uuid(f"workspace-binding-host-decision:{receipt_id}")
         host_hash = canonical_hash(
@@ -351,6 +438,7 @@ class WorkspaceBindingAuthorityStore:
         await self.initialize()
         challenge.verify_proposal(proposal)
         receipt.verify_challenge(challenge)
+        await self._verify_manual_source_authority(proposal, challenge, receipt)
         async with self._connection() as db:
             durable_proposal = await self._load_json_tx(
                 db,
@@ -393,6 +481,8 @@ class WorkspaceBindingAuthorityStore:
         configured = self.configured_root()
         if request.configured_workspace_root != configured:
             raise WorkspaceBindingError("workspace_binding_configured_root_mismatch")
+        self._verify_configured_root_identity(request.configured_workspace_root)
+        await self._verify_current_run_authority(request)
         await self._verify_scope(request.task_scope_id, request.subject)
         snapshot_id = _uuid(f"workspace-binding-mode-snapshot:{request.request_hash}")
         host_ref = _uuid(f"workspace-binding-host-mode:{snapshot_id}")
@@ -486,6 +576,8 @@ class WorkspaceBindingAuthorityStore:
             raise WorkspaceBindingError("workspace_binding_auto_snapshot_not_durable")
         request = RunBindingModeSnapshotRequest.from_json(json.loads(str(row["request_json"])))
         snapshot.verify_request(request, now_millis=self._clock_millis())
+        self._verify_configured_root_identity(snapshot.configured_workspace_root)
+        await self._verify_current_run_authority(request, snapshot=snapshot)
         if (
             proposal.run_id != snapshot.run_id
             or proposal.subject != snapshot.subject
@@ -532,6 +624,13 @@ class WorkspaceBindingAuthorityStore:
         fault_inject: Callable[[str], None] | None = None,
     ) -> WorkspaceBindingSetReceipt:
         await self.verify_binding_grant(proposal, grant)
+        if grant.source is WorkspaceBindingGrantSource.MANUAL:
+            await self._load_manual_append_authority(proposal, grant)
+        if grant.source is WorkspaceBindingGrantSource.AUTO:
+            replay = await self._load_committed_binding_receipt(grant)
+            if replay is not None:
+                return replay
+        auto_authority = await self._load_auto_append_authority(proposal, grant)
         with self._open_verified_root(proposal.root):
             async with self._connection() as db:
                 await db.execute("BEGIN IMMEDIATE")
@@ -718,6 +817,20 @@ class WorkspaceBindingAuthorityStore:
                             raise TaskScopeConflict("workspace_binding_base_revision_conflict")
                     if fault_inject:
                         fault_inject("before_binding_commit")
+                    if auto_authority is not None:
+                        request, snapshot = auto_authority
+                        await self._verify_current_run_authority(
+                            request,
+                            snapshot=snapshot,
+                            proposal=proposal,
+                        )
+                        self._verify_configured_root_identity(
+                            snapshot.configured_workspace_root
+                        )
+                        snapshot.verify_request(
+                            request,
+                            now_millis=self._clock_millis(),
+                        )
                     self._verify_root(proposal.root, auto=False)
                     await db.commit()
                     if fault_inject:
@@ -726,6 +839,191 @@ class WorkspaceBindingAuthorityStore:
                     await db.rollback()
                     raise
         return receipt
+
+    async def _load_manual_append_authority(
+        self,
+        proposal: WorkspaceBindingProposal,
+        grant: WorkspaceBindingAuthorityGrant,
+    ) -> None:
+        async with self._connection() as db:
+            receipt_json = await self._load_json_tx(
+                db,
+                "task_workspace_manual_decisions",
+                "host_receipt_id",
+                grant.source_authority_ref,
+                "decision_json",
+            )
+            if receipt_json is None:
+                raise WorkspaceBindingError("workspace_binding_manual_authority_not_durable")
+            receipt = ManualWorkspaceBindingAuthorizationReceipt.from_json(receipt_json)
+            challenge_json = await self._load_json_tx(
+                db,
+                "task_workspace_manual_challenges",
+                "challenge_id",
+                receipt.challenge_id,
+                "challenge_json",
+            )
+        if challenge_json is None:
+            raise WorkspaceBindingError("workspace_binding_manual_authority_not_durable")
+        challenge = ManualWorkspaceBindingChallenge.from_json(challenge_json)
+        if (
+            receipt.host_receipt_ref != grant.source_authority_ref
+            or receipt.host_receipt_hash != grant.source_authority_hash
+        ):
+            raise WorkspaceBindingError("workspace_binding_manual_grant_lineage_mismatch")
+        challenge.verify_proposal(proposal)
+        receipt.verify_challenge(challenge)
+        await self._verify_manual_source_authority(proposal, challenge, receipt)
+
+    async def _verify_manual_source_authority(
+        self,
+        proposal: WorkspaceBindingProposal,
+        challenge: ManualWorkspaceBindingChallenge,
+        receipt: ManualWorkspaceBindingAuthorizationReceipt,
+    ) -> None:
+        authority = self._manual_authorization_authority
+        if authority is None:
+            raise WorkspaceBindingError("workspace_binding_manual_authority_unavailable")
+        await authority.verify_manual_challenge(
+            ManualWorkspaceChallengeAuthorityCheck(
+                proposal,
+                challenge.authorization_nonce,
+                challenge.authorization_channel,
+                challenge.authorization_evidence_id,
+                challenge.authorization_evidence_hash,
+                challenge.interaction_event_id,
+                challenge.issued_at_millis,
+                challenge.not_before_millis,
+                challenge.expires_at_millis,
+            )
+        )
+        await authority.verify_manual_decision(
+            ManualWorkspaceDecisionAuthorityCheck(
+                challenge,
+                receipt.decided_by_actor_id,
+                receipt.decision,
+                receipt.decided_at_millis,
+            )
+        )
+
+    async def _load_committed_binding_receipt(
+        self, grant: WorkspaceBindingAuthorityGrant
+    ) -> WorkspaceBindingSetReceipt | None:
+        async with self._connection() as db:
+            row = await self._fetchone(
+                db,
+                "SELECT receipt_json FROM task_workspace_binding_revisions WHERE grant_id=?",
+                (grant.grant_id,),
+            )
+        if row is None:
+            return None
+        receipt = WorkspaceBindingSetReceipt.from_json(json.loads(str(row["receipt_json"])))
+        receipt.verify_grant(grant)
+        return receipt
+
+    async def _load_auto_append_authority(
+        self,
+        proposal: WorkspaceBindingProposal,
+        grant: WorkspaceBindingAuthorityGrant,
+    ) -> tuple[RunBindingModeSnapshotRequest, HostIssuedRunBindingModeSnapshot] | None:
+        if grant.source is not WorkspaceBindingGrantSource.AUTO:
+            return None
+        async with self._connection() as db:
+            durable_proposal = await self._load_json_tx(
+                db,
+                "task_workspace_binding_proposals",
+                "proposal_id",
+                proposal.proposal_id,
+                "proposal_json",
+            )
+            durable_grant = await self._load_json_tx(
+                db,
+                "task_workspace_binding_grants",
+                "grant_id",
+                grant.grant_id,
+                "grant_json",
+            )
+            row = await self._fetchone(
+                db,
+                "SELECT request_json,snapshot_json FROM task_workspace_run_mode_snapshots "
+                "WHERE json_extract(snapshot_json,'$.authority_receipt_ref')=?",
+                (grant.source_authority_ref,),
+            )
+        if durable_proposal != proposal.to_json() or durable_grant != grant.to_json():
+            raise WorkspaceBindingError("workspace_binding_auto_grant_lineage_not_durable")
+        if row is None:
+            raise WorkspaceBindingError("workspace_binding_auto_snapshot_not_durable")
+        request = RunBindingModeSnapshotRequest.from_json(json.loads(str(row["request_json"])))
+        snapshot = HostIssuedRunBindingModeSnapshot.from_json(
+            json.loads(str(row["snapshot_json"]))
+        )
+        if (
+            snapshot.authority_receipt_ref != grant.source_authority_ref
+            or snapshot.authority_receipt_hash != grant.source_authority_hash
+        ):
+            raise WorkspaceBindingError("workspace_binding_auto_grant_lineage_mismatch")
+        snapshot.verify_request(request, now_millis=self._clock_millis())
+        self._verify_configured_root_identity(snapshot.configured_workspace_root)
+        await self._verify_current_run_authority(
+            request,
+            snapshot=snapshot,
+            proposal=proposal,
+        )
+        return request, snapshot
+
+    async def _verify_current_run_authority(
+        self,
+        request: RunBindingModeSnapshotRequest,
+        *,
+        snapshot: HostIssuedRunBindingModeSnapshot | None = None,
+        proposal: WorkspaceBindingProposal | None = None,
+    ) -> None:
+        authority = self._current_run_authority
+        if authority is None:
+            raise WorkspaceBindingError("workspace_binding_current_run_authority_unavailable")
+        current = await authority.load_current_run_binding(request.run_id)
+        if current is None:
+            raise WorkspaceBindingError("workspace_binding_current_run_authority_missing")
+        expected = (
+            (current.lifecycle, "active"),
+            (current.run_id, request.run_id),
+            (current.subject, request.subject),
+            (current.run_revision, request.run_revision),
+            (current.task_scope_id, request.task_scope_id),
+            (current.binding_set_revision, request.binding_set_revision),
+            (current.context_snapshot_id, request.context_snapshot_id),
+            (current.context_snapshot_revision, request.context_snapshot_revision),
+            (current.context_snapshot_hash, request.context_snapshot_hash),
+            (current.configured_workspace_root, request.configured_workspace_root),
+            (current.configuration_revision, request.configuration_revision),
+            (current.binding_mode, WorkspaceBindingMode.AUTO),
+        )
+        if any(left != right for left, right in expected):
+            raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
+        if snapshot is not None:
+            snapshot.verify_request(request, now_millis=self._clock_millis())
+        if proposal is not None and (
+            proposal.run_id != request.run_id
+            or proposal.subject != request.subject
+            or proposal.task_scope_id != request.task_scope_id
+            or proposal.base_binding_set_revision != request.binding_set_revision
+        ):
+            raise WorkspaceBindingError("workspace_binding_auto_snapshot_lineage_mismatch")
+
+    def _verify_configured_root_identity(self, root: CanonicalWorkspaceRoot) -> None:
+        try:
+            with self._open_verified_root(root):
+                current = self.configured_root()
+                if current != root:
+                    raise WorkspaceBindingError(
+                        "workspace_binding_configured_root_identity_drift"
+                    )
+        except WorkspaceBindingError as exc:
+            if exc.code == "workspace_binding_configured_root_identity_drift":
+                raise
+            raise WorkspaceBindingError(
+                "workspace_binding_configured_root_identity_drift"
+            ) from exc
 
     async def verify_effect_authority(
         self,
@@ -1021,6 +1319,11 @@ class WorkspaceBindingAuthorityStore:
 
 
 __all__ = [
+    "CurrentRunBindingAuthority",
+    "CurrentRunBindingAuthorityPort",
+    "ManualWorkspaceAuthorizationAuthorityPort",
+    "ManualWorkspaceChallengeAuthorityCheck",
+    "ManualWorkspaceDecisionAuthorityCheck",
     "WorkspaceBindingAuthorityStore",
     "WorkspaceBindingEffectAuthority",
     "WorkspaceBindingError",

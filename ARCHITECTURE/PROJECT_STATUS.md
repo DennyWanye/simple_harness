@@ -34,8 +34,12 @@
   genesis 固定 empty-set parent，后续只允许 parent set 加一个 grant root。Manual nonce replay/changed-payload、
   Auto forged/expired/stale、CAS 并发、commit 前后 crash/restart、同 root 跨 scope、symlink/公共父目录/
   identity drift 和当前 Run 冻结旧 revision 均 fail-closed；provision candidate 不产生 binding authority。
+  Manual challenge/decision 还必须由注入的 Host authority 命中 exact durable user evidence 与 authenticated
+  interaction；Auto append 从 grant source receipt 重载 exact durable snapshot/request/proposal/grant，并在事务前和
+  commit 前重验有效期、active Run、context/config revision 与 configured-root inode。S4 尚无完整生产 Run
+  lifecycle seam，故该显式 port 缺失时 Auto fail-closed，留待 S5 production composition 注入真实 owner。
   project route 与 effect envelope 必须交叉绑定 exact receipt id/hash/revision/root membership。Task 4 专项
-  `12 passed`，TaskScope/Task 1–4/marker/candidate 组合 `67 passed`，SDK adapter `253 passed`。
+  `15 passed`；TaskScope/Task 1–4/marker/candidate 与 SDK adapter 组合 `322 passed`。
 - 这是 S4 Task 1–4 的独立基础，不代表 S4 release unit 完成：production foreground composition 仍在 S5 Task 8，
   README-STATUS 等阅读视图/search consumer、
   foreground FIFO、真实 Provider 接线与 UI 尚未实施。

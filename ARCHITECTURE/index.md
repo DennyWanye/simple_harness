@@ -4,9 +4,12 @@
 
 2026-08-30 Human Memory Program 已完成 S4 Task 1–4 的 Host fresh epoch、永久 evidence、Canonical TaskScope
 Archive、recoverable task-home provisioning 与 append-only multi-root binding authority。state schema v38
-以 Host durable Manual decision 或 Host-issued Auto Run snapshot 生成 grant；binding receipt 持有 canonical
-sorted root-set commitment、exact parent/grant 与 immutable revision。POSIX root 在 commit/effect 前以
-no-follow fd 和 filesystem identity 重验，Windows 无等价实现时 fail-closed。schema-v2 route receipt 与
+以 Host verifier 确认的 durable user evidence/interaction 或 Host-issued Auto Run snapshot 生成 grant；
+Auto 在 authorize、append transaction 前和 commit 前都从 durable source receipt 重验 snapshot 时窗、active
+Run、exact context/config revision 与 configured-root filesystem identity，缺少 current-Run authority port 时
+fail-closed。binding receipt 持有 canonical sorted root-set commitment、exact parent/grant 与 immutable
+revision。POSIX root 在 commit/effect 前以 no-follow fd 和 filesystem identity 重验，Windows 无等价实现时
+fail-closed。schema-v2 route receipt 与
 `TaskExecutionEnvelope` 必须交叉绑定 exact binding-set receipt id/hash/revision，当前 Run 不能使用后续 append
 的新 root。provision receipt/proposed root 仍只是候选，不能自动升级为 authority。当前不含 Task 5
 阅读视图/search consumer/FIFO/UI，也不能作为产品成功

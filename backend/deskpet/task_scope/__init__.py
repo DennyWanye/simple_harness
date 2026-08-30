@@ -15,6 +15,11 @@ from .store import (
     TaskScopeConflict,
 )
 from .workspace_bindings import (
+    CurrentRunBindingAuthority,
+    CurrentRunBindingAuthorityPort,
+    ManualWorkspaceAuthorizationAuthorityPort,
+    ManualWorkspaceChallengeAuthorityCheck,
+    ManualWorkspaceDecisionAuthorityCheck,
     WorkspaceBindingAuthorityStore,
     WorkspaceBindingEffectAuthority,
     WorkspaceBindingError,
@@ -24,6 +29,11 @@ from .workspace_bindings import (
 __all__ = [
     "CanonicalTaskScopeStore",
     "CheckpointReceipt",
+    "CurrentRunBindingAuthority",
+    "CurrentRunBindingAuthorityPort",
+    "ManualWorkspaceAuthorizationAuthorityPort",
+    "ManualWorkspaceChallengeAuthorityCheck",
+    "ManualWorkspaceDecisionAuthorityCheck",
     "MutationApplyReceipt",
     "TaskEventReceipt",
     "TaskEventRecorder",

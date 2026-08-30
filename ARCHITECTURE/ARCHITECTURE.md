@@ -9,9 +9,12 @@
 - fresh-only `human-memory-v1` state.db 已推进至 v38：v35 永久 evidence/唯一 primary conversation、v36
   Canonical TaskScope Archive、v37 recoverable task_home provisioning、v38 append-only multi-root binding。
   普通生产 Session/UI 尚未切换到该路径，不能把 schema 就绪当作 foreground composition 完成。
-- `WorkspaceBindingAuthorityStore` 只接受 SDK 0.7 strict DTO。Manual 必须命中 durable challenge/user decision；
-  Auto snapshot 由 Host port 签发并绑定 Run/subject/context/configuration/configured-root identity。公开 DTO/hash
-  自洽、provision receipt、proposed root、generic metadata 或模型声明 Auto 都不是 authority。
+- `WorkspaceBindingAuthorityStore` 只接受 SDK 0.7 strict DTO。Manual challenge/decision 必须先由显式 Host
+  verifier 命中 exact durable user evidence 与 authenticated interaction，再形成 durable decision；Auto snapshot
+  由 Host port 签发并绑定 Run/subject/context/configuration/configured-root identity。Auto authorize、首次 append
+  transaction 前和 commit 前均重载 source snapshot 并重验 active Run、exact context/config revision、时窗和
+  configured-root filesystem identity；对应 verifier 缺失时 fail-closed。公开 DTO/hash 自洽、provision receipt、
+  proposed root、generic metadata 或模型声明 Auto 都不是 authority。
 - 每次 append 由 grant、exact parent、sorted unique root identity set 和 CAS base revision 构成 immutable
   `WorkspaceBindingSetReceipt`；相同 root 可被不同 TaskScope 引用，同一 set 只能 append。route schema v2 与
   `TaskExecutionEnvelope` 交叉绑定 exact receipt id/hash/revision，effect 执行前重验 frozen membership 和当前
