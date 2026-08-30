@@ -1,13 +1,14 @@
 ---
 id: TC-GS-10
 purpose: Verify Auto Skill installation retains durable authorization evidence and every failure converges the SDK Run and UI
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A9, TO-A10, TO-R3, TO-R6]
 tags: [skill-install, auto-authorization, error-contract, run-convergence]
 entrypoint: chat skill install and session health recovery
 revision: 2
+replacement: TC-HM-08
 ---
 
 # TC-GS-10 — Auto Skill 安装与 Run/UI 收敛

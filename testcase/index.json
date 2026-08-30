@@ -1569,10 +1569,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-01-project-registration.md",
       "preconditions": [],
       "purpose": "Verify Git-root preview, explicit child registration, folder registration, deduplication, and path identity",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 2,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "project",
@@ -1591,10 +1591,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-02-session-create-restart-idempotency.md",
       "preconditions": [],
       "purpose": "Verify atomic immutable project Session creation, restart persistence, transaction rollback, and lost-ACK replay",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "session",
@@ -1612,10 +1612,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-03-projectless-handoff-fail-closed.md",
       "preconditions": [],
       "purpose": "Verify projectless chat remains usable while local development fails closed and project continuation creates a new Session",
-      "replacement": null,
+      "replacement": "TC-HM-10",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "projectless",
@@ -1634,10 +1634,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-04-workspace-authority.md",
       "preconditions": [],
       "purpose": "Verify every fresh Run and physical file operation derives one immutable execution root from the Session binding",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "integration",
       "tags": [
         "workspace-authority",
@@ -1656,10 +1656,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-05-sidebar-inspector-pagination.md",
       "preconditions": [],
       "purpose": "Verify grouped sidebar, read-only inspector, same-project creation, pagination consistency, and concurrent catalog mutation",
-      "replacement": null,
+      "replacement": "TC-HM-02",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "sidebar",
@@ -1677,10 +1677,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-06-project-execution-root-split.md",
       "preconditions": [],
       "purpose": "Verify project grouping and all physical execution remain distinct when project_root differs from execution_root",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "project-root",
@@ -1698,10 +1698,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-07-missing-root-relocate.md",
       "preconditions": [],
       "purpose": "Verify missing project roots remain visible, tools fail closed, and relocation only accepts the same project identity",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "missing-root",
@@ -1720,10 +1720,10 @@
       "path": "2026-08-25-project-scoped-sessions/TC-PS-08-legacy-migration-regression.md",
       "preconditions": [],
       "purpose": "Verify the v33 one-time reset removes all pre-upgrade conversation data without deleting global configuration or new post-upgrade data",
-      "replacement": null,
+      "replacement": "TC-HM-X01",
       "results": [],
       "revision": 3,
-      "status": "active",
+      "status": "superseded",
       "surface": "integration",
       "tags": [
         "migration",
@@ -1903,10 +1903,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-01-default-workspace.md",
       "preconditions": [],
       "purpose": "Verify a fresh ordinary Session receives one durable automatic workspace under native Documents",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "ordinary-session",
@@ -1927,10 +1927,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-02-selected-workspace.md",
       "preconditions": [],
       "purpose": "Verify selected directory precedence, picker cancellation fallback, and invalid-directory atomic failure",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "ordinary-session",
@@ -1976,10 +1976,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-04-cross-session-skill.md",
       "preconditions": [],
       "purpose": "Verify old, automatic-workspace, and selected-workspace Sessions share and invoke one global Skill snapshot",
-      "replacement": null,
+      "replacement": "TC-HM-02",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "skill-runtime",
@@ -2002,10 +2002,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-05-cold-restart.md",
       "preconditions": [],
       "purpose": "Verify cold restart restores Session workspaces and the shared global Skill and Tool catalogs without reinstall",
-      "replacement": null,
+      "replacement": "TC-HM-02",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "cold-start",
@@ -2025,10 +2025,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-06-atomic-failure.md",
       "preconditions": [],
       "purpose": "Verify workspace and global Skill failures expose no half state and retry converges safely",
-      "replacement": null,
+      "replacement": "TC-HM-08",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "integration",
       "tags": [
         "fault-injection",
@@ -2049,10 +2049,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-07-global-tool-catalog.md",
       "preconditions": [],
       "purpose": "Verify every Session discovers one complete descriptor catalog while execution remains policy and availability gated",
-      "replacement": null,
+      "replacement": "TC-HM-10",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "tool-catalog",
@@ -2074,10 +2074,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-08-concurrency-idempotency.md",
       "preconditions": [],
       "purpose": "Verify concurrent default Session creation and exact Skill install replay are collision-safe and idempotent",
-      "replacement": null,
+      "replacement": "TC-HM-X01",
       "results": [],
       "revision": 1,
-      "status": "active",
+      "status": "superseded",
       "surface": "integration",
       "tags": [
         "concurrency",
@@ -2097,10 +2097,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-09-auto-permission.md",
       "preconditions": [],
       "purpose": "Verify automatic permission is the fresh default, explicit overrides persist, and mandatory gates remain effective",
-      "replacement": null,
+      "replacement": "TC-HM-09",
       "results": [],
-      "revision": 1,
-      "status": "active",
+      "revision": 2,
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "permission",
@@ -2122,12 +2122,10 @@
       "path": "2026-08-29-global-skills-default-session-workspace/TC-GS-10-install-run-convergence.md",
       "preconditions": [],
       "purpose": "Verify Auto Skill installation retains durable authorization evidence and every failure converges the SDK Run and UI",
-      "replacement": null,
-      "results": [
-        "2026-08-29-global-skills-default-session-workspace/results/2026-08-29-auto-install-convergence.md"
-      ],
+      "replacement": "TC-HM-08",
+      "results": [],
       "revision": 2,
-      "status": "active",
+      "status": "superseded",
       "surface": "desktop-ui",
       "tags": [
         "skill-install",
@@ -2193,6 +2191,351 @@
         "needs-metadata"
       ],
       "type": "hybrid"
+    },
+    {
+      "entrypoint": "primary conversation and context_route",
+      "id": "TC-HM-01",
+      "obligations": [
+        "HM-TO-A4",
+        "HM-TO-R4"
+      ],
+      "path": "human-memory-program/TC-HM-01-no-recall.md",
+      "preconditions": [],
+      "purpose": "Verify a context-sufficient request records no_recall and performs no short-horizon or long-term query",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "no-recall",
+        "latency",
+        "audit"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "primary conversation, task_scope_search, and task_scope_open",
+      "id": "TC-HM-02",
+      "obligations": [
+        "HM-TO-A3",
+        "HM-TO-A4",
+        "HM-TO-A6",
+        "HM-TO-A7",
+        "HM-TO-R7",
+        "HM-TO-R8"
+      ],
+      "path": "human-memory-program/TC-HM-02-task-resume.md",
+      "preconditions": [],
+      "purpose": "Verify a distant TaskScope is discovered as a candidate then exactly opened and completely resumed",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "taskscope",
+        "search",
+        "exact-open",
+        "resume"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "primary conversation and recall",
+      "id": "TC-HM-03",
+      "obligations": [
+        "HM-TO-A2",
+        "HM-TO-A4",
+        "HM-TO-R2",
+        "HM-TO-R3"
+      ],
+      "path": "human-memory-program/TC-HM-03-conflict-evolution.md",
+      "preconditions": [],
+      "purpose": "Verify explicit correction supersedes stale memory while ambiguous conflict remains contested",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "correction",
+        "conflict",
+        "supersede"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "primary conversation and Host scheduler",
+      "id": "TC-HM-04",
+      "obligations": [
+        "HM-TO-A5",
+        "HM-TO-R2",
+        "HM-TO-R6"
+      ],
+      "path": "human-memory-program/TC-HM-04-procedure-prospective.md",
+      "preconditions": [],
+      "purpose": "Verify Procedure activation and Prospective trigger lifecycle remain distinct and permission bounded",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "procedure",
+        "prospective",
+        "trigger",
+        "permission"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "primary conversation",
+      "id": "TC-HM-05",
+      "obligations": [
+        "HM-TO-A5",
+        "HM-TO-R6"
+      ],
+      "path": "human-memory-program/TC-HM-05-ambiguous-goal.md",
+      "preconditions": [],
+      "purpose": "Verify an ambiguous wish is a semantic goal and never a scheduled prospective intention",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "semantic-goal",
+        "prospective",
+        "negative-safety"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "context_route and recall",
+      "id": "TC-HM-06",
+      "obligations": [
+        "HM-TO-A4",
+        "HM-TO-R3",
+        "HM-TO-R5"
+      ],
+      "path": "human-memory-program/TC-HM-06-recipient-privacy.md",
+      "preconditions": [],
+      "purpose": "Verify recipient and purpose filtering blocks relevant but inappropriate private memories",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "privacy",
+        "recipient",
+        "purpose",
+        "cross-taskscope"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "primary conversation, ordinary read, and controlled audit",
+      "id": "TC-HM-07",
+      "obligations": [
+        "HM-TO-A1",
+        "HM-TO-A7",
+        "HM-TO-R1",
+        "HM-TO-R3",
+        "HM-TO-R5"
+      ],
+      "path": "human-memory-program/TC-HM-07-audit-forgetting.md",
+      "preconditions": [],
+      "purpose": "Verify raw evidence is permanent while append-only suppression removes content from every ordinary path",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "append-only",
+        "suppression",
+        "audit",
+        "rebuild"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "public SDK contracts and fresh Host data directory",
+      "id": "TC-HM-08",
+      "obligations": [
+        "HM-TO-A2",
+        "HM-TO-A3",
+        "HM-TO-A4",
+        "HM-TO-A7",
+        "HM-TO-A8",
+        "HM-TO-R2",
+        "HM-TO-R4",
+        "HM-TO-R6",
+        "HM-TO-R8"
+      ],
+      "path": "human-memory-program/TC-HM-08-invalid-plan-recovery.md",
+      "preconditions": [],
+      "purpose": "Verify invalid LLM plans and cross-repository initialization fail closed and recover without half state",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "api",
+      "tags": [
+        "human-memory",
+        "llm-adversarial",
+        "protocol",
+        "initialization",
+        "replay"
+      ],
+      "type": "scripted"
+    },
+    {
+      "entrypoint": "context_route and project effect",
+      "id": "TC-HM-09",
+      "obligations": [
+        "HM-TO-A3",
+        "HM-TO-A8",
+        "HM-TO-R2",
+        "HM-TO-R4"
+      ],
+      "path": "human-memory-program/TC-HM-09-taskscope-bindings.md",
+      "preconditions": [],
+      "purpose": "Verify TaskScope creation, immutable multi-root binding revisions, and per-effect workspace authority",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "taskscope",
+        "multi-root",
+        "binding",
+        "auto-mode"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "context_route, task_scope_search, and task_scope_open",
+      "id": "TC-HM-10",
+      "obligations": [
+        "HM-TO-A3",
+        "HM-TO-A4",
+        "HM-TO-R3",
+        "HM-TO-R7"
+      ],
+      "path": "human-memory-program/TC-HM-10-routing-resume.md",
+      "preconditions": [],
+      "purpose": "Verify the five routing outcomes distinguish conversation memory, active work, resume, and new work",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "taskscope",
+        "routing",
+        "resume",
+        "no-recall"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "long-running primary conversation",
+      "id": "TC-HM-11",
+      "obligations": [
+        "HM-TO-A3",
+        "HM-TO-A6",
+        "HM-TO-A8",
+        "HM-TO-R2",
+        "HM-TO-R7",
+        "HM-TO-R8"
+      ],
+      "path": "human-memory-program/TC-HM-11-single-run-context.md",
+      "preconditions": [],
+      "purpose": "Verify one foreground ReAct Run, durable FIFO, semantic closure, and bounded causal Context assembly",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "foreground-run",
+        "fifo",
+        "context",
+        "closure",
+        "restart"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "TaskScope inspector and digital twin view",
+      "id": "TC-HM-12",
+      "obligations": [
+        "HM-TO-A6",
+        "HM-TO-A7",
+        "HM-TO-R3",
+        "HM-TO-R5",
+        "HM-TO-R7"
+      ],
+      "path": "human-memory-program/TC-HM-12-digital-twin-views.md",
+      "preconditions": [],
+      "purpose": "Verify bounded TaskScope read views and a traceable display-only digital twin projection",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "desktop-ui",
+      "tags": [
+        "human-memory",
+        "digital-twin",
+        "knowledge-graph",
+        "read-views",
+        "display-only"
+      ],
+      "type": "hybrid"
+    },
+    {
+      "entrypoint": "clean wheel consumers and frozen evaluator corpus",
+      "id": "TC-HM-X01",
+      "obligations": [
+        "HM-TO-A1",
+        "HM-TO-A2",
+        "HM-TO-A8",
+        "HM-TO-R1",
+        "HM-TO-R4",
+        "HM-TO-R5",
+        "HM-TO-R6"
+      ],
+      "path": "human-memory-program/TC-HM-X01-contract-init-quality.md",
+      "preconditions": [],
+      "purpose": "Verify three-repository public contracts, fresh initialization, frozen recall quality, and performance budgets",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "api",
+      "tags": [
+        "human-memory",
+        "cross-repo",
+        "wheel",
+        "quality",
+        "benchmark",
+        "fresh-init"
+      ],
+      "type": "scripted"
     },
     {
       "entrypoint": "",

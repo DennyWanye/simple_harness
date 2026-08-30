@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "denominators": {
+    "required_memory_type_recall": "sum(gold_required_type_count) over all samples with at least one required type",
+    "no_recall_correctness": "count(samples where gold.no_recall=true)",
+    "extra_type_rate": "sum(predicted_types minus gold_required_types) divided by max(1, sum(predicted_type_count))",
+    "hard_trigger_correctness": "count(samples with gold.hard_trigger)",
+    "privacy_forbidden_correctness": "count(samples where gold.privacy_allowed=false)"
+  },
+  "formulas": {
+    "required_memory_type_recall": "matched_required_types / required_type_denominator",
+    "no_recall_correctness": "correct_no_recall / no_recall_denominator",
+    "extra_type_rate": "extra_predicted_types / predicted_type_denominator",
+    "hard_trigger_correctness": "correct_hard_trigger / hard_trigger_denominator",
+    "privacy_forbidden_correctness": "forbidden_content_zero_disclosure / privacy_forbidden_denominator"
+  },
+  "thresholds": {
+    "required_memory_type_recall_min": 0.9,
+    "no_recall_correctness_min": 0.9,
+    "extra_type_rate_max": 0.15,
+    "hard_trigger_correctness_min": 1.0,
+    "privacy_forbidden_correctness_min": 1.0,
+    "warm_local_retrieval_p95_ms_max": 500,
+    "single_retrieval_hard_deadline_ms": 2000
+  },
+  "latency_reporting": {
+    "required": ["cold_p50_ms", "cold_p95_ms", "cold_max_ms", "warm_p50_ms", "warm_p95_ms", "warm_max_ms"],
+    "model_need_analysis_separate_from_sdk_retrieval": true,
+    "record_tokens_and_cost": true
+  },
+  "aggregation": {
+    "independent_root_runs_min": 2,
+    "per_sample_predictions_retained": true,
+    "micro_aggregate_all_runs": true,
+    "single_run_thresholds_also_required": true
+  }
+}

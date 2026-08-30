@@ -1,13 +1,14 @@
 ---
 id: TC-GS-04
 purpose: Verify old, automatic-workspace, and selected-workspace Sessions share and invoke one global Skill snapshot
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A4, TO-A7, TO-R2]
 tags: [skill-runtime, global-catalog, fresh-run, provider]
 entrypoint: fresh chat run
 revision: 1
+replacement: TC-HM-02
 ---
 
 # TC-GS-04 — 三类 Session 的 Skill 可见与调用

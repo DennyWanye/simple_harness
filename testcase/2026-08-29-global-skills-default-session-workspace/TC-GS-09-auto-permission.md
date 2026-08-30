@@ -1,13 +1,14 @@
 ---
 id: TC-GS-09
 purpose: Verify automatic permission is the fresh default, explicit overrides persist, and mandatory gates remain effective
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A9, TO-R3]
 tags: [permission, auto-default, provenance, authorization]
 entrypoint: new ordinary session and permission settings
 revision: 2
+replacement: TC-HM-09
 ---
 
 # TC-GS-09 — 自动权限默认与安全边界

@@ -1,7 +1,7 @@
 ---
 id: TC-PS-02
 purpose: Verify atomic immutable project Session creation, restart persistence, transaction rollback, and lost-ACK replay
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations:
@@ -13,6 +13,7 @@ tags:
   - idempotency
 entrypoint: new project session
 revision: 1
+replacement: TC-HM-09
 ---
 
 # TC-PS-02 — 项目 Session 创建、重启与请求幂等

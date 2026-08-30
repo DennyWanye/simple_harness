@@ -1,7 +1,7 @@
 ---
 id: TC-PS-04
 purpose: Verify every fresh Run and physical file operation derives one immutable execution root from the Session binding
-status: active
+status: superseded
 surface: integration
 type: hybrid
 obligations:
@@ -13,6 +13,7 @@ tags:
   - fail-closed
 entrypoint: project chat run
 revision: 1
+replacement: TC-HM-09
 ---
 
 # TC-PS-04 — 单一 workspace authority

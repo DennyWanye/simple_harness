@@ -1,13 +1,14 @@
 ---
 id: TC-GS-02
 purpose: Verify selected directory precedence, picker cancellation fallback, and invalid-directory atomic failure
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A2, TO-A8, TO-R1]
 tags: [ordinary-session, selected-workspace, picker, atomicity]
 entrypoint: new ordinary session
 revision: 1
+replacement: TC-HM-09
 ---
 
 # TC-GS-02 — 用户选择目录优先

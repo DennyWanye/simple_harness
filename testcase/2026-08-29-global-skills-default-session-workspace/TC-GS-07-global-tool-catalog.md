@@ -1,13 +1,14 @@
 ---
 id: TC-GS-07
 purpose: Verify every Session discovers one complete descriptor catalog while execution remains policy and availability gated
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A5, TO-A8, TO-R3]
 tags: [tool-catalog, descriptor, authorization, availability]
 entrypoint: tool search and describe
 revision: 1
+replacement: TC-HM-10
 ---
 
 # TC-GS-07 — 全 Session Tool catalog 与执行门禁

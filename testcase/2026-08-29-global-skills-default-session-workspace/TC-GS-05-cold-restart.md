@@ -1,13 +1,14 @@
 ---
 id: TC-GS-05
 purpose: Verify cold restart restores Session workspaces and the shared global Skill and Tool catalogs without reinstall
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A1, TO-A4, TO-A7, TO-A8, TO-R5]
 tags: [cold-start, restart, catalog, provider]
 entrypoint: application cold restart
 revision: 1
+replacement: TC-HM-02
 ---
 
 # TC-GS-05 — 冷重启恢复

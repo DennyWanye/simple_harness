@@ -1,7 +1,7 @@
 ---
 id: TC-PS-08
 purpose: Verify the v33 one-time reset removes all pre-upgrade conversation data without deleting global configuration or new post-upgrade data
-status: active
+status: superseded
 surface: integration
 type: hybrid
 obligations:
@@ -13,6 +13,7 @@ tags:
   - restart
 entrypoint: application startup migration
 revision: 3
+replacement: TC-HM-X01
 ---
 
 # TC-PS-08 — v33 升级一次性清空与新数据保留

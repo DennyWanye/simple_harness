@@ -1,13 +1,14 @@
 ---
 id: TC-GS-08
 purpose: Verify concurrent default Session creation and exact Skill install replay are collision-safe and idempotent
-status: active
+status: superseded
 surface: integration
 type: scripted
 obligations: [TO-A3, TO-A6, TO-R1, TO-R4]
 tags: [concurrency, idempotency, lost-ack, workspace]
 entrypoint: public session-create and global-install services
 revision: 1
+replacement: TC-HM-X01
 ---
 
 # TC-GS-08 — 并发与幂等

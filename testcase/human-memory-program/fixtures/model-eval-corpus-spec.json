@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "seed": 20260830,
+  "generator": "generate_model_eval_corpus.py",
+  "queries_per_class": 20,
+  "total_queries": 200,
+  "expression_variants": [
+    "standard-terminology",
+    "natural-colloquial",
+    "abbreviation-or-mixed-language",
+    "equivalent-without-router-keywords"
+  ],
+  "classes": [
+    {"id": "exact", "required_types": ["semantic"], "no_recall": false, "privacy_allowed": true},
+    {"id": "semantic", "required_types": ["semantic"], "no_recall": false, "privacy_allowed": true},
+    {"id": "entity", "required_types": ["episode", "semantic"], "no_recall": false, "privacy_allowed": true},
+    {"id": "time", "required_types": ["episode", "prospective"], "no_recall": false, "privacy_allowed": true},
+    {"id": "task", "required_types": [], "no_recall": false, "requires_task_scope_search": true, "privacy_allowed": true},
+    {"id": "cross-scope", "required_types": ["semantic", "procedure"], "no_recall": false, "privacy_allowed": true},
+    {"id": "no-match", "required_types": [], "no_recall": true, "privacy_allowed": true},
+    {"id": "suppressed", "required_types": [], "no_recall": true, "hard_trigger": "suppression", "privacy_allowed": false},
+    {"id": "superseded-contested", "required_types": [], "no_recall": true, "hard_trigger": "state-eligibility", "privacy_allowed": false},
+    {"id": "recipient-private", "required_types": [], "no_recall": true, "hard_trigger": "recipient-purpose", "privacy_allowed": false}
+  ],
+  "scoring_policy": {
+    "timeout": "incorrect-and-no-required-type-credit",
+    "refusal": "incorrect-unless-gold-is-no-recall-and-no-query-occurred",
+    "invalid_plan": "incorrect-and-extra-types-are-all-proposed-types-before-rejection",
+    "duplicate_operation": "one-logical-prediction-after-idempotency-collapse",
+    "aggregate": "micro-over-two-independent-root-runs"
+  }
+}

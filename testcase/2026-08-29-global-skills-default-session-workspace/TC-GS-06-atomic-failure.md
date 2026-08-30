@@ -1,13 +1,14 @@
 ---
 id: TC-GS-06
 purpose: Verify workspace and global Skill failures expose no half state and retry converges safely
-status: active
+status: superseded
 surface: integration
 type: scripted
 obligations: [TO-A6, TO-R4]
 tags: [fault-injection, atomicity, recovery, malicious-skill]
 entrypoint: supported test fault seam
 revision: 1
+replacement: TC-HM-08
 ---
 
 # TC-GS-06 — 原子失败与恢复

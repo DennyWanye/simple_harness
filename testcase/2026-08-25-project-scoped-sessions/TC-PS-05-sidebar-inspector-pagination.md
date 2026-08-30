@@ -1,7 +1,7 @@
 ---
 id: TC-PS-05
 purpose: Verify grouped sidebar, read-only inspector, same-project creation, pagination consistency, and concurrent catalog mutation
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations:
@@ -13,6 +13,7 @@ tags:
   - pagination
 entrypoint: session sidebar
 revision: 1
+replacement: TC-HM-02
 ---
 
 # TC-PS-05 — 项目化侧栏、Inspector 与分页一致性

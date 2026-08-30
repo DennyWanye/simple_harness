@@ -1,7 +1,7 @@
 ---
 id: TC-PS-06
 purpose: Verify project grouping and all physical execution remain distinct when project_root differs from execution_root
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations:
@@ -12,6 +12,7 @@ tags:
   - worktree-fixture
 entrypoint: project session inspector
 revision: 1
+replacement: TC-HM-09
 ---
 
 # TC-PS-06 — Project root 与 execution root 分离

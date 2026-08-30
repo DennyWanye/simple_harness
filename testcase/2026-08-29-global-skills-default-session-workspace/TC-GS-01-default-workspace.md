@@ -1,13 +1,14 @@
 ---
 id: TC-GS-01
 purpose: Verify a fresh ordinary Session receives one durable automatic workspace under native Documents
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations: [TO-A1, TO-A7, TO-A8, TO-R1]
 tags: [ordinary-session, automatic-workspace, canonical-identity, restart]
 entrypoint: new ordinary session
 revision: 1
+replacement: TC-HM-09
 ---
 
 # TC-GS-01 — 普通 Session 默认工作区

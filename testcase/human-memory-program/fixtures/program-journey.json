@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "primary_conversation_min_committed_turns": 20,
+  "independent_root_runs": 2,
+  "required_elements": [
+    "two_task_scopes",
+    "one_exact_resume",
+    "one_tool_effect",
+    "one_provider_exchange",
+    "one_memory_recall",
+    "one_explicit_correction",
+    "one_logical_forgetting",
+    "one_prospective_intention"
+  ],
+  "run_1": "single-primary-conversation-long-journey",
+  "run_2": "independent-model-root-replay-of-decisive-scenarios",
+  "forbidden_shortcuts": [
+    "historical-pass-inheritance",
+    "provider-output-replay-as-second-root",
+    "ten-turn-substitute",
+    "scripted-protocol-only-as-ui-proof"
+  ]
+}

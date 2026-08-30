@@ -1,7 +1,7 @@
 ---
 id: TC-PS-01
 purpose: Verify Git-root preview, explicit child registration, folder registration, deduplication, and path identity
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations:
@@ -13,6 +13,7 @@ tags:
   - path-identity
 entrypoint: project picker
 revision: 2
+replacement: TC-HM-09
 ---
 
 # TC-PS-01 — 项目注册与路径身份

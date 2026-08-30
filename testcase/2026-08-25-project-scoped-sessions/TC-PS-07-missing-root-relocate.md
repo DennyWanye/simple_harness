@@ -1,7 +1,7 @@
 ---
 id: TC-PS-07
 purpose: Verify missing project roots remain visible, tools fail closed, and relocation only accepts the same project identity
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations:
@@ -12,6 +12,7 @@ tags:
   - fail-closed
 entrypoint: project inspector relocation
 revision: 1
+replacement: TC-HM-09
 ---
 
 # TC-PS-07 — 目录缺失与同项目重新定位

@@ -1,7 +1,7 @@
 ---
 id: TC-PS-03
 purpose: Verify projectless chat remains usable while local development fails closed and project continuation creates a new Session
-status: active
+status: superseded
 surface: desktop-ui
 type: hybrid
 obligations:
@@ -12,6 +12,7 @@ tags:
   - fail-closed
 entrypoint: ordinary chat
 revision: 1
+replacement: TC-HM-10
 ---
 
 # TC-PS-03 — 无项目会话与“在项目中继续”
