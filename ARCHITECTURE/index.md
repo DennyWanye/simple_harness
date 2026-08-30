@@ -2,6 +2,9 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-08-30 Human Memory Program 实施前差距已记录在 `ARCHITECTURE.md` 顶部；其中目标协议和目标 UI 均明确
+标为未实现，不能作为当前生产能力引用。
+
 2026-08-29 当前 Project-scoped managed Skill 安装事实：聊天和 Settings 统一进入
 `ProjectSkillInstallService`，外部 GitHub 内容先冻结 exact commit、成员清单和 Project identity，再由
 `skill_install` 的真实 UI 授权继续；模型、通用 shell 和 UI boolean 都不能代替授权。Manager 原子发布后，

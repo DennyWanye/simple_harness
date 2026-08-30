@@ -1,6 +1,27 @@
-<!-- last-calibrated: 2026-08-30 -->
+<!-- last-calibrated: e95821207d9d61667c8e0f111c81477e78991ba2 -->
 
 # simple_harness Long-Running Agent Architecture Baseline
+
+## Human Memory Program 实施前边界（2026-08-30）
+
+本节只记录 clean `e9582120` 的当前事实；占用中的主 worktree 未提交改动不在本基线内。
+
+- 产品仍提供多 Session/Project 列表。`TaskSessionManager` 是进程内 `/new`、`/continue` 文本命令解析器，
+  把 TaskScope 等同为 effective session id；它没有 durable TaskScope archive、search/open、状态机、checkpoint、
+  六阅读视图或多 root binding。
+- 当前 `session_project_bindings` 是每 Session 一个 immutable Project/执行根；不是一个 TaskScope 的
+  append-only 多根 binding set。普通 Session 的自动目录默认位于 `Documents/SimpleHarnessProjects`，也不是
+  新 program 约定的 macOS/Linux 默认 `~/SimpleHarnessWorkSpace`。
+- Host 启动 Memory SDK 时启用 fact worker 但未注入 LLM extractor，因此 SDK 使用默认正则 extractor。
+- 首轮与 continuation 的 Context 都从同 Session 历史按 Token 预算截断；没有固定最近 10 个完整因果组、
+  五天 short-horizon index、TaskScope current state 与按需 typed long-term recall 的分区组装。
+- `memory_recall` / `memory_search` 被排除在 model-visible SDK catalog，automatic recall 在首个 Provider
+  attempt 前完成；`memory_write` / `memory_read` / `memory_forget` 仍作为显式 Fact 管理工具可见。因此当前
+  主模型可以按 exact Fact 做显式管理，但不能在同一 ReAct Run 内输出版本化 route/RecallPlan 并执行 typed recall。
+- `messages` 和会话目录仍有物理删除 API/SQL；当前 Context snapshot 已能冻结并哈希实际 Provider 输入，
+  但尚未形成 program 要求的永久 raw evidence、LLM invocation/decision、TaskScope event/checkpoint 统一审计链。
+- 数字孪生体当前没有独立知识图谱 UI。V1 目标必须保持 display-only，任何图谱派生数据都不得进入 Provider
+  Context、RecallPlan、Tool 选择或 effect。
 
 ## Project-scoped managed Skill 安装（2026-08-29）
 
