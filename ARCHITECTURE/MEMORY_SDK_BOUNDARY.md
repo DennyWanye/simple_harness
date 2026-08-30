@@ -9,10 +9,10 @@
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
 
-## 2026-08-30 Human Memory Program Host evidence + Canonical TaskScope Archive（S4 Task 1–2）
+## 2026-08-30 Human Memory Program Host evidence、Canonical Archive 与 Task Home（S4 Task 1–3）
 
-- Host 已新增 opt-in `human-memory-v1` 基础，并以不改写 v35 checksum 的追加 migration 升至 state schema
-  v36。该 epoch 只能从空数据库取得 durable
+- Host 已新增 opt-in `human-memory-v1` 基础，并以不改写 v35/v36 checksum 的追加 migration 升至 state schema
+  v37。该 epoch 只能从空数据库取得 durable
   bootstrap marker 后初始化；普通 state.db 启动仍停在 v34，不会因为新 migration 文件存在而升级。任何既有
   v34/更旧数据库从新的 primary 入口打开时，都在 backup、reset、migration 和业务写入之前稳定拒绝；不迁移、
   不删除，也不展示旧 Session。
@@ -36,7 +36,16 @@
 - TaskScope raw event/evidence link/decision/attempt/canonical revision/checkpoint/outbox 禁止 physical UPDATE/DELETE；
   head、watermark 与 projection cache 是可重算协调状态。projection cache 可删除，并已验证能从 canonical
   revision 逐字节等价重建；这不是 README/STATUS 等用户阅读视图，也未实现 search consumer。
-- 当前 Host 仍精确固定 Harness SDK 0.6.4；Task 1–2 以结构协议和真实 S1 source DTO 互操作 probe 验证，**不**把
+- v37 新增 `reserved → filesystem_ready → committed | failed_retryable` 的 TaskScope task-home provisioning。
+  managed 模式只在 configured managed workspace root 的真实子目录创建 `<safe-title>--<scope-digest>`；macOS/Linux
+  未配置时使用 `~/SimpleHarnessWorkSpace`。explicit 模式只接受 trusted user selection/project picker 且目标必须
+  是已存在、非 symlink 的 exact directory；项目允许管理元数据时 task home 位于
+  `.simple-harness/task-scopes/<id>`，否则落 private app-data。稳定 staging+marker+filesystem identity 让每个故障
+  边界重启都收敛同一路径，不以第二目录掩盖失败。
+- Provision receipt 只有 final committed 才存在；reserved/filesystem_ready/failed 都不形成 workspace authority。
+  当前只保存 `proposed_workspace_root` 候选，未创建 Task 4 binding 表或 revision。task home identity/request/path
+  不可物理改写，transition event 和 committed receipt 永久 append-only。
+- 当前 Host 仍精确固定 Harness SDK 0.6.4；Task 1–3 以结构协议和真实 S1 source DTO 互操作 probe 验证，**不**把
   fake DTO 当成生产集成。Harness 0.7 exact wheel pin、composition、TaskScope provisioning/binding/阅读视图、
   search consumer、foreground FIFO、动态 Context 与 UI 均仍是 S4 后续任务/S5/S6 范围，当前能力不作为产品
   成功声明或默认新入口。
@@ -48,6 +57,9 @@
 - Task 2 新增 archive/ingress 专项 `8 passed`；与 Task 1 memory/session/SessionDB 组合 `75 passed`，SDK
   adapters `253 passed`，真实 S1 source `ExecutionEvidence` + `TaskScopeMutationPlan` DTO interoperability probe
   PASS。上述均为自动化/源码协议证据，没有 UI、真实 Provider 或 production composition 声明。
+- Task 3 provisioning 专项 `14 passed`，Task 1–3 相关组合 `89 passed`，SDK adapters `253 passed`；覆盖全部七个
+  operational fault 边界、v37 migration commit 前/后、nonexistent/symlink/untrusted explicit path、permission
+  failure/retry、duplicate title、idempotency conflict、project/app-data metadata 和 no-binding/no-partial-authority。
 
 ## 1. 当前生产链路
 

@@ -99,8 +99,14 @@ HUMAN_MEMORY_PROGRAM_MIGRATION = "027_human_memory_program_v35.sql"
 HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION = 35
 TASK_SCOPE_ARCHIVE_MIGRATION = "028_task_scope_archive_v36.sql"
 TASK_SCOPE_ARCHIVE_SCHEMA_VERSION = 36
+TASK_SCOPE_PROVISION_MIGRATION = "029_task_scope_provision_v37.sql"
+TASK_SCOPE_PROVISION_SCHEMA_VERSION = 37
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
-    {HUMAN_MEMORY_PROGRAM_MIGRATION, TASK_SCOPE_ARCHIVE_MIGRATION}
+    {
+        HUMAN_MEMORY_PROGRAM_MIGRATION,
+        TASK_SCOPE_ARCHIVE_MIGRATION,
+        TASK_SCOPE_PROVISION_MIGRATION,
+    }
 )
 
 # From v23 onward every registered SQL step is executed with its DDL,
@@ -123,6 +129,7 @@ MIGRATION_STEPS: dict[str, int] = {
     _AUTOMATIC_SESSION_WORKSPACE_MIGRATION: _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION,
     HUMAN_MEMORY_PROGRAM_MIGRATION: HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
     TASK_SCOPE_ARCHIVE_MIGRATION: TASK_SCOPE_ARCHIVE_SCHEMA_VERSION,
+    TASK_SCOPE_PROVISION_MIGRATION: TASK_SCOPE_PROVISION_SCHEMA_VERSION,
 }
 
 
@@ -532,6 +539,17 @@ async def run_migrations(
                             "(1,'human-memory-v1',1,?,?,?)",
                             (version, migration_sha256, time.time()),
                         )
+                    if version == TASK_SCOPE_PROVISION_MIGRATION:
+                        migration_sha256 = hashlib.sha256(
+                            sql.encode("utf-8")
+                        ).hexdigest()
+                        await db.execute(
+                            "INSERT INTO task_scope_provision_marker("
+                            "singleton,format_epoch,schema_version,migration_id,"
+                            "migration_sha256,initialized_at) VALUES "
+                            "(1,'human-memory-v1',1,?,?,?)",
+                            (version, migration_sha256, time.time()),
+                        )
                     await db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) "
                         "VALUES (?, ?)",
@@ -548,6 +566,8 @@ async def run_migrations(
                         fault_inject("before_human_memory_program_commit")
                     if version == TASK_SCOPE_ARCHIVE_MIGRATION and fault_inject:
                         fault_inject("before_task_scope_archive_commit")
+                    if version == TASK_SCOPE_PROVISION_MIGRATION and fault_inject:
+                        fault_inject("before_task_scope_provision_commit")
                     await db.commit()
                     if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
                         fault_inject("after_ddl_commit")
@@ -557,6 +577,8 @@ async def run_migrations(
                         fault_inject("after_human_memory_program_commit")
                     if version == TASK_SCOPE_ARCHIVE_MIGRATION and fault_inject:
                         fault_inject("after_task_scope_archive_commit")
+                    if version == TASK_SCOPE_PROVISION_MIGRATION and fault_inject:
+                        fault_inject("after_task_scope_provision_commit")
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
                     log.error(
@@ -632,7 +654,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            TASK_SCOPE_ARCHIVE_SCHEMA_VERSION
+            TASK_SCOPE_PROVISION_SCHEMA_VERSION
+            if TASK_SCOPE_PROVISION_MIGRATION in durable_markers
+            else TASK_SCOPE_ARCHIVE_SCHEMA_VERSION
             if TASK_SCOPE_ARCHIVE_MIGRATION in durable_markers
             else HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
             if HUMAN_MEMORY_PROGRAM_MIGRATION in durable_markers

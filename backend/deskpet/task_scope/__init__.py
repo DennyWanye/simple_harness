@@ -8,6 +8,12 @@ from .store import (
     TaskEventRecorder,
     TaskScopeConflict,
 )
+from .provisioning import (
+    TaskScopeProvisionError,
+    TaskScopeProvisionReceipt,
+    TaskScopeProvisionRequest,
+    TaskScopeProvisioner,
+)
 
 __all__ = [
     "CanonicalTaskScopeStore",
@@ -16,4 +22,8 @@ __all__ = [
     "TaskEventReceipt",
     "TaskEventRecorder",
     "TaskScopeConflict",
+    "TaskScopeProvisionError",
+    "TaskScopeProvisionReceipt",
+    "TaskScopeProvisionRequest",
+    "TaskScopeProvisioner",
 ]

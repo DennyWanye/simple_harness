@@ -2,10 +2,10 @@
 
 > **最后更新**：2026-08-30
 
-## 2026-08-30 Human Memory Program S4 Task 1–2 Host 权威归档
+## 2026-08-30 Human Memory Program S4 Task 1–3 Host 权威归档与 Task Home
 
-- 在隔离 worktree 完成 fresh-only `human-memory-v1` state schema v35 基础与追加 v36 TaskScope Archive；原 v35
-  migration checksum 不变，v36 有独立 immutable marker。durable
+- 在隔离 worktree 完成 fresh-only `human-memory-v1` state schema v35 基础、追加 v36 TaskScope Archive 和 v37
+  recoverable provisioning；既有 migration checksum 不变，每步有独立 immutable marker。durable
   bootstrap 与每 subject 唯一 writable primary conversation/init receipt。普通 Host 仍以 v34 为默认生产 epoch；
   新 primary 入口对任何既有 v34/旧 marker 在写入前拒绝，不迁移、不删除旧 Session。
 - 新 Host evidence store 要求 S1 sanitization envelope+receipt 的严格结构、canonical hash 与绑定验证后，才在同一
@@ -23,8 +23,11 @@
   cache 删除后可由 canonical revision 重建。
 - Task 2 专项 `8 passed`，Task 1–2 相关组合 `75 passed`，SDK adapters `253 passed`；真实 S1 source
   `ExecutionEvidence`/`TaskScopeMutationPlan` DTO interoperability probe PASS。
-- 这是 S4 Task 1–2 的独立基础，不代表 S4 release unit 完成：Host 仍固定 Harness SDK 0.6.4；0.7 wheel pin 与
-  composition 在 S5 Task 8，TaskScope provisioning/多根 binding/README-STATUS 等阅读视图/search consumer、
+- v37 provisioning 区分 managed root、task home 与 non-authoritative explicit workspace candidate；只接受 Host
+  managed policy 或 trusted user/project-picker provenance。稳定 reservation/staging marker/filesystem identity 支持
+  所有边界 kill/retry；final receipt 前不产生权限。Task 3 专项 `14 passed`，Task 1–3 相关组合 `89 passed`。
+- 这是 S4 Task 1–3 的独立基础，不代表 S4 release unit 完成：Host 仍固定 Harness SDK 0.6.4；0.7 wheel pin 与
+  composition 在 S5 Task 8，多根 binding/README-STATUS 等阅读视图/search consumer、
   foreground FIFO、真实 Provider 接线与 UI 尚未实施。
 
 ## 2026-08-29 Project-scoped managed Skill 安装故障链修复与 macOS 真 UI 验收
