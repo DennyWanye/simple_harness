@@ -97,6 +97,11 @@ _AUTOMATIC_SESSION_WORKSPACE_MIGRATION = "026_automatic_session_workspace_v34.sq
 _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION = 34
 HUMAN_MEMORY_PROGRAM_MIGRATION = "027_human_memory_program_v35.sql"
 HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION = 35
+TASK_SCOPE_ARCHIVE_MIGRATION = "028_task_scope_archive_v36.sql"
+TASK_SCOPE_ARCHIVE_SCHEMA_VERSION = 36
+HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
+    {HUMAN_MEMORY_PROGRAM_MIGRATION, TASK_SCOPE_ARCHIVE_MIGRATION}
+)
 
 # From v23 onward every registered SQL step is executed with its DDL,
 # schema marker, and user_version in one runner-owned transaction.  Migration
@@ -117,6 +122,7 @@ MIGRATION_STEPS: dict[str, int] = {
     _LEGACY_SESSION_RESET_MIGRATION: _LEGACY_SESSION_RESET_SCHEMA_VERSION,
     _AUTOMATIC_SESSION_WORKSPACE_MIGRATION: _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION,
     HUMAN_MEMORY_PROGRAM_MIGRATION: HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
+    TASK_SCOPE_ARCHIVE_MIGRATION: TASK_SCOPE_ARCHIVE_SCHEMA_VERSION,
 }
 
 
@@ -348,7 +354,7 @@ async def run_migrations(
         # v35 starts a new, fresh-only data epoch.  Ordinary state.db startup
         # must never turn an existing v34 database into that epoch merely
         # because a new SQL file is present on disk.
-        files = [p for p in files if p.name != HUMAN_MEMORY_PROGRAM_MIGRATION]
+        files = [p for p in files if p.name not in HUMAN_MEMORY_PROGRAM_MIGRATIONS]
 
     applied_now: list[str] = []
     async with aiosqlite.connect(db_path) as db:
@@ -515,6 +521,17 @@ async def run_migrations(
                             "(1,'human-memory-v1',1,?,?,?)",
                             (version, migration_sha256, time.time()),
                         )
+                    if version == TASK_SCOPE_ARCHIVE_MIGRATION:
+                        migration_sha256 = hashlib.sha256(
+                            sql.encode("utf-8")
+                        ).hexdigest()
+                        await db.execute(
+                            "INSERT INTO task_scope_archive_marker("
+                            "singleton,format_epoch,schema_version,migration_id,"
+                            "migration_sha256,initialized_at) VALUES "
+                            "(1,'human-memory-v1',1,?,?,?)",
+                            (version, migration_sha256, time.time()),
+                        )
                     await db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) "
                         "VALUES (?, ?)",
@@ -529,6 +546,8 @@ async def run_migrations(
                         fault_inject("before_legacy_reset_commit")
                     if version == HUMAN_MEMORY_PROGRAM_MIGRATION and fault_inject:
                         fault_inject("before_human_memory_program_commit")
+                    if version == TASK_SCOPE_ARCHIVE_MIGRATION and fault_inject:
+                        fault_inject("before_task_scope_archive_commit")
                     await db.commit()
                     if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
                         fault_inject("after_ddl_commit")
@@ -536,6 +555,8 @@ async def run_migrations(
                         fault_inject("after_legacy_reset_commit")
                     if version == HUMAN_MEMORY_PROGRAM_MIGRATION and fault_inject:
                         fault_inject("after_human_memory_program_commit")
+                    if version == TASK_SCOPE_ARCHIVE_MIGRATION and fault_inject:
+                        fault_inject("after_task_scope_archive_commit")
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
                     log.error(
@@ -611,7 +632,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
+            TASK_SCOPE_ARCHIVE_SCHEMA_VERSION
+            if TASK_SCOPE_ARCHIVE_MIGRATION in durable_markers
+            else HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
             if HUMAN_MEMORY_PROGRAM_MIGRATION in durable_markers
             else _AUTOMATIC_SESSION_WORKSPACE_SCHEMA_VERSION
             if _AUTOMATIC_SESSION_WORKSPACE_MIGRATION in durable_markers

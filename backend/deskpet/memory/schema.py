@@ -34,6 +34,8 @@ from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
     HUMAN_MEMORY_PROGRAM_MIGRATION,
     HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
+    TASK_SCOPE_ARCHIVE_MIGRATION,
+    TASK_SCOPE_ARCHIVE_SCHEMA_VERSION,
     TARGET_SCHEMA_VERSION,
     backup_db,
     ensure_v9,
@@ -67,8 +69,8 @@ def _human_memory_program_lock(db_path: Path) -> asyncio.Lock:
     )
 
 
-def _migration_sha256() -> str:
-    migration = DEFAULT_MIGRATIONS_DIR / HUMAN_MEMORY_PROGRAM_MIGRATION
+def _migration_sha256(migration_id: str) -> str:
+    migration = DEFAULT_MIGRATIONS_DIR / migration_id
     return hashlib.sha256(migration.read_bytes()).hexdigest()
 
 
@@ -121,8 +123,10 @@ def _write_bootstrap_marker(db_path: Path) -> None:
         db.commit()
 
 
-def _validate_human_memory_program_marker(db_path: Path) -> None:
-    expected_sha256 = _migration_sha256()
+def _validate_human_memory_program_marker(
+    db_path: Path, *, expected_user_version: int
+) -> None:
+    expected_sha256 = _migration_sha256(HUMAN_MEMORY_PROGRAM_MIGRATION)
     try:
         with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
             row = db.execute(
@@ -147,9 +151,38 @@ def _validate_human_memory_program_marker(db_path: Path) -> None:
     if (
         row != expected
         or schema_marker is None
-        or version != HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
+        or version != expected_user_version
     ):
         raise HumanMemoryProgramEpochError("human_memory_program_marker_invalid")
+
+
+def _validate_task_scope_archive_marker(db_path: Path) -> None:
+    expected_sha256 = _migration_sha256(TASK_SCOPE_ARCHIVE_MIGRATION)
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT format_epoch,schema_version,migration_id,migration_sha256 "
+                "FROM task_scope_archive_marker WHERE singleton=1"
+            ).fetchone()
+            schema_marker = db.execute(
+                "SELECT 1 FROM schema_migrations WHERE version=?",
+                (TASK_SCOPE_ARCHIVE_MIGRATION,),
+            ).fetchone()
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError("task_scope_archive_marker_invalid") from exc
+    expected = (
+        "human-memory-v1",
+        1,
+        TASK_SCOPE_ARCHIVE_MIGRATION,
+        expected_sha256,
+    )
+    if (
+        row != expected
+        or schema_marker is None
+        or version != TASK_SCOPE_ARCHIVE_SCHEMA_VERSION
+    ):
+        raise HumanMemoryProgramEpochError("task_scope_archive_marker_invalid")
 
 
 async def initialize_human_memory_program_state_db(
@@ -169,12 +202,19 @@ async def initialize_human_memory_program_state_db(
     async with _human_memory_program_lock(path):
         current = await read_user_version(path)
         bootstrap = _has_bootstrap_marker(path)
-        if current == HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
-            _validate_human_memory_program_marker(path)
+        if current == TASK_SCOPE_ARCHIVE_SCHEMA_VERSION:
+            _validate_human_memory_program_marker(
+                path, expected_user_version=TASK_SCOPE_ARCHIVE_SCHEMA_VERSION
+            )
+            _validate_task_scope_archive_marker(path)
             return
-        if current > HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+        if current > TASK_SCOPE_ARCHIVE_SCHEMA_VERSION:
             raise HumanMemoryProgramEpochError(
                 "human_memory_program_future_database_unsupported"
+            )
+        if current == HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+            _validate_human_memory_program_marker(
+                path, expected_user_version=HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
             )
         if current == 0 and not bootstrap:
             if path.exists():
@@ -207,7 +247,10 @@ async def initialize_human_memory_program_state_db(
             raise InitializeError(
                 f"human memory program initialization failed: {exc}"
             ) from exc
-        _validate_human_memory_program_marker(path)
+        _validate_human_memory_program_marker(
+            path, expected_user_version=TASK_SCOPE_ARCHIVE_SCHEMA_VERSION
+        )
+        _validate_task_scope_archive_marker(path)
 
 
 async def initialize_state_db(

@@ -9,9 +9,10 @@
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
 
-## 2026-08-30 Human Memory Program Host evidence 基础（S4 Task 1）
+## 2026-08-30 Human Memory Program Host evidence + Canonical TaskScope Archive（S4 Task 1–2）
 
-- Host 已新增 opt-in `human-memory-v1` / state schema v35 基础。该 epoch 只能从空数据库取得 durable
+- Host 已新增 opt-in `human-memory-v1` 基础，并以不改写 v35 checksum 的追加 migration 升至 state schema
+  v36。该 epoch 只能从空数据库取得 durable
   bootstrap marker 后初始化；普通 state.db 启动仍停在 v34，不会因为新 migration 文件存在而升级。任何既有
   v34/更旧数据库从新的 primary 入口打开时，都在 backup、reset、migration 和业务写入之前稳定拒绝；不迁移、
   不删除，也不展示旧 Session。
@@ -23,14 +24,30 @@
   user/assistant/tool/provider/run evidence。Provider payload 使用 public allowlist；认证字段、credential value
   canary、隐藏 reasoning 和私有扩展在持久化前 fail closed。raw evidence、sanitization receipt、primary identity、init/format marker 均有
   SQLite `BEFORE UPDATE/DELETE` 拒绝 trigger，纠正与遗忘必须由后续 append-only lineage 表达。
-- 当前 Host 仍精确固定 Harness SDK 0.6.4；本基础以结构协议和真实 S1 source DTO 互操作 probe 验证，**不**把
-  fake receipt 当成生产集成。Harness 0.7 exact wheel pin、composition、真实 Provider ingress、TaskScope、FIFO、
-  动态 Context 与 UI 均仍是 S4 后续任务/S5/S6 范围，当前能力不作为产品成功声明或默认新入口。
+- v36 新增 Canonical TaskScope Archive：`task_scopes` identity、Host-native turn/file/test event、LLM mutation
+  attempt/decision、step fact、evidence link、canonical revision、immutable checkpoint 及 projection/search outbox
+  均在 Host state.db 留下永久、可重放记录。LLM `TaskScopeMutationPlan` 先做冻结结构、对象/JSON、canonical hash、
+  disclosure、evidence lineage 和 credential/private-field 校验，再以 `base_revision` CAS 在单事务写 mutation
+  decision/event/canonical revision/projection/search outbox；CAS 冲突只追加 attempt 审计，不产生新 revision。
+- S1 `ExecutionEvidence` ingress 以 `source_event_id + evidence_hash` 幂等，持久保存 receipt、run cursor 与连续
+  durable watermark；乱序 terminal 不可跨过缺失 sequence，只有 durable watermark 到达 terminal source
+  sequence 才能生成 immutable terminal gate receipt。这里仅是 Host ingress/gate seam，尚未接入正式 foreground
+  composition 或真实 Provider 链。
+- TaskScope raw event/evidence link/decision/attempt/canonical revision/checkpoint/outbox 禁止 physical UPDATE/DELETE；
+  head、watermark 与 projection cache 是可重算协调状态。projection cache 可删除，并已验证能从 canonical
+  revision 逐字节等价重建；这不是 README/STATUS 等用户阅读视图，也未实现 search consumer。
+- 当前 Host 仍精确固定 Harness SDK 0.6.4；Task 1–2 以结构协议和真实 S1 source DTO 互操作 probe 验证，**不**把
+  fake DTO 当成生产集成。Harness 0.7 exact wheel pin、composition、TaskScope provisioning/binding/阅读视图、
+  search consumer、foreground FIFO、动态 Context 与 UI 均仍是 S4 后续任务/S5/S6 范围，当前能力不作为产品
+  成功声明或默认新入口。
 - 决定性回归：提交态新增/迁移/既有 Session 组合 `67 passed`，SDK adapters `253 passed`。受影响后端
   m–r 分片先跑 `1497 passed`，提交态复跑为 `1496 passed, 26 skipped, 1 deselected, 1 failed`；唯一失败是
   已登记的环境型 `test_process_list_with_query` process-name filter 基线红，与本 slice 无调用/文件依赖。真实 S1
   DTO source interop probe PASS；没有 UI 或真实 Provider evidence 声明。原始本地 probe 数据仅保存在 ignored
   `.local-test-evidence/`。
+- Task 2 新增 archive/ingress 专项 `8 passed`；与 Task 1 memory/session/SessionDB 组合 `75 passed`，SDK
+  adapters `253 passed`，真实 S1 source `ExecutionEvidence` + `TaskScopeMutationPlan` DTO interoperability probe
+  PASS。上述均为自动化/源码协议证据，没有 UI、真实 Provider 或 production composition 声明。
 
 ## 1. 当前生产链路
 

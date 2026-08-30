@@ -2,8 +2,10 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
-2026-08-30 Human Memory Program 实施前差距已记录在 `ARCHITECTURE.md` 顶部；其中目标协议和目标 UI 均明确
-标为未实现，不能作为当前生产能力引用。
+2026-08-30 Human Memory Program 已完成 S4 Task 1–2 的 Host fresh epoch、永久 evidence 与 Canonical TaskScope
+Archive 基础；当前只提供结构协议验证、权威归档、CAS revision、ExecutionEvidence ingress/watermark 和 terminal
+gate seam，不含正式 composition、provisioning/binding/阅读视图/search consumer/FIFO/UI，也不能作为产品成功
+声明。当前边界与证据见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
 
 2026-08-29 当前 Project-scoped managed Skill 安装事实：聊天和 Settings 统一进入
 `ProjectSkillInstallService`，外部 GitHub 内容先冻结 exact commit、成员清单和 Project identity，再由
