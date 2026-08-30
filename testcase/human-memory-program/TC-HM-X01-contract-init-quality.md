@@ -18,6 +18,15 @@ revision: 1
 - 固定 seed 的 evaluator corpus：exact/semantic/entity/time/task/cross-scope/no-match/suppressed/superseded/contested/expired，包含明确 Episode、Semantic、Procedure、Prospective 和无长期价值反例。
 - 1k/10k/100k active records；至少 200 个 query；1M 仅 exploratory。
 
+Fixture lock：
+
+- `model-eval-corpus-spec.json` SHA-256 `c698ce728f0a86759103d7971e6207497d6eb3ce02ce5c5fb38ed47ab90d800a`
+- `generate_model_eval_corpus.py` SHA-256 `43df1aa4924cebbe9a4c16527587e423554081320bf8109fa3b3134958c60017`
+- `metric-formulas.json` SHA-256 `a6b9eb57f67e3aafd7222e80ba2cdc2c41a36ac796dedc6138d02b0cdbd6661c`
+- `program-journey.json` SHA-256 `b462b84244153867962b08f4d2dde8a2d3293562a90b3aeee616f27acbeeee8f`
+- 由上述固定 generator/spec 产生的 200-query corpus SHA-256
+  `6b5ab9cb161338f8c898d214b19f9932b47c64687dbf61469e9803afa9b8bddc`
+
 ## 步骤与预期
 
 | 步骤 | 操作 | 预期结果 |
