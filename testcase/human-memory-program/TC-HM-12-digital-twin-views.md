@@ -19,17 +19,35 @@ revision: 2
 ## 固定输入与边界
 
 - DTO oracle：`fixtures/twin-graph-v1.json` revision 1，SHA-256
-  `b79932d076e38dee4f97bca782444751a2c5c8f714771e1d47c99aae3c810f4b`。
+  `02c7e7e306cdccf1cb7e7a6d792b0e7e39a9bf4161db4eeaade7a4f70deaed61`。
 - self-check runner：`runners/run_twin_graph_public_consumer.py`，SHA-256
-  `c370d6731e9be5254591fdfba163c14a9452a63d0c44468a3ec7555c08850ed2`。
+  `4971db29d56797b797ab2d30c9351c2ba781c5498bfb0297c0e2033aa397a1a3`。
+- Memory candidate 固定为 `simple-harness-memory-sdk==0.6.0`、source commit
+  `8cdc103c01335849462779f1cf95e86fccb445f7`、wheel SHA-256
+  `723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182`；两次独立 build byte-identical。
 - 唯一 graph read port 名称是 `get_twin_graph_view`。禁止 graph→recall/rank/context conversion，也禁止
   Agent runtime、Recall pipeline 或 Context assembler 把 graph DTO 当 authority。
 - 正式 SDK lane 只能从 exact installed wheel 的 package root 取得 public Manager/backend/DTO；必须用公开 evidence、
   mutation、correction、suppression 与 close/reopen API 建立真实 canonical durable state，再通过 Manager/
   `CognitiveMemoryBackend.get_twin_graph_view` 读取。禁止 source checkout、private import、直接 SQL、repository object，
   也禁止把 fixture 的 `canonical_records/relation_rows` 直接传给 graph method。
-- Task 6 candidate identity 和 exact public seed contract 尚未冻结时，正式 SDK lane 必须
-  `NOT_RUN/BLOCKED`；DTO self-check PASS 不是产品 PASS。
+- Task 6 candidate identity 已冻结；exact public seed contract 仍为
+  `PENDING_TASK6_PUBLIC_SEED_API_PIN`。formal runner 必须先核对 wheel bytes/metadata/source pin，再以
+  `exact package-root public manager/backend seed contract is not pinned` 返回 `NOT_RUN/BLOCKED`；DTO self-check
+  PASS 不是产品 PASS。
+
+## 冻结命令
+
+```bash
+python3 testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --self-check
+```
+
+```bash
+python3 testcase/human-memory-program/runners/run_twin_graph_public_consumer.py \
+  --memory-wheel /tmp/simple-harness-memory-task6-wheel-one.gVYHGH/simple_harness_memory_sdk-0.6.0-py3-none-any.whl \
+  --memory-wheel-sha256 723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182 \
+  --memory-source-commit 8cdc103c01335849462779f1cf95e86fccb445f7
+```
 
 ## 前置
 

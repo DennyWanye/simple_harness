@@ -24,10 +24,12 @@
       "required_rule": "The runner must create durable canonical state only through package-root public manager/backend plus public evidence, mutation, correction, suppression, close/reopen APIs; fixture canonical rows must never be passed to get_twin_graph_view."
     },
     "candidate_identity": {
-      "status": "PENDING_TASK6_FINAL_PIN",
-      "version": null,
-      "source_commit": null,
-      "wheel_sha256": null
+      "status": "PINNED",
+      "distribution": "simple-harness-memory-sdk",
+      "version": "0.6.0",
+      "source_commit": "8cdc103c01335849462779f1cf95e86fccb445f7",
+      "wheel_sha256": "723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182",
+      "reproducible_second_wheel_sha256": "723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182"
     },
     "forbidden_access": [
       "source checkout import",

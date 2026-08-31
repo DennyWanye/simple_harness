@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any
+import zipfile
 
 
 BLOCKED_EXIT = 3
@@ -55,11 +56,19 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
         errors.append("only the public simple_harness_memory package root is allowed")
     if consumer.get("public_graph_method") != "get_twin_graph_view":
         errors.append("the only graph read port must be get_twin_graph_view")
-    if consumer.get("candidate_identity", {}).get("status") not in {
-        "PENDING_TASK6_FINAL_PIN",
-        "PINNED",
-    }:
-        errors.append("candidate identity status is invalid")
+    if consumer.get("candidate_identity", {}).get("status") != "PINNED":
+        errors.append("candidate identity must be PINNED")
+    candidate = consumer.get("candidate_identity", {})
+    if candidate.get("status") == "PINNED":
+        for field in ("wheel_sha256", "reproducible_second_wheel_sha256"):
+            if not HEX64.fullmatch(candidate.get(field, "")):
+                errors.append(f"pinned candidate {field} must be hex64")
+        if candidate.get("wheel_sha256") != candidate.get(
+            "reproducible_second_wheel_sha256"
+        ):
+            errors.append("reproducible Task 6 wheel hashes differ")
+        if not candidate.get("source_commit") or not candidate.get("version"):
+            errors.append("pinned candidate source commit/version missing")
     seed_contract = consumer.get("public_manager_seed_contract", {})
     if seed_contract.get("status") not in {
         "PENDING_TASK6_PUBLIC_SEED_API_PIN",
@@ -170,13 +179,57 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
     }
 
 
-def execute_candidate(fixture: dict[str, Any]) -> dict[str, Any]:
+def execute_candidate(
+    fixture: dict[str, Any], args: argparse.Namespace
+) -> dict[str, Any]:
     consumer = fixture["public_consumer"]
-    if consumer["candidate_identity"]["status"] != "PINNED":
+    pin = consumer["candidate_identity"]
+    if pin["status"] != "PINNED":
         return {
             "status": "NOT_RUN/BLOCKED",
             "reason": "Task 6 final Memory candidate identity is not pinned",
         }
+    if not (
+        args.memory_wheel
+        and args.memory_wheel_sha256
+        and args.memory_source_commit
+    ):
+        return {
+            "status": "NOT_RUN/BLOCKED",
+            "reason": "exact Task 6 wheel path, SHA-256, and source commit are required",
+        }
+    wheel = Path(args.memory_wheel).resolve()
+    if not wheel.is_file() or wheel.suffix != ".whl":
+        return {"status": "NOT_RUN/BLOCKED", "reason": "Task 6 wheel is unavailable"}
+    if not HEX64.fullmatch(args.memory_wheel_sha256):
+        return {"status": "NOT_RUN/BLOCKED", "reason": "wheel SHA-256 must be hex64"}
+    actual_hash = _sha256_bytes(wheel.read_bytes())
+    if actual_hash != args.memory_wheel_sha256:
+        return {"status": "FAIL", "reason": "Task 6 wheel content hash mismatch"}
+    if args.memory_wheel_sha256 != pin["wheel_sha256"]:
+        return {"status": "FAIL", "reason": "Task 6 wheel does not match frozen pin"}
+    if args.memory_source_commit != pin["source_commit"]:
+        return {"status": "FAIL", "reason": "Task 6 source commit does not match frozen pin"}
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            metadata_names = [
+                name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+            ]
+            if len(metadata_names) != 1:
+                raise ValueError("wheel metadata cardinality")
+            metadata = archive.read(metadata_names[0]).decode("utf-8")
+        fields = {}
+        for line in metadata.splitlines():
+            if line.startswith("Name: "):
+                fields["distribution"] = line.removeprefix("Name: ").strip()
+            elif line.startswith("Version: "):
+                fields["version"] = line.removeprefix("Version: ").strip()
+    except (OSError, UnicodeDecodeError, ValueError, zipfile.BadZipFile):
+        return {"status": "FAIL", "reason": "Task 6 wheel metadata is invalid"}
+    if fields.get("distribution") != pin["distribution"] or fields.get(
+        "version"
+    ) != pin["version"]:
+        return {"status": "FAIL", "reason": "Task 6 wheel distribution/version mismatch"}
     if consumer["public_manager_seed_contract"]["status"] != "PINNED":
         return {
             "status": "NOT_RUN/BLOCKED",
@@ -207,7 +260,11 @@ def main() -> int:
     args = parser.parse_args()
     fixture_path = Path(args.fixture).resolve()
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
-    result = self_check(fixture_path) if args.self_check else execute_candidate(fixture)
+    result = (
+        self_check(fixture_path)
+        if args.self_check
+        else execute_candidate(fixture, args)
+    )
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if result["status"] == "PASS":
         return 0
