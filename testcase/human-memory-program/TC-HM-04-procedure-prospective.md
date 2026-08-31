@@ -13,7 +13,7 @@ revision: 3
 # TC-HM-04 — Procedure 与 Prospective 一等能力
 
 触发故障使用 `fixtures/fault-matrix.json` 的 `prospective-occurrence` lane；fixture SHA-256
-`c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b`。
+`b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da`。
 
 ## 步骤与预期
 

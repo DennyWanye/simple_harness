@@ -25,9 +25,9 @@ Fixture lock：
 - `generate_model_eval_corpus.py` SHA-256 `673ed746dec9d15c7c874ef1a64ea71036bc309df0f1e6ab4558fce856132431`
 - `metric-formulas.json` SHA-256 `27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a`
 - `program-journey.json` SHA-256 `b462b84244153867962b08f4d2dde8a2d3293562a90b3aeee616f27acbeeee8f`
-- `fault-matrix.json` SHA-256 `c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b`
-- `typed-recall-v3.json` revision 3 SHA-256 `92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10`
-- `runners/run_typed_recall_public_consumer.py` SHA-256 `85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f`
+- `fault-matrix.json` SHA-256 `b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da`
+- `typed-recall-v3.json` revision 3 SHA-256 `373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12`
+- `runners/run_typed_recall_public_consumer.py` SHA-256 `61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb`
 - Harness candidate `simple-harness-sdk==0.7.0` / source commit `fb491574db8bb4d19d8a7f9df0c72ae460bb08f4` / wheel SHA-256 `36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f`；Memory candidate `simple-harness-memory-sdk==0.6.0` / source commit `9c79fa7ed96214aac7de93a11970e02891afedae` / wheel SHA-256 `cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c`。任一 identity 缺失或不匹配即 `NOT_RUN/BLOCKED`。
 - 由上述固定 generator/spec 产生的 240-query corpus SHA-256
   `49e622f3e6913e870e08fbb58d5f21fb44226a2a63d1eec1ee7fb985e054a5a7`

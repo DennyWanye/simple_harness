@@ -17,7 +17,7 @@ revision: 3
 - 同一永久主对话准备不少于 24 个完整因果 turn group、两个 TaskScope、五天内外短时内容、四类长期记忆、并行工具调用与一个 1 MiB Tool Result。
 - 分别运行 4k、8k、32k effective provider window；至少一次真实主模型 root run。
 - FIFO/closure crash 使用 `fixtures/fault-matrix.json` 的 `foreground-fifo-closure` lane；fixture SHA-256
-  `c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b`。
+  `b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da`。
 
 ## 步骤与预期
 

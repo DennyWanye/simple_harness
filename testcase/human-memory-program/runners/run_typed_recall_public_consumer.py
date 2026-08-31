@@ -50,6 +50,12 @@ def _classify_candidate_exit(phase: str, returncode: int) -> str:
     return "FAIL"
 
 
+def _classify_executed_result(status: object) -> str:
+    """An invoked product callable may not downgrade its own failure to NOT_RUN."""
+
+    return "PASS" if status == "PASS" else "FAIL"
+
+
 def _canonical_bytes(value: Any) -> bytes:
     return json.dumps(
         value,
@@ -394,6 +400,15 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
         errors.append("executed candidate nonzero must classify as FAIL")
     if _classify_candidate_exit("identity", 3) != "NOT_RUN/BLOCKED":
         errors.append("missing public candidate identity must classify as NOT_RUN/BLOCKED")
+    if _classify_executed_result("NOT_RUN/BLOCKED") != "FAIL":
+        errors.append("executed callable must not downgrade failure to NOT_RUN/BLOCKED")
+    state_oracle = fixture.get("state_hash_oracle", {})
+    if state_oracle.get("executed_callable_blocked_outcome") != "FAIL":
+        errors.append("executed callable blocked outcome must remain FAIL")
+    if state_oracle.get("zero_state_delta_relation") != "EXACT_UNCHANGED":
+        errors.append("zero state delta must require an exact unchanged terminal")
+    if state_oracle.get("fault_relation") != "EXACT_ALL_OLD_OR_ALL_NEW":
+        errors.append("fault state must require an exact old-or-new terminal")
     for path, value in _iter_hash_fields(fixture):
         if not HEX64.fullmatch(value):
             errors.append(f"not lowercase hex64: {path}")
@@ -486,8 +501,12 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
         ),
         "expected_public_artifact_cells": sum(len(cells) for cells in expected_product_cells.values()),
         "artifact_validator_self_check": "PASS",
-        "artifact_validator_negative_cases": 3,
-        "candidate_exit_classification": {"missing_identity": "NOT_RUN/BLOCKED", "executed_nonzero": "FAIL"},
+        "artifact_validator_negative_cases": 5,
+        "candidate_exit_classification": {
+            "missing_identity": "NOT_RUN/BLOCKED",
+            "executed_nonzero": "FAIL",
+            "executed_returned_blocked": "FAIL",
+        },
     }
 
 
@@ -584,6 +603,46 @@ def _expected_product_cells(fixture: dict[str, Any]) -> dict[str, dict[str, dict
     return lanes
 
 
+def _expected_state_hashes(
+    fixture: dict[str, Any],
+    *,
+    lane: str,
+    cell_id: str,
+    observed: Any,
+) -> tuple[str, frozenset[str], str]:
+    """Return the frozen before hash, allowed after hashes, and relation name.
+
+    The digest is a fixture-owned public-state terminal identity.  Reject cells
+    with ``state_delta=0`` must remain byte-identical.  Fault seams may finish
+    at exactly the frozen old or new terminal, never an arbitrary third state.
+    Every other cell is bound to the exact frozen changed terminal.
+    """
+
+    oracle = fixture["state_hash_oracle"]
+    fields = oracle["canonical_payload_fields"]
+    prefix = oracle["domain_prefix_utf8_with_nul"].replace("\\0", "\0").encode("utf-8")
+
+    def terminal_hash(terminal: str) -> str:
+        payload = {
+            "fixture_id": fixture["fixture_id"],
+            "fixture_revision": fixture["fixture_revision"],
+            "lane": lane,
+            "cell_id": cell_id,
+            "terminal": terminal,
+        }
+        if list(payload) != fields:
+            raise ValueError("state hash canonical field order differs")
+        return _sha256_bytes(prefix + _canonical_bytes(payload))
+
+    old_hash = terminal_hash(oracle["terminal_values"]["before"])
+    new_hash = terminal_hash(oracle["terminal_values"]["after"])
+    if lane == "fault-recovery":
+        return old_hash, frozenset((old_hash, new_hash)), oracle["fault_relation"]
+    if isinstance(observed, dict) and observed.get("state_delta") == 0:
+        return old_hash, frozenset((old_hash,)), oracle["zero_state_delta_relation"]
+    return old_hash, frozenset((new_hash,)), oracle["default_relation"]
+
+
 def _validate_candidate_artifacts(
     artifact_dir: Path,
     fixture_path: Path,
@@ -673,6 +732,17 @@ def _validate_candidate_artifacts(
                     return {"status": "FAIL", "reason": f"oracle mismatch: {lane}/{cell['cell_id']}/{field}"}
             if not HEX64.fullmatch(cell["before_hash"]) or not HEX64.fullmatch(cell["after_hash"]):
                 return {"status": "FAIL", "reason": f"invalid durable hash: {lane}/{cell['cell_id']}"}
+            expected_before, allowed_after, relation = _expected_state_hashes(
+                fixture,
+                lane=lane,
+                cell_id=cell["cell_id"],
+                observed=expected["observed"],
+            )
+            if cell["before_hash"] != expected_before or cell["after_hash"] not in allowed_after:
+                return {
+                    "status": "FAIL",
+                    "reason": f"durable state relation mismatch: {lane}/{cell['cell_id']}/{relation}",
+                }
             indexed = index_by_pair[(lane, cell["cell_id"])]
             expected_indexed = {
                 "lane": lane,
@@ -712,11 +782,21 @@ def _artifact_validator_self_check(fixture_path: Path, fixture: dict[str, Any]) 
         for lane, relative in fixture["public_consumer"]["lane_artifacts"].items():
             cells = []
             for cell_id, oracle in expected[lane].items():
+                before_hash, allowed_after, relation = _expected_state_hashes(
+                    fixture,
+                    lane=lane,
+                    cell_id=cell_id,
+                    observed=oracle["observed"],
+                )
+                if relation == fixture["state_hash_oracle"]["fault_relation"]:
+                    after_hash = max(allowed_after)
+                else:
+                    after_hash = next(iter(allowed_after))
                 cell = {
                     "cell_id": cell_id,
                     **oracle,
-                    "before_hash": "3" * 64,
-                    "after_hash": "4" * 64,
+                    "before_hash": before_hash,
+                    "after_hash": after_hash,
                 }
                 cells.append(cell)
             artifact = {"lane": lane, "fixture_revision": fixture["fixture_revision"], "fixture_sha256": fixture_hash, "started_at": started_at, "completed_at": completed_at, "cells": cells}
@@ -743,6 +823,59 @@ def _artifact_validator_self_check(fixture_path: Path, fixture: dict[str, Any]) 
         result = {"evidence_index_sha256": _sha256_bytes(index_path.read_bytes())}
         if _validate_candidate_artifacts(root, fixture_path, fixture, result, identity, invocation) is not None:
             errors.append("known-good evidence index/artifacts rejected")
+        good_index = copy.deepcopy(index)
+
+        def write_index(candidate: dict[str, Any]) -> dict[str, str]:
+            index_path.write_bytes(_canonical_bytes(candidate))
+            return {"evidence_index_sha256": _sha256_bytes(index_path.read_bytes())}
+
+        def rewrite_cell_hash(
+            *, lane: str, cell_id: str, field: str, value: str
+        ) -> tuple[dict[str, Any], dict[str, str]]:
+            candidate = copy.deepcopy(good_index)
+            relative = fixture["public_consumer"]["lane_artifacts"][lane]
+            path = root / relative
+            artifact = json.loads(path.read_text(encoding="utf-8"))
+            target = next(cell for cell in artifact["cells"] if cell["cell_id"] == cell_id)
+            target[field] = value
+            path.write_bytes(_canonical_bytes(artifact))
+            artifact_hash = _sha256_bytes(path.read_bytes())
+            next(row for row in candidate["artifacts"] if row["lane"] == lane)[
+                "sha256"
+            ] = artifact_hash
+            for row in candidate["cells"]:
+                if row["lane"] == lane:
+                    row["artifact_sha256"] = artifact_hash
+                if row["lane"] == lane and row["cell_id"] == cell_id:
+                    row[field] = value
+            return candidate, write_index(candidate)
+
+        def restore_lane(lane: str) -> None:
+            relative = fixture["public_consumer"]["lane_artifacts"][lane]
+            artifact_row = next(row for row in good_index["artifacts"] if row["lane"] == lane)
+            cells = [
+                cell
+                for cell in index_cells
+                if cell["lane"] == lane
+            ]
+            artifact = {
+                "lane": lane,
+                "fixture_revision": fixture["fixture_revision"],
+                "fixture_sha256": fixture_hash,
+                "started_at": artifact_row["started_at"],
+                "completed_at": artifact_row["completed_at"],
+                "cells": [
+                    {
+                        "cell_id": cell["cell_id"],
+                        **expected[lane][cell["cell_id"]],
+                        "before_hash": cell["before_hash"],
+                        "after_hash": cell["after_hash"],
+                    }
+                    for cell in cells
+                ],
+            }
+            (root / relative).write_bytes(_canonical_bytes(artifact))
+
         first_artifact = root / next(iter(fixture["public_consumer"]["lane_artifacts"].values()))
         original_artifact = first_artifact.read_bytes()
         first_artifact.write_bytes(original_artifact + b"\n")
@@ -751,11 +884,64 @@ def _artifact_validator_self_check(fixture_path: Path, fixture: dict[str, Any]) 
         first_artifact.write_bytes(original_artifact)
         if _validate_candidate_artifacts(root, fixture_path, fixture, result, identity, datetime.now(timezone.utc) + timedelta(days=1)) is None:
             errors.append("stale artifacts accepted")
-        index["cells"].pop()
-        index_path.write_bytes(_canonical_bytes(index))
-        missing_cell_result = {"evidence_index_sha256": _sha256_bytes(index_path.read_bytes())}
+        missing_index = copy.deepcopy(good_index)
+        missing_index["cells"].pop()
+        missing_cell_result = write_index(missing_index)
         if _validate_candidate_artifacts(root, fixture_path, fixture, missing_cell_result, identity, invocation) is None:
             errors.append("missing evidence-index cell accepted")
+
+        unchanged_lane = "protocol"
+        unchanged_id = "strict-v3-rejected"
+        unchanged_before, unchanged_allowed, _ = _expected_state_hashes(
+            fixture,
+            lane=unchanged_lane,
+            cell_id=unchanged_id,
+            observed=expected[unchanged_lane][unchanged_id]["observed"],
+        )
+        assert unchanged_allowed == frozenset((unchanged_before,))
+        _, changed_allowed, _ = _expected_state_hashes(
+            fixture,
+            lane=unchanged_lane,
+            cell_id=unchanged_id,
+            observed={},
+        )
+        drift_hash = next(iter(changed_allowed))
+        _, drift_result = rewrite_cell_hash(
+            lane=unchanged_lane,
+            cell_id=unchanged_id,
+            field="after_hash",
+            value=drift_hash,
+        )
+        if _validate_candidate_artifacts(
+            root, fixture_path, fixture, drift_result, identity, invocation
+        ) is None:
+            errors.append("zero-state-delta durable drift accepted")
+        restore_lane(unchanged_lane)
+        write_index(good_index)
+
+        fault_lane = "fault-recovery"
+        fault_id = "fault:decision-header"
+        rogue_hash = "f" * 64
+        _, fault_allowed, _ = _expected_state_hashes(
+            fixture,
+            lane=fault_lane,
+            cell_id=fault_id,
+            observed=expected[fault_lane][fault_id]["observed"],
+        )
+        if rogue_hash in fault_allowed:
+            rogue_hash = "e" * 64
+        _, fault_result = rewrite_cell_hash(
+            lane=fault_lane,
+            cell_id=fault_id,
+            field="after_hash",
+            value=rogue_hash,
+        )
+        if _validate_candidate_artifacts(
+            root, fixture_path, fixture, fault_result, identity, invocation
+        ) is None:
+            errors.append("fault half-state durable hash accepted")
+        restore_lane(fault_lane)
+        write_index(good_index)
     return errors
 
 
@@ -944,6 +1130,14 @@ print(json.dumps(result, sort_keys=True))
             return {"status": "FAIL", "reason": "public consumer did not emit one JSON result"}
         if not isinstance(result, dict) or result.get("status") not in {"PASS", "FAIL", "NOT_RUN/BLOCKED"}:
             return {"status": "FAIL", "reason": "public consumer returned an invalid result envelope"}
+        if _classify_executed_result(result.get("status")) == "FAIL":
+            if result.get("status") == "NOT_RUN/BLOCKED":
+                return {
+                    "status": "FAIL",
+                    "reason": "public consumer executed but attempted to downgrade product failure to NOT_RUN/BLOCKED",
+                    "candidate_result": result,
+                }
+            return result
         if result.get("status") == "PASS":
             required = fixture["public_consumer"]["required_artifacts"]
             missing = [name for name in required if not (artifact_dir / name).is_file()]

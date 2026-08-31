@@ -24,11 +24,11 @@ revision: 3
 - 只允许从 candidate wheels 的 `simple_harness` / `simple_harness_memory` 包根调用公开导出；禁止 source checkout
   import、私有 submodule、repository object、直接 SQL 和读取实现 diff。
 - 主 fixture：`fixtures/typed-recall-v3.json`，revision 3，SHA-256
-  `92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10`。
+  `373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12`。
 - fault fixture：`fixtures/fault-matrix.json` 的 `typed-recall-decision-result` lane，SHA-256
-  `c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b`。
+  `b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da`。
 - official runner：`runners/run_typed_recall_public_consumer.py`，SHA-256
-  `85cd4d61005d818fa6dca6bdea451606b2e8841af6a671dc269dc2ee6e724a1f`。
+  `61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb`。
 - Harness candidate 固定为 `simple-harness-sdk==0.7.0`、source commit `fb491574db8bb4d19d8a7f9df0c72ae460bb08f4`、wheel SHA-256
   `36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f`；Memory candidate 固定为 `simple-harness-memory-sdk==0.6.0`、source commit `9c79fa7ed96214aac7de93a11970e02891afedae`、wheel SHA-256 `cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c`。任一 identity 缺失或不匹配均不得执行或 PASS。
 - runner/候选 callable 或任一 exact wheel 缺失时，本用例是 `NOT_RUN/BLOCKED`，不得以自检、邻近单测或私有探针替代。
@@ -58,10 +58,10 @@ revision: 3
   --artifact-dir /absolute/path/to/.local-test-evidence/typed-recall-task5
 ```
 
-runner 会拒绝任何已存在的 artifact run directory，先核对两 wheel SHA-256，再用兼容 Python 与 `uv` 建立隔离 venv、从 exact candidate wheel 路径安装候选并解析其声明依赖、清空 `PYTHONPATH`，记录 distribution/version/module origin/source commit 后才从临时目录调用 package root。公开 callable/import 缺失为 `NOT_RUN/BLOCKED`；callable 已执行后 assertion、exception 或非零退出一律 `FAIL`。
+runner 会拒绝任何已存在的 artifact run directory，先核对两 wheel SHA-256，再用兼容 Python 与 `uv` 建立隔离 venv、从 exact candidate wheel 路径安装候选并解析其声明依赖、清空 `PYTHONPATH`，记录 distribution/version/module origin/source commit 后才从临时目录调用 package root。公开 callable/import 在调用前缺失为 `NOT_RUN/BLOCKED`；callable 一旦执行，assertion、exception、非零退出或自行返回 `NOT_RUN/BLOCKED` 一律 `FAIL`。
 PASS 必须产生：`protocol.json`、`conflict-state.json`、`eligibility.json`、`current-use.json`、
 `unsupported-replay.json`、`selection-budget.json`、`fault-recovery.json` 和 `evidence-index.json`；result envelope
-必须回绑 fixture revision/hash。runner 必须解析全部 lane JSON 与 `evidence-index.json`，要求 401 个冻结 cell 的 exact set/unique ID/outcome/reason/query-count/canary/observed values 一致，重算逐 artifact/index SHA-256，并校验 index path/hash/timestamp、wheel identity 与 run freshness；旧文件、空文件、聚合 PASS、篡改 hash 或 pre-existing directory 均 `FAIL`。原始 artifacts 只留 `.local-test-evidence/`，不得提交 Git。
+必须回绑 fixture revision/hash。runner 必须解析全部 lane JSON 与 `evidence-index.json`，要求 401 个冻结 cell 的 exact set/unique ID/outcome/reason/query-count/canary/observed values 一致，重算逐 artifact/index SHA-256，并校验 index path/hash/timestamp、wheel identity 与 run freshness。每个 cell 的 before/after terminal hash 由 fixture domain-separated known answer 固定：`state_delta=0` 必须 exact unchanged，fault seam 只允许 exact all-old 或 exact all-new，其他 cell 必须 exact changed；任何第三状态或半状态均 `FAIL`。旧文件、空文件、聚合 PASS、篡改 hash 或 pre-existing directory 均 `FAIL`。原始 artifacts 只留 `.local-test-evidence/`，不得提交 Git。
 
 ## 命名 lane 与冻结步骤
 

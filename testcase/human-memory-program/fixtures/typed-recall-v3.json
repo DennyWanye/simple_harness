@@ -41,6 +41,16 @@
     },
     "missing_candidate_or_entrypoint_outcome": "NOT_RUN/BLOCKED"
   },
+  "state_hash_oracle": {
+    "schema_version": 1,
+    "domain_prefix_utf8_with_nul": "simple-harness-memory/typed-recall-state/v1\\0",
+    "canonical_payload_fields": ["fixture_id", "fixture_revision", "lane", "cell_id", "terminal"],
+    "default_relation": "EXACT_CHANGED",
+    "zero_state_delta_relation": "EXACT_UNCHANGED",
+    "fault_relation": "EXACT_ALL_OLD_OR_ALL_NEW",
+    "terminal_values": {"before": "old", "after": "new"},
+    "executed_callable_blocked_outcome": "FAIL"
+  },
   "source_binding_cases": [
     {
       "id": "mixed-long-short",
@@ -393,7 +403,8 @@
     "require_request_hash_mutations_are_distinct": true,
     "require_literal_budget_values_recompute": true,
     "require_rrf_values_recompute_to_12dp": true,
-    "require_artifact_validator_tamper_and_freshness_rejection": true,
+    "require_artifact_validator_tamper_freshness_and_state_relation_rejection": true,
+    "require_executed_callable_blocked_is_failure": true,
     "require_receipt_policy_and_time_known_answers": true,
     "require_all_tie_breaks_and_vector_degradation": true,
     "require_rich_projection_stripping": true,

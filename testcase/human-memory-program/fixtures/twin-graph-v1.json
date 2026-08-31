@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "fixture_id": "HM-TWIN-GRAPH-V1",
+  "fixture_revision": 1,
+  "seed": "HM-TWIN-GRAPH-20260831-V1",
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "quality_gate_reason": "The deterministic DTO oracle does not prove desktop rendering or zero Agent influence until the exact Task 6 wheel and Host runtime execute it.",
+  "canonical_json": "UTF-8, sorted keys, compact separators, ensure_ascii=false",
+  "hash_algorithm": "sha256",
+  "public_consumer": {
+    "runner": "runners/run_twin_graph_public_consumer.py",
+    "allowed_import_root": "simple_harness_memory",
+    "distribution": "simple-harness-memory-sdk",
+    "public_graph_method": "get_twin_graph_view",
+    "public_manager_seed_contract": {
+      "status": "PENDING_TASK6_PUBLIC_SEED_API_PIN",
+      "manager_export": null,
+      "backend_export": null,
+      "open_call": null,
+      "evidence_ingest_call": null,
+      "mutation_apply_call": null,
+      "suppression_call": null,
+      "rebuild_call": null,
+      "required_rule": "The runner must create durable canonical state only through package-root public manager/backend plus public evidence, mutation, correction, suppression, close/reopen APIs; fixture canonical rows must never be passed to get_twin_graph_view."
+    },
+    "candidate_identity": {
+      "status": "PENDING_TASK6_FINAL_PIN",
+      "version": null,
+      "source_commit": null,
+      "wheel_sha256": null
+    },
+    "forbidden_access": [
+      "source checkout import",
+      "private submodule import",
+      "direct SQL",
+      "repository object",
+      "implementation diff"
+    ],
+    "missing_identity_or_entrypoint_outcome": "NOT_RUN/BLOCKED",
+    "executed_callable_nonzero_or_mismatch_outcome": "FAIL"
+  },
+  "dto_contract": {
+    "graph_fields": ["schema_version", "principal_id", "as_of", "nodes", "edges"],
+    "node_fields": ["node_id", "node_type", "status", "confidence", "source_refs", "can_correct", "can_forget", "label", "tooltip"],
+    "edge_fields": ["edge_id", "source_node_id", "target_node_id", "relation_type", "status", "confidence", "source_refs", "label", "tooltip"],
+    "node_order": "node_id ascending",
+    "edge_order": "edge_id ascending",
+    "ordinary_view_excluded_states": ["suppressed", "superseded", "expired"],
+    "visible_record_classes": ["active", "contested", "inferred"],
+    "sensitive_text_policy": "No sensitive raw label, edge label, tooltip, or canary may occur in the canonical graph bytes.",
+    "restricted_policy": "RESTRICTED nodes and incident edges are absent from ordinary view.",
+    "payload_hash": "sha256(canonical graph JSON bytes)"
+  },
+  "cases": [
+    {
+      "id": "base-active-contested-inferred",
+      "canonical_setup_oracle": {
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:00:00Z",
+        "view_policy": "ordinary",
+        "canonical_records": [
+          {"memory_id": "mem-pref-r1", "memory_type": "semantic", "view_state": "active", "confidence": 1.0, "source_refs": ["ev-pref-1"], "privacy": "PERSONAL", "label": "Uses Python 3.12"},
+          {"memory_id": "mem-city-r2", "memory_type": "semantic", "view_state": "contested", "confidence": 0.5, "source_refs": ["ev-city-1", "ev-city-2"], "privacy": "PERSONAL", "label": "Preferred city is contested"},
+          {"memory_id": "mem-goal", "memory_type": "semantic", "view_state": "inferred", "confidence": 0.42, "source_refs": ["ev-goal"], "privacy": "PERSONAL", "label": "Learn painting"},
+          {"memory_id": "mem-proc", "memory_type": "procedure", "view_state": "active", "confidence": 0.95, "source_refs": ["ev-proc"], "privacy": "PERSONAL", "label": "Release checklist"},
+          {"memory_id": "mem-rel", "memory_type": "semantic", "view_state": "active", "confidence": 1.0, "source_refs": ["ev-rel"], "privacy": "SENSITIVE", "label": "SENSITIVE_LABEL_CANARY_ALICE"},
+          {"memory_id": "mem-restricted", "memory_type": "semantic", "view_state": "active", "confidence": 1.0, "source_refs": ["ev-restricted"], "privacy": "RESTRICTED", "label": "RESTRICTED_CANARY_TOKEN"},
+          {"memory_id": "mem-address", "memory_type": "semantic", "view_state": "suppressed", "confidence": 1.0, "source_refs": ["ev-address"], "privacy": "SENSITIVE", "label": "SUPPRESSED_ADDRESS_CANARY"},
+          {"memory_id": "mem-pref-old", "memory_type": "semantic", "view_state": "superseded", "confidence": 1.0, "source_refs": ["ev-pref-old"], "privacy": "PERSONAL", "label": "Uses Python 3.11"},
+          {"memory_id": "mem-reminder-old", "memory_type": "prospective", "view_state": "expired", "confidence": 1.0, "source_refs": ["ev-reminder"], "privacy": "PERSONAL", "label": "Expired reminder"}
+        ],
+        "relation_rows": [
+          {"relation_id": "edge-proc", "source_memory_id": "mem-pref-r1", "target_memory_id": "mem-proc", "relation_type": "supports", "status": "active", "confidence": 0.9, "source_refs": ["ev-proc"], "privacy": "PERSONAL", "label": "Informs procedure"},
+          {"relation_id": "edge-sensitive", "source_memory_id": "mem-rel", "target_memory_id": "mem-goal", "relation_type": "related_to", "status": "active", "confidence": 0.8, "source_refs": ["ev-rel"], "privacy": "SENSITIVE", "label": "SENSITIVE_EDGE_CANARY"},
+          {"relation_id": "edge-suppressed", "source_memory_id": "mem-address", "target_memory_id": "mem-goal", "relation_type": "located_at", "status": "active", "confidence": 1.0, "source_refs": ["ev-address"], "privacy": "SENSITIVE", "label": "SUPPRESSED_EDGE_CANARY"}
+        ]
+      },
+      "expected_graph": {
+        "schema_version": 1,
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:00:00Z",
+        "nodes": [
+          {"node_id": "mem-city-r2", "node_type": "semantic", "status": "contested", "confidence": 0.5, "source_refs": ["ev-city-1", "ev-city-2"], "can_correct": true, "can_forget": true, "label": "Preferred city is contested", "tooltip": null},
+          {"node_id": "mem-goal", "node_type": "semantic", "status": "inferred", "confidence": 0.42, "source_refs": ["ev-goal"], "can_correct": true, "can_forget": true, "label": "Learn painting", "tooltip": null},
+          {"node_id": "mem-pref-r1", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-pref-1"], "can_correct": true, "can_forget": true, "label": "Uses Python 3.12", "tooltip": null},
+          {"node_id": "mem-proc", "node_type": "procedure", "status": "active", "confidence": 0.95, "source_refs": ["ev-proc"], "can_correct": true, "can_forget": true, "label": "Release checklist", "tooltip": null},
+          {"node_id": "mem-rel", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-rel"], "can_correct": true, "can_forget": true, "label": "Private memory", "tooltip": null}
+        ],
+        "edges": [
+          {"edge_id": "edge-proc", "source_node_id": "mem-pref-r1", "target_node_id": "mem-proc", "relation_type": "supports", "status": "active", "confidence": 0.9, "source_refs": ["ev-proc"], "label": "Informs procedure", "tooltip": null}
+        ]
+      },
+      "expected_payload_sha256": "953717f5c63eb6427469e7ab3a6267cccbc856850cd4d81e5389e8213e6c3f71",
+      "forbidden_output_canaries": ["SENSITIVE_LABEL_CANARY_ALICE", "RESTRICTED_CANARY_TOKEN", "SUPPRESSED_ADDRESS_CANARY", "SENSITIVE_EDGE_CANARY", "SUPPRESSED_EDGE_CANARY", "Uses Python 3.11", "Expired reminder"],
+      "excluded_node_ids": ["mem-restricted", "mem-address", "mem-pref-old", "mem-reminder-old"],
+      "excluded_edge_ids": ["edge-sensitive", "edge-suppressed"]
+    },
+    {
+      "id": "after-correction",
+      "canonical_transition_oracle": {
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:01:00Z",
+        "view_policy": "ordinary",
+        "transition": {"action": "correct", "old_revision": "mem-pref-r1", "new_revision": "mem-pref-r2"},
+        "base_case": "base-active-contested-inferred"
+      },
+      "expected_graph": {
+        "schema_version": 1,
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:01:00Z",
+        "nodes": [
+          {"node_id": "mem-city-r2", "node_type": "semantic", "status": "contested", "confidence": 0.5, "source_refs": ["ev-city-1", "ev-city-2"], "can_correct": true, "can_forget": true, "label": "Preferred city is contested", "tooltip": null},
+          {"node_id": "mem-goal", "node_type": "semantic", "status": "inferred", "confidence": 0.42, "source_refs": ["ev-goal"], "can_correct": true, "can_forget": true, "label": "Learn painting", "tooltip": null},
+          {"node_id": "mem-pref-r2", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-pref-2"], "can_correct": true, "can_forget": true, "label": "Uses Python 3.13", "tooltip": null},
+          {"node_id": "mem-proc", "node_type": "procedure", "status": "active", "confidence": 0.95, "source_refs": ["ev-proc"], "can_correct": true, "can_forget": true, "label": "Release checklist", "tooltip": null},
+          {"node_id": "mem-rel", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-rel"], "can_correct": true, "can_forget": true, "label": "Private memory", "tooltip": null}
+        ],
+        "edges": [
+          {"edge_id": "edge-proc-r2", "source_node_id": "mem-pref-r2", "target_node_id": "mem-proc", "relation_type": "supports", "status": "active", "confidence": 0.9, "source_refs": ["ev-proc", "ev-pref-2"], "label": "Informs procedure", "tooltip": null}
+        ]
+      },
+      "expected_payload_sha256": "2b9086c5c977f1538ee905f988ba45b8b533ad81c7225dfb622134b50326035e",
+      "must_exclude_node_ids": ["mem-pref-r1"],
+      "must_include_node_ids": ["mem-pref-r2"]
+    },
+    {
+      "id": "after-forget",
+      "canonical_transition_oracle": {
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:02:00Z",
+        "view_policy": "ordinary",
+        "transition": {"action": "forget", "target_revision": "mem-goal"},
+        "base_case": "after-correction"
+      },
+      "expected_graph": {
+        "schema_version": 1,
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:02:00Z",
+        "nodes": [
+          {"node_id": "mem-city-r2", "node_type": "semantic", "status": "contested", "confidence": 0.5, "source_refs": ["ev-city-1", "ev-city-2"], "can_correct": true, "can_forget": true, "label": "Preferred city is contested", "tooltip": null},
+          {"node_id": "mem-pref-r2", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-pref-2"], "can_correct": true, "can_forget": true, "label": "Uses Python 3.13", "tooltip": null},
+          {"node_id": "mem-proc", "node_type": "procedure", "status": "active", "confidence": 0.95, "source_refs": ["ev-proc"], "can_correct": true, "can_forget": true, "label": "Release checklist", "tooltip": null},
+          {"node_id": "mem-rel", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-rel"], "can_correct": true, "can_forget": true, "label": "Private memory", "tooltip": null}
+        ],
+        "edges": [
+          {"edge_id": "edge-proc-r2", "source_node_id": "mem-pref-r2", "target_node_id": "mem-proc", "relation_type": "supports", "status": "active", "confidence": 0.9, "source_refs": ["ev-proc", "ev-pref-2"], "label": "Informs procedure", "tooltip": null}
+        ]
+      },
+      "expected_payload_sha256": "67304409ddebaf1b67318afc7343408ff2410cc930c7c800301efad90c3eb651",
+      "must_exclude_node_ids": ["mem-goal"],
+      "forbidden_output_canaries": ["Learn painting", "SENSITIVE_EDGE_CANARY"]
+    },
+    {
+      "id": "after-rebuild",
+      "canonical_transition_oracle": {
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:02:00Z",
+        "view_policy": "ordinary",
+        "action": "rebuild_projection",
+        "base_case": "after-forget",
+        "stale_projection_canaries": ["mem-goal", "SUPPRESSED_ADDRESS_CANARY", "mem-pref-r1"]
+      },
+      "expected_graph": {
+        "schema_version": 1,
+        "principal_id": "principal-twin-1",
+        "as_of": "2026-08-31T12:02:00Z",
+        "nodes": [
+          {"node_id": "mem-city-r2", "node_type": "semantic", "status": "contested", "confidence": 0.5, "source_refs": ["ev-city-1", "ev-city-2"], "can_correct": true, "can_forget": true, "label": "Preferred city is contested", "tooltip": null},
+          {"node_id": "mem-pref-r2", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-pref-2"], "can_correct": true, "can_forget": true, "label": "Uses Python 3.13", "tooltip": null},
+          {"node_id": "mem-proc", "node_type": "procedure", "status": "active", "confidence": 0.95, "source_refs": ["ev-proc"], "can_correct": true, "can_forget": true, "label": "Release checklist", "tooltip": null},
+          {"node_id": "mem-rel", "node_type": "semantic", "status": "active", "confidence": 1.0, "source_refs": ["ev-rel"], "can_correct": true, "can_forget": true, "label": "Private memory", "tooltip": null}
+        ],
+        "edges": [
+          {"edge_id": "edge-proc-r2", "source_node_id": "mem-pref-r2", "target_node_id": "mem-proc", "relation_type": "supports", "status": "active", "confidence": 0.9, "source_refs": ["ev-proc", "ev-pref-2"], "label": "Informs procedure", "tooltip": null}
+        ]
+      },
+      "expected_payload_sha256": "67304409ddebaf1b67318afc7343408ff2410cc930c7c800301efad90c3eb651",
+      "must_match_case_payload": "after-forget",
+      "forbidden_output_canaries": ["mem-goal", "SUPPRESSED_ADDRESS_CANARY", "mem-pref-r1"]
+    }
+  ],
+  "agent_isolation_oracle": {
+    "graph_only_marker": "GRAPH_ONLY_DERIVATION_CANARY",
+    "before": {
+      "recall_decision_hash": "2e00b997ab0436187f98f0f7227a9a5b15a81cadfda12803ba8933ffd5740b2f",
+      "rank_order": ["mem-pref-r2", "mem-proc"],
+      "context_snapshot_hash": "ab6f77e6a396d6d5e7ac0b92ca73a7d3b37309fbdac8e1e719b682b16d63c297",
+      "tool_selection_hash": "9baf81a0fc2a47db8896d8221522bca2f30c5a44dc8ea6e6931ccf6c02225a25"
+    },
+    "after": {
+      "recall_decision_hash": "2e00b997ab0436187f98f0f7227a9a5b15a81cadfda12803ba8933ffd5740b2f",
+      "rank_order": ["mem-pref-r2", "mem-proc"],
+      "context_snapshot_hash": "ab6f77e6a396d6d5e7ac0b92ca73a7d3b37309fbdac8e1e719b682b16d63c297",
+      "tool_selection_hash": "9baf81a0fc2a47db8896d8221522bca2f30c5a44dc8ea6e6931ccf6c02225a25"
+    },
+    "expected_control_sha256": "3644412e2ae74cf12593a90fefd22042bf44f7803c8c242fe26d5299658008bb",
+    "required_runtime_evidence": "Independent Host probe must compare exact before/after decision, ranking, ContextSnapshot, answer, and tool behavior; graph callable self-report is insufficient."
+  }
+}

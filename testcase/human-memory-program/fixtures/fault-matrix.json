@@ -86,7 +86,7 @@
       "testcases": ["TC-HM-13", "TC-HM-X01"],
       "runner_command": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python testcase/human-memory-program/runners/run_typed_recall_public_consumer.py --fixture testcase/human-memory-program/fixtures/typed-recall-v3.json --harness-wheel /tmp/simple-harness-task5-wheel3.MtoX75/simple_harness_sdk-0.7.0-py3-none-any.whl --harness-wheel-sha256 36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f --harness-source-commit fb491574db8bb4d19d8a7f9df0c72ae460bb08f4 --memory-wheel /tmp/simple-harness-memory-task5-wheel.Eftjjy/simple_harness_memory_sdk-0.6.0-py3-none-any.whl --memory-wheel-sha256 cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c --memory-source-commit 9c79fa7ed96214aac7de93a11970e02891afedae --consumer-entrypoint simple_harness_memory:run_typed_recall_black_box_fixture --artifact-dir $ARTIFACT_DIR",
       "fixture": "typed-recall-v3.json",
-      "fixture_sha256": "92202927c9817c8a1fc2eed2f26751ac8971b52452144bebc5e8c545e9a79e10",
+      "fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
       "payloads": [
         {"id": "contest-create", "oracle": "atomic rN+1 plus group, two ordered members, relation, decision, receipt, and head CAS"},
         {"id": "contest-reject-matrix", "oracle": "no-evidence, same-content, stale-target, shared-evidence, active-group, nested, cross-principal, cross-memory, one-member, and three-member all leave zero state delta"},
@@ -96,7 +96,9 @@
         {"id": "authority-events", "oracle": "each eligibility-changing event stales old result use"},
         {"id": "context-use", "oracle": "policy/time/decision/result/item/snapshot/run/turn/continuation/attempt-bound receipt known hashes; suppression-first and receipt-first linearize"},
         {"id": "evidence-index-tamper", "oracle": "stale timestamps, duplicate/missing/extra cells, wrong artifact hash/path/fixture/wheel pin, and product mismatch all fail"},
-        {"id": "candidate-executed-nonzero", "oracle": "callable assertion/exception/nonzero is FAIL; only missing install/import/public callable is NOT_RUN/BLOCKED"},
+        {"id": "durable-state-relation", "oracle": "state_delta=0 requires exact identical frozen terminal hash; each fault seam accepts only its exact old or exact new terminal hash"},
+        {"id": "candidate-executed-nonzero", "oracle": "callable assertion/exception/nonzero is FAIL; only missing install/import/public callable before invocation is NOT_RUN/BLOCKED"},
+        {"id": "candidate-executed-blocked", "oracle": "an invoked callable returning NOT_RUN/BLOCKED is FAIL and cannot bypass artifact validation"},
         {"id": "vector-lane-degrade", "oracle": "unavailable requested vector lane degrades with audit and zero unauthorized fallback"}
       ],
       "seams": [
@@ -124,6 +126,7 @@
         "evidence-index-before-parse",
         "artifact-hash-recompute",
         "artifact-freshness-check",
+        "durable-state-hash-relation-check",
         "vector-lane-unavailable",
         "commit-before-ack",
         "restart-open-rebuild"

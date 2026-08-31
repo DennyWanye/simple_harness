@@ -2501,11 +2501,15 @@
         "HM-TO-R7"
       ],
       "path": "human-memory-program/TC-HM-12-digital-twin-views.md",
-      "preconditions": [],
+      "preconditions": [
+        "Task 6 exact Memory candidate wheel, SHA-256, source commit, and version are pinned for the SDK lane",
+        "Package-root public manager/backend evidence, mutation, correction, suppression, close/reopen seed contract is pinned",
+        "Fresh ignored artifact directory is available"
+      ],
       "purpose": "Verify bounded TaskScope read views and a traceable display-only digital twin projection",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 2,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
