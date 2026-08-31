@@ -80,6 +80,13 @@
       "runner_command": "python3 -m pytest backend/tests/faults/test_foreground_fifo_closure.py -q",
       "seams": ["message-commit", "run-admission", "terminal-watermark", "objective-event-commit", "semantic-closure-commit", "projection-commit"],
       "terminal_oracle": "max foreground run one; FIFO preserved; mutation-or-no-mutation closure complete"
+    },
+    {
+      "id": "typed-recall-decision-result",
+      "testcases": ["TC-HM-13", "TC-HM-X01"],
+      "runner_command": "python3 -m pytest tests/faults/test_typed_recall_decision_result.py -q",
+      "seams": ["decision-header", "between-decision-items", "before-result-header", "between-result-items", "before-terminal-fence", "commit-before-ack", "restart-open-rebuild"],
+      "terminal_oracle": "before commit only a start attempt may remain; after commit exact replay returns byte-identical decision/result; naked source refs and incomplete conflict groups disclose zero content"
     }
   ]
 }

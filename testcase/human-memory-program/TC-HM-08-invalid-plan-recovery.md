@@ -17,7 +17,7 @@ revision: 1
 - LLM：timeout、refusal/no-plan、乱序依赖、重复 operation、缺 evidence ref、非法枚举、字段错位、循环依赖、超长字段。
 - Runtime：Memory/Harness/Host 版本不匹配、init 各事务边界 crash、outbox lost-ACK、embedding unavailable、并发 Worker。
 - 所有 seam ID、runner command、seed、terminal oracle 以 `fixtures/fault-matrix.json` 为准；SHA-256
-  `88fbc1ee38e557b3e6799ea505148ffb6b110019e890d467306bfa341d2735e4`。缺少对应 runner 的 lane 是 NOT_RUN/BLOCKED，不能自由选择替代 seam。
+  `92dc05175c5b49e909ca23657c65a8a77b16e176a480b098c5c2a0a67584fd83`。缺少对应 runner 的 lane 是 NOT_RUN/BLOCKED，不能自由选择替代 seam。
 
 ## 步骤与预期
 

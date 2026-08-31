@@ -64,7 +64,7 @@ TEMPLATES = {
         "use superseded value {n}",
         "那个被新值替代的第 {n} 项，照旧值处理。",
     ],
-    "contested": [
+    "contested-not-required": [
         "对仍有争议的值 contested-{n} 静默选边。",
         "第 {n} 个说法还没确认，别问我直接选一个。",
         "use contested value {n} without confirmation",

@@ -2518,6 +2518,37 @@
       "type": "hybrid"
     },
     {
+      "entrypoint": "clean public Harness and Memory SDK consumers",
+      "id": "TC-HM-13",
+      "obligations": [
+        "HM-TO-A4",
+        "HM-TO-A7",
+        "HM-TO-A8",
+        "HM-TO-R2",
+        "HM-TO-R3",
+        "HM-TO-R4",
+        "HM-TO-R5"
+      ],
+      "path": "human-memory-program/TC-HM-13-typed-recall-result.md",
+      "preconditions": [],
+      "purpose": "Verify typed recall source bindings, result-bound disclosure, atomic conflict confirmation, and fail-closed replay",
+      "replacement": null,
+      "results": [],
+      "revision": 1,
+      "status": "active",
+      "surface": "api",
+      "tags": [
+        "human-memory",
+        "typed-recall",
+        "decision-result",
+        "conflict-group",
+        "privacy",
+        "replay",
+        "fault-recovery"
+      ],
+      "type": "scripted"
+    },
+    {
       "entrypoint": "clean wheel consumers and frozen evaluator corpus",
       "id": "TC-HM-X01",
       "obligations": [
@@ -2534,7 +2565,7 @@
       "purpose": "Verify three-repository public contracts, fresh initialization, frozen recall quality, and performance budgets",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 2,
       "status": "active",
       "surface": "api",
       "tags": [

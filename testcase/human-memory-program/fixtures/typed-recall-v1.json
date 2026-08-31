@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "fixture_id": "HM-TYPED-RECALL-V1",
+  "seed": "HM-TYPED-RECALL-20260831-V1",
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "quality_gate_reason": "This deterministic protocol fixture is not a substitute for the independently reviewed 200+ query real-model corpus.",
+  "protocol_versions": {
+    "harness_recall": 4,
+    "typed_recall_result": 1,
+    "context_fragment": 2,
+    "memory_schema": 6
+  },
+  "source_binding_cases": [
+    {
+      "id": "mixed-long-short",
+      "selected": [
+        {"source_kind": "cognitive_memory", "memory_type": "semantic", "source_ref": "mem-sem-1", "source_revision": 3},
+        {"source_kind": "short_horizon", "chunk_ref": "chunk-1", "source_revision": null}
+      ],
+      "expect": "RECALL_WITH_EXACT_ORDERED_DECISION_RESULT_BINDINGS"
+    },
+    {
+      "id": "short-only",
+      "selected": [
+        {"source_kind": "short_horizon", "chunk_ref": "chunk-2", "source_revision": null}
+      ],
+      "expect": "RECALL_WITHOUT_SYNTHETIC_MEMORY_TYPE_OR_REVISION"
+    },
+    {
+      "id": "naked-source-ref",
+      "request": {"source_ref": "mem-sem-1", "source_revision": 3},
+      "expect": "PUBLIC_ENTRYPOINT_ABSENT_OR_REJECTED",
+      "candidate_query_started": false,
+      "payload_count": 0
+    }
+  ],
+  "conflict_classes": [
+    {
+      "id": "contested-dependent-complete",
+      "group": {
+        "group_id": "conflict-python-version-1",
+        "active": true,
+        "members": [
+          {"ordinal": 0, "role": "incumbent", "memory_id": "mem-python", "revision": 7, "content_hash": "sha256:incumbent", "eligible": true},
+          {"ordinal": 1, "role": "challenger", "memory_id": "mem-python", "revision": 8, "content_hash": "sha256:challenger", "eligible": true}
+        ]
+      },
+      "expect": "ONE_ATOMIC_RECALL_CONFIRMATION_GROUP",
+      "ordinary_selected_member_count": 0,
+      "page_in_single_member_allowed": false
+    },
+    {
+      "id": "contested-dependent-partial",
+      "group": {
+        "group_id": "conflict-python-version-2",
+        "active": true,
+        "members": [
+          {"ordinal": 0, "role": "incumbent", "memory_id": "mem-python-2", "revision": 4, "content_hash": "sha256:visible", "eligible": true},
+          {"ordinal": 1, "role": "challenger", "memory_id": "mem-python-2", "revision": 5, "content_hash": "sha256:suppressed", "eligible": false, "failure": "suppressed"}
+        ]
+      },
+      "expect": "ZERO_DISCLOSURE",
+      "public_group_count": 0,
+      "public_candidate_count": 0,
+      "public_conflict_presence": false
+    }
+  ],
+  "long_term_lifecycle_matrix": {
+    "episode": {"eligible": ["active", "amended"], "ineligible": ["disputed", "superseded"]},
+    "semantic": {"eligible": ["active"], "ineligible": ["candidate", "superseded"]},
+    "procedure": {"eligible": ["active", "reinforced"], "ineligible": ["draft", "eligible", "revised", "inapplicable", "superseded"]},
+    "prospective": {"eligible": ["pending", "triggered", "in_progress", "rescheduled"], "ineligible": ["candidate", "completed", "cancelled", "expired"]}
+  },
+  "epistemic_verification_matrix": [
+    {"memory_types": ["episode", "semantic"], "epistemic": "explicit_user", "eligible_verification": ["source_bound", "user_confirmed"]},
+    {"memory_types": ["episode", "semantic"], "epistemic": "verified_external", "eligible_verification": ["source_verified"]},
+    {"memory_types": ["episode", "semantic"], "epistemic": "observed_behavior", "eligible_verification": ["source_verified", "repeated_observation"]},
+    {"memory_types": ["episode", "semantic", "procedure", "prospective"], "epistemic": "llm_inference", "eligible_verification": []},
+    {"memory_types": ["episode", "semantic", "procedure", "prospective"], "epistemic": "unknown", "eligible_verification": []},
+    {"memory_types": ["procedure"], "epistemic": "explicit_user", "eligible_verification": ["source_bound", "user_confirmed"]},
+    {"memory_types": ["procedure"], "epistemic": "observed_behavior", "eligible_verification": ["repeated_observation"], "additional_gate": "current_applicability_fingerprint_exact"},
+    {"memory_types": ["prospective"], "epistemic": "explicit_user", "eligible_verification": ["source_bound", "user_confirmed"], "additional_gate": "typed_trigger_and_current_signal_complete"}
+  ],
+  "ordinary_disclosure_matrix": [
+    {"recipient": "USER_SELF", "purposes": ["task_execution", "personalization", "task_resume", "user_review"], "allowed_privacy": ["PUBLIC", "PERSONAL", "SENSITIVE"], "denied_privacy": ["RESTRICTED"]},
+    {"recipient": "HOUSEHOLD", "purposes": ["task_execution", "task_resume"], "allowed_privacy": ["PUBLIC"], "denied_privacy": ["PERSONAL", "SENSITIVE", "RESTRICTED"]},
+    {"recipient": "TASK_COLLABORATOR", "purposes": ["task_execution", "task_resume"], "allowed_privacy": ["PUBLIC"], "denied_privacy": ["PERSONAL", "SENSITIVE", "RESTRICTED"]},
+    {"recipient": "EXTERNAL_PARTY", "purposes": ["task_execution", "personalization", "task_resume", "user_review"], "allowed_privacy": [], "denied_privacy": ["PUBLIC", "PERSONAL", "SENSITIVE", "RESTRICTED"]},
+    {"recipient": "PUBLIC", "purposes": ["task_execution", "personalization", "task_resume", "user_review"], "allowed_privacy": [], "denied_privacy": ["PUBLIC", "PERSONAL", "SENSITIVE", "RESTRICTED"]},
+    {"recipient": "UNKNOWN", "purposes": ["task_execution", "personalization", "task_resume", "user_review"], "allowed_privacy": [], "denied_privacy": ["PUBLIC", "PERSONAL", "SENSITIVE", "RESTRICTED"]}
+  ],
+  "attribute_floor": {
+    "non_self_deny_even_if_public": ["identity", "relationship", "family", "health", "location", "financial"],
+    "audit_export_ordinary_recall_allowed": false
+  },
+  "selector_capability_cases": [
+    {"selector": "MEMORY_TYPE", "supported": true},
+    {"selector": "TASK_SCOPE", "supported": true},
+    {"selector": "ENTITY", "supported": true},
+    {"selector": "TIME", "supported": true},
+    {"selector": "SHORT_HORIZON", "supported": true},
+    {"selector": "EVENT", "supported": false, "reason": "INVALID_PLAN", "candidate_query_started": false},
+    {"selector": "ENVIRONMENT", "supported": false, "reason": "INVALID_PLAN", "candidate_query_started": false},
+    {"selector": "TASK_PHASE", "supported": false, "reason": "INVALID_PLAN", "candidate_query_started": false}
+  ],
+  "retrieval_mode_cases": [
+    {"mode": "FULL_TEXT", "supported": true},
+    {"mode": "VECTOR", "supported": true},
+    {"mode": "EXACT", "supported": false, "reason": "INVALID_PLAN", "candidate_query_started": false},
+    {"mode": "TEMPORAL", "supported": false, "reason": "INVALID_PLAN", "candidate_query_started": false},
+    {"mode": "GRAPH", "supported": false, "reason": "INVALID_PLAN", "candidate_query_started": false}
+  ],
+  "context_use_linearization": [
+    {"id": "suppression-first", "order": ["suppression_commit", "authorize_context_use"], "expect": "RECALL_AUTHORITY_STALE", "payload_count": 0},
+    {"id": "receipt-first", "order": ["authorize_context_use_commit", "suppression_commit"], "expect": "EXACT_SNAPSHOT_ATTEMPT_MAY_COMPLETE_ONCE_AND_ALL_NEW_ATTEMPTS_FAIL"}
+  ],
+  "replay_cases": [
+    {"id": "terminal-exact-replay", "same_idempotency_key": true, "same_request_hash": true, "expect": "BYTE_IDENTICAL_DECISION_AND_RESULT", "candidate_query_started": false},
+    {"id": "conflicting-replay", "same_idempotency_key": true, "same_request_hash": false, "expect": "IDEMPOTENCY_CONFLICT", "candidate_query_started": false},
+    {"id": "restart-unexpired-dangling", "terminal_present": false, "deadline_expired": false, "expect": "RERUN_FROM_ZERO_DURABLE_CANDIDATE_STATE"},
+    {"id": "restart-expired-dangling", "terminal_present": false, "deadline_expired": true, "expect": "DEADLINE_EXCEEDED_WITH_ZERO_CONTENT"}
+  ],
+  "durability_fault_seams": [
+    "decision-header",
+    "between-decision-items",
+    "before-result-header",
+    "between-result-items",
+    "before-terminal-fence",
+    "commit-before-ack"
+  ],
+  "durability_oracle": "Before final commit only a start attempt may remain; after commit replay is byte-identical; durable open/rebuild recomputes every header, item, group, content, payload, evidence and terminal hash.",
+  "candidate_and_rank_bounds": {
+    "per_source_type_lane_cap_formula": "min(128,max(32,8*max_items))",
+    "per_type_fused_cap": 128,
+    "mixed_union_pre_dedupe_cap": 640,
+    "rrf_k": 60,
+    "weights": {"vector": 0.4, "full_text": 0.3, "entity": 0.15, "task_scope": 0.1, "temporal": 0.05},
+    "stable_order": ["-rrf_score_12dp", "-matched_lane_count", "-typed_source_time", "source_kind", "memory_type_or_empty", "source_ref", "source_revision_or_zero"]
+  },
+  "budget_cases": [
+    {"id": "exact-limit-ascii", "text_class": "ASCII", "expect": "FITS_EXACTLY"},
+    {"id": "limit-plus-one-cjk", "text_class": "CJK", "expect": "SKIP_WHOLE_ITEM"},
+    {"id": "limit-plus-one-emoji", "text_class": "emoji", "expect": "SKIP_WHOLE_ITEM"},
+    {"id": "json-escaping-byte-count", "text_class": "escaping", "expect": "CANONICAL_UTF8_COUNT"},
+    {"id": "oversize-first-smaller-fit", "expect": "SKIP_FIRST_AND_SELECT_LATER_SMALLER_ITEM"},
+    {"id": "deadline-entry-to-return", "deadline_ms": 2000, "expect": "ZERO_CONTENT_ON_TIMEOUT_AND_DURABLE_TERMINAL"}
+  ],
+  "budget_ranges": {"max_items": [1, 32], "max_bytes": [1, 65536], "max_tokens": [1, 8192], "deadline_ms": [1, 2000]},
+  "token_estimate": "max(1,unicode_codepoint_count,ceil(canonical_utf8_bytes/3))"
+}
