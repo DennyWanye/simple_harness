@@ -19,15 +19,15 @@ revision: 2
 ## Sealed public-consumer authority
 
 - fixture：`fixtures/sealed-audit-v1.json` revision 1，SHA-256
-  `3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141`。
+  `57d6758f4c42dd18bcf1bd843cd000de31cafda7a04ec820236505db5843a758`。
 - runner：`runners/run_sealed_audit_public_consumer.py`，SHA-256
   `d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62`。
 - Harness：`simple-harness-sdk==0.7.0`，commit
   `fb491574db8bb4d19d8a7f9df0c72ae460bb08f4`，wheel SHA-256
   `36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f`。
 - Memory：`simple-harness-memory-sdk==0.6.0`，commit
-  `0b6bf875cce888b16e4b96399cb6407fb06e0ae9`，wheel SHA-256
-  `79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad`；第二次构建字节一致。
+  `d069e0e949edb44d85d2ebeac6e49b05f9fb51b1`，wheel SHA-256
+  `6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2`；第二次构建字节一致。
 - clean consumer 只从 `simple_harness` 与 `simple_harness_memory` package root 导入公开 DTO、builder 和
   `MemoryManager` facade；禁止私有 submodule、source checkout、repository object、SQL 和产品测试 helper。
 
@@ -46,9 +46,9 @@ revision: 2
   --harness-wheel /tmp/simple-harness-task5-wheel3.MtoX75/simple_harness_sdk-0.7.0-py3-none-any.whl \
   --harness-wheel-sha256 36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f \
   --harness-source-commit fb491574db8bb4d19d8a7f9df0c72ae460bb08f4 \
-  --memory-wheel /tmp/simple-harness-memory-task7-final-a.wc6T5v/simple_harness_memory_sdk-0.6.0-py3-none-any.whl \
-  --memory-wheel-sha256 79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad \
-  --memory-source-commit 0b6bf875cce888b16e4b96399cb6407fb06e0ae9 \
+  --memory-wheel /tmp/simple-harness-memory-task7-closure-a.N0ny0w/simple_harness_memory_sdk-0.6.0-py3-none-any.whl \
+  --memory-wheel-sha256 6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2 \
+  --memory-source-commit d069e0e949edb44d85d2ebeac6e49b05f9fb51b1 \
   --artifact-dir /absolute/path/to/.local-test-evidence/sealed-audit-task7
 ```
 

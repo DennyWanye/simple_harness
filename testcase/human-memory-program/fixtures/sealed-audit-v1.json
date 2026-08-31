@@ -12,9 +12,9 @@
     "memory": {
       "distribution": "simple-harness-memory-sdk",
       "version": "0.6.0",
-      "source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9",
-      "wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad",
-      "reproducible_second_wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad"
+      "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+      "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2",
+      "reproducible_second_wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"
     }
   },
   "principal": {
