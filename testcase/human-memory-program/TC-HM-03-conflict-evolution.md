@@ -7,7 +7,7 @@ type: hybrid
 obligations: [HM-TO-A2, HM-TO-A4, HM-TO-R2, HM-TO-R3]
 tags: [human-memory, correction, conflict, supersede]
 entrypoint: primary conversation and recall
-revision: 2
+revision: 3
 ---
 
 # TC-HM-03 — 事实变化与含糊冲突
@@ -16,7 +16,7 @@ revision: 2
 
 - 已有 active 用户事实“常用 Python 3.11”，其证据和 revision 已记录。
 - 故障 seam、runner 与终态 oracle 以 `fixtures/fault-matrix.json` 的 `claim-supersede` lane 为准；fixture SHA-256
-  `6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c`。
+  `c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b`。
 
 ## 步骤与预期
 

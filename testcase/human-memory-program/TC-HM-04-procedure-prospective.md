@@ -7,13 +7,13 @@ type: hybrid
 obligations: [HM-TO-A5, HM-TO-R2, HM-TO-R6]
 tags: [human-memory, procedure, prospective, trigger, permission]
 entrypoint: primary conversation and Host scheduler
-revision: 2
+revision: 3
 ---
 
 # TC-HM-04 — Procedure 与 Prospective 一等能力
 
 触发故障使用 `fixtures/fault-matrix.json` 的 `prospective-occurrence` lane；fixture SHA-256
-`6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c`。
+`c67881ae20a3f6b442f1ac46db9e6e9a472edc3ec09079e8a42ef219e9b6bc6b`。
 
 ## 步骤与预期
 

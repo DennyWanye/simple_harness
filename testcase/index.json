@@ -2267,7 +2267,7 @@
       "purpose": "Verify explicit correction supersedes stale memory while ambiguous conflict remains contested",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2291,7 +2291,7 @@
       "purpose": "Verify Procedure activation and Prospective trigger lifecycle remain distinct and permission bounded",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2397,7 +2397,7 @@
       "purpose": "Verify invalid LLM plans and cross-repository initialization fail closed and recover without half state",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "api",
       "tags": [
@@ -2423,7 +2423,7 @@
       "purpose": "Verify TaskScope creation, immutable multi-root binding revisions, and per-effect workspace authority",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2477,7 +2477,7 @@
       "purpose": "Verify one foreground ReAct Run, durable FIFO, semantic closure, and bounded causal Context assembly",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2532,14 +2532,16 @@
       "path": "human-memory-program/TC-HM-13-typed-recall-result.md",
       "preconditions": [
         "Exact candidate Harness SDK wheel path and SHA-256 are available",
+        "Exact candidate Harness SDK source commit is available",
         "Exact candidate Memory SDK wheel path and SHA-256 are available",
+        "Exact candidate Memory SDK source commit is available",
         "Candidate Memory root exports the public black-box fixture callable",
         "Fresh isolated artifact directory is outside tracked testcase files"
       ],
       "purpose": "Verify typed recall writes, source bindings, result-bound disclosure, atomic conflict confirmation, and fail-closed replay",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "api",
       "tags": [
@@ -2570,7 +2572,7 @@
       "purpose": "Verify three-repository public contracts, fresh initialization, frozen recall quality, and performance budgets",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "api",
       "tags": [
