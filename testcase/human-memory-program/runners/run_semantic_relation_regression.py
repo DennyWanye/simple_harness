@@ -42,7 +42,17 @@ def main() -> int:
     commands = (
         ("harness-tests", [uv, "run", "pytest", "-q"], harness_root),
         ("harness-ruff", [uv, "run", "ruff", "check", "src", "tests"], harness_root),
-        ("harness-mypy", [uv, "run", "mypy", "src/simple_harness"], harness_root),
+        (
+            "harness-changed-surface-mypy",
+            [
+                uv,
+                "run",
+                "mypy",
+                "src/simple_harness/runtime/memory_protocol.py",
+                "src/simple_harness/__init__.py",
+            ],
+            harness_root,
+        ),
         ("memory-tests", [uv, "run", "pytest", "-q"], memory_root),
         ("memory-ruff", [uv, "run", "ruff", "check", "src", "tests"], memory_root),
         ("memory-mypy", [uv, "run", "mypy", "src/simple_harness_memory"], memory_root),

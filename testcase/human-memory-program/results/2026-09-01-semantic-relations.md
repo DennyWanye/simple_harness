@@ -7,6 +7,11 @@
 | TC-HM-12 rev3 | 1–5 and relation trace subset of 8–9 | PASS | `.local-test-evidence/2026-09-01/semantic-relations-public-run02/` |
 | TC-HM-08 rev4 | 6–9 relation integrity subset | PASS (40/40) | `.local-test-evidence/2026-09-01/semantic-relations-integrity-run22/` |
 
+The final gate also reruns both repositories' complete pytest and ruff suites, the complete Memory mypy target,
+the changed Harness public-protocol mypy surface, and both oracle self-checks. Harness-wide mypy is a known red
+baseline (171 errors in 21 unrelated modules) and is retained as a failed gate attempt rather than represented as
+passing or expanded into this relation slice.
+
 ## Exact candidate identity
 
 - Harness: `simple-harness-sdk==0.7.0`, source `3e7a71af1dfea2e065530208225ac13fc5f17300`,
