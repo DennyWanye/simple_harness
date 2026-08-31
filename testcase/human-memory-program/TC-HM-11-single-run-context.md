@@ -7,7 +7,7 @@ type: hybrid
 obligations: [HM-TO-A3, HM-TO-A6, HM-TO-A8, HM-TO-R2, HM-TO-R7, HM-TO-R8]
 tags: [human-memory, foreground-run, fifo, context, closure, restart]
 entrypoint: long-running primary conversation
-revision: 1
+revision: 2
 ---
 
 # TC-HM-11 — 单前台 Run、消息排队与动态 Context
@@ -17,7 +17,7 @@ revision: 1
 - 同一永久主对话准备不少于 24 个完整因果 turn group、两个 TaskScope、五天内外短时内容、四类长期记忆、并行工具调用与一个 1 MiB Tool Result。
 - 分别运行 4k、8k、32k effective provider window；至少一次真实主模型 root run。
 - FIFO/closure crash 使用 `fixtures/fault-matrix.json` 的 `foreground-fifo-closure` lane；fixture SHA-256
-  `92dc05175c5b49e909ca23657c65a8a77b16e176a480b098c5c2a0a67584fd83`。
+  `6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c`。
 
 ## 步骤与预期
 

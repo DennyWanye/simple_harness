@@ -84,9 +84,40 @@
     {
       "id": "typed-recall-decision-result",
       "testcases": ["TC-HM-13", "TC-HM-X01"],
-      "runner_command": "python3 -m pytest tests/faults/test_typed_recall_decision_result.py -q",
-      "seams": ["decision-header", "between-decision-items", "before-result-header", "between-result-items", "before-terminal-fence", "commit-before-ack", "restart-open-rebuild"],
-      "terminal_oracle": "before commit only a start attempt may remain; after commit exact replay returns byte-identical decision/result; naked source refs and incomplete conflict groups disclose zero content"
+      "runner_command": "python3 testcase/human-memory-program/runners/run_typed_recall_public_consumer.py --fixture testcase/human-memory-program/fixtures/typed-recall-v2.json --harness-wheel $HARNESS_WHEEL --memory-wheel $MEMORY_WHEEL --consumer-entrypoint simple_harness_memory:run_typed_recall_black_box_fixture --artifact-dir $ARTIFACT_DIR",
+      "fixture": "typed-recall-v2.json",
+      "fixture_sha256": "71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd",
+      "payloads": [
+        {"id": "contest-create", "oracle": "atomic rN+1 plus group, two ordered members, relation, decision, receipt, and head CAS"},
+        {"id": "contest-reject-matrix", "oracle": "no-evidence, same-content, stale-target, shared-evidence, active-group, nested, and cross-principal all leave zero state delta"},
+        {"id": "contest-resolve", "oracle": "authorized rN+2 select-incumbent/replacement plus terminal supersede/suppress; old group never revives"},
+        {"id": "decision-result", "oracle": "one terminal transaction or start-attempt only"},
+        {"id": "authority-events", "oracle": "each eligibility-changing event stales old result use"},
+        {"id": "context-use", "oracle": "suppression-first and receipt-first linearize with exact-attempt replay"}
+      ],
+      "seams": [
+        "conflict-group-insert",
+        "between-conflict-members",
+        "conflict-relation-insert",
+        "conflict-decision-insert",
+        "conflict-receipt-insert",
+        "conflict-head-cas",
+        "conflict-resolution-insert",
+        "resolution-head-cas",
+        "decision-header",
+        "between-decision-items",
+        "before-result-header",
+        "between-result-items",
+        "before-terminal-fence",
+        "recall-authority-event-insert",
+        "recall-authority-head-cas",
+        "context-use-receipt-insert",
+        "suppression-before-context-use",
+        "context-use-before-suppression",
+        "commit-before-ack",
+        "restart-open-rebuild"
+      ],
+      "terminal_oracle": "each mutation is all-old or all-new; resolved groups never reactivate; before final recall commit only a start attempt may remain; after commit exact replay returns byte-identical decision/result/use receipt; naked source refs and incomplete conflict groups disclose zero content"
     }
   ]
 }

@@ -7,7 +7,7 @@ type: hybrid
 obligations: [HM-TO-A3, HM-TO-A8, HM-TO-R2, HM-TO-R4]
 tags: [human-memory, taskscope, multi-root, binding, auto-mode]
 entrypoint: context_route and project effect
-revision: 1
+revision: 2
 ---
 
 # TC-HM-09 — TaskScope 创建、多根绑定与权限
@@ -17,7 +17,7 @@ revision: 1
 - 配置 workspace root 的真实后代两个、外部合法目录一个、workspace root 本身、公共父目录、文件、symlink 越界目录和可制造 filesystem identity drift 的目录。
 - 未配置 workspace 时另跑 macOS/Linux 默认 `~/SimpleHarnessWorkSpace` lane。
 - crash/retry 使用 `fixtures/fault-matrix.json` 的 `taskscope-init-binding` lane；fixture SHA-256
-  `92dc05175c5b49e909ca23657c65a8a77b16e176a480b098c5c2a0a67584fd83`。
+  `6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c`。
 
 ## 步骤与预期
 

@@ -7,7 +7,7 @@ type: scripted
 obligations: [HM-TO-A1, HM-TO-A2, HM-TO-A8, HM-TO-R1, HM-TO-R4, HM-TO-R5, HM-TO-R6]
 tags: [human-memory, cross-repo, wheel, quality, benchmark, fresh-init]
 entrypoint: clean wheel consumers and frozen evaluator corpus
-revision: 2
+revision: 3
 ---
 
 # TC-HM-X01 — 跨仓契约、全新初始化与质量硬门
@@ -16,7 +16,7 @@ revision: 2
 
 - 三仓 exact candidate commit/wheel hash 与公共协议版本。
 - 固定 seed 的 evaluator corpus：exact/semantic/entity/time/task/cross-scope/no-match/suppressed/superseded/contested-not-required/expired/recipient-private，包含明确 Episode、Semantic、Procedure、Prospective 和无长期价值反例。`contested-not-required` 仅重命名旧类别，原 20 条 query 与 `no_recall=true` gold 不变。
-- 依赖冲突事实才能继续的 `contested-dependent-complete/partial` 不进入真实模型质量分母，只存在于 `typed-recall-v1.json` 的确定性协议 oracle。
+- 依赖冲突事实才能继续的 `contested-dependent-complete/partial` 不进入真实模型质量分母，只存在于 `typed-recall-v2.json` 的确定性协议 oracle。
 - 1k/10k/100k active records；至少 200 个 query；1M 仅 exploratory。
 
 Fixture lock：
@@ -25,8 +25,9 @@ Fixture lock：
 - `generate_model_eval_corpus.py` SHA-256 `673ed746dec9d15c7c874ef1a64ea71036bc309df0f1e6ab4558fce856132431`
 - `metric-formulas.json` SHA-256 `27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a`
 - `program-journey.json` SHA-256 `b462b84244153867962b08f4d2dde8a2d3293562a90b3aeee616f27acbeeee8f`
-- `fault-matrix.json` SHA-256 `92dc05175c5b49e909ca23657c65a8a77b16e176a480b098c5c2a0a67584fd83`
-- `typed-recall-v1.json` SHA-256 `3c1d17551aa6056dec51e4c7b8fae026d8da2f0f0c28d4c54b08e0cbb97af6d3`
+- `fault-matrix.json` SHA-256 `6882fe06cb561cb8cd1fbe1f0ad8fff1589218ffa295c3d4d12cc36283e1446c`
+- `typed-recall-v2.json` revision 2 SHA-256 `71d87d7c9c67faf45b8e1f16bbf9a3b0d61596b40a186d0dd27f304241b6bddd`
+- `runners/run_typed_recall_public_consumer.py` SHA-256 `eda919b10601d651aa4720fcec5b29bccdd4aa9b559d222081277dd021bb8815`
 - 由上述固定 generator/spec 产生的 240-query corpus SHA-256
   `49e622f3e6913e870e08fbb58d5f21fb44226a2a63d1eec1ee7fb985e054a5a7`
 
