@@ -15,22 +15,22 @@
     "fixture rows passed to get_twin_graph_view"
   ],
   "candidate_identity": {
-    "status": "PENDING_POST_BUILD_PIN",
+    "status": "PINNED",
     "harness": {
       "distribution": "simple-harness-sdk",
-      "version": null,
-      "source_commit": null,
-      "wheel_sha256": null,
-      "reproducible_second_wheel_sha256": null
+      "version": "0.7.0",
+      "source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+      "wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+      "reproducible_second_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd"
     },
     "memory": {
       "distribution": "simple-harness-memory-sdk",
-      "version": null,
-      "source_commit": null,
-      "wheel_sha256": null,
-      "reproducible_second_wheel_sha256": null
+      "version": "0.6.0",
+      "source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+      "wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+      "reproducible_second_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
     },
-    "public_adapter_sha256": null
+    "public_adapter_sha256": "21209b70eb38de4e77635e1fb9edc4adeb1acdfc03cdb9e64f84f75f6492684e"
   },
   "required_public_symbols": {
     "simple_harness": [
@@ -45,8 +45,12 @@
       "SemanticRelationMemoryPayload"
     ],
     "simple_harness_memory": [
+      "build_human_memory_v7",
       "MemoryManager",
-      "SQLiteMemoryBackend"
+      "MemoryPrincipal",
+      "MemoryScope",
+      "InformationClassificationPolicy",
+      "MemoryMutationReceiptView"
     ]
   },
   "strict_plan_oracle": {

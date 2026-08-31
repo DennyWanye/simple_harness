@@ -21,43 +21,43 @@ revision: 3
 - DTO oracle：`fixtures/twin-graph-v1.json` revision 1，SHA-256
   `02c7e7e306cdccf1cb7e7a6d792b0e7e39a9bf4161db4eeaade7a4f70deaed61`。
 - self-check runner：`runners/run_twin_graph_public_consumer.py`，SHA-256
-  `c797ce8d87e0738824adada8ed6286155b23b55b6bcbdd2db520104fa3050ae3`。
+  `8a8d4bdc169f3cbc2e254f8b888d350e8e9245c749bad564ef8affa19ce3e1b0`。
 - relation oracle：`fixtures/semantic-relations-v1.json` revision 1，SHA-256
-  `f4aab67c16fee324a6a257b6ede409be02d3477246025d57cb17f4bc6fda0f02`。它在生产实现前冻结 Harness v5 三 operation wire、双 wheel package-root 边界、
+  `224d8f864eb52f285d96f957cd60a455b37eaa97e18fe1f36f8674d055b8f439`。它在生产实现前冻结 Harness v5 三 operation wire、双 wheel package-root 边界、
   2 nodes + 1 `applies_to` edge、relation node zero、endpoint suppression 与 close/reopen 0 edge。
 - `twin-graph-v1.json` 是 rev1 projection regression 数据，包含的历史 edge labels 与 `mem-rel` 普通 node 不是 v5
   relation-memory write contract；v5 knowledge relation kind 只以 relation oracle 的 `applies_to` 为准。
-- Memory candidate 固定为 `simple-harness-memory-sdk==0.6.0`、source commit
-  `8cdc103c01335849462779f1cf95e86fccb445f7`、wheel SHA-256
-  `723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182`；两次独立 build byte-identical。
+- 候选身份固定为 Harness `simple-harness-sdk==0.7.0`、source commit
+  `3e7a71af1dfea2e065530208225ac13fc5f17300`、wheel SHA-256
+  `d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd`，以及 Memory
+  `simple-harness-memory-sdk==0.6.0`、source commit `64284059f9ee82d886d85151a95c542660d09c1a`、wheel
+  SHA-256 `844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e`；两仓两次独立 build
+  均 byte-identical。public adapter SHA-256 为
+  `21209b70eb38de4e77635e1fb9edc4adeb1acdfc03cdb9e64f84f75f6492684e`。
 - 唯一 graph read port 名称是 `get_twin_graph_view`。禁止 graph→recall/rank/context conversion，也禁止
   Agent runtime、Recall pipeline 或 Context assembler 把 graph DTO 当 authority。
 - 正式 SDK lane 只能从 exact installed wheel 的 package root 取得 public Manager/backend/DTO；必须用公开 evidence、
   mutation、correction、suppression 与 close/reopen API 建立真实 canonical durable state，再通过 Manager/
   `CognitiveMemoryBackend.get_twin_graph_view` 读取。禁止 source checkout、private import、直接 SQL、repository object，
   也禁止把 fixture 的 `canonical_records/relation_rows` 直接传给 graph method。
-- Task 6 candidate identity 已冻结；exact public seed contract 仍为
-  `PENDING_TASK6_PUBLIC_SEED_API_PIN`。formal runner 必须先核对 wheel bytes/metadata/source pin，再以
-  `exact package-root public manager/backend seed contract is not pinned` 返回 `NOT_RUN/BLOCKED`；DTO self-check
-  PASS 不是产品 PASS。
-- Semantic relation candidate identity 在本 revision 冻结时刻必须是 `PENDING_POST_BUILD_PIN`；Task 0 只冻结行为、DTO、
-  transition 和 public choreography。构建后的 Harness/Memory wheel bytes、versions、source commits 与 reproducible hashes
-  在单独 repin 阶段填入，不得改写 relation oracle 语义。
+- exact public seed contract 已固定为 package-root evidence admission、strict atomic mutation、owned committed receipt view、
+  graph read、authorized endpoint suppression 与 close/reopen。formal runner 必须先核对 wheel bytes/metadata/source pin 和
+  required public symbols；DTO self-check PASS 仍不是产品 PASS。
 
 ## 冻结命令
 
 ```bash
-python3 testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --self-check
+python testcase/human-memory-program/runners/run_twin_graph_public_consumer.py --self-check
 ```
 
 ```bash
-python3 testcase/human-memory-program/runners/run_twin_graph_public_consumer.py \
+python testcase/human-memory-program/runners/run_twin_graph_public_consumer.py \
   --harness-wheel <exact-harness-wheel> \
   --harness-wheel-sha256 <exact-harness-sha256> \
   --harness-source-commit <exact-harness-commit> \
-  --memory-wheel /tmp/simple-harness-memory-task6-wheel-one.gVYHGH/simple_harness_memory_sdk-0.6.0-py3-none-any.whl \
-  --memory-wheel-sha256 723bcbc36847f058f3f50c634f008ba12c399a3547b7bb3c2ba7eecf4d8bd182 \
-  --memory-source-commit 8cdc103c01335849462779f1cf95e86fccb445f7 \
+  --memory-wheel <exact-memory-wheel> \
+  --memory-wheel-sha256 844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e \
+  --memory-source-commit 64284059f9ee82d886d85151a95c542660d09c1a \
   --manager-entrypoint <pinned-public-only-adapter.py> \
   --artifact-dir .local-test-evidence/<date>/<run>
 ```

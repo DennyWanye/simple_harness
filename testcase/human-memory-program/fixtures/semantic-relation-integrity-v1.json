@@ -5,9 +5,22 @@
   "quality_gate": "NOT_RUN/BLOCKED",
   "purpose": "Freeze fail-closed admission, atomicity, lifecycle, restart-integrity, audit, and evidence-retention oracles for applies_to relation memories before implementation.",
   "candidate_identity": {
-    "status": "PENDING_POST_BUILD_PIN",
-    "harness": null,
-    "memory": null
+    "status": "PINNED",
+    "harness": {
+      "distribution": "simple-harness-sdk",
+      "version": "0.7.0",
+      "source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
+      "wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+      "reproducible_second_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd"
+    },
+    "memory": {
+      "distribution": "simple-harness-memory-sdk",
+      "version": "0.6.0",
+      "source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
+      "wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+      "reproducible_second_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+    },
+    "integrity_adapter_sha256": "f98ba55ed7d44170363bbac5de1e0b07fcc6f8e285a5913c7a55bf2a2e1956d8"
   },
   "allowed_relation_kinds": [
     "applies_to"
@@ -29,72 +42,89 @@
   "rejection_cases": [
     {
       "id": "missing-dependency",
+      "boundary": "harness_pre_admission",
       "reason_code": "relation_endpoint_dependency_required"
     },
     {
       "id": "forward-dependency",
+      "boundary": "harness_pre_admission",
       "reason_code": "invalid_dependency_order"
     },
     {
       "id": "non-create-producer",
+      "boundary": "harness_pre_admission",
       "reason_code": "relation_endpoint_create_required"
     },
     {
       "id": "duplicate-operation-id",
+      "boundary": "harness_pre_admission",
       "reason_code": "duplicate_operation"
     },
     {
       "id": "unknown-relation-kind",
+      "boundary": "harness_pre_admission",
       "reason_code": "invalid_relation_kind"
     },
     {
       "id": "illegal-source-type",
+      "boundary": "harness_pre_admission",
       "reason_code": "invalid_relation_source_type"
     },
     {
       "id": "illegal-target-type",
+      "boundary": "harness_pre_admission",
       "reason_code": "invalid_relation_target_type"
     },
     {
       "id": "self-loop",
+      "boundary": "harness_pre_admission",
       "reason_code": "relation_self_loop"
     },
     {
       "id": "relation-as-endpoint",
+      "boundary": "harness_pre_admission",
       "reason_code": "relation_endpoint_must_be_claim"
     },
     {
       "id": "cross-principal",
-      "reason_code": "relation_endpoint_principal_mismatch"
+      "boundary": "memory_post_admission",
+      "reason_code": "relation_endpoint_not_owned"
     },
     {
       "id": "missing-endpoint",
+      "boundary": "memory_post_admission",
       "reason_code": "relation_endpoint_not_found"
     },
     {
       "id": "stale-endpoint-revision",
-      "reason_code": "relation_endpoint_revision_mismatch"
+      "boundary": "memory_post_admission",
+      "reason_code": "relation_endpoint_revision_stale"
     },
     {
       "id": "contested-endpoint",
-      "reason_code": "relation_endpoint_not_active"
+      "boundary": "memory_post_admission",
+      "reason_code": "relation_endpoint_conflict_ineligible"
     },
     {
       "id": "suppressed-endpoint",
-      "reason_code": "relation_endpoint_not_active"
+      "boundary": "memory_post_admission",
+      "reason_code": "relation_endpoint_state_ineligible"
     },
     {
       "id": "missing-evidence",
+      "boundary": "harness_pre_admission",
       "reason_code": "evidence_ref_required"
     },
     {
       "id": "classification-insufficient",
-      "reason_code": "relation_disclosure_denied"
+      "boundary": "memory_post_admission",
+      "reason_code": "relation_endpoint_classification_not_disclosable"
     }
   ],
   "pre_admission_wire_cases": [
     {
       "id": "malformed-v5-wire",
+      "reason_code": "memory_mutation_unsupported_schema_version",
       "harness_oracle": "bounded credential-safe typed diagnostic with stable reason code",
       "host_durable_audit_oracle": "NOT_RUN/BLOCKED_UNTIL_S5",
       "memory_call_count": 0,
@@ -197,6 +227,580 @@
       "terminal_oracle": "reopen/rebuild fail closed; zero public edge"
     }
   ],
+  "case_command_plans": {
+    "after-edge-before-commit": {
+      "exercise": {
+        "canonical_sha256": "b4d4b52e39efbfbda0b0996c425e0eeb11b9dcd03a4eec9feb857c193fd157e6",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "64fe4a7b9d202b2b1e87481e04a62e57bf6bfb005dba882f3d2f7c40256a3310",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "after-memory-before-edge": {
+      "exercise": {
+        "canonical_sha256": "fc9351118d461c70ec688559d19e6dd12eab710097b722f761f1194ebbc9274a",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "b1f431cde972dd4a5d74566bdab443b8a7a659fcc6acc2d4fee3adec08c1b906",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "before-relation-memory-insert": {
+      "exercise": {
+        "canonical_sha256": "a58742c9fd7ce6455262f699076954f9ae29abc50d1f11e435b1bfacca2177c1",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "6995ff9682a3766d0405651563e4d6522792c8aecf82e503414fdc6be3a821c7",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "classification-insufficient": {
+      "exercise": {
+        "canonical_sha256": "f0b57ec76fb7401da451bcfdfe5f4b4e0b907407c3009e3e0a242efe7aced792",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "900a1b9cac1284acaa34373fd2ffb625ee6c530ab0f99ffcfe0fcebe200bf85b",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "classification-restricted": {
+      "exercise": {
+        "canonical_sha256": "41eb50aa568a813959e50430e3aba1f19251cb063f718149bd19606c8eae7b9a",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "54d5a5e506547a473d4aceb56c023ed4213d877cee2b1e8bba12bb8d24948f54",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "commit-before-ack": {
+      "exercise": {
+        "canonical_sha256": "637bfb97ff39f676a0f347379cf1ae3b5ee7f2b2dd4a500b5a2f079fd11f1f70",
+        "command_kinds": [
+          "apply_memory_mutation_plan",
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "c62c2406030afb11940af7a0cc6426b8d6284d8ae34821196aec2b5252952375",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "conflicting-replay": {
+      "exercise": {
+        "canonical_sha256": "2523ebaaff462765b37ddec21043338ba1599042086f0f98133a4f0766ecc2ed",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "df1a985debae057cf465af61315487bc7db5f63a75903fe3db1a75f20e41828b",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "contested-endpoint": {
+      "exercise": {
+        "canonical_sha256": "828235df368472fc3768e073aac494b1904349a5c51f11c688840da4a865cfc8",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "521db725b2d2c4cf30eddee781499fdfa5fbeb2072e63229870498cf4ce5ba02",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "created-endpoints": {
+      "exercise": {
+        "canonical_sha256": "3943e3c7775771678b8e6489efea0309299bfdceb6f7b6159f734493f0a23abe",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "19bcb59937cf867c8d390f5fdf46ce1248a989c1973ab6580313ef54bd4644ad",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "cross-principal": {
+      "exercise": {
+        "canonical_sha256": "0f847ce0481c37ec0a828beeb8d07c71e73efa3a0cafc3a4e75eb855f08d5522",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "fdb566ac56e5193e441c3221f2a5c62c249168c73bf7e749d025539b70917680",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "domain-mismatch": {
+      "exercise": {
+        "canonical_sha256": "35b4a9cc483f9c54204e1b4e13898e6005cfbf7f1d0233c726a880b536807d5b",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "d73cca374bd600711b0b80fb6f1aead63ddaf42091f4e1404832e10effbf2491",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "duplicate-operation-id": {
+      "exercise": {
+        "canonical_sha256": "09d11ef9029553995a74514970d9bf0ef8a6bc45aeaebbb8f54b2932b17fb513",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "74d8d3272b0ab6996649e8a42a9b1213c785d0494aeadef640beceda258ae8ab",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "endpoint-contested": {
+      "exercise": {
+        "canonical_sha256": "1c23ae08cb9d06c0c0cca52a3ae068c284a47cc070b5b45778e0b7cae8cb3e88",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "db9ed09ef8217faffcf76fe492773a07ab975bfbb4a8c121763ee300f69da488",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "endpoint-expired": {
+      "exercise": {
+        "canonical_sha256": "98341900f03ada364cd2fe83d06550c8e878f5c8d7ad5c128e5065bd48ed53b7",
+        "command_kinds": [
+          "sleep"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "db93fa066efb1cb7312cd0db46b37091d5046503e67c21e0b00973df254df226",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "endpoint-foreign-key-mismatch": {
+      "exercise": {
+        "canonical_sha256": "35b4a9cc483f9c54204e1b4e13898e6005cfbf7f1d0233c726a880b536807d5b",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "a94dbe7982699c308673580998b2e50477b06ff2e3b435d9e42e661b39b0c18e",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "endpoint-superseded": {
+      "exercise": {
+        "canonical_sha256": "08e0a0d51ff11acc1754c3c17158038e571bb6c09ba9215cd4453cfe29a7d527",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "612dc8d05c14bc7a888ecdf0850c8d5e24a2efc7aa062b28bbe267a3f427168b",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "endpoint-suppressed": {
+      "exercise": {
+        "canonical_sha256": "a83517cf66f89d59475007b181dee50adaef35bac963dba451be09a2b6038116",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "2568ff159f314d0eaf71d2e9d7a4d5adcd3bc63c4f6872c3674dc3c60745142c",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "evidence-suppressed": {
+      "exercise": {
+        "canonical_sha256": "0801ea09607fef240e14cf54f372878c9831bc1e3cf0e9b95b333dbcccf84b83",
+        "command_kinds": [
+          "suppress"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "c345fcbb9cb1321298d522b726edc015b149c40a7762ed0de4393aa5ad2d03d0",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "exact-replay": {
+      "exercise": {
+        "canonical_sha256": "2d4d7a2bbdf3be8a6bb5a94f2e267d993e9464055fb808c2c9d54180b927f0ef",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "741c01752ba7138efff8fe6fca2764c8bf3d29d0fa7c6cdc54f8544c0a8e9244",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "existing-endpoints": {
+      "exercise": {
+        "canonical_sha256": "3d72d41a1bcc374107c04f959e3fd2711e12a04d83bb7c0c4f5c7fadb188efb8",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "9a8b605b9e396eb05a7aae8a035dbeac712ffea9ee4bb9e5df397720806679e6",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "forward-dependency": {
+      "exercise": {
+        "canonical_sha256": "6fe44372a9ac8724a2b87c94d1909dbddb2e874f8bf001e9be31a6d2aa1879b3",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "1f2adcb58b86d921c180512b36250a4eb11e30cabb467fcd13a214886085111d",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "illegal-source-type": {
+      "exercise": {
+        "canonical_sha256": "88fe4e691eed9a7b52a246a270f07a2adda81e8f6954e5a8fffbdfd69cbed8b3",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "ca7922f48e1bcb8288a004f985a1252290788b2776f39526a58b4409396867c0",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "illegal-target-type": {
+      "exercise": {
+        "canonical_sha256": "38ff6d211cd89e081b7eaab9ffc02c420c862d9897c47cd133d4102530030011",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "e58bb515b81485770373eaae11d815bb0acafe8ef08af7e008b7764bae406862",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "malformed-v5-wire": {
+      "exercise": {
+        "canonical_sha256": "c668a4024dcd6c57f02c1eddf5ae597cd8d1001e932d992d223983a3c78b62c0",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "834ae1a11081e190434181dd3191433adc7640e063b22eddab71c64ddb4ca5ab",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "missing-dependency": {
+      "exercise": {
+        "canonical_sha256": "1de3333d599d83d6d38c86450c95c4ab9483033021a851f45843b5e898851fa4",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "d0e33bcf519f95c88c90e7988b8157bd526cd462fe99f4f1d34a256cf1e2e175",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "missing-endpoint": {
+      "exercise": {
+        "canonical_sha256": "59eb38ed707251b196186820f3cd615d424c77762339863285827867c8e882f8",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "4de28543a81d3b21f4d2c46fa764082579864ec6fdcef217d1032f66db9ffacd",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "missing-evidence": {
+      "exercise": {
+        "canonical_sha256": "eba88118f4164603d0a1d9f4895a4de61b1d46fcd2182eb9dd099a0b908332ed",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "532f86990cd978844ff3716f9650ff5ca593eb1b963f82548306498f32cf1ee7",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "non-create-producer": {
+      "exercise": {
+        "canonical_sha256": "123de9c1b7d45f1beed6145aafcfabaea8249c18f5b67fd9263b647931a8abd0",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "baa312c2a67de0218d6b05bd4b58379a3ad2654d32eb1a5c0259dac426fffff5",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "owner-contested": {
+      "exercise": {
+        "canonical_sha256": "d18c1c667a0d883d6f6dc944a2951e01c3ceb48711a47c773b4d1f71284042d2",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "8767ced842aa672cb8bd051a6fc8467f8ec1088878ed3d9c58abf0c1b07d53d0",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "owner-expired": {
+      "exercise": {
+        "canonical_sha256": "98341900f03ada364cd2fe83d06550c8e878f5c8d7ad5c128e5065bd48ed53b7",
+        "command_kinds": [
+          "sleep"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "d5028e56cb4bc806b9c89c2d8ae348eb3e175c765aa4b235698163c67e57dfcb",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "owner-mismatch": {
+      "exercise": {
+        "canonical_sha256": "35b4a9cc483f9c54204e1b4e13898e6005cfbf7f1d0233c726a880b536807d5b",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "a51284dc22ac5ae4b3480f1a1c10202142d53c9f647c085bcef6955a978a0e9f",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "owner-superseded": {
+      "exercise": {
+        "canonical_sha256": "cc794822ba6e09a9ca3fe17d988da1680ddb48004babea19c653f79cbe288b49",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "170315ccb307bbc1b16b3546e642a8b29bd0c6eb376d11dd995d4b675db175dd",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "owner-suppressed": {
+      "exercise": {
+        "canonical_sha256": "cc5f00b8a6813d221d43ff6d90b00b07255f628624d2d232016c1ccbc2b222e7",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "c6e5a004fadef8fb0d1ccf8bb16db443ddec43199bdd8e611ae9768686760433",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "relation-as-endpoint": {
+      "exercise": {
+        "canonical_sha256": "4d45b10beaa910ddfe3f5875e0a2ea649c828b2b88308caa85bb0e350f925d6c",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "439bf9522df093bdcddfb4de393980ca12fc5dea9a36ea90c8f661bd47a05d2c",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "relation-corrected": {
+      "exercise": {
+        "canonical_sha256": "e6fe267d0c6158a929b0c6897d1ae318ba8ea8337e6599e3542971292af32440",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "d366748869133fcdd2f5efa9fdf8b9733364d7ef31645326b6f023cfac2e9c68",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "relation-hash-mismatch": {
+      "exercise": {
+        "canonical_sha256": "35b4a9cc483f9c54204e1b4e13898e6005cfbf7f1d0233c726a880b536807d5b",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "3efc7ba33cddaee091636bfae660f500d6baff00e8a67c450dc5f08126e462dc",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "self-loop": {
+      "exercise": {
+        "canonical_sha256": "211a09eab5427bbcc8f3a40021423fb75ce8533834548122723323afe3dc649a",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "5e90cece3766760fa13c4de533b79c1ce902f19a13057414ac8a32963c75facd",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    },
+    "stale-endpoint-revision": {
+      "exercise": {
+        "canonical_sha256": "d759685167a75d4d3989098f015c8c007ed074be84fcdb2d8b4584e7eb560a0d",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "f189b5bdd8194b4665e136d18972f5e81afb796c020ae0c800f06db2c2f67cba",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "suppressed-endpoint": {
+      "exercise": {
+        "canonical_sha256": "34a555209e729799887a38b8d271481fa7825328895ff26434b5e7ab25db3796",
+        "command_kinds": [
+          "apply_memory_mutation_plan"
+        ]
+      },
+      "setup": {
+        "canonical_sha256": "13d49fcf71229b85fab05068a51e85d43ac0b766a59dc39ec9f6b03ce9e50843",
+        "command_kinds": [
+          "ingest_committed_evidence",
+          "ingest_committed_evidence",
+          "apply_memory_mutation_plan",
+          "apply_memory_mutation_plan"
+        ]
+      }
+    },
+    "unknown-relation-kind": {
+      "exercise": {
+        "canonical_sha256": "dc934905be6c855de1fffbda0fb26085150313b16edc2e94973dd07a5748131c",
+        "command_kinds": []
+      },
+      "setup": {
+        "canonical_sha256": "5c02bd2cf917fea49379b2e894942a9899f387efd389e7b2bd176e65168d9c65",
+        "command_kinds": [
+          "ingest_committed_evidence"
+        ]
+      }
+    }
+  },
   "trace_and_retention_oracle": {
     "required_lineage": [
       "evidence -> plan",
@@ -219,21 +823,78 @@
     "runner": "runners/run_semantic_relation_integrity_evidence.py",
     "candidate_lane": "source integration faults plus exact dual-wheel public state transitions",
     "artifact_policy": "ignored .local-test-evidence only",
-    "required_case_result_fields": [
+    "adapter_argv": [
+      "--fixture",
+      "<integrity-fixture>",
+      "--case-id",
+      "<frozen-case-id>",
+      "--phase",
+      "setup|exercise",
+      "--db-dir",
+      "<fresh-request-only-dir-without-case-db>",
+      "--execution-nonce",
+      "<verifier-generated-hex64>",
+      "--invocation-hash",
+      "<verifier-computed-hex64>"
+    ],
+    "adapter_allowed_import_roots": [
+      "simple_harness",
+      "simple_harness_memory"
+    ],
+    "adapter_required_source_tokens": [
+      "import simple_harness",
+      "import simple_harness_memory",
+      "MemoryMutationPlan",
+      "SanitizedEvidenceEnvelope",
+      "SuppressionRequest"
+    ],
+    "adapter_forbidden_source_tokens": [
+      "from simple_harness.",
+      "from simple_harness_memory.",
+      "MemoryManager",
+      "build_human_memory",
+      "apply_memory_mutation_plan",
+      "get_twin_graph_view",
+      "__globals__",
+      "import sqlite3",
+      "import aiosqlite",
+      "import subprocess",
+      "import socket",
+      "sys.path",
+      "PYTHONPATH"
+    ],
+    "required_adapter_result_fields": [
       "case_id",
-      "status",
-      "expected_terminal_oracle",
-      "observed_outcome_or_reason",
+      "phase",
+      "execution_nonce",
+      "invocation_hash",
+      "commands",
+      "invalid_wire"
+    ],
+    "required_artifact_fields": [
+      "schema_version",
+      "case_id",
+      "execution_nonce",
+      "invocation_hash",
+      "candidate_identity",
+      "memory_call_count",
+      "outcome",
+      "reason_code",
       "before_roots",
       "after_roots",
       "before_row_cardinality",
       "after_row_cardinality",
       "raw_evidence_hash_before",
       "raw_evidence_hash_after",
+      "graph_before",
+      "graph_after",
       "reopen_result",
-      "candidate_identity",
-      "evidence_artifact_ref",
-      "evidence_artifact_sha256"
+      "first_receipt_hash",
+      "replay_receipt_hash",
+      "physical_delete_count",
+      "old_edge_count",
+      "new_edge_count",
+      "fault_seam"
     ],
     "required_root_fields": [
       "evidence_root",
@@ -249,6 +910,49 @@
       "receipt_rows",
       "audit_rows"
     ],
-    "pass_rule": "every frozen case appears exactly once with status PASS, exact candidate identity, complete hashes/cardinalities, raw evidence before equals after, and a case-specific terminal oracle; missing evidence is NOT_RUN/BLOCKED"
+    "required_graph_fields": [
+      "node_count",
+      "edge_count",
+      "relation_memory_node_count",
+      "payload_sha256"
+    ],
+    "required_reopen_fields": [
+      "status",
+      "edge_count",
+      "payload_sha256"
+    ],
+    "case_db_filename": "memory.sqlite",
+    "case_wire_filename": "invalid-wire.json",
+    "principal_context": {
+      "deployment_id": "deployment-relation-1",
+      "household_id": "household-relation-1",
+      "actor_id": "principal-relation-1",
+      "session_id": "session-relation-1"
+    },
+    "verifier_owned_inspector": {
+      "sqlite_tables": [
+        "evidence_envelopes",
+        "evidence_items",
+        "cognitive_memory_heads",
+        "cognitive_memory_revisions",
+        "cognitive_relations",
+        "memory_mutation_receipts",
+        "memory_mutation_rejection_audits",
+        "memory_mutation_apply_results"
+      ],
+      "graph_api": "installed simple_harness_memory.build_human_memory_v7 plus MemoryManager.get_twin_graph_view",
+      "harness_parser": "installed simple_harness.parse_memory_mutation_plan",
+      "rule": "adapter only performs setup/exercise; verifier snapshots and reads the real database, calls the installed graph API/parser itself, recomputes roots/cardinality/receipt/graph hashes, applies frozen corruptions itself, and writes the final artifact",
+      "request_process_isolation": "the pinned adapter runs in a separate process with only a fresh request directory and emits bounded command JSON; it never receives the case database path and cannot supply calls, outcomes, roots, receipts, fault events or PASS",
+      "apply_call_executor": "after the adapter process exits, a verifier-owned second process parses the bounded commands, opens the exact-wheel public MemoryManager, injects the frozen fault point, executes each real public apply/suppress/ingest call and returns the call trace; adapter and trace collector never share interpreter globals",
+      "fault_injection_points": {
+        "before-relation-memory-insert": "mutation.before_relation_memory_insert",
+        "after-memory-before-edge": "mutation.after_relation_memory_before_knowledge_row",
+        "after-edge-before-commit": "mutation.after_knowledge_row_before_commit",
+        "commit-before-ack": "mutation.after_commit"
+      },
+      "replay_rule": "exact replay requires a real exercise apply call returning the byte-identical public result captured from setup; commit-before-ack requires one verifier-injected post-commit exception followed by one real replay call with the stored receipt"
+    },
+    "pass_rule": "the verifier creates a clean venv, installs both exact wheels, independently probes installed module origins, generates an unpredictable nonce and invocation hash, obtains request-only command JSON from a separate adapter process, executes those commands in a verifier-owned exact-wheel process, and uses only that call trace plus its SQLite/package-root inspector to create and evaluate every artifact; external evidence indexes, adapter-produced artifacts, producer-reported call counts/outcomes, shared interpreter state, and producer-reported PASS are not inputs"
   }
 }

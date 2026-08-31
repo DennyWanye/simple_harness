@@ -2,6 +2,10 @@
 
 > Generated from testcase Markdown frontmatter. Do not record PASS/FAIL here.
 
+Human Memory execution results are recorded outside frozen testcase definitions under
+[`human-memory-program/results/`](human-memory-program/results/); the 2026-09-01 Semantic relation SDK result is
+[`2026-09-01-semantic-relations.md`](human-memory-program/results/2026-09-01-semantic-relations.md).
+
 | ID | Path | Purpose | AC/Obligation | Surface | Type | Preconditions | Entry point | Reusable tags | Last validated | Status | Results | Replacement |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | LEGACY-01E71BF30056 | workbench-ui/TC-WB-09-pet-code-removal.md | Review legacy testcase metadata: workbench-ui/TC-WB-09-pet-code-removal.md | — | unknown | hybrid | — | — | legacy, needs-metadata | — | needs-review | — | — |

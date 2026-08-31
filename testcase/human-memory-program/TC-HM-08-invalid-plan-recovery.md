@@ -21,12 +21,24 @@ revision: 4
 - 一等语义关系完整性 Oracle 以 `fixtures/semantic-relation-integrity-v1.json` revision 1 为准；它冻结
   positive endpoint、16 个 admission rejection、4 个事务 seam、重放、owner/endpoint lifecycle、重启损坏、
   trace/root 与原始证据永不物理删除；SHA-256
-  `e56b8f88e0ed91a03a7b093c0d615a1b290089bd28464d4d9b8790b1552d8172`。正式执行前保持
-  `NOT_RUN/BLOCKED`，不得把 self-check 当产品 PASS。
+  `fe03e8eaa283626766829689b6d46507a3b9f308986bb15702fdf65ede552d91`。候选身份固定为 Harness
+  `0.7.0` / `3e7a71af1dfea2e065530208225ac13fc5f17300` / wheel
+  `d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd` 与 Memory `0.6.0` /
+  `64284059f9ee82d886d85151a95c542660d09c1a` / wheel
+  `844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e`；两仓第二次构建 hash 必须相同。
+  self-check 仍不构成产品 PASS。
 - integrity evidence verifier：`runners/run_semantic_relation_integrity_evidence.py`，SHA-256
-  `1429e8fc06e78571917cc2e514f66db55a936d97d715ec60a772f05970d32bd8`。它要求冻结的 40 个 case
-  各自提供 observed outcome/reason、前后五类 roots、五类 row cardinality、raw-evidence 前后 hash、reopen result、
-  exact candidate identity 与本地 ignored artifact ref/hash；少一项或少一个 case 都不能 PASS。
+  `6ec3b646700eab44321630b1fb5dd185759a2d8cb62e35e6016c5ba7fc75055f`；request-only adapter SHA-256
+  `f98ba55ed7d44170363bbac5de1e0b07fcc6f8e285a5913c7a55bf2a2e1956d8`。它执行冻结的 40 个
+  case。verifier 自己在 clean venv 安装 exact wheels、生成不可预测 execution nonce 并逐 case 调用 post-build pinned
+  adapter。adapter 在独立进程中只生成 bounded setup/exercise command JSON，拿不到 case database 路径，也不能提交
+  call/outcome/fault/PASS；进程退出后，由 verifier-owned 第二进程解析命令并通过已安装 package-root
+  `MemoryManager` 执行真实 ingest/apply/suppress。adapter 与 call trace 不共享 interpreter globals。
+  fault seam 也由 verifier executor 注入，exact replay 必须出现一次真实 replay 调用，commit-before-ack 必须观察到一次
+  post-commit 异常和第二次真实调用。随后 verifier 自己读取 SQLite、调用已安装 Harness parser/graph API、注入 corruption，并生成
+  canonical JSON artifact，独立比较 exact reason、调用数、前后五类 roots、五类 row delta、receipt replay、old/new edge、
+  reopen fail-closed 与 raw-evidence retention；adapter 的 artifact、调用数、outcome、reason 或 PASS 均不是输入。任一机器
+  Oracle 不符或少一个 case 都不能 PASS。
 - 关系 malformed wire 在进入 Memory SDK 前由 Harness 返回有界、credential-safe、稳定 reason code；Memory 调用数和
   durable delta 都必须为 0。Host 的 durable pre-admission audit 是 S5 独立能力，在 S5 完成前必须明确报告
   `NOT_RUN/BLOCKED_UNTIL_S5`，不能用 Memory 的 post-admission rejection audit 冒充。
@@ -50,18 +62,18 @@ revision: 4
 ## 关系完整性冻结命令
 
 ```bash
-python3 testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --self-check
+python testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py --self-check
 ```
 
 ```bash
-python3 testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py \
+python testcase/human-memory-program/runners/run_semantic_relation_integrity_evidence.py \
   --harness-wheel <exact-harness-wheel> \
   --harness-wheel-sha256 <exact-harness-sha256> \
   --harness-source-commit <exact-harness-commit> \
   --memory-wheel <exact-memory-wheel> \
   --memory-wheel-sha256 <exact-memory-sha256> \
   --memory-source-commit <exact-memory-commit> \
-  --evidence-index .local-test-evidence/<date>/<run>/relation-integrity-index.json \
+  --case-entrypoint <pinned-integrity-case-adapter.py> \
   --artifact-root .local-test-evidence/<date>/<run>
 ```
 

@@ -260,14 +260,27 @@ def _relation_integrity_fixture_self_check(fixture_path: Path) -> dict[str, Any]
         "runners/run_semantic_relation_integrity_evidence.py"
     ):
         errors.append("relation integrity execution runner is not frozen")
-    if len(execution.get("required_case_result_fields", [])) != 14:
-        errors.append("relation integrity case evidence schema is incomplete")
+    if execution.get("required_adapter_result_fields") != [
+        "case_id",
+        "phase",
+        "execution_nonce",
+        "invocation_hash",
+        "commands",
+        "invalid_wire",
+    ]:
+        errors.append("relation integrity adapter result schema is incomplete")
+    if len(execution.get("required_artifact_fields", [])) != 23:
+        errors.append("relation integrity artifact evidence schema is incomplete")
     if execution.get("required_root_fields") != retention.get(
         "required_manifest_roots"
     ):
         errors.append("integrity evidence roots differ from manifest roots")
     if len(execution.get("required_row_fields", [])) != 5:
         errors.append("relation integrity row-cardinality schema is incomplete")
+    if len(execution.get("required_graph_fields", [])) != 4:
+        errors.append("relation integrity graph schema is incomplete")
+    if len(execution.get("required_reopen_fields", [])) != 3:
+        errors.append("relation integrity reopen schema is incomplete")
     if errors:
         return {"status": "FAIL", "errors": errors}
     return {
@@ -528,12 +541,21 @@ def execute_candidate(
         env = os.environ.copy()
         env["PYTHONPATH"] = ""
         env["PYTHONNOUSERSITE"] = "1"
+        required_symbols_json = json.dumps(
+            relation_fixture["required_public_symbols"], sort_keys=True
+        )
         probe_code = (
             "import importlib.metadata as m,json,simple_harness,simple_harness_memory;"
+            f"required=json.loads({required_symbols_json!r});"
+            "modules={'simple_harness':simple_harness,"
+            "'simple_harness_memory':simple_harness_memory};"
+            "missing={key:[name for name in names if not hasattr(modules[key],name)]"
+            " for key,names in required.items()};"
             "print(json.dumps({'harness':{'version':m.version('simple-harness-sdk'),"
             "'module_origin':simple_harness.__file__},'memory':{'version':"
             "m.version('simple-harness-memory-sdk'),'module_origin':"
-            "simple_harness_memory.__file__}},sort_keys=True))"
+            "simple_harness_memory.__file__},'missing_public_symbols':missing},"
+            "sort_keys=True))"
         )
         probe = subprocess.run(
             [str(python), "-c", probe_code],
@@ -549,6 +571,9 @@ def execute_candidate(
             installed_identity = json.loads(probe.stdout.strip().splitlines()[-1])
         except (IndexError, json.JSONDecodeError):
             return {"status": "FAIL", "reason": "installed identity probe emitted invalid JSON"}
+        missing_symbols = installed_identity.pop("missing_public_symbols", None)
+        if not isinstance(missing_symbols, dict) or any(missing_symbols.values()):
+            return {"status": "FAIL", "reason": "required public symbol is missing"}
         for key in ("harness", "memory"):
             installed = installed_identity.get(key, {})
             pin = relation_pin[key]
