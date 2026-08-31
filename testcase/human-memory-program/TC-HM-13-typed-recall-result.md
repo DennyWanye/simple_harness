@@ -12,12 +12,13 @@ preconditions:
   - Exact candidate Harness SDK source commit is available
   - Exact candidate Memory SDK wheel path and SHA-256 are available
   - Exact candidate Memory SDK source commit is available
-  - Candidate Memory root exports the public black-box fixture callable
+  - Validation-side public Manager adapter covers the exact frozen 391-cell set
+  - Exact-source integration/fault evidence covers the exact frozen 10-cell set
   - Fresh isolated artifact directory is outside tracked testcase files
-revision: 3
+revision: 4
 ---
 
-# TC-HM-13 rev3 — Typed Recall 写入、Decision/Result 与结果绑定披露
+# TC-HM-13 rev4 — Typed Recall 写入、Decision/Result 与结果绑定披露
 
 ## Authority 与固定输入
 
@@ -25,13 +26,19 @@ revision: 3
   import、私有 submodule、repository object、直接 SQL 和读取实现 diff。
 - 主 fixture：`fixtures/typed-recall-v3.json`，revision 3，SHA-256
   `373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12`。
+- 执行分层 fixture：`fixtures/typed-recall-execution-layers-v1.json`，revision 1，SHA-256
+  `2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca`。它冻结 401 个 cell
+  的 exact union：391 个 clean-wheel public Manager cell 与 10 个 exact-source corruption/fault cell；两层必须分别
+  PASS，任何一层的静态 digest、自检或另一层 PASS 都不能代替本层产品证据。
 - fault fixture：`fixtures/fault-matrix.json` 的 `typed-recall-decision-result` lane，SHA-256
   `b4dcb2f39a2e5c2f7afeeb1dd496aa94587fe075c8772ea44fab880115bc74da`。
-- official runner：`runners/run_typed_recall_public_consumer.py`，SHA-256
-  `61cd4dd7c3e5fa9c5ac6fa0765a8051c2cdf90a50461af71b26e3d14c153afcb`。
+- official oracle/combined-artifact validator：`runners/run_typed_recall_public_consumer.py`。该 runner 不得再要求
+  Memory 包根提供测试专用 callable；clean-wheel 产品操作由验证侧 adapter 通过公开 builder/Manager 驱动。SHA-256
+  `cb537559eaea35eba33a57e69d95ec0b6c85cc86e131e6f468df166afe498e93`。
 - Harness candidate 固定为 `simple-harness-sdk==0.7.0`、source commit `fb491574db8bb4d19d8a7f9df0c72ae460bb08f4`、wheel SHA-256
-  `36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f`；Memory candidate 固定为 `simple-harness-memory-sdk==0.6.0`、source commit `9c79fa7ed96214aac7de93a11970e02891afedae`、wheel SHA-256 `cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c`。任一 identity 缺失或不匹配均不得执行或 PASS。
-- runner/候选 callable 或任一 exact wheel 缺失时，本用例是 `NOT_RUN/BLOCKED`，不得以自检、邻近单测或私有探针替代。
+  `36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f`；Memory candidate 固定为 `simple-harness-memory-sdk==0.6.0`、source commit `d069e0e949edb44d85d2ebeac6e49b05f9fb51b1`、wheel SHA-256 `6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2`。任一 identity 缺失或不匹配均不得执行或 PASS。
+- 391-cell adapter、10-cell exact-source evidence 或任一 exact wheel 缺失时，本用例是 `NOT_RUN/BLOCKED`；不得以
+  fixture 自检、包根 capability probe、邻近单测、私有 SQL 或产品测试 helper 替代。
 
 ## 先验自检与正式命令
 
@@ -40,25 +47,15 @@ revision: 3
 ```bash
 /Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python testcase/human-memory-program/runners/run_typed_recall_public_consumer.py \
   --fixture testcase/human-memory-program/fixtures/typed-recall-v3.json \
+  --execution-layers testcase/human-memory-program/fixtures/typed-recall-execution-layers-v1.json \
   --self-check
 ```
 
-该命令只证明 fixture 的独立预计算值一致，不证明产品行为。正式黑盒执行：
-
-```bash
-/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python testcase/human-memory-program/runners/run_typed_recall_public_consumer.py \
-  --fixture testcase/human-memory-program/fixtures/typed-recall-v3.json \
-  --harness-wheel /tmp/simple-harness-task5-wheel3.MtoX75/simple_harness_sdk-0.7.0-py3-none-any.whl \
-  --harness-wheel-sha256 36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f \
-  --harness-source-commit fb491574db8bb4d19d8a7f9df0c72ae460bb08f4 \
-  --memory-wheel /tmp/simple-harness-memory-task5-wheel.Eftjjy/simple_harness_memory_sdk-0.6.0-py3-none-any.whl \
-  --memory-wheel-sha256 cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c \
-  --memory-source-commit 9c79fa7ed96214aac7de93a11970e02891afedae \
-  --consumer-entrypoint simple_harness_memory:run_typed_recall_black_box_fixture \
-  --artifact-dir /absolute/path/to/.local-test-evidence/typed-recall-task5
-```
-
-runner 会拒绝任何已存在的 artifact run directory，先核对两 wheel SHA-256，再用兼容 Python 与 `uv` 建立隔离 venv、从 exact candidate wheel 路径安装候选并解析其声明依赖、清空 `PYTHONPATH`，记录 distribution/version/module origin/source commit 后才从临时目录调用 package root。公开 callable/import 在调用前缺失为 `NOT_RUN/BLOCKED`；callable 一旦执行，assertion、exception、非零退出或自行返回 `NOT_RUN/BLOCKED` 一律 `FAIL`。
+该命令只证明 fixture known answers、401=391+10 exact partition 与 artifact validator 的负例一致，不证明产品行为。
+正式执行必须由验证侧 public Manager adapter 建立 fresh DB、通过 package-root DTO/builder/Manager 完成 391 个 cell，另由
+exact-source integration/fault-injection gate 完成明确列出的 10 个 corruption/fault cell，再由 combined validator 对 exact
+union 做去重、缺失、hash、freshness 和 identity 校验。当前任一层没有正式 fresh evidence 时，状态保持 `NOT_RUN/BLOCKED`，
+不得恢复已删除的 `simple_harness_memory:run_typed_recall_black_box_fixture` 假定。
 PASS 必须产生：`protocol.json`、`conflict-state.json`、`eligibility.json`、`current-use.json`、
 `unsupported-replay.json`、`selection-budget.json`、`fault-recovery.json` 和 `evidence-index.json`；result envelope
 必须回绑 fixture revision/hash。runner 必须解析全部 lane JSON 与 `evidence-index.json`，要求 401 个冻结 cell 的 exact set/unique ID/outcome/reason/query-count/canary/observed values 一致，重算逐 artifact/index SHA-256，并校验 index path/hash/timestamp、wheel identity 与 run freshness。每个 cell 的 before/after terminal hash 由 fixture domain-separated known answer 固定：`state_delta=0` 必须 exact unchanged，fault seam 只允许 exact all-old 或 exact all-new，其他 cell 必须 exact changed；任何第三状态或半状态均 `FAIL`。旧文件、空文件、聚合 PASS、篡改 hash 或 pre-existing directory 均 `FAIL`。原始 artifacts 只留 `.local-test-evidence/`，不得提交 Git。

@@ -2543,13 +2543,14 @@
         "Exact candidate Harness SDK source commit is available",
         "Exact candidate Memory SDK wheel path and SHA-256 are available",
         "Exact candidate Memory SDK source commit is available",
-        "Candidate Memory root exports the public black-box fixture callable",
+        "Validation-side public Manager adapter covers the exact frozen 391-cell set",
+        "Exact-source integration/fault evidence covers the exact frozen 10-cell set",
         "Fresh isolated artifact directory is outside tracked testcase files"
       ],
       "purpose": "Verify typed recall writes, source bindings, result-bound disclosure, atomic conflict confirmation, and fail-closed replay",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "api",
       "tags": [

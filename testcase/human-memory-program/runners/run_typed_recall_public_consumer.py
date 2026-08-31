@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Black-box runner for the frozen Typed Recall public-consumer contract.
+"""Oracle and execution-layer gate for the frozen Typed Recall contract.
 
-Self-check validates only the independent fixture oracle. Execute mode installs
-candidate wheels into an isolated virtual environment and invokes one callable
-exported directly from an allowed public package root. It never imports source
-checkouts, private submodules, repositories, or SQL helpers.
+Self-check validates the independent 401-cell oracle and its exact 391 public /
+10 source-integration partition.  Execute mode verifies exact candidate wheel
+identities, then remains fail-closed until both validation-side evidence layers
+are supplied.  Product test helpers, source imports, private submodules,
+repositories, and SQL helpers are never accepted as clean-wheel evidence.
 """
 
 from __future__ import annotations
@@ -15,18 +16,15 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
-import os
 from pathlib import Path
 import re
-import shutil
-import subprocess
-import sys
 import tempfile
 from typing import Any
 
 
 BLOCKED_EXIT = 3
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
+HEX40 = re.compile(r"^[0-9a-f]{40}$")
 REQUIRED_AUTHORITY_EVENTS = {
     "suppression",
     "revoke",
@@ -387,7 +385,7 @@ def _check_exhaustive_axes(fixture: dict[str, Any], errors: list[str]) -> tuple[
     return epistemic_total, disclosure_total
 
 
-def self_check(fixture_path: Path) -> dict[str, Any]:
+def self_check(fixture_path: Path, execution_layers_path: Path) -> dict[str, Any]:
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
     errors: list[str] = []
     if fixture.get("fixture_revision") != 3:
@@ -476,6 +474,13 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
         expected_product_cells = _expected_product_cells(fixture)
     except (KeyError, TypeError, ValueError) as exc:
         return {"status": "FAIL", "fixture": str(fixture_path), "errors": [f"product cell oracle invalid: {exc}"]}
+    layer_check = _validate_execution_layers(
+        fixture_path=fixture_path,
+        fixture=fixture,
+        execution_layers_path=execution_layers_path,
+    )
+    if layer_check["status"] != "PASS":
+        return layer_check
     artifact_validator_errors = _artifact_validator_self_check(fixture_path, fixture)
     if artifact_validator_errors:
         return {"status": "FAIL", "fixture": str(fixture_path), "errors": artifact_validator_errors}
@@ -500,6 +505,11 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
             + len(fixture["attribute_floor_cases"])
         ),
         "expected_public_artifact_cells": sum(len(cells) for cells in expected_product_cells.values()),
+        "execution_layers_fixture": str(execution_layers_path),
+        "execution_layers_fixture_sha256": layer_check["execution_layers_fixture_sha256"],
+        "clean_wheel_public_manager_cells": layer_check["clean_wheel_public_manager_cells"],
+        "source_exact_commit_integration_cells": layer_check["source_exact_commit_integration_cells"],
+        "combined_exact_union_cells": layer_check["combined_exact_union_cells"],
         "artifact_validator_self_check": "PASS",
         "artifact_validator_negative_cases": 5,
         "candidate_exit_classification": {
@@ -508,12 +518,6 @@ def self_check(fixture_path: Path) -> dict[str, Any]:
             "executed_returned_blocked": "FAIL",
         },
     }
-
-
-def _python_in_venv(venv_dir: Path) -> Path:
-    if os.name == "nt":
-        return venv_dir / "Scripts" / "python.exe"
-    return venv_dir / "bin" / "python"
 
 
 def _expected_product_cells(fixture: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
@@ -601,6 +605,127 @@ def _expected_product_cells(fixture: dict[str, Any]) -> dict[str, dict[str, dict
     for seam in fixture["durability_oracle"]["fault_seams"]:
         add("fault-recovery", f"fault:{seam}", {"seam": seam}, "ALL_OLD_OR_ALL_NEW", query_count=0)
     return lanes
+
+
+def _validate_execution_layers(
+    *,
+    fixture_path: Path,
+    fixture: dict[str, Any],
+    execution_layers_path: Path,
+) -> dict[str, Any]:
+    """Validate the frozen 391 public / 10 source-integration partition.
+
+    This is a routing oracle only.  It cannot turn either execution layer into
+    PASS and it cannot replace product artifacts from either layer.
+    """
+
+    try:
+        layers = json.loads(execution_layers_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "status": "FAIL",
+            "execution_layers_fixture": str(execution_layers_path),
+            "errors": [f"invalid execution-layers fixture: {type(exc).__name__}"],
+        }
+    errors: list[str] = []
+    if layers.get("schema_version") != 1 or layers.get("fixture_revision") != 1:
+        errors.append("execution-layers schema/revision must be 1")
+    if layers.get("quality_gate") != "NOT_RUN/BLOCKED":
+        errors.append("execution-layers semantic quality gate must remain NOT_RUN/BLOCKED")
+    if layers.get("typed_recall_fixture") != fixture_path.name:
+        errors.append("execution-layers typed recall filename pin mismatch")
+    if layers.get("typed_recall_fixture_revision") != fixture.get("fixture_revision"):
+        errors.append("execution-layers typed recall revision pin mismatch")
+    if layers.get("typed_recall_fixture_sha256") != _sha256_bytes(fixture_path.read_bytes()):
+        errors.append("execution-layers typed recall SHA-256 pin mismatch")
+
+    expected = _expected_product_cells(fixture)
+    all_ids = sorted(
+        f"{lane}/{cell_id}"
+        for lane, cells in expected.items()
+        for cell_id in cells
+    )
+    integration = layers.get("source_exact_commit_integration", {})
+    integration_ids = integration.get("exact_cells")
+    if not isinstance(integration_ids, list) or not all(
+        isinstance(cell_id, str) for cell_id in integration_ids
+    ):
+        errors.append("source integration exact cell list is invalid")
+        integration_ids = []
+    if integration_ids != sorted(integration_ids):
+        errors.append("source integration exact cell list must be sorted")
+    if len(integration_ids) != len(set(integration_ids)):
+        errors.append("source integration exact cell list contains duplicates")
+    all_set = set(all_ids)
+    integration_set = set(integration_ids)
+    if not integration_set <= all_set:
+        errors.append("source integration list contains an unknown frozen cell")
+    public_ids = sorted(all_set - integration_set)
+
+    def lane_counts(ids: list[str]) -> dict[str, int]:
+        counts = {lane: 0 for lane in expected}
+        for lane_cell_id in ids:
+            lane, _, _ = lane_cell_id.partition("/")
+            if lane not in counts:
+                errors.append(f"unknown lane in partition: {lane_cell_id}")
+                continue
+            counts[lane] += 1
+        return counts
+
+    def check_partition(
+        name: str,
+        section: dict[str, Any],
+        ids: list[str],
+    ) -> None:
+        if section.get("count") != len(ids):
+            errors.append(f"{name} cell count mismatch")
+        if section.get("sorted_lane_cell_ids_sha256") != _sha256_json(ids):
+            errors.append(f"{name} sorted cell-id hash mismatch")
+        if "lane_counts" in section and section.get("lane_counts") != lane_counts(ids):
+            errors.append(f"{name} lane counts mismatch")
+
+    check_partition("all", layers.get("all_cells", {}), all_ids)
+    check_partition(
+        "clean-wheel public manager",
+        layers.get("clean_wheel_public_manager", {}),
+        public_ids,
+    )
+    check_partition("source integration", integration, sorted(integration_ids))
+    combined = layers.get("combined_gate", {})
+    if combined.get("status") != "BLOCKED_UNTIL_BOTH_LAYERS_EXECUTE":
+        errors.append("combined gate must remain blocked until both layers execute")
+    if combined.get("required_exact_union_count") != len(all_ids):
+        errors.append("combined exact union count mismatch")
+    if combined.get("required_exact_union_sha256") != _sha256_json(all_ids):
+        errors.append("combined exact union hash mismatch")
+    if combined.get("duplicate_cell_count") != 0 or combined.get("missing_cell_count") != 0:
+        errors.append("combined gate must freeze zero duplicate/missing cells")
+    if combined.get("semantic_quality_gate") != "NOT_RUN/BLOCKED":
+        errors.append("combined semantic quality gate must remain NOT_RUN/BLOCKED")
+
+    for identity_name in ("candidate_harness_identity", "candidate_memory_identity"):
+        identity = layers.get("clean_wheel_public_manager", {}).get(identity_name, {})
+        if identity.get("status") != "PINNED":
+            errors.append(f"{identity_name} must be PINNED")
+        if not HEX64.fullmatch(str(identity.get("wheel_sha256", ""))):
+            errors.append(f"{identity_name} wheel SHA-256 must be lowercase hex64")
+        if not HEX40.fullmatch(str(identity.get("source_commit", ""))):
+            errors.append(f"{identity_name} source commit must be lowercase hex40")
+    if errors:
+        return {
+            "status": "FAIL",
+            "execution_layers_fixture": str(execution_layers_path),
+            "errors": errors,
+        }
+    return {
+        "status": "PASS",
+        "execution_layers_fixture": str(execution_layers_path),
+        "execution_layers_fixture_sha256": _sha256_bytes(execution_layers_path.read_bytes()),
+        "clean_wheel_public_manager_cells": len(public_ids),
+        "source_exact_commit_integration_cells": len(integration_ids),
+        "combined_exact_union_cells": len(all_ids),
+        "layers": layers,
+    }
 
 
 def _expected_state_hashes(
@@ -945,7 +1070,15 @@ def _artifact_validator_self_check(fixture_path: Path, fixture: dict[str, Any]) 
     return errors
 
 
-def _execute_candidate(args: argparse.Namespace, fixture: dict[str, Any]) -> dict[str, Any]:
+def _execute_candidate(
+    args: argparse.Namespace,
+    execution_layers: dict[str, Any],
+) -> dict[str, Any]:
+    if args.consumer_entrypoint:
+        return {
+            "status": "FAIL",
+            "reason": "product test-helper entrypoints are prohibited; use the validation-side public Manager adapter",
+        }
     required_identity_args = (
         args.harness_wheel,
         args.harness_wheel_sha256,
@@ -953,12 +1086,11 @@ def _execute_candidate(args: argparse.Namespace, fixture: dict[str, Any]) -> dic
         args.memory_wheel,
         args.memory_wheel_sha256,
         args.memory_source_commit,
-        args.consumer_entrypoint,
     )
     if not all(required_identity_args):
         return {
             "status": "NOT_RUN/BLOCKED",
-            "reason": "exact candidate wheels, SHA-256 pins, source commits, and --consumer-entrypoint are required",
+            "reason": "exact candidate wheels, SHA-256 pins, and source commits are required before layered execution",
         }
     wheels = [Path(args.harness_wheel).resolve(), Path(args.memory_wheel).resolve()]
     for wheel in wheels:
@@ -970,7 +1102,11 @@ def _execute_candidate(args: argparse.Namespace, fixture: dict[str, Any]) -> dic
     actual_wheel_hashes = [_sha256_bytes(wheel.read_bytes()) for wheel in wheels]
     if actual_wheel_hashes != expected_wheel_hashes:
         return {"status": "FAIL", "reason": "candidate wheel SHA-256 mismatch"}
-    pins = fixture["public_consumer"]["candidate_identity_pins"]
+    public_layer = execution_layers["clean_wheel_public_manager"]
+    pins = {
+        "harness": public_layer["candidate_harness_identity"],
+        "memory": public_layer["candidate_memory_identity"],
+    }
     supplied = {
         "harness": {"wheel_sha256": args.harness_wheel_sha256, "source_commit": args.harness_source_commit},
         "memory": {"wheel_sha256": args.memory_wheel_sha256, "source_commit": args.memory_source_commit},
@@ -980,191 +1116,31 @@ def _execute_candidate(args: argparse.Namespace, fixture: dict[str, Any]) -> dic
             return {"status": "NOT_RUN/BLOCKED", "reason": f"final {name} candidate identity is not frozen in fixture"}
         if any(supplied[name][field] != pins[name][field] for field in ("wheel_sha256", "source_commit")):
             return {"status": "FAIL", "reason": f"{name} candidate identity does not match frozen fixture pin"}
-    module_name, separator, callable_name = args.consumer_entrypoint.partition(":")
-    if separator != ":" or module_name not in fixture["public_consumer"]["allowed_import_roots"]:
-        return {
-            "status": "NOT_RUN/BLOCKED",
-            "reason": "entrypoint must be CALLABLE exported directly from an allowed public package root",
-        }
-    artifact_dir = Path(args.artifact_dir).resolve()
-    if artifact_dir.exists():
-        return {"status": "FAIL", "reason": "artifact run directory must not pre-exist"}
-    artifact_dir.parent.mkdir(parents=True, exist_ok=True)
-    invocation_started = datetime.now(timezone.utc)
-    artifact_dir.mkdir(exist_ok=False)
-    with tempfile.TemporaryDirectory(prefix="hm-typed-recall-consumer-") as tmp:
-        tmp_path = Path(tmp)
-        venv_dir = tmp_path / "venv"
-        uv = shutil.which("uv")
-        if uv is None:
-            return {"status": "NOT_RUN/BLOCKED", "reason": "isolated installer unavailable: uv"}
-        create = subprocess.run(
-            [uv, "venv", "--python", sys.executable, str(venv_dir)],
-            cwd=tmp_path,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if create.returncode != 0:
-            return {
-                "status": "NOT_RUN/BLOCKED",
-                "reason": f"isolated uv venv creation failed: exit {create.returncode}",
-            }
-        python = _python_in_venv(venv_dir)
-        install = subprocess.run(
-            [uv, "pip", "install", "--python", str(python), *(str(wheel) for wheel in wheels)],
-            cwd=tmp_path,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if install.returncode != 0:
-            return {"status": _classify_candidate_exit("install", install.returncode), "reason": "candidate wheel install failed"}
-        env = os.environ.copy()
-        env["PYTHONPATH"] = ""
-        env["PYTHONNOUSERSITE"] = "1"
-        identity_probe = """
-import importlib, importlib.metadata as metadata, json, sys
-roots = [(sys.argv[1], sys.argv[2]), (sys.argv[3], sys.argv[4])]
-out = {}
-try:
-    for root, distribution in roots:
-        module = importlib.import_module(root)
-        out[root] = {
-            "distribution": distribution,
-            "version": metadata.version(distribution),
-            "module_origin": str(module.__file__),
-        }
-except (ImportError, metadata.PackageNotFoundError) as exc:
-    print(json.dumps({"status":"NOT_RUN/BLOCKED","reason":"public_root_or_distribution_unavailable","detail":type(exc).__name__}, sort_keys=True))
-    raise SystemExit(3)
-try:
-    consumer = importlib.import_module(sys.argv[5])
-    if not callable(getattr(consumer, sys.argv[6])):
-        raise AttributeError(sys.argv[6])
-except ImportError as exc:
-    print(json.dumps({"status":"NOT_RUN/BLOCKED","reason":"public_consumer_module_unavailable","detail":type(exc).__name__}, sort_keys=True))
-    raise SystemExit(3)
-except AttributeError as exc:
-    print(json.dumps({"status":"NOT_RUN/BLOCKED","reason":"public_consumer_callable_unavailable","component":sys.argv[5]+":"+sys.argv[6],"detail":type(exc).__name__}, sort_keys=True))
-    raise SystemExit(3)
-print(json.dumps(out, sort_keys=True))
-"""
-        roots = fixture["public_consumer"]["candidate_distributions"]
-        identity_run = subprocess.run(
-            [
-                str(python), "-c", identity_probe,
-                "simple_harness", roots["simple_harness"],
-                "simple_harness_memory", roots["simple_harness_memory"],
-                module_name, callable_name,
-            ],
-            cwd=tmp_path,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if identity_run.returncode != 0:
-            try:
-                identity_failure = json.loads(identity_run.stdout)
-            except json.JSONDecodeError:
-                identity_failure = {}
-            return {
-                "status": _classify_candidate_exit("identity", identity_run.returncode),
-                "reason": identity_failure.get(
-                    "reason", "public root module/callable or installed distribution unavailable"
-                ),
-                "component": identity_failure.get("component"),
-                "detail": identity_failure.get("detail"),
-            }
-        try:
-            probed = json.loads(identity_run.stdout)
-        except json.JSONDecodeError:
-            return {"status": "FAIL", "reason": "candidate identity probe emitted invalid JSON"}
-        venv_root = venv_dir.resolve()
-        for root in ("simple_harness", "simple_harness_memory"):
-            try:
-                origin = Path(probed[root]["module_origin"]).resolve()
-                origin.relative_to(venv_root)
-            except (KeyError, TypeError, ValueError):
-                return {"status": "FAIL", "reason": f"candidate module origin escaped isolated venv: {root}"}
-        identity = {
-            "harness": {
-                **probed["simple_harness"],
-                "wheel_sha256": actual_wheel_hashes[0],
-                "source_commit": args.harness_source_commit,
-            },
-            "memory": {
-                **probed["simple_harness_memory"],
-                "wheel_sha256": actual_wheel_hashes[1],
-                "source_commit": args.memory_source_commit,
-            },
-        }
-        for name in ("harness", "memory"):
-            if identity[name]["distribution"] != pins[name]["distribution"] or identity[name]["version"] != pins[name]["version"]:
-                return {"status": "FAIL", "reason": f"installed {name} distribution/version mismatch"}
-        probe = """
-import importlib, json, sys
-module = importlib.import_module(sys.argv[1])
-consumer = getattr(module, sys.argv[2])
-result = consumer(fixture_path=sys.argv[3], artifact_dir=sys.argv[4])
-print(json.dumps(result, sort_keys=True))
-"""
-        run = subprocess.run(
-            [str(python), "-c", probe, module_name, callable_name, str(Path(args.fixture).resolve()), str(artifact_dir)],
-            cwd=tmp_path,
-            env=env,
-            text=True,
-            capture_output=True,
-            check=False,
-        )
-        if run.returncode != 0:
-            return {
-                "status": _classify_candidate_exit("execute", run.returncode),
-                "reason": "public consumer executed but raised or exited nonzero",
-                "candidate_exit_code": run.returncode,
-            }
-        try:
-            result = json.loads(run.stdout)
-        except json.JSONDecodeError:
-            return {"status": "FAIL", "reason": "public consumer did not emit one JSON result"}
-        if not isinstance(result, dict) or result.get("status") not in {"PASS", "FAIL", "NOT_RUN/BLOCKED"}:
-            return {"status": "FAIL", "reason": "public consumer returned an invalid result envelope"}
-        if _classify_executed_result(result.get("status")) == "FAIL":
-            if result.get("status") == "NOT_RUN/BLOCKED":
-                return {
-                    "status": "FAIL",
-                    "reason": "public consumer executed but attempted to downgrade product failure to NOT_RUN/BLOCKED",
-                    "candidate_result": result,
-                }
-            return result
-        if result.get("status") == "PASS":
-            required = fixture["public_consumer"]["required_artifacts"]
-            missing = [name for name in required if not (artifact_dir / name).is_file()]
-            if missing:
-                return {"status": "FAIL", "reason": f"missing required artifacts: {missing}"}
-            expected_fixture_hash = _sha256_bytes(Path(args.fixture).resolve().read_bytes())
-            if result.get("fixture_sha256") != expected_fixture_hash:
-                return {"status": "FAIL", "reason": "consumer result fixture hash mismatch"}
-            if result.get("fixture_revision") != fixture["fixture_revision"]:
-                return {"status": "FAIL", "reason": "consumer result fixture revision mismatch"}
-            artifact_error = _validate_candidate_artifacts(
-                artifact_dir,
-                Path(args.fixture).resolve(),
-                fixture,
-                result,
-                identity,
-                invocation_started,
-            )
-            if artifact_error is not None:
-                return artifact_error
-        return result
+    return {
+        "status": "NOT_RUN/BLOCKED",
+        "reason": "validation-side 391-cell public Manager artifacts and exact-source 10-cell integration artifacts have not both been supplied",
+        "clean_wheel_public_manager_cells": public_layer["count"],
+        "source_exact_commit_integration_cells": execution_layers[
+            "source_exact_commit_integration"
+        ]["count"],
+        "combined_exact_union_cells": execution_layers["all_cells"]["count"],
+    }
 
 
 def main() -> int:
     default_fixture = Path(__file__).resolve().parents[1] / "fixtures" / "typed-recall-v3.json"
+    default_execution_layers = (
+        Path(__file__).resolve().parents[1]
+        / "fixtures"
+        / "typed-recall-execution-layers-v1.json"
+    )
     parser = argparse.ArgumentParser()
     parser.add_argument("--fixture", type=Path, default=default_fixture)
+    parser.add_argument(
+        "--execution-layers",
+        type=Path,
+        default=default_execution_layers,
+    )
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--harness-wheel")
     parser.add_argument("--harness-wheel-sha256")
@@ -1175,15 +1151,15 @@ def main() -> int:
     parser.add_argument("--consumer-entrypoint")
     parser.add_argument("--artifact-dir", default=".local-test-evidence/typed-recall-public-consumer")
     args = parser.parse_args()
-    checked = self_check(args.fixture.resolve())
+    checked = self_check(args.fixture.resolve(), args.execution_layers.resolve())
     if checked["status"] != "PASS":
         print(json.dumps(checked, ensure_ascii=False, sort_keys=True))
         return 1
     if args.self_check:
         print(json.dumps(checked, ensure_ascii=False, sort_keys=True))
         return 0
-    fixture = json.loads(args.fixture.read_text(encoding="utf-8"))
-    result = _execute_candidate(args, fixture)
+    execution_layers = json.loads(args.execution_layers.read_text(encoding="utf-8"))
+    result = _execute_candidate(args, execution_layers)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if result["status"] == "PASS":
         return 0

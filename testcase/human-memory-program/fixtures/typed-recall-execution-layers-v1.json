@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "fixture_id": "typed-recall-execution-layers-v1",
+  "fixture_revision": 1,
+  "typed_recall_fixture": "typed-recall-v3.json",
+  "typed_recall_fixture_revision": 3,
+  "typed_recall_fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "all_cells": {
+    "count": 401,
+    "sorted_lane_cell_ids_sha256": "49e4433ebdc7d4551a3425e6006b8143dffd89ca2545331072a9196f4ba66dea"
+  },
+  "clean_wheel_public_manager": {
+    "count": 391,
+    "sorted_lane_cell_ids_sha256": "dfe4c42b0cbce37b8f8173d1d0e313bb36a94767835f632878ce458b904c119a",
+    "selection_rule": "all frozen cells except exact source-integration cells",
+    "lane_counts": {
+      "protocol": 11,
+      "conflict-state": 17,
+      "eligibility": 301,
+      "current-use": 17,
+      "unsupported-replay": 19,
+      "selection-budget": 26,
+      "fault-recovery": 0
+    },
+    "allowed_import_roots": [
+      "simple_harness",
+      "simple_harness_memory"
+    ],
+    "required_public_calls": [
+      "build_human_memory_v6",
+      "ingest_committed_evidence",
+      "apply_memory_mutation_plan",
+      "execute_typed_recall",
+      "page_typed_recall_result",
+      "authorize_recall_context_use",
+      "suppress",
+      "revoke_suppression",
+      "authorize_audit_access",
+      "export_canonical_state_manifest",
+      "close"
+    ],
+    "forbidden_access": [
+      "source checkout import",
+      "private submodule import",
+      "direct SQL",
+      "repository object",
+      "product test helper",
+      "fault injector"
+    ],
+    "candidate_memory_identity": {
+      "status": "PINNED",
+      "distribution": "simple-harness-memory-sdk",
+      "version": "0.6.0",
+      "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+      "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"
+    },
+    "candidate_harness_identity": {
+      "status": "PINNED",
+      "distribution": "simple-harness-sdk",
+      "version": "0.7.0",
+      "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+      "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"
+    }
+  },
+  "source_exact_commit_integration": {
+    "count": 10,
+    "sorted_lane_cell_ids_sha256": "32d42ed588b5ca27b22a726217e6121a15c41ac45e6246c4f5f727026c687769",
+    "lane_counts": {
+      "protocol": 0,
+      "conflict-state": 3,
+      "eligibility": 0,
+      "current-use": 0,
+      "unsupported-replay": 0,
+      "selection-budget": 0,
+      "fault-recovery": 7
+    },
+    "exact_cells": [
+      "conflict-state/contested-tampered-cross-memory-reopen",
+      "conflict-state/contested-tampered-one-member-reopen",
+      "conflict-state/contested-tampered-three-members-reopen",
+      "fault-recovery/fault:before-result-header",
+      "fault-recovery/fault:before-terminal-fence",
+      "fault-recovery/fault:between-decision-items",
+      "fault-recovery/fault:between-result-items",
+      "fault-recovery/fault:commit-before-ack",
+      "fault-recovery/fault:decision-header",
+      "fault-recovery/fault:restart-open-rebuild"
+    ],
+    "required_gate": "source exact-commit integration/fault-injection",
+    "required_identity": [
+      "source_commit",
+      "tree_clean_or_exact_diff_hash",
+      "python_version",
+      "test_command",
+      "started_at",
+      "completed_at"
+    ],
+    "allowed_test_only_access": [
+      "transaction seam fault injection",
+      "durable corruption construction",
+      "restart/reopen verifier"
+    ],
+    "prohibited_claim": "These cells may not be marked PASS by a clean-wheel public Manager adapter or static digest."
+  },
+  "combined_gate": {
+    "status": "BLOCKED_UNTIL_BOTH_LAYERS_EXECUTE",
+    "required_layer_status": {
+      "clean_wheel_public_manager": "PASS",
+      "source_exact_commit_integration": "PASS"
+    },
+    "required_exact_union_count": 401,
+    "required_exact_union_sha256": "49e4433ebdc7d4551a3425e6006b8143dffd89ca2545331072a9196f4ba66dea",
+    "duplicate_cell_count": 0,
+    "missing_cell_count": 0,
+    "semantic_quality_gate": "NOT_RUN/BLOCKED"
+  }
+}
