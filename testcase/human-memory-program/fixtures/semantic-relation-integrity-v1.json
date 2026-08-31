@@ -1,0 +1,254 @@
+{
+  "fixture_revision": 1,
+  "protocol_schema_version": 5,
+  "storage_schema_version": 7,
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "purpose": "Freeze fail-closed admission, atomicity, lifecycle, restart-integrity, audit, and evidence-retention oracles for applies_to relation memories before implementation.",
+  "candidate_identity": {
+    "status": "PENDING_POST_BUILD_PIN",
+    "harness": null,
+    "memory": null
+  },
+  "allowed_relation_kinds": [
+    "applies_to"
+  ],
+  "positive_endpoint_cases": [
+    {
+      "id": "created-endpoints",
+      "source": "same-plan semantic claim CREATE",
+      "target": "same-plan procedure CREATE",
+      "oracle": "one canonical relation memory plus one exact-revision knowledge row"
+    },
+    {
+      "id": "existing-endpoints",
+      "source": "existing active semantic claim exact ref",
+      "target": "existing active prospective exact ref",
+      "oracle": "one canonical relation memory plus one exact-revision knowledge row"
+    }
+  ],
+  "rejection_cases": [
+    {
+      "id": "missing-dependency",
+      "reason_code": "relation_endpoint_dependency_required"
+    },
+    {
+      "id": "forward-dependency",
+      "reason_code": "invalid_dependency_order"
+    },
+    {
+      "id": "non-create-producer",
+      "reason_code": "relation_endpoint_create_required"
+    },
+    {
+      "id": "duplicate-operation-id",
+      "reason_code": "duplicate_operation"
+    },
+    {
+      "id": "unknown-relation-kind",
+      "reason_code": "invalid_relation_kind"
+    },
+    {
+      "id": "illegal-source-type",
+      "reason_code": "invalid_relation_source_type"
+    },
+    {
+      "id": "illegal-target-type",
+      "reason_code": "invalid_relation_target_type"
+    },
+    {
+      "id": "self-loop",
+      "reason_code": "relation_self_loop"
+    },
+    {
+      "id": "relation-as-endpoint",
+      "reason_code": "relation_endpoint_must_be_claim"
+    },
+    {
+      "id": "cross-principal",
+      "reason_code": "relation_endpoint_principal_mismatch"
+    },
+    {
+      "id": "missing-endpoint",
+      "reason_code": "relation_endpoint_not_found"
+    },
+    {
+      "id": "stale-endpoint-revision",
+      "reason_code": "relation_endpoint_revision_mismatch"
+    },
+    {
+      "id": "contested-endpoint",
+      "reason_code": "relation_endpoint_not_active"
+    },
+    {
+      "id": "suppressed-endpoint",
+      "reason_code": "relation_endpoint_not_active"
+    },
+    {
+      "id": "missing-evidence",
+      "reason_code": "evidence_ref_required"
+    },
+    {
+      "id": "classification-insufficient",
+      "reason_code": "relation_disclosure_denied"
+    }
+  ],
+  "pre_admission_wire_cases": [
+    {
+      "id": "malformed-v5-wire",
+      "harness_oracle": "bounded credential-safe typed diagnostic with stable reason code",
+      "host_durable_audit_oracle": "NOT_RUN/BLOCKED_UNTIL_S5",
+      "memory_call_count": 0,
+      "durable_state_delta": 0
+    }
+  ],
+  "transaction_fault_cases": [
+    {
+      "id": "before-relation-memory-insert",
+      "seam": "before-relation-memory-insert",
+      "terminal_oracle": "all-old; zero relation memory and zero knowledge row"
+    },
+    {
+      "id": "after-memory-before-edge",
+      "seam": "after-relation-memory-before-knowledge-row",
+      "terminal_oracle": "all-old; zero relation memory and zero knowledge row"
+    },
+    {
+      "id": "after-edge-before-commit",
+      "seam": "after-knowledge-row-before-commit",
+      "terminal_oracle": "all-old; zero relation memory and zero knowledge row"
+    },
+    {
+      "id": "commit-before-ack",
+      "seam": "commit-before-ack",
+      "terminal_oracle": "all-new; exact replay returns byte-identical receipt without duplicate rows"
+    }
+  ],
+  "replay_cases": [
+    {
+      "id": "exact-replay",
+      "terminal_oracle": "byte-identical receipt; one relation memory; one knowledge row"
+    },
+    {
+      "id": "conflicting-replay",
+      "terminal_oracle": "stable idempotency conflict; zero state delta"
+    }
+  ],
+  "lifecycle_cases": [
+    {
+      "id": "owner-suppressed",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "owner-contested",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "owner-superseded",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "endpoint-contested",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "endpoint-superseded",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "endpoint-suppressed",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "owner-expired",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "endpoint-expired",
+      "terminal_oracle": "knowledge edge absent"
+    },
+    {
+      "id": "evidence-suppressed",
+      "terminal_oracle": "knowledge edge absent while sealed evidence remains byte-identical"
+    },
+    {
+      "id": "classification-restricted",
+      "terminal_oracle": "knowledge edge absent from ordinary view"
+    },
+    {
+      "id": "relation-corrected",
+      "terminal_oracle": "old edge absent; new active exact-owner edge present once"
+    }
+  ],
+  "restart_corruption_cases": [
+    {
+      "id": "owner-mismatch",
+      "terminal_oracle": "reopen/rebuild fail closed; zero public edge"
+    },
+    {
+      "id": "domain-mismatch",
+      "terminal_oracle": "reopen/rebuild fail closed; zero public edge"
+    },
+    {
+      "id": "relation-hash-mismatch",
+      "terminal_oracle": "reopen/rebuild fail closed; zero public edge"
+    },
+    {
+      "id": "endpoint-foreign-key-mismatch",
+      "terminal_oracle": "reopen/rebuild fail closed; zero public edge"
+    }
+  ],
+  "trace_and_retention_oracle": {
+    "required_lineage": [
+      "evidence -> plan",
+      "plan -> relation operation",
+      "operation -> relation memory exact revision",
+      "relation memory exact revision -> knowledge row",
+      "knowledge row -> graph edge"
+    ],
+    "required_manifest_roots": [
+      "evidence_root",
+      "mutation_plan_root",
+      "memory_state_root",
+      "cognitive_relation_root",
+      "graph_projection_root"
+    ],
+    "raw_evidence_oracle": "byte-identical before/after every reject, fault, replay, lifecycle transition, and reopen",
+    "physical_delete_count": 0
+  },
+  "execution_contract": {
+    "runner": "runners/run_semantic_relation_integrity_evidence.py",
+    "candidate_lane": "source integration faults plus exact dual-wheel public state transitions",
+    "artifact_policy": "ignored .local-test-evidence only",
+    "required_case_result_fields": [
+      "case_id",
+      "status",
+      "expected_terminal_oracle",
+      "observed_outcome_or_reason",
+      "before_roots",
+      "after_roots",
+      "before_row_cardinality",
+      "after_row_cardinality",
+      "raw_evidence_hash_before",
+      "raw_evidence_hash_after",
+      "reopen_result",
+      "candidate_identity",
+      "evidence_artifact_ref",
+      "evidence_artifact_sha256"
+    ],
+    "required_root_fields": [
+      "evidence_root",
+      "mutation_plan_root",
+      "memory_state_root",
+      "cognitive_relation_root",
+      "graph_projection_root"
+    ],
+    "required_row_fields": [
+      "evidence_rows",
+      "memory_revision_rows",
+      "knowledge_relation_rows",
+      "receipt_rows",
+      "audit_rows"
+    ],
+    "pass_rule": "every frozen case appears exactly once with status PASS, exact candidate identity, complete hashes/cardinalities, raw evidence before equals after, and a case-specific terminal oracle; missing evidence is NOT_RUN/BLOCKED"
+  }
+}

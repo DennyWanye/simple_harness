@@ -1,0 +1,288 @@
+{
+  "fixture_revision": 1,
+  "protocol_schema_version": 5,
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "purpose": "Freeze the public applies_to relation-memory value oracle before production implementation.",
+  "allowed_import_roots": [
+    "simple_harness",
+    "simple_harness_memory"
+  ],
+  "forbidden_access": [
+    "source checkout imports",
+    "private module imports",
+    "direct SQL",
+    "repository object",
+    "fixture rows passed to get_twin_graph_view"
+  ],
+  "candidate_identity": {
+    "status": "PENDING_POST_BUILD_PIN",
+    "harness": {
+      "distribution": "simple-harness-sdk",
+      "version": null,
+      "source_commit": null,
+      "wheel_sha256": null,
+      "reproducible_second_wheel_sha256": null
+    },
+    "memory": {
+      "distribution": "simple-harness-memory-sdk",
+      "version": null,
+      "source_commit": null,
+      "wheel_sha256": null,
+      "reproducible_second_wheel_sha256": null
+    },
+    "public_adapter_sha256": null
+  },
+  "required_public_symbols": {
+    "simple_harness": [
+      "CreatedByOperationTarget",
+      "ExistingMemoryTarget",
+      "MemoryMutationKind",
+      "MemoryMutationOperation",
+      "MemoryMutationPlan",
+      "SemanticMemoryKind",
+      "SemanticMemoryPayload",
+      "SemanticRelationKind",
+      "SemanticRelationMemoryPayload"
+    ],
+    "simple_harness_memory": [
+      "MemoryManager",
+      "SQLiteMemoryBackend"
+    ]
+  },
+  "strict_plan_oracle": {
+    "plan_constructor_inputs": {
+      "plan_id": "relation-plan-1",
+      "run_id": "relation-run-1",
+      "turn_id": "relation-turn-1",
+      "subject": "principal-relation-1",
+      "base_revision": 1,
+      "outcome": "mutate",
+      "apply_mode": "strict_atomic",
+      "idempotency_key": "relation-idempotency-1",
+      "disclosure_context": {
+        "run_id": "relation-run-1",
+        "subject": "principal-relation-1",
+        "recipient": "user_self",
+        "recipient_id": "principal-relation-1",
+        "intended_audience": "user_self",
+        "purpose": "personalization",
+        "source": "authenticated_host",
+        "trust": "trusted_authority",
+        "generation": "current",
+        "authority_ref": "host-disclosure-relation-1",
+        "reason_codes": ["disclosure_minimum_necessary"]
+      },
+      "evidence_ref_source": "exact EvidenceRef returned by the public evidence admission path"
+    },
+    "shared_operation_constructor_inputs": {
+      "target": null,
+      "epistemic_status": "explicit_user",
+      "conflict_status": "uncontested",
+      "verification_state": "source_bound",
+      "valid_time_interval": {"valid_from": 1.0, "valid_until": null},
+      "proposed_privacy_class": "personal",
+      "evidence_span_source": "exact EvidenceSpanRef returned by the same public evidence admission path",
+      "reason_code": "explicit_user_relation"
+    },
+    "apply_mode": "strict_atomic",
+    "operation_order": [
+      "create-preference",
+      "create-procedure",
+      "create-relation"
+    ],
+    "operations": [
+      {
+        "operation_id": "create-preference",
+        "kind": "create",
+        "memory_type": "semantic",
+        "depends_on_operation_ids": [],
+        "lifecycle_state": "active",
+        "proposed_information_attributes": ["preference"],
+        "payload": {
+          "memory_type": "semantic",
+          "semantic_kind": "claim",
+          "subject_entity": "user",
+          "predicate": "prefers_release_workflow",
+          "object_value": "evidence-first",
+          "qualifiers": []
+        }
+      },
+      {
+        "operation_id": "create-procedure",
+        "kind": "create",
+        "memory_type": "procedure",
+        "depends_on_operation_ids": [],
+        "lifecycle_state": "active",
+        "proposed_information_attributes": ["work"],
+        "payload": {
+          "memory_type": "procedure",
+          "name": "release-workflow",
+          "applicability": ["release"],
+          "steps": ["verify evidence", "publish"],
+          "proposed_risk_level": "low"
+        }
+      },
+      {
+        "operation_id": "create-relation",
+        "kind": "create",
+        "memory_type": "semantic",
+        "depends_on_operation_ids": [
+          "create-preference",
+          "create-procedure"
+        ],
+        "lifecycle_state": "active",
+        "proposed_information_attributes": ["preference", "work"],
+        "payload": {
+          "memory_type": "semantic",
+          "semantic_kind": "relation",
+          "relation_kind": "applies_to",
+          "source_endpoint": {
+            "target_kind": "created_by_operation",
+            "operation_id": "create-preference"
+          },
+          "target_endpoint": {
+            "target_kind": "created_by_operation",
+            "operation_id": "create-procedure"
+          }
+        }
+      }
+    ]
+  },
+  "public_choreography": [
+    "install both exact wheels into one clean environment",
+    "import only the two allowed package roots",
+    "create a fresh public SQLite backend and MemoryManager",
+    "write evidence through the public evidence authority path",
+    "submit the strict three-operation MemoryMutationPlan through MemoryManager.apply_memory_mutation_plan",
+    "call MemoryManager.get_twin_graph_view",
+    "take an endpoint exact memory_id and revision from the public node DTO",
+    "submit authorized SUPPRESS for that endpoint through the public mutation path",
+    "call get_twin_graph_view and assert zero knowledge edges",
+    "close and reopen the same durable database through public APIs",
+    "call get_twin_graph_view and assert zero knowledge edges again"
+  ],
+  "adapter_contract": {
+    "argv": ["--fixture", "<relation-fixture>", "--db", "<fresh-db>"],
+    "allowed_import_roots": ["simple_harness", "simple_harness_memory"],
+    "forbidden_source_tokens": [
+      "from simple_harness.",
+      "from simple_harness_memory.",
+      "import sqlite3",
+      "import aiosqlite",
+      "sys.path",
+      "PYTHONPATH"
+    ],
+    "required_result_fields": [
+      "status",
+      "identity",
+      "mutation_receipt",
+      "after_atomic_create",
+      "after_endpoint_suppression",
+      "after_close_reopen",
+      "trace"
+    ],
+    "identity_fields": [
+      "distribution",
+      "version",
+      "source_commit",
+      "wheel_sha256"
+    ],
+    "mutation_receipt_fields": [
+      "strict_atomic",
+      "operation_count",
+      "relation_owner",
+      "resolved_endpoints",
+      "orphan_relation_row_count",
+      "evidence_ids",
+      "effective_privacy_class",
+      "epistemic_status",
+      "receipt_hash"
+    ],
+    "relation_owner_fields": [
+      "memory_id",
+      "revision",
+      "semantic_kind"
+    ],
+    "resolved_endpoint_fields": [
+      "role",
+      "operation_id",
+      "memory_id",
+      "revision",
+      "memory_type",
+      "semantic_kind"
+    ],
+    "trace_fields": [
+      "links",
+      "hashes"
+    ],
+    "created_view_fields": [
+      "node_count",
+      "edge_count",
+      "relation_memory_node_count",
+      "edge_relation_kinds",
+      "edge_direction",
+      "source_memory_id",
+      "target_memory_id",
+      "payload_sha256"
+    ],
+    "suppressed_view_fields": [
+      "edge_count",
+      "payload_sha256"
+    ]
+  },
+  "expected_views": {
+    "after_atomic_create": {
+      "node_count": 2,
+      "edge_count": 1,
+      "relation_memory_node_count": 0,
+      "edge_relation_kinds": ["applies_to"],
+      "edge_direction": "create-preference -> create-procedure",
+      "source_memory_id": "must equal resolved source endpoint",
+      "target_memory_id": "must equal resolved target endpoint",
+      "payload_sha256": "must be hex64"
+    },
+    "after_endpoint_suppression": {
+      "edge_count": 0,
+      "payload_sha256": "must be hex64"
+    },
+    "after_close_reopen": {
+      "edge_count": 0,
+      "payload_sha256": "must equal after_endpoint_suppression",
+      "must_equal_view": "after_endpoint_suppression"
+    }
+  },
+  "receipt_oracle": {
+    "strict_atomic": true,
+    "operation_count": 3,
+    "relation_owner_exact_revision": true,
+    "resolved_endpoint_count": 2,
+    "orphan_relation_row_count": 0,
+    "evidence_ids": ["evidence-relation-1"],
+    "effective_privacy_class": "personal",
+    "epistemic_status": "explicit_user"
+  },
+  "trace_oracle": {
+    "required_link_kinds": [
+      "evidence_to_plan",
+      "plan_to_operation",
+      "operation_to_relation_memory",
+      "relation_memory_to_knowledge_row",
+      "knowledge_row_to_twin_edge"
+    ],
+    "required_hashes": [
+      "plan_hash",
+      "operation_intent_hash",
+      "relation_memory_content_hash",
+      "relation_hash",
+      "graph_payload_hash"
+    ]
+  },
+  "fail_closed_oracles": {
+    "missing_public_symbol": "NOT_RUN/BLOCKED",
+    "candidate_identity_unpinned": "NOT_RUN/BLOCKED",
+    "wire_schema_not_5": "FAIL",
+    "missing_or_forward_dependency": "FAIL",
+    "relation_memory_visible_as_node": "FAIL",
+    "private_import_or_sql_required": "FAIL"
+  }
+}

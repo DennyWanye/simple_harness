@@ -2394,14 +2394,15 @@
         "HM-TO-R2",
         "HM-TO-R4",
         "HM-TO-R6",
-        "HM-TO-R8"
+        "HM-TO-R8",
+        "HM-TO-R9"
       ],
       "path": "human-memory-program/TC-HM-08-invalid-plan-recovery.md",
       "preconditions": [],
       "purpose": "Verify invalid LLM plans and cross-repository initialization fail closed and recover without half state",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "api",
       "tags": [
@@ -2498,11 +2499,14 @@
       "entrypoint": "TaskScope inspector and digital twin view",
       "id": "TC-HM-12",
       "obligations": [
+        "HM-TO-A2",
         "HM-TO-A6",
         "HM-TO-A7",
+        "HM-TO-A8",
         "HM-TO-R3",
         "HM-TO-R5",
-        "HM-TO-R7"
+        "HM-TO-R7",
+        "HM-TO-R9"
       ],
       "path": "human-memory-program/TC-HM-12-digital-twin-views.md",
       "preconditions": [
@@ -2513,7 +2517,7 @@
       "purpose": "Verify bounded TaskScope read views and a traceable display-only digital twin projection",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
