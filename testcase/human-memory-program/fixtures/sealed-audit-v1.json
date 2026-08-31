@@ -1,0 +1,88 @@
+{
+  "fixture_id": "sealed-audit-v1",
+  "fixture_revision": 1,
+  "quality_gate": "NOT_RUN/BLOCKED",
+  "candidate_identity": {
+    "harness": {
+      "distribution": "simple-harness-sdk",
+      "version": "0.7.0",
+      "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+      "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"
+    },
+    "memory": {
+      "distribution": "simple-harness-memory-sdk",
+      "version": "0.6.0",
+      "source_commit": "0b6bf875cce888b16e4b96399cb6407fb06e0ae9",
+      "wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad",
+      "reproducible_second_wheel_sha256": "79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad"
+    }
+  },
+  "principal": {
+    "deployment_id": "actor-1",
+    "household_id": "actor-1",
+    "actor_id": "actor-1",
+    "session_id": "session-1",
+    "subject": "actor-1"
+  },
+  "evidence": {
+    "evidence_id": "evidence-sealed-1",
+    "run_id": "run-sealed-1",
+    "source_ref": "turn-sealed-1",
+    "filter_policy_version": "credential-filter/v1",
+    "raw_source_payload": {
+      "text": "Alice lives at 123 Example Street. API key sk-test-task7-do-not-persist"
+    },
+    "raw_source_sha256": "f4484bd5cc9bd6bba64271b1257f19be944e74a775478c81152be41770192e04",
+    "sanitized_payload": {
+      "text": "Alice lives at 123 Example Street. API key [REDACTED]"
+    },
+    "sanitized_sha256": "d408528257aef7aede7b6abb753cc515ddd4f92c4e99f5a62b6bdc335e6b9699",
+    "forbidden_canaries": [
+      "sk-test-task7-do-not-persist",
+      "Authorization: Bearer task7-secret",
+      "cookie=task7-secret"
+    ]
+  },
+  "audit": {
+    "authority_id": "audit-authority-1",
+    "decision_id": "audit-decision-1",
+    "nonce": "audit-nonce-1",
+    "replay_identity": "audit-replay-1",
+    "scope_kind": "subject",
+    "reason_code": "user_requested_audit",
+    "max_reads": 12,
+    "issued_offset_seconds": -1,
+    "expires_offset_seconds": 600,
+    "trace_selector": "evidence"
+  },
+  "manifest_oracle": {
+    "minimum_total_row_count": 1,
+    "minimum_table_roots": 1,
+    "required_table_root_fields": [
+      "category",
+      "table_name",
+      "row_count",
+      "root_hash",
+      "first_leaf_hash",
+      "last_leaf_hash"
+    ],
+    "hash_fields": [
+      "schema_checksum",
+      "initialization_receipt_hash",
+      "principal_ref_hash",
+      "payload_hash",
+      "access_event_hash"
+    ],
+    "reopen_expectation": "CANONICAL_STATE_REMAINS_READABLE_WITH_MONOTONIC_AUDIT_LINEAGE"
+  },
+  "public_api_usability_findings": {
+    "string_constructible_but_enum_not_root_exported": [
+      "SuppressionScopeKind",
+      "SealedAuditPurpose"
+    ],
+    "return_type_not_root_exported_but_result_is_consumable": [
+      "EvidenceIngestionReceipt",
+      "IngestedEvidenceRecord"
+    ]
+  }
+}

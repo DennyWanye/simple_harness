@@ -7,10 +7,56 @@ type: hybrid
 obligations: [HM-TO-A1, HM-TO-A7, HM-TO-R1, HM-TO-R3, HM-TO-R5]
 tags: [human-memory, append-only, suppression, audit, rebuild]
 entrypoint: primary conversation, ordinary read, and controlled audit
-revision: 1
+preconditions:
+  - Exact Harness and Memory candidate wheel paths, SHA-256 pins, source commits, and versions are available
+  - Python 3.11 or newer and uv are available for the isolated clean-wheel consumer
+  - Fresh ignored artifact run directory does not already exist
+revision: 2
 ---
 
-# TC-HM-07 — 永久原始证据、逻辑遗忘与受控审计
+# TC-HM-07 rev2 — 永久原始证据、逻辑遗忘与受控审计
+
+## Sealed public-consumer authority
+
+- fixture：`fixtures/sealed-audit-v1.json` revision 1，SHA-256
+  `3f60c0591846ca5a38470314e1b0b2aa7a652ea1debb78f8287ddafc49adb141`。
+- runner：`runners/run_sealed_audit_public_consumer.py`，SHA-256
+  `d290b529dba99799c9f5d59b9ae5f101ac33054398cf40f4bb097d9dcc7b3c62`。
+- Harness：`simple-harness-sdk==0.7.0`，commit
+  `fb491574db8bb4d19d8a7f9df0c72ae460bb08f4`，wheel SHA-256
+  `36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f`。
+- Memory：`simple-harness-memory-sdk==0.6.0`，commit
+  `0b6bf875cce888b16e4b96399cb6407fb06e0ae9`，wheel SHA-256
+  `79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad`；第二次构建字节一致。
+- clean consumer 只从 `simple_harness` 与 `simple_harness_memory` package root 导入公开 DTO、builder 和
+  `MemoryManager` facade；禁止私有 submodule、source checkout、repository object、SQL 和产品测试 helper。
+
+自检只证明 fixture known answers，不证明产品：
+
+```bash
+/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python \
+  testcase/human-memory-program/runners/run_sealed_audit_public_consumer.py --self-check
+```
+
+正式命令：
+
+```bash
+/Users/denny/projects/simple-harness-memory-sdk-memory-plan/.venv/bin/python \
+  testcase/human-memory-program/runners/run_sealed_audit_public_consumer.py \
+  --harness-wheel /tmp/simple-harness-task5-wheel3.MtoX75/simple_harness_sdk-0.7.0-py3-none-any.whl \
+  --harness-wheel-sha256 36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f \
+  --harness-source-commit fb491574db8bb4d19d8a7f9df0c72ae460bb08f4 \
+  --memory-wheel /tmp/simple-harness-memory-task7-final-a.wc6T5v/simple_harness_memory_sdk-0.6.0-py3-none-any.whl \
+  --memory-wheel-sha256 79b07b574275decb464ba8fcf8ff3cf6d210787682080b3577f3fe7b95e64dad \
+  --memory-source-commit 0b6bf875cce888b16e4b96399cb6407fb06e0ae9 \
+  --artifact-dir /absolute/path/to/.local-test-evidence/sealed-audit-task7
+```
+
+PASS 必须证明：公开 builder 新建 fresh v6 DB；sanitized evidence 保留 raw source hash 绑定但不保存原始凭据 canary；
+外部 audit authority reference 经 `authorize_audit_access` 生成 sealed receipt；同一 receipt 分别读取 sealed evidence、
+sealed trace 和 canonical manifest；关闭并从同一 DB 公开 reopen 后，逐表 row count 不减少，count 不变的 root 不漂移，
+count 增长的 root 必须变化；manifest 的 64-hex schema/init/principal/table/payload/access hashes、逐表 count 和总 count
+独立校验。原始 DB/result 仅留 ignored artifact 目录。
 
 ## 步骤与预期
 
@@ -26,3 +72,8 @@ revision: 1
 ## 物理删除禁令
 
 - retention、维护、测试清理、容量压力和 schema forward-fix 各路径都要比较 raw row count 与逐项 SHA-256；任一减少即 FAIL。
+
+## 质量与 UI 边界
+
+该 clean-wheel deterministic PASS 不替代真实主模型 trace 质量、逻辑遗忘全表面、桌面 UI 或两轮真实模型评估；
+这些 required gates 仍为 `NOT_RUN/BLOCKED`，不得由本 runner 推导 program quality PASS。

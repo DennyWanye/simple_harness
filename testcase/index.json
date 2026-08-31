@@ -2362,11 +2362,15 @@
         "HM-TO-R5"
       ],
       "path": "human-memory-program/TC-HM-07-audit-forgetting.md",
-      "preconditions": [],
+      "preconditions": [
+        "Exact Harness and Memory candidate wheel paths, SHA-256 pins, source commits, and versions are available",
+        "Python 3.11 or newer and uv are available for the isolated clean-wheel consumer",
+        "Fresh ignored artifact run directory does not already exist"
+      ],
       "purpose": "Verify raw evidence is permanent while append-only suppression removes content from every ordinary path",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 2,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
