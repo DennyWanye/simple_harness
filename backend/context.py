@@ -123,6 +123,10 @@ _VALID_SERVICES = frozenset({
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     "human_memory_host_service_factory",
+    "human_memory_binding_append_authority",
+    "human_memory_recovery_lifecycle",
+    "human_memory_foreground_scheduler_wake",
+    "human_memory_foreground_runtime_execution",
     # Capability-pack execution state, including the complete Project-scoped
     # Skill-install aggregate, is owned by the execution/Manager database.
     # ProductState contributes only the immutable authorization receipt.
@@ -273,6 +277,10 @@ class ServiceContext:
     sdk_runtime_decision_sink: Any | None = None
     sdk_task_execution_authority: Any | None = None
     human_memory_host_service_factory: Any | None = None
+    human_memory_binding_append_authority: Any | None = None
+    human_memory_recovery_lifecycle: Any | None = None
+    human_memory_foreground_scheduler_wake: Any | None = None
+    human_memory_foreground_runtime_execution: Any | None = None
     capability_store: Any | None = None
     capability_platform: Any | None = None
     # Project-scoped Skill installation is composed during capability-runtime

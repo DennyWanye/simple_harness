@@ -172,6 +172,19 @@ class AppendBindingRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class DecideManualBindingRequest:
+    challenge_ref: str
+    decision: str
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        identifier(self.challenge_ref, "challenge_ref", 512)
+        if self.decision not in {"allow", "deny"}:
+            raise ValueError("decision must be allow or deny")
+        identifier(self.idempotency_key, "idempotency_key", 512)
+
+
+@dataclass(frozen=True, slots=True)
 class ControlRunRequest:
     control: str
     reason: str
@@ -286,6 +299,30 @@ class WorkspaceBindingAppendPort(Protocol):
         task_scope_id: str,
         root: str,
         idempotency_key: str,
+        interaction_evidence_id: str,
+        interaction_evidence_hash: str,
+    ) -> Mapping[str, object]: ...
+
+    async def propose_manual_binding(
+        self,
+        *,
+        subject: str,
+        task_scope_id: str,
+        root: str,
+        idempotency_key: str,
+        interaction_evidence_id: str,
+        interaction_evidence_hash: str,
+    ) -> Mapping[str, object]: ...
+
+    async def decide_manual_binding(
+        self,
+        *,
+        subject: str,
+        challenge_ref: str,
+        decision: str,
+        idempotency_key: str,
+        interaction_evidence_id: str,
+        interaction_evidence_hash: str,
     ) -> Mapping[str, object]: ...
 
 
@@ -583,11 +620,78 @@ class HumanMemoryHostService:
             raise HumanMemoryHostServiceError(
                 "human_memory_binding_authority_unavailable"
             )
+        committed = await self._append_host_evidence(
+            payload={
+                "schema_version": 1,
+                "action": "binding.append",
+                "scope_ref": request.scope_ref,
+                "root": request.root,
+                "idempotency_key": request.idempotency_key,
+            },
+            idempotency_key=f"binding-proposal:{request.idempotency_key}",
+            source_ref=f"host-binding-append:{request.idempotency_key}",
+        )
         return await self._binding_append.append_binding(
             subject=self._auth.subject,
             task_scope_id=request.scope_ref,
             root=request.root,
             idempotency_key=request.idempotency_key,
+            interaction_evidence_id=committed.evidence_id,
+            interaction_evidence_hash=committed.envelope_sha256,
+        )
+
+    async def propose_manual_binding(
+        self, request: AppendBindingRequest
+    ) -> Mapping[str, object]:
+        await self._assert_owned_scope(request.scope_ref)
+        if self._binding_append is None:
+            raise HumanMemoryHostServiceError(
+                "human_memory_binding_authority_unavailable"
+            )
+        committed = await self._append_host_evidence(
+            payload={
+                "schema_version": 1,
+                "action": "binding.manual.propose",
+                "scope_ref": request.scope_ref,
+                "root": request.root,
+                "idempotency_key": request.idempotency_key,
+            },
+            idempotency_key=f"binding-proposal:{request.idempotency_key}",
+            source_ref=f"host-binding-manual-proposal:{request.idempotency_key}",
+        )
+        return await self._binding_append.propose_manual_binding(
+            subject=self._auth.subject,
+            task_scope_id=request.scope_ref,
+            root=request.root,
+            idempotency_key=request.idempotency_key,
+            interaction_evidence_id=committed.evidence_id,
+            interaction_evidence_hash=committed.envelope_sha256,
+        )
+
+    async def decide_manual_binding(
+        self, request: DecideManualBindingRequest
+    ) -> Mapping[str, object]:
+        if self._binding_append is None:
+            raise HumanMemoryHostServiceError(
+                "human_memory_binding_authority_unavailable"
+            )
+        committed = await self._append_host_evidence(
+            payload={
+                "schema_version": 1,
+                "action": "binding.manual.decide",
+                "challenge_ref": request.challenge_ref,
+                "decision": request.decision,
+            },
+            idempotency_key=f"binding-decision:{request.idempotency_key}",
+            source_ref=f"host-binding-manual-decision:{request.challenge_ref}",
+        )
+        return await self._binding_append.decide_manual_binding(
+            subject=self._auth.subject,
+            challenge_ref=request.challenge_ref,
+            decision=request.decision,
+            idempotency_key=request.idempotency_key,
+            interaction_evidence_id=committed.evidence_id,
+            interaction_evidence_hash=committed.envelope_sha256,
         )
 
     async def control_current_run(
@@ -1638,6 +1742,7 @@ __all__ = (
     "AuthenticatedHostSnapshot",
     "ControlRunRequest",
     "CreateTaskScopeRequest",
+    "DecideManualBindingRequest",
     "DeterministicEventSeedPort",
     "ForegroundSchedulerWakePort",
     "HumanMemoryHostService",
