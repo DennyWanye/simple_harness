@@ -113,6 +113,20 @@ from deskpet.task_scope.runtime_binding_authority import (
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 
+# Single source for the v44 audit-set alias → Host table mapping used by both
+# the execution-audit projection and the recovery/export projection.
+_V44_AUDIT_TABLE_ALIASES: tuple[tuple[str, str], ...] = (
+    ("foreground_claimed_payloads", "foreground_run_preparation_bindings"),
+    ("foreground_execution_preparations", "foreground_execution_preparations"),
+    ("foreground_start_intents", "foreground_execution_start_intents"),
+    ("foreground_start_observations", "foreground_execution_start_observations"),
+    (
+        "foreground_reconciliation_receipts",
+        "foreground_execution_reconciliations",
+    ),
+    ("foreground_terminal_lineage", "foreground_terminal_receipts"),
+)
+
 
 class _CanonicalBulkSeed:
     def __init__(self, db_path: Path) -> None:
@@ -421,6 +435,9 @@ class _DeterministicWakeGate:
         self._enqueue_count += 1
         if self._enqueue_count >= self._release_after:
             await self._runtime.after_enqueue(subject=subject)
+
+    async def after_control(self, *, subject: str) -> None:
+        await self._runtime.after_control(subject=subject)
 
 
 class S4ValuePublicAdapter:
@@ -1411,18 +1428,11 @@ class S4ValuePublicAdapter:
             table, _, where = source.partition(" WHERE ")
             if self._host_row_count(table, f"WHERE {where}" if where else ""):
                 sequence.append(name)
-        aliases = (
-            ("foreground_claimed_payloads", "foreground_run_preparation_bindings"),
-            ("foreground_execution_preparations", "foreground_execution_preparations"),
-            ("foreground_start_intents", "foreground_execution_start_intents"),
-            ("foreground_start_observations", "foreground_execution_start_observations"),
-            (
-                "foreground_reconciliation_receipts",
-                "foreground_execution_reconciliations",
-            ),
-            ("foreground_terminal_lineage", "foreground_terminal_receipts"),
-        )
-        sets = [alias for alias, table in aliases if self._host_table_exists(table)]
+        sets = [
+            alias
+            for alias, table in _V44_AUDIT_TABLE_ALIASES
+            if self._host_table_exists(table)
+        ]
         path = self._require_db()
         with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
             row = db.execute(
@@ -1477,18 +1487,11 @@ class S4ValuePublicAdapter:
         if self._db_path is None:
             return projected
         manifest_ref = str(projected.get("manifest_ref") or "")
-        aliases = (
-            ("foreground_claimed_payloads", "foreground_run_preparation_bindings"),
-            ("foreground_execution_preparations", "foreground_execution_preparations"),
-            ("foreground_start_intents", "foreground_execution_start_intents"),
-            ("foreground_start_observations", "foreground_execution_start_observations"),
-            (
-                "foreground_reconciliation_receipts",
-                "foreground_execution_reconciliations",
-            ),
-            ("foreground_terminal_lineage", "foreground_terminal_receipts"),
-        )
-        sets = [alias for alias, table in aliases if self._host_table_exists(table)]
+        sets = [
+            alias
+            for alias, table in _V44_AUDIT_TABLE_ALIASES
+            if self._host_table_exists(table)
+        ]
         roots: dict[str, str] = {}
         if manifest_ref:
             path = self._require_db()
@@ -1503,7 +1506,7 @@ class S4ValuePublicAdapter:
                 }
             roots = {
                 alias: rows[table]
-                for alias, table in aliases
+                for alias, table in _V44_AUDIT_TABLE_ALIASES
                 if table in rows
             }
         projected.update(

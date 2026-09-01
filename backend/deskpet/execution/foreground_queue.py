@@ -62,6 +62,23 @@ class ControlKind(StrEnum):
     CANCEL = "cancel"
 
 
+class EffectBoundary(StrEnum):
+    """Externally visible Runtime boundary admitted by the current Host lease."""
+
+    SDK_START = "sdk_start"
+    SDK_CONTROL = "sdk_control"
+    TOOL = "tool"
+
+
+_EFFECT_BOUNDARY_ALLOWED_STATES: dict[EffectBoundary, frozenset[str]] = {
+    EffectBoundary.SDK_START: frozenset({"CLAIMED"}),
+    EffectBoundary.SDK_CONTROL: frozenset(
+        {"PAUSE_REQUESTED", "STOP_REQUESTED", "CANCEL_REQUESTED"}
+    ),
+    EffectBoundary.TOOL: frozenset({"RUNNING"}),
+}
+
+
 class ForegroundQueueError(RuntimeError):
     code = "foreground_queue_rejected"
 
@@ -145,8 +162,8 @@ class ClaimedExecution:
     candidate: PreparationCandidate
     lineage_hash: str
     claimed_execution_hash: str
-    admission_receipt_id: str = ""
-    admission_receipt_hash: str = ""
+    admission_receipt_id: str
+    admission_receipt_hash: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1978,12 +1995,26 @@ class ForegroundQueueStore:
         sdk_run_id: str,
         owner_id: str,
         generation: int,
+        boundary: EffectBoundary | str = EffectBoundary.TOOL,
     ) -> EffectAdmissionReceipt:
+        """Final current-generation admission before one external side effect.
+
+        Every externally visible Runtime boundary — the sole SDK start, each
+        control signal send, and each physical Tool effect dispatch — must call
+        this immediately before acting so a reclaimed lease (stale owner or
+        stale generation) can never produce an external side effect.
+        """
+
+        try:
+            effect_boundary = EffectBoundary(boundary)
+        except ValueError as exc:
+            raise ForegroundQueueError("foreground_effect_boundary_invalid") from exc
         now = _clock_value(self._clock)
         await self.initialize()
         async with self._connection() as db:
             head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
-            if head["current_state"] != RunState.RUNNING.value:
+            allowed_states = _EFFECT_BOUNDARY_ALLOWED_STATES[effect_boundary]
+            if str(head["current_state"]) not in allowed_states:
                 raise ForegroundQueueError("foreground_effect_state_rejected")
             await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
             snapshot = await self._snapshot_tx(db, host_run_id)

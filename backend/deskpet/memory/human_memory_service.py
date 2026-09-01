@@ -336,6 +336,8 @@ class RecoveryLifecyclePort(Protocol):
 class ForegroundSchedulerWakePort(Protocol):
     async def after_enqueue(self, *, subject: str) -> None: ...
 
+    async def after_control(self, *, subject: str) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class _RawSetSpec:
@@ -709,6 +711,11 @@ class HumanMemoryHostService:
             reason=request.reason,
             idempotency_key=request.idempotency_key,
         )
+        # The durable control intent, reduced state, and signal outbox are
+        # committed above; wake the active Runtime so pause/stop/cancel are
+        # delivered immediately instead of waiting for the next poll.
+        if self._scheduler_wake is not None and receipt.outcome == "signalled":
+            await self._scheduler_wake.after_control(subject=self._auth.subject)
         return {
             "control_ref": receipt.control_id,
             "receipt_ref": receipt.control_id,

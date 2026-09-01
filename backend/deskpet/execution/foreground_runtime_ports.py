@@ -164,6 +164,10 @@ class TaskScopeForegroundContextPort:
             if isinstance(item, Mapping)
         )
         return FrozenContextAuthority(
+            host_run_id=claimed.host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=claimed.owner_id,
+            generation=claimed.generation,
             authority_ref=snapshot.snapshot_id,
             authority_hash=snapshot.snapshot_fingerprint,
             snapshot_id=snapshot.snapshot_id,
@@ -191,7 +195,7 @@ class ProductForegroundProviderPort:
         request_id: str,
         sdk_run_id: str,
     ) -> FrozenProviderAuthority:
-        del claimed, execution_session_id, request_id
+        del execution_session_id, request_id
         from llm.model_catalog import model_context_window
 
         chain = self._registry.get_chain()
@@ -218,6 +222,10 @@ class ProductForegroundProviderPort:
             "registry_snapshot_hash": str(self._registry.snapshot_digest()),
         }
         return FrozenProviderAuthority(
+            host_run_id=claimed.host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=claimed.owner_id,
+            generation=claimed.generation,
             authority_ref=f"foreground-provider:{sdk_run_id}",
             authority_hash=canonical_hash(payload),
             provider_id=provider_id,
@@ -255,6 +263,10 @@ class ProductForegroundProviderPort:
             catalog_fingerprint=str(tools.catalog["content_fingerprint"]),
         )
         return BoundProviderAuthority(
+            host_run_id=frozen.host_run_id,
+            sdk_run_id=frozen.sdk_run_id,
+            owner_id=frozen.owner_id,
+            generation=frozen.generation,
             authority_ref=f"sdk-provider-binding:{sdk_run_id}",
             authority_hash=str(binding.binding_fingerprint),
             binding=binding,
@@ -358,6 +370,10 @@ class ProductForegroundToolPort:
         start_record = authority.run_start_record()
         authority_hash = canonical_hash(start_record)
         return FrozenToolAuthority(
+            host_run_id=claimed.host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=claimed.owner_id,
+            generation=claimed.generation,
             authority_ref=f"sdk-tool-authority:{sdk_run_id}",
             authority_hash=authority_hash,
             catalog=catalog,

@@ -10,6 +10,7 @@ from .foreground_queue import (
     ControlKind,
     ControlReceipt,
     EffectAdmissionReceipt,
+    EffectBoundary,
     EnqueueReceipt,
     ExecutionAuditReceipt,
     ForegroundQueueError,
@@ -27,6 +28,7 @@ from .foreground_queue import (
 )
 from .foreground_runtime import (
     AuthenticatedTerminalObservation,
+    ForegroundEffectAdmissionGate,
     ForegroundRuntimeError,
     ForegroundRuntimeExecutionAuthority,
 )
@@ -49,9 +51,11 @@ __all__ = [
     "ControlKind",
     "ControlReceipt",
     "EffectAdmissionReceipt",
+    "EffectBoundary",
     "EmergencyExportReceipt",
     "EnqueueReceipt",
     "ExecutionAuditReceipt",
+    "ForegroundEffectAdmissionGate",
     "ForegroundQueueError",
     "ForegroundQueueStore",
     "ForegroundRuntimeError",

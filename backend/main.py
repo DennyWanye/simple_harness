@@ -3122,6 +3122,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             _sdk_runtime_stack,
         ),
         audit_sink=_AuditSink(),
+        effect_gate=_ensure_foreground_effect_gate(),
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -7235,6 +7236,22 @@ async def _build_product_agent_loop(request):
 # SDK Runtime globals (production ingress)
 _sdk_runtime_stack = None
 _sdk_ingress = None
+# Shared final Tool-effect admission gate.  The SDK effect executor consults
+# it before every physical dispatch; the foreground runtime registers exact
+# lease identities into it.  Created lazily because the SDK stack starts
+# before the human-memory foreground ports.
+_foreground_effect_gate = None
+
+
+def _ensure_foreground_effect_gate():  # type: ignore[no-untyped-def]
+    global _foreground_effect_gate
+    if _foreground_effect_gate is None:
+        from deskpet.execution.foreground_runtime import (
+            ForegroundEffectAdmissionGate,
+        )
+
+        _foreground_effect_gate = ForegroundEffectAdmissionGate()
+    return _foreground_effect_gate
 _sdk_context_port = None
 _sdk_runtime_catalog: dict[str, Any] | None = None
 _sdk_run_binding_registry = None
@@ -8166,6 +8183,7 @@ async def _build_product_sdk_runtime_stack(
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
             authorization=authorization_adapter,
             reconciliation=reconciliation_adapter,
+            foreground_admission=_ensure_foreground_effect_gate(),
         )
         from simple_harness.execution.context_authority import (
             DurableToolCatalogResolver,

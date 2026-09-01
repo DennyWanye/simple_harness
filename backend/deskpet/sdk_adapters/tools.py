@@ -13,7 +13,7 @@ import json
 import logging
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 from simple_harness import CallId, JsonValue, thaw_json
 from simple_harness.tools import (
@@ -327,17 +327,41 @@ class ProductToolsAdapter(ToolRegistry):
                 _validation_run_id.reset(validation_token)
 
 
+class ForegroundEffectAdmissionPort(Protocol):
+    """Final generation-bound admission for foreground-owned Runs.
+
+    Implemented by ``deskpet.execution.foreground_runtime.
+    ForegroundEffectAdmissionGate``; Runs never registered with the gate pass
+    through unchanged.
+    """
+
+    async def authorize(self, sdk_run_id: str) -> None: ...
+
+
 class ProductEffectExecutor(EffectExecutor):
     """Bind SDK validation and dispatch to the immutable Run authority."""
 
-    def __init__(self, *, registry: ProductToolsAdapter, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        *,
+        registry: ProductToolsAdapter,
+        foreground_admission: ForegroundEffectAdmissionPort | None = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(registry=registry, **kwargs)
+        self._foreground_admission = foreground_admission
 
     async def execute(self, **kwargs: Any):
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
         self._registry.assert_workspace_current(context.run_id)
+        if self._foreground_admission is not None:
+            # Final current-generation admission immediately before the
+            # physical Tool effect.  A foreground lease reclaimed after the
+            # authorization decision fails here, so a stale worker's Run
+            # cannot produce external Tool side effects.
+            await self._foreground_admission.authorize(context.run_id.value)
         token = _validation_run_id.set(context.run_id.value)
         try:
             return await super().execute(**kwargs)
@@ -679,6 +703,7 @@ def filter_sdk_catalog_for_workspace(
 __all__ = (
     "PRODUCT_TOOL_NAMES",
     "ProductToolInventoryEntry",
+    "ForegroundEffectAdmissionPort",
     "ProductEffectExecutor",
     "ProductToolRegistration",
     "ProductToolsAdapter",

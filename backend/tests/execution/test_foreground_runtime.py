@@ -12,19 +12,25 @@ from deskpet.execution.foreground_queue import (
     AdmissionReceipt,
     ClaimedExecution,
     ContextLineage,
+    ControlKind,
+    EffectBoundary,
+    ForegroundQueueError,
     ForegroundRunSnapshot,
     PreparationCandidate,
     PreparationDraftReceipt,
     RunState,
+    SignalEnvelope,
 )
 from deskpet.execution.foreground_runtime import (
     AuthenticatedTerminalObservation,
     BoundProviderAuthority,
+    ForegroundEffectAdmissionGate,
     ForegroundRuntimeError,
     ForegroundRuntimeExecutionAuthority,
     FrozenContextAuthority,
     FrozenProviderAuthority,
     FrozenToolAuthority,
+    resolve_host_terminal,
 )
 from deskpet.sdk_adapters.ingress import IngressStartReceipt
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
@@ -116,6 +122,17 @@ class _Store:
         self.prior_start_outcomes: tuple[str, ...] = ()
         self.terminals: list[str] = []
         self.closed_leases: list[tuple[str, int]] = []
+        self.current_generation = 1
+        self.effect_admissions: list[str] = []
+        self.signals: list[SignalEnvelope] = []
+        self.acks: list[tuple[str, str]] = []
+        self.pause_outcomes: list[str] = []
+
+    async def authorize_effect(self, **kwargs):  # type: ignore[no-untyped-def]
+        if int(kwargs["generation"]) != self.current_generation:
+            raise ForegroundQueueError("foreground_generation_stale")
+        self.effect_admissions.append(str(kwargs.get("boundary")))
+        return kwargs
 
     async def current_snapshot(self, subject: str):  # type: ignore[no-untyped-def]
         assert subject == SUBJECT
@@ -152,6 +169,8 @@ class _Store:
             kwargs["preparation_draft_hash"],
             candidate,
             "d" * 64,
+            "f" * 64,
+            f"admission-{host_run_id}",
             "f" * 64,
         )
         return AdmissionReceipt(
@@ -198,7 +217,18 @@ class _Store:
         return self.active
 
     async def pending_signals(self, host_run_id: str):  # type: ignore[no-untyped-def]
-        return ()
+        acked = {signal_id for signal_id, _ in self.acks}
+        return tuple(
+            signal for signal in self.signals if signal.signal_id not in acked
+        )
+
+    async def acknowledge_signal(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.acks.append((kwargs["signal_id"], kwargs["sdk_signal_id"]))
+        return kwargs
+
+    async def record_pause_outcome(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.pause_outcomes.append(kwargs["idempotency_key"])
+        return kwargs
 
     async def heartbeat(self, **kwargs):  # type: ignore[no-untyped-def]
         return kwargs
@@ -229,8 +259,13 @@ class _Context:
         return ContextLineage(f"context-{candidate.turn_id}", 1, "c" * 64)
 
     async def prepare(self, **kwargs):  # type: ignore[no-untyped-def]
-        candidate = kwargs["claimed"].candidate
+        claimed = kwargs["claimed"]
+        candidate = claimed.candidate
         return FrozenContextAuthority(
+            claimed.host_run_id,
+            kwargs["sdk_run_id"],
+            claimed.owner_id,
+            claimed.generation,
             f"context:{candidate.turn_id}",
             "2" * 64,
             f"snapshot-{candidate.turn_id}",
@@ -261,13 +296,21 @@ class _Provider:
         self.terminal = []
 
     async def freeze(self, **kwargs):  # type: ignore[no-untyped-def]
+        claimed = kwargs["claimed"]
         return FrozenProviderAuthority(
+            claimed.host_run_id, kwargs["sdk_run_id"], claimed.owner_id,
+            claimed.generation,
             "provider:1", "3" * 64, "provider", "incarnation", 1, 1,
             "model", {}, 4096,
         )
 
     async def bind(self, **kwargs):  # type: ignore[no-untyped-def]
-        return BoundProviderAuthority("provider-binding:1", "4" * 64, _Binding())
+        frozen = kwargs["frozen"]
+        return BoundProviderAuthority(
+            frozen.host_run_id, frozen.sdk_run_id, frozen.owner_id,
+            frozen.generation,
+            "provider-binding:1", "4" * 64, _Binding(),
+        )
 
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
         self.terminal.append((sdk_run_id, state))
@@ -278,7 +321,12 @@ class _Tools:
         self.terminal = []
 
     async def freeze(self, **kwargs):  # type: ignore[no-untyped-def]
+        claimed = kwargs["claimed"]
         return FrozenToolAuthority(
+            claimed.host_run_id,
+            kwargs["sdk_run_id"],
+            claimed.owner_id,
+            claimed.generation,
             "tools:1",
             "5" * 64,
             {"generation": 7, "content_fingerprint": "catalog-1", "tool_names": []},
@@ -293,6 +341,17 @@ class _Ingress:
     def __init__(self) -> None:
         self.starts = []
         self.records = {}
+        self.cancels: list[str] = []
+        self.signals: list[dict] = []
+
+    async def cancel(self, run_id: str) -> None:
+        self.cancels.append(run_id)
+
+    async def signal(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.signals.append(kwargs)
+        return type(
+            "Delivery", (), {"delivery_id": f"sdk-delivery:{kwargs['signal_id']}"}
+        )()
 
     async def start(self, **kwargs):  # type: ignore[no-untyped-def]
         from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
@@ -362,6 +421,8 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
         candidate,
         "d" * 64,
         "f" * 64,
+        f"admission-{host_run_id}",
+        "f" * 64,
     )
     store.claimed[host_run_id] = claimed
     ingress = _Ingress()
@@ -418,6 +479,8 @@ async def test_restart_after_bind_before_start_retries_same_sdk_identity_once() 
         "a" * 64,
         candidate,
         "d" * 64,
+        "f" * 64,
+        f"admission-{host_run_id}",
         "f" * 64,
     )
     store.claimed[host_run_id] = claimed
@@ -569,3 +632,257 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
         )
         is None
     )
+
+
+def _signal_envelope(
+    signal_id: str,
+    *,
+    host_run_id: str,
+    sdk_run_id: str,
+    kind: ControlKind,
+    generation: int = 1,
+) -> SignalEnvelope:
+    return SignalEnvelope(
+        signal_id,
+        f"control-{signal_id}",
+        host_run_id,
+        sdk_run_id,
+        generation,
+        kind,
+        "7" * 64,
+    )
+
+
+async def _wait_until(condition, *, timeout: float = 5.0) -> None:  # type: ignore[no-untyped-def]
+    deadline = asyncio.get_running_loop().time() + timeout
+    while not condition():
+        if asyncio.get_running_loop().time() > deadline:
+            raise AssertionError("condition not reached before timeout")
+        await asyncio.sleep(0.01)
+
+
+@pytest.mark.asyncio
+async def test_reclaim_between_bind_and_start_blocks_sdk_start_side_effect() -> None:
+    class ReclaimAfterBind(_Store):
+        async def bind_sdk_run(self, **kwargs):  # type: ignore[no-untyped-def]
+            result = await super().bind_sdk_run(**kwargs)
+            # A competing owner reclaims the lease after the durable SDK
+            # binding commits but before this worker reaches ingress.start.
+            self.current_generation = 2
+            return result
+
+    store = ReclaimAfterBind([_candidate(1)])
+    ingress = _Ingress()
+    runtime = ForegroundRuntimeExecutionAuthority(
+        store=store,  # type: ignore[arg-type]
+        subject=SUBJECT,
+        owner_id="owner-1",
+        ingress=ingress,  # type: ignore[arg-type]
+        context=_Context(),
+        provider=_Provider(),
+        tools=_Tools(),
+        terminal_observer=_Terminal(),
+    )
+    await runtime.after_enqueue(subject=SUBJECT)
+    await runtime.drain()
+
+    assert isinstance(runtime.last_error, ForegroundQueueError)
+    assert runtime.last_error.code == "foreground_generation_stale"
+    assert ingress.starts == []
+    assert store.terminals == []
+
+
+@pytest.mark.asyncio
+async def test_reclaim_between_signal_read_and_send_blocks_sdk_control() -> None:
+    store = _Store([])
+    host_run_id = "host-turn-1"
+    sdk_run_id = "sdk-run-1"
+    store.signals = [
+        _signal_envelope(
+            "sig-cancel",
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            kind=ControlKind.CANCEL,
+        )
+    ]
+    # Lease reclaimed after the durable signal read, before the SDK send.
+    store.current_generation = 2
+    ingress = _Ingress()
+    runtime = ForegroundRuntimeExecutionAuthority(
+        store=store,  # type: ignore[arg-type]
+        subject=SUBJECT,
+        owner_id="owner-1",
+        ingress=ingress,  # type: ignore[arg-type]
+        context=_Context(),
+        provider=_Provider(),
+        tools=_Tools(),
+        terminal_observer=_Terminal(),
+    )
+    with pytest.raises(ForegroundQueueError) as exc:
+        await runtime._deliver_controls(
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            generation=1,
+        )
+    assert exc.value.code == "foreground_generation_stale"
+    assert ingress.cancels == []
+    assert ingress.signals == []
+    assert store.acks == []
+
+
+@pytest.mark.asyncio
+async def test_reclaim_between_tool_admission_and_dispatch_blocks_effect(
+    monkeypatch,
+) -> None:  # type: ignore[no-untyped-def]
+    from simple_harness import RequestId, RunId
+    from simple_harness.tools import ToolContext
+    from simple_harness.tools.contracts import CancellationToken
+    from simple_harness.tools.executor import EffectExecutor
+
+    from deskpet.sdk_adapters.tools import ProductEffectExecutor
+
+    store = _Store([])
+    gate = ForegroundEffectAdmissionGate()
+    gate.register(
+        store=store,  # type: ignore[arg-type]
+        host_run_id="host-turn-1",
+        sdk_run_id="sdk-run-1",
+        owner_id="owner-1",
+        generation=1,
+    )
+    # The runtime's earlier authorization admission passed at generation 1.
+    await gate.authorize("sdk-run-1")
+    assert store.effect_admissions == [str(EffectBoundary.TOOL)]
+
+    dispatches: list[str] = []
+
+    async def _count_dispatch(self, **kwargs):  # type: ignore[no-untyped-def]
+        dispatches.append(str(kwargs["context"].run_id.value))
+
+    monkeypatch.setattr(EffectExecutor, "execute", _count_dispatch)
+
+    class _Registry:
+        def assert_workspace_current(self, run_id) -> None:  # type: ignore[no-untyped-def]
+            return None
+
+    executor = ProductEffectExecutor(
+        uow=object(),  # type: ignore[arg-type]
+        registry=_Registry(),  # type: ignore[arg-type]
+        authorization=object(),  # type: ignore[arg-type]
+        reconciliation=object(),  # type: ignore[arg-type]
+        foreground_admission=gate,
+    )
+    context = ToolContext(RunId("sdk-run-1"), RequestId("req-1"), CancellationToken())
+
+    # Same-generation dispatch is admitted.
+    await executor.execute(context=context)
+    assert dispatches == ["sdk-run-1"]
+
+    # Lease reclaimed between the authorization admission and this dispatch.
+    store.current_generation = 2
+    with pytest.raises(ForegroundQueueError) as exc:
+        await executor.execute(context=context)
+    assert exc.value.code == "foreground_generation_stale"
+    assert dispatches == ["sdk-run-1"]
+
+    # Unregistered Runs (legacy ingress) bypass the foreground gate.
+    other = ToolContext(RunId("sdk-run-2"), RequestId("req-2"), CancellationToken())
+    await executor.execute(context=other)
+    assert dispatches == ["sdk-run-1", "sdk-run-2"]
+
+
+@pytest.mark.asyncio
+async def test_durable_control_commit_wakes_active_runtime_immediately() -> None:
+    release_terminal = asyncio.Event()
+
+    class BlockedTerminal:
+        def __init__(self) -> None:
+            self.state = RunState.COMPLETED
+
+        async def observe(self, **kwargs):  # type: ignore[no-untyped-def]
+            await release_terminal.wait()
+            return AuthenticatedTerminalObservation(
+                self.state,
+                f"sdk-terminal:{kwargs['sdk_run_id']}",
+                "6" * 64,
+            )
+
+    store = _Store([_candidate(1)])
+    ingress = _Ingress()
+    terminal = BlockedTerminal()
+    runtime = ForegroundRuntimeExecutionAuthority(
+        store=store,  # type: ignore[arg-type]
+        subject=SUBJECT,
+        owner_id="owner-1",
+        ingress=ingress,  # type: ignore[arg-type]
+        context=_Context(),
+        provider=_Provider(),
+        tools=_Tools(),
+        terminal_observer=terminal,
+    )
+    await runtime.after_enqueue(subject=SUBJECT)
+    await _wait_until(lambda: len(ingress.starts) == 1)
+    assert store.active is not None and store.active.sdk_run_id is not None
+    host_run_id = store.active.host_run_id
+    sdk_run_id = store.active.sdk_run_id
+
+    # PAUSE: durable commit + wake -> delivered, acked, PAUSED advanced.
+    store.signals.append(
+        _signal_envelope(
+            "sig-pause",
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            kind=ControlKind.PAUSE,
+        )
+    )
+    await runtime.after_control(subject=SUBJECT)
+    await _wait_until(lambda: any(sid == "sig-pause" for sid, _ in store.acks))
+    assert ingress.signals[0]["payload"] == {"kind": "pause"}
+    assert store.pause_outcomes == ["runtime-pause:sig-pause"]
+    pause_ack = next(ack for sid, ack in store.acks if sid == "sig-pause")
+    assert pause_ack == "sdk-delivery:sig-pause"
+
+    # STOP: distinct signal identity and distinct terminal semantics.
+    store.signals.append(
+        _signal_envelope(
+            "sig-stop",
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            kind=ControlKind.STOP,
+        )
+    )
+    await runtime.after_control(subject=SUBJECT)
+    await _wait_until(lambda: any(sid == "sig-stop" for sid, _ in store.acks))
+    stop_ack = next(ack for sid, ack in store.acks if sid == "sig-stop")
+    assert stop_ack == "sdk-stop:sig-stop"
+    assert ingress.cancels == [sdk_run_id]
+
+    terminal.state = RunState.STOPPED
+    release_terminal.set()
+    await runtime.drain()
+    assert runtime.last_error is None
+    assert store.terminals == [host_run_id]
+    assert str(EffectBoundary.SDK_CONTROL) in store.effect_admissions
+    assert str(EffectBoundary.SDK_START) in store.effect_admissions
+
+
+def test_resolve_host_terminal_keeps_stop_and_cancel_distinct() -> None:
+    assert (
+        resolve_host_terminal("cancelled", RunState.STOP_REQUESTED.value)
+        is RunState.STOPPED
+    )
+    assert (
+        resolve_host_terminal("cancelled", RunState.CANCEL_REQUESTED.value)
+        is RunState.CANCELLED
+    )
+    assert resolve_host_terminal("cancelled", None) is RunState.CANCELLED
+    # The Host never fabricates a cancellation terminal over a finished Run.
+    assert (
+        resolve_host_terminal("completed", RunState.STOP_REQUESTED.value)
+        is RunState.COMPLETED
+    )
+    assert (
+        resolve_host_terminal("failed", RunState.STOP_REQUESTED.value)
+        is RunState.FAILED
+    )
+    assert resolve_host_terminal("waiting", None) is None
