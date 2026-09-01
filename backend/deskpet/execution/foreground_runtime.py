@@ -32,6 +32,7 @@ from deskpet.execution.foreground_queue import (
     ClaimedExecution,
     ContextLineage,
     ControlKind,
+    ForegroundQueueError,
     ForegroundQueueStore,
     PreparationCandidate,
     RunState,
@@ -275,6 +276,25 @@ class ForegroundRuntimeExecutionAuthority:
         except TimeoutError:
             task.cancel()
             await asyncio.gather(task, return_exceptions=True)
+        snapshot = await self._store.current_snapshot(self._subject)
+        if snapshot is None or snapshot.owner_id != self._owner_id:
+            return
+        try:
+            await self._store.close_current_lease(
+                host_run_id=snapshot.host_run_id,
+                owner_id=self._owner_id,
+                generation=snapshot.generation,
+                idempotency_key=(
+                    f"runtime-shutdown:{snapshot.host_run_id}:g{snapshot.generation}"
+                ),
+            )
+        except ForegroundQueueError as exc:
+            if exc.code not in {
+                "foreground_generation_stale",
+                "foreground_lease_expired",
+                "foreground_run_already_terminal",
+            }:
+                raise
 
     async def _record_audit(self, event: str, **payload: object) -> None:
         if self._audit is not None:

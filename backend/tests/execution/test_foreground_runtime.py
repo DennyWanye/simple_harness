@@ -115,6 +115,7 @@ class _Store:
         self.start_observations: list[str] = []
         self.prior_start_outcomes: tuple[str, ...] = ()
         self.terminals: list[str] = []
+        self.closed_leases: list[tuple[str, int]] = []
 
     async def current_snapshot(self, subject: str):  # type: ignore[no-untyped-def]
         assert subject == SUBJECT
@@ -200,6 +201,12 @@ class _Store:
         return ()
 
     async def heartbeat(self, **kwargs):  # type: ignore[no-untyped-def]
+        return kwargs
+
+    async def close_current_lease(self, **kwargs):  # type: ignore[no-untyped-def]
+        self.closed_leases.append(
+            (kwargs["host_run_id"], kwargs["generation"])
+        )
         return kwargs
 
     async def record_reconciliation(self, **kwargs):  # type: ignore[no-untyped-def]
@@ -494,6 +501,28 @@ async def test_subject_mismatch_is_rejected_before_driver_creation() -> None:
     with pytest.raises(ForegroundRuntimeError) as exc:
         await runtime.after_enqueue(subject="other")
     assert exc.value.code == "foreground_runtime_subject_mismatch"
+
+
+@pytest.mark.asyncio
+async def test_close_expires_owned_active_lease_for_immediate_restart() -> None:
+    candidate = _candidate(1)
+    store = _Store([])
+    store.active = _snapshot(candidate, host_run_id="host-turn-1")
+    runtime = ForegroundRuntimeExecutionAuthority(
+        store=store,  # type: ignore[arg-type]
+        subject=SUBJECT,
+        owner_id="owner-1",
+        ingress=_Ingress(),  # type: ignore[arg-type]
+        context=_Context(),
+        provider=_Provider(),
+        tools=_Tools(),
+        terminal_observer=_Terminal(),
+    )
+    runtime._driver = asyncio.create_task(asyncio.sleep(0))  # noqa: SLF001
+
+    await runtime.close()
+
+    assert store.closed_leases == [("host-turn-1", 1)]
 
 
 @pytest.mark.asyncio

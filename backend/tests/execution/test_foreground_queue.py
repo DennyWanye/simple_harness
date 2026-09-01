@@ -1274,6 +1274,42 @@ async def test_execution_lifecycle_receipts_are_immutable_and_restart_reusable(
 
 
 @pytest.mark.asyncio
+async def test_graceful_scheduler_close_allows_immediate_generation_reclaim(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    store = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(store, primary_id, 1)
+    draft = await _draft(store, key="shutdown-draft")
+    admitted = await store.claim_next(
+        subject=SUBJECT,
+        owner_id="owner-before-shutdown",
+        claim_idempotency_key="shutdown-claim",
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
+        lease_seconds=300,
+    )
+    assert admitted is not None
+
+    closed = await store.close_current_lease(
+        host_run_id=admitted.host_run_id,
+        owner_id="owner-before-shutdown",
+        generation=admitted.generation,
+        idempotency_key="shutdown-close",
+    )
+    reclaimed = await store.reclaim_expired(
+        host_run_id=admitted.host_run_id,
+        new_owner_id="owner-after-restart",
+        expected_generation=admitted.generation,
+        lease_seconds=300,
+        idempotency_key="shutdown-reclaim",
+    )
+
+    assert closed.action == "close"
+    assert reclaimed.generation == admitted.generation + 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "phase,table",
     (

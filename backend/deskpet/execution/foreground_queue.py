@@ -1569,6 +1569,64 @@ class ForegroundQueueStore:
                 raise
         return receipt
 
+    async def close_current_lease(
+        self,
+        *,
+        host_run_id: str,
+        owner_id: str,
+        generation: int,
+        idempotency_key: str,
+    ) -> LeaseReceipt:
+        """Expire the current lease during graceful scheduler shutdown."""
+
+        host_run_id = identifier(host_run_id, "host_run_id", 512)
+        owner_id = identifier(owner_id, "owner_id", 512)
+        idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
+        now = _clock_value(self._clock)
+        await self.initialize()
+        async with self._connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
+            try:
+                existing = await self._lease_by_key_tx(
+                    db, host_run_id, idempotency_key
+                )
+                if existing is not None:
+                    if (
+                        existing["owner_id"] != owner_id
+                        or int(existing["generation"]) != generation
+                        or existing["action"] != "close"
+                    ):
+                        raise ForegroundQueueError(
+                            "foreground_lease_idempotency_conflict"
+                        )
+                    await db.commit()
+                    return self._lease_receipt(existing)
+                await self._validate_lease_tx(
+                    db, host_run_id, owner_id, generation, now
+                )
+                receipt = await self._insert_lease_receipt_tx(
+                    db,
+                    host_run_id=host_run_id,
+                    owner_id=owner_id,
+                    generation=generation,
+                    prior_generation=generation,
+                    action="close",
+                    expires_at=None,
+                    idempotency_key=idempotency_key,
+                    recorded_at=now,
+                )
+                await db.execute(
+                    "UPDATE foreground_run_heads SET lease_expires_at=?,updated_at=? "
+                    "WHERE host_run_id=?",
+                    (now, now, host_run_id),
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return receipt
+
     async def reclaim_expired(
         self,
         *,
