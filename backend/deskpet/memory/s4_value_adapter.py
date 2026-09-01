@@ -23,7 +23,11 @@ from deskpet.memory.human_memory_service import (
     HumanMemoryHostService,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
+    OpenTaskScopeRequest,
+    QueueTurnRequest,
+    ReadTaskScopeViewRequest,
     SaveCheckpointRequest,
+    SearchTaskScopesRequest,
 )
 from deskpet.memory.schema import dispatch_startup_epoch, inspect_startup_epoch
 from deskpet.task_scope.store import CanonicalTaskScopeStore
@@ -39,7 +43,18 @@ class _CanonicalBulkSeed:
             raise HumanMemoryHostServiceError(
                 "human_memory_bulk_seed_authority_unavailable"
             )
-        return await operation(**values)
+        values.pop("idempotency_key", None)
+        receipt = await operation(**values)
+        return {
+            "scope_ref": receipt.task_scope_id,
+            "event_count": receipt.count,
+            "first_event_ref": receipt.first_event_id,
+            "first_event_sequence": receipt.first_event_sequence,
+            "last_event_ref": receipt.last_event_id,
+            "last_event_sequence": receipt.last_event_sequence,
+            "source_ref": receipt.source_id,
+            "source_hash": receipt.source_hash,
+        }
 
 
 class S4ValuePublicAdapter:
@@ -136,6 +151,50 @@ class S4ValuePublicAdapter:
                     idempotency_key=f"fixture-checkpoint:{request['scope_ref']}",
                 )
             )
+        if operation == "queue.enqueue":
+            return await service.enqueue_turn(
+                QueueTurnRequest(
+                    scope_ref=str(request["scope_ref"]),
+                    delivery_key=str(request["delivery_key"]),
+                    text=str(request.get("text", "")),
+                )
+            )
+        if operation == "authority.snapshot":
+            return await service.authority_snapshot()
+        if operation == "derived.drop_rebuildable":
+            return await service.drop_rebuildable(str(request["scope_ref"]))
+        if operation == "derived.rebuild":
+            return await service.rebuild_derived(str(request["scope_ref"]))
+        if operation == "task_scope.search":
+            return await service.search_task_scopes(
+                SearchTaskScopesRequest(
+                    query=str(request["query"]),
+                    max_candidates=int(request.get("max_candidates", 8)),
+                    cursor=None
+                    if request.get("cursor") is None
+                    else str(request["cursor"]),
+                )
+            )
+        if operation == "task_scope.open_exact":
+            probe = request.get("live_probe")
+            return await service.open_task_scope(
+                OpenTaskScopeRequest(
+                    scope_ref=str(request["scope_ref"]),
+                    live_probe=None if probe is None else dict(probe),
+                    expected_source_hash=None
+                    if request.get("expected_source_hash") is None
+                    else str(request["expected_source_hash"]),
+                )
+            )
+        if operation == "view.read":
+            return await service.read_view(
+                ReadTaskScopeViewRequest(
+                    scope_ref=str(request["scope_ref"]),
+                    kind=str(request["kind"]),
+                )
+            )
+        if operation == "queue.snapshot":
+            return await service.queue_snapshot()
         if operation == "recovery.manifest":
             return await service.raw_integrity_manifest()
         raise HumanMemoryHostServiceError("human_memory_operation_unavailable")

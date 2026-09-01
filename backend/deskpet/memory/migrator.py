@@ -607,6 +607,14 @@ async def run_migrations(
                         migration_sha256 = hashlib.sha256(
                             sql.encode("utf-8")
                         ).hexdigest()
+                        if version == FOREGROUND_QUEUE_MIGRATION:
+                            await db.execute(
+                                "INSERT INTO foreground_queue_marker("
+                                "singleton,format_epoch,schema_version,migration_id,"
+                                "migration_sha256,initialized_at) VALUES "
+                                "(1,'human-memory-v1',1,?,?,?)",
+                                (version, migration_sha256, time.time()),
+                            )
                         await _execute_transactional_script(
                             db, _HUMAN_MIGRATION_CHAIN_SQL
                         )
