@@ -174,9 +174,9 @@ def plan_recent_causal_groups(
 
 
 __all__ = [
+    "DEFAULT_LARGE_RESULT_BYTES",
     "CausalGroup",
     "CausalGroupPlan",
     "CausalItem",
-    "DEFAULT_LARGE_RESULT_BYTES",
     "plan_recent_causal_groups",
 ]

@@ -227,6 +227,14 @@ async def test_real_provider_resume_existing_same_run_continuation(
     # and the final answer engages the task instead of asking what A is.
     final_payload = "".join(str(m.content) for m in provider.calls[-1].messages)
     assert "季度报告" in final_payload
+
+    # Frozen budget pass rule (metric-formulas): actual provider input tokens
+    # must never exceed the effective input budget — underestimates are FAIL.
+    from deskpet.sdk_adapters.context_partitions import effective_input_budget
+
+    effective = effective_input_budget(32768)
+    worst = max(int(u.get("prompt_tokens") or 0) for u in provider.usages)
+    assert worst <= effective, (worst, effective)
     answer = str(result.response.message.content)
     assert answer.strip(), "real model must answer after routing"
     assert result.termination.route_state == "routed_task"

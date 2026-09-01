@@ -247,13 +247,13 @@ def assemble_partitions(
 
 
 __all__ = [
-    "AssembledContext",
-    "ContextBudgetExceeded",
     "GENERATION_RESERVE",
     "PARTITION_CAPS",
+    "TRIM_ORDER",
+    "AssembledContext",
+    "ContextBudgetExceeded",
     "PartitionItem",
     "PartitionReport",
-    "TRIM_ORDER",
     "assemble_partitions",
     "budget_window",
     "effective_input_budget",

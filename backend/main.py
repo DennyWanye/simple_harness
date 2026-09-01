@@ -9193,12 +9193,29 @@ async def _run_product_harness_continuation(
 
     current_message = Message(MessageRole.USER, text)
     continuation_value = None
+    from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
+    from deskpet.sdk_adapters.context_partitions import effective_input_budget
+
+    # S5a: the continuation lane shares the frozen 32k-tier budget and causal
+    # grouping with the per-turn Context authority — no second source of truth.
     history, _truncated = await _bounded_sdk_history(
         session_db,
         session_id=session_id,
         root_run_id=root_run_id,
-        token_budget=32_000,
+        token_budget=effective_input_budget(32_768),
     )
+    _group_plan = plan_recent_causal_groups(history)
+    history = [
+        item.to_history_row()
+        for group in _group_plan.groups
+        for item in group.items
+    ]
+    if _truncated or _group_plan.dropped_group_count:
+        logger.info(
+            "sdk_continuation_history_bounded truncated=%s dropped_groups=%s",
+            _truncated,
+            _group_plan.dropped_group_count,
+        )
     source_payload = {
         "schema_version": 1,
         "provider_messages": [

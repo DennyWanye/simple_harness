@@ -374,7 +374,11 @@ async def milestone(tmp_path: Path):
     ports = SimpleNamespace(
         context=context,
         react_checkpoint=SimpleNamespace(
-            read_start_snapshot=lambda run_id: {"input": {}}
+            read_start_snapshot=lambda run_id: {
+                "input": {
+                    "context_metadata": {"budget": {"context_window": 32768}}
+                }
+            }
         ),
     )
     route_service = ContextRouteToolService(

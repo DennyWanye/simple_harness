@@ -628,6 +628,111 @@ class ContextRouteLedgerStore:
             await db.close()
 
 
+
+
+def _context_text_tokens(text: str) -> int:
+    """CJK-aware estimator matching the chat lane's _sdk_text_tokens shape."""
+
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    rest = len(text) - cjk
+    return cjk + max(1, -(-rest // 4)) if text else 1
+
+
+def _message_text(message: Any) -> str:
+    content = getattr(message, "content", "")
+    if isinstance(content, str):
+        return content
+    return canonical_json([getattr(block, "to_dict", lambda b=block: str(b))() for block in content])
+
+
+def _plan_turn_messages(
+    messages: tuple[Any, ...], window_tokens: int | None
+) -> tuple[tuple[Any, ...], dict[str, int]]:
+    """Per-turn causal-group + frozen-budget assembly over the Run context.
+
+    Protected prefix = leading system material (and the memory block flagged
+    ``source=memory``); the conversational tail is grouped into causal units
+    (最近 10 完整组 + open tail).  A missing window falls back to the smallest
+    frozen tier — over-trimming is safe, overflowing is not.
+    """
+
+    from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
+    from deskpet.sdk_adapters.context_partitions import (
+        PARTITION_CAPS,
+        budget_window,
+        effective_input_budget,
+    )
+
+    split = 0
+    for message in messages:
+        role = str(getattr(getattr(message, "role", ""), "value", getattr(message, "role", "")))
+        metadata = getattr(message, "metadata", None)
+        source = metadata.get("source") if isinstance(metadata, Mapping) else None
+        if role == "system" or source == "memory":
+            split += 1
+            continue
+        break
+    protected = messages[:split]
+    tail = messages[split:]
+    if not tail:
+        return messages, {"causal_groups": 0, "trimmed_groups": 0}
+
+    window = int(window_tokens) if window_tokens else min(PARTITION_CAPS)
+    tier = budget_window(max(window, min(PARTITION_CAPS)))
+    effective = effective_input_budget(max(window, min(PARTITION_CAPS)))
+
+    history = [
+        {
+            "role": str(getattr(getattr(m, "role", ""), "value", getattr(m, "role", ""))),
+            "content": _message_text(m),
+        }
+        for m in tail
+    ]
+    plan = plan_recent_causal_groups(history)
+    groups = list(plan.groups)
+    trimmed = plan.dropped_group_count
+
+    def total_tokens() -> int:
+        total = sum(_context_text_tokens(_message_text(m)) for m in protected)
+        for group in groups:
+            total += sum(_context_text_tokens(item.content) for item in group.items)
+        return total
+
+    while total_tokens() > effective:
+        closed = [i for i, g in enumerate(groups) if not g.open_run]
+        if len(closed) <= 1 and (not closed or groups[closed[0]] is groups[-1]):
+            break
+        if not closed:
+            break
+        groups.pop(closed[0])
+        trimmed += 1
+
+    # Map kept groups back onto the original Message objects by index walk.
+    kept_counts = [len(group.items) for group in plan.groups]
+    kept_set = {id(group) for group in groups}
+    kept_messages: list[Any] = list(protected)
+    cursor = len(tail) - sum(kept_counts)  # dropped-by-planner prefix length
+    for group in plan.groups:
+        span = tail[cursor : cursor + len(group.items)]
+        cursor += len(group.items)
+        if id(group) not in kept_set:
+            continue
+        for message, item in zip(span, group.items):
+            if item.summarized:
+                # Large tool results travel as typed summary + page ref; the
+                # raw payload stays durable behind the exact ref.
+                from dataclasses import replace as _replace
+
+                message = _replace(message, content=item.content)
+            kept_messages.append(message)
+    facts = {
+        "causal_groups": len(groups),
+        "trimmed_groups": trimmed,
+        "budget_tier": tier,
+    }
+    return tuple(kept_messages), facts
+
+
 class ProductRunContextAuthority:
     """Per-turn Host Context authority for the SDK 0.7 react barrier."""
 
@@ -660,6 +765,7 @@ class ProductRunContextAuthority:
         start_input = start.get("input") if isinstance(start, Mapping) else None
         temperature: float | None = None
         max_output_tokens: int | None = None
+        window_tokens: int | None = None
         if isinstance(start_input, Mapping):
             raw_temperature = start_input.get("temperature")
             if raw_temperature is not None:
@@ -667,15 +773,26 @@ class ProductRunContextAuthority:
             raw_max = start_input.get("max_output_tokens")
             if raw_max is not None:
                 max_output_tokens = int(raw_max)
+            metadata = start_input.get("context_metadata")
+            if isinstance(metadata, Mapping):
+                budget = metadata.get("budget")
+                if isinstance(budget, Mapping) and budget.get("context_window"):
+                    window_tokens = int(budget["context_window"])
+        messages, assembly_facts = _plan_turn_messages(
+            tuple(context.messages), window_tokens
+        )
         probe = ProviderRequest(
             RequestId("hash-only"),
-            tuple(context.messages),
+            messages,
             tools=tools,
             temperature=temperature,
             max_output_tokens=max_output_tokens,
         )
         expected = provider_request_fingerprint(probe)
-        source_revisions = {"context": int(request.prior_context_revision)}
+        source_revisions = {
+            "context": int(request.prior_context_revision),
+            **assembly_facts,
+        }
         snapshot_id, snapshot_revision = await self._ledger.record_snapshot_receipt(
             sdk_run_id=request.run_id.value,
             provider_turn_ordinal=request.provider_turn_ordinal,
@@ -691,7 +808,7 @@ class ProductRunContextAuthority:
             request.prior_context_revision,
             snapshot_revision,
             source_revisions,
-            tuple(context.messages),
+            messages,
             tools,
             temperature,
             max_output_tokens,
