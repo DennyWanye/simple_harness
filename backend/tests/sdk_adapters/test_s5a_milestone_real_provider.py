@@ -55,6 +55,7 @@ _SYSTEM = (
     "task_scope_id 调 context_route(route=resume_existing)；全新的多步骤任务→"
     "create_new（带 title）。路由提交成功（返回 context_route_receipt）后绝不再调用 "
     "context_route，直接用已有内容完成回答。搜索命中不等于授权，必须传 exact ID。"
+    "expected_source_hash 是可选字段：不需要就省略；要传就逐字复制候选的 source_hash。"
     "搜索结果为空时最多换一次关键词重试，仍为空就直接向用户提问。"
 )
 

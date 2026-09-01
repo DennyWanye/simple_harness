@@ -334,3 +334,34 @@ def test_context_route_policy_is_context_control() -> None:
     assert route == ToolRouteRequirement.FORBIDDEN.value
     assert scope == ToolRouteRequirement.FORBIDDEN.value
     assert "task_scope_search" not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES
+
+
+@pytest.mark.asyncio
+async def test_resume_malformed_pin_gets_guidance_not_stale(state_db: Path) -> None:
+    """LLM hash-copy slips (63 chars etc.) get explicit guidance, not a
+    misleading stale error (real-provider lane finding, 2026-09-02)."""
+
+    tool = _service(state_db)
+    result = await tool.handle_context_route(
+        {
+            "route": "resume_existing",
+            "task_scope_id": "scope-a",
+            "expected_source_hash": "6de69ef2" * 8,
+        }
+    )
+    # 64 hex chars is fine shape-wise; now drop one char → guidance.
+    bad = await ContextRouteToolService(
+        service_factory_getter=lambda: None,
+        binding_store_factory=lambda: None,
+        binding_append_getter=lambda: None,
+        ledger=ContextRouteLedgerStore(state_db),
+        tool_context_getter=lambda: _tool_context(effect="effect-badpin"),
+    ).handle_context_route(
+        {
+            "route": "resume_existing",
+            "task_scope_id": "scope-a",
+            "expected_source_hash": ("6de69ef2" * 8)[:-1],
+        }
+    )
+    assert bad["error"]["code"] == "context_route_expected_source_hash_malformed"
+    del result

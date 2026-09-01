@@ -54,7 +54,7 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
         "task_scope_id": {"type": "string", "maxLength": 128},
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
-        "expected_source_hash": {"type": "string", "maxLength": 64},
+        "expected_source_hash": {"type": "string", "minLength": 64, "maxLength": 64},
     },
     "required": ["route"],
     "additionalProperties": False,
@@ -382,6 +382,19 @@ class ContextRouteToolService:
                 "context_route_exact_task_scope_required",
                 guidance="Call task_scope_search first, confirm one candidate, "
                 "then pass its exact task_scope_id.",
+            )
+        pinned = proposal.get("expected_source_hash")
+        if pinned is not None and (
+            len(str(pinned)) != 64
+            or any(ch not in "0123456789abcdef" for ch in str(pinned))
+        ):
+            # A miscopied pin is the most common LLM payload slip: reject with
+            # explicit guidance instead of surfacing a misleading stale error.
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal,
+                "context_route_expected_source_hash_malformed",
+                guidance="expected_source_hash is optional; omit it, or copy "
+                "the candidate's source_hash exactly (64 lowercase hex).",
             )
         service = self._bind_service()
         from deskpet.memory.human_memory_service import OpenTaskScopeRequest
