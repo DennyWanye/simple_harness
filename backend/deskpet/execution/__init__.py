@@ -25,6 +25,11 @@ from .foreground_queue import (
     TerminalReceipt,
     TurnState,
 )
+from .foreground_runtime import (
+    AuthenticatedTerminalObservation,
+    ForegroundRuntimeError,
+    ForegroundRuntimeExecutionAuthority,
+)
 from .recovery_fence import (
     EmergencyExportReceipt,
     HumanMemoryIngressFenced,
@@ -38,6 +43,7 @@ from .recovery_fence import (
 __all__ = [
     "FOREGROUND_SCHEDULER_KIND",
     "AdmissionReceipt",
+    "AuthenticatedTerminalObservation",
     "ClaimedExecution",
     "ContextLineage",
     "ControlKind",
@@ -48,6 +54,8 @@ __all__ = [
     "ExecutionAuditReceipt",
     "ForegroundQueueError",
     "ForegroundQueueStore",
+    "ForegroundRuntimeError",
+    "ForegroundRuntimeExecutionAuthority",
     "ForegroundRunSnapshot",
     "HumanMemoryIngressFenced",
     "HumanMemoryRecoveryCoordinator",

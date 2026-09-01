@@ -20,6 +20,7 @@ from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     TerminalWatermarkPending,
 )
+from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.task_scope.protocol import canonical_hash
 from deskpet.task_scope.store import CanonicalTaskScopeStore
@@ -324,6 +325,71 @@ async def _authorized_terminal_evidence(
 
 def _assert_code(exc: pytest.ExceptionInfo[ForegroundQueueError], code: str) -> None:
     assert exc.value.code == code
+
+
+@pytest.mark.asyncio
+async def test_sdk_terminal_observer_imports_exact_sdk_event_before_settlement(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, _clock = await _ready(tmp_path)
+    store = ForegroundQueueStore(db_path, clock=_clock)
+    await _enqueue(store, primary_id, 1)
+    admission = await _claim_and_bind(store, sdk_run_id="sdk-run-observed")
+    await store.record_sdk_started(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-observed",
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id="sdk-start-observed",
+        idempotency_key="sdk-start-observed",
+    )
+
+    class _Ingress:
+        async def wait_idle(self, run_id: str) -> None:
+            assert run_id == "sdk-run-observed"
+
+        def query(self, run_id: str):  # type: ignore[no-untyped-def]
+            assert run_id == "sdk-run-observed"
+            return type(
+                "Run", (), {"state": type("State", (), {"value": "completed"})()}
+            )()
+
+    class _Stack:
+        def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
+            assert run_id == "sdk-run-observed"
+            return type(
+                "Evidence",
+                (),
+                {
+                    "event_id": "sdk-terminal-observed",
+                    "event_hash": "9" * 64,
+                    "occurred_at": 101.0,
+                },
+            )()
+
+    observed = await SqliteSdkTerminalObserver(
+        str(db_path), _Ingress(), _Stack()  # type: ignore[arg-type]
+    ).observe(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-observed",
+        subject=SUBJECT,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+    )
+    assert observed is not None
+    assert observed.sdk_event_id == "sdk-terminal-observed"
+    assert observed.terminal_state is RunState.COMPLETED
+    terminal = await store.record_sdk_terminal(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-observed",
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        terminal_state=observed.terminal_state,
+        sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash,
+        idempotency_key="terminal-observed",
+    )
+    assert terminal.terminal_state is RunState.COMPLETED
 
 
 @pytest.mark.asyncio

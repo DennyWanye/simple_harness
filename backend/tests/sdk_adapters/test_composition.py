@@ -510,6 +510,13 @@ async def test_host_control_ingress_yields_bounded_zero_side_state_evidence(
     assert evidence.terminal_event_id
     assert evidence.terminal_event_hash
     assert evidence.evidence_hash
+    ordinary_terminal = stack.read_run_terminal_evidence(
+        attempt.expected_run_id
+    )
+    assert ordinary_terminal is not None
+    assert ordinary_terminal.event_id == evidence.terminal_event_id
+    assert ordinary_terminal.event_hash == evidence.terminal_event_hash
+    assert ordinary_terminal.state == "completed"
     mismatched = stack.read_skill_install_verification_evidence(
         replace(attempt, project_scope_key="different-scope")
     )

@@ -3059,11 +3059,70 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
     )
     service_context.register("human_memory_binding_append_authority", binding)
     service_context.register("human_memory_recovery_lifecycle", recovery)
-    # The execution agent publishes these two ports once the sole SDK ingress
-    # composition has been constructed.  Keeping them explicitly absent is a
-    # fail-closed state, never a silent no-op scheduler.
-    service_context.register("human_memory_foreground_scheduler_wake", None)
-    service_context.register("human_memory_foreground_runtime_execution", None)
+    if any(
+        item is None
+        for item in (
+            _sdk_ingress,
+            _sdk_runtime_stack,
+            _provider_registry,
+            _sdk_provider_binding_resolver,
+            _sdk_runtime_catalog,
+            _sdk_runtime_tool_inventory,
+            _sdk_tool_authority_registry,
+        )
+    ):
+        # Fresh installs without a configured Provider keep the Host mutation
+        # authorities available, but cannot manufacture an Agent authority.
+        service_context.register("human_memory_foreground_scheduler_wake", None)
+        service_context.register("human_memory_foreground_runtime_execution", None)
+        logger.warning(
+            "human_memory_foreground_runtime_unavailable",
+            reason="sdk_runtime_authority_unavailable",
+        )
+        return
+
+    from deskpet.execution.foreground_runtime import (
+        ForegroundRuntimeExecutionAuthority,
+        SqliteSdkTerminalObserver,
+    )
+    from deskpet.execution.foreground_runtime_ports import (
+        ProductForegroundProviderPort,
+        ProductForegroundToolPort,
+        TaskScopeForegroundContextPort,
+    )
+
+    class _AuditSink:
+        def record(self, event: str, payload: Mapping[str, object]) -> None:
+            logger.info(event, **dict(payload))
+
+    runtime = ForegroundRuntimeExecutionAuthority(
+        store=foreground,
+        subject="deskpet-local-owner-v1",
+        owner_id=f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}",
+        ingress=_sdk_ingress,
+        context=TaskScopeForegroundContextPort(
+            _state_db_path,
+            subject="deskpet-local-owner-v1",
+        ),
+        provider=ProductForegroundProviderPort(
+            _provider_registry,
+            _sdk_provider_binding_resolver,
+        ),
+        tools=ProductForegroundToolPort(
+            _state_db_path,
+            catalog=_sdk_runtime_catalog,
+            inventory=_sdk_runtime_tool_inventory,
+            registry=_sdk_tool_authority_registry,
+        ),
+        terminal_observer=SqliteSdkTerminalObserver(
+            str(_state_db_path),
+            _sdk_ingress,
+            _sdk_runtime_stack,
+        ),
+        audit_sink=_AuditSink(),
+    )
+    service_context.register("human_memory_foreground_scheduler_wake", runtime)
+    service_context.register("human_memory_foreground_runtime_execution", runtime)
 
 
 @asynccontextmanager
@@ -5515,6 +5574,25 @@ async def lifespan(app: FastAPI):
     await shutdown_default_gateway()
     global _sdk_runtime_stack, _sdk_ingress
     global _sdk_desktop_bridge
+    _foreground_runtime = service_context.get(
+        "human_memory_foreground_runtime_execution"
+    )
+    if _foreground_runtime is not None:
+        try:
+            await _foreground_runtime.close(timeout=5.0)
+            logger.info("human_memory_foreground_runtime_stopped")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "human_memory_foreground_runtime_shutdown_failed",
+                error=str(exc),
+            )
+        finally:
+            service_context.register(
+                "human_memory_foreground_scheduler_wake", None
+            )
+            service_context.register(
+                "human_memory_foreground_runtime_execution", None
+            )
     # Close SDK Runtime ingress
     if _sdk_ingress is not None:
         _sdk_ingress.close()
@@ -10350,6 +10428,13 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
 
     # Open SDK ingress
     _sdk_ingress.open()
+    foreground_runtime = service_context.get(
+        "human_memory_foreground_runtime_execution"
+    )
+    if foreground_runtime is not None:
+        # Startup recovery enters through the same public wake as enqueue;
+        # SQLite, not this process task, decides whether work exists.
+        await foreground_runtime.after_enqueue(subject="deskpet-local-owner-v1")
 
     # Manager publication may have committed before a crash or a bounded
     # verification failure.  Resume those internal SDK Runs only after the

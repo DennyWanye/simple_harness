@@ -231,6 +231,17 @@ class SkillInstallVerificationEvidence:
     reason_code: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class SdkRunTerminalEvidence:
+    """Authenticated terminal event read from the SDK transaction owner."""
+
+    run_id: str
+    state: str
+    event_id: str
+    event_hash: str
+    occurred_at: float
+
+
 DependencyLoader: TypeAlias = Callable[
     [], SdkRuntimeBuildInputs | Awaitable[SdkRuntimeBuildInputs]
 ]
@@ -586,6 +597,45 @@ class ProductSdkRuntimeStack:
                 ),
             )
 
+    def read_run_terminal_evidence(
+        self, run_id: str
+    ) -> SdkRunTerminalEvidence | None:
+        """Read one ordinary Run's exact terminal event under one DB snapshot."""
+
+        self.require_ready()
+        uow = self._uow
+        if uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        expected = str(run_id).strip()
+        if not expected:
+            raise ValueError("run_id is required")
+        with uow.database.transaction() as connection:
+            run = connection.execute(
+                "SELECT state FROM runs WHERE run_id=?", (expected,)
+            ).fetchone()
+            if run is None:
+                return None
+            state = str(run["state"])
+            if state not in {"completed", "failed", "cancelled"}:
+                return None
+            events = connection.execute(
+                "SELECT event_id,kind,payload_json,created_at FROM run_events "
+                "WHERE run_id=? AND kind IN "
+                "('run.completed','run.failed','run.cancelled')",
+                (expected,),
+            ).fetchall()
+            if len(events) != 1 or str(events[0]["kind"]) != f"run.{state}":
+                raise SdkRuntimeNotReady("SDK terminal event is ambiguous")
+            event = events[0]
+            raw_payload = str(event["payload_json"])
+            return SdkRunTerminalEvidence(
+                expected,
+                state,
+                str(event["event_id"]),
+                hashlib.sha256(raw_payload.encode("utf-8")).hexdigest(),
+                float(event["created_at"]),
+            )
+
     async def commit_preflight_blocked_root(
         self,
         *,
@@ -793,6 +843,7 @@ __all__ = (
     "SdkRuntimeBuildInputs",
     "SdkRuntimeNotReady",
     "SdkRuntimeReady",
+    "SdkRunTerminalEvidence",
     "SkillInstallVerificationEvidence",
     "WorkflowFactory",
     "WorkflowFactoryResourceScope",
