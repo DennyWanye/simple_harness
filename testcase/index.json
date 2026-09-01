@@ -2234,14 +2234,16 @@
         "HM-TO-A6",
         "HM-TO-A7",
         "HM-TO-R7",
-        "HM-TO-R8"
+        "HM-TO-R8",
+        "HM-S4-TO-VALUE",
+        "HM-S4-TO-AUTHORITY"
       ],
       "path": "human-memory-program/TC-HM-02-task-resume.md",
       "preconditions": [],
       "purpose": "Verify a distant TaskScope is discovered as a candidate then exactly opened and completely resumed",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 3,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2421,14 +2423,15 @@
         "HM-TO-A3",
         "HM-TO-A8",
         "HM-TO-R2",
-        "HM-TO-R4"
+        "HM-TO-R4",
+        "HM-S4-TO-AUTHORITY"
       ],
       "path": "human-memory-program/TC-HM-09-taskscope-bindings.md",
       "preconditions": [],
       "purpose": "Verify TaskScope creation, immutable multi-root binding revisions, and per-effect workspace authority",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2454,7 +2457,7 @@
       "purpose": "Verify the five routing outcomes distinguish conversation memory, active work, resume, and new work",
       "replacement": null,
       "results": [],
-      "revision": 1,
+      "revision": 2,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2475,14 +2478,16 @@
         "HM-TO-A8",
         "HM-TO-R2",
         "HM-TO-R7",
-        "HM-TO-R8"
+        "HM-TO-R8",
+        "HM-S4-TO-VALUE",
+        "HM-S4-TO-FIFO"
       ],
       "path": "human-memory-program/TC-HM-11-single-run-context.md",
       "preconditions": [],
       "purpose": "Verify one foreground ReAct Run, durable FIFO, semantic closure, and bounded causal Context assembly",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2506,7 +2511,8 @@
         "HM-TO-R3",
         "HM-TO-R5",
         "HM-TO-R7",
-        "HM-TO-R9"
+        "HM-TO-R9",
+        "HM-S4-TO-VIEWS"
       ],
       "path": "human-memory-program/TC-HM-12-digital-twin-views.md",
       "preconditions": [
@@ -2517,7 +2523,7 @@
       "purpose": "Verify bounded TaskScope read views and a traceable display-only digital twin projection",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2565,6 +2571,36 @@
         "privacy",
         "replay",
         "fault-recovery"
+      ],
+      "type": "scripted"
+    },
+    {
+      "entrypoint": "public Human Memory Host API/facade",
+      "id": "TC-HM-14",
+      "obligations": [
+        "HM-S4-TO-INTEGRATION",
+        "HM-S4-TO-DATA",
+        "HM-S4-TO-REGRESSION"
+      ],
+      "path": "human-memory-program/TC-HM-14-host-closure-recovery.md",
+      "preconditions": [
+        "Fresh isolated user-data directory is available",
+        "A public-only adapter is pinned by path and SHA-256 for the current run",
+        "Raw evidence output directory is under ignored .local-test-evidence"
+      ],
+      "purpose": "Verify fresh Host composition, primary-authority fences, durable recovery, emergency export, and affected public API compatibility",
+      "replacement": null,
+      "results": [],
+      "revision": 2,
+      "status": "active",
+      "surface": "api",
+      "tags": [
+        "human-memory",
+        "host-api",
+        "primary-authority",
+        "recovery",
+        "data-integrity",
+        "regression"
       ],
       "type": "scripted"
     },
