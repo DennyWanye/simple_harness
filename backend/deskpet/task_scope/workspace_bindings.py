@@ -832,6 +832,11 @@ class WorkspaceBindingAuthorityStore:
                             now_millis=self._clock_millis(),
                         )
                     self._verify_root(proposal.root, auto=False)
+                    from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                    await append_projection_source_tx(
+                        db, proposal.task_scope_id, now=now
+                    )
                     await db.commit()
                     if fault_inject:
                         fault_inject("after_binding_commit")

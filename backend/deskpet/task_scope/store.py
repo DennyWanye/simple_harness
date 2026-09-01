@@ -75,6 +75,18 @@ class CheckpointReceipt:
     event_watermark: int
 
 
+@dataclass(frozen=True, slots=True)
+class DeterministicEventBatchReceipt:
+    task_scope_id: str
+    count: int
+    first_event_id: str
+    first_event_sequence: int
+    last_event_id: str
+    last_event_sequence: int
+    source_id: str
+    source_hash: str
+
+
 def _uuid(label: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
 
@@ -134,6 +146,9 @@ class CanonicalTaskScopeStore:
                     (task_scope_id, state_hash, created_at),
                 )
                 await self._write_projection_tx(db, task_scope_id, 1, state, created_at)
+                from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                await append_projection_source_tx(db, task_scope_id, now=created_at)
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -189,6 +204,9 @@ class CanonicalTaskScopeStore:
                     "WHERE task_scope_id=? AND event_watermark<?",
                     (receipt.event_sequence, time.time(), task_scope_id, receipt.event_sequence),
                 )
+                from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                await append_projection_source_tx(db, task_scope_id)
                 await db.commit()
             except Exception:
                 await db.rollback()
@@ -285,6 +303,9 @@ class CanonicalTaskScopeStore:
                 if updated.rowcount != 1:
                     raise TaskScopeConflict("mutation_base_revision_conflict")
                 await self._write_projection_tx(db, task_scope_id, committed, state, created_at)
+                from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                await append_projection_source_tx(db, task_scope_id, now=created_at)
                 await db.commit()
             except TaskScopeConflict:
                 # A recorded CAS conflict is committed above; other conflicts
@@ -345,11 +366,112 @@ class CanonicalTaskScopeStore:
                     "INSERT INTO task_scope_checkpoints(checkpoint_id,task_scope_id,revision,checkpoint_hash,checkpoint_json,event_watermark,created_at) VALUES (?,?,?,?,?,?,?)",
                     (checkpoint_id, task_scope_id, target_revision, checkpoint_hash, canonical_json(payload), head["event_watermark"], created_at),
                 )
+                from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                await append_projection_source_tx(db, task_scope_id, now=created_at)
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
         return CheckpointReceipt(checkpoint_id, task_scope_id, target_revision, checkpoint_hash, int(head["event_watermark"]))
+
+    async def append_deterministic_events(
+        self,
+        *,
+        task_scope_id: str,
+        subject: str,
+        count: int,
+        canary: str,
+        batch_size: int = 1000,
+    ) -> DeterministicEventBatchReceipt:
+        """Public test seam for large deterministic histories.
+
+        Rows are inserted in bounded batches inside one transaction and produce
+        exactly one source-change/outbox identity. It deliberately accepts no
+        arbitrary SQL or payload callback.
+        """
+
+        identifier(task_scope_id, "task_scope_id", 512)
+        identifier(subject, "subject", 512)
+        identifier(canary, "canary", 4096)
+        if isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 100_000:
+            raise ValueError("deterministic_event_count_invalid")
+        if isinstance(batch_size, bool) or not isinstance(batch_size, int) or not 1 <= batch_size <= 5000:
+            raise ValueError("deterministic_event_batch_size_invalid")
+        canary_hash = canonical_hash({"canary": canary})
+        first_event_id = ""
+        last_event_id = ""
+        async with self._connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                head = await self._head_tx(db, task_scope_id)
+                scope = await self._fetchone(
+                    db, "SELECT subject FROM task_scopes WHERE task_scope_id=?", (task_scope_id,)
+                )
+                if scope is None or scope["subject"] != subject:
+                    raise TaskScopeNotFound("deterministic_event_scope_subject_mismatch")
+                first_sequence = int(head["event_watermark"]) + 1
+                now = time.time()
+                for offset in range(0, count, batch_size):
+                    rows: list[tuple[object, ...]] = []
+                    for index in range(offset, min(offset + batch_size, count)):
+                        sequence = first_sequence + index
+                        source_event_id = f"deterministic:{canary_hash}:{index + 1}"
+                        payload = {
+                            "schema_version": 1,
+                            "canary": canary,
+                            "event_index": index + 1,
+                            "unicode": "记忆-🧠" if (index + 1) % 97 == 0 else "",
+                        }
+                        payload_hash = canonical_hash(payload)
+                        event_id = _uuid(f"task-scope-event:{source_event_id}")
+                        if index == 0:
+                            first_event_id = event_id
+                        last_event_id = event_id
+                        rows.append(
+                            (
+                                event_id,
+                                task_scope_id,
+                                sequence,
+                                "host.turn",
+                                "host",
+                                source_event_id,
+                                payload_hash,
+                                canonical_json(payload),
+                                None,
+                                float(index + 1),
+                                now,
+                            )
+                        )
+                    await db.executemany(
+                        "INSERT INTO task_scope_events(event_id,task_scope_id,event_sequence,"
+                        "event_kind,source_kind,source_event_id,payload_hash,payload_json,"
+                        "reason_code,occurred_at,committed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        rows,
+                    )
+                last_sequence = first_sequence + count - 1
+                await db.execute(
+                    "UPDATE task_scope_heads SET event_watermark=?,updated_at=? WHERE task_scope_id=?",
+                    (last_sequence, now, task_scope_id),
+                )
+                from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                source = await append_projection_source_tx(db, task_scope_id, now=now)
+                assert source is not None
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return DeterministicEventBatchReceipt(
+            task_scope_id,
+            count,
+            first_event_id,
+            first_sequence,
+            last_event_id,
+            last_sequence,
+            source.source_id,
+            source.source_hash,
+        )
 
     async def rebuild_projection(self, task_scope_id: str, revision: int) -> str:
         async with self._connection() as db:

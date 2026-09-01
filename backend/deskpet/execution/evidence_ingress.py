@@ -151,6 +151,9 @@ class ExecutionEvidenceIngress:
                     db, "SELECT * FROM task_scope_execution_ingest_receipts WHERE receipt_id=?", (receipt_id,)
                 )
                 assert row is not None
+                from deskpet.task_scope.projection_sources import append_projection_source_tx
+
+                await append_projection_source_tx(db, task_scope_id, now=now)
                 await db.commit()
             except Exception:
                 await db.rollback()

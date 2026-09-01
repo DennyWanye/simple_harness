@@ -9,10 +9,26 @@ from .provisioning import (
 from .store import (
     CanonicalTaskScopeStore,
     CheckpointReceipt,
+    DeterministicEventBatchReceipt,
     MutationApplyReceipt,
     TaskEventReceipt,
     TaskEventRecorder,
     TaskScopeConflict,
+)
+from .projection_sources import ProjectionSourceReceipt
+from .projections import (
+    CheckpointDriftReport,
+    ProjectionIntegrityError,
+    ReadBlockRef,
+    TaskScopeProjectionStore,
+    TaskScopeReadView,
+)
+from .search import (
+    ExactOpenResult,
+    SearchCandidate,
+    SearchResult,
+    TaskScopeSearchError,
+    TaskScopeSearchStore,
 )
 from .workspace_bindings import (
     CurrentRunBindingAuthority,
@@ -29,12 +45,24 @@ from .workspace_bindings import (
 __all__ = [
     "CanonicalTaskScopeStore",
     "CheckpointReceipt",
+    "DeterministicEventBatchReceipt",
     "CurrentRunBindingAuthority",
     "CurrentRunBindingAuthorityPort",
     "ManualWorkspaceAuthorizationAuthorityPort",
     "ManualWorkspaceChallengeAuthorityCheck",
     "ManualWorkspaceDecisionAuthorityCheck",
     "MutationApplyReceipt",
+    "ProjectionIntegrityError",
+    "ProjectionSourceReceipt",
+    "ReadBlockRef",
+    "CheckpointDriftReport",
+    "TaskScopeProjectionStore",
+    "TaskScopeReadView",
+    "TaskScopeSearchError",
+    "TaskScopeSearchStore",
+    "SearchCandidate",
+    "SearchResult",
+    "ExactOpenResult",
     "TaskEventReceipt",
     "TaskEventRecorder",
     "TaskScopeConflict",
