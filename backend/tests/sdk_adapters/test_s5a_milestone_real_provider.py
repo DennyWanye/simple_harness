@@ -151,7 +151,7 @@ class RealRelayProvider:
 
 @pytest.mark.asyncio
 async def test_real_provider_resume_existing_same_run_continuation(
-    milestone, tmp_path
+    milestone, tmp_path  # noqa: F811
 ) -> None:
     runtime = _runtime()
     created = await milestone.service.create_task_scope(
@@ -239,7 +239,7 @@ async def test_real_provider_resume_existing_same_run_continuation(
 
 
 @pytest.mark.asyncio
-async def test_real_provider_no_recall_single_invocation(milestone) -> None:
+async def test_real_provider_no_recall_single_invocation(milestone) -> None:  # noqa: F811
     """S5A-S1 / TC-HM-01: a context-sufficient request answers in ONE real
     invocation with zero tool calls and a durable no_recall decision."""
 
@@ -275,7 +275,7 @@ async def test_real_provider_no_recall_single_invocation(milestone) -> None:
 
 
 @pytest.mark.asyncio
-async def test_real_provider_commits_direct_route_via_tool(milestone) -> None:
+async def test_real_provider_commits_direct_route_via_tool(milestone) -> None:  # noqa: F811
     """Third positive real-provider route (S5A-S3): explicit direct_standalone
     commit through the context_route tool, then the answer."""
 
