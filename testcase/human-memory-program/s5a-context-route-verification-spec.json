@@ -1,6 +1,6 @@
 {
   "spec_id": "s5a-context-route-verification-spec",
-  "status": "draft-oracle-frozen (Task 0; machine paths/pins finalized at Task 6)",
+  "status": "final (Task 6/phase-4)",
   "increment": "2026-09-01-s5a-context-route",
   "acceptance": "simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/acceptance.md",
   "oracle_freeze_note": "所有预期在实现前冻结于本文件与引用的 TC-HM-* 修订版；执行者无权删除/反转/放宽，测试失败只有改实现或上报行为变更两条路",
@@ -8,13 +8,13 @@
     "S5A-S1-five-route-deterministic": {
       "oracle": "TC-HM-10 rev2 步骤1-6（六步全序）",
       "expect": "五路各产出 ContextRouteReceipt(origin=CONTEXT_TOOL) 且 durable route decision 入 v45；direct_standalone 经 record_no_recall 产出 DIRECT_STANDALONE decision；search 命中不直接授权，exact open 后才 continue；active cursor 不被闲聊污染",
-      "milestone_subset": "route 裁决 + receipt 收敛（memory_standalone 终态 BLOCKED-until-Task-5）",
+      "milestone_subset": "route 裁决 + receipt 收敛（历史中间态已收敛：memory_standalone 现接真 v7 recall）",
       "provider": "deterministic"
     },
     "S5A-S2-same-run-continuation-real": {
       "oracle": "TC-HM-02 rev3 步骤1-3 + TC-HM-10 步骤4",
       "expect": "真实 provider『继续以前的 A』→ resume_existing → task_scope_search 候选（cursor/binding byte-identical）→ exact task_scope_open → 同一 host Run 内 continuation 用 exact ResumePackage 回答；route receipt + 每 provider turn snapshot receipt 三 hash（Host expected = Harness request fingerprint = adapter captured payload）相等且 receipt 在 provider reservation 前入 checkpoint",
-      "provider": "real (BLOCKED until user config)"
+      "provider": "real (config provided 2026-09-01; lane PASS)"
     },
     "S5A-S3-per-turn-snapshot-and-budget": {
       "oracle": "TC-HM-11 rev5 步骤4/6 + metric-formulas.json 冻结常量",
@@ -37,16 +37,22 @@
       "provider": "n/a"
     }
   },
-  "oracle_pins_todo_task6": [
-    "TC-HM-01/02/10/11 file-bytes sha256",
-    "fixtures/metric-formulas.json sha256",
-    "fixtures/fault-matrix.json sha256",
-    "memory-sdk 0.6.0 wheel sha256 + candidate manifest"
-  ],
   "evidence_contract": {
     "raw_outputs": ".local-test-evidence/ only (never committed)",
     "ledger": "attach-evidence with producer_type/artifact_kind/business_facts; distinct file copies per artifact_kind",
-    "negative_assertions": ["no receipt_hmac access", "no keychain/security/keyring calls", "APIKEY never in repo/logs/evidence"]
+    "negative_assertions": [
+      "no receipt_hmac access",
+      "no keychain/security/keyring calls",
+      "APIKEY never in repo/logs/evidence"
+    ]
   },
-  "intermediate_state_declaration": "Task 2-5 间 chat 链 DIRECT_STANDALONE no-recall decision 属未接 reconcile 门的中间态；AC-4 终验证据以 Task 5 后带 reconcile 调用的 run 为准"
+  "intermediate_state_declaration": "Task 2-5 间 chat 链 DIRECT_STANDALONE no-recall decision 属未接 reconcile 门的中间态；AC-4 终验证据以 Task 5 后带 reconcile 调用的 run 为准",
+  "oracle_pins": {
+    "tc_hm_01_sha256": "ceb4c806a68014d2d4cf8e07d3ced994e2d97295d6ef53add74b13c244fb4572",
+    "tc_hm_02_sha256": "1f3f0a192aa1a47065c8c3de93af6ae9166df2020e39930b19aeb45020e77dec",
+    "tc_hm_10_sha256": "01b57607ae0c5985221344aabb8d894cb5935360ea3c21b07357b566894fbd68",
+    "tc_hm_11_sha256": "5dc77365f2ee49928f49d6b12b1ba0bd64020ff44970e2b67ab46784804e4c97",
+    "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
+    "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff"
+  }
 }
