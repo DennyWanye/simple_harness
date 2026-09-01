@@ -796,6 +796,48 @@ async def test_terminal_rejects_canonical_event_from_other_generation(
 
 
 @pytest.mark.asyncio
+async def test_terminal_accepts_prior_generation_after_exact_lease_reclaim(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    store = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(store, primary_id, 1)
+    admission = await _claim_and_bind(store)
+    terminal_evidence = await _authorized_terminal_evidence(
+        db_path,
+        sdk_run_id="sdk-run-1",
+        source_event_id="sdk-terminal-generation-1",
+        terminal_state=RunState.COMPLETED,
+        generation=1,
+    )
+    await store.close_current_lease(
+        host_run_id=admission.host_run_id,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        idempotency_key="close-generation-1",
+    )
+    reclaimed = await store.reclaim_expired(
+        host_run_id=admission.host_run_id,
+        new_owner_id="owner-2",
+        expected_generation=1,
+        lease_seconds=10,
+        idempotency_key="reclaim-generation-2",
+    )
+    terminal = await store.record_sdk_terminal(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-1",
+        owner_id="owner-2",
+        generation=reclaimed.generation,
+        terminal_state=RunState.COMPLETED,
+        sdk_event_id="sdk-terminal-generation-1",
+        sdk_event_hash=terminal_evidence.evidence_hash,
+        idempotency_key="terminal-generation-2-reconcile",
+    )
+    assert terminal.generation == 2
+    assert terminal.terminal_state is RunState.COMPLETED
+
+
+@pytest.mark.asyncio
 async def test_pause_resume_reclaim_and_stale_generation_fences(tmp_path: Path) -> None:
     db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
     store = ForegroundQueueStore(db_path, clock=clock)

@@ -12,6 +12,7 @@ facade DTO.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.metadata
 import json
 import sqlite3
@@ -21,7 +22,7 @@ import uuid
 from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, ClassVar, cast
 
 from simple_harness import (
     ROOT_PROFILE_KEY,
@@ -49,7 +50,10 @@ from simple_harness.tools import (
     ToolRegistry,
 )
 
-from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.foreground_queue import (
+    ForegroundQueueError,
+    ForegroundQueueStore,
+)
 from deskpet.execution.foreground_runtime import (
     ForegroundRuntimeExecutionAuthority,
     SqliteSdkTerminalObserver,
@@ -80,7 +84,10 @@ from deskpet.memory.human_memory_service import (
     SaveCheckpointRequest,
     SearchTaskScopesRequest,
 )
-from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
+from deskpet.memory.recovery_fence import (
+    RecoveryLifecyclePort,
+    build_recovery_lifecycle_port,
+)
 from deskpet.memory.schema import dispatch_startup_epoch, inspect_startup_epoch
 from deskpet.sdk_adapters.composition import (
     ProductSdkRuntimeStack,
@@ -278,13 +285,13 @@ class _DeterministicProviderBindingResolver:
 
 class _Catalog:
     def __init__(self, catalog: Mapping[str, object]) -> None:
-        self._generation = int(catalog["generation"])
+        self._generation = int(cast(int, catalog["generation"]))
         self._fingerprint = str(catalog["content_fingerprint"])
         self._specs = tuple(
             ProviderToolSpec(
                 str(item["name"]),
                 str(item["description"]),
-                dict(cast(Mapping[str, object], item["input_schema"])),
+                dict(cast(Mapping[str, Any], item["input_schema"])),
             )
             for item in cast(list[Mapping[str, object]], catalog["specs"])
         )
@@ -306,6 +313,98 @@ class _RuntimeAudit:
 
     def record(self, event: str, payload: Mapping[str, object]) -> None:
         self.events.append((event, dict(payload)))
+
+
+class _InjectedFault(RuntimeError):
+    code = "test_fault_injected"
+
+
+class _FaultController:
+    """One-shot crash point used around real durable production operations."""
+
+    _QUEUE_POINTS: ClassVar[dict[str, str]] = {
+        "prepare.after_commit": "prepare.after_draft",
+        "claim.after_commit": "claim.after_commit",
+        "start_intent.after_commit": "start_intent.after_commit",
+        "terminal.before_commit": "terminal.before_commit",
+        "terminal.after_commit": "terminal.after_commit",
+    }
+
+    def __init__(self) -> None:
+        self.armed_boundary: str | None = None
+        self.triggered_boundary: str | None = None
+        self._triggered = asyncio.Event()
+
+    def arm(self, boundary: str) -> None:
+        if self.armed_boundary is not None:
+            raise HumanMemoryHostServiceError("test_fault_already_armed")
+        self.armed_boundary = boundary
+        self.triggered_boundary = None
+        self._triggered = asyncio.Event()
+
+    def queue_hook(self, point: str) -> None:
+        self.trigger(self._QUEUE_POINTS.get(point, point))
+
+    def trigger(self, boundary: str) -> None:
+        if self.armed_boundary != boundary:
+            return
+        self.armed_boundary = None
+        self.triggered_boundary = boundary
+        self._triggered.set()
+        raise _InjectedFault(boundary)
+
+    async def wait(self, boundary: str, *, timeout: float = 30.0) -> None:
+        await asyncio.wait_for(self._triggered.wait(), timeout=timeout)
+        if self.triggered_boundary != boundary:
+            raise HumanMemoryHostServiceError("test_fault_boundary_drift")
+
+
+class _FaultingForegroundQueueStore(ForegroundQueueStore):
+    """Production queue with hooks only where the queue has no native hook."""
+
+    def __init__(self, db_path: Path, controller: _FaultController) -> None:
+        super().__init__(db_path, fault_hook=controller.queue_hook)
+        self._controller = controller
+
+    async def read_claimed_execution(self, **values):  # type: ignore[no-untyped-def]
+        result = await super().read_claimed_execution(**values)
+        self._controller.trigger("authority.after_claim")
+        return result
+
+    async def bind_sdk_run(self, **values):  # type: ignore[no-untyped-def]
+        result = await super().bind_sdk_run(**values)
+        self._controller.trigger("host_sdk_bind.after_commit")
+        return result
+
+    async def record_sdk_started(self, **values):  # type: ignore[no-untyped-def]
+        result = await super().record_sdk_started(**values)
+        self._controller.trigger("started_observation.after_commit")
+        return result
+
+
+class _FaultingSdkIngress:
+    """Decorate the real SDK ingress at its durable acceptance boundary."""
+
+    def __init__(self, delegate: SdkRuntimeIngress, controller: _FaultController) -> None:
+        self._delegate = delegate
+        self._controller = controller
+
+    async def start(self, **values):  # type: ignore[no-untyped-def]
+        result = await self._delegate.start(**values)
+        self._controller.trigger("sdk_start.after_accept")
+        return result
+
+    def query(self, run_id: str):  # type: ignore[no-untyped-def]
+        return self._delegate.query(run_id)
+
+    async def cancel(self, run_id: str) -> None:
+        await self._delegate.cancel(run_id)
+
+    async def signal(self, **values):  # type: ignore[no-untyped-def]
+        return await self._delegate.signal(**values)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._delegate, name)
 
 
 class _DeterministicWakeGate:
@@ -338,6 +437,7 @@ class S4ValuePublicAdapter:
         )
         self._db_path: Path | None = None
         self._service: HumanMemoryHostService | None = None
+        self._recovery: RecoveryLifecyclePort | None = None
         self._primary_ref: str | None = None
         self._foreground: ForegroundQueueStore | None = None
         self._binding: WorkspaceBindingRuntimeAuthority | None = None
@@ -350,6 +450,11 @@ class S4ValuePublicAdapter:
         self._provider_bindings = _DeterministicProviderBindingResolver()
         self._tool_authorities = SdkRunToolAuthorityRegistry()
         self._runtime_audit = _RuntimeAudit()
+        self._faults = _FaultController()
+        self._scenario: str | None = None
+        self._explicit_recovery = False
+        self._planned_host_run_id: str | None = None
+        self._planned_sdk_run_id: str | None = None
         self._owner_generation = 0
         self._session_db_reads = 0
         self._logical_roots: dict[str, Path] = {}
@@ -490,7 +595,7 @@ class S4ValuePublicAdapter:
 
     async def _bind_host(self, *, startup, restart: bool) -> None:  # type: ignore[no-untyped-def]
         path = self._require_db()
-        self._foreground = ForegroundQueueStore(path)
+        self._foreground = _FaultingForegroundQueueStore(path, self._faults)
         configured = self._logical_roots["configured_root"]
         self._binding = WorkspaceBindingRuntimeAuthority(
             path,
@@ -503,11 +608,12 @@ class S4ValuePublicAdapter:
         if self._runtime_stack is None or self._ingress is None:
             raise HumanMemoryHostServiceError("human_memory_sdk_runtime_unavailable")
         self._owner_generation += 1
+        ingress = _FaultingSdkIngress(self._ingress, self._faults)
         self._runtime = ForegroundRuntimeExecutionAuthority(
             store=self._foreground,
             subject=self._auth.subject,
             owner_id=f"s4-foreground-owner-{self._owner_generation}",
-            ingress=self._ingress,
+            ingress=cast(SdkRuntimeIngress, ingress),
             context=TaskScopeForegroundContextPort(path, subject=self._auth.subject),
             provider=ProductForegroundProviderPort(
                 self._provider_registry, self._provider_bindings
@@ -519,34 +625,53 @@ class S4ValuePublicAdapter:
                 registry=self._tool_authorities,
             ),
             terminal_observer=SqliteSdkTerminalObserver(
-                str(path), self._ingress, self._runtime_stack
+                str(path), cast(SdkRuntimeIngress, ingress), self._runtime_stack
             ),
             audit_sink=self._runtime_audit,
             lease_seconds=300.0,
         )
-        scheduler_wake = (
-            self._runtime
-            if restart
-            else _DeterministicWakeGate(self._runtime, release_after=2)
+        release_after = 1 if self._scenario is not None else 2
+        scheduler_wake = self._runtime if restart else _DeterministicWakeGate(
+            self._runtime, release_after=release_after
+        )
+        self._recovery = build_recovery_lifecycle_port(
+            db_path=path, artifact_dir=self._artifact_dir
         )
         self._service = HumanMemoryHostServiceFactory(path, startup).bind(
             self._auth,
             deterministic_event_seed=_CanonicalBulkSeed(path),
             binding_append=self._binding,
-            recovery=build_recovery_lifecycle_port(
-                db_path=path, artifact_dir=self._artifact_dir
-            ),
+            recovery=self._recovery,
             scheduler_wake=scheduler_wake,
         )
-        if restart and await self._foreground.current_snapshot(self._auth.subject):
+        if restart and (
+            await self._foreground.current_snapshot(self._auth.subject) is not None
+            or await self._foreground.read_next_preparation_candidate(
+                self._auth.subject
+            )
+            is not None
+        ):
             await self._runtime.after_enqueue(subject=self._auth.subject)
 
     async def _invoke(
         self, operation: str, request: dict[str, Any]
     ) -> Mapping[str, object]:
+        if operation == "runtime.identity":
+            return self._runtime_identity()
         if operation == "host.reset_fresh":
             if request.get("data_format") != "human-memory-v1":
                 raise HumanMemoryHostServiceError("human_memory_data_format_rejected")
+            if self._runtime is not None:
+                await self._runtime.close(timeout=0.05)
+            if self._runtime_stack is not None:
+                await self._runtime_stack.close()
+            self._scenario = (
+                None if request.get("scenario") is None else str(request["scenario"])
+            )
+            self._faults = _FaultController()
+            self._explicit_recovery = False
+            self._planned_host_run_id = None
+            self._planned_sdk_run_id = None
             self._db_path = self._artifact_dir / f"s4-value-{uuid.uuid4().hex}.db"
             workspace_root = self._artifact_dir / "workspace"
             self._logical_roots = {
@@ -572,12 +697,12 @@ class S4ValuePublicAdapter:
             if self._runtime is not None:
                 await self._runtime.close(timeout=0.01)
             startup = inspect_startup_epoch(path, approved_fresh_lane=False)
-            before = self._start_observation_count("QUERY_FOUND")
             await self._bind_host(startup=startup, restart=True)
-            await self._wait_for(
-                lambda: self._start_observation_count("QUERY_FOUND") > before,
-                "foreground_runtime_restart_reconciliation_timeout",
-            )
+            if self._scenario is None:
+                await self._wait_for(
+                    lambda: self._start_observation_count("QUERY_FOUND") > 0,
+                    "foreground_runtime_restart_reconciliation_timeout",
+                )
             return {
                 "format_epoch": startup.composition_mode.value,
                 "startup_epoch": startup.epoch.value,
@@ -587,7 +712,7 @@ class S4ValuePublicAdapter:
         service = self._require_service()
         self._assert_fixture_principal(request)
         if operation == "host.composition_snapshot":
-            ports = []
+            ports: list[str] = []
             if self._binding is not None:
                 ports.extend(
                     (
@@ -607,19 +732,6 @@ class S4ValuePublicAdapter:
                 "registered_ports": ports,
                 "fixture_ports": [],
                 "legacy_future_registered_ports": [],
-            }
-        if operation == "runtime.identity":
-            distribution = importlib.metadata.distribution("simple-harness-sdk")
-            import simple_harness
-
-            return {
-                "filename": SDK_WHEEL_FILENAME,
-                "sha256": SDK_WHEEL_SHA256,
-                "distribution": distribution.metadata["Name"],
-                "version": SDK_VERSION,
-                "source_commit": SDK_SOURCE_COMMIT,
-                "module_origin": str(Path(simple_harness.__file__).resolve()),
-                "public_contract_manifest_hash": SDK_CANDIDATE_MANIFEST_SHA256,
             }
         if operation == "execution.await_current":
             expected = str(request.get("state") or "RUNNING")
@@ -650,17 +762,111 @@ class S4ValuePublicAdapter:
                 raise HumanMemoryHostServiceError("foreground_run_stale_generation")
             host_run_id = snapshot.host_run_id
             self._provider_bindings.finish(sdk_run_id)
-            await self._wait_for(
-                lambda: self._terminal_recorded(host_run_id),
-                "foreground_runtime_terminal_timeout",
-            )
+            try:
+                await self._wait_for(
+                    lambda: self._terminal_recorded(host_run_id),
+                    "foreground_runtime_terminal_timeout",
+                )
+            except HumanMemoryHostServiceError:
+                if self._faults.triggered_boundary != "terminal.before_commit":
+                    raise
+                path = self._require_db()
+                if self._runtime is not None:
+                    await self._runtime.close(timeout=0.01)
+                await self._bind_host(
+                    startup=inspect_startup_epoch(
+                        path, approved_fresh_lane=False
+                    ),
+                    restart=True,
+                )
+                await self._wait_for(
+                    lambda: self._terminal_recorded(host_run_id),
+                    "foreground_runtime_terminal_recovery_timeout",
+                )
             return {
                 "host_run_id": host_run_id,
                 "sdk_run_id": sdk_run_id,
                 "terminal": "COMPLETED",
             }
         if operation == "execution.audit":
-            return self._execution_audit_projection()
+            return self._execution_audit_projection(
+                str(request.get("host_run_id") or "")
+            )
+        if operation == "fault.arm":
+            boundary = str(request.get("boundary") or "")
+            allowed = tuple(str(item) for item in self._fixture["fault_boundaries"])
+            if boundary not in allowed:
+                raise HumanMemoryHostServiceError("test_fault_boundary_unknown")
+            delivery_key = (
+                f"{self._fixture['queue']['turns'][0]['delivery_key']}:{boundary}"
+            )
+            turn_id = self._stable_uuid(
+                f"foreground-turn:{self._auth.subject}:{delivery_key}"
+            )
+            host_run_id = self._stable_uuid(f"foreground-run:{turn_id}")
+            execution_session_id = self._execution_session_id(host_run_id)
+            sdk_run_id = SdkRuntimeIngress._compute_run_id(
+                execution_session_id,
+                f"foreground-request-{turn_id}",
+                turn_id,
+            ).value
+            self._planned_host_run_id = host_run_id
+            self._planned_sdk_run_id = sdk_run_id
+            self._faults.arm(boundary)
+            return {
+                "fault_ref": f"sha256:{canonical_hash({'boundary': boundary, 'host_run_id': host_run_id, 'sdk_run_id': sdk_run_id})}",
+                "planned_host_run_id": host_run_id,
+                "planned_sdk_run_id": sdk_run_id,
+            }
+        if operation == "fault.reclaim_current_lease":
+            snapshot = await self._require_foreground().current_snapshot(
+                self._auth.subject
+            )
+            if snapshot is None or snapshot.host_run_id != str(request["host_run_id"]):
+                raise HumanMemoryHostServiceError(
+                    "human_memory_foreground_run_not_found"
+                )
+            if self._runtime is not None:
+                await self._runtime.close(timeout=0.01)
+            receipt = await self._require_foreground().reclaim_expired(
+                host_run_id=snapshot.host_run_id,
+                new_owner_id=f"s4-fault-reclaimer-{self._owner_generation + 1}",
+                expected_generation=snapshot.generation,
+                lease_seconds=300.0,
+                idempotency_key=(
+                    f"fixture-reclaim:{snapshot.host_run_id}:g{snapshot.generation + 1}"
+                ),
+            )
+            return {
+                "host_run_id": receipt.host_run_id,
+                "owner_id": receipt.owner_id,
+                "generation": receipt.generation,
+                "receipt_ref": receipt.lease_receipt_id,
+                "receipt_hash": receipt.lease_hash,
+            }
+        if operation == "runtime.signal":
+            try:
+                control_receipt = await self._require_foreground().request_control(
+                    host_run_id=str(request["host_run_id"]),
+                    subject=self._auth.subject,
+                    generation=int(request["generation"]),
+                    control_kind=str(request["signal"]),
+                    reason="fixture-generation-fence",
+                    idempotency_key=(
+                        f"fixture-stale-signal:{request['host_run_id']}:g{request['generation']}"
+                    ),
+                )
+            except ForegroundQueueError as exc:
+                if exc.code == "foreground_generation_stale":
+                    raise HumanMemoryHostServiceError(
+                        "foreground_run_stale_generation"
+                    ) from exc
+                raise
+            return {
+                "receipt_ref": control_receipt.control_id,
+                "generation": control_receipt.generation,
+                "outcome": control_receipt.outcome,
+            }
         if operation == "effect.project":
             snapshot = await self._require_foreground().current_snapshot(
                 self._auth.subject
@@ -724,13 +930,20 @@ class S4ValuePublicAdapter:
                 )
             )
         if operation == "queue.enqueue":
-            return await service.enqueue_turn(
+            result = await service.enqueue_turn(
                 QueueTurnRequest(
                     scope_ref=str(request["scope_ref"]),
                     delivery_key=str(request["delivery_key"]),
                     text=str(request.get("text") or "fixture queued turn"),
                 )
             )
+            queued_boundary = self._faults.armed_boundary
+            if queued_boundary is not None and not queued_boundary.startswith(
+                "terminal."
+            ):
+                await self._faults.wait(queued_boundary)
+                raise _InjectedFault(queued_boundary)
+            return result
         if operation == "authority.snapshot":
             return await service.authority_snapshot()
         if operation == "derived.drop_rebuildable":
@@ -780,6 +993,23 @@ class S4ValuePublicAdapter:
                     idempotency_key="fixture-binding-append",
                 )
             )
+        if operation == "binding.seed_single_root":
+            self._policy.select("manual")
+            scope_ref = str(request["scope_ref"])
+            proposal = await service.propose_manual_binding(
+                AppendBindingRequest(
+                    scope_ref=scope_ref,
+                    root=str(self._physical_root(str(request["root"]))),
+                    idempotency_key=f"fixture-binding-seed:{scope_ref}",
+                )
+            )
+            return await service.decide_manual_binding(
+                DecideManualBindingRequest(
+                    challenge_ref=str(proposal["challenge_ref"]),
+                    decision="allow",
+                    idempotency_key=f"fixture-binding-seed-decision:{scope_ref}",
+                )
+            )
         if operation == "binding.propose_manual":
             self._policy.select("manual")
             return await service.propose_manual_binding(
@@ -808,6 +1038,12 @@ class S4ValuePublicAdapter:
             if snapshot is None or snapshot.host_run_id != str(request.get("run_ref")):
                 raise HumanMemoryHostServiceError(
                     "workspace_binding_current_run_authority_required"
+                )
+            if request.get("generation") is not None and snapshot.generation != int(
+                request["generation"]
+            ):
+                raise HumanMemoryHostServiceError(
+                    "foreground_run_stale_generation"
                 )
             self._policy.select("auto")
             result = dict(
@@ -894,9 +1130,26 @@ class S4ValuePublicAdapter:
         if operation == "queue.snapshot":
             return await service.queue_snapshot()
         if operation == "recovery.manifest":
-            return await service.recovery_manifest()
+            if self._explicit_recovery:
+                result = await self._require_recovery().sealed_manifest(
+                    subject=self._auth.subject
+                )
+            else:
+                result = await service.recovery_manifest()
+            return self._recovery_projection(result)
+        if operation == "recovery.begin_close":
+            self._explicit_recovery = True
+            return await self._require_recovery().begin_close(
+                subject=self._auth.subject
+            )
+        if operation == "recovery.drain_checkpoint_seal":
+            result = await self._require_recovery().drain_checkpoint_seal(
+                subject=self._auth.subject
+            )
+            return self._recovery_projection(result)
         if operation == "recovery.emergency_export":
-            return await service.emergency_export()
+            result = await service.emergency_export()
+            return self._recovery_projection(result)
         if operation.startswith("legacy_session."):
             target = str(request.get("target") or "")
             if target and target == self._primary_ref:
@@ -958,6 +1211,15 @@ class S4ValuePublicAdapter:
         with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
             row = db.execute(f"SELECT COUNT(*) FROM {table} {where}", values).fetchone()
         return int(row[0]) if row is not None else 0
+
+    def _host_table_exists(self, table: str) -> bool:
+        path = self._require_db()
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (table,),
+            ).fetchone()
+        return row is not None
 
     def _start_observation_count(self, outcome: str) -> int:
         return self._host_row_count(
@@ -1124,7 +1386,9 @@ class S4ValuePublicAdapter:
             raise HumanMemoryHostServiceError("foreground_turn_missing")
         return str(row[0])
 
-    def _execution_audit_projection(self) -> Mapping[str, object]:
+    def _execution_audit_projection(
+        self, host_run_id: str
+    ) -> Mapping[str, object]:
         facts = (
             ("preparation_draft", "foreground_preparation_drafts"),
             ("atomic_claim", "foreground_run_preparation_bindings"),
@@ -1158,14 +1422,105 @@ class S4ValuePublicAdapter:
             ),
             ("foreground_terminal_lineage", "foreground_terminal_receipts"),
         )
-        sets = [alias for alias, table in aliases if self._host_row_count(table)]
+        sets = [alias for alias, table in aliases if self._host_table_exists(table)]
+        path = self._require_db()
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT sdk_run_id FROM foreground_run_heads WHERE host_run_id=?",
+                (host_run_id,),
+            ).fetchone()
+            intent_count = db.execute(
+                "SELECT COUNT(*) FROM foreground_execution_start_intents "
+                "WHERE host_run_id=?",
+                (host_run_id,),
+            ).fetchone()[0]
+            binding_count = db.execute(
+                "SELECT COUNT(*) FROM foreground_run_sdk_bindings "
+                "WHERE host_run_id=?",
+                (host_run_id,),
+            ).fetchone()[0]
+        sdk_run_id = None if row is None or row[0] is None else str(row[0])
+        sdk_snapshot_count = 0
+        if sdk_run_id is not None and self._sdk_db_path is not None:
+            with sqlite3.connect(
+                f"file:{self._sdk_db_path.resolve()}?mode=ro", uri=True
+            ) as db:
+                sdk_snapshot_count = int(
+                    db.execute(
+                        "SELECT COUNT(*) FROM run_start_snapshots WHERE run_id=?",
+                        (sdk_run_id,),
+                    ).fetchone()[0]
+                )
+        recovered_same_identity = (
+            host_run_id == self._planned_host_run_id
+            and sdk_run_id == self._planned_sdk_run_id
+        )
+        duplicate_start_observed = (
+            int(intent_count) != 1
+            or int(binding_count) != 1
+            or sdk_snapshot_count != 1
+        )
         return {
             "schema_version": 1,
             "lifecycle_sequence": sequence,
             "v44_audit_sets": sets,
             "session_db_read_count": self._session_db_reads,
             "runtime_events": len(self._runtime_audit.events),
+            "recovered_same_identity": recovered_same_identity,
+            "duplicate_start_observed": duplicate_start_observed,
         }
+
+    def _recovery_projection(
+        self, result: Mapping[str, object]
+    ) -> Mapping[str, object]:
+        projected = dict(result)
+        if self._db_path is None:
+            return projected
+        manifest_ref = str(projected.get("manifest_ref") or "")
+        aliases = (
+            ("foreground_claimed_payloads", "foreground_run_preparation_bindings"),
+            ("foreground_execution_preparations", "foreground_execution_preparations"),
+            ("foreground_start_intents", "foreground_execution_start_intents"),
+            ("foreground_start_observations", "foreground_execution_start_observations"),
+            (
+                "foreground_reconciliation_receipts",
+                "foreground_execution_reconciliations",
+            ),
+            ("foreground_terminal_lineage", "foreground_terminal_receipts"),
+        )
+        sets = [alias for alias, table in aliases if self._host_table_exists(table)]
+        roots: dict[str, str] = {}
+        if manifest_ref:
+            path = self._require_db()
+            with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+                rows = {
+                    str(row[0]): str(row[1])
+                    for row in db.execute(
+                        "SELECT table_name,row_root FROM "
+                        "human_memory_recovery_manifest_tables WHERE manifest_id=?",
+                        (manifest_ref,),
+                    ).fetchall()
+                }
+            roots = {
+                alias: rows[table]
+                for alias, table in aliases
+                if table in rows
+            }
+        projected.update(
+            {
+                "v44_audit_sets": sets,
+                "protected_existing_row_roots": roots,
+            }
+        )
+        return projected
+
+    @staticmethod
+    def _stable_uuid(label: str) -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
+
+    @staticmethod
+    def _execution_session_id(host_run_id: str) -> str:
+        return f"foreground-execution-{hashlib.sha256(host_run_id.encode('utf-8')).hexdigest()}"
 
     def _assert_fixture_principal(self, request: Mapping[str, object]) -> None:
         asserted = request.get("subject")
@@ -1181,6 +1536,13 @@ class S4ValuePublicAdapter:
         if self._service is None:
             raise HumanMemoryHostServiceError("human_memory_adapter_not_initialized")
         return self._service
+
+    def _require_recovery(self) -> RecoveryLifecyclePort:
+        if self._recovery is None:
+            raise HumanMemoryHostServiceError(
+                "human_memory_recovery_authority_unavailable"
+            )
+        return self._recovery
 
 
 def create_adapter(*, fixture: dict[str, Any], artifact_dir: Path) -> S4ValuePublicAdapter:

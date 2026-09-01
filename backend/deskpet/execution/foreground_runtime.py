@@ -564,7 +564,9 @@ class ForegroundRuntimeExecutionAuthority:
                         owner_id=self._owner_id,
                         generation=claimed.generation,
                         observed_state="FAILED_CLOSED",
-                        idempotency_key=f"runtime-reconcile:{host_run_id}:missing",
+                        idempotency_key=(
+                            f"runtime-reconcile:{host_run_id}:g{claimed.generation}:missing"
+                        ),
                     )
                     raise ForegroundRuntimeError(
                         "foreground_runtime_orphaned_start"
@@ -575,7 +577,9 @@ class ForegroundRuntimeExecutionAuthority:
                     owner_id=self._owner_id,
                     generation=claimed.generation,
                     observed_state="UNBOUND_RETRY",
-                    idempotency_key=f"runtime-reconcile:{host_run_id}:pre-start",
+                    idempotency_key=(
+                        f"runtime-reconcile:{host_run_id}:g{claimed.generation}:pre-start"
+                    ),
                 )
                 should_start = True
             else:
@@ -652,7 +656,9 @@ class ForegroundRuntimeExecutionAuthority:
                         owner_id=self._owner_id,
                         generation=claimed.generation,
                         observed_state="UNBOUND_RETRY",
-                        idempotency_key=f"runtime-reconcile:{host_run_id}:start-missing",
+                        idempotency_key=(
+                            f"runtime-reconcile:{host_run_id}:g{claimed.generation}:start-missing"
+                        ),
                     )
                     raise
                 await self._store.record_start_observation(
@@ -745,7 +751,10 @@ class ForegroundRuntimeExecutionAuthority:
                 owner_id=self._owner_id,
                 generation=claimed.generation,
                 observed_state=observed,
-                idempotency_key=f"runtime-reconcile:{host_run_id}:{state_value or 'running'}",
+                idempotency_key=(
+                    f"runtime-reconcile:{host_run_id}:g{claimed.generation}:"
+                    f"{state_value or 'running'}"
+                ),
             )
             return
         await self._store.record_reconciliation(
@@ -756,7 +765,9 @@ class ForegroundRuntimeExecutionAuthority:
             observed_state="BOUND_TERMINAL",
             evidence_ref=terminal.sdk_event_id,
             evidence_hash=terminal.sdk_event_hash,
-            idempotency_key=f"runtime-reconcile:{host_run_id}:terminal",
+            idempotency_key=(
+                f"runtime-reconcile:{host_run_id}:g{claimed.generation}:terminal"
+            ),
         )
         await self._store.record_sdk_terminal(
             host_run_id=host_run_id,
@@ -995,7 +1006,10 @@ class SqliteSdkTerminalObserver:
             return None
         if (
             evidence.get("subject") != subject
-            or int(public.get("generation", 0)) != generation
+            or isinstance(public.get("generation"), bool)
+            or not isinstance(public.get("generation"), int)
+            or int(public["generation"]) < 1
+            or int(public["generation"]) > generation
             or str(public.get("terminal_state", "")).upper() != terminal.value
         ):
             return None

@@ -103,6 +103,7 @@ async def test_recovery_fence_manifest_export_and_reopen(tmp_path: Path) -> None
         }
         assert execution_tables <= manifest_tables
     exported = await coordinator.emergency_export(export_id="export-1")
+    assert exported.overall_root == manifest.overall_root
     content = exported.artifact_path.read_bytes()
     assert hashlib.sha256(content).hexdigest() == exported.artifact_sha256
     assert all(len(line) <= 32 * 1024 for line in content.splitlines())
@@ -205,6 +206,30 @@ async def test_public_lifecycle_builder_is_subject_bound_and_restart_safe(
         HumanMemoryRecoveryError, match="human_memory_recovery_subject_mismatch"
     ):
         await port.manifest(subject="actor-2")
+
+
+@pytest.mark.asyncio
+async def test_public_explicit_close_seals_export_to_same_manifest_root(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    port = build_recovery_lifecycle_port(
+        db_path=db_path, artifact_dir=tmp_path / "exports"
+    )
+    closing = await port.begin_close(subject="actor-1")
+    assert closing["state"] == "CLOSING"
+    sealed = await port.drain_checkpoint_seal(subject="actor-1")
+    assert sealed["state"] == "SEALED"
+    assert sealed["wal_busy"] == 0
+    assert sealed["drained_or_parked"] is True
+    manifest = await port.sealed_manifest(subject="actor-1")
+    assert manifest["overall_root"] == sealed["overall_root"]
+    exported = await port.emergency_export(subject="actor-1")
+    assert exported["manifest_ref"] == manifest["manifest_ref"]
+    assert exported["overall_root"] == manifest["overall_root"]
 
 
 @pytest.mark.asyncio

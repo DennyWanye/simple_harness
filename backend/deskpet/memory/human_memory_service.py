@@ -46,6 +46,7 @@ from deskpet.memory.schema import (
     StartupCompositionMode,
     StartupEpochDecision,
 )
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open
 from deskpet.task_scope.projections import TaskScopeProjectionStore
 from deskpet.task_scope.protocol import (
     canonical_hash,
@@ -768,6 +769,11 @@ class HumanMemoryHostService:
         return await self._recovery.emergency_export(subject=self._auth.subject)
 
     async def enqueue_turn(self, request: QueueTurnRequest) -> Mapping[str, object]:
+        # Recovery fencing is a global Host lifecycle boundary.  Check it
+        # before scope authorization so callers cannot observe a lower-level
+        # authorization result after ingress has closed; the actual writer
+        # transaction performs the same check again to close the race.
+        await assert_human_memory_ingress_open(self._db_path)
         await self._assert_owned_scope(request.scope_ref)
         primary = await self._program.initialize_subject(self._auth.subject)
         payload = {

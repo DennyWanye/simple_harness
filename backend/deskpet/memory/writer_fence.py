@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import aiosqlite
 
 INGRESS_FENCED_CODE = "human_memory_ingress_fenced"
@@ -39,8 +41,16 @@ async def assert_human_memory_ingress_open_tx(
     return int(row[1])
 
 
+async def assert_human_memory_ingress_open(db_path: str | Path) -> int | None:
+    """Read-only facade preflight; writer transactions must still recheck."""
+
+    async with aiosqlite.connect(Path(db_path)) as db:
+        return await assert_human_memory_ingress_open_tx(db)
+
+
 __all__ = [
     "INGRESS_FENCED_CODE",
     "HumanMemoryIngressFenced",
+    "assert_human_memory_ingress_open",
     "assert_human_memory_ingress_open_tx",
 ]

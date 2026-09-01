@@ -1876,7 +1876,8 @@ class ForegroundQueueStore:
                 if (
                     isinstance(payload_generation, bool)
                     or not isinstance(payload_generation, int)
-                    or payload_generation != generation
+                    or payload_generation < 1
+                    or payload_generation > generation
                 ):
                     raise ForegroundQueueError("foreground_terminal_generation_mismatch")
                 payload_terminal = public_payload.get("terminal_state")

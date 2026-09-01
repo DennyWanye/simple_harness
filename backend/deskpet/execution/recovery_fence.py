@@ -798,7 +798,8 @@ class HumanMemoryRecoveryCoordinator:
             "table_roots": table_roots,
             "manifest_overall_root": manifest["overall_root"],
             "chunks": chunk_refs,
-            "overall_root": canonical_hash(chunk_refs),
+            "chunk_root": canonical_hash(chunk_refs),
+            "overall_root": manifest["overall_root"],
         }
         artifact = b"\n".join(
             [canonical_json({"header": header}).encode("utf-8")]

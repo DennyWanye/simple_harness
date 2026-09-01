@@ -14,6 +14,8 @@ import uuid
 from collections.abc import Mapping
 from pathlib import Path
 
+import aiosqlite
+
 from deskpet.execution.recovery_fence import (
     HumanMemoryRecoveryCoordinator,
     HumanMemoryRecoveryError,
@@ -41,6 +43,98 @@ class RecoveryLifecyclePort:
                 result = _manifest_mapping(subject, receipt)
                 await coordinator.reopen()
                 return result
+            except Exception as exc:
+                await self._fail_closed_on_error(coordinator, exc)
+                raise
+
+    async def begin_close(self, *, subject: str) -> Mapping[str, object]:
+        """Fence ingress without implicitly advancing the remaining lifecycle."""
+
+        subject = self._assert_subject(subject)
+        async with self._lifecycle_guard():
+            coordinator = await self._bound_coordinator()
+            try:
+                state = await coordinator.snapshot()
+                if state.state == "OPEN":
+                    state = await coordinator.begin_close()
+                elif state.state != "CLOSING":
+                    raise HumanMemoryRecoveryError("human_memory_recovery_not_open")
+                return {
+                    "subject": subject,
+                    "state": state.state,
+                    "generation": state.generation,
+                    "cutoff": state.cutoff,
+                    "transition_hash": state.transition_hash,
+                }
+            except Exception as exc:
+                await self._fail_closed_on_error(coordinator, exc)
+                raise
+
+    async def drain_checkpoint_seal(
+        self, *, subject: str
+    ) -> Mapping[str, object]:
+        """Complete an explicitly started close and leave its manifest sealed."""
+
+        subject = self._assert_subject(subject)
+        async with self._lifecycle_guard():
+            coordinator = await self._bound_coordinator()
+            try:
+                state = await coordinator.snapshot()
+                drained_or_parked = False
+                if state.state == "CLOSING":
+                    worker_receipts = await coordinator.drain_or_park(action="park")
+                    drained_or_parked = True
+                    state = await coordinator.quiesce()
+                else:
+                    worker_receipts = ()
+                if state.state == "QUIESCED":
+                    wal_receipt_hash = await coordinator.checkpoint_wal()
+                    receipt = await coordinator.seal()
+                elif state.state == "SEALED":
+                    wal_receipt_hash = ""
+                    receipt = await coordinator.current_manifest()
+                    drained_or_parked = True
+                else:
+                    raise HumanMemoryRecoveryError(
+                        "human_memory_recovery_not_closing"
+                    )
+                wal_busy = await self._wal_busy(receipt.generation)
+                return {
+                    **_manifest_mapping(subject, receipt),
+                    "wal_busy": wal_busy,
+                    "wal_receipt_hash": wal_receipt_hash,
+                    "drained_or_parked": drained_or_parked,
+                    "worker_receipt_hashes": list(worker_receipts),
+                    "state": "SEALED",
+                }
+            except Exception as exc:
+                await self._fail_closed_on_error(coordinator, exc)
+                raise
+
+    async def _wal_busy(self, generation: int) -> int:
+        async with aiosqlite.connect(self._db_path) as db:
+            cursor = await db.execute(
+                "SELECT busy FROM human_memory_recovery_wal_receipts "
+                "WHERE generation=? ORDER BY recorded_at DESC,receipt_id DESC LIMIT 1",
+                (generation,),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        if row is None:
+            raise HumanMemoryRecoveryError(
+                "human_memory_recovery_checkpoint_missing"
+            )
+        return int(row[0])
+
+    async def sealed_manifest(self, *, subject: str) -> Mapping[str, object]:
+        """Verify and read the current sealed receipt without reopening ingress."""
+
+        subject = self._assert_subject(subject)
+        async with self._lifecycle_guard():
+            coordinator = await self._bound_coordinator()
+            try:
+                receipt = await coordinator.current_manifest()
+                return _manifest_mapping(subject, receipt)
             except Exception as exc:
                 await self._fail_closed_on_error(coordinator, exc)
                 raise
