@@ -8,7 +8,10 @@ from pathlib import Path
 import pytest
 
 from deskpet.memory.schema import initialize_human_memory_program_state_db
-from deskpet.task_scope.projections import TaskScopeProjectionStore
+from deskpet.task_scope.projections import (
+    ProjectionIntegrityError,
+    TaskScopeProjectionStore,
+)
 from deskpet.task_scope.search import TaskScopeSearchError, TaskScopeSearchStore
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 
@@ -194,8 +197,48 @@ async def test_public_bulk_seam_materializes_100k_in_500_event_groups(
     )
     assert len(groups) == 200
     assert all(group["event_count"] == 500 for group in groups)
+    recovered: list[int] = []
+    projection_store = TaskScopeProjectionStore(db_path)
+    for group in groups:
+        events = await projection_store.read_evidence_group(str(group["block_id"]))
+        recovered.extend(int(event["payload"]["event_index"]) for event in events)
+    assert recovered == list(range(1, 100_001))
     with sqlite3.connect(db_path) as db:
         assert db.execute("SELECT MAX(length(content)) FROM task_scope_read_blocks").fetchone()[0] <= 32768
         assert db.execute(
             "SELECT COUNT(*) FROM task_scope_projection_source_outbox WHERE task_scope_id='scope-large'"
         ).fetchone()[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_evidence_group_reassembles_oversized_event_and_fails_on_missing_ref(
+    tmp_path: Path,
+) -> None:
+    db_path, store = await _v40_db(tmp_path)
+    await store.create_task_scope(
+        task_scope_id="scope-chunked", subject="actor-1", title="Chunked history"
+    )
+    await store.append_host_event(
+        task_scope_id="scope-chunked",
+        event_kind="host.turn",
+        source_event_id="oversized-event",
+        payload={"event_index": 1, "body": "记" * 70_000},
+    )
+    projections = TaskScopeProjectionStore(db_path)
+    await projections.materialize(task_scope_id="scope-chunked")
+    groups = await projections.list_evidence_groups(task_scope_id="scope-chunked")
+    events = await projections.read_evidence_group(str(groups[0]["block_id"]))
+    assert events[0]["payload"]["body"] == "记" * 70_000
+
+    group = json.loads(await projections.read_block(str(groups[0]["block_id"])))
+    root_ref = group["leaves_root"]
+    if root_ref["block_kind"] == "leaf":
+        missing_id = root_ref["block_id"]
+    else:
+        index = json.loads(await projections.read_block(root_ref["block_id"]))
+        missing_id = index["children"][0]["block_id"]
+    with sqlite3.connect(db_path) as db:
+        db.execute("DELETE FROM task_scope_read_blocks WHERE block_id=?", (missing_id,))
+        db.commit()
+    with pytest.raises(ProjectionIntegrityError, match="task_scope_projection_block_missing"):
+        await projections.read_evidence_group(str(groups[0]["block_id"]))

@@ -157,7 +157,7 @@ class TaskScopeProjectionStore:
                 db, source_id=source_id, task_scope_id=task_scope_id
             )
             cursor = await db.execute(
-                "SELECT content,content_sha256 FROM task_scope_read_blocks "
+                "SELECT block_id,block_kind,content,content_sha256 FROM task_scope_read_blocks "
                 "WHERE source_id=? AND view_kind='EVIDENCE' AND block_kind='group'",
                 (source.source_id,),
             )
@@ -168,9 +168,187 @@ class TaskScopeProjectionStore:
             content = bytes(row["content"])
             if hashlib.sha256(content).hexdigest() != row["content_sha256"]:
                 raise ProjectionIntegrityError("task_scope_projection_block_hash_mismatch")
-            groups.append(json.loads(content))
+            group = json.loads(content)
+            group["block_id"] = str(row["block_id"])
+            group["block_kind"] = str(row["block_kind"])
+            group["content_sha256"] = str(row["content_sha256"])
+            group["byte_length"] = len(content)
+            groups.append(group)
         groups.sort(key=lambda item: int(item["logical_group"]))
         return tuple(groups)
+
+    async def read_evidence_group(
+        self, group_block_id: str
+    ) -> tuple[dict[str, Any], ...]:
+        """Recover one logical page and verify its complete block DAG."""
+
+        async with self._connection() as db:
+            cursor = await db.execute(
+                "SELECT * FROM task_scope_read_blocks WHERE block_id=?",
+                (group_block_id,),
+            )
+            group_row = await cursor.fetchone()
+            await cursor.close()
+            if group_row is None:
+                raise ProjectionIntegrityError("task_scope_projection_block_missing")
+            if group_row["view_kind"] != "EVIDENCE" or group_row["block_kind"] != "group":
+                raise ProjectionIntegrityError("task_scope_projection_group_kind_mismatch")
+            try:
+                group = json.loads(_verified_content(group_row))
+                leaves_root = group["leaves_root"]
+            except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                raise ProjectionIntegrityError("task_scope_projection_group_manifest_invalid") from exc
+            source_id = str(group_row["source_id"])
+            leaf_refs = await self._collect_leaf_refs_tx(
+                db,
+                source_id=source_id,
+                raw_ref=leaves_root,
+                ancestry=frozenset({group_block_id}),
+                depth=0,
+            )
+            events: list[dict[str, Any]] = []
+            for leaf_ref in leaf_refs:
+                _, leaf_content = await self._load_ref_tx(
+                    db,
+                    source_id=source_id,
+                    raw_ref=leaf_ref,
+                    allowed_kinds={"leaf"},
+                )
+                try:
+                    leaf = json.loads(leaf_content)
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ProjectionIntegrityError("task_scope_projection_leaf_invalid") from exc
+                if isinstance(leaf.get("events"), list):
+                    for event in leaf["events"]:
+                        if not isinstance(event, dict):
+                            raise ProjectionIntegrityError("task_scope_projection_event_invalid")
+                        events.append(event)
+                    continue
+                chunks = leaf.get("chunks")
+                if not isinstance(chunks, list) or not chunks:
+                    raise ProjectionIntegrityError("task_scope_projection_leaf_invalid")
+                assembled = bytearray()
+                for chunk_ref in chunks:
+                    _, chunk_content = await self._load_ref_tx(
+                        db,
+                        source_id=source_id,
+                        raw_ref=chunk_ref,
+                        allowed_kinds={"chunk"},
+                    )
+                    assembled.extend(chunk_content)
+                if (
+                    not isinstance(leaf.get("byte_length"), int)
+                    or len(assembled) != leaf["byte_length"]
+                    or hashlib.sha256(assembled).hexdigest() != leaf.get("content_sha256")
+                ):
+                    raise ProjectionIntegrityError("task_scope_projection_event_chunks_invalid")
+                try:
+                    event = json.loads(bytes(assembled))
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ProjectionIntegrityError("task_scope_projection_event_chunks_invalid") from exc
+                if not isinstance(event, dict) or event.get("event_sequence") != leaf.get("event_sequence"):
+                    raise ProjectionIntegrityError("task_scope_projection_event_chunks_invalid")
+                events.append(event)
+            sequences = [event.get("event_sequence") for event in events]
+            expected_count = group.get("event_count")
+            first = group.get("first_event_sequence")
+            last = group.get("last_event_sequence")
+            if (
+                not isinstance(expected_count, int)
+                or not isinstance(first, int)
+                or not isinstance(last, int)
+                or expected_count < 1
+                or len(events) != expected_count
+                or sequences != list(range(first, last + 1))
+            ):
+                raise ProjectionIntegrityError("task_scope_projection_group_sequence_invalid")
+            return tuple(events)
+
+    async def _collect_leaf_refs_tx(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        source_id: str,
+        raw_ref: object,
+        ancestry: frozenset[str],
+        depth: int,
+    ) -> list[dict[str, object]]:
+        if depth > 64:
+            raise ProjectionIntegrityError("task_scope_projection_index_depth_invalid")
+        row, content = await self._load_ref_tx(
+            db,
+            source_id=source_id,
+            raw_ref=raw_ref,
+            allowed_kinds={"leaf", "index"},
+        )
+        block_id = str(row["block_id"])
+        if block_id in ancestry:
+            raise ProjectionIntegrityError("task_scope_projection_index_cycle")
+        if row["block_kind"] == "leaf":
+            assert isinstance(raw_ref, dict)
+            return [raw_ref]
+        try:
+            index = json.loads(content)
+            children = index["children"]
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise ProjectionIntegrityError("task_scope_projection_index_invalid") from exc
+        if not isinstance(children, list) or not children:
+            raise ProjectionIntegrityError("task_scope_projection_index_invalid")
+        result: list[dict[str, object]] = []
+        branch = ancestry | {block_id}
+        for child in children:
+            result.extend(
+                await self._collect_leaf_refs_tx(
+                    db,
+                    source_id=source_id,
+                    raw_ref=child,
+                    ancestry=branch,
+                    depth=depth + 1,
+                )
+            )
+        return result
+
+    async def _load_ref_tx(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        source_id: str,
+        raw_ref: object,
+        allowed_kinds: set[str],
+    ) -> tuple[aiosqlite.Row, bytes]:
+        if not isinstance(raw_ref, dict):
+            raise ProjectionIntegrityError("task_scope_projection_ref_invalid")
+        block_id = raw_ref.get("block_id")
+        block_kind = raw_ref.get("block_kind")
+        content_sha256 = raw_ref.get("content_sha256")
+        byte_length = raw_ref.get("byte_length")
+        if (
+            not isinstance(block_id, str)
+            or block_kind not in allowed_kinds
+            or not isinstance(content_sha256, str)
+            or len(content_sha256) != 64
+            or isinstance(byte_length, bool)
+            or not isinstance(byte_length, int)
+            or not 0 <= byte_length <= MAX_BLOCK_BYTES
+        ):
+            raise ProjectionIntegrityError("task_scope_projection_ref_invalid")
+        cursor = await db.execute(
+            "SELECT * FROM task_scope_read_blocks WHERE block_id=?", (block_id,)
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        if row is None:
+            raise ProjectionIntegrityError("task_scope_projection_block_missing")
+        content = _verified_content(row)
+        if (
+            row["source_id"] != source_id
+            or row["view_kind"] != "EVIDENCE"
+            or row["block_kind"] != block_kind
+            or row["content_sha256"] != content_sha256
+            or len(content) != byte_length
+        ):
+            raise ProjectionIntegrityError("task_scope_projection_ref_mismatch")
+        return row, content
 
     async def verify_checkpoint(
         self,
@@ -649,6 +827,13 @@ def _ref_json(ref: ReadBlockRef) -> dict[str, object]:
         "content_sha256": ref.content_sha256,
         "byte_length": ref.byte_length,
     }
+
+
+def _verified_content(row: aiosqlite.Row) -> bytes:
+    content = bytes(row["content"])
+    if len(content) > MAX_BLOCK_BYTES or hashlib.sha256(content).hexdigest() != row["content_sha256"]:
+        raise ProjectionIntegrityError("task_scope_projection_block_hash_mismatch")
+    return content
 
 
 def _bounded_view(kind: str, value: str, limit: int) -> str:
