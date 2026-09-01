@@ -1,0 +1,122 @@
+{
+  "schema_version": "1.0",
+  "status": "draft-pre-execution",
+  "inventory": {
+    "testcase_dir": "testcase",
+    "index": "testcase/index.json",
+    "validated_testcase_count": 147,
+    "historical_pass_inherited": false
+  },
+  "required_obligations": [
+    "HM-S4-TO-VALUE",
+    "HM-S4-TO-VIEWS",
+    "HM-S4-TO-FIFO",
+    "HM-S4-TO-INTEGRATION",
+    "HM-S4-TO-DATA",
+    "HM-S4-TO-AUTHORITY",
+    "HM-S4-TO-REGRESSION"
+  ],
+  "candidate_review": [
+    {
+      "testcase_id": "TC-HM-02",
+      "reviewed_revision": 3,
+      "resulting_revision": 3,
+      "conclusion": "Reuse the existing 100k permission-first candidate to exact-open and bounded ResumePackage oracle without extension."
+    },
+    {
+      "testcase_id": "TC-HM-09",
+      "reviewed_revision": 4,
+      "resulting_revision": 4,
+      "conclusion": "Reuse its immutable multi-root and Auto snapshot authority assertions; execution-specific current-Run generation checks are added to TC-HM-11/14."
+    },
+    {
+      "testcase_id": "TC-HM-10",
+      "reviewed_revision": 2,
+      "resulting_revision": 2,
+      "conclusion": "Keep non-gating because natural-language routing remains S5/S6 and its S4 search/open behavior duplicates TC-HM-02."
+    },
+    {
+      "testcase_id": "TC-HM-11",
+      "reviewed_revision": 4,
+      "resulting_revision": 5,
+      "conclusion": "Extend the existing FIFO oracle with inert draft to atomic claim, generation-bound authority, host_initial routed SDK start, exact wheel identity, SessionDB-read prohibition, restart identity, and multi-root project-effect fail-closed behavior."
+    },
+    {
+      "testcase_id": "TC-HM-12",
+      "reviewed_revision": 4,
+      "resulting_revision": 4,
+      "conclusion": "Reuse the existing bounded six-view and byte-identical rebuild oracle without extension."
+    },
+    {
+      "testcase_id": "TC-HM-14",
+      "reviewed_revision": 2,
+      "resulting_revision": 3,
+      "conclusion": "Extend the Host integration oracle with real HUMAN ports, Manual two-stage authorization, Auto current-Run authority, v44 per-table retention/fence/export, exact wheel identity, and production scheduler/runtime API coverage."
+    }
+  ],
+  "decisions": [
+    {
+      "obligation_id": "HM-S4-TO-VALUE",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-02", "TC-HM-11"],
+      "selected_testcases": ["TC-HM-02", "TC-HM-11"],
+      "selected_revisions": {"TC-HM-02": 3, "TC-HM-11": 5},
+      "reason": "TC-HM-02 preserves the Archive value oracle; TC-HM-11 rev5 adds the non-overlapping production routed SDK execution value path.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-VIEWS",
+      "decision": "reuse-as-is",
+      "candidates": ["TC-HM-12"],
+      "selected_testcases": ["TC-HM-12"],
+      "selected_revisions": {"TC-HM-12": 4},
+      "reason": "The existing six-view oracle already covers the frozen bounds, paging, drift, and byte-identical rebuild requirements.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-FIFO",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-11"],
+      "selected_testcases": ["TC-HM-11"],
+      "selected_revisions": {"TC-HM-11": 5},
+      "reason": "Rev5 preserves FIFO/control semantics and adds the exact preparation/claim/start/bind/terminal/restart authority chain.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-INTEGRATION",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-14"],
+      "selected_testcases": ["TC-HM-14"],
+      "selected_revisions": {"TC-HM-14": 3},
+      "reason": "Rev3 extends the existing Host closure case with real HUMAN composition ports and authenticated Manual/Auto binding without adding a second integration case.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-DATA",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-14"],
+      "selected_testcases": ["TC-HM-14"],
+      "selected_revisions": {"TC-HM-14": 3},
+      "reason": "Rev3 adds v44 execution audit rows to the existing fence, manifest, WAL, raw-integrity, and export oracle.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-AUTHORITY",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-02", "TC-HM-09", "TC-HM-10", "TC-HM-11", "TC-HM-14"],
+      "selected_testcases": ["TC-HM-02", "TC-HM-09", "TC-HM-11", "TC-HM-14"],
+      "selected_revisions": {"TC-HM-02": 3, "TC-HM-09": 4, "TC-HM-11": 5, "TC-HM-14": 3},
+      "reason": "The selected minimal set separates search, workspace binding, Runtime generation, and production Host composition authorities; TC-HM-10 remains non-gating because it duplicates search and otherwise belongs to S5/S6.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "HM-S4-TO-REGRESSION",
+      "decision": "reuse-with-extension",
+      "candidates": ["TC-HM-14"],
+      "selected_testcases": ["TC-HM-14"],
+      "selected_revisions": {"TC-HM-14": 3},
+      "reason": "Rev3 extends the existing public API matrix with the exact SDK wheel, binding, scheduler/runtime and v44 recovery surfaces.",
+      "historical_pass_inherited": false
+    }
+  ]
+}

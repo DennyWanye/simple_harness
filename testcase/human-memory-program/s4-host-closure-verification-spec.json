@@ -1,0 +1,263 @@
+{
+  "schema_version": "1.0",
+  "acceptance_file": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/acceptance.md",
+  "assurance_contract": "/Users/denny/projects/simple-harness-memory-sdk-memory-plan/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/assurance-contract.json",
+  "testcase_inventory": "testcase/index.json",
+  "reuse_report": "testcase/human-memory-program/s4-host-closure-reuse-report.json",
+  "obligations": [
+    {"obligation_id": "HM-S4-TO-VALUE", "ac_ids": ["HM-AC-3", "HM-AC-4", "HM-AC-6"]},
+    {"obligation_id": "HM-S4-TO-VIEWS", "ac_ids": ["HM-AC-6", "HM-AC-7"]},
+    {"obligation_id": "HM-S4-TO-FIFO", "ac_ids": ["HM-AC-3", "HM-AC-8"]},
+    {"obligation_id": "HM-S4-TO-INTEGRATION", "ac_ids": ["HM-AC-1", "HM-AC-8"]},
+    {"obligation_id": "HM-S4-TO-DATA", "ac_ids": ["HM-AC-1", "HM-AC-7", "HM-AC-8"]},
+    {"obligation_id": "HM-S4-TO-AUTHORITY", "ac_ids": ["HM-AC-3", "HM-AC-4"]},
+    {"obligation_id": "HM-S4-TO-REGRESSION", "ac_ids": ["HM-AC-8"]}
+  ],
+  "scenarios": [
+    {
+      "scenario_id": "S4-EXECUTION-VALUE",
+      "obligation_ids": ["HM-S4-TO-VALUE"],
+      "required": true,
+      "testcase_ids": ["TC-HM-02", "TC-HM-11"],
+      "testcase_revisions": {"TC-HM-02": 3, "TC-HM-11": 5},
+      "gate_type": "positive-value",
+      "input_class": "deterministic-100k-routed-sdk-execution",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "cold_start": true,
+      "expected_run_created": true,
+      "impact_paths": [
+        "backend/deskpet/execution/foreground_queue.py",
+        "backend/deskpet/execution/foreground_runtime.py",
+        "backend/deskpet/sdk_adapters/foreground_execution.py",
+        "backend/main.py",
+        "backend/context.py"
+      ],
+      "oracle_pins": {
+        "fixture_sha256": "3c8b6035175d858ff123e6b944858c1bf4a4efab66f7c4d0a8fe163eeaac3c2a",
+        "runner_common_sha256": "de258ee4c481019fc6db2b3e1f8ab02122ccbc440cc9b1459aa29b63c1841fe6",
+        "execution_value_runner_sha256": "e553df33cd180422377ea1c7f84cbb167b9d73218d1ee5a45fc1699057166b3f"
+      },
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["business-result", "execution-log", "wheel-identity"],
+        "required_identity": ["host_run_id", "sdk_run_id", "root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "business_terminal",
+          "exact_scope_opened",
+          "event_count_100000",
+          "inert_draft_before_claim",
+          "atomic_claim_generation_authority",
+          "initial_route_host_provenance",
+          "exact_candidate_wheel_identity",
+          "session_db_reads_zero",
+          "host_sdk_one_to_one",
+          "restart_no_double_start",
+          "terminal_then_next_turn"
+        ]
+      }
+    },
+    {
+      "scenario_id": "S4-VIEWS",
+      "obligation_ids": ["HM-S4-TO-VIEWS"],
+      "required": true,
+      "testcase_ids": ["TC-HM-12"],
+      "testcase_revisions": {"TC-HM-12": 4},
+      "gate_type": "negative-safety",
+      "input_class": "deterministic-bounded-view-rebuild",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "cold_start": true,
+      "expected_run_created": false,
+      "impact_paths": [
+        "backend/deskpet/task_scope/projections.py",
+        "backend/deskpet/memory/migrations/031_task_scope_projections_v39.sql"
+      ],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": ["six_views_within_limits", "evidence_pages_cover_all_events", "rebuild_byte_identical", "checkpoint_drift_reported"]
+      }
+    },
+    {
+      "scenario_id": "S4-EXECUTION-FAULTS",
+      "obligation_ids": ["HM-S4-TO-FIFO", "HM-S4-TO-DATA"],
+      "required": true,
+      "testcase_ids": ["TC-HM-11", "TC-HM-14"],
+      "testcase_revisions": {"TC-HM-11": 5, "TC-HM-14": 3},
+      "gate_type": "negative-safety",
+      "input_class": "prepare-claim-start-bind-terminal-fault-restart",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "required_lanes": ["temporal-fault"],
+      "cold_start": true,
+      "expected_run_created": true,
+      "impact_paths": [
+        "backend/deskpet/execution/foreground_queue.py",
+        "backend/deskpet/execution/foreground_runtime.py",
+        "backend/deskpet/memory/migrations/036_foreground_execution_v44.sql",
+        "backend/deskpet/execution/recovery_fence.py"
+      ],
+      "oracle_pins": {
+        "fixture_sha256": "3c8b6035175d858ff123e6b944858c1bf4a4efab66f7c4d0a8fe163eeaac3c2a",
+        "runner_common_sha256": "de258ee4c481019fc6db2b3e1f8ab02122ccbc440cc9b1459aa29b63c1841fe6",
+        "execution_fault_runner_sha256": "1e3af60be9a5e1f5aa171e1e62d0efb12799e894eebd816f71055fef20ab836f"
+      },
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "fault-recovery-log", "recovery-manifest", "emergency-export"],
+        "required_identity": ["host_run_id", "sdk_run_id", "root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "same_identity_after_each_fault",
+          "sdk_start_count_one",
+          "stale_generation_rejected",
+          "v44_audit_rows_retained",
+          "v44_manifest_taxonomy_complete",
+          "v44_export_lineage_complete",
+          "protected_row_roots_unchanged",
+          "session_db_reads_zero"
+        ]
+      }
+    },
+    {
+      "scenario_id": "S4-BINDING-AUTHORITY",
+      "obligation_ids": ["HM-S4-TO-AUTHORITY"],
+      "required": true,
+      "testcase_ids": ["TC-HM-02", "TC-HM-09", "TC-HM-11", "TC-HM-14"],
+      "testcase_revisions": {"TC-HM-02": 3, "TC-HM-09": 4, "TC-HM-11": 5, "TC-HM-14": 3},
+      "gate_type": "negative-safety",
+      "input_class": "manual-two-stage-auto-current-run-multi-root",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "cold_start": false,
+      "expected_run_created": true,
+      "impact_paths": [
+        "backend/deskpet/task_scope/workspace_bindings.py",
+        "backend/deskpet/task_scope/runtime_binding_authority.py",
+        "backend/deskpet/task_scope/search.py",
+        "backend/deskpet/memory/human_memory_service.py"
+      ],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log"],
+        "required_identity": ["host_run_id", "root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "manual_direct_append_requires_challenge",
+          "manual_same_actor_allow_deny_expiry_replay",
+          "auto_exact_current_run_generation",
+          "auto_outside_workspace_rejected",
+          "request_selected_mode_rejected",
+          "multi_root_project_effect_fail_closed",
+          "permission_first_candidate_search",
+          "candidate_search_does_not_mutate_authority"
+        ]
+      }
+    },
+    {
+      "scenario_id": "S4-HUMAN-COMPOSITION",
+      "obligation_ids": ["HM-S4-TO-INTEGRATION"],
+      "required": true,
+      "testcase_ids": ["TC-HM-14"],
+      "testcase_revisions": {"TC-HM-14": 3},
+      "gate_type": "negative-safety",
+      "input_class": "fresh-human-production-port-composition",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "cold_start": true,
+      "expected_run_created": false,
+      "impact_paths": ["backend/main.py", "backend/context.py"],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "fresh_human_ports_real_and_present",
+          "legacy_future_ports_absent",
+          "subject_injection_rejected",
+          "public_payload_cannot_select_db_worker_or_authority"
+        ]
+      }
+    },
+    {
+      "scenario_id": "S4-REGRESSION",
+      "obligation_ids": ["HM-S4-TO-REGRESSION"],
+      "required": true,
+      "testcase_ids": ["TC-HM-14"],
+      "testcase_revisions": {"TC-HM-14": 3},
+      "gate_type": "negative-safety",
+      "input_class": "sdk-old-new-host-critical-affected-regression",
+      "ui": false,
+      "manual_required": false,
+      "min_root_runs": 1,
+      "cold_start": true,
+      "expected_run_created": true,
+      "impact_paths": [],
+      "evidence_contract": {
+        "producer_types": ["gate-exec", "runtime-probe"],
+        "required_artifact_kinds": ["execution-log", "wheel-identity"],
+        "required_identity": ["root_run_id"],
+        "required_timestamps": true,
+        "required_business_facts": [
+          "old_new_start_checkpoint_matrix",
+          "exact_candidate_wheel_identity",
+          "critical_affected_full_surface_smoke",
+          "host_full_pytest",
+          "changed_surface_mypy",
+          "changed_surface_ruff"
+        ]
+      }
+    }
+  ],
+  "manifest": {
+    "repo_root": "/Users/denny/projects/simple_harness-memory-plan",
+    "flow_tier": {
+      "value": "FULL",
+      "rationale": "S4 crosses durable schema, runtime execution identity, authenticated workspace authority, recovery, and production startup composition",
+      "decided_by": "user"
+    },
+    "applicability": {
+      "input_sensitive": {"value": false, "rationale": "本增量验证冻结 typed authority 和确定性生命周期，不评价自然语言路由质量", "decided_by": "user"},
+      "llm_payload_driven": {"value": false, "rationale": "deterministic Provider 只证明 SDK start/terminal 接线，不以模型文本驱动验收状态", "decided_by": "user"},
+      "stateful_init": {"value": true, "rationale": "v39-v44、foreground Run、execution audit、binding 与 recovery 都依赖 fresh/cold 持久化状态", "decided_by": "user"}
+    },
+    "release_unit": {
+      "slice_id": "S4-HOST-RUNTIME-EXECUTION-CLOSURE",
+      "parent_program": "human-memory-digital-twin",
+      "must_ac_count": 6,
+      "task_count": 8,
+      "plan_lines": 168,
+      "high_risk_subsystems": 3,
+      "concurrent_layer_kinds": 3
+    },
+    "testcase_revision_pins": {"TC-HM-02": 3, "TC-HM-09": 4, "TC-HM-11": 5, "TC-HM-12": 4, "TC-HM-14": 3},
+    "oracle_pins": {
+      "fixture": {"path": "testcase/human-memory-program/fixtures/s4-runtime-execution-v1.json", "sha256": "3c8b6035175d858ff123e6b944858c1bf4a4efab66f7c4d0a8fe163eeaac3c2a"},
+      "runner_common": {"path": "testcase/human-memory-program/runners/s4_execution_runner_common.py", "sha256": "de258ee4c481019fc6db2b3e1f8ab02122ccbc440cc9b1459aa29b63c1841fe6"},
+      "execution_value_runner": {"path": "testcase/human-memory-program/runners/run_s4_execution_value.py", "sha256": "e553df33cd180422377ea1c7f84cbb167b9d73218d1ee5a45fc1699057166b3f"},
+      "execution_fault_runner": {"path": "testcase/human-memory-program/runners/run_s4_execution_faults.py", "sha256": "1e3af60be9a5e1f5aa171e1e62d0efb12799e894eebd816f71055fef20ab836f"}
+    },
+    "exact_candidate_wheel_identity": {
+      "filename": "required-at-formal-run",
+      "distribution_version": "required-at-formal-run",
+      "sha256": "required-at-formal-run",
+      "source_commit": "required-at-formal-run",
+      "module_origin": "must-resolve-under-installed-package-root",
+      "public_contract_manifest_hash": "required-at-formal-run"
+    },
+    "impact_map_source": "Frozen A2 plan file-impact inventory only; implementation code and diff were not inspected",
+    "raw_evidence_root": ".local-test-evidence/<YYYY-MM-DD>/<scenario-or-run>/",
+    "executor_engine": "current",
+    "auditor_engine": "independent-agent"
+  }
+}

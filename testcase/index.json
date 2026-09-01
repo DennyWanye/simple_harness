@@ -2480,14 +2480,15 @@
         "HM-TO-R7",
         "HM-TO-R8",
         "HM-S4-TO-VALUE",
-        "HM-S4-TO-FIFO"
+        "HM-S4-TO-FIFO",
+        "HM-S4-TO-AUTHORITY"
       ],
       "path": "human-memory-program/TC-HM-11-single-run-context.md",
       "preconditions": [],
-      "purpose": "Verify one foreground ReAct Run, durable FIFO, semantic closure, and bounded causal Context assembly",
+      "purpose": "Verify one foreground ReAct Run, durable FIFO, initial routed SDK execution, semantic closure, and bounded causal Context assembly",
       "replacement": null,
       "results": [],
-      "revision": 4,
+      "revision": 5,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2580,18 +2581,20 @@
       "obligations": [
         "HM-S4-TO-INTEGRATION",
         "HM-S4-TO-DATA",
+        "HM-S4-TO-AUTHORITY",
         "HM-S4-TO-REGRESSION"
       ],
       "path": "human-memory-program/TC-HM-14-host-closure-recovery.md",
       "preconditions": [
         "Fresh isolated user-data directory is available",
         "A public-only adapter is pinned by path and SHA-256 for the current run",
+        "The exact candidate Harness SDK wheel filename, distribution version, SHA-256, source commit, and module origin are pinned",
         "Raw evidence output directory is under ignored .local-test-evidence"
       ],
-      "purpose": "Verify fresh Host composition, primary-authority fences, durable recovery, emergency export, and affected public API compatibility",
+      "purpose": "Verify fresh Host runtime composition, authenticated binding, v44 audit retention, durable recovery, emergency export, and affected public API compatibility",
       "replacement": null,
       "results": [],
-      "revision": 2,
+      "revision": 3,
       "status": "active",
       "surface": "api",
       "tags": [

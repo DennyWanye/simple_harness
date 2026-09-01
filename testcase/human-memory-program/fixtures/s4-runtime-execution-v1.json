@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0",
+  "fixture_id": "s4-runtime-execution-v1",
+  "subject": "subject-s4-runtime-owner",
+  "wrong_actor": "subject-s4-runtime-wrong-actor",
+  "data_format": "human-memory-v1",
+  "task_scopes": {
+    "a": {
+      "fixture_key": "runtime-scope-a",
+      "title": "S4 runtime alpha archive",
+      "goal": "Resume alpha through one routed SDK Run",
+      "event_count": 100000,
+      "canary": "S4_RUNTIME_ALPHA_ONLY_22c1a28f",
+      "checkpoint": {
+        "repo": "/fixture/work/runtime-alpha",
+        "branch": "fixture/runtime-alpha",
+        "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "files": ["README.md", "src/runtime.py"],
+        "tests": ["s4-runtime-value:pending"],
+        "next_action": "start the oldest durable turn"
+      }
+    },
+    "b": {
+      "fixture_key": "runtime-scope-b",
+      "title": "S4 runtime alpha archival",
+      "goal": "Remain a similar but distinct candidate",
+      "event_count": 17,
+      "canary": "S4_RUNTIME_BETA_MUST_NOT_APPEAR_d28a9f52"
+    }
+  },
+  "workspace": {
+    "manual_root": "/fixture/work/runtime-alpha",
+    "second_manual_root": "/fixture/work/runtime-alpha-dependency",
+    "auto_root": "/fixture/configured-workspace/runtime-alpha-auto",
+    "outside_root": "/fixture/outside-workspace",
+    "configured_root": "/fixture/configured-workspace"
+  },
+  "queue": {
+    "turns": [
+      {"delivery_key": "s4-runtime-q1", "text": "continue alpha first"},
+      {"delivery_key": "s4-runtime-q2", "text": "continue alpha second"}
+    ]
+  },
+  "expected_route": {
+    "outcome": "ROUTED_TASK",
+    "origin": "host_initial"
+  },
+  "required_human_ports": [
+    "human_memory_binding_append_authority",
+    "human_memory_recovery_lifecycle",
+    "human_memory_foreground_scheduler_wake",
+    "human_memory_foreground_runtime_execution_authority"
+  ],
+  "required_v44_audit_sets": [
+    "foreground_claimed_payloads",
+    "foreground_execution_preparations",
+    "foreground_start_intents",
+    "foreground_start_observations",
+    "foreground_reconciliation_receipts",
+    "foreground_terminal_lineage"
+  ],
+  "required_execution_sequence": [
+    "preparation_draft",
+    "atomic_claim",
+    "generation_authority",
+    "start_intent",
+    "sdk_start_observation",
+    "host_sdk_binding",
+    "running_observation",
+    "terminal_observation",
+    "settlement"
+  ],
+  "fault_boundaries": [
+    "prepare.after_draft",
+    "claim.after_commit",
+    "authority.after_claim",
+    "start_intent.after_commit",
+    "sdk_start.after_accept",
+    "host_sdk_bind.after_commit",
+    "started_observation.after_commit",
+    "terminal.before_commit",
+    "terminal.after_commit"
+  ],
+  "stable_errors": {
+    "manual_authorization_required": "workspace_binding_manual_authorization_required",
+    "wrong_actor": "workspace_binding_decision_actor_mismatch",
+    "expired_manual_authorization": "workspace_binding_manual_authorization_expired",
+    "stale_generation": "foreground_run_stale_generation",
+    "auto_current_run_required": "workspace_binding_current_run_authority_required",
+    "auto_outside_workspace": "workspace_binding_auto_root_outside_configured_workspace",
+    "root_selector_required": "workspace_binding_effect_root_selector_required",
+    "subject_mismatch": "human_memory_subject_mismatch",
+    "fault_injected": "test_fault_injected",
+    "ingress_fenced": "human_memory_ingress_fenced"
+  },
+  "wheel_contract": {
+    "distribution": "simple-harness-sdk",
+    "minimum_start_snapshot_schema": 7,
+    "minimum_react_checkpoint_schema": 6,
+    "route_receipt_version": 3,
+    "required_public_symbols": [
+      "ContextRouteReceipt",
+      "RunStart",
+      "StartSnapshot"
+    ]
+  },
+  "forbidden_audit_keys": [
+    "api_key",
+    "access_token",
+    "authorization",
+    "cookie",
+    "private_provider_payload",
+    "session_db_row"
+  ]
+}
