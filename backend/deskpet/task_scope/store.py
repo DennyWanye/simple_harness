@@ -18,6 +18,7 @@ import aiosqlite
 
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
     TaskScopeProtocolError,
     canonical_hash,
@@ -121,6 +122,7 @@ class CanonicalTaskScopeStore:
         state_hash = canonical_hash(state)
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 row = await self._fetchone(
                     db,
@@ -181,6 +183,7 @@ class CanonicalTaskScopeStore:
             identifier(reason_code, "reason_code", 512)
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._event_by_source_tx(db, source_event_id)
                 if existing is not None:
@@ -218,6 +221,7 @@ class CanonicalTaskScopeStore:
         task_scope_id = str(raw["task_scope_id"])
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -332,6 +336,7 @@ class CanonicalTaskScopeStore:
         reject_private_payload(payload_meta)
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(db, "SELECT * FROM task_scope_checkpoints WHERE checkpoint_id=?", (checkpoint_id,))
                 head = await self._head_tx(db, task_scope_id)
@@ -403,6 +408,7 @@ class CanonicalTaskScopeStore:
         last_event_id = ""
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 head = await self._head_tx(db, task_scope_id)
                 scope = await self._fetchone(
@@ -476,6 +482,7 @@ class CanonicalTaskScopeStore:
     async def rebuild_projection(self, task_scope_id: str, revision: int) -> str:
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 row = await self._fetchone(db, "SELECT state_json FROM task_scope_canonical_revisions WHERE task_scope_id=? AND revision=?", (task_scope_id, revision))
                 if row is None:

@@ -36,6 +36,8 @@ from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
     FOREGROUND_QUEUE_MIGRATION,
     FOREGROUND_QUEUE_SCHEMA_VERSION,
+    HUMAN_MEMORY_RECOVERY_MIGRATION,
+    HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
     HUMAN_MEMORY_PROGRAM_MIGRATION,
     HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
     HUMAN_MEMORY_TARGET_SCHEMA_VERSION,
@@ -296,6 +298,7 @@ def _validate_s4_migration_chain(
         (TASK_SCOPE_PROJECTIONS_MIGRATION, TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION),
         (TASK_SCOPE_SEARCH_MIGRATION, TASK_SCOPE_SEARCH_SCHEMA_VERSION),
         (FOREGROUND_QUEUE_MIGRATION, FOREGROUND_QUEUE_SCHEMA_VERSION),
+        (HUMAN_MEMORY_RECOVERY_MIGRATION, HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:
@@ -326,6 +329,32 @@ def _validate_s4_migration_chain(
             raise HumanMemoryProgramEpochError(
                 "human_memory_migration_chain_invalid"
             )
+
+
+def _validate_recovery_marker(
+    db_path: Path, *, expected_user_version: int
+) -> None:
+    if expected_user_version < HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION:
+        return
+    expected_sha256 = _migration_sha256(HUMAN_MEMORY_RECOVERY_MIGRATION)
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT format_epoch,schema_version,migration_id,migration_sha256 "
+                "FROM human_memory_recovery_marker WHERE singleton=1"
+            ).fetchone()
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_recovery_marker_invalid"
+        ) from exc
+    if row != (
+        "human-memory-v1",
+        1,
+        HUMAN_MEMORY_RECOVERY_MIGRATION,
+        expected_sha256,
+    ) or version != expected_user_version:
+        raise HumanMemoryProgramEpochError("human_memory_recovery_marker_invalid")
 
 
 def inspect_startup_epoch(
@@ -430,6 +459,7 @@ def inspect_startup_epoch(
                 _validate_s4_migration_chain(
                     path, expected_user_version=version
                 )
+            _validate_recovery_marker(path, expected_user_version=version)
         except (HumanMemoryProgramEpochError, OSError):
             return StartupEpochDecision(
                 StartupEpoch.INVALID,
@@ -513,6 +543,9 @@ async def initialize_human_memory_program_state_db(
             _validate_s4_migration_chain(
                 path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
             )
+            _validate_recovery_marker(
+                path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+            )
             return
         if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
             raise HumanMemoryProgramEpochError(
@@ -550,6 +583,7 @@ async def initialize_human_memory_program_state_db(
                 _validate_s4_migration_chain(
                     path, expected_user_version=current
                 )
+            _validate_recovery_marker(path, expected_user_version=current)
         if current == 0 and not bootstrap:
             if path.exists():
                 with sqlite3.connect(
@@ -595,6 +629,9 @@ async def initialize_human_memory_program_state_db(
             path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         )
         _validate_s4_migration_chain(
+            path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
+        _validate_recovery_marker(
             path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         )
 

@@ -26,6 +26,7 @@ from typing import Any, Protocol, runtime_checkable
 import aiosqlite
 
 from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 
 
 _ENVELOPE_KEYS = frozenset(
@@ -513,6 +514,7 @@ class HumanMemoryProgramStore:
             await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("PRAGMA busy_timeout=5000")
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 cursor = await db.execute(
                     "SELECT primary_conversation_id,created_at FROM "
@@ -614,6 +616,7 @@ class HumanMemoryProgramStore:
             await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("PRAGMA busy_timeout=5000")
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 cursor = await db.execute(
                     "SELECT evidence.*, receipt.receipt_sha256 AS "

@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import validate_execution_evidence, validate_refs
 from deskpet.task_scope.store import (
     CanonicalTaskScopeStore,
@@ -65,6 +66,7 @@ class ExecutionEvidenceIngress:
         await self._store.initialize()
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._store._fetchone(
                     db,
@@ -163,6 +165,7 @@ class ExecutionEvidenceIngress:
     async def authorize_terminal(self, run_id: str) -> TerminalGateReceipt:
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 watermark = await self._watermark_tx(db, run_id)
                 terminal = watermark["terminal_source_sequence"]

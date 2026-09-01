@@ -21,6 +21,15 @@ from .foreground_queue import (
     TerminalReceipt,
     TurnState,
 )
+from .recovery_fence import (
+    EmergencyExportReceipt,
+    HumanMemoryIngressFenced,
+    HumanMemoryRecoveryCoordinator,
+    HumanMemoryRecoveryError,
+    RecoveryFenceSnapshot,
+    RecoveryManifestReceipt,
+    assert_human_memory_ingress_open_tx,
+)
 
 __all__ = [
     "AdmissionReceipt",
@@ -40,4 +49,11 @@ __all__ = [
     "SignalEnvelope",
     "TerminalReceipt",
     "TurnState",
+    "EmergencyExportReceipt",
+    "HumanMemoryIngressFenced",
+    "HumanMemoryRecoveryCoordinator",
+    "HumanMemoryRecoveryError",
+    "RecoveryFenceSnapshot",
+    "RecoveryManifestReceipt",
+    "assert_human_memory_ingress_open_tx",
 ]

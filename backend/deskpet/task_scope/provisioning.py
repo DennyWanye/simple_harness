@@ -25,6 +25,7 @@ from typing import Literal
 
 import aiosqlite
 
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
 from deskpet.task_scope.store import (
     CanonicalTaskScopeStore,
@@ -284,6 +285,7 @@ class TaskScopeProvisioner:
         now = time.time()
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 by_key = await self._store._fetchone(
                     db,
@@ -400,6 +402,7 @@ class TaskScopeProvisioner:
     ) -> None:
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 row = await self._store._fetchone(
                     db,
@@ -438,6 +441,7 @@ class TaskScopeProvisioner:
     async def _commit_receipt(self, provision_id: str) -> None:
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 row = await self._store._fetchone(
                     db,
@@ -508,6 +512,7 @@ class TaskScopeProvisioner:
     async def _mark_failed(self, provision_id: str, reason: str) -> None:
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 row = await self._store._fetchone(
                     db,
@@ -541,6 +546,7 @@ class TaskScopeProvisioner:
     ) -> None:
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 updated = await db.execute(
                     "UPDATE task_scope_provisions SET state=?,failure_code=NULL,updated_at=? WHERE provision_id=? AND state=?",

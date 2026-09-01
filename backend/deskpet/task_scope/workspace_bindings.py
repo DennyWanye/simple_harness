@@ -38,6 +38,7 @@ from simple_harness import (
 )
 
 from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
 from deskpet.task_scope.store import TaskScopeConflict, TaskScopeNotFound, _uuid
 
@@ -183,6 +184,7 @@ class WorkspaceBindingAuthorityStore:
         now = time.time()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 await self._verify_scope_tx(db, proposal.task_scope_id, proposal.subject)
                 existing = await self._fetchone(
@@ -285,6 +287,7 @@ class WorkspaceBindingAuthorityStore:
         )
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -387,6 +390,7 @@ class WorkspaceBindingAuthorityStore:
                 raise
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 durable_challenge = await self._load_json_tx(
                     db,
@@ -515,6 +519,7 @@ class WorkspaceBindingAuthorityStore:
         )
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -634,6 +639,7 @@ class WorkspaceBindingAuthorityStore:
         with self._open_verified_root(proposal.root):
             async with self._connection() as db:
                 await db.execute("BEGIN IMMEDIATE")
+                await assert_human_memory_ingress_open_tx(db)
                 try:
                     replay = await self._fetchone(
                         db,
@@ -1188,6 +1194,7 @@ class WorkspaceBindingAuthorityStore:
         )
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,

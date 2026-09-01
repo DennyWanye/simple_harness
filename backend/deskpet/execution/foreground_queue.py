@@ -23,6 +23,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
     canonical_hash,
     canonical_json,
@@ -282,6 +283,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -376,6 +378,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 active = await self._active_head_tx(db, subject)
                 if active is not None:
@@ -539,6 +542,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -658,6 +662,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -821,6 +826,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 signal = await self._fetchone(db, "SELECT * FROM foreground_signal_outbox WHERE signal_id=?", (signal_id,))
                 if signal is None:
@@ -885,6 +891,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._lease_by_key_tx(db, host_run_id, idempotency_key)
                 if existing is not None:
@@ -936,6 +943,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._lease_by_key_tx(db, host_run_id, idempotency_key)
                 if existing is not None:
@@ -996,6 +1004,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._lease_by_key_tx(db, host_run_id, idempotency_key)
                 if existing is not None:
@@ -1085,6 +1094,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 existing = await self._fetchone(
                     db,
@@ -1294,6 +1304,7 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
             try:
                 replay = await self._fetchone(
                     db,

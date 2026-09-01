@@ -109,7 +109,9 @@ TASK_SCOPE_SEARCH_MIGRATION = "032_task_scope_search_v40.sql"
 TASK_SCOPE_SEARCH_SCHEMA_VERSION = 40
 FOREGROUND_QUEUE_MIGRATION = "033_foreground_queue_v41.sql"
 FOREGROUND_QUEUE_SCHEMA_VERSION = 41
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = FOREGROUND_QUEUE_SCHEMA_VERSION
+HUMAN_MEMORY_RECOVERY_MIGRATION = "034_human_memory_recovery_v42.sql"
+HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION = 42
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -119,6 +121,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         TASK_SCOPE_PROJECTIONS_MIGRATION,
         TASK_SCOPE_SEARCH_MIGRATION,
         FOREGROUND_QUEUE_MIGRATION,
+        HUMAN_MEMORY_RECOVERY_MIGRATION,
     }
 )
 
@@ -147,6 +150,7 @@ MIGRATION_STEPS: dict[str, int] = {
     TASK_SCOPE_PROJECTIONS_MIGRATION: TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION,
     TASK_SCOPE_SEARCH_MIGRATION: TASK_SCOPE_SEARCH_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION: FOREGROUND_QUEUE_SCHEMA_VERSION,
+    HUMAN_MEMORY_RECOVERY_MIGRATION: HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -154,6 +158,7 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         TASK_SCOPE_PROJECTIONS_MIGRATION,
         TASK_SCOPE_SEARCH_MIGRATION,
         FOREGROUND_QUEUE_MIGRATION,
+        HUMAN_MEMORY_RECOVERY_MIGRATION,
     }
 )
 
@@ -173,6 +178,58 @@ BEFORE DELETE ON human_memory_migration_chain BEGIN
     SELECT RAISE(ABORT,'human_memory_append_only');
 END;
 """
+
+
+async def _seed_recovery_registry(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute(
+        "SELECT table_name,taxonomy FROM human_memory_recovery_table_registry "
+        "ORDER BY table_name"
+    )
+    rows = await cursor.fetchall()
+    await cursor.close()
+    for table_name, taxonomy in rows:
+        name = str(table_name)
+        if re.fullmatch(r"[a-z0-9_]+", name) is None:
+            raise MigrationError("human memory recovery registry table invalid")
+        info_cursor = await db.execute(f'PRAGMA table_info("{name}")')
+        info = await info_cursor.fetchall()
+        await info_cursor.close()
+        if not info:
+            raise MigrationError(f"human memory recovery registry missing table: {name}")
+        columns = [
+            {
+                "cid": int(row[0]),
+                "name": str(row[1]),
+                "type": str(row[2]),
+                "notnull": int(row[3]),
+                "default": row[4],
+                "pk": int(row[5]),
+            }
+            for row in info
+        ]
+        await db.execute(
+            "UPDATE human_memory_recovery_table_registry SET columns_json=? "
+            "WHERE table_name=?",
+            (json.dumps(columns, sort_keys=True, separators=(",", ":")), name),
+        )
+        if str(taxonomy) in {"A", "B"}:
+            for operation in ("INSERT", "UPDATE", "DELETE"):
+                trigger_name = f"hm_recovery_fence_{name}_{operation.lower()}"
+                await db.execute(
+                    f'CREATE TRIGGER "{trigger_name}" BEFORE {operation} ON "{name}" '
+                    "WHEN (SELECT state FROM human_memory_recovery_fence WHERE singleton=1)<>'OPEN' "
+                    "BEGIN SELECT RAISE(ABORT,'human_memory_ingress_fenced'); END"
+                )
+    await db.execute(
+        "CREATE TRIGGER human_memory_recovery_registry_no_update "
+        "BEFORE UPDATE ON human_memory_recovery_table_registry BEGIN "
+        "SELECT RAISE(ABORT,'human_memory_recovery_append_only'); END"
+    )
+    await db.execute(
+        "CREATE TRIGGER human_memory_recovery_registry_no_delete "
+        "BEFORE DELETE ON human_memory_recovery_table_registry BEGIN "
+        "SELECT RAISE(ABORT,'human_memory_recovery_append_only'); END"
+    )
 
 
 async def _execute_transactional_script(
@@ -559,6 +616,29 @@ async def run_migrations(
                 try:
                     await db.execute("BEGIN IMMEDIATE")
                     await _execute_transactional_script(db, sql)
+                    if version == TASK_SCOPE_PROJECTIONS_MIGRATION:
+                        # v38 can already contain canonical TaskScopes. v39
+                        # must publish their first exact source/outbox inside
+                        # this migration transaction; post-commit scans are
+                        # not an authority boundary.
+                        prior_factory = db.row_factory
+                        db.row_factory = aiosqlite.Row
+                        try:
+                            from deskpet.task_scope.projection_sources import (
+                                append_projection_source_tx,
+                            )
+
+                            scope_cursor = await db.execute(
+                                "SELECT task_scope_id FROM task_scopes ORDER BY task_scope_id"
+                            )
+                            scope_rows = await scope_cursor.fetchall()
+                            await scope_cursor.close()
+                            for scope_row in scope_rows:
+                                await append_projection_source_tx(
+                                    db, str(scope_row["task_scope_id"])
+                                )
+                        finally:
+                            db.row_factory = prior_factory
                     if version == HUMAN_MEMORY_PROGRAM_MIGRATION:
                         migration_sha256 = hashlib.sha256(
                             sql.encode("utf-8")
@@ -615,6 +695,49 @@ async def run_migrations(
                                 "(1,'human-memory-v1',1,?,?,?)",
                                 (version, migration_sha256, time.time()),
                             )
+                        if version == HUMAN_MEMORY_RECOVERY_MIGRATION:
+                            initialized_at = time.time()
+                            await db.execute(
+                                "INSERT INTO human_memory_recovery_marker("
+                                "singleton,format_epoch,schema_version,migration_id,"
+                                "migration_sha256,initialized_at) VALUES "
+                                "(1,'human-memory-v1',1,?,?,?)",
+                                (version, migration_sha256, initialized_at),
+                            )
+                            genesis = {
+                                "schema_version": 1,
+                                "generation": 1,
+                                "from_state": None,
+                                "to_state": "OPEN",
+                                "cutoff": None,
+                                "reason_code": "migration_genesis",
+                            }
+                            genesis_json = json.dumps(
+                                genesis, sort_keys=True, separators=(",", ":")
+                            )
+                            genesis_hash = hashlib.sha256(
+                                genesis_json.encode("utf-8")
+                            ).hexdigest()
+                            await db.execute(
+                                "INSERT INTO human_memory_recovery_transitions("
+                                "transition_id,generation,from_state,to_state,cutoff,"
+                                "reason_code,transition_hash,transition_json,recorded_at) "
+                                "VALUES ('human-memory-recovery-genesis',1,NULL,'OPEN',NULL,?,?,?,?)",
+                                (
+                                    "migration_genesis",
+                                    genesis_hash,
+                                    genesis_json,
+                                    initialized_at,
+                                ),
+                            )
+                            await db.execute(
+                                "INSERT INTO human_memory_recovery_fence("
+                                "singleton,state,generation,cutoff,last_transition_id,"
+                                "last_transition_hash,failure_code,updated_at) "
+                                "VALUES (1,'OPEN',1,NULL,'human-memory-recovery-genesis',?,NULL,?)",
+                                (genesis_hash, initialized_at),
+                            )
+                            await _seed_recovery_registry(db)
                         await _execute_transactional_script(
                             db, _HUMAN_MIGRATION_CHAIN_SQL
                         )
@@ -741,7 +864,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            FOREGROUND_QUEUE_SCHEMA_VERSION
+            HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION
+            if HUMAN_MEMORY_RECOVERY_MIGRATION in durable_markers
+            else FOREGROUND_QUEUE_SCHEMA_VERSION
             if FOREGROUND_QUEUE_MIGRATION in durable_markers
             else TASK_SCOPE_SEARCH_SCHEMA_VERSION
             if TASK_SCOPE_SEARCH_MIGRATION in durable_markers
