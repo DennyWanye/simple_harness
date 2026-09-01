@@ -75,7 +75,14 @@ dependencies = [
     # 验证组合：torch 2.7.1+cu128 / torchvision 0.22.1 / torchaudio 2.7.1 /
     # transformers 4.57.6 / RTX 5070 Ti，arch_list 含 sm_120，encode (N,1024) 通过。
     "FlagEmbedding>=1.2,<1.4",
-    "transformers>=4.45,<5",
+    # 2026-09-01 S5a：向量模型切换 tencent/WeMM-Embedding-2B（qwen3_5 架构）——
+    # 需要 transformers>=5.16 + sentence-transformers>=5.7。原 <5 pin 的
+    # FlagEmbedding segfault 教训已失效：FlagEmbedding 不再是运行时依赖
+    # （grep 全仓仅剩 download_bge_m3.py 文档注释）。Windows/CUDA 侧发布前
+    # 需按 pyproject 上方踩坑记录重验一次 ABI 组合。
+    "transformers>=5.16",
+    "sentence-transformers>=5.7",
+    "qwen-vl-utils",
     "peft<0.15",
     # ── torch 三件套：必须严格同 minor 配对（钉死，勿单独改其一）★ ──
     # 2026-06-08 踩坑修复：原先只 pin `torch>=2.6,<3`（宽松）、且

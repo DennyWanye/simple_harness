@@ -54,8 +54,10 @@ class WeMMEmbedder(Embedder):
 
     @property
     def dim(self) -> int:
-        dimension = self._model.get_sentence_embedding_dimension()
-        return int(dimension or 2048)
+        getter = getattr(self._model, "get_embedding_dimension", None) or (
+            self._model.get_sentence_embedding_dimension
+        )
+        return int(getter() or 2048)
 
     @property
     def lineage(self) -> EmbeddingLineage:
