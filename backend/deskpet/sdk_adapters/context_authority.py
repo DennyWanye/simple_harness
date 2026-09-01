@@ -532,6 +532,102 @@ class ContextRouteLedgerStore:
             await db.close()
 
 
+    async def latest_task_route_decision(self) -> Mapping[str, Any] | None:
+        """Return the most recent ROUTED_TASK decision (S5a active-scope source).
+
+        Single-user product boundary: standalone routes never write ROUTED_TASK
+        rows, so ordinary chit-chat cannot move this de-facto active cursor.
+        """
+
+        db = await self._connect()
+        try:
+            cursor = await db.execute(
+                "SELECT task_scope_id,binding_set_revision,binding_set_receipt_id,"
+                "binding_set_receipt_hash,route,recorded_at FROM context_route_decisions "
+                "WHERE route IN ('continue_active','resume_existing','create_new') "
+                "ORDER BY recorded_at DESC, decision_id DESC LIMIT 1"
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row is None:
+                return None
+            return {
+                "task_scope_id": row[0],
+                "binding_set_revision": row[1],
+                "binding_set_receipt_id": row[2],
+                "binding_set_receipt_hash": row[3],
+                "route": row[4],
+                "recorded_at": row[5],
+            }
+        finally:
+            await db.close()
+
+    async def record_tool_invocation(
+        self,
+        *,
+        sdk_run_id: str,
+        raw_call_id: str,
+        effect_id: str,
+        proposal: Mapping[str, Any],
+        verdict: str,
+        decision_id: str | None,
+        detail: Mapping[str, Any],
+    ) -> None:
+        """Record route tool lineage; idempotent per (run, effect_id)."""
+
+        if verdict not in {"accepted", "rejected", "clarification"}:
+            raise ContextRouteLedgerError("sdk_context_route_verdict_invalid")
+        proposal_hash = canonical_sha256(dict(proposal))
+        invocation_hash = canonical_sha256(
+            {
+                "decision_id": decision_id,
+                "detail": dict(detail),
+                "effect_id": effect_id,
+                "proposal_hash": proposal_hash,
+                "raw_call_id": raw_call_id,
+                "sdk_run_id": sdk_run_id,
+                "verdict": verdict,
+            }
+        )
+        db = await self._connect()
+        try:
+            await db.execute("BEGIN IMMEDIATE")
+            cursor = await db.execute(
+                "SELECT invocation_hash FROM context_route_tool_invocations "
+                "WHERE sdk_run_id=? AND effect_id=?",
+                (sdk_run_id, effect_id),
+            )
+            existing = await cursor.fetchone()
+            await cursor.close()
+            if existing is not None:
+                await db.commit()
+                return
+            await db.execute(
+                "INSERT INTO context_route_tool_invocations("
+                "invocation_id,sdk_run_id,raw_call_id,effect_id,proposal_hash,"
+                "verdict,decision_id,detail_json,invocation_hash,recorded_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                (
+                    f"route-invocation:{sdk_run_id}:{effect_id}",
+                    sdk_run_id,
+                    raw_call_id,
+                    effect_id,
+                    proposal_hash,
+                    verdict,
+                    decision_id,
+                    canonical_json(dict(detail)),
+                    invocation_hash,
+                    float(self._clock()),
+                ),
+            )
+            await db.commit()
+        except BaseException:
+            await db.rollback()
+            raise
+        finally:
+            await db.close()
+
+
 class ProductRunContextAuthority:
     """Per-turn Host Context authority for the SDK 0.7 react barrier."""
 

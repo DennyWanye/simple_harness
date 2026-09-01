@@ -918,6 +918,7 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 
     from deskpet.sdk_adapters.tools import (
+        HOST_COMPOSED_TOOL_NAMES,
         PROJECTLESS_SAFE_TOOL_NAMES,
         build_product_tool_registry,
     )
@@ -954,7 +955,7 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
         name
         for name, item in by_name.items()
         if item.projectless_admission == "safe"
-    } == PROJECTLESS_SAFE_TOOL_NAMES
+    } == PROJECTLESS_SAFE_TOOL_NAMES - HOST_COMPOSED_TOOL_NAMES
     assert all(
         item.projectless_admission == "requires_project"
         for name, item in by_name.items()

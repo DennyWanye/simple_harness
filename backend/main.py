@@ -8040,6 +8040,85 @@ async def _build_product_sdk_runtime_stack(
             "stable_handler_id": "core.skill_install.v2",
         },
     ))
+    # S5a — five-route Context authority tools (host-composed like skill_install).
+    from deskpet.sdk_adapters.context_authority import (
+        ContextRouteLedgerStore as _ContextRouteLedgerStore,
+    )
+    from deskpet.sdk_adapters.context_route import (
+        CONTEXT_ROUTE_SCHEMA,
+        TASK_SCOPE_SEARCH_SCHEMA,
+        ContextRouteToolService,
+    )
+    from deskpet.sdk_adapters.tools import active_product_tool_context
+
+    def _context_route_binding_store():
+        from deskpet.task_scope.workspace_bindings import (
+            WorkspaceBindingAuthorityStore,
+        )
+
+        return WorkspaceBindingAuthorityStore(_state_db_path)
+
+    _context_route_service = ContextRouteToolService(
+        service_factory_getter=lambda: service_context.get(
+            "human_memory_host_service_factory"
+        ),
+        binding_store_factory=_context_route_binding_store,
+        binding_append_getter=lambda: service_context.get(
+            "human_memory_binding_append_authority"
+        ),
+        ledger=_ContextRouteLedgerStore(_state_db_path),
+        tool_context_getter=active_product_tool_context,
+    )
+
+    async def context_route_handler(arguments, _context):
+        return await _context_route_service.handle_context_route(arguments)
+
+    async def task_scope_search_handler(arguments, _context):
+        return await _context_route_service.handle_task_scope_search(arguments)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name="context_route",
+            description=(
+                "Commit the Context route for this Run: direct_standalone (no "
+                "memory needed), memory_standalone (typed recall), "
+                "continue_active (exact current task), resume_existing (exact "
+                "task_scope_id from a confirmed task_scope_search candidate; "
+                "returns the bounded ResumePackage), or create_new (new "
+                "multi-step task; requires title). Search hits never "
+                "authorize; only this tool commits a route."
+            ),
+            input_schema=CONTEXT_ROUTE_SCHEMA,
+            handler=context_route_handler,
+            dispatch_kind="async",
+            permission_category="context_route",
+            metadata={
+                "source": "product-context-route",
+                "version": "1",
+                "stable_handler_id": "core.context_route.v1",
+            },
+        ),
+        ProductToolRegistration(
+            name="task_scope_search",
+            description=(
+                "Permission-first search over the caller's own archived task "
+                "scopes. Returns read-only candidates (title, goal, snippet, "
+                "rank); candidates grant no authority and never change the "
+                "active task. Confirm one and pass its exact task_scope_id to "
+                "context_route(route=resume_existing)."
+            ),
+            input_schema=TASK_SCOPE_SEARCH_SCHEMA,
+            handler=task_scope_search_handler,
+            dispatch_kind="async",
+            permission_category="task_scope_search",
+            metadata={
+                "source": "product-context-route",
+                "version": "1",
+                "stable_handler_id": "core.task_scope_search.v1",
+            },
+        ),
+    )
     tools_adapter, tool_inventory = build_product_tool_registry(projected_registrations)
     from deskpet.tools import registry as live_tool_registry
 

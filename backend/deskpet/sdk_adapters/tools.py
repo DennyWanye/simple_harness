@@ -11,7 +11,7 @@ import hashlib
 import inspect
 import json
 import logging
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
 
@@ -29,26 +29,14 @@ from simple_harness.tools.executor import EffectExecutor
 logger = logging.getLogger(__name__)
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
-    """agent agent_parallel agent_reach_doctor agent_reach_read app_discover
-app_launch await_subagents capability_build capability_repair context_page_in
-desktop_create_file doc_create doc_edit doc_read download_file edit_file excel_create
-external_action_wait fetch_tool_result file_glob file_grep file_organize file_read
-file_write generate_image glob gold_price_lookup grep image_ocr list_directory
-memory_forget memory_read memory_recall memory_search memory_write move_file
-office_pick_file pdf_export ppt_create process_list process_start process_stop
-process_wait project_directory_select project_group_send read_file register_artifacts
-run_browser_task run_shell scrapling_fetch screen_capture screen_click screen_key
-screen_move screen_scroll screen_type skill_invoke spawn_subagents spawn_team
-skill_install todo_complete todo_write tool_activate tool_describe tool_search web_crawl
-web_extract_article web_fetch web_read_sitemap web_search window_capture window_focus
-window_key window_list workflow_spawn workspace_prepare workspace_recall write_file""".split()
+    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workflow_spawn", "workspace_prepare", "workspace_recall", "write_file"]
 )
 
 # Host-composed administrative tools are registered only after their durable
 # authorization/runtime services exist.  The static catalog can therefore be
 # built without them for conformance and recovery, while production wiring is
 # still checked against PRODUCT_TOOL_NAMES once the registration is appended.
-HOST_COMPOSED_TOOL_NAMES = frozenset({"skill_install"})
+HOST_COMPOSED_TOOL_NAMES = frozenset({"skill_install", "context_route", "task_scope_search"})
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
 ProjectlessAdmission = Literal["safe", "requires_project"]
@@ -62,6 +50,8 @@ ProductHandler = Callable[[Mapping[str, JsonValue], ToolContext], Any]
 PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
     {
         "context_page_in",
+        "context_route",
+        "task_scope_search",
         "gold_price_lookup",
         "memory_forget",
         "memory_read",
@@ -702,9 +692,10 @@ def filter_sdk_catalog_for_workspace(
 
 __all__ = (
     "PRODUCT_TOOL_NAMES",
-    "ProductToolInventoryEntry",
+    "PROJECTLESS_SAFE_TOOL_NAMES",
     "ForegroundEffectAdmissionPort",
     "ProductEffectExecutor",
+    "ProductToolInventoryEntry",
     "ProductToolRegistration",
     "ProductToolsAdapter",
     "SdkToolExecutorCatalogUnavailable",
@@ -713,5 +704,4 @@ __all__ = (
     "build_product_tool_registry",
     "extend_product_registry_with_mcp",
     "filter_sdk_catalog_for_workspace",
-    "PROJECTLESS_SAFE_TOOL_NAMES",
 )

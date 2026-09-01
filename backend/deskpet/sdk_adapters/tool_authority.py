@@ -28,8 +28,8 @@ from simple_harness.tools import (
     ExecutableToolRecord,
     PreparedToolEffect,
     RuntimeCapabilityRecord,
-    RuntimeToolCatalogError,
     RuntimeToolCatalog,
+    RuntimeToolCatalogError,
     ToolExposureMode,
 )
 
@@ -56,8 +56,28 @@ from deskpet.types.task_grants import ResourceSelector, TaskGrant
 from deskpet.types.task_work_context import TaskWorkContext
 from deskpet.workflows.effects import PreparedToolCall
 
+# SDK execution-policy overrides for Host tools.  Everything absent keeps the
+# SDK defaults (NON_PROJECT_EFFECT / OPTIONAL / OPTIONAL).  CONTEXT_CONTROL
+# structurally forces route/task-scope FORBIDDEN in the SDK record contract.
+SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
+    "context_route": ("context_control", "forbidden", "forbidden"),
+}
+
+
+
+def _execution_policy_overrides(name: str) -> dict[str, str]:
+    override = SDK_TOOL_EXECUTION_POLICY_OVERRIDES.get(name)
+    if override is None:
+        return {}
+    effect_class, route_requirement, task_scope_requirement = override
+    return {
+        "effect_class": effect_class,
+        "route_requirement": route_requirement,
+        "task_scope_requirement": task_scope_requirement,
+    }
 
 SDK_TOOL_AUTHORITY_RECORD_KIND = "deskpet.sdk-tool-authority"
+
 SDK_TOOL_AUTHORITY_RECORD_VERSION = 3
 SDK_FULL_CATALOG_DISCLOSURE_POLICY = "full-direct-v1"
 SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY = "explicit-deferred-v1"
@@ -69,6 +89,11 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         "agent_parallel",
         "await_subagents",
         "context_page_in",
+        # Five-route Context authority: the model must reach the route
+        # barrier without a tool_search hop, and search candidates must be
+        # cheap to request in the same conversation.
+        "context_route",
+        "task_scope_search",
         "skill_invoke",
         # Project Skill installation is a core product control surface, not a
         # generic deferred capability. Its one-field schema is cheap to expose
@@ -720,6 +745,7 @@ class SdkRunToolAuthorityRegistry:
                         frozen.toolset,
                         frozen.source,
                     ),
+                    **_execution_policy_overrides(name),
                 )
             )
         descriptor_specs = catalog.get("descriptor_specs", raw_specs)
