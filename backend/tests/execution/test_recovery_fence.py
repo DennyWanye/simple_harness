@@ -133,14 +133,133 @@ async def test_public_lifecycle_builder_is_subject_bound_and_restart_safe(
         db_path=db_path, artifact_dir=tmp_path / "exports"
     )
     first = await port.manifest(subject="actor-1")
+    assert first["receipt_ref"] == first["manifest_ref"]
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    assert (await coordinator.snapshot()).state == "OPEN"
     second = await port.manifest(subject="actor-1")
-    assert first == second
+    assert int(second["generation"]) == int(first["generation"]) + 1
+    assert (await coordinator.snapshot()).state == "OPEN"
+    store = CanonicalTaskScopeStore(db_path)
+    assert (
+        await store.append_host_event(
+            task_scope_id="scope-1",
+            event_kind="host.turn",
+            source_event_id="after-public-manifest",
+            payload={"event_index": 1},
+        )
+    ).event_sequence == 1
     exported = await port.emergency_export(subject="actor-1")
     assert Path(str(exported["artifact_path"])).is_file()
+    assert (await coordinator.snapshot()).state == "OPEN"
+    assert (
+        await store.append_host_event(
+            task_scope_id="scope-1",
+            event_kind="host.turn",
+            source_event_id="after-public-export",
+            payload={"event_index": 2},
+        )
+    ).event_sequence == 2
     with pytest.raises(
         HumanMemoryRecoveryError, match="human_memory_recovery_subject_mismatch"
     ):
         await port.manifest(subject="actor-2")
+
+
+@pytest.mark.asyncio
+async def test_public_manifest_resumes_existing_sealed_generation_and_reopens(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="park")
+    await coordinator.quiesce()
+    await coordinator.checkpoint_wal()
+    sealed = await coordinator.seal()
+    port = build_recovery_lifecycle_port(
+        db_path=db_path, artifact_dir=tmp_path / "exports"
+    )
+    resumed = await port.manifest(subject="actor-1")
+    assert resumed["manifest_ref"] == sealed.manifest_id
+    assert resumed["receipt_ref"] == sealed.manifest_id
+    assert (await coordinator.snapshot()).state == "OPEN"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_and_repeated_public_manifest_calls_leave_ingress_open(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    port = build_recovery_lifecycle_port(
+        db_path=db_path, artifact_dir=tmp_path / "exports"
+    )
+    concurrent = await asyncio.gather(
+        *(port.manifest(subject="actor-1") for _ in range(3))
+    )
+    assert sorted(int(item["generation"]) for item in concurrent) == [2, 3, 4]
+    assert len({str(item["receipt_ref"]) for item in concurrent}) == 3
+    repeated = await port.manifest(subject="actor-1")
+    assert repeated["generation"] == 5
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    assert (await coordinator.snapshot()).state == "OPEN"
+
+
+def test_public_port_survives_adapter_style_event_loop_restart(tmp_path: Path) -> None:
+    db_path = tmp_path / "state.db"
+    asyncio.run(
+        CanonicalTaskScopeStore(db_path).create_task_scope(
+            task_scope_id="scope-1", subject="actor-1", title="Memory"
+        )
+    )
+    port = build_recovery_lifecycle_port(
+        db_path=db_path, artifact_dir=tmp_path / "exports"
+    )
+    manifest = asyncio.run(port.manifest(subject="actor-1"))
+    exported = asyncio.run(port.emergency_export(subject="actor-1"))
+    assert manifest["receipt_ref"] == manifest["manifest_ref"]
+    assert Path(str(exported["artifact_path"])).is_file()
+    coordinator = asyncio.run(
+        HumanMemoryRecoveryCoordinator.bind_for_host(
+            db_path, export_root=tmp_path / "exports"
+        )
+    )
+    assert asyncio.run(coordinator.snapshot()).state == "OPEN"
+
+
+@pytest.mark.asyncio
+async def test_public_reopen_failure_remains_failed_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    port = build_recovery_lifecycle_port(
+        db_path=db_path, artifact_dir=tmp_path / "exports"
+    )
+    coordinator = await port._bound_coordinator()
+
+    async def fail_reopen():
+        raise HumanMemoryRecoveryError("human_memory_recovery_reopen_fault")
+
+    monkeypatch.setattr(coordinator, "_reopen", fail_reopen)
+    with pytest.raises(
+        HumanMemoryRecoveryError, match="human_memory_recovery_reopen_fault"
+    ):
+        await port.manifest(subject="actor-1")
+    assert (await coordinator.snapshot()).state == "FAILED_CLOSED"
 
 
 @pytest.mark.asyncio
@@ -184,19 +303,20 @@ async def test_export_corruption_is_detected_and_fails_closed(tmp_path: Path) ->
     await CanonicalTaskScopeStore(db_path).create_task_scope(
         task_scope_id="scope-1", subject="actor-1", title="Memory"
     )
-    port = build_recovery_lifecycle_port(
-        db_path=db_path, artifact_dir=tmp_path / "exports"
-    )
-    await port.manifest(subject="actor-1")
-    exported = await port.emergency_export(subject="actor-1")
-    Path(str(exported["artifact_path"])).write_bytes(b"corrupt")
-    with pytest.raises(
-        HumanMemoryRecoveryError, match="human_memory_export_artifact_mismatch"
-    ):
-        await port.emergency_export(subject="actor-1")
     coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
         db_path, export_root=tmp_path / "exports"
     )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="park")
+    await coordinator.quiesce()
+    await coordinator.checkpoint_wal()
+    await coordinator.seal()
+    exported = await coordinator.emergency_export(export_id="corrupt-export")
+    exported.artifact_path.write_bytes(b"corrupt")
+    with pytest.raises(
+        HumanMemoryRecoveryError, match="human_memory_export_artifact_mismatch"
+    ):
+        await coordinator.emergency_export(export_id="corrupt-export")
     assert (await coordinator.snapshot()).state == "FAILED_CLOSED"
 
 
