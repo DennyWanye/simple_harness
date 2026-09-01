@@ -13,6 +13,7 @@ colliding with the stdlib ``time`` module in local imports.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Optional
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
@@ -24,7 +25,7 @@ class TimeComponent:
 
     name: str = "time"
 
-    def __init__(self, *, clock: object | None = None) -> None:
+    def __init__(self, *, clock: Optional[object] = None) -> None:
         # ``clock`` lets tests freeze the clock without monkeypatching
         # the datetime module. Expected interface: ``clock.now()``.
         self._clock = clock

@@ -26,15 +26,16 @@ from .deep_research_v6_retrieval_runtime import (
 )
 from .deep_research_v6_semantic_runtime import DeepResearchV6SemanticRuntime
 from .research_runtime import (
-    V6_RESEARCH_RESPONSE_FORMATS,
     BoundResearchEffectContext,
     DurableResearchCallEffectAdapter,
     DurableV5ControlPort,
     DurableV6ResearchLLMStagePort,
+    V6_RESEARCH_RESPONSE_FORMATS,
     WorkflowControlSignalHub,
     build_v6_research_llm_profiles,
     research_response_format_hash,
 )
+
 
 EffectContextResolver = Callable[[NodeExecutionIdentity], Awaitable[BoundResearchEffectContext]]
 

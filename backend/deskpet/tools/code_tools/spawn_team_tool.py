@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
+
 _KIND_ENUM = ["general", "research", "code", "fileops", "doc", "web"]
 
 _SCHEMA: dict[str, Any] = {

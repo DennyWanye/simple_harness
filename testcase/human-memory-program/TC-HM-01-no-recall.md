@@ -4,7 +4,7 @@ purpose: Verify a context-sufficient request records no_recall and performs no s
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [HM-TO-A4, HM-TO-R4]
+obligations: [HM-TO-A4, HM-TO-R4, S5A-TO-NORECALL, S5A-TO-RECALL]
 tags: [human-memory, no-recall, latency, audit]
 entrypoint: primary conversation and context_route
 revision: 1

@@ -10,16 +10,16 @@ import copy
 import hashlib
 import itertools
 import unicodedata
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import cmp_to_key
+from typing import Mapping, Sequence
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from .deep_research_v6_contracts import ResearchSpecV1, parse_blob_ref
 from .deep_research_v6_evidence import (
-    Q1_ASSESSMENT_POLICY_HASH,
     AdmittedResearchFactV1,
     AnswerAssessmentV1,
+    Q1_ASSESSMENT_POLICY_HASH,
     RegisteredInferenceV1,
 )
 
@@ -113,7 +113,7 @@ class GenericAdmittedFactV1:
         inference_ref: str | None = None,
         as_of: str | None = None,
         conflicted: bool = False,
-    ) -> GenericAdmittedFactV1:
+    ) -> "GenericAdmittedFactV1":
         return cls(
             requirement_id=requirement_id,
             binding_ids=tuple(binding_ids),

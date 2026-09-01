@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
+from typing import Awaitable, Callable, Mapping
 
 from ..contracts import JsonValue, NodeExecutionIdentity, canonical_json
 from ..deadlines import (
@@ -15,11 +15,6 @@ from ..deadlines import (
     create_child_deadline,
     resume_deadline,
 )
-from ..definitions.deep_research_v6_retrieval_contracts import (
-    OfficialSearchResultV1,
-    PageExtractionResultV1,
-    SourceLocatorV1,
-)
 from ..effects import (
     EffectAction,
     EffectJournal,
@@ -27,7 +22,13 @@ from ..effects import (
     PreparedToolCall,
 )
 from ..store import RegisteredBlobStore, StaleRunFence
+from ..definitions.deep_research_v6_retrieval_contracts import (
+    OfficialSearchResultV1,
+    PageExtractionResultV1,
+    SourceLocatorV1,
+)
 from .research_runtime import BoundResearchEffectContext
+
 
 V6_READ_POLICY_ID = "deep-research-v6-page-read-v1"
 V6_READ_POLICY_HASH = hashlib.sha256(V6_READ_POLICY_ID.encode("utf-8")).hexdigest()
@@ -63,7 +64,9 @@ def v6_read_logical_effect_id(
     if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 0:
         raise ValueError("v6 retrieval ordinal must be non-negative")
     return hashlib.sha256(
-        f"{run_id}|{route_id}|{operation_kind}|{target_or_page_id}|{ordinal}".encode()
+        f"{run_id}|{route_id}|{operation_kind}|{target_or_page_id}|{ordinal}".encode(
+            "utf-8"
+        )
     ).hexdigest()
 
 
@@ -82,7 +85,7 @@ class DurableV6DeadlinePort:
     ) -> None:
         self.journal = journal
         self.resolve_effect_context = resolve_effect_context
-        self.wall_clock = wall_clock or (lambda: datetime.now(UTC))
+        self.wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
         import time
 
         self.monotonic_ns = monotonic_ns or time.monotonic_ns
@@ -578,11 +581,11 @@ class DurableV6PageReadEffectAdapter:
 
 
 __all__ = [
-    "V6_AUTO_CAP_POLICY_HASH",
-    "V6_READ_POLICY_HASH",
-    "V6_READ_POLICY_ID",
     "DurableV6DeadlinePort",
     "DurableV6PageReadEffectAdapter",
+    "V6_READ_POLICY_HASH",
+    "V6_READ_POLICY_ID",
+    "V6_AUTO_CAP_POLICY_HASH",
     "V6ReadAttemptContext",
     "v6_read_logical_effect_id",
 ]

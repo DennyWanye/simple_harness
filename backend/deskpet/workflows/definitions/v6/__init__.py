@@ -1,13 +1,12 @@
 """DeepResearch v6 graph surface and registry hook."""
 
 from ...runner import WorkflowRegistry
+
 from .deep_research import (
     DEEP_RESEARCH_V6,
     DEEP_RESEARCH_V6_DEFINITION,
     build_continuation_start_payload,
     decode_continuation_snapshot,
-)
-from .deep_research import (
     initial_state as deep_research_initial_state,
 )
 

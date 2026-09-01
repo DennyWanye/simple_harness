@@ -10,12 +10,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
-from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable, Mapping, Sequence
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from .deep_research_v6_contracts import format_blob_ref, parse_blob_ref, sha256_json
+
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _CLAIM_KINDS = {
@@ -129,7 +129,7 @@ class IntegrityValidationError(ValueError):
         super().__init__(f"{code} at {path}: {message}")
 
 
-def _fail(code: str, path: str, message: str) -> NoReturn:
+def _fail(code: str, path: str, message: str) -> "NoReturn":
     raise IntegrityValidationError(code, path, message)
 
 
@@ -246,7 +246,7 @@ class ClaimRecordV1:
         inference_ref: str | None,
         support_status: str,
         visibility: str,
-    ) -> ClaimRecordV1:
+    ) -> "ClaimRecordV1":
         payload: dict[str, JsonValue] = {
             "schema_version": 1,
             "claim_id": "pending",
@@ -263,7 +263,7 @@ class ClaimRecordV1:
         return cls.from_json(payload)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ClaimRecordV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "ClaimRecordV1":
         return cls(copy.deepcopy(dict(value)))
 
     def to_json(self) -> dict[str, JsonValue]:
@@ -320,7 +320,7 @@ class ClaimBatchV1:
         claim_policy_hash: str,
         claims: Iterable[ClaimRecordV1 | Mapping[str, Any]],
         status: str,
-    ) -> ClaimBatchV1:
+    ) -> "ClaimBatchV1":
         records = sorted(
             (
                 item
@@ -350,7 +350,7 @@ class ClaimBatchV1:
         return cls.from_json(payload)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ClaimBatchV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "ClaimBatchV1":
         return cls(copy.deepcopy(dict(value)))
 
     def to_json(self) -> dict[str, JsonValue]:
@@ -411,7 +411,7 @@ class QualityAuditV1:
         soft_scores: Mapping[str, int],
         repair_count: int,
         answer_status: str,
-    ) -> QualityAuditV1:
+    ) -> "QualityAuditV1":
         codes = sorted(set(hard_failure_codes))
         payload: dict[str, JsonValue] = {
             "schema_version": 1,
@@ -431,7 +431,7 @@ class QualityAuditV1:
         return cls.from_json(payload)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> QualityAuditV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "QualityAuditV1":
         return cls(copy.deepcopy(dict(value)))
 
     def to_json(self) -> dict[str, JsonValue]:

@@ -13,15 +13,16 @@ import inspect
 import json
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import aiosqlite
 
 from ..errors import WorkflowContractError
 from .schema import initialize_workflow_db
+
 
 _CONTROL_ACTIONS = {"generate_now", "continue_research", "retry_from_start", "cancel_settle"}
 _CONTROL_TERMINAL = {"consumed", "rejected", "expired"}
@@ -106,7 +107,7 @@ def _sha256_text(value: str) -> str:
 
 def _wire_digest(value: object, field: str) -> str:
     text = str(value or "")
-    digest = text.removeprefix("sha256:")
+    digest = text[7:] if text.startswith("sha256:") else text
     if len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest):
         raise ResearchRepositoryError("invalid_v6_blob_ref", f"{field} is not a SHA-256 reference")
     return digest
@@ -215,7 +216,7 @@ class ResearchWorkflowRepository:
             raise ResearchRepositoryError("invalid_control_command", "invalid control identity")
         now = float(self._clock())
         command_id = command_id or hashlib.sha256(
-            f"{run_id}|{idempotency_key}".encode()
+            f"{run_id}|{idempotency_key}".encode("utf-8")
         ).hexdigest()
         envelope = copy.deepcopy(dict(payload or {}))
         envelope["_repository"] = {
@@ -794,7 +795,7 @@ class ResearchWorkflowRepository:
             )
         now = float(self._clock())
         pin_id = pin_id or hashlib.sha256(
-            f"{snapshot_hash}|{run_id}|{pin_kind}".encode()
+            f"{snapshot_hash}|{run_id}|{pin_kind}".encode("utf-8")
         ).hexdigest()
         await self.initialize()
         db = await self._connect()
@@ -1315,7 +1316,7 @@ class ResearchWorkflowRepository:
                 ),
             )
             child_pin_id = hashlib.sha256(
-                f"{snapshot_hash}|{child_run_id}|continue_child".encode()
+                f"{snapshot_hash}|{child_run_id}|continue_child".encode("utf-8")
             ).hexdigest()
             await db.execute(
                 """INSERT INTO workflow_research_snapshot_pins(
@@ -1499,10 +1500,10 @@ class ResearchWorkflowRepository:
             RouteDecisionV1,
         )
         from ..definitions.deep_research_v6_evidence import (
-            GENESIS_EVIDENCE_HEAD,
             AdmittedResearchFactV1,
             AnswerAssessmentV1,
             EvidenceFactBatchV1,
+            GENESIS_EVIDENCE_HEAD,
             RegisteredInferenceV1,
             derive_assessment_input_hash,
         )
@@ -1785,9 +1786,7 @@ class ResearchWorkflowRepository:
             manifest_digest, manifest = await self._read_registered_json_v6(
                 db, terminal_manifest_ref, field="terminal_manifest_ref"
             )
-            from ..definitions.deep_research_v6_delivery import (
-                TerminalDeliveryManifestV1,
-            )
+            from ..definitions.deep_research_v6_delivery import TerminalDeliveryManifestV1
 
             try:
                 decoded_manifest = TerminalDeliveryManifestV1.from_json(manifest)
@@ -2122,9 +2121,7 @@ class ResearchWorkflowRepository:
             manifest_digest, manifest = await self._read_registered_json_v6(
                 db, terminal_payload["manifest_ref"], field="terminal_manifest_ref"
             )
-            from ..definitions.deep_research_v6_delivery import (
-                TerminalDeliveryManifestV1,
-            )
+            from ..definitions.deep_research_v6_delivery import TerminalDeliveryManifestV1
 
             try:
                 decoded_manifest = TerminalDeliveryManifestV1.from_json(manifest)

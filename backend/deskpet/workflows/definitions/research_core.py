@@ -10,9 +10,8 @@ from __future__ import annotations
 import asyncio
 import re
 import time
-from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Any, Awaitable, Callable, Iterable, Mapping, Protocol
 
 from ...tools import research_scoring
 from ...tools import research_tools as legacy
@@ -278,7 +277,7 @@ class ResearchPorts:
     fetch: FetchPort
 
     @classmethod
-    def from_workflow_context(cls, context: object) -> ResearchPorts:
+    def from_workflow_context(cls, context: object) -> "ResearchPorts":
         """Read the three research ports from a ``WorkflowContext``-like object."""
 
         port = getattr(context, "port", None)
@@ -319,7 +318,7 @@ class ResearchCoreConfig:
         max_total_passages: int,
         min_passage_chars: int,
         max_rounds: int,
-    ) -> ResearchCoreConfig:
+    ) -> "ResearchCoreConfig":
         raw = legacy._research_raw()
         try:
             direct_timeout = float(raw.get("direct_timeout", 45.0))
@@ -1295,15 +1294,15 @@ async def run_research_core(
 
 
 __all__ = [
-    "RESEARCH_LLM_ROLES",
     "FetchPort",
-    "ResearchArtifactPort",
-    "ResearchCallEffectPort",
     "ResearchCoreConfig",
     "ResearchCoreState",
+    "ResearchArtifactPort",
+    "ResearchCallEffectPort",
     "ResearchLLMPort",
     "ResearchLLMPortV2",
     "ResearchLLMResult",
+    "RESEARCH_LLM_ROLES",
     "ResearchPorts",
     "ResearchSearchPort",
     "ResearchSearchResults",

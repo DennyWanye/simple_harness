@@ -6,10 +6,10 @@ import asyncio
 import json
 import os
 import time
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
+
 
 TOOL_COMPLETION_LATCH_ENV = "DESKPET_TOOL_COMPLETION_LATCH_SCRIPT"
 _MAX_SCRIPT_BYTES = 32 * 1024
@@ -46,7 +46,7 @@ class ToolCompletionLatchScriptV1:
     @classmethod
     def from_environment(
         cls, environ: Mapping[str, str] | None = None
-    ) -> ToolCompletionLatchScriptV1 | None:
+    ) -> "ToolCompletionLatchScriptV1 | None":
         values = os.environ if environ is None else environ
         raw_path = str(values.get(TOOL_COMPLETION_LATCH_ENV) or "").strip()
         if not raw_path:
@@ -59,7 +59,7 @@ class ToolCompletionLatchScriptV1:
         path: str | Path,
         *,
         environ: Mapping[str, str] | None = None,
-    ) -> ToolCompletionLatchScriptV1:
+    ) -> "ToolCompletionLatchScriptV1":
         values = os.environ if environ is None else environ
         if values.get("DESKPET_DEV_MODE") != "1":
             raise ToolCompletionLatchRejected(

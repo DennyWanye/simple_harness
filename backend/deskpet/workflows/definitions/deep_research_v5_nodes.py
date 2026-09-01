@@ -11,12 +11,12 @@ import asyncio
 import copy
 import hashlib
 import inspect
-from collections.abc import Awaitable, Mapping
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
-from typing import Any, Protocol
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Awaitable, Mapping, Protocol
 
 from ..contracts import JsonValue, StatePatch, WorkflowContext, WorkflowState
+from .research_core import ResearchStageCancelled, ResearchStageOutputError
 from .deep_research_v5_contracts import (
     ContractValidationError,
     DeliveryDecision,
@@ -25,14 +25,6 @@ from .deep_research_v5_contracts import (
     ResearchBrief,
     ResearchControlCommand,
     validate_terminal_projection,
-)
-from .deep_research_v5_delivery import (
-    ReportDraftError,
-    apply_atomic_repair,
-    build_extractively_grounded_draft,
-    evaluate_structured_report,
-    failed_report_evaluation,
-    select_repair_dimension,
 )
 from .deep_research_v5_loop_policy import (
     LoopPolicyState,
@@ -51,12 +43,16 @@ from .deep_research_v5_policy import (
     validate_modeling_output,
 )
 from .deep_research_v5_progress import build_v5_stage_projection
-from .deep_research_v5_queries import (
-    DimensionQuery,
-    build_gap_query_plan,
-    build_initial_query_plan,
+from .deep_research_v5_queries import DimensionQuery, build_gap_query_plan, build_initial_query_plan
+from .deep_research_v5_delivery import (
+    ReportDraftError,
+    apply_atomic_repair,
+    build_extractively_grounded_draft,
+    evaluate_structured_report,
+    failed_report_evaluation,
+    select_repair_dimension,
 )
-from .research_core import ResearchStageCancelled, ResearchStageOutputError
+
 
 GAP_WORK_LIMIT = 64
 REPAIR_LIMIT = 16
@@ -381,7 +377,14 @@ async def _refresh_loop(
     )
     command = await _poll_control(state, context)
     if command is not None and command.status in {"accepted", "observed"}:
-        if command.action == "generate_now" and loop.control_mode == "running" or command.action == "generate_now" and loop.control_mode == "generate_now_settling":
+        if command.action == "generate_now" and loop.control_mode == "running":
+            loop = request_generate_now(
+                loop,
+                action_id=command.command_id,
+                idempotency_key=command.idempotency_key,
+                active_seconds=active,
+            )
+        elif command.action == "generate_now" and loop.control_mode == "generate_now_settling":
             loop = request_generate_now(
                 loop,
                 action_id=command.command_id,
@@ -673,7 +676,7 @@ def _gap_item(
     reason: str = "dimension_gap_rescue",
 ) -> GapWorkItem:
     digest = hashlib.sha256(
-        f"{operation_id}\0{query.fingerprint}\0{attempt}\0{reason}".encode()
+        f"{operation_id}\0{query.fingerprint}\0{attempt}\0{reason}".encode("utf-8")
     ).hexdigest()[:24]
     return GapWorkItem(
         item_id=f"gap-{digest}",
@@ -1274,8 +1277,8 @@ def _now(values: Mapping[str, JsonValue]) -> datetime:
             _loop(values).wall_clock_anchor.replace("Z", "+00:00")
         )
     except ValueError:
-        parsed = datetime.now(UTC)
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+        parsed = datetime.now(timezone.utc)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
 
 
 def _delivery(

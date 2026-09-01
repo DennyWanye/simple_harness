@@ -15,18 +15,17 @@ import json
 import re
 import time
 from collections import OrderedDict
-from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Mapping, Sequence
 
 import aiosqlite
 
 from deskpet.execution.run_read_model import (
     CONTEXT_VISIBILITY_EXCLUDE,
     DETAIL_QUERY_KINDS,
+    PublicActivityItem,
     ProjectionManifestV1,
     ProjectionTotalsV1,
-    PublicActivityItem,
     PublicDetailPageV1,
     PublicFactEnvelope,
     PublicReadError,
@@ -42,6 +41,7 @@ from deskpet.security.tool_public_projection import (
     ToolPublicProjectorV1,
     legacy_unknown_tool_policy,
 )
+
 
 _EVENT_PUBLIC_FIELDS = frozenset(
     {

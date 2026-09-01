@@ -2,39 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from pathlib import Path
+from typing import Mapping
 
-from ...contracts import (
-    ChannelSpec,
-    JsonType,
-    JsonValue,
-    ReducerKind,
-    RetryPolicy,
-    WorkflowState,
-)
-from ...definition import (
-    END_NODE,
-    Edge,
-    NodeDefinition,
-    NodeDispatch,
-    WorkflowDefinition,
-    compile_workflow,
-)
+from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, RetryPolicy, WorkflowState
+from ...definition import END_NODE, Edge, NodeDefinition, NodeDispatch, WorkflowDefinition, compile_workflow
 from ..deep_research_v3_contracts import BRANCH_IDS, BRANCH_STAGES
 from ..deep_research_v3_nodes import (
+    cite_handler, finalize_handler, gap_handler, make_branch_handler, make_join_handler,
+    normalize_handler, persist_handler, plan_handler, rerank_handler, synth_handler,
     PUBLIC_STAGE_IDS,
-    cite_handler,
-    finalize_handler,
-    gap_handler,
-    make_branch_handler,
-    make_join_handler,
-    normalize_handler,
-    persist_handler,
-    plan_handler,
-    rerank_handler,
-    synth_handler,
 )
+
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v3"

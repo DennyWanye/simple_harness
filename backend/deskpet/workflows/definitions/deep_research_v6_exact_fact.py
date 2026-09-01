@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, Iterable
 
 from ..contracts import canonical_json
+
 
 _WIRE_REF_RE: Final = re.compile(r"^sha256:[0-9a-f]{64}$")
 _NUMBER_RE: Final = r"(?P<value>[0-9][0-9,，]*(?:\.[0-9]+)?)"

@@ -12,7 +12,7 @@ import math
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any, Protocol
 
 from deskpet.execution.provider_invocations import coordinate_provider_call
@@ -641,7 +641,7 @@ class MonotonicResearchClock:
         wall_clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._monotonic = monotonic
-        self._wall_clock = wall_clock or (lambda: datetime.now(UTC))
+        self._wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
         self._context_started = monotonic()
         self._bases: dict[str, tuple[float, float]] = {}
 
@@ -765,7 +765,7 @@ class DurableV5ControlPort:
     @staticmethod
     def _timestamp(value: object, *, fallback: float) -> str:
         seconds = float(value) if isinstance(value, (int, float)) else fallback
-        return datetime.fromtimestamp(seconds, tz=UTC).isoformat()
+        return datetime.fromtimestamp(seconds, tz=timezone.utc).isoformat()
 
     def _project(self, row: Mapping[str, object]) -> ResearchControlCommand:
         payload = copy.deepcopy(dict(row.get("payload") or {}))
@@ -1988,7 +1988,7 @@ class DurableResearchLLMStagePort:
             media_type="application/vnd.deskpet.research-llm-prompt+json",
         )
         digest = hashlib.sha256(
-            f"{identity.checkpoint_ns}:{identity.checkpoint_id}:{identity.task_id}:{stage}:".encode()
+            f"{identity.checkpoint_ns}:{identity.checkpoint_id}:{identity.task_id}:{stage}:".encode("utf-8")
             + encoded
         ).hexdigest()
         result = await self.effect(
@@ -2154,7 +2154,7 @@ class DurableResearchReadStagePort:
         transport_payload = {**copy.deepcopy(dict(payload)), "_stage": stage}
         encoded = canonical_json(transport_payload).encode("utf-8")
         stable = hashlib.sha256(
-            f"{identity.checkpoint_ns}:{identity.checkpoint_id}:{identity.task_id}:{stage}:".encode()
+            f"{identity.checkpoint_ns}:{identity.checkpoint_id}:{identity.task_id}:{stage}:".encode("utf-8")
             + encoded
         ).hexdigest()
         return await self.effect.execute(
@@ -2166,20 +2166,20 @@ class DurableResearchReadStagePort:
 
 
 __all__ = [
-    "V6_RESEARCH_RESPONSE_FORMATS",
     "BoundResearchEffectContext",
-    "DurableResearchCallEffectAdapter",
-    "DurableResearchLLMCallEnvelope",
-    "DurableResearchLLMStagePort",
+    "DurableResearchSnapshotPort",
     "DurableResearchReadEffectAdapter",
     "DurableResearchReadStagePort",
-    "DurableResearchSnapshotPort",
-    "DurableV5ControlPort",
+    "DurableResearchLLMStagePort",
+    "DurableResearchLLMCallEnvelope",
     "DurableV6ResearchLLMStagePort",
-    "ResearchEffectAdapterError",
-    "ResearchEffectCancelled",
-    "ResearchEffectContextResolver",
+    "DurableResearchCallEffectAdapter",
+    "DurableV5ControlPort",
     "ResearchLLMEffectProfile",
+    "V6_RESEARCH_RESPONSE_FORMATS",
+    "ResearchEffectCancelled",
+    "ResearchEffectAdapterError",
+    "ResearchEffectContextResolver",
     "WorkflowControlSignalHub",
     "build_v6_research_llm_profiles",
     "research_response_format_hash",

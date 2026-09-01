@@ -2207,7 +2207,9 @@
       "id": "TC-HM-01",
       "obligations": [
         "HM-TO-A4",
-        "HM-TO-R4"
+        "HM-TO-R4",
+        "S5A-TO-NORECALL",
+        "S5A-TO-RECALL"
       ],
       "path": "human-memory-program/TC-HM-01-no-recall.md",
       "preconditions": [],
@@ -2236,7 +2238,8 @@
         "HM-TO-R7",
         "HM-TO-R8",
         "HM-S4-TO-VALUE",
-        "HM-S4-TO-AUTHORITY"
+        "HM-S4-TO-AUTHORITY",
+        "S5A-TO-ROUTE"
       ],
       "path": "human-memory-program/TC-HM-02-task-resume.md",
       "preconditions": [],
@@ -2450,7 +2453,9 @@
         "HM-TO-A3",
         "HM-TO-A4",
         "HM-TO-R3",
-        "HM-TO-R7"
+        "HM-TO-R7",
+        "S5A-TO-ROUTE",
+        "S5A-TO-RECALL"
       ],
       "path": "human-memory-program/TC-HM-10-routing-resume.md",
       "preconditions": [],
@@ -2481,7 +2486,10 @@
         "HM-TO-R8",
         "HM-S4-TO-VALUE",
         "HM-S4-TO-FIFO",
-        "HM-S4-TO-AUTHORITY"
+        "HM-S4-TO-AUTHORITY",
+        "S5A-TO-SNAPSHOT",
+        "S5A-TO-BUDGET",
+        "S5A-TO-COMPOSITION"
       ],
       "path": "human-memory-program/TC-HM-11-single-run-context.md",
       "preconditions": [],
@@ -2546,7 +2554,8 @@
         "HM-TO-R2",
         "HM-TO-R3",
         "HM-TO-R4",
-        "HM-TO-R5"
+        "HM-TO-R5",
+        "S5A-TO-MEMORY-SURFACE"
       ],
       "path": "human-memory-program/TC-HM-13-typed-recall-result.md",
       "preconditions": [

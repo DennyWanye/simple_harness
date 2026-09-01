@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import MutableSet
-from typing import Any
+from typing import Any, MutableSet
 
 from deskpet.execution.provider_fault_script import ProviderFaultScriptV1
 from deskpet.execution.provider_workloads import workload_context
+
 
 log = logging.getLogger(__name__)
 

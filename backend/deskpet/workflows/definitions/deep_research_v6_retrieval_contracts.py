@@ -7,9 +7,8 @@ They deliberately keep provider payloads and raw URLs out of the effect row.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from .deep_research_v6_contracts import parse_blob_ref
@@ -130,12 +129,12 @@ class SourceLocatorV1:
         return value
 
     @classmethod
-    def create(cls, **kwargs: Any) -> SourceLocatorV1:
+    def create(cls, **kwargs: Any) -> "SourceLocatorV1":
         payload: dict[str, JsonValue] = {"schema_version": 1, **kwargs}
         return cls(locator_id=_identity("locator_", payload), **kwargs)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> SourceLocatorV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "SourceLocatorV1":
         keys = {"schema_version", "locator_id", "canonical_url", "final_url", "canonical_url_hash", "final_url_hash", "authority_id", "verification_status", "verification_policy_hash", "redirect_chain_hashes"}
         _exact(value, keys, "SourceLocatorV1")
         hashes = _strings(value["redirect_chain_hashes"], "redirect_chain_hashes", sorted_unique=False)
@@ -174,12 +173,12 @@ class SearchCandidateV1:
         return {**self._payload(), "candidate_id": self.candidate_id}
 
     @classmethod
-    def create(cls, **kwargs: Any) -> SearchCandidateV1:
+    def create(cls, **kwargs: Any) -> "SearchCandidateV1":
         payload: dict[str, JsonValue] = {"schema_version": 1, **kwargs}
         return cls(candidate_id=_identity("candidate_", payload), **kwargs)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> SearchCandidateV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "SearchCandidateV1":
         keys = {"schema_version", "candidate_id", "ordinal", "source_locator_ref", "title_hash", "snippet_hash", "authority_match", "reason_codes"}
         _exact(value, keys, "SearchCandidateV1")
         return cls(candidate_id=_text(value["candidate_id"], "candidate_id"), ordinal=_integer(value["ordinal"], "ordinal"), source_locator_ref=_ref(value["source_locator_ref"], "source_locator_ref"), title_hash=_digest(value["title_hash"], "title_hash"), snippet_hash=_digest(value["snippet_hash"], "snippet_hash"), authority_match=_text(value["authority_match"], "authority_match"), reason_codes=_strings(value["reason_codes"], "reason_codes"))  # type: ignore[arg-type]
@@ -223,12 +222,12 @@ class OfficialSearchResultV1:
         return {**self._payload(), "result_id": self.result_id}
 
     @classmethod
-    def create(cls, **kwargs: Any) -> OfficialSearchResultV1:
+    def create(cls, **kwargs: Any) -> "OfficialSearchResultV1":
         payload: dict[str, JsonValue] = {"schema_version": 1, **kwargs, "candidates": [item.to_json() for item in kwargs["candidates"]]}
         return cls(result_id=_identity("osr_", payload), **kwargs)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> OfficialSearchResultV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "OfficialSearchResultV1":
         keys = {"schema_version", "result_id", "logical_effect_id", "attempt_no", "request_id", "query_hash", "target_id", "candidates", "outcome", "error_code", "deadline_id"}
         _exact(value, keys, "OfficialSearchResultV1")
         raw = value["candidates"]
@@ -341,12 +340,12 @@ class PageExtractionResultV1:
         return {**self._payload(), "result_id": self.result_id}
 
     @classmethod
-    def create(cls, **kwargs: Any) -> PageExtractionResultV1:
+    def create(cls, **kwargs: Any) -> "PageExtractionResultV1":
         payload: dict[str, JsonValue] = {"schema_version": 1, **kwargs, "spans": list(kwargs["spans"]), "bindings": list(kwargs["bindings"])}
         return cls(result_id=_identity("pxr_", payload), **kwargs)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> PageExtractionResultV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "PageExtractionResultV1":
         keys = {"schema_version", "result_id", "logical_page_id", "logical_effect_id", "attempt_no", "source_locator_ref", "page_record", "spans", "bindings", "outcome", "error_code", "deadline_id", "control_command_id"}
         _exact(value, keys, "PageExtractionResultV1")
         page = value["page_record"]
@@ -393,11 +392,11 @@ class PageAttemptOutcomeV1:
     def to_json(self) -> dict[str, JsonValue]: return {**self._payload(), "outcome_id": self.outcome_id}
 
     @classmethod
-    def create(cls, **kwargs: Any) -> PageAttemptOutcomeV1:
+    def create(cls, **kwargs: Any) -> "PageAttemptOutcomeV1":
         payload: dict[str, JsonValue] = {"schema_version": 1, **kwargs}; return cls(outcome_id=_identity("pao_", payload), **kwargs)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> PageAttemptOutcomeV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "PageAttemptOutcomeV1":
         keys = {"schema_version", "outcome_id", "logical_page_id", "ordinal", "logical_effect_id", "attempt_no", "canonical_effect_id", "result_ref", "status", "deadline_id", "control_command_id"}; _exact(value, keys, "PageAttemptOutcomeV1")
         attempt = value["attempt_no"]
         if attempt is not None: attempt = _integer(attempt, "attempt_no", minimum=1)

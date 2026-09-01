@@ -23,6 +23,7 @@ from simple_harness.workflow import (
 
 from deskpet.sdk_adapters.product_workflows import research_stages as stages
 
+
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v7-sdk1"
 STATE_SCHEMA_VERSION = 8

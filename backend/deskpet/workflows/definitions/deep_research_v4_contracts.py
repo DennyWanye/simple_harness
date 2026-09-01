@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Literal
+from typing import Literal, Mapping, Any
 
 from ..contracts import JsonValue, validate_json_value
+
 
 IntentKind = Literal["generic", "technology_intelligence"]
 Maturity = Literal["adopted", "emerging", "experimental", "unknown"]
@@ -38,7 +38,7 @@ class IntentProfile:
         return value
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> IntentProfile:
+    def from_json(cls, value: Mapping[str, Any]) -> "IntentProfile":
         return cls(
             kind=str(value["kind"]),  # type: ignore[arg-type]
             as_of_date=str(value["as_of_date"]),
@@ -80,7 +80,7 @@ class SourceSeed:
         return value
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> SourceSeed:
+    def from_json(cls, value: Mapping[str, Any]) -> "SourceSeed":
         direct = value.get("direct_source")
         return cls(
             seed_id=str(value["seed_id"]),
@@ -129,7 +129,7 @@ class TechnologyTopic:
         return value
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> TechnologyTopic:
+    def from_json(cls, value: Mapping[str, Any]) -> "TechnologyTopic":
         return cls(
             topic_id=str(value["topic_id"]),
             label=str(value["label"]),

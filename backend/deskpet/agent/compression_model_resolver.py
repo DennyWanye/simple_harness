@@ -4,9 +4,8 @@
 """Resolve the Context OS compaction model without silent model fallback."""
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Iterable
 
 
 @dataclass(frozen=True)

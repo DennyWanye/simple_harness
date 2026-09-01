@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import re
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import Any, Literal
+import re
+from typing import Any, Literal, Mapping, Sequence
 
 from ...retrieval.query_terms import normalize_query_text, query_fingerprint
 from .deep_research_v5_contracts import (
@@ -15,6 +14,7 @@ from .deep_research_v5_contracts import (
     ResearchBrief,
     ResearchDimension,
 )
+
 
 QueryFamily = Literal["general", "official", "temporal_statistics", "comparison"]
 ComparisonAxis = Literal[
@@ -125,7 +125,7 @@ class DimensionQuery:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> DimensionQuery:
+    def from_json(cls, value: Mapping[str, Any]) -> "DimensionQuery":
         expected = {
             "dimension_id", "query_family", "comparison_axis", "source_target",
             "query", "freshness_window",
@@ -436,9 +436,9 @@ def build_gap_query_plan(
 
 
 __all__ = [
-    "QUERY_FAMILIES",
     "ComparisonAxis",
     "DimensionQuery",
+    "QUERY_FAMILIES",
     "QueryFamily",
     "build_dimension_queries",
     "build_gap_query_plan",

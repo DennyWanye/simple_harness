@@ -1,12 +1,158 @@
 {
-  "report_id": "s5a-context-route-reuse-report",
-  "date": "2026-09-01",
+  "schema_version": "1.0",
+  "status": "final",
+  "inventory": {
+    "testcase_dir": "testcase",
+    "index": "testcase/index.json",
+    "validated_testcase_count": 147,
+    "historical_pass_inherited": false
+  },
+  "required_obligations": [
+    "S5A-TO-ROUTE",
+    "S5A-TO-SNAPSHOT",
+    "S5A-TO-BUDGET",
+    "S5A-TO-NORECALL",
+    "S5A-TO-RECALL",
+    "S5A-TO-COMPOSITION",
+    "S5A-TO-MEMORY-SURFACE"
+  ],
+  "candidate_review": [
+    {
+      "testcase_id": "TC-HM-01",
+      "reviewed_revision": 1,
+      "resulting_revision": 1,
+      "conclusion": "Reuse the no-recall oracle; S5a adds the reconcile-gated predicate as new required negative lanes without touching the frozen file."
+    },
+    {
+      "testcase_id": "TC-HM-02",
+      "reviewed_revision": 3,
+      "resulting_revision": 3,
+      "conclusion": "Reuse the search→exact-open→bounded-resume oracle; S4 canary/24KiB assertions stay binding."
+    },
+    {
+      "testcase_id": "TC-HM-10",
+      "reviewed_revision": 2,
+      "resulting_revision": 2,
+      "conclusion": "S5a is the fulfilment slice for the five-route six-step oracle (rev2 marks it S5)."
+    },
+    {
+      "testcase_id": "TC-HM-11",
+      "reviewed_revision": 5,
+      "resulting_revision": 5,
+      "conclusion": "Reuse steps 4/6 (per-turn snapshot, budget, replay); the S4 automation sub-lane stays covered by the S4 receipt and is not re-gated here."
+    }
+  ],
   "decisions": [
-    {"asset": "TC-HM-10 rev2", "decision": "reuse-oracle", "note": "五路分流六步全序是 S5a 兑现方（TC-HM-10:33 明文属 S5）；只复用 oracle，当前 run 重新执行取证"},
-    {"asset": "TC-HM-02 rev3", "decision": "reuse-oracle", "note": "search→exact-open→bounded-resume oracle 直接承载 S5A-S2；S4 子 lane 断言（canary/24KiB/cursor byte-identical）继续生效"},
-    {"asset": "TC-HM-11 rev5", "decision": "reuse-oracle", "note": "步骤4/6 承载 per-turn snapshot 与预算 oracle；S4 automation 子 lane 不重跑（受 S4 receipt dbaeaae7 覆盖），仅回归不破坏"},
-    {"asset": "TC-HM-01 rev1", "decision": "reuse-oracle-extend", "note": "no_recall oracle 复用；AC-4 specialist 修订谓词（reconcile+presented set+资格门）为 S5a 扩展，负测试注入面=apply_prospective_signal"},
-    {"asset": "fixtures/metric-formulas.json + fault-matrix.json", "decision": "reuse-frozen", "note": "分区预算常量与 fault lanes 冻结引用，不改动"},
-    {"asset": "s4-host-closure-verification-spec.json", "decision": "reference-only", "note": "S4 spec 不复用为 S5a 门；新建 s5a spec"}
+    {
+      "obligation_id": "S5A-TO-ROUTE",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-10",
+        "TC-HM-02"
+      ],
+      "selected_testcases": [
+        "TC-HM-10",
+        "TC-HM-02"
+      ],
+      "selected_revisions": {
+        "TC-HM-10": 2,
+        "TC-HM-02": 3
+      },
+      "reason": "Five-route adjudication + search-never-authorizes reuse TC-HM-10/TC-HM-02 oracles; S5a adds the context_route tool surface lanes.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "S5A-TO-SNAPSHOT",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-11"
+      ],
+      "selected_testcases": [
+        "TC-HM-11"
+      ],
+      "selected_revisions": {
+        "TC-HM-11": 5
+      },
+      "reason": "Per-turn snapshot three-hash and replay reuse the TC-HM-11 step 4/6 oracle with the v45 receipt ledger extension.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "S5A-TO-BUDGET",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-11"
+      ],
+      "selected_testcases": [
+        "TC-HM-11"
+      ],
+      "selected_revisions": {
+        "TC-HM-11": 5
+      },
+      "reason": "Frozen partition budget/trim order reuse TC-HM-11 step 4 plus metric-formulas constants (byte-pinned).",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "S5A-TO-NORECALL",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-01"
+      ],
+      "selected_testcases": [
+        "TC-HM-01"
+      ],
+      "selected_revisions": {
+        "TC-HM-01": 1
+      },
+      "reason": "no_recall gate reuses TC-HM-01 and extends it with the specialist-revised reconcile predicate negative lanes.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "S5A-TO-RECALL",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-01",
+        "TC-HM-10"
+      ],
+      "selected_testcases": [
+        "TC-HM-01",
+        "TC-HM-10"
+      ],
+      "selected_revisions": {
+        "TC-HM-01": 1,
+        "TC-HM-10": 2
+      },
+      "reason": "memory_standalone typed recall lanes extend the routing oracle's step 2.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "S5A-TO-COMPOSITION",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-11"
+      ],
+      "selected_testcases": [
+        "TC-HM-11"
+      ],
+      "selected_revisions": {
+        "TC-HM-11": 5
+      },
+      "reason": "Composition fail-closed and cutover drills extend TC-HM-11's composition boundary with the S5a-specific v45/cold-start lanes.",
+      "historical_pass_inherited": false
+    },
+    {
+      "obligation_id": "S5A-TO-MEMORY-SURFACE",
+      "decision": "reuse-with-extension",
+      "candidates": [
+        "TC-HM-13"
+      ],
+      "selected_testcases": [
+        "TC-HM-13"
+      ],
+      "selected_revisions": {
+        "TC-HM-13": 1
+      },
+      "reason": "Memory 0.6 consumer-contract lanes extend the typed-recall-result oracle; inbox/outbox shapes are new S5a consumer contracts.",
+      "historical_pass_inherited": false
+    }
   ]
 }

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import time
+import hashlib
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any

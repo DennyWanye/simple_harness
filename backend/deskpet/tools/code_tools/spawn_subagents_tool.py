@@ -91,8 +91,8 @@ def build_await_subagents_tool(workflow_service_provider):
             raise RuntimeError("workflow service is unavailable")
         uow = workflow_service.execution_uow
         from deskpet.execution.contracts import (
-            TERMINAL_RUN_STATUSES,
             RunRef,
+            TERMINAL_RUN_STATUSES,
         )
         from deskpet.harness.drivers.react_boundary import ReactCommandBoundary
 
@@ -292,11 +292,7 @@ def build_subagent_batch_delegate(
 
 
 __all__ = [
-    "_AWAIT_SCHEMA",
-    "_SPAWN_SCHEMA",
-    "SdkSubagentJoinPort",
-    "build_sdk_await_subagents_tool",
-    "build_subagent_batch_delegate",
-    "normalize_delegation",
-    "product_delegation_tool_catalog",
+    "SdkSubagentJoinPort", "build_sdk_await_subagents_tool",
+    "build_subagent_batch_delegate", "normalize_delegation",
+    "product_delegation_tool_catalog", "_SPAWN_SCHEMA", "_AWAIT_SCHEMA",
 ]

@@ -16,19 +16,20 @@ from .deep_research_v3_contracts import (
     SupportDecision,
 )
 
+
 _WORD = re.compile(r"[a-zA-Z][a-zA-Z0-9_.+-]*|\d+(?:\.\d+)?|[\u4e00-\u9fff]", re.UNICODE)
 _EXACT = re.compile(
     r"(?:\b(?:v(?:ersion)?\s*)?\d+(?:\.\d+){1,3}\b|"
     r"\b\d{4}[-年/]\d{1,2}(?:[-月/]\d{1,2}日?)?\b|"
     r"\b\d+(?:\.\d+)?%\b|[$¥€£]\s*\d+(?:\.\d+)?|"
     r"\b\d+(?:\.\d+)?\b)",
-    re.IGNORECASE,
+    re.I,
 )
-_PARAGRAPH = re.compile(r"\S(?:.*?\S)?(?=\n\s*\n|\Z)", re.DOTALL)
+_PARAGRAPH = re.compile(r"\S(?:.*?\S)?(?=\n\s*\n|\Z)", re.S)
 _SENTENCE = re.compile(r"[^。！？.!?\n]+[。！？.!?]?", re.UNICODE)
 _CLAUSE_SEPARATOR = re.compile(
     r"\s*(?:[;；]|,(?=\s+(?:and|but|while|whereas)\b)|，(?=(?:并且|但|而|同时|其中)))\s*",
-    re.IGNORECASE,
+    re.I,
 )
 _LOW_VALUE_EXTRACTIVE_RE = re.compile(
     r"^(?:"
@@ -39,7 +40,7 @@ _LOW_VALUE_EXTRACTIVE_RE = re.compile(
     r"(?:a|an)\s+(?:ai\s+)?(?:chatbot|agent)\s+(?:answers?|takes?)\b|"
     r"making\s+.+\s+accessible\s+to\s+everyone"
     r")",
-    re.IGNORECASE,
+    re.I,
 )
 _PAGE_CHROME_RE = re.compile(
     r"(?:skip to (?:main )?content|navigation menu|appearance settings|"
@@ -50,14 +51,14 @@ _PAGE_CHROME_RE = re.compile(
     r"guides,? concepts,? and product docs for|"
     r"migrate to .+ migrate to|"
     r"this page requires javascript|please turn on javascript)",
-    re.IGNORECASE,
+    re.I,
 )
 _PUBLICATION_METADATA_RE = re.compile(
     r"(?:\bsubmitted on\b|\blast revised\b|\bwas (?:submitted|published|authored)\b|"
     r"\bpublished on\b|\bauthored by\b|^the cited entry\b|"
     r"\bis associated with\b|\bcovers (?:january|february|march|april|may|june|"
     r"july|august|september|october|november|december)\b)",
-    re.IGNORECASE,
+    re.I,
 )
 _TECHNOLOGY_CHANGE_RE = re.compile(
     r"\b(?:introduc(?:e|es|ed)|launch(?:es|ed)?|releas(?:e|es|ed)|add(?:s|ed)?|"
@@ -65,20 +66,20 @@ _TECHNOLOGY_CHANGE_RE = re.compile(
     r"increase(?:s|d)?|outperform(?:s|ed)?|achiev(?:e|es|ed)|propos(?:e|es|ed)|"
     r"present(?:s|ed)?|open[- ]source(?:s|d)?)\b|"
     r"新增|发布|推出|开源|支持|实现|提升|降低|加速|提出|达到|优于",
-    re.IGNORECASE,
+    re.I,
 )
 _TECHNOLOGY_DETAIL_RE = re.compile(
     r"\b(?:inference|serving|latency|throughput|benchmark|context|kv[- ]cache|"
     r"quantization|mixture[- ]of[- ]experts|\bmoe\b|attention|tool calling|\bmcp\b|"
     r"multi[- ]agent|multimodal|vision|audio|video|training|runtime|framework|sdk|api)\b|"
     r"推理|服务|延迟|吞吐|基准|上下文|量化|混合专家|注意力|工具调用|多智能体|多模态|训练|运行时|框架",
-    re.IGNORECASE,
+    re.I,
 )
 _TECHNOLOGY_META_RE = re.compile(
     r"^(?:last updated|updated quarterly|architecture at a glance|best .+ 20\d{2}|"
     r"compare the best|\d+\.|table of contents)\b|"
     r"(?:living benchmark|research papers?: the 20\d{2} list)",
-    re.IGNORECASE,
+    re.I,
 )
 
 
@@ -176,7 +177,7 @@ def select_evidence_passages(
                 snippet = text[start:end].strip()
                 if len(snippet) < 24:
                     continue
-                abstract = re.search(r"\babstract\s*:\s*", snippet, re.IGNORECASE)
+                abstract = re.search(r"\babstract\s*:\s*", snippet, re.I)
                 if abstract and len(snippet[abstract.end():].strip()) >= 32:
                     start += abstract.end()
                     snippet = snippet[abstract.end():].strip()

@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Literal, Mapping, Sequence
 
 from .deep_research_v5_contracts import ContractValidationError, DimensionCoverage
+
 
 DEFAULT_SOFT_CHECKPOINT_SECONDS = 300.0
 DEFAULT_LEASE_SECONDS = 120.0
@@ -94,7 +94,7 @@ class ProgressSnapshot:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ProgressSnapshot:
+    def from_json(cls, value: Mapping[str, Any]) -> "ProgressSnapshot":
         expected = {"coverage_points", "first_party_satisfied", "quality_score"}
         if set(value) != expected:
             raise ContractValidationError("invalid progress snapshot fields")
@@ -251,7 +251,7 @@ class LoopPolicyState:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> LoopPolicyState:
+    def from_json(cls, value: Mapping[str, Any]) -> "LoopPolicyState":
         expected = {
             "schema_version", "operation_id", "wall_clock_anchor",
             "accumulated_active_seconds", "soft_checkpoint_seconds", "lease_seconds",
@@ -693,13 +693,13 @@ def claim_continue_child(
 
 
 __all__ = [
+    "ContinueClaim",
+    "ControlMode",
     "DEFAULT_AUTOMATIC_CAP_SECONDS",
     "DEFAULT_LEASE_SECONDS",
     "DEFAULT_PLATEAU_ROUNDS",
     "DEFAULT_SETTLE_TARGET_SECONDS",
     "DEFAULT_SOFT_CHECKPOINT_SECONDS",
-    "ContinueClaim",
-    "ControlMode",
     "GapWorkCandidate",
     "LoopDecision",
     "LoopPolicyState",

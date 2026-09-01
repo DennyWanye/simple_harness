@@ -10,19 +10,12 @@ import copy
 import hashlib
 import json
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 import aiosqlite
 
-from ..contracts import (
-    JsonValue,
-    NodeExecutionIdentity,
-    WorkflowContext,
-    canonical_json,
-    validate_json_value,
-)
+from ..contracts import JsonValue, NodeExecutionIdentity, WorkflowContext, canonical_json, validate_json_value
 from ..errors import InvalidStatePatch
 from ..store import RegisteredBlobStore
 from .deep_research_v6_contracts import format_blob_ref, parse_blob_ref, sha256_json
@@ -30,6 +23,7 @@ from .deep_research_v6_integrity import (
     ClaimRecordV1,
     build_q1_exact_scalar_integrity,
 )
+
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _MANIFEST_KEYS = {
@@ -58,7 +52,7 @@ _REQUEST_KEYS = {
 _PROJECTION_KEYS = {"schema_version", "manifest_ref", "manifest_hash", "answer_status", "blob_refs", "intents"}
 
 
-def _invalid(code: str, message: str) -> NoReturn:
+def _invalid(code: str, message: str) -> "NoReturn":
     raise InvalidStatePatch(code, message)
 
 
@@ -233,7 +227,7 @@ class TerminalDeliveryManifestV1:
         object.__setattr__(self, "value", raw)
 
     @classmethod
-    def create(cls, **values: JsonValue) -> TerminalDeliveryManifestV1:
+    def create(cls, **values: JsonValue) -> "TerminalDeliveryManifestV1":
         raw = copy.deepcopy(values)
         raw["schema_version"] = 1
         raw.pop("manifest_id", None)
@@ -241,7 +235,7 @@ class TerminalDeliveryManifestV1:
         return cls(raw)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> TerminalDeliveryManifestV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "TerminalDeliveryManifestV1":
         return cls(copy.deepcopy(dict(value)))
 
     def to_json(self) -> dict[str, JsonValue]:
@@ -273,11 +267,11 @@ class TerminalCommitRequestV1:
         object.__setattr__(self, "value", raw)
 
     @classmethod
-    def create(cls, **values: JsonValue) -> TerminalCommitRequestV1:
+    def create(cls, **values: JsonValue) -> "TerminalCommitRequestV1":
         return cls({"schema_version": 1, **copy.deepcopy(values)})
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> TerminalCommitRequestV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "TerminalCommitRequestV1":
         return cls(copy.deepcopy(dict(value)))
 
     def to_json(self) -> dict[str, JsonValue]:

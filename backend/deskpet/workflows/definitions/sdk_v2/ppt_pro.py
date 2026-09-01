@@ -19,6 +19,7 @@ from simple_harness.workflow import (
 
 from deskpet.sdk_adapters.product_workflows import ppt_nodes as nodes
 
+
 WORKFLOW_NAME = "ppt_pro"
 WORKFLOW_VERSION = "v2"
 STATE_SCHEMA_VERSION = 2

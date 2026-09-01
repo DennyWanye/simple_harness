@@ -4,8 +4,6 @@ from ...runner import WorkflowRegistry
 from .deep_research import (
     DEEP_RESEARCH_V7,
     DEEP_RESEARCH_V7_DEFINITION,
-)
-from .deep_research import (
     initial_state as deep_research_initial_state,
 )
 

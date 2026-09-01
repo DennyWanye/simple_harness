@@ -3168,15 +3168,17 @@ async def lifespan(app: FastAPI):
     if _memory_backend is None:
         from paths import resolve_model_dir
         from simple_harness_memory import MemoryManager
-        from simple_harness_memory.embedders import BGEM3Embedder
 
-        memory_resource = resolve_model_dir("bge-m3-int8").resolve()
+        from deskpet.memory.wemm_embedder import WeMMEmbedder
+
+        # 2026-09-01: user-selected vector model — tencent/WeMM-Embedding-2B
+        # replaces BGE-M3 across the memory composition.
+        memory_resource = resolve_model_dir("wemm-embedding-2b").resolve()
         if not memory_resource.is_dir():
             raise RuntimeError("memory_embedding_resource_unavailable")
-        memory_embedder = BGEM3Embedder(
+        memory_embedder = WeMMEmbedder(
             memory_resource,
             revision="product-bundled",
-            model_name="bge-m3-int8",
         )
         memory_build_kwargs = {
             "embedder": memory_embedder,

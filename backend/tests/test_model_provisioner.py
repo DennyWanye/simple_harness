@@ -45,7 +45,7 @@ def test_missing_lists_all_when_empty(tmp_path: Path) -> None:
 def test_missing_excludes_ready_models(tmp_path: Path) -> None:
     _populate(tmp_path, "faster-whisper-large-v3-turbo", "model.bin")
     prov = ModelProvisioner(models_dir=tmp_path, fetch_url=_noop_fetch)
-    assert [m[0] for m in prov.missing()] == ["bge-m3-int8"]
+    assert [m[0] for m in prov.missing()] == ["wemm-embedding-2b"]
 
 
 def test_sentinel_required_for_whisper(tmp_path: Path) -> None:
@@ -58,7 +58,7 @@ def test_sentinel_required_for_whisper(tmp_path: Path) -> None:
 
 def test_run_downloads_via_manifest_and_reaches_ready(tmp_path: Path) -> None:
     manifests = {
-        "bge-m3-int8": {
+        "wemm-embedding-2b": {
             "files": [{"path": "config.json", "size": 8}, {"path": "1_Pooling/config.json", "size": 8}],
             "total_bytes": 16,
         },
@@ -72,7 +72,7 @@ def test_run_downloads_via_manifest_and_reaches_ready(tmp_path: Path) -> None:
 
     assert prov.status()["state"] == "ready"
     # 嵌套路径正确落盘。
-    assert (tmp_path / "bge-m3-int8" / "1_Pooling" / "config.json").read_bytes() == b"data1234"
+    assert (tmp_path / "wemm-embedding-2b" / "1_Pooling" / "config.json").read_bytes() == b"data1234"
     assert (tmp_path / "faster-whisper-large-v3-turbo" / "model.bin").is_file()
     assert prov.missing() == []
 
@@ -107,7 +107,7 @@ def test_run_error_degrades_to_error_state(tmp_path: Path) -> None:
 
 def test_total_bytes_from_manifest(tmp_path: Path) -> None:
     manifests = {
-        "bge-m3-int8": {"files": [{"path": "a.bin", "size": 100}], "total_bytes": 100},
+        "wemm-embedding-2b": {"files": [{"path": "a.bin", "size": 100}], "total_bytes": 100},
         "faster-whisper-large-v3-turbo": {"files": [{"path": "model.bin", "size": 50}], "total_bytes": 50},
     }
     seen_total: list[int] = []
@@ -137,12 +137,12 @@ def test_cdn_base_env_override(tmp_path: Path, monkeypatch) -> None:
     prov = ModelProvisioner(models_dir=tmp_path, fetch_url=fetch)
     prov._run()
     # 末尾斜杠被剥离；manifest URL 用了 override 的 base。
-    assert any(u.startswith("https://example.com/m/bge-m3-int8/manifest.json") for u in captured)
+    assert any(u.startswith("https://example.com/m/wemm-embedding-2b/manifest.json") for u in captured)
 
 
 def test_status_reports_downloaded_bytes_from_disk(tmp_path: Path) -> None:
     prov = ModelProvisioner(models_dir=tmp_path, fetch_url=_noop_fetch)
-    sub = "bge-m3-int8"
+    sub = "wemm-embedding-2b"
     (tmp_path / sub).mkdir(parents=True)
     (tmp_path / sub / "part.bin").write_bytes(b"y" * 4096)
     prov._update(state="downloading", current=sub, index=1, total=1, total_bytes=2_300_000_000)

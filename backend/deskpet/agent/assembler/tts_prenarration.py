@@ -20,8 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import random
-from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, Callable, Optional, Sequence
 
 import structlog
 
@@ -63,10 +62,10 @@ class TTSPreNarrator:
     def __init__(
         self,
         *,
-        tts_callable: Callable[..., Any] | None = None,
+        tts_callable: Optional[Callable[..., Any]] = None,
         enabled: bool = True,
-        phrases: dict[str, Sequence[str]] | None = None,
-        rng: random.Random | None = None,
+        phrases: Optional[dict[str, Sequence[str]]] = None,
+        rng: Optional[random.Random] = None,
     ) -> None:
         self._tts = tts_callable
         self._enabled = bool(enabled)
@@ -86,7 +85,7 @@ class TTSPreNarrator:
             return ""
         return self._rng.choice(list(bucket))
 
-    def speak(self, task_type: str) -> asyncio.Task[Any] | None:
+    def speak(self, task_type: str) -> Optional[asyncio.Task[Any]]:
         """Speak a filler phrase. Returns the background task (or None).
 
         Never raises; TTS failures go to the structured log.

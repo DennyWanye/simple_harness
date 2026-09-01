@@ -10,12 +10,12 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Literal, Mapping, Sequence
 
 from ..contracts import JsonValue, validate_json_value
+
 
 ResearchProfile = Literal["generic_research", "policy_education", "technology_intelligence"]
 DimensionImportance = Literal["core", "supporting"]
@@ -142,7 +142,7 @@ class ResearchDimension:
             "not_applicable_when": list(self.not_applicable_when)})
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchDimension:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchDimension":
         raw = _object(value, {"schema_version", "dimension_id", "question", "importance",
             "expected_source_types", "query_targets", "first_party_required", "not_applicable_when"}, cls.__name__)
         return cls(str(_text(raw["dimension_id"], "dimension_id")), str(_text(raw["question"], "question")),
@@ -190,7 +190,7 @@ class ResearchBrief:
             "not_applicable_conditions": list(self.not_applicable_conditions)})
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchBrief:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchBrief":
         raw = _object(value, {"schema_version", "brief_id", "user_question", "profile", "as_of_date",
             "locale", "geography", "subjects", "expected_decision", "dimensions", "not_applicable_conditions"}, cls.__name__)
         if not isinstance(raw["dimensions"], list): raise ContractValidationError("dimensions must be an array")
@@ -234,7 +234,7 @@ class DimensionCoverage:
             "source_family_ids": list(self.source_family_ids), "first_party_satisfied": self.first_party_satisfied,
             "relevance_score": self.relevance_score, "gap_reasons": list(self.gap_reasons)})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> DimensionCoverage:
+    def from_json(cls, value: Mapping[str, Any]) -> "DimensionCoverage":
         raw = _object(value, {"schema_version", "dimension_id", "status", "evidence_passage_ids", "winning_evidence_ids", "source_family_ids", "first_party_satisfied", "relevance_score", "gap_reasons"}, cls.__name__)
         return cls(str(_text(raw["dimension_id"], "dimension_id")), _enum(raw["status"], {"covered", "partially_covered", "uncovered", "not_applicable"}, "status"), _strings(raw["evidence_passage_ids"], "evidence_passage_ids"), _strings(raw["winning_evidence_ids"], "winning_evidence_ids"), _strings(raw["source_family_ids"], "source_family_ids"), _boolean(raw["first_party_satisfied"], "first_party_satisfied"), _number(raw["relevance_score"], "relevance_score"), _strings(raw["gap_reasons"], "gap_reasons"))  # type: ignore[arg-type]
 
@@ -262,7 +262,7 @@ class EvidenceSourceFamily:
     def to_json(self) -> dict[str, JsonValue]:
         return _finalize({"schema_version": 1, "family_id": self.family_id, "canonical_url": self.canonical_url, "canonical_source_id": self.canonical_source_id, "source_type": self.source_type, "source_tier": self.source_tier, "member_urls": list(self.member_urls), "original_document_url": self.original_document_url, "page_quality": self.page_quality, "content_hashes": list(self.content_hashes)})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> EvidenceSourceFamily:
+    def from_json(cls, value: Mapping[str, Any]) -> "EvidenceSourceFamily":
         raw = _object(value, {"schema_version", "family_id", "canonical_url", "canonical_source_id", "source_type", "source_tier", "member_urls", "original_document_url", "page_quality", "content_hashes"}, cls.__name__)
         return cls(str(_text(raw["family_id"], "family_id")), str(_text(raw["canonical_url"], "canonical_url")), str(_text(raw["canonical_source_id"], "canonical_source_id")), str(_text(raw["source_type"], "source_type")), _enum(raw["source_tier"], {"first_party", "secondary", "aggregator"}, "source_tier"), _strings(raw["member_urls"], "member_urls"), _text(raw["original_document_url"], "original_document_url", optional=True), _enum(raw["page_quality"], {"valid", "invalid", "unknown"}, "page_quality"), _strings(raw["content_hashes"], "content_hashes"))  # type: ignore[arg-type]
 
@@ -288,7 +288,7 @@ class GapWorkItem:
     def to_json(self) -> dict[str, JsonValue]:
         return _finalize({"schema_version": 1, "item_id": self.item_id, "operation_id": self.operation_id, "dimension_id": self.dimension_id, "work_kind": self.work_kind, "query": self.query, "source_target": self.source_target, "attempt": self.attempt, "reason": self.reason, "status": self.status})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> GapWorkItem:
+    def from_json(cls, value: Mapping[str, Any]) -> "GapWorkItem":
         raw = _object(value, {"schema_version", "item_id", "operation_id", "dimension_id", "work_kind", "query", "source_target", "attempt", "reason", "status"}, cls.__name__)
         return cls(str(_text(raw["item_id"], "item_id")), str(_text(raw["operation_id"], "operation_id")), str(_text(raw["dimension_id"], "dimension_id")), _enum(raw["work_kind"], {"query", "source_target", "fetch"}, "work_kind"), _text(raw["query"], "query", optional=True), _text(raw["source_target"], "source_target", optional=True), _integer(raw["attempt"], "attempt", minimum=1), str(_text(raw["reason"], "reason")), _enum(raw["status"], {"pending", "running", "completed", "failed", "cancelled"}, "status"))  # type: ignore[arg-type]
 
@@ -318,7 +318,7 @@ class ResearchBudgetLedger:
         for name in ("max_input_tokens", "max_output_tokens", "max_cost_micros", "committed_input_tokens", "committed_output_tokens", "committed_cost_micros", "usage_unknown_count"): _integer(getattr(self, name), name)
         if self.committed_input_tokens > self.max_input_tokens or self.committed_output_tokens > self.max_output_tokens or self.committed_cost_micros > self.max_cost_micros: raise ContractValidationError("committed usage exceeds budget")
     def __post_init__(self) -> None: self.validate()
-    def record_active_interval(self, *, started_monotonic: float, ended_monotonic: float, wall_clock_anchor: str) -> ResearchBudgetLedger:
+    def record_active_interval(self, *, started_monotonic: float, ended_monotonic: float, wall_clock_anchor: str) -> "ResearchBudgetLedger":
         start = _number(started_monotonic, "started_monotonic"); end = _number(ended_monotonic, "ended_monotonic")
         _timestamp(wall_clock_anchor, "wall_clock_anchor")
         if end < start: raise ContractValidationError("monotonic interval cannot run backwards")
@@ -326,7 +326,7 @@ class ResearchBudgetLedger:
     def to_json(self) -> dict[str, JsonValue]:
         return _finalize({"schema_version": 1, **{name: getattr(self, name) for name in ("ledger_id", "profile", "wall_clock_anchor", "accumulated_active_seconds", "soft_checkpoint_seconds", "lease_seconds", "automatic_limit_seconds", "max_input_tokens", "max_output_tokens", "max_cost_micros", "committed_input_tokens", "committed_output_tokens", "committed_cost_micros", "usage_unknown_count")}})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchBudgetLedger:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchBudgetLedger":
         names = {"ledger_id", "profile", "wall_clock_anchor", "accumulated_active_seconds", "soft_checkpoint_seconds", "lease_seconds", "automatic_limit_seconds", "max_input_tokens", "max_output_tokens", "max_cost_micros", "committed_input_tokens", "committed_output_tokens", "committed_cost_micros", "usage_unknown_count"}
         raw = _object(value, {"schema_version", *names}, cls.__name__)
         return cls(str(_text(raw["ledger_id"], "ledger_id")), _enum(raw["profile"], {"generic_research", "policy_education", "technology_intelligence"}, "profile"), str(_timestamp(raw["wall_clock_anchor"], "wall_clock_anchor")), _number(raw["accumulated_active_seconds"], "accumulated_active_seconds"), _number(raw["soft_checkpoint_seconds"], "soft_checkpoint_seconds"), _number(raw["lease_seconds"], "lease_seconds"), _number(raw["automatic_limit_seconds"], "automatic_limit_seconds"), *(_integer(raw[name], name) for name in ("max_input_tokens", "max_output_tokens", "max_cost_micros", "committed_input_tokens", "committed_output_tokens", "committed_cost_micros", "usage_unknown_count")))  # type: ignore[arg-type]
@@ -351,7 +351,7 @@ class ResearchLLMResult:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, "content": self.content, "model": self.model, "input_tokens": self.input_tokens, "output_tokens": self.output_tokens, "cache_tokens": self.cache_tokens, "usage_source": self.usage_source, "request_id": self.request_id})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchLLMResult:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchLLMResult":
         raw = _object(value, {"schema_version", "content", "model", "input_tokens", "output_tokens", "cache_tokens", "usage_source", "request_id"}, cls.__name__)
         def token(name: str) -> int | None: return None if raw[name] is None else _integer(raw[name], name)
         return cls(str(_text(raw["content"], "content")), str(_text(raw["model"], "model")), token("input_tokens"), token("output_tokens"), token("cache_tokens"), _enum(raw["usage_source"], {"provider", "usage_unknown"}, "usage_source"), _text(raw["request_id"], "request_id", optional=True))  # type: ignore[arg-type]
@@ -378,7 +378,7 @@ class ResearchLLMLedgerEntry:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, **{name: getattr(self, name) for name in ("call_id", "role", "model", "result_ref", "input_tokens", "output_tokens", "cache_tokens", "usage_source", "elapsed_ms", "coverage_gain", "quality_gain", "recorded_at")}})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchLLMLedgerEntry:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchLLMLedgerEntry":
         names = {"call_id", "role", "model", "result_ref", "input_tokens", "output_tokens", "cache_tokens", "usage_source", "elapsed_ms", "coverage_gain", "quality_gain", "recorded_at"}; raw = _object(value, {"schema_version", *names}, cls.__name__)
         def token(name: str) -> int | None: return None if raw[name] is None else _integer(raw[name], name)
         return cls(str(_text(raw["call_id"], "call_id")), str(_text(raw["role"], "role")), str(_text(raw["model"], "model")), str(_text(raw["result_ref"], "result_ref")), token("input_tokens"), token("output_tokens"), token("cache_tokens"), _enum(raw["usage_source"], {"provider", "usage_unknown"}, "usage_source"), _integer(raw["elapsed_ms"], "elapsed_ms"), _number(raw["coverage_gain"], "coverage_gain"), _number(raw["quality_gain"], "quality_gain"), str(_timestamp(raw["recorded_at"], "recorded_at")))  # type: ignore[arg-type]
@@ -402,7 +402,7 @@ class DimensionAnalysis:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, "dimension_id": self.dimension_id, "direct_answer": self.direct_answer, "fact_claim_ids": list(self.fact_claim_ids), "inference_claim_ids": list(self.inference_claim_ids), "limitation_claim_ids": list(self.limitation_claim_ids), "winning_evidence_ids": list(self.winning_evidence_ids), "relevance_score": self.relevance_score, "confidence": self.confidence})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> DimensionAnalysis:
+    def from_json(cls, value: Mapping[str, Any]) -> "DimensionAnalysis":
         raw = _object(value, {"schema_version", "dimension_id", "direct_answer", "fact_claim_ids", "inference_claim_ids", "limitation_claim_ids", "winning_evidence_ids", "relevance_score", "confidence"}, cls.__name__)
         return cls(str(_text(raw["dimension_id"], "dimension_id")), _text(raw["direct_answer"], "direct_answer", optional=True), _strings(raw["fact_claim_ids"], "fact_claim_ids"), _strings(raw["inference_claim_ids"], "inference_claim_ids"), _strings(raw["limitation_claim_ids"], "limitation_claim_ids"), _strings(raw["winning_evidence_ids"], "winning_evidence_ids"), _number(raw["relevance_score"], "relevance_score"), _enum(raw["confidence"], {"high", "medium", "low", "insufficient"}, "confidence"))  # type: ignore[arg-type]
 
@@ -436,7 +436,7 @@ class ReportQualityAudit:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, **{name: (list(getattr(self, name)) if name in {"hard_failures", "defects", "allowed_repairs"} else getattr(self, name)) for name in ("audit_id", "rubric_version", "relevance", "coverage", "source_quality", "synthesis_reasoning", "timeliness_uncertainty", "readability", "total_score", "hard_failures", "defects", "allowed_repairs", "passed", "audited_at")}})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ReportQualityAudit:
+    def from_json(cls, value: Mapping[str, Any]) -> "ReportQualityAudit":
         names = {"audit_id", "rubric_version", "relevance", "coverage", "source_quality", "synthesis_reasoning", "timeliness_uncertainty", "readability", "total_score", "hard_failures", "defects", "allowed_repairs", "passed", "audited_at"}; raw = _object(value, {"schema_version", *names}, cls.__name__)
         return cls(str(_text(raw["audit_id"], "audit_id")), str(_text(raw["rubric_version"], "rubric_version")), *(_number(raw[name], name) for name in ("relevance", "coverage", "source_quality", "synthesis_reasoning", "timeliness_uncertainty", "readability", "total_score")), _strings(raw["hard_failures"], "hard_failures"), _strings(raw["defects"], "defects"), _strings(raw["allowed_repairs"], "allowed_repairs"), _boolean(raw["passed"], "passed"), str(_timestamp(raw["audited_at"], "audited_at")))
 
@@ -460,7 +460,7 @@ class DeliveryDecision:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, "status": self.status, "reason_codes": list(self.reason_codes), "report_ref": self.report_ref, "summary_ref": self.summary_ref, "evidence_snapshot_hash": self.evidence_snapshot_hash, "quality_audit_ref": self.quality_audit_ref, "continue_until": self.continue_until, "decided_at": self.decided_at})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> DeliveryDecision:
+    def from_json(cls, value: Mapping[str, Any]) -> "DeliveryDecision":
         raw = _object(value, {"schema_version", "status", "reason_codes", "report_ref", "summary_ref", "evidence_snapshot_hash", "quality_audit_ref", "continue_until", "decided_at"}, cls.__name__)
         return cls(_enum(raw["status"], {"completed", "partial", "insufficient_evidence"}, "status"), _strings(raw["reason_codes"], "reason_codes"), _text(raw["report_ref"], "report_ref", optional=True), str(_text(raw["summary_ref"], "summary_ref")), _text(raw["evidence_snapshot_hash"], "evidence_snapshot_hash", optional=True), _text(raw["quality_audit_ref"], "quality_audit_ref", optional=True), _timestamp(raw["continue_until"], "continue_until", optional=True), str(_timestamp(raw["decided_at"], "decided_at")))  # type: ignore[arg-type]
 
@@ -483,7 +483,7 @@ class ResearchOperationLineage:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, **{name: getattr(self, name) for name in ("operation_id", "run_id", "parent_run_id", "parent_operation_id", "snapshot_hash", "parent_report_ref", "budget_lease_id", "created_at")}})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchOperationLineage:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchOperationLineage":
         names = {"operation_id", "run_id", "parent_run_id", "parent_operation_id", "snapshot_hash", "parent_report_ref", "budget_lease_id", "created_at"}; raw = _object(value, {"schema_version", *names}, cls.__name__)
         return cls(str(_text(raw["operation_id"], "operation_id")), str(_text(raw["run_id"], "run_id")), _text(raw["parent_run_id"], "parent_run_id", optional=True), _text(raw["parent_operation_id"], "parent_operation_id", optional=True), _text(raw["snapshot_hash"], "snapshot_hash", optional=True), _text(raw["parent_report_ref"], "parent_report_ref", optional=True), str(_text(raw["budget_lease_id"], "budget_lease_id")), str(_timestamp(raw["created_at"], "created_at")))
 
@@ -510,7 +510,7 @@ class ResearchControlCommand:
     def __post_init__(self) -> None: self.validate()
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"schema_version": 1, "command_id": self.command_id, "run_id": self.run_id, "action": self.action, "idempotency_key": self.idempotency_key, "status": self.status, "expected_run_version": self.expected_run_version, "observed_checkpoint_id": self.observed_checkpoint_id, "payload": copy.deepcopy(self.payload), "result": copy.deepcopy(self.result), "expires_at": self.expires_at, "created_at": self.created_at, "updated_at": self.updated_at})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchControlCommand:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchControlCommand":
         raw = _object(value, {"schema_version", "command_id", "run_id", "action", "idempotency_key", "status", "expected_run_version", "observed_checkpoint_id", "payload", "result", "expires_at", "created_at", "updated_at"}, cls.__name__)
         return cls(str(_text(raw["command_id"], "command_id")), str(_text(raw["run_id"], "run_id")), _enum(raw["action"], {"generate_now", "continue_research", "retry_from_start", "cancel_settle"}, "action"), str(_text(raw["idempotency_key"], "idempotency_key")), _enum(raw["status"], {"open", "accepted", "observed", "settled", "consumed", "rejected", "expired"}, "status"), _integer(raw["expected_run_version"], "expected_run_version"), _text(raw["observed_checkpoint_id"], "observed_checkpoint_id", optional=True), _json_object(raw["payload"], "payload"), _json_object(raw["result"], "result"), str(_timestamp(raw["expires_at"], "expires_at")), str(_timestamp(raw["created_at"], "created_at")), str(_timestamp(raw["updated_at"], "updated_at")))  # type: ignore[arg-type]
 
@@ -539,12 +539,12 @@ class ResearchEvidenceSnapshot:
         if self.snapshot_hash != self._hash(self._content()): raise ContractValidationError("snapshot_hash does not match canonical manifest")
     def __post_init__(self) -> None: self.validate()
     @classmethod
-    def create(cls, *, parent_run_id: str, dimension_coverages: Sequence[DimensionCoverage], passage_blob_refs: Sequence[str], source_families: Sequence[EvidenceSourceFamily], query_fingerprints: Sequence[str], budget_summary: Mapping[str, JsonValue], created_at: str, continue_until: str) -> ResearchEvidenceSnapshot:
+    def create(cls, *, parent_run_id: str, dimension_coverages: Sequence[DimensionCoverage], passage_blob_refs: Sequence[str], source_families: Sequence[EvidenceSourceFamily], query_fingerprints: Sequence[str], budget_summary: Mapping[str, JsonValue], created_at: str, continue_until: str) -> "ResearchEvidenceSnapshot":
         provisional = {"schema_version": 1, "parent_run_id": parent_run_id, "dimension_coverages": [item.to_json() for item in dimension_coverages], "passage_blob_refs": list(passage_blob_refs), "source_families": [item.to_json() for item in source_families], "query_fingerprints": list(query_fingerprints), "budget_summary": copy.deepcopy(dict(budget_summary)), "created_at": created_at, "continue_until": continue_until}
         return cls(cls._hash(provisional), parent_run_id, tuple(dimension_coverages), tuple(passage_blob_refs), tuple(source_families), tuple(query_fingerprints), copy.deepcopy(dict(budget_summary)), created_at, continue_until)
     def to_json(self) -> dict[str, JsonValue]: return _finalize({"snapshot_hash": self.snapshot_hash, **self._content()})
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchEvidenceSnapshot:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchEvidenceSnapshot":
         raw = _object(value, {"schema_version", "snapshot_hash", "parent_run_id", "dimension_coverages", "passage_blob_refs", "source_families", "query_fingerprints", "budget_summary", "created_at", "continue_until"}, cls.__name__)
         if not isinstance(raw["dimension_coverages"], list) or not isinstance(raw["source_families"], list): raise ContractValidationError("snapshot nested contracts must be arrays")
         return cls(str(_text(raw["snapshot_hash"], "snapshot_hash")), str(_text(raw["parent_run_id"], "parent_run_id")), tuple(DimensionCoverage.from_json(item) for item in raw["dimension_coverages"]), _strings(raw["passage_blob_refs"], "passage_blob_refs"), tuple(EvidenceSourceFamily.from_json(item) for item in raw["source_families"]), _strings(raw["query_fingerprints"], "query_fingerprints"), _json_object(raw["budget_summary"], "budget_summary"), str(_timestamp(raw["created_at"], "created_at")), str(_timestamp(raw["continue_until"], "continue_until")))
@@ -595,29 +595,11 @@ ResearchControlDecision = ResearchControlCommand
 
 
 __all__ = [
-    "ContractValidationError",
-    "CoverageStatus",
-    "DeliveryDecision",
-    "DeliveryStatus",
-    "DimensionAnalysis",
-    "DimensionCoverage",
-    "DimensionImportance",
-    "EngineTerminalStatus",
-    "EvidenceSourceFamily",
-    "GapWorkItem",
-    "LLMBudgetLedger",
-    "LedgerEntry",
-    "ReportQualityAudit",
-    "ResearchBrief",
-    "ResearchBudgetLedger",
-    "ResearchControlCommand",
-    "ResearchControlDecision",
-    "ResearchDimension",
-    "ResearchEvidenceSnapshot",
-    "ResearchLLMLedgerEntry",
-    "ResearchLLMResult",
-    "ResearchOperationLineage",
-    "ResearchProfile",
-    "UsageSource",
-    "validate_terminal_projection",
+    "ContractValidationError", "CoverageStatus", "DeliveryDecision", "DeliveryStatus",
+    "DimensionAnalysis", "DimensionCoverage", "DimensionImportance", "EngineTerminalStatus",
+    "EvidenceSourceFamily", "GapWorkItem", "LedgerEntry", "LLMBudgetLedger",
+    "ReportQualityAudit", "ResearchBrief", "ResearchBudgetLedger", "ResearchControlCommand",
+    "ResearchControlDecision", "ResearchDimension",
+    "ResearchEvidenceSnapshot", "ResearchLLMLedgerEntry", "ResearchLLMResult",
+    "ResearchOperationLineage", "ResearchProfile", "UsageSource", "validate_terminal_projection",
 ]

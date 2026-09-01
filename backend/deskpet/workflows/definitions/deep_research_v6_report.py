@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import itertools
 import re
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from html import escape
+from typing import Mapping, Sequence
 
 from .deep_research_v6_assessment import (
     GenericAdmittedFactV1,
@@ -21,6 +21,7 @@ from .deep_research_v6_assessment import (
 from .deep_research_v6_contracts import ResearchSpecV1
 from .deep_research_v6_evidence import AnswerAssessmentV1
 from .deep_research_v6_integrity import ClaimRecordV1
+
 
 _NON_HTTP_LINK = re.compile(r"\[([^\]]+)\]\((?!https?://)[^)]+\)", re.IGNORECASE)
 _STATUS = {

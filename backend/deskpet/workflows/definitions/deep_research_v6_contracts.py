@@ -9,11 +9,11 @@ from __future__ import annotations
 import copy
 import hashlib
 import re
-from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, ClassVar, TypeAlias
+from typing import Any, ClassVar, Iterable, Mapping, TypeAlias
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
+
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -28,7 +28,7 @@ class ResearchSpecValidationError(ValueError):
         super().__init__(f"{code} at {path}: {message}")
 
 
-def _fail(code: str, path: str, message: str) -> NoReturn:
+def _fail(code: str, path: str, message: str) -> "NoReturn":
     raise ResearchSpecValidationError(code, path, message)
 
 
@@ -239,7 +239,7 @@ class RouteDecisionV1:
         return copy.deepcopy(raw)
 
     @classmethod
-    def create(cls, **values: JsonValue) -> RouteDecisionV1:
+    def create(cls, **values: JsonValue) -> "RouteDecisionV1":
         payload = copy.deepcopy(values)
         payload["schema_version"] = 1
         payload.pop("route_id", None)
@@ -258,7 +258,7 @@ class RouteDecisionV1:
         return cls(payload)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, JsonValue]) -> RouteDecisionV1:
+    def from_json(cls, value: Mapping[str, JsonValue]) -> "RouteDecisionV1":
         return cls(value)
 
     def to_json(self) -> dict[str, JsonValue]:
@@ -772,11 +772,11 @@ class ResearchSpecV1:
         object.__setattr__(self, "_value", copy.deepcopy(raw))
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchSpecV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchSpecV1":
         return cls(copy.deepcopy(dict(value)))
 
     @classmethod
-    def create(cls, **values: JsonValue) -> ResearchSpecV1:
+    def create(cls, **values: JsonValue) -> "ResearchSpecV1":
         payload = copy.deepcopy(values)
         payload["schema_version"] = 1
         payload.pop("spec_id", None)
@@ -875,47 +875,17 @@ def build_route_decision_from_spec(
 
 
 __all__ = [
-    "AxisMemberV1",
-    "AxisV1",
-    "CardinalityV1",
-    "ClaimKindRuleV1",
-    "ClaimSetRequirement",
-    "CollectionDedupeV1",
-    "CollectionFieldV1",
-    "CollectionItemSchemaV1",
-    "CollectionRequirement",
-    "CollectionSelectionV1",
-    "CoverageV1",
-    "MatrixCellPolicyV1",
-    "MatrixRequirement",
-    "RankingRuleV1",
-    "RequiredCellsV1",
-    "RequirementV1",
-    "ResearchSpecV1",
-    "ResearchSpecValidationError",
+    "AxisMemberV1", "AxisV1", "CardinalityV1", "ClaimKindRuleV1",
+    "ClaimSetRequirement", "CollectionDedupeV1", "CollectionFieldV1",
+    "CollectionItemSchemaV1", "CollectionRequirement", "CollectionSelectionV1",
+    "CoverageV1", "MatrixCellPolicyV1", "MatrixRequirement", "RankingRuleV1",
+    "RequiredCellsV1", "RequirementV1", "ResearchSpecV1", "ResearchSpecValidationError",
     "RouteDecisionV1",
-    "ScalarRequirement",
-    "ScopeV1",
-    "SourceConstraintV1",
-    "SubjectV1",
-    "TimeScopeV1",
-    "ToleranceV1",
-    "TopicFacetV1",
-    "UnitV1",
-    "UserConstraintsV1",
-    "ValueSchemaV1",
-    "WorkDimensionV1",
-    "build_requirement",
-    "build_route_decision_from_spec",
-    "canonical_set",
-    "conditional_fanout_enabled",
-    "conditional_fanout_reason",
-    "derive_requirement_id",
-    "derive_spec_hash",
-    "derive_spec_id",
-    "format_blob_ref",
-    "parse_blob_ref",
-    "requirement_from_json",
-    "sha256_json",
+    "ScalarRequirement", "ScopeV1", "SourceConstraintV1", "SubjectV1",
+    "TimeScopeV1", "ToleranceV1", "TopicFacetV1", "UnitV1",
+    "UserConstraintsV1", "ValueSchemaV1", "WorkDimensionV1", "build_requirement",
+    "build_route_decision_from_spec", "canonical_set", "derive_requirement_id", "derive_spec_hash", "derive_spec_id",
+    "format_blob_ref", "parse_blob_ref", "requirement_from_json", "sha256_json",
+    "conditional_fanout_enabled", "conditional_fanout_reason",
     "validate_continuation_spec_hash",
 ]

@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
-from collections.abc import Callable
 from concurrent.futures import Executor
-from typing import Any, Protocol, cast
+from typing import Any, Callable, Protocol, cast
 
 from ..effects import NormalizedToolOutcome, PreparedToolCall
 from ..store import RunFence
@@ -81,7 +80,7 @@ async def execute_sync_handler(
     future = loop.run_in_executor(executor, context.run, handler)
     try:
         raw = await asyncio.wait_for(asyncio.shield(future), timeout_seconds)
-    except TimeoutError as exc:
+    except asyncio.TimeoutError as exc:
         await journal.mark_uncertain(fence, effect_id, "sync_handler_timeout")
 
         def finish_late(completed: asyncio.Future[Any]) -> None:

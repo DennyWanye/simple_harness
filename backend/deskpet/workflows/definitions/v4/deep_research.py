@@ -3,17 +3,10 @@
 from __future__ import annotations
 
 import copy
-from collections.abc import Mapping
 from pathlib import Path
+from typing import Mapping
 
-from ...contracts import (
-    ChannelSpec,
-    JsonType,
-    JsonValue,
-    ReducerKind,
-    RetryPolicy,
-    WorkflowState,
-)
+from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, RetryPolicy, WorkflowState
 from ...definition import (
     END_NODE,
     ConditionalEdge,
@@ -38,11 +31,12 @@ from ..deep_research_v4_nodes import (
     plan_handler,
     post_cite_route,
     post_direct_route,
-    rerank_handler,
     research_continue_handler,
+    rerank_handler,
     synth_handler,
 )
 from ..v3.deep_research import initial_state as v3_initial_state
+
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v4"

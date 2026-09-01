@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from collections.abc import Mapping, Sequence
+from typing import Mapping, Sequence
 
 from ..contracts import JsonValue, canonical_json
 

@@ -35,7 +35,7 @@ def _receipt_hash(value: str, name: str) -> str:
 
 
 def auto_skill_approval_payload(
-    identity: AuthorizationSagaIdentity, *, intent_id: str,
+    identity: "AuthorizationSagaIdentity", *, intent_id: str,
     content_digest: str, member_set_stamp: str, expires_at: float,
 ) -> dict[str, Any]:
     return {
@@ -57,7 +57,7 @@ def auto_skill_approval_payload(
 
 
 def auto_skill_approval_receipt(
-    identity: AuthorizationSagaIdentity, **kwargs: Any
+    identity: "AuthorizationSagaIdentity", **kwargs: Any
 ) -> tuple[str, str]:
     payload = auto_skill_approval_payload(identity, **kwargs)
     nonce = _hash({"domain": "auto-skill-decision-nonce-v1", **payload})

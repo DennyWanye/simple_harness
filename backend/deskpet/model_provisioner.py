@@ -45,7 +45,10 @@ DEFAULT_CDN_BASE = (
 #: (子目录, 就绪哨兵文件)。哨兵存在即视为就绪；None 表示"目录非空即就绪"。
 #: 子目录名与 `paths.resolve_model_dir` 期望的一致。
 _MODELS: tuple[tuple[str, Optional[str]], ...] = (
-    ("bge-m3-int8", None),
+    # 2026-09-01: WeMM-Embedding-2B replaces BGE-M3 as the vector model.
+    # NOTE(release): upload the WeMM snapshot to the COS model bucket before
+    # shipping — the provisioner can only download what the bucket holds.
+    ("wemm-embedding-2b", None),
     ("faster-whisper-large-v3-turbo", "model.bin"),
 )
 

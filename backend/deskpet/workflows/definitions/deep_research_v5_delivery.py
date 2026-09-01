@@ -13,14 +13,14 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
 
-from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
-from .deep_research_v3_quality import evaluate_support
 from .deep_research_v5_contracts import (
     DimensionAnalysis,
     DimensionCoverage,
     JsonValue,
     ResearchBrief,
 )
+from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
+from .deep_research_v3_quality import evaluate_support
 from .deep_research_v5_report import (
     REPORT_QUALITY_RUBRIC_V1_HASH,
     ReportClaim,
@@ -671,14 +671,20 @@ def select_repair_dimension(
                 for source_id in item.get("source_ids", [])
             )
             for item in dimension_claims
-        ) or action == "narrow_unsupported_claim" and any(
+        ):
+            return dimension_id
+        elif action == "narrow_unsupported_claim" and any(
             str(item.get("kind") or "") == "key_judgment"
             and (
                 not item.get("source_ids")
                 or not item.get("supported_fact_refs")
             )
             for item in dimension_claims
-        ) or action == "add_uncertainty" and coverage.status == "partially_covered" or action == "rewrite_readability" and dimension_claims:
+        ):
+            return dimension_id
+        elif action == "add_uncertainty" and coverage.status == "partially_covered":
+            return dimension_id
+        elif action == "rewrite_readability" and dimension_claims:
             return dimension_id
     return None
 

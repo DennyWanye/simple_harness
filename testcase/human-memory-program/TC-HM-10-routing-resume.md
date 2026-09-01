@@ -4,7 +4,7 @@ purpose: Verify the five routing outcomes distinguish conversation memory, activ
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [HM-TO-A3, HM-TO-A4, HM-TO-R3, HM-TO-R7]
+obligations: [HM-TO-A3, HM-TO-A4, HM-TO-R3, HM-TO-R7, S5A-TO-ROUTE, S5A-TO-RECALL]
 tags: [human-memory, taskscope, routing, resume, no-recall]
 entrypoint: context_route, task_scope_search, and task_scope_open
 revision: 2

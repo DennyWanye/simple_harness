@@ -6,14 +6,14 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.tokens import count_text_tokens
+
 
 _RULE_FILES = ("AGENTS.md", "AGENTS", "rules.md")
 _RULE_DIRS = (".deskpet/rules", ".claude/rules", "rules")

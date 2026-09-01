@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping, Sequence
 
-from ..contracts import JsonValue, validate_json_value
+from ..contracts import JsonValue, canonical_json, validate_json_value
 from .deep_research_v6_contracts import parse_blob_ref, sha256_json
 
 
@@ -83,7 +82,7 @@ class V6FetchedPageRefPayloadV1:
         return value
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> V6FetchedPageRefPayloadV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "V6FetchedPageRefPayloadV1":
         keys = {
             "schema_version", "page_id", "ordinal", "source_locator_ref",
             "body_ref", "body_hash", "canonical_url_hash", "final_url_hash",
@@ -142,7 +141,7 @@ class V6ExtractedEvidenceRefV1:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> V6ExtractedEvidenceRefV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "V6ExtractedEvidenceRefV1":
         keys = {
             "schema_version", "requirement_id", "page_id", "evidence_ref",
             "source_locator_ref",
@@ -306,7 +305,7 @@ class EvidenceCandidateV1:
         return {**self._base_json(), "candidate_id": self.candidate_id}
 
     @classmethod
-    def create(cls, *, body_bytes: bytes, **values: Any) -> EvidenceCandidateV1:
+    def create(cls, *, body_bytes: bytes, **values: Any) -> "EvidenceCandidateV1":
         start = values["span_start_byte"]
         end = values["span_end_byte"]
         if not isinstance(start, int) or not isinstance(end, int):
@@ -318,7 +317,7 @@ class EvidenceCandidateV1:
         return cls.from_json({**base, "candidate_id": candidate_id}, body_bytes=body_bytes)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any], *, body_bytes: bytes) -> EvidenceCandidateV1:
+    def from_json(cls, value: Mapping[str, Any], *, body_bytes: bytes) -> "EvidenceCandidateV1":
         if not isinstance(value, Mapping) or set(value) != _CANDIDATE_KEYS or value.get("schema_version") != 1:
             raise ValueError("EvidenceCandidateV1 keys/version differ")
         payload = value["payload"]
@@ -386,7 +385,7 @@ class EvidenceCandidateBundleV1:
         return {**self._base_json(), "bundle_id": self.bundle_id}
 
     @classmethod
-    def create(cls, **values: Any) -> EvidenceCandidateBundleV1:
+    def create(cls, **values: Any) -> "EvidenceCandidateBundleV1":
         values["candidates"] = tuple(values.get("candidates", ()))
         values["bundle_reason_codes"] = tuple(sorted(set(values.get("bundle_reason_codes", ()))))
         provisional = cls.__new__(cls)
@@ -396,7 +395,7 @@ class EvidenceCandidateBundleV1:
         return cls(bundle_id="ecb_" + sha256_json(base)[:24], **values)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any], *, body_bytes: bytes) -> EvidenceCandidateBundleV1:
+    def from_json(cls, value: Mapping[str, Any], *, body_bytes: bytes) -> "EvidenceCandidateBundleV1":
         keys = {"schema_version", "bundle_id", "run_id", "spec_hash", "work_group_id", "logical_page_id", "page_plan_ordinal", "page_result_ref", "route_decision_ref", "route_policy_ref", "extraction_policy_ref", "repair_round", "candidates", "bundle_reason_codes"}
         if not isinstance(value, Mapping) or set(value) != keys or value.get("schema_version") != 1:
             raise ValueError("EvidenceCandidateBundleV1 keys/version differ")
@@ -452,14 +451,14 @@ class CandidateProducerOutcomeV1:
     def to_json(self) -> dict[str, JsonValue]: return {**self._base_json(), "outcome_id": self.outcome_id}
 
     @classmethod
-    def create(cls, **values: Any) -> CandidateProducerOutcomeV1:
+    def create(cls, **values: Any) -> "CandidateProducerOutcomeV1":
         values["dependency_refs"] = tuple(sorted(set(values["dependency_refs"])))
         provisional = cls.__new__(cls)
         for key, value in values.items(): object.__setattr__(provisional, key, value)
         return cls(outcome_id="cpo_" + sha256_json(provisional._base_json())[:24], **values)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> CandidateProducerOutcomeV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "CandidateProducerOutcomeV1":
         keys = {"schema_version", "outcome_id", "origin", "status", "logical_page_id", "work_group_id", "bundle_ref", "llm_effect_outcome_ref", "policy_ref", "dependency_refs"}
         if not isinstance(value, Mapping) or set(value) != keys or value.get("schema_version") != 1 or not isinstance(value["dependency_refs"], list):
             raise ValueError("CandidateProducerOutcomeV1 keys/version differ")
@@ -492,14 +491,14 @@ class InferenceProposalV1:
         return {"schema_version": 1, "requirement_id": self.requirement_id, "inference_kind": self.inference_kind, "item_or_cell_id": self.item_or_cell_id, "facet_ids": list(self.facet_ids), "normalized_proposition": self.normalized_proposition, "premise_fact_refs": list(self.premise_fact_refs), "model_id": self.model_id, "model_policy_ref": self.model_policy_ref}
     def to_json(self) -> dict[str, JsonValue]: return {**self._base_json(), "proposal_id": self.proposal_id}
     @classmethod
-    def create(cls, **values: Any) -> InferenceProposalV1:
+    def create(cls, **values: Any) -> "InferenceProposalV1":
         values["facet_ids"] = tuple(sorted(set(values.get("facet_ids", ()))))
         values["premise_fact_refs"] = tuple(sorted(set(values["premise_fact_refs"])))
         provisional = cls.__new__(cls)
         for key, value in values.items(): object.__setattr__(provisional, key, value)
         return cls(proposal_id="inp_" + sha256_json(provisional._base_json())[:24], **values)
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> InferenceProposalV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "InferenceProposalV1":
         keys={"schema_version","proposal_id","requirement_id","inference_kind","item_or_cell_id","facet_ids","normalized_proposition","premise_fact_refs","model_id","model_policy_ref"}
         if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1 or not isinstance(value["facet_ids"],list) or not isinstance(value["premise_fact_refs"],list): raise ValueError("InferenceProposalV1 keys/version differ")
         return cls(proposal_id=str(value["proposal_id"]),requirement_id=str(value["requirement_id"]),inference_kind=str(value["inference_kind"]),item_or_cell_id=value["item_or_cell_id"],facet_ids=tuple(str(x) for x in value["facet_ids"]),normalized_proposition=str(value["normalized_proposition"]),premise_fact_refs=tuple(str(x) for x in value["premise_fact_refs"]),model_id=str(value["model_id"]),model_policy_ref=str(value["model_policy_ref"]))
@@ -530,14 +529,14 @@ class InferenceProposalBundleV1:
     def _base_json(self)->dict[str,JsonValue]: return {"schema_version":1,"run_id":self.run_id,"spec_hash":self.spec_hash,"work_group_id":self.work_group_id,"input_evidence_head_hash":self.input_evidence_head_hash,"ordinal":self.ordinal,"profile_ref":self.profile_ref,"premise_fact_refs":list(self.premise_fact_refs),"proposals":[x.to_json() for x in self.proposals]}
     def to_json(self)->dict[str,JsonValue]: return {**self._base_json(),"bundle_id":self.bundle_id}
     @classmethod
-    def create(cls,**values:Any)->InferenceProposalBundleV1:
+    def create(cls,**values:Any)->"InferenceProposalBundleV1":
         values["proposals"]=tuple(sorted(values.get("proposals",()),key=lambda x:(values["work_group_id"],x.inference_kind,x.proposal_id)))
         values["premise_fact_refs"]=tuple(sorted({ref for proposal in values["proposals"] for ref in proposal.premise_fact_refs}))
         provisional=cls.__new__(cls)
         for key,value in values.items(): object.__setattr__(provisional,key,value)
         return cls(bundle_id="ipb_"+sha256_json(provisional._base_json())[:24],**values)
     @classmethod
-    def from_json(cls,value:Mapping[str,Any])->InferenceProposalBundleV1:
+    def from_json(cls,value:Mapping[str,Any])->"InferenceProposalBundleV1":
         keys={"schema_version","bundle_id","run_id","spec_hash","work_group_id","input_evidence_head_hash","ordinal","profile_ref","premise_fact_refs","proposals"}
         if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1 or not isinstance(value["premise_fact_refs"],list) or not isinstance(value["proposals"],list): raise ValueError("InferenceProposalBundleV1 keys/version differ")
         return cls(bundle_id=str(value["bundle_id"]),run_id=str(value["run_id"]),spec_hash=str(value["spec_hash"]),work_group_id=str(value["work_group_id"]),input_evidence_head_hash=str(value["input_evidence_head_hash"]),ordinal=value["ordinal"],profile_ref=str(value["profile_ref"]),premise_fact_refs=tuple(str(x) for x in value["premise_fact_refs"]),proposals=tuple(InferenceProposalV1.from_json(x) for x in value["proposals"]))
@@ -605,7 +604,7 @@ class EvidenceRepairRequestV1:
         return {**self._base_json(), "repair_id": self.repair_id}
 
     @classmethod
-    def create(cls, **values: Any) -> EvidenceRepairRequestV1:
+    def create(cls, **values: Any) -> "EvidenceRepairRequestV1":
         values["validation_reason_codes"] = tuple(
             sorted(set(values["validation_reason_codes"]))
         )
@@ -615,7 +614,7 @@ class EvidenceRepairRequestV1:
         return cls(repair_id="err_" + sha256_json(provisional._base_json())[:24], **values)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> EvidenceRepairRequestV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "EvidenceRepairRequestV1":
         keys = {
             "schema_version", "repair_id", "result_kind", "original_profile_ref",
             "repair_profile_ref", "original_prompt_ref", "prior_outcome_ref",
@@ -743,7 +742,7 @@ class ResearchLLMEffectOutcomeV1:
         return {**self._base_json(), "outcome_id": self.outcome_id}
 
     @classmethod
-    def create(cls, **values: Any) -> ResearchLLMEffectOutcomeV1:
+    def create(cls, **values: Any) -> "ResearchLLMEffectOutcomeV1":
         values["reason_codes"] = tuple(sorted(set(values.get("reason_codes", ()))))
         values["dependency_refs"] = tuple(sorted({
             ref for ref in (
@@ -758,7 +757,7 @@ class ResearchLLMEffectOutcomeV1:
         return cls(outcome_id="rlo_" + sha256_json(provisional._base_json())[:24], **values)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> ResearchLLMEffectOutcomeV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "ResearchLLMEffectOutcomeV1":
         keys = {
             "schema_version", "outcome_id", "logical_effect_id", "effect_id", "status",
             "result_kind", "profile_ref", "prompt_ref", "raw_result_ref", "result_ref",

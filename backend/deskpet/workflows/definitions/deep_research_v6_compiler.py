@@ -6,19 +6,20 @@ import copy
 import hashlib
 import re
 import unicodedata
-from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Any
+from typing import Any, Iterable, Mapping, Sequence
 
 from .deep_research_v6_contracts import (
-    RequirementV1,
+    ClaimSetRequirement,
     ResearchSpecV1,
     ResearchSpecValidationError,
+    RequirementV1,
     build_requirement,
     canonical_set,
     format_blob_ref,
     sha256_json,
 )
+
 
 COMPILER_POLICY = {
     "schema_version": 1,

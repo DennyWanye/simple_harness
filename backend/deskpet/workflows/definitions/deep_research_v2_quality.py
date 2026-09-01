@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import hashlib
 import re
-from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Callable, Iterable, Literal, Mapping
+
 
 _CITATION = re.compile(r"\[(\d+)\]")
 _SENTENCE = re.compile(r"(?<=[。！？.!?])\s*")
 _TOKEN = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 _EXACT = re.compile(r"(?:\d{4}[-年/]\d{1,2}(?:[-月/]\d{1,2}日?)?|\d+(?:\.\d+)?%?|[$¥€£]\s*\d+(?:\.\d+)?)")
-_ANALYSIS = re.compile(r"(?:可能|意味着|推测|或许|likely|may|might|suggests)", re.IGNORECASE)
-_OPINION = re.compile(r"(?:应该|最好|建议|must|should|recommend)", re.IGNORECASE)
+_ANALYSIS = re.compile(r"(?:可能|意味着|推测|或许|likely|may|might|suggests)", re.I)
+_OPINION = re.compile(r"(?:应该|最好|建议|must|should|recommend)", re.I)
 
 
 @dataclass(frozen=True, slots=True)

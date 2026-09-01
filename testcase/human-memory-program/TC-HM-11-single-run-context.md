@@ -4,7 +4,7 @@ purpose: Verify one foreground ReAct Run, durable FIFO, initial routed SDK execu
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [HM-TO-A3, HM-TO-A6, HM-TO-A8, HM-TO-R2, HM-TO-R7, HM-TO-R8, HM-S4-TO-VALUE, HM-S4-TO-FIFO, HM-S4-TO-AUTHORITY]
+obligations: [HM-TO-A3, HM-TO-A6, HM-TO-A8, HM-TO-R2, HM-TO-R7, HM-TO-R8, HM-S4-TO-VALUE, HM-S4-TO-FIFO, HM-S4-TO-AUTHORITY, S5A-TO-SNAPSHOT, S5A-TO-BUDGET, S5A-TO-COMPOSITION]
 tags: [human-memory, foreground-run, fifo, context, closure, restart]
 entrypoint: long-running primary conversation
 revision: 5

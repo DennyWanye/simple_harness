@@ -5,9 +5,8 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
-from collections.abc import Iterable, Mapping, Sequence
-from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from datetime import date, datetime, timedelta, timezone
+from typing import Any, Iterable, Mapping, Sequence
 from urllib.parse import urlsplit
 
 from .deep_research_v4_contracts import (
@@ -16,6 +15,7 @@ from .deep_research_v4_contracts import (
     TechnologyFinding,
     TechnologyTopic,
 )
+
 
 _AI_TERMS = ("ai", "人工智能", "大模型", "llm", "基础模型", "agent", "智能体", "多模态")
 _RECENT_TERMS = (
@@ -96,7 +96,7 @@ def _is_unrequested_version_anchor(entity: str, user_topic: str) -> bool:
         return False
     return bool(
         re.search(r"\d", entity)
-        or re.search(r"\b(?:version|release|specification|alpha|beta|rc)\b", entity, re.IGNORECASE)
+        or re.search(r"\b(?:version|release|specification|alpha|beta|rc)\b", entity, re.I)
     )
 
 _PRIMARY_DOMAINS = frozenset(
@@ -107,20 +107,20 @@ _PRIMARY_DOMAINS = frozenset(
         "mistral.ai", "cohere.com", "pytorch.org", "tensorflow.org",
     }
 )
-_QUANT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:%|x|ms|s|tokens?|k|m|b|gb|tb)\b", re.IGNORECASE)
+_QUANT_RE = re.compile(r"\d+(?:\.\d+)?\s*(?:%|x|ms|s|tokens?|k|m|b|gb|tb)\b", re.I)
 _QUANT_CONTEXT_RE = re.compile(
     r"benchmark|accuracy|score|cost|latency|throughput|context|参数|准确率|得分|成本|延迟|吞吐|上下文",
-    re.IGNORECASE,
+    re.I,
 )
-_ADOPTED_RE = re.compile(r"\bga\b|generally available|stable|production|正式发布|稳定版|生产可用", re.IGNORECASE)
-_EMERGING_RE = re.compile(r"\bbeta\b|preview|released|release|公测|预览|发布", re.IGNORECASE)
-_EXPERIMENTAL_RE = re.compile(r"preprint|prototype|research preview|实验|原型|预印本", re.IGNORECASE)
-_CAPABILITY_RE = re.compile(r"support(?:s|ed)?|enable(?:s|d)?|interop|新增|支持|互操作", re.IGNORECASE)
+_ADOPTED_RE = re.compile(r"\bga\b|generally available|stable|production|正式发布|稳定版|生产可用", re.I)
+_EMERGING_RE = re.compile(r"\bbeta\b|preview|released|release|公测|预览|发布", re.I)
+_EXPERIMENTAL_RE = re.compile(r"preprint|prototype|research preview|实验|原型|预印本", re.I)
+_CAPABILITY_RE = re.compile(r"support(?:s|ed)?|enable(?:s|d)?|interop|新增|支持|互操作", re.I)
 _CHANGE_RE = re.compile(
     r"introduc(?:e|es|ed)|improv(?:e|es|ed)|reduc(?:e|es|ed)|increase(?:s|d)?|"
     r"faster|integrat(?:e|es|ed)|compatib|launch(?:es|ed)?|release(?:s|d)?|"
     r"新增|提升|降低|加速|集成|兼容|发布|开源",
-    re.IGNORECASE,
+    re.I,
 )
 _VERTICAL_RE = re.compile(
     r"\behr\b|electronic health record|healthcare|clinical|medical|patient|hospital|"
@@ -128,25 +128,25 @@ _VERTICAL_RE = re.compile(
     r"molecule|genomics|radiology|pathology|agriculture|crop|supply chain|marketing|"
     r"customer service|real estate|医疗|电子病历|临床|患者|医院|金融|银行|教育|零售|"
     r"保险|制药|药物发现|分子|基因组|放射科|病理|农业|作物|供应链|营销|客服|地产|政务",
-    re.IGNORECASE,
+    re.I,
 )
 _NAVIGATION_RE = re.compile(
     r"example workflows and tasks teams can take on with chatgpt or codex|"
     r"explore (?:our )?(?:products|solutions|resources)|browse all (?:products|solutions|resources)|"
     r"sign in(?: to)? chatgpt|contact sales|cookie preferences|skip to (?:main )?content",
-    re.IGNORECASE,
+    re.I,
 )
 _EVENT_ONLY_RE = re.compile(
     r"\b(?:conference|forum|workshop|summit)\b.*\b(?:was held|took place|convened)\b|"
     r"(?:论坛|会议|峰会|研讨会).{0,32}(?:举办|举行|召开|成功举办)",
-    re.IGNORECASE,
+    re.I,
 )
 _TOPIC_KEYWORDS = {
-    "model_inference": re.compile(r"\bllm\b|\binference\b|foundation model|transformer|model inference|大模型|基础模型|模型推理", re.IGNORECASE),
-    "agent": re.compile(r"\bagents?\b|tool use|tool calling|\bmcp\b|智能体|工具调用", re.IGNORECASE),
-    "multimodal": re.compile(r"multimodal|vision|image|video|audio|speech|多模态|视觉|图像|视频|音频|语音", re.IGNORECASE),
-    "training_inference_system": re.compile(r"training|inference system|serving|runtime|gpu|cpu|cuda|latency|throughput|activation[- ]offload|训练|推理系统|服务框架|运行时|延迟|吞吐|激活卸载", re.IGNORECASE),
-    "open_infrastructure": re.compile(r"open[ -]?source|framework|runtime|library|repository|github|hugging ?face|开源|框架|运行时|代码库", re.IGNORECASE),
+    "model_inference": re.compile(r"\bllm\b|\binference\b|foundation model|transformer|model inference|大模型|基础模型|模型推理", re.I),
+    "agent": re.compile(r"\bagents?\b|tool use|tool calling|\bmcp\b|智能体|工具调用", re.I),
+    "multimodal": re.compile(r"multimodal|vision|image|video|audio|speech|多模态|视觉|图像|视频|音频|语音", re.I),
+    "training_inference_system": re.compile(r"training|inference system|serving|runtime|gpu|cpu|cuda|latency|throughput|activation[- ]offload|训练|推理系统|服务框架|运行时|延迟|吞吐|激活卸载", re.I),
+    "open_infrastructure": re.compile(r"open[ -]?source|framework|runtime|library|repository|github|hugging ?face|开源|框架|运行时|代码库", re.I),
 }
 _ENTITY_PHRASE_RE = re.compile(
     r"\b(?:[A-Z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*)(?:\s+[A-Z][A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*){0,2}\b"
@@ -159,15 +159,15 @@ _GENERIC_ENTITY_WORDS = frozenset({
 _VENDOR_PREFIX_RE = re.compile(
     r"^(?:openai|google|google deepmind|deepmind|microsoft|meta|anthropic|nvidia|"
     r"alibaba|aliyun|tencent|baidu|amazon|aws|hugging face|huggingface)\s+",
-    re.IGNORECASE,
+    re.I,
 )
 _VERSION_SUFFIX_RE = re.compile(
     r"(?:\s+|[-_.])(?:v(?:ersion)?\s*)?\d+(?:\.\d+)*(?:[-_.]?(?:alpha|beta|rc)\d*)?$",
-    re.IGNORECASE,
+    re.I,
 )
 _VARIANT_SUFFIX_RE = re.compile(
     r"\s+(?:sdk|framework|toolkit|library|platform|runtime|系统|框架|工具包|平台)$",
-    re.IGNORECASE,
+    re.I,
 )
 _ENTITY_ALIASES = {
     "hunyuan image": "hunyuanimage",
@@ -188,20 +188,20 @@ _LEADING_SUBJECT_RE = re.compile(
     r"(?:is|are|was|were|uses?|provides?|supports?|enables?|introduced|released|launched|"
     r"includes?|unifies?|maps?|executes?|preserves?|adds?|added|expands?|expanded|overlaps?|"
     r"degrades?|physically\s+separates?|can)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _VENDOR_OBJECT_RE = re.compile(
     r"^\s*(Apple|Google|Microsoft|Meta|NVIDIA|OpenAI|Anthropic)\s+introduced\s+"
     r"(?:a|an)\s+new generation of\s+(.+?)(?:\s+at\b|\s+for\b|\s+with\b|[.;]|$)",
-    re.IGNORECASE,
+    re.I,
 )
 _VENDOR_PRODUCT_RE = re.compile(
     r"^\s*(OpenAI|Google|Microsoft|Meta|NVIDIA|Apple|Anthropic)\s+"
     r"(?:released|launched|introduced|unveiled)\s+(.+?)"
     r"(?:\s+(?:with|for|at|that|which|as|in)\b|[.;]|$)",
-    re.IGNORECASE,
+    re.I,
 )
-_ENTITY_ACTION_RE = re.compile(r"发布|新增|降低|提升|支持|能力|延迟|吞吐|正式", re.IGNORECASE)
+_ENTITY_ACTION_RE = re.compile(r"发布|新增|降低|提升|支持|能力|延迟|吞吐|正式", re.I)
 _GENERIC_FINDING_ENTITY_KEYS = frozenset({
     "aitraining", "aiinference", "bestaiagents", "theopensourceengine", "ces",
     "apple", "google", "microsoft", "meta", "nvidia", "openai", "anthropic", "pdf",
@@ -225,17 +225,17 @@ _NON_CHANGE_STATEMENT_RE = re.compile(
     r"moved\s+well\s+past\s+its\s+origins|"
     r"deliberate\s+decision\s+grounded\s+in\s+.+?\s+design\s+principles|"
     r"featured\s+.+?\s+as\s+of)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _MALFORMED_PRODUCT_SUBJECT_RE = re.compile(
     r"^\s*\d+(?:\.\d+)?\s+Pro\b",
-    re.IGNORECASE,
+    re.I,
 )
 _RELEASE_METADATA_ONLY_RE = re.compile(
     r"\b(?:marked\s+the\s+release\s+candidate\s+revision|"
     r"locked\s+the\s+release\s+candidate|"
     r"released\s+as\s+a\s+release\s+candidate)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _STATIC_NON_CHANGE_RE = re.compile(
     r"^\s*.+?\s+is\s+(?:"
@@ -244,73 +244,73 @@ _STATIC_NON_CHANGE_RE = re.compile(
     r"(?:model|library|framework|platform|repository|tool|serving engine|"
     r"orchestration layer(?:\s+above\s+.+)?)"
     r")\s*\.?\s*$",
-    re.IGNORECASE,
+    re.I,
 )
 _RELEASE_DATE_ONLY_RE = re.compile(
     r"^\s*.+?\s+(?:(?:was\s+)?released\s+on|was\s+dated)\s+\d{4}-\d{2}-\d{2}\.?\s*$",
-    re.IGNORECASE,
+    re.I,
 )
 _POSSESSIVE_PROJECT_RE = re.compile(
     r"^\s*([A-Z][A-Za-z0-9+_.-]{2,40})[’']s\s+[A-Za-z0-9+_.-]+\s+"
     r"(?:added|introduced|released|enabled|improved|reduced)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _METRIC_SUBJECT_RE = re.compile(
     r"^\s*([A-Za-z][A-Za-z0-9+_.-]{2,40})\b[^.;]{0,100}?\b"
     r"(?:achiev(?:e|es|ed)|reduces?|improves?|outperforms?|deliver(?:s|ed)?)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _SECURITY_SIDE_TOPIC_RE = re.compile(
     r"content protection|vulnerabilit|forensic|malware|\bcve[- ]|prompt injection|"
     r"security benchmark|agentic crawler",
-    re.IGNORECASE,
+    re.I,
 )
 _AGENT_TECH_DETAIL_RE = re.compile(
     r"tool (?:use|calling)|agent tools?|function calling|\bmcp\b|model context protocol|multi[- ]agent|"
     r"workflow runtime|agent runtime|agent framework|agent sdk|state graph|checkpoint|"
     r"human[- ]in[- ]the[- ]loop|semantic kernel|autogen|langgraph|crewai",
-    re.IGNORECASE,
+    re.I,
 )
 _PRICING_ONLY_RE = re.compile(
     r"(?:[$€£¥￥]|\bpricing\b|\bsubscription\b|\bprice plan\b|积分制|赠送|付费档|订阅档)",
-    re.IGNORECASE,
+    re.I,
 )
 _OPEN_SOURCE_NEWS_BOILERPLATE_RE = re.compile(
     r"latest news from .{0,40} on open source releases, major projects, events|"
     r"\bwe (?:are|are working to|aim to) .{0,80}(?:democrati[sz]|advanc).{0,40}"
     r"(?:artificial intelligence|\bai\b).{0,40}(?:open source|open science)",
-    re.IGNORECASE,
+    re.I,
 )
 _CHALLENGE_ONLY_RE = re.compile(
     r"\b(?:remain|remains|still) (?:difficult|hard|challenging) to (?:deploy|run|serve)|"
     r"\bdeployment remains (?:difficult|hard|challenging)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _TECHNICAL_DETAIL_RE = re.compile(
     r"architecture|mixture[- ]of[- ]experts|\bmoe\b|attention|kv[ -]?cache|quantization|"
     r"架构|混合专家|注意力|量化",
-    re.IGNORECASE,
+    re.I,
 )
 _PRODUCT_PAIR_RE = re.compile(
     r"^\s*([A-Za-z][A-Za-z0-9+_.-]*\s+\d+(?:\.\d+)?\s+[A-Za-z0-9+_.-]+)\s+and\s+"
     r"(?:[A-Za-z][A-Za-z0-9+_.-]*\s+\d+(?:\.\d+)?\s+)?([A-Za-z0-9+_.-]+)\s+"
     r"(?:are|use|support|enable|introduce|provide)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _MIXED_LEADING_SUBJECT_RE = re.compile(
     r"^\s*([\u3400-\u9fffA-Za-z][\u3400-\u9fffA-Za-z0-9+_. -]{1,60}?)\s+"
     r"(?:is|are|was|were|uses?|provides?|supports?|enables?|introduced|released|launched|entered)\b",
-    re.IGNORECASE,
+    re.I,
 )
 _ENGLISH_MONTH_DATE_RE = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+"
     r"(\d{1,2}),\s*(\d{4})\b",
-    re.IGNORECASE,
+    re.I,
 )
 _ENGLISH_MONTH_YEAR_RE = re.compile(
     r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+"
     r"(\d{4})\b",
-    re.IGNORECASE,
+    re.I,
 )
 _MONTH_NUMBER = {
     name.casefold(): index
@@ -351,7 +351,7 @@ def normalize_entity_key(value: str) -> str:
 
 
 def _leading_subject_entity(statement: str) -> str | None:
-    meet_subject = re.search(r"^\s*Meet\s+(.+?):", statement, re.IGNORECASE)
+    meet_subject = re.search(r"^\s*Meet\s+(.+?):", statement, re.I)
     if meet_subject is not None:
         candidate = " ".join(meet_subject.group(1).split()).strip(" .,:;()[]")
         if normalize_entity_key(candidate) and not _is_generic_technology_entity(candidate):
@@ -396,13 +396,13 @@ def _leading_subject_entity(statement: str) -> str | None:
     if match is None:
         return None
     candidate = " ".join(match.group(1).split()).strip(" .,:;()[]")
-    candidate = re.sub(r"^(?:a|an|the)\s+", "", candidate, flags=re.IGNORECASE).strip()
-    candidate = re.sub(r"\s+(?:fast\s+)?models?$", "", candidate, flags=re.IGNORECASE).strip()
+    candidate = re.sub(r"^(?:a|an|the)\s+", "", candidate, flags=re.I).strip()
+    candidate = re.sub(r"\s+(?:fast\s+)?models?$", "", candidate, flags=re.I).strip()
     candidate = re.sub(
         r"\s+(?:preprint\s+prototype|research\s+preview|beta\s+prototype)$",
         "",
         candidate,
-        flags=re.IGNORECASE,
+        flags=re.I,
     ).strip()
     if not normalize_entity_key(candidate) or _is_generic_technology_entity(candidate):
         return None
@@ -480,7 +480,7 @@ def _time_window(topic: str, as_of: date) -> tuple[date, date]:
         end = min(end, as_of)
         return (start, end) if start <= end else fallback
 
-    since_match = re.search(r"(?:since\s+|)(\d{4})\s*年以来|since\s+(\d{4})", text, re.IGNORECASE)
+    since_match = re.search(r"(?:since\s+|)(\d{4})\s*年以来|since\s+(\d{4})", text, re.I)
     if since_match:
         year = int(since_match.group(1) or since_match.group(2))
         if year > as_of.year:
@@ -491,7 +491,7 @@ def _time_window(topic: str, as_of: date) -> tuple[date, date]:
     duration_match = re.search(
         r"(?:过去|最近)\s*(-?\d+)\s*(天|周|个月|年)|(?:last|past)\s+(-?\d+)\s*(days?|weeks?|months?|years?)",
         text,
-        re.IGNORECASE,
+        re.I,
     )
     if duration_match:
         amount = int(duration_match.group(1) or duration_match.group(3))
@@ -503,7 +503,7 @@ def _time_window(topic: str, as_of: date) -> tuple[date, date]:
 
 
 def classify_intent(topic: str, *, as_of_date: date | None = None) -> IntentProfile:
-    as_of = as_of_date or datetime.now(UTC).date()
+    as_of = as_of_date or datetime.now(timezone.utc).date()
     technology = all(
         (_contains(topic, _AI_TERMS), _contains(topic, _RECENT_TERMS), _contains(topic, _TECH_TERMS))
     )
@@ -607,7 +607,7 @@ def plan_technology_topics(
 
 def canonical_host(value: str) -> str:
     host = (urlsplit(value).hostname or "").casefold().strip(".")
-    return host.removeprefix("www.")
+    return host[4:] if host.startswith("www.") else host
 
 
 def is_navigation_or_product_boilerplate(*values: str) -> bool:
@@ -618,7 +618,7 @@ def is_navigation_or_product_boilerplate(*values: str) -> bool:
 def is_primary_source(value: str) -> bool:
     host = canonical_host(value)
     parsed = urlsplit(value)
-    if host == "github.com" and re.search(r"/(?:issues|discussions)(?:/|$)", parsed.path, re.IGNORECASE):
+    if host == "github.com" and re.search(r"/(?:issues|discussions)(?:/|$)", parsed.path, re.I):
         return False
     return any(host == domain or host.endswith(f".{domain}") for domain in _PRIMARY_DOMAINS)
 
@@ -758,7 +758,7 @@ def _entity_name(
         behavior_tree = re.search(
             r"\b((?:Contract[- ]Grounded\s+)?Behavior Tree Synthesis)\b",
             title,
-            re.IGNORECASE,
+            re.I,
         )
         if behavior_tree:
             return behavior_tree.group(1)
@@ -772,17 +772,17 @@ def _entity_name(
         return "HeteroMosaic"
     if "model runner v2" in searchable.casefold() and "vllm-project/vllm" in source_urls:
         return "vLLM Model Runner V2"
-    if "vllm-project/vllm" in source_urls and re.search(r"^\s*vLLM\b", statement, re.IGNORECASE):
+    if "vllm-project/vllm" in source_urls and re.search(r"^\s*vLLM\b", statement, re.I):
         # Release notes often lead with the project name followed by a backend
         # or model feature.  Treat those changes as one vLLM finding instead
         # of emitting weak acronym entities such as ``FP8`` beside ``vLLM``.
         return "vLLM"
     for title in titles:
-        jetson_pi = re.search(r"\bJetson-PI\b", title, re.IGNORECASE)
+        jetson_pi = re.search(r"\bJetson-PI\b", title, re.I)
         if jetson_pi and re.search(
             r"\bJetson-PI\b|\bcited method\b|\bcontrol frequency\b",
             statement,
-            re.IGNORECASE,
+            re.I,
         ):
             return "Jetson-PI"
     leading = _leading_subject_entity(statement)
@@ -790,7 +790,7 @@ def _entity_name(
         if leading.casefold().startswith("model runner") and "vllm-project/vllm" in source_urls:
             return f"vLLM {leading}"
         return leading
-    llm_agent = re.search(r"\bLarge Language Models?\s*\(LLMs?\)\s+agents?\b", searchable, re.IGNORECASE)
+    llm_agent = re.search(r"\bLarge Language Models?\s*\(LLMs?\)\s+agents?\b", searchable, re.I)
     if llm_agent:
         return "LLM Agents"
     for acronym in _ACRONYM_RE.findall(searchable):
@@ -912,7 +912,7 @@ def build_ranked_findings(
             and re.search(
                 r"/releases(?:/|$)",
                 urlsplit(str(item.get("canonical_url") or item.get("url") or "")).path,
-                re.IGNORECASE,
+                re.I,
             )
             for item in winning
         )
@@ -1063,16 +1063,9 @@ def finding_set_failure_codes(
 
 
 __all__ = [
-    "build_ranked_findings",
-    "canonical_host",
-    "classify_intent",
-    "finding_set_failure_codes",
-    "is_navigation_or_product_boilerplate",
+    "build_ranked_findings", "canonical_host", "classify_intent", "finding_set_failure_codes",
     "is_primary_source",
-    "normalize_entity_key",
-    "plan_technology_topics",
-    "recency_score",
-    "score_supported_finding",
-    "source_seeds",
+    "is_navigation_or_product_boilerplate", "plan_technology_topics", "recency_score",
+    "normalize_entity_key", "score_supported_finding", "source_seeds",
     "supported_statement_dates",
 ]

@@ -6,9 +6,8 @@ import copy
 import hashlib
 import inspect
 import json
-from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Awaitable, Callable, Mapping, Protocol
 
 from deskpet.companion.personal_workflow import (
     PersonalWorkflowNode,
@@ -101,7 +100,7 @@ class PersonalWorkflowEffectReceiptV1:
         attempt_ordinal: int,
         output: Mapping[str, JsonValue],
         receipt_ref: str,
-    ) -> PersonalWorkflowEffectReceiptV1:
+    ) -> "PersonalWorkflowEffectReceiptV1":
         values = {
             "logical_effect_id": logical_effect_id,
             "stable_call_id": stable_call_id,

@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import copy
 import hashlib
-from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping, Sequence
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from .deep_research_v6_contracts import parse_blob_ref, sha256_json
 from .deep_research_v6_exact_fact import ExtractedScalarEvidence, ScalarEvidenceRequest
+
 
 GENESIS_EVIDENCE_HEAD = "0" * 64
 Q1_ROUTE_POLICY: dict[str, JsonValue] = {"schema_version": 1, "policy_id": "deep-research-v6-route-q1-v1"}
@@ -143,14 +143,14 @@ class AdmittedResearchFactV1:
         return {**self._base_json(), "fact_id": self.fact_id}
 
     @classmethod
-    def create(cls, **values: Any) -> AdmittedResearchFactV1:
+    def create(cls, **values: Any) -> "AdmittedResearchFactV1":
         values["semantic_payload"] = copy.deepcopy(dict(values["semantic_payload"]))
         provisional = cls.__new__(cls)
         for key, value in values.items(): object.__setattr__(provisional, key, value)
         return cls(fact_id="arf_" + sha256_json(provisional._base_json())[:24], **values)
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> AdmittedResearchFactV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "AdmittedResearchFactV1":
         keys = {"schema_version", "fact_id", "run_id", "spec_hash", "requirement_id", "target_kind", "item_or_cell_id", "field_or_facet_key", "candidate_id", "page_id", "span_id", "binding_id", "source_family_id", "source_tier", "admission_policy_hash", "status", "semantic_payload"}
         if not isinstance(value, Mapping) or set(value) != keys or value.get("schema_version") != 1 or not isinstance(value["semantic_payload"], Mapping):
             raise ValueError("AdmittedResearchFactV1 keys/version differ")
@@ -205,14 +205,14 @@ class RegisteredInferenceV1:
         return {"schema_version": 1, "run_id": self.run_id, "spec_hash": self.spec_hash, "requirement_id": self.requirement_id, "item_or_cell_id": self.item_or_cell_id, "inference_kind": self.inference_kind, "facet_ids": list(self.facet_ids), "normalized_proposition": self.normalized_proposition, "proposed_premise_fact_refs": list(self.proposed_premise_fact_refs), "premise_fact_refs": list(self.premise_fact_refs), "premise_binding_ids": list(self.premise_binding_ids), "model_id": self.model_id, "model_policy_ref": self.model_policy_ref, "inference_policy_hash": self.inference_policy_hash, "status": self.status, "reason_codes": list(self.reason_codes)}
     def to_json(self) -> dict[str, JsonValue]: return {**self._base_json(), "inference_id": self.inference_id}
     @classmethod
-    def create(cls, **values: Any) -> RegisteredInferenceV1:
+    def create(cls, **values: Any) -> "RegisteredInferenceV1":
         for key in ("facet_ids", "proposed_premise_fact_refs", "premise_fact_refs", "premise_binding_ids", "reason_codes"):
             values[key] = tuple(sorted(set(values.get(key, ()))))
         provisional = cls.__new__(cls)
         for key, value in values.items(): object.__setattr__(provisional, key, value)
         return cls(inference_id="rin_" + sha256_json(provisional._base_json())[:24], **values)
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> RegisteredInferenceV1:
+    def from_json(cls, value: Mapping[str, Any]) -> "RegisteredInferenceV1":
         keys={"schema_version","inference_id","run_id","spec_hash","requirement_id","item_or_cell_id","inference_kind","facet_ids","normalized_proposition","proposed_premise_fact_refs","premise_fact_refs","premise_binding_ids","model_id","model_policy_ref","inference_policy_hash","status","reason_codes"}
         if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1: raise ValueError("RegisteredInferenceV1 keys/version differ")
         for key in ("facet_ids","proposed_premise_fact_refs","premise_fact_refs","premise_binding_ids","reason_codes"):
@@ -286,7 +286,7 @@ class EvidenceFactBatchV1:
         return {"schema_version":1,"batch_kind":self.batch_kind,"run_id":self.run_id,"spec_hash":self.spec_hash,"previous_head_hash":self.previous_head_hash,"ordinal":self.ordinal,"page_result_refs":list(self.page_result_refs),"candidate_slot_results":copy.deepcopy(list(self.candidate_slot_results)),"inference_slot_results":copy.deepcopy(list(self.inference_slot_results)),"admitted_fact_refs":list(self.admitted_fact_refs),"registered_inference_refs":list(self.registered_inference_refs),"rejected_candidate_ids":list(self.rejected_candidate_ids),"conflict_ids":list(self.conflict_ids),"provenance_refs":list(self.provenance_refs),"policy_refs":copy.deepcopy(self.policy_refs)}
     def to_json(self)->dict[str,JsonValue]: return {**self._base_json(),"batch_id":self.batch_id,"head_hash":self.head_hash}
     @classmethod
-    def create(cls,**values:Any)->EvidenceFactBatchV1:
+    def create(cls,**values:Any)->"EvidenceFactBatchV1":
         # Final-schema API.  Callers must persist facts/inferences before batching.
         values.setdefault("batch_kind","facts")
         for key in ("page_result_refs","admitted_fact_refs","registered_inference_refs","rejected_candidate_ids","conflict_ids","provenance_refs"):
@@ -299,7 +299,7 @@ class EvidenceFactBatchV1:
         head=hashlib.sha256((values["previous_head_hash"]+canonical_json(provisional._base_json())).encode("utf-8")).hexdigest()
         return cls(batch_id="efb_"+head[:24],head_hash=head,**values)
     @classmethod
-    def from_json(cls,value:Mapping[str,Any])->EvidenceFactBatchV1:
+    def from_json(cls,value:Mapping[str,Any])->"EvidenceFactBatchV1":
         keys={"schema_version","batch_id","batch_kind","run_id","spec_hash","previous_head_hash","ordinal","page_result_refs","candidate_slot_results","inference_slot_results","admitted_fact_refs","registered_inference_refs","rejected_candidate_ids","conflict_ids","provenance_refs","policy_refs","head_hash"}
         if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1: raise ValueError("EvidenceFactBatchV1 keys/version differ")
         for key in ("page_result_refs","candidate_slot_results","inference_slot_results","admitted_fact_refs","registered_inference_refs","rejected_candidate_ids","conflict_ids","provenance_refs"):
@@ -337,12 +337,12 @@ class AnswerAssessmentV1:
     def _base_json(self)->dict[str,JsonValue]: return {"schema_version":1,"assessment_input_hash":self.assessment_input_hash,"spec_hash":self.spec_hash,"evidence_head_hash":self.evidence_head_hash,"policy_hash":self.policy_hash,"requirement_results":copy.deepcopy(list(self.requirement_results)),"conflicts":copy.deepcopy(list(self.conflicts)),"missing_requirement_ids":list(self.missing_requirement_ids),"minimum_useful":self.minimum_useful,"status":self.status,"reason_codes":list(self.reason_codes)}
     def to_json(self)->dict[str,JsonValue]: return {**self._base_json(),"assessment_id":self.assessment_id,"assessment_hash":self.assessment_hash}
     @classmethod
-    def create(cls,*,spec_hash:str,evidence_head_hash:str,requirement_results:Sequence[Mapping[str,JsonValue]],missing_requirement_ids:Sequence[str],minimum_useful:bool,status:str,reason_codes:Sequence[str],conflicts:Sequence[Mapping[str,JsonValue]]=(),policy_hash:str=Q1_ASSESSMENT_POLICY_HASH,assessment_input_hash:str|None=None,ordered_fact_refs:Sequence[str]=(),ordered_inference_refs:Sequence[str]=())->AnswerAssessmentV1:
+    def create(cls,*,spec_hash:str,evidence_head_hash:str,requirement_results:Sequence[Mapping[str,JsonValue]],missing_requirement_ids:Sequence[str],minimum_useful:bool,status:str,reason_codes:Sequence[str],conflicts:Sequence[Mapping[str,JsonValue]]=(),policy_hash:str=Q1_ASSESSMENT_POLICY_HASH,assessment_input_hash:str|None=None,ordered_fact_refs:Sequence[str]=(),ordered_inference_refs:Sequence[str]=())->"AnswerAssessmentV1":
         input_hash=assessment_input_hash or derive_assessment_input_hash(spec_hash=spec_hash,evidence_head_hash=evidence_head_hash,ordered_fact_refs=ordered_fact_refs,ordered_inference_refs=ordered_inference_refs,assessment_policy_hash=policy_hash)
         base={"schema_version":1,"assessment_input_hash":input_hash,"spec_hash":spec_hash,"evidence_head_hash":evidence_head_hash,"policy_hash":policy_hash,"requirement_results":[copy.deepcopy(dict(x)) for x in requirement_results],"conflicts":[copy.deepcopy(dict(x)) for x in conflicts],"missing_requirement_ids":list(missing_requirement_ids),"minimum_useful":minimum_useful,"status":status,"reason_codes":sorted(set(reason_codes))}
         digest=sha256_json(base); return cls.from_json({**base,"assessment_id":"asa_"+digest[:24],"assessment_hash":digest})
     @classmethod
-    def from_json(cls,value:Mapping[str,Any])->AnswerAssessmentV1:
+    def from_json(cls,value:Mapping[str,Any])->"AnswerAssessmentV1":
         keys={"schema_version","assessment_id","assessment_hash","assessment_input_hash","spec_hash","evidence_head_hash","policy_hash","requirement_results","conflicts","missing_requirement_ids","minimum_useful","status","reason_codes"}
         if not isinstance(value,Mapping) or set(value)!=keys or value.get("schema_version")!=1: raise ValueError("AnswerAssessmentV1 keys/version differ")
         for key in ("requirement_results","conflicts","missing_requirement_ids","reason_codes"):
@@ -367,4 +367,4 @@ def assess_q1_evidence(*,spec_hash:str,evidence_head_hash:str,requests:Sequence[
     return AnswerAssessmentV1.create(spec_hash=spec_hash,evidence_head_hash=evidence_head_hash,ordered_fact_refs=ordered_fact_refs,requirement_results=sorted(results,key=lambda x:(str(x["requirement_id"]),str(x["item_or_cell_id"]))),missing_requirement_ids=missing,minimum_useful=supported>0,status=status,reason_codes=reasons)
 
 
-__all__=["GENESIS_EVIDENCE_HEAD", "Q1_ADMISSION_POLICY", "Q1_ADMISSION_POLICY_HASH", "Q1_ASSESSMENT_POLICY", "Q1_ASSESSMENT_POLICY_HASH", "Q1_ROUTE_POLICY", "AdmittedResearchFactV1", "AnswerAssessmentV1", "EvidenceFactBatchV1", "RegisteredInferenceV1", "assess_q1_evidence", "derive_assessment_input_hash"]
+__all__=["AdmittedResearchFactV1","AnswerAssessmentV1","EvidenceFactBatchV1","GENESIS_EVIDENCE_HEAD","Q1_ADMISSION_POLICY","Q1_ADMISSION_POLICY_HASH","Q1_ASSESSMENT_POLICY","Q1_ASSESSMENT_POLICY_HASH","Q1_ROUTE_POLICY","RegisteredInferenceV1","assess_q1_evidence","derive_assessment_input_hash"]

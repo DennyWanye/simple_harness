@@ -4,7 +4,7 @@ purpose: Verify a distant TaskScope is discovered as a candidate then exactly op
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [HM-TO-A3, HM-TO-A4, HM-TO-A6, HM-TO-A7, HM-TO-R7, HM-TO-R8, HM-S4-TO-VALUE, HM-S4-TO-AUTHORITY]
+obligations: [HM-TO-A3, HM-TO-A4, HM-TO-A6, HM-TO-A7, HM-TO-R7, HM-TO-R8, HM-S4-TO-VALUE, HM-S4-TO-AUTHORITY, S5A-TO-ROUTE]
 tags: [human-memory, taskscope, search, exact-open, resume]
 entrypoint: primary conversation, task_scope_search, and task_scope_open
 revision: 3

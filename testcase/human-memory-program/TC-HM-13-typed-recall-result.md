@@ -4,7 +4,7 @@ purpose: Verify typed recall writes, source bindings, result-bound disclosure, a
 status: active
 surface: api
 type: scripted
-obligations: [HM-TO-A4, HM-TO-A7, HM-TO-A8, HM-TO-R2, HM-TO-R3, HM-TO-R4, HM-TO-R5]
+obligations: [HM-TO-A4, HM-TO-A7, HM-TO-A8, HM-TO-R2, HM-TO-R3, HM-TO-R4, HM-TO-R5, S5A-TO-MEMORY-SURFACE]
 tags: [human-memory, typed-recall, decision-result, conflict-group, privacy, replay, fault-recovery]
 entrypoint: clean public Harness and Memory SDK consumers
 preconditions:

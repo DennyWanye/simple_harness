@@ -9,9 +9,8 @@ import inspect
 import json
 import re
 import time
-from collections.abc import Mapping
 from dataclasses import replace
-from typing import Any
+from typing import Any, Mapping
 
 from ...tools import research_scoring
 from ...tools import research_tools as legacy_research
@@ -25,15 +24,7 @@ from .deep_research_v3_contracts import (
     canonical_url,
     no_op_patch,
 )
-from .deep_research_v3_quality import (
-    evaluate_support,
-    fallback_claims,
-    make_publish_decision,
-    parse_structured_claims,
-    quality_payload,
-    repair_and_prune,
-    select_evidence_passages,
-)
+from .deep_research_v3_quality import (evaluate_support, fallback_claims, make_publish_decision, parse_structured_claims, quality_payload, repair_and_prune, select_evidence_passages)
 from .deep_research_v3_report import render_body, render_report
 from .research_core import (
     FetchPort,
@@ -42,13 +33,14 @@ from .research_core import (
     ResearchSearchPort,
 )
 
+
 _NON_SELF_CONTAINED_CLAIM_RE = re.compile(
     r"^(?:"
     r"(?:该|此|这个|这些|其|本)(?:模型|平台|系统|框架|项目|工具|论文|报告|方法|产品)|"
     r"(?:this|these)\s+(?:model|platform|system|framework|project|tool|paper|report|method|product)\b|"
     r".*(?:排行榜|榜单).*(?:Top\s*\d+|推荐|列出|包含)"
     r")",
-    re.IGNORECASE,
+    re.I,
 )
 _LOW_VALUE_TECH_CLAIM_RE = re.compile(
     r"(?:\bsubmitted on\b|\blast revised\b|\bwas (?:submitted|published|authored)\b|"
@@ -59,7 +51,7 @@ _LOW_VALUE_TECH_CLAIM_RE = re.compile(
     r"^direct agents from issue to merge$|^guides,? concepts,? and product docs for|"
     r"^a technical report presents\b|\bcase study\b.*\bethical ai discourse\b|"
     r"^ai ethics is framed\b)",
-    re.IGNORECASE,
+    re.I,
 )
 
 

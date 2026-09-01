@@ -48,10 +48,10 @@
   },
   "intermediate_state_declaration": "Task 2-5 间 chat 链 DIRECT_STANDALONE no-recall decision 属未接 reconcile 门的中间态；AC-4 终验证据以 Task 5 后带 reconcile 调用的 run 为准",
   "oracle_pins": {
-    "tc_hm_01_sha256": "ceb4c806a68014d2d4cf8e07d3ced994e2d97295d6ef53add74b13c244fb4572",
-    "tc_hm_02_sha256": "1f3f0a192aa1a47065c8c3de93af6ae9166df2020e39930b19aeb45020e77dec",
-    "tc_hm_10_sha256": "01b57607ae0c5985221344aabb8d894cb5935360ea3c21b07357b566894fbd68",
-    "tc_hm_11_sha256": "5dc77365f2ee49928f49d6b12b1ba0bd64020ff44970e2b67ab46784804e4c97",
+    "tc_hm_01_sha256": "73c2aad5f68c1a4fe7e1e15158cab2aad262975858d7bdceb9bfdddb905d6e2c",
+    "tc_hm_02_sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a",
+    "tc_hm_10_sha256": "eb4e606c34529d1c83a855d613b1e959169378a491fc5038062550d3fb4ad86a",
+    "tc_hm_11_sha256": "73d6afcec22d1a65f01d8308130981e49829f161c01651c90dfa5ee03809bd29",
     "metric_formulas_sha256": "27c99ab292f9d308d40ecd1e9d83ea836706d8c25e4096b200dde47efafb356a",
     "memory_wheel_sha256": "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff"
   }

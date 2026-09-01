@@ -11,8 +11,6 @@ from typing import TYPE_CHECKING
 from .deep_research import (
     DEEP_RESEARCH_V5,
     DEEP_RESEARCH_V5_DEFINITION,
-)
-from .deep_research import (
     initial_state as deep_research_initial_state,
 )
 
@@ -23,14 +21,14 @@ if TYPE_CHECKING:
 DEFAULT_DEEP_RESEARCH_VERSION = "v5"
 
 
-def register_v5_workflows(registry: WorkflowRegistry) -> None:
+def register_v5_workflows(registry: "WorkflowRegistry") -> None:
     registry.register(DEEP_RESEARCH_V5)
 
 
 __all__ = [
+    "DEFAULT_DEEP_RESEARCH_VERSION",
     "DEEP_RESEARCH_V5",
     "DEEP_RESEARCH_V5_DEFINITION",
-    "DEFAULT_DEEP_RESEARCH_VERSION",
     "deep_research_initial_state",
     "register_v5_workflows",
 ]

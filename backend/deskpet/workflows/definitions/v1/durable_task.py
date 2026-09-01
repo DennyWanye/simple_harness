@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
 from dataclasses import replace
+from typing import Mapping, Sequence
 
 from ...contracts import JsonValue, WorkflowState
 from ...definition import CompiledWorkflow, compile_workflow
+from .code_task import CODE_COMPLEX_V1_DEFINITION, initial_state as _legacy_initial_state
 from ..code_nodes import (
     MAX_DURABLE_PROPOSAL_TURNS,
     MAX_FIX_ROUNDS,
     CapabilitySnapshotV1,
     TaskSessionRefV1,
 )
-from .code_task import CODE_COMPLEX_V1_DEFINITION
-from .code_task import initial_state as _legacy_initial_state
+
 
 WORKFLOW_NAME = "durable_task"
 WORKFLOW_VERSION = "v1"

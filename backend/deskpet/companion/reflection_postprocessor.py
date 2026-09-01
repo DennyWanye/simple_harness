@@ -98,7 +98,7 @@ class HostNeutralSemanticGrowthResultV1:
     def from_mapping(
         cls,
         raw: Mapping[str, object],
-    ) -> HostNeutralSemanticGrowthResultV1:
+    ) -> "HostNeutralSemanticGrowthResultV1":
         required = {
             "decision",
             "target_kind",
@@ -431,11 +431,11 @@ def _optional_semantic_text(value: object) -> str | None:
 
 
 __all__ = [
-    "HostNeutralSemanticGrowthResultV1",
     "LiveEvidenceLoader",
     "LiveGrowthTargetFactsV1",
     "LiveReflectionEvidenceV1",
     "LiveTargetFactsResolver",
+    "HostNeutralSemanticGrowthResultV1",
     "ReflectionDecisionStorePort",
     "ReflectionResultPostprocessor",
 ]

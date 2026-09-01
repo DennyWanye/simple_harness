@@ -12,6 +12,7 @@ from ..contracts import JsonValue, canonical_json
 from .deep_research_v4_contracts import IntentProfile, TechnologyFinding
 from .deep_research_v4_intelligence import finding_set_failure_codes
 
+
 _MATURITY = {
     "adopted": ("生产可用", "可进入受控采用；先用代表性业务负载验证成本、稳定性和迁移影响。"),
     "emerging": ("正在成熟", "适合开展限界 PoC，并持续跟踪接口稳定性、生态兼容和正式版节奏。"),
