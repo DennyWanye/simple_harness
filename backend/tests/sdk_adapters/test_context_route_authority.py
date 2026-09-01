@@ -322,3 +322,35 @@ async def test_ledger_verify_schema_fails_closed_on_pre_v45_db(
         db.commit()
     with pytest.raises(ContextRouteLedgerError):
         ContextRouteLedgerStore(legacy).verify_schema()
+
+
+@pytest.mark.asyncio
+async def test_window_resolves_from_production_start_shapes(state_db: Path) -> None:
+    """Round-2 audit P1: both production context_metadata shapes (scalar
+    context_window on chat, run_binding.context_window on foreground) must
+    reach the frozen-budget tier — never silently fall to the smallest tier."""
+
+    from deskpet.sdk_adapters.context_authority import _resolve_window_tokens
+
+    chat_shape = {"context_window": 128000, "run_binding": {"context_window": 128000}}
+    foreground_shape = {"run_binding": {"context_window": 32768}}
+    harness_shape = {"budget": {"context_window": 32768}}
+    assert _resolve_window_tokens(chat_shape) == 128000
+    assert _resolve_window_tokens(foreground_shape) == 32768
+    assert _resolve_window_tokens(harness_shape) == 32768
+    assert _resolve_window_tokens({}) is None
+
+    context = _FakeContext()
+    big_persona = "规" * 3000
+    context.messages = [
+        Message(role=MessageRole.SYSTEM, content=big_persona),
+        Message(role=MessageRole.USER, content="hello"),
+    ]
+    authority = _authority(
+        state_db,
+        context,
+        start_input={"context_metadata": {"context_window": 200000}},
+    )
+    snapshot = await authority.prepare_snapshot(_request(1, context.revision))
+    # A 3k-CJK persona fits comfortably once the real window is honoured.
+    assert big_persona in "".join(str(m.content) for m in snapshot.messages)

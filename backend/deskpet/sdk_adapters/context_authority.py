@@ -662,6 +662,27 @@ def _message_text(message: Any) -> str:
     return canonical_json([getattr(block, "to_dict", lambda b=block: str(b))() for block in content])
 
 
+def _resolve_window_tokens(metadata: Mapping[str, Any]) -> int | None:
+    """Resolve the provider context window from every production start shape.
+
+    Chat starts write a scalar ``context_window``; both chat and foreground
+    starts carry it inside ``run_binding``; the milestone harness uses the
+    ``budget`` sub-mapping.  Missing everywhere → None (smallest frozen tier,
+    over-trim direction).
+    """
+
+    budget = metadata.get("budget")
+    if isinstance(budget, Mapping) and budget.get("context_window"):
+        return int(budget["context_window"])
+    scalar = metadata.get("context_window")
+    if scalar:
+        return int(scalar)
+    run_binding = metadata.get("run_binding")
+    if isinstance(run_binding, Mapping) and run_binding.get("context_window"):
+        return int(run_binding["context_window"])
+    return None
+
+
 def _pending_occurrence_message(pending: tuple[Any, ...]) -> Any:
     """Bounded, Host-authored summary of eligible pending occurrences."""
 
@@ -852,9 +873,7 @@ class ProductRunContextAuthority:
                 max_output_tokens = int(raw_max)
             metadata = start_input.get("context_metadata")
             if isinstance(metadata, Mapping):
-                budget = metadata.get("budget")
-                if isinstance(budget, Mapping) and budget.get("context_window"):
-                    window_tokens = int(budget["context_window"])
+                window_tokens = _resolve_window_tokens(metadata)
         inbox_message = None
         if self._reconcile is not None:
             presented = await self._ledger.presented_occurrence_keys()

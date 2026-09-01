@@ -581,7 +581,6 @@ async def test_memory_standalone_route_returns_typed_fragments(gate) -> None:
     for fragment in result["fragments"]:
         assert fragment["bytes"] > 0 and fragment["tokens"] > 0
         assert fragment["lane"] in {"long_term_typed", "short_horizon"}
-    assert "short_horizon_unavailable" not in result["degradation_codes"] or True
     assert receipt["recall_refs"], "receipt must carry recall refs"
     with sqlite3.connect(gate.state_db) as db:
         rows = db.execute(

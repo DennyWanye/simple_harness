@@ -14,8 +14,9 @@ local subject.  S5a consumes three read/observe surfaces:
 - ``typed_recall`` — the memory_standalone lane over ``execute_typed_recall``
   with Host-constructed DisclosureContext (recipient/purpose can never come
   from model payloads).
-- The short-horizon vector lane is deterministically degraded in S5a (no
-  production embedder is bound to v7 yet); typed/FTS recall stays eligible.
+- The short-horizon vector lane runs on the production embedder when one is
+  composed (hash/mock embedders are guarded off); without one it degrades
+  deterministically and typed/FTS recall stays eligible.
 """
 
 from __future__ import annotations
