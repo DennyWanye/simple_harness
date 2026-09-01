@@ -186,11 +186,16 @@ class TaskScopeProjectionStore:
             cursor = await db.execute(
                 "SELECT checkpoint_id,checkpoint_hash,checkpoint_json "
                 "FROM task_scope_checkpoints WHERE task_scope_id=? "
-                "ORDER BY created_at DESC,checkpoint_id DESC LIMIT ?",
-                (source.task_scope_id, 1 if source.checkpoint_sequence else 0),
+                "ORDER BY created_at,checkpoint_id LIMIT 1 OFFSET ?",
+                (
+                    source.task_scope_id,
+                    max(0, source.checkpoint_sequence - 1),
+                ),
             )
             row = await cursor.fetchone()
             await cursor.close()
+            if source.checkpoint_sequence == 0:
+                row = None
         checkpoint_id = None if row is None else str(row["checkpoint_id"])
         checkpoint_hash = None if row is None else str(row["checkpoint_hash"])
         expected = {} if row is None else json.loads(str(row["checkpoint_json"])).get("metadata", {})

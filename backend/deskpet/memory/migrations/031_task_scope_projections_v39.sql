@@ -49,7 +49,7 @@ CREATE TABLE task_scope_read_blocks (
     content_sha256 TEXT NOT NULL CHECK(length(content_sha256) = 64),
     content BLOB NOT NULL CHECK(length(content) <= 32768),
     created_at REAL NOT NULL,
-    UNIQUE(source_id, view_kind, content_sha256),
+    UNIQUE(source_id, view_kind, block_kind, content_sha256),
     FOREIGN KEY(source_id) REFERENCES task_scope_projection_sources(source_id)
 );
 
@@ -91,4 +91,3 @@ CREATE TRIGGER task_scope_read_views_no_delete BEFORE DELETE ON task_scope_read_
 CREATE TRIGGER task_scope_projection_receipts_no_update BEFORE UPDATE ON task_scope_projection_materialization_receipts BEGIN SELECT RAISE(ABORT,'task_scope_projection_append_only'); END;
 CREATE TRIGGER task_scope_projection_receipts_no_delete BEFORE DELETE ON task_scope_projection_materialization_receipts BEGIN SELECT RAISE(ABORT,'task_scope_projection_append_only'); END;
 CREATE TRIGGER task_scope_projection_source_heads_no_delete BEFORE DELETE ON task_scope_projection_source_heads BEGIN SELECT RAISE(ABORT,'task_scope_projection_head_required'); END;
-

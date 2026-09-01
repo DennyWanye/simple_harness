@@ -264,7 +264,6 @@ class TaskScopeSearchStore:
             "limit": limit,
         }
         request_hash = canonical_hash(request_base)
-        offset = _decode_cursor(cursor, request_hash)
         async with self._connection() as db:
             await self._require_fts_tx(db)
             if allowed:
@@ -281,6 +280,7 @@ class TaskScopeSearchStore:
             else:
                 authorized_scopes = ()
         if not authorized_scopes:
+            _decode_cursor(cursor, request_hash, canonical_hash([]))
             return await self._record_search_receipt(subject, request_hash, (), None)
         for scope_id in authorized_scopes:
             await self.rebuild_scope(scope_id)
@@ -288,18 +288,25 @@ class TaskScopeSearchStore:
         async with self._connection() as db:
             await self._require_fts_tx(db)
             document_cursor = await db.execute(
-                "SELECT d.document_id FROM task_scope_search_heads h "
+                "SELECT d.document_id,d.source_hash FROM task_scope_search_heads h "
                 "JOIN task_scope_search_documents d ON d.document_id=h.document_id "
                 f"WHERE d.subject=? AND d.task_scope_id IN ({','.join('?' for _ in authorized_scopes)}) "
                 "ORDER BY d.document_id",
                 (subject, *authorized_scopes),
             )
-            authorized_documents = tuple(
-                str(row["document_id"]) for row in await document_cursor.fetchall()
+            document_rows = await document_cursor.fetchall()
+            authorized_documents = tuple(str(row["document_id"]) for row in document_rows)
+            source_set_hash = canonical_hash(
+                [
+                    {"document_id": row["document_id"], "source_hash": row["source_hash"]}
+                    for row in document_rows
+                ]
             )
             await document_cursor.close()
             if not authorized_documents:
+                _decode_cursor(cursor, request_hash, source_set_hash)
                 return await self._record_search_receipt(subject, request_hash, (), None)
+            offset = _decode_cursor(cursor, request_hash, source_set_hash)
             placeholders = ",".join("?" for _ in authorized_documents)
             # Phase one above produces only authorized immutable document ids.
             # FTS MATCH and ranking are phase two and cannot introduce another id.
@@ -334,7 +341,11 @@ class TaskScopeSearchStore:
             )
             for row in rows
         )
-        next_cursor = _encode_cursor(request_hash, offset + limit) if has_more else None
+        next_cursor = (
+            _encode_cursor(request_hash, source_set_hash, offset + limit)
+            if has_more
+            else None
+        )
         return await self._record_search_receipt(subject, request_hash, candidates, next_cursor)
 
     async def open_exact(
@@ -524,14 +535,19 @@ def _bounded(value: str, limit: int) -> str:
             data = data[:-1]
 
 
-def _encode_cursor(request_hash: str, offset: int) -> str:
+def _encode_cursor(request_hash: str, source_set_hash: str, offset: int) -> str:
     payload = canonical_json(
-        {"schema_version": 1, "request_hash": request_hash, "offset": offset}
+        {
+            "schema_version": 1,
+            "request_hash": request_hash,
+            "source_set_hash": source_set_hash,
+            "offset": offset,
+        }
     ).encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
-def _decode_cursor(cursor: str | None, request_hash: str) -> int:
+def _decode_cursor(cursor: str | None, request_hash: str, source_set_hash: str) -> int:
     if cursor is None:
         return 0
     try:
@@ -540,6 +556,7 @@ def _decode_cursor(cursor: str | None, request_hash: str) -> int:
         if payload != {
             "schema_version": 1,
             "request_hash": request_hash,
+            "source_set_hash": source_set_hash,
             "offset": payload["offset"],
         }:
             raise ValueError
