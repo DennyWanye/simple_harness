@@ -30,7 +30,9 @@ closure 与 S6 UI 仍未实施，不作产品成功声明。
   ReAct checkpoint v6）→ RUNNING → SDK 认证 terminal → settle → next。重启 reconciliation 按 durable
   binding/SDK state 补观察或以同一 identity 重试，永不产生第二个 SDK Run。
 - generation fence（2026-09-01 P1 整改闭合）：`ForegroundQueueStore.authorize_effect` 按
-  `EffectBoundary`（`SDK_START`=CLAIMED、`SDK_CONTROL`=*_REQUESTED、`TOOL`=RUNNING）在每个外部副作用
+  `EffectBoundary`（`SDK_START`=CLAIMED、`SDK_CONTROL`=*_REQUESTED、`TOOL`=全部非终态活动态
+  ——RUNNING/PAUSE_REQUESTED/PAUSED/STOP_REQUESTED/CANCEL_REQUESTED；2026-09-01 review 修复：
+  TOOL fence 只拦 stale worker 与终态，控制过渡期的工具调用不再被打成 FAILED）在每个外部副作用
   紧前做最终 current-generation admission；物理 Tool dispatch 经 `ForegroundEffectAdmissionGate` 在
   `ProductEffectExecutor.execute` 内接入同一 durable admission（main.py 以单例 gate 同时接 executor 与
   runtime）。lease reclaim 后旧 worker 的 start/signal/tool 副作用计数为 0（bind→start、signal-read→send、
@@ -51,7 +53,8 @@ closure 与 S6 UI 仍未实施，不作产品成功声明。
   `test_real_product_sdk_production_composition_starts` 已绿；changed-surface ruff/mypy 相对 main 零新增。
 - 已知边界（P2，未阻塞本增量）：foreground composition 与旧 chat ingress 双构造路径尚未收敛；
   effect gate 为进程内注册表（未注册 run 放行，重启窗口由启动唤醒缓解）；控制泵异常降级为 audit 行；
-  PAUSED 无生产 resume 控制（暂停后 tool dispatch fail-closed）；CLAIMED 期 control 会阻住 SDK_START
+  PAUSED 无生产 resume 控制（2026-09-01 review 修复后暂停期 tool dispatch 已正常放行，仅 resume
+  缺失）；CLAIMED 期 control 会阻住 SDK_START
   且无终态路径（既有 liveness 缺口，fence 使其无外部副作用）。多 root project effect 仍稳定 fail closed。
 
 ## Human Memory Program S4 Task 1–4 当前边界（2026-08-30）

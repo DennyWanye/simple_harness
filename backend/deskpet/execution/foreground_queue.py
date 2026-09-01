@@ -75,7 +75,21 @@ _EFFECT_BOUNDARY_ALLOWED_STATES: dict[EffectBoundary, frozenset[str]] = {
     EffectBoundary.SDK_CONTROL: frozenset(
         {"PAUSE_REQUESTED", "STOP_REQUESTED", "CANCEL_REQUESTED"}
     ),
-    EffectBoundary.TOOL: frozenset({"RUNNING"}),
+    # The TOOL fence exists to stop STALE WORKERS (lease/generation drift) and
+    # terminal runs from producing external side effects.  Control-transition
+    # states stay admitted: SDK 0.7 cannot halt a run mid-tool, so rejecting a
+    # dispatch while the head sits in *_REQUESTED/PAUSED would convert a clean
+    # pause/stop into a FAILED run (the SDK kernel terminalizes on the raised
+    # admission error).  Terminal states are rejected by _validate_lease_tx.
+    EffectBoundary.TOOL: frozenset(
+        {
+            "RUNNING",
+            "PAUSE_REQUESTED",
+            "PAUSED",
+            "STOP_REQUESTED",
+            "CANCEL_REQUESTED",
+        }
+    ),
 }
 
 

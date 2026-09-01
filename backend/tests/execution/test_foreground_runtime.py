@@ -886,3 +886,188 @@ def test_resolve_host_terminal_keeps_stop_and_cancel_distinct() -> None:
         is RunState.FAILED
     )
     assert resolve_host_terminal("waiting", None) is None
+
+
+class _BlockedTerminal:
+    def __init__(self) -> None:
+        self.state = RunState.COMPLETED
+        self.release = asyncio.Event()
+
+    async def observe(self, **kwargs):  # type: ignore[no-untyped-def]
+        await self.release.wait()
+        return AuthenticatedTerminalObservation(
+            self.state,
+            f"sdk-terminal:{kwargs['sdk_run_id']}",
+            "6" * 64,
+        )
+
+
+def _live_runtime(store: _Store, ingress: _Ingress, terminal: _BlockedTerminal):
+    return ForegroundRuntimeExecutionAuthority(
+        store=store,  # type: ignore[arg-type]
+        subject=SUBJECT,
+        owner_id="owner-1",
+        ingress=ingress,  # type: ignore[arg-type]
+        context=_Context(),
+        provider=_Provider(),
+        tools=_Tools(),
+        terminal_observer=terminal,
+    )
+
+
+@pytest.mark.asyncio
+async def test_superseding_stop_during_pause_ack_is_still_delivered_live() -> None:
+    """A STOP landing between the pause read and its ack must not end delivery."""
+
+    class SupersedingStore(_Store):
+        def __init__(self, candidates) -> None:  # type: ignore[no-untyped-def]
+            super().__init__(candidates)
+            self.superseded_once = False
+
+        async def acknowledge_signal(self, **kwargs):  # type: ignore[no-untyped-def]
+            if kwargs["signal_id"] == "sig-pause" and not self.superseded_once:
+                self.superseded_once = True
+                # The user committed STOP between the durable read and this
+                # ack: the real store hides the pause via desired_control and
+                # exposes the stop signal.
+                self.signals = [
+                    signal
+                    for signal in self.signals
+                    if signal.signal_id != "sig-pause"
+                ]
+                self.signals.append(
+                    _signal_envelope(
+                        "sig-stop",
+                        host_run_id=kwargs["sdk_run_id"].replace("sdk", "host"),
+                        sdk_run_id=kwargs["sdk_run_id"],
+                        kind=ControlKind.STOP,
+                    )
+                )
+                raise ForegroundQueueError("foreground_signal_superseded")
+            return await super().acknowledge_signal(**kwargs)
+
+    store = SupersedingStore([_candidate(1)])
+    ingress = _Ingress()
+    terminal = _BlockedTerminal()
+    runtime = _live_runtime(store, ingress, terminal)
+    await runtime.after_enqueue(subject=SUBJECT)
+    await _wait_until(lambda: len(ingress.starts) == 1)
+    assert store.active is not None and store.active.sdk_run_id is not None
+    sdk_run_id = store.active.sdk_run_id
+
+    store.signals.append(
+        _signal_envelope(
+            "sig-pause",
+            host_run_id=store.active.host_run_id,
+            sdk_run_id=sdk_run_id,
+            kind=ControlKind.PAUSE,
+        )
+    )
+    await runtime.after_control(subject=SUBJECT)
+    await _wait_until(lambda: any(sid == "sig-stop" for sid, _ in store.acks))
+    assert not any(sid == "sig-pause" for sid, _ in store.acks)
+    stop_ack = next(ack for sid, ack in store.acks if sid == "sig-stop")
+    assert stop_ack == "sdk-stop:sig-stop"
+    assert ingress.cancels == [sdk_run_id]
+    assert store.pause_outcomes == []
+
+    terminal.state = RunState.STOPPED
+    terminal.release.set()
+    await runtime.drain()
+    assert runtime.last_error is None
+    assert store.terminals == [store.claimed[next(iter(store.claimed))].host_run_id]
+
+
+@pytest.mark.asyncio
+async def test_pause_outcome_race_with_stop_keeps_pump_alive() -> None:
+    """A STOP moving the head off PAUSE_REQUESTED after the ack is benign."""
+
+    class RacingStore(_Store):
+        def __init__(self, candidates) -> None:  # type: ignore[no-untyped-def]
+            super().__init__(candidates)
+            self.raced_once = False
+
+        async def record_pause_outcome(self, **kwargs):  # type: ignore[no-untyped-def]
+            if not self.raced_once:
+                self.raced_once = True
+                self.signals.append(
+                    _signal_envelope(
+                        "sig-stop",
+                        host_run_id=kwargs["host_run_id"],
+                        sdk_run_id=kwargs["sdk_run_id"],
+                        kind=ControlKind.STOP,
+                    )
+                )
+                raise ForegroundQueueError("foreground_state_transition_invalid")
+            return await super().record_pause_outcome(**kwargs)
+
+    store = RacingStore([_candidate(1)])
+    ingress = _Ingress()
+    terminal = _BlockedTerminal()
+    runtime = _live_runtime(store, ingress, terminal)
+    await runtime.after_enqueue(subject=SUBJECT)
+    await _wait_until(lambda: len(ingress.starts) == 1)
+    assert store.active is not None and store.active.sdk_run_id is not None
+    sdk_run_id = store.active.sdk_run_id
+
+    store.signals.append(
+        _signal_envelope(
+            "sig-pause",
+            host_run_id=store.active.host_run_id,
+            sdk_run_id=sdk_run_id,
+            kind=ControlKind.PAUSE,
+        )
+    )
+    await runtime.after_control(subject=SUBJECT)
+    await _wait_until(lambda: any(sid == "sig-stop" for sid, _ in store.acks))
+    assert store.pause_outcomes == []
+    assert ingress.cancels == [sdk_run_id]
+
+    terminal.state = RunState.STOPPED
+    terminal.release.set()
+    await runtime.drain()
+    assert runtime.last_error is None
+
+
+@pytest.mark.asyncio
+async def test_durable_cancel_commit_is_delivered_live() -> None:
+    store = _Store([_candidate(1)])
+    ingress = _Ingress()
+    terminal = _BlockedTerminal()
+    runtime = _live_runtime(store, ingress, terminal)
+    await runtime.after_enqueue(subject=SUBJECT)
+    await _wait_until(lambda: len(ingress.starts) == 1)
+    assert store.active is not None and store.active.sdk_run_id is not None
+    sdk_run_id = store.active.sdk_run_id
+
+    store.signals.append(
+        _signal_envelope(
+            "sig-cancel",
+            host_run_id=store.active.host_run_id,
+            sdk_run_id=sdk_run_id,
+            kind=ControlKind.CANCEL,
+        )
+    )
+    await runtime.after_control(subject=SUBJECT)
+    await _wait_until(lambda: any(sid == "sig-cancel" for sid, _ in store.acks))
+    cancel_ack = next(ack for sid, ack in store.acks if sid == "sig-cancel")
+    assert cancel_ack == "sdk-cancel:sig-cancel"
+    assert ingress.cancels == [sdk_run_id]
+
+    terminal.state = RunState.CANCELLED
+    terminal.release.set()
+    await runtime.drain()
+    assert runtime.last_error is None
+
+
+def test_production_registries_accept_stopped_terminal() -> None:
+    """STOP resolves to Host terminal STOPPED; the shared SDK-adapter
+    registries must release bindings for it instead of raising ValueError."""
+
+    from deskpet.sdk_adapters.run_bindings import SdkRunBindingRegistry
+    from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
+
+    with pytest.raises(KeyError):
+        SdkRunBindingRegistry().mark_terminal("missing-run", "stopped")
+    with pytest.raises(KeyError):
+        SdkRunToolAuthorityRegistry().mark_terminal("missing-run", "stopped")

@@ -1105,8 +1105,15 @@ class SdkRunToolAuthorityRegistry:
         return updated
 
     def mark_terminal(self, run_id: object, terminal_state: str) -> SdkRunToolAuthorityV1:
-        if str(terminal_state).lower() not in {"completed", "failed", "cancelled"}:
-            raise ValueError("terminal_state must be completed, failed, or cancelled")
+        if str(terminal_state).lower() not in {
+            "completed",
+            "failed",
+            "cancelled",
+            "stopped",
+        }:
+            raise ValueError(
+                "terminal_state must be completed, failed, cancelled, or stopped"
+            )
         record = self.resolve(run_id)
         self._records.pop(record.run_id, None)
         self._runtime_exposures.pop(record.run_id, None)

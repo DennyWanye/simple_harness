@@ -12,6 +12,7 @@ import pytest
 from deskpet.execution import (
     ContextLineage,
     ControlKind,
+    EffectBoundary,
     ForegroundQueueError,
     ForegroundQueueStore,
     RunState,
@@ -1457,3 +1458,76 @@ async def test_execution_audit_boundary_faults_are_rollback_or_exact_replay(
     assert recovered.phase == phase.replace("execution_", "")
     with sqlite3.connect(db_path) as db:
         assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_admission_survives_control_transitions(tmp_path: Path) -> None:
+    """The TOOL fence blocks stale workers and terminal runs, not controls.
+
+    SDK 0.7 cannot halt a run mid-tool, so a pause/stop/cancel request moving
+    the head to *_REQUESTED (or PAUSED) must not convert an in-flight tool
+    dispatch into a FAILED run.
+    """
+
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    store = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(store, primary_id, 1)
+    admission = await _claim_and_bind(store)
+    await store.record_sdk_started(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-1",
+        owner_id="owner-1",
+        generation=1,
+        sdk_event_id="started-1",
+        idempotency_key="started-1",
+    )
+
+    async def tool_admitted() -> None:
+        receipt = await store.authorize_effect(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-run-1",
+            owner_id="owner-1",
+            generation=1,
+            boundary=EffectBoundary.TOOL,
+        )
+        assert receipt.generation == 1
+
+    await tool_admitted()  # RUNNING
+    await store.request_control(
+        host_run_id=admission.host_run_id,
+        subject=SUBJECT,
+        generation=1,
+        control_kind="pause",
+        reason="user_pause",
+        idempotency_key="tool-pause-1",
+    )
+    await tool_admitted()  # PAUSE_REQUESTED
+    await store.record_pause_outcome(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-1",
+        owner_id="owner-1",
+        generation=1,
+        sdk_event_id="paused-1",
+        paused=True,
+        idempotency_key="tool-paused-1",
+    )
+    await tool_admitted()  # PAUSED
+    await store.request_control(
+        host_run_id=admission.host_run_id,
+        subject=SUBJECT,
+        generation=1,
+        control_kind="stop",
+        reason="user_stop",
+        idempotency_key="tool-stop-1",
+    )
+    await tool_admitted()  # STOP_REQUESTED
+    # Stale generation is still fenced regardless of state.
+    with pytest.raises(ForegroundQueueError) as stale:
+        await store.authorize_effect(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-run-1",
+            owner_id="owner-1",
+            generation=2,
+            boundary=EffectBoundary.TOOL,
+        )
+    _assert_code(stale, "foreground_generation_stale")

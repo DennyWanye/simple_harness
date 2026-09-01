@@ -967,23 +967,41 @@ class ForegroundRuntimeExecutionAuthority:
                     payload={"kind": signal.control_kind.value},
                 )
                 sdk_signal_id = delivered.delivery_id
-            await self._store.acknowledge_signal(
-                signal_id=signal.signal_id,
-                sdk_run_id=sdk_run_id,
-                owner_id=self._owner_id,
-                generation=generation,
-                sdk_signal_id=sdk_signal_id,
-            )
-            if signal.control_kind is ControlKind.PAUSE:
-                await self._store.record_pause_outcome(
-                    host_run_id=host_run_id,
+            try:
+                await self._store.acknowledge_signal(
+                    signal_id=signal.signal_id,
                     sdk_run_id=sdk_run_id,
                     owner_id=self._owner_id,
                     generation=generation,
-                    sdk_event_id=sdk_signal_id,
-                    paused=True,
-                    idempotency_key=f"runtime-pause:{signal.signal_id}",
+                    sdk_signal_id=sdk_signal_id,
                 )
+            except ForegroundQueueError as exc:
+                if exc.code == "foreground_signal_superseded":
+                    # A higher-priority control committed between the durable
+                    # signal read and this ack.  Supersession invalidates only
+                    # THIS signal — this worker still holds the lease and the
+                    # superseding signal is pending, so skip and let the next
+                    # delivery pass (pump wake or poll) send it.
+                    continue
+                raise
+            if signal.control_kind is ControlKind.PAUSE:
+                try:
+                    await self._store.record_pause_outcome(
+                        host_run_id=host_run_id,
+                        sdk_run_id=sdk_run_id,
+                        owner_id=self._owner_id,
+                        generation=generation,
+                        sdk_event_id=sdk_signal_id,
+                        paused=True,
+                        idempotency_key=f"runtime-pause:{signal.signal_id}",
+                    )
+                except ForegroundQueueError as exc:
+                    if exc.code == "foreground_state_transition_invalid":
+                        # A superseding STOP/CANCEL moved the head off
+                        # PAUSE_REQUESTED after the ack; the pause outcome is
+                        # moot and the superseding signal delivers next pass.
+                        continue
+                    raise
                 self._record_audit(
                     "foreground.runtime.paused",
                     host_run_id=host_run_id,
@@ -1019,11 +1037,15 @@ class ForegroundRuntimeExecutionAuthority:
                     generation=generation,
                 )
             except ForegroundQueueError as exc:
+                # Only lease-loss/terminal rejections end the pump — this
+                # worker may no longer signal the Run.  Supersession races are
+                # handled per-signal inside _deliver_controls and must NOT end
+                # delivery: the superseding higher-priority control is still
+                # pending and this worker still owns the lease.
                 if exc.code in {
                     "foreground_generation_stale",
                     "foreground_lease_expired",
                     "foreground_run_already_terminal",
-                    "foreground_signal_superseded",
                 }:
                     return
                 raise

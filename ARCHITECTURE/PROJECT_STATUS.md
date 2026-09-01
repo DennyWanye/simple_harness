@@ -2,6 +2,27 @@
 
 > **最后更新**：2026-09-01
 
+## 2026-09-01（补）S4 closure review 修复：STOPPED 终态白名单、TOOL fence 状态集、supersession 竞态
+
+- 8 角度独立 code review（3 正确性 + 3 清理 + 高度 + 规约，逐条验证）发现 9 项 CONFIRMED；按建议
+  修复其中 3 项阻塞级正确性问题：
+  1. **生产 mark_terminal 白名单缺 "stopped"**：`SdkRunBindingRegistry` 与
+     `SdkRunToolAuthorityRegistry` 的终态白名单补入 `stopped`——此前用户 stop 会在 terminal 落账后
+     抛 ValueError 杀死 driver 并泄漏 tool scope pin/provider binding（测试全绿是因为只有 fake 学过
+     新终态）。新增 registry 级测试。
+  2. **TOOL fence 状态集**：`_EFFECT_BOUNDARY_ALLOWED_STATES[TOOL]` 由 {RUNNING} 扩为全部非终态
+     活动态——fence 的目标是 stale worker 与终态，SDK 0.7 无法在 tool 中途停机，原实现会把
+     pause/stop 过渡期的工具调用经 SDK kernel 兜底打成 FAILED run。新增真实 store 的
+     控制过渡期 admission 测试（stale generation 仍被拦）。
+  3. **supersession 竞态**：`_deliver_controls` 逐信号处理 `foreground_signal_superseded`（ack 竞态）
+     与 `foreground_state_transition_invalid`（pause outcome 竞态）为 skip-and-continue；控制泵退出
+     集收窄为 lease 丢失/终态三码——此前 pause→stop 升级竞态会永久杀死泵/driver，live STOP 被静默
+     丢弃、run 跑到自然完成。新增两个竞态测试 + cancel 即时送达正向测试（顺带闭合 P2
+     `audit-hm-cancel-delivery-positive-untested`）。
+- 其余 6 项 CONFIRMED findings（终态 TOCTOU、pause-ack 崩溃窗口、error-after-commit、control-before-
+  start wedge〔既有等价缺口〕、身份四元组收敛、热路径 admission 成本）登记为下一增量 P2/改进项。
+- 执行套件 66 passed（+5 新测试）；本节完成后已按 plan-test 重走全量复测与机器门（见下节 receipt 更新）。
+
 ## 2026-09-01 Human Memory S4 Task 5–8 Host Runtime Execution Closure（P1 整改闭合）
 
 - 在 `fix/human-memory-runtime-p1-closure` 分支（基线 main `04a5a649`）完成 S4 host-closure 增量的

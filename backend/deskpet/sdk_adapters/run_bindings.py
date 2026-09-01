@@ -154,8 +154,15 @@ class SdkRunBindingRegistry:
         return waiting
 
     def mark_terminal(self, run_id: str, terminal_state: str) -> SdkRunBindingV1:
-        if str(terminal_state).lower() not in {"completed", "failed", "cancelled"}:
-            raise ValueError("terminal_state must be completed, failed, or cancelled")
+        if str(terminal_state).lower() not in {
+            "completed",
+            "failed",
+            "cancelled",
+            "stopped",
+        }:
+            raise ValueError(
+                "terminal_state must be completed, failed, cancelled, or stopped"
+            )
         binding = self._bindings.pop(str(run_id), None)
         if binding is None:
             raise KeyError(run_id)
