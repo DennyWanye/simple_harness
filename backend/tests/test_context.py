@@ -147,7 +147,7 @@ def test_critical_harness_services_register_none_without_error(name: str):
         "human_memory_binding_append_authority",
         "human_memory_recovery_lifecycle",
         "human_memory_foreground_scheduler_wake",
-        "human_memory_foreground_runtime_execution",
+        "human_memory_foreground_runtime_execution_authority",
     ],
 )
 def test_human_memory_production_ports_are_explicit_slots(name: str):

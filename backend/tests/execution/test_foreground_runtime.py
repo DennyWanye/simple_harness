@@ -521,7 +521,9 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
 
     await main._activate_human_memory_host_ports(epoch)
     scheduler = main.service_context.get("human_memory_foreground_scheduler_wake")
-    runtime = main.service_context.get("human_memory_foreground_runtime_execution")
+    runtime = main.service_context.get(
+        "human_memory_foreground_runtime_execution_authority"
+    )
     assert scheduler is runtime
     assert isinstance(runtime, ForegroundRuntimeExecutionAuthority)
     assert runtime.subject == "deskpet-local-owner-v1"
@@ -532,4 +534,9 @@ async def test_human_lifespan_registers_one_real_runtime_and_legacy_does_not(
     )()
     await main._activate_human_memory_host_ports(legacy)
     assert main.service_context.get("human_memory_foreground_scheduler_wake") is None
-    assert main.service_context.get("human_memory_foreground_runtime_execution") is None
+    assert (
+        main.service_context.get(
+            "human_memory_foreground_runtime_execution_authority"
+        )
+        is None
+    )

@@ -3030,7 +3030,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         "human_memory_binding_append_authority",
         "human_memory_recovery_lifecycle",
         "human_memory_foreground_scheduler_wake",
-        "human_memory_foreground_runtime_execution",
+        "human_memory_foreground_runtime_execution_authority",
     )
     if startup_epoch.composition_mode is not StartupCompositionMode.HUMAN:
         for name in names:
@@ -3074,7 +3074,9 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         # Fresh installs without a configured Provider keep the Host mutation
         # authorities available, but cannot manufacture an Agent authority.
         service_context.register("human_memory_foreground_scheduler_wake", None)
-        service_context.register("human_memory_foreground_runtime_execution", None)
+        service_context.register(
+            "human_memory_foreground_runtime_execution_authority", None
+        )
         logger.warning(
             "human_memory_foreground_runtime_unavailable",
             reason="sdk_runtime_authority_unavailable",
@@ -3122,7 +3124,9 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         audit_sink=_AuditSink(),
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
-    service_context.register("human_memory_foreground_runtime_execution", runtime)
+    service_context.register(
+        "human_memory_foreground_runtime_execution_authority", runtime
+    )
 
 
 @asynccontextmanager
@@ -5575,7 +5579,7 @@ async def lifespan(app: FastAPI):
     global _sdk_runtime_stack, _sdk_ingress
     global _sdk_desktop_bridge
     _foreground_runtime = service_context.get(
-        "human_memory_foreground_runtime_execution"
+        "human_memory_foreground_runtime_execution_authority"
     )
     if _foreground_runtime is not None:
         try:
@@ -5591,7 +5595,7 @@ async def lifespan(app: FastAPI):
                 "human_memory_foreground_scheduler_wake", None
             )
             service_context.register(
-                "human_memory_foreground_runtime_execution", None
+                "human_memory_foreground_runtime_execution_authority", None
             )
     # Close SDK Runtime ingress
     if _sdk_ingress is not None:
@@ -10429,7 +10433,7 @@ async def _activate_companion_runtime_adapter_and_open_ingress() -> None:
     # Open SDK ingress
     _sdk_ingress.open()
     foreground_runtime = service_context.get(
-        "human_memory_foreground_runtime_execution"
+        "human_memory_foreground_runtime_execution_authority"
     )
     if foreground_runtime is not None:
         # Startup recovery enters through the same public wake as enqueue;
