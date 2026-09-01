@@ -32,24 +32,12 @@ _OWNED_PREFIXES = ("human_memory_", "task_scope_", "task_workspace_", "foregroun
 _PRIVATE_NAMES = frozenset(
     {"password", "token", "secret", "cookie", "api_key", "credential", "authorization"}
 )
-_OUTBOX_QUERIES = {
-    "projection-source": (
-        "SELECT outbox_id FROM task_scope_projection_source_outbox ORDER BY outbox_id"
-    ),
-    "projection-legacy": (
-        "SELECT outbox_id FROM task_scope_projection_outbox ORDER BY outbox_id"
-    ),
-    "search": "SELECT outbox_id FROM task_scope_search_outbox ORDER BY outbox_id",
-    "foreground-signal": (
-        "SELECT o.signal_id FROM foreground_signal_outbox o "
-        "LEFT JOIN foreground_signal_acks a ON a.signal_id=o.signal_id "
-        "WHERE a.signal_id IS NULL ORDER BY o.signal_id"
-    ),
-    "foreground-lease": (
-        "SELECT host_run_id FROM foreground_run_heads "
-        "WHERE current_state NOT IN ('COMPLETED','FAILED','STOPPED','CANCELLED') "
-        "AND owner_id IS NOT NULL ORDER BY host_run_id"
-    ),
+_WORKER_SPECS = {
+    "projection-source": ("task_scope_projection_source_outbox", "outbox_id"),
+    "projection-legacy": ("task_scope_projection_outbox", "outbox_id"),
+    "search": ("task_scope_search_outbox", "outbox_id"),
+    "foreground-signal": ("foreground_signal_outbox", "signal_id"),
+    "foreground-lease": ("foreground_run_heads", "host_run_id"),
 }
 
 
@@ -175,23 +163,80 @@ class HumanMemoryRecoveryCoordinator:
                 fence = await self._fence_tx(db)
                 if fence["state"] != "CLOSING" or fence["cutoff"] is None:
                     raise HumanMemoryRecoveryError("human_memory_recovery_not_closing")
-                for worker_kind, sql in _OUTBOX_QUERIES.items():
-                    cursor = await db.execute(sql)
-                    item_ids = [str(row[0]) for row in await cursor.fetchall()]
-                    await cursor.close()
+                items = await self._current_work_items_tx(db)
+                for worker_kind in _WORKER_SPECS:
+                    worker_items = [
+                        item for item in items if item["worker_kind"] == worker_kind
+                    ]
+                    item_receipt_hashes: list[str] = []
+                    gap_count = 0
+                    for item in worker_items:
+                        proof = await self._durable_proof_tx(db, item)
+                        if proof is None and action == "drain":
+                            gap_count += 1
+                            continue
+                        disposition = (
+                            ("acked" if worker_kind == "foreground-signal" else "delivered")
+                            if proof is not None
+                            else (
+                                "lease_parked"
+                                if worker_kind == "foreground-lease"
+                                else "parked"
+                            )
+                        )
+                        item_payload = {
+                            "schema_version": 1,
+                            "generation": int(fence["generation"]),
+                            "worker_kind": worker_kind,
+                            "source_table": item["source_table"],
+                            "item_pk": item["item_pk"],
+                            "item_content_hash": item["item_content_hash"],
+                            "disposition": disposition,
+                            "proof_ref": None if proof is None else proof["proof_ref"],
+                            "proof_hash": None if proof is None else proof["proof_hash"],
+                            "durable_watermark": item["watermark"],
+                            "lease_owner_id": (
+                                item["lease_owner_id"]
+                                if disposition == "lease_parked"
+                                else None
+                            ),
+                            "lease_generation": (
+                                item["lease_generation"]
+                                if disposition == "lease_parked"
+                                else None
+                            ),
+                            "cutoff": str(fence["cutoff"]),
+                        }
+                        item_receipt_hash = canonical_hash(item_payload)
+                        await self._insert_or_verify_work_item_tx(
+                            db, item_payload, item_receipt_hash
+                        )
+                        item_receipt_hashes.append(item_receipt_hash)
+                    if gap_count:
+                        raise HumanMemoryRecoveryError(
+                            "human_memory_recovery_outbox_gap"
+                        )
                     payload = {
-                        "schema_version": 1,
+                        "schema_version": 2,
                         "generation": int(fence["generation"]),
                         "worker_kind": worker_kind,
                         "action": action,
                         "cutoff": str(fence["cutoff"]),
-                        "item_count": len(item_ids),
-                        "item_root": canonical_hash(item_ids),
-                        "gap_count": 0,
+                        "item_count": len(worker_items),
+                        "item_root": canonical_hash(item_receipt_hashes),
+                        "gap_count": gap_count,
                     }
                     receipt_hash = canonical_hash(payload)
-                    await db.execute(
-                        "INSERT OR IGNORE INTO human_memory_recovery_worker_receipts("
+                    cursor = await db.execute(
+                        "SELECT receipt_hash,receipt_json FROM human_memory_recovery_worker_receipts "
+                        "WHERE generation=? AND worker_kind=?",
+                        (payload["generation"], worker_kind),
+                    )
+                    existing = await cursor.fetchone()
+                    await cursor.close()
+                    if existing is None:
+                        await db.execute(
+                            "INSERT INTO human_memory_recovery_worker_receipts("
                         "receipt_id,generation,worker_kind,action,cutoff,item_count,"
                         "item_root,gap_count,receipt_hash,receipt_json,recorded_at) "
                         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
@@ -203,12 +248,19 @@ class HumanMemoryRecoveryCoordinator:
                             payload["cutoff"],
                             payload["item_count"],
                             payload["item_root"],
-                            0,
+                            gap_count,
                             receipt_hash,
                             canonical_json(payload),
                             time.time(),
                         ),
-                    )
+                        )
+                    elif (
+                        str(existing["receipt_hash"]) != receipt_hash
+                        or str(existing["receipt_json"]) != canonical_json(payload)
+                    ):
+                        raise HumanMemoryRecoveryError(
+                            "human_memory_recovery_worker_receipt_conflict"
+                        )
                     receipt_hashes.append(receipt_hash)
                 await db.commit()
             except Exception as exc:
@@ -224,19 +276,7 @@ class HumanMemoryRecoveryCoordinator:
                 fence = await self._fence_tx(db)
                 if fence["state"] != "CLOSING":
                     raise HumanMemoryRecoveryError("human_memory_recovery_not_closing")
-                cursor = await db.execute(
-                    "SELECT worker_kind,gap_count,cutoff FROM human_memory_recovery_worker_receipts "
-                    "WHERE generation=?",
-                    (fence["generation"],),
-                )
-                rows = await cursor.fetchall()
-                await cursor.close()
-                if (
-                    {str(row["worker_kind"]) for row in rows} != set(_OUTBOX_QUERIES)
-                    or any(int(row["gap_count"]) != 0 for row in rows)
-                    or any(row["cutoff"] != fence["cutoff"] for row in rows)
-                ):
-                    raise HumanMemoryRecoveryError("human_memory_recovery_outbox_gap")
+                await self._verify_quiescence_tx(db, fence)
                 await self._transition_tx(
                     db,
                     current=fence,
@@ -251,6 +291,276 @@ class HumanMemoryRecoveryCoordinator:
                 await self._record_step_failure(exc)
                 raise
         return await self.snapshot()
+
+    async def _current_work_items_tx(
+        self, db: aiosqlite.Connection
+    ) -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        for worker_kind, (table, primary_key) in _WORKER_SPECS.items():
+            where = ""
+            if worker_kind == "foreground-lease":
+                where = (
+                    " WHERE current_state NOT IN "
+                    "('COMPLETED','FAILED','STOPPED','CANCELLED') "
+                    "AND owner_id IS NOT NULL"
+                )
+            cursor = await db.execute(
+                f'SELECT * FROM "{table}"{where} ORDER BY "{primary_key}"'
+            )
+            rows = await cursor.fetchall()
+            columns = [str(item[0]) for item in cursor.description or ()]
+            await cursor.close()
+            if not columns and rows:
+                info = await _column_signature_tx(db, table)
+                columns = [str(item["name"]) for item in info]
+            for row in rows:
+                row_values = [
+                    _typed_value(row[index]) for index in range(len(row))
+                ]
+                item: dict[str, Any] = {
+                    "worker_kind": worker_kind,
+                    "source_table": table,
+                    "item_pk": str(row[primary_key]),
+                    "item_content_hash": canonical_hash(
+                        {"table": table, "columns": columns, "values": row_values}
+                    ),
+                    "row": row,
+                    "watermark": self._item_watermark(worker_kind, row),
+                    "lease_owner_id": None,
+                    "lease_generation": None,
+                }
+                if worker_kind == "foreground-lease":
+                    item["lease_owner_id"] = str(row["owner_id"])
+                    item["lease_generation"] = int(row["generation"])
+                items.append(item)
+        return items
+
+    @staticmethod
+    def _item_watermark(worker_kind: str, row: aiosqlite.Row) -> int:
+        if worker_kind == "projection-source":
+            return int(row["covered_through_sequence"])
+        if worker_kind in {"projection-legacy", "search"}:
+            return int(row["canonical_revision"])
+        return int(row["generation"])
+
+    async def _durable_proof_tx(
+        self, db: aiosqlite.Connection, item: Mapping[str, Any]
+    ) -> dict[str, str] | None:
+        row = item["row"]
+        worker_kind = str(item["worker_kind"])
+        if worker_kind == "projection-source":
+            cursor = await db.execute(
+                "SELECT receipt_id,receipt_hash FROM "
+                "task_scope_projection_materialization_receipts "
+                "WHERE source_id=? AND source_hash=?",
+                (row["source_id"], row["source_hash"]),
+            )
+        elif worker_kind == "projection-legacy":
+            cursor = await db.execute(
+                "SELECT projection_revision_id,projection_hash FROM "
+                "task_scope_projection_revisions WHERE task_scope_id=? "
+                "AND canonical_revision=? AND projection_hash=?",
+                (row["task_scope_id"], row["canonical_revision"], row["projection_hash"]),
+            )
+        elif worker_kind == "search":
+            cursor = await db.execute(
+                "SELECT d.document_id,d.document_hash FROM task_scope_projection_sources s "
+                "JOIN task_scope_search_documents d ON d.source_id=s.source_id "
+                "AND d.source_hash=s.source_hash WHERE s.task_scope_id=? "
+                "AND s.canonical_revision=? AND s.state_hash=?",
+                (row["task_scope_id"], row["canonical_revision"], row["state_hash"]),
+            )
+        elif worker_kind == "foreground-signal":
+            cursor = await db.execute(
+                "SELECT ack_id,ack_hash FROM foreground_signal_acks "
+                "WHERE signal_id=? AND generation=?",
+                (row["signal_id"], row["generation"]),
+            )
+        else:
+            return None
+        proof = await cursor.fetchone()
+        await cursor.close()
+        if proof is None:
+            return None
+        return {"proof_ref": str(proof[0]), "proof_hash": str(proof[1])}
+
+    async def _insert_or_verify_work_item_tx(
+        self,
+        db: aiosqlite.Connection,
+        payload: Mapping[str, Any],
+        receipt_hash: str,
+    ) -> None:
+        cursor = await db.execute(
+            "SELECT receipt_hash,receipt_json FROM human_memory_recovery_work_items "
+            "WHERE generation=? AND worker_kind=? AND source_table=? AND item_pk=?",
+            (
+                payload["generation"],
+                payload["worker_kind"],
+                payload["source_table"],
+                payload["item_pk"],
+            ),
+        )
+        existing = await cursor.fetchone()
+        await cursor.close()
+        encoded = canonical_json(payload)
+        if existing is not None:
+            if (
+                str(existing["receipt_hash"]) != receipt_hash
+                or str(existing["receipt_json"]) != encoded
+            ):
+                raise HumanMemoryRecoveryError(
+                    "human_memory_recovery_work_item_conflict"
+                )
+            return
+        await db.execute(
+            "INSERT INTO human_memory_recovery_work_items("
+            "item_receipt_id,generation,worker_kind,source_table,item_pk,"
+            "item_content_hash,disposition,proof_ref,proof_hash,durable_watermark,"
+            "lease_owner_id,lease_generation,cutoff,receipt_hash,receipt_json,recorded_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                _uuid(f"recovery-work-item:{receipt_hash}"),
+                payload["generation"],
+                payload["worker_kind"],
+                payload["source_table"],
+                payload["item_pk"],
+                payload["item_content_hash"],
+                payload["disposition"],
+                payload["proof_ref"],
+                payload["proof_hash"],
+                payload["durable_watermark"],
+                payload["lease_owner_id"],
+                payload["lease_generation"],
+                payload["cutoff"],
+                receipt_hash,
+                encoded,
+                time.time(),
+            ),
+        )
+
+    async def _verify_quiescence_tx(
+        self, db: aiosqlite.Connection, fence: aiosqlite.Row
+    ) -> None:
+        current = await self._current_work_items_tx(db)
+        expected = {
+            (item["worker_kind"], item["source_table"], item["item_pk"]): item
+            for item in current
+        }
+        cursor = await db.execute(
+            "SELECT * FROM human_memory_recovery_work_items WHERE generation=? "
+            "ORDER BY worker_kind,source_table,item_pk",
+            (fence["generation"],),
+        )
+        receipts = await cursor.fetchall()
+        await cursor.close()
+        actual = {
+            (str(row["worker_kind"]), str(row["source_table"]), str(row["item_pk"])): row
+            for row in receipts
+        }
+        if set(actual) != set(expected):
+            raise HumanMemoryRecoveryError("human_memory_recovery_outbox_gap")
+        by_worker: dict[str, list[str]] = {kind: [] for kind in _WORKER_SPECS}
+        for key, item in expected.items():
+            receipt = actual[key]
+            try:
+                payload = json.loads(str(receipt["receipt_json"]))
+            except json.JSONDecodeError as exc:
+                raise HumanMemoryRecoveryError(
+                    "human_memory_recovery_work_item_invalid"
+                ) from exc
+            receipt_hash = canonical_hash(payload)
+            if (
+                receipt_hash != receipt["receipt_hash"]
+                or canonical_json(payload) != receipt["receipt_json"]
+                or int(receipt["generation"]) != int(fence["generation"])
+                or receipt["cutoff"] != fence["cutoff"]
+                or receipt["item_content_hash"] != item["item_content_hash"]
+                or int(receipt["durable_watermark"]) != int(item["watermark"])
+                or payload.get("generation") != int(receipt["generation"])
+                or payload.get("worker_kind") != receipt["worker_kind"]
+                or payload.get("source_table") != receipt["source_table"]
+                or payload.get("item_pk") != receipt["item_pk"]
+                or payload.get("item_content_hash") != receipt["item_content_hash"]
+                or payload.get("disposition") != receipt["disposition"]
+                or payload.get("proof_ref") != receipt["proof_ref"]
+                or payload.get("proof_hash") != receipt["proof_hash"]
+                or payload.get("durable_watermark")
+                != receipt["durable_watermark"]
+                or payload.get("lease_owner_id") != receipt["lease_owner_id"]
+                or payload.get("lease_generation") != receipt["lease_generation"]
+                or payload.get("cutoff") != receipt["cutoff"]
+            ):
+                raise HumanMemoryRecoveryError(
+                    "human_memory_recovery_work_item_invalid"
+                )
+            disposition = str(receipt["disposition"])
+            proof = await self._durable_proof_tx(db, item)
+            if disposition in {"delivered", "acked"}:
+                if (
+                    proof is None
+                    or receipt["proof_ref"] != proof["proof_ref"]
+                    or receipt["proof_hash"] != proof["proof_hash"]
+                ):
+                    raise HumanMemoryRecoveryError(
+                        "human_memory_recovery_durable_proof_missing"
+                    )
+            elif disposition == "parked":
+                if item["worker_kind"] == "foreground-lease":
+                    raise HumanMemoryRecoveryError(
+                        "human_memory_recovery_lease_unfenced"
+                    )
+            elif disposition == "lease_parked":
+                if (
+                    item["worker_kind"] != "foreground-lease"
+                    or receipt["lease_owner_id"] != item["lease_owner_id"]
+                    or int(receipt["lease_generation"])
+                    != int(item["lease_generation"])
+                ):
+                    raise HumanMemoryRecoveryError(
+                        "human_memory_recovery_lease_unfenced"
+                    )
+            else:
+                raise HumanMemoryRecoveryError(
+                    "human_memory_recovery_work_item_invalid"
+                )
+            by_worker[str(item["worker_kind"])].append(receipt_hash)
+        aggregate_cursor = await db.execute(
+            "SELECT * FROM human_memory_recovery_worker_receipts WHERE generation=?",
+            (fence["generation"],),
+        )
+        aggregates = await aggregate_cursor.fetchall()
+        await aggregate_cursor.close()
+        aggregate_map = {str(row["worker_kind"]): row for row in aggregates}
+        if set(aggregate_map) != set(_WORKER_SPECS):
+            raise HumanMemoryRecoveryError("human_memory_recovery_outbox_gap")
+        for worker_kind, hashes in by_worker.items():
+            aggregate = aggregate_map[worker_kind]
+            try:
+                payload = json.loads(str(aggregate["receipt_json"]))
+            except json.JSONDecodeError as exc:
+                raise HumanMemoryRecoveryError(
+                    "human_memory_recovery_worker_receipt_invalid"
+                ) from exc
+            if (
+                canonical_hash(payload) != aggregate["receipt_hash"]
+                or canonical_json(payload) != aggregate["receipt_json"]
+                or payload.get("schema_version") != 2
+                or payload.get("generation") != int(fence["generation"])
+                or payload.get("worker_kind") != worker_kind
+                or payload.get("action") != aggregate["action"]
+                or payload.get("cutoff") != fence["cutoff"]
+                or payload.get("item_count") != len(hashes)
+                or payload.get("item_root") != canonical_hash(hashes)
+                or payload.get("gap_count") != 0
+                or int(aggregate["generation"]) != int(fence["generation"])
+                or aggregate["cutoff"] != fence["cutoff"]
+                or int(aggregate["item_count"]) != len(hashes)
+                or aggregate["item_root"] != canonical_hash(hashes)
+                or int(aggregate["gap_count"]) != 0
+            ):
+                raise HumanMemoryRecoveryError(
+                    "human_memory_recovery_worker_receipt_invalid"
+                )
 
     async def checkpoint_wal(self) -> str:
         try:

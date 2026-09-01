@@ -23,6 +23,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
     canonical_hash,
@@ -807,7 +808,17 @@ class ForegroundQueueStore:
             )
             rows = await cursor.fetchall()
             await cursor.close()
-        return tuple(self._signal(row) for row in rows)
+            visible_rows = []
+            for row in rows:
+                if not await is_human_memory_work_item_parked_tx(
+                    db,
+                    worker_kind="foreground-signal",
+                    source_table="foreground_signal_outbox",
+                    primary_key="signal_id",
+                    item_pk=str(row["signal_id"]),
+                ):
+                    visible_rows.append(row)
+        return tuple(self._signal(row) for row in visible_rows)
 
     async def acknowledge_signal(
         self,
@@ -1380,6 +1391,14 @@ class ForegroundQueueStore:
         now: float,
     ) -> aiosqlite.Row:
         head = await self._head_tx(db, host_run_id)
+        if await is_human_memory_work_item_parked_tx(
+            db,
+            worker_kind="foreground-lease",
+            source_table="foreground_run_heads",
+            primary_key="host_run_id",
+            item_pk=host_run_id,
+        ):
+            raise ForegroundQueueError("foreground_lease_recovery_parked")
         if str(head["current_state"]) in TERMINAL_STATES:
             raise ForegroundQueueError("foreground_run_already_terminal")
         if head["owner_id"] != owner_id or int(head["generation"]) != generation:

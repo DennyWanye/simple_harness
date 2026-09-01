@@ -16,6 +16,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.task_scope.projection_sources import load_projection_source_tx
 from deskpet.task_scope.projections import (
     CheckpointDriftReport,
@@ -79,6 +80,23 @@ class TaskScopeSearchStore:
             try:
                 await self._require_fts_tx(db)
                 source = await load_projection_source_tx(db, task_scope_id=task_scope_id)
+                outbox_cursor = await db.execute(
+                    "SELECT outbox_id FROM task_scope_search_outbox WHERE task_scope_id=? "
+                    "AND canonical_revision=?",
+                    (task_scope_id, source.canonical_revision),
+                )
+                outbox = await outbox_cursor.fetchone()
+                await outbox_cursor.close()
+                if outbox is None:
+                    raise TaskScopeSearchError("task_scope_search_outbox_missing")
+                if await is_human_memory_work_item_parked_tx(
+                    db,
+                    worker_kind="search",
+                    source_table="task_scope_search_outbox",
+                    primary_key="outbox_id",
+                    item_pk=str(outbox["outbox_id"]),
+                ):
+                    raise TaskScopeSearchError("human_memory_search_work_item_parked")
                 state_cursor = await db.execute(
                     "SELECT s.subject,s.title,r.state_json FROM task_scopes s "
                     "JOIN task_scope_canonical_revisions r ON r.task_scope_id=s.task_scope_id "

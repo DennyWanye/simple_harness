@@ -36,18 +36,20 @@ from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
     FOREGROUND_QUEUE_MIGRATION,
     FOREGROUND_QUEUE_SCHEMA_VERSION,
-    HUMAN_MEMORY_RECOVERY_MIGRATION,
-    HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
     HUMAN_MEMORY_PROGRAM_MIGRATION,
     HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
+    HUMAN_MEMORY_QUIESCENCE_MIGRATION,
+    HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION,
+    HUMAN_MEMORY_RECOVERY_MIGRATION,
+    HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
     HUMAN_MEMORY_TARGET_SCHEMA_VERSION,
     TARGET_SCHEMA_VERSION,
     TASK_SCOPE_ARCHIVE_MIGRATION,
     TASK_SCOPE_ARCHIVE_SCHEMA_VERSION,
-    TASK_SCOPE_PROVISION_MIGRATION,
-    TASK_SCOPE_PROVISION_SCHEMA_VERSION,
     TASK_SCOPE_PROJECTIONS_MIGRATION,
     TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION,
+    TASK_SCOPE_PROVISION_MIGRATION,
+    TASK_SCOPE_PROVISION_SCHEMA_VERSION,
     TASK_SCOPE_SEARCH_MIGRATION,
     TASK_SCOPE_SEARCH_SCHEMA_VERSION,
     TASK_WORKSPACE_BINDING_MIGRATION,
@@ -299,6 +301,7 @@ def _validate_s4_migration_chain(
         (TASK_SCOPE_SEARCH_MIGRATION, TASK_SCOPE_SEARCH_SCHEMA_VERSION),
         (FOREGROUND_QUEUE_MIGRATION, FOREGROUND_QUEUE_SCHEMA_VERSION),
         (HUMAN_MEMORY_RECOVERY_MIGRATION, HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION),
+        (HUMAN_MEMORY_QUIESCENCE_MIGRATION, HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:
@@ -355,6 +358,35 @@ def _validate_recovery_marker(
         expected_sha256,
     ) or version != expected_user_version:
         raise HumanMemoryProgramEpochError("human_memory_recovery_marker_invalid")
+    _validate_quiescence_marker(
+        db_path, expected_user_version=expected_user_version
+    )
+
+
+def _validate_quiescence_marker(
+    db_path: Path, *, expected_user_version: int
+) -> None:
+    if expected_user_version < HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION:
+        return
+    expected_sha256 = _migration_sha256(HUMAN_MEMORY_QUIESCENCE_MIGRATION)
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT format_epoch,schema_version,migration_id,migration_sha256 "
+                "FROM human_memory_quiescence_marker WHERE singleton=1"
+            ).fetchone()
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_quiescence_marker_invalid"
+        ) from exc
+    if row != (
+        "human-memory-v1",
+        1,
+        HUMAN_MEMORY_QUIESCENCE_MIGRATION,
+        expected_sha256,
+    ) or version != expected_user_version:
+        raise HumanMemoryProgramEpochError("human_memory_quiescence_marker_invalid")
 
 
 def inspect_startup_epoch(

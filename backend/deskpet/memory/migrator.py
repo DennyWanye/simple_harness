@@ -111,7 +111,9 @@ FOREGROUND_QUEUE_MIGRATION = "033_foreground_queue_v41.sql"
 FOREGROUND_QUEUE_SCHEMA_VERSION = 41
 HUMAN_MEMORY_RECOVERY_MIGRATION = "034_human_memory_recovery_v42.sql"
 HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION = 42
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION
+HUMAN_MEMORY_QUIESCENCE_MIGRATION = "035_human_memory_quiescence_v43.sql"
+HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION = 43
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -122,6 +124,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         TASK_SCOPE_SEARCH_MIGRATION,
         FOREGROUND_QUEUE_MIGRATION,
         HUMAN_MEMORY_RECOVERY_MIGRATION,
+        HUMAN_MEMORY_QUIESCENCE_MIGRATION,
     }
 )
 
@@ -151,6 +154,7 @@ MIGRATION_STEPS: dict[str, int] = {
     TASK_SCOPE_SEARCH_MIGRATION: TASK_SCOPE_SEARCH_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION: FOREGROUND_QUEUE_SCHEMA_VERSION,
     HUMAN_MEMORY_RECOVERY_MIGRATION: HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
+    HUMAN_MEMORY_QUIESCENCE_MIGRATION: HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -159,6 +163,7 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         TASK_SCOPE_SEARCH_MIGRATION,
         FOREGROUND_QUEUE_MIGRATION,
         HUMAN_MEMORY_RECOVERY_MIGRATION,
+        HUMAN_MEMORY_QUIESCENCE_MIGRATION,
     }
 )
 
@@ -230,6 +235,35 @@ async def _seed_recovery_registry(db: aiosqlite.Connection) -> None:
         "BEFORE DELETE ON human_memory_recovery_table_registry BEGIN "
         "SELECT RAISE(ABORT,'human_memory_recovery_append_only'); END"
     )
+
+
+async def _register_recovery_tables(
+    db: aiosqlite.Connection, tables: tuple[tuple[str, str], ...]
+) -> None:
+    """Register additive protected tables without mutating the v42 registry."""
+
+    for name, taxonomy in tables:
+        info_cursor = await db.execute(f'PRAGMA table_info("{name}")')
+        info = await info_cursor.fetchall()
+        await info_cursor.close()
+        if not info:
+            raise MigrationError(f"human memory recovery registry missing table: {name}")
+        columns = [
+            {
+                "cid": int(row[0]),
+                "name": str(row[1]),
+                "type": str(row[2]),
+                "notnull": int(row[3]),
+                "default": row[4],
+                "pk": int(row[5]),
+            }
+            for row in info
+        ]
+        await db.execute(
+            "INSERT INTO human_memory_recovery_table_registry("
+            "table_name,taxonomy,columns_json) VALUES (?,?,?)",
+            (name, taxonomy, json.dumps(columns, sort_keys=True, separators=(",", ":"))),
+        )
 
 
 async def _execute_transactional_script(
@@ -738,6 +772,22 @@ async def run_migrations(
                                 (genesis_hash, initialized_at),
                             )
                             await _seed_recovery_registry(db)
+                        if version == HUMAN_MEMORY_QUIESCENCE_MIGRATION:
+                            initialized_at = time.time()
+                            await db.execute(
+                                "INSERT INTO human_memory_quiescence_marker("
+                                "singleton,format_epoch,schema_version,migration_id,"
+                                "migration_sha256,initialized_at) VALUES "
+                                "(1,'human-memory-v1',1,?,?,?)",
+                                (version, migration_sha256, initialized_at),
+                            )
+                            await _register_recovery_tables(
+                                db,
+                                (
+                                    ("human_memory_quiescence_marker", "C"),
+                                    ("human_memory_recovery_work_items", "C"),
+                                ),
+                            )
                         await _execute_transactional_script(
                             db, _HUMAN_MIGRATION_CHAIN_SQL
                         )
@@ -864,7 +914,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION
+            HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION
+            if HUMAN_MEMORY_QUIESCENCE_MIGRATION in durable_markers
+            else HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION
             if HUMAN_MEMORY_RECOVERY_MIGRATION in durable_markers
             else FOREGROUND_QUEUE_SCHEMA_VERSION
             if FOREGROUND_QUEUE_MIGRATION in durable_markers

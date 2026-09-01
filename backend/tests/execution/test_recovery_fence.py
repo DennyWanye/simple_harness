@@ -6,20 +6,29 @@ import json
 import sqlite3
 from pathlib import Path
 
+import aiosqlite
 import pytest
+
+from deskpet.execution import ContextLineage, ForegroundQueueError, ForegroundQueueStore
 from deskpet.execution.recovery_fence import (
     HumanMemoryIngressFenced,
     HumanMemoryRecoveryCoordinator,
     HumanMemoryRecoveryError,
 )
+from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.migrator import ensure_v9
 from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
+from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.schema import (
     InitializeError,
     _write_bootstrap_marker,
     initialize_human_memory_program_state_db,
 )
-from deskpet.task_scope.projections import TaskScopeProjectionStore
+from deskpet.task_scope.projections import (
+    ProjectionIntegrityError,
+    TaskScopeProjectionStore,
+)
+from deskpet.task_scope.search import TaskScopeSearchStore
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 
 
@@ -283,7 +292,7 @@ async def test_v42_fault_restart_has_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 42
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_recovery_marker"
         ).fetchone()[0] == 1
@@ -295,6 +304,370 @@ async def test_v42_fault_restart_has_one_exact_marker(
             "SELECT COUNT(*) FROM human_memory_recovery_transitions "
             "WHERE transition_id='human-memory-recovery-genesis'"
         ).fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage",
+    (
+        "before_035_human_memory_quiescence_v43_commit",
+        "after_035_human_memory_quiescence_v43_commit",
+    ),
+)
+async def test_v43_fault_restart_has_one_exact_marker(
+    tmp_path: Path, stage: str
+) -> None:
+    db_path = tmp_path / "state.db"
+
+    def crash(actual: str) -> None:
+        if actual == stage:
+            raise RuntimeError(f"crash:{stage}")
+
+    with pytest.raises(InitializeError, match=stage):
+        await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
+    await initialize_human_memory_program_state_db(db_path)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
+        assert db.execute(
+            "SELECT COUNT(*) FROM human_memory_quiescence_marker"
+        ).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT COUNT(*) FROM human_memory_migration_chain "
+            "WHERE schema_version=43"
+        ).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT COUNT(*) FROM human_memory_recovery_table_registry "
+            "WHERE table_name IN ('human_memory_quiescence_marker',"
+            "'human_memory_recovery_work_items')"
+        ).fetchone()[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_exact_park_is_restart_verifiable_and_preserves_raw_rows(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    store = CanonicalTaskScopeStore(db_path)
+    await store.create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    await store.append_host_event(
+        task_scope_id="scope-1",
+        event_kind="host.turn",
+        source_event_id="event-1",
+        payload={"event_index": 1},
+    )
+    with sqlite3.connect(db_path) as db:
+        before = {
+            table: tuple(db.execute(f'SELECT * FROM "{table}" ORDER BY 1').fetchall())
+            for table in (
+                "task_scope_projection_source_outbox",
+                "task_scope_projection_outbox",
+                "task_scope_search_outbox",
+            )
+        }
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="park")
+    with pytest.raises(
+        ProjectionIntegrityError, match="human_memory_projection_work_item_parked"
+    ):
+        await TaskScopeProjectionStore(db_path).read_view(
+            "README", task_scope_id="scope-1"
+        )
+    restarted = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    assert (await restarted.quiesce()).state == "QUIESCED"
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM human_memory_recovery_work_items "
+            "WHERE generation=2"
+        ).fetchone()[0] == sum(len(rows) for rows in before.values())
+        after = {
+            table: tuple(db.execute(f'SELECT * FROM "{table}" ORDER BY 1').fetchall())
+            for table in before
+        }
+    assert after == before
+
+
+@pytest.mark.asyncio
+async def test_quiesce_rejects_omitted_exact_item_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="park")
+    with sqlite3.connect(db_path) as db:
+        db.execute("DROP TRIGGER human_memory_recovery_work_item_no_delete")
+        db.execute(
+            "DELETE FROM human_memory_recovery_work_items WHERE item_receipt_id=("
+            "SELECT item_receipt_id FROM human_memory_recovery_work_items LIMIT 1)"
+        )
+        db.commit()
+    with pytest.raises(HumanMemoryRecoveryError, match="human_memory_recovery_outbox_gap"):
+        await coordinator.quiesce()
+    assert (await coordinator.snapshot()).state == "FAILED_CLOSED"
+
+
+@pytest.mark.asyncio
+async def test_quiesce_rejects_stale_generation_item_and_fails_closed(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="park")
+    with sqlite3.connect(db_path) as db:
+        db.execute("DROP TRIGGER human_memory_recovery_work_item_no_update")
+        db.execute(
+            "UPDATE human_memory_recovery_work_items SET generation=999 "
+            "WHERE item_receipt_id=(SELECT item_receipt_id FROM "
+            "human_memory_recovery_work_items LIMIT 1)"
+        )
+        db.commit()
+    with pytest.raises(HumanMemoryRecoveryError, match="human_memory_recovery_outbox_gap"):
+        await coordinator.quiesce()
+    assert (await coordinator.snapshot()).state == "FAILED_CLOSED"
+
+
+@pytest.mark.asyncio
+async def test_forged_worker_summary_cannot_authorize_quiescence(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    closing = await coordinator.begin_close()
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "INSERT INTO human_memory_recovery_worker_receipts("
+            "receipt_id,generation,worker_kind,action,cutoff,item_count,item_root,"
+            "gap_count,receipt_hash,receipt_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "forged-summary",
+                closing.generation,
+                "projection-source",
+                "park",
+                closing.cutoff,
+                0,
+                "a" * 64,
+                0,
+                "b" * 64,
+                "{}",
+                1.0,
+            ),
+        )
+        db.commit()
+    with pytest.raises(
+        HumanMemoryRecoveryError,
+        match="human_memory_recovery_worker_receipt_conflict",
+    ):
+        await coordinator.drain_or_park(action="park")
+    assert (await coordinator.snapshot()).state == "FAILED_CLOSED"
+
+
+@pytest.mark.asyncio
+async def test_writer_worker_close_race_is_transaction_linearized(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    store = CanonicalTaskScopeStore(db_path)
+    await store.create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+
+    async def append_racer() -> str:
+        try:
+            await store.append_host_event(
+                task_scope_id="scope-1",
+                event_kind="host.turn",
+                source_event_id="racing-event",
+                payload={"event_index": 1},
+            )
+            return "committed"
+        except HumanMemoryIngressFenced:
+            return "fenced"
+
+    close_result, append_result, worker_result = await asyncio.gather(
+        coordinator.begin_close(),
+        append_racer(),
+        TaskScopeProjectionStore(db_path).read_view(
+            "README", task_scope_id="scope-1"
+        ),
+        return_exceptions=True,
+    )
+    assert close_result.state == "CLOSING"
+    assert append_result in {"committed", "fenced"}
+    assert not isinstance(worker_result, BaseException)
+    await coordinator.drain_or_park(action="park")
+    assert (await coordinator.quiesce()).state == "QUIESCED"
+
+
+@pytest.mark.asyncio
+async def test_active_foreground_lease_is_exactly_parked_without_row_loss(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    primary = await HumanMemoryProgramStore(db_path).initialize_subject("actor-1")
+    with sqlite3.connect(db_path) as db:
+        db.execute(
+            "INSERT INTO human_memory_sanitization_receipts("
+            "receipt_id,evidence_id,subject,run_id,envelope_sha256,source_sha256,"
+            "sanitized_sha256,filter_policy_version,receipt_sha256,receipt_json,"
+            "admitted_at,committed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "receipt-1",
+                "evidence-1",
+                "actor-1",
+                "source-run-1",
+                "1" * 64,
+                "a" * 64,
+                "b" * 64,
+                "test/v1",
+                "c" * 64,
+                "{}",
+                1.0,
+                1.0,
+            ),
+        )
+        db.execute(
+            "INSERT INTO human_memory_evidence("
+            "evidence_id,primary_conversation_id,subject,run_id,source_kind,source_ref,"
+            "source_sha256,sanitized_sha256,envelope_sha256,receipt_id,payload_json,"
+            "envelope_json,occurred_at,committed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                "evidence-1",
+                primary.primary_conversation_id,
+                "actor-1",
+                "source-run-1",
+                "typed_observation",
+                "test/evidence-1",
+                "a" * 64,
+                "b" * 64,
+                "1" * 64,
+                "receipt-1",
+                "{}",
+                "{}",
+                1.0,
+                1.0,
+            ),
+        )
+        db.commit()
+    queue = ForegroundQueueStore(db_path, clock=lambda: 100.0)
+    await queue.initialize()
+    await queue.enqueue_turn(
+        subject="actor-1",
+        primary_conversation_id=primary.primary_conversation_id,
+        task_scope_id="scope-1",
+        evidence_id="evidence-1",
+        evidence_hash="1" * 64,
+        idempotency_key="enqueue-1",
+        turn_payload={"text": "run"},
+    )
+    admission = await queue.claim_next(
+        subject="actor-1",
+        owner_id="owner-1",
+        claim_idempotency_key="claim-1",
+        context=ContextLineage("context-1", 1, "d" * 64),
+        lease_seconds=10,
+    )
+    assert admission is not None
+    with sqlite3.connect(db_path) as db:
+        head_before = db.execute(
+            "SELECT * FROM foreground_run_heads WHERE host_run_id=?",
+            (admission.host_run_id,),
+        ).fetchone()
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="park")
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        assert await is_human_memory_work_item_parked_tx(
+            db,
+            worker_kind="foreground-lease",
+            source_table="foreground_run_heads",
+            primary_key="host_run_id",
+            item_pk=admission.host_run_id,
+        )
+    with sqlite3.connect(db_path) as db:
+        lease_receipt = db.execute(
+            "SELECT disposition,lease_owner_id,lease_generation "
+            "FROM human_memory_recovery_work_items WHERE worker_kind='foreground-lease'"
+        ).fetchone()
+        head_after = db.execute(
+            "SELECT * FROM foreground_run_heads WHERE host_run_id=?",
+            (admission.host_run_id,),
+        ).fetchone()
+    assert lease_receipt == ("lease_parked", "owner-1", admission.generation)
+    assert head_after == head_before
+    assert (await coordinator.quiesce()).state == "QUIESCED"
+    await coordinator.checkpoint_wal()
+    await coordinator.seal()
+    await coordinator.reopen()
+    with pytest.raises(ForegroundQueueError, match="foreground_lease_recovery_parked"):
+        await queue.heartbeat(
+            host_run_id=admission.host_run_id,
+            owner_id="owner-1",
+            generation=admission.generation,
+            lease_seconds=10,
+            idempotency_key="old-lease-after-reopen",
+        )
+
+
+@pytest.mark.asyncio
+async def test_drain_uses_durable_projection_and_search_proofs(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "state.db"
+    await CanonicalTaskScopeStore(db_path).create_task_scope(
+        task_scope_id="scope-1", subject="actor-1", title="Memory"
+    )
+    await TaskScopeProjectionStore(db_path).read_view(
+        "README", task_scope_id="scope-1"
+    )
+    await TaskScopeSearchStore(db_path).rebuild_scope("scope-1")
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(
+        db_path, export_root=tmp_path / "exports"
+    )
+    await coordinator.begin_close()
+    await coordinator.drain_or_park(action="drain")
+    assert (await coordinator.quiesce()).state == "QUIESCED"
+    with sqlite3.connect(db_path) as db:
+        dispositions = {
+            str(row[0]): str(row[1])
+            for row in db.execute(
+                "SELECT worker_kind,disposition FROM human_memory_recovery_work_items"
+            )
+        }
+    assert dispositions["projection-source"] == "delivered"
+    assert dispositions["projection-legacy"] == "delivered"
+    assert dispositions["search"] == "delivered"
 
 
 @pytest.mark.asyncio
@@ -405,7 +778,7 @@ async def test_v38_resume_backfills_exact_projection_source_in_migration_tx(
         db.commit()
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 42
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
         assert db.execute(
             "SELECT COUNT(*) FROM task_scope_projection_sources WHERE task_scope_id='scope-old'"
         ).fetchone()[0] == 1

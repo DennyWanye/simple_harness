@@ -15,6 +15,7 @@ from typing import Any
 
 import aiosqlite
 
+from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.task_scope.projection_sources import (
     ProjectionSourceReceipt,
     load_projection_source_tx,
@@ -85,6 +86,27 @@ class TaskScopeProjectionStore:
                 source = await load_projection_source_tx(
                     db, source_id=source_id, task_scope_id=task_scope_id
                 )
+                outbox_cursor = await db.execute(
+                    "SELECT outbox_id FROM task_scope_projection_source_outbox "
+                    "WHERE source_id=?",
+                    (source.source_id,),
+                )
+                outbox = await outbox_cursor.fetchone()
+                await outbox_cursor.close()
+                if outbox is None:
+                    raise ProjectionIntegrityError(
+                        "task_scope_projection_source_outbox_missing"
+                    )
+                if await is_human_memory_work_item_parked_tx(
+                    db,
+                    worker_kind="projection-source",
+                    source_table="task_scope_projection_source_outbox",
+                    primary_key="outbox_id",
+                    item_pk=str(outbox["outbox_id"]),
+                ):
+                    raise ProjectionIntegrityError(
+                        "human_memory_projection_work_item_parked"
+                    )
                 model = await self._load_model_tx(db, source)
                 rendered = await self._render_tx(db, source, model)
                 projection_root = canonical_hash(
