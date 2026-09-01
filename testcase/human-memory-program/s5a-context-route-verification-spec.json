@@ -1,0 +1,52 @@
+{
+  "spec_id": "s5a-context-route-verification-spec",
+  "status": "draft-oracle-frozen (Task 0; machine paths/pins finalized at Task 6)",
+  "increment": "2026-09-01-s5a-context-route",
+  "acceptance": "simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/acceptance.md",
+  "oracle_freeze_note": "所有预期在实现前冻结于本文件与引用的 TC-HM-* 修订版；执行者无权删除/反转/放宽，测试失败只有改实现或上报行为变更两条路",
+  "scenario_matrix": {
+    "S5A-S1-five-route-deterministic": {
+      "oracle": "TC-HM-10 rev2 步骤1-6（六步全序）",
+      "expect": "五路各产出 ContextRouteReceipt(origin=CONTEXT_TOOL) 且 durable route decision 入 v45；direct_standalone 经 record_no_recall 产出 DIRECT_STANDALONE decision；search 命中不直接授权，exact open 后才 continue；active cursor 不被闲聊污染",
+      "milestone_subset": "route 裁决 + receipt 收敛（memory_standalone 终态 BLOCKED-until-Task-5）",
+      "provider": "deterministic"
+    },
+    "S5A-S2-same-run-continuation-real": {
+      "oracle": "TC-HM-02 rev3 步骤1-3 + TC-HM-10 步骤4",
+      "expect": "真实 provider『继续以前的 A』→ resume_existing → task_scope_search 候选（cursor/binding byte-identical）→ exact task_scope_open → 同一 host Run 内 continuation 用 exact ResumePackage 回答；route receipt + 每 provider turn snapshot receipt 三 hash（Host expected = Harness request fingerprint = adapter captured payload）相等且 receipt 在 provider reservation 前入 checkpoint",
+      "provider": "real (BLOCKED until user config)"
+    },
+    "S5A-S3-per-turn-snapshot-and-budget": {
+      "oracle": "TC-HM-11 rev5 步骤4/6 + metric-formulas.json 冻结常量",
+      "expect": "每 provider turn 重算 RunContextSnapshot：revision 单调、最近10完整因果组不拆链（user起/assistant终/tool对配对）、分区预算按冻结 caps/reserve/margin、裁剪顺序固定、大结果 typed summary+exact page-ref；4k/8k/32k 三窗口 usage ≤ effective budget，underestimate 即 FAIL；continuation 32k 硬编码预算已收敛到同一 planner（旧双真相消除）",
+      "provider": "deterministic + real usage calibration"
+    },
+    "S5A-S4-no-recall-gate": {
+      "oracle": "TC-HM-01 rev1 步骤2-4 + AC-4 specialist 修订谓词",
+      "expect": "no_recall 前必有 inbox reconcile 调用证据；pending={matched ∧ live/presentable ∧ 资格门 ∧ occurrence_key∉presented set}；恒空生产 inbox 下 no_recall 路径 = Memory 零查询 + 恰一次 provider invocation + durable DIRECT_STANDALONE；required 负测试经 apply_prospective_signal + 注入 resolver 产出 matched occurrence → no_recall 被拒且合资格 summary 进 snapshot；FORGOTTEN/suppressed occurrence 对照 → 不阻塞 no_recall 且内容零进入 Context",
+      "provider": "deterministic"
+    },
+    "S5A-S5-twin-influence-zero-and-payload": {
+      "oracle": "acceptance S5A-S5 + program 五类载荷变异冻结清单",
+      "expect": "context_route 载荷 schema违约/超长/重复/乱序/拒调 → 稳定 fail-closed 无半状态；twin-influence-zero：无 import/dependency/serialized-payload 泄漏 + snapshot 重放 byte-identical；kill/replay 后无重复 provider 调用、无重复 route 决策",
+      "provider": "deterministic"
+    },
+    "S5A-S6-composition-cutover": {
+      "oracle": "acceptance AC-6 + cutover 义务节",
+      "expect": "逐项移除三 authority/store prerequisite → startup stable fail；v45 前向 migration PASS；旧 runtime 开 v45 userdata stable reject；occurrence presented 表存在且恒空断言；rollback drill 不删 evidence；Memory 0.6.0 wheel 错误 hash fail-closed；cutover receipt 产出",
+      "provider": "n/a"
+    }
+  },
+  "oracle_pins_todo_task6": [
+    "TC-HM-01/02/10/11 file-bytes sha256",
+    "fixtures/metric-formulas.json sha256",
+    "fixtures/fault-matrix.json sha256",
+    "memory-sdk 0.6.0 wheel sha256 + candidate manifest"
+  ],
+  "evidence_contract": {
+    "raw_outputs": ".local-test-evidence/ only (never committed)",
+    "ledger": "attach-evidence with producer_type/artifact_kind/business_facts; distinct file copies per artifact_kind",
+    "negative_assertions": ["no receipt_hmac access", "no keychain/security/keyring calls", "APIKEY never in repo/logs/evidence"]
+  },
+  "intermediate_state_declaration": "Task 2-5 间 chat 链 DIRECT_STANDALONE no-recall decision 属未接 reconcile 门的中间态；AC-4 终验证据以 Task 5 后带 reconcile 调用的 run 为准"
+}

@@ -1,0 +1,12 @@
+{
+  "report_id": "s5a-context-route-reuse-report",
+  "date": "2026-09-01",
+  "decisions": [
+    {"asset": "TC-HM-10 rev2", "decision": "reuse-oracle", "note": "五路分流六步全序是 S5a 兑现方（TC-HM-10:33 明文属 S5）；只复用 oracle，当前 run 重新执行取证"},
+    {"asset": "TC-HM-02 rev3", "decision": "reuse-oracle", "note": "search→exact-open→bounded-resume oracle 直接承载 S5A-S2；S4 子 lane 断言（canary/24KiB/cursor byte-identical）继续生效"},
+    {"asset": "TC-HM-11 rev5", "decision": "reuse-oracle", "note": "步骤4/6 承载 per-turn snapshot 与预算 oracle；S4 automation 子 lane 不重跑（受 S4 receipt dbaeaae7 覆盖），仅回归不破坏"},
+    {"asset": "TC-HM-01 rev1", "decision": "reuse-oracle-extend", "note": "no_recall oracle 复用；AC-4 specialist 修订谓词（reconcile+presented set+资格门）为 S5a 扩展，负测试注入面=apply_prospective_signal"},
+    {"asset": "fixtures/metric-formulas.json + fault-matrix.json", "decision": "reuse-frozen", "note": "分区预算常量与 fault lanes 冻结引用，不改动"},
+    {"asset": "s4-host-closure-verification-spec.json", "decision": "reference-only", "note": "S4 spec 不复用为 S5a 门；新建 s5a spec"}
+  ]
+}
