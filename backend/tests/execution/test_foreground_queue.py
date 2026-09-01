@@ -1059,6 +1059,8 @@ async def test_two_schedulers_claim_exact_draft_and_generation_fences_read_model
     assert claimed.candidate.candidate_json == first_candidate.candidate_json
     assert claimed.candidate.candidate_hash == first_candidate.candidate_hash
     assert claimed.draft_id in {first_draft.draft_id, second_draft.draft_id}
+    assert claimed.admission_receipt_id == admission.admission_receipt_id
+    assert claimed.admission_receipt_hash == admission.admission_receipt_hash
     with sqlite3.connect(db_path) as db:
         assert db.execute(
             "SELECT COUNT(*) FROM foreground_run_preparation_bindings"
@@ -1086,6 +1088,8 @@ async def test_two_schedulers_claim_exact_draft_and_generation_fences_read_model
     )
     assert recovered.candidate.candidate_hash == claimed.candidate.candidate_hash
     assert recovered.draft_hash == claimed.draft_hash
+    assert recovered.admission_receipt_id == claimed.admission_receipt_id
+    assert recovered.admission_receipt_hash == claimed.admission_receipt_hash
 
 
 @pytest.mark.asyncio

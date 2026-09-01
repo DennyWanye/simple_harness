@@ -28,6 +28,7 @@ from deskpet.sdk_adapters.context_preparation import (
 from deskpet.sdk_adapters.tool_authority import (
     SDK_DIRECT_TOOL_KERNEL,
     SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+    SDK_FULL_CATALOG_DISCLOSURE_POLICY,
     SdkRunToolAuthorityRegistry,
 )
 from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
@@ -57,11 +58,19 @@ class TaskScopeForegroundContextPort:
         self._search = TaskScopeSearchStore(db_path)
         self._bindings = WorkspaceBindingAuthorityStore(db_path)
 
-    async def _open(self, task_scope_id: str):  # type: ignore[no-untyped-def]
+    async def _open(
+        self,
+        task_scope_id: str,
+        *,
+        source_id: str | None = None,
+        materialized_only: bool = False,
+    ):  # type: ignore[no-untyped-def]
         return await self._search.open_exact(
             subject=self._subject,
             allowed_scope_ids=(task_scope_id,),
             task_scope_id=task_scope_id,
+            source_id=source_id,
+            materialized_only=materialized_only,
         )
 
     @staticmethod
@@ -104,7 +113,11 @@ class TaskScopeForegroundContextPort:
         candidate = claimed.candidate
         if candidate.subject != self._subject or candidate.task_scope_id is None:
             raise RuntimeError("foreground_task_scope_authority_missing")
-        opened = await self._open(candidate.task_scope_id)
+        opened = await self._open(
+            candidate.task_scope_id,
+            source_id=expected_context.context_snapshot_id,
+            materialized_only=True,
+        )
         self._verify_binding(candidate, opened.resume_package)
         observed = ContextLineage(
             opened.source_id,
@@ -334,7 +347,11 @@ class ProductForegroundToolPort:
             catalog=catalog,
             inventory=inventory,
             deferred_names=deferred,
-            disclosure_policy=SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY,
+            disclosure_policy=(
+                SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY
+                if deferred
+                else SDK_FULL_CATALOG_DISCLOSURE_POLICY
+            ),
             binding_version=receipt.binding_set_revision,
             workspace_resolution=workspace_resolution,
         )

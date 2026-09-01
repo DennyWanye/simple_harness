@@ -104,12 +104,19 @@ class WorkspaceBindingRuntimeAuthority:
             }
         if mode != WorkspaceBindingMode.AUTO.value:
             raise WorkspaceBindingError("workspace_binding_mode_unavailable")
-        return await self._append_auto(
-            task_scope_id=task_scope_id,
-            root=root,
-            idempotency_key=idempotency_key,
-            policy_generation=int(getattr(state, "generation", -1)),
-        )
+        try:
+            return await self._append_auto(
+                task_scope_id=task_scope_id,
+                root=root,
+                idempotency_key=idempotency_key,
+                policy_generation=int(getattr(state, "generation", -1)),
+            )
+        except WorkspaceBindingError as exc:
+            if exc.code == "workspace_root_not_configured_descendant":
+                raise WorkspaceBindingError(
+                    "workspace_binding_auto_root_outside_configured_workspace"
+                ) from exc
+            raise
 
     async def propose_manual_binding(
         self,

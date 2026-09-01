@@ -377,6 +377,8 @@ class TaskScopeSearchStore:
         task_scope_id: str,
         expected_source_hash: str | None = None,
         live_probe: Mapping[str, object] | None = None,
+        source_id: str | None = None,
+        materialized_only: bool = False,
     ) -> ExactOpenResult:
         identifier(subject, "subject", 512)
         identifier(task_scope_id, "task_scope_id", 512)
@@ -393,10 +395,24 @@ class TaskScopeSearchStore:
                 raise TaskScopeNotFound(TaskScopeNotFound.code)
             if scope["subject"] != subject:
                 raise TaskScopeSearchError("human_memory_permission_denied")
-            source = await load_projection_source_tx(db, task_scope_id=task_scope_id)
+            source = await load_projection_source_tx(
+                db,
+                source_id=source_id,
+                task_scope_id=None if source_id is not None else task_scope_id,
+            )
+            if source.task_scope_id != task_scope_id:
+                raise TaskScopeSearchError("human_memory_permission_denied")
             if expected_source_hash is not None and expected_source_hash != source.source_hash:
                 raise TaskScopeSearchError("task_scope_source_stale")
-        views = await self._projections.materialize(source_id=source.source_id)
+        if materialized_only:
+            views = {
+                kind: await self._projections.read_materialized_view(
+                    kind, source_id=source.source_id
+                )
+                for kind in ("README", "PLAN", "STATUS", "RESUME", "EVIDENCE")
+            }
+        else:
+            views = await self._projections.materialize(source_id=source.source_id)
         drift_report = (
             None
             if live_probe is None
@@ -440,6 +456,8 @@ class TaskScopeSearchStore:
             "subject": subject,
             "task_scope_id": task_scope_id,
             "expected_source_hash": expected_source_hash,
+            "source_id": source_id,
+            "materialized_only": materialized_only,
         }
         request_hash = canonical_hash(request)
         receipt_hash = await self._record_access_receipt(

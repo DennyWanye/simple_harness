@@ -145,6 +145,8 @@ class ClaimedExecution:
     candidate: PreparationCandidate
     lineage_hash: str
     claimed_execution_hash: str
+    admission_receipt_id: str = ""
+    admission_receipt_hash: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -797,6 +799,8 @@ class ForegroundQueueStore:
                 candidate=candidate,
                 lineage_hash=str(run["lineage_hash"]),
                 claimed_execution_hash=canonical_hash(payload),
+                admission_receipt_id=str(run["admission_receipt_id"]),
+                admission_receipt_hash=str(run["admission_receipt_hash"]),
             )
 
     async def read_start_observation_outcomes(

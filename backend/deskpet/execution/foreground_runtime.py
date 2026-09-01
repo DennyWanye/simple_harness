@@ -386,7 +386,7 @@ class ForegroundRuntimeExecutionAuthority:
         )
         execution_session_id = _execution_session_id(host_run_id)
         request_id = f"foreground-request-{claimed.candidate.turn_id}"
-        sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+        sdk_run_id = SdkRuntimeIngress._compute_run_id(
             execution_session_id,
             request_id,
             claimed.candidate.turn_id,
@@ -435,9 +435,25 @@ class ForegroundRuntimeExecutionAuthority:
             or candidate.binding_set_receipt_hash is None
         ):
             raise ForegroundRuntimeError("foreground_runtime_route_authority_missing")
-        host_ref = f"foreground-claimed-execution:{host_run_id}:g{claimed.generation}"
+        if claimed.admission_receipt_id and claimed.admission_receipt_hash:
+            host_ref = claimed.admission_receipt_id
+            host_hash = claimed.admission_receipt_hash
+            route_receipt_id = _uuid(
+                f"foreground-initial-route:{host_run_id}:{host_ref}:{host_hash}"
+            )
+        else:
+            # Compatibility for injected test stores that predate the durable
+            # admission receipt fields. Production queue reads always provide
+            # the immutable admission authority above.
+            host_ref = (
+                f"foreground-claimed-execution:{host_run_id}:g{claimed.generation}"
+            )
+            host_hash = claimed.claimed_execution_hash
+            route_receipt_id = _uuid(
+                f"foreground-initial-route:{host_run_id}:g{claimed.generation}"
+            )
         route = ContextRouteReceipt(
-            _uuid(f"foreground-initial-route:{host_run_id}:g{claimed.generation}"),
+            route_receipt_id,
             sdk_run_id,
             None,
             None,
@@ -450,7 +466,7 @@ class ForegroundRuntimeExecutionAuthority:
             binding_set_receipt_hash=candidate.binding_set_receipt_hash,
             origin=ContextRouteOrigin.HOST_INITIAL,
             host_authority_ref=host_ref,
-            host_authority_hash=claimed.claimed_execution_hash,
+            host_authority_hash=host_hash,
         )
         await self._context.verify_initial_route(route)
         turn_payload = _candidate_turn_payload(candidate)
@@ -915,6 +931,7 @@ class SqliteSdkTerminalObserver:
                 ExecutionEvidenceKind,
                 IntendedAudience,
             )
+
             from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
             disclosure = DisclosureContext(
