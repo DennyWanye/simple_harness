@@ -213,11 +213,20 @@ async def test_auto_binding_uses_only_current_foreground_run_snapshot(
         {"scope_ref": scope_ref, "delivery_key": "turn-auto", "text": "run"},
     )
     assert queued["payload"]["ok"] is True
+    candidate = await foreground.read_next_preparation_candidate(_auth().subject)
+    assert candidate is not None
+    draft = await foreground.prepare_candidate(
+        subject=_auth().subject,
+        expected_candidate_hash=candidate.candidate_hash,
+        context=ContextLineage("context-auto", 1, "a" * 64),
+        idempotency_key="prepare-auto",
+    )
     admitted = await foreground.claim_next(
         subject=_auth().subject,
         owner_id="scheduler-auto",
         claim_idempotency_key="claim-auto",
-        context=ContextLineage("context-auto", 1, "a" * 64),
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
         lease_seconds=30,
     )
     assert admitted is not None
