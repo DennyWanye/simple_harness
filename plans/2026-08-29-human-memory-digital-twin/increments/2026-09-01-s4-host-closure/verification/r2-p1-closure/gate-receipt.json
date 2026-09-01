@@ -1,28 +1,28 @@
 {
   "acceptance_sha256": "6e4ef78e3feab3870b57e24917f17bf02d22f1bc55c623985c67c2b90a9672e4",
-  "auditor_input_sha256": "0f8d4356e0f6f0934614fa403e7978f9c9a8cca55a1041fe5c6bc8ad3e4f9986",
-  "auditor_output_sha256": "82949f69253daf592dbf60f9d2f9f934303fafea3189d420ec26176add379a6c",
+  "auditor_input_sha256": "6e51c0fb09aabd38aa0625e5f56b4998ce64e21382db63fe653f585dd7df639c",
+  "auditor_output_sha256": "909e37eb2686af01fae061e2eb4fcb932cbcd98dcff39a8726b2d2114142667f",
   "content_basis": "worktree-content-excluding-declared-scope",
-  "content_digest": "b57eadd5c501b30295c57f866c98e9caee9449016e3b35a7ad3130772221263d",
-  "dirty_patch_sha256": "6b1b42e45c0d16c8b128cbb7f48ac004f03b428472d1e49cc8aae5c1201c09ce",
-  "evidence_manifest_sha256": "3784cc69ded85c288e104ef37b6e07ff7a09a96973b135193087de996ba494d5",
+  "content_digest": "dbaeaae7e9a7f6a90ec7b65611f2e229d9f441e74b1541286a9a94d710543572",
+  "dirty_patch_sha256": "ad04bb5b494f39f4f37b5e0833595ac1f4a982d670cab6910a622e7085b9f827",
+  "evidence_manifest_sha256": "3599c91630f015aa2ce1fccbf3dfb21c89d73b269072781e2101b55bc03d2bd8",
   "evidence_summary": {
     "distinct_artifacts": 15,
-    "distinct_root_runs": 9,
+    "distinct_root_runs": 11,
     "records": 17,
     "shared_artifact_sha256": [
-      "6ede5db8639a413b10c29eebfed52a146717144a7ca0af73e4a33b5ae8ea575e",
-      "dd278d91f46fb3f90c40fba3204925acdb5be488261f7b71468cc6e4be9e2c69"
+      "999c2f832c26bc1e650ccada814139cf0ffec011b5d5e273e2ac94fc29ec3e9c",
+      "ffca7e59a362d840f594dd8e0b605ea21c7cf0636ecd0ec3bbe439c71d27d2d5"
     ]
   },
   "exclusion_scope": [
     ".plan-test/active-run.json",
     "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure"
   ],
-  "finalized_at": "2026-09-01T16:41:22+0800",
+  "finalized_at": "2026-09-01T18:22:21+0800",
   "fixture_only": false,
-  "head": "56d99a213ba65b2054b59fde5039904adf254fac",
-  "ledger_sha256": "77dcc830b61fbe1278c14b302be53a16fd879dc44427220aa021a5cfb7dd8f71",
+  "head": "70b08da9805ac568697fa9905f0f9f85d589c49f",
+  "ledger_sha256": "727fafc38240117286bddc6e5448fdfe469d391c9855e9c70760b51b5a064440",
   "receipt_version": 1,
   "retired": false,
   "run_id": "run-20260901-153005",
@@ -39,10 +39,10 @@
   "state": "SHIPPABLE",
   "superseded_by": null,
   "testcase_lock_sha256": "eda2cf77e693802d54e06336a54fbd44033f350428f39f0c3838cdffe7bd5cfa",
-  "tested_code_head": "56d99a213ba65b2054b59fde5039904adf254fac",
+  "tested_code_head": "70b08da9805ac568697fa9905f0f9f85d589c49f",
   "timing_summary": {
-    "declared_ms": 2520000,
-    "entries": 3,
+    "declared_ms": 4260000,
+    "entries": 4,
     "measured_ms": 0
   },
   "toolchain": {

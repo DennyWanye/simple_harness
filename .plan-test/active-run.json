@@ -1,10 +1,10 @@
 {
   "acceptance_sha256": "6e4ef78e3feab3870b57e24917f17bf02d22f1bc55c623985c67c2b90a9672e4",
-  "candidate_content_digest": "ec581ca412dd66fc4a7a134ab7b75a5aef18e60ec3df28039df5c8e5b4d0735b",
-  "latest_valid_receipt_digest": "b57eadd5c501b30295c57f866c98e9caee9449016e3b35a7ad3130772221263d",
+  "candidate_content_digest": "f0c0c03303e77b51af1d84d25127a963099f80c10a0018143d2cb04df1fc8f8b",
+  "latest_valid_receipt_digest": "dbaeaae7e9a7f6a90ec7b65611f2e229d9f441e74b1541286a9a94d710543572",
   "latest_valid_receipt_path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure/gate-receipt.json",
-  "receipt_finalized_at": "2026-09-01T16:41:22+0800",
+  "receipt_finalized_at": "2026-09-01T18:22:21+0800",
   "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure",
   "run_id": "run-20260901-153005",
-  "updated_at": "2026-09-01T15:46:06+0800"
+  "updated_at": "2026-09-01T17:54:13+0800"
 }
