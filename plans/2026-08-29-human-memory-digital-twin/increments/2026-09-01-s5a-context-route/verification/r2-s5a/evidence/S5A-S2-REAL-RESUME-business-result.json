@@ -1,0 +1,23 @@
+{
+  "scenario_id": "S5A-S2-REAL-RESUME",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "identity": {
+    "root_run_id": "run-milestone-1"
+  },
+  "business_facts": {
+    "business_terminal": "answer continues task A from exact ResumePackage",
+    "search_then_exact_open": true,
+    "route_receipt_binding_quadruple": true,
+    "resume_package_in_final_payload": true,
+    "snapshot_three_hash_equal": true,
+    "usage_within_effective_budget": "worst prompt_tokens <= effective_input_budget(32768)=25396",
+    "runs": 2,
+    "model": "gpt-5.6-luna",
+    "note_run2": "first attempt hit a legitimate stale expected_source_hash rejection (seed-order defect in the lane, fixed; fail-closed behavior correct); retry passed"
+  },
+  "raw_refs": [
+    "evidence/s2-real-resume-run1.log",
+    "evidence/s2-real-resume-run2.log"
+  ],
+  "transcripts_present": 6
+}

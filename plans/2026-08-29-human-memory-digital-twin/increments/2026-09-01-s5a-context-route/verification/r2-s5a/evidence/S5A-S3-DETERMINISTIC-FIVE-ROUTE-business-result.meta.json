@@ -1,0 +1,13 @@
+{
+  "producer_type": "runtime-probe",
+  "artifact_kind": "business-result",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "root_run_id": "run-step-4",
+  "business_facts": {
+    "business_terminal": "six-step sequence terminal answers per TC-HM-10",
+    "five_routes_adjudicated": true,
+    "durable_decisions_ledger": true,
+    "active_cursor_not_polluted": true,
+    "real_provider_four_positive_routes": "resume/no-recall/direct/continue all PASS"
+  }
+}

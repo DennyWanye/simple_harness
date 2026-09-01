@@ -1,0 +1,11 @@
+{
+  "producer_type": "runtime-probe",
+  "artifact_kind": "business-result",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "root_run_id": "regression-suite",
+  "business_facts": {
+    "host_full_pytest_at_baseline": "6272 passed, 12 deselected (7 documented machine-baseline reds, see reg-baseline-exclusions)",
+    "memory_full_suite_green": "1071 passed, 8 skipped",
+    "changed_surface_static_clean": "ruff clean; mypy clean on S5a-owned modules"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "producer_type": "runtime-probe",
+  "artifact_kind": "business-result",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "root_run_id": "run-milestone-1",
+  "business_facts": {
+    "business_terminal": "chat answered from current context only",
+    "single_invocation": true,
+    "zero_tool_calls": true,
+    "durable_no_recall_decision": "context_route_decisions route=direct_standalone origin=no_recall",
+    "route_state_standalone": true,
+    "runs": 2,
+    "model": "gpt-5.6-luna"
+  }
+}

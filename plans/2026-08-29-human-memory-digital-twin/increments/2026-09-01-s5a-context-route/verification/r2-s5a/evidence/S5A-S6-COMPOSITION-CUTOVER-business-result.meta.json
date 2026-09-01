@@ -1,0 +1,14 @@
+{
+  "producer_type": "runtime-probe",
+  "artifact_kind": "business-result",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "root_run_id": "cold-start-boot",
+  "business_facts": {
+    "three_authorities_registered": true,
+    "stale_schema_stable_fail": true,
+    "v44_forward_migration": true,
+    "old_runtime_rejects_v45": true,
+    "presented_table_exists_empty": true,
+    "cold_start": "fresh userdata -> HUMAN v45 epoch -> provider seeded -> stack ready; direct-chat leg gated by Tauri identity bridge (manual UI scenario)"
+  }
+}

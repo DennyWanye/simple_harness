@@ -2,6 +2,26 @@
 
 # simple_harness Long-Running Agent Architecture Baseline
 
+## S5a Context/Route Authority（2026-09-02 生产事实）
+
+- 每个 provider turn 由 `ProductRunContextAuthority.prepare_snapshot` 重算 RunContextSnapshot：
+  protected 前缀（system+memory 块）+ 最近 10 完整因果组（tool 对不拆、open 尾组不裁、大结果
+  typed summary+page_ref）；窗口从 start context_metadata（标量 context_window / run_binding /
+  harness budget 三来源）解析映射到冻结档（4k/8k/32k），超 effective budget 裁尽仍超 →
+  `ContextBudgetExceeded` fail-closed；`payload_hash == expected_request_fingerprint` 自检 +
+  SDK react loop 三 hash 链（receipt 在 provider reservation 前入 checkpoint）。
+- 五路 `context_route`（CONTEXT_CONTROL、direct kernel、host-composed）由 Host 裁决并写 v45
+  durable decisions/invocations；search 命中不授权，resume 需 exact ID；continue_active 承
+  最近 ROUTED_TASK durable 决策并与 binding head 复核；create_new 走幂等 create+append_binding。
+- 终局 `no_recall` 前 mandatory occurrence-inbox reconcile（Memory 0.6 只读 inbox：matched ∧
+  live/presentable ∧ privacy 资格 ∧ 非 suppressed ∧ occurrence_key ∉ v45 presented set）；
+  pending → `NoRecallBlockedError` + 合资格摘要注入 snapshot；presented set 由 Host 持有，
+  S5a 零写入（S5b settled 状态机接管）。
+- memory_standalone → `HumanMemoryV7Runtime`（human_memory_v7.db，fresh-only）双 recall lane；
+  嵌入模型 WeMM-Embedding-2B（本地快照）；legacy 记忆组合同模。
+- 组合根按 state.db epoch 门控：<35 legacy 保持裸路径；≥35 且 <45 stable fail；≥45 注册三
+  authority + v7 runtime（缺件 startup fail，无 Noop 降级）。
+
 ## ToolReceipt HMAC key authority（2026-09-01）
 
 - `backend/deskpet/tools/receipt_store.py` 仍对 ToolReceipt 做 HMAC-SHA256 签名/验签，但 receipt key 只存在

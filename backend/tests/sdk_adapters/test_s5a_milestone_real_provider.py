@@ -167,10 +167,13 @@ async def test_real_provider_resume_existing_same_run_continuation(
         )
     )
     scope_id = str(created["scope_ref"])
-    await milestone.service.rebuild_derived(scope_id)
     workspace = tmp_path / "workspace" / "root-a"
     workspace.mkdir(parents=True)
     await _bind_scope_root(milestone.db_path, scope_id, workspace)
+    # Rebuild AFTER the binding append so the search index carries the final
+    # canonical source hash — otherwise a model that pins the candidate's
+    # expected_source_hash hits a legitimate stale rejection.
+    await milestone.service.rebuild_derived(scope_id)
 
     transcript: list = []
     provider = RealRelayProvider(runtime, transcript)

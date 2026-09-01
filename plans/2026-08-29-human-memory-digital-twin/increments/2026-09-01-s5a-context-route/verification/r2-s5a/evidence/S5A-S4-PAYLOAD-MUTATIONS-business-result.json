@@ -1,0 +1,17 @@
+{
+  "scenario_id": "S5A-S4-PAYLOAD-MUTATIONS",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "identity": {
+    "root_run_id": "run-mut"
+  },
+  "business_facts": {
+    "invalid_route_fail_closed": true,
+    "oversize_query_fail_closed": true,
+    "duplicate_effect_idempotent": true,
+    "no_half_state": true
+  },
+  "raw_refs": [
+    "evidence/s4-payload-mutations.log"
+  ],
+  "transcripts_present": 6
+}

@@ -1,0 +1,20 @@
+{
+  "scenario_id": "S5A-S6-COMPOSITION-CUTOVER",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "identity": {
+    "root_run_id": "cold-start-boot"
+  },
+  "business_facts": {
+    "three_authorities_registered": true,
+    "stale_schema_stable_fail": true,
+    "v44_forward_migration": true,
+    "old_runtime_rejects_v45": true,
+    "presented_table_exists_empty": true,
+    "cold_start": "fresh userdata -> HUMAN v45 epoch -> provider seeded -> stack ready; direct-chat leg gated by Tauri identity bridge (manual UI scenario)"
+  },
+  "raw_refs": [
+    "evidence/s6-composition-cutover.log",
+    "evidence/s6-cold-start-e2e.log"
+  ],
+  "transcripts_present": 6
+}

@@ -1,0 +1,19 @@
+{
+  "scenario_id": "S5A-S3-DETERMINISTIC-FIVE-ROUTE",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "identity": {
+    "root_run_id": "run-step-4"
+  },
+  "business_facts": {
+    "business_terminal": "six-step sequence terminal answers per TC-HM-10",
+    "five_routes_adjudicated": true,
+    "durable_decisions_ledger": true,
+    "active_cursor_not_polluted": true,
+    "real_provider_four_positive_routes": "resume/no-recall/direct/continue all PASS"
+  },
+  "raw_refs": [
+    "evidence/s3-deterministic-six-step.log",
+    "evidence/s3-real-direct-continue.log"
+  ],
+  "transcripts_present": 6
+}

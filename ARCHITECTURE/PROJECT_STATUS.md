@@ -2,6 +2,29 @@
 
 > **最后更新**：2026-09-01
 
+## 2026-09-02 Human Memory S5a：五路 context_route、per-turn Context authority 与同 Run continuation
+
+- 在 `feat/human-memory-s5a-context-route` 分支（基线 `fix/human-memory-runtime-p1-closure` @ c9f73349）交付
+  S5a 增量：SDK 0.7 三 authority 首次生产接线（`ProductRunContextAuthority` per-turn snapshot 三 hash、
+  `ProductRuntimeDecisionSink` durable no-recall、`ProductTaskExecutionAuthority` exact effect 回声/
+  PROJECT_EFFECT 真空 fail-closed），v45 `037_context_route_ledger` durable 账本（route/no-recall decision、
+  snapshot receipt、tool 血缘、occurrence presented 全列表 S5a 零写入），host-composed `context_route`
+  （CONTEXT_CONTROL/direct kernel）+ `task_scope_search` 五路裁决工具，因果组 planner + 冻结分区预算
+  （metric-formulas 逐字节 pin，超载 fail-closed 禁 underestimate），mandatory no_recall inbox reconcile
+  （matched∧live∧资格∧非 suppressed∧∉presented；真 apply_prospective_signal 注入负测试），
+  memory_standalone 双 recall lane（execute_typed_recall + recall_short_horizon，fragments 带
+  bytes/tokens/lane），Memory SDK 0.6.0 exact pin（wheel 62a3f63c，双 clean build 字节一致）。
+- 真实 provider（gpt-5.6-luna @ 用户 relay）四路正向实测：resume 同 Run continuation（exact ResumePackage
+  进最终 payload）、单 invocation no-recall、direct commit、continue_active 承 durable cursor；usage ≤
+  冻结 effective budget。deterministic 矩阵：六步五路序列、A/B canary 零混入、20+turn/1MiB/kill-replay
+  三 hash、载荷变异 fail-closed、v44→v45 cutover 演练四件套、fresh 冷启动组合冒烟。
+- 向量模型切换（用户指令）：`tencent/WeMM-Embedding-2B`（2048 维 L2，本地快照 + trust_remote_code 限本地）
+  取代 BGE-M3；transformers 5.16.1 / sentence-transformers 6.0.1（torch 三件套保持 2.7.1 pin）；
+  发布前置：WeMM 快照需上传 COS 模型桶（provisioner 只认桶内容）。
+- 已知边界：chat 直达对话被 Tauri 身份桥（Rust 签名）门控——headless 后端不可达，属真人 UI 场景；
+  本机 7 项环境红（S4 期即在案）与 process_list flaky 维持基线；PROJECT_EFFECT root 签发接线列
+  S5b Task 5 前置义务。
+
 ## 2026-09-01（补）S4 closure review 修复：STOPPED 终态白名单、TOOL fence 状态集、supersession 竞态
 
 - 8 角度独立 code review（3 正确性 + 3 清理 + 高度 + 规约，逐条验证）发现 9 项 CONFIRMED；按建议

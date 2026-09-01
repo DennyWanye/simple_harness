@@ -1,0 +1,18 @@
+{
+  "scenario_id": "S5A-S5-SNAPSHOT-KILL-REPLAY",
+  "generated_at": "2026-09-02T00:55:00Z",
+  "identity": {
+    "root_run_id": "run-twenty"
+  },
+  "business_facts": {
+    "snapshot_revisions_monotonic": "1..11",
+    "three_hash_equal_all_turns": true,
+    "no_completed_turn_reinvoked": "replay invoked turns 6..11 only",
+    "large_result_typed_summary_only": "1MiB payload never raw in any provider request",
+    "twin_influence_zero": "static import + payload replay checks"
+  },
+  "raw_refs": [
+    "evidence/s5-kill-replay-twin.log"
+  ],
+  "transcripts_present": 6
+}
