@@ -152,6 +152,8 @@ class ScriptedProvider:
     async def invoke(self, run_id, request, *, cancel, execution_lease):
         self.calls.append(request)
         template = self.responses.pop(0)
+        if isinstance(template, BaseException):
+            raise template
         return ProviderResponse(
             request_id=request.request_id,
             message=template.message,

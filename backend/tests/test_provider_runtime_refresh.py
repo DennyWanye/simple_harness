@@ -121,11 +121,12 @@ async def test_real_product_sdk_production_composition_starts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from simple_harness_memory import MemoryManager
+
     from deskpet.memory.session_db import SessionDB
     from deskpet.sdk_adapters.skill_install_verification import (
         BindableSkillInstallVerificationDriverFactory,
     )
-    from simple_harness_memory import MemoryManager
 
     data_dir = tmp_path / "data"
     data_dir.mkdir()
@@ -361,3 +362,117 @@ def test_foreground_no_longer_owns_manual_memory_prepare() -> None:
     assert "ConversationTurnInput" in source
     assert "ConversationContinuationInput" in continuation
     assert "context_source_snapshot_ref=source_ref" in continuation
+
+
+@pytest.mark.asyncio
+async def test_human_epoch_composition_registers_three_authorities(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S5A-S6/AC-6: on a human-memory (v45) state db the stack build registers
+    the three concrete SDK authorities; a pre-v45 human db fails stably."""
+
+    from simple_harness_memory import MemoryManager
+
+    from deskpet.memory.schema import initialize_human_memory_program_state_db
+    from deskpet.memory.session_db import SessionDB
+    from deskpet.sdk_adapters.context_authority import (
+        ProductRunContextAuthority,
+        ProductRuntimeDecisionSink,
+    )
+    from deskpet.sdk_adapters.skill_install_verification import (
+        BindableSkillInstallVerificationDriverFactory,
+    )
+    from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    human_state = tmp_path / "human-state.db"
+    await initialize_human_memory_program_state_db(human_state)
+
+    memory = await MemoryManager.build_development(data_dir / "memory.db")
+    session = SessionDB(data_dir / "state.db", memory_backend=memory)
+    await session.initialize()
+    services = {
+        "session_db": session,
+        "capability_platform": object(),
+        "provider_registry": _ProductionProviderRegistry(),
+        "workflow_service": object(),
+        "context_page_in_store": _ProductionContextPages(),
+        "memory_recall_query": _ProductionMemoryQuery(),
+        "memory_recall_scope_resolver": _ProductionMemoryScope(),
+        "search_gateway": _ProductionSearchGateway(),
+        "authorization_runtime": object(),
+        "capability_store": _ProductionCapabilityStore(),
+        "skill_install_verification_driver_factory": (
+            BindableSkillInstallVerificationDriverFactory()
+        ),
+        "frozen_skill_instruction_resolver": object(),
+        "legacy_frozen_skill_instruction_resolver": object(),
+        "project_skill_install_service": SimpleNamespace(
+            confirm_authorized=AsyncMock(),
+            stage_authorization_preflight=AsyncMock(),
+            settle_authorization_terminal=lambda _evidence: None,
+        ),
+    }
+    slots = (
+        "sdk_run_context_authority",
+        "sdk_runtime_decision_sink",
+        "sdk_task_execution_authority",
+        "human_memory_v7_runtime",
+    )
+    previous = {
+        name: main.service_context.get(name) for name in (*services, *slots)
+    }
+    stack = None
+    monkeypatch.setattr(main, "_memory_backend", memory)
+    monkeypatch.setattr(main._paths, "user_data_dir", lambda: tmp_path)
+    monkeypatch.setattr(main, "_state_db_path", human_state)
+    try:
+        for name, value in services.items():
+            main.service_context.register(name, value)
+        stack = await main._build_product_sdk_runtime_stack(1)
+        assert isinstance(
+            main.service_context.get("sdk_run_context_authority"),
+            ProductRunContextAuthority,
+        )
+        assert isinstance(
+            main.service_context.get("sdk_runtime_decision_sink"),
+            ProductRuntimeDecisionSink,
+        )
+        assert isinstance(
+            main.service_context.get("sdk_task_execution_authority"),
+            ProductTaskExecutionAuthority,
+        )
+        assert main.service_context.get("human_memory_v7_runtime") is not None
+    finally:
+        if stack is not None:
+            await stack.close()
+        for name, value in previous.items():
+            main.service_context.register(name, value)
+        await session.close()
+
+    # Missing prerequisite drill: a human-epoch db stuck below v45 must fail
+    # the stack build stably (no Noop fallback).
+    import sqlite3 as _sqlite3
+
+    stale = tmp_path / "stale-state.db"
+    with _sqlite3.connect(stale) as db:
+        db.execute("PRAGMA user_version=44")
+        db.commit()
+    monkeypatch.setattr(main, "_state_db_path", stale)
+    memory2 = await MemoryManager.build_development(data_dir / "memory2.db")
+    session2 = SessionDB(data_dir / "state2.db", memory_backend=memory2)
+    await session2.initialize()
+    monkeypatch.setattr(main, "_memory_backend", memory2)
+    try:
+        for name, value in services.items():
+            if name != "session_db":
+                main.service_context.register(name, value)
+        main.service_context.register("session_db", session2)
+        with pytest.raises(Exception, match="sdk_context_route_ledger_schema_missing"):
+            await main._build_product_sdk_runtime_stack(2)
+    finally:
+        for name, value in previous.items():
+            main.service_context.register(name, value)
+        await session2.close()

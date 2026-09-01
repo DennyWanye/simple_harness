@@ -18,20 +18,18 @@ process.
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
 from pathlib import Path
 
 import httpx
 import pytest
-from simple_harness.contracts import CallId, RequestId
+from simple_harness.contracts import CallId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetSnapshot
 from simple_harness.providers import ProviderResponse, ProviderToolCall
 
 from deskpet.memory.human_memory_service import CreateTaskScopeRequest
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
-
 from tests.sdk_adapters.test_s5a_milestone_route_loop import (  # noqa: F401
     RUN,
     _bind_scope_root,
@@ -238,3 +236,63 @@ async def test_real_provider_resume_existing_same_run_continuation(
     answer = str(result.response.message.content)
     assert answer.strip(), "real model must answer after routing"
     assert result.termination.route_state == "routed_task"
+
+
+@pytest.mark.asyncio
+async def test_real_provider_no_recall_single_invocation(milestone) -> None:
+    """S5A-S1 / TC-HM-01: a context-sufficient request answers in ONE real
+    invocation with zero tool calls and a durable no_recall decision."""
+
+    runtime = _runtime()
+    provider = RealRelayProvider(runtime, [])
+    provider_no_tools = provider
+
+    # Narrow instruction: this lane must not route through tools at all.
+    global _SYSTEM
+    saved = _SYSTEM
+    _SYSTEM = (
+        "你是桌面工作台的主模型。当前消息只需当前上下文即可回答时，"
+        "禁止调用任何工具，直接给出简短中文回答。"
+    )
+    try:
+        milestone.context.messages[0] = type(milestone.context.messages[0])(
+            role=milestone.context.messages[0].role,
+            content="把这句话改得更简洁：我今天想要去外面的公园里面散一会儿步",
+        )
+        result = await _run(milestone, provider_no_tools)
+    finally:
+        _SYSTEM = saved
+
+    assert result.termination.route_state == "routed_standalone"
+    assert len(provider.calls) == 1, "single invocation required"
+    assert milestone.effects.calls == []
+    decisions = _rows(
+        milestone.db_path,
+        "SELECT route,origin FROM context_route_decisions WHERE sdk_run_id=?",
+        RUN.value,
+    )
+    assert decisions == [("direct_standalone", "no_recall")]
+
+
+@pytest.mark.asyncio
+async def test_real_provider_commits_direct_route_via_tool(milestone) -> None:
+    """Third positive real-provider route (S5A-S3): explicit direct_standalone
+    commit through the context_route tool, then the answer."""
+
+    runtime = _runtime()
+    provider = RealRelayProvider(runtime, [])
+    milestone.context.messages[0] = type(milestone.context.messages[0])(
+        role=milestone.context.messages[0].role,
+        content="用一句话解释什么是二分查找（不需要任何记忆或任务）",
+    )
+    result = await _run(milestone, provider)
+
+    assert result.termination.route_state == "routed_standalone"
+    assert "context_route" in milestone.effects.calls
+    decisions = _rows(
+        milestone.db_path,
+        "SELECT route,origin FROM context_route_decisions WHERE sdk_run_id=?",
+        RUN.value,
+    )
+    assert ("direct_standalone", "context_tool") in decisions
+    assert str(result.response.message.content).strip()

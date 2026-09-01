@@ -768,10 +768,20 @@ def _plan_turn_messages(
         for message, item in zip(span, group.items):
             if item.summarized:
                 # Large tool results travel as typed summary + page ref; the
-                # raw payload stays durable behind the exact ref.
-                from dataclasses import replace as _replace
+                # raw payload stays durable behind the exact ref.  Rebuild the
+                # Message explicitly: frozen metadata does not survive
+                # dataclasses.replace validation.
+                from simple_harness.contracts.messages import Message as _Message
 
-                message = _replace(message, content=item.content)
+                raw_metadata = getattr(message, "metadata", {})
+                metadata = dict(thaw_json(raw_metadata)) if raw_metadata else {}
+                message = _Message(
+                    role=message.role,
+                    content=item.content,
+                    name=getattr(message, "name", None),
+                    call_id=getattr(message, "call_id", None),
+                    metadata=metadata,
+                )
             kept_messages.append(message)
     facts = {
         "causal_groups": len(groups),
