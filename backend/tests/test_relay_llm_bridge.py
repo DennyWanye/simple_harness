@@ -23,17 +23,19 @@ from main import app, LLM_RUNTIME_PATH
 
 
 @pytest.fixture(autouse=True)
-def _snapshot_runtime_config():
-    """Snapshot llm_runtime.json + local_llm; restore after each test."""
-    saved = LLM_RUNTIME_PATH.read_text(encoding="utf-8") if LLM_RUNTIME_PATH.exists() else None
+def _snapshot_runtime_config(tmp_path, monkeypatch):
+    """Isolate llm_runtime.json in tmp_path; restore local_llm after each test.
+
+    The real user file may legitimately hold a persisted provider config; these
+    tests assert persist_key semantics against an empty runtime store.
+    """
+    isolated = tmp_path / "llm_runtime.json"
+    monkeypatch.setattr(main_module, "LLM_RUNTIME_PATH", isolated)
+    monkeypatch.setitem(globals(), "LLM_RUNTIME_PATH", isolated)
     saved_llm = main_module.local_llm
     try:
         yield
     finally:
-        if saved is not None:
-            LLM_RUNTIME_PATH.write_text(saved, encoding="utf-8")
-        elif LLM_RUNTIME_PATH.exists():
-            LLM_RUNTIME_PATH.unlink()
         main_module.local_llm = saved_llm
 
 

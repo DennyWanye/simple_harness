@@ -114,3 +114,15 @@ def test_consumers_share_single_source_of_truth() -> None:
     assert conformance._WHEEL == sdk_wheel_path()
     assert main.SDK_VERSION is SDK_VERSION
     assert main.build_candidate_identity is build_candidate_identity
+
+
+def test_memory_candidate_wrong_wheel_hash_fails_closed(monkeypatch) -> None:
+    """S5A-AC-6: a tampered vendored Memory wheel must refuse composition."""
+
+    import deskpet.sdk_adapters.sdk_candidate as candidate
+
+    monkeypatch.setattr(
+        candidate, "SDK_MEMORY_WHEEL_SHA256", "0" * 64, raising=True
+    )
+    with pytest.raises(RuntimeError, match="SHA-256 mismatch"):
+        verify_memory_candidate()

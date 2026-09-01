@@ -7,7 +7,7 @@ from simple_harness_memory import MemoryManager
 @pytest.mark.asyncio
 async def test_two_users_are_sql_scoped_across_append_recall_facts_and_twin(tmp_path):
     memory = await MemoryManager.build_development(
-        tmp_path / "memory.db", enable_facts=True
+        tmp_path / "memory.db"
     )
     session = SessionDB(tmp_path / "state.db", memory_backend=memory)
     await session.initialize()

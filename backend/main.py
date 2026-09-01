@@ -3181,8 +3181,13 @@ async def lifespan(app: FastAPI):
         memory_build_kwargs = {
             "embedder": memory_embedder,
             "resource_path": memory_resource,
-            "enable_facts": True,
         }
+        if "enable_facts" in inspect.signature(
+            MemoryManager.build_production
+        ).parameters:
+            # Removed in Memory SDK 0.6 (facts are always on); keep the legacy
+            # kwarg only for pre-0.6 wheels.
+            memory_build_kwargs["enable_facts"] = True
         if "observability_sink" in inspect.signature(
             MemoryManager.build_production
         ).parameters:
@@ -8501,6 +8506,25 @@ async def _build_product_sdk_runtime_stack(
     )
     from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
 
+    def _state_db_user_version() -> int:
+        import sqlite3 as _sqlite3
+
+        path = Path(_state_db_path)
+        if not path.exists():
+            return 0
+        with _sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            return int(db.execute("PRAGMA user_version").fetchone()[0])
+
+    _state_version = _state_db_user_version()
+    if _state_version < 35:
+        # Legacy (pre human-memory epoch) composition keeps the SDK bare
+        # context path; the v45 route/snapshot ledger does not exist there and
+        # the fail-closed proxies stay unregistered exactly as before S5a.
+        logger.info(
+            "sdk_context_authorities_skipped_legacy_epoch version=%s",
+            _state_version,
+        )
+        return stack
     if tool_authorities is None:
         raise RuntimeError("sdk_context_authority_composition_missing:tool_authority_registry")
     context_route_ledger = ContextRouteLedgerStore(_state_db_path)

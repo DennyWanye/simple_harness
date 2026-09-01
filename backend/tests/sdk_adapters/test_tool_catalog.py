@@ -1164,10 +1164,7 @@ def test_memory_recall_and_search_dispatch_to_live_memory_sdk_for_ordinary_run(
             raise CompanionStateError("owner_memory_scope_missing_or_ambiguous")
 
     async def case() -> None:
-        memory_backend = SQLiteMemoryBackend(
-            str(tmp_path / "memory.db"),
-            auto_extract_facts=False,
-        )
+        memory_backend = SQLiteMemoryBackend(str(tmp_path / "memory.db"))
         await memory_backend.initialize()
         await memory_backend.append_message(
             "session-memory",
