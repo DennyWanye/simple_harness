@@ -139,3 +139,19 @@ def test_critical_harness_services_register_none_without_error(name: str):
     ctx = ServiceContext()
     ctx.register(name, None)
     assert ctx.get(name) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "human_memory_binding_append_authority",
+        "human_memory_recovery_lifecycle",
+        "human_memory_foreground_scheduler_wake",
+        "human_memory_foreground_runtime_execution",
+    ],
+)
+def test_human_memory_production_ports_are_explicit_slots(name: str):
+    ctx = ServiceContext()
+    authority = object()
+    ctx.register(name, authority)
+    assert ctx.get(name) is authority

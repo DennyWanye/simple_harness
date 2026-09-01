@@ -15,6 +15,7 @@ from deskpet.memory.human_memory_service import (
     AuthenticatedHostSnapshot,
     ControlRunRequest,
     CreateTaskScopeRequest,
+    DecideManualBindingRequest,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
     ListEvidenceGroupsRequest,
@@ -187,6 +188,20 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         return await service.append_binding(
             AppendBindingRequest(
                 str(request["scope_ref"]), str(request["root"]), request_id
+            )
+        )
+    if operation == "binding.manual.propose":
+        return await service.propose_manual_binding(
+            AppendBindingRequest(
+                str(request["scope_ref"]), str(request["root"]), request_id
+            )
+        )
+    if operation == "binding.manual.decide":
+        return await service.decide_manual_binding(
+            DecideManualBindingRequest(
+                str(request["challenge_ref"]),
+                str(request["decision"]),
+                request_id,
             )
         )
     if operation == "queue.enqueue":

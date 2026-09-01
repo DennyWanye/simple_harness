@@ -3021,6 +3021,51 @@ async def _authorization_auto_mode() -> bool:
     return (await store.get_policy_state()).mode == "auto"
 
 
+async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ignore[no-untyped-def]
+    """Publish fresh-HUMAN authorities only after their dependencies are ready."""
+
+    from deskpet.memory.schema import StartupCompositionMode
+
+    names = (
+        "human_memory_binding_append_authority",
+        "human_memory_recovery_lifecycle",
+        "human_memory_foreground_scheduler_wake",
+        "human_memory_foreground_runtime_execution",
+    )
+    if startup_epoch.composition_mode is not StartupCompositionMode.HUMAN:
+        for name in names:
+            service_context.register(name, None)
+        return
+    policy = service_context.get("capability_store")
+    if policy is None:
+        raise RuntimeError("Human Memory binding requires authorization policy")
+    from deskpet.execution.foreground_queue import ForegroundQueueStore
+    from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
+    from deskpet.task_scope.runtime_binding_authority import (
+        WorkspaceBindingRuntimeAuthority,
+    )
+
+    foreground = ForegroundQueueStore(_state_db_path)
+    binding = WorkspaceBindingRuntimeAuthority(
+        _state_db_path,
+        subject="deskpet-local-owner-v1",
+        foreground=foreground,
+        policy=policy,
+    )
+    recovery = build_recovery_lifecycle_port(
+        db_path=_state_db_path,
+        artifact_dir=Path(_paths.user_data_dir())
+        / "human-memory-emergency-exports",
+    )
+    service_context.register("human_memory_binding_append_authority", binding)
+    service_context.register("human_memory_recovery_lifecycle", recovery)
+    # The execution agent publishes these two ports once the sole SDK ingress
+    # composition has been constructed.  Keeping them explicitly absent is a
+    # fail-closed state, never a silent no-op scheduler.
+    service_context.register("human_memory_foreground_scheduler_wake", None)
+    service_context.register("human_memory_foreground_runtime_execution", None)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
@@ -5419,6 +5464,7 @@ async def lifespan(app: FastAPI):
         await _initialize_growth_authority()
         # Slice C: Use SDK Runtime instead of legacy harness
         await _activate_product_sdk_runtime()
+        await _activate_human_memory_host_ports(startup_epoch)
         await _complete_growth_authority_cutover()
         await _initialize_companion_projection_services()
         await _activate_companion_runtime_adapter_and_open_ingress()
