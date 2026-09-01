@@ -17,7 +17,10 @@ from pathlib import Path
 import aiosqlite
 
 from deskpet.task_scope.projection_sources import load_projection_source_tx
-from deskpet.task_scope.projections import CheckpointDriftReport, TaskScopeProjectionStore
+from deskpet.task_scope.projections import (
+    CheckpointDriftReport,
+    TaskScopeProjectionStore,
+)
 from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
 from deskpet.task_scope.store import TaskScopeNotFound, _uuid
 
@@ -383,6 +386,16 @@ class TaskScopeSearchStore:
                 source_id=source.source_id, live_probe=live_probe
             )
         )
+        read_views: dict[str, dict[str, object]] = {
+            kind: {
+                "content": _bounded(views[kind].content, 4096),
+                "content_sha256": views[kind].content_sha256,
+                "root_block_id": views[kind].root_block_id,
+                "block_count": views[kind].block_count,
+                "receipt_hash": views[kind].receipt_hash,
+            }
+            for kind in ("README", "PLAN", "STATUS", "RESUME", "EVIDENCE")
+        }
         package: dict[str, object] = {
             "schema_version": 1,
             "task_scope_id": task_scope_id,
@@ -394,20 +407,11 @@ class TaskScopeSearchStore:
             "binding_receipt_hash": source.binding_receipt_hash,
             "checkpoint_sequence": source.checkpoint_sequence,
             "checkpoint_set_root": source.checkpoint_set_root,
-            "read_views": {
-                kind: {
-                    "content": _bounded(views[kind].content, 4096),
-                    "content_sha256": views[kind].content_sha256,
-                    "root_block_id": views[kind].root_block_id,
-                    "block_count": views[kind].block_count,
-                    "receipt_hash": views[kind].receipt_hash,
-                }
-                for kind in ("README", "PLAN", "STATUS", "RESUME", "EVIDENCE")
-            },
+            "read_views": read_views,
         }
         encoded = canonical_json(package).encode("utf-8")
         if len(encoded) > MAX_RESUME_PACKAGE_BYTES:
-            for item in package["read_views"].values():  # type: ignore[union-attr]
+            for item in read_views.values():
                 item["content"] = _bounded(str(item["content"]), 1024)
             encoded = canonical_json(package).encode("utf-8")
         if len(encoded) > MAX_RESUME_PACKAGE_BYTES:

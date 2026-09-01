@@ -3048,7 +3048,6 @@ async def lifespan(app: FastAPI):
         _state_db_path,
         approved_fresh_lane=approved_fresh_lane,
     )
-    service_context.register("human_memory_composition", startup_epoch)
     service_context.register(
         "human_memory_host_service_factory",
         (

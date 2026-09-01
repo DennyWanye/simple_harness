@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
+from deskpet.execution.foreground_queue import ContextLineage, ForegroundQueueStore
 from deskpet.memory.human_memory_service import (
     AppendBindingRequest,
     AppendDeterministicEventsRequest,
@@ -34,7 +36,7 @@ from deskpet.memory.human_memory_service import (
     SaveCheckpointRequest,
     SearchTaskScopesRequest,
 )
-from deskpet.execution.foreground_queue import ContextLineage, ForegroundQueueStore
+from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
 from deskpet.memory.schema import dispatch_startup_epoch, inspect_startup_epoch
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 
@@ -44,13 +46,8 @@ class _CanonicalBulkSeed:
         self._store = CanonicalTaskScopeStore(db_path)
 
     async def append_deterministic_events(self, **values):  # type: ignore[no-untyped-def]
-        operation = getattr(self._store, "append_deterministic_events", None)
-        if not callable(operation):
-            raise HumanMemoryHostServiceError(
-                "human_memory_bulk_seed_authority_unavailable"
-            )
         values.pop("idempotency_key", None)
-        receipt = await operation(**values)
+        receipt = await self._store.append_deterministic_events(**values)
         return {
             "scope_ref": receipt.task_scope_id,
             "event_count": receipt.count,
@@ -109,16 +106,6 @@ class _FixtureSchedulerWake:
         )
 
 
-def _recovery_port(db_path: Path, artifact_dir: Path):  # type: ignore[no-untyped-def]
-    """Resolve the separately owned v42 lifecycle implementation."""
-
-    try:
-        from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
-    except ImportError:
-        return None
-    return build_recovery_lifecycle_port(db_path=db_path, artifact_dir=artifact_dir)
-
-
 class S4ValuePublicAdapter:
     def __init__(self, *, fixture: Mapping[str, Any], artifact_dir: Path) -> None:
         self._fixture = dict(fixture)
@@ -162,7 +149,9 @@ class S4ValuePublicAdapter:
                 self._auth,
                 deterministic_event_seed=_CanonicalBulkSeed(self._db_path),
                 binding_append=_FixtureBindingAppend(),
-                recovery=_recovery_port(self._db_path, self._artifact_dir),
+                recovery=build_recovery_lifecycle_port(
+                    db_path=self._db_path, artifact_dir=self._artifact_dir
+                ),
                 scheduler_wake=_FixtureSchedulerWake(self._db_path),
             )
             return {
@@ -176,7 +165,9 @@ class S4ValuePublicAdapter:
                 self._auth,
                 deterministic_event_seed=_CanonicalBulkSeed(path),
                 binding_append=_FixtureBindingAppend(),
-                recovery=_recovery_port(path, self._artifact_dir),
+                recovery=build_recovery_lifecycle_port(
+                    db_path=path, artifact_dir=self._artifact_dir
+                ),
                 scheduler_wake=_FixtureSchedulerWake(path),
             )
             return {
@@ -311,8 +302,6 @@ class S4ValuePublicAdapter:
         if operation == "queue.snapshot":
             return await service.queue_snapshot()
         if operation == "recovery.manifest":
-            if not getattr(service, "recovery_available", False):
-                return await service.raw_integrity_manifest()
             return await service.recovery_manifest()
         if operation == "recovery.emergency_export":
             return await service.emergency_export()

@@ -29,8 +29,8 @@ from simple_harness import (
     DisclosureSource,
     DisclosureTrust,
     EvidenceReasonCode,
-    EvidenceSourceKind,
     EvidenceRef,
+    EvidenceSourceKind,
     IntendedAudience,
     SanitizedEvidenceEnvelope,
     SanitizedEvidenceReceipt,
@@ -292,16 +292,6 @@ _RAW_SET_ALLOWLIST = (
 )
 
 
-def _canonical(value: object) -> bytes:
-    return json.dumps(
-        value,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8")
-
-
 def _json_cell(value: object) -> object:
     if isinstance(value, bytes):
         return {"blob_sha256": hashlib.sha256(value).hexdigest(), "size": len(value)}
@@ -342,10 +332,6 @@ class HumanMemoryHostService:
     @property
     def startup_decision(self) -> StartupEpochDecision:
         return self._startup
-
-    @property
-    def recovery_available(self) -> bool:
-        return self._recovery is not None
 
     async def open_primary(self) -> Mapping[str, object]:
         receipt = await self._program.initialize_subject(self._auth.subject)
@@ -993,12 +979,13 @@ class HumanMemoryHostService:
                 else:
                     rows = db.execute(f'SELECT * FROM "{spec.table}"').fetchall()
                 canonical_rows = sorted(
-                    _canonical(
+                    canonical_json(
                         {
                             key: _json_cell(row[key])
-                            for key in row.keys()
+                            # sqlite3.Row iteration yields values, unlike dict.
+                            for key in row.keys()  # noqa: SIM118
                         }
-                    )
+                    ).encode("utf-8")
                     for row in rows
                 )
                 digest = hashlib.sha256()
@@ -1009,7 +996,9 @@ class HumanMemoryHostService:
                     "row_count": len(canonical_rows),
                     "content_sha256": digest.hexdigest(),
                 }
-        manifest_hash = hashlib.sha256(_canonical(raw_sets)).hexdigest()
+        manifest_hash = hashlib.sha256(
+            canonical_json(raw_sets).encode("utf-8")
+        ).hexdigest()
         return {
             "schema_version": 1,
             "format_epoch": self._startup.composition_mode.value,
@@ -1139,24 +1128,24 @@ class HumanMemoryHostServiceFactory:
 
 
 __all__ = (
-    "AppendDeterministicEventsRequest",
     "AppendBindingRequest",
+    "AppendDeterministicEventsRequest",
     "AppendPrimaryEventRequest",
     "AuditRefsRequest",
     "AuthenticatedHostSnapshot",
     "ControlRunRequest",
     "CreateTaskScopeRequest",
     "DeterministicEventSeedPort",
+    "ForegroundSchedulerWakePort",
     "HumanMemoryHostService",
     "HumanMemoryHostServiceError",
     "HumanMemoryHostServiceFactory",
-    "ForegroundSchedulerWakePort",
     "MutateTaskScopeRequest",
     "OpenTaskScopeRequest",
     "QueueTurnRequest",
     "ReadTaskScopeViewRequest",
+    "RecoveryLifecyclePort",
     "SaveCheckpointRequest",
     "SearchTaskScopesRequest",
-    "RecoveryLifecyclePort",
     "WorkspaceBindingAppendPort",
 )

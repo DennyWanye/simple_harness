@@ -10,7 +10,6 @@ from pathlib import Path
 
 import aiosqlite
 
-
 PRIMARY_AUTHORITY_IMMUTABLE = "human_memory_primary_authority_immutable"
 
 

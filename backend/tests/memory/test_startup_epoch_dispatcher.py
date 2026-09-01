@@ -5,7 +5,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, run_migrations
 from deskpet.memory.schema import (
     StartupCompositionMode,

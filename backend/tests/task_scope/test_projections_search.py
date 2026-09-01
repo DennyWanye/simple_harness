@@ -6,7 +6,6 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.task_scope.projections import (
     ProjectionIntegrityError,
@@ -66,7 +65,6 @@ async def test_source_views_groups_rebuild_and_checkpoint_drift(tmp_path: Path) 
     assert len(views["README"].content.encode()) <= 16 * 1024
     assert len(views["STATUS"].content.encode()) <= 12 * 1024
     assert len(views["RESUME"].content.encode()) <= 24 * 1024
-    evidence = json.loads(views["EVIDENCE"].content)
     groups = await projections.list_evidence_groups(task_scope_id="scope-1")
     assert [group["event_count"] for group in groups] == [500, 500, 1]
     with sqlite3.connect(db_path) as db:

@@ -7,7 +7,6 @@ from dataclasses import fields
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.human_memory_service import (
     AppendBindingRequest,
     AppendDeterministicEventsRequest,
@@ -24,6 +23,7 @@ from deskpet.memory.human_memory_service import (
     SaveCheckpointRequest,
     SearchTaskScopesRequest,
 )
+from deskpet.memory.s4_value_adapter import S4ValuePublicAdapter
 from deskpet.memory.schema import (
     StartupCompositionMode,
     StartupEpoch,
@@ -31,7 +31,6 @@ from deskpet.memory.schema import (
     dispatch_startup_epoch,
     inspect_startup_epoch,
 )
-from deskpet.memory.s4_value_adapter import S4ValuePublicAdapter
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 
 
@@ -196,7 +195,7 @@ def test_value_adapter_treats_fixture_subject_as_assertion_not_dto_field(
     )
 
     class Service:
-        async def raw_integrity_manifest(self):  # type: ignore[no-untyped-def]
+        async def recovery_manifest(self):  # type: ignore[no-untyped-def]
             return {"raw_sets": {}}
 
     adapter._service = Service()  # type: ignore[assignment]

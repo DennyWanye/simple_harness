@@ -45,7 +45,7 @@ async def projection_source_schema_ready(db: aiosqlite.Connection) -> bool:
 
 
 def _fold_hash(domain: str, hashes: list[str]) -> str:
-    digest = hashlib.sha256(f"{domain}\0".encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"{domain}\0".encode()).hexdigest()
     for value in hashes:
         digest = canonical_hash(
             {"domain": domain, "prior_root": digest, "item_hash": value}

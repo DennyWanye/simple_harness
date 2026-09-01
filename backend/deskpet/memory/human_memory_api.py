@@ -23,7 +23,6 @@ from deskpet.memory.human_memory_service import (
     SearchTaskScopesRequest,
 )
 
-
 HUMAN_MEMORY_COMMAND = "human_memory_request"
 _AUTHORITY_FIELDS = frozenset(
     {

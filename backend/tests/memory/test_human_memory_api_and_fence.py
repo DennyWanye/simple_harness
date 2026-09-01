@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import fields
 from pathlib import Path
 
 import pytest
-
 from deskpet.memory.human_memory_api import handle_human_memory_command
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.human_memory_service import (

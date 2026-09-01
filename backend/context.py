@@ -122,7 +122,6 @@ _VALID_SERVICES = frozenset({
     "sdk_run_context_authority",
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
-    "human_memory_composition",
     "human_memory_host_service_factory",
     # Capability-pack execution state, including the complete Project-scoped
     # Skill-install aggregate, is owned by the execution/Manager database.
@@ -273,7 +272,6 @@ class ServiceContext:
     sdk_run_context_authority: Any | None = None
     sdk_runtime_decision_sink: Any | None = None
     sdk_task_execution_authority: Any | None = None
-    human_memory_composition: Any | None = None
     human_memory_host_service_factory: Any | None = None
     capability_store: Any | None = None
     capability_platform: Any | None = None

@@ -174,7 +174,7 @@ class TaskScopeProjectionStore:
             group["content_sha256"] = str(row["content_sha256"])
             group["byte_length"] = len(content)
             groups.append(group)
-        groups.sort(key=lambda item: int(item["logical_group"]))
+        groups.sort(key=lambda item: int(str(item["logical_group"])))
         return tuple(groups)
 
     async def read_evidence_group(
@@ -851,7 +851,7 @@ def _bounded_view(kind: str, value: str, limit: int) -> str:
                 "details_view": "EVIDENCE",
             }
         )
-    suffix = "\n…[bounded; details are content-addressed in EVIDENCE]\n".encode("utf-8")
+    suffix = "\n…[bounded; details are content-addressed in EVIDENCE]\n".encode()
     prefix = encoded[: limit - len(suffix)]
     while True:
         try:

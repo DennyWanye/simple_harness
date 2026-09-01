@@ -772,7 +772,7 @@ class HumanMemoryRecoveryCoordinator:
         )
         rows = await cursor.fetchall()
         await cursor.close()
-        result = []
+        result: list[dict[str, object]] = []
         for row in rows:
             values: dict[str, object] = {}
             for index, name_column in enumerate(names):
@@ -789,7 +789,7 @@ class HumanMemoryRecoveryCoordinator:
                             "value_sha256": hashlib.sha256(value.encode("utf-8")).hexdigest(),
                         }
                 values[name_column] = typed
-            record = {
+            record: dict[str, object] = {
                 "table": name,
                 "values": values,
             }
