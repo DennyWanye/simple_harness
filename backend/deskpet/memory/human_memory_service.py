@@ -1026,11 +1026,14 @@ class HumanMemoryHostService:
         return value
 
     @staticmethod
-    def _assert_cursor_source(cursor: Mapping[str, object], request: object) -> None:
+    def _assert_cursor_source(
+        cursor: Mapping[str, object],
+        request: ListEvidenceGroupsRequest | ReadEvidencePageRequest,
+    ) -> None:
         if (
-            cursor.get("scope_ref") != getattr(request, "scope_ref")
-            or cursor.get("source_ref") != getattr(request, "source_ref")
-            or cursor.get("source_hash") != getattr(request, "source_hash")
+            cursor.get("scope_ref") != request.scope_ref
+            or cursor.get("source_ref") != request.source_ref
+            or cursor.get("source_hash") != request.source_hash
         ):
             raise HumanMemoryHostServiceError(
                 "human_memory_evidence_cursor_binding_mismatch"

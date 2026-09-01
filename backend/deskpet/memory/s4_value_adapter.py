@@ -16,7 +16,7 @@ import json
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from deskpet.execution.foreground_queue import ContextLineage, ForegroundQueueStore
 from deskpet.memory.human_memory_service import (
@@ -307,7 +307,7 @@ class S4ValuePublicAdapter:
             if str(request["kind"]) != "EVIDENCE":
                 return view
             pages: list[dict[str, object]] = []
-            groups_cursor = None
+            groups_cursor: str | None = None
             while True:
                 group_page = await service.list_evidence_groups(
                     ListEvidenceGroupsRequest(
@@ -317,8 +317,9 @@ class S4ValuePublicAdapter:
                         cursor=groups_cursor,
                     )
                 )
-                for group in group_page["groups"]:
-                    page_cursor = None
+                groups = cast(list[Mapping[str, object]], group_page["groups"])
+                for group in groups:
+                    page_cursor: str | None = None
                     while True:
                         result = await service.read_evidence_page(
                             ReadEvidencePageRequest(
@@ -330,17 +331,17 @@ class S4ValuePublicAdapter:
                                 cursor=page_cursor,
                             )
                         )
-                        page = dict(result["page"])
+                        page = dict(cast(Mapping[str, object], result["page"]))
                         decoded = json.loads(str(page["content"]))
                         if "events" in decoded:
                             page["events"] = decoded["events"]
                         if "event_chunk" in decoded:
                             page["event_chunk"] = decoded["event_chunk"]
                         pages.append(page)
-                        page_cursor = result["next_cursor"]
+                        page_cursor = cast(str | None, result["next_cursor"])
                         if page_cursor is None:
                             break
-                groups_cursor = group_page["next_cursor"]
+                groups_cursor = cast(str | None, group_page["next_cursor"])
                 if groups_cursor is None:
                     break
             view["pages"] = pages
