@@ -68,6 +68,14 @@ async def test_recovery_fence_manifest_export_and_reopen(tmp_path: Path) -> None
             "INSERT INTO task_scopes(task_scope_id,subject,title,created_at) "
             "VALUES ('unregistered','actor-1','bad',1)"
         )
+    with (
+        sqlite3.connect(db_path) as db,
+        pytest.raises(sqlite3.IntegrityError, match="human_memory_ingress_fenced"),
+    ):
+        db.execute(
+            "INSERT INTO foreground_preparation_drafts(draft_id) "
+            "VALUES ('must-be-fenced-before-column-validation')"
+        )
     receipts = await coordinator.drain_or_park(action="park")
     assert len(receipts) == 5
     assert (await coordinator.quiesce()).state == "QUIESCED"
@@ -75,11 +83,31 @@ async def test_recovery_fence_manifest_export_and_reopen(tmp_path: Path) -> None
     manifest = await coordinator.seal()
     assert (await coordinator.snapshot()).state == "SEALED"
     await coordinator.verify_manifest(manifest.manifest_id)
+    execution_tables = {
+        "foreground_execution_marker",
+        "foreground_preparation_drafts",
+        "foreground_run_preparation_bindings",
+        "foreground_execution_preparations",
+        "foreground_execution_start_intents",
+        "foreground_execution_start_observations",
+        "foreground_execution_reconciliations",
+    }
+    with sqlite3.connect(db_path) as db:
+        manifest_tables = {
+            row[0]
+            for row in db.execute(
+                "SELECT table_name FROM human_memory_recovery_manifest_tables "
+                "WHERE manifest_id=?",
+                (manifest.manifest_id,),
+            ).fetchall()
+        }
+        assert execution_tables <= manifest_tables
     exported = await coordinator.emergency_export(export_id="export-1")
     content = exported.artifact_path.read_bytes()
     assert hashlib.sha256(content).hexdigest() == exported.artifact_sha256
     assert all(len(line) <= 32 * 1024 for line in content.splitlines())
     assert b"password" not in content.lower()
+    assert b"foreground_execution_marker" in content
     assert await coordinator.emergency_export(export_id="export-1") == exported
     assert (await coordinator.reopen()).state == "OPEN"
     appended = await store.append_host_event(
@@ -295,7 +323,7 @@ async def test_v42_fault_restart_has_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_recovery_marker"
         ).fetchone()[0] == 1
@@ -330,7 +358,7 @@ async def test_v43_fault_restart_has_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_quiescence_marker"
         ).fetchone()[0] == 1
@@ -343,6 +371,61 @@ async def test_v43_fault_restart_has_one_exact_marker(
             "WHERE table_name IN ('human_memory_quiescence_marker',"
             "'human_memory_recovery_work_items')"
         ).fetchone()[0] == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "stage",
+    (
+        "before_036_foreground_execution_v44_commit",
+        "after_036_foreground_execution_v44_commit",
+    ),
+)
+async def test_v44_fault_restart_registers_execution_ledger_exactly_once(
+    tmp_path: Path, stage: str
+) -> None:
+    db_path = tmp_path / "state.db"
+
+    def crash(actual: str) -> None:
+        if actual == stage:
+            raise RuntimeError(f"crash:{stage}")
+
+    with pytest.raises(InitializeError, match=stage):
+        await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
+    await initialize_human_memory_program_state_db(db_path)
+    execution_tables = (
+        "foreground_execution_marker",
+        "foreground_preparation_drafts",
+        "foreground_run_preparation_bindings",
+        "foreground_execution_preparations",
+        "foreground_execution_start_intents",
+        "foreground_execution_start_observations",
+        "foreground_execution_reconciliations",
+    )
+    placeholders = ",".join("?" for _ in execution_tables)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert db.execute(
+            "SELECT COUNT(*) FROM foreground_execution_marker"
+        ).fetchone()[0] == 1
+        assert db.execute(
+            "SELECT COUNT(*) FROM human_memory_migration_chain "
+            "WHERE schema_version=44"
+        ).fetchone()[0] == 1
+        registry = db.execute(
+            "SELECT table_name,taxonomy FROM human_memory_recovery_table_registry "
+            f"WHERE table_name IN ({placeholders}) ORDER BY table_name",
+            execution_tables,
+        ).fetchall()
+        assert len(registry) == len(execution_tables)
+        assert {taxonomy for _, taxonomy in registry} == {"A"}
+        for table in execution_tables:
+            trigger_count = db.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' "
+                "AND name LIKE ?",
+                (f"hm_recovery_fence_{table}_%",),
+            ).fetchone()[0]
+            assert trigger_count == 3
 
 
 @pytest.mark.asyncio
@@ -591,11 +674,20 @@ async def test_active_foreground_lease_is_exactly_parked_without_row_loss(
         idempotency_key="enqueue-1",
         turn_payload={"text": "run"},
     )
+    candidate = await queue.read_next_preparation_candidate("actor-1")
+    assert candidate is not None
+    draft = await queue.prepare_candidate(
+        subject="actor-1",
+        expected_candidate_hash=candidate.candidate_hash,
+        context=ContextLineage("context-1", 1, "d" * 64),
+        idempotency_key="prepare-1",
+    )
     admission = await queue.claim_next(
         subject="actor-1",
         owner_id="owner-1",
         claim_idempotency_key="claim-1",
-        context=ContextLineage("context-1", 1, "d" * 64),
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
         lease_seconds=10,
     )
     assert admission is not None
@@ -781,7 +873,7 @@ async def test_v38_resume_backfills_exact_projection_source_in_migration_tx(
         db.commit()
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
         assert db.execute(
             "SELECT COUNT(*) FROM task_scope_projection_sources WHERE task_scope_id='scope-old'"
         ).fetchone()[0] == 1

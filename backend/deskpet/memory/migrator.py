@@ -113,7 +113,9 @@ HUMAN_MEMORY_RECOVERY_MIGRATION = "034_human_memory_recovery_v42.sql"
 HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION = 42
 HUMAN_MEMORY_QUIESCENCE_MIGRATION = "035_human_memory_quiescence_v43.sql"
 HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION = 43
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION
+FOREGROUND_EXECUTION_MIGRATION = "036_foreground_execution_v44.sql"
+FOREGROUND_EXECUTION_SCHEMA_VERSION = 44
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = FOREGROUND_EXECUTION_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -125,6 +127,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         FOREGROUND_QUEUE_MIGRATION,
         HUMAN_MEMORY_RECOVERY_MIGRATION,
         HUMAN_MEMORY_QUIESCENCE_MIGRATION,
+        FOREGROUND_EXECUTION_MIGRATION,
     }
 )
 
@@ -155,6 +158,7 @@ MIGRATION_STEPS: dict[str, int] = {
     FOREGROUND_QUEUE_MIGRATION: FOREGROUND_QUEUE_SCHEMA_VERSION,
     HUMAN_MEMORY_RECOVERY_MIGRATION: HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
     HUMAN_MEMORY_QUIESCENCE_MIGRATION: HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION,
+    FOREGROUND_EXECUTION_MIGRATION: FOREGROUND_EXECUTION_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -164,6 +168,7 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         FOREGROUND_QUEUE_MIGRATION,
         HUMAN_MEMORY_RECOVERY_MIGRATION,
         HUMAN_MEMORY_QUIESCENCE_MIGRATION,
+        FOREGROUND_EXECUTION_MIGRATION,
     }
 )
 
@@ -264,6 +269,14 @@ async def _register_recovery_tables(
             "table_name,taxonomy,columns_json) VALUES (?,?,?)",
             (name, taxonomy, json.dumps(columns, sort_keys=True, separators=(",", ":"))),
         )
+        if taxonomy in {"A", "B"}:
+            for operation in ("INSERT", "UPDATE", "DELETE"):
+                trigger_name = f"hm_recovery_fence_{name}_{operation.lower()}"
+                await db.execute(
+                    f'CREATE TRIGGER "{trigger_name}" BEFORE {operation} ON "{name}" '
+                    "WHEN (SELECT state FROM human_memory_recovery_fence WHERE singleton=1)<>'OPEN' "
+                    "BEGIN SELECT RAISE(ABORT,'human_memory_ingress_fenced'); END"
+                )
 
 
 async def _execute_transactional_script(
@@ -788,6 +801,27 @@ async def run_migrations(
                                     ("human_memory_recovery_work_items", "C"),
                                 ),
                             )
+                        if version == FOREGROUND_EXECUTION_MIGRATION:
+                            initialized_at = time.time()
+                            await db.execute(
+                                "INSERT INTO foreground_execution_marker("
+                                "singleton,format_epoch,schema_version,migration_id,"
+                                "migration_sha256,initialized_at) VALUES "
+                                "(1,'human-memory-v1',1,?,?,?)",
+                                (version, migration_sha256, initialized_at),
+                            )
+                            await _register_recovery_tables(
+                                db,
+                                (
+                                    ("foreground_execution_marker", "A"),
+                                    ("foreground_preparation_drafts", "A"),
+                                    ("foreground_run_preparation_bindings", "A"),
+                                    ("foreground_execution_preparations", "A"),
+                                    ("foreground_execution_start_intents", "A"),
+                                    ("foreground_execution_start_observations", "A"),
+                                    ("foreground_execution_reconciliations", "A"),
+                                ),
+                            )
                         await _execute_transactional_script(
                             db, _HUMAN_MIGRATION_CHAIN_SQL
                         )
@@ -914,7 +948,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION
+            FOREGROUND_EXECUTION_SCHEMA_VERSION
+            if FOREGROUND_EXECUTION_MIGRATION in durable_markers
+            else HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION
             if HUMAN_MEMORY_QUIESCENCE_MIGRATION in durable_markers
             else HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION
             if HUMAN_MEMORY_RECOVERY_MIGRATION in durable_markers
