@@ -17,9 +17,9 @@ import inspect
 import json
 import time
 import uuid
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 import aiosqlite
 from simple_harness import (
@@ -32,7 +32,6 @@ from deskpet.execution.foreground_queue import (
     ClaimedExecution,
     ContextLineage,
     ControlKind,
-    ForegroundQueueError,
     ForegroundQueueStore,
     PreparationCandidate,
     RunState,
@@ -82,7 +81,15 @@ class FrozenContextAuthority:
 class BoundProviderAuthority:
     authority_ref: str
     authority_hash: str
-    binding: object
+    binding: ForegroundRunBinding
+
+
+class ForegroundRunBinding(Protocol):
+    catalog_generation: int
+    catalog_fingerprint: str
+    budget_fingerprint: str
+
+    def to_record(self) -> Mapping[str, object]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,14 +234,14 @@ class ForegroundRuntimeExecutionAuthority:
         self._driver: asyncio.Task[None] | None = None
         self._driver_lock = asyncio.Lock()
         self._closed = False
-        self._last_error: BaseException | None = None
+        self._last_error: Exception | None = None
 
     @property
     def subject(self) -> str:
         return self._subject
 
     @property
-    def last_error(self) -> BaseException | None:
+    def last_error(self) -> Exception | None:
         return self._last_error
 
     async def after_enqueue(self, *, subject: str) -> None:
@@ -282,7 +289,7 @@ class ForegroundRuntimeExecutionAuthority:
                     return
         except asyncio.CancelledError:
             raise
-        except BaseException as exc:  # fail closed; durable state remains recoverable
+        except Exception as exc:  # noqa: BLE001 - durable state remains recoverable
             self._last_error = exc
             await self._record_audit(
                 "foreground.runtime.failed",
@@ -428,14 +435,17 @@ class ForegroundRuntimeExecutionAuthority:
         await self._context.verify_initial_route(route)
         turn_payload = _candidate_turn_payload(candidate)
         run_binding = bound_provider.binding
-        catalog_generation = int(getattr(run_binding, "catalog_generation"))
-        catalog_fingerprint = str(getattr(run_binding, "catalog_fingerprint"))
-        budget_fingerprint = str(getattr(run_binding, "budget_fingerprint"))
+        catalog_generation = int(run_binding.catalog_generation)
+        catalog_fingerprint = str(run_binding.catalog_fingerprint)
+        budget_fingerprint = str(run_binding.budget_fingerprint)
+        tool_names = tools.catalog.get("tool_names")
+        if not isinstance(tool_names, (list, tuple)):
+            raise ForegroundRuntimeError("foreground_runtime_tool_catalog_invalid")
         start_payload = {
             "input": {"text": context.current_text},
             "messages": [dict(item) for item in context.provider_messages],
             "capability_snapshot": {
-                "tools": list(tools.catalog.get("tool_names") or ())
+                "tools": [str(item) for item in tool_names]
             },
             "context_metadata": {
                 "session_id": execution_session_id,
@@ -493,9 +503,15 @@ class ForegroundRuntimeExecutionAuthority:
             idempotency_key=f"runtime-sdk-bind:{host_run_id}",
         )
 
+        should_start = previously_bound_sdk_run_id is None
         if previously_bound_sdk_run_id is not None:
             record = self._ingress.query(sdk_run_id)
             if record is None:
+                outcomes = await self._store.read_start_observation_outcomes(
+                    host_run_id=host_run_id,
+                    owner_id=self._owner_id,
+                    generation=claimed.generation,
+                )
                 await self._store.record_start_observation(
                     host_run_id=host_run_id,
                     sdk_run_id=sdk_run_id,
@@ -505,42 +521,61 @@ class ForegroundRuntimeExecutionAuthority:
                     error_code="foreground_runtime_orphaned_start",
                     idempotency_key=f"runtime-restart-query:{host_run_id}:missing",
                 )
+                if {"RETURNED", "QUERY_FOUND"}.intersection(outcomes):
+                    await self._store.record_reconciliation(
+                        host_run_id=host_run_id,
+                        sdk_run_id=sdk_run_id,
+                        owner_id=self._owner_id,
+                        generation=claimed.generation,
+                        observed_state="FAILED_CLOSED",
+                        idempotency_key=f"runtime-reconcile:{host_run_id}:missing",
+                    )
+                    raise ForegroundRuntimeError(
+                        "foreground_runtime_orphaned_start"
+                    )
                 await self._store.record_reconciliation(
                     host_run_id=host_run_id,
                     sdk_run_id=sdk_run_id,
                     owner_id=self._owner_id,
                     generation=claimed.generation,
-                    observed_state="FAILED_CLOSED",
-                    idempotency_key=f"runtime-reconcile:{host_run_id}:missing",
+                    observed_state="UNBOUND_RETRY",
+                    idempotency_key=f"runtime-reconcile:{host_run_id}:pre-start",
                 )
-                raise ForegroundRuntimeError("foreground_runtime_orphaned_start")
-            await self._store.record_start_observation(
-                host_run_id=host_run_id,
-                sdk_run_id=sdk_run_id,
-                owner_id=self._owner_id,
-                generation=claimed.generation,
-                outcome="QUERY_FOUND",
-                result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
-                result_hash=canonical_hash(
-                    {
-                        "run_id": sdk_run_id,
-                        "state": str(getattr(getattr(record, "state", None), "value", "")),
-                        "version": int(getattr(record, "version", 0)),
-                    }
-                ),
-                idempotency_key=f"runtime-restart-query:{host_run_id}:found",
-            )
-            current = await self._store.current_snapshot(self._subject)
-            if current is not None and current.state is RunState.CLAIMED:
-                await self._store.record_sdk_started(
+                should_start = True
+            else:
+                await self._store.record_start_observation(
                     host_run_id=host_run_id,
                     sdk_run_id=sdk_run_id,
                     owner_id=self._owner_id,
                     generation=claimed.generation,
-                    sdk_event_id=f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}",
-                    idempotency_key=f"runtime-running:{host_run_id}",
+                    outcome="QUERY_FOUND",
+                    result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+                    result_hash=canonical_hash(
+                        {
+                            "run_id": sdk_run_id,
+                            "state": str(
+                                getattr(
+                                    getattr(record, "state", None), "value", ""
+                                )
+                            ),
+                            "version": int(getattr(record, "version", 0)),
+                        }
+                    ),
+                    idempotency_key=f"runtime-restart-query:{host_run_id}:found",
                 )
-        else:
+                current = await self._store.current_snapshot(self._subject)
+                if current is not None and current.state is RunState.CLAIMED:
+                    await self._store.record_sdk_started(
+                        host_run_id=host_run_id,
+                        sdk_run_id=sdk_run_id,
+                        owner_id=self._owner_id,
+                        generation=claimed.generation,
+                        sdk_event_id=(
+                            f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}"
+                        ),
+                        idempotency_key=f"runtime-running:{host_run_id}",
+                    )
+        if should_start:
             start_returned = True
             try:
                 receipt = await self._ingress.start(
@@ -554,7 +589,7 @@ class ForegroundRuntimeExecutionAuthority:
                     initial_route_receipt=route,
                     initial_route_receipt_hash=route.receipt_hash,
                 )
-            except BaseException as exc:
+            except Exception as exc:
                 await self._store.record_start_observation(
                     host_run_id=host_run_id,
                     sdk_run_id=sdk_run_id,

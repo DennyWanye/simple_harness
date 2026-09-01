@@ -1219,6 +1219,11 @@ async def test_execution_lifecycle_receipts_are_immutable_and_restart_reusable(
         result_hash="6" * 64,
         idempotency_key="execution-start-returned",
     )
+    assert await store.read_start_observation_outcomes(
+        host_run_id=admission.host_run_id,
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+    ) == ("RETURNED",)
     running = await store.record_sdk_started(
         host_run_id=admission.host_run_id,
         sdk_run_id="sdk-deterministic-run",

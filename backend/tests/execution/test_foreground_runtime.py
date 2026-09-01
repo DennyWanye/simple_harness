@@ -82,6 +82,7 @@ def _snapshot(
     sdk_run_id: str | None = None,
     owner_id: str = "owner-1",
     generation: int = 1,
+    state: RunState | None = None,
 ) -> ForegroundRunSnapshot:
     return ForegroundRunSnapshot(
         host_run_id,
@@ -96,7 +97,7 @@ def _snapshot(
         f"context-{candidate.turn_id}",
         1,
         "c" * 64,
-        RunState.CLAIMED if sdk_run_id is None else RunState.RUNNING,
+        state or (RunState.CLAIMED if sdk_run_id is None else RunState.RUNNING),
         None,
         owner_id,
         generation,
@@ -112,6 +113,7 @@ class _Store:
         self.active: ForegroundRunSnapshot | None = None
         self.claimed: dict[str, ClaimedExecution] = {}
         self.start_observations: list[str] = []
+        self.prior_start_outcomes: tuple[str, ...] = ()
         self.terminals: list[str] = []
 
     async def current_snapshot(self, subject: str):  # type: ignore[no-untyped-def]
@@ -187,6 +189,9 @@ class _Store:
     async def record_start_observation(self, **kwargs):  # type: ignore[no-untyped-def]
         self.start_observations.append(kwargs["outcome"])
         return kwargs
+
+    async def read_start_observation_outcomes(self, **kwargs):  # type: ignore[no-untyped-def]
+        return self.prior_start_outcomes
 
     async def record_sdk_started(self, **kwargs):  # type: ignore[no-untyped-def]
         return self.active
@@ -391,6 +396,58 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
     assert runtime.last_error is None
     assert ingress.starts == []
     assert store.start_observations == ["QUERY_FOUND"]
+
+
+@pytest.mark.asyncio
+async def test_restart_after_bind_before_start_retries_same_sdk_identity_once() -> None:
+    candidate = _candidate(1)
+    store = _Store([candidate])
+    host_run_id = "host-turn-1"
+    claimed = ClaimedExecution(
+        host_run_id,
+        "owner-1",
+        1,
+        "draft-turn-1",
+        "a" * 64,
+        candidate,
+        "d" * 64,
+        "f" * 64,
+    )
+    store.claimed[host_run_id] = claimed
+    ingress = _Ingress()
+    from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+
+    session_id = "foreground-execution-" + __import__("hashlib").sha256(
+        host_run_id.encode()
+    ).hexdigest()
+    request_id = "foreground-request-turn-1"
+    sdk_run_id = SdkRuntimeIngress._compute_run_id(  # noqa: SLF001
+        session_id, request_id, "turn-1"
+    ).value
+    store.active = _snapshot(
+        candidate,
+        host_run_id=host_run_id,
+        sdk_run_id=sdk_run_id,
+        state=RunState.CLAIMED,
+    )
+
+    runtime = ForegroundRuntimeExecutionAuthority(
+        store=store,  # type: ignore[arg-type]
+        subject=SUBJECT,
+        owner_id="owner-1",
+        ingress=ingress,  # type: ignore[arg-type]
+        context=_Context(),
+        provider=_Provider(),
+        tools=_Tools(),
+        terminal_observer=_Terminal(),
+    )
+    await runtime.after_enqueue(subject=SUBJECT)
+    await runtime.drain()
+
+    assert runtime.last_error is None
+    assert len(ingress.starts) == 1
+    assert store.start_observations == ["QUERY_MISSING", "RETURNED"]
+    assert ingress.starts[0]["initial_route_receipt"].run_id == sdk_run_id
 
 
 @pytest.mark.asyncio

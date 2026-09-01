@@ -799,6 +799,28 @@ class ForegroundQueueStore:
                 claimed_execution_hash=canonical_hash(payload),
             )
 
+    async def read_start_observation_outcomes(
+        self, *, host_run_id: str, owner_id: str, generation: int
+    ) -> tuple[str, ...]:
+        """Read immutable start outcomes for exact crash-recovery decisions."""
+
+        host_run_id = identifier(host_run_id, "host_run_id", 512)
+        owner_id = identifier(owner_id, "owner_id", 512)
+        now = _clock_value(self._clock)
+        await self.initialize()
+        async with self._connection() as db:
+            await self._validate_lease_tx(
+                db, host_run_id, owner_id, generation, now
+            )
+            cursor = await db.execute(
+                "SELECT outcome FROM foreground_execution_start_observations "
+                "WHERE host_run_id=? ORDER BY recorded_at,observation_id",
+                (host_run_id,),
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+        return tuple(str(row["outcome"]) for row in rows)
+
     async def record_execution_preparation(
         self,
         *,
