@@ -62,6 +62,14 @@ class ControlKind(StrEnum):
     CANCEL = "cancel"
 
 
+class EffectBoundary(StrEnum):
+    """Externally visible Runtime boundary admitted by the current Host lease."""
+
+    SDK_START = "sdk_start"
+    SDK_CONTROL = "sdk_control"
+    TOOL = "tool"
+
+
 class ForegroundQueueError(RuntimeError):
     code = "foreground_queue_rejected"
 
@@ -1978,12 +1986,26 @@ class ForegroundQueueStore:
         sdk_run_id: str,
         owner_id: str,
         generation: int,
+        boundary: EffectBoundary | str = EffectBoundary.TOOL,
     ) -> EffectAdmissionReceipt:
+        try:
+            effect_boundary = EffectBoundary(boundary)
+        except ValueError as exc:
+            raise ForegroundQueueError("foreground_effect_boundary_invalid") from exc
         now = _clock_value(self._clock)
         await self.initialize()
         async with self._connection() as db:
             head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
-            if head["current_state"] != RunState.RUNNING.value:
+            allowed_states = {
+                EffectBoundary.SDK_START: {RunState.CLAIMED.value},
+                EffectBoundary.SDK_CONTROL: {
+                    RunState.PAUSE_REQUESTED.value,
+                    RunState.STOP_REQUESTED.value,
+                    RunState.CANCEL_REQUESTED.value,
+                },
+                EffectBoundary.TOOL: {RunState.RUNNING.value},
+            }[effect_boundary]
+            if str(head["current_state"]) not in allowed_states:
                 raise ForegroundQueueError("foreground_effect_state_rejected")
             await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
             snapshot = await self._snapshot_tx(db, host_run_id)

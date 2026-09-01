@@ -32,6 +32,7 @@ from deskpet.execution.foreground_queue import (
     ClaimedExecution,
     ContextLineage,
     ControlKind,
+    EffectBoundary,
     ForegroundQueueError,
     ForegroundQueueStore,
     PreparationCandidate,
@@ -49,6 +50,10 @@ class ForegroundRuntimeError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class FrozenProviderAuthority:
+    host_run_id: str
+    sdk_run_id: str
+    owner_id: str
+    generation: int
     authority_ref: str
     authority_hash: str
     provider_id: str
@@ -62,6 +67,10 @@ class FrozenProviderAuthority:
 
 @dataclass(frozen=True, slots=True)
 class FrozenToolAuthority:
+    host_run_id: str
+    sdk_run_id: str
+    owner_id: str
+    generation: int
     authority_ref: str
     authority_hash: str
     catalog: Mapping[str, object]
@@ -70,6 +79,10 @@ class FrozenToolAuthority:
 
 @dataclass(frozen=True, slots=True)
 class FrozenContextAuthority:
+    host_run_id: str
+    sdk_run_id: str
+    owner_id: str
+    generation: int
     authority_ref: str
     authority_hash: str
     snapshot_id: str
@@ -80,6 +93,10 @@ class FrozenContextAuthority:
 
 @dataclass(frozen=True, slots=True)
 class BoundProviderAuthority:
+    host_run_id: str
+    sdk_run_id: str
+    owner_id: str
+    generation: int
     authority_ref: str
     authority_hash: str
     binding: ForegroundRunBinding
@@ -98,6 +115,15 @@ class AuthenticatedTerminalObservation:
     terminal_state: RunState
     sdk_event_id: str
     sdk_event_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ForegroundEffectBinding:
+    host_run_id: str
+    sdk_run_id: str
+    owner_id: str
+    generation: int
+    request_id: str
 
 
 class ForegroundContextPreparationPort(Protocol):
@@ -234,6 +260,8 @@ class ForegroundRuntimeExecutionAuthority:
         self._lease_seconds = float(lease_seconds)
         self._driver: asyncio.Task[None] | None = None
         self._driver_lock = asyncio.Lock()
+        self._control_wake = asyncio.Event()
+        self._effect_bindings: dict[str, _ForegroundEffectBinding] = {}
         self._closed = False
         self._last_error: Exception | None = None
 
@@ -258,6 +286,36 @@ class ForegroundRuntimeExecutionAuthority:
                     self._run_driver(),
                     name=f"foreground-runtime:{hashlib.sha256(subject.encode()).hexdigest()[:12]}",
                 )
+
+    async def after_control(self, *, subject: str) -> None:
+        """Wake the active Run's control pump after a durable control commit."""
+
+        if subject != self._subject:
+            raise ForegroundRuntimeError("foreground_runtime_subject_mismatch")
+        if self._closed:
+            raise ForegroundRuntimeError("foreground_runtime_closed")
+        self._control_wake.set()
+        await self.after_enqueue(subject=subject)
+
+    async def authorize_tool_effect(
+        self, *, sdk_run_id: str, request_id: str
+    ) -> None:
+        """Final, generation-bound admission used immediately before dispatch."""
+
+        binding = self._effect_bindings.get(sdk_run_id)
+        if binding is None:
+            # The shared SDK also owns non-foreground Runs.  Only Runs explicitly
+            # registered by this authority are subject to the foreground lease.
+            return
+        if binding.request_id != request_id:
+            raise ForegroundRuntimeError("foreground_tool_request_identity_drift")
+        await self._store.authorize_effect(
+            host_run_id=binding.host_run_id,
+            sdk_run_id=binding.sdk_run_id,
+            owner_id=binding.owner_id,
+            generation=binding.generation,
+            boundary=EffectBoundary.TOOL,
+        )
 
     async def drain(self) -> None:
         """Wait for the current process helper; tests and shutdown only."""
@@ -299,6 +357,25 @@ class ForegroundRuntimeExecutionAuthority:
     async def _record_audit(self, event: str, **payload: object) -> None:
         if self._audit is not None:
             await _maybe_await(self._audit.record(event, payload))
+
+    @staticmethod
+    def _assert_authority_identity(
+        authority: object,
+        *,
+        host_run_id: str,
+        sdk_run_id: str,
+        owner_id: str,
+        generation: int,
+    ) -> None:
+        observed = (
+            str(getattr(authority, "host_run_id", "")),
+            str(getattr(authority, "sdk_run_id", "")),
+            str(getattr(authority, "owner_id", "")),
+            int(getattr(authority, "generation", 0)),
+        )
+        expected = (host_run_id, sdk_run_id, owner_id, generation)
+        if observed != expected:
+            raise ForegroundRuntimeError("foreground_runtime_authority_identity_drift")
 
     async def _run_driver(self) -> None:
         self._last_error = None
@@ -400,11 +477,25 @@ class ForegroundRuntimeExecutionAuthority:
             request_id=request_id,
             sdk_run_id=sdk_run_id,
         )
+        self._assert_authority_identity(
+            provider,
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+        )
         tools = await self._tools.freeze(
             claimed=claimed,
             execution_session_id=execution_session_id,
             request_id=request_id,
             sdk_run_id=sdk_run_id,
+        )
+        self._assert_authority_identity(
+            tools,
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
         )
         context = await self._context.prepare(
             claimed=claimed,
@@ -419,6 +510,13 @@ class ForegroundRuntimeExecutionAuthority:
             provider=provider,
             tools=tools,
         )
+        self._assert_authority_identity(
+            context,
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+        )
         bound_provider = await self._provider.bind(
             frozen=provider,
             context=context,
@@ -426,6 +524,20 @@ class ForegroundRuntimeExecutionAuthority:
             execution_session_id=execution_session_id,
             request_id=request_id,
             sdk_run_id=sdk_run_id,
+        )
+        self._assert_authority_identity(
+            bound_provider,
+            host_run_id=host_run_id,
+            sdk_run_id=sdk_run_id,
+            owner_id=self._owner_id,
+            generation=claimed.generation,
+        )
+        self._effect_bindings[sdk_run_id] = _ForegroundEffectBinding(
+            host_run_id,
+            sdk_run_id,
+            self._owner_id,
+            claimed.generation,
+            request_id,
         )
         candidate = claimed.candidate
         if (
@@ -616,6 +728,13 @@ class ForegroundRuntimeExecutionAuthority:
                         idempotency_key=f"runtime-running:{host_run_id}",
                     )
         if should_start:
+            await self._store.authorize_effect(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                boundary=EffectBoundary.SDK_START,
+            )
             start_returned = True
             try:
                 receipt = await self._ingress.start(
