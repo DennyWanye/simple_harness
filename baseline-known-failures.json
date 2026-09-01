@@ -1,12 +1,11 @@
 {
-  "schema_version": 1,
+  "accepted_at": "2026-09-01T09:20:23+0800",
   "signatures": [
-    "root-tests:exit=1",
-    "frontend-lint:exit=1"
-  ],
-  "failures": {
-    "root-tests": "3fcba2d77f91b5e5567d88d474c866d0c9be68990b0ad8dad522ba970668e0db",
-    "frontend-lint": "c5547f2488640711a3d576e4c9d8957a7873f77c0dfb7b34d4ec21974840a212",
-    "backend-m-r": "2cafccf058b55f9b8196a314206a00cbed14dac610ebfbbc1c0cd5c2503add0f"
-  }
+    "backend-a:exit=1",
+    "backend-capabilities:exit=1",
+    "backend-companion:exit=1",
+    "backend-m-r:exit=1",
+    "frontend-lint:exit=1",
+    "root-tests:exit=1"
+  ]
 }

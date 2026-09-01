@@ -11,9 +11,12 @@ fail-closed。binding receipt 持有 canonical sorted root-set commitment、exac
 revision。POSIX root 在 commit/effect 前以 no-follow fd 和 filesystem identity 重验，Windows 无等价实现时
 fail-closed。schema-v2 route receipt 与
 `TaskExecutionEnvelope` 必须交叉绑定 exact binding-set receipt id/hash/revision，当前 Run 不能使用后续 append
-的新 root。provision receipt/proposed root 仍只是候选，不能自动升级为 authority。当前不含 Task 5
-阅读视图/search consumer/FIFO/UI，也不能作为产品成功
-声明。当前边界与证据见 [`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
+的新 root。provision receipt/proposed root 仍只是候选，不能自动升级为 authority。当前逐项缺口是：
+S4 Task 5 六阅读视图/checkpoint verifier、Task 6 permission-first search/exact open、Task 7 单 foreground
+Run/durable FIFO、Task 8 Host composition/旧入口 fence/data epoch/recovery/emergency export；S5 Task 8
+才负责主模型 route/recall/context/tool 的最终 production composition，S6 才切 UI。不能把这些边界混作一个
+“Task 5”，也不能把 S4 Task 8 误记为 S5。当前能力不作为产品成功声明。当前边界与证据见
+[`MEMORY_SDK_BOUNDARY.md`](MEMORY_SDK_BOUNDARY.md)。
 
 2026-08-29 当前 Project-scoped managed Skill 安装事实：聊天和 Settings 统一进入
 `ProjectSkillInstallService`，外部 GitHub 内容先冻结 exact commit、成员清单和 Project identity，再由
@@ -47,7 +50,7 @@ locator/content hash 读取冻结正文。Session 创建时动态冻结当前 Co
 可查询的 Run 结果，同一稳定 failure identity 不会被 Agent 盲目重放，只有显式 retry 才推进 durable attempt
 generation。统一能力中心与兼容 Skill Store 都从同一个 `user:v2:*` managed catalog 投影已安装项。
 
-2026-08-30 当前 SDK 消费组合：Service SDK `0.3.12`（wheel SHA-256 `710ae66b…`）、
+2026-08-30 历史 production 消费快照：Service SDK `0.3.12`（wheel SHA-256 `710ae66b…`）、
 Harness SDK `0.6.4` candidate（source `21f3c7a…`，wheel SHA-256 `ecb6e85c…`）和 Memory SDK
 `0.5.2`（`deff2fa8…`）。Service 的发布 manifest 仍记录 Harness `0.6.2` 构建成员；消费端按其
 `>=0.4,<0.7` 约束独立准入 0.6.4，并分别校验 Harness candidate manifest 与 Service authority root。
@@ -63,7 +66,7 @@ Agent Tool/Workflow，仍必须进入正式 `ProductTurnPreparer`/RunKernel auth
 
 2026-08-27 当前 Project-scoped Sessions 事实：macOS 冻结场景 S-PS-01～S-PS-08 已全部通过。Session 在创建时绑定 Project，现有 Session 不能修改根目录；要在另一目录工作需基于目标 Project 新建 Session。终端、内置文件工具和 Project Rules 只使用冻结的 execution root，project-bound Run 不暴露进程级固定根的动态 `mcp:filesystem`。从旧 schema 升到 v33 会按全新安装清空升级前 Session、消息、Project 与会话派生数据，同时保留全局 Provider/设置/Keychain 和磁盘文件。Windows 是未来独立范围。详情见 [`ARCHITECTURE.md`](ARCHITECTURE.md)、[`AGENT_HARNESS.md`](AGENT_HARNESS.md)、[`UI.md`](UI.md) 与 [`PROJECT_STATUS.md`](PROJECT_STATUS.md)。
 
-2026-08-29 当前 Tool/Capability 事实：simple_harness 已 vendor Harness 0.6.4 candidate（source
+2026-08-29 历史 Tool/Capability 验收快照：当时 simple_harness vendor Harness 0.6.4 candidate（source
 `21f3c7a…`，wheel SHA `ecb6e85c65e9140c6838666f59f38239557e15cf410c1afe023ffd06bfb35be7`）
 与 Memory 0.5.2（wheel SHA
 `deff2fa85a269a3978f2c6efcd99fda77abcb74444170361365fd00ec0164e9e`）。SDK 公共 runtime catalog 统一

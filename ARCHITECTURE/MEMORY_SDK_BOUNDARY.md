@@ -1,6 +1,6 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-08-30
+> 最后更新：2026-09-01
 > 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
 > Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`
 > 发布标记：Harness `v0.3.0` → `fbb156f`；Memory `v0.4.0` → `3d4247b`；主分支与 tags 已推送；
@@ -9,10 +9,10 @@
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
 
-## 2026-08-30 Human Memory Program Host evidence、Canonical Archive 与 Task Home（S4 Task 1–3）
+## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 
-- Host 已新增 opt-in `human-memory-v1` 基础，并以不改写 v35/v36 checksum 的追加 migration 升至 state schema
-  v37。该 epoch 只能从空数据库取得 durable
+- Host 已新增 opt-in `human-memory-v1` 基础，并以不改写 v35–v37 checksum 的追加 migration 升至 state schema
+  v38。该 epoch 只能从空数据库取得 durable
   bootstrap marker 后初始化；普通 state.db 启动仍停在 v34，不会因为新 migration 文件存在而升级。任何既有
   v34/更旧数据库从新的 primary 入口打开时，都在 backup、reset、migration 和业务写入之前稳定拒绝；不迁移、
   不删除，也不展示旧 Session。
@@ -48,12 +48,14 @@
   broken symlink、resolve 后 root rename/replace、receipt commit/reopen 前 root 或 task-home identity/containment 漂移
   均不得生成 committed receipt。
 - Provision receipt 只有 final committed 才存在；reserved/filesystem_ready/failed 都不形成 workspace authority。
-  当前只保存 `proposed_workspace_root` 候选，未创建 Task 4 binding 表或 revision。task home identity/request/path
-  不可物理改写，transition event 和 committed receipt 永久 append-only。
-- 当前 Host 仍精确固定 Harness SDK 0.6.4；Task 1–3 以结构协议和真实 S1 source DTO 互操作 probe 验证，**不**把
-  fake DTO 当成生产集成。Harness 0.7 exact wheel pin、composition、TaskScope provisioning/binding/阅读视图、
-  search consumer、foreground FIFO、动态 Context 与 UI 均仍是 S4 后续任务/S5/S6 范围，当前能力不作为产品
-  成功声明或默认新入口。
+  `proposed_workspace_root` 仍只是候选。v38 已新增 append-only binding proposal/challenge/decision/grant/set
+  revisions：Manual 必须重载 durable authenticated user evidence/interaction，Auto 必须重载 Host-issued current-Run
+  snapshot 并在 append/commit 前复核 active Run、context/config revision、时窗与 configured-root filesystem
+  identity。task home 与 binding receipts 均不可物理改写。
+- 当前 Host Human Memory candidate 精确固定 Harness SDK 0.7.0；Task 1–4 以 strict public DTO、真实 source DTO
+  interoperability 与 durable authority restart/fault probes 验证，**不**把 fake DTO 当成生产集成。六阅读视图、
+  candidate search/exact open、foreground FIFO 与 S4 Host integration/recovery 尚未实现；S5 才接 main-model
+  route/recall/context/tool composition，S6 才切 UI。因此当前能力不作为产品成功声明或默认新入口。
 - 决定性回归：提交态新增/迁移/既有 Session 组合 `67 passed`，SDK adapters `253 passed`。受影响后端
   m–r 分片先跑 `1497 passed`，提交态复跑为 `1496 passed, 26 skipped, 1 deselected, 1 failed`；唯一失败是
   已登记的环境型 `test_process_list_with_query` process-name filter 基线红，与本 slice 无调用/文件依赖。真实 S1
@@ -66,6 +68,10 @@
   operational fault 边界、v37 migration commit 前/后、nonexistent/symlink/untrusted explicit path、permission
   failure/retry、duplicate title、idempotency conflict、project/app-data metadata、broken-link escape、managed/explicit
   root replacement TOCTOU 和 no-binding/no-partial-authority。
+- Task 4 binding 专项 `15 passed`；Task 1–4/marker/candidate 与 SDK adapter 组合 `322 passed`。当前明确未实现：
+  `task_scope/projections.py`（六 bounded views/checkpoint verifier）、`task_scope/search.py`（permission-first
+  candidate search/exact open）、`execution/foreground_queue.py`（单 foreground Run/FIFO）、
+  `execution/recovery_fence.py` 及 `backend/main.py` 的 fresh Host service/旧入口 fence/emergency export 接线。
 
 ## 1. 当前生产链路
 

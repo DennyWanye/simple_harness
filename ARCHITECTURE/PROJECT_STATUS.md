@@ -1,8 +1,13 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-08-30
+> **最后更新**：2026-09-01
 
 ## 2026-08-30 Human Memory Program S4 Task 1–4 Host 权威归档、Task Home 与多根权限
+
+- 2026-09-01 用户明确要求停止 `deskpet.receipt_hmac` 钥匙串请求：ToolReceipt HMAC 保留，但 key
+  authority 改为应用私有 `userdata/secrets/receipt_hmac.key`，首次 exclusive create、POSIX 0600、重启复用；
+  `receipt_store.py` 已删除 keyring/Keychain get/set 与 service 常量。已有 OS 钥匙串条目不读取、不迁移、
+  不删除；Provider/API 登录凭据的独立 Keychain 逻辑不在本变更范围。
 
 - 在隔离 worktree 完成 fresh-only `human-memory-v1` state schema v35 基础、追加 v36 TaskScope Archive、v37
   recoverable provisioning；既有 migration checksum 不变，每步有独立 immutable marker。durable
@@ -40,9 +45,10 @@
   lifecycle seam，故该显式 port 缺失时 Auto fail-closed，留待 S5 production composition 注入真实 owner。
   project route 与 effect envelope 必须交叉绑定 exact receipt id/hash/revision/root membership。Task 4 专项
   `15 passed`；TaskScope/Task 1–4/marker/candidate 与 SDK adapter 组合 `322 passed`。
-- 这是 S4 Task 1–4 的独立基础，不代表 S4 release unit 完成：production foreground composition 仍在 S5 Task 8，
-  README-STATUS 等阅读视图/search consumer、
-  foreground FIFO、真实 Provider 接线与 UI 尚未实施。
+- 这是 S4 Task 1–4 的独立基础，不代表 S4 release unit 完成。S4 Task 5 六阅读视图/checkpoint verifier、
+  Task 6 permission-first search/exact open、Task 7 单 foreground Run/durable FIFO、Task 8 Host
+  composition/旧入口 fence/data epoch/recovery/emergency export 尚未实施；S5 Task 8 才负责主模型
+  route/recall/context/tool 的最终 production composition，S6 才负责 UI 与 program 真人验收。
 ## 2026-08-30 空白会话安装、全局验证快照与语音临时关闭
 
 - 空白消息页创建普通 Session 时不再把 transport 占位 ID `message-panel-main/default` 当作 handoff

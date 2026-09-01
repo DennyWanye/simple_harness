@@ -1,6 +1,14 @@
-<!-- last-calibrated: e95821207d9d61667c8e0f111c81477e78991ba2 -->
+<!-- last-calibrated: 892aa15c3005e1d39d4700879f8532568dfa4100 -->
 
 # simple_harness Long-Running Agent Architecture Baseline
+
+## ToolReceipt HMAC key authority（2026-09-01）
+
+- `backend/deskpet/tools/receipt_store.py` 仍对 ToolReceipt 做 HMAC-SHA256 签名/验签，但 receipt key 只存在
+  应用私有 `userdata/secrets/receipt_hmac.key`。首次以 exclusive create 生成，POSIX 强制 0600，并发 loser
+  重读 winner；文件不可读、长度不符或创建失败时 fail closed。
+- receipt 路径不再 import/call Python `keyring`，也不再使用或探测 `deskpet.receipt_hmac` OS credential
+  service。已有钥匙串条目保持原样且永不被该路径访问；Provider/API 登录凭据仍有独立 credential owner。
 
 ## Human Memory Program S4 Task 1–4 当前边界（2026-08-30）
 
@@ -19,6 +27,12 @@
   `WorkspaceBindingSetReceipt`；相同 root 可被不同 TaskScope 引用，同一 set 只能 append。route schema v2 与
   `TaskExecutionEnvelope` 交叉绑定 exact receipt id/hash/revision，effect 执行前重验 frozen membership 和当前
   filesystem identity；后续 append 不扩大当前 Run。POSIX 使用 no-follow fd，Windows 当前 fail-closed。
+- S4 Task 5–8 当前逐项未实现：没有 `task_scope/projections.py` 的六 bounded views/checkpoint verifier，没有
+  `task_scope/search.py` 的 permission-first candidate search/exact open，没有
+  `execution/foreground_queue.py` 的单 foreground Run/durable FIFO，也没有 `execution/recovery_fence.py` 或
+  `backend/main.py` 的 fresh service、旧入口 fence、data epoch/emergency export 接线。现有 v36
+  projection cache/outbox 只重建 canonical-state JSON，不能替代这四项。S5 Task 8 是后续主模型
+  route/recall/context/tool production composition，不是 S4 Task 8。
 - Host 启动 Memory SDK 时启用 fact worker 但未注入 LLM extractor，因此 SDK 使用默认正则 extractor。
 - 首轮与 continuation 的 Context 都从同 Session 历史按 Token 预算截断；没有固定最近 10 个完整因果组、
   五天 short-horizon index、TaskScope current state 与按需 typed long-term recall 的分区组装。
@@ -64,10 +78,11 @@
 
 ## SDK-first Tool / Capability 目录（2026-08-30 校准）
 
-- Host 当前 vendor Service `0.3.12`（wheel SHA-256 `710ae66b…`）、Harness `0.6.4` candidate
+- 2026-08-30 历史 production 快照中，Host vendor Service `0.3.12`（wheel SHA-256 `710ae66b…`）、Harness `0.6.4` candidate
   （`ecb6e85c…`）与 Memory `0.5.2`（`deff2fa8…`）。Service manifest 记录的构建时 Harness 是
   `0.6.2`；消费端按 Service `>=0.4,<0.7` 约束独立准入 0.6.4，且不将其冒充为官方三 SDK
-  release unit。SDK 公共 `RuntimeToolCatalog` 统一表达 executable
+  release unit。当前 Human Memory candidate 依赖已固定 Harness `0.7.0`（见 `backend/pyproject.toml`）；这个
+  0.6.4 组合只保留为历史验收证据，不再表示当前 candidate pin。SDK 公共 `RuntimeToolCatalog` 统一表达 executable
   Tool、Skill resource 与 Workflow
   profile；Host 只提供 source metadata、权限事实和 physical handler。
 - fresh Run 使用 `explicit-deferred-v1`：固定的小型 direct kernel 包含
