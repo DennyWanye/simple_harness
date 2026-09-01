@@ -532,6 +532,21 @@ class ContextRouteLedgerStore:
             await db.close()
 
 
+    async def presented_occurrence_keys(self) -> frozenset[str]:
+        """Read the per-occurrence presented set (S5a: zero rows by design)."""
+
+        db = await self._connect()
+        try:
+            cursor = await db.execute(
+                "SELECT occurrence_key FROM occurrence_presented "
+                "WHERE presented_at IS NOT NULL"
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+            return frozenset(str(row[0]) for row in rows)
+        finally:
+            await db.close()
+
     async def latest_task_route_decision(self) -> Mapping[str, Any] | None:
         """Return the most recent ROUTED_TASK decision (S5a active-scope source).
 
@@ -645,8 +660,39 @@ def _message_text(message: Any) -> str:
     return canonical_json([getattr(block, "to_dict", lambda b=block: str(b))() for block in content])
 
 
+def _pending_occurrence_message(pending: tuple[Any, ...]) -> Any:
+    """Bounded, Host-authored summary of eligible pending occurrences."""
+
+    from simple_harness.contracts.messages import Message, MessageRole
+
+    entries = [
+        {
+            "action": str(entry.action_text)[:512],
+            "occurred_at": float(entry.occurred_at),
+            "occurrence_key": entry.occurrence_key,
+            "memory_id": entry.memory_id,
+        }
+        for entry in pending[:8]
+    ]
+    body = canonical_json(
+        {
+            "kind": "pending_prospective_occurrences",
+            "count": len(pending),
+            "entries": entries,
+        }
+    )
+    return Message(
+        role=MessageRole.SYSTEM,
+        content=body,
+        metadata={"source": "prospective_inbox", "trust": "host_authority"},
+    )
+
+
 def _plan_turn_messages(
-    messages: tuple[Any, ...], window_tokens: int | None
+    messages: tuple[Any, ...],
+    window_tokens: int | None,
+    *,
+    extra_protected: Any = None,
 ) -> tuple[tuple[Any, ...], dict[str, int]]:
     """Per-turn causal-group + frozen-budget assembly over the Run context.
 
@@ -673,9 +719,11 @@ def _plan_turn_messages(
             continue
         break
     protected = messages[:split]
+    if extra_protected is not None:
+        protected = (*protected, extra_protected)
     tail = messages[split:]
     if not tail:
-        return messages, {"causal_groups": 0, "trimmed_groups": 0}
+        return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0}
 
     window = int(window_tokens) if window_tokens else min(PARTITION_CAPS)
     tier = budget_window(max(window, min(PARTITION_CAPS)))
@@ -742,10 +790,12 @@ class ProductRunContextAuthority:
         ports_resolver: Any,
         exposure_resolver: Any,
         ledger: ContextRouteLedgerStore,
+        reconcile: Any = None,
     ) -> None:
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
         self._ledger = ledger
+        self._reconcile = reconcile
 
     async def prepare_snapshot(self, request: Any) -> Any:
         from simple_harness import RequestId
@@ -778,8 +828,14 @@ class ProductRunContextAuthority:
                 budget = metadata.get("budget")
                 if isinstance(budget, Mapping) and budget.get("context_window"):
                     window_tokens = int(budget["context_window"])
+        inbox_message = None
+        if self._reconcile is not None:
+            presented = await self._ledger.presented_occurrence_keys()
+            pending = await self._reconcile(presented)
+            if pending:
+                inbox_message = _pending_occurrence_message(pending)
         messages, assembly_facts = _plan_turn_messages(
-            tuple(context.messages), window_tokens
+            tuple(context.messages), window_tokens, extra_protected=inbox_message
         )
         probe = ProviderRequest(
             RequestId("hash-only"),
@@ -822,11 +878,31 @@ class ProductRunContextAuthority:
         return snapshot
 
 
-class ProductRuntimeDecisionSink:
-    """Durable terminal no-recall decision sink (DIRECT_STANDALONE only)."""
+class NoRecallBlockedError(RuntimeError):
+    code = "sdk_no_recall_blocked_pending_occurrence"
 
-    def __init__(self, *, ledger: ContextRouteLedgerStore) -> None:
+    def __init__(self, pending_count: int) -> None:
+        super().__init__(f"{self.code}: {pending_count} pending occurrence(s)")
+        self.pending_count = pending_count
+
+
+class ProductRuntimeDecisionSink:
+    """Durable terminal no-recall decision sink (DIRECT_STANDALONE only).
+
+    With a reconcile port bound (human-memory composition), ``no_recall`` is
+    only recorded after the mandatory occurrence-inbox reconcile finds no
+    pending presentable occurrence; a reconcile failure blocks ``no_recall``
+    (fail closed) rather than silently claiming an empty inbox.
+    """
+
+    def __init__(
+        self,
+        *,
+        ledger: ContextRouteLedgerStore,
+        reconcile: Any = None,
+    ) -> None:
         self._ledger = ledger
+        self._reconcile = reconcile
 
     async def record_no_recall(
         self,
@@ -835,6 +911,11 @@ class ProductRuntimeDecisionSink:
         provider_turn_ordinal: int,
         request_fingerprint: str,
     ) -> Any:
+        if self._reconcile is not None:
+            presented = await self._ledger.presented_occurrence_keys()
+            pending = await self._reconcile(presented)
+            if pending:
+                raise NoRecallBlockedError(len(pending))
         import uuid
 
         from simple_harness.execution.context_authority import ContextRouteReceipt

@@ -8063,6 +8063,16 @@ async def _build_product_sdk_runtime_stack(
 
         return WorkspaceBindingAuthorityStore(_state_db_path)
 
+    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+
+    _human_memory_v7 = HumanMemoryV7Runtime(
+        Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db"
+    )
+    service_context.register("human_memory_v7_runtime", _human_memory_v7)
+
+    async def _recall_executor(**kwargs):
+        return await _human_memory_v7.typed_recall(**kwargs)
+
     _context_route_service = ContextRouteToolService(
         service_factory_getter=lambda: service_context.get(
             "human_memory_host_service_factory"
@@ -8073,6 +8083,7 @@ async def _build_product_sdk_runtime_stack(
         ),
         ledger=_ContextRouteLedgerStore(_state_db_path),
         tool_context_getter=active_product_tool_context,
+        recall_executor=_recall_executor,
     )
 
     async def context_route_handler(arguments, _context):
@@ -8536,17 +8547,29 @@ async def _build_product_sdk_runtime_stack(
             raise RuntimeError("sdk_run_context_authority_ports_unbound")
         return ports
 
+    _v7_runtime = service_context.get("human_memory_v7_runtime")
+    if _v7_runtime is None:
+        raise RuntimeError(
+            "sdk_context_authority_composition_missing:human_memory_v7_runtime"
+        )
+
+    async def _occurrence_reconcile(presented):
+        return await _v7_runtime.pending_occurrences(presented)
+
     service_context.register(
         "sdk_run_context_authority",
         ProductRunContextAuthority(
             ports_resolver=_authority_ports,
             exposure_resolver=tool_authorities.resolve_exposure,
             ledger=context_route_ledger,
+            reconcile=_occurrence_reconcile,
         ),
     )
     service_context.register(
         "sdk_runtime_decision_sink",
-        ProductRuntimeDecisionSink(ledger=context_route_ledger),
+        ProductRuntimeDecisionSink(
+            ledger=context_route_ledger, reconcile=_occurrence_reconcile
+        ),
     )
     service_context.register(
         "sdk_task_execution_authority", ProductTaskExecutionAuthority()

@@ -123,6 +123,7 @@ _VALID_SERVICES = frozenset({
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     "human_memory_host_service_factory",
+    "human_memory_v7_runtime",
     "human_memory_binding_append_authority",
     "human_memory_recovery_lifecycle",
     "human_memory_foreground_scheduler_wake",
@@ -277,6 +278,7 @@ class ServiceContext:
     sdk_runtime_decision_sink: Any | None = None
     sdk_task_execution_authority: Any | None = None
     human_memory_host_service_factory: Any | None = None
+    human_memory_v7_runtime: Any = None
     human_memory_binding_append_authority: Any | None = None
     human_memory_recovery_lifecycle: Any | None = None
     human_memory_foreground_scheduler_wake: Any | None = None

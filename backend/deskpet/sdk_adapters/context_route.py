@@ -50,6 +50,7 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "route": {"type": "string", "enum": list(ROUTES)},
+        "query": {"type": "string", "maxLength": _MAX_TEXT},
         "task_scope_id": {"type": "string", "maxLength": 128},
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
@@ -100,6 +101,7 @@ class ContextRouteToolService:
         ledger: ContextRouteLedgerStore,
         tool_context_getter: Any,
         auth_factory: Any = local_owner_auth,
+        recall_executor: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -107,6 +109,7 @@ class ContextRouteToolService:
         self._ledger = ledger
         self._tool_context_getter = tool_context_getter
         self._auth_factory = auth_factory
+        self._recall_executor = recall_executor
 
     # -- shared -----------------------------------------------------------
 
@@ -161,6 +164,7 @@ class ContextRouteToolService:
         task_scope_id: str | None = None,
         binding: Mapping[str, Any] | None = None,
         extras: Mapping[str, Any] | None = None,
+        recall_refs: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -174,6 +178,7 @@ class ContextRouteToolService:
             effect_id=effect_id,
             route=route,
             task_scope_id=task_scope_id,
+            recall_refs=recall_refs,
             binding_set_revision=(
                 None if binding is None else int(binding["binding_set_revision"])
             ),
@@ -242,10 +247,8 @@ class ContextRouteToolService:
                     proposal=proposal,
                 )
             if route_value == "memory_standalone":
-                # BLOCKED-until-Task-5: the typed recall lane is not wired yet.
-                return await self._reject(
-                    run_id, raw_call_id, effect_id, proposal,
-                    "context_route_memory_standalone_unavailable",
+                return await self._memory_standalone(
+                    run_id, raw_call_id, effect_id, turn_ordinal, proposal
                 )
             if route_value == "continue_active":
                 return await self._continue_active(
@@ -286,6 +289,48 @@ class ContextRouteToolService:
             detail={"code": code, **detail},
         )
         return _error(code, **detail)
+
+
+    async def _memory_standalone(
+        self,
+        run_id: str,
+        raw_call_id: str,
+        effect_id: str,
+        turn_ordinal: int,
+        proposal: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        if self._recall_executor is None:
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal,
+                "context_route_memory_standalone_unavailable",
+            )
+        query = str(proposal.get("query") or "").strip()
+        if not query:
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal,
+                "context_route_recall_query_required",
+            )
+        from deskpet.memory.human_memory_v7 import project_recall_fragments
+
+        execution = await self._recall_executor(
+            query=query, run_id=run_id, turn_ordinal=turn_ordinal
+        )
+        fragments = project_recall_fragments(execution)
+        refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
+        return await self._commit_receipt(
+            run_id=run_id,
+            raw_call_id=raw_call_id,
+            effect_id=effect_id,
+            turn_ordinal=turn_ordinal,
+            route=TaskScopeRoute.MEMORY_STANDALONE,
+            proposal=proposal,
+            recall_refs=refs,
+            extras={
+                "fragments": list(fragments),
+                "degradation_codes": list(execution.degradation_codes),
+                "truncated": bool(execution.result.truncated),
+            },
+        )
 
     async def _continue_active(
         self,

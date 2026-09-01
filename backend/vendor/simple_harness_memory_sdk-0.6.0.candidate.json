@@ -1,7 +1,7 @@
 {
   "candidate": "simple_harness_memory_sdk-0.6.0-py3-none-any.whl",
-  "sha256": "82844d8677e35df7428f13b4282aef57c043f868a1707c8cd75f3527b9bf8c05",
-  "source_commit": "1cae806",
+  "sha256": "a51ca4c6c15fd26320485fd422c75412f764c782ac1beac65421c11d25040e2d",
+  "source_commit": "6fac9ba",
   "built_with": "uv build --no-sources (double clean build byte-identical)",
   "built_at": "2026-09-01"
 }
