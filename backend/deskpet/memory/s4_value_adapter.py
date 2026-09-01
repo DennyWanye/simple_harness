@@ -72,6 +72,7 @@ from deskpet.memory.human_memory_service import (
     ControlRunRequest,
     CreateTaskScopeRequest,
     DecideManualBindingRequest,
+    ForegroundSchedulerWakePort,
     HumanMemoryHostService,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
@@ -440,6 +441,17 @@ class _DeterministicWakeGate:
         await self._runtime.after_control(subject=subject)
 
 
+class _HeldWakeGate:
+    """Never wake the scheduler: archive/durability oracles assert queued turns
+    survive cold restart untouched, so execution must not start."""
+
+    async def after_enqueue(self, *, subject: str) -> None:
+        del subject
+
+    async def after_control(self, *, subject: str) -> None:
+        del subject
+
+
 class S4ValuePublicAdapter:
     def __init__(self, *, fixture: Mapping[str, Any], artifact_dir: Path) -> None:
         self._fixture = dict(fixture)
@@ -469,6 +481,7 @@ class S4ValuePublicAdapter:
         self._runtime_audit = _RuntimeAudit()
         self._faults = _FaultController()
         self._scenario: str | None = None
+        self._scheduler_held = False
         self._explicit_recovery = False
         self._planned_host_run_id: str | None = None
         self._planned_sdk_run_id: str | None = None
@@ -648,9 +661,14 @@ class S4ValuePublicAdapter:
             lease_seconds=300.0,
         )
         release_after = 1 if self._scenario is not None else 2
-        scheduler_wake = self._runtime if restart else _DeterministicWakeGate(
-            self._runtime, release_after=release_after
-        )
+        if self._scheduler_held:
+            scheduler_wake: ForegroundSchedulerWakePort = _HeldWakeGate()
+        elif restart:
+            scheduler_wake = self._runtime
+        else:
+            scheduler_wake = _DeterministicWakeGate(
+                self._runtime, release_after=release_after
+            )
         self._recovery = build_recovery_lifecycle_port(
             db_path=path, artifact_dir=self._artifact_dir
         )
@@ -661,12 +679,17 @@ class S4ValuePublicAdapter:
             recovery=self._recovery,
             scheduler_wake=scheduler_wake,
         )
-        if restart and (
-            await self._foreground.current_snapshot(self._auth.subject) is not None
-            or await self._foreground.read_next_preparation_candidate(
-                self._auth.subject
+        if (
+            restart
+            and not self._scheduler_held
+            and (
+                await self._foreground.current_snapshot(self._auth.subject)
+                is not None
+                or await self._foreground.read_next_preparation_candidate(
+                    self._auth.subject
+                )
+                is not None
             )
-            is not None
         ):
             await self._runtime.after_enqueue(subject=self._auth.subject)
 
@@ -685,6 +708,7 @@ class S4ValuePublicAdapter:
             self._scenario = (
                 None if request.get("scenario") is None else str(request["scenario"])
             )
+            self._scheduler_held = str(request.get("scheduler") or "") == "held"
             self._faults = _FaultController()
             self._explicit_recovery = False
             self._planned_host_run_id = None
@@ -715,7 +739,7 @@ class S4ValuePublicAdapter:
                 await self._runtime.close(timeout=0.01)
             startup = inspect_startup_epoch(path, approved_fresh_lane=False)
             await self._bind_host(startup=startup, restart=True)
-            if self._scenario is None:
+            if self._scenario is None and not self._scheduler_held:
                 await self._wait_for(
                     lambda: self._start_observation_count("QUERY_FOUND") > 0,
                     "foreground_runtime_restart_reconciliation_timeout",
