@@ -10,6 +10,7 @@ revision, or worker authority fields.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import sqlite3
@@ -29,9 +30,14 @@ from simple_harness import (
     DisclosureTrust,
     EvidenceReasonCode,
     EvidenceSourceKind,
+    EvidenceRef,
     IntendedAudience,
     SanitizedEvidenceEnvelope,
     SanitizedEvidenceReceipt,
+    TaskScopeMutationKind,
+    TaskScopeMutationOperation,
+    TaskScopeMutationOutcome,
+    TaskScopeMutationPlan,
 )
 
 from deskpet.execution.foreground_queue import ForegroundQueueStore
@@ -41,7 +47,12 @@ from deskpet.memory.schema import (
     StartupEpochDecision,
 )
 from deskpet.task_scope.projections import TaskScopeProjectionStore
-from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier, reject_private_payload
+from deskpet.task_scope.protocol import (
+    canonical_hash,
+    canonical_json,
+    identifier,
+    reject_private_payload,
+)
 from deskpet.task_scope.search import TaskScopeSearchStore
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 
@@ -124,6 +135,62 @@ class SearchTaskScopesRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class AppendPrimaryEventRequest:
+    event: Mapping[str, object]
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        reject_private_payload(dict(self.event), "primary_event")
+        identifier(self.idempotency_key, "idempotency_key", 512)
+
+
+@dataclass(frozen=True, slots=True)
+class MutateTaskScopeRequest:
+    scope_ref: str
+    kind: str
+    value: str
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        identifier(self.scope_ref, "scope_ref", 512)
+        identifier(self.kind, "mutation_kind", 64)
+        identifier(self.value, "mutation_value", 32_768)
+        identifier(self.idempotency_key, "idempotency_key", 512)
+
+
+@dataclass(frozen=True, slots=True)
+class AppendBindingRequest:
+    scope_ref: str
+    root: str
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        identifier(self.scope_ref, "scope_ref", 512)
+        identifier(self.root, "root", 4096)
+        identifier(self.idempotency_key, "idempotency_key", 512)
+
+
+@dataclass(frozen=True, slots=True)
+class ControlRunRequest:
+    control: str
+    reason: str
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        identifier(self.control, "control", 64)
+        identifier(self.reason, "reason", 2048)
+        identifier(self.idempotency_key, "idempotency_key", 512)
+
+
+@dataclass(frozen=True, slots=True)
+class AuditRefsRequest:
+    scope_ref: str
+
+    def __post_init__(self) -> None:
+        identifier(self.scope_ref, "scope_ref", 512)
+
+
+@dataclass(frozen=True, slots=True)
 class OpenTaskScopeRequest:
     scope_ref: str
     live_probe: Mapping[str, object] | None = None
@@ -169,6 +236,27 @@ class DeterministicEventSeedPort(Protocol):
         canary: str,
         idempotency_key: str,
     ) -> Awaitable[Mapping[str, object]]: ...
+
+
+class WorkspaceBindingAppendPort(Protocol):
+    async def append_binding(
+        self,
+        *,
+        subject: str,
+        task_scope_id: str,
+        root: str,
+        idempotency_key: str,
+    ) -> Mapping[str, object]: ...
+
+
+class RecoveryLifecyclePort(Protocol):
+    async def manifest(self, *, subject: str) -> Mapping[str, object]: ...
+
+    async def emergency_export(self, *, subject: str) -> Mapping[str, object]: ...
+
+
+class ForegroundSchedulerWakePort(Protocol):
+    async def after_enqueue(self, *, subject: str) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +318,9 @@ class HumanMemoryHostService:
         auth: AuthenticatedHostSnapshot,
         startup: StartupEpochDecision,
         deterministic_event_seed: DeterministicEventSeedPort | None = None,
+        binding_append: WorkspaceBindingAppendPort | None = None,
+        recovery: RecoveryLifecyclePort | None = None,
+        scheduler_wake: ForegroundSchedulerWakePort | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -244,10 +335,17 @@ class HumanMemoryHostService:
         self._search = TaskScopeSearchStore(self._db_path)
         self._foreground = ForegroundQueueStore(self._db_path)
         self._deterministic_event_seed = deterministic_event_seed
+        self._binding_append = binding_append
+        self._recovery = recovery
+        self._scheduler_wake = scheduler_wake
 
     @property
     def startup_decision(self) -> StartupEpochDecision:
         return self._startup
+
+    @property
+    def recovery_available(self) -> bool:
+        return self._recovery is not None
 
     async def open_primary(self) -> Mapping[str, object]:
         receipt = await self._program.initialize_subject(self._auth.subject)
@@ -255,6 +353,21 @@ class HumanMemoryHostService:
             "primary_ref": receipt.primary_conversation_id,
             "receipt_ref": receipt.receipt_id,
             "receipt_hash": receipt.receipt_sha256,
+        }
+
+    async def append_primary_event(
+        self, request: AppendPrimaryEventRequest
+    ) -> Mapping[str, object]:
+        committed = await self._append_host_evidence(
+            payload=dict(request.event),
+            idempotency_key=request.idempotency_key,
+            source_ref=f"host-primary:{request.idempotency_key}",
+        )
+        return {
+            "evidence_ref": committed.evidence_id,
+            "primary_ref": committed.primary_conversation_id,
+            "receipt_ref": committed.receipt_id,
+            "evidence_hash": committed.envelope_sha256,
         }
 
     async def create_task_scope(
@@ -271,9 +384,11 @@ class HumanMemoryHostService:
             task_scope_id=scope_ref,
             subject=self._auth.subject,
             title=request.title,
+            goal=request.goal,
         )
         return {
             "scope_ref": receipt.task_scope_id,
+            "ref": receipt.task_scope_id,
             "revision": receipt.revision,
             "state_hash": receipt.state_hash,
             "goal": request.goal,
@@ -318,6 +433,206 @@ class HumanMemoryHostService:
             "checkpoint_hash": receipt.checkpoint_hash,
             "event_watermark": receipt.event_watermark,
         }
+
+    async def mutate_task_scope(
+        self, request: MutateTaskScopeRequest
+    ) -> Mapping[str, object]:
+        await self._assert_owned_scope(request.scope_ref)
+        status_kind = {
+            ("status", "active"): TaskScopeMutationKind.TASK_RESUME,
+            ("status", "paused"): TaskScopeMutationKind.TASK_PAUSE,
+            ("status", "blocked"): TaskScopeMutationKind.TASK_BLOCK,
+            ("status", "complete"): TaskScopeMutationKind.TASK_COMPLETE,
+        }.get((request.kind, request.value))
+        try:
+            kind = status_kind or TaskScopeMutationKind(request.kind)
+        except ValueError as exc:
+            raise HumanMemoryHostServiceError(
+                "task_scope_mutation_kind_rejected"
+            ) from exc
+        plan_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"simple-harness:host-mutation-plan:{self._auth.subject}:{request.idempotency_key}",
+            )
+        )
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?",
+                (request.scope_ref,),
+            ).fetchone()
+            replay = db.execute(
+                "SELECT plan_json FROM task_scope_mutation_attempts WHERE plan_id=?",
+                (plan_id,),
+            ).fetchone()
+        if row is None:
+            raise HumanMemoryHostServiceError("human_memory_permission_denied")
+        if replay is not None:
+            plan = TaskScopeMutationPlan.from_json(json.loads(str(replay[0])))
+            operations = tuple(plan.operations)
+            if (
+                plan.subject != self._auth.subject
+                or plan.task_scope_id != request.scope_ref
+                or plan.idempotency_key != request.idempotency_key
+                or len(operations) != 1
+                or operations[0].kind is not kind
+                or operations[0].value != request.value
+            ):
+                raise HumanMemoryHostServiceError(
+                    "task_scope_mutation_idempotency_conflict"
+                )
+            receipt = await self._scopes.apply_mutation_plan(plan)
+            return self._mutation_result(receipt)
+        run_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"simple-harness:host-mutation-run:{self._auth.subject}:{request.idempotency_key}",
+            )
+        )
+        committed = await self._append_host_evidence(
+            payload={
+                "schema_version": 1,
+                "scope_ref": request.scope_ref,
+                "kind": request.kind,
+                "value": request.value,
+            },
+            idempotency_key=f"mutation-evidence:{request.idempotency_key}",
+            source_ref=f"host-mutation:{request.idempotency_key}",
+            run_id=run_id,
+        )
+        evidence_ref = EvidenceRef(
+            committed.evidence_id, committed.envelope_sha256, 1
+        )
+        disclosure = self._disclosure(run_id)
+        plan = TaskScopeMutationPlan(
+            plan_id=plan_id,
+            run_id=run_id,
+            subject=self._auth.subject,
+            task_scope_id=request.scope_ref,
+            base_revision=int(row[0]),
+            outcome=TaskScopeMutationOutcome.MUTATE,
+            operations=(
+                TaskScopeMutationOperation(
+                    operation_id=str(
+                        uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"simple-harness:host-mutation-operation:{request.idempotency_key}",
+                        )
+                    ),
+                    kind=kind,
+                    value=request.value,
+                    evidence_refs=(evidence_ref,),
+                    reason_code="host_typed_mutation",
+                ),
+            ),
+            closure_reason=None,
+            source_turn_id=f"host-request:{request.idempotency_key}",
+            disclosure_context=disclosure,
+            evidence_refs=(evidence_ref,),
+            idempotency_key=request.idempotency_key,
+        )
+        receipt = await self._scopes.apply_mutation_plan(plan)
+        return self._mutation_result(receipt)
+
+    @staticmethod
+    def _mutation_result(receipt) -> Mapping[str, object]:  # type: ignore[no-untyped-def]
+        return {
+            "scope_ref": receipt.task_scope_id,
+            "receipt_ref": receipt.decision_id,
+            "revision": receipt.committed_revision,
+            "decision_ref": receipt.decision_id,
+            "plan_hash": receipt.plan_hash,
+            "state_hash": receipt.state_hash,
+            "event_ref": receipt.event_id,
+        }
+
+    async def append_binding(
+        self, request: AppendBindingRequest
+    ) -> Mapping[str, object]:
+        await self._assert_owned_scope(request.scope_ref)
+        if self._binding_append is None:
+            raise HumanMemoryHostServiceError(
+                "human_memory_binding_authority_unavailable"
+            )
+        return await self._binding_append.append_binding(
+            subject=self._auth.subject,
+            task_scope_id=request.scope_ref,
+            root=request.root,
+            idempotency_key=request.idempotency_key,
+        )
+
+    async def control_current_run(
+        self, request: ControlRunRequest
+    ) -> Mapping[str, object]:
+        current = await self._foreground.current_snapshot(self._auth.subject)
+        if current is None:
+            raise HumanMemoryHostServiceError("human_memory_foreground_run_not_found")
+        receipt = await self._foreground.request_control(
+            host_run_id=current.host_run_id,
+            subject=self._auth.subject,
+            generation=current.generation,
+            control_kind=request.control,
+            reason=request.reason,
+            idempotency_key=request.idempotency_key,
+        )
+        return {
+            "control_ref": receipt.control_id,
+            "receipt_ref": receipt.control_id,
+            "run_ref": receipt.host_run_id,
+            "generation": receipt.generation,
+            "outcome": receipt.outcome,
+            "state": receipt.reduced_state.value,
+            "receipt_hash": receipt.control_hash,
+            "signal_ref": receipt.signal_id,
+        }
+
+    async def audit_refs(self, request: AuditRefsRequest) -> Mapping[str, object]:
+        await self._assert_owned_scope(request.scope_ref)
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            source = db.execute(
+                "SELECT source_id,source_hash FROM task_scope_projection_sources "
+                "WHERE task_scope_id=? ORDER BY source_sequence DESC LIMIT 1",
+                (request.scope_ref,),
+            ).fetchone()
+            checkpoint = db.execute(
+                "SELECT checkpoint_id,checkpoint_hash FROM task_scope_checkpoints "
+                "WHERE task_scope_id=? ORDER BY created_at DESC,checkpoint_id DESC LIMIT 1",
+                (request.scope_ref,),
+            ).fetchone()
+            binding = db.execute(
+                "SELECT current_receipt_id,current_receipt_hash FROM "
+                "task_workspace_binding_heads WHERE task_scope_id=?",
+                (request.scope_ref,),
+            ).fetchone()
+        refs = []
+        if source is not None:
+            refs.append({"kind": "projection_source", "ref": source[0], "hash": source[1]})
+        if checkpoint is not None:
+            refs.append({"kind": "checkpoint", "ref": checkpoint[0], "hash": checkpoint[1]})
+        if binding is not None:
+            refs.append({"kind": "binding", "ref": binding[0], "hash": binding[1]})
+        receipt_hash = canonical_hash({"scope_ref": request.scope_ref, "refs": refs})
+        return {
+            "scope_ref": request.scope_ref,
+            "audit_refs": refs,
+            "receipt_ref": f"sha256:{receipt_hash}",
+            "receipt_hash": receipt_hash,
+        }
+
+    async def recovery_manifest(self) -> Mapping[str, object]:
+        if self._recovery is None:
+            raise HumanMemoryHostServiceError(
+                "human_memory_recovery_authority_unavailable"
+            )
+        return await self._recovery.manifest(subject=self._auth.subject)
+
+    async def emergency_export(self) -> Mapping[str, object]:
+        if self._recovery is None:
+            raise HumanMemoryHostServiceError(
+                "human_memory_recovery_authority_unavailable"
+            )
+        return await self._recovery.emergency_export(subject=self._auth.subject)
 
     async def enqueue_turn(self, request: QueueTurnRequest) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
@@ -398,8 +713,11 @@ class HumanMemoryHostService:
             turn_payload=payload,
             task_scope_id=request.scope_ref,
         )
+        if self._scheduler_wake is not None:
+            await self._scheduler_wake.after_enqueue(subject=self._auth.subject)
         return {
             "turn_ref": queued.turn_id,
+            "receipt_ref": queued.turn_id,
             "scope_ref": queued.task_scope_id,
             "enqueue_sequence": queued.enqueue_sequence,
             "content_sha256": queued.turn_hash,
@@ -450,6 +768,7 @@ class HumanMemoryHostService:
         drift = result.drift_report
         return {
             "scope_ref": result.task_scope_id,
+            "receipt_ref": f"sha256:{result.receipt_hash}",
             "source_ref": result.source_id,
             "source_hash": result.source_hash,
             "resume_package": result.resume_package,
@@ -485,49 +804,50 @@ class HumanMemoryHostService:
                 pending: list[dict[str, object]] = []
                 for raw_event in events:
                     event = dict(raw_event)
-                    payload = event.get("payload", {})
-                    if not isinstance(payload, Mapping):
-                        raise HumanMemoryHostServiceError(
-                            "task_scope_projection_event_payload_invalid"
-                        )
-                    normalized = {
-                        "event_index": payload.get("event_index"),
-                        "event_sequence": event.get("event_sequence"),
-                        "event_id": event.get("event_id"),
-                        "payload_hash": event.get("payload_hash"),
-                    }
                     candidate = canonical_json(
-                        {"schema_version": 1, "events": [*pending, normalized]}
+                        {"schema_version": 1, "events": [*pending, event]}
                     )
                     if pending and len(candidate.encode("utf-8")) > 32 * 1024:
-                        content = canonical_json(
-                            {"schema_version": 1, "events": pending}
-                        )
+                        pages.append(self._event_page(pending))
+                        pending = []
+                    single = canonical_json({"schema_version": 1, "events": [event]})
+                    if len(single.encode("utf-8")) <= 32 * 1024:
+                        pending.append(event)
+                        continue
+                    event_bytes = canonical_json(event).encode("utf-8")
+                    event_hash = hashlib.sha256(event_bytes).hexdigest()
+                    chunks = [
+                        event_bytes[offset : offset + 20 * 1024]
+                        for offset in range(0, len(event_bytes), 20 * 1024)
+                    ]
+                    for ordinal, chunk in enumerate(chunks, 1):
+                        chunk_payload = {
+                            "schema_version": 1,
+                            "event_chunk": {
+                                "event_sequence": event.get("event_sequence"),
+                                "ordinal": ordinal,
+                                "count": len(chunks),
+                                "event_content_sha256": event_hash,
+                                "encoding": "base64",
+                                "content": base64.b64encode(chunk).decode("ascii"),
+                            },
+                        }
+                        content = canonical_json(chunk_payload)
+                        if len(content.encode("utf-8")) > 32 * 1024:
+                            raise HumanMemoryHostServiceError(
+                                "task_scope_projection_public_page_too_large"
+                            )
                         content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
                         pages.append(
                             {
                                 "page_id": f"sha256:{content_hash}",
                                 "content": content,
                                 "content_sha256": content_hash,
-                                "events": pending,
+                                "event_chunk": chunk_payload["event_chunk"],
                             }
                         )
-                        pending = [normalized]
-                    else:
-                        pending.append(normalized)
                 if pending:
-                    content = canonical_json(
-                        {"schema_version": 1, "events": pending}
-                    )
-                    content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-                    pages.append(
-                        {
-                            "page_id": f"sha256:{content_hash}",
-                            "content": content,
-                            "content_sha256": content_hash,
-                            "events": pending,
-                        }
-                    )
+                    pages.append(self._event_page(pending))
         return {
             "scope_ref": request.scope_ref,
             "source_ref": view.source_id,
@@ -538,6 +858,22 @@ class HumanMemoryHostService:
             "block_count": view.block_count,
             "receipt_hash": view.receipt_hash,
             "pages": pages,
+        }
+
+    @staticmethod
+    def _event_page(events: list[dict[str, object]]) -> dict[str, object]:
+        content = canonical_json({"schema_version": 1, "events": events})
+        content_bytes = content.encode("utf-8")
+        if len(content_bytes) > 32 * 1024:
+            raise HumanMemoryHostServiceError(
+                "task_scope_projection_public_page_too_large"
+            )
+        content_hash = hashlib.sha256(content_bytes).hexdigest()
+        return {
+            "page_id": f"sha256:{content_hash}",
+            "content": content,
+            "content_sha256": content_hash,
+            "events": events,
         }
 
     async def drop_rebuildable(self, scope_ref: str) -> Mapping[str, object]:
@@ -666,10 +1002,13 @@ class HumanMemoryHostService:
                     "row_count": len(canonical_rows),
                     "content_sha256": digest.hexdigest(),
                 }
+        manifest_hash = hashlib.sha256(_canonical(raw_sets)).hexdigest()
         return {
             "schema_version": 1,
             "format_epoch": self._startup.composition_mode.value,
             "raw_sets": raw_sets,
+            "content_sha256": manifest_hash,
+            "sealed": False,
         }
 
     async def _owned_scope_ids(self) -> tuple[str, ...]:
@@ -691,6 +1030,81 @@ class HumanMemoryHostService:
         if row is None or str(row[0]) != self._auth.subject:
             raise HumanMemoryHostServiceError("human_memory_permission_denied")
 
+    def _disclosure(self, run_id: str) -> DisclosureContext:
+        return DisclosureContext(
+            run_id=run_id,
+            subject=self._auth.subject,
+            recipient=DeliveryRecipient.USER_SELF,
+            recipient_id=self._auth.subject,
+            intended_audience=IntendedAudience.USER_SELF,
+            purpose=DisclosurePurpose.TASK_EXECUTION,
+            source=DisclosureSource.AUTHENTICATED_HOST,
+            trust=DisclosureTrust.TRUSTED_AUTHORITY,
+            generation=DisclosureGeneration.CURRENT,
+            authority_ref=self._auth.authority_ref,
+            reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
+        )
+
+    async def _append_host_evidence(
+        self,
+        *,
+        payload: Mapping[str, object],
+        idempotency_key: str,
+        source_ref: str,
+        run_id: str | None = None,
+    ):
+        reject_private_payload(dict(payload), "host_evidence")
+        run_ref = run_id or str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"simple-harness:host-evidence-run:{self._auth.subject}:{idempotency_key}",
+            )
+        )
+        evidence_id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"simple-harness:host-evidence:{self._auth.subject}:{idempotency_key}",
+            )
+        )
+        payload_dict = dict(payload)
+        payload_hash = canonical_hash(payload_dict)
+        disclosure = self._disclosure(run_ref)
+        envelope = SanitizedEvidenceEnvelope(
+            evidence_id=evidence_id,
+            run_id=run_ref,
+            subject=self._auth.subject,
+            source_kind=EvidenceSourceKind.USER_MESSAGE,
+            source_ref=source_ref,
+            source_hash=payload_hash,
+            sanitized_payload=payload_dict,
+            sanitized_hash=payload_hash,
+            filter_policy_version="host-typed-ingress/v1",
+            removed_spans=(),
+            disclosure_context=disclosure,
+            evidence_refs=(),
+        )
+        receipt = SanitizedEvidenceReceipt(
+            receipt_id=str(
+                uuid.uuid5(
+                    uuid.NAMESPACE_URL,
+                    f"simple-harness:host-evidence-receipt:{evidence_id}",
+                )
+            ),
+            run_id=run_ref,
+            subject=self._auth.subject,
+            evidence_id=evidence_id,
+            envelope_hash=envelope.envelope_hash,
+            source_hash=payload_hash,
+            sanitized_hash=payload_hash,
+            filter_policy_version="host-typed-ingress/v1",
+            accepted=True,
+            reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
+            disclosure_context=disclosure,
+            evidence_refs=(),
+            admitted_at=0.0,
+        )
+        return await self._program.append_evidence(envelope, receipt)
+
 
 @dataclass(frozen=True, slots=True)
 class HumanMemoryHostServiceFactory:
@@ -702,26 +1116,40 @@ class HumanMemoryHostServiceFactory:
         auth: AuthenticatedHostSnapshot,
         *,
         deterministic_event_seed: DeterministicEventSeedPort | None = None,
+        binding_append: WorkspaceBindingAppendPort | None = None,
+        recovery: RecoveryLifecyclePort | None = None,
+        scheduler_wake: ForegroundSchedulerWakePort | None = None,
     ) -> HumanMemoryHostService:
         return HumanMemoryHostService(
             self.db_path,
             auth=auth,
             startup=self.startup,
             deterministic_event_seed=deterministic_event_seed,
+            binding_append=binding_append,
+            recovery=recovery,
+            scheduler_wake=scheduler_wake,
         )
 
 
 __all__ = (
     "AppendDeterministicEventsRequest",
+    "AppendBindingRequest",
+    "AppendPrimaryEventRequest",
+    "AuditRefsRequest",
     "AuthenticatedHostSnapshot",
+    "ControlRunRequest",
     "CreateTaskScopeRequest",
     "DeterministicEventSeedPort",
     "HumanMemoryHostService",
     "HumanMemoryHostServiceError",
     "HumanMemoryHostServiceFactory",
+    "ForegroundSchedulerWakePort",
+    "MutateTaskScopeRequest",
     "OpenTaskScopeRequest",
     "QueueTurnRequest",
     "ReadTaskScopeViewRequest",
     "SaveCheckpointRequest",
     "SearchTaskScopesRequest",
+    "RecoveryLifecyclePort",
+    "WorkspaceBindingAppendPort",
 )

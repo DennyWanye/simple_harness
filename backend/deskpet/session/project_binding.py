@@ -1148,6 +1148,18 @@ class SessionCreationService:
             raise ProjectSessionError("invalid_request")
         if project_id is None and execution_kind == "explicit":
             raise ProjectSessionError("invalid_request")
+        from deskpet.memory.primary_authority import (
+            PrimaryAuthorityImmutableError,
+            assert_not_primary_authority,
+            assert_not_primary_authority_tx,
+        )
+
+        try:
+            await assert_not_primary_authority(
+                self._bindings._db_path, source_session_id
+            )
+        except PrimaryAuthorityImmutableError as exc:
+            raise ProjectSessionError(exc.code) from exc
         requested_execution_root = (
             os.path.abspath(os.path.expanduser(str(execution_root)))
             if execution_kind == "explicit" and execution_root
@@ -1217,6 +1229,12 @@ class SessionCreationService:
             await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("BEGIN IMMEDIATE")
             try:
+                try:
+                    await assert_not_primary_authority_tx(
+                        db, (source_session_id,)
+                    )
+                except PrimaryAuthorityImmutableError as exc:
+                    raise ProjectSessionError(exc.code) from exc
                 await self._bindings._require_upgrade_complete(db)
                 receipt = await (await db.execute(
                     "SELECT intent_hash,result_json,lifecycle FROM session_creation_receipts WHERE request_id=?",
@@ -1259,9 +1277,15 @@ class SessionCreationService:
                         automatic_identity, 1, now, now, now,
                     )
                     project_id = automatic_project_id
+                sid = automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
+                try:
+                    await assert_not_primary_authority_tx(
+                        db, (source_session_id, sid)
+                    )
+                except PrimaryAuthorityImmutableError as exc:
+                    raise ProjectSessionError(exc.code) from exc
                 handoff = await self._build_handoff(db, source_session_id) if source_session_id else None
                 now = time.time()
-                sid = automatic_workspace[0] if automatic_workspace is not None else str(uuid.uuid4())
                 await db.execute("INSERT INTO sessions(id,created_at,metadata) VALUES(?,?,?)",
                                  (sid, now, _canonical_json({"origin": "project_session_v1"})))
                 await db.execute("INSERT INTO session_catalog_entries(session_id,product_kind,created_at) VALUES(?, 'conversation', ?)", (sid, now))
@@ -1439,9 +1463,24 @@ class SessionCreationService:
         sid, now = str(session_id or "").strip(), time.time()
         if not sid:
             raise ProjectSessionError("session_not_found")
+        from deskpet.memory.primary_authority import (
+            PrimaryAuthorityImmutableError,
+            assert_not_primary_authority,
+            assert_not_primary_authority_tx,
+        )
+
+        try:
+            await assert_not_primary_authority(self._bindings._db_path, sid)
+        except PrimaryAuthorityImmutableError as exc:
+            raise ProjectSessionError(exc.code) from exc
         async with self._bindings._write_lock:
             async with aiosqlite.connect(self._bindings._db_path) as db:
                 await db.execute("BEGIN IMMEDIATE")
+                try:
+                    await assert_not_primary_authority_tx(db, (sid,))
+                except PrimaryAuthorityImmutableError as exc:
+                    await db.rollback()
+                    raise ProjectSessionError(exc.code) from exc
                 exists = await (await db.execute("SELECT 1 FROM sessions WHERE id=?", (sid,))).fetchone()
                 if exists is None:
                     raise ProjectSessionError("session_not_found")

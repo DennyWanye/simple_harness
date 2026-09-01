@@ -12938,6 +12938,26 @@ async def control_channel(ws: WebSocket):
 
     session_id = ws.query_params.get("session_id", "default")
     requested_scope = ws.query_params.get("requested_scope", "")
+    _cc_sdb = service_context.get("session_db")
+    if _cc_sdb is not None:
+        try:
+            from deskpet.memory.primary_authority import (
+                assert_not_primary_authority,
+            )
+
+            await assert_not_primary_authority(_cc_sdb._db_path, session_id)
+        except Exception as _cc_exc:  # noqa: BLE001
+            _cc_code = getattr(_cc_exc, "code", None)
+            if _cc_code:
+                await ws.send_json(
+                    {
+                        "type": "session_authority_error",
+                        "payload": {"ok": False, "code": _cc_code},
+                    }
+                )
+                await ws.close(code=4003, reason=_cc_code)
+                return
+            raise
     # The main-window identity bridge must coexist with the message-panel
     # chat socket.  Its requested scope is not mutation authority (the first
     # Rust-signed command still proves the real label/scope), but it is safe to
@@ -14156,6 +14176,37 @@ async def control_channel(ws: WebSocket):
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("context_breakdown_send_failed err=%s", exc)
 
+            elif msg_type == "human_memory_request":
+                from deskpet.memory.human_memory_api import (
+                    handle_human_memory_command,
+                )
+                from deskpet.memory.human_memory_service import (
+                    AuthenticatedHostSnapshot,
+                )
+
+                _hm_response = await handle_human_memory_command(
+                    raw,
+                    factory=service_context.get(
+                        "human_memory_host_service_factory"
+                    ),
+                    auth=AuthenticatedHostSnapshot(
+                        subject="deskpet-local-owner-v1",
+                        principal_id="local-control-channel",
+                        authority_ref="host:validated-control-channel:v1",
+                    ),
+                    binding_append=service_context.get(
+                        "human_memory_binding_append_authority"
+                    ),
+                    recovery=service_context.get(
+                        "human_memory_recovery_lifecycle"
+                    ),
+                    scheduler_wake=service_context.get(
+                        "human_memory_foreground_scheduler_wake"
+                    ),
+                )
+                if _hm_response is not None:
+                    await ws.send_json(_hm_response)
+
             elif msg_type in {
                 "project_preview_register", "project_register", "session_create",
                 "project_catalog_page", "project_sessions_page", "project_inspect",
@@ -14192,8 +14243,16 @@ async def control_channel(ws: WebSocket):
                 _sd_sid = _sd_payload.get("session_id") or ""
                 _sd_sdb = service_context.get("session_db")
                 _sd_ok = False
+                _sd_code = None
                 if _sd_sdb is not None and _sd_sid:
                     try:
+                        from deskpet.memory.primary_authority import (
+                            assert_not_primary_authority,
+                        )
+
+                        await assert_not_primary_authority(
+                            _sd_sdb._db_path, _sd_sid
+                        )
                         _sd_workflows = service_context.get("workflow_service")
                         _sd_creation = service_context.get(
                             "session_creation_service"
@@ -14219,13 +14278,18 @@ async def control_channel(ws: WebSocket):
                         _sd_ok = True
                         logger.info("session_deleted sid=%s", _sd_sid)
                     except Exception as _sd_exc:  # noqa: BLE001
+                        _sd_code = getattr(_sd_exc, "code", None)
                         logger.warning(
                             "session_delete_failed", error=str(_sd_exc),
                             session_id=_sd_sid,
                         )
                 await ws.send_json({
                     "type": "session_deleted",
-                    "payload": {"session_id": _sd_sid, "ok": _sd_ok},
+                    "payload": {
+                        "session_id": _sd_sid,
+                        "ok": _sd_ok,
+                        **({"code": _sd_code} if _sd_code else {}),
+                    },
                 })
 
             elif msg_type == "session_rename":
@@ -14236,14 +14300,23 @@ async def control_channel(ws: WebSocket):
                 _sr_sdb = service_context.get("session_db")
                 _sr_ok = False
                 _sr_stored = ""
+                _sr_code = None
                 if _sr_sdb is not None and _sr_sid:
                     try:
+                        from deskpet.memory.primary_authority import (
+                            assert_not_primary_authority,
+                        )
+
+                        await assert_not_primary_authority(
+                            _sr_sdb._db_path, _sr_sid
+                        )
                         _sr_stored = await _sr_sdb.set_session_title(_sr_sid, _sr_title)
                         _sr_ok = True
                         logger.info(
                             "session_renamed sid=%s title_len=%d", _sr_sid, len(_sr_stored)
                         )
                     except Exception as _sr_exc:  # noqa: BLE001
+                        _sr_code = getattr(_sr_exc, "code", None)
                         logger.warning(
                             "session_rename_failed", error=str(_sr_exc),
                             session_id=_sr_sid,
@@ -14254,6 +14327,7 @@ async def control_channel(ws: WebSocket):
                         "session_id": _sr_sid,
                         "title": _sr_stored,
                         "ok": _sr_ok,
+                        **({"code": _sr_code} if _sr_code else {}),
                     },
                 })
 
@@ -14267,6 +14341,31 @@ async def control_channel(ws: WebSocket):
                 payload = raw.get("payload", {}) or {}
                 target_sid = payload.get("session_id") or session_id
                 limit = int(payload.get("limit") or 200)
+                _sml_sdb = service_context.get("session_db")
+                if _sml_sdb is not None:
+                    try:
+                        from deskpet.memory.primary_authority import (
+                            assert_not_primary_authority,
+                        )
+
+                        await assert_not_primary_authority(
+                            _sml_sdb._db_path, str(target_sid)
+                        )
+                    except Exception as _sml_exc:  # noqa: BLE001
+                        _sml_code = getattr(_sml_exc, "code", None)
+                        if _sml_code:
+                            await ws.send_json(
+                                {
+                                    "type": "session_messages_error",
+                                    "payload": {
+                                        "ok": False,
+                                        "session_id": target_sid,
+                                        "code": _sml_code,
+                                    },
+                                }
+                            )
+                            continue
+                        raise
                 # Loading a transcript is also the product shell's explicit
                 # declaration of which conversation this transport currently
                 # presents.  Rebind the peer group before the consistency

@@ -101,11 +101,18 @@ class CanonicalTaskScopeStore:
         await initialize_human_memory_program_state_db(self._db_path)
 
     async def create_task_scope(
-        self, *, task_scope_id: str, subject: str, title: str
+        self,
+        *,
+        task_scope_id: str,
+        subject: str,
+        title: str,
+        goal: str | None = None,
     ) -> TaskScopeReceipt:
         task_scope_id = identifier(task_scope_id, "task_scope_id", 512)
         subject = identifier(subject, "subject", 512)
         title = identifier(title, "title", 4096)
+        if goal is not None:
+            goal = identifier(goal, "goal", 16_384)
         await HumanMemoryProgramStore(self._db_path).initialize_subject(subject)
         created_at = time.time()
         state = {
@@ -114,7 +121,7 @@ class CanonicalTaskScopeStore:
             "subject": subject,
             "title": title,
             "status": "active",
-            "goal": None,
+            "goal": goal,
             "resume": None,
             "operations": [],
         }
@@ -133,6 +140,14 @@ class CanonicalTaskScopeStore:
                     if row["subject"] != subject or row["title"] != title:
                         raise TaskScopeConflict("task_scope_identity_conflict")
                     head = await self._head_tx(db, task_scope_id)
+                    current = await self._fetchone(
+                        db,
+                        "SELECT state_json FROM task_scope_canonical_revisions "
+                        "WHERE task_scope_id=? AND revision=1",
+                        (task_scope_id,),
+                    )
+                    if current is None or json.loads(str(current["state_json"])).get("goal") != goal:
+                        raise TaskScopeConflict("task_scope_identity_conflict")
                     await db.commit()
                     return TaskScopeReceipt(task_scope_id, subject, int(head["current_revision"]), str(head["state_hash"]))
                 await db.execute(

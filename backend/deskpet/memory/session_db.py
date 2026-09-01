@@ -1387,9 +1387,12 @@ class SessionDB:
 
     async def create_session(self, metadata: dict[str, Any] | None = None) -> str:
         """新建会话，返回 UUID 字符串。"""
+        session_id = str(uuid.uuid4())
+        from deskpet.memory.primary_authority import assert_not_primary_authority
+
+        await assert_not_primary_authority(self._db_path, session_id)
         if not self._initialized:
             await self.initialize()
-        session_id = str(uuid.uuid4())
         await self.ensure_session(session_id, metadata)
         return session_id
 
@@ -1407,17 +1410,24 @@ class SessionDB:
         share one stable id. This method persists that caller-supplied id in
         the canonical ``sessions`` table without changing existing metadata.
         """
-        if not self._initialized:
-            await self.initialize()
         sid = (session_id or "").strip()
         if not sid:
             raise ValueError("session_id must be non-empty")
+        from deskpet.memory.primary_authority import (
+            assert_not_primary_authority,
+            assert_not_primary_authority_tx,
+        )
+
+        await assert_not_primary_authority(self._db_path, sid)
+        if not self._initialized:
+            await self.initialize()
         meta_json = json.dumps(metadata) if metadata else None
 
         async def _do():
             async with self._write_lock:
                 async with aiosqlite.connect(self._db_path) as db:
                     await db.execute("PRAGMA busy_timeout=5000")
+                    await assert_not_primary_authority_tx(db, (sid,))
                     await db.execute(
                         "INSERT INTO sessions(id, created_at, metadata) "
                         "VALUES (?, ?, ?) "
@@ -4251,6 +4261,12 @@ class SessionDB:
 
     async def clear(self, session_id: str) -> None:
         """Implement ``MemoryStore.clear`` for one session."""
+        from deskpet.memory.primary_authority import (
+            assert_not_primary_authority,
+            assert_not_primary_authority_tx,
+        )
+
+        await assert_not_primary_authority(self._db_path, session_id)
         if not self._initialized:
             await self.initialize()
 
@@ -4260,6 +4276,7 @@ class SessionDB:
                     await db.execute("PRAGMA foreign_keys=ON")
                     await db.execute("PRAGMA busy_timeout=5000")
                     await db.execute("BEGIN IMMEDIATE")
+                    await assert_not_primary_authority_tx(db, (session_id,))
                     await db.execute(
                         "DELETE FROM companion_ingress_outbox WHERE session_id = ?",
                         (session_id,),
@@ -4445,17 +4462,24 @@ class SessionDB:
         Returns the stored title ("" when cleared) so the caller can echo the
         canonical value back to the UI.
         """
-        if not self._initialized:
-            await self.initialize()
         sid = (session_id or "").strip()
         if not sid:
             return ""
+        from deskpet.memory.primary_authority import (
+            assert_not_primary_authority,
+            assert_not_primary_authority_tx,
+        )
+
+        await assert_not_primary_authority(self._db_path, sid)
+        if not self._initialized:
+            await self.initialize()
         clean = (title or "").strip()[: self.MAX_TITLE_LEN]
 
         async def _do() -> None:
             async with self._write_lock:
                 async with aiosqlite.connect(self._db_path) as db:
                     await db.execute("PRAGMA busy_timeout=5000")
+                    await assert_not_primary_authority_tx(db, (sid,))
                     if clean:
                         await db.execute(
                             "INSERT INTO session_titles(session_id, title, updated_at) "

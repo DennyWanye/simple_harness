@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import sqlite3
 from dataclasses import fields
 from pathlib import Path
@@ -7,19 +9,30 @@ from pathlib import Path
 import pytest
 
 from deskpet.memory.human_memory_service import (
+    AppendBindingRequest,
     AppendDeterministicEventsRequest,
+    AppendPrimaryEventRequest,
+    AuditRefsRequest,
     AuthenticatedHostSnapshot,
+    ControlRunRequest,
     CreateTaskScopeRequest,
     HumanMemoryHostService,
     HumanMemoryHostServiceError,
+    MutateTaskScopeRequest,
+    OpenTaskScopeRequest,
+    ReadTaskScopeViewRequest,
     SaveCheckpointRequest,
+    SearchTaskScopesRequest,
 )
 from deskpet.memory.schema import (
     StartupCompositionMode,
     StartupEpoch,
     StartupEpochDecision,
+    dispatch_startup_epoch,
+    inspect_startup_epoch,
 )
 from deskpet.memory.s4_value_adapter import S4ValuePublicAdapter
+from deskpet.task_scope.store import CanonicalTaskScopeStore
 
 
 def _startup(mode: StartupCompositionMode) -> StartupEpochDecision:
@@ -51,6 +64,14 @@ def test_public_request_dtos_cannot_carry_host_authority() -> None:
         CreateTaskScopeRequest,
         AppendDeterministicEventsRequest,
         SaveCheckpointRequest,
+        AppendPrimaryEventRequest,
+        MutateTaskScopeRequest,
+        AppendBindingRequest,
+        ControlRunRequest,
+        AuditRefsRequest,
+        SearchTaskScopesRequest,
+        OpenTaskScopeRequest,
+        ReadTaskScopeViewRequest,
     ):
         assert forbidden.isdisjoint(field.name for field in fields(request_type))
 
@@ -191,3 +212,96 @@ def test_value_adapter_treats_fixture_subject_as_assertion_not_dto_field(
     )
     assert rejected["ok"] is False
     assert rejected["code"] == "human_memory_permission_denied"
+
+
+@pytest.mark.asyncio
+async def test_create_goal_is_canonical_and_survives_cold_restart(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    service = HumanMemoryHostService(path, auth=_auth(), startup=startup)
+    created = await service.create_task_scope(
+        CreateTaskScopeRequest("alpha", "Alpha", "retain canonical goal", "create-a")
+    )
+    await service.rebuild_derived(str(created["scope_ref"]))
+
+    restarted = HumanMemoryHostService(
+        path,
+        auth=_auth(),
+        startup=inspect_startup_epoch(path, approved_fresh_lane=False),
+    )
+    search = await restarted.search_task_scopes(
+        SearchTaskScopesRequest("canonical goal")
+    )
+    assert search["candidates"][0]["goal"] == "retain canonical goal"
+    opened = await restarted.open_task_scope(
+        OpenTaskScopeRequest(str(created["scope_ref"]))
+    )
+    assert "retain canonical goal" in str(opened["resume_package"])
+
+    with pytest.raises(Exception, match="task_scope_identity_conflict"):
+        await restarted.create_task_scope(
+            CreateTaskScopeRequest("alpha", "Alpha", "different goal", "create-a")
+        )
+
+
+@pytest.mark.asyncio
+async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    service = HumanMemoryHostService(path, auth=_auth(), startup=startup)
+    created = await service.create_task_scope(
+        CreateTaskScopeRequest("roundtrip", "Roundtrip", "retain every field", "create-r")
+    )
+    scope_ref = str(created["scope_ref"])
+    mutation = await service.mutate_task_scope(
+        MutateTaskScopeRequest(scope_ref, "status", "active", "mutation-r")
+    )
+    assert await service.mutate_task_scope(
+        MutateTaskScopeRequest(scope_ref, "status", "active", "mutation-r")
+    ) == mutation
+    oversized = "记忆🧠" * 12_000
+    await CanonicalTaskScopeStore(path).append_host_event(
+        task_scope_id=scope_ref,
+        event_kind="host.turn",
+        source_event_id="oversized-unicode",
+        payload={"text": oversized, "nested": {"ordinal": 7}},
+    )
+    await service.rebuild_derived(scope_ref)
+    view = await service.read_view(ReadTaskScopeViewRequest(scope_ref, "EVIDENCE"))
+
+    recovered: list[dict[str, object]] = []
+    chunks: dict[str, list[tuple[int, str]]] = {}
+    for page in view["pages"]:
+        assert len(str(page["content"]).encode("utf-8")) <= 32 * 1024
+        recovered.extend(page.get("events", []))
+        chunk = page.get("event_chunk")
+        if chunk:
+            chunks.setdefault(str(chunk["event_content_sha256"]), []).append(
+                (int(chunk["ordinal"]), str(chunk["content"]))
+            )
+    for parts in chunks.values():
+        raw = b"".join(
+            base64.b64decode(content)
+            for _, content in sorted(parts)
+        )
+        recovered.append(json.loads(raw))
+
+    oversized_event = next(
+        event for event in recovered if event["source_event_id"] == "oversized-unicode"
+    )
+    assert oversized_event["payload"] == {
+        "text": oversized,
+        "nested": {"ordinal": 7},
+    }
+    assert oversized_event["event_kind"] == "host.turn"
+    assert oversized_event["source_kind"] == "host"
+    mutation_event = next(
+        event for event in recovered if event["event_kind"] == "mutation.plan"
+    )
+    assert mutation_event["evidence_links"]
+    assert "payload" in mutation_event
+    assert "steps" in mutation_event
