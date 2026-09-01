@@ -8,6 +8,7 @@ from pathlib import Path
 
 import aiosqlite
 import pytest
+
 from deskpet.execution import (
     ContextLineage,
     ForegroundQueueError,
@@ -19,7 +20,7 @@ from deskpet.execution.recovery_fence import (
     HumanMemoryRecoveryError,
 )
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-from deskpet.memory.migrator import ensure_v9
+from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION, ensure_v9
 from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.schema import (
@@ -348,7 +349,10 @@ async def test_v42_fault_restart_has_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_recovery_marker"
         ).fetchone()[0] == 1
@@ -383,7 +387,10 @@ async def test_v43_fault_restart_has_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_quiescence_marker"
         ).fetchone()[0] == 1
@@ -429,7 +436,10 @@ async def test_v44_fault_restart_registers_execution_ledger_exactly_once(
     )
     placeholders = ",".join("?" for _ in execution_tables)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM foreground_execution_marker"
         ).fetchone()[0] == 1
@@ -898,7 +908,10 @@ async def test_v38_resume_backfills_exact_projection_source_in_migration_tx(
         db.commit()
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM task_scope_projection_sources WHERE task_scope_id='scope-old'"
         ).fetchone()[0] == 1

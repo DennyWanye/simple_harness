@@ -8,19 +8,6 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from deskpet.memory.schema import (
-    InitializeError,
-    initialize_human_memory_program_state_db,
-)
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
-from deskpet.task_scope.workspace_bindings import (
-    CurrentRunBindingAuthority,
-    ManualWorkspaceChallengeAuthorityCheck,
-    ManualWorkspaceDecisionAuthorityCheck,
-    WorkspaceBindingAuthorityStore,
-    WorkspaceBindingError,
-    canonical_workspace_root,
-)
 from simple_harness import (
     CallId,
     ContextRouteReceipt,
@@ -33,6 +20,21 @@ from simple_harness import (
     WorkspaceBindingAuthorizationDecision,
     WorkspaceBindingMode,
     WorkspaceBindingProposal,
+)
+
+from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+from deskpet.memory.schema import (
+    InitializeError,
+    initialize_human_memory_program_state_db,
+)
+from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
+from deskpet.task_scope.workspace_bindings import (
+    CurrentRunBindingAuthority,
+    ManualWorkspaceChallengeAuthorityCheck,
+    ManualWorkspaceDecisionAuthorityCheck,
+    WorkspaceBindingAuthorityStore,
+    WorkspaceBindingError,
+    canonical_workspace_root,
 )
 
 
@@ -1034,7 +1036,10 @@ async def test_v38_migration_fault_reopens_with_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_marker").fetchone()[0] == 1
         assert (
             db.execute(

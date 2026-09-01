@@ -16,6 +16,7 @@ from deskpet.memory.human_memory_program import (
     HumanMemoryProgramStore,
     PrimaryConversationMismatch,
 )
+from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION
 from deskpet.memory.schema import (
     HumanMemoryProgramEpochError,
     InitializeError,
@@ -190,7 +191,10 @@ async def test_concurrent_cold_init_creates_one_writable_primary_and_receipt(
     assert len({item.receipt_id for item in receipts}) == 1
 
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_primary_conversations "
             "WHERE subject='actor-1' AND writable=1"

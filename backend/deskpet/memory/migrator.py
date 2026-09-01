@@ -115,7 +115,9 @@ HUMAN_MEMORY_QUIESCENCE_MIGRATION = "035_human_memory_quiescence_v43.sql"
 HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION = 43
 FOREGROUND_EXECUTION_MIGRATION = "036_foreground_execution_v44.sql"
 FOREGROUND_EXECUTION_SCHEMA_VERSION = 44
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = FOREGROUND_EXECUTION_SCHEMA_VERSION
+CONTEXT_ROUTE_MIGRATION = "037_context_route_ledger_v45.sql"
+CONTEXT_ROUTE_SCHEMA_VERSION = 45
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = CONTEXT_ROUTE_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -128,6 +130,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         HUMAN_MEMORY_RECOVERY_MIGRATION,
         HUMAN_MEMORY_QUIESCENCE_MIGRATION,
         FOREGROUND_EXECUTION_MIGRATION,
+        CONTEXT_ROUTE_MIGRATION,
     }
 )
 
@@ -159,6 +162,7 @@ MIGRATION_STEPS: dict[str, int] = {
     HUMAN_MEMORY_RECOVERY_MIGRATION: HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION,
     HUMAN_MEMORY_QUIESCENCE_MIGRATION: HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION,
     FOREGROUND_EXECUTION_MIGRATION: FOREGROUND_EXECUTION_SCHEMA_VERSION,
+    CONTEXT_ROUTE_MIGRATION: CONTEXT_ROUTE_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -820,6 +824,25 @@ async def run_migrations(
                                     ("foreground_execution_start_intents", "A"),
                                     ("foreground_execution_start_observations", "A"),
                                     ("foreground_execution_reconciliations", "A"),
+                                ),
+                            )
+                        if version == CONTEXT_ROUTE_MIGRATION:
+                            initialized_at = time.time()
+                            await db.execute(
+                                "INSERT INTO context_route_marker("
+                                "singleton,format_epoch,schema_version,migration_id,"
+                                "migration_sha256,initialized_at) VALUES "
+                                "(1,'human-memory-v1',1,?,?,?)",
+                                (version, migration_sha256, initialized_at),
+                            )
+                            await _register_recovery_tables(
+                                db,
+                                (
+                                    ("context_route_marker", "A"),
+                                    ("context_route_decisions", "A"),
+                                    ("run_context_snapshot_receipts", "A"),
+                                    ("context_route_tool_invocations", "A"),
+                                    ("occurrence_presented", "A"),
                                 ),
                             )
                         await _execute_transactional_script(

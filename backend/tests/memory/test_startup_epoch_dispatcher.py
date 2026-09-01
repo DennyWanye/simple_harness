@@ -5,7 +5,12 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from deskpet.memory.migrator import DEFAULT_MIGRATIONS_DIR, run_migrations
+
+from deskpet.memory.migrator import (
+    DEFAULT_MIGRATIONS_DIR,
+    HUMAN_MEMORY_TARGET_SCHEMA_VERSION,
+    run_migrations,
+)
 from deskpet.memory.schema import (
     StartupCompositionMode,
     StartupEpoch,
@@ -60,7 +65,9 @@ async def test_v34_legacy_and_future_database_are_not_humanized(
 
     future = tmp_path / "future.db"
     with sqlite3.connect(future) as db:
-        db.execute("PRAGMA user_version=45")
+        db.execute(
+            f"PRAGMA user_version={HUMAN_MEMORY_TARGET_SCHEMA_VERSION + 1}"
+        )
         db.commit()
     future_decision = inspect_startup_epoch(
         future, approved_fresh_lane=True

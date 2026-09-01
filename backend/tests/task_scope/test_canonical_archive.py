@@ -11,17 +11,18 @@ from deskpet.execution.evidence_ingress import (
     ExecutionEvidenceIngress,
     TerminalWatermarkPending,
 )
-from deskpet.task_scope.protocol import TaskScopeProtocolError, canonical_hash
-from deskpet.task_scope.store import (
-    CanonicalTaskScopeStore,
-    TaskEventRecorder,
-    TaskScopeConflict,
-)
+from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION
 from deskpet.memory.schema import (
     HumanMemoryProgramEpochError,
     InitializeError,
     initialize_human_memory_program_state_db,
     initialize_state_db,
+)
+from deskpet.task_scope.protocol import TaskScopeProtocolError, canonical_hash
+from deskpet.task_scope.store import (
+    CanonicalTaskScopeStore,
+    TaskEventRecorder,
+    TaskScopeConflict,
 )
 
 
@@ -266,7 +267,10 @@ async def test_v36_fault_restart_and_marker_integrity(tmp_path: Path, fault_stag
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert db.execute("SELECT COUNT(*) FROM task_scope_archive_marker").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM schema_migrations WHERE version='028_task_scope_archive_v36.sql'").fetchone()[0] == 1
 

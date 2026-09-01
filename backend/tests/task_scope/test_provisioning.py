@@ -4,6 +4,8 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+
+from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION
 from deskpet.memory.schema import (
     InitializeError,
     initialize_human_memory_program_state_db,
@@ -410,7 +412,10 @@ async def test_v37_migration_fault_restarts_with_one_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
+        assert (
+            db.execute("PRAGMA user_version").fetchone()[0]
+            == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
         assert (
             db.execute("SELECT COUNT(*) FROM task_scope_provision_marker").fetchone()[0]
             == 1

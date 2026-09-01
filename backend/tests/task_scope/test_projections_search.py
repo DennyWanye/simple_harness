@@ -6,6 +6,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
+
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.task_scope.projections import (
     ProjectionIntegrityError,
