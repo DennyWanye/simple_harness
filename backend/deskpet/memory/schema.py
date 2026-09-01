@@ -28,17 +28,26 @@ import shutil
 import sqlite3
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
+    FOREGROUND_QUEUE_MIGRATION,
+    FOREGROUND_QUEUE_SCHEMA_VERSION,
     HUMAN_MEMORY_PROGRAM_MIGRATION,
     HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION,
+    HUMAN_MEMORY_TARGET_SCHEMA_VERSION,
     TARGET_SCHEMA_VERSION,
     TASK_SCOPE_ARCHIVE_MIGRATION,
     TASK_SCOPE_ARCHIVE_SCHEMA_VERSION,
     TASK_SCOPE_PROVISION_MIGRATION,
     TASK_SCOPE_PROVISION_SCHEMA_VERSION,
+    TASK_SCOPE_PROJECTIONS_MIGRATION,
+    TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION,
+    TASK_SCOPE_SEARCH_MIGRATION,
+    TASK_SCOPE_SEARCH_SCHEMA_VERSION,
     TASK_WORKSPACE_BINDING_MIGRATION,
     TASK_WORKSPACE_BINDING_SCHEMA_VERSION,
     backup_db,
@@ -62,6 +71,35 @@ class HumanMemoryProgramEpochError(InitializeError):
     """The requested database is not the fresh human-memory-v1 epoch."""
 
     code = "human_memory_program_legacy_database_unsupported"
+
+
+class StartupEpoch(StrEnum):
+    FRESH = "FRESH"
+    HUMAN_RESUME = "HUMAN_RESUME"
+    LEGACY = "LEGACY"
+    INVALID = "INVALID"
+    FUTURE = "FUTURE"
+
+
+class StartupCompositionMode(StrEnum):
+    HUMAN = "human-memory-v1"
+    LEGACY = "legacy"
+    REJECTED = "rejected"
+
+
+@dataclass(frozen=True, slots=True)
+class StartupEpochDecision:
+    epoch: StartupEpoch
+    composition_mode: StartupCompositionMode
+    user_version: int
+    reason_code: str
+
+
+_STARTUP_EPOCH_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _startup_epoch_lock(db_path: Path) -> asyncio.Lock:
+    return _STARTUP_EPOCH_LOCKS.setdefault(str(db_path.resolve()), asyncio.Lock())
 
 
 _HUMAN_MEMORY_PROGRAM_LOCKS: dict[str, asyncio.Lock] = {}
@@ -222,7 +260,9 @@ def _validate_task_scope_provision_marker(
         raise HumanMemoryProgramEpochError("task_scope_provision_marker_invalid")
 
 
-def _validate_task_workspace_binding_marker(db_path: Path) -> None:
+def _validate_task_workspace_binding_marker(
+    db_path: Path, *, expected_user_version: int = TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+) -> None:
     expected_sha256 = _migration_sha256(TASK_WORKSPACE_BINDING_MIGRATION)
     try:
         with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
@@ -245,8 +285,199 @@ def _validate_task_workspace_binding_marker(db_path: Path) -> None:
         TASK_WORKSPACE_BINDING_MIGRATION,
         expected_sha256,
     )
-    if row != expected or schema_marker is None or version != TASK_WORKSPACE_BINDING_SCHEMA_VERSION:
+    if row != expected or schema_marker is None or version != expected_user_version:
         raise HumanMemoryProgramEpochError("task_workspace_binding_marker_invalid")
+
+
+def _validate_s4_migration_chain(
+    db_path: Path, *, expected_user_version: int
+) -> None:
+    expected_steps = (
+        (TASK_SCOPE_PROJECTIONS_MIGRATION, TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION),
+        (TASK_SCOPE_SEARCH_MIGRATION, TASK_SCOPE_SEARCH_SCHEMA_VERSION),
+        (FOREGROUND_QUEUE_MIGRATION, FOREGROUND_QUEUE_SCHEMA_VERSION),
+    )
+    required = [item for item in expected_steps if item[1] <= expected_user_version]
+    if not required:
+        return
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+            rows = {
+                str(row[0]): (int(row[1]), str(row[2]))
+                for row in db.execute(
+                    "SELECT migration_id,schema_version,migration_sha256 "
+                    "FROM human_memory_migration_chain"
+                )
+            }
+            schema_markers = {
+                str(row[0])
+                for row in db.execute("SELECT version FROM schema_migrations")
+            }
+    except (OSError, sqlite3.Error) as exc:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_migration_chain_invalid"
+        ) from exc
+    if version != expected_user_version:
+        raise HumanMemoryProgramEpochError("human_memory_migration_chain_invalid")
+    for migration_id, schema_version in required:
+        expected = (schema_version, _migration_sha256(migration_id))
+        if rows.get(migration_id) != expected or migration_id not in schema_markers:
+            raise HumanMemoryProgramEpochError(
+                "human_memory_migration_chain_invalid"
+            )
+
+
+def inspect_startup_epoch(
+    db_path: str | Path,
+    *,
+    approved_fresh_lane: bool,
+    maximum_human_schema_version: int = HUMAN_MEMORY_TARGET_SCHEMA_VERSION,
+) -> StartupEpochDecision:
+    """Classify ``state.db`` without creating or mutating it."""
+
+    path = Path(db_path)
+    if not path.exists() or path.stat().st_size == 0:
+        if approved_fresh_lane:
+            return StartupEpochDecision(
+                StartupEpoch.FRESH,
+                StartupCompositionMode.HUMAN,
+                0,
+                "human_memory_fresh_database",
+            )
+        return StartupEpochDecision(
+            StartupEpoch.INVALID,
+            StartupCompositionMode.REJECTED,
+            0,
+            "human_memory_fresh_lane_not_approved",
+        )
+
+    try:
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            quick_check = db.execute("PRAGMA quick_check").fetchone()
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+            user_tables = {
+                str(row[0])
+                for row in db.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name NOT LIKE 'sqlite_%'"
+                )
+            }
+            bootstrap = None
+            if "human_memory_program_bootstrap" in user_tables:
+                bootstrap = db.execute(
+                    "SELECT format_epoch,origin FROM human_memory_program_bootstrap "
+                    "WHERE singleton=1"
+                ).fetchone()
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return StartupEpochDecision(
+            StartupEpoch.INVALID,
+            StartupCompositionMode.REJECTED,
+            0,
+            "human_memory_database_invalid",
+        )
+
+    if quick_check is None or str(quick_check[0]).lower() != "ok":
+        return StartupEpochDecision(
+            StartupEpoch.INVALID,
+            StartupCompositionMode.REJECTED,
+            version,
+            "human_memory_database_invalid",
+        )
+    if version > maximum_human_schema_version:
+        return StartupEpochDecision(
+            StartupEpoch.FUTURE,
+            StartupCompositionMode.REJECTED,
+            version,
+            "human_memory_future_epoch_unsupported",
+        )
+
+    marker_tables = {
+        "human_memory_program_bootstrap",
+        "human_memory_program_marker",
+        "task_scope_archive_marker",
+        "task_scope_provision_marker",
+        "task_workspace_binding_marker",
+        "human_memory_migration_chain",
+    }
+    has_any_human_marker = bool(marker_tables & user_tables)
+    if bootstrap is not None:
+        if bootstrap != ("human-memory-v1", "fresh-empty-database"):
+            return StartupEpochDecision(
+                StartupEpoch.INVALID,
+                StartupCompositionMode.REJECTED,
+                version,
+                "human_memory_bootstrap_marker_invalid",
+            )
+        try:
+            if version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+                _validate_human_memory_program_marker(
+                    path, expected_user_version=version
+                )
+            if version >= TASK_SCOPE_ARCHIVE_SCHEMA_VERSION:
+                _validate_task_scope_archive_marker(
+                    path, expected_user_version=version
+                )
+            if version >= TASK_SCOPE_PROVISION_SCHEMA_VERSION:
+                _validate_task_scope_provision_marker(
+                    path, expected_user_version=version
+                )
+            if version >= TASK_WORKSPACE_BINDING_SCHEMA_VERSION:
+                _validate_task_workspace_binding_marker(
+                    path, expected_user_version=version
+                )
+            if version >= TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION:
+                _validate_s4_migration_chain(
+                    path, expected_user_version=version
+                )
+        except (HumanMemoryProgramEpochError, OSError):
+            return StartupEpochDecision(
+                StartupEpoch.INVALID,
+                StartupCompositionMode.REJECTED,
+                version,
+                "human_memory_marker_chain_invalid",
+            )
+        return StartupEpochDecision(
+            StartupEpoch.HUMAN_RESUME,
+            StartupCompositionMode.HUMAN,
+            version,
+            "human_memory_resume_database",
+        )
+
+    if has_any_human_marker or version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+        return StartupEpochDecision(
+            StartupEpoch.INVALID,
+            StartupCompositionMode.REJECTED,
+            version,
+            "human_memory_marker_chain_invalid",
+        )
+    if version == 0:
+        if not user_tables and approved_fresh_lane:
+            return StartupEpochDecision(
+                StartupEpoch.FRESH,
+                StartupCompositionMode.HUMAN,
+                0,
+                "human_memory_fresh_database",
+            )
+        return StartupEpochDecision(
+            StartupEpoch.INVALID,
+            StartupCompositionMode.REJECTED,
+            0,
+            "human_memory_ambiguous_v0_database",
+        )
+    if "schema_migrations" not in user_tables:
+        return StartupEpochDecision(
+            StartupEpoch.INVALID,
+            StartupCompositionMode.REJECTED,
+            version,
+            "human_memory_legacy_database_invalid",
+        )
+    return StartupEpochDecision(
+        StartupEpoch.LEGACY,
+        StartupCompositionMode.LEGACY,
+        version,
+        HumanMemoryProgramEpochError.code,
+    )
 
 
 async def initialize_human_memory_program_state_db(
@@ -266,19 +497,24 @@ async def initialize_human_memory_program_state_db(
     async with _human_memory_program_lock(path):
         current = await read_user_version(path)
         bootstrap = _has_bootstrap_marker(path)
-        if current == TASK_WORKSPACE_BINDING_SCHEMA_VERSION:
+        if current == HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
             _validate_human_memory_program_marker(
-                path, expected_user_version=TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+                path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
             )
             _validate_task_scope_archive_marker(
-                path, expected_user_version=TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+                path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
             )
             _validate_task_scope_provision_marker(
-                path, expected_user_version=TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+                path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
             )
-            _validate_task_workspace_binding_marker(path)
+            _validate_task_workspace_binding_marker(
+                path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+            )
+            _validate_s4_migration_chain(
+                path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+            )
             return
-        if current > TASK_WORKSPACE_BINDING_SCHEMA_VERSION:
+        if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
             raise HumanMemoryProgramEpochError(
                 "human_memory_program_future_database_unsupported"
             )
@@ -297,6 +533,23 @@ async def initialize_human_memory_program_state_db(
             _validate_human_memory_program_marker(
                 path, expected_user_version=TASK_SCOPE_PROVISION_SCHEMA_VERSION
             )
+        if current >= TASK_WORKSPACE_BINDING_SCHEMA_VERSION:
+            _validate_human_memory_program_marker(
+                path, expected_user_version=current
+            )
+            _validate_task_scope_archive_marker(
+                path, expected_user_version=current
+            )
+            _validate_task_scope_provision_marker(
+                path, expected_user_version=current
+            )
+            _validate_task_workspace_binding_marker(
+                path, expected_user_version=current
+            )
+            if current >= TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION:
+                _validate_s4_migration_chain(
+                    path, expected_user_version=current
+                )
             _validate_task_scope_archive_marker(
                 path, expected_user_version=TASK_SCOPE_PROVISION_SCHEMA_VERSION
             )
@@ -323,7 +576,8 @@ async def initialize_human_memory_program_state_db(
 
         # The database was durably claimed while it was empty.  Existing base
         # migrations may now finish/replay, followed by the opt-in program steps.
-        await initialize_state_db(path, fault_inject=fault_inject)
+        if current < HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
+            await initialize_state_db(path, fault_inject=fault_inject)
         try:
             await ensure_v9(
                 path,
@@ -335,15 +589,44 @@ async def initialize_human_memory_program_state_db(
                 f"human memory program initialization failed: {exc}"
             ) from exc
         _validate_human_memory_program_marker(
-            path, expected_user_version=TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+            path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         )
         _validate_task_scope_archive_marker(
-            path, expected_user_version=TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+            path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         )
         _validate_task_scope_provision_marker(
-            path, expected_user_version=TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+            path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         )
-        _validate_task_workspace_binding_marker(path)
+        _validate_task_workspace_binding_marker(
+            path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
+        _validate_s4_migration_chain(
+            path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+        )
+
+
+async def dispatch_startup_epoch(
+    db_path: str | Path,
+    *,
+    approved_fresh_lane: bool,
+    fault_inject: Callable[[str], None] | None = None,
+) -> StartupEpochDecision:
+    """Freeze one pre-opener composition decision and execute its initializer."""
+
+    path = Path(db_path)
+    async with _startup_epoch_lock(path):
+        decision = inspect_startup_epoch(
+            path, approved_fresh_lane=approved_fresh_lane
+        )
+        if decision.epoch in {StartupEpoch.FRESH, StartupEpoch.HUMAN_RESUME}:
+            await initialize_human_memory_program_state_db(
+                path, fault_inject=fault_inject
+            )
+            return decision
+        if decision.epoch is StartupEpoch.LEGACY:
+            await initialize_state_db(path, fault_inject=fault_inject)
+            return decision
+        raise HumanMemoryProgramEpochError(decision.reason_code)
 
 
 async def initialize_state_db(
@@ -375,6 +658,25 @@ async def initialize_state_db(
     """
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    bootstrap_version = (
+        await read_user_version(db_path)
+        if db_path.exists() and _has_bootstrap_marker(db_path)
+        else None
+    )
+    if (
+        bootstrap_version is not None
+        and bootstrap_version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
+    ):
+        decision = inspect_startup_epoch(
+            db_path, approved_fresh_lane=False
+        )
+        if decision.epoch is StartupEpoch.HUMAN_RESUME:
+            if decision.user_version == HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+                return
+            raise HumanMemoryProgramEpochError(
+                "human_memory_program_requires_human_initializer"
+            )
+        raise HumanMemoryProgramEpochError(decision.reason_code)
     ensure_owner_only_state_db(db_path)
 
     # 2026-05-21 fix: only backup when a migration is actually pending.

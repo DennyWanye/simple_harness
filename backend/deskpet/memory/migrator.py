@@ -103,12 +103,22 @@ TASK_SCOPE_PROVISION_MIGRATION = "029_task_scope_provision_v37.sql"
 TASK_SCOPE_PROVISION_SCHEMA_VERSION = 37
 TASK_WORKSPACE_BINDING_MIGRATION = "030_task_workspace_bindings_v38.sql"
 TASK_WORKSPACE_BINDING_SCHEMA_VERSION = 38
+TASK_SCOPE_PROJECTIONS_MIGRATION = "031_task_scope_projections_v39.sql"
+TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION = 39
+TASK_SCOPE_SEARCH_MIGRATION = "032_task_scope_search_v40.sql"
+TASK_SCOPE_SEARCH_SCHEMA_VERSION = 40
+FOREGROUND_QUEUE_MIGRATION = "033_foreground_queue_v41.sql"
+FOREGROUND_QUEUE_SCHEMA_VERSION = 41
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = FOREGROUND_QUEUE_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
         TASK_SCOPE_ARCHIVE_MIGRATION,
         TASK_SCOPE_PROVISION_MIGRATION,
         TASK_WORKSPACE_BINDING_MIGRATION,
+        TASK_SCOPE_PROJECTIONS_MIGRATION,
+        TASK_SCOPE_SEARCH_MIGRATION,
+        FOREGROUND_QUEUE_MIGRATION,
     }
 )
 
@@ -134,7 +144,35 @@ MIGRATION_STEPS: dict[str, int] = {
     TASK_SCOPE_ARCHIVE_MIGRATION: TASK_SCOPE_ARCHIVE_SCHEMA_VERSION,
     TASK_SCOPE_PROVISION_MIGRATION: TASK_SCOPE_PROVISION_SCHEMA_VERSION,
     TASK_WORKSPACE_BINDING_MIGRATION: TASK_WORKSPACE_BINDING_SCHEMA_VERSION,
+    TASK_SCOPE_PROJECTIONS_MIGRATION: TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION,
+    TASK_SCOPE_SEARCH_MIGRATION: TASK_SCOPE_SEARCH_SCHEMA_VERSION,
+    FOREGROUND_QUEUE_MIGRATION: FOREGROUND_QUEUE_SCHEMA_VERSION,
 }
+
+_S4_HUMAN_MIGRATIONS = frozenset(
+    {
+        TASK_SCOPE_PROJECTIONS_MIGRATION,
+        TASK_SCOPE_SEARCH_MIGRATION,
+        FOREGROUND_QUEUE_MIGRATION,
+    }
+)
+
+_HUMAN_MIGRATION_CHAIN_SQL = """
+CREATE TABLE IF NOT EXISTS human_memory_migration_chain (
+    migration_id TEXT PRIMARY KEY,
+    schema_version INTEGER NOT NULL UNIQUE,
+    migration_sha256 TEXT NOT NULL,
+    applied_at REAL NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS human_memory_migration_chain_no_update
+BEFORE UPDATE ON human_memory_migration_chain BEGIN
+    SELECT RAISE(ABORT,'human_memory_append_only');
+END;
+CREATE TRIGGER IF NOT EXISTS human_memory_migration_chain_no_delete
+BEFORE DELETE ON human_memory_migration_chain BEGIN
+    SELECT RAISE(ABORT,'human_memory_append_only');
+END;
+"""
 
 
 async def _execute_transactional_script(
@@ -565,6 +603,24 @@ async def run_migrations(
                             "(1,'human-memory-v1',1,?,?,?)",
                             (version, migration_sha256, time.time()),
                         )
+                    if version in _S4_HUMAN_MIGRATIONS:
+                        migration_sha256 = hashlib.sha256(
+                            sql.encode("utf-8")
+                        ).hexdigest()
+                        await _execute_transactional_script(
+                            db, _HUMAN_MIGRATION_CHAIN_SQL
+                        )
+                        await db.execute(
+                            "INSERT INTO human_memory_migration_chain("
+                            "migration_id,schema_version,migration_sha256,applied_at) "
+                            "VALUES (?,?,?,?)",
+                            (
+                                version,
+                                MIGRATION_STEPS[version],
+                                migration_sha256,
+                                time.time(),
+                            ),
+                        )
                     await db.execute(
                         "INSERT INTO schema_migrations(version, applied_at) "
                         "VALUES (?, ?)",
@@ -585,6 +641,8 @@ async def run_migrations(
                         fault_inject("before_task_scope_provision_commit")
                     if version == TASK_WORKSPACE_BINDING_MIGRATION and fault_inject:
                         fault_inject("before_task_workspace_binding_commit")
+                    if version in _S4_HUMAN_MIGRATIONS and fault_inject:
+                        fault_inject(f"before_{version.removesuffix('.sql')}_commit")
                     await db.commit()
                     if version == _PROJECT_SCOPED_SESSIONS_MIGRATION and fault_inject:
                         fault_inject("after_ddl_commit")
@@ -598,6 +656,8 @@ async def run_migrations(
                         fault_inject("after_task_scope_provision_commit")
                     if version == TASK_WORKSPACE_BINDING_MIGRATION and fault_inject:
                         fault_inject("after_task_workspace_binding_commit")
+                    if version in _S4_HUMAN_MIGRATIONS and fault_inject:
+                        fault_inject(f"after_{version.removesuffix('.sql')}_commit")
                 except Exception as exc:  # noqa: BLE001
                     await db.rollback()
                     log.error(
@@ -673,7 +733,13 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            TASK_WORKSPACE_BINDING_SCHEMA_VERSION
+            FOREGROUND_QUEUE_SCHEMA_VERSION
+            if FOREGROUND_QUEUE_MIGRATION in durable_markers
+            else TASK_SCOPE_SEARCH_SCHEMA_VERSION
+            if TASK_SCOPE_SEARCH_MIGRATION in durable_markers
+            else TASK_SCOPE_PROJECTIONS_SCHEMA_VERSION
+            if TASK_SCOPE_PROJECTIONS_MIGRATION in durable_markers
+            else TASK_WORKSPACE_BINDING_SCHEMA_VERSION
             if TASK_WORKSPACE_BINDING_MIGRATION in durable_markers
             else TASK_SCOPE_PROVISION_SCHEMA_VERSION
             if TASK_SCOPE_PROVISION_MIGRATION in durable_markers

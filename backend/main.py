@@ -3033,9 +3033,30 @@ async def lifespan(app: FastAPI):
     service_context.register("provider_routing_readiness", _provider_readiness)
     # v33 reset preflight must finish before MemoryManager, workflow,
     # companion, or SDK execution databases are opened.
-    from deskpet.memory.schema import initialize_state_db
+    from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory
+    from deskpet.memory.schema import (
+        StartupCompositionMode,
+        dispatch_startup_epoch,
+    )
 
-    await initialize_state_db(_state_db_path)
+    approved_fresh_lane = (
+        _state_db_path.resolve().is_relative_to(
+            Path(_paths.user_data_dir()).resolve()
+        )
+    )
+    startup_epoch = await dispatch_startup_epoch(
+        _state_db_path,
+        approved_fresh_lane=approved_fresh_lane,
+    )
+    service_context.register("human_memory_composition", startup_epoch)
+    service_context.register(
+        "human_memory_host_service_factory",
+        (
+            HumanMemoryHostServiceFactory(_state_db_path, startup_epoch)
+            if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
+            else None
+        ),
+    )
     if _memory_backend is None:
         from paths import resolve_model_dir
         from simple_harness_memory import MemoryManager
@@ -7491,6 +7512,43 @@ def _trigger_harness_recovery_after_identity_bind() -> bool:
     return True
 
 
+class _SdkRunContextAuthorityProxy:
+    async def prepare_snapshot(self, request):  # type: ignore[no-untyped-def]
+        target = service_context.get("sdk_run_context_authority")
+        operation = getattr(target, "prepare_snapshot", None)
+        if not callable(operation):
+            raise RuntimeError("sdk_run_context_authority_unavailable")
+        return await operation(request)
+
+
+class _SdkRuntimeDecisionSinkProxy:
+    async def record_no_recall(self, **values):  # type: ignore[no-untyped-def]
+        target = service_context.get("sdk_runtime_decision_sink")
+        operation = getattr(target, "record_no_recall", None)
+        if not callable(operation):
+            raise RuntimeError("sdk_runtime_decision_sink_unavailable")
+        return await operation(**values)
+
+
+class _SdkTaskExecutionAuthorityProxy:
+    async def issue_envelope(self, request):  # type: ignore[no-untyped-def]
+        target = service_context.get("sdk_task_execution_authority")
+        operation = getattr(target, "issue_envelope", None)
+        if not callable(operation):
+            raise RuntimeError("sdk_task_execution_authority_unavailable")
+        return await operation(request)
+
+
+def _sdk_runtime_authority_bindings() -> dict[str, object]:
+    """Bind SDK 0.7 required ports without granting fallback authority."""
+
+    return {
+        "run_context_authority": _SdkRunContextAuthorityProxy(),
+        "runtime_decision_sink": _SdkRuntimeDecisionSinkProxy(),
+        "task_execution_authority": _SdkTaskExecutionAuthorityProxy(),
+    }
+
+
 async def _build_product_sdk_runtime_stack(
     generation: int,
 ):
@@ -8164,6 +8222,7 @@ async def _build_product_sdk_runtime_stack(
             provider_projection_pump=production_projection_pump,
             run_binding=tool_authorities,
             structured_message_services=ProductContextAdapter(),
+            **_sdk_runtime_authority_bindings(),
             owner_id=f"deskpet-product-sdk-g{generation}",
         )
         if "observability_sink" in inspect.signature(

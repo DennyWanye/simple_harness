@@ -303,6 +303,25 @@ def test_desktop_composition_uses_sdk_production_builder_with_memory_on() -> Non
     assert 'if str(spec.name) in {"memory_recall", "memory_search"}' in source
     assert "def resolve(self, generation, content_fingerprint):" in source
     assert ".resolve(generation, content_fingerprint)" in source
+    assert "**_sdk_runtime_authority_bindings()" in source
+
+
+@pytest.mark.asyncio
+async def test_sdk_07_required_authorities_are_constructor_bound_and_fail_closed() -> None:
+    import main
+
+    bindings = main._sdk_runtime_authority_bindings()
+    assert set(bindings) == {
+        "run_context_authority",
+        "runtime_decision_sink",
+        "task_execution_authority",
+    }
+    with pytest.raises(RuntimeError, match="sdk_run_context_authority_unavailable"):
+        await bindings["run_context_authority"].prepare_snapshot(object())
+    with pytest.raises(RuntimeError, match="sdk_runtime_decision_sink_unavailable"):
+        await bindings["runtime_decision_sink"].record_no_recall(run_id="run")
+    with pytest.raises(RuntimeError, match="sdk_task_execution_authority_unavailable"):
+        await bindings["task_execution_authority"].issue_envelope(object())
 
 
 def test_desktop_composition_shares_physical_capability_scope_store() -> None:
