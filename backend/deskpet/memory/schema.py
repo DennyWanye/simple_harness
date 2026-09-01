@@ -550,12 +550,6 @@ async def initialize_human_memory_program_state_db(
                 _validate_s4_migration_chain(
                     path, expected_user_version=current
                 )
-            _validate_task_scope_archive_marker(
-                path, expected_user_version=TASK_SCOPE_PROVISION_SCHEMA_VERSION
-            )
-            _validate_task_scope_provision_marker(
-                path, expected_user_version=TASK_SCOPE_PROVISION_SCHEMA_VERSION
-            )
         if current == 0 and not bootstrap:
             if path.exists():
                 with sqlite3.connect(

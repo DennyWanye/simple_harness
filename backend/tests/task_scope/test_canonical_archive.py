@@ -266,7 +266,7 @@ async def test_v36_fault_restart_and_marker_integrity(tmp_path: Path, fault_stag
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 38
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 41
         assert db.execute("SELECT COUNT(*) FROM task_scope_archive_marker").fetchone()[0] == 1
         assert db.execute("SELECT COUNT(*) FROM schema_migrations WHERE version='028_task_scope_archive_v36.sql'").fetchone()[0] == 1
 
