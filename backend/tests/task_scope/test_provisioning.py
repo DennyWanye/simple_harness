@@ -410,7 +410,7 @@ async def test_v37_migration_fault_restarts_with_one_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 38
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 41
         assert (
             db.execute("SELECT COUNT(*) FROM task_scope_provision_marker").fetchone()[0]
             == 1
