@@ -125,9 +125,9 @@ async def _resolve(value: object) -> object:
 
 
 def _text_tokens(value: object) -> int:
-    text = str(value or "")
-    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
-    return cjk + max(0, len(text) - cjk + 3) // 4
+    from deskpet.sdk_adapters.context_partitions import text_tokens
+
+    return text_tokens(value)
 
 
 def _attachment_payload_size(block: Mapping[str, Any]) -> int:
