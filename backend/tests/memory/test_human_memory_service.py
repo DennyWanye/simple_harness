@@ -267,8 +267,14 @@ async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
     await CanonicalTaskScopeStore(path).append_host_event(
         task_scope_id=scope_ref,
         event_kind="host.turn",
+        source_event_id="ordinary-indexed",
+        payload={"event_index": 3, "text": "ordinary"},
+    )
+    await CanonicalTaskScopeStore(path).append_host_event(
+        task_scope_id=scope_ref,
+        event_kind="host.turn",
         source_event_id="oversized-unicode",
-        payload={"text": oversized, "nested": {"ordinal": 7}},
+        payload={"event_index": 7, "text": oversized, "nested": {"ordinal": 7}},
     )
     await service.rebuild_derived(scope_ref)
     view = await service.read_view(ReadTaskScopeViewRequest(scope_ref, "EVIDENCE"))
@@ -294,9 +300,11 @@ async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
         event for event in recovered if event["source_event_id"] == "oversized-unicode"
     )
     assert oversized_event["payload"] == {
+        "event_index": 7,
         "text": oversized,
         "nested": {"ordinal": 7},
     }
+    assert oversized_event["event_index"] == 7
     assert oversized_event["event_kind"] == "host.turn"
     assert oversized_event["source_kind"] == "host"
     mutation_event = next(
@@ -305,3 +313,8 @@ async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
     assert mutation_event["evidence_links"]
     assert "payload" in mutation_event
     assert "steps" in mutation_event
+    ordinary = next(
+        event for event in recovered if event["source_event_id"] == "ordinary-indexed"
+    )
+    assert ordinary["event_index"] == 3
+    assert ordinary["payload"] == {"event_index": 3, "text": "ordinary"}

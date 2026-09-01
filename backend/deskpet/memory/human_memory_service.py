@@ -804,6 +804,13 @@ class HumanMemoryHostService:
                 pending: list[dict[str, object]] = []
                 for raw_event in events:
                     event = dict(raw_event)
+                    payload = event.get("payload")
+                    if isinstance(payload, Mapping):
+                        event_index = payload.get("event_index")
+                        if isinstance(event_index, int) and not isinstance(
+                            event_index, bool
+                        ):
+                            event["event_index"] = event_index
                     candidate = canonical_json(
                         {"schema_version": 1, "events": [*pending, event]}
                     )
