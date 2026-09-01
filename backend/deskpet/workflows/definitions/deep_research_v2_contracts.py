@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from ..contracts import JsonValue, validate_json_value
-
 
 BRANCH_IDS = tuple(f"b{index}" for index in range(6))
 BRANCH_STAGES = ("expand", "search", "direct", "fetch", "score")
@@ -35,10 +35,10 @@ class BranchBudgetState:
         return result
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "BranchBudgetState":
+    def from_json(cls, value: Mapping[str, Any]) -> BranchBudgetState:
         return cls(**{name: value[name] for name in cls.__dataclass_fields__ if name in value})
 
-    def consume(self, **amounts: int) -> "BranchBudgetState":
+    def consume(self, **amounts: int) -> BranchBudgetState:
         values = asdict(self)
         for name, amount in amounts.items():
             if name not in values or name in {"deadline_at", "engine_retry_limit"}:

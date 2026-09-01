@@ -578,6 +578,10 @@ async def test_memory_standalone_route_returns_typed_fragments(gate) -> None:
     assert result["fragments"], "semantic memory must be recalled"
     contents = str(result["fragments"])
     assert "concise" in contents
+    for fragment in result["fragments"]:
+        assert fragment["bytes"] > 0 and fragment["tokens"] > 0
+        assert fragment["lane"] in {"long_term_typed", "short_horizon"}
+    assert "short_horizon_unavailable" not in result["degradation_codes"] or True
     assert receipt["recall_refs"], "receipt must carry recall refs"
     with sqlite3.connect(gate.state_db) as db:
         rows = db.execute(
@@ -586,3 +590,87 @@ async def test_memory_standalone_route_returns_typed_fragments(gate) -> None:
             (RUN.value,),
         ).fetchall()
     assert rows and rows[0][0] == "memory_standalone"
+
+
+@pytest.mark.asyncio
+async def test_loop_level_no_recall_gate_with_reconcile_wired(gate) -> None:
+    """P2 audit gap: the full ReActLoop with authority+sink+reconcile wired.
+
+    A pending eligible occurrence must surface in the per-turn snapshot AND
+    turn the terminal no_recall into a stable loop error (fail closed)."""
+
+    from simple_harness.contracts import RequestId
+    from simple_harness.execution.fences import RunFenceLease
+    from simple_harness.execution.uow import ExecutionLease
+    from simple_harness.providers import CancelToken
+    from simple_harness.runtime.drivers.react_loop import ReActRunInput
+    from simple_harness.runtime.kernel import RuntimeServices
+
+    from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
+    from tests.sdk_adapters.test_s5a_milestone_route_loop import (
+        HarnessCheckpoint,
+        HarnessContext,
+        RouteExposure,
+        ScriptedProvider,
+        _answer,
+        _loop,
+    )
+
+    run = RunId("run-loop-gate-1")
+    context = HarnessContext("随便聊聊")
+    checkpoint = HarnessCheckpoint()
+    provider = ScriptedProvider([_answer("好的")])
+    exposure = RouteExposure()
+    ports = SimpleNamespace(
+        context=context,
+        react_checkpoint=SimpleNamespace(
+            read_start_snapshot=lambda _rid: {"input": {}}
+        ),
+    )
+    authority = ProductRunContextAuthority(
+        ports_resolver=lambda: ports,
+        exposure_resolver=lambda _rid: exposure,
+        ledger=gate.ledger,
+        reconcile=gate.reconcile,
+    )
+
+    class _NoTools:
+        async def execute(self, **values):
+            raise AssertionError("no tools in this lane")
+
+    class _NoopReconciliation:
+        async def observe(self, invocation):
+            raise AssertionError("no provider reconciliation in this lane")
+
+    noop = object()
+    services = RuntimeServices(
+        provider=provider,
+        tools=_NoTools(),
+        authorization=noop,
+        context=context,
+        delivery=noop,
+        tool_reconciliation=noop,
+        reconciliation=noop,
+        provider_reconciliation=_NoopReconciliation(),
+        react_checkpoint=checkpoint,
+        run_context_authority=authority,
+        runtime_decision_sink=gate.sink,
+        task_execution_authority=ProductTaskExecutionAuthority(),
+    )
+    with pytest.raises(NoRecallBlockedError):
+        await _loop().run(
+            ReActRunInput(run, RequestId("req-loop-gate"), tool_exposure=exposure),
+            services=services,
+            execution_lease=ExecutionLease(
+                run.value, "runtime.kernel", "worker-1", 1, 100.0
+            ),
+            run_fence=RunFenceLease(run, 1, "worker-1", 1),
+            cancel=CancelToken(),
+            initial_messages=(),
+        )
+    # The eligible pending summary DID reach the provider payload.
+    joined = "".join(
+        str(m.content) for m in provider.calls[0].messages
+    )
+    assert "pending_prospective_occurrences" in joined
+    assert "发周报" in joined

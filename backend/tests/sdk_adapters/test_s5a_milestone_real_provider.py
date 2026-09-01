@@ -48,10 +48,14 @@ _EVIDENCE_DIR = Path(__file__).resolve().parents[3] / ".local-test-evidence" / "
 
 _SYSTEM = (
     "你是桌面工作台的主模型。收到用户消息后必须先判断上下文需求并调用 "
-    "context_route 提交路由：不需要任何记忆→direct_standalone；继续一个久远的既有"
-    "任务→先用 task_scope_search 找候选，再用候选里的 exact task_scope_id 调 "
-    "context_route(route=resume_existing)；路由成功后用返回的 resume_package 内容"
-    "继续任务并给出简短中文回答。搜索命中不等于授权，必须传 exact ID。搜索结果为空时最多换一次关键词重试，仍为空就直接向用户提问，不要反复搜索。"
+    "context_route 提交路由（五路）：不需要任何记忆→direct_standalone；"
+    "需要用户长期记忆→memory_standalone（带 query）；"
+    "接着刚才/当前进行中的任务继续→continue_active（不要搜索、不要传 task_scope_id）；"
+    "继续一个久远的既有任务→先用 task_scope_search 找候选，再用候选里的 exact "
+    "task_scope_id 调 context_route(route=resume_existing)；全新的多步骤任务→"
+    "create_new（带 title）。路由提交成功（返回 context_route_receipt）后绝不再调用 "
+    "context_route，直接用已有内容完成回答。搜索命中不等于授权，必须传 exact ID。"
+    "搜索结果为空时最多换一次关键词重试，仍为空就直接向用户提问。"
 )
 
 
@@ -195,7 +199,7 @@ async def test_real_provider_resume_existing_same_run_continuation(
         "WHERE sdk_run_id=?",
         RUN.value,
     )
-    assert decisions == [("resume_existing", "context_tool", scope_id)]
+    assert ("resume_existing", "context_tool", scope_id) in decisions
 
     head = await WorkspaceBindingAuthorityStore(
         milestone.db_path
@@ -296,3 +300,71 @@ async def test_real_provider_commits_direct_route_via_tool(milestone) -> None:  
     )
     assert ("direct_standalone", "context_tool") in decisions
     assert str(result.response.message.content).strip()
+
+
+@pytest.mark.asyncio
+async def test_real_provider_continue_active_follows_durable_cursor(
+    milestone, tmp_path
+) -> None:
+    """AC-1 third real positive route: continue_active against the durable
+    active cursor left by a prior resume decision."""
+
+    runtime = _runtime()
+    created = await milestone.service.create_task_scope(
+        CreateTaskScopeRequest(
+            "task-a",
+            "季度报告 A",
+            "撰写 Q3 季度报告 任务 A：已完成收入与成本部分，下一步补市场份额图表",
+            "create-a",
+        )
+    )
+    scope_id = str(created["scope_ref"])
+    await milestone.service.rebuild_derived(scope_id)
+    workspace = tmp_path / "workspace" / "root-a"
+    workspace.mkdir(parents=True)
+    await _bind_scope_root(milestone.db_path, scope_id, workspace)
+
+    # Durable active cursor: a prior committed resume decision (Host artifact
+    # from an earlier run; the model under test only handles the continue).
+    from simple_harness.execution.context_authority import ContextRouteReceipt
+    from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
+
+    from deskpet.task_scope.workspace_bindings import (
+        WorkspaceBindingAuthorityStore,
+    )
+
+    head = await WorkspaceBindingAuthorityStore(
+        milestone.db_path
+    ).current_receipt(scope_id)
+    prior = ContextRouteReceipt(
+        receipt_id="prior-resume-receipt",
+        run_id="run-prior",
+        raw_call_id="raw-prior",
+        effect_id="effect-prior",
+        route=TaskScopeRoute.RESUME_EXISTING,
+        task_scope_id=scope_id,
+        binding_set_revision=head.binding_set_revision,
+        binding_set_receipt_id=head.receipt_id,
+        binding_set_receipt_hash=head.receipt_hash,
+    )
+    await milestone.ledger.record_route_decision(
+        receipt=prior,
+        provider_turn_ordinal=1,
+        origin="context_tool",
+        idempotency_key="effect-prior",
+    )
+
+    milestone.context.messages[0] = type(milestone.context.messages[0])(
+        role=milestone.context.messages[0].role,
+        content="接着刚才的任务继续做",
+    )
+    provider = RealRelayProvider(runtime, [])
+    result = await _run(milestone, provider)
+
+    assert result.termination.route_state == "routed_task"
+    from simple_harness.contracts import thaw_json
+
+    checkpoint = dict(thaw_json(milestone.checkpoint.value.checkpoint))
+    receipt = dict(checkpoint["route_receipt"])
+    assert receipt["route"] == "continue_active"
+    assert receipt["task_scope_id"] == scope_id

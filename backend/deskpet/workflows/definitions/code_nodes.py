@@ -9,8 +9,8 @@ import copy
 import hashlib
 import inspect
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
 
 import httpx
 
@@ -18,9 +18,15 @@ from ...execution.provider_invocations import (
     ProviderDispatchNotSentError,
     ProviderDispatchUnknownError,
 )
-from ..contracts import JsonValue, StatePatch, WorkflowContext, WorkflowState, canonical_json, validate_json_value
+from ..contracts import (
+    JsonValue,
+    StatePatch,
+    WorkflowContext,
+    WorkflowState,
+    canonical_json,
+    validate_json_value,
+)
 from ..control import workflow_interrupt
-from ..effects import PreparedToolCall
 from ..errors import WorkflowErrorCode, WorkflowNodeError
 from ..proposal_state import (
     ConvergenceStateV1,
@@ -29,7 +35,6 @@ from ..proposal_state import (
     ProposalOutcomeV1,
     ProposalStateV1,
 )
-
 
 MAX_PROPOSAL_TURNS = 20
 MAX_DURABLE_PROPOSAL_TURNS = 40
@@ -158,7 +163,7 @@ class CapabilitySnapshotV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "CapabilitySnapshotV1":
+    def from_dict(cls, value: Mapping[str, object]) -> CapabilitySnapshotV1:
         raw_policy = value.get("effect_policy")
         return cls(
             tool_name=str(value["tool_name"]),
@@ -197,7 +202,7 @@ class WorkflowSessionRefV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "WorkflowSessionRefV1":
+    def from_dict(cls, value: Mapping[str, object]) -> WorkflowSessionRefV1:
         return cls(
             base_session_id=str(value["base_session_id"]),
             code_session_id=str(value["code_session_id"]),
@@ -243,7 +248,7 @@ class TaskSessionRefV1:
         }
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, object]) -> "TaskSessionRefV1":
+    def from_dict(cls, value: Mapping[str, object]) -> TaskSessionRefV1:
         return cls(
             session_id=str(value["session_id"]),
             task_scope_id=str(value["task_scope_id"]),
@@ -1562,10 +1567,10 @@ async def finalize_handler(state: WorkflowState, context: WorkflowContext) -> St
 
 
 __all__ = [
-    "CapabilitySnapshotV1",
     "FORBIDDEN_DURABLE_TOOLS",
     "MAX_FIX_ROUNDS",
     "MAX_PROPOSAL_TURNS",
+    "CapabilitySnapshotV1",
     "TaskSessionRefV1",
     "WorkflowSessionRefV1",
     "approval_route",

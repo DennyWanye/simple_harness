@@ -8,20 +8,19 @@ from __future__ import annotations
 import copy
 import hashlib
 import inspect
-import json
 import posixpath
 import re
 import zipfile
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
 from itertools import combinations
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 from urllib.parse import unquote
 from xml.etree import ElementTree
 
 from ...tools import ppt_tools
 from ..contracts import JsonValue, canonical_json, validate_json_value
-
 
 FULL_PAGE_RENDER_MODE = "full_page_images"
 _FULL_PAGE_REVISION_CODES = frozenset(
@@ -86,9 +85,9 @@ def _expected_editable_copy(record: Mapping[str, Any]) -> list[tuple[str, str]]:
         fields.extend(
             [
                 ("left_title", slide.get("left_title")),
-                *((("left", item) for item in slide.get("left") or ())),
+                *(("left", item) for item in slide.get("left") or ()),
                 ("right_title", slide.get("right_title")),
-                *((("right", item) for item in slide.get("right") or ())),
+                *(("right", item) for item in slide.get("right") or ()),
             ]
         )
     elif layout == "quote":
@@ -1504,7 +1503,7 @@ def _full_page_pre_hash(
             "font_policy_version": ppt_tools.FULL_PAGE_FONT_POLICY_VERSION,
             "target_size": list(ppt_tools.FULL_PAGE_TARGET_SIZE),
             "page_revision": page_revision,
-            "revision_codes": list(sorted(revision_codes)),
+            "revision_codes": sorted(revision_codes),
         }
     )
 
@@ -1559,8 +1558,8 @@ __all__ = [
     "file_or_value_hash",
     "generate_slide_image",
     "next_pending_slide",
-    "prepare_slide_records",
     "normalize_full_page_records",
+    "prepare_slide_records",
     "probe_images",
     "records_to_slides",
     "render_deck",

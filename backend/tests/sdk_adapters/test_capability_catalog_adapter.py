@@ -15,7 +15,6 @@ from deskpet.sdk_adapters.capability_catalog import (
     ProductWorkflowSourceFact,
 )
 
-
 _A = "a" * 64
 _B = "b" * 64
 _C = "c" * 64

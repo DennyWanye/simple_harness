@@ -11,8 +11,9 @@ immutable Skill projection already consumed by slash-command ingress.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from deskpet.capabilities.contracts import CapabilityScope
 from deskpet.capabilities.manifest import PackEnvironment, load_and_validate_pack

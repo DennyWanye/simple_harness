@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import pytest
 import httpx
-
+import pytest
 from simple_harness import freeze_json, thaw_json
 
 from deskpet.memory.session_db import SessionDB
@@ -12,12 +11,12 @@ from deskpet.sdk_adapters.context_authority import (
     SnapshotContractConflict,
     canonical_sha256,
 )
+from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
+from deskpet.sdk_adapters.provider import ProductProviderAdapter
 from deskpet.sdk_adapters.provider_projection_pump import (
     ProviderProjectionContextV1,
     SdkProviderProjectionPump,
 )
-from deskpet.sdk_adapters.delivery import ProductDeliveryAdapter
-from deskpet.sdk_adapters.provider import ProductProviderAdapter
 
 
 @dataclass(frozen=True)

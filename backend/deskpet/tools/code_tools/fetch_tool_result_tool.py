@@ -22,7 +22,6 @@ from typing import Any
 
 from agent.tool_result_truncator import get_global_ref_store
 
-
 # Reasonable per-call slice cap so a single LLM call can't blow context
 # back up. The whole point of truncation was to keep history compact —
 # the LLM should grab targeted slices, not the whole megabyte.

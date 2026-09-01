@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import importlib
 import hashlib
+import importlib
 import json
 import os
 import subprocess
@@ -13,16 +13,13 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 from simple_harness.workflow import WorkflowContext
 
-from deskpet.sdk_adapters.conformance import _WorkflowSeam, _research_context
-
+from deskpet.sdk_adapters.conformance import _research_context, _WorkflowSeam
 from deskpet.sdk_adapters.workflows import (
     ACTIVE_PRODUCT_WORKFLOWS,
     build_product_workflow_registrations,
 )
-
 
 FORBIDDEN = (
     "deskpet.workflows.contracts",
@@ -81,8 +78,8 @@ def test_fresh_process_standard_import_does_not_load_legacy_workflow_authority()
 
 
 def test_lazy_legacy_exports_preserve_first_access_identity():
-    import deskpet.workflows as workflows
-    import deskpet.workflows.definitions as definitions
+    from deskpet import workflows
+    from deskpet.workflows import definitions
 
     contracts = importlib.import_module("deskpet.workflows.contracts")
     legacy_definition = importlib.import_module("deskpet.workflows.definition")

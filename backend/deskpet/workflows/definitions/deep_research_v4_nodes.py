@@ -7,14 +7,16 @@ import copy
 import json
 import re
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
-from datetime import date, datetime, timezone
-from typing import Any, Mapping, Sequence
+from datetime import UTC, date, datetime
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 from ..contracts import JsonValue, StatePatch, WorkflowContext, WorkflowState
+from . import deep_research_v3_nodes as v3
 from .deep_research_v3_contracts import (
     BRANCH_IDS,
     BranchBudgetState,
@@ -23,8 +25,11 @@ from .deep_research_v3_contracts import (
     canonical_url,
     no_op_patch,
 )
-from . import deep_research_v3_nodes as v3
-from .deep_research_v4_contracts import IntentProfile, SourceSeed, TechnologyFinding, TechnologyTopic
+from .deep_research_v4_contracts import (
+    IntentProfile,
+    TechnologyFinding,
+    TechnologyTopic,
+)
 from .deep_research_v4_intelligence import (
     build_ranked_findings,
     canonical_host,
@@ -37,7 +42,6 @@ from .deep_research_v4_intelligence import (
 )
 from .deep_research_v4_report import render_technology_report
 from .research_core import FetchPort, ResearchLLMPort, ResearchSearchPort
-
 
 PUBLIC_STAGE_IDS = v3.PUBLIC_STAGE_IDS
 _FAILURE_METRIC_KEYS = (
@@ -86,7 +90,7 @@ def _as_of_date(state: WorkflowState, context: WorkflowContext) -> date:
     elif callable(getattr(clock, "now", None)):
         candidate = clock.now()  # type: ignore[union-attr]
     if isinstance(candidate, datetime):
-        return candidate.astimezone(timezone.utc).date() if candidate.tzinfo else candidate.date()
+        return candidate.astimezone(UTC).date() if candidate.tzinfo else candidate.date()
     if isinstance(candidate, date):
         return candidate
     if isinstance(candidate, str):
@@ -94,7 +98,7 @@ def _as_of_date(state: WorkflowState, context: WorkflowContext) -> date:
             return date.fromisoformat(candidate[:10])
         except ValueError:
             pass
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 def _config(values: Mapping[str, Any]) -> dict[str, Any]:
@@ -209,7 +213,7 @@ def _source_metadata(row: Mapping[str, Any]) -> dict[str, JsonValue]:
             result[key] = copy.deepcopy(value)
     if "published_at" not in result:
         text = str(row.get("text") or row.get("snippet") or "")
-        published = re.search(r"\bPublished:\s*(\d{4}-\d{2}-\d{2})", text, re.I)
+        published = re.search(r"\bPublished:\s*(\d{4}-\d{2}-\d{2})", text, re.IGNORECASE)
         if published:
             result["published_at"] = published.group(1)
     return result
@@ -463,7 +467,7 @@ async def _technology_direct(branch_id: str, state: WorkflowState, context: Work
                     errors.append(_event(branch_id, "direct", "deadline_exhausted"))
                     break
                 outcome = await asyncio.wait_for(port.direct(query, seed.direct_source), timeout=timeout)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 errors.append(_event(branch_id, "direct", "timeout"))
                 continue
             except Exception:
@@ -577,7 +581,7 @@ async def _technology_search(branch_id: str, state: WorkflowState, context: Work
                     port.search(query, max_results=min(5, budget.url_remaining)),
                     timeout=timeout,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 outcome = []
                 errors.append(_event(branch_id, "search", "timeout"))
             except Exception:
@@ -1126,12 +1130,12 @@ async def synth_handler(state: WorkflowState, context: WorkflowContext) -> State
 
 _NUMBER_TOKEN_RE = re.compile(
     r"\d+(?:\.\d+)?\s*(?:%|x|ms|seconds?|tokens?|tok/s|req/s|qps|k|m|b|gb|tb)\b",
-    re.I,
+    re.IGNORECASE,
 )
 _ALL_NUMBER_TOKEN_RE = re.compile(
     r"\d+(?:\.\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?)?\s*"
     r"(?:%|x|倍|年|月|日|毫秒|秒|tokens?|tok/s|req/s|qps|k|m|b|gb|tb|亿元)?",
-    re.I,
+    re.IGNORECASE,
 )
 
 
@@ -1326,7 +1330,7 @@ def _parse_localized_changes(raw: str, findings: Sequence[TechnologyFinding]) ->
         }
         if not localized_entities.issubset(source_entities):
             raise ValueError("localized finding introduced an entity")
-        prose = re.sub(re.escape(finding.entity), "", localized, flags=re.I)
+        prose = re.sub(re.escape(finding.entity), "", localized, flags=re.IGNORECASE)
         chinese_count = len(re.findall(r"[\u3400-\u9fff]", prose))
         english_count = len(re.findall(r"[A-Za-z]", prose))
         if chinese_count < 12 or english_count > max(12, chinese_count * 2):
@@ -1459,7 +1463,7 @@ async def cite_handler(state: WorkflowState, context: WorkflowContext) -> StateP
     try:
         as_of = date.fromisoformat(profile.as_of_date)
     except ValueError:
-        as_of = datetime.now(timezone.utc).date()
+        as_of = datetime.now(UTC).date()
     ranked_evidence = [
         dict(item) for item in values.get("ranked_evidence", []) if isinstance(item, Mapping)
     ]
@@ -1687,9 +1691,22 @@ async def insufficient_evidence_finalize(state: WorkflowState, context: Workflow
 
 
 __all__ = [
-    "PUBLIC_STAGE_IDS", "branch_handler", "cite_handler", "finalize_handler",
-    "gap_handler", "insufficient_evidence_finalize", "join_handler", "make_branch_handler",
-    "make_join_handler", "no_results_finalize", "normalize_handler", "persist_handler",
-    "plan_handler", "post_cite_route", "post_direct_route", "research_continue_handler",
-    "rerank_handler", "synth_handler",
+    "PUBLIC_STAGE_IDS",
+    "branch_handler",
+    "cite_handler",
+    "finalize_handler",
+    "gap_handler",
+    "insufficient_evidence_finalize",
+    "join_handler",
+    "make_branch_handler",
+    "make_join_handler",
+    "no_results_finalize",
+    "normalize_handler",
+    "persist_handler",
+    "plan_handler",
+    "post_cite_route",
+    "post_direct_route",
+    "rerank_handler",
+    "research_continue_handler",
+    "synth_handler",
 ]

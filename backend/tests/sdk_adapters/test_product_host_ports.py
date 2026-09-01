@@ -13,25 +13,6 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from deskpet.product_state.database import ProductStateDatabase
-from deskpet.sdk_adapters.capability_host import (
-    ProductCapabilityHostAdapter,
-    ProductCapabilityOperationReceipts,
-)
-from deskpet.sdk_adapters.context import ProductContextAdapter
-from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
-from deskpet.sdk_adapters.provider import (
-    ProductProviderAdapter,
-    ProductProviderInvocationCoordinator,
-    _ProductOpenAICompatibleProvider,
-)
-from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
-from deskpet.sdk_adapters.tools import (
-    PRODUCT_TOOL_NAMES,
-    ProductToolRegistration,
-    active_product_tool_context,
-    build_product_tool_registry,
-)
 from simple_harness import CallId, RequestId, RunId, fingerprint_json
 from simple_harness.contracts.messages import ContentBlock, Message, MessageRole
 from simple_harness.execution.dispatch import (
@@ -56,6 +37,26 @@ from simple_harness.providers import (
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
 from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1
 
+from deskpet.product_state.database import ProductStateDatabase
+from deskpet.sdk_adapters.capability_host import (
+    ProductCapabilityHostAdapter,
+    ProductCapabilityOperationReceipts,
+)
+from deskpet.sdk_adapters.context import ProductContextAdapter
+from deskpet.sdk_adapters.personal_catalog import ProductPersonalCatalogAdapter
+from deskpet.sdk_adapters.provider import (
+    ProductProviderAdapter,
+    ProductProviderInvocationCoordinator,
+    _ProductOpenAICompatibleProvider,
+)
+from deskpet.sdk_adapters.reconciliation import ProductProviderReconciliationAdapter
+from deskpet.sdk_adapters.tools import (
+    PRODUCT_TOOL_NAMES,
+    ProductToolRegistration,
+    active_product_tool_context,
+    build_product_tool_registry,
+)
+
 
 def test_provider_restores_cooperative_task_cancellation() -> None:
     async def case() -> None:
@@ -66,7 +67,7 @@ def test_provider_restores_cooperative_task_cancellation() -> None:
             client=client,
             price_resolver=lambda provider, model: (1, 1, "price-v1"),
         )
-        adapter._delegate.invoke = AsyncMock(  # noqa: SLF001
+        adapter._delegate.invoke = AsyncMock(
             side_effect=ProviderCancelledError()
         )
         try:
@@ -158,7 +159,7 @@ async def test_tool_turn_without_public_content_does_not_make_second_provider_ca
             ProviderToolCall(CallId("call-one"), "memory_search", {"query": "x"}),
         ),
     )
-    adapter._delegate.invoke = AsyncMock(return_value=response)  # noqa: SLF001
+    adapter._delegate.invoke = AsyncMock(return_value=response)
     try:
         actual = await adapter.invoke(
             ProviderRequest(RequestId("run-one:provider-turn:1"), (Message(MessageRole.USER, "x"),)),
@@ -167,7 +168,7 @@ async def test_tool_turn_without_public_content_does_not_make_second_provider_ca
     finally:
         await client.aclose()
 
-    assert adapter._delegate.invoke.await_count == 1  # noqa: SLF001
+    assert adapter._delegate.invoke.await_count == 1
     assert actual.message.content == ""
 
 
@@ -197,7 +198,7 @@ async def test_nested_tool_arguments_survive_provider_history_normalization() ->
             ),
         ),
     )
-    adapter._delegate.invoke = AsyncMock(return_value=response)  # noqa: SLF001
+    adapter._delegate.invoke = AsyncMock(return_value=response)
     try:
         actual = await adapter.invoke(
             ProviderRequest(
@@ -238,7 +239,7 @@ async def test_non_text_or_blank_public_progress_is_removed_without_narration(
             ),
         ),
     )
-    adapter._delegate.invoke = AsyncMock(return_value=response)  # noqa: SLF001
+    adapter._delegate.invoke = AsyncMock(return_value=response)
     try:
         actual = await adapter.invoke(
             ProviderRequest(

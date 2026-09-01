@@ -6,9 +6,9 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import asdict, fields
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlparse
 
 from ....tools import research_tools as legacy
@@ -35,7 +35,6 @@ from ...definition import (
 from ...store import BlobStore
 from .. import deep_research_nodes as research_nodes
 from ..research_core import ResearchCoreConfig, ResearchCoreState, ResearchPorts
-
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v1"

@@ -10,6 +10,7 @@ candidates, and every consumer must draw the identity from one module.
 from __future__ import annotations
 
 import pytest
+
 from deskpet.sdk_adapters.runtime_paths import (
     SdkCandidateIdentity,
     verify_sdk_candidate,

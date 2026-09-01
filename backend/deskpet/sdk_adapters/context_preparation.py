@@ -15,7 +15,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 from .context_authority import PreparedSdkContextSnapshotV1
 
-
 _ALLOWED_HISTORY_PROJECTIONS = {
     "user": {"legacy_message", "user_message"},
     "assistant": {"legacy_message", "assistant_message", "final_assistant"},
@@ -228,7 +227,7 @@ class SdkContextPreparationService:
     ) -> PreparedSdkContextSnapshotV1:
         try:
             history_rows = await _resolve(self._sources.history(session_id))
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise SdkContextSourceUnavailable("history") from exc
         history = _history_messages(history_rows, root_run_id=root_run_id)
 

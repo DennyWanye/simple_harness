@@ -8068,7 +8068,8 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
 
     _human_memory_v7 = HumanMemoryV7Runtime(
-        Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db"
+        Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
+        embedder_getter=lambda: service_context.get("embedder"),
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
 

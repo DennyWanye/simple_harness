@@ -5,10 +5,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping
 import json
-from pathlib import Path
 import time
+from collections.abc import Awaitable, Callable, Mapping
+from pathlib import Path
 
 import aiosqlite
 from simple_harness.contracts import JsonValue, canonical_json

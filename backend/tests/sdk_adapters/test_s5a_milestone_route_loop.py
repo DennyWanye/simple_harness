@@ -399,6 +399,7 @@ async def milestone(tmp_path: Path):
     sink = ProductRuntimeDecisionSink(ledger=ledger)
     return SimpleNamespace(
         db_path=db_path,
+        ledger=ledger,
         service=service,
         context=context,
         checkpoint=checkpoint,

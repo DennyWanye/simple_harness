@@ -6,9 +6,10 @@ import hashlib
 import json
 import re
 import unicodedata
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Literal, Mapping, Sequence
+from typing import Literal
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .deep_research_v5_contracts import (
@@ -17,7 +18,6 @@ from .deep_research_v5_contracts import (
     EvidenceSourceFamily,
     ResearchDimension,
 )
-
 
 FamilyMatchLevel = Literal["exact", "strong", "weak", "none"]
 CoverageStatus = Literal[
@@ -49,10 +49,10 @@ _INVALID_FLAG_ORDER = (
     "title_mismatch",
 )
 _INVALID_CONTENT_PATTERNS = (
-    ("captcha", re.compile(r"captcha|人机验证", re.I)),
-    ("security_verification", re.compile(r"安全验证|security verification", re.I)),
-    ("login_wall", re.compile(r"登录后(?:继续|查看)|sign in to continue|login required", re.I)),
-    ("app_shell", re.compile(r"enable javascript|请启用javascript|javascript is required", re.I)),
+    ("captcha", re.compile(r"captcha|人机验证", re.IGNORECASE)),
+    ("security_verification", re.compile(r"安全验证|security verification", re.IGNORECASE)),
+    ("login_wall", re.compile(r"登录后(?:继续|查看)|sign in to continue|login required", re.IGNORECASE)),
+    ("app_shell", re.compile(r"enable javascript|请启用javascript|javascript is required", re.IGNORECASE)),
 )
 _TRACKING_QUERY_KEYS = frozenset(
     {"utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "spm", "from"}
@@ -647,13 +647,6 @@ class EvidenceAdmissionPolicyV1:
 
 
 __all__ = [
-    "AdmissionDecision",
-    "AdmittedPassage",
-    "CoverageMetrics",
-    "EvidenceAdmissionPolicyV1",
-    "EvidenceCandidate",
-    "EvidenceEvaluation",
-    "FamilyMatchLevel",
     "MAX_DUPLICATE_RATE",
     "MAX_INVALID_RATE",
     "MIN_BODY_CHARS",
@@ -662,6 +655,13 @@ __all__ = [
     "POLICY_HASH",
     "POLICY_ID",
     "POLICY_VERSION",
+    "AdmissionDecision",
+    "AdmittedPassage",
+    "CoverageMetrics",
+    "EvidenceAdmissionPolicyV1",
+    "EvidenceCandidate",
+    "EvidenceEvaluation",
+    "FamilyMatchLevel",
     "SourceFamilyMatch",
     "admit_passage",
     "classify_coverage",

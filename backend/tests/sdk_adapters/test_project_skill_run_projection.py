@@ -8,8 +8,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from deskpet.capabilities.manifest import load_and_validate_pack
 from deskpet.capabilities.contracts import CapabilityBinding
+from deskpet.capabilities.manifest import load_and_validate_pack
 from deskpet.capabilities.run_catalog import (
     FirstPartyFrozenSkillResolver,
     PreparedRunCatalogLease,

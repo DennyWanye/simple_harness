@@ -66,7 +66,7 @@ class ResearchPorts:
     blob: ResearchBlobPort
 
     @classmethod
-    def from_context(cls, context: WorkflowContext) -> "ResearchPorts":
+    def from_context(cls, context: WorkflowContext) -> ResearchPorts:
         return cls(
             llm=_typed(context, "llm", ResearchLLMPort),  # type: ignore[arg-type]
             search=_typed(context, "search", ResearchSearchPort),  # type: ignore[arg-type]

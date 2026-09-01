@@ -7,9 +7,10 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from deskpet.sdk_adapters.memory_facts_surface import OfficialMemoryFactsSurface
 from simple_harness.runtime import AgentIdentity
 from simple_harness_memory import Fact, MemoryPrincipal
+
+from deskpet.sdk_adapters.memory_facts_surface import OfficialMemoryFactsSurface
 
 
 @pytest.mark.asyncio

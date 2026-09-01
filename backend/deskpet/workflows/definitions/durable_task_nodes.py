@@ -5,5 +5,5 @@ runs import it through this module; the old module remains only so frozen
 ``code_complex@v1`` runs can replay.
 """
 
-from .code_nodes import *  # noqa: F403 - compatibility re-export is intentional
+from .code_nodes import *
 

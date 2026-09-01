@@ -9,16 +9,16 @@ import pytest
 from simple_harness import CallId, RequestId, RunId, thaw_json
 from simple_harness.tools import CancellationToken, ToolCall, ToolContext
 
+from deskpet.sdk_adapters.context_authority import canonical_sha256
+from deskpet.sdk_adapters.tool_authority import (
+    SdkRuntimeCapabilityBridgeAdapter,
+    SdkRunToolAuthorityRegistry,
+)
 from deskpet.sdk_adapters.tools import (
     ProductToolInventoryEntry,
     ProductToolsAdapter,
     extend_product_registry_with_mcp,
     filter_sdk_catalog_for_workspace,
-)
-from deskpet.sdk_adapters.context_authority import canonical_sha256
-from deskpet.sdk_adapters.tool_authority import (
-    SdkRunToolAuthorityRegistry,
-    SdkRuntimeCapabilityBridgeAdapter,
 )
 
 

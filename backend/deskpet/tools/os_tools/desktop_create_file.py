@@ -28,7 +28,6 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-
 _EXAMPLES = [
     {"name": "todo.txt", "content": "买牛奶\n回邮件"},
     {"name": "snippet.py", "content": "print('hi')"},
@@ -107,7 +106,7 @@ def desktop_create_file(args: dict[str, Any], task_id: str = "") -> str:
     except OSError as exc:
         return _err(
             f"OSError: {exc}",
-            f"创建桌面文件时操作系统报错。"
+            "创建桌面文件时操作系统报错。"
             "常见原因：桌面目录权限不足、磁盘已满、文件名含非法字符。",
         )
 

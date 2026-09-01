@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from deskpet.security.redaction import TraceRedactor
 from deskpet.security.sensitive_text import redact_sensitive_text
-
 
 _REDACTOR = TraceRedactor()
 

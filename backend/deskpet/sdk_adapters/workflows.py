@@ -26,7 +26,6 @@ from deskpet.workflows.definitions.sdk_v7.deep_research import (
     DEEP_RESEARCH_V7_SDK1_DEFINITION,
 )
 
-
 ACTIVE_PRODUCT_WORKFLOWS = MappingProxyType(
     {
         "workflow.deep_research": ("deep_research", "v7-sdk1"),

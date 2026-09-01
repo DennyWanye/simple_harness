@@ -149,13 +149,26 @@ def plan_recent_causal_groups(
             )
         )
 
+    # A leading bucket that does not open with a USER message is the residue
+    # of an upstream cut (greedy token pre-trim); keeping it would present a
+    # causally broken half-group.  Drop it unless it is all we have.
+    residue_dropped = 0
+    while (
+        len(built) > 1
+        and built[0].items[0].role not in _USER_ROLES
+    ):
+        built.pop(0)
+        residue_dropped += 1
+
     open_tail = built[-1] if built and built[-1].open_run else None
     complete_groups = [group for group in built if not group.open_run]
     kept = complete_groups[-groups_max:]
     dropped = len(complete_groups) - len(kept)
     if open_tail is not None:
         kept = [*kept, open_tail]
-    return CausalGroupPlan(groups=tuple(kept), dropped_group_count=dropped)
+    return CausalGroupPlan(
+        groups=tuple(kept), dropped_group_count=dropped + residue_dropped
+    )
 
 
 __all__ = [

@@ -9,7 +9,8 @@ import inspect
 import json
 import re
 import time
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlparse
 
 from ...tools import research_scoring
@@ -24,7 +25,12 @@ from .deep_research_v2_contracts import (
     canonical_url,
     no_op_patch,
 )
-from .deep_research_v2_quality import apply_repair, evaluate_support, parse_claims, quality_payload
+from .deep_research_v2_quality import (
+    apply_repair,
+    evaluate_support,
+    parse_claims,
+    quality_payload,
+)
 from .deep_research_v2_report import render_report
 from .research_core import (
     FetchPort,
@@ -32,7 +38,6 @@ from .research_core import (
     ResearchLLMPort,
     ResearchSearchPort,
 )
-
 
 PUBLIC_STAGE_IDS = (
     "normalize", "plan", "expand", "search", "direct", "fetch", "score",

@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -20,7 +20,6 @@ from deskpet.sdk_adapters.sdk_candidate import (
     build_candidate_identity,
     sdk_wheel_path,
 )
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WHEEL = sdk_wheel_path()

@@ -19,7 +19,6 @@ from typing import Any
 from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 
-
 _DEFAULT_PERSONA_TEMPLATE = (
     "你是 DeskPet，一只陪伴用户工作的桌面宠物 AI。\n"
     "- 语气自然、简短，偶尔撒娇；\n"

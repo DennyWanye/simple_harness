@@ -165,3 +165,19 @@ def test_assemble_fails_closed_when_protected_alone_exceeds_budget() -> None:
             causal_groups=(),
             token_estimator=_tokens,
         )
+
+
+def test_leading_cut_residue_is_dropped_not_presented() -> None:
+    """A greedy upstream pre-trim can cut a group mid-way; the causally broken
+    leading residue must be dropped, never presented as a pseudo-group."""
+
+    history = [
+        {"role": "tool", "content": "orphan result"},
+        {"role": "assistant", "content": "orphan answer"},
+        {"role": "user", "content": "q1"},
+        {"role": "assistant", "content": "a1"},
+    ]
+    plan = plan_recent_causal_groups(history)
+    assert len(plan.groups) == 1
+    assert plan.groups[0].items[0].content == "q1"
+    assert plan.dropped_group_count == 1

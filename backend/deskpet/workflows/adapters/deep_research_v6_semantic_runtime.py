@@ -11,8 +11,9 @@ import copy
 import hashlib
 import inspect
 import json
+from collections.abc import Awaitable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Awaitable, Mapping, Protocol, Sequence
+from typing import Any, Protocol
 
 import aiosqlite
 
@@ -26,9 +27,9 @@ from ..definitions.deep_research_v6_contracts import (
 from ..definitions.deep_research_v6_evidence import AdmittedResearchFactV1
 from ..definitions.deep_research_v6_evidence_contracts import (
     CandidateProducerOutcomeV1,
-    EvidenceRepairRequestV1,
     EvidenceCandidateBundleV1,
     EvidenceCandidateV1,
+    EvidenceRepairRequestV1,
     InferenceProposalBundleV1,
     ResearchLLMEffectOutcomeV1,
     V6FetchedPageRefPayloadV1,
@@ -39,7 +40,6 @@ from ..definitions.deep_research_v6_exact_fact import (
 )
 from ..definitions.deep_research_v6_retrieval_contracts import PageExtractionResultV1
 from ..store import RegisteredBlobStore
-
 
 EXTRACTION_POLICY: dict[str, JsonValue] = {
     "schema_version": 1,
@@ -1226,9 +1226,9 @@ class DeepResearchV6SemanticRuntime:
 
 
 __all__ = [
-    "DeepResearchV6SemanticRuntime",
     "EXTRACTION_POLICY",
     "INFERENCE_POLICY",
+    "DeepResearchV6SemanticRuntime",
     "SemanticRuntimeConfigurationError",
     "V6SemanticStagePort",
 ]

@@ -24,7 +24,6 @@ from simple_harness.workflow import StatePatch, WorkflowContext
 from .payloads import bounded_report_envelope, report_sha256
 from .research_ports import ResearchPorts
 
-
 PLAN_PROMPT = """\
 You are planning a deep research project from the original user request below.
 
@@ -137,8 +136,7 @@ def parse_sub_questions(raw: str, *, maximum: int) -> list[str]:
     text = str(raw or "").strip()
     if text.startswith("```"):
         text = text[text.find("\n") + 1 :]
-        if text.endswith("```"):
-            text = text[:-3]
+        text = text.removesuffix("```")
     left, right = text.find("["), text.rfind("]")
     values: list[object] = []
     if 0 <= left < right:
@@ -522,11 +520,11 @@ async def finalize_handler(state, context: WorkflowContext) -> StatePatch:
 
 
 __all__ = (
-    "Citation",
     "CONTINUATION_PROMPT",
     "PLAN_PROMPT",
-    "ResearchReport",
     "SYNTH_PROMPT",
+    "Citation",
+    "ResearchReport",
     "finalize_handler",
     "normalize_handler",
     "operation_key",

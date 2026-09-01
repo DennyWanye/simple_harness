@@ -5,8 +5,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from simple_harness import freeze_json, thaw_json
 
@@ -47,7 +48,7 @@ class SdkRunBindingV1:
     lease_state: str = "active"
 
     @classmethod
-    def build(cls, **raw: Any) -> "SdkRunBindingV1":
+    def build(cls, **raw: Any) -> SdkRunBindingV1:
         lease_state = str(raw.get("lease_state") or "active").strip().lower()
         if lease_state not in {"active", "waiting"}:
             raise ValueError("lease_state must be active or waiting")
@@ -110,7 +111,7 @@ class SdkRunBindingV1:
         }
 
     @classmethod
-    def from_record(cls, value: Mapping[str, Any]) -> "SdkRunBindingV1":
+    def from_record(cls, value: Mapping[str, Any]) -> SdkRunBindingV1:
         if int(value.get("schema_version", 1)) != 1:
             raise ValueError("unsupported SDK run binding schema")
         rebuilt = cls.build(**dict(value))
@@ -119,7 +120,7 @@ class SdkRunBindingV1:
             raise RunBindingConflict("SDK run binding fingerprint mismatch")
         return rebuilt
 
-    def replace(self, **changes: Any) -> "SdkRunBindingV1":
+    def replace(self, **changes: Any) -> SdkRunBindingV1:
         raw = self.to_record()
         raw.update(changes)
         raw.pop("binding_fingerprint", None)
@@ -171,7 +172,7 @@ class SdkRunBindingRegistry:
     @classmethod
     def reconstruct(
         cls, records: Iterable[Mapping[str, Any]]
-    ) -> "SdkRunBindingRegistry":
+    ) -> SdkRunBindingRegistry:
         registry = cls()
         for record in records:
             binding = SdkRunBindingV1.from_record(record)

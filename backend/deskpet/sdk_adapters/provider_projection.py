@@ -11,8 +11,9 @@ measurement can advance Context Usage authority.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 
 def _read(value: object, key: str, default: Any = None) -> Any:
@@ -55,7 +56,7 @@ class ProviderProjectionEnvelopeV1:
     handoff_attempt: int | None = None
 
     @classmethod
-    def from_value(cls, value: object) -> "ProviderProjectionEnvelopeV1":
+    def from_value(cls, value: object) -> ProviderProjectionEnvelopeV1:
         state = _required(value, "state").lower()
         if state not in {"succeeded", "failed", "cancelled", "unknown"}:
             raise ValueError("unsupported provider settlement state")

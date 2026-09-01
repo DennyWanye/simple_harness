@@ -8,6 +8,22 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pytest
+from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
+from simple_harness.execution.context_authority import DurableToolCatalogResolver
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+from simple_harness.providers import ProviderToolSpec
+from simple_harness.tools import (
+    AuthorizationDecision,
+    AuthorizationReceipt,
+    CancellationToken,
+    FunctionTool,
+    PreparedToolEffect,
+    ToolCall,
+    ToolContext,
+    ToolResult,
+    ToolSpec,
+)
+
 from deskpet.permissions.policy import AuthorizationPolicyState
 from deskpet.permissions.runtime import PreparedAuthorizationRuntime
 from deskpet.product_state.authorization_saga import AuthorizationSagaRepository
@@ -31,21 +47,6 @@ from deskpet.sdk_adapters.tools import (
     SdkToolExecutorCatalogUnavailable,
 )
 from deskpet.tools.capabilities import ToolCapabilityScopeStore
-from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
-from simple_harness.execution.context_authority import DurableToolCatalogResolver
-from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-from simple_harness.providers import ProviderToolSpec
-from simple_harness.tools import (
-    AuthorizationDecision,
-    AuthorizationReceipt,
-    CancellationToken,
-    FunctionTool,
-    PreparedToolEffect,
-    ToolCall,
-    ToolContext,
-    ToolResult,
-    ToolSpec,
-)
 
 
 def test_directory_picker_is_discoverable_not_in_the_direct_kernel() -> None:

@@ -4,7 +4,10 @@ import json
 import pytest
 
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
-from deskpet.sdk_adapters.context_preparation import SdkContextPreparationService, SdkContextSources
+from deskpet.sdk_adapters.context_preparation import (
+    SdkContextPreparationService,
+    SdkContextSources,
+)
 
 
 @pytest.mark.asyncio

@@ -590,7 +590,7 @@ class _SkillInstallVerificationDriver:
                     "continuation_count": 0,
                 },
             )
-        except Exception as exc:  # noqa: BLE001 - bounded terminal algebra
+        except Exception as exc:
             reason_code = (
                 str(exc)
                 if isinstance(exc, RuntimeError)
@@ -721,9 +721,9 @@ def _route_failure(code: str) -> DriverResult:
 
 
 __all__ = (
+    "SKILL_INSTALL_VERIFICATION_PURPOSE",
     "BindableSkillInstallVerificationDriverFactory",
     "ProductRootDriverRouter",
-    "SKILL_INSTALL_VERIFICATION_PURPOSE",
     "SdkTerminalCapabilityReleaseReconciler",
     "SkillInstallVerificationAttemptResolver",
     "SkillInstallVerificationRunService",

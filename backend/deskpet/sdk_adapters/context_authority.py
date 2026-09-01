@@ -707,7 +707,9 @@ def _plan_turn_messages(
     from deskpet.sdk_adapters.causal_groups import plan_recent_causal_groups
     from deskpet.sdk_adapters.context_partitions import (
         PARTITION_CAPS,
+        ContextBudgetExceeded,
         budget_window,
+        effective_input_budget,
         trim_causal_groups,
     )
 
@@ -738,6 +740,15 @@ def _plan_turn_messages(
         for m in tail
     ]
     plan = plan_recent_causal_groups(history)
+    protected_caps = PARTITION_CAPS[tier]["protected"]
+    protected_bytes = sum(
+        len(_message_text(m).encode("utf-8")) for m in protected
+    )
+    if (
+        len(protected) > int(protected_caps["items_max"])
+        or protected_bytes > int(protected_caps["bytes_max"])
+    ):
+        raise ContextBudgetExceeded("sdk_context_protected_partition_over_cap")
     protected_tokens = sum(
         _context_text_tokens(_message_text(m)) for m in protected
     )
@@ -749,6 +760,17 @@ def _plan_turn_messages(
     )
     groups = list(kept_groups)
     trimmed = plan.dropped_group_count + budget_trimmed
+    # Frozen pass rule: after every allowed trim the estimate must fit the
+    # effective budget — shipping an oversized payload (underestimate) is
+    # forbidden, so the turn fails closed instead.
+    effective = effective_input_budget(max(window, min(PARTITION_CAPS)))
+    total = protected_tokens + sum(
+        _context_text_tokens(item.content)
+        for group in groups
+        for item in group.items
+    )
+    if total > effective:
+        raise ContextBudgetExceeded()
 
     # Map kept groups back onto the original Message objects by index walk.
     kept_counts = [len(group.items) for group in plan.groups]

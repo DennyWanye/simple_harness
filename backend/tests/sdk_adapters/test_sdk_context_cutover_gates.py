@@ -4,17 +4,6 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from deskpet.sdk_adapters.context import ProductContextAdapter
-from deskpet.sdk_adapters.context_preparation import (
-    SdkContextPreparationService,
-    SdkContextSources,
-    trusted_project_task_snapshot,
-)
-from deskpet.sdk_adapters.run_bindings import (
-    SdkRunBindingRegistry,
-    SdkRunBindingV1,
-)
-
 from simple_harness import Message, RequestId, RunId, thaw_json
 from simple_harness.execution import ProviderBinding
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
@@ -50,6 +39,17 @@ from simple_harness.tools.authorization import (
 from simple_harness.tools.reconciliation import (
     ReconciliationObservation,
     ReconciliationState,
+)
+
+from deskpet.sdk_adapters.context import ProductContextAdapter
+from deskpet.sdk_adapters.context_preparation import (
+    SdkContextPreparationService,
+    SdkContextSources,
+    trusted_project_task_snapshot,
+)
+from deskpet.sdk_adapters.run_bindings import (
+    SdkRunBindingRegistry,
+    SdkRunBindingV1,
 )
 
 

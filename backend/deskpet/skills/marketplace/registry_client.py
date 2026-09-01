@@ -16,7 +16,7 @@ Failure (5xx, 4xx, network error) is surfaced as ``{"skills": [],
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 import httpx
 import structlog
@@ -30,12 +30,12 @@ class RegistryClient:
         url: str,
         *,
         cache_ttl_s: float = 3600.0,
-        transport: Optional[httpx.BaseTransport] = None,
+        transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.url = url
         self.cache_ttl_s = cache_ttl_s
         self._transport = transport
-        self._cache: Optional[dict[str, Any]] = None
+        self._cache: dict[str, Any] | None = None
         self._cache_at: float = 0.0
 
     async def fetch(self, *, force: bool = False) -> dict[str, Any]:

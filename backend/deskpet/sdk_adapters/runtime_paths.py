@@ -5,14 +5,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
-from importlib import metadata
 import json
-from pathlib import Path
 import sqlite3
+from dataclasses import dataclass
+from importlib import metadata
+from pathlib import Path
 from urllib.parse import unquote, urlparse
-
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _EVIDENCE_ROOT = _PROJECT_ROOT / ".local-test-evidence"

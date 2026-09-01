@@ -51,10 +51,11 @@ def local_memory_principal() -> Any:
 class HumanMemoryV7Runtime:
     """Lazy singleton over ``build_human_memory_v7`` (fresh-only store)."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(self, db_path: str | Path, *, embedder_getter: Any = None) -> None:
         self._db_path = Path(db_path)
         self._manager: Any | None = None
         self._lock = asyncio.Lock()
+        self._embedder_getter = embedder_getter
 
     async def manager(self) -> Any:
         async with self._lock:
@@ -62,7 +63,16 @@ class HumanMemoryV7Runtime:
                 from simple_harness_memory import build_human_memory_v7
 
                 self._db_path.parent.mkdir(parents=True, exist_ok=True)
-                self._manager = await build_human_memory_v7(self._db_path)
+                embedder = (
+                    self._embedder_getter() if self._embedder_getter else None
+                )
+                if getattr(embedder, "kind", None) in {"hash", "mock"}:
+                    # v7 production guard: deterministic test embeddings never
+                    # power the short-horizon vector lane.
+                    embedder = None
+                self._manager = await build_human_memory_v7(
+                    self._db_path, short_horizon_embedder=embedder
+                )
             return self._manager
 
     async def close(self) -> None:
@@ -219,18 +229,74 @@ class HumanMemoryV7Runtime:
             f"context-route:{run_id}:{turn_ordinal}",
             (RecallReasonCode.USER_FACT_DEPENDENCY,),
         )
-        return await manager.execute_typed_recall(
+        execution = await manager.execute_typed_recall(
             principal=principal, context=context, plan=plan, now=moment
         )
+        try:
+            short_horizon = await manager.recall_short_horizon(
+                principal=principal,
+                query=query,
+                disclosure_context=disclosure,
+                limit=8,
+                now=moment,
+            )
+        except Exception:  # noqa: BLE001 - degraded lane must stay stable
+            short_horizon = None
+        return RecallLanes(execution=execution, short_horizon=short_horizon)
 
 
-def project_recall_fragments(execution: Any) -> tuple[dict[str, Any], ...]:
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class RecallLanes:
+    """Typed long-term execution plus the five-day short-horizon lane."""
+
+    execution: Any
+    short_horizon: Any | None
+
+    @property
+    def degradation_codes(self) -> tuple[str, ...]:
+        codes = tuple(
+            getattr(code, "value", str(code))
+            for code in self.execution.degradation_codes
+        )
+        if self.short_horizon is None:
+            codes = (*codes, "short_horizon_unavailable")
+        elif self.short_horizon.degradation_code is not None:
+            codes = (
+                *codes,
+                getattr(
+                    self.short_horizon.degradation_code,
+                    "value",
+                    str(self.short_horizon.degradation_code),
+                ),
+            )
+        return codes
+
+    @property
+    def result(self) -> Any:
+        return self.execution.result
+
+
+def _fragment_size(payload: Any) -> tuple[int, int]:
+    import json as _json
+
+    from deskpet.sdk_adapters.context_partitions import text_tokens
+
+    text = _json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    return len(text.encode("utf-8")), text_tokens(text)
+
+
+def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     """Host second-pass eligibility + dedup over typed recall items.
 
     The SDK already gated candidates; the Host re-checks privacy class before
     anything enters Context and deduplicates by public payload hash.
     """
 
+    execution = getattr(lanes, "execution", lanes)
+    short_horizon = getattr(lanes, "short_horizon", None)
     fragments: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in execution.result.items:
@@ -243,6 +309,7 @@ def project_recall_fragments(execution: Any) -> tuple[dict[str, Any], ...]:
         if payload_hash in seen:
             continue
         seen.add(payload_hash)
+        bytes_len, tokens = _fragment_size(item.public_payload)
         fragments.append(
             {
                 "ref": item.selected_item.item_id,
@@ -256,6 +323,33 @@ def project_recall_fragments(execution: Any) -> tuple[dict[str, Any], ...]:
                 "payload": item.public_payload,
                 "payload_hash": payload_hash,
                 "source_task_scope_ids": list(item.source_task_scope_ids),
+                "bytes": bytes_len,
+                "tokens": tokens,
+                "lane": "long_term_typed",
+            }
+        )
+    for hit in getattr(short_horizon, "hits", ()) or ():
+        privacy = getattr(
+            hit.effective_privacy_class, "value", str(hit.effective_privacy_class)
+        )
+        if privacy not in _ELIGIBLE_PRIVACY_CLASSES:
+            continue
+        if hit.content_hash in seen:
+            continue
+        seen.add(hit.content_hash)
+        bytes_len, tokens = _fragment_size(hit.content)
+        fragments.append(
+            {
+                "ref": hit.chunk_ref,
+                "memory_type": "short_horizon",
+                "privacy_class": privacy,
+                "score": float(hit.score),
+                "payload": hit.content,
+                "payload_hash": hit.content_hash,
+                "source_task_scope_ids": [],
+                "bytes": bytes_len,
+                "tokens": tokens,
+                "lane": "short_horizon",
             }
         )
     return tuple(fragments)
@@ -263,6 +357,7 @@ def project_recall_fragments(execution: Any) -> tuple[dict[str, Any], ...]:
 
 __all__ = [
     "HumanMemoryV7Runtime",
+    "RecallLanes",
     "local_memory_principal",
     "project_recall_fragments",
 ]

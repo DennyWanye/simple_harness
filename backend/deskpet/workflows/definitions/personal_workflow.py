@@ -5,9 +5,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from deskpet.companion.personal_workflow import (
     PersonalWorkflowV1,
@@ -233,7 +234,7 @@ class PersonalWorkflowSelectionV1:
     @classmethod
     def from_authoritative_mapping(
         cls, value: Mapping[str, Any]
-    ) -> "PersonalWorkflowSelectionV1":
+    ) -> PersonalWorkflowSelectionV1:
         required = {
             "schema_version",
             "selection_id",
@@ -292,7 +293,7 @@ class PersonalWorkflowSelectionV1:
         lease_entries: Sequence[Mapping[str, Any]],
         effect_topology: Mapping[str, Any],
         tool_bindings: Mapping[str, Mapping[str, Any]],
-    ) -> "PersonalWorkflowSelectionV1":
+    ) -> PersonalWorkflowSelectionV1:
         parsed = parse_personal_workflow_v1(
             graph,
             tool_resolver=lambda name: tool_bindings[name],
@@ -453,12 +454,12 @@ __all__ = [
     "PERSONAL_WORKFLOW_V1",
     "PERSONAL_WORKFLOW_V1_DEFINITION",
     "PROFILE_KEY",
-    "PersonalWorkflowSelectionError",
-    "PersonalWorkflowSelectionV1",
     "SELECTION_EXTENSION_KEY",
     "STATE_SCHEMA_VERSION",
     "WORKFLOW_NAME",
     "WORKFLOW_VERSION",
+    "PersonalWorkflowSelectionError",
+    "PersonalWorkflowSelectionV1",
     "initial_state",
     "personal_workflow_query_hash",
     "selection_from_capability_snapshot",

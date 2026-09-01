@@ -8,8 +8,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, Mapping, Protocol
+from typing import Any, Protocol
 
 from simple_harness import thaw_json
 
@@ -47,7 +48,7 @@ class ProviderProjectionContextV1:
     effective_ceiling: int
 
     @classmethod
-    def from_value(cls, value: object) -> "ProviderProjectionContextV1":
+    def from_value(cls, value: object) -> ProviderProjectionContextV1:
         def read(key: str, default: Any = None) -> Any:
             if isinstance(value, Mapping):
                 return value.get(key, default)

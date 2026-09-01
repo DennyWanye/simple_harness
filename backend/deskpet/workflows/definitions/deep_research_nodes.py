@@ -7,8 +7,8 @@ handlers to a versioned graph without moving business logic again.
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict
-from typing import Any, Mapping, Sequence
 
 from ..contracts import JsonValue, canonical_json, validate_json_value
 from ..store import BlobRef, BlobStore
@@ -26,7 +26,6 @@ from .research_core import (
     search_stage,
     synth_stage,
 )
-
 
 BLOB_REF_KEY = "$blob_ref"
 DEFAULT_BLOB_THRESHOLD = 16 * 1024

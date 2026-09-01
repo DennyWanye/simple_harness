@@ -421,7 +421,7 @@ class SdkRuntimeIngress:
         import hashlib
 
         identity = hashlib.sha256(
-            f"{session_id}\0{request_id}\0{turn_id}".encode("utf-8")
+            f"{session_id}\0{request_id}\0{turn_id}".encode()
         ).hexdigest()
         return RunId(f"product-sdk-{identity}")
 

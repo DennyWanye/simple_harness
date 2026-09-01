@@ -15,12 +15,10 @@ from __future__ import annotations
 import os
 import time
 from pathlib import Path
-from typing import Optional
 
 from deskpet.agent.assembler.bundle import Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
 from deskpet.agent.tokens import count_text_tokens as _ctok
-
 
 _MAX_ENTRIES = 20
 
@@ -37,7 +35,7 @@ class WorkspaceComponent:
 
     name: str = "workspace"
 
-    def __init__(self, workspace_dir: Optional[Path] = None) -> None:
+    def __init__(self, workspace_dir: Path | None = None) -> None:
         self._override = workspace_dir
 
     async def provide(self, ctx: ComponentContext) -> Slice:
@@ -89,7 +87,7 @@ class WorkspaceComponent:
             },
         )
 
-    def _resolve_dir(self, ctx: ComponentContext) -> Optional[Path]:
+    def _resolve_dir(self, ctx: ComponentContext) -> Path | None:
         if self._override is not None:
             return self._override
         ws = ctx.config.get("workspace") if isinstance(ctx.config, dict) else None
@@ -105,7 +103,7 @@ class WorkspaceComponent:
         return Path(user_data_dir("deskpet", appauthor=False)) / "workspace"
 
 
-def _fmt_size(size: Optional[int]) -> str:
+def _fmt_size(size: int | None) -> str:
     if size is None:
         return ""
     if size < 1024:

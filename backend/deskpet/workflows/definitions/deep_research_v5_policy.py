@@ -11,9 +11,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date
-from typing import Any, Mapping
+from typing import Any
 
 from .deep_research_v5_contracts import (
     ContractValidationError,
@@ -21,7 +22,6 @@ from .deep_research_v5_contracts import (
     ResearchBrief,
     ResearchDimension,
 )
-
 
 EDUCATION_DIMENSION_IDS = (
     "edu_current_state",
@@ -300,14 +300,14 @@ def _locale(question: str) -> str:
 
 
 def _explicit_as_of(question: str, fallback: date) -> str:
-    full = re.search(r"(?:截至|截止|as of|by)\s*(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})日?", question, re.I)
+    full = re.search(r"(?:截至|截止|as of|by)\s*(\d{4})[-年/](\d{1,2})[-月/](\d{1,2})日?", question, re.IGNORECASE)
     if full:
         try:
             parsed = date(int(full.group(1)), int(full.group(2)), int(full.group(3)))
             return parsed.isoformat() if parsed <= fallback else fallback.isoformat()
         except ValueError:
             pass
-    month = re.search(r"(?:截至|截止|as of|by)\s*(\d{4})[-年/](\d{1,2})月?", question, re.I)
+    month = re.search(r"(?:截至|截止|as of|by)\s*(\d{4})[-年/](\d{1,2})月?", question, re.IGNORECASE)
     if month:
         try:
             parsed = date(int(month.group(1)), int(month.group(2)), 1)
@@ -430,7 +430,7 @@ def _subjects(question: str, profile: str) -> tuple[str, ...]:
         dict.fromkeys(
             match.group(0).strip()
             for pattern in product_patterns
-            for match in re.finditer(pattern, question, re.I)
+            for match in re.finditer(pattern, question, re.IGNORECASE)
         )
     )
     if products:
@@ -789,11 +789,11 @@ def initial_dimension_coverages(brief: ResearchBrief) -> tuple[DimensionCoverage
 
 
 __all__ = [
-    "DetectedResearchIntent",
     "EDUCATION_DIMENSION_IDS",
     "GENERIC_DIMENSION_IDS",
-    "ProfileDefinition",
     "TECHNOLOGY_DIMENSION_IDS",
+    "DetectedResearchIntent",
+    "ProfileDefinition",
     "ValidatedModelingOutput",
     "build_research_brief",
     "detect_research_intent",

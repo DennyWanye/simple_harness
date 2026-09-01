@@ -8,9 +8,10 @@ contract used by generic, education, and technology research.
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, Literal, Mapping, Sequence
+from typing import Any, Literal
 
 from .deep_research_v3_contracts import AtomicClaim, EvidencePassage
 from .deep_research_v3_quality import evaluate_support
@@ -23,7 +24,6 @@ from .deep_research_v5_contracts import (
 )
 from .deep_research_v5_evidence import AdmittedPassage, EvidenceEvaluation
 
-
 AnalysisStatementKind = Literal["fact", "inference", "gap"]
 _STATEMENT_FIELDS = (
     "finding",
@@ -35,14 +35,14 @@ _STATEMENT_FIELDS = (
 )
 _GAP_MARKER = re.compile(
     r"(?:evidence\s+gap|insufficient\s+evidence|证据不足|证据缺口|暂无足够证据)",
-    re.I,
+    re.IGNORECASE,
 )
 _PSEUDO_FINDING = re.compile(
     r"(?:^|[。.!?；;]\s*)(?:发布(?:于|日期)|发布日期|文件(?:于.+)?印发|"
     r"published\s+on|.+\s+was\s+published\s+on|publication\s+date|"
     r"anniversary|周年|术语定义|文件标题|政策口号|全面推进|深入贯彻|"
     r"大力实施|持续推动|strengthen\b|promote\b|deepen\b)",
-    re.I,
+    re.IGNORECASE,
 )
 _TIER_ORDER = {"first_party": 0, "secondary": 1, "aggregator": 2}
 
@@ -116,7 +116,7 @@ class AnalysisStatement:
         }
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "AnalysisStatement":
+    def from_json(cls, value: Mapping[str, Any]) -> AnalysisStatement:
         raw = _strict_object(
             value,
             keys={"schema_version", "claim_id", "text", "kind", "citation_ids"},
@@ -191,7 +191,7 @@ class PerDimensionAnalysisPayload:
         return result
 
     @classmethod
-    def from_json(cls, value: Mapping[str, Any]) -> "PerDimensionAnalysisPayload":
+    def from_json(cls, value: Mapping[str, Any]) -> PerDimensionAnalysisPayload:
         keys = {"schema_version", "dimension_id", "citation_ids", *_STATEMENT_FIELDS}
         raw = _strict_object(value, keys=keys, name=cls.__name__)
         parsed: dict[str, AnalysisStatement | None] = {}

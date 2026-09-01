@@ -16,7 +16,6 @@ from typing import Any
 
 from ..contracts import JsonValue, WorkflowState
 
-
 CAPABILITY = "deep_research_progress_v5"
 SCHEMA_VERSION = 5
 

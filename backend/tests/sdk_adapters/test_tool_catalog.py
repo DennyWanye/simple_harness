@@ -2,13 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
 
 EXPECTED_MANIFEST_SHA256 = (
     "891ae13615229ee98715f8b18f39a5a045c1f995a29e984a4b86c4eaa2f310bf"
@@ -597,10 +596,18 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
     import inspect
 
     from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from deskpet.tool_catalog import build_explicit_product_tool_catalog, load_tool_manifest
+    from deskpet.tool_catalog import (
+        build_explicit_product_tool_catalog,
+        load_tool_manifest,
+    )
     from deskpet.tools.capabilities import ToolExecutionContext
     from deskpet.tools.context_page_in_tools import ContextPageInStore
 
@@ -621,8 +628,8 @@ def test_all_14_specialized_migrations_reach_equivalent_real_handlers(
                 "root_run_id": kwargs["root_run_id"],
             }
 
-    from deskpet.tools.os_tools import app_tools, process_tools
     from deskpet.tools import window_use_tool
+    from deskpet.tools.os_tools import app_tools, process_tools
 
     service = ProcessService()
     monkeypatch.setattr(app_tools, "get_process_tool_service", lambda: service)
@@ -791,7 +798,12 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
     import asyncio
 
     from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     from deskpet.sdk_adapters.tools import build_product_tool_registry
     from deskpet.tool_catalog import build_explicit_product_tool_catalog
@@ -855,10 +867,18 @@ def test_sdk_await_subagents_uses_typed_port_and_never_loads_old_harness() -> No
 @pytest.mark.asyncio
 async def test_sdk_todo_write_runs_sync_bridge_off_event_loop() -> None:
     from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     from deskpet.sdk_adapters.tools import build_product_tool_registry
-    from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
+    from deskpet.tool_catalog import (
+        ToolCatalogDependencies,
+        build_explicit_product_tool_catalog,
+    )
     from deskpet.tools.context_page_in_tools import ContextPageInStore
 
     writes: list[tuple[str, list[dict[str, str]]]] = []
@@ -915,7 +935,12 @@ def test_six_dispatch_families_invoke_real_product_handlers(tmp_path: Path) -> N
     import asyncio
 
     from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     from deskpet.sdk_adapters.tools import (
         HOST_COMPOSED_TOOL_NAMES,
@@ -1026,7 +1051,12 @@ def test_real_call_id_drives_idempotency_and_write_scope_fence(tmp_path: Path) -
     import asyncio
 
     from simple_harness import CallId, RequestId, RunId
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     from deskpet.sdk_adapters.tools import build_product_tool_registry
     from deskpet.tool_catalog import build_explicit_product_tool_catalog
@@ -1106,7 +1136,12 @@ def test_sdk_tool_context_without_authoritative_workspace_fails_closed(
     import asyncio
 
     from simple_harness import CallId, RequestId, RunId
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
 
     from deskpet.sdk_adapters.tools import build_product_tool_registry
     from deskpet.tool_catalog import build_explicit_product_tool_catalog
@@ -1150,7 +1185,12 @@ def test_memory_recall_and_search_dispatch_to_live_memory_sdk_for_ordinary_run(
     import asyncio
 
     from simple_harness import CallId, RequestId, RunId, thaw_json
-    from simple_harness.tools import CancellationToken, ToolCall, ToolContext, ToolOutcome
+    from simple_harness.tools import (
+        CancellationToken,
+        ToolCall,
+        ToolContext,
+        ToolOutcome,
+    )
     from simple_harness_memory.backends.sqlite import SQLiteMemoryBackend
 
     from deskpet.companion.contracts import CompanionStateError

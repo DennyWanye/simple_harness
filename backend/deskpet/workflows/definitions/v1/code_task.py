@@ -5,9 +5,16 @@
 
 from __future__ import annotations
 
-from typing import Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
-from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, RetryPolicy, WorkflowState
+from ...contracts import (
+    ChannelSpec,
+    JsonType,
+    JsonValue,
+    ReducerKind,
+    RetryPolicy,
+    WorkflowState,
+)
 from ...definition import (
     END_NODE,
     CompiledWorkflow,
@@ -23,7 +30,6 @@ from ..code_nodes import (
     TaskSessionRefV1,
     WorkflowSessionRefV1,
 )
-
 
 WORKFLOW_NAME = "code_complex"
 WORKFLOW_VERSION = "v1"

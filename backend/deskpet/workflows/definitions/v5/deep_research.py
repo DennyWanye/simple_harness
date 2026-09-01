@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 import copy
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Mapping
 
 from ...contracts import ChannelSpec, JsonType, JsonValue, ReducerKind, WorkflowState
-from ...definition import END_NODE, ConditionalEdge, Edge, NodeDefinition, WorkflowDefinition, compile_workflow
+from ...definition import (
+    END_NODE,
+    ConditionalEdge,
+    Edge,
+    NodeDefinition,
+    WorkflowDefinition,
+    compile_workflow,
+)
+from ..deep_research_v5_contracts import ResearchEvidenceSnapshot
+from ..deep_research_v5_evidence import POLICY_HASH as EVIDENCE_ADMISSION_POLICY_HASH
 from ..deep_research_v5_nodes import (
     direct_handler,
     expand_handler,
@@ -34,10 +43,7 @@ from ..deep_research_v5_nodes import (
     search_handler,
     synth_handler,
 )
-from ..deep_research_v5_contracts import ResearchEvidenceSnapshot
-from ..deep_research_v5_evidence import POLICY_HASH as EVIDENCE_ADMISSION_POLICY_HASH
 from ..deep_research_v5_report import REPORT_QUALITY_RUBRIC_V1_HASH
-
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v5"

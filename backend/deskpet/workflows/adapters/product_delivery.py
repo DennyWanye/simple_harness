@@ -17,7 +17,7 @@ import json
 import uuid
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +31,6 @@ from ...tools.receipt import ToolReceipt, make_receipt
 from ...tools.receipt_store import ReceiptStore
 from ..contracts import canonical_json
 from ..store.run_store import WorkflowRunStore
-
 
 DeliveryHandler = Callable[
     [Mapping[str, Any], Mapping[str, Any]], Awaitable[dict[str, Any]]
@@ -305,8 +304,8 @@ def _outcome(payload: Mapping[str, Any]) -> str:
 def _event_time(event: Mapping[str, Any]) -> datetime:
     raw = event.get("created_at")
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
-        return datetime.fromtimestamp(float(raw), tz=timezone.utc)
-    return datetime.now(timezone.utc)
+        return datetime.fromtimestamp(float(raw), tz=UTC)
+    return datetime.now(UTC)
 
 
 def stable_workflow_receipt_id(event_id: str, phase: str) -> str:

@@ -31,7 +31,7 @@ SDK_CI_ARTIFACT_ID = None
 
 SDK_MEMORY_VERSION = "0.6.0"
 SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.6.0-py3-none-any.whl"
-SDK_MEMORY_WHEEL_SHA256 = "a51ca4c6c15fd26320485fd422c75412f764c782ac1beac65421c11d25040e2d"
+SDK_MEMORY_WHEEL_SHA256 = "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff"
 SDK_MEMORY_SOURCE_COMMIT = "46624b5c49f2c0a64a522eca64d6eb798823370e"
 SDK_MEMORY_CI_RUN_ID = None
 SDK_MEMORY_CI_ARTIFACT_ID = None
@@ -224,8 +224,8 @@ __all__ = (
     "SDK_WHEEL_FILENAME",
     "SDK_WHEEL_SHA256",
     "build_candidate_identity",
-    "sdk_memory_wheel_path",
     "sdk_candidate_manifest_path",
+    "sdk_memory_wheel_path",
     "sdk_service_candidate_manifest_path",
     "sdk_service_wheel_path",
     "sdk_wheel_path",

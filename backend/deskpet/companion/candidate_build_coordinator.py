@@ -8,9 +8,10 @@ execution identities have been observed.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Mapping, Protocol
+from typing import Protocol
 
 from .build_admission import (
     CandidateDraftReceiptExpectationV1,

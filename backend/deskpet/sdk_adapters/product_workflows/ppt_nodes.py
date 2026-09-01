@@ -19,7 +19,6 @@ from simple_harness.workflow import (
     workflow_interrupt,
 )
 
-
 MAX_OUTLINE_REVISIONS = 2
 MAX_VISUAL_REVISIONS = 2
 MAX_FULL_PAGE_PROVIDER_ATTEMPTS = 3

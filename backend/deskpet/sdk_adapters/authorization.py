@@ -6,10 +6,10 @@ import hashlib
 import inspect
 import json
 import time
-from dataclasses import replace
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
+from simple_harness import thaw_json
 from simple_harness.tools import (
     AuthorizationDecision,
     AuthorizationReceipt,
@@ -17,7 +17,6 @@ from simple_harness.tools import (
     AuthorizationResult,
     PreparedToolEffect,
 )
-from simple_harness import thaw_json
 
 from deskpet.product_state.authorization_saga import (
     AuthorizationSagaIdentity,

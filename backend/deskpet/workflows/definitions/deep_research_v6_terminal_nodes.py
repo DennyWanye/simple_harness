@@ -12,8 +12,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import aiosqlite
 
@@ -33,22 +34,30 @@ from .deep_research_v6_assessment import (
     assess_requirements,
     decode_assessment_inputs,
 )
-from .deep_research_v6_contracts import ResearchSpecV1, format_blob_ref, parse_blob_ref, sha256_json
+from .deep_research_v6_contracts import (
+    ResearchSpecV1,
+    format_blob_ref,
+    parse_blob_ref,
+    sha256_json,
+)
 from .deep_research_v6_control import consume_v6_control
 from .deep_research_v6_delivery import TerminalDeliveryManifestV1, build_intent_specs
 from .deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     AnswerAssessmentV1,
     EvidenceFactBatchV1,
-    GENESIS_EVIDENCE_HEAD,
     RegisteredInferenceV1,
     derive_assessment_input_hash,
 )
 from .deep_research_v6_evidence_contracts import V6FetchedPageRefPayloadV1
-from .deep_research_v6_retrieval_contracts import PageExtractionResultV1
 from .deep_research_v6_integrity import ClaimBatchV1, ClaimRecordV1, QualityAuditV1
-from .deep_research_v6_report import CitationView, TypedReportResult, render_typed_report
-
+from .deep_research_v6_report import (
+    CitationView,
+    TypedReportResult,
+    render_typed_report,
+)
+from .deep_research_v6_retrieval_contracts import PageExtractionResultV1
 
 CLAIM_POLICY_V1: dict[str, JsonValue] = {
     "schema_version": 1,

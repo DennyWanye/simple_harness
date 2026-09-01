@@ -11,10 +11,11 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from decimal import Decimal, ROUND_HALF_UP
-from typing import Literal, Mapping, Sequence
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Literal
 
 from .deep_research_v5_contracts import (
     ContractValidationError,
@@ -23,7 +24,6 @@ from .deep_research_v5_contracts import (
     ReportQualityAudit,
     ResearchBrief,
 )
-
 
 ClaimKind = Literal[
     "key_judgment",
@@ -500,12 +500,12 @@ def lint_rendered_report(
     )
 
 
-def _d(value: int | float | Decimal) -> Decimal:
+def _d(value: float | Decimal) -> Decimal:
     return value if isinstance(value, Decimal) else Decimal(str(value))
 
 
 def _clamp(value: Decimal, maximum: int) -> Decimal:
-    return max(Decimal("0"), min(_d(maximum), value))
+    return max(Decimal(0), min(_d(maximum), value))
 
 
 def _round_tenth(value: Decimal, maximum: int) -> Decimal:
@@ -514,12 +514,12 @@ def _round_tenth(value: Decimal, maximum: int) -> Decimal:
 
 def _ratio(items: Sequence[object], predicate) -> Decimal:  # type: ignore[no-untyped-def]
     if not items:
-        return Decimal("0")
+        return Decimal(0)
     return _d(sum(1 for item in items if predicate(item))) / _d(len(items))
 
 
 def _component(parts: Sequence[tuple[int, Decimal]], maximum: int) -> Decimal:
-    return _round_tenth(sum((_d(weight) * ratio for weight, ratio in parts), Decimal("0")), maximum)
+    return _round_tenth(sum((_d(weight) * ratio for weight, ratio in parts), Decimal(0)), maximum)
 
 
 def audit_report_quality(
@@ -591,18 +591,18 @@ def audit_report_quality(
     relevance = _component(((15, direct_answer_ratio), (10, mapped_key_ratio)), 25)
 
     coverage_values = {
-        "covered": Decimal("1"),
+        "covered": Decimal(1),
         "partially_covered": Decimal("0.5"),
-        "uncovered": Decimal("0"),
+        "uncovered": Decimal(0),
     }
     weighted_coverage = (
         sum(
             (coverage_values[coverage_by_id[item.dimension_id].status] for item in applicable_core),
-            Decimal("0"),
+            Decimal(0),
         )
         / _d(len(applicable_core))
         if applicable_core
-        else Decimal("0")
+        else Decimal(0)
     )
     conclusion_evidence_ratio = _ratio(
         applicable_core,
@@ -734,7 +734,7 @@ def audit_report_quality(
             ),
         )
     else:
-        uncertainty_ratio = Decimal("1")
+        uncertainty_ratio = Decimal(1)
     timeliness_uncertainty = _component(
         ((5, temporal_ratio), (5, uncertainty_ratio)), 10
     )
@@ -756,7 +756,7 @@ def audit_report_quality(
         timeliness_uncertainty,
         readability,
     )
-    total = _round_tenth(sum(components, Decimal("0")), 100)
+    total = _round_tenth(sum(components, Decimal(0)), 100)
 
     hard_failures: list[str] = []
     if any(coverage_by_id[item.dimension_id].status == "uncovered" for item in applicable_core):
@@ -800,11 +800,11 @@ def audit_report_quality(
     supported_key_claims = bool(key_claims) and all(key_claim_supported(claim) for claim in key_claims)
     partial_minimum = max(1, math.ceil(len(applicable_core) * 0.5))
 
-    if total >= Decimal("80") and all_core_covered and not hard_failures:
+    if total >= Decimal(80) and all_core_covered and not hard_failures:
         delivery_status: DeliveryStatus = "completed"
         reason_codes = ("quality_gate_passed",)
     elif (
-        total >= Decimal("60")
+        total >= Decimal(60)
         and supported_key_claims
         and len(covered_or_partial) >= partial_minimum
         and not universal_failures
@@ -817,15 +817,15 @@ def audit_report_quality(
 
     defects: list[str] = list(hard_failures)
     allowed_repairs: list[str] = []
-    if synthesis_reasoning < Decimal("15"):
+    if synthesis_reasoning < Decimal(15):
         allowed_repairs.append("complete_dimension_analysis")
     if "secondary_replaces_available_official" in hard_failures:
         allowed_repairs.append("replace_secondary_citation")
     if "unsupported_key_claim" in hard_failures:
         allowed_repairs.append("narrow_unsupported_claim")
-    if timeliness_uncertainty < Decimal("10"):
+    if timeliness_uncertainty < Decimal(10):
         allowed_repairs.append("add_uncertainty")
-    if readability < Decimal("5"):
+    if readability < Decimal(5):
         allowed_repairs.append("rewrite_readability")
 
     timestamp = audited_at or datetime.now(UTC).isoformat()

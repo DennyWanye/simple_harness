@@ -24,10 +24,10 @@ which sits between ``frozen_system`` and ``memory_block``.
 """
 from __future__ import annotations
 
-import logging
 import inspect
+import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from deskpet.agent.assembler.bundle import ContextFragment, Slice
 from deskpet.agent.assembler.components.base import Component, ComponentContext
@@ -74,8 +74,8 @@ class SkillComponent:
     def __init__(
         self,
         *,
-        skill_matcher: Optional[Any] = None,
-        skill_loader: Optional[Any] = None,
+        skill_matcher: Any | None = None,
+        skill_loader: Any | None = None,
     ) -> None:
         self._matcher = skill_matcher
         self._loader = skill_loader
@@ -267,7 +267,7 @@ class SkillComponent:
                 resolved_scope = getattr(resolved, "scope", None)
                 if resolved_scope != scope:
                     raise RuntimeError("frozen_skill_scope_resolution_mismatch")
-                raw_body = str(getattr(resolved, "instruction"))
+                raw_body = str(resolved.instruction)
             except Exception:  # noqa: BLE001
                 continue
             authority_body = raw_body

@@ -15,37 +15,112 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
-
-from simple_harness.contracts import CallId, ExecutionSessionId, Message, RequestId, RunId, canonical_json
+from simple_harness.contracts import (
+    CallId,
+    ExecutionSessionId,
+    Message,
+    RequestId,
+    RunId,
+    canonical_json,
+)
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
-from simple_harness.execution.delivery import DeliveryDispatcher, DeliverySpec, DeliveryState
+from simple_harness.execution.delivery import (
+    DeliveryDispatcher,
+    DeliverySpec,
+    DeliveryState,
+)
 from simple_harness.execution.dispatch import ProviderInvocationCoordinator
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
 from simple_harness.execution.uow import RunState
-from simple_harness.providers import CancelToken, ProviderRequest, ProviderResponse, ProviderTarget, ProviderToolCall, ProviderTransportError, ProviderUsage, Secret, SecretRedactor
-from simple_harness.runtime import AgentLoopCollaborator, EffectBatchExecutor, RunStart, RuntimePorts, RuntimeProfile, SqliteContextPort, build_runtime
+from simple_harness.providers import (
+    CancelToken,
+    ProviderRequest,
+    ProviderResponse,
+    ProviderTarget,
+    ProviderToolCall,
+    ProviderTransportError,
+    ProviderUsage,
+)
+from simple_harness.runtime import (
+    AgentLoopCollaborator,
+    EffectBatchExecutor,
+    RunStart,
+    RuntimePorts,
+    RuntimeProfile,
+    SqliteContextPort,
+)
 from simple_harness.runtime.drivers import ReActDriver
 from simple_harness.runtime.termination import TerminationLimits
 from simple_harness.testing import CaseObservation, ConformanceHostMetadata
-from simple_harness.tools import AuthorizationDecision, AuthorizationReceipt, AuthorizationRequest, AuthorizationResult, EffectExecutor, FunctionTool, ToolOutcome, ToolRegistry, ToolResult, ToolSpec
-from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
+from simple_harness.tools import (
+    AuthorizationDecision,
+    AuthorizationReceipt,
+    AuthorizationRequest,
+    AuthorizationResult,
+    EffectExecutor,
+    ToolOutcome,
+    ToolResult,
+    ToolSpec,
+)
+from simple_harness.tools.reconciliation import (
+    ReconciliationObservation,
+    ReconciliationState,
+)
 from simple_harness.tools.schema import SchemaDefinitionError
-from simple_harness.workflow import CapabilityBuildHostServices, CheckpointExecutionAdapter, DurableTaskHostServices, END_NODE, Edge, NodeDefinition, PersonalWorkflowHostServices, ProfileDescriptor, StartInputSchema, StatePatch, WorkflowContext, WorkflowDefinition, WorkflowDefinitionRegistration, WorkflowExecutionPorts, WorkflowHostServices, WorkflowProfileRegistration, WorkflowRegistry, WorkflowRunner, compile_workflow, compile_workflow_registration, profile_descriptor_fingerprint, workflow_manifest_hash
+from simple_harness.workflow import (
+    END_NODE,
+    CapabilityBuildHostServices,
+    CheckpointExecutionAdapter,
+    DurableTaskHostServices,
+    Edge,
+    NodeDefinition,
+    PersonalWorkflowHostServices,
+    ProfileDescriptor,
+    StartInputSchema,
+    StatePatch,
+    WorkflowContext,
+    WorkflowDefinition,
+    WorkflowDefinitionRegistration,
+    WorkflowExecutionPorts,
+    WorkflowHostServices,
+    WorkflowProfileRegistration,
+    WorkflowRegistry,
+    WorkflowRunner,
+    compile_workflow,
+    compile_workflow_registration,
+    profile_descriptor_fingerprint,
+    workflow_manifest_hash,
+)
 from simple_harness.workflow.checkpoint import SqliteNativeCheckpointStore
 from simple_harness.workflow.native import NativeWorkflowExecutable
 from simple_harness.workflow.recovery import RecoveryDecision, RecoveryDisposition
 from simple_harness.workflows import build_official_workflow_registrations
-from simple_harness.workflows.capability_build import create_initial_state as capability_initial_state
-from simple_harness.workflows.durable_task import create_initial_state as durable_initial_state
+from simple_harness.workflows.capability_build import (
+    create_initial_state as capability_initial_state,
+)
+from simple_harness.workflows.durable_task import (
+    create_initial_state as durable_initial_state,
+)
 from simple_harness.workflows.durable_task.state import ProposalOutcomeV1
-from simple_harness.workflows.personal_v1 import PersonalWorkflowSelectionV1, create_initial_state as personal_initial_state, personal_workflow_query_hash
+from simple_harness.workflows.personal_v1 import (
+    PersonalWorkflowSelectionV1,
+    personal_workflow_query_hash,
+)
+from simple_harness.workflows.personal_v1 import (
+    create_initial_state as personal_initial_state,
+)
 
-from deskpet.sdk_adapters.composition import ProductSdkRuntimeStack, SdkRuntimeBuildInputs
-from deskpet.product_state.authorization_saga import AuthorizationSagaIdentity, AuthorizationSagaRepository
+from deskpet.product_state.authorization_saga import (
+    AuthorizationSagaIdentity,
+    AuthorizationSagaRepository,
+)
 from deskpet.product_state.database import ProductStateDatabase
 from deskpet.product_state.task_grants import DurableTaskGrantAuthority
-from deskpet.types.task_grants import TaskGrant
 from deskpet.sdk_adapters.authorization import ProductAuthorizationAdapter
+from deskpet.sdk_adapters.composition import (
+    ProductSdkRuntimeStack,
+    SdkRuntimeBuildInputs,
+)
 from deskpet.sdk_adapters.product_workflows.research_ports import (
     ResearchArtifactPort,
     ResearchBlobPort,
@@ -59,9 +134,12 @@ from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
 from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity, sdk_wheel_path
 from deskpet.sdk_adapters.tools import build_product_tool_registry
 from deskpet.sdk_adapters.workflows import build_product_workflow_registrations
-from deskpet.tool_catalog import ToolCatalogDependencies, build_explicit_product_tool_catalog
+from deskpet.tool_catalog import (
+    ToolCatalogDependencies,
+    build_explicit_product_tool_catalog,
+)
 from deskpet.tools.context_page_in_tools import ContextPageInStore
-
+from deskpet.types.task_grants import TaskGrant
 
 _WHEEL = sdk_wheel_path()
 VENDORED_SDK_SHA256 = hashlib.sha256(_WHEEL.read_bytes()).hexdigest()

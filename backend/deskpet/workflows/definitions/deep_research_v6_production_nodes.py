@@ -11,8 +11,10 @@ import copy
 import hashlib
 import inspect
 import json
-from typing import Any, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
+from ..adapters.deep_research_v6_semantic_runtime import INFERENCE_POLICY
 from ..contracts import (
     JsonValue,
     NodeExecutionIdentity,
@@ -22,7 +24,6 @@ from ..contracts import (
     canonical_json,
 )
 from ..store import RegisteredBlobStore
-from ..adapters.deep_research_v6_semantic_runtime import INFERENCE_POLICY
 from .deep_research_v6_assessment import (
     assess_requirements,
     decode_assessment_inputs,
@@ -43,9 +44,9 @@ from .deep_research_v6_contracts import (
 )
 from .deep_research_v6_control import poll_v6_control, settle_v6_control
 from .deep_research_v6_evidence import (
+    GENESIS_EVIDENCE_HEAD,
     AdmittedResearchFactV1,
     EvidenceFactBatchV1,
-    GENESIS_EVIDENCE_HEAD,
     RegisteredInferenceV1,
 )
 from .deep_research_v6_evidence_contracts import (
@@ -55,7 +56,6 @@ from .deep_research_v6_evidence_contracts import (
     InferenceProposalBundleV1,
 )
 from .deep_research_v6_terminal_nodes import CLAIM_POLICY_V1, QUALITY_POLICY_V1
-
 
 ADMISSION_POLICY_V1: dict[str, JsonValue] = {
     "schema_version": 1,

@@ -10,13 +10,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 import httpx
 import structlog
-
 from simple_harness.contracts import ExecutionSessionId, RequestId, RunId
 from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
 from simple_harness.execution.delivery import DeliveryDispatcher
@@ -56,11 +55,15 @@ logger = structlog.get_logger(__name__)
 # Global registry: run_id → ProductDeliveryAdapter
 # Populated by _execute_sdk_run() before starting a Run
 # Cleaned up after Run completes
-_delivery_adapters: dict[str, "ProductDeliveryAdapter"] = {}  # type: ignore[name-defined]
+_delivery_adapters: dict[str, ProductDeliveryAdapter] = {}  # type: ignore[name-defined]
 from deskpet.tools.os_tools.process_tools import process_list
 from deskpet.tools.ppt_tools import _handle_ppt_create
 
-from .composition import OwnedResourceCloser, ProductSdkRuntimeStack, SdkRuntimeBuildInputs
+from .composition import (
+    OwnedResourceCloser,
+    ProductSdkRuntimeStack,
+    SdkRuntimeBuildInputs,
+)
 from .provider import ProductProviderAdapter
 from .runtime_paths import ProductRuntimePathsAdapter
 from .sdk_candidate import build_candidate_identity
@@ -100,7 +103,7 @@ class _AllowSelectedTools:
 
 def _host_receipt(kind: str, sdk_receipt: AuthorizationReceipt) -> AuthorizationReceipt:
     digest = hashlib.sha256(
-        f"desktop-sdk-test:{kind}:{sdk_receipt.receipt_hash}".encode("utf-8")
+        f"desktop-sdk-test:{kind}:{sdk_receipt.receipt_hash}".encode()
     ).hexdigest()
     return AuthorizationReceipt(
         receipt_ref=f"desktop-sdk-test:{kind}:{digest}",
@@ -153,7 +156,6 @@ class _DeliverySink:
             idempotency_key: Unique delivery key from SDK
         """
         # Import here to avoid circular dependency
-        from .delivery import ProductDeliveryAdapter
 
         # Extract run_id from payload or idempotency_key
         # Strategy 1: Check if payload contains run_id directly
@@ -402,7 +404,7 @@ class DesktopSdkRuntimeBridge:
     @staticmethod
     def run_id_for(session_id: str, request_id: str, turn_id: str) -> str:
         identity = hashlib.sha256(
-            f"{session_id}\0{request_id}\0{turn_id}".encode("utf-8")
+            f"{session_id}\0{request_id}\0{turn_id}".encode()
         ).hexdigest()
         return f"desktop-sdk-{identity}"
 

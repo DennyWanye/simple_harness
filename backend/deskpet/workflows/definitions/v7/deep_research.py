@@ -19,11 +19,16 @@ from ...contracts import (
     WorkflowState,
     validate_json_value,
 )
-from ...definition import END_NODE, Edge, NodeDefinition, WorkflowDefinition, compile_workflow
+from ...definition import (
+    END_NODE,
+    Edge,
+    NodeDefinition,
+    WorkflowDefinition,
+    compile_workflow,
+)
 from ...store import BlobStore
 from .. import deep_research_nodes as payload_codec
 from ..research_core import ResearchArtifactPort, ResearchPorts
-
 
 WORKFLOW_NAME = "deep_research"
 WORKFLOW_VERSION = "v7"

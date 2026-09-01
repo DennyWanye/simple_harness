@@ -19,12 +19,14 @@ import hashlib
 import json
 import re
 import time
-import structlog
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from html.parser import HTMLParser
-from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
+from typing import Any, Literal, Protocol
 from urllib.parse import urljoin, urlsplit
+
+import structlog
 
 from deskpet.execution.dispatch import dispatch_with_run_fence
 
@@ -74,7 +76,6 @@ from ..trace.context import current_span
 from ..trace.models import SpanKind, SpanStatus
 from ..trace.store import TraceStore
 
-
 PARENT_DEADLINE_MS = 120_000
 PAGE_DEADLINE_MS = 20_000
 MAX_QUERY_COUNT = 6
@@ -104,7 +105,7 @@ class _ControlSignalPort(Protocol):
 class DeepResearchV6RetrievalResult:
     """Inspectable result while ``load_pages`` exposes only graph page inputs."""
 
-    pages: tuple["V6FetchedPageRefPayloadV1", ...]
+    pages: tuple[V6FetchedPageRefPayloadV1, ...]
     parent_deadline: DurableDeadlineV1
     search_count: int
     fetch_count: int
@@ -517,7 +518,7 @@ class DeepResearchV6EvidenceRuntime:
         self.max_fetch_concurrency = int(max_fetch_concurrency)
         self.max_lanes = int(max_lanes)
         self.max_query_chars = int(max_query_chars)
-        self.wall_clock = wall_clock or (lambda: datetime.now(timezone.utc))
+        self.wall_clock = wall_clock or (lambda: datetime.now(UTC))
         self.monotonic_ns = monotonic_ns or time.monotonic_ns
         self.trace_store = trace_store or TraceStore(blobs.database)
         self.durable_reads = durable_reads
@@ -565,7 +566,7 @@ class DeepResearchV6EvidenceRuntime:
         if parent is None:
             return None
         span_id = hashlib.sha256(
-            f"{parent.span_id}|{stage}|{request_id}|{ordinal}".encode("utf-8")
+            f"{parent.span_id}|{stage}|{request_id}|{ordinal}".encode()
         ).hexdigest()
         try:
             await self.trace_store.start_span(
@@ -2247,7 +2248,7 @@ class DeepResearchV6EvidenceRuntime:
                 "source_tier": source_tier,
                 "body_ref": format_blob_ref(body_blob.sha256),
                 "body_hash": body_hash,
-                "fetched_at": document.fetched_at or datetime.now(timezone.utc).isoformat(),
+                "fetched_at": document.fetched_at or datetime.now(UTC).isoformat(),
                 "media_type": "text/html; charset=utf-8" if prefer_html else "text/plain; charset=utf-8",
                 "admission_status": "admitted",
                 "reason_codes": [admission_reason],
@@ -2381,12 +2382,12 @@ class DeepResearchV6EvidenceRuntime:
 
 
 __all__ = [
-    "DeepResearchV6EvidenceRuntime",
-    "DeepResearchV6RetrievalResult",
-    "V6FetchedPageRefPayloadV1",
     "MAX_FETCH_CONCURRENCY",
     "MAX_FETCH_COUNT",
     "MAX_QUERY_COUNT",
     "PAGE_DEADLINE_MS",
     "PARENT_DEADLINE_MS",
+    "DeepResearchV6EvidenceRuntime",
+    "DeepResearchV6RetrievalResult",
+    "V6FetchedPageRefPayloadV1",
 ]

@@ -15,18 +15,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, Literal, Mapping, Sequence, cast
+from typing import Any, Literal, cast
 
 from simple_harness import FrozenJsonValue, freeze_json, thaw_json
 from simple_harness.tools import (
     SkillResourceRecord,
-    ToolExposureMode as SdkToolExposureMode,
     WorkflowProfileRecord,
+)
+from simple_harness.tools import (
+    ToolExposureMode as SdkToolExposureMode,
 )
 
 from deskpet.capabilities.contracts import fingerprint_json
-
 
 _RUN_VERIFICATION_EVIDENCE_ISSUER = object()
 
@@ -306,7 +308,7 @@ class SkillRunPageInVerificationEvidence:
         run_catalog_content_stamp: str,
         process_catalog_stamp: str,
         members: Sequence[SkillRunPageInMember],
-    ) -> "SkillRunPageInVerificationEvidence":
+    ) -> SkillRunPageInVerificationEvidence:
         ordered = tuple(sorted(members, key=lambda item: item.skill_name))
         payload = {
             "schema": "skill-run-page-in-verification/v1",
@@ -578,7 +580,7 @@ class ProductCapabilityCatalogSourceAdapter:
         install_scope: str = "project",
         records: Sequence[SkillResourceRecord],
         expected_skill_names: Iterable[str],
-    ) -> "SkillRunPageInVerificationEvidence":
+    ) -> SkillRunPageInVerificationEvidence:
         """Prove exact Skill bytes are resolvable by a bound, ready fresh Run.
 
         The application service owns creation and terminal settlement of the

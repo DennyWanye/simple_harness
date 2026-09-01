@@ -229,9 +229,10 @@ class ProductDeliveryAdapter:
                 )
 
         try:
+            from simple_harness import thaw_json
+
             from agent.agent_loop import ToolCallEvent
             from llm.types import ToolCall
-            from simple_harness import thaw_json
 
             await self._presenter.present(
                 ToolCallEvent(
@@ -260,8 +261,9 @@ class ProductDeliveryAdapter:
         try:
             import json
 
-            from agent.agent_loop import ToolResultEvent
             from simple_harness import thaw_json
+
+            from agent.agent_loop import ToolResultEvent
 
             envelope = {
                 "outcome": result.outcome.value,
@@ -296,7 +298,7 @@ class ProductDeliveryAdapter:
                 error=str(exc),
             )
 
-    def _deserialize_run_event(self, payload: dict[str, Any]) -> "RunEvent":
+    def _deserialize_run_event(self, payload: dict[str, Any]) -> RunEvent:
         """Deserialize SDK delivery payload → RunEvent.
 
         Args:
@@ -309,7 +311,7 @@ class ProductDeliveryAdapter:
             ValueError: If payload structure is invalid
         """
         # Import here to avoid circular dependencies
-        from deskpet.execution.contracts import RunEvent, RunEventCandidate, LiveCursor
+        from deskpet.execution.contracts import LiveCursor, RunEvent, RunEventCandidate
 
         try:
             # Reconstruct nested candidate object
