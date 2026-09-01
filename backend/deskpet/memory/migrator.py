@@ -36,7 +36,7 @@ import re
 import sqlite3
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import aiosqlite
@@ -350,7 +350,7 @@ def _safe_timestamp() -> str:
 
     用于 ``.bak.<ts>`` 后缀 —— Windows 文件名不能包含 ``:``。
     """
-    now = datetime.now(timezone.utc).replace(microsecond=0)
+    now = datetime.now(UTC).replace(microsecond=0)
     # "2026-04-24T12:34:56+00:00" → "2026-04-24T12-34-56"
     return now.isoformat().replace(":", "-").split("+")[0]
 
@@ -541,7 +541,7 @@ async def run_migrations(
                     )
                     await db.execute(f"PRAGMA user_version={_V17_SCHEMA_VERSION}")
                     await db.commit()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     log.error(
                         "migration %s failed: %s (db=%s)",
@@ -565,7 +565,7 @@ async def run_migrations(
                     )
                     await db.execute(f"PRAGMA user_version={_V18_SCHEMA_VERSION}")
                     await db.commit()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     log.error(
                         "migration %s failed: %s (db=%s)",
@@ -589,7 +589,7 @@ async def run_migrations(
                     )
                     await db.execute(f"PRAGMA user_version={_V19_SCHEMA_VERSION}")
                     await db.commit()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     log.error(
                         "migration %s failed: %s (db=%s)",
@@ -620,7 +620,7 @@ async def run_migrations(
                         f"PRAGMA user_version={_COMPANION_PROJECTION_SCHEMA_VERSION}"
                     )
                     await db.commit()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     log.error(
                         "migration %s failed: %s (db=%s)",
@@ -646,7 +646,7 @@ async def run_migrations(
                         f"PRAGMA user_version={_CONTEXT_USAGE_HISTORY_SCHEMA_VERSION}"
                     )
                     await db.commit()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     log.error(
                         "migration %s failed: %s (db=%s)",
@@ -896,7 +896,7 @@ async def run_migrations(
                         fault_inject("after_task_workspace_binding_commit")
                     if version in _S4_HUMAN_MIGRATIONS and fault_inject:
                         fault_inject(f"after_{version.removesuffix('.sql')}_commit")
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     log.error(
                         "migration %s failed: %s (db=%s)",
@@ -965,7 +965,7 @@ async def run_migrations(
                         f"PRAGMA user_version={_PROVIDER_BINDING_LIFECYCLE_SCHEMA_VERSION}"
                     )
                     await db.commit()
-                except Exception as exc:  # noqa: BLE001
+                except Exception as exc:
                     await db.rollback()
                     raise MigrationError(
                         "provider binding lifecycle repair failed"

@@ -8411,6 +8411,50 @@ async def _build_product_sdk_runtime_stack(
     service_context.register(
         "sdk_prepared_authorization_policy", authorization_policy
     )
+
+    # S5a — register the three concrete SDK 0.7 authorities.  Missing any
+    # prerequisite must fail the stack build (no Noop/fake fallback); the
+    # proxies in _sdk_runtime_authority_bindings stay fail-closed otherwise.
+    from deskpet.sdk_adapters.context_authority import (
+        ContextRouteLedgerStore,
+        ProductRunContextAuthority,
+        ProductRuntimeDecisionSink,
+    )
+    from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
+
+    if tool_authorities is None:
+        raise RuntimeError("sdk_context_authority_composition_missing:tool_authority_registry")
+    context_route_ledger = ContextRouteLedgerStore(_state_db_path)
+    context_route_ledger.verify_schema()
+
+    def _authority_ports():
+        ports = production_ports.get("ports")
+        if ports is None:
+            raise RuntimeError("sdk_run_context_authority_ports_unbound")
+        return ports
+
+    service_context.register(
+        "sdk_run_context_authority",
+        ProductRunContextAuthority(
+            ports_resolver=_authority_ports,
+            exposure_resolver=tool_authorities.resolve_exposure,
+            ledger=context_route_ledger,
+        ),
+    )
+    service_context.register(
+        "sdk_runtime_decision_sink",
+        ProductRuntimeDecisionSink(ledger=context_route_ledger),
+    )
+    service_context.register(
+        "sdk_task_execution_authority", ProductTaskExecutionAuthority()
+    )
+    for slot in (
+        "sdk_run_context_authority",
+        "sdk_runtime_decision_sink",
+        "sdk_task_execution_authority",
+    ):
+        if service_context.get(slot) is None:
+            raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
     return stack
 
 
