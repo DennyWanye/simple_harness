@@ -12,13 +12,53 @@ facade DTO.
 from __future__ import annotations
 
 import asyncio
+import importlib.metadata
 import json
+import sqlite3
+import threading
+import time
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 
-from deskpet.execution.foreground_queue import ContextLineage, ForegroundQueueStore
+from simple_harness import (
+    ROOT_PROFILE_KEY,
+    RuntimePorts,
+    RuntimeProfile,
+    SqliteContextPort,
+)
+from simple_harness.contracts.messages import Message, MessageRole
+from simple_harness.execution.budget import BudgetPolicy
+from simple_harness.execution.context_authority import ToolCatalogSnapshot
+from simple_harness.execution.delivery import DeliveryDispatcher
+from simple_harness.execution.dispatch import (
+    ProviderBinding,
+    ProviderInvocationCoordinator,
+)
+from simple_harness.providers import ProviderResponse, ProviderTarget, ProviderToolSpec
+from simple_harness.runtime import AgentLoopCollaborator, EffectBatchExecutor
+from simple_harness.runtime.drivers import ReActDriver
+from simple_harness.tools import (
+    AuthorizationDecision,
+    AuthorizationResult,
+    EffectExecutor,
+    ReconciliationObservation,
+    ReconciliationState,
+    ToolRegistry,
+)
+
+from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.foreground_runtime import (
+    ForegroundRuntimeExecutionAuthority,
+    SqliteSdkTerminalObserver,
+)
+from deskpet.execution.foreground_runtime_ports import (
+    ProductForegroundProviderPort,
+    ProductForegroundToolPort,
+    TaskScopeForegroundContextPort,
+)
 from deskpet.memory.human_memory_service import (
     AppendBindingRequest,
     AppendDeterministicEventsRequest,
@@ -27,6 +67,7 @@ from deskpet.memory.human_memory_service import (
     AuthenticatedHostSnapshot,
     ControlRunRequest,
     CreateTaskScopeRequest,
+    DecideManualBindingRequest,
     HumanMemoryHostService,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
@@ -41,7 +82,29 @@ from deskpet.memory.human_memory_service import (
 )
 from deskpet.memory.recovery_fence import build_recovery_lifecycle_port
 from deskpet.memory.schema import dispatch_startup_epoch, inspect_startup_epoch
+from deskpet.sdk_adapters.composition import (
+    ProductSdkRuntimeStack,
+    SdkRuntimeBuildInputs,
+)
+from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
+from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+from deskpet.sdk_adapters.runtime_paths import ProductRuntimePathsAdapter
+from deskpet.sdk_adapters.sdk_candidate import (
+    SDK_CANDIDATE_MANIFEST_SHA256,
+    SDK_SOURCE_COMMIT,
+    SDK_VERSION,
+    SDK_WHEEL_FILENAME,
+    SDK_WHEEL_SHA256,
+    build_candidate_identity,
+)
+from deskpet.sdk_adapters.tool_authority import SdkRunToolAuthorityRegistry
+from deskpet.sdk_adapters.tools import ProductToolInventoryEntry
+from deskpet.task_scope.protocol import canonical_hash
+from deskpet.task_scope.runtime_binding_authority import (
+    WorkspaceBindingRuntimeAuthority,
+)
 from deskpet.task_scope.store import CanonicalTaskScopeStore
+from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 
 
 class _CanonicalBulkSeed:
@@ -63,60 +126,202 @@ class _CanonicalBulkSeed:
         }
 
 
-class _FixtureBindingAppend:
-    """Constructor-bound verification authority for the public API smoke.
+class _Policy:
+    def __init__(self) -> None:
+        self.mode = "manual"
+        self.generation = 0
 
-    The binding state machine itself is covered by its focused suite.  This
-    seam proves the facade cannot mint a grant from request fields.
-    """
+    async def get_policy_state(self):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(mode=self.mode, generation=self.generation)
 
-    async def append_binding(self, **values):  # type: ignore[no-untyped-def]
-        payload = {
-            "subject": values["subject"],
-            "task_scope_id": values["task_scope_id"],
-            "root": values["root"],
-            "idempotency_key": values["idempotency_key"],
-        }
-        digest = __import__("hashlib").sha256(
-            __import__("json").dumps(
-                payload, sort_keys=True, separators=(",", ":")
-            ).encode("utf-8")
-        ).hexdigest()
-        return {
-            "scope_ref": values["task_scope_id"],
-            "receipt_ref": f"fixture-binding:{digest}",
-            "receipt_hash": digest,
-        }
+    def select(self, mode: str) -> None:
+        if mode != self.mode:
+            self.mode = mode
+            self.generation += 1
 
 
-class _FixtureSchedulerWake:
-    def __init__(self, db_path: Path) -> None:
-        self._store = ForegroundQueueStore(db_path)
+class _Noop:
+    async def reconcile(self):  # type: ignore[no-untyped-def]
+        return None
+
+    async def run_once(self):  # type: ignore[no-untyped-def]
+        return False
+
+    def current_generation(self) -> int:
+        return 1
+
+
+class _Authorization:
+    async def authorize(self, prepared):  # type: ignore[no-untyped-def]
+        return AuthorizationResult(
+            AuthorizationDecision.ALLOW,
+            receipt_ref=f"s4-authorization:{prepared.effect_id.value}",
+        )
+
+
+class _Reconciliation:
+    async def observe(self, prepared):  # type: ignore[no-untyped-def]
+        return ReconciliationObservation(
+            ReconciliationState.STILL_UNKNOWN,
+            f"s4-reconciliation:{prepared.effect_id.value}",
+        )
+
+
+class _DeliverySink:
+    async def deliver(self, payload, *, idempotency_key):  # type: ignore[no-untyped-def]
+        del payload, idempotency_key
+
+
+class _DeterministicProvider:
+    target = ProviderTarget(
+        "deterministic-text-terminal",
+        "gpt-4o-mini",
+        "gpt-4o-mini",
+        "local",
+        "s4-value",
+    )
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    async def invoke(self, request, *, cancel):  # type: ignore[no-untyped-def]
+        self.started.set()
+        while not self.release.is_set():
+            if cancel.is_cancelled:
+                raise asyncio.CancelledError
+            try:
+                await asyncio.wait_for(self.release.wait(), timeout=0.05)
+            except TimeoutError:
+                pass
+        return ProviderResponse(
+            request.request_id,
+            Message(MessageRole.ASSISTANT, "deterministic terminal answer"),
+            model="gpt-4o-mini",
+            finish_reason="stop",
+        )
+
+
+class _DeterministicProviderRegistry:
+    def __init__(self) -> None:
+        self._entry = SimpleNamespace(
+            enabled=True,
+            model="gpt-4o-mini",
+            incarnation_id="s4-provider-incarnation-v1",
+            config_revision=1,
+        )
+
+    def get_chain(self):  # type: ignore[no-untyped-def]
+        return ({"id": "deterministic-text-terminal", "model": "gpt-4o-mini"},)
+
+    def get_entry(self, provider_id: str):  # type: ignore[no-untyped-def]
+        return self._entry if provider_id == "deterministic-text-terminal" else None
+
+    def snapshot_digest(self) -> str:
+        return canonical_hash(
+            {
+                "provider_id": "deterministic-text-terminal",
+                "incarnation_id": self._entry.incarnation_id,
+                "config_revision": self._entry.config_revision,
+            }
+        )
+
+
+class _DeterministicProviderBindingResolver:
+    """In-process Provider harness behind the production Provider port."""
+
+    def __init__(self) -> None:
+        self._bindings: dict[str, SdkRunBindingV1] = {}
+        self._authorities: dict[str, ProviderBinding] = {}
+        self._providers: dict[str, _DeterministicProvider] = {}
+
+    def create_binding(self, **raw: Any) -> SdkRunBindingV1:
+        run_id = str(raw["run_id"])
+        provider = self._providers.get(run_id)
+        if provider is None:
+            provider = _DeterministicProvider()
+            self._providers[run_id] = provider
+        authority = ProviderBinding(provider, None, BudgetPolicy())
+        binding = SdkRunBindingV1.build(
+            **raw, budget_fingerprint=authority.budget_fingerprint
+        )
+        current = self._bindings.get(run_id)
+        if current is not None and current.binding_fingerprint != binding.binding_fingerprint:
+            raise RuntimeError("sdk_run_binding_conflict")
+        self._bindings[run_id] = current or binding
+        self._authorities.setdefault(run_id, authority)
+        return self._bindings[run_id]
+
+    def resolve(self, run_id):  # type: ignore[no-untyped-def]
+        value = str(getattr(run_id, "value", run_id))
+        authority = self._authorities.get(value)
+        if authority is None:
+            raise KeyError(value)
+        return authority
+
+    async def wait_started(self, run_id: str) -> None:
+        provider = self._providers.get(run_id)
+        if provider is None:
+            raise RuntimeError("deterministic_provider_missing")
+        await provider.started.wait()
+
+    def finish(self, run_id: str) -> None:
+        provider = self._providers.get(run_id)
+        if provider is None:
+            raise RuntimeError("deterministic_provider_missing")
+        provider.release.set()
+
+    def mark_terminal(self, run_id: str, state: str) -> None:
+        if state not in {"completed", "failed", "cancelled", "stopped"}:
+            raise ValueError("terminal state required")
+
+
+class _Catalog:
+    def __init__(self, catalog: Mapping[str, object]) -> None:
+        self._generation = int(catalog["generation"])
+        self._fingerprint = str(catalog["content_fingerprint"])
+        self._specs = tuple(
+            ProviderToolSpec(
+                str(item["name"]),
+                str(item["description"]),
+                dict(cast(Mapping[str, object], item["input_schema"])),
+            )
+            for item in cast(list[Mapping[str, object]], catalog["specs"])
+        )
+
+    def current_generation(self) -> int:
+        return self._generation
+
+    def resolve(self, generation: int, content_fingerprint: str):  # type: ignore[no-untyped-def]
+        if generation != self._generation or content_fingerprint != self._fingerprint:
+            return None
+        return ToolCatalogSnapshot(
+            self._generation, self._fingerprint, self._specs, 0.0
+        )
+
+
+class _RuntimeAudit:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def record(self, event: str, payload: Mapping[str, object]) -> None:
+        self.events.append((event, dict(payload)))
+
+
+class _DeterministicWakeGate:
+    """Let the frozen runner persist its complete queue before execution starts."""
+
+    def __init__(
+        self, runtime: ForegroundRuntimeExecutionAuthority, *, release_after: int
+    ) -> None:
+        self._runtime = runtime
+        self._release_after = release_after
+        self._enqueue_count = 0
 
     async def after_enqueue(self, *, subject: str) -> None:
-        if await self._store.current_snapshot(subject) is not None:
-            return
-        candidate = await self._store.read_next_preparation_candidate(subject)
-        if candidate is None:
-            return
-        draft = await self._store.prepare_candidate(
-            subject=subject,
-            expected_candidate_hash=candidate.candidate_hash,
-            context=ContextLineage(
-                context_snapshot_id="fixture-context",
-                context_snapshot_revision=1,
-                context_snapshot_hash="c" * 64,
-            ),
-            idempotency_key=f"fixture-preparation:{candidate.turn_id}",
-        )
-        await self._store.claim_next(
-            subject=subject,
-            owner_id="fixture-foreground-scheduler",
-            claim_idempotency_key="fixture-claim-current",
-            preparation_draft_id=draft.draft_id,
-            preparation_draft_hash=draft.draft_hash,
-            lease_seconds=3600.0,
-        )
+        self._enqueue_count += 1
+        if self._enqueue_count >= self._release_after:
+            await self._runtime.after_enqueue(subject=subject)
 
 
 class S4ValuePublicAdapter:
@@ -134,62 +339,344 @@ class S4ValuePublicAdapter:
         self._db_path: Path | None = None
         self._service: HumanMemoryHostService | None = None
         self._primary_ref: str | None = None
+        self._foreground: ForegroundQueueStore | None = None
+        self._binding: WorkspaceBindingRuntimeAuthority | None = None
+        self._policy = _Policy()
+        self._runtime: ForegroundRuntimeExecutionAuthority | None = None
+        self._runtime_stack: ProductSdkRuntimeStack | None = None
+        self._ingress: SdkRuntimeIngress | None = None
+        self._sdk_db_path: Path | None = None
+        self._provider_registry = _DeterministicProviderRegistry()
+        self._provider_bindings = _DeterministicProviderBindingResolver()
+        self._tool_authorities = SdkRunToolAuthorityRegistry()
+        self._runtime_audit = _RuntimeAudit()
+        self._owner_generation = 0
+        self._session_db_reads = 0
+        self._logical_roots: dict[str, Path] = {}
+        self._catalog, self._inventory = self._build_catalog()
+        self._loop = asyncio.new_event_loop()
+        self._loop_thread = threading.Thread(
+            target=self._run_event_loop,
+            name=f"s4-value-adapter-{uuid.uuid4().hex[:8]}",
+            daemon=True,
+        )
+        self._loop_thread.start()
+
+    @staticmethod
+    def _build_catalog() -> tuple[dict[str, object], tuple[ProductToolInventoryEntry, ...]]:
+        specs = [
+            {
+                "name": name,
+                "description": f"S4 deterministic {name}",
+                "input_schema": {"type": "object", "properties": {}},
+            }
+            for name in ("tool_search", "tool_describe", "tool_activate")
+        ]
+        schema_fingerprints = {
+            str(item["name"]): canonical_hash(item["input_schema"])
+            for item in specs
+        }
+        catalog: dict[str, object] = {
+            "generation": 1,
+            "content_fingerprint": canonical_hash(specs),
+            "tool_names": [str(item["name"]) for item in specs],
+            "tool_count": len(specs),
+            "schema_token_count": sum(max(1, len(repr(item)) // 4) for item in specs),
+            "schema_fingerprints": schema_fingerprints,
+            "specs": specs,
+        }
+        inventory = tuple(
+            ProductToolInventoryEntry(
+                name=str(item["name"]),
+                dispatch_kind="control",
+                permission_category="read_file",
+                source="s4-deterministic-runtime",
+                version="v1",
+                execution_identity=canonical_hash(item),
+                projectless_admission="safe",
+            )
+            for item in specs
+        )
+        return catalog, inventory
+
+    def _run_event_loop(self) -> None:
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
 
     def invoke(self, operation: str, request: dict[str, Any]) -> dict[str, Any]:
         try:
-            payload = asyncio.run(self._invoke(operation, dict(request)))
+            future = asyncio.run_coroutine_threadsafe(
+                self._invoke(operation, dict(request)), self._loop
+            )
+            payload = future.result(timeout=180.0)
         except Exception as exc:  # noqa: BLE001 - stable black-box projection
             return {
                 "ok": False,
                 "status": 409,
                 "code": getattr(exc, "code", str(exc) or type(exc).__name__),
             }
+        if (
+            isinstance(payload, Mapping)
+            and payload.get("status") == "authorization_required"
+            and payload.get("code")
+        ):
+            return {
+                "ok": False,
+                "status": 409,
+                "code": str(payload["code"]),
+                "payload": dict(payload),
+            }
         return {"ok": True, "status": 200, "payload": payload}
+
+    async def _start_sdk_stack(self) -> None:
+        runtime_root = self._artifact_dir / "sdk-runtime"
+        runtime_paths = ProductRuntimePathsAdapter(runtime_root)
+        self._sdk_db_path = runtime_paths.execution_database
+        catalog_port = _Catalog(self._catalog)
+
+        def ports_factory(database, uow):  # type: ignore[no-untyped-def]
+            authorization = _Authorization()
+            reconciliation = _Reconciliation()
+            provider = ProviderInvocationCoordinator(
+                uow=uow,
+                resolver=self._provider_bindings,
+                clock=time.time,
+            )
+            tools = EffectExecutor(
+                uow=uow,
+                registry=ToolRegistry(),
+                authorization=authorization,
+                reconciliation=reconciliation,
+                clock=time.time,
+            )
+            return RuntimePorts(
+                provider=provider,
+                tools=tools,
+                authorization=authorization,
+                context=SqliteContextPort(database, clock=time.time),
+                delivery=DeliveryDispatcher(
+                    uow, {"s4-value": _DeliverySink()}, clock=time.time
+                ),
+                tool_reconciliation=reconciliation,
+                reconciliation=_Noop(),
+                provider_reconciliation=_Noop(),
+                react_checkpoint=uow,
+                tool_catalog=catalog_port,
+                owner_id="s4-sdk-runtime-owner",
+                clock=time.time,
+            )
+
+        self._runtime_stack = ProductSdkRuntimeStack(
+            paths=runtime_paths,
+            candidate_identity=build_candidate_identity(),
+            dependency_loader=lambda: SdkRuntimeBuildInputs(
+                profiles={
+                    ROOT_PROFILE_KEY: RuntimeProfile(ROOT_PROFILE_KEY, "react")
+                },
+                drivers={
+                    "react": ReActDriver(
+                        collaborator=AgentLoopCollaborator(),
+                        effects=EffectBatchExecutor(),
+                        clock=time.time,
+                    )
+                },
+                ports_factory=ports_factory,
+                workflow_catalog_digest="s4-value-runtime-v1",
+            ),
+        )
+        await self._runtime_stack.start()
+        self._ingress = SdkRuntimeIngress(self._runtime_stack)
+        self._ingress.open()
+
+    async def _bind_host(self, *, startup, restart: bool) -> None:  # type: ignore[no-untyped-def]
+        path = self._require_db()
+        self._foreground = ForegroundQueueStore(path)
+        configured = self._logical_roots["configured_root"]
+        self._binding = WorkspaceBindingRuntimeAuthority(
+            path,
+            subject=self._auth.subject,
+            foreground=self._foreground,
+            policy=self._policy,
+            configured_workspace_root=configured,
+            home_directory=self._artifact_dir,
+        )
+        if self._runtime_stack is None or self._ingress is None:
+            raise HumanMemoryHostServiceError("human_memory_sdk_runtime_unavailable")
+        self._owner_generation += 1
+        self._runtime = ForegroundRuntimeExecutionAuthority(
+            store=self._foreground,
+            subject=self._auth.subject,
+            owner_id=f"s4-foreground-owner-{self._owner_generation}",
+            ingress=self._ingress,
+            context=TaskScopeForegroundContextPort(path, subject=self._auth.subject),
+            provider=ProductForegroundProviderPort(
+                self._provider_registry, self._provider_bindings
+            ),
+            tools=ProductForegroundToolPort(
+                path,
+                catalog=self._catalog,
+                inventory=self._inventory,
+                registry=self._tool_authorities,
+            ),
+            terminal_observer=SqliteSdkTerminalObserver(
+                str(path), self._ingress, self._runtime_stack
+            ),
+            audit_sink=self._runtime_audit,
+            lease_seconds=300.0,
+        )
+        scheduler_wake = (
+            self._runtime
+            if restart
+            else _DeterministicWakeGate(self._runtime, release_after=2)
+        )
+        self._service = HumanMemoryHostServiceFactory(path, startup).bind(
+            self._auth,
+            deterministic_event_seed=_CanonicalBulkSeed(path),
+            binding_append=self._binding,
+            recovery=build_recovery_lifecycle_port(
+                db_path=path, artifact_dir=self._artifact_dir
+            ),
+            scheduler_wake=scheduler_wake,
+        )
+        if restart and await self._foreground.current_snapshot(self._auth.subject):
+            await self._runtime.after_enqueue(subject=self._auth.subject)
 
     async def _invoke(
         self, operation: str, request: dict[str, Any]
     ) -> Mapping[str, object]:
         if operation == "host.reset_fresh":
-            if request != {"data_format": "human-memory-v1"}:
+            if request.get("data_format") != "human-memory-v1":
                 raise HumanMemoryHostServiceError("human_memory_data_format_rejected")
             self._db_path = self._artifact_dir / f"s4-value-{uuid.uuid4().hex}.db"
+            workspace_root = self._artifact_dir / "workspace"
+            self._logical_roots = {
+                "manual_root": workspace_root / "runtime-alpha",
+                "second_manual_root": workspace_root / "runtime-alpha-dependency",
+                "auto_root": workspace_root / "configured" / "runtime-alpha-auto",
+                "outside_root": workspace_root / "outside",
+                "configured_root": workspace_root / "configured",
+            }
+            for root in self._logical_roots.values():
+                root.mkdir(parents=True, exist_ok=True)
             startup = await dispatch_startup_epoch(
                 self._db_path, approved_fresh_lane=True
             )
-            self._service = HumanMemoryHostServiceFactory(
-                self._db_path, startup
-            ).bind(
-                self._auth,
-                deterministic_event_seed=_CanonicalBulkSeed(self._db_path),
-                binding_append=_FixtureBindingAppend(),
-                recovery=build_recovery_lifecycle_port(
-                    db_path=self._db_path, artifact_dir=self._artifact_dir
-                ),
-                scheduler_wake=_FixtureSchedulerWake(self._db_path),
-            )
+            await self._start_sdk_stack()
+            await self._bind_host(startup=startup, restart=False)
             return {
                 "format_epoch": startup.composition_mode.value,
                 "startup_epoch": startup.epoch.value,
             }
         if operation == "host.cold_restart":
             path = self._require_db()
+            if self._runtime is not None:
+                await self._runtime.close(timeout=0.01)
             startup = inspect_startup_epoch(path, approved_fresh_lane=False)
-            self._service = HumanMemoryHostServiceFactory(path, startup).bind(
-                self._auth,
-                deterministic_event_seed=_CanonicalBulkSeed(path),
-                binding_append=_FixtureBindingAppend(),
-                recovery=build_recovery_lifecycle_port(
-                    db_path=path, artifact_dir=self._artifact_dir
-                ),
-                scheduler_wake=_FixtureSchedulerWake(path),
+            before = self._start_observation_count("QUERY_FOUND")
+            await self._bind_host(startup=startup, restart=True)
+            await self._wait_for(
+                lambda: self._start_observation_count("QUERY_FOUND") > before,
+                "foreground_runtime_restart_reconciliation_timeout",
             )
             return {
                 "format_epoch": startup.composition_mode.value,
                 "startup_epoch": startup.epoch.value,
+                "reconciled": True,
             }
 
         service = self._require_service()
         self._assert_fixture_principal(request)
+        if operation == "host.composition_snapshot":
+            ports = []
+            if self._binding is not None:
+                ports.extend(
+                    (
+                        "human_memory_binding_append_authority",
+                        "human_memory_recovery_lifecycle",
+                    )
+                )
+            if self._runtime is not None:
+                ports.extend(
+                    (
+                        "human_memory_foreground_scheduler_wake",
+                        "human_memory_foreground_runtime_execution_authority",
+                    )
+                )
+            return {
+                "epoch": "HUMAN",
+                "registered_ports": ports,
+                "fixture_ports": [],
+                "legacy_future_registered_ports": [],
+            }
+        if operation == "runtime.identity":
+            distribution = importlib.metadata.distribution("simple-harness-sdk")
+            import simple_harness
+
+            return {
+                "filename": SDK_WHEEL_FILENAME,
+                "sha256": SDK_WHEEL_SHA256,
+                "distribution": distribution.metadata["Name"],
+                "version": SDK_VERSION,
+                "source_commit": SDK_SOURCE_COMMIT,
+                "module_origin": str(Path(simple_harness.__file__).resolve()),
+                "public_contract_manifest_hash": SDK_CANDIDATE_MANIFEST_SHA256,
+            }
+        if operation == "execution.await_current":
+            expected = str(request.get("state") or "RUNNING")
+            await self._wait_for_current_state(expected)
+            snapshot = await self._require_foreground().current_snapshot(
+                self._auth.subject
+            )
+            if snapshot is None or snapshot.sdk_run_id is None:
+                raise HumanMemoryHostServiceError(
+                    "human_memory_foreground_run_not_found"
+                )
+            await self._provider_bindings.wait_started(snapshot.sdk_run_id)
+            await self._wait_for(
+                lambda: self._sdk_checkpoint_exists(snapshot.sdk_run_id),
+                "foreground_runtime_checkpoint_timeout",
+            )
+            return self._execution_projection(snapshot.host_run_id)
+        if operation == "runtime.finish_current":
+            if str(request.get("terminal") or "").upper() != "COMPLETED":
+                raise HumanMemoryHostServiceError(
+                    "human_memory_test_terminal_unsupported"
+                )
+            snapshot = await self._require_foreground().current_snapshot(
+                self._auth.subject
+            )
+            sdk_run_id = str(request.get("sdk_run_id") or "")
+            if snapshot is None or snapshot.sdk_run_id != sdk_run_id:
+                raise HumanMemoryHostServiceError("foreground_run_stale_generation")
+            host_run_id = snapshot.host_run_id
+            self._provider_bindings.finish(sdk_run_id)
+            await self._wait_for(
+                lambda: self._terminal_recorded(host_run_id),
+                "foreground_runtime_terminal_timeout",
+            )
+            return {
+                "host_run_id": host_run_id,
+                "sdk_run_id": sdk_run_id,
+                "terminal": "COMPLETED",
+            }
+        if operation == "execution.audit":
+            return self._execution_audit_projection()
+        if operation == "effect.project":
+            snapshot = await self._require_foreground().current_snapshot(
+                self._auth.subject
+            )
+            if snapshot is None or snapshot.host_run_id != str(request.get("run_ref")):
+                raise HumanMemoryHostServiceError(
+                    "workspace_binding_current_run_authority_required"
+                )
+            receipt = await WorkspaceBindingAuthorityStore(
+                self._require_db()
+            ).current_receipt(str(snapshot.task_scope_id))
+            if len(receipt.root_identity_hashes) != 1:
+                raise HumanMemoryHostServiceError(
+                    "workspace_binding_effect_root_selector_required"
+                )
+            return {"effect": str(request.get("effect") or ""), "authorized": True}
         if operation == "primary.open":
             result = await service.open_primary()
             self._primary_ref = str(result["primary_ref"])
@@ -289,10 +776,58 @@ class S4ValuePublicAdapter:
             return await service.append_binding(
                 AppendBindingRequest(
                     scope_ref=str(request["scope_ref"]),
-                    root=str(request["root"]),
+                    root=str(self._physical_root(str(request["root"]))),
                     idempotency_key="fixture-binding-append",
                 )
             )
+        if operation == "binding.propose_manual":
+            self._policy.select("manual")
+            return await service.propose_manual_binding(
+                AppendBindingRequest(
+                    scope_ref=str(request["scope_ref"]),
+                    root=str(self._physical_root(str(request["root"]))),
+                    idempotency_key=f"fixture-binding-propose:{request['scope_ref']}",
+                )
+            )
+        if operation == "binding.decide_manual":
+            if str(request.get("actor") or "") != self._auth.subject:
+                raise HumanMemoryHostServiceError(
+                    "workspace_binding_decision_actor_mismatch"
+                )
+            return await service.decide_manual_binding(
+                DecideManualBindingRequest(
+                    challenge_ref=str(request["challenge_ref"]),
+                    decision=str(request["decision"]),
+                    idempotency_key=f"fixture-binding-decision:{request['challenge_ref']}",
+                )
+            )
+        if operation == "binding.append_auto_current":
+            snapshot = await self._require_foreground().current_snapshot(
+                self._auth.subject
+            )
+            if snapshot is None or snapshot.host_run_id != str(request.get("run_ref")):
+                raise HumanMemoryHostServiceError(
+                    "workspace_binding_current_run_authority_required"
+                )
+            self._policy.select("auto")
+            result = dict(
+                await service.append_binding(
+                    AppendBindingRequest(
+                        scope_ref=str(snapshot.task_scope_id),
+                        root=str(self._physical_root(str(request["root"]))),
+                        idempotency_key=f"fixture-auto-binding:{snapshot.host_run_id}:{request['root']}",
+                    )
+                )
+            )
+            result.update(
+                {
+                    "run_ref": snapshot.host_run_id,
+                    "generation": snapshot.generation,
+                    "context_snapshot_ref": snapshot.context_snapshot_id,
+                    "configuration_revision": self._policy.generation + 1,
+                }
+            )
+            return result
         if operation == "queue.control":
             return await service.control_current_run(
                 ControlRunRequest(
@@ -370,6 +905,267 @@ class S4ValuePublicAdapter:
                 )
             raise HumanMemoryHostServiceError("human_memory_legacy_session_unavailable")
         raise HumanMemoryHostServiceError("human_memory_operation_unavailable")
+
+    def _physical_root(self, logical: str) -> Path:
+        workspace = cast(Mapping[str, object], self._fixture.get("workspace", {}))
+        for key, value in workspace.items():
+            if logical == str(value) and key in self._logical_roots:
+                return self._logical_roots[key]
+        raise HumanMemoryHostServiceError("workspace_root_unavailable")
+
+    def _require_foreground(self) -> ForegroundQueueStore:
+        if self._foreground is None:
+            raise HumanMemoryHostServiceError("human_memory_adapter_not_initialized")
+        return self._foreground
+
+    async def _wait_for(self, predicate, code: str, *, timeout: float = 120.0) -> None:  # type: ignore[no-untyped-def]
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                if predicate():
+                    return
+            except (OSError, sqlite3.OperationalError):
+                pass
+            if self._runtime is not None and self._runtime.last_error is not None:
+                error = self._runtime.last_error
+                raise HumanMemoryHostServiceError(
+                    str(getattr(error, "code", str(error) or type(error).__name__))
+                )
+            await asyncio.sleep(0.01)
+        raise HumanMemoryHostServiceError(code)
+
+    async def _wait_for_current_state(self, expected: str) -> None:
+        deadline = time.monotonic() + 120.0
+        while time.monotonic() < deadline:
+            try:
+                snapshot = await self._require_foreground().current_snapshot(
+                    self._auth.subject
+                )
+            except sqlite3.OperationalError:
+                snapshot = None
+            if snapshot is not None and snapshot.state.value == expected:
+                return
+            if self._runtime is not None and self._runtime.last_error is not None:
+                error = self._runtime.last_error
+                raise HumanMemoryHostServiceError(
+                    str(getattr(error, "code", str(error) or type(error).__name__))
+                )
+            await asyncio.sleep(0.01)
+        raise HumanMemoryHostServiceError("foreground_runtime_state_timeout")
+
+    def _host_row_count(self, table: str, where: str = "", values: tuple = ()) -> int:
+        path = self._require_db()
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(f"SELECT COUNT(*) FROM {table} {where}", values).fetchone()
+        return int(row[0]) if row is not None else 0
+
+    def _start_observation_count(self, outcome: str) -> int:
+        return self._host_row_count(
+            "foreground_execution_start_observations",
+            "WHERE outcome=?",
+            (outcome,),
+        )
+
+    def _terminal_recorded(self, host_run_id: str) -> bool:
+        return bool(
+            self._host_row_count(
+                "foreground_terminal_receipts",
+                "WHERE host_run_id=?",
+                (host_run_id,),
+            )
+        )
+
+    def _sdk_checkpoint_exists(self, sdk_run_id: str) -> bool:
+        path = self._sdk_db_path
+        if path is None or not path.exists():
+            return False
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT checkpoint_json FROM workflow_checkpoints "
+                "WHERE run_id=? AND namespace='react.termination.v1' "
+                "ORDER BY version DESC LIMIT 1",
+                (sdk_run_id,),
+            ).fetchone()
+        if row is None:
+            return False
+        value = json.loads(str(row[0]))
+        return bool(
+            isinstance(value, dict)
+            and value.get("route_receipt_hash")
+            and value.get("route_receipt")
+        )
+
+    def _runtime_identity(self) -> dict[str, object]:
+        import simple_harness
+
+        return {
+            "filename": SDK_WHEEL_FILENAME,
+            "sha256": SDK_WHEEL_SHA256,
+            "distribution": importlib.metadata.distribution(
+                "simple-harness-sdk"
+            ).metadata["Name"],
+            "version": SDK_VERSION,
+            "source_commit": SDK_SOURCE_COMMIT,
+            "module_origin": str(Path(simple_harness.__file__).resolve()),
+            "public_contract_manifest_hash": SDK_CANDIDATE_MANIFEST_SHA256,
+        }
+
+    def _execution_projection(self, host_run_id: str) -> Mapping[str, object]:
+        path = self._require_db()
+        sdk_path = self._sdk_db_path
+        if sdk_path is None:
+            raise HumanMemoryHostServiceError("human_memory_sdk_runtime_unavailable")
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            run = db.execute(
+                "SELECT r.*,h.current_state,h.sdk_run_id,h.owner_id,h.generation "
+                "FROM foreground_runs r JOIN foreground_run_heads h "
+                "ON h.host_run_id=r.host_run_id WHERE r.host_run_id=?",
+                (host_run_id,),
+            ).fetchone()
+            draft = db.execute(
+                "SELECT d.*,b.binding_hash FROM foreground_run_preparation_bindings b "
+                "JOIN foreground_preparation_drafts d ON d.draft_id=b.draft_id "
+                "WHERE b.host_run_id=?",
+                (host_run_id,),
+            ).fetchone()
+            intent = db.execute(
+                "SELECT * FROM foreground_execution_start_intents WHERE host_run_id=?",
+                (host_run_id,),
+            ).fetchone()
+            start_count = db.execute(
+                "SELECT COUNT(*) FROM foreground_execution_start_intents "
+                "WHERE host_run_id=?",
+                (host_run_id,),
+            ).fetchone()[0]
+        if run is None or draft is None or intent is None or run["sdk_run_id"] is None:
+            raise HumanMemoryHostServiceError("foreground_runtime_audit_incomplete")
+        sdk_run_id = str(run["sdk_run_id"])
+        with sqlite3.connect(f"file:{sdk_path.resolve()}?mode=ro", uri=True) as db:
+            start_row = db.execute(
+                "SELECT snapshot_json FROM run_start_snapshots WHERE run_id=?",
+                (sdk_run_id,),
+            ).fetchone()
+            checkpoint_row = db.execute(
+                "SELECT checkpoint_json FROM workflow_checkpoints "
+                "WHERE run_id=? AND namespace='react.termination.v1' "
+                "ORDER BY version DESC LIMIT 1",
+                (sdk_run_id,),
+            ).fetchone()
+        if start_row is None or checkpoint_row is None:
+            raise HumanMemoryHostServiceError("foreground_runtime_sdk_audit_incomplete")
+        start = json.loads(str(start_row[0]))
+        checkpoint = json.loads(str(checkpoint_row[0]))
+        route = start.get("initial_route_receipt")
+        route_hash = str(start.get("initial_route_receipt_hash") or "")
+        if (
+            not isinstance(route, dict)
+            or canonical_hash(route) != route_hash
+            or checkpoint.get("route_receipt_hash") != route_hash
+            or checkpoint.get("route_receipt") != route
+        ):
+            raise HumanMemoryHostServiceError("foreground_runtime_route_audit_mismatch")
+        draft_payload = json.loads(str(draft["draft_json"]))
+        if not isinstance(draft_payload, dict):
+            raise HumanMemoryHostServiceError("foreground_runtime_draft_audit_invalid")
+        return {
+            "host_run_id": host_run_id,
+            "sdk_run_id": sdk_run_id,
+            "owner_id": str(run["owner_id"]),
+            "generation": int(run["generation"]),
+            "delivery_key": self._delivery_key(str(run["turn_id"])),
+            "task_scope_id": str(run["task_scope_id"]),
+            "state": str(run["current_state"]),
+            "draft": {
+                **draft_payload,
+                "draft_hash": str(draft["draft_hash"]),
+                "executable": False,
+            },
+            "claim": {
+                "draft_id": str(draft["draft_id"]),
+                "draft_hash": str(draft["draft_hash"]),
+                "binding_hash": str(draft["binding_hash"]),
+            },
+            "authority": {
+                "host_run_id": host_run_id,
+                "sdk_run_id": sdk_run_id,
+                "owner_id": str(run["owner_id"]),
+                "generation": int(run["generation"]),
+                "claimed_execution_hash": str(draft["binding_hash"]),
+                "start_intent_hash": str(intent["intent_hash"]),
+            },
+            "route": {
+                **route,
+                "outcome": "ROUTED_TASK",
+                "binding_set_receipt_ref": route["binding_set_receipt_id"],
+                "route_hash": route_hash,
+            },
+            "start_snapshot": {
+                "schema_version": int(start["schema_version"]),
+                "route_hash": route_hash,
+            },
+            "react_checkpoint": {
+                "schema_version": int(checkpoint["schema_version"]),
+                "route_hash": str(checkpoint["route_receipt_hash"]),
+            },
+            "wheel_identity": self._runtime_identity(),
+            "sdk_start_count": int(start_count),
+            "session_db_read_count": self._session_db_reads,
+        }
+
+    def _delivery_key(self, turn_id: str) -> str:
+        path = self._require_db()
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT idempotency_key FROM foreground_turns WHERE turn_id=?",
+                (turn_id,),
+            ).fetchone()
+        if row is None:
+            raise HumanMemoryHostServiceError("foreground_turn_missing")
+        return str(row[0])
+
+    def _execution_audit_projection(self) -> Mapping[str, object]:
+        facts = (
+            ("preparation_draft", "foreground_preparation_drafts"),
+            ("atomic_claim", "foreground_run_preparation_bindings"),
+            ("generation_authority", "foreground_lease_receipts"),
+            ("start_intent", "foreground_execution_start_intents"),
+            ("sdk_start_observation", "foreground_execution_start_observations"),
+            ("host_sdk_binding", "foreground_run_sdk_bindings"),
+            (
+                "running_observation",
+                "foreground_run_transitions WHERE to_state='RUNNING'",
+            ),
+            ("terminal_observation", "foreground_terminal_receipts"),
+            (
+                "settlement",
+                "foreground_turn_transitions WHERE to_state='SETTLED'",
+            ),
+        )
+        sequence = []
+        for name, source in facts:
+            table, _, where = source.partition(" WHERE ")
+            if self._host_row_count(table, f"WHERE {where}" if where else ""):
+                sequence.append(name)
+        aliases = (
+            ("foreground_claimed_payloads", "foreground_run_preparation_bindings"),
+            ("foreground_execution_preparations", "foreground_execution_preparations"),
+            ("foreground_start_intents", "foreground_execution_start_intents"),
+            ("foreground_start_observations", "foreground_execution_start_observations"),
+            (
+                "foreground_reconciliation_receipts",
+                "foreground_execution_reconciliations",
+            ),
+            ("foreground_terminal_lineage", "foreground_terminal_receipts"),
+        )
+        sets = [alias for alias, table in aliases if self._host_row_count(table)]
+        return {
+            "schema_version": 1,
+            "lifecycle_sequence": sequence,
+            "v44_audit_sets": sets,
+            "session_db_read_count": self._session_db_reads,
+            "runtime_events": len(self._runtime_audit.events),
+        }
 
     def _assert_fixture_principal(self, request: Mapping[str, object]) -> None:
         asserted = request.get("subject")
