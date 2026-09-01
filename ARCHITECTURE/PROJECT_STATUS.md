@@ -2,6 +2,43 @@
 
 > **最后更新**：2026-09-01
 
+## 2026-09-01 Human Memory S4 Task 5–8 Host Runtime Execution Closure（P1 整改闭合）
+
+- 在 `fix/human-memory-runtime-p1-closure` 分支（基线 main `04a5a649`）完成 S4 host-closure 增量的
+  两个 open P1 整改并重新全量验证；候选提交 `24f86694`（P1 修复 + 竞态测试）与 `56d99a21`
+  （archive oracle 的 scheduler=held 测试适配）。
+- `audit-hm-runtime-generation-fence` resolved：`ForegroundQueueStore.authorize_effect` 新增
+  `EffectBoundary`（SDK_START/SDK_CONTROL/TOOL）分边界最终 current-generation admission；四个 frozen
+  authority dataclass 绑定并逐一断言 exact `(host_run_id, sdk_run_id, owner_id, generation)`；
+  `ForegroundEffectAdmissionGate` 在 `ProductEffectExecutor.execute` 的物理 dispatch 紧前接入同一
+  durable admission，main.py 以惰性单例 gate 同时接 executor 与 foreground runtime；
+  `ClaimedExecution` admission receipt 字段改必填并删除 test-only fallback。
+- `audit-hm-control-delivery` resolved：`control_current_run` durable commit 后经
+  `after_control` 即时唤醒 active Runtime；`_pump_controls` 与 terminal 观察并发送达（≤1s poll 兜底）；
+  pause 送达 ACK 后 `record_pause_outcome` 推进 PAUSED；STOP/CANCEL 保持独立信号身份
+  （`sdk-stop:`/`sdk-cancel:`）与独立 Host 终态（`resolve_host_terminal`；completed/failed 恒随 SDK
+  证据）。audit sink 固定同步（删 `_maybe_await`）；`s4_value_adapter` 合并重复 v44 alias 映射。
+- 新增四类竞态测试断言 stale worker 外部副作用为 0：bind→start、signal-read→send、
+  tool-admission→dispatch 的 reclaim race，以及 pause/stop 在 active Runtime 的即时送达
+  （`tests/execution/test_foreground_runtime.py`，12 passed）。
+- 独立 code-audit round-3（auditor=opus，独立于 executor=claude-fable-5）：PASS，2 个 P1 resolved，
+  6 个 P2 登记未阻塞（composition 双路径漂移、effect gate 进程内注册表、泵异常降级、PAUSED 无生产
+  resume、CLAIMED 期 control 的既有 liveness 缺口、cancel 即时送达正向场景未单测）；产物
+  `code-audit-round-3.json`（memory-sdk 增量目录）。
+- 本机 fresh 正式验证（gate run `r2-p1-closure`，run-20260901-153005）：100k archive cold-resume
+  value smoke PASS；100k execution value runner PASS；9/9 boundary fault runner PASS（generation fence
+  g1→g2 断言）；22-case critical/affected API smoke PASS（含 live pause control、Manual 两阶段
+  binding、legacy CRUD fence）；full-surface route smoke PASS（装配 + 14 路由 + /health 200）；聚焦
+  套件 views 12 / fifo 36 / integration 25 / data-recovery 25 / authority 36 passed；Host full pytest
+  `6218 passed, 50 skipped, 6 failed`——6 个失败全部既有（backend-a、capabilities×2、companion 四项
+  baseline known-red + `test_health_check_timeout_values`、`test_exact_pinned_sdk_062_*` 两项本机环境
+  失败，均在未修改 main worktree 复现），required 转绿项
+  `test_real_product_sdk_production_composition_starts` 已绿；changed-surface ruff/mypy 相对 main
+  零新增。原始证据保存于 ignored `.local-test-evidence/2026-09-01/`（gate 内 artifacts/ 留有日志与
+  result JSON）。
+- 边界：S5 剩余主模型 route/RecallPlan/Memory recall/五天短时域/动态 Context/semantic closure 与
+  S6 UI 未实施；多 root project effect 稳定 fail closed；发布/push/tag/merge 不在本增量。
+
 ## 2026-08-30 Human Memory Program S4 Task 1–4 Host 权威归档、Task Home 与多根权限
 
 - 2026-09-01 用户明确要求停止 `deskpet.receipt_hmac` 钥匙串请求：ToolReceipt HMAC 保留，但 key

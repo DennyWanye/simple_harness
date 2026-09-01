@@ -1,0 +1,60 @@
+{
+  "acceptance_sha256": "6e4ef78e3feab3870b57e24917f17bf02d22f1bc55c623985c67c2b90a9672e4",
+  "auditor_input_sha256": "0f8d4356e0f6f0934614fa403e7978f9c9a8cca55a1041fe5c6bc8ad3e4f9986",
+  "auditor_output_sha256": "82949f69253daf592dbf60f9d2f9f934303fafea3189d420ec26176add379a6c",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "b57eadd5c501b30295c57f866c98e9caee9449016e3b35a7ad3130772221263d",
+  "dirty_patch_sha256": "6b1b42e45c0d16c8b128cbb7f48ac004f03b428472d1e49cc8aae5c1201c09ce",
+  "evidence_manifest_sha256": "3784cc69ded85c288e104ef37b6e07ff7a09a96973b135193087de996ba494d5",
+  "evidence_summary": {
+    "distinct_artifacts": 15,
+    "distinct_root_runs": 9,
+    "records": 17,
+    "shared_artifact_sha256": [
+      "6ede5db8639a413b10c29eebfed52a146717144a7ca0af73e4a33b5ae8ea575e",
+      "dd278d91f46fb3f90c40fba3204925acdb5be488261f7b71468cc6e4be9e2c69"
+    ]
+  },
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure"
+  ],
+  "finalized_at": "2026-09-01T16:41:22+0800",
+  "fixture_only": false,
+  "head": "56d99a213ba65b2054b59fde5039904adf254fac",
+  "ledger_sha256": "77dcc830b61fbe1278c14b302be53a16fd879dc44427220aa021a5cfb7dd8f71",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "run-20260901-153005",
+  "scenario_statuses": {
+    "S4-AUTHORITY": "PASS",
+    "S4-DATA-RECOVERY": "PASS",
+    "S4-FIFO": "PASS",
+    "S4-INTEGRATION": "PASS",
+    "S4-REGRESSION": "PASS",
+    "S4-VALUE-100K": "PASS",
+    "S4-VIEWS": "PASS"
+  },
+  "schema_version": "1.5.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "eda2cf77e693802d54e06336a54fbd44033f350428f39f0c3838cdffe7bd5cfa",
+  "tested_code_head": "56d99a213ba65b2054b59fde5039904adf254fac",
+  "timing_summary": {
+    "declared_ms": 2520000,
+    "entries": 3,
+    "measured_ms": 0
+  },
+  "toolchain": {
+    "gate_path": "/Users/taiwan/.claude/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "cd63030d40cdd38d87b885e62b3ce80a73ef92b56d5297f9e00532590217fa25",
+    "gate_version": "1.5.0",
+    "host": "taiwandeMac-mini.local",
+    "platform": "Darwin-25.6.0-arm64",
+    "plugin_version": "",
+    "python_version": "3.9.6",
+    "recorded_at": "2026-09-01T15:30:05+0800"
+  },
+  "validator_version": "1.5.0",
+  "waivers": []
+}

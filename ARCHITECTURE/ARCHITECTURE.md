@@ -10,6 +10,50 @@
 - receipt 路径不再 import/call Python `keyring`，也不再使用或探测 `deskpet.receipt_hmac` OS credential
   service。已有钥匙串条目保持原样且永不被该路径访问；Provider/API 登录凭据仍有独立 credential owner。
 
+## Human Memory Program S4 Task 5–8 Host Runtime Execution Closure（2026-09-01）
+
+本节记录 S4 Host TaskScope + Runtime Execution Closure 增量（Task 5–8 + 用户 A2 批准的最小 S5
+execution composition）在整改后的当前生产事实。S5 剩余 RecallPlan/Memory recall/动态 Context/semantic
+closure 与 S6 UI 仍未实施，不作产品成功声明。
+
+- v39–v44 schema 链已落地：六 bounded 阅读视图与 checkpoint verifier（`task_scope/projections.py`）、
+  permission-first FTS locator 与 exact open（`task_scope/search.py`）、单 foreground Run/durable
+  FIFO/control/lease（`execution/foreground_queue.py`）、recovery fence/drain/WAL/emergency export
+  （`execution/recovery_fence.py`）、immutable execution preparation/start/observation/reconciliation
+  audit（v44）。`backend/main.py` 的 fresh HUMAN lane 默认注册真实 binding/recovery/scheduler/runtime
+  authority；legacy/future lane 保持 `None` 且旧 Session CRUD 对 primary 稳定返回
+  `human_memory_primary_authority_immutable`。
+- production foreground execution authority（`execution/foreground_runtime.py`）：claimed-turn exact
+  read → inert draft → atomic claim → 冻结 Context/Provider/Tool authority（全部携带并断言 exact
+  `(host_run_id, sdk_run_id, owner_id, generation)` 四元组）→ deterministic `sdk_run_id` → 唯一
+  `SdkRuntimeIngress.start`（v3 `ContextRouteReceipt(origin=host_initial)` / StartSnapshot v7 /
+  ReAct checkpoint v6）→ RUNNING → SDK 认证 terminal → settle → next。重启 reconciliation 按 durable
+  binding/SDK state 补观察或以同一 identity 重试，永不产生第二个 SDK Run。
+- generation fence（2026-09-01 P1 整改闭合）：`ForegroundQueueStore.authorize_effect` 按
+  `EffectBoundary`（`SDK_START`=CLAIMED、`SDK_CONTROL`=*_REQUESTED、`TOOL`=RUNNING）在每个外部副作用
+  紧前做最终 current-generation admission；物理 Tool dispatch 经 `ForegroundEffectAdmissionGate` 在
+  `ProductEffectExecutor.execute` 内接入同一 durable admission（main.py 以单例 gate 同时接 executor 与
+  runtime）。lease reclaim 后旧 worker 的 start/signal/tool 副作用计数为 0（bind→start、signal-read→send、
+  tool-admission→dispatch 三类 reclaim race 有专项测试）。`ClaimedExecution` 的 admission receipt 字段
+  必填，initial route 的 host authority ref/hash 只来自 immutable admission receipt。
+- live control delivery（2026-09-01 P1 整改闭合）：durable control commit 后
+  `HumanMemoryHostService.control_current_run` 即时 `after_control` 唤醒 active Runtime；控制泵与
+  terminal 观察并发运行（事件驱动 + ≤1s poll 兜底）。pause 送达并 ACK 后推进 PAUSED；STOP 与 CANCEL
+  保持不同信号身份（`sdk-stop:`/`sdk-cancel:` ack）与不同 Host 终态（`resolve_host_terminal`：SDK
+  cancelled + durable STOP_REQUESTED → STOPPED，否则 CANCELLED；completed/failed 恒随 SDK 证据，Host
+  不伪造取消终态）。audit sink 固定同步。
+- 验证事实（候选 `56d99a21`，gate run `r2-p1-closure`，本机 fresh 证据）：独立 code-audit round-3
+  PASS（2 个 P1 resolved；6 个 P2 已登记为已知边界，见下）；100k archive cold-resume value smoke、
+  100k execution value runner、9/9 boundary fault runner、22-case critical/affected API smoke（含 live
+  pause control 与 Manual 两阶段 binding）、full-surface route smoke 全 PASS；聚焦套件
+  12/36/25/25/36 passed；Host full pytest `6218 passed / 6 failed`，6 个失败全部为既有项（4 个
+  baseline known-red + 2 个本机环境失败并在未修改 main 上复现），required 转绿项
+  `test_real_product_sdk_production_composition_starts` 已绿；changed-surface ruff/mypy 相对 main 零新增。
+- 已知边界（P2，未阻塞本增量）：foreground composition 与旧 chat ingress 双构造路径尚未收敛；
+  effect gate 为进程内注册表（未注册 run 放行，重启窗口由启动唤醒缓解）；控制泵异常降级为 audit 行；
+  PAUSED 无生产 resume 控制（暂停后 tool dispatch fail-closed）；CLAIMED 期 control 会阻住 SDK_START
+  且无终态路径（既有 liveness 缺口，fence 使其无外部副作用）。多 root project effect 仍稳定 fail closed。
+
 ## Human Memory Program S4 Task 1–4 当前边界（2026-08-30）
 
 本节记录 Human Memory Host 当前隔离实现事实；仍未接入的后续 composition/UI 不作完成声明。
@@ -27,12 +71,9 @@
   `WorkspaceBindingSetReceipt`；相同 root 可被不同 TaskScope 引用，同一 set 只能 append。route schema v2 与
   `TaskExecutionEnvelope` 交叉绑定 exact receipt id/hash/revision，effect 执行前重验 frozen membership 和当前
   filesystem identity；后续 append 不扩大当前 Run。POSIX 使用 no-follow fd，Windows 当前 fail-closed。
-- S4 Task 5–8 当前逐项未实现：没有 `task_scope/projections.py` 的六 bounded views/checkpoint verifier，没有
-  `task_scope/search.py` 的 permission-first candidate search/exact open，没有
-  `execution/foreground_queue.py` 的单 foreground Run/durable FIFO，也没有 `execution/recovery_fence.py` 或
-  `backend/main.py` 的 fresh service、旧入口 fence、data epoch/emergency export 接线。现有 v36
-  projection cache/outbox 只重建 canonical-state JSON，不能替代这四项。S5 Task 8 是后续主模型
-  route/recall/context/tool production composition，不是 S4 Task 8。
+- ~~S4 Task 5–8 当前逐项未实现~~（2026-09-01 已被上方"S4 Task 5–8 Host Runtime Execution Closure"
+  节取代：projections/search/foreground_queue/recovery_fence 与 main.py fresh 接线均已落地并验证）。
+  S5 Task 8 仍是后续主模型 route/recall/context/tool production composition，不是 S4 Task 8。
 - Host 启动 Memory SDK 时启用 fact worker 但未注入 LLM extractor，因此 SDK 使用默认正则 extractor。
 - 首轮与 continuation 的 Context 都从同 Session 历史按 Token 预算截断；没有固定最近 10 个完整因果组、
   五天 short-horizon index、TaskScope current state 与按需 typed long-term recall 的分区组装。

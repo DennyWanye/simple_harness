@@ -2,6 +2,19 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-09-01 Human Memory Program 已完成 S4 Task 5–8 Host TaskScope + Runtime Execution Closure（含用户
+A2 批准的最小 S5 execution composition）：v39–v44 schema、六 bounded 阅读视图/checkpoint verifier、
+permission-first search/exact open、单 foreground Run/durable FIFO/control、recovery fence/emergency
+export、fresh HUMAN production composition 与唯一 `SdkRuntimeIngress.start`。2026-09-01 整改闭合两个
+P1：generation fence（`EffectBoundary` 最终 admission 覆盖 SDK start/每次 control 发送/物理 Tool
+dispatch，`ForegroundEffectAdmissionGate` 接入 `ProductEffectExecutor`，stale worker 外部副作用为 0）与
+live control delivery（durable commit 即时唤醒、控制泵、pause ACK→PAUSED、STOP/CANCEL 独立信号与
+终态）。验证：code-audit round-3 PASS、100k archive/execution value、9/9 fault、22-case API smoke、
+full pytest 6218 passed（6 个失败全部为既有基线/本机环境项且在未修改 main 复现）。S5 剩余
+RecallPlan/recall/动态 Context/semantic closure 与 S6 UI 未实施；PAUSED 无生产 resume、双 composition
+路径漂移等 P2 边界见 [`ARCHITECTURE.md`](ARCHITECTURE.md) 对应节。gate run 位于
+`plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s4-host-closure/verification/r2-p1-closure/`。
+
 2026-08-30 Human Memory Program 已完成 S4 Task 1–4 的 Host fresh epoch、永久 evidence、Canonical TaskScope
 Archive、recoverable task-home provisioning 与 append-only multi-root binding authority。state schema v38
 以 Host verifier 确认的 durable user evidence/interaction 或 Host-issued Auto Run snapshot 生成 grant；
