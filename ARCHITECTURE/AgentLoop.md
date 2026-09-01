@@ -130,7 +130,7 @@ R6 新请求不再调用 legacy `dispatch()`。ReAct/Workflow Driver 都经 Effe
 补充细节：
 
 - **VerifyGate**：`mode ∈ {off, shadow, strict}`，off=总 pass（BC）。claim 提取基线见 [`STAGE0-claim-baseline.md`](../plans/2026-05-23-tool-last-mile-upgrade/STAGE0-claim-baseline.md)，RegexExtractor 带 ReDoS 防护。对账规则：claim 的 `pattern_id` 反查 `tool_hint`，ledger 须有 `tool_name ∈ tool_hint 且 ok=True` 的 receipt。
-- **N1 信任面**：[`receipt_store.py`](../backend/deskpet/tools/receipt_store.py) `load_session` 时对每条 receipt 强制 **HMAC 验签**，sig-invalid 整条剔除（防伪造凭据骗过对账）。HMAC key 走 OS keystore（DPAPI/Keychain）→ 裸文件 fallback。
+- **N1 信任面**：[`receipt_store.py`](../backend/deskpet/tools/receipt_store.py) `load_session` 时对每条 receipt 强制 **HMAC 验签**，sig-invalid 整条剔除（防伪造凭据骗过对账）。按用户 2026-09-01 要求，receipt HMAC key 只存应用私有 `userdata/secrets/receipt_hmac.key`（POSIX 0600），生产代码不再读取、写入或探测 OS Keychain/keyring；已有系统钥匙串条目不查询、不迁移、不删除。
 - **goal_checker** 与 **external_evaluator** 都是 safe-fail：LLM 异常/parse 失败 → 降级（goal_checker 返 skipped 不默认通过；external_evaluator `conservative_on_error=True` 高后果时返 revise 保守拦）。
 - 守门相关源码：[`verify_gate.py`](../backend/deskpet/agent/verify_gate.py)、[`goal_checker.py`](../backend/deskpet/agent/goal_checker.py)、[`external_evaluator.py`](../backend/deskpet/agent/external_evaluator.py)、[`goal_store.py`](../backend/deskpet/agent/goal_store.py)。
 

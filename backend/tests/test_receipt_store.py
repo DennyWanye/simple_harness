@@ -1,13 +1,18 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""TG-7/TG-8 — ReceiptStore 持久化 + HMAC keystore wrapper（WI-T2.1/T2.2）。
+"""TG-7/TG-8 — ReceiptStore 持久化 + local HMAC key（WI-T2.1/T2.2）。
 
 覆盖 PRD §3 D5 + D11 + 二轮 N1（信任面）+ §5 健康区间 metric。
 """
 from __future__ import annotations
 
 import json
+import inspect
+import importlib
+import os
+import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -73,22 +78,87 @@ def test_t7_4_args_hash_key_order_insensitive():
     assert h1 == h2
 
 
-def test_t7_5_key_loads_from_file_when_keystore_unavail(tmp_path, monkeypatch):
-    """无 keystore 时回退裸文件，重启后能再加载同一 key。"""
-    # 屏蔽 keyring 调用，强制走文件路径
-    import deskpet.tools.receipt_store as mod
-    monkeypatch.setattr(mod, "_try_keystore_get", lambda: None)
-    monkeypatch.setattr(mod, "_try_keystore_set", lambda k: False)
+def test_t7_5_receipt_key_never_accesses_keyring(tmp_path, monkeypatch):
+    """Receipt HMAC 永远只用 userdata file；存在 keyring 也不得访问。"""
+    calls: list[str] = []
 
-    key1, source1 = load_or_create_hmac_key(tmp_path / "secrets")
+    class _ForbiddenKeyring:
+        def get_password(self, *_args, **_kwargs):
+            calls.append("get_password")
+            raise AssertionError("receipt HMAC must not access keyring")
+
+        def set_password(self, *_args, **_kwargs):
+            calls.append("set_password")
+            raise AssertionError("receipt HMAC must not access keyring")
+
+    monkeypatch.setitem(sys.modules, "keyring", _ForbiddenKeyring())
+    import deskpet.tools.receipt_store as mod
+
+    # Re-run the production module import after the forbidden module exists,
+    # then exercise the real constructor and receipt round trip.
+    mod = importlib.reload(mod)
+    store1 = mod.ReceiptStore(tmp_path)
+    key1, source1 = store1.key, store1.key_source
     assert len(key1) == 32
-    assert source1 in ("generated", "file")
-    # 文件应已写
+    assert source1 == "generated"
     assert (tmp_path / "secrets" / "receipt_hmac.key").exists()
-    # 再调一次 → 应从文件读到同样 key
-    key2, source2 = load_or_create_hmac_key(tmp_path / "secrets")
-    assert key2 == key1
-    assert source2 == "file"
+    receipt = mod.emit_receipt(
+        store1,
+        tool_name="keychain_free_roundtrip",
+        args={"value": 1},
+        started_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        ended_at=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        ok=True,
+        session_id="no-keychain",
+    )
+    store2 = mod.ReceiptStore(tmp_path)
+    assert store2.key == key1
+    assert store2.key_source == "file"
+    assert store2.load_session("no-keychain") == [receipt]
+    assert calls == []
+
+
+def test_t7_5b_concurrent_first_create_converges_on_one_local_key(tmp_path):
+    secrets_dir = tmp_path / "secrets"
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(lambda _index: load_or_create_hmac_key(secrets_dir), range(16)))
+
+    assert len({key for key, _source in results}) == 1
+    key_path = secrets_dir / "receipt_hmac.key"
+    assert len(key_path.read_bytes()) == 32
+    assert list(secrets_dir.glob(".receipt_hmac.key.*.tmp")) == []
+    if os.name == "posix":
+        assert key_path.stat().st_mode & 0o077 == 0
+
+
+def test_t7_5c_receipt_store_source_has_no_keychain_integration():
+    import deskpet.tools.receipt_store as mod
+
+    source = inspect.getsource(mod)
+    assert "deskpet.receipt_hmac" not in source
+    assert "import keyring" not in source
+
+
+def test_t7_5d_old_receipts_remain_raw_but_do_not_enter_verified_ledger(tmp_path):
+    old_store = ReceiptStore(tmp_path, key=b"\x11" * 32)
+    emit_receipt(
+        old_store,
+        tool_name="old-receipt",
+        args={},
+        started_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+        ended_at=datetime(2026, 8, 31, tzinfo=timezone.utc),
+        ok=True,
+        session_id="legacy-keychain",
+    )
+    raw_path = tmp_path / "receipts" / "legacy-keychain.jsonl"
+    raw_before = raw_path.read_bytes()
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir(parents=True, exist_ok=True)
+    (secrets_dir / "receipt_hmac.key").write_bytes(b"\x22" * 32)
+
+    local_store = ReceiptStore(tmp_path)
+    assert local_store.load_session("legacy-keychain") == []
+    assert raw_path.read_bytes() == raw_before
 
 
 def test_t7_6_sanity_echo_validates_key():

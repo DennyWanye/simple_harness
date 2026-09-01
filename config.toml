@@ -81,7 +81,7 @@ outline_preview_default = false
 artifact_dir_retention_days = 30
 
 [tools.verifier]
-# D5 receipt 写盘 — HMAC 签名 + DPAPI/Keychain 包装
+# D5 receipt 写盘 — HMAC 签名；key 只存应用私有 userdata，不访问系统钥匙串
 emit_receipts = true
 # D6 verify 模式 — "shadow" 仅 warn log 不阻断，先收集 1-2 周 metric
 # 验证 fake_completion_caught_rate ≥ 95% 后再升 "strict"（真拦截）

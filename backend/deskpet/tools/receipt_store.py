@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""WI-T2.1/T2.2 — ToolReceipt 持久化 + HMAC keystore wrapper。
+"""WI-T2.1/T2.2 — ToolReceipt 持久化 + application-local HMAC key。
 
-PRD §3 D5/D11 真正实现：
-  - HMAC key 走 OS keystore（Python `keyring` 库抽象 DPAPI/Keychain/libsecret），
-    keystore 不可用时 fallback 到 <user_data>/secrets/receipt_hmac.key (0600)
+当前实现：
+  - HMAC key 只存于 <user_data>/secrets/receipt_hmac.key（POSIX 0600）
+  - 不读取、写入或探测任何 OS credential/keychain service
   - Receipt 写盘到 <user_data>/receipts/<session_id>.jsonl，按会话滚动
   - 启动期自清理 ended_at < now - retention_days 的整文件
   - HMAC key 重生时旧 jsonl 整文件归档到 receipts/archived/
@@ -38,84 +38,84 @@ from .receipt import (
 
 logger = logging.getLogger(__name__)
 
-# ─── Keystore wrapper ────────────────────────────────────────
+# ─── Application-local key ───────────────────────────────────
 
-_KEYRING_SERVICE = "deskpet.receipt_hmac"
-_KEYRING_USERNAME = "deskpet"
 _KEY_BYTES = 32  # 256-bit
 
 
-def _try_keystore_get() -> Optional[bytes]:
-    """尝试从 OS keystore 读 HMAC key；不可用返回 None（不抛）。"""
-    try:
-        import keyring  # type: ignore
-        raw = keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
-        if raw:
-            import base64
-            return base64.b64decode(raw)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("keystore get unavailable: %s", exc)
-    return None
+class ReceiptKeyUnavailable(RuntimeError):
+    """The application-local receipt signing key cannot be read or created."""
 
 
-def _try_keystore_set(key: bytes) -> bool:
-    """尝试写 HMAC key 到 OS keystore；不可用返回 False。"""
+def _read_local_key(key_path: Path) -> bytes:
     try:
-        import base64
-        import keyring  # type: ignore
-        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME,
-                             base64.b64encode(key).decode("ascii"))
-        return True
-    except Exception as exc:  # noqa: BLE001
-        logger.info("keystore set unavailable: %s", exc)
-        return False
+        key = key_path.read_bytes()
+    except OSError as exc:
+        raise ReceiptKeyUnavailable("receipt_hmac_key_unreadable") from exc
+    if len(key) != _KEY_BYTES:
+        raise ReceiptKeyUnavailable("receipt_hmac_key_invalid_length")
+    if os.name == "posix":
+        try:
+            os.chmod(key_path, 0o600)
+        except OSError as exc:
+            raise ReceiptKeyUnavailable("receipt_hmac_key_permissions_failed") from exc
+    return key
+
+
+def _create_local_key(key_path: Path, key: bytes) -> None:
+    temp_path = key_path.with_name(
+        f".{key_path.name}.{os.getpid()}.{_secrets_mod.token_hex(8)}.tmp"
+    )
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(temp_path, flags, 0o600)
+        view = memoryview(key)
+        while view:
+            written = os.write(descriptor, view)
+            if written <= 0:
+                raise OSError("receipt HMAC key write made no progress")
+            view = view[written:]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+        # Publish only after all 32 bytes are durable. Hard-link creation is
+        # atomic and never replaces an existing winner's key.
+        os.link(temp_path, key_path)
+        if os.name == "posix":
+            directory_fd = os.open(key_path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            temp_path.unlink(missing_ok=True)
+        except OSError:
+            logger.warning("receipt HMAC temporary key cleanup failed: %s", temp_path)
 
 
 def load_or_create_hmac_key(secrets_dir: Path) -> tuple[bytes, str]:
-    """加载或生成 HMAC key。
-
-    优先级：
-      1. OS keystore（DPAPI/Keychain/libsecret via Python `keyring`）
-      2. 裸文件 fallback：<secrets_dir>/receipt_hmac.key (0600 / Windows ACL)
+    """Load or exclusively create the application-local HMAC key.
 
     Returns:
-        (key_bytes, source) where source ∈ {"keystore", "file", "generated"}
+        (key_bytes, source) where source is ``file`` or ``generated``.
     """
-    # 1. Try keystore
-    key = _try_keystore_get()
-    if key and len(key) == _KEY_BYTES:
-        return key, "keystore"
-
-    # 2. Try bare file
     secrets_dir.mkdir(parents=True, exist_ok=True)
     key_path = secrets_dir / "receipt_hmac.key"
     if key_path.exists():
-        try:
-            key = key_path.read_bytes()
-            if len(key) == _KEY_BYTES:
-                # 同时回写 keystore 让下次走 keystore
-                _try_keystore_set(key)
-                return key, "file"
-        except OSError as exc:
-            logger.warning("HMAC key file unreadable: %s — regenerating", exc)
+        return _read_local_key(key_path), "file"
 
-    # 3. Generate new
     key = _secrets_mod.token_bytes(_KEY_BYTES)
-    if _try_keystore_set(key):
-        return key, "generated"  # keystore primary, no file write
-    # keystore unavailable: write file with restricted permissions
     try:
-        key_path.write_bytes(key)
-        try:
-            os.chmod(key_path, 0o600)
-        except (OSError, NotImplementedError):
-            pass  # Windows mode bits — relies on NTFS ACL inheritance
-        logger.warning(
-            "HMAC key persisted to bare file %s (0600); install `keyring` "
-            "for DPAPI/Keychain protection.", key_path
-        )
+        _create_local_key(key_path, key)
+    except FileExistsError:
+        # Another process won the first-create race. Reuse its exact key.
+        return _read_local_key(key_path), "file"
     except OSError as exc:
-        logger.error("HMAC key write failed: %s — using ephemeral key", exc)
+        raise ReceiptKeyUnavailable("receipt_hmac_key_create_failed") from exc
     return key, "generated"
 
 
