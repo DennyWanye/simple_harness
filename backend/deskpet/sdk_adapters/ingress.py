@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from simple_harness import (
+    ContextRouteReceipt,
     HostControlAuthorityV1,
     HostControlRunStartV1,
     RunId,
@@ -112,6 +113,8 @@ class SdkRuntimeIngress:
         context_stage_id: str | None = None,
         context_stage_hash: str | None = None,
         prepared_context: dict[str, Any] | None = None,
+        initial_route_receipt: ContextRouteReceipt | None = None,
+        initial_route_receipt_hash: str | None = None,
     ) -> IngressStartReceipt:
         """Start a new Run through the sole ingress.
 
@@ -135,6 +138,8 @@ class SdkRuntimeIngress:
                 tool_catalog_fingerprint=tool_catalog_fingerprint,
                 provider_budget_fingerprint=provider_budget_fingerprint,
                 input=payload,
+                initial_route_receipt=initial_route_receipt,
+                initial_route_receipt_hash=initial_route_receipt_hash,
             )
         else:
             start = RunStart(
@@ -146,6 +151,8 @@ class SdkRuntimeIngress:
                 session_generation,
                 tool_catalog_fingerprint,
                 provider_budget_fingerprint,
+                initial_route_receipt=initial_route_receipt,
+                initial_route_receipt_hash=initial_route_receipt_hash,
             )
             await ready.client.start(start)
 

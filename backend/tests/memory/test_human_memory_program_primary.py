@@ -38,6 +38,10 @@ def _hash(value: object) -> str:
     return hashlib.sha256(_canonical(value).encode()).hexdigest()
 
 
+def _domain_hash(domain: str, value: object) -> str:
+    return _hash({"domain": domain, "payload": value})
+
+
 def _disclosure(run_id: str, subject: str) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -65,16 +69,23 @@ class FakeS1Envelope:
     sanitized_payload: dict[str, Any]
     source_hash: str = "a" * 64
     filter_policy_version: str = "credential-filter/v1"
+    schema_version: int = 1
     sanitized_hash: str = field(init=False)
     envelope_hash: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.sanitized_hash = _hash(self.sanitized_payload)
-        self.envelope_hash = _hash(self.to_json())
+        self.envelope_hash = (
+            _hash(self.to_json())
+            if self.schema_version == 1
+            else _domain_hash(
+                "simple-harness/sanitized-evidence-envelope/v2", self.to_json()
+            )
+        )
 
     def to_json(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": self.schema_version,
             "evidence_id": self.evidence_id,
             "run_id": self.run_id,
             "subject": self.subject,
@@ -114,7 +125,13 @@ class FakeS1Receipt:
         self.source_hash = self.envelope.source_hash
         self.sanitized_hash = self.envelope.sanitized_hash
         self.filter_policy_version = self.envelope.filter_policy_version
-        self.receipt_hash = _hash(self.to_json())
+        self.receipt_hash = (
+            _hash(self.to_json())
+            if self.envelope.schema_version == 1
+            else _domain_hash(
+                "simple-harness/sanitized-evidence-receipt/v2", self.to_json()
+            )
+        )
 
     def verify(self, envelope: FakeS1Envelope) -> None:
         if not self.accepted or envelope.envelope_hash != self.envelope_hash:
@@ -122,7 +139,7 @@ class FakeS1Receipt:
 
     def to_json(self) -> dict[str, Any]:
         return {
-            "schema_version": 1,
+            "schema_version": self.envelope.schema_version,
             "receipt_id": self.receipt_id,
             "run_id": self.run_id,
             "subject": self.subject,
@@ -289,6 +306,26 @@ async def test_append_all_task1_evidence_kinds_after_receipt(tmp_path: Path) -> 
     assert (
         await store.append_evidence(replay_envelope, replay_receipt)
     ).evidence_id == "evidence-1"
+
+
+@pytest.mark.asyncio
+async def test_accepts_sdk_v2_domain_separated_evidence_hashes(tmp_path: Path) -> None:
+    store = HumanMemoryProgramStore(tmp_path / "state.db")
+    envelope = FakeS1Envelope(
+        evidence_id="evidence-v2",
+        run_id="run-v2",
+        subject="actor-1",
+        source_kind="runtime_event",
+        source_ref="runtime/run-v2",
+        sanitized_payload={"event": "run_terminal", "status": "completed"},
+        schema_version=2,
+    )
+    receipt = FakeS1Receipt(envelope)
+
+    committed = await store.append_evidence(envelope, receipt)
+
+    assert committed.evidence_id == "evidence-v2"
+    assert committed.envelope_sha256 == envelope.envelope_hash
 
 
 @pytest.mark.asyncio

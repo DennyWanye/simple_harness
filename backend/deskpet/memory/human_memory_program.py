@@ -21,7 +21,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import aiosqlite
 
@@ -227,6 +227,10 @@ def _sha256_json(value: object) -> str:
     return hashlib.sha256(_canonical_json(value).encode("utf-8")).hexdigest()
 
 
+def _sha256_domain_json(domain: str, value: object) -> str:
+    return _sha256_json({"domain": domain, "payload": value})
+
+
 def _bounded_identifier(value: object, name: str, *, maximum: int = 1024) -> str:
     if not isinstance(value, str) or not value.strip() or "\x00" in value:
         raise HumanMemoryProgramProtocolError(f"{name}_invalid")
@@ -248,6 +252,12 @@ def _digest(value: object, name: str) -> str:
 def _require_schema_v1(value: object, name: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value != 1:
         raise HumanMemoryProgramProtocolError(f"{name}_schema_rejected")
+
+
+def _evidence_schema(value: object, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value not in {1, 2}:
+        raise HumanMemoryProgramProtocolError(f"{name}_schema_rejected")
+    return value
 
 
 def _reject_private_keys(value: object, path: str = "payload") -> None:
@@ -385,8 +395,14 @@ def _validate_protocol_pair(
     if frozenset(receipt_json) != _RECEIPT_KEYS:
         raise HumanMemoryProgramProtocolError("evidence_receipt_fields_differ")
 
-    _require_schema_v1(envelope_json.get("schema_version"), "evidence_envelope")
-    _require_schema_v1(receipt_json.get("schema_version"), "evidence_receipt")
+    envelope_schema = _evidence_schema(
+        envelope_json.get("schema_version"), "evidence_envelope"
+    )
+    receipt_schema = _evidence_schema(
+        receipt_json.get("schema_version"), "evidence_receipt"
+    )
+    if envelope_schema != receipt_schema:
+        raise HumanMemoryProgramProtocolError("evidence_schema_binding_mismatch")
     envelope_bindings = {
         "evidence_id": envelope.evidence_id,
         "run_id": envelope.run_id,
@@ -468,8 +484,16 @@ def _validate_protocol_pair(
         ) from exc
     if not receipt.accepted:
         raise HumanMemoryProgramProtocolError("sanitization_receipt_not_accepted")
-    envelope_hash = _sha256_json(envelope_json)
-    receipt_hash = _sha256_json(receipt_json)
+    if envelope_schema == 1:
+        envelope_hash = _sha256_json(envelope_json)
+        receipt_hash = _sha256_json(receipt_json)
+    else:
+        envelope_hash = _sha256_domain_json(
+            "simple-harness/sanitized-evidence-envelope/v2", envelope_json
+        )
+        receipt_hash = _sha256_domain_json(
+            "simple-harness/sanitized-evidence-receipt/v2", receipt_json
+        )
     if envelope_hash != _digest(envelope.envelope_hash, "envelope_hash"):
         raise HumanMemoryProgramProtocolError("evidence_envelope_hash_mismatch")
     if receipt_hash != _digest(receipt.receipt_hash, "receipt_hash"):
