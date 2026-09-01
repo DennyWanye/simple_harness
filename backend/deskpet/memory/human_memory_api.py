@@ -17,9 +17,12 @@ from deskpet.memory.human_memory_service import (
     CreateTaskScopeRequest,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
+    ListEvidenceGroupsRequest,
     MutateTaskScopeRequest,
     OpenTaskScopeRequest,
     QueueTurnRequest,
+    ReadEvidencePageRequest,
+    ReadTaskScopeViewRequest,
     SearchTaskScopesRequest,
 )
 
@@ -135,6 +138,37 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 None
                 if request.get("expected_source_hash") is None
                 else str(request["expected_source_hash"]),
+            )
+        )
+    if operation == "task_scope.view":
+        return await service.read_view(
+            ReadTaskScopeViewRequest(
+                str(request["scope_ref"]), str(request["kind"])
+            )
+        )
+    if operation == "task_scope.evidence_groups":
+        return await service.list_evidence_groups(
+            ListEvidenceGroupsRequest(
+                scope_ref=str(request["scope_ref"]),
+                source_ref=str(request["source_ref"]),
+                source_hash=str(request["source_hash"]),
+                cursor=None
+                if request.get("cursor") is None
+                else str(request["cursor"]),
+                limit=int(request.get("limit", 8)),
+            )
+        )
+    if operation == "task_scope.evidence_page":
+        return await service.read_evidence_page(
+            ReadEvidencePageRequest(
+                scope_ref=str(request["scope_ref"]),
+                source_ref=str(request["source_ref"]),
+                source_hash=str(request["source_hash"]),
+                group_ref=str(request["group_ref"]),
+                group_hash=str(request["group_hash"]),
+                cursor=None
+                if request.get("cursor") is None
+                else str(request["cursor"]),
             )
         )
     if operation == "task_scope.mutate":

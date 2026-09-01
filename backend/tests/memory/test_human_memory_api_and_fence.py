@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -74,6 +75,115 @@ async def test_ws_api_reports_stable_legacy_epoch_code() -> None:
     )
     assert response["payload"]["error"]["code"] == (
         "human_memory_legacy_epoch_unsupported"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ws_api_exposes_bounded_subject_bound_evidence_pages(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    factory = HumanMemoryHostServiceFactory(path, startup)
+    created = await handle_human_memory_command(
+        {
+            "type": "human_memory_request",
+            "request_id": "create-evidence",
+            "operation": "task_scope.create",
+            "request": {
+                "fixture_key": "evidence-api",
+                "title": "Evidence API",
+                "goal": "bounded reads",
+            },
+        },
+        factory=factory,
+        auth=_auth(),
+    )
+    scope_ref = created["payload"]["result"]["scope_ref"]
+    mutated = await handle_human_memory_command(
+        {
+            "type": "human_memory_request",
+            "request_id": "mutate-evidence",
+            "operation": "task_scope.mutate",
+            "request": {
+                "scope_ref": scope_ref,
+                "mutation": {"kind": "status", "value": "active"},
+            },
+        },
+        factory=factory,
+        auth=_auth(),
+    )
+    assert mutated["payload"]["ok"] is True
+    await factory.bind(_auth()).rebuild_derived(scope_ref)
+
+    top = await handle_human_memory_command(
+        {
+            "type": "human_memory_request",
+            "request_id": "read-top",
+            "operation": "task_scope.view",
+            "request": {"scope_ref": scope_ref, "kind": "EVIDENCE"},
+        },
+        factory=factory,
+        auth=_auth(),
+    )
+    view = top["payload"]["result"]
+    assert "pages" not in view
+    assert len(json.dumps(top, ensure_ascii=False).encode()) <= 32 * 1024
+
+    groups = await handle_human_memory_command(
+        {
+            "type": "human_memory_request",
+            "request_id": "read-groups",
+            "operation": "task_scope.evidence_groups",
+            "request": {
+                "scope_ref": scope_ref,
+                "source_ref": view["source_ref"],
+                "source_hash": view["source_hash"],
+                "limit": 1,
+            },
+        },
+        factory=factory,
+        auth=_auth(),
+    )
+    group = groups["payload"]["result"]["groups"][0]
+    page = await handle_human_memory_command(
+        {
+            "type": "human_memory_request",
+            "request_id": "read-page",
+            "operation": "task_scope.evidence_page",
+            "request": {
+                "scope_ref": scope_ref,
+                "source_ref": view["source_ref"],
+                "source_hash": view["source_hash"],
+                "group_ref": group["group_ref"],
+                "group_hash": group["group_hash"],
+            },
+        },
+        factory=factory,
+        auth=_auth(),
+    )
+    assert page["payload"]["ok"] is True
+    assert len(json.dumps(page, ensure_ascii=False).encode()) <= 32 * 1024
+    decoded = json.loads(page["payload"]["result"]["page"]["content"])
+    assert decoded["events"]
+
+    rejected = await handle_human_memory_command(
+        {
+            "type": "human_memory_request",
+            "request_id": "authority-smuggle",
+            "operation": "task_scope.evidence_groups",
+            "request": {
+                "scope_ref": scope_ref,
+                "source_ref": view["source_ref"],
+                "source_hash": view["source_hash"],
+                "worker_authority": "attacker",
+            },
+        },
+        factory=factory,
+        auth=_auth(),
+    )
+    assert rejected["payload"]["error"]["code"] == (
+        "human_memory_public_authority_field_rejected"
     )
 
 

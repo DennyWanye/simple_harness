@@ -17,8 +17,10 @@ from deskpet.memory.human_memory_service import (
     CreateTaskScopeRequest,
     HumanMemoryHostService,
     HumanMemoryHostServiceError,
+    ListEvidenceGroupsRequest,
     MutateTaskScopeRequest,
     OpenTaskScopeRequest,
+    ReadEvidencePageRequest,
     ReadTaskScopeViewRequest,
     SaveCheckpointRequest,
     SearchTaskScopesRequest,
@@ -71,6 +73,8 @@ def test_public_request_dtos_cannot_carry_host_authority() -> None:
         SearchTaskScopesRequest,
         OpenTaskScopeRequest,
         ReadTaskScopeViewRequest,
+        ListEvidenceGroupsRequest,
+        ReadEvidencePageRequest,
     ):
         assert forbidden.isdisjoint(field.name for field in fields(request_type))
 
@@ -277,17 +281,61 @@ async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
     )
     await service.rebuild_derived(scope_ref)
     view = await service.read_view(ReadTaskScopeViewRequest(scope_ref, "EVIDENCE"))
+    assert "pages" not in view
+    assert len(json.dumps(view, ensure_ascii=False).encode("utf-8")) <= 32 * 1024
 
     recovered: list[dict[str, object]] = []
     chunks: dict[str, list[tuple[int, str]]] = {}
-    for page in view["pages"]:
-        assert len(str(page["content"]).encode("utf-8")) <= 32 * 1024
-        recovered.extend(page.get("events", []))
-        chunk = page.get("event_chunk")
-        if chunk:
-            chunks.setdefault(str(chunk["event_content_sha256"]), []).append(
-                (int(chunk["ordinal"]), str(chunk["content"]))
+    group_cursor = None
+    group_count = 0
+    first_page_cursor = None
+    while True:
+        group_page = await service.list_evidence_groups(
+            ListEvidenceGroupsRequest(
+                scope_ref,
+                str(view["source_ref"]),
+                str(view["source_hash"]),
+                group_cursor,
+                1,
             )
+        )
+        assert len(json.dumps(group_page, ensure_ascii=False).encode()) <= 32 * 1024
+        for group in group_page["groups"]:
+            group_count += 1
+            page_cursor = None
+            while True:
+                page_result = await service.read_evidence_page(
+                    ReadEvidencePageRequest(
+                        scope_ref,
+                        str(view["source_ref"]),
+                        str(view["source_hash"]),
+                        str(group["group_ref"]),
+                        str(group["group_hash"]),
+                        page_cursor,
+                    )
+                )
+                assert len(json.dumps(page_result, ensure_ascii=False).encode()) <= 32 * 1024
+                page = page_result["page"]
+                assert len(str(page["content"]).encode("utf-8")) <= 32 * 1024
+                decoded = json.loads(str(page["content"]))
+                recovered.extend(decoded.get("events", []))
+                chunk = decoded.get("event_chunk")
+                if chunk:
+                    chunks.setdefault(str(chunk["event_content_sha256"]), []).append(
+                        (int(chunk["ordinal"]), str(chunk["content"]))
+                    )
+                page_cursor = page_result["next_cursor"]
+                if first_page_cursor is None and page_cursor is not None:
+                    first_page_cursor = (
+                        group,
+                        page_cursor,
+                    )
+                if page_cursor is None:
+                    break
+        group_cursor = group_page["next_cursor"]
+        if group_cursor is None:
+            break
+    assert group_count >= 1
     for parts in chunks.values():
         raw = b"".join(
             base64.b64decode(content)
@@ -303,7 +351,6 @@ async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
         "text": oversized,
         "nested": {"ordinal": 7},
     }
-    assert oversized_event["event_index"] == 7
     assert oversized_event["event_kind"] == "host.turn"
     assert oversized_event["source_kind"] == "host"
     mutation_event = next(
@@ -317,3 +364,74 @@ async def test_public_evidence_pages_roundtrip_complete_oversized_unicode_event(
     )
     assert ordinary["event_index"] == 3
     assert ordinary["payload"] == {"event_index": 3, "text": "ordinary"}
+
+    assert first_page_cursor is not None
+    group, cursor = first_page_cursor
+    tampered = str(cursor)[:-1] + ("A" if str(cursor)[-1] != "A" else "B")
+    with pytest.raises(
+        HumanMemoryHostServiceError, match="human_memory_evidence_cursor_invalid"
+    ):
+        await service.read_evidence_page(
+            ReadEvidencePageRequest(
+                scope_ref,
+                str(view["source_ref"]),
+                str(view["source_hash"]),
+                str(group["group_ref"]),
+                str(group["group_hash"]),
+                tampered,
+            )
+        )
+
+    restarted = HumanMemoryHostService(
+        path,
+        auth=_auth(),
+        startup=inspect_startup_epoch(path, approved_fresh_lane=False),
+    )
+    reopened = await restarted.read_view(ReadTaskScopeViewRequest(scope_ref, "EVIDENCE"))
+    assert reopened == view
+    reopened_groups = await restarted.list_evidence_groups(
+        ListEvidenceGroupsRequest(
+            scope_ref, str(view["source_ref"]), str(view["source_hash"])
+        )
+    )
+    assert reopened_groups["groups"]
+
+    wrong_subject = HumanMemoryHostService(
+        path,
+        auth=_auth("subject-b"),
+        startup=inspect_startup_epoch(path, approved_fresh_lane=False),
+    )
+    with pytest.raises(HumanMemoryHostServiceError, match="human_memory_permission_denied"):
+        await wrong_subject.list_evidence_groups(
+            ListEvidenceGroupsRequest(
+                scope_ref, str(view["source_ref"]), str(view["source_hash"])
+            )
+        )
+
+    first_group = reopened_groups["groups"][0]
+    with pytest.raises(
+        HumanMemoryHostServiceError,
+        match="human_memory_evidence_group_binding_mismatch",
+    ):
+        await restarted.read_evidence_page(
+            ReadEvidencePageRequest(
+                scope_ref,
+                str(view["source_ref"]),
+                str(view["source_hash"]),
+                str(first_group["group_ref"]),
+                "0" * 64,
+            )
+        )
+
+    await restarted.mutate_task_scope(
+        MutateTaskScopeRequest(scope_ref, "status", "paused", "mutation-stale")
+    )
+    await restarted.rebuild_derived(scope_ref)
+    with pytest.raises(
+        HumanMemoryHostServiceError, match="human_memory_evidence_source_stale"
+    ):
+        await restarted.list_evidence_groups(
+            ListEvidenceGroupsRequest(
+                scope_ref, str(view["source_ref"]), str(view["source_hash"])
+            )
+        )

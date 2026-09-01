@@ -154,6 +154,70 @@ class TaskScopeProjectionStore:
             raise ValueError("task_scope_view_kind_invalid")
         return (await self.materialize(task_scope_id=task_scope_id, source_id=source_id))[kind]
 
+    async def read_materialized_view(
+        self,
+        view_kind: str,
+        *,
+        task_scope_id: str | None = None,
+        source_id: str | None = None,
+    ) -> TaskScopeReadView:
+        """Read one already-built bounded view without rebuilding its archive."""
+
+        kind = view_kind.upper()
+        if kind not in VIEW_KINDS:
+            raise ValueError("task_scope_view_kind_invalid")
+        async with self._connection() as db:
+            source = await load_projection_source_tx(
+                db, source_id=source_id, task_scope_id=task_scope_id
+            )
+            cursor = await db.execute(
+                "SELECT * FROM task_scope_read_view_revisions "
+                "WHERE source_id=? AND task_scope_id=? AND view_kind=?",
+                (source.source_id, source.task_scope_id, kind),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        if row is None:
+            raise ProjectionIntegrityError("task_scope_projection_not_materialized")
+        content_bytes = bytes(row["content"])
+        if (
+            len(content_bytes) > VIEW_LIMITS[kind]
+            or hashlib.sha256(content_bytes).hexdigest() != row["content_sha256"]
+        ):
+            raise ProjectionIntegrityError("task_scope_projection_view_hash_mismatch")
+        receipt = {
+            "schema_version": 1,
+            "task_scope_id": source.task_scope_id,
+            "source_id": source.source_id,
+            "source_hash": source.source_hash,
+            "view_kind": kind,
+            "content_sha256": str(row["content_sha256"]),
+            "byte_length": len(content_bytes),
+            "root_block_id": (
+                None if row["root_block_id"] is None else str(row["root_block_id"])
+            ),
+            "block_count": int(row["block_count"]),
+        }
+        receipt_hash = canonical_hash(receipt)
+        if (
+            receipt_hash != row["receipt_hash"]
+            or canonical_json(receipt) != row["receipt_json"]
+        ):
+            raise ProjectionIntegrityError("task_scope_projection_receipt_mismatch")
+        return TaskScopeReadView(
+            task_scope_id=source.task_scope_id,
+            source_id=source.source_id,
+            source_hash=source.source_hash,
+            view_kind=kind,
+            content=content_bytes.decode("utf-8"),
+            content_sha256=str(row["content_sha256"]),
+            root_block_id=(
+                None if row["root_block_id"] is None else str(row["root_block_id"])
+            ),
+            block_count=int(row["block_count"]),
+            receipt_hash=receipt_hash,
+        )
+
     async def read_block(self, block_id: str) -> bytes:
         async with self._connection() as db:
             cursor = await db.execute(

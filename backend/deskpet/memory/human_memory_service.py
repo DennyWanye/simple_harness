@@ -50,6 +50,7 @@ from deskpet.task_scope.projections import TaskScopeProjectionStore
 from deskpet.task_scope.protocol import (
     canonical_hash,
     canonical_json,
+    digest,
     identifier,
     reject_private_payload,
 )
@@ -224,6 +225,45 @@ class ReadTaskScopeViewRequest:
         identifier(self.kind, "kind", 64)
 
 
+@dataclass(frozen=True, slots=True)
+class ListEvidenceGroupsRequest:
+    scope_ref: str
+    source_ref: str
+    source_hash: str
+    cursor: str | None = None
+    limit: int = 8
+
+    def __post_init__(self) -> None:
+        identifier(self.scope_ref, "scope_ref", 512)
+        identifier(self.source_ref, "source_ref", 512)
+        digest(self.source_hash, "source_hash")
+        if self.cursor is not None:
+            identifier(self.cursor, "cursor", 4096)
+        if isinstance(self.limit, bool) or not isinstance(self.limit, int):
+            raise TypeError("limit must be an integer")
+        if not 1 <= self.limit <= 16:
+            raise ValueError("limit must be between 1 and 16")
+
+
+@dataclass(frozen=True, slots=True)
+class ReadEvidencePageRequest:
+    scope_ref: str
+    source_ref: str
+    source_hash: str
+    group_ref: str
+    group_hash: str
+    cursor: str | None = None
+
+    def __post_init__(self) -> None:
+        identifier(self.scope_ref, "scope_ref", 512)
+        identifier(self.source_ref, "source_ref", 512)
+        digest(self.source_hash, "source_hash")
+        identifier(self.group_ref, "group_ref", 512)
+        digest(self.group_hash, "group_hash")
+        if self.cursor is not None:
+            identifier(self.cursor, "cursor", 4096)
+
+
 class DeterministicEventSeedPort(Protocol):
     """Verification-only bulk authority implemented by the canonical producer."""
 
@@ -328,6 +368,9 @@ class HumanMemoryHostService:
         self._binding_append = binding_append
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
+        self._evidence_group_ref_cache: dict[
+            tuple[str, str, str], tuple[dict[str, object], ...]
+        ] = {}
 
     @property
     def startup_decision(self) -> StartupEpochDecision:
@@ -775,83 +818,162 @@ class HumanMemoryHostService:
         self, request: ReadTaskScopeViewRequest
     ) -> Mapping[str, object]:
         await self._assert_owned_scope(request.scope_ref)
-        view = await self._projections.read_view(
+        view = await self._projections.read_materialized_view(
             request.kind, task_scope_id=request.scope_ref
         )
-        pages: list[dict[str, object]] = []
-        if view.view_kind == "EVIDENCE":
-            groups = await self._projections.list_evidence_groups(
-                task_scope_id=request.scope_ref
-            )
-            for group in groups:
-                events = await self._projections.read_evidence_group(
-                    str(group["block_id"])
-                )
-                pending: list[dict[str, object]] = []
-                for raw_event in events:
-                    event = dict(raw_event)
-                    payload = event.get("payload")
-                    if isinstance(payload, Mapping):
-                        event_index = payload.get("event_index")
-                        if isinstance(event_index, int) and not isinstance(
-                            event_index, bool
-                        ):
-                            event["event_index"] = event_index
-                    candidate = canonical_json(
-                        {"schema_version": 1, "events": [*pending, event]}
-                    )
-                    if pending and len(candidate.encode("utf-8")) > 32 * 1024:
-                        pages.append(self._event_page(pending))
-                        pending = []
-                    single = canonical_json({"schema_version": 1, "events": [event]})
-                    if len(single.encode("utf-8")) <= 32 * 1024:
-                        pending.append(event)
-                        continue
-                    event_bytes = canonical_json(event).encode("utf-8")
-                    event_hash = hashlib.sha256(event_bytes).hexdigest()
-                    chunks = [
-                        event_bytes[offset : offset + 20 * 1024]
-                        for offset in range(0, len(event_bytes), 20 * 1024)
-                    ]
-                    for ordinal, chunk in enumerate(chunks, 1):
-                        chunk_payload = {
-                            "schema_version": 1,
-                            "event_chunk": {
-                                "event_sequence": event.get("event_sequence"),
-                                "ordinal": ordinal,
-                                "count": len(chunks),
-                                "event_content_sha256": event_hash,
-                                "encoding": "base64",
-                                "content": base64.b64encode(chunk).decode("ascii"),
-                            },
-                        }
-                        content = canonical_json(chunk_payload)
-                        if len(content.encode("utf-8")) > 32 * 1024:
-                            raise HumanMemoryHostServiceError(
-                                "task_scope_projection_public_page_too_large"
-                            )
-                        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-                        pages.append(
-                            {
-                                "page_id": f"sha256:{content_hash}",
-                                "content": content,
-                                "content_sha256": content_hash,
-                                "event_chunk": chunk_payload["event_chunk"],
-                            }
-                        )
-                if pending:
-                    pages.append(self._event_page(pending))
-        return {
+        result = {
             "scope_ref": request.scope_ref,
             "source_ref": view.source_id,
+            "source_hash": view.source_hash,
             "kind": view.view_kind,
             "content": view.content,
             "content_sha256": view.content_sha256,
             "root_block_id": view.root_block_id,
             "block_count": view.block_count,
             "receipt_hash": view.receipt_hash,
-            "pages": pages,
         }
+        self._assert_public_bound(result)
+        return result
+
+    async def list_evidence_groups(
+        self, request: ListEvidenceGroupsRequest
+    ) -> Mapping[str, object]:
+        await self._assert_current_source(
+            request.scope_ref, request.source_ref, request.source_hash
+        )
+        offset = 0
+        if request.cursor is not None:
+            cursor = self._decode_cursor(request.cursor, "evidence-groups")
+            self._assert_cursor_source(cursor, request)
+            offset = self._cursor_int(cursor, "offset", minimum=0)
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            rows = db.execute(
+                "SELECT block_id,content_sha256,content FROM task_scope_read_blocks "
+                "WHERE source_id=? AND view_kind='EVIDENCE' AND block_kind='group' "
+                "ORDER BY CAST(json_extract(CAST(content AS TEXT),'$.logical_group') AS INTEGER) "
+                "LIMIT ? OFFSET ?",
+                (request.source_ref, request.limit + 1, offset),
+            ).fetchall()
+        descriptors = [self._group_descriptor(row) for row in rows[: request.limit]]
+        next_cursor = None
+        if len(rows) > request.limit:
+            next_cursor = self._encode_cursor(
+                {
+                    "kind": "evidence-groups",
+                    "scope_ref": request.scope_ref,
+                    "source_ref": request.source_ref,
+                    "source_hash": request.source_hash,
+                    "offset": offset + request.limit,
+                }
+            )
+        result = {
+            "scope_ref": request.scope_ref,
+            "source_ref": request.source_ref,
+            "source_hash": request.source_hash,
+            "groups": descriptors,
+            "next_cursor": next_cursor,
+            "receipt_hash": canonical_hash(
+                {
+                    "scope_ref": request.scope_ref,
+                    "source_ref": request.source_ref,
+                    "source_hash": request.source_hash,
+                    "offset": offset,
+                    "groups": descriptors,
+                    "next_cursor": next_cursor,
+                }
+            ),
+        }
+        self._assert_public_bound(result)
+        return result
+
+    async def read_evidence_page(
+        self, request: ReadEvidencePageRequest
+    ) -> Mapping[str, object]:
+        await self._assert_current_source(
+            request.scope_ref, request.source_ref, request.source_hash
+        )
+        group = self._load_group(
+            request.source_ref, request.group_ref, request.group_hash
+        )
+        cache_key = (request.source_ref, request.group_ref, request.group_hash)
+        cached_refs = self._evidence_group_ref_cache.get(cache_key)
+        if cached_refs is None:
+            leaf_refs = self._collect_group_leaf_refs(request.source_ref, group)
+            if len(self._evidence_group_ref_cache) >= 64:
+                self._evidence_group_ref_cache.pop(
+                    next(iter(self._evidence_group_ref_cache))
+                )
+            self._evidence_group_ref_cache[cache_key] = tuple(leaf_refs)
+        else:
+            leaf_refs = [dict(item) for item in cached_refs]
+        if not leaf_refs:
+            raise HumanMemoryHostServiceError("human_memory_evidence_group_empty")
+        leaf_index = 0
+        event_offset = 0
+        chunk_index = 0
+        chunk_offset = 0
+        prior_page_hash = None
+        if request.cursor is not None:
+            cursor = self._decode_cursor(request.cursor, "evidence-page")
+            self._assert_cursor_source(cursor, request)
+            if (
+                cursor.get("group_ref") != request.group_ref
+                or cursor.get("group_hash") != request.group_hash
+            ):
+                raise HumanMemoryHostServiceError(
+                    "human_memory_evidence_cursor_binding_mismatch"
+                )
+            leaf_index = self._cursor_int(cursor, "leaf_index", minimum=0)
+            event_offset = self._cursor_int(cursor, "event_offset", minimum=0)
+            chunk_index = self._cursor_int(cursor, "chunk_index", minimum=0)
+            chunk_offset = self._cursor_int(cursor, "chunk_offset", minimum=0)
+            prior_page_hash = cursor.get("prior_page_hash")
+            self._assert_position_ref(cursor, leaf_refs, leaf_index)
+        if leaf_index >= len(leaf_refs):
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_exhausted")
+        page, next_position = self._read_dag_page(
+            request.source_ref,
+            leaf_refs,
+            leaf_index=leaf_index,
+            event_offset=event_offset,
+            chunk_index=chunk_index,
+            chunk_offset=chunk_offset,
+        )
+        page_hash = str(page["content_sha256"])
+        next_cursor = None
+        if next_position is not None:
+            next_leaf, next_event, next_chunk, next_offset = next_position
+            next_ref = leaf_refs[next_leaf]
+            next_cursor = self._encode_cursor(
+                {
+                    "kind": "evidence-page",
+                    "scope_ref": request.scope_ref,
+                    "source_ref": request.source_ref,
+                    "source_hash": request.source_hash,
+                    "group_ref": request.group_ref,
+                    "group_hash": request.group_hash,
+                    "leaf_index": next_leaf,
+                    "event_offset": next_event,
+                    "chunk_index": next_chunk,
+                    "chunk_offset": next_offset,
+                    "block_ref": next_ref["block_id"],
+                    "block_hash": next_ref["content_sha256"],
+                    "prior_page_hash": page_hash,
+                }
+            )
+        result = {
+            "scope_ref": request.scope_ref,
+            "source_ref": request.source_ref,
+            "source_hash": request.source_hash,
+            "group_ref": request.group_ref,
+            "group_hash": request.group_hash,
+            "prior_page_hash": prior_page_hash,
+            "page": page,
+            "next_cursor": next_cursor,
+        }
+        self._assert_public_bound(result)
+        return result
 
     @staticmethod
     def _event_page(events: list[dict[str, object]]) -> dict[str, object]:
@@ -866,8 +988,386 @@ class HumanMemoryHostService:
             "page_id": f"sha256:{content_hash}",
             "content": content,
             "content_sha256": content_hash,
-            "events": events,
         }
+
+    @staticmethod
+    def _encode_cursor(payload: Mapping[str, object]) -> str:
+        body = dict(payload)
+        envelope = {"payload": body, "sha256": canonical_hash(body)}
+        return base64.urlsafe_b64encode(canonical_json(envelope).encode()).decode()
+
+    @staticmethod
+    def _decode_cursor(token: str, expected_kind: str) -> dict[str, object]:
+        try:
+            raw = base64.urlsafe_b64decode(token.encode("ascii"))
+            envelope = json.loads(raw)
+        except (ValueError, UnicodeError, json.JSONDecodeError) as exc:
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_cursor_invalid"
+            ) from exc
+        if not isinstance(envelope, Mapping) or set(envelope) != {"payload", "sha256"}:
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+        payload = envelope["payload"]
+        if (
+            not isinstance(payload, Mapping)
+            or envelope["sha256"] != canonical_hash(dict(payload))
+            or payload.get("kind") != expected_kind
+        ):
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+        return dict(payload)
+
+    @staticmethod
+    def _cursor_int(
+        payload: Mapping[str, object], name: str, *, minimum: int
+    ) -> int:
+        value = payload.get(name)
+        if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+        return value
+
+    @staticmethod
+    def _assert_cursor_source(cursor: Mapping[str, object], request: object) -> None:
+        if (
+            cursor.get("scope_ref") != getattr(request, "scope_ref")
+            or cursor.get("source_ref") != getattr(request, "source_ref")
+            or cursor.get("source_hash") != getattr(request, "source_hash")
+        ):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_cursor_binding_mismatch"
+            )
+
+    async def _assert_current_source(
+        self, scope_ref: str, source_ref: str, source_hash: str
+    ) -> None:
+        await self._assert_owned_scope(scope_ref)
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT h.source_id,h.source_hash FROM task_scope_projection_source_heads h "
+                "WHERE h.task_scope_id=?",
+                (scope_ref,),
+            ).fetchone()
+        if row is None:
+            raise HumanMemoryHostServiceError("human_memory_evidence_source_unavailable")
+        if str(row[0]) != source_ref or str(row[1]) != source_hash:
+            raise HumanMemoryHostServiceError("human_memory_evidence_source_stale")
+
+    @staticmethod
+    def _group_descriptor(row: sqlite3.Row) -> dict[str, object]:
+        content = bytes(row["content"])
+        content_hash = hashlib.sha256(content).hexdigest()
+        if content_hash != row["content_sha256"] or len(content) > 32 * 1024:
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            )
+        try:
+            group = json.loads(content)
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            ) from exc
+        if not isinstance(group, Mapping):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            )
+        logical_group = group.get("logical_group")
+        first = group.get("first_event_sequence")
+        last = group.get("last_event_sequence")
+        count = group.get("event_count")
+        if (
+            group.get("schema_version") != 1
+            or isinstance(logical_group, bool)
+            or not isinstance(logical_group, int)
+            or logical_group < 1
+            or isinstance(first, bool)
+            or not isinstance(first, int)
+            or first < 1
+            or isinstance(last, bool)
+            or not isinstance(last, int)
+            or last < first
+            or isinstance(count, bool)
+            or not isinstance(count, int)
+            or count != last - first + 1
+            or count > 500
+            or not isinstance(group.get("leaves_root"), Mapping)
+        ):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            )
+        return {
+            "group_ref": str(row["block_id"]),
+            "group_hash": content_hash,
+            "logical_group": logical_group,
+            "first_event_sequence": first,
+            "last_event_sequence": last,
+            "event_count": count,
+        }
+
+    def _load_group(
+        self, source_ref: str, group_ref: str, group_hash: str
+    ) -> dict[str, object]:
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute(
+                "SELECT block_id,content_sha256,content FROM task_scope_read_blocks "
+                "WHERE block_id=? AND source_id=? AND view_kind='EVIDENCE' "
+                "AND block_kind='group'",
+                (group_ref, source_ref),
+            ).fetchone()
+        if row is None or str(row["content_sha256"]) != group_hash:
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_binding_mismatch"
+            )
+        self._group_descriptor(row)
+        try:
+            group = json.loads(bytes(row["content"]))
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            ) from exc
+        if not isinstance(group, dict):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            )
+        return group
+
+    def _collect_group_leaf_refs(
+        self, source_ref: str, group: Mapping[str, object]
+    ) -> list[dict[str, object]]:
+        root = group.get("leaves_root")
+        if not isinstance(root, Mapping):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_group_integrity_failed"
+            )
+        refs: list[dict[str, object]] = []
+        visiting: set[str] = set()
+
+        def visit(raw_ref: Mapping[str, object], depth: int) -> None:
+            if depth > 64:
+                raise HumanMemoryHostServiceError(
+                    "human_memory_evidence_index_depth_rejected"
+                )
+            row, content = self._read_exact_block(source_ref, raw_ref)
+            block_id = str(row["block_id"])
+            if block_id in visiting:
+                raise HumanMemoryHostServiceError(
+                    "human_memory_evidence_index_cycle_rejected"
+                )
+            kind = str(row["block_kind"])
+            if kind == "leaf":
+                refs.append(self._block_ref(row))
+                return
+            if kind != "index":
+                raise HumanMemoryHostServiceError(
+                    "human_memory_evidence_index_kind_rejected"
+                )
+            try:
+                index = json.loads(content)
+            except (UnicodeError, json.JSONDecodeError) as exc:
+                raise HumanMemoryHostServiceError(
+                    "human_memory_evidence_index_invalid"
+                ) from exc
+            children = index.get("children") if isinstance(index, Mapping) else None
+            if not isinstance(children, list):
+                raise HumanMemoryHostServiceError(
+                    "human_memory_evidence_index_invalid"
+                )
+            visiting.add(block_id)
+            for child in children:
+                if not isinstance(child, Mapping):
+                    raise HumanMemoryHostServiceError(
+                        "human_memory_evidence_index_invalid"
+                    )
+                visit(child, depth + 1)
+            visiting.remove(block_id)
+
+        visit(root, 0)
+        return refs
+
+    def _read_exact_block(
+        self, source_ref: str, raw_ref: Mapping[str, object]
+    ) -> tuple[sqlite3.Row, bytes]:
+        block_id = raw_ref.get("block_id")
+        block_kind = raw_ref.get("block_kind")
+        content_hash = raw_ref.get("content_sha256")
+        byte_length = raw_ref.get("byte_length")
+        if (
+            not isinstance(block_id, str)
+            or block_kind not in {"chunk", "leaf", "index"}
+            or not isinstance(content_hash, str)
+            or isinstance(byte_length, bool)
+            or not isinstance(byte_length, int)
+            or byte_length < 0
+        ):
+            raise HumanMemoryHostServiceError("human_memory_evidence_ref_invalid")
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            row = db.execute(
+                "SELECT block_id,source_id,block_kind,content_sha256,content "
+                "FROM task_scope_read_blocks WHERE block_id=? AND source_id=?",
+                (block_id, source_ref),
+            ).fetchone()
+        if row is None:
+            raise HumanMemoryHostServiceError("human_memory_evidence_block_missing")
+        content = bytes(row["content"])
+        if (
+            str(row["content_sha256"]) != content_hash
+            or str(row["block_kind"]) != block_kind
+            or len(content) != byte_length
+            or hashlib.sha256(content).hexdigest() != content_hash
+        ):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_block_integrity_failed"
+            )
+        return row, content
+
+    @staticmethod
+    def _block_ref(row: sqlite3.Row) -> dict[str, object]:
+        return {
+            "block_id": str(row["block_id"]),
+            "block_kind": str(row["block_kind"]),
+            "content_sha256": str(row["content_sha256"]),
+            "byte_length": len(bytes(row["content"])),
+        }
+
+    @staticmethod
+    def _assert_position_ref(
+        cursor: Mapping[str, object], refs: list[dict[str, object]], leaf_index: int
+    ) -> None:
+        if leaf_index >= len(refs):
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_exhausted")
+        ref = refs[leaf_index]
+        if (
+            cursor.get("block_ref") != ref["block_id"]
+            or cursor.get("block_hash") != ref["content_sha256"]
+        ):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_cursor_block_mismatch"
+            )
+
+    def _read_dag_page(
+        self,
+        source_ref: str,
+        leaf_refs: list[dict[str, object]],
+        *,
+        leaf_index: int,
+        event_offset: int,
+        chunk_index: int,
+        chunk_offset: int,
+    ) -> tuple[dict[str, object], tuple[int, int, int, int] | None]:
+        _, leaf_content = self._read_exact_block(source_ref, leaf_refs[leaf_index])
+        try:
+            leaf = json.loads(leaf_content)
+        except (UnicodeError, json.JSONDecodeError) as exc:
+            raise HumanMemoryHostServiceError("human_memory_evidence_leaf_invalid") from exc
+        if not isinstance(leaf, Mapping):
+            raise HumanMemoryHostServiceError("human_memory_evidence_leaf_invalid")
+        events = leaf.get("events")
+        if isinstance(events, list):
+            if chunk_index or chunk_offset or event_offset >= len(events):
+                raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+            selected: list[dict[str, object]] = []
+            for raw_event in events[event_offset:]:
+                if not isinstance(raw_event, dict):
+                    raise HumanMemoryHostServiceError("human_memory_evidence_event_invalid")
+                event = dict(raw_event)
+                payload = event.get("payload")
+                if isinstance(payload, Mapping):
+                    event_index = payload.get("event_index")
+                    if isinstance(event_index, int) and not isinstance(event_index, bool):
+                        event["event_index"] = event_index
+                candidate = canonical_json(
+                    {"schema_version": 1, "events": [*selected, event]}
+                )
+                if selected and len(candidate.encode("utf-8")) > 20 * 1024:
+                    break
+                if len(candidate.encode("utf-8")) > 20 * 1024:
+                    raise HumanMemoryHostServiceError(
+                        "human_memory_evidence_leaf_event_too_large"
+                    )
+                selected.append(event)
+            page = self._event_page(selected)
+            next_event = event_offset + len(selected)
+            if next_event < len(events):
+                return page, (leaf_index, next_event, 0, 0)
+            if leaf_index + 1 < len(leaf_refs):
+                return page, (leaf_index + 1, 0, 0, 0)
+            return page, None
+        chunks = leaf.get("chunks")
+        if event_offset or not isinstance(chunks, list) or not chunks:
+            raise HumanMemoryHostServiceError("human_memory_evidence_leaf_invalid")
+        if chunk_index >= len(chunks) or not isinstance(chunks[chunk_index], Mapping):
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+        event_hasher = hashlib.sha256()
+        total = 0
+        response_chunk_size = 12 * 1024
+        absolute_offset = 0
+        for prior_ref in chunks[:chunk_index]:
+            if not isinstance(prior_ref, Mapping):
+                raise HumanMemoryHostServiceError("human_memory_evidence_leaf_invalid")
+            _, prior_content = self._read_exact_block(source_ref, prior_ref)
+            absolute_offset += len(prior_content)
+        absolute_offset += chunk_offset
+        response = bytearray()
+        next_chunk_index = chunk_index
+        next_chunk_offset = chunk_offset
+        for index, chunk_ref in enumerate(chunks):
+            if not isinstance(chunk_ref, Mapping):
+                raise HumanMemoryHostServiceError("human_memory_evidence_leaf_invalid")
+            _, content = self._read_exact_block(source_ref, chunk_ref)
+            event_hasher.update(content)
+            total += len(content)
+            if index < chunk_index or len(response) >= response_chunk_size:
+                continue
+            start = chunk_offset if index == chunk_index else 0
+            if start >= len(content):
+                raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+            take = min(response_chunk_size - len(response), len(content) - start)
+            response.extend(content[start : start + take])
+            if start + take < len(content):
+                next_chunk_index = index
+                next_chunk_offset = start + take
+            else:
+                next_chunk_index = index + 1
+                next_chunk_offset = 0
+        if total != leaf.get("byte_length") or event_hasher.hexdigest() != leaf.get(
+            "content_sha256"
+        ):
+            raise HumanMemoryHostServiceError(
+                "human_memory_evidence_event_chunks_invalid"
+            )
+        if not response:
+            raise HumanMemoryHostServiceError("human_memory_evidence_cursor_invalid")
+        event_length = int(leaf["byte_length"])
+        payload = {
+            "schema_version": 1,
+            "event_chunk": {
+                "event_sequence": leaf.get("event_sequence"),
+                "ordinal": absolute_offset // response_chunk_size + 1,
+                "count": (event_length + response_chunk_size - 1) // response_chunk_size,
+                "event_content_sha256": leaf.get("content_sha256"),
+                "encoding": "base64",
+                "content": base64.b64encode(bytes(response)).decode("ascii"),
+            },
+        }
+        content = canonical_json(payload)
+        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        page = {
+            "page_id": f"sha256:{content_hash}",
+            "content": content,
+            "content_sha256": content_hash,
+        }
+        if next_chunk_index < len(chunks):
+            return page, (leaf_index, 0, next_chunk_index, next_chunk_offset)
+        if leaf_index + 1 < len(leaf_refs):
+            return page, (leaf_index + 1, 0, 0, 0)
+        return page, None
+
+    @staticmethod
+    def _assert_public_bound(value: Mapping[str, object]) -> None:
+        if len(canonical_json(dict(value)).encode("utf-8")) > 32 * 1024:
+            raise HumanMemoryHostServiceError(
+                "task_scope_projection_public_response_too_large"
+            )
 
     async def drop_rebuildable(self, scope_ref: str) -> Mapping[str, object]:
         await self._assert_owned_scope(scope_ref)
@@ -1140,9 +1640,11 @@ __all__ = (
     "HumanMemoryHostService",
     "HumanMemoryHostServiceError",
     "HumanMemoryHostServiceFactory",
+    "ListEvidenceGroupsRequest",
     "MutateTaskScopeRequest",
     "OpenTaskScopeRequest",
     "QueueTurnRequest",
+    "ReadEvidencePageRequest",
     "ReadTaskScopeViewRequest",
     "RecoveryLifecyclePort",
     "SaveCheckpointRequest",

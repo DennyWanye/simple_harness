@@ -12,6 +12,7 @@ facade DTO.
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -29,9 +30,11 @@ from deskpet.memory.human_memory_service import (
     HumanMemoryHostService,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
+    ListEvidenceGroupsRequest,
     MutateTaskScopeRequest,
     OpenTaskScopeRequest,
     QueueTurnRequest,
+    ReadEvidencePageRequest,
     ReadTaskScopeViewRequest,
     SaveCheckpointRequest,
     SearchTaskScopesRequest,
@@ -293,12 +296,55 @@ class S4ValuePublicAdapter:
                 AuditRefsRequest(scope_ref=str(request["scope_ref"]))
             )
         if operation == "view.read":
-            return await service.read_view(
-                ReadTaskScopeViewRequest(
-                    scope_ref=str(request["scope_ref"]),
-                    kind=str(request["kind"]),
+            view = dict(
+                await service.read_view(
+                    ReadTaskScopeViewRequest(
+                        scope_ref=str(request["scope_ref"]),
+                        kind=str(request["kind"]),
+                    )
                 )
             )
+            if str(request["kind"]) != "EVIDENCE":
+                return view
+            pages: list[dict[str, object]] = []
+            groups_cursor = None
+            while True:
+                group_page = await service.list_evidence_groups(
+                    ListEvidenceGroupsRequest(
+                        scope_ref=str(view["scope_ref"]),
+                        source_ref=str(view["source_ref"]),
+                        source_hash=str(view["source_hash"]),
+                        cursor=groups_cursor,
+                    )
+                )
+                for group in group_page["groups"]:
+                    page_cursor = None
+                    while True:
+                        result = await service.read_evidence_page(
+                            ReadEvidencePageRequest(
+                                scope_ref=str(view["scope_ref"]),
+                                source_ref=str(view["source_ref"]),
+                                source_hash=str(view["source_hash"]),
+                                group_ref=str(group["group_ref"]),
+                                group_hash=str(group["group_hash"]),
+                                cursor=page_cursor,
+                            )
+                        )
+                        page = dict(result["page"])
+                        decoded = json.loads(str(page["content"]))
+                        if "events" in decoded:
+                            page["events"] = decoded["events"]
+                        if "event_chunk" in decoded:
+                            page["event_chunk"] = decoded["event_chunk"]
+                        pages.append(page)
+                        page_cursor = result["next_cursor"]
+                        if page_cursor is None:
+                            break
+                groups_cursor = group_page["next_cursor"]
+                if groups_cursor is None:
+                    break
+            view["pages"] = pages
+            return view
         if operation == "queue.snapshot":
             return await service.queue_snapshot()
         if operation == "recovery.manifest":
