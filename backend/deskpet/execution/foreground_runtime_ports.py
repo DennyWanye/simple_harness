@@ -278,13 +278,18 @@ class ProductForegroundToolPort:
         candidate = claimed.candidate
         if candidate.task_scope_id is None:
             raise RuntimeError("foreground_tool_scope_missing")
-        receipt = await self._bindings.current_receipt(candidate.task_scope_id)
         if (
-            receipt.binding_set_revision != candidate.binding_set_revision
-            or receipt.receipt_id != candidate.binding_set_receipt_id
-            or receipt.receipt_hash != candidate.binding_set_receipt_hash
+            candidate.binding_set_revision < 1
+            or candidate.binding_set_receipt_id is None
+            or candidate.binding_set_receipt_hash is None
         ):
-            raise RuntimeError("foreground_tool_binding_changed_after_claim")
+            raise RuntimeError("foreground_tool_binding_authority_missing")
+        receipt = await self._bindings.exact_receipt(
+            task_scope_id=candidate.task_scope_id,
+            binding_set_revision=candidate.binding_set_revision,
+            binding_set_receipt_id=candidate.binding_set_receipt_id,
+            binding_set_receipt_hash=candidate.binding_set_receipt_hash,
+        )
         roots = []
         for root_hash in receipt.root_identity_hashes:
             authority = await self._bindings.verify_effect_authority(

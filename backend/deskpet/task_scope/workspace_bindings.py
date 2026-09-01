@@ -334,6 +334,30 @@ class WorkspaceBindingAuthorityStore:
         authority = self._manual_authorization_authority
         if authority is None:
             raise WorkspaceBindingError("workspace_binding_manual_authority_unavailable")
+        async with self._connection() as db:
+            durable_challenge = await self._load_json_tx(
+                db,
+                "task_workspace_manual_challenges",
+                "challenge_id",
+                challenge.challenge_id,
+                "challenge_json",
+            )
+            existing = await self._fetchone(
+                db,
+                "SELECT decision_json FROM task_workspace_manual_decisions "
+                "WHERE challenge_id=?",
+                (challenge.challenge_id,),
+            )
+        if durable_challenge == challenge.to_json() and existing is not None:
+            try:
+                return self._resolve_manual_decision_replay(
+                    existing["decision_json"],
+                    challenge=challenge,
+                    decided_by_actor_id=decided_by_actor_id,
+                    decision=decision,
+                )
+            except TaskScopeConflict:
+                pass
         await authority.verify_manual_decision(
             ManualWorkspaceDecisionAuthorityCheck(
                 challenge,
@@ -409,10 +433,14 @@ class WorkspaceBindingAuthorityStore:
                 )
                 payload = canonical_json(receipt.to_json())
                 if existing is not None:
-                    if existing["decision_json"] != payload:
-                        raise TaskScopeConflict("workspace_binding_decision_conflict")
+                    replay = self._resolve_manual_decision_replay(
+                        existing["decision_json"],
+                        challenge=challenge,
+                        decided_by_actor_id=decided_by_actor_id,
+                        decision=decision,
+                    )
                     await db.commit()
-                    return receipt
+                    return replay
                 await db.execute(
                     "INSERT INTO task_workspace_manual_decisions("
                     "receipt_id,challenge_id,receipt_hash,decision,host_receipt_id,"
@@ -431,6 +459,32 @@ class WorkspaceBindingAuthorityStore:
             except Exception:
                 await db.rollback()
                 raise
+        return receipt
+
+    @staticmethod
+    def _resolve_manual_decision_replay(
+        decision_json: str,
+        *,
+        challenge: ManualWorkspaceBindingChallenge,
+        decided_by_actor_id: str,
+        decision: WorkspaceBindingAuthorizationDecision,
+    ) -> ManualWorkspaceBindingAuthorizationReceipt:
+        receipt = ManualWorkspaceBindingAuthorizationReceipt.from_json(
+            json.loads(decision_json)
+        )
+        if (
+            receipt.decided_by_actor_id != decided_by_actor_id
+            or receipt.decision is not WorkspaceBindingAuthorizationDecision(decision)
+        ):
+            raise TaskScopeConflict("workspace_binding_decision_conflict")
+        try:
+            receipt.verify_challenge(challenge)
+        except ValueError as exc:
+            if (
+                receipt.decision is not WorkspaceBindingAuthorizationDecision.DENY
+                or "does not authorize" not in str(exc)
+            ):
+                raise TaskScopeConflict("workspace_binding_decision_conflict") from exc
         return receipt
 
     async def verify_manual_authorization(
@@ -838,7 +892,9 @@ class WorkspaceBindingAuthorityStore:
                             now_millis=self._clock_millis(),
                         )
                     self._verify_root(proposal.root, auto=False)
-                    from deskpet.task_scope.projection_sources import append_projection_source_tx
+                    from deskpet.task_scope.projection_sources import (
+                        append_projection_source_tx,
+                    )
 
                     await append_projection_source_tx(
                         db, proposal.task_scope_id, now=now
@@ -1159,6 +1215,36 @@ class WorkspaceBindingAuthorityStore:
         if row is None:
             raise TaskScopeNotFound("workspace_binding_set_not_found")
         return WorkspaceBindingSetReceipt.from_json(json.loads(str(row["receipt_json"])))
+
+    async def exact_receipt(
+        self,
+        *,
+        task_scope_id: str,
+        binding_set_revision: int,
+        binding_set_receipt_id: str,
+        binding_set_receipt_hash: str,
+    ) -> WorkspaceBindingSetReceipt:
+        """Read one immutable binding revision without consulting the live head."""
+
+        await self.initialize()
+        async with self._connection() as db:
+            row = await self._fetchone(
+                db,
+                "SELECT receipt_json FROM task_workspace_binding_revisions "
+                "WHERE task_scope_id=? AND binding_set_revision=?",
+                (task_scope_id, binding_set_revision),
+            )
+        if row is None:
+            raise WorkspaceBindingError("workspace_binding_exact_receipt_missing")
+        receipt = WorkspaceBindingSetReceipt.from_json(
+            json.loads(str(row["receipt_json"]))
+        )
+        if (
+            receipt.receipt_id != binding_set_receipt_id
+            or receipt.receipt_hash != binding_set_receipt_hash
+        ):
+            raise WorkspaceBindingError("workspace_binding_exact_receipt_stale")
+        return receipt
 
     async def _store_grant(
         self,

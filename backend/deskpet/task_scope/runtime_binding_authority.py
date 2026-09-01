@@ -189,7 +189,13 @@ class WorkspaceBindingRuntimeAuthority:
             proposal, challenge, receipt
         )
         binding = await self._store.append_binding(proposal, grant)
-        return self._binding_result(binding, status="bound")
+        return {
+            **self._binding_result(binding, status="bound"),
+            "decision_ref": receipt.receipt_id,
+            "decision_hash": receipt.receipt_hash,
+            "grant_ref": grant.grant_id,
+            "grant_hash": grant.grant_hash,
+        }
 
     async def load_current_run_binding(
         self, run_id: str
@@ -390,7 +396,10 @@ class WorkspaceBindingRuntimeAuthority:
             "proposal_ref": challenge.proposal_id,
             "proposal_hash": challenge.proposal_hash,
             "scope_ref": challenge.task_scope_id,
+            "nonce": challenge.authorization_nonce,
+            "expires_at": challenge.expires_at_millis,
             "expires_at_millis": challenge.expires_at_millis,
+            "evidence_ref": challenge.authorization_evidence_id,
         }
 
     @staticmethod
@@ -400,6 +409,7 @@ class WorkspaceBindingRuntimeAuthority:
             "scope_ref": receipt.task_scope_id,
             "binding_set_revision": receipt.binding_set_revision,
             "receipt_ref": receipt.receipt_id,
+            "binding_set_receipt_ref": receipt.receipt_id,
             "receipt_hash": receipt.receipt_hash,
             "root_set_digest": receipt.root_set_digest,
             "root_identity_hashes": list(receipt.root_identity_hashes),

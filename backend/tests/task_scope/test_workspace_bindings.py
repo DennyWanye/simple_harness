@@ -8,6 +8,19 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from deskpet.memory.schema import (
+    InitializeError,
+    initialize_human_memory_program_state_db,
+)
+from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
+from deskpet.task_scope.workspace_bindings import (
+    CurrentRunBindingAuthority,
+    ManualWorkspaceChallengeAuthorityCheck,
+    ManualWorkspaceDecisionAuthorityCheck,
+    WorkspaceBindingAuthorityStore,
+    WorkspaceBindingError,
+    canonical_workspace_root,
+)
 from simple_harness import (
     CallId,
     ContextRouteReceipt,
@@ -20,17 +33,6 @@ from simple_harness import (
     WorkspaceBindingAuthorizationDecision,
     WorkspaceBindingMode,
     WorkspaceBindingProposal,
-)
-
-from deskpet.memory.schema import InitializeError, initialize_human_memory_program_state_db
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
-from deskpet.task_scope.workspace_bindings import (
-    CurrentRunBindingAuthority,
-    ManualWorkspaceChallengeAuthorityCheck,
-    ManualWorkspaceDecisionAuthorityCheck,
-    WorkspaceBindingAuthorityStore,
-    WorkspaceBindingError,
-    canonical_workspace_root,
 )
 
 
@@ -237,6 +239,12 @@ async def test_manual_append_restart_replay_and_exact_frozen_effect_revision(
         clock_millis=lambda: 1500,
     )
     assert await reopened.current_receipt("scope-1") == receipt2
+    assert await reopened.exact_receipt(
+        task_scope_id="scope-1",
+        binding_set_revision=receipt1.binding_set_revision,
+        binding_set_receipt_id=receipt1.receipt_id,
+        binding_set_receipt_hash=receipt1.receipt_hash,
+    ) == receipt1
     route = ContextRouteReceipt(
         "route-1",
         "run-1",

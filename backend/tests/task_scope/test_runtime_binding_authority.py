@@ -57,13 +57,14 @@ async def test_manual_binding_requires_durable_challenge_then_exact_allow(
     startup = await dispatch_startup_epoch(db_path, approved_fresh_lane=True)
     factory = HumanMemoryHostServiceFactory(db_path, startup)
     foreground = ForegroundQueueStore(db_path)
+    now = [1_000]
     authority = WorkspaceBindingRuntimeAuthority(
         db_path,
         subject=_auth().subject,
         foreground=foreground,
         policy=_Policy("manual"),
         configured_workspace_root=configured,
-        clock_millis=lambda: 1_000,
+        clock_millis=lambda: now[0],
     )
     opened = await _request(factory, authority, "primary", "primary.open", {})
     assert opened["payload"]["ok"] is True
@@ -87,6 +88,9 @@ async def test_manual_binding_requires_durable_challenge_then_exact_allow(
     result = proposed["payload"]["result"]
     assert result["code"] == "workspace_binding_manual_authorization_required"
     assert result["status"] == "authorization_required"
+    assert result["nonce"]
+    assert result["expires_at"] == result["expires_at_millis"]
+    assert result["evidence_ref"]
 
     allowed = await _request(
         factory,
@@ -95,21 +99,26 @@ async def test_manual_binding_requires_durable_challenge_then_exact_allow(
         "binding.manual.decide",
         {"challenge_ref": result["challenge_ref"], "decision": "allow"},
     )
-    assert allowed["payload"]["result"]["status"] == "bound"
-    assert allowed["payload"]["result"]["binding_set_revision"] == 1
+    allowed_result = allowed["payload"]["result"]
+    assert allowed_result["status"] == "bound"
+    assert allowed_result["binding_set_revision"] == 1
+    assert allowed_result["decision_ref"]
+    assert allowed_result["grant_ref"]
+    assert allowed_result["binding_set_receipt_ref"] == allowed_result["receipt_ref"]
 
+    now[0] = 1_100
     replay = await _request(
         factory,
         authority,
-        "decision-1",
+        "decision-2",
         "binding.manual.decide",
         {"challenge_ref": result["challenge_ref"], "decision": "allow"},
     )
-    assert replay == allowed
+    assert replay["payload"]["result"] == allowed_result
     with sqlite3.connect(db_path) as db:
         assert db.execute(
             "SELECT COUNT(*) FROM human_memory_evidence WHERE subject='binding-owner'"
-        ).fetchone()[0] == 2
+        ).fetchone()[0] == 3
         assert db.execute(
             "SELECT COUNT(*) FROM task_workspace_manual_challenges"
         ).fetchone()[0] == 1
