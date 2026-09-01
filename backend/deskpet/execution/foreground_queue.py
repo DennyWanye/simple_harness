@@ -20,7 +20,6 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
 
 import aiosqlite
 
@@ -31,7 +30,6 @@ from deskpet.task_scope.protocol import (
     identifier,
     reject_private_payload,
 )
-
 
 TERMINAL_STATES = frozenset({"COMPLETED", "FAILED", "STOPPED", "CANCELLED"})
 FOREGROUND_SCHEDULER_KIND = "foreground_scheduler"
@@ -785,9 +783,22 @@ class ForegroundQueueStore:
         await self.initialize()
         async with self._connection() as db:
             head = await self._head_tx(db, host_run_id)
+            if (
+                str(head["current_state"]) in TERMINAL_STATES
+                or head["desired_control"] is None
+            ):
+                return ()
             cursor = await db.execute(
-                "SELECT s.*,b.sdk_run_id FROM foreground_signal_outbox s LEFT JOIN foreground_signal_acks a ON a.signal_id=s.signal_id LEFT JOIN foreground_run_sdk_bindings b ON b.host_run_id=s.host_run_id WHERE s.host_run_id=? AND s.generation=? AND a.signal_id IS NULL ORDER BY s.created_at,s.signal_id",
-                (host_run_id, int(head["generation"])),
+                "SELECT s.*,b.sdk_run_id FROM foreground_signal_outbox s "
+                "LEFT JOIN foreground_signal_acks a ON a.signal_id=s.signal_id "
+                "LEFT JOIN foreground_run_sdk_bindings b ON b.host_run_id=s.host_run_id "
+                "WHERE s.host_run_id=? AND s.generation=? AND s.control_kind=? "
+                "AND a.signal_id IS NULL ORDER BY s.created_at,s.signal_id",
+                (
+                    host_run_id,
+                    int(head["generation"]),
+                    str(head["desired_control"]),
+                ),
             )
             rows = await cursor.fetchall()
             await cursor.close()
@@ -814,6 +825,17 @@ class ForegroundQueueStore:
                 signal = await self._fetchone(db, "SELECT * FROM foreground_signal_outbox WHERE signal_id=?", (signal_id,))
                 if signal is None:
                     raise ForegroundQueueError("foreground_signal_not_found")
+                head = await self._head_tx(db, str(signal["host_run_id"]))
+                if (
+                    int(signal["generation"]) != generation
+                    or int(head["generation"]) != generation
+                ):
+                    raise ForegroundQueueError("foreground_generation_stale")
+                if (
+                    str(head["current_state"]) in TERMINAL_STATES
+                    or head["desired_control"] != signal["control_kind"]
+                ):
+                    raise ForegroundQueueError("foreground_signal_superseded")
                 existing = await self._fetchone(db, "SELECT * FROM foreground_signal_acks WHERE signal_id=?", (signal_id,))
                 if existing is not None:
                     if existing["sdk_signal_id"] != sdk_signal_id or existing["sdk_run_id"] != sdk_run_id:
@@ -822,8 +844,6 @@ class ForegroundQueueStore:
                     return self._signal_ack(existing)
                 await self._validate_lease_tx(db, str(signal["host_run_id"]), owner_id, generation, now)
                 await self._validate_sdk_binding_tx(db, str(signal["host_run_id"]), sdk_run_id)
-                if int(signal["generation"]) != generation:
-                    raise ForegroundQueueError("foreground_signal_generation_stale")
                 payload = {
                     "schema_version": 1,
                     "signal_id": signal_id,
@@ -1053,6 +1073,8 @@ class ForegroundQueueStore:
         sdk_event_id = identifier(sdk_event_id, "sdk_event_id", 512)
         sdk_event_hash = digest(sdk_event_hash, "sdk_event_hash")
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
+        if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+            raise ForegroundQueueError("foreground_generation_invalid")
         try:
             terminal = RunState(terminal_state)
         except ValueError as exc:
@@ -1073,6 +1095,7 @@ class ForegroundQueueStore:
                     if (
                         existing["sdk_run_id"] != sdk_run_id
                         or existing["terminal_state"] != terminal.value
+                        or int(existing["generation"]) != generation
                         or existing["sdk_event_id"] != sdk_event_id
                         or existing["sdk_event_hash"] != sdk_event_hash
                     ):
@@ -1081,17 +1104,71 @@ class ForegroundQueueStore:
                     return self._terminal_receipt(existing)
                 head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
+                run = await self._run_tx(db, host_run_id)
                 receipt = await self._fetchone(
                     db,
-                    "SELECT task_scope_id FROM task_scope_execution_ingest_receipts WHERE source_event_id=? AND run_id=? AND evidence_hash=? AND evidence_kind='run_terminal'",
+                    "SELECT r.task_scope_id,r.source_sequence,r.event_id,e.payload_json "
+                    "FROM task_scope_execution_ingest_receipts r "
+                    "JOIN task_scope_events e ON e.event_id=r.event_id "
+                    "AND e.task_scope_id=r.task_scope_id AND e.payload_hash=r.evidence_hash "
+                    "WHERE r.source_event_id=? AND r.run_id=? AND r.evidence_hash=? "
+                    "AND r.evidence_kind='run_terminal'",
                     (sdk_event_id, sdk_run_id, sdk_event_hash),
                 )
-                run = await self._run_tx(db, host_run_id)
-                if receipt is None or (
-                    run["task_scope_id"] is not None
-                    and receipt["task_scope_id"] != run["task_scope_id"]
-                ):
+                if receipt is None:
                     raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
+                if (
+                    run["task_scope_id"] is None
+                    or receipt["task_scope_id"] != run["task_scope_id"]
+                ):
+                    raise ForegroundQueueError("foreground_terminal_scope_mismatch")
+                gate = await self._fetchone(
+                    db,
+                    "SELECT g.gate_receipt_id,g.terminal_source_sequence,"
+                    "g.durable_source_sequence,w.durable_source_sequence AS current_durable_sequence,"
+                    "w.terminal_source_sequence AS current_terminal_sequence "
+                    "FROM task_scope_terminal_gate_receipts g "
+                    "JOIN task_scope_run_watermarks w ON w.run_id=g.run_id "
+                    "AND w.task_scope_id=g.task_scope_id "
+                    "WHERE g.run_id=? AND g.task_scope_id=? "
+                    "AND g.terminal_source_sequence=? "
+                    "AND g.durable_source_sequence>=g.terminal_source_sequence "
+                    "AND w.terminal_source_sequence=g.terminal_source_sequence "
+                    "AND w.durable_source_sequence>=g.terminal_source_sequence",
+                    (sdk_run_id, receipt["task_scope_id"], receipt["source_sequence"]),
+                )
+                if gate is None:
+                    raise ForegroundQueueError("foreground_terminal_gate_pending")
+                try:
+                    evidence = json.loads(str(receipt["payload_json"]))
+                except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                    raise ForegroundQueueError(
+                        "foreground_terminal_sdk_evidence_invalid"
+                    ) from exc
+                if (
+                    not isinstance(evidence, dict)
+                    or evidence.get("event_id") != sdk_event_id
+                    or evidence.get("run_id") != sdk_run_id
+                    or evidence.get("subject") != head["subject"]
+                    or evidence.get("kind") != "run_terminal"
+                ):
+                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                public_payload = evidence.get("public_payload")
+                if not isinstance(public_payload, dict):
+                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                payload_generation = public_payload.get("generation")
+                if (
+                    isinstance(payload_generation, bool)
+                    or not isinstance(payload_generation, int)
+                    or payload_generation != generation
+                ):
+                    raise ForegroundQueueError("foreground_terminal_generation_mismatch")
+                payload_terminal = public_payload.get("terminal_state")
+                if (
+                    not isinstance(payload_terminal, str)
+                    or payload_terminal.upper() != terminal.value
+                ):
+                    raise ForegroundQueueError("foreground_terminal_state_mismatch")
                 transition_id, transition_hash = await self._insert_run_transition_tx(
                     db,
                     host_run_id=host_run_id,
@@ -1116,6 +1193,13 @@ class ForegroundQueueStore:
                     "generation": generation,
                     "sdk_event_id": sdk_event_id,
                     "sdk_event_hash": sdk_event_hash,
+                    "terminal_gate_receipt_id": gate["gate_receipt_id"],
+                    "terminal_source_sequence": int(
+                        gate["terminal_source_sequence"]
+                    ),
+                    "terminal_gate_durable_source_sequence": int(
+                        gate["durable_source_sequence"]
+                    ),
                     "recorded_at": now,
                 }
                 terminal_hash = canonical_hash(terminal_payload)
@@ -1683,13 +1767,13 @@ class ForegroundQueueStore:
 
 
 __all__ = [
+    "FOREGROUND_SCHEDULER_KIND",
     "AdmissionReceipt",
     "ContextLineage",
     "ControlKind",
     "ControlReceipt",
     "EffectAdmissionReceipt",
     "EnqueueReceipt",
-    "FOREGROUND_SCHEDULER_KIND",
     "ForegroundQueueError",
     "ForegroundQueueStore",
     "ForegroundRunSnapshot",

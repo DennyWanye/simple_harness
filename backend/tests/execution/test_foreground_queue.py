@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
-
 from deskpet.execution import (
     ContextLineage,
     ControlKind,
@@ -16,9 +16,13 @@ from deskpet.execution import (
     ForegroundQueueStore,
     RunState,
 )
+from deskpet.execution.evidence_ingress import (
+    ExecutionEvidenceIngress,
+    TerminalWatermarkPending,
+)
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+from deskpet.task_scope.protocol import canonical_hash
 from deskpet.task_scope.store import CanonicalTaskScopeStore
-
 
 MIGRATION = (
     Path(__file__).parents[2]
@@ -164,52 +168,108 @@ async def _claim_and_bind(
     return admission
 
 
-def _sdk_terminal_evidence(
-    db_path: Path, *, sdk_run_id: str, source_event_id: str, evidence_hash: str
-) -> None:
-    with sqlite3.connect(db_path) as db:
-        sequence = int(
-            db.execute(
-                "SELECT COALESCE(MAX(event_sequence),0)+1 FROM task_scope_events WHERE task_scope_id=?",
-                (SCOPE,),
-            ).fetchone()[0]
-        )
-        event_id = f"event-{source_event_id}"
-        db.execute(
-            "INSERT INTO task_scope_events(event_id,task_scope_id,event_sequence,event_kind,"
-            "source_kind,source_event_id,payload_hash,payload_json,reason_code,occurred_at,"
-            "committed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                event_id,
-                SCOPE,
-                sequence,
-                "run_terminal",
-                "harness",
-                source_event_id,
-                evidence_hash,
-                "{}",
-                None,
-                100.0,
-                100.0,
-            ),
-        )
-        db.execute(
-            "INSERT INTO task_scope_execution_ingest_receipts(receipt_id,task_scope_id,run_id,"
-            "source_sequence,source_event_id,evidence_hash,event_id,evidence_kind,committed_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
-            (
-                f"ingest-{source_event_id}",
-                SCOPE,
-                sdk_run_id,
-                1,
-                source_event_id,
-                evidence_hash,
-                event_id,
-                "run_terminal",
-                100.0,
-            ),
-        )
-        db.commit()
+class _ExecutionEvidence:
+    def __init__(self, raw: dict[str, object]) -> None:
+        self._raw = raw
+        for key, value in raw.items():
+            setattr(self, key, value)
+        self.evidence_hash = canonical_hash(raw)
+
+    def to_json(self) -> dict[str, object]:
+        return json.loads(json.dumps(self._raw))
+
+
+def _execution_evidence(
+    *,
+    sdk_run_id: str,
+    source_event_id: str,
+    kind: str,
+    source_sequence: int,
+    generation: int = 1,
+    terminal_state: RunState | None = None,
+) -> _ExecutionEvidence:
+    public_payload: dict[str, object] = {
+        "generation": generation,
+        "sequence": source_sequence,
+    }
+    if terminal_state is not None:
+        public_payload["terminal_state"] = terminal_state.value
+    return _ExecutionEvidence(
+        {
+            "schema_version": 1,
+            "event_id": source_event_id,
+            "run_id": sdk_run_id,
+            "subject": SUBJECT,
+            "kind": kind,
+            "public_payload": public_payload,
+            "disclosure_context": {
+                "schema_version": 1,
+                "run_id": sdk_run_id,
+                "subject": SUBJECT,
+                "recipient": "user_self",
+                "recipient_id": SUBJECT,
+                "intended_audience": "user_self",
+                "purpose": "task_continuity",
+                "source": "authenticated_host",
+                "trust": "trusted_authority",
+                "generation": str(generation),
+                "authority_ref": "foreground-queue-test",
+                "reason_codes": ["minimum_necessary"],
+            },
+            "evidence_refs": [
+                {"evidence_id": "evidence-1", "content_hash": "1" * 64, "ordinal": 1}
+            ],
+            "idempotency_key": f"ingest-{source_event_id}",
+            "occurred_at": float(source_sequence),
+        }
+    )
+
+
+async def _ingest_execution(
+    db_path: Path,
+    *,
+    sdk_run_id: str,
+    source_event_id: str,
+    kind: str,
+    source_sequence: int,
+    generation: int = 1,
+    terminal_state: RunState | None = None,
+) -> _ExecutionEvidence:
+    evidence = _execution_evidence(
+        sdk_run_id=sdk_run_id,
+        source_event_id=source_event_id,
+        kind=kind,
+        source_sequence=source_sequence,
+        generation=generation,
+        terminal_state=terminal_state,
+    )
+    await ExecutionEvidenceIngress(db_path).ingest(
+        task_scope_id=SCOPE,
+        source_sequence=source_sequence,
+        evidence=evidence,
+    )
+    return evidence
+
+
+async def _authorized_terminal_evidence(
+    db_path: Path,
+    *,
+    sdk_run_id: str,
+    source_event_id: str,
+    terminal_state: RunState,
+    generation: int = 1,
+) -> _ExecutionEvidence:
+    evidence = await _ingest_execution(
+        db_path,
+        sdk_run_id=sdk_run_id,
+        source_event_id=source_event_id,
+        kind="run_terminal",
+        source_sequence=1,
+        generation=generation,
+        terminal_state=terminal_state,
+    )
+    await ExecutionEvidenceIngress(db_path).authorize_terminal(sdk_run_id)
+    return evidence
 
 
 def _assert_code(exc: pytest.ExceptionInfo[ForegroundQueueError], code: str) -> None:
@@ -358,23 +418,38 @@ async def test_control_priority_sdk_terminal_and_atomic_next_admission(tmp_path:
     assert weaker.outcome == "superseded"
     assert cancel.reduced_state is RunState.CANCEL_REQUESTED
     signals = await store.pending_signals(admission.host_run_id)
-    assert {signal.control_kind for signal in signals} == {
-        ControlKind.PAUSE,
-        ControlKind.STOP,
-        ControlKind.CANCEL,
-    }
-    cancel_signal = next(
-        signal for signal in signals if signal.control_kind is ControlKind.CANCEL
+    assert len(signals) == 1
+    assert signals[0].control_kind is ControlKind.CANCEL
+    cancel_signal = signals[0]
+    restarted = ForegroundQueueStore(db_path, clock=clock)
+    assert await restarted.pending_signals(admission.host_run_id) == signals
+    for superseded_signal in (pause.signal_id, stop.signal_id):
+        assert superseded_signal is not None
+        with pytest.raises(ForegroundQueueError) as superseded_ack:
+            await restarted.acknowledge_signal(
+                signal_id=superseded_signal,
+                sdk_run_id="sdk-run-1",
+                owner_id="owner-1",
+                generation=1,
+                sdk_signal_id=f"sdk-{superseded_signal}",
+            )
+        _assert_code(superseded_ack, "foreground_signal_superseded")
+    concurrent_acks = await asyncio.gather(
+        *(
+            restarted.acknowledge_signal(
+                signal_id=cancel_signal.signal_id,
+                sdk_run_id="sdk-run-1",
+                owner_id="owner-1",
+                generation=1,
+                sdk_signal_id="sdk-signal-cancel",
+            )
+            for _ in range(2)
+        )
     )
-    ack = await store.acknowledge_signal(
-        signal_id=cancel_signal.signal_id,
-        sdk_run_id="sdk-run-1",
-        owner_id="owner-1",
-        generation=1,
-        sdk_signal_id="sdk-signal-cancel",
-    )
+    assert concurrent_acks[0] == concurrent_acks[1]
+    ack = concurrent_acks[0]
     assert (
-        await store.acknowledge_signal(
+        await restarted.acknowledge_signal(
             signal_id=cancel_signal.signal_id,
             sdk_run_id="sdk-run-1",
             owner_id="owner-1",
@@ -401,12 +476,13 @@ async def test_control_priority_sdk_terminal_and_atomic_next_admission(tmp_path:
     snapshot_before_evidence = await store.current_snapshot(SUBJECT)
     assert snapshot_before_evidence is not None
     assert snapshot_before_evidence.state is RunState.CANCEL_REQUESTED
-    _sdk_terminal_evidence(
+    terminal_evidence = await _authorized_terminal_evidence(
         db_path,
         sdk_run_id="sdk-run-1",
         source_event_id="sdk-terminal-1",
-        evidence_hash=terminal_hash,
+        terminal_state=RunState.CANCELLED,
     )
+    terminal_hash = terminal_evidence.evidence_hash
     terminal = await store.record_sdk_terminal(
         host_run_id=admission.host_run_id,
         sdk_run_id="sdk-run-1",
@@ -440,6 +516,156 @@ async def test_control_priority_sdk_terminal_and_atomic_next_admission(tmp_path:
     )
     assert next_admission is not None
     assert next_admission.enqueue_sequence == 2
+
+
+@pytest.mark.asyncio
+async def test_terminal_waits_for_contiguous_gate_and_settles_once(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=2)
+    store = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(store, primary_id, 1)
+    await _enqueue(store, primary_id, 2)
+    admission = await _claim_and_bind(store)
+    terminal_evidence = await _ingest_execution(
+        db_path,
+        sdk_run_id="sdk-run-1",
+        source_event_id="sdk-terminal-gap",
+        kind="run_terminal",
+        source_sequence=3,
+        terminal_state=RunState.COMPLETED,
+    )
+
+    with pytest.raises(ForegroundQueueError) as pending:
+        await store.record_sdk_terminal(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-run-1",
+            owner_id="owner-1",
+            generation=1,
+            terminal_state=RunState.COMPLETED,
+            sdk_event_id="sdk-terminal-gap",
+            sdk_event_hash=terminal_evidence.evidence_hash,
+            idempotency_key="terminal-gap",
+        )
+    _assert_code(pending, "foreground_terminal_gate_pending")
+    assert await store.current_snapshot(SUBJECT) is not None
+    with pytest.raises(ForegroundQueueError) as still_active:
+        await store.claim_next(
+            subject=SUBJECT,
+            owner_id="owner-2",
+            claim_idempotency_key="claim-2",
+            context=CONTEXT,
+            lease_seconds=10,
+        )
+    _assert_code(still_active, "foreground_run_already_active")
+    with pytest.raises(TerminalWatermarkPending):
+        await ExecutionEvidenceIngress(db_path).authorize_terminal("sdk-run-1")
+
+    await _ingest_execution(
+        db_path,
+        sdk_run_id="sdk-run-1",
+        source_event_id="sdk-event-1",
+        kind="provider_invocation",
+        source_sequence=1,
+    )
+    await _ingest_execution(
+        db_path,
+        sdk_run_id="sdk-run-1",
+        source_event_id="sdk-event-2",
+        kind="tool_invocation",
+        source_sequence=2,
+    )
+    await ExecutionEvidenceIngress(db_path).authorize_terminal("sdk-run-1")
+
+    with pytest.raises(ForegroundQueueError) as mismatched_state:
+        await store.record_sdk_terminal(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-run-1",
+            owner_id="owner-1",
+            generation=1,
+            terminal_state=RunState.FAILED,
+            sdk_event_id="sdk-terminal-gap",
+            sdk_event_hash=terminal_evidence.evidence_hash,
+            idempotency_key="terminal-state-mismatch",
+        )
+    _assert_code(mismatched_state, "foreground_terminal_state_mismatch")
+    assert await store.current_snapshot(SUBJECT) is not None
+
+    terminal_receipts = await asyncio.gather(
+        *(
+            store.record_sdk_terminal(
+                host_run_id=admission.host_run_id,
+                sdk_run_id="sdk-run-1",
+                owner_id="owner-1",
+                generation=1,
+                terminal_state=RunState.COMPLETED,
+                sdk_event_id="sdk-terminal-gap",
+                sdk_event_hash=terminal_evidence.evidence_hash,
+                idempotency_key="terminal-gap",
+            )
+            for _ in range(2)
+        )
+    )
+    assert terminal_receipts[0] == terminal_receipts[1]
+    assert await store.current_snapshot(SUBJECT) is None
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM foreground_terminal_receipts"
+        ).fetchone()[0] == 1
+        terminal_json = json.loads(
+            db.execute(
+                "SELECT receipt_json FROM foreground_terminal_receipts"
+            ).fetchone()[0]
+        )
+        gate_id = db.execute(
+            "SELECT gate_receipt_id FROM task_scope_terminal_gate_receipts "
+            "WHERE run_id='sdk-run-1'"
+        ).fetchone()[0]
+        assert terminal_json["terminal_gate_receipt_id"] == gate_id
+        assert terminal_json["terminal_source_sequence"] == 3
+        assert terminal_json["terminal_gate_durable_source_sequence"] == 3
+        assert db.execute(
+            "SELECT COUNT(*) FROM foreground_turn_heads WHERE current_state='SETTLED'"
+        ).fetchone()[0] == 1
+    next_admission = await store.claim_next(
+        subject=SUBJECT,
+        owner_id="owner-2",
+        claim_idempotency_key="claim-2",
+        context=CONTEXT,
+        lease_seconds=10,
+    )
+    assert next_admission is not None
+    assert next_admission.enqueue_sequence == 2
+
+
+@pytest.mark.asyncio
+async def test_terminal_rejects_canonical_event_from_other_generation(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    store = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(store, primary_id, 1)
+    admission = await _claim_and_bind(store)
+    terminal_evidence = await _authorized_terminal_evidence(
+        db_path,
+        sdk_run_id="sdk-run-1",
+        source_event_id="sdk-terminal-generation-2",
+        terminal_state=RunState.COMPLETED,
+        generation=2,
+    )
+    with pytest.raises(ForegroundQueueError) as mismatch:
+        await store.record_sdk_terminal(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-run-1",
+            owner_id="owner-1",
+            generation=1,
+            terminal_state=RunState.COMPLETED,
+            sdk_event_id="sdk-terminal-generation-2",
+            sdk_event_hash=terminal_evidence.evidence_hash,
+            idempotency_key="terminal-generation-mismatch",
+        )
+    _assert_code(mismatch, "foreground_terminal_generation_mismatch")
+    assert await store.current_snapshot(SUBJECT) is not None
 
 
 @pytest.mark.asyncio
@@ -591,12 +817,13 @@ async def test_terminal_transaction_fault_never_partially_settles(
     await _enqueue(plain, primary_id, 1)
     admission = await _claim_and_bind(plain)
     terminal_hash = "9" * 64
-    _sdk_terminal_evidence(
+    terminal_evidence = await _authorized_terminal_evidence(
         db_path,
         sdk_run_id="sdk-run-1",
         source_event_id="sdk-terminal-1",
-        evidence_hash=terminal_hash,
+        terminal_state=RunState.COMPLETED,
     )
+    terminal_hash = terminal_evidence.evidence_hash
     faulted = ForegroundQueueStore(
         db_path, clock=clock, fault_hook=OneShotFault(fault_point)
     )
