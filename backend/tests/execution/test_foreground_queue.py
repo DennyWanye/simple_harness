@@ -143,6 +143,23 @@ async def _enqueue(
     )
 
 
+async def _draft(
+    store: ForegroundQueueStore,
+    *,
+    subject: str = SUBJECT,
+    context: ContextLineage = CONTEXT,
+    key: str = "prepare-1",
+):
+    candidate = await store.read_next_preparation_candidate(subject)
+    assert candidate is not None
+    return await store.prepare_candidate(
+        subject=subject,
+        expected_candidate_hash=candidate.candidate_hash,
+        context=context,
+        idempotency_key=key,
+    )
+
+
 async def _claim_and_bind(
     store: ForegroundQueueStore,
     *,
@@ -150,14 +167,47 @@ async def _claim_and_bind(
     claim_key: str = "claim-1",
     sdk_run_id: str = "sdk-run-1",
 ):
+    draft = await _draft(store, key=f"prepare-{claim_key}")
     admission = await store.claim_next(
         subject=SUBJECT,
         owner_id=owner,
         claim_idempotency_key=claim_key,
-        context=CONTEXT,
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
         lease_seconds=10,
     )
     assert admission is not None
+    await store.record_execution_preparation(
+        host_run_id=admission.host_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        context_ref="context:test",
+        context_hash="c" * 64,
+        provider_ref="provider:test",
+        provider_hash="d" * 64,
+        tool_ref="tools:test",
+        tool_hash="e" * 64,
+        execution_request_hash="f" * 64,
+        idempotency_key=f"final-prepare-{claim_key}",
+    )
+    await store.record_start_intent(
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        start_request_hash="a" * 64,
+        idempotency_key=f"start-intent-{claim_key}",
+    )
+    await store.record_start_observation(
+        host_run_id=admission.host_run_id,
+        sdk_run_id=sdk_run_id,
+        owner_id=owner,
+        generation=admission.generation,
+        outcome="RETURNED",
+        result_ref=f"sdk-start:{sdk_run_id}",
+        result_hash="b" * 64,
+        idempotency_key=f"start-observation-{claim_key}",
+    )
     await store.bind_sdk_run(
         host_run_id=admission.host_run_id,
         sdk_run_id=sdk_run_id,
@@ -309,11 +359,13 @@ async def test_evidence_first_concurrent_enqueue_and_fifo_claim(tmp_path: Path) 
         )
     _assert_code(conflict, "foreground_turn_idempotency_conflict")
 
+    draft = await _draft(store)
     claimed = await store.claim_next(
         subject=SUBJECT,
         owner_id="owner-1",
         claim_idempotency_key="claim-1",
-        context=CONTEXT,
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
         lease_seconds=10,
     )
     assert claimed is not None
@@ -322,7 +374,8 @@ async def test_evidence_first_concurrent_enqueue_and_fifo_claim(tmp_path: Path) 
         subject=SUBJECT,
         owner_id="owner-1",
         claim_idempotency_key="claim-1",
-        context=ContextLineage("ignored-on-retry", 9, "d" * 64),
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
         lease_seconds=99,
     )
     assert recovered is not None
@@ -334,7 +387,8 @@ async def test_evidence_first_concurrent_enqueue_and_fifo_claim(tmp_path: Path) 
             subject=SUBJECT,
             owner_id="owner-2",
             claim_idempotency_key="claim-2",
-            context=CONTEXT,
+            preparation_draft_id=draft.draft_id,
+            preparation_draft_hash=draft.draft_hash,
             lease_seconds=10,
         )
     _assert_code(duplicate, "foreground_run_already_active")
@@ -343,7 +397,8 @@ async def test_evidence_first_concurrent_enqueue_and_fifo_claim(tmp_path: Path) 
             subject=SUBJECT,
             owner_id="projection-worker",
             claim_idempotency_key="background-claim",
-            context=CONTEXT,
+            preparation_draft_id=draft.draft_id,
+            preparation_draft_hash=draft.draft_hash,
             lease_seconds=10,
             worker_kind="projection_worker",
         )
@@ -507,11 +562,13 @@ async def test_control_priority_sdk_terminal_and_atomic_next_admission(tmp_path:
             idempotency_key="terminal-changed",
         )
     _assert_code(immutable, "foreground_terminal_immutable")
+    next_draft = await _draft(store, key="prepare-claim-2")
     next_admission = await store.claim_next(
         subject=SUBJECT,
         owner_id="owner-2",
         claim_idempotency_key="claim-2",
-        context=CONTEXT,
+        preparation_draft_id=next_draft.draft_id,
+        preparation_draft_hash=next_draft.draft_hash,
         lease_seconds=10,
     )
     assert next_admission is not None
@@ -549,12 +606,14 @@ async def test_terminal_waits_for_contiguous_gate_and_settles_once(
         )
     _assert_code(pending, "foreground_terminal_gate_pending")
     assert await store.current_snapshot(SUBJECT) is not None
+    active_draft = await _draft(store, key="prepare-active-retry")
     with pytest.raises(ForegroundQueueError) as still_active:
         await store.claim_next(
             subject=SUBJECT,
             owner_id="owner-2",
             claim_idempotency_key="claim-2",
-            context=CONTEXT,
+            preparation_draft_id=active_draft.draft_id,
+            preparation_draft_hash=active_draft.draft_hash,
             lease_seconds=10,
         )
     _assert_code(still_active, "foreground_run_already_active")
@@ -627,11 +686,13 @@ async def test_terminal_waits_for_contiguous_gate_and_settles_once(
         assert db.execute(
             "SELECT COUNT(*) FROM foreground_turn_heads WHERE current_state='SETTLED'"
         ).fetchone()[0] == 1
+    next_draft = await _draft(store, key="prepare-next-gap")
     next_admission = await store.claim_next(
         subject=SUBJECT,
         owner_id="owner-2",
         claim_idempotency_key="claim-2",
-        context=CONTEXT,
+        preparation_draft_id=next_draft.draft_id,
+        preparation_draft_hash=next_draft.draft_hash,
         lease_seconds=10,
     )
     assert next_admission is not None
@@ -781,20 +842,23 @@ async def test_claim_transaction_fault_is_rollback_or_exact_recovery(
     db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
     plain = ForegroundQueueStore(db_path, clock=clock)
     await _enqueue(plain, primary_id, 1)
+    draft = await _draft(plain)
     faulted = ForegroundQueueStore(db_path, clock=clock, fault_hook=OneShotFault(fault_point))
     with pytest.raises(RuntimeError, match=fault_point):
         await faulted.claim_next(
             subject=SUBJECT,
             owner_id="owner-1",
             claim_idempotency_key="claim-1",
-            context=CONTEXT,
+            preparation_draft_id=draft.draft_id,
+            preparation_draft_hash=draft.draft_hash,
             lease_seconds=10,
         )
     recovered = await plain.claim_next(
         subject=SUBJECT,
         owner_id="owner-1",
         claim_idempotency_key="claim-1",
-        context=CONTEXT,
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
         lease_seconds=10,
     )
     assert recovered is not None
@@ -865,3 +929,378 @@ async def test_terminal_transaction_fault_never_partially_settles(
         assert db.execute(
             "SELECT current_state FROM foreground_turn_heads"
         ).fetchone()[0] == "SETTLED"
+
+
+@pytest.mark.asyncio
+async def test_two_schedulers_claim_exact_draft_and_generation_fences_read_model(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    first = ForegroundQueueStore(db_path, clock=clock)
+    second = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(first, primary_id, 1)
+    first_candidate, second_candidate = await asyncio.gather(
+        first.read_next_preparation_candidate(SUBJECT),
+        second.read_next_preparation_candidate(SUBJECT),
+    )
+    assert first_candidate is not None
+    assert second_candidate == first_candidate
+    first_draft, second_draft = await asyncio.gather(
+        first.prepare_candidate(
+            subject=SUBJECT,
+            expected_candidate_hash=first_candidate.candidate_hash,
+            context=CONTEXT,
+            idempotency_key="scheduler-one-draft",
+        ),
+        second.prepare_candidate(
+            subject=SUBJECT,
+            expected_candidate_hash=second_candidate.candidate_hash,
+            context=CONTEXT,
+            idempotency_key="scheduler-two-draft",
+        ),
+    )
+    results = await asyncio.gather(
+        first.claim_next(
+            subject=SUBJECT,
+            owner_id="scheduler-one",
+            claim_idempotency_key="scheduler-one-claim",
+            preparation_draft_id=first_draft.draft_id,
+            preparation_draft_hash=first_draft.draft_hash,
+            lease_seconds=10,
+        ),
+        second.claim_next(
+            subject=SUBJECT,
+            owner_id="scheduler-two",
+            claim_idempotency_key="scheduler-two-claim",
+            preparation_draft_id=second_draft.draft_id,
+            preparation_draft_hash=second_draft.draft_hash,
+            lease_seconds=10,
+        ),
+        return_exceptions=True,
+    )
+    admissions = [item for item in results if not isinstance(item, Exception)]
+    failures = [item for item in results if isinstance(item, ForegroundQueueError)]
+    assert len(admissions) == len(failures) == 1
+    assert failures[0].code == "foreground_run_already_active"
+    admission = admissions[0]
+    assert admission is not None
+    owner = admission.owner_id
+    claimed = await first.read_claimed_execution(
+        host_run_id=admission.host_run_id,
+        owner_id=owner,
+        generation=1,
+    )
+    assert claimed.candidate.candidate_json == first_candidate.candidate_json
+    assert claimed.candidate.candidate_hash == first_candidate.candidate_hash
+    assert claimed.draft_id in {first_draft.draft_id, second_draft.draft_id}
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM foreground_run_preparation_bindings"
+        ).fetchone()[0] == 1
+
+    clock.now = admission.lease_expires_at + 1
+    reclaimed = await first.reclaim_expired(
+        host_run_id=admission.host_run_id,
+        new_owner_id="scheduler-restarted",
+        expected_generation=1,
+        lease_seconds=10,
+        idempotency_key="reclaim-execution",
+    )
+    with pytest.raises(ForegroundQueueError) as stale:
+        await first.read_claimed_execution(
+            host_run_id=admission.host_run_id,
+            owner_id=owner,
+            generation=1,
+        )
+    _assert_code(stale, "foreground_generation_stale")
+    recovered = await first.read_claimed_execution(
+        host_run_id=admission.host_run_id,
+        owner_id="scheduler-restarted",
+        generation=reclaimed.generation,
+    )
+    assert recovered.candidate.candidate_hash == claimed.candidate.candidate_hash
+    assert recovered.draft_hash == claimed.draft_hash
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "fault_point,committed",
+    [("prepare.before_commit", False), ("prepare.after_commit", True)],
+)
+async def test_preparation_draft_fault_is_inert_and_exactly_replayable(
+    tmp_path: Path, fault_point: str, committed: bool
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    plain = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(plain, primary_id, 1)
+    candidate = await plain.read_next_preparation_candidate(SUBJECT)
+    assert candidate is not None
+    faulted = ForegroundQueueStore(
+        db_path, clock=clock, fault_hook=OneShotFault(fault_point)
+    )
+    with pytest.raises(RuntimeError, match=fault_point):
+        await faulted.prepare_candidate(
+            subject=SUBJECT,
+            expected_candidate_hash=candidate.candidate_hash,
+            context=CONTEXT,
+            idempotency_key="faulted-draft",
+        )
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM foreground_preparation_drafts"
+        ).fetchone()[0] == int(committed)
+        assert db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0] == 0
+    recovered = await plain.prepare_candidate(
+        subject=SUBJECT,
+        expected_candidate_hash=candidate.candidate_hash,
+        context=CONTEXT,
+        idempotency_key="faulted-draft",
+    )
+    assert recovered.candidate_hash == candidate.candidate_hash
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(
+            "SELECT COUNT(*) FROM foreground_preparation_drafts"
+        ).fetchone()[0] == 1
+        assert db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_execution_lifecycle_receipts_are_immutable_and_restart_reusable(
+    tmp_path: Path,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    store = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(store, primary_id, 1)
+    draft = await _draft(store, key="lifecycle-draft")
+    admission = await store.claim_next(
+        subject=SUBJECT,
+        owner_id="owner-before-crash",
+        claim_idempotency_key="lifecycle-claim",
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
+        lease_seconds=10,
+    )
+    assert admission is not None
+    preparation = await store.record_execution_preparation(
+        host_run_id=admission.host_run_id,
+        owner_id="owner-before-crash",
+        generation=1,
+        context_ref="context:exact",
+        context_hash="1" * 64,
+        provider_ref="provider:exact",
+        provider_hash="2" * 64,
+        tool_ref="tools:exact",
+        tool_hash="3" * 64,
+        execution_request_hash="4" * 64,
+        idempotency_key="execution-preparation",
+    )
+    clock.now = admission.lease_expires_at + 1
+    lease = await store.reclaim_expired(
+        host_run_id=admission.host_run_id,
+        new_owner_id="owner-after-crash",
+        expected_generation=1,
+        lease_seconds=10,
+        idempotency_key="execution-reclaim",
+    )
+    replayed_preparation = await store.record_execution_preparation(
+        host_run_id=admission.host_run_id,
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+        context_ref="context:exact",
+        context_hash="1" * 64,
+        provider_ref="provider:exact",
+        provider_hash="2" * 64,
+        tool_ref="tools:exact",
+        tool_hash="3" * 64,
+        execution_request_hash="4" * 64,
+        idempotency_key="execution-preparation",
+    )
+    assert replayed_preparation == preparation
+    intent = await store.record_start_intent(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-deterministic-run",
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+        start_request_hash="5" * 64,
+        idempotency_key="execution-start-intent",
+    )
+    await store.bind_sdk_run(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-deterministic-run",
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+        idempotency_key="execution-bind",
+    )
+    with pytest.raises(ForegroundQueueError) as unobserved_start:
+        await store.record_sdk_started(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-deterministic-run",
+            owner_id="owner-after-crash",
+            generation=lease.generation,
+            sdk_event_id="sdk-started-before-observation",
+            idempotency_key="execution-running-before-observation",
+        )
+    _assert_code(
+        unobserved_start, "foreground_execution_start_observation_missing"
+    )
+    observation = await store.record_start_observation(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-deterministic-run",
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+        outcome="RETURNED",
+        result_ref="sdk:start:receipt",
+        result_hash="6" * 64,
+        idempotency_key="execution-start-returned",
+    )
+    running = await store.record_sdk_started(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-deterministic-run",
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+        sdk_event_id="sdk-started-after-observation",
+        idempotency_key="execution-running-after-observation",
+    )
+    assert running.state is RunState.RUNNING
+    reconciliation = await store.record_reconciliation(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-deterministic-run",
+        owner_id="owner-after-crash",
+        generation=lease.generation,
+        observed_state="BOUND_RUNNING",
+        evidence_ref="sdk:query:receipt",
+        evidence_hash="7" * 64,
+        idempotency_key="execution-reconciled",
+    )
+    assert {intent.phase, observation.phase, reconciliation.phase} == {
+        "start_intent",
+        "start_observation",
+        "reconciliation",
+    }
+    with pytest.raises(ForegroundQueueError) as immutable:
+        await store.record_execution_preparation(
+            host_run_id=admission.host_run_id,
+            owner_id="owner-after-crash",
+            generation=lease.generation,
+            context_ref="context:changed",
+            context_hash="8" * 64,
+            provider_ref="provider:exact",
+            provider_hash="2" * 64,
+            tool_ref="tools:exact",
+            tool_hash="3" * 64,
+            execution_request_hash="4" * 64,
+            idempotency_key="execution-preparation",
+        )
+    _assert_code(immutable, "foreground_execution_preparation_immutable")
+    with sqlite3.connect(db_path) as db:
+        for table in (
+            "foreground_execution_preparations",
+            "foreground_execution_start_intents",
+            "foreground_execution_start_observations",
+            "foreground_execution_reconciliations",
+        ):
+            assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "phase,table",
+    (
+        ("execution_preparation", "foreground_execution_preparations"),
+        ("start_intent", "foreground_execution_start_intents"),
+        ("start_observation", "foreground_execution_start_observations"),
+        ("reconciliation", "foreground_execution_reconciliations"),
+    ),
+)
+@pytest.mark.parametrize("boundary,committed", (("before_commit", False), ("after_commit", True)))
+async def test_execution_audit_boundary_faults_are_rollback_or_exact_replay(
+    tmp_path: Path,
+    phase: str,
+    table: str,
+    boundary: str,
+    committed: bool,
+) -> None:
+    db_path, primary_id, clock = await _ready(tmp_path, evidence_count=1)
+    plain = ForegroundQueueStore(db_path, clock=clock)
+    await _enqueue(plain, primary_id, 1)
+    draft = await _draft(plain, key=f"{phase}-draft")
+    admission = await plain.claim_next(
+        subject=SUBJECT,
+        owner_id="audit-owner",
+        claim_idempotency_key=f"{phase}-claim",
+        preparation_draft_id=draft.draft_id,
+        preparation_draft_hash=draft.draft_hash,
+        lease_seconds=10,
+    )
+    assert admission is not None
+
+    async def record_preparation(target: ForegroundQueueStore):
+        return await target.record_execution_preparation(
+            host_run_id=admission.host_run_id,
+            owner_id="audit-owner",
+            generation=1,
+            context_ref="context:audit",
+            context_hash="1" * 64,
+            provider_ref="provider:audit",
+            provider_hash="2" * 64,
+            tool_ref="tools:audit",
+            tool_hash="3" * 64,
+            execution_request_hash="4" * 64,
+            idempotency_key="audit-preparation",
+        )
+
+    async def record_intent(target: ForegroundQueueStore):
+        return await target.record_start_intent(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-audit-run",
+            owner_id="audit-owner",
+            generation=1,
+            start_request_hash="5" * 64,
+            idempotency_key="audit-intent",
+        )
+
+    async def invoke(target: ForegroundQueueStore):
+        if phase == "execution_preparation":
+            return await record_preparation(target)
+        if phase == "start_intent":
+            return await record_intent(target)
+        if phase == "start_observation":
+            return await target.record_start_observation(
+                host_run_id=admission.host_run_id,
+                sdk_run_id="sdk-audit-run",
+                owner_id="audit-owner",
+                generation=1,
+                outcome="RETURNED",
+                result_ref="sdk:audit:start",
+                result_hash="6" * 64,
+                idempotency_key="audit-observation",
+            )
+        return await target.record_reconciliation(
+            host_run_id=admission.host_run_id,
+            sdk_run_id="sdk-audit-run",
+            owner_id="audit-owner",
+            generation=1,
+            observed_state="BOUND_RUNNING",
+            evidence_ref="sdk:audit:query",
+            evidence_hash="7" * 64,
+            idempotency_key="audit-reconciliation",
+        )
+
+    if phase != "execution_preparation":
+        await record_preparation(plain)
+    if phase in {"start_observation", "reconciliation"}:
+        await record_intent(plain)
+    fault_point = f"{phase}.{boundary}"
+    faulted = ForegroundQueueStore(
+        db_path, clock=clock, fault_hook=OneShotFault(fault_point)
+    )
+    with pytest.raises(RuntimeError, match=fault_point):
+        await invoke(faulted)
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == int(
+            committed
+        )
+    recovered = await invoke(plain)
+    assert recovered.phase == phase.replace("execution_", "")
+    with sqlite3.connect(db_path) as db:
+        assert db.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 1

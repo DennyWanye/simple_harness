@@ -1026,7 +1026,7 @@ async def test_v38_migration_fault_reopens_with_one_exact_marker(
         await initialize_human_memory_program_state_db(db_path, fault_inject=crash)
     await initialize_human_memory_program_state_db(db_path)
     with sqlite3.connect(db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 43
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 44
         assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_marker").fetchone()[0] == 1
         assert (
             db.execute(

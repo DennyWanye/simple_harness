@@ -60,7 +60,7 @@ async def test_v34_legacy_and_future_database_are_not_humanized(
 
     future = tmp_path / "future.db"
     with sqlite3.connect(future) as db:
-        db.execute("PRAGMA user_version=43")
+        db.execute("PRAGMA user_version=45")
         db.commit()
     future_decision = inspect_startup_epoch(
         future, approved_fresh_lane=True

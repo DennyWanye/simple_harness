@@ -34,6 +34,8 @@ from pathlib import Path
 
 from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
+    FOREGROUND_EXECUTION_MIGRATION,
+    FOREGROUND_EXECUTION_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION,
     FOREGROUND_QUEUE_SCHEMA_VERSION,
     HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -302,6 +304,7 @@ def _validate_s4_migration_chain(
         (FOREGROUND_QUEUE_MIGRATION, FOREGROUND_QUEUE_SCHEMA_VERSION),
         (HUMAN_MEMORY_RECOVERY_MIGRATION, HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION),
         (HUMAN_MEMORY_QUIESCENCE_MIGRATION, HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION),
+        (FOREGROUND_EXECUTION_MIGRATION, FOREGROUND_EXECUTION_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:
@@ -361,6 +364,9 @@ def _validate_recovery_marker(
     _validate_quiescence_marker(
         db_path, expected_user_version=expected_user_version
     )
+    _validate_execution_marker(
+        db_path, expected_user_version=expected_user_version
+    )
 
 
 def _validate_quiescence_marker(
@@ -387,6 +393,32 @@ def _validate_quiescence_marker(
         expected_sha256,
     ) or version != expected_user_version:
         raise HumanMemoryProgramEpochError("human_memory_quiescence_marker_invalid")
+
+
+def _validate_execution_marker(
+    db_path: Path, *, expected_user_version: int
+) -> None:
+    if expected_user_version < FOREGROUND_EXECUTION_SCHEMA_VERSION:
+        return
+    expected_sha256 = _migration_sha256(FOREGROUND_EXECUTION_MIGRATION)
+    try:
+        with sqlite3.connect(f"file:{db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT format_epoch,schema_version,migration_id,migration_sha256 "
+                "FROM foreground_execution_marker WHERE singleton=1"
+            ).fetchone()
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError(
+            "foreground_execution_marker_invalid"
+        ) from exc
+    if row != (
+        "human-memory-v1",
+        1,
+        FOREGROUND_EXECUTION_MIGRATION,
+        expected_sha256,
+    ) or version != expected_user_version:
+        raise HumanMemoryProgramEpochError("foreground_execution_marker_invalid")
 
 
 def inspect_startup_epoch(

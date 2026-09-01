@@ -96,15 +96,25 @@ class _FixtureSchedulerWake:
     async def after_enqueue(self, *, subject: str) -> None:
         if await self._store.current_snapshot(subject) is not None:
             return
-        await self._store.claim_next(
+        candidate = await self._store.read_next_preparation_candidate(subject)
+        if candidate is None:
+            return
+        draft = await self._store.prepare_candidate(
             subject=subject,
-            owner_id="fixture-foreground-scheduler",
-            claim_idempotency_key="fixture-claim-current",
+            expected_candidate_hash=candidate.candidate_hash,
             context=ContextLineage(
                 context_snapshot_id="fixture-context",
                 context_snapshot_revision=1,
                 context_snapshot_hash="c" * 64,
             ),
+            idempotency_key=f"fixture-preparation:{candidate.turn_id}",
+        )
+        await self._store.claim_next(
+            subject=subject,
+            owner_id="fixture-foreground-scheduler",
+            claim_idempotency_key="fixture-claim-current",
+            preparation_draft_id=draft.draft_id,
+            preparation_draft_hash=draft.draft_hash,
             lease_seconds=3600.0,
         )
 
