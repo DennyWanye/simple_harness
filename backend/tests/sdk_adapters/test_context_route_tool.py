@@ -325,9 +325,12 @@ def test_context_route_policy_is_context_control() -> None:
         ToolRouteRequirement,
     )
 
-    from deskpet.sdk_adapters.tool_authority import _execution_policy_overrides
+    from deskpet.sdk_adapters.tool_authority import (
+        SDK_TOOL_EXECUTION_POLICY_OVERRIDES,
+    )
 
-    override = _execution_policy_overrides("context_route")
-    assert override["effect_class"] == ToolEffectClass.CONTEXT_CONTROL.value
-    assert override["route_requirement"] == ToolRouteRequirement.FORBIDDEN.value
-    assert _execution_policy_overrides("task_scope_search") == {}
+    effect, route, scope = SDK_TOOL_EXECUTION_POLICY_OVERRIDES["context_route"]
+    assert effect == ToolEffectClass.CONTEXT_CONTROL.value
+    assert route == ToolRouteRequirement.FORBIDDEN.value
+    assert scope == ToolRouteRequirement.FORBIDDEN.value
+    assert "task_scope_search" not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES

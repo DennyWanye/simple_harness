@@ -16,7 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 _ASSISTANT_ROLES = {"assistant"}
 _USER_ROLES = {"user"}
@@ -63,13 +63,6 @@ class CausalGroup:
 class CausalGroupPlan:
     groups: tuple[CausalGroup, ...]
     dropped_group_count: int
-    page_refs: tuple[str, ...] = field(default=())
-
-    @property
-    def open_group(self) -> CausalGroup | None:
-        if self.groups and self.groups[-1].open_run:
-            return self.groups[-1]
-        return None
 
 
 def _text(value: object) -> str:
@@ -78,7 +71,7 @@ def _text(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def _page_ref(role: str, index: int, content: str) -> str:
+def _page_ref(index: int, content: str) -> str:
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
     return f"page:causal:{index}:{digest}"
 
@@ -93,7 +86,7 @@ def _item(
     if role in _TOOL_ROLES and size > large_result_bytes:
         # Large results never travel raw: typed summary + exact ref; the raw
         # payload remains durable and can be paged back in by this ref.
-        ref = _page_ref(role, index, content)
+        ref = _page_ref(index, content)
         summary = json.dumps(
             {
                 "kind": "typed_tool_result_summary",
@@ -162,15 +155,7 @@ def plan_recent_causal_groups(
     dropped = len(complete_groups) - len(kept)
     if open_tail is not None:
         kept = [*kept, open_tail]
-    refs = tuple(
-        item.page_ref
-        for group in kept
-        for item in group.items
-        if item.page_ref is not None
-    )
-    return CausalGroupPlan(
-        groups=tuple(kept), dropped_group_count=dropped, page_refs=refs
-    )
+    return CausalGroupPlan(groups=tuple(kept), dropped_group_count=dropped)
 
 
 __all__ = [

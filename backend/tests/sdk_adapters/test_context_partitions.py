@@ -79,7 +79,7 @@ def test_causal_groups_pair_tools_and_mark_open_run() -> None:
     ]
     assert first.complete and second.complete
     assert tail.open_run and not tail.complete
-    assert plan.open_group is tail
+    assert plan.groups[-1].open_run
     assert plan.dropped_group_count == 0
 
 
@@ -112,7 +112,6 @@ def test_large_tool_result_becomes_typed_summary_with_page_ref() -> None:
     assert payload["kind"] == "typed_tool_result_summary"
     assert payload["bytes"] == 50_000
     assert payload["page_ref"] == tool_item.page_ref
-    assert plan.page_refs == (tool_item.page_ref,)
 
 
 def test_budget_window_maps_arbitrary_provider_windows_to_frozen_tiers() -> None:

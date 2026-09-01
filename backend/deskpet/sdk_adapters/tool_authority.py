@@ -65,17 +65,6 @@ SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
 
 
 
-def _execution_policy_overrides(name: str) -> dict[str, str]:
-    override = SDK_TOOL_EXECUTION_POLICY_OVERRIDES.get(name)
-    if override is None:
-        return {}
-    effect_class, route_requirement, task_scope_requirement = override
-    return {
-        "effect_class": effect_class,
-        "route_requirement": route_requirement,
-        "task_scope_requirement": task_scope_requirement,
-    }
-
 SDK_TOOL_AUTHORITY_RECORD_KIND = "deskpet.sdk-tool-authority"
 
 SDK_TOOL_AUTHORITY_RECORD_VERSION = 3
@@ -745,7 +734,16 @@ class SdkRunToolAuthorityRegistry:
                         frozen.toolset,
                         frozen.source,
                     ),
-                    **_execution_policy_overrides(name),
+                    **dict(
+                        zip(
+                            (
+                                "effect_class",
+                                "route_requirement",
+                                "task_scope_requirement",
+                            ),
+                            SDK_TOOL_EXECUTION_POLICY_OVERRIDES.get(name, ()),
+                        )
+                    ),
                 )
             )
         descriptor_specs = catalog.get("descriptor_specs", raw_specs)

@@ -354,21 +354,25 @@ class ContextRouteLedgerStore:
         self._db_path = Path(db_path)
         self._clock = clock or _time.time
 
-    def verify_schema(self) -> None:
-        """Fail closed when the database exists without the v45 ledger."""
+    def user_version(self) -> int:
+        """Read-only schema version of the backing database (0 when absent)."""
 
         import sqlite3
 
         if not self._db_path.exists():
-            return
+            return 0
         with sqlite3.connect(
             f"file:{self._db_path.resolve()}?mode=ro", uri=True
         ) as db:
-            version = int(db.execute("PRAGMA user_version").fetchone()[0])
-            if version < 45:
-                raise ContextRouteLedgerError(
-                    "sdk_context_route_ledger_schema_missing"
-                )
+            return int(db.execute("PRAGMA user_version").fetchone()[0])
+
+    def verify_schema(self) -> None:
+        """Fail closed when the database exists without the v45 ledger."""
+
+        if self._db_path.exists() and self.user_version() < 45:
+            raise ContextRouteLedgerError(
+                "sdk_context_route_ledger_schema_missing"
+            )
 
     async def _connect(self):
         import aiosqlite
@@ -646,11 +650,9 @@ class ContextRouteLedgerStore:
 
 
 def _context_text_tokens(text: str) -> int:
-    """CJK-aware estimator matching the chat lane's _sdk_text_tokens shape."""
+    from deskpet.sdk_adapters.context_partitions import text_tokens
 
-    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
-    rest = len(text) - cjk
-    return cjk + max(1, -(-rest // 4)) if text else 1
+    return text_tokens(text)
 
 
 def _message_text(message: Any) -> str:
@@ -706,7 +708,7 @@ def _plan_turn_messages(
     from deskpet.sdk_adapters.context_partitions import (
         PARTITION_CAPS,
         budget_window,
-        effective_input_budget,
+        trim_causal_groups,
     )
 
     split = 0
@@ -727,7 +729,6 @@ def _plan_turn_messages(
 
     window = int(window_tokens) if window_tokens else min(PARTITION_CAPS)
     tier = budget_window(max(window, min(PARTITION_CAPS)))
-    effective = effective_input_budget(max(window, min(PARTITION_CAPS)))
 
     history = [
         {
@@ -737,23 +738,17 @@ def _plan_turn_messages(
         for m in tail
     ]
     plan = plan_recent_causal_groups(history)
-    groups = list(plan.groups)
-    trimmed = plan.dropped_group_count
-
-    def total_tokens() -> int:
-        total = sum(_context_text_tokens(_message_text(m)) for m in protected)
-        for group in groups:
-            total += sum(_context_text_tokens(item.content) for item in group.items)
-        return total
-
-    while total_tokens() > effective:
-        closed = [i for i, g in enumerate(groups) if not g.open_run]
-        if len(closed) <= 1 and (not closed or groups[closed[0]] is groups[-1]):
-            break
-        if not closed:
-            break
-        groups.pop(closed[0])
-        trimmed += 1
+    protected_tokens = sum(
+        _context_text_tokens(_message_text(m)) for m in protected
+    )
+    kept_groups, budget_trimmed = trim_causal_groups(
+        plan.groups,
+        window_tokens=max(window, min(PARTITION_CAPS)),
+        protected_tokens=protected_tokens,
+        token_estimator=_context_text_tokens,
+    )
+    groups = list(kept_groups)
+    trimmed = plan.dropped_group_count + budget_trimmed
 
     # Map kept groups back onto the original Message objects by index walk.
     kept_counts = [len(group.items) for group in plan.groups]

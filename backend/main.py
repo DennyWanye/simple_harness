@@ -3182,12 +3182,6 @@ async def lifespan(app: FastAPI):
             "embedder": memory_embedder,
             "resource_path": memory_resource,
         }
-        if "enable_facts" in inspect.signature(
-            MemoryManager.build_production
-        ).parameters:
-            # Removed in Memory SDK 0.6 (facts are always on); keep the legacy
-            # kwarg only for pre-0.6 wheels.
-            memory_build_kwargs["enable_facts"] = True
         if "observability_sink" in inspect.signature(
             MemoryManager.build_production
         ).parameters:
@@ -7698,6 +7692,14 @@ def _sdk_runtime_authority_bindings() -> dict[str, object]:
     }
 
 
+def _local_owner_auth():
+    """Single Host authority template for the authenticated local owner."""
+
+    from deskpet.sdk_adapters.context_route import local_owner_auth
+
+    return local_owner_auth()
+
+
 async def _build_product_sdk_runtime_stack(
     generation: int,
 ):
@@ -8070,9 +8072,6 @@ async def _build_product_sdk_runtime_stack(
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
 
-    async def _recall_executor(**kwargs):
-        return await _human_memory_v7.typed_recall(**kwargs)
-
     _context_route_service = ContextRouteToolService(
         service_factory_getter=lambda: service_context.get(
             "human_memory_host_service_factory"
@@ -8083,7 +8082,7 @@ async def _build_product_sdk_runtime_stack(
         ),
         ledger=_ContextRouteLedgerStore(_state_db_path),
         tool_context_getter=active_product_tool_context,
-        recall_executor=_recall_executor,
+        recall_executor=_human_memory_v7.typed_recall,
     )
 
     async def context_route_handler(arguments, _context):
@@ -8517,16 +8516,7 @@ async def _build_product_sdk_runtime_stack(
     )
     from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
 
-    def _state_db_user_version() -> int:
-        import sqlite3 as _sqlite3
-
-        path = Path(_state_db_path)
-        if not path.exists():
-            return 0
-        with _sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
-            return int(db.execute("PRAGMA user_version").fetchone()[0])
-
-    _state_version = _state_db_user_version()
+    _state_version = ContextRouteLedgerStore(_state_db_path).user_version()
     if _state_version < 35:
         # Legacy (pre human-memory epoch) composition keeps the SDK bare
         # context path; the v45 route/snapshot ledger does not exist there and
@@ -8553,8 +8543,7 @@ async def _build_product_sdk_runtime_stack(
             "sdk_context_authority_composition_missing:human_memory_v7_runtime"
         )
 
-    async def _occurrence_reconcile(presented):
-        return await _v7_runtime.pending_occurrences(presented)
+    _occurrence_reconcile = _v7_runtime.pending_occurrences
 
     service_context.register(
         "sdk_run_context_authority",
@@ -11571,9 +11560,9 @@ async def _sdk_context_usage_from_projection_only(*_args: Any, **_kwargs: Any) -
 
 
 def _sdk_text_tokens(value: object) -> int:
-    text = str(value or "")
-    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
-    return cjk + max(0, len(text) - cjk + 3) // 4
+    from deskpet.sdk_adapters.context_partitions import text_tokens
+
+    return text_tokens(value)
 
 
 async def _bounded_sdk_history(
@@ -14528,11 +14517,7 @@ async def control_channel(ws: WebSocket):
                     factory=service_context.get(
                         "human_memory_host_service_factory"
                     ),
-                    auth=AuthenticatedHostSnapshot(
-                        subject="deskpet-local-owner-v1",
-                        principal_id="local-control-channel",
-                        authority_ref="host:validated-control-channel:v1",
-                    ),
+                    auth=_local_owner_auth(),
                     binding_append=service_context.get(
                         "human_memory_binding_append_authority"
                     ),

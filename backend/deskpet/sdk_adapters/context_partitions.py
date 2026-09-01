@@ -64,6 +64,61 @@ class ContextBudgetExceeded(RuntimeError):
         super().__init__(message or self.code)
 
 
+def text_tokens(value: object) -> int:
+    """Shared CJK-aware token estimator (the chat lane formula, verbatim)."""
+
+    text = str(value or "")
+    cjk = sum(1 for char in text if "\u3400" <= char <= "\u9fff")
+    return cjk + max(0, len(text) - cjk + 3) // 4
+
+
+def trim_causal_groups(
+    groups,
+    *,
+    window_tokens: int,
+    protected_tokens: int,
+    token_estimator=text_tokens,
+):
+    """Frozen-cap + budget trim over causal groups (production + oracle path).
+
+    Applies the frozen recent_causal_groups caps for the window tier, then
+    drops the oldest complete groups until the token budget fits.  The open
+    group is never dropped.  Returns (kept_groups, trimmed_count).
+    """
+
+    tier = budget_window(window_tokens)
+    caps = PARTITION_CAPS[tier]["recent_causal_groups"]
+    effective = effective_input_budget(window_tokens)
+    kept = list(groups)
+    trimmed = 0
+
+    def closed():
+        return [i for i, g in enumerate(kept) if not g.open_run]
+
+    def group_tokens(group):
+        return sum(token_estimator(item.content) for item in group.items)
+
+    while (
+        len(closed()) > int(caps["groups_max"])
+        or sum(g.item_count for g in kept) > int(caps["items_max"])
+        or sum(g.bytes_len for g in kept) > int(caps["bytes_max"])
+    ):
+        candidates = closed()
+        if not candidates:
+            raise ContextBudgetExceeded("sdk_context_causal_groups_over_cap")
+        kept.pop(candidates[0])
+        trimmed += 1
+    while protected_tokens + sum(group_tokens(g) for g in kept) > effective:
+        candidates = closed()
+        if not candidates or (len(candidates) <= 1 and kept[candidates[0]] is kept[-1]):
+            break
+        if len(candidates) <= 1:
+            break
+        kept.pop(candidates[0])
+        trimmed += 1
+    return tuple(kept), trimmed
+
+
 def safety_margin(window_tokens: int) -> int:
     return max(256, window_tokens // 10)
 
