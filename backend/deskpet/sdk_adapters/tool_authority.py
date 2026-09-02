@@ -358,6 +358,35 @@ class SdkRunToolAuthorityV1:
         }
 
 
+class FaultRecordingRunToolExposure(CatalogRunToolExposure):
+    """Run Tool exposure that labels ``catalog_execution_policy_unavailable``.
+
+    The frozen SDK react loop reads the execution policy of every model call
+    through this port; a hidden/absent Tool raises ``RuntimeToolCatalogError``
+    which escapes the loop as a whole-Run fault whose SDK-public code is only
+    ``driver_failed``.  Recording the stable code here lets the Host terminal
+    observer carry it into the ``run_terminal`` evidence (S5b design-freeze §4).
+    """
+
+    def __init__(
+        self,
+        catalog: RuntimeToolCatalog,
+        *,
+        run_fault_sink: Any = None,
+    ) -> None:
+        super().__init__(catalog)
+        self._run_fault_sink = run_fault_sink
+
+    def execution_policy(self, run_id: RunId, provider_name: str):  # type: ignore[override]
+        try:
+            return super().execution_policy(run_id, provider_name)
+        except RuntimeToolCatalogError as exc:
+            record = getattr(self._run_fault_sink, "record", None)
+            if callable(record) and exc.code == "catalog_execution_policy_unavailable":
+                record(run_id, exc.code)
+            raise
+
+
 class SdkRunToolAuthorityRegistry:
     """Immutable per-Run Tool authority with WAITING-safe scope leases."""
 
@@ -367,6 +396,7 @@ class SdkRunToolAuthorityRegistry:
         scope_store: ToolCapabilityScopeStore | None = None,
         resource_records: Sequence[RuntimeCapabilityRecord] = (),
         workspace_identity_validator: Callable[[Mapping[str, Any]], None] | None = None,
+        run_fault_sink: Any = None,
     ) -> None:
         self.scope_store = scope_store or ToolCapabilityScopeStore()
         self._records: dict[str, SdkRunToolAuthorityV1] = {}
@@ -374,6 +404,7 @@ class SdkRunToolAuthorityRegistry:
         self._unavailable_capabilities: dict[str, dict[str, str]] = {}
         self._resource_records = tuple(resource_records)
         self._workspace_identity_validator = workspace_identity_validator
+        self._run_fault_sink = run_fault_sink
         self._terminal_listeners: list[
             Callable[[SdkRunToolAuthorityV1], None]
         ] = []
@@ -810,7 +841,7 @@ class SdkRunToolAuthorityRegistry:
             )
             unavailable_capabilities[capability_id] = reason
         self._unavailable_capabilities[run_id] = unavailable_capabilities
-        self._runtime_exposures[run_id] = CatalogRunToolExposure(
+        self._runtime_exposures[run_id] = FaultRecordingRunToolExposure(
             RuntimeToolCatalog(
                 (
                     *runtime_records,
@@ -818,7 +849,8 @@ class SdkRunToolAuthorityRegistry:
                     *(() if resource_records is None else tuple(resource_records)),
                 ),
                 generation=generation or 1,
-            )
+            ),
+            run_fault_sink=self._run_fault_sink,
         )
         return record
 
@@ -1801,6 +1833,7 @@ __all__ = (
     "SDK_PERMISSION_POLICY_VERSION",
     "SDK_TOOL_AUTHORITY_RECORD_KIND",
     "SDK_TOOL_AUTHORITY_RECORD_VERSION",
+    "FaultRecordingRunToolExposure",
     "ProjectSkillInstallPreflightPort",
     "SdkCapabilityBridgeAdapter",
     "SdkPreparedAuthorizationPolicy",

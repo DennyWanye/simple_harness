@@ -1112,14 +1112,37 @@ class ForegroundRuntimeExecutionAuthority:
 
 
 class SqliteSdkTerminalObserver:
-    """Join SDK terminal state to an already-ingested authenticated S1 fact."""
+    """Join SDK terminal state to an already-ingested authenticated S1 fact.
+
+    S5b Task 1: on durable FAILED the ``run_terminal`` evidence carries a
+    stable ``public_payload.error_code`` — the Host whole-Run fault code from
+    ``run_fault_memo`` (``sdk_task_execution_route_authority_missing``,
+    ``sdk_task_execution_root_authority_ambiguous|missing``,
+    ``catalog_execution_policy_unavailable``) when the Host raised it, else the
+    SDK public code (``driver_failed`` …).  No new host.* event kind is added.
+    """
 
     def __init__(
-        self, db_path: str, ingress: SdkRuntimeIngress, runtime_stack: object
+        self,
+        db_path: str,
+        ingress: SdkRuntimeIngress,
+        runtime_stack: object,
+        *,
+        run_fault_memo: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._ingress = ingress
         self._runtime_stack = runtime_stack
+        self._run_fault_memo = run_fault_memo
+
+    def _terminal_error_code(self, sdk_run_id: str, sdk_evidence: object) -> str | None:
+        memo = self._run_fault_memo
+        read = getattr(memo, "read", None)
+        code = read(sdk_run_id) if callable(read) else None
+        if not code:
+            code = getattr(sdk_evidence, "error_code", None)
+        code = str(code or "").strip()
+        return code or None
 
     async def observe(
         self,
@@ -1230,16 +1253,21 @@ class SqliteSdkTerminalObserver:
                 f"sdk-terminal:{sdk_evidence.event_id}:{sdk_evidence.event_hash}",
                 (DisclosureReasonCode.MINIMUM_NECESSARY,),
             )
+            public_payload: dict[str, object] = {
+                "generation": generation,
+                "terminal_state": terminal.value,
+                "sdk_terminal_event_hash": str(sdk_evidence.event_hash),
+            }
+            if terminal is RunState.FAILED:
+                error_code = self._terminal_error_code(sdk_run_id, sdk_evidence)
+                if error_code is not None:
+                    public_payload["error_code"] = error_code
             evidence = ExecutionEvidence(
                 event_id=str(sdk_evidence.event_id),
                 run_id=sdk_run_id,
                 subject=subject,
                 kind=ExecutionEvidenceKind.RUN_TERMINAL,
-                public_payload={
-                    "generation": generation,
-                    "terminal_state": terminal.value,
-                    "sdk_terminal_event_hash": str(sdk_evidence.event_hash),
-                },
+                public_payload=public_payload,
                 disclosure_context=disclosure,
                 evidence_refs=(
                     EvidenceRef(
@@ -1258,6 +1286,9 @@ class SqliteSdkTerminalObserver:
                 evidence=evidence,
             )
             await evidence_ingress.authorize_terminal(sdk_run_id)
+            release = getattr(self._run_fault_memo, "release", None)
+            if callable(release):
+                release(sdk_run_id)
             async with aiosqlite.connect(self._db_path) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(

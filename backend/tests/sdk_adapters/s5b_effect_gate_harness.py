@@ -305,7 +305,6 @@ class GatedEffects(ProductEffectExecutor, PhysicalToolBridge):
 class _Registry:
     def assert_workspace_current(self, run_id) -> None:
         del run_id
-        return None
 
 
 class _NoopReconciliation:
@@ -326,7 +325,7 @@ class RecordingTaskExecutionAuthority:
         self.requests.append(request)
         try:
             envelope = await self.inner.issue_envelope(request)
-        except Exception as exc:  # noqa: BLE001 - recorded then re-raised
+        except Exception as exc:
             self.errors.append(exc)
             raise
         self.envelopes.append(envelope)

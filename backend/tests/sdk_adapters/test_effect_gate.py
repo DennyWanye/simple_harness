@@ -23,7 +23,6 @@ from deskpet.memory.human_memory_service import MutateTaskScopeRequest
 from deskpet.sdk_adapters.effect_gate import (
     EFFECT_GATE_PUBLIC_MESSAGE,
     PROJECT_EFFECT_ACTIVE_SCOPE_STATUSES,
-    EffectGate,
 )
 from deskpet.sdk_adapters.task_execution import (
     BindingRootResolver,
@@ -171,7 +170,7 @@ async def test_gate_passes_s4_codes_through_unchanged(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_gate_receipt_superseded_after_mid_run_append(tmp_path) -> None:
-    env, scope_a, root_a, envelope = await _routed_write(tmp_path)
+    env, scope_a, _root, envelope = await _routed_write(tmp_path)
     root_2 = env.workspace_base / "root-a2"
     root_2.mkdir(parents=True)
     await h.bind_scope_root(env.db_path, scope_a, root_2, base_revision=1, tag="r2")

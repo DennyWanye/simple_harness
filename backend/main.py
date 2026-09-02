@@ -3120,6 +3120,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             str(_state_db_path),
             _sdk_ingress,
             _sdk_runtime_stack,
+            run_fault_memo=_ensure_run_fault_memo(),
         ),
         audit_sink=_AuditSink(),
         effect_gate=_ensure_foreground_effect_gate(),
@@ -7841,6 +7842,7 @@ async def _build_product_sdk_runtime_stack(
             "validate_workspace_identity",
             None,
         ),
+        run_fault_sink=_ensure_run_fault_memo(),
     )
     project_bindings = service_context.get("project_binding_service")
     if project_bindings is not None:

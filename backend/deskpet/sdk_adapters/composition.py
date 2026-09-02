@@ -240,6 +240,10 @@ class SdkRunTerminalEvidence:
     event_id: str
     event_hash: str
     occurred_at: float
+    # SDK public error code of a failed Run (``driver_failed`` …); the frozen SDK
+    # never exposes the private cause, so Host-raised whole-Run faults are
+    # labelled by the Host RunFaultMemo instead (foreground terminal observer).
+    error_code: str | None = None
 
 
 DependencyLoader: TypeAlias = Callable[
@@ -628,12 +632,23 @@ class ProductSdkRuntimeStack:
                 raise SdkRuntimeNotReady("SDK terminal event is ambiguous")
             event = events[0]
             raw_payload = str(event["payload_json"])
+            error_code: str | None = None
+            if state == "failed":
+                try:
+                    payload = json.loads(raw_payload)
+                except ValueError:
+                    payload = None
+                if isinstance(payload, Mapping):
+                    code = payload.get("code")
+                    if isinstance(code, str) and code.strip():
+                        error_code = code.strip()
             return SdkRunTerminalEvidence(
                 expected,
                 state,
                 str(event["event_id"]),
                 hashlib.sha256(raw_payload.encode("utf-8")).hexdigest(),
                 float(event["created_at"]),
+                error_code,
             )
 
     async def commit_preflight_blocked_root(
