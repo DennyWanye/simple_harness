@@ -387,3 +387,60 @@ async def test_abandoned_project_effect_reservation_is_material_dirty(tmp_path: 
         assert ch.rows(env.db_path, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'") == [("abandoned",)]
     finally:
         case.close()
+
+
+
+@pytest.mark.asyncio
+async def test_read_reserved_fact_reads_sdk_ledger(tmp_path: Path) -> None:
+    """Task 6（Task 2 审查 F-8.1）：生产 ``ProductSdkRuntimeStack.read_reserved_fact`` 读真实 SDK effect 账本——
+    terminal 记录 → ``ToolInvocationFact``（含客观事件，目标路径公开）；run_id 不匹配 / 非终态 / 无记录 /
+    未知前缀 / 无 provider 行 → ``None``（交 tombstone）。"""
+
+    from types import SimpleNamespace
+
+    from deskpet.execution.evidence_ingress import ToolInvocationFact
+    from deskpet.sdk_adapters.composition import ProductSdkRuntimeStack
+
+    case = _Case(tmp_path / "case")
+    await case.initialize()
+    try:
+        settled = await case.execute(effect_id="effect-fact", path="docs/fact.txt")
+        assert settled.effect is not None and settled.effect.state is EffectState.SUCCEEDED
+        stack = ProductSdkRuntimeStack.__new__(ProductSdkRuntimeStack)
+        stack._uow = case.uow  # 只接 read_reserved_fact 所依赖的账本读口（生产同一 uow）
+
+        def reservation(source_event_id: str, run_id: str = RUN.value):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(source_event_id=source_event_id, run_id=run_id, kind="tool_invocation")
+
+        fact = await stack.read_reserved_fact(reservation("effect:effect-fact"))
+        assert isinstance(fact, ToolInvocationFact)
+        assert (fact.run_id, fact.effect_id, fact.tool_name, fact.effect_state, fact.outcome) == (
+            RUN.value, "effect-fact", "write_file", "succeeded", "succeeded",
+        )
+        assert fact.source_event_id == "effect:effect-fact" and fact.kind == "tool_invocation"
+        assert fact.objective is not None and fact.objective.event_kind == "host.file"
+        assert fact.objective.payload["targets"] == ["docs/fact.txt"]
+        assert "written" not in str(fact.objective.payload)
+        # run_id 不匹配 → None（不把别的 Run 的 effect 记到本 Run）。
+        assert await stack.read_reserved_fact(reservation("effect:effect-fact", run_id="run-other")) is None
+        # 无记录 / 未知前缀 / provider 行不存在 → None。
+        assert await stack.read_reserved_fact(reservation("effect:effect-missing")) is None
+        assert await stack.read_reserved_fact(reservation("snapshot:1")) is None
+        assert await stack.read_reserved_fact(reservation("provider:request-none")) is None
+        # 非终态（PREPARED）→ None。
+        crash = {"armed": True}
+        real_bind = case.executor._authorization.bind_effect_handoff
+
+        async def bind_then_crash(prepared, authorization_receipt_ref, sdk_receipt):  # type: ignore[no-untyped-def]
+            if crash["armed"]:
+                crash["armed"] = False
+                raise asyncio.CancelledError("crash before handoff")
+            return await real_bind(prepared, authorization_receipt_ref, sdk_receipt)
+
+        case.executor._authorization.bind_effect_handoff = bind_then_crash  # type: ignore[method-assign]
+        with pytest.raises(asyncio.CancelledError):
+            await case.execute(effect_id="effect-prepared", path="p.txt")
+        assert case.ledger_state("effect-prepared") == "prepared"
+        assert await stack.read_reserved_fact(reservation("effect:effect-prepared")) is None
+    finally:
+        case.close()

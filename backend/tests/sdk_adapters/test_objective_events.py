@@ -220,3 +220,32 @@ def fq_rows(db_path: Path, sql: str, *params):
 
     with sqlite3.connect(db_path) as db:
         return db.execute(sql, params).fetchall()
+
+
+def test_compound_shell_command_not_classified_as_test() -> None:
+    """Task 6（Task 2 审查 F-4）：白名单 runner 头之后出现 shell 连接符/重定向/命令替换（token 级判定，
+    非正则）或 ``shell=True`` → 不是"只跑了测试"，降级 host.file；单一 runner 命令仍 host.test。"""
+
+    ok = _ok({"exit_code": 0})
+    assert classify_objective_event("run_shell", {"command": "pytest -q tests"}, ok).event_kind == "host.test"
+    for command in (
+        "pytest && rm -rf build",
+        "pytest; git push",
+        "pytest || true",
+        "pytest | tee log.txt",
+        "pytest > out.txt",
+        "pytest;",
+        "pytest $(cat args)",
+        "pytest `cat args`",
+        "python -m pytest tests && rm -rf dist",
+    ):
+        spec = classify_objective_event("run_shell", {"command": command}, ok)
+        assert spec is not None and spec.event_kind == "host.file", command
+        assert spec.payload["command_head"] is None
+    # list 形式的 args 同样按 token 判定；shell=True 整体降级。
+    listed = classify_objective_event("process_start", {"command": "npm", "args": ["test", "&&", "rm", "-rf", "x"]}, ok)
+    assert listed.event_kind == "host.file" and listed.payload["command_head"] is None
+    shelled = classify_objective_event("run_shell", {"command": "pytest -q", "shell": True}, ok)
+    assert shelled.event_kind == "host.file"
+    plain = classify_objective_event("process_start", {"command": "npm", "args": ["test"]}, ok)
+    assert plain.event_kind == "host.test" and plain.payload["command_head"] == "npm test"

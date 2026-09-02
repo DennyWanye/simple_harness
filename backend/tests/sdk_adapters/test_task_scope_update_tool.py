@@ -264,3 +264,24 @@ async def test_replayed_task_scope_update_returns_original_receipt_and_does_not_
     assert replay2["closure_receipt"] == receipt
     del revision
     assert h.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_closure_receipts WHERE task_scope_id=?", scope) == [(1,)]
+
+
+@pytest.mark.asyncio
+async def test_task_scope_update_multibyte_key_rejected_with_audit(tmp_path: Path) -> None:
+    """Task 6（Task 3 审查 F-5）：200 个 CJK 字符的 idempotency_key（600 字节 > 256 字节）→ 稳定码
+    ``task_scope_update_payload_invalid`` + ``host_pre_admission_audit`` 行，而不是 ``tool_handler_failed``。"""
+
+    env, scope = await _routed_env(tmp_path)
+    revision = _revision(env, scope)
+    before = len(_audits(env))
+    result = await _call(env, "multibyte", _arguments(env, scope, "键" * 200))
+    assert isinstance(result, ToolResult) and result.outcome.value == "rejected"
+    assert result.error_code == "task_scope_update_payload_invalid"
+    assert "idempotency_key" in str(result.public_message)
+    audits = _audits(env)
+    assert len(audits) == before + 1 and audits[-1][1:] == ("task_scope_update", "task_scope_update_payload_invalid")
+    assert _revision(env, scope) == revision
+    # 240 字节的多字节 key 合法（按字节计，不按字符计；派生 operation_id "op-…" 仍在 256 字节内）。
+    ok_key = "键" * 80  # 240 bytes
+    accepted = await _call(env, "multibyte-ok", _arguments(env, scope, ok_key, kind="task.pause"))
+    assert isinstance(accepted, dict) and accepted["ok"] is True

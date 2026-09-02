@@ -470,9 +470,33 @@ def _command_tokens(arguments: Mapping[str, Any]) -> list[str]:
     return tokens
 
 
+# Shell control / redirection tokens: a command line that continues past the
+# allowlisted runner head with any of these is a compound command (``pytest &&
+# rm -rf build``), which is a file effect, not "just a test run".  Token-level
+# equality / prefix checks only — no regex, no keyword search inside tokens.
+_SHELL_OPERATOR_TOKENS: tuple[str, ...] = (";", "&&", "||", "|", "&", ">", ">>", "<", "$(", "`")
+_SHELL_OPERATOR_PREFIXES: tuple[str, ...] = ("$(", "`", ">", "<", "|", "&", ";")
+
+
+def _has_shell_operator(tokens: list[str]) -> bool:
+    for token in tokens:
+        if token in _SHELL_OPERATOR_TOKENS:
+            return True
+        if token.startswith(_SHELL_OPERATOR_PREFIXES) or token.endswith((";", "|", "&", "`")):
+            return True
+        if any(marker in token for marker in ("&&", "||", "$(", ";")):
+            return True
+    return False
+
+
 def _test_runner_head(tokens: list[str]) -> str | None:
+    """Allowlisted runner head, or ``None`` for compound / operator-bearing lines
+    (Task 2 review F-4)."""
+
     for head in TEST_RUNNER_COMMANDS:
         if tuple(tokens[: len(head)]) == head:
+            if _has_shell_operator(tokens[len(head):]):
+                return None
             return " ".join(head)
     return None
 
@@ -557,6 +581,10 @@ def classify_objective_event(
     }
     if rule == OBJECTIVE_TEST_RUNNER_RULE:
         head = _test_runner_head(_command_tokens(arguments))
+        # ``shell=True`` hands the whole line to a shell: operators may hide in
+        # a single token, so the call is a file effect regardless of its head.
+        if arguments.get("shell") is True:
+            head = None
         exit_code = _exit_code(result)
         if head is not None and exit_code is not None:
             payload: dict[str, object] = {**base, "command_head": head, "exit_code": exit_code}

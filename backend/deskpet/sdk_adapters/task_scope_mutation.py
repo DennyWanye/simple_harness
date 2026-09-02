@@ -46,8 +46,17 @@ from typing import Any
 
 import aiosqlite
 
-from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
-from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeConflict
+from deskpet.task_scope.protocol import (
+    TaskScopeProtocolError,
+    canonical_hash,
+    canonical_json,
+    identifier,
+)
+from deskpet.task_scope.store import (
+    CanonicalTaskScopeStore,
+    TaskScopeConflict,
+    TaskScopeNotFound,
+)
 
 TASK_SCOPE_UPDATE_TOOL_NAME = "task_scope_update"
 HOST_TASK_SCOPE_UPDATE_AUTHORITY_REF = "host:task-scope-update:v1"
@@ -226,6 +235,16 @@ class TaskScopeUpdateService:
                 source_turn_id=f"sdk-run:{run_id}:turn:{turn_ordinal}",
                 reason_code=MODEL_CLOSURE_REASON_CODE,
             )
+        except (TaskScopeProtocolError, TaskScopeNotFound) as exc:
+            # Task 3 review F-5: Host protocol/lookup errors inside the handler are
+            # stable rejections with an audit row, never ``tool_handler_failed``.
+            code = (
+                "task_scope_update_scope_unbound"
+                if isinstance(exc, TaskScopeNotFound)
+                else "task_scope_update_payload_invalid"
+            )
+            await self._audit(run_id, code, payload)
+            return ToolResult.rejected(call_id, code, f"task_scope_update rejected: {code} {str(exc)[:128]}")
         except ClosureRejected as rejected:
             await self._audit(run_id, rejected.code, payload)
             message = f"task_scope_update rejected: {rejected.code}"
@@ -520,7 +539,10 @@ def _validate_shape(arguments: Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(base_revision, bool) or not isinstance(base_revision, int) or base_revision < 1:
         raise ClosureRejected("task_scope_update_payload_invalid", field="base_revision")
     key = arguments.get("idempotency_key")
-    if not isinstance(key, str) or not key.strip() or len(key) > 256:
+    # Task 3 review F-5: the 256 limit is bytes (the identifier contract), not
+    # characters — a 200-CJK-character key must be a stable payload rejection,
+    # never a ``tool_handler_failed`` escaping from ``identifier()``.
+    if not isinstance(key, str) or not key.strip() or len(key.encode("utf-8")) > 256:
         raise ClosureRejected("task_scope_update_payload_invalid", field="idempotency_key")
     closure_reason = arguments.get("closure_reason")
     if closure_reason is not None and (
@@ -564,7 +586,10 @@ def _validate_shape(arguments: Mapping[str, Any]) -> dict[str, Any]:
             }
         )
     for name in ("outcome", "base_revision", "idempotency_key"):
-        identifier(str(arguments[name]), name, 512)
+        try:
+            identifier(str(arguments[name]), name, 512)
+        except TaskScopeProtocolError as exc:
+            raise ClosureRejected("task_scope_update_payload_invalid", field=name, message=str(exc)[:128]) from exc
     return {
         "outcome": outcome,
         "base_revision": int(base_revision),

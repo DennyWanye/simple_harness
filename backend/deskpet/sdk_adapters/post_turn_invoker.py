@@ -47,6 +47,37 @@ from deskpet.task_scope.protocol import canonical_json
 
 PURPOSES: frozenset[str] = frozenset({"closure", "analysis"})
 NOT_SENT_ERROR_TYPES: tuple[str, ...] = ("ConnectError", "ConnectTimeout", "UnsupportedProtocol", "InvalidURL")
+# Task 3 review F-3: the frozen SDK provider re-raises transport failures as
+# ``ProviderTransportError(private_cause=SecretRedactor.exception(exc)) from None``
+# and the redactor keeps only ``RuntimeError(str(exc))`` — the httpx type is
+# erased.  The connect phase (nothing was ever sent) is therefore recognised by
+# the exact httpx/httpcore connect-failure messages; anything else stays the
+# conservative ``sent_unknown``.  (SDK 0.8 obligation: keep the failure phase
+# in the public error — recorded in PROJECT_STATUS.)
+NOT_SENT_MESSAGE_MARKERS: tuple[str, ...] = (
+    "All connection attempts failed",
+    "Connection refused",
+    "nodename nor servname provided",
+    "Name or service not known",
+    "Temporary failure in name resolution",
+    "Network is unreachable",
+    "No route to host",
+    "Address family for hostname not supported",
+)
+
+
+def _not_sent(exc: BaseException) -> str | None:
+    """``not_sent`` reason for a transport failure, else ``None`` (→ sent_unknown)."""
+
+    root = _root_cause(exc)
+    name = type(root).__name__
+    if name in NOT_SENT_ERROR_TYPES:
+        return f"provider_not_sent:{name}"
+    text = str(root)
+    for marker in NOT_SENT_MESSAGE_MARKERS:
+        if marker in text:
+            return "provider_not_sent:ConnectError"
+    return None
 
 
 def _uuid(label: str) -> str:
@@ -217,9 +248,18 @@ class RunBoundInvoker:
                 return _row(row)
         return None
 
-    async def _update(self, attempt_id: str, sql: str, params: tuple[object, ...]) -> None:
+    async def _update(self, attempt_id: str, sql: str, params: tuple[object, ...]) -> int:
+        """One guarded UPDATE on the attempt row; returns the affected row count.
+
+        Task 3 review F-4: every state transition is conditional on the current
+        status, so ``0`` means another owner already moved the row — the caller
+        must not act (in particular, never call the Provider) on a row it no
+        longer owns.
+        """
+
         async with self.transaction() as db:
-            await db.execute(sql, (*params, attempt_id))
+            cursor = await db.execute(sql, (*params, attempt_id))
+            return int(cursor.rowcount)
 
     async def _settle_failed(self, attempt_id: str, *, unknown_class: str | None, reason: str) -> None:
         await self._update(
@@ -409,22 +449,33 @@ class RunBoundInvoker:
         if reuse_response is not None:
             # Zero-call replay: the row still walks reserved → handed_off so the
             # caller settles it (with its durable result) exactly like a fresh call.
-            await self._update(
+            moved = await self._update(
                 attempt_id,
                 "UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=?,reason_code=? "
                 "WHERE attempt_id=? AND status='reserved'",
                 (self._clock(), f"reused:{reuse_source}"),
             )
+            if moved != 1:
+                return InvocationOutcome(
+                    "lease_lost", attempt_id, ordinal, reason_code="attempt_reserved_row_lost", provider_calls=0,
+                )
             return InvocationOutcome(
                 "succeeded", attempt_id, ordinal, response=reuse_response,
                 reason_code=f"reused:{reuse_source}", provider_calls=0,
             )
         request = build_request(attempt)
-        await self._update(
+        moved = await self._update(
             attempt_id,
             "UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=? WHERE attempt_id=? AND status='reserved'",
             (self._clock(),),
         )
+        if moved != 1:
+            # Task 3 review F-4: a new owner already reconciled this reserved row
+            # (reserved → failed(not_sent) + its own attempt).  Calling the
+            # Provider now would be a call no ledger row represents.
+            return InvocationOutcome(
+                "lease_lost", attempt_id, ordinal, reason_code="attempt_reserved_row_lost", provider_calls=0,
+            )
         self._fault("attempt-handed-off")
         from simple_harness.providers import CancelToken
         from simple_harness.providers.errors import (
@@ -437,7 +488,14 @@ class RunBoundInvoker:
         try:
             coroutine = adapter.invoke(request, cancel=CancelToken())
             response = await (asyncio.wait_for(coroutine, timeout=deadline_seconds) if deadline_seconds else coroutine)
-        except (asyncio.CancelledError, ProviderCancelledError):
+        except asyncio.CancelledError:
+            # Task 3 review F-6: the request may have been sent, so the ledger
+            # settles ``unknown(sent_unknown)`` (never resent) — but task
+            # cancellation must keep propagating (Python ≥3.11 cooperative
+            # cancel); the caller must not continue with durable writes.
+            await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
+            raise
+        except ProviderCancelledError:
             await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
             return InvocationOutcome(
                 "unknown", attempt_id, ordinal, reason_code=f"{purpose}_attempt_unknown",
@@ -450,9 +508,8 @@ class RunBoundInvoker:
                 unknown_class="sent_unknown", provider_calls=1,
             )
         except ProviderTransportError as exc:
-            root = _root_cause(exc)
-            if type(root).__name__ in NOT_SENT_ERROR_TYPES:
-                reason = f"provider_not_sent:{type(root).__name__}"
+            reason = _not_sent(exc)
+            if reason is not None:
                 await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
                 return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, unknown_class="not_sent", provider_calls=1)
             await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
@@ -465,9 +522,8 @@ class RunBoundInvoker:
             await self._settle_failed(attempt_id, unknown_class=None, reason=reason)
             return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, provider_calls=1)
         except Exception as exc:  # noqa: BLE001 - transport taxonomy
-            root = _root_cause(exc)
-            if type(root).__name__ in NOT_SENT_ERROR_TYPES:
-                reason = f"provider_not_sent:{type(root).__name__}"
+            reason = _not_sent(exc)
+            if reason is not None:
                 await self._settle_failed(attempt_id, unknown_class="not_sent", reason=reason)
                 return InvocationOutcome("failed", attempt_id, ordinal, reason_code=reason, unknown_class="not_sent", provider_calls=1)
             await self._settle_unknown(attempt_id, reason=f"{purpose}_attempt_unknown")
@@ -621,11 +677,26 @@ def _thaw(value: Any) -> Any:
 
 
 def _root_cause(exc: BaseException) -> BaseException:
+    """Innermost cause: ``__cause__`` chain first, then the SDK's private cause.
+
+    Task 3 review F-3: the real SDK provider wraps transport failures as
+    ``ProviderTransportError(private_cause=…) from None`` — ``__cause__`` is
+    deliberately severed, the httpx exception only survives as the private
+    cause.  Without it ``not_sent`` (connection refused / DNS) could never be
+    classified in production and every transport failure became
+    ``sent_unknown``.
+    """
+
     seen: set[int] = set()
     root = exc
-    while root.__cause__ is not None and id(root) not in seen:
+    while id(root) not in seen:
         seen.add(id(root))
-        root = root.__cause__
+        next_cause = root.__cause__
+        if next_cause is None:
+            next_cause = getattr(root, "_private_cause", None)
+        if not isinstance(next_cause, BaseException):
+            break
+        root = next_cause
     return root
 
 

@@ -544,7 +544,10 @@ async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_pat
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("sdk_state,terminal", [("completed", "COMPLETED"), ("failed", "FAILED")])
+@pytest.mark.parametrize(
+    "sdk_state,terminal",
+    [("completed", "COMPLETED"), ("failed", "FAILED"), ("cancelled", "CANCELLED"), ("cancelled", "STOPPED")],
+)
 async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state: str, terminal: str) -> None:
     """Task 3（S5B-AC-1③ 三水位）：Harness 证据水位放行后，语义收敛水位仍要求 closure receipt。
 
@@ -559,6 +562,18 @@ async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state:
 
     env = await ch.bound_run(tmp_path, "sdk-run-gate")
     await ch.material_write(env, "e-1")
+    if terminal == "STOPPED":
+        # Task 6（Task 3 审查 F-9.1）：STOP 意图下 SDK cancelled → Host STOPPED，门同样生效。
+        from deskpet.execution.foreground_queue import EffectBoundary
+
+        await env.store.request_control(
+            host_run_id=env.admission.host_run_id, subject=ch.SUBJECT, generation=env.admission.generation,
+            control_kind="stop", reason="user_stop", idempotency_key="stop-gate",
+        )
+        await env.store.authorize_effect(
+            host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
+            generation=env.admission.generation, boundary=EffectBoundary.TOOL,
+        )
     facts = ch.FakeRunFacts(env.run_id, state=sdk_state)
     observed = await ch.observe_terminal(env, facts)
     assert observed is not None and observed.terminal_state.value == terminal
@@ -570,7 +585,9 @@ async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state:
         await ch.record_terminal(env, observed)
     assert blocked.value.code == "foreground_terminal_closure_pending"
     assert ch.rows(env.db_path, "SELECT COUNT(*) FROM foreground_terminal_receipts") == before
-    assert ch.rows(env.db_path, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", env.admission.host_run_id) == [("RUNNING",)]
+    assert ch.rows(env.db_path, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", env.admission.host_run_id) == [
+        ("STOP_REQUESTED" if terminal == "STOPPED" else "RUNNING",)
+    ]
 
     # 本 Run 的 pending receipt（兜底失败/非 COMPLETED 终态）→ 终态照常提交，脏标记仍在。
     await write_closure_receipt(
@@ -858,7 +875,6 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     同事务；sent_unknown → durable pending(closure_attempt_unknown)，重启/新 owner 重放 0 重发；
     timeout/拒绝 → pending 且 Host 终态照常提交。
     """
-    import asyncio
 
     from simple_harness.providers.errors import ProviderTimeoutError
 
@@ -903,9 +919,11 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
 
     # ② sent_unknown（请求已发出，结果不明）→ pending(closure_attempt_unknown)，终态照常；
     #    重启（新 fallback/invoker 实例）重放 → 绝不重发（Provider 计数不变）。
+    from simple_harness.providers.errors import ProviderCancelledError
+
     env2 = await ch.bound_run(tmp_path / "two", "sdk-run-fb-2")
     await ch.material_write(env2, "e-2")
-    adapter2 = ch.FakeAdapter([asyncio.CancelledError()])
+    adapter2 = ch.FakeAdapter([ProviderCancelledError()])
     facts2 = ch.FakeRunFacts(env2.run_id)
     observed2 = await ch.observe_terminal(env2, facts2)
     fallback2, _ = ch.build_fallback(env2, facts2, adapter2)
@@ -1305,9 +1323,8 @@ def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
     ③ ``ProductRunContextAuthority`` 缺 closure_reader 由 ``_build_run_context_authority`` 保证非 None；
     ④ ``_activate_product_sdk_runtime`` 把构建异常 raise（见 test_composition 的真实启动顺序用例）。"""
 
-    from context import ServiceContext
-
     import main
+    from context import ServiceContext
     from deskpet.sdk_adapters.effect_gate import EffectGate
     from deskpet.task_scope.store import CanonicalTaskScopeStore
 
@@ -1347,3 +1364,97 @@ async def test_v46_forward_migration_and_old_runtime_rejects(tmp_path: Path, mon
     from tests.memory import test_s5b_v46_cutover as cutover
 
     await cutover.test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path, monkeypatch)
+
+
+
+# ---- S5b Task 6：Task 3 审查 F-7 / F-9.5 ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_force_close_does_not_swallow_in_flight_run_dirty(tmp_path: Path) -> None:
+    """F-7：Run A 留下 pending(W)；Run B 同 scope 执行中已写文件（新 material 事件）；此时 Host checkpoint /
+    complete 强制收口 → receipt 水位 = pending 承载的 W（不是 head），B 的事件仍脏、由 B 自己收口。"""
+
+    from deskpet.execution.semantic_closure import (
+        dirty_state,
+        force_close_pending,
+        pending_receipts,
+    )
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, "sdk-run-a")
+    await ch.material_write(env, "e-a1")
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    fallback, _ = ch.build_fallback(env, facts, ch.FakeAdapter([ch.plain_answer()]))
+    settled = await ch.settle(env, fallback)
+    assert settled.status == "pending"
+    await ch.record_terminal(env, observed)
+    store = CanonicalTaskScopeStore(env.db_path)
+    [pending] = await pending_receipts(store, ch.SCOPE)
+    pending_watermark = pending.closure_watermark
+
+    # Run B（同 scope）执行中：两条 material 事件落在 pending 水位之后。
+    env_b = await ch.next_run(env, "sdk-run-b")
+    await ch.material_write(env_b, "e-b1", path="b1.txt")
+    await ch.material_write(env_b, "e-b2", path="b2.txt")
+    before = await dirty_state(store, ch.SCOPE)
+    assert {e.source_event_id for e in before.material_events} >= {"execution:effect:e-b1", "execution:effect:e-b2"}
+
+    receipt = await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT)
+    assert receipt is not None and receipt.outcome == "no_mutation"
+    assert receipt.closure_watermark == pending_watermark
+    after = await dirty_state(store, ch.SCOPE)
+    assert after.is_dirty
+    assert {e.source_event_id for e in after.material_events} >= {"execution:effect:e-b1", "execution:effect:e-b2"}
+    assert "execution:effect:e-a1" not in {e.source_event_id for e in after.material_events}
+    # pending 已被清（不再重复强制收口）；幂等重放不再写第二条 receipt。
+    assert not await pending_receipts(store, ch.SCOPE)
+    assert await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    receipts = ch.receipts(env.db_path)
+    assert [r[2] for r in receipts].count("no_mutation") == 1
+    # B 自己的收口覆盖 B 的事件。
+    facts_b = ch.FakeRunFacts(env_b.run_id)
+    observed_b = await ch.observe_terminal(env_b, facts_b)
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    fallback_b, _ = ch.build_fallback(env_b, facts_b, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision, idempotency_key="closure-b"))]))
+    settled_b = await ch.settle(env_b, fallback_b)
+    assert settled_b.status == "mutate"
+    assert not (await dirty_state(store, ch.SCOPE)).is_dirty
+    await ch.record_terminal(env_b, observed_b)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_reserve_from_two_connections_never_double_allocates(tmp_path: Path) -> None:
+    """F-9.5：两个 ``ExecutionEvidenceIngress``（两条连接）真正并发 ``reserve`` → 序号互不重复、无冲突；
+    幂等重放同 source 得同序号；UNIQUE(run_id, source_sequence) 兜底。"""
+
+    import asyncio
+
+    from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, "sdk-run-concurrent")
+    a = ExecutionEvidenceIngress(env.db_path)
+    b = ExecutionEvidenceIngress(env.db_path)
+    reservations = await asyncio.gather(*[
+        (a if index % 2 == 0 else b).reserve(
+            run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id=f"effect:c-{index}",
+            tool_name="write_file",
+        )
+        for index in range(12)
+    ])
+    sequences = sorted(r.source_sequence for r in reservations)
+    assert sequences == list(range(1, 13))
+    assert len({r.reservation_id for r in reservations}) == 12
+    # 幂等重放（并发再来一轮同 source）→ 同序号，无新行。
+    replay = await asyncio.gather(*[
+        (b if index % 2 == 0 else a).reserve(
+            run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id=f"effect:c-{index}",
+        )
+        for index in range(12)
+    ])
+    assert sorted(r.source_sequence for r in replay) == sequences
+    assert ch.rows(env.db_path, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=?", env.run_id) == [(12,)]

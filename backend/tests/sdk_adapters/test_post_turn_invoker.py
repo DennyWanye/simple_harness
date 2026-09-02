@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -21,6 +22,7 @@ from simple_harness import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderRequest
 from simple_harness.providers.errors import (
+    ProviderCancelledError,
     ProviderRequestRejectedError,
     ProviderTimeoutError,
 )
@@ -104,8 +106,9 @@ async def test_unknown_taxonomy_not_sent_retries_sent_unknown_never_resends(tmp_
     second = await _invoke(env, invoker)
     assert second.status == "succeeded" and second.attempt_ordinal == 2 and len(adapter.calls) == 2
 
-    # sent_unknown：已发出、结果不可得（cancel / 读超时）→ unknown(sent_unknown) → 以后同 request 0 调用。
-    adapter2 = ch.FakeAdapter([asyncio.CancelledError(), ch.plain_answer("never")])
+    # sent_unknown：已发出、结果不可得（Provider cancel / 读超时）→ unknown(sent_unknown) → 以后同 request 0 调用。
+    # （Task 6：asyncio.CancelledError 不再被吞——见 test_invoker_propagates_cancelled_error。）
+    adapter2 = ch.FakeAdapter([ProviderCancelledError(), ch.plain_answer("never")])
     env2, invoker2 = await _invoker(tmp_path / "two", adapter2)
     unknown = await _invoke(env2, invoker2)
     assert (unknown.status, unknown.unknown_class) == ("unknown", "sent_unknown")
@@ -156,7 +159,7 @@ async def test_sent_confirmed_only_via_injected_observer_returns_same_row(tmp_pa
     assert seen == [blocked.attempt_id] and len(adapter.calls) == 0
     assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "unknown", "sent_confirmed")]
     # 已 settle 的 unknown(sent_unknown) 行不可再改（v46 单调守卫）：observer 不再介入，仍 blocked。
-    adapter2 = ch.FakeAdapter([asyncio.CancelledError()])
+    adapter2 = ch.FakeAdapter([ProviderCancelledError()])
     env2, invoker2 = await _invoker(tmp_path / "two", adapter2)
     unknown = await _invoke(env2, invoker2)
     assert (unknown.status, unknown.unknown_class) == ("unknown", "sent_unknown")
@@ -225,3 +228,86 @@ async def test_binding_unrebuildable_is_not_sent_without_provider_call(tmp_path:
     # 无 binding 记录：连行都不插（NOT NULL provider/model），零调用。
     none = await _invoke(env, invoker, binding={})
     assert none.status == "failed" and none.reason_code == "binding_unrebuildable:missing" and none.attempt_id is None
+
+
+# ---- S5b Task 6：Task 3 审查 F-3 / F-4 / F-6 ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_invoker_not_sent_classification_with_real_adapter_error(tmp_path: Path) -> None:
+    """F-3：真实 SDK ``OpenAICompatibleProvider`` 指向关闭端口 → ``ProviderTransportError(private_cause=…) from None``
+    （``__cause__`` 被切断，redactor 把私有原因变成 ``RuntimeError(str(ConnectError))``，类型也被抹掉）→ 仍按
+    连接阶段失败判定 ``not_sent``（可 attempt+1），不再落成死路径 ``sent_unknown``。"""
+
+    from simple_harness.providers import OpenAICompatibleProvider
+    from simple_harness.providers.errors import ProviderTransportError
+
+    try:
+        from simple_harness.providers import Secret
+    except ImportError:  # pragma: no cover - SDK layout guard
+        from simple_harness.providers.secrets import Secret  # type: ignore[no-redef]
+
+    client = httpx.AsyncClient()
+    provider = OpenAICompatibleProvider(client, "http://127.0.0.1:1", "model-x", Secret("not-a-real-key"), timeout=2.0)
+    try:
+        # 先证明真实 adapter 的异常形状：__cause__ 为 None、私有原因是 httpx 连接错误。
+        from simple_harness import RequestId as _RequestId
+        from simple_harness.providers import CancelToken
+
+        with pytest.raises(ProviderTransportError) as transport:
+            await provider.invoke(_request(SimpleNamespace(attempt_ordinal=0)), cancel=CancelToken())
+        assert transport.value.__cause__ is None
+        private = getattr(transport.value, "_private_cause", None)
+        assert isinstance(private, RuntimeError) and not isinstance(private, httpx.ConnectError)
+        assert "connection" in str(private).lower()
+        env, invoker = await _invoker(tmp_path, provider)
+        first = await _invoke(env, invoker)
+        assert (first.status, first.unknown_class, first.reason_code) == ("failed", "not_sent", "provider_not_sent:ConnectError")
+        assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "failed", "not_sent")]
+        # not_sent → 下一次 attempt+1（同 request_hash）。
+        second = await _invoke(env, invoker)
+        assert (second.status, second.unknown_class, second.attempt_ordinal) == ("failed", "not_sent", 2)
+        assert _RequestId("x").value == "x"
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_invoker_handoff_requires_rowcount_one(tmp_path: Path) -> None:
+    """F-4：reserved 行在 handoff 前已被新 owner reconcile（reserved→failed(not_sent)）→ 旧 owner 的
+    ``reserved→handed_off`` UPDATE 影响 0 行 → ``lease_lost``、**零 Provider 调用**（不产生账本外调用）。"""
+
+    import sqlite3 as _sqlite3
+
+    state: dict[str, Path] = {}
+
+    def reconciled_by_new_owner(point: str) -> None:
+        if point == "attempt-reserved":
+            with _sqlite3.connect(state["db"]) as db:
+                db.execute(
+                    "UPDATE post_turn_invocation_attempts SET status='failed',unknown_class='not_sent',"
+                    "reason_code='reserved_abandoned',settled_at=1.0 WHERE status='reserved'"
+                )
+                db.commit()
+
+    adapter = ch.FakeAdapter([ch.plain_answer("must not be called")])
+    env, invoker = await _invoker(tmp_path, adapter, fault=reconciled_by_new_owner)
+    state["db"] = env.db_path
+    outcome = await _invoke(env, invoker)
+    assert outcome.status == "lease_lost" and outcome.reason_code == "attempt_reserved_row_lost"
+    assert outcome.provider_calls == 0 and len(adapter.calls) == 0
+    assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "failed", "not_sent")]
+
+
+@pytest.mark.asyncio
+async def test_invoker_propagates_cancelled_error(tmp_path: Path) -> None:
+    """F-6：任务取消（asyncio.CancelledError）→ 账本 settle ``unknown(sent_unknown)`` 后 **重新抛出**（协作取消
+    不被吞掉，调用方不得继续 durable 写入）；后续同 request 0 调用。"""
+
+    adapter = ch.FakeAdapter([asyncio.CancelledError(), ch.plain_answer("never")])
+    env, invoker = await _invoker(tmp_path, adapter)
+    with pytest.raises(asyncio.CancelledError):
+        await _invoke(env, invoker)
+    assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "unknown", "sent_unknown")]
+    blocked = await _invoke(env, invoker)
+    assert blocked.status == "blocked" and blocked.provider_calls == 0 and len(adapter.calls) == 1
