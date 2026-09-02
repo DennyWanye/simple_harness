@@ -349,11 +349,87 @@ class ProductEffectExecutor(EffectExecutor):
         registry: ProductToolsAdapter,
         foreground_admission: ForegroundEffectAdmissionPort | None = None,
         effect_gate: EffectGatePort | None = None,
+        evidence_ingress: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(registry=registry, **kwargs)
         self._foreground_admission = foreground_admission
         self._effect_gate = effect_gate
+        # S5b Task 2: Harness evidence reservation before the physical
+        # dispatch, objective event + evidence row + tool_invocation import in
+        # one state.db transaction after the SDK settled the effect.
+        self._evidence_ingress = evidence_ingress
+
+    async def _evidence_scope(self, context: ToolContext) -> tuple[str, str] | None:
+        """(task_scope_id, subject) of the Run's admission scope, or ``None``.
+
+        Foreground Runs resolve through ``foreground_run_sdk_bindings``; a Run
+        carrying a PROJECT_EFFECT envelope falls back to the envelope scope
+        (the gate already proved it equals the frozen admission scope).  A Run
+        with neither has no TaskScope watermark and produces no evidence.
+        """
+
+        ingress = self._evidence_ingress
+        if ingress is None:
+            return None
+        binding = await ingress.resolve_run_scope(context.run_id.value)
+        if binding is not None:
+            return binding.task_scope_id, binding.subject
+        envelope = context.task_execution_envelope
+        scope_id = None if envelope is None else envelope.task_scope_id
+        if not scope_id:
+            return None
+        subject = await ingress.scope_subject(str(scope_id))
+        if subject is None:
+            return None
+        return str(scope_id), subject
+
+    async def _reserve_evidence(self, context: ToolContext, call: ToolCall, scope: tuple[str, str]) -> None:
+        effect_id = context.effect_id
+        if effect_id is None:
+            raise RuntimeError("effect_evidence_identity_missing")
+        await self._evidence_ingress.reserve(
+            run_id=context.run_id.value,
+            task_scope_id=scope[0],
+            kind="tool_invocation",
+            source_event_id=f"effect:{effect_id.value}",
+        )
+
+    async def _commit_evidence(
+        self, context: ToolContext, call: ToolCall, execution: EffectExecution, scope: tuple[str, str]
+    ) -> None:
+        from deskpet.execution.evidence_ingress import ToolInvocationFact
+        from deskpet.sdk_adapters.effect_gate import classify_objective_event
+
+        record = execution.effect
+        if record is None or not record.terminal:
+            # Rejected before an effect existed, or still HANDED_OFF/UNKNOWN:
+            # the reservation stays open for the terminal drain.
+            return
+        ingress = self._evidence_ingress
+        existing = await ingress.reservation(f"effect:{record.effect_id.value}")
+        if existing is not None and existing.status != "reserved":
+            # Already imported (e.g. the context_route ledger transaction).
+            return
+        result = execution.result
+        objective = classify_objective_event(
+            record.tool_name,
+            dict(thaw_json(record.arguments)),
+            result,
+            effect_id=record.effect_id.value,
+            call_id=record.call_id.value,
+        )
+        fact = ToolInvocationFact(
+            run_id=record.run_id.value,
+            effect_id=record.effect_id.value,
+            call_id=record.call_id.value,
+            tool_name=record.tool_name,
+            effect_state=record.state.value,
+            outcome=result.outcome.value,
+            error_code=result.error_code,
+            objective=objective,
+        )
+        await ingress.commit_fact(task_scope_id=scope[0], subject=scope[1], fact=fact)
 
     async def execute(self, **kwargs: Any):
         context = kwargs.get("context")
@@ -395,11 +471,24 @@ class ProductEffectExecutor(EffectExecutor):
             # authorization decision fails here, so a stale worker's Run
             # cannot produce external Tool side effects.
             await self._foreground_admission.authorize(context.run_id.value)
+        evidence_scope = await self._evidence_scope(context)
+        if evidence_scope is not None:
+            call = kwargs.get("call")
+            if not isinstance(call, ToolCall):
+                raise TypeError("ProductEffectExecutor requires ToolCall")
+            # Reserve the Harness source_sequence BEFORE the physical action
+            # (design-freeze §3): a crash after the SDK settles the effect but
+            # before the Host commit is closed by the terminal drain, which
+            # re-reads the settled effect under this exact sequence.
+            await self._reserve_evidence(context, call, evidence_scope)
         token = _validation_run_id.set(context.run_id.value)
         try:
-            return await super().execute(**kwargs)
+            execution = await super().execute(**kwargs)
         finally:
             _validation_run_id.reset(token)
+        if evidence_scope is not None:
+            await self._commit_evidence(context, kwargs["call"], execution, evidence_scope)
+        return execution
 
     def _is_first_occurrence(self, kwargs: Mapping[str, Any]) -> bool:
         """Step 0: only an effect with no durable SDK ledger record is gated.

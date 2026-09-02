@@ -317,6 +317,7 @@ class PhysicalToolBridge(EffectExecutor):
             version=2,
             fence_epoch=1,
             authorization_receipt_ref="harness:allow",
+            handoff_receipt_ref="harness:handoff",
             result=result,
             raw_call_id=values.get("raw_call_id"),
             turn_ordinal=int(values.get("turn_ordinal", 0)),
@@ -342,7 +343,6 @@ class _NoEffectLedger:
 
     def read_effect(self, effect_id):
         del effect_id
-        return None
 
 
 class _NoopReconciliation:

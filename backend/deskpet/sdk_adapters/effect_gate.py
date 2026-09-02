@@ -53,13 +53,15 @@ for this gate therefore means *an exact frozen root exists*; ``projectless`` /
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from simple_harness import CallId, RunId
 from simple_harness.tools import ToolContext, ToolResult
 from simple_harness.tools.runtime_catalog import ToolEffectClass
 
+from deskpet.execution.evidence_ingress import ObjectiveEventSpec
 from deskpet.task_scope.store import TaskScopeNotFound
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 
@@ -190,10 +192,146 @@ class EffectGate:
         return None
 
 
+# ---------------------------------------------------------------------------
+# Objective event mapping (S5b Task 2, design-freeze §2) — deterministic:
+# tool name + exit code + registered test-runner allowlist; no keywords, no
+# regex.  Every PROJECT_EFFECT tool (§1) has exactly one rule (exhaustiveness
+# is asserted by tests/sdk_adapters/test_objective_events.py).
+# ---------------------------------------------------------------------------
+
+OBJECTIVE_FILE_EVENT = "host.file"
+OBJECTIVE_TEST_RUNNER_RULE = "test-runner-rule"  # host.test iff allowlisted head + exit code
+OBJECTIVE_EVENT_MAP: Mapping[str, str] = MappingProxyType(
+    {
+        "write_file": OBJECTIVE_FILE_EVENT,
+        "file_write": OBJECTIVE_FILE_EVENT,
+        "edit_file": OBJECTIVE_FILE_EVENT,
+        "move_file": OBJECTIVE_FILE_EVENT,
+        "file_organize": OBJECTIVE_FILE_EVENT,
+        "run_shell": OBJECTIVE_TEST_RUNNER_RULE,
+        "process_start": OBJECTIVE_TEST_RUNNER_RULE,
+        "doc_create": OBJECTIVE_FILE_EVENT,
+        "doc_edit": OBJECTIVE_FILE_EVENT,
+        "excel_create": OBJECTIVE_FILE_EVENT,
+        "ppt_create": OBJECTIVE_FILE_EVENT,
+        "pdf_export": OBJECTIVE_FILE_EVENT,
+        "download_file": OBJECTIVE_FILE_EVENT,
+        "workspace_prepare": OBJECTIVE_FILE_EVENT,
+    }
+)
+# Registered test runners, matched on the *leading* command tokens only.
+TEST_RUNNER_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("pytest",),
+    ("python", "-m", "pytest"),
+    ("npm", "test"),
+    ("pnpm", "test"),
+    ("cargo", "test"),
+    ("go", "test"),
+    ("vitest",),
+    ("jest",),
+)
+_TARGET_ARGUMENT_KEYS: tuple[str, ...] = (
+    "path", "file_path", "source", "source_path", "destination", "destination_path",
+    "target", "target_path", "output_path", "output", "directory", "root", "url",
+)
+_EXIT_CODE_KEYS: tuple[str, ...] = ("exit_code", "returncode", "return_code", "status_code")
+
+
+def _command_tokens(arguments: Mapping[str, Any]) -> list[str]:
+    command = arguments.get("command")
+    tokens: list[str] = []
+    if isinstance(command, str):
+        tokens.extend(command.split())
+    elif isinstance(command, (list, tuple)):
+        tokens.extend(str(item) for item in command)
+    args = arguments.get("args")
+    if isinstance(args, (list, tuple)):
+        tokens.extend(str(item) for item in args)
+    return tokens
+
+
+def _test_runner_head(tokens: list[str]) -> str | None:
+    for head in TEST_RUNNER_COMMANDS:
+        if tuple(tokens[: len(head)]) == head:
+            return " ".join(head)
+    return None
+
+
+def _exit_code(result: ToolResult) -> int | None:
+    value = result.value
+    if not isinstance(value, Mapping):
+        return None
+    for key in _EXIT_CODE_KEYS:
+        code = value.get(key)
+        if isinstance(code, bool):
+            continue
+        if isinstance(code, int):
+            return code
+    return None
+
+
+def _targets(arguments: Mapping[str, Any]) -> list[str]:
+    targets: list[str] = []
+    for key in _TARGET_ARGUMENT_KEYS:
+        value = arguments.get(key)
+        if isinstance(value, str) and value:
+            targets.append(value)
+    paths = arguments.get("paths")
+    if isinstance(paths, (list, tuple)):
+        targets.extend(str(item) for item in paths if isinstance(item, str) and item)
+    return targets
+
+
+def classify_objective_event(
+    tool_name: str,
+    arguments: Mapping[str, Any],
+    result: ToolResult,
+    *,
+    effect_id: str | None = None,
+    call_id: str | None = None,
+) -> ObjectiveEventSpec | None:
+    """Map one settled PROJECT_EFFECT execution to its ``host.*`` objective event.
+
+    Returns ``None`` for tools outside the frozen list (read tools, control
+    tools).  The payload carries only public identity facts: tool name, ids,
+    outcome / error code, the target paths (never file content) or the
+    allowlisted command head + exit code (never the full command line or
+    output).
+    """
+
+    rule = OBJECTIVE_EVENT_MAP.get(tool_name)
+    if rule is None:
+        return None
+    base: dict[str, object] = {
+        "tool_name": tool_name,
+        "effect_id": effect_id,
+        "call_id": call_id,
+        "outcome": result.outcome.value,
+        "error_code": result.error_code,
+    }
+    if rule == OBJECTIVE_TEST_RUNNER_RULE:
+        head = _test_runner_head(_command_tokens(arguments))
+        exit_code = _exit_code(result)
+        if head is not None and exit_code is not None:
+            return ObjectiveEventSpec(
+                "host.test", {**base, "command_head": head, "exit_code": exit_code}
+            )
+        return ObjectiveEventSpec(
+            "host.file",
+            {**base, "command_head": head, "exit_code": exit_code, "targets": _targets(arguments)},
+        )
+    return ObjectiveEventSpec("host.file", {**base, "targets": _targets(arguments)})
+
+
 __all__ = [
     "EFFECT_GATE_PUBLIC_MESSAGE",
+    "OBJECTIVE_EVENT_MAP",
+    "OBJECTIVE_FILE_EVENT",
+    "OBJECTIVE_TEST_RUNNER_RULE",
     "PROJECT_EFFECT_ACTIVE_SCOPE_STATUSES",
+    "TEST_RUNNER_COMMANDS",
     "EffectGate",
     "RouteReceiptReader",
     "ScopeStatusReader",
+    "classify_objective_event",
 ]

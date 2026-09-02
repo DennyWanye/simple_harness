@@ -13,8 +13,11 @@ from types import SimpleNamespace
 
 import pytest
 from simple_harness import CallId, RequestId, RunId
+from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import CancelToken, ProviderRequest
 from simple_harness.tools import ToolResult
+
+_MESSAGES = (Message(role=MessageRole.USER, content="hi"),)
 
 from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.sdk_adapters.effect_gate import (
@@ -110,16 +113,21 @@ async def test_executor_reserves_before_dispatch_and_skips_when_effect_absent(tm
     assert out["exception"] is None
     rows = h.rows(
         env.db_path,
-        "SELECT r.kind,r.status,r.reserved_at,r.resolved_at,e.event_kind FROM harness_evidence_reservations r "
+        "SELECT r.kind,r.status,r.reserved_at,r.resolved_at,e.event_kind,e.payload_json "
+        "FROM harness_evidence_reservations r "
         "LEFT JOIN task_scope_execution_ingest_receipts i ON i.source_event_id=r.source_event_id "
         "LEFT JOIN task_scope_events e ON e.event_id=i.event_id WHERE r.run_id=? ORDER BY r.source_sequence",
         h.RUN.value,
     )
-    # context_route / write_file / read_file 三次 dispatch 各一条预留，全部导入；预留先于解决。
-    assert [(kind, status, ek) for kind, status, _r, _s, ek in rows] == [
-        ("tool_invocation", "ingested", "harness.tool_invocation")
-    ] * 3
-    assert all(reserved <= resolved for _k, _s, reserved, resolved, _e in rows)
+    # 基座无 foreground 绑定：scope 只能来自 PROJECT_EFFECT envelope（write_file 一条；
+    # context_route / read_file 的 envelope 不带 scope → 无预留，生产上由 foreground 绑定解析）。
+    # 预留在物理 dispatch 前建立、settle 后导入。
+    import json as _json
+
+    assert [(kind, status, ek, _json.loads(pj)["public_payload"]["tool_name"]) for kind, status, _r, _s, ek, pj in rows] == [
+        ("tool_invocation", "ingested", "harness.tool_invocation", "write_file"),
+    ]
+    assert all(reserved <= resolved for _k, _s, reserved, resolved, _e, _p in rows)
     # 只有 PROJECT_EFFECT 工具产客观事件：恰一条 host.file。
     host = h.rows(env.db_path, "SELECT event_kind FROM task_scope_events WHERE task_scope_id=? AND source_kind='host'", scope_a)
     assert host == [("host.file",)]
@@ -174,7 +182,7 @@ async def test_provider_coordinator_reserves_then_ingests_and_leaves_reserved_on
         responses=[h.answer("hi"), RuntimeError("boom")],
     )
     lease = SimpleNamespace(run_id=run_id, namespace="runtime.kernel")
-    request = ProviderRequest(RequestId(f"{run_id}:provider-turn:1"), ())
+    request = ProviderRequest(RequestId(f"{run_id}:provider-turn:1"), _MESSAGES)
     response = await coordinator.invoke(RunId(run_id), request, cancel=CancelToken(), execution_lease=lease)
     assert response.message.content == "hi"
     rows = fq_rows(queue_db, "SELECT source_event_id,status,kind FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence", run_id)
@@ -186,12 +194,12 @@ async def test_provider_coordinator_reserves_then_ingests_and_leaves_reserved_on
     assert public["request_id"] == f"{run_id}:provider-turn:1" and public["finish_reason"] == "stop"
     assert "hi" not in payload  # 不记消息内容
     with pytest.raises(RuntimeError):
-        await coordinator.invoke(RunId(run_id), ProviderRequest(RequestId(f"{run_id}:provider-turn:2"), ()), cancel=CancelToken(), execution_lease=lease)
+        await coordinator.invoke(RunId(run_id), ProviderRequest(RequestId(f"{run_id}:provider-turn:2"), _MESSAGES), cancel=CancelToken(), execution_lease=lease)
     rows = fq_rows(queue_db, "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence", run_id)
     assert rows[-1] == (f"provider:{run_id}:provider-turn:2", "reserved")
     # 无 foreground 绑定的 Run：直通，不预留。
     await coordinator.__class__(evidence_ingress=ingress, responses=[h.answer("x")]).invoke(
-        RunId("sdk-run-unbound"), ProviderRequest(RequestId("sdk-run-unbound:provider-turn:1"), ()), cancel=CancelToken(),
+        RunId("sdk-run-unbound"), ProviderRequest(RequestId("sdk-run-unbound:provider-turn:1"), _MESSAGES), cancel=CancelToken(),
         execution_lease=SimpleNamespace(run_id="sdk-run-unbound", namespace="runtime.kernel"),
     )
     assert fq_rows(queue_db, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id='sdk-run-unbound'") == [(0,)]

@@ -17,14 +17,23 @@ import pytest
 from simple_harness import CallId, EffectId, RequestId, RunId
 from simple_harness.execution.effects import EffectState
 from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
-from simple_harness.tools import FunctionTool, ToolCall, ToolContext, ToolResult, ToolSpec
+from simple_harness.tools import (
+    FunctionTool,
+    ToolCall,
+    ToolContext,
+    ToolResult,
+    ToolSpec,
+)
 from simple_harness.tools.authorization import (
     AuthorizationDecision,
     AuthorizationReceipt,
     AuthorizationResult,
 )
 from simple_harness.tools.contracts import CancellationToken
-from simple_harness.tools.reconciliation import ReconciliationObservation, ReconciliationState
+from simple_harness.tools.reconciliation import (
+    ReconciliationObservation,
+    ReconciliationState,
+)
 from simple_harness.tools.registry import ToolRegistry
 
 from deskpet.sdk_adapters.tools import ProductEffectExecutor

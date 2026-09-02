@@ -770,7 +770,19 @@ class ProductProviderAdapter:
 
 
 class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
-    """Keep Provider handoff uncertainty separate from user Run cancellation."""
+    """Keep Provider handoff uncertainty separate from user Run cancellation.
+
+    S5b Task 2: for a foreground Run bound to an admission TaskScope the
+    Provider invocation is a Harness fact — its ``source_sequence`` is reserved
+    (``provider:{request_id}``) before the physical send and imported after
+    the SDK settled the invocation.  A failed/unknown send leaves the row
+    reserved; the terminal observer drains it from the SDK ledger (or writes
+    a tombstone).
+    """
+
+    def __init__(self, *args: Any, evidence_ingress: Any | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._evidence_ingress = evidence_ingress
 
     async def invoke(
         self,
@@ -781,8 +793,19 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
         execution_lease,
         workflow_lease=None,
     ):
+        binding = None
+        ingress = getattr(self, "_evidence_ingress", None)
+        if ingress is not None:
+            binding = await ingress.resolve_run_scope(run_id.value)
+            if binding is not None:
+                await ingress.reserve(
+                    run_id=run_id.value,
+                    task_scope_id=binding.task_scope_id,
+                    kind="provider_invocation",
+                    source_event_id=f"provider:{request.request_id.value}",
+                )
         try:
-            return await super().invoke(
+            response = await super().invoke(
                 run_id,
                 request,
                 cancel=cancel,
@@ -796,6 +819,36 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 # is authoritative and must reach Runtime._cancel_run.
                 raise asyncio.CancelledError() from None
             raise
+        if binding is not None:
+            await ingress.commit_fact(
+                task_scope_id=binding.task_scope_id,
+                subject=binding.subject,
+                fact=provider_invocation_fact(run_id.value, request, response),
+            )
+        return response
+
+
+def provider_invocation_fact(run_id: str, request: ProviderRequest, response: ProviderResponse | None, *, error_code: str | None = None):
+    """Public-only Harness fact for one settled Provider invocation."""
+
+    from deskpet.execution.evidence_ingress import ProviderInvocationFact
+
+    usage = None
+    if response is not None and response.usage is not None:
+        usage = {
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+            "total_tokens": response.usage.total_tokens,
+        }
+    return ProviderInvocationFact(
+        run_id=run_id,
+        request_id=request.request_id.value,
+        model=None if response is None else response.model,
+        finish_reason=None if response is None else _safe_finish_reason(response.finish_reason),
+        tool_call_count=0 if response is None else len(response.tool_calls),
+        error_code=error_code,
+        usage=usage,
+    )
 
 
 __all__ = (
@@ -803,4 +856,5 @@ __all__ = (
     "ProductProviderAdapter",
     "ProductProviderInvocationCoordinator",
     "ProductProviderRegistry",
+    "provider_invocation_fact",
 )

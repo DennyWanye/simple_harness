@@ -7270,6 +7270,23 @@ def _ensure_run_fault_memo():  # type: ignore[no-untyped-def]
 
         _run_fault_memo = RunFaultMemo()
     return _run_fault_memo
+
+
+# S5b Task 2: single owner of Harness evidence reservations / same-transaction
+# objective events over the human-memory state.db.  Shared by the effect
+# executor (tool_invocation + host.file/host.test), the provider coordinator
+# (provider_invocation) and the v45 route ledger (snapshot / route facts); the
+# terminal observer drains it through the SDK runtime stack's fact reader.
+_evidence_ingress = None
+
+
+def _ensure_evidence_ingress():  # type: ignore[no-untyped-def]
+    global _evidence_ingress
+    if _evidence_ingress is None:
+        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+
+        _evidence_ingress = ExecutionEvidenceIngress(_state_db_path)
+    return _evidence_ingress
 _sdk_context_port = None
 _sdk_runtime_catalog: dict[str, Any] | None = None
 _sdk_run_binding_registry = None
@@ -8101,7 +8118,9 @@ async def _build_product_sdk_runtime_stack(
         binding_append_getter=lambda: service_context.get(
             "human_memory_binding_append_authority"
         ),
-        ledger=_ContextRouteLedgerStore(_state_db_path),
+        ledger=_ContextRouteLedgerStore(
+            _state_db_path, evidence_ingress=_ensure_evidence_ingress()
+        ),
         tool_context_getter=active_product_tool_context,
         recall_executor=_human_memory_v7.typed_recall,
     )
@@ -8319,6 +8338,7 @@ async def _build_product_sdk_runtime_stack(
             reconciliation=reconciliation_adapter,
             foreground_admission=_ensure_foreground_effect_gate(),
             effect_gate=effect_gate,
+            evidence_ingress=_ensure_evidence_ingress(),
         )
         from simple_harness.execution.context_authority import (
             DurableToolCatalogResolver,
@@ -8382,6 +8402,7 @@ async def _build_product_sdk_runtime_stack(
         provider_port = ProductProviderInvocationCoordinator(
             uow=uow,
             resolver=provider_binding_resolver,
+            evidence_ingress=_ensure_evidence_ingress(),
         )
         if projection_pump is None:
             from deskpet.sdk_adapters.provider_projection_pump import (
@@ -8572,7 +8593,9 @@ async def _build_product_sdk_runtime_stack(
         return stack
     if tool_authorities is None:
         raise RuntimeError("sdk_context_authority_composition_missing:tool_authority_registry")
-    context_route_ledger = ContextRouteLedgerStore(_state_db_path)
+    context_route_ledger = ContextRouteLedgerStore(
+        _state_db_path, evidence_ingress=_ensure_evidence_ingress()
+    )
     context_route_ledger.verify_schema()
 
     def _authority_ports():
