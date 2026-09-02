@@ -115,6 +115,9 @@ CREATE TABLE post_turn_invocation_attempts (
     handed_off_at REAL,
     settled_at REAL,
     reason_code TEXT,
+    -- Task 4: the durable analysis result envelope of a succeeded attempt, so a
+    -- Memory reclaim after a Host crash replays the same delivery (zero calls).
+    result_envelope_json TEXT,
     UNIQUE(request_hash, attempt_ordinal)
 );
 CREATE INDEX idx_post_turn_invocation_attempts_run
@@ -240,7 +243,9 @@ BEGIN
              NEW.settled_at IS NOT OLD.settled_at
              OR NEW.unknown_class IS NOT OLD.unknown_class
              OR NEW.result_hash IS NOT OLD.result_hash
-             OR NEW.plan_id IS NOT OLD.plan_id)
+             OR NEW.plan_id IS NOT OLD.plan_id
+             OR (OLD.result_envelope_json IS NOT NULL
+                 AND NEW.result_envelope_json IS NOT OLD.result_envelope_json))
         THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
         WHEN OLD.handed_off_at IS NOT NULL AND NEW.handed_off_at IS NOT OLD.handed_off_at
         THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')

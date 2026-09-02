@@ -42,7 +42,8 @@ from typing import Any, Protocol
 import aiosqlite
 
 from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueStore
-from deskpet.task_scope.protocol import canonical_hash, canonical_json
+from deskpet.memory.analysis_lineage import binding_model_config_hash
+from deskpet.task_scope.protocol import canonical_json
 
 PURPOSES: frozenset[str] = frozenset({"closure", "analysis"})
 NOT_SENT_ERROR_TYPES: tuple[str, ...] = ("ConnectError", "ConnectTimeout", "UnsupportedProtocol", "InvalidURL")
@@ -52,19 +53,6 @@ def _uuid(label: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
 
 
-def binding_model_config_hash(record: Mapping[str, Any], *, endpoint_identity: str | None) -> str:
-    """Immutable provider/model/config identity of one Run binding."""
-
-    return canonical_hash(
-        {
-            "provider_id": str(record.get("provider_id") or ""),
-            "provider_incarnation_id": str(record.get("provider_incarnation_id") or ""),
-            "provider_config_revision": int(record.get("provider_config_revision") or 0),
-            "model_id": str(record.get("model_id") or ""),
-            "model_params": json.loads(json.dumps(record.get("model_params") or {}, sort_keys=True, default=str)),
-            "endpoint_identity": endpoint_identity,
-        }
-    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -114,6 +102,10 @@ class InvocationOutcome:
     reason_code: str | None = None
     unknown_class: str | None = None
     provider_calls: int = 0
+    # ``lease_lost``: the Provider answered but the caller must not apply it;
+    # the response is exposed here only so the caller may persist it as a
+    # ledger fact (Task 4 analysis replay), never through ``response``.
+    ledger_response: Any = None
 
 
 class LeaseFence(Protocol):
@@ -187,6 +179,27 @@ class RunBoundInvoker:
         await cursor.close()
         return None if row is None else _row(row)
 
+    async def _durable_evidence_set_result(
+        self, db: aiosqlite.Connection, purpose: str, evidence_set_key: str
+    ) -> tuple[AttemptRow, Any] | None:
+        """Attempt-independent reuse (design-freeze §6 / AC-2③): a settled attempt over the **same
+        evidence set** whose durable result carries the Provider response → replayable with 0 calls."""
+
+        cursor = await db.execute(
+            "SELECT * FROM post_turn_invocation_attempts WHERE purpose=? AND evidence_set_key=? "
+            "AND result_envelope_json IS NOT NULL AND (status='succeeded' OR (status='unknown' AND unknown_class='sent_confirmed')) "
+            "ORDER BY settled_at DESC, attempt_ordinal DESC LIMIT 1",
+            (purpose, evidence_set_key),
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
+        if row is None:
+            return None
+        response = durable_response(row["result_envelope_json"])
+        if response is None:
+            return None
+        return _row(row), response
+
     async def _open_member_attempt(
         self, db: aiosqlite.Connection, members: Sequence[tuple[str, str, str]], *, exclude: str | None
     ) -> AttemptRow | None:
@@ -225,27 +238,65 @@ class RunBoundInvoker:
         )
 
     async def settle_succeeded_tx(
-        self, db: aiosqlite.Connection, attempt_id: str, *, response: Any, plan_id: str | None
+        self,
+        db: aiosqlite.Connection,
+        attempt_id: str,
+        *,
+        response: Any,
+        plan_id: str | None,
+        result_hash: str | None = None,
+        result_envelope_json: str | None = None,
     ) -> None:
-        """``handed_off → succeeded`` inside the caller's apply transaction."""
+        """``handed_off → succeeded`` inside the caller's apply transaction.
 
-        result_hash = _response_hash(response)
+        Task 4 (analysis): ``result_hash`` is the Memory ``MemoryAnalysisResult.result_hash``
+        and ``result_envelope_json`` the durable delivery envelope, so a later reclaim
+        returns the same delivery without a Provider call.
+        """
+
         provider_request_id = getattr(response, "provider_request_id", None)
         await db.execute(
             "UPDATE post_turn_invocation_attempts SET status='succeeded',result_hash=?,provider_request_id=?,"
-            "plan_id=?,settled_at=? WHERE attempt_id=? AND status='handed_off'",
+            "plan_id=?,settled_at=?,result_envelope_json=? WHERE attempt_id=? AND status='handed_off'",
             (
-                result_hash,
+                result_hash or _response_hash(response),
                 None if provider_request_id is None else str(provider_request_id),
                 plan_id,
                 self._clock(),
+                result_envelope_json,
                 attempt_id,
             ),
         )
 
-    async def settle_succeeded(self, attempt_id: str, *, response: Any, plan_id: str | None) -> None:
+    async def settle_succeeded(
+        self,
+        attempt_id: str,
+        *,
+        response: Any,
+        plan_id: str | None,
+        result_hash: str | None = None,
+        result_envelope_json: str | None = None,
+    ) -> None:
         async with self.transaction() as db:
-            await self.settle_succeeded_tx(db, attempt_id, response=response, plan_id=plan_id)
+            await self.settle_succeeded_tx(
+                db, attempt_id, response=response, plan_id=plan_id,
+                result_hash=result_hash, result_envelope_json=result_envelope_json,
+            )
+
+    async def read_attempt(self, attempt_id: str) -> tuple[AttemptRow, str | None] | None:
+        """One durable attempt row plus its result envelope JSON (analysis replay)."""
+
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM post_turn_invocation_attempts WHERE attempt_id=?", (attempt_id,)
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        if row is None:
+            return None
+        envelope = row["result_envelope_json"]
+        return _row(row), None if envelope is None else str(envelope)
 
     # -- invoke --------------------------------------------------------------
 
@@ -274,6 +325,9 @@ class RunBoundInvoker:
             open_member = await self._open_member_attempt(
                 db, members, exclude=None if latest is None else latest.attempt_id
             )
+            durable = await self._durable_evidence_set_result(db, purpose, evidence_set_key)
+        reuse_response: Any = None
+        reuse_source: str | None = None
         if latest is not None:
             if latest.status == "succeeded":
                 return InvocationOutcome("reused", latest.attempt_id, latest.attempt_ordinal)
@@ -295,10 +349,19 @@ class RunBoundInvoker:
                     "blocked", latest.attempt_id, latest.attempt_ordinal, reason_code=f"{purpose}_attempt_failed"
                 )
         if open_member is not None:
-            return InvocationOutcome(
-                "blocked", open_member.attempt_id, open_member.attempt_ordinal,
-                reason_code=f"{purpose}_attempt_unknown", unknown_class=open_member.unknown_class,
-            )
+            observed = await self._observe(open_member)
+            if observed is None:
+                return InvocationOutcome(
+                    "blocked", open_member.attempt_id, open_member.attempt_ordinal,
+                    reason_code=f"{purpose}_attempt_unknown", unknown_class=open_member.unknown_class,
+                )
+            # The injected observer confirmed the in-flight member attempt: reuse
+            # its response for this request (0 calls) — never resend.
+            reuse_response, reuse_source = observed.response, open_member.attempt_id
+        elif durable is not None and (latest is None or latest.status == "failed"):
+            # Same evidence set already analysed by a settled attempt (a Memory
+            # retry after a stale lease / new batch id): replay its response.
+            reuse_response, reuse_source = durable[1], durable[0].attempt_id
         ordinal = 1 if latest is None else latest.attempt_ordinal + 1
         record = dict(binding_record or {})
         provider_id = str(record.get("provider_id") or "").strip()
@@ -343,6 +406,19 @@ class RunBoundInvoker:
             request_hash, ordinal, evidence_set_key, "reserved", None, provider_id, model_id,
             str(row["model_config_hash"]), None, None, plan_id, None,
         )
+        if reuse_response is not None:
+            # Zero-call replay: the row still walks reserved → handed_off so the
+            # caller settles it (with its durable result) exactly like a fresh call.
+            await self._update(
+                attempt_id,
+                "UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=?,reason_code=? "
+                "WHERE attempt_id=? AND status='reserved'",
+                (self._clock(), f"reused:{reuse_source}"),
+            )
+            return InvocationOutcome(
+                "succeeded", attempt_id, ordinal, response=reuse_response,
+                reason_code=f"reused:{reuse_source}", provider_calls=0,
+            )
         request = build_request(attempt)
         await self._update(
             attempt_id,
@@ -404,9 +480,11 @@ class RunBoundInvoker:
             await self._fence.revalidate()
         except Exception as exc:  # noqa: BLE001 - lease errors carry a stable code
             await self.settle_succeeded(attempt_id, response=response, plan_id=plan_id)
+            # The response is a ledger fact the caller may persist (never apply).
             return InvocationOutcome(
-                "lease_lost", attempt_id, ordinal, reason_code=str(getattr(exc, "code", type(exc).__name__)),
-                provider_calls=1,
+                "lease_lost", attempt_id, ordinal,
+                reason_code=str(getattr(exc, "code", type(exc).__name__)), provider_calls=1,
+                ledger_response=response,
             )
         return InvocationOutcome("succeeded", attempt_id, ordinal, response=response, provider_calls=1)
 
@@ -468,6 +546,60 @@ class _Transaction:
             await db.close()
 
 
+DURABLE_RESULT_SCHEMA = "post-turn-durable-result/v1"
+
+
+def durable_result_json(*, response: Any, envelope_json: Mapping[str, Any] | None) -> str:
+    """``result_envelope_json`` payload: the public Provider response (+ the delivery envelope)."""
+
+    from simple_harness.execution.provider_invocations import provider_response_json
+
+    return canonical_json(
+        {
+            "schema_version": DURABLE_RESULT_SCHEMA,
+            "response": json.loads(canonical_json(provider_response_json(response))),
+            "envelope": None if envelope_json is None else json.loads(canonical_json(dict(envelope_json))),
+        }
+    )
+
+
+def durable_response(raw: object) -> Any | None:
+    """Provider response stored by :func:`durable_result_json` (``None`` if absent/legacy)."""
+
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, Mapping) or payload.get("schema_version") != DURABLE_RESULT_SCHEMA:
+        return None
+    response = payload.get("response")
+    if not isinstance(response, Mapping):
+        return None
+    from simple_harness.execution.provider_invocations import (
+        provider_response_from_json,
+    )
+
+    try:
+        return provider_response_from_json(response)
+    except Exception:  # noqa: BLE001 - a malformed durable copy is treated as absent
+        return None
+
+
+def durable_envelope_json(raw: object) -> Mapping[str, Any] | None:
+    if raw is None:
+        return None
+    try:
+        payload = json.loads(str(raw))
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(payload, Mapping) or payload.get("schema_version") != DURABLE_RESULT_SCHEMA:
+        return None
+    envelope = payload.get("envelope")
+    return envelope if isinstance(envelope, Mapping) else None
+
+
 def _response_hash(response: Any) -> str:
     message = getattr(response, "message", None)
     calls = tuple(getattr(response, "tool_calls", ()) or ())
@@ -503,10 +635,14 @@ def _error_code(exc: BaseException) -> str:
 
 
 __all__ = [
+    "DURABLE_RESULT_SCHEMA",
     "AttemptRow",
     "ForegroundLeaseFence",
     "InvocationOutcome",
     "LeaseFence",
     "RunBoundInvoker",
     "binding_model_config_hash",
+    "durable_envelope_json",
+    "durable_response",
+    "durable_result_json",
 ]
