@@ -8786,19 +8786,33 @@ async def _build_product_sdk_runtime_stack(
     # S5b Task 4: Host↔Memory async face (evidence authority / analysis executor /
     # ingestion outbox lane) is part of the same composition; each is a slot.
     _activate_memory_analysis_lane()
-    for slot in (
-        "sdk_run_context_authority",
-        "sdk_runtime_decision_sink",
-        "sdk_task_execution_authority",
-        "sdk_effect_gate",
-        "sdk_closure_instruction_reader",
-        "sdk_evidence_authority",
-        "sdk_memory_analysis_executor",
-        "sdk_memory_ingestion_outbox",
-    ):
-        if service_context.get(slot) is None:
-            raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
+    _assert_sdk_composition_slots()
     return stack
+
+
+# S5b AC-6①: every authority the SDK runtime composition must carry; a missing
+# one is a startup failure (raised from `_activate_product_sdk_runtime`), never
+# a Noop/fake fallback.  Kept as data so the composition test can construct the
+# same check against a real service_context instead of grepping this file.
+SDK_COMPOSITION_SLOTS: tuple[str, ...] = (
+    "sdk_provider_binding_resolver",
+    "sdk_tool_authority_registry",
+    "sdk_run_context_authority",
+    "sdk_runtime_decision_sink",
+    "sdk_task_execution_authority",
+    "sdk_effect_gate",
+    "sdk_closure_instruction_reader",
+    "sdk_evidence_authority",
+    "sdk_memory_analysis_executor",
+    "sdk_memory_ingestion_outbox",
+)
+
+
+def _assert_sdk_composition_slots(context=None) -> None:  # type: ignore[no-untyped-def]
+    registry = service_context if context is None else context
+    for slot in SDK_COMPOSITION_SLOTS:
+        if registry.get(slot) is None:
+            raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
 
 
 def _build_run_context_authority(  # type: ignore[no-untyped-def]

@@ -1297,11 +1297,53 @@ def test_analysis_proposal_span_derivation_rejects_paraphrase() -> None:
 
 
 # ---- S5B-AC-6 / Task 6：composition、cutover ----
-@XF
-def test_composition_missing_piece_startup_fail_each() -> None:
-    raise NotImplementedError
+def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
+    """AC-6①：逐槽缺件 → 真构造断言 startup stable fail（不是源码 grep、不是 warning+skip）。
+
+    ① 生产装配的缺槽断言 ``main._assert_sdk_composition_slots`` 对真实 ``ServiceContext`` 逐槽置 None →
+       ``sdk_context_authority_composition_missing:<slot>``；② ``EffectGate`` 构造期逐件缺失 → TypeError；
+    ③ ``ProductRunContextAuthority`` 缺 closure_reader 由 ``_build_run_context_authority`` 保证非 None；
+    ④ ``_activate_product_sdk_runtime`` 把构建异常 raise（见 test_composition 的真实启动顺序用例）。"""
+
+    from context import ServiceContext
+
+    import main
+    from deskpet.sdk_adapters.effect_gate import EffectGate
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+    context = ServiceContext()
+    for slot in main.SDK_COMPOSITION_SLOTS:
+        context.register(slot, object())
+    main._assert_sdk_composition_slots(context)
+    assert {"sdk_effect_gate", "sdk_task_execution_authority", "sdk_closure_instruction_reader",
+            "sdk_evidence_authority", "sdk_memory_analysis_executor", "sdk_memory_ingestion_outbox",
+            "sdk_provider_binding_resolver"} <= set(main.SDK_COMPOSITION_SLOTS)
+    for slot in main.SDK_COMPOSITION_SLOTS:
+        probe = ServiceContext()
+        for other in main.SDK_COMPOSITION_SLOTS:
+            probe.register(other, None if other == slot else object())
+        with pytest.raises(RuntimeError, match=f"sdk_context_authority_composition_missing:{slot}$"):
+            main._assert_sdk_composition_slots(probe)
+    # ② EffectGate 真构造：任一件缺失 → TypeError（stack 构建期即失败）。
+    pieces = {
+        "binding_store": object(), "route_ledger": object(),
+        "scope_store": CanonicalTaskScopeStore(tmp_path / "s.db"),
+        "authority_resolver": lambda run_id: None, "exposure_resolver": lambda run_id: None,
+    }
+    EffectGate(**pieces)
+    for name in pieces:
+        with pytest.raises(TypeError, match=f"sdk_effect_gate_composition_missing:{name}"):
+            EffectGate(**{**pieces, name: None})
+    # ③ 生产 builder 的 closure_reader 非 None（Task 3 审查 F-2 的真对象断言在 test_composition）。
+    source = Path(main.__file__).read_text(encoding="utf-8")
+    assert "_assert_sdk_composition_slots()" in source.split("def _build_product_sdk_runtime_stack")[1]
 
 
-@XF
-def test_v46_forward_migration_and_old_runtime_rejects() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_v46_forward_migration_and_old_runtime_rejects(tmp_path: Path, monkeypatch) -> None:
+    """AC-6②：v45 → v46 前向（旧行/evidence 守恒）、旧 runtime 打开 v46 稳定拒绝、rollback drill 不删 evidence。
+    决定性用例集合在 tests/memory/test_s5b_v46_cutover.py（Task 8 record-run --exec）；此处直接调用。"""
+
+    from tests.memory import test_s5b_v46_cutover as cutover
+
+    await cutover.test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path, monkeypatch)

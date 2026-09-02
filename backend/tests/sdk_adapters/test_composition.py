@@ -931,10 +931,11 @@ async def test_production_context_authority_injects_closure_instruction_when_adm
     body = _json.loads(str(protected[0].content))
     assert body["kind"] == "task_scope_closure_required" and body["task_scope_id"] == ch.SCOPE
     assert [p["reason_code"] for p in body["pending_receipts"]] == ["closure_model_declined"]
-    # 缺件：生产装配把 reader 登记为 service_context 槽 ``sdk_closure_instruction_reader`` 并进缺槽断言。
+    # 缺件：生产装配把 reader 登记为 service_context 槽 ``sdk_closure_instruction_reader`` 并进缺槽断言
+    # （Task 6：缺槽断言是数据 ``SDK_COMPOSITION_SLOTS`` + ``_assert_sdk_composition_slots`` 真构造）。
     source = Path(main.__file__).read_text(encoding="utf-8")
     assert 'service_context.register("sdk_closure_instruction_reader"' in source
-    assert '"sdk_closure_instruction_reader",' in source.split("for slot in (")[1].split(")")[0]
+    assert "sdk_closure_instruction_reader" in main.SDK_COMPOSITION_SLOTS
 
 
 # ---- S5b Task 6 / P0：真实启动顺序下的 stack 构建与缺件 fail-closed ----
