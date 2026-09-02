@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from simple_harness import CallId, EffectId, RequestId, RunId, thaw_json
@@ -40,6 +41,7 @@ from deskpet.sdk_adapters.tool_authority import (
     SdkRunToolAuthorityRegistry,
     SdkToolAuthorityMigrationUnavailable,
     _v2_record_hashes,
+    confirm_only_tool_names,
 )
 from deskpet.sdk_adapters.tools import (
     ProductEffectExecutor,
@@ -72,6 +74,7 @@ class _Inventory:
     execution_identity: str = "execution-identity-v1"
     projectless_admission: str = "requires_project"
     availability_reason: str | None = None
+    effect_class: str | None = None  # S5b Task 6：inventory 冻结 EffectClass（None → manifest / unknown）
 
 
 class _AuthorizationStore:
@@ -1263,3 +1266,180 @@ def test_hidden_tool_policy_fault_is_recorded_for_run_terminal() -> None:
     exposure.execution_policy(run_id, "tool_search")
     memo.release("run-hidden")
     assert memo.read("run-hidden") is None
+
+
+# ---- S5b Task 6 / AC-3⑤（A5）：Auto explicit_only —— confirm-only 类永不 auto-grant ----
+
+
+def _catalog_for(specs: list[dict], inventory: tuple) -> dict:  # type: ignore[no-untyped-def]
+    from deskpet.sdk_adapters.context_authority import canonical_sha256
+
+    return {
+        "generation": 9,
+        "content_fingerprint": canonical_sha256(specs),
+        "specs": specs,
+        "schema_fingerprints": {item["name"]: canonical_sha256(item["input_schema"]) for item in specs},
+    }
+
+
+def _write_specs() -> list[dict]:
+    schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
+    return [
+        {"name": "write_file", "description": "Write a project file", "input_schema": schema},
+        {"name": "purge_dir", "description": "Delete a directory tree", "input_schema": schema},
+        {"name": "run_shell", "description": "Run a shell command", "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
+    ]
+
+
+def _effect_for(run_id: str, name: str, *, effect_id: str) -> PreparedToolEffect:
+    schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}
+    if name == "run_shell":
+        schema = {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}
+        arguments = {"command": "rm -rf build"}
+    else:
+        arguments = {"path": "/tmp/project/x"}
+    return PreparedToolEffect(
+        EffectId(effect_id), RunId(run_id), ToolCall(CallId(f"call-{effect_id}"), name, arguments),
+        ToolSpec(name, "spec", schema), {"session_id": "session-a", "root_run_id": f"root-{run_id}"},
+    )
+
+
+async def _auto_policy(authorities: SdkRunToolAuthorityRegistry) -> SdkPreparedAuthorizationPolicy:
+    return SdkPreparedAuthorizationPolicy(
+        PreparedAuthorizationRuntime(_AuthorizationStore("auto", 0), clock=lambda: 100.0),
+        authorities, clock=lambda: 100.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_never_grants_confirm_only() -> None:
+    """(a) auto + DESTRUCTIVE（inventory 冻结 EffectClass）→ REQUIRE_USER，reason
+    ``product_policy_user_confirmation``，候选 grant 来源 ``user``（绝不合成 ``policy:auto``）；
+    (b) auto + write_file（manifest reversible_local）→ ALLOW（既有 auto 策略，grant 来源 policy:auto）；
+    manifest dangerous（run_shell）同样 REQUIRE_USER；``explicit_only`` 经 ``plan_prepared_call`` 接入。"""
+
+    inventory = (
+        _Inventory("write_file", "async", "write_file"),
+        _Inventory("purge_dir", "async", "write_file", effect_class="destructive"),
+        _Inventory("run_shell", "async", "shell"),
+    )
+    authorities = SdkRunToolAuthorityRegistry()
+    authority = authorities.prepare_run(
+        run_id="run-auto", session_id="session-a", request_id="request-auto", root_run_id="root-run-auto",
+        task_scope_id="task-auto", workspace_root=None, catalog=_catalog_for(_write_specs(), inventory),
+        inventory=inventory,
+    )
+    assert authority.specs["purge_dir"].effect_class == "destructive"
+    assert authority.specs["write_file"].effect_class == "reversible_local"
+    assert authority.specs["run_shell"].effect_class == "unknown" and authority.specs["run_shell"].manifest_dangerous is True
+    assert confirm_only_tool_names(authority) == ("purge_dir", "run_shell")
+    policy = await _auto_policy(authorities)
+
+    seen: list[tuple[str, bool, bool]] = []
+    original = policy._runtime.plan_prepared_call
+
+    async def spy(**kwargs):  # type: ignore[no-untyped-def]
+        seen.append((kwargs["call"].tool_name, bool(kwargs.get("explicit_only", False)), bool(kwargs.get("confirmed", False))))
+        return await original(**kwargs)
+
+    policy._runtime.plan_prepared_call = spy  # type: ignore[method-assign]
+
+    # (a) DESTRUCTIVE → REQUIRE_USER，grant_source == user ≠ policy:auto。
+    destructive = await policy.decide(_effect_for("run-auto", "purge_dir", effect_id="effect-purge"), request=None)
+    assert destructive.decision is AuthorizationDecision.REQUIRE_USER
+    assert destructive.reason_code == "product_policy_user_confirmation"
+    assert destructive.request is not None
+    assert destructive.request.metadata["grant_source"] == "user"
+    assert destructive.request.metadata["grant_source"] != "policy:auto"
+    facts = policy.facts_for(_effect_for("run-auto", "purge_dir", effect_id="effect-purge"))
+    assert facts.grant.source == "user"
+    assert facts.plan.authorization_origin == "explicit_decision"
+    assert [item for item in seen if item[0] == "purge_dir"] == [("purge_dir", True, False), ("purge_dir", True, True)]
+    # manifest dangerous（run_shell, EffectClass unknown）→ 同样 REQUIRE_USER。
+    shell = await policy.decide(_effect_for("run-auto", "run_shell", effect_id="effect-shell"), request=None)
+    assert shell.decision is AuthorizationDecision.REQUIRE_USER
+    assert shell.request is not None and shell.request.metadata["grant_source"] == "user"
+    # (b) write_file（reversible_local）→ ALLOW，既有 auto grant。
+    allowed = await policy.decide(_effect_for("run-auto", "write_file", effect_id="effect-write"), request=None)
+    assert allowed.decision is AuthorizationDecision.ALLOW
+    assert policy.facts_for(_effect_for("run-auto", "write_file", effect_id="effect-write")).grant.source == "policy:auto"
+    assert [item for item in seen if item[0] == "write_file"] == [("write_file", False, False)]
+
+
+def test_project_effect_tools_frozen_effect_class_and_confirm_only_subset() -> None:
+    """(d) PROJECT_EFFECT 清单逐项冻结 EffectClass（与 manifest 一致，manifest 缺 EffectClass 的按名 unknown），
+    confirm-only 子集按名断言：run_shell / process_start（manifest dangerous + unknown）、
+    move_file / file_organize / ppt_create（EffectClass unknown，design-freeze §11）。"""
+
+    from deskpet.permissions.effect_policy import IrreversibleEffectPolicy
+    from deskpet.sdk_adapters.tool_authority import (
+        PROJECT_EFFECT_TOOL_NAMES,
+        frozen_tool_effect,
+    )
+    from deskpet.tool_catalog.manifest import load_tool_manifest
+
+    by_name = {str(item["name"]): item for item in load_tool_manifest().tools}
+    schema = {"type": "object", "properties": {"path": {"type": "string"}}}
+    specs = [{"name": name, "description": f"tool {name}", "input_schema": schema} for name in PROJECT_EFFECT_TOOL_NAMES]
+    inventory = tuple(
+        _Inventory(name, str(by_name[name].get("dispatch_kind") or "handler"), str(by_name[name].get("permission_category") or "write_file"))
+        for name in PROJECT_EFFECT_TOOL_NAMES
+    )
+    registry = SdkRunToolAuthorityRegistry()
+    authority = registry.prepare_run(
+        run_id="run-frozen", session_id="s", request_id="r", root_run_id="root", task_scope_id="task",
+        workspace_root=None, catalog=_catalog_for(specs, inventory), inventory=inventory,
+    )
+    decision = IrreversibleEffectPolicy().classify(
+        owner_key="sdk-runtime", run_kind="chat",
+        specs=[SimpleNamespace(**dict(by_name[name])) for name in PROJECT_EFFECT_TOOL_NAMES],
+    )
+    classified = {item.name: item.effect_class for item in decision.classifications}
+    for name in PROJECT_EFFECT_TOOL_NAMES:
+        assert authority.specs[name].effect_class == classified[name] == str(by_name[name]["effect_class"]), name
+        assert frozen_tool_effect(name) == (classified[name], bool(by_name[name].get("dangerous", False)))
+    assert confirm_only_tool_names(authority) == ("file_organize", "move_file", "ppt_create", "process_start", "run_shell")
+    # 未知工具（不在 manifest、无 inventory EffectClass）→ unknown → confirm-only；inventory 显式 EffectClass 优先。
+    assert frozen_tool_effect("mcp__fs__write_file") == ("unknown", False)
+    assert frozen_tool_effect("mcp__fs__write_file", _Inventory("mcp__fs__write_file", "async", "write_file", effect_class="reversible_local")) == ("reversible_local", False)
+    assert frozen_tool_effect("write_file", _Inventory("write_file", "async", "write_file", effect_class="bogus")) == ("unknown", False)
+
+
+def test_restored_run_keeps_frozen_effect_class_and_older_records_fall_back_to_manifest() -> None:
+    """WAITING 重启：v3 记录携带 effect_class → 原样恢复（不按新 manifest 重分类）；缺该字段的旧记录按 manifest 回落。"""
+
+    from types import SimpleNamespace as _NS
+
+    inventory = (
+        _Inventory("write_file", "async", "write_file", effect_class="destructive"),
+        _Inventory("read_file", "async", "read_file"),
+    )
+    specs = [
+        {"name": "write_file", "description": "w", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
+        {"name": "read_file", "description": "r", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}}}},
+    ]
+    catalog = _catalog_for(specs, inventory)
+    registry = SdkRunToolAuthorityRegistry()
+    authority = registry.prepare_run(
+        run_id="run-restore", session_id="s", request_id="r", root_run_id="root", task_scope_id="task",
+        workspace_root=None, catalog=catalog, inventory=inventory,
+    )
+    record = authority.run_start_record()
+    assert {item["name"]: item["effect_class"] for item in record["inventory"]} == {"write_file": "destructive", "read_file": "read_only"}
+    binding = _NS(run_id="run-restore", session_id="s", request_id="r", catalog_generation=9, catalog_fingerprint=catalog["content_fingerprint"])
+    snapshot = _NS(
+        generation=9, content_fingerprint=catalog["content_fingerprint"],
+        specs=tuple(_NS(name=item["name"], description=item["description"], parameters=item["input_schema"]) for item in specs),
+    )
+    resolver = _NS(resolve=lambda generation, fingerprint: snapshot)
+    restored = SdkRunToolAuthorityRegistry().restore_run(
+        run_start_record=record, run_binding=binding, catalog_resolver=resolver, lease_state="waiting",
+    )
+    assert restored.specs["write_file"].effect_class == "destructive" and restored.specs["write_file"].confirm_only
+    # 旧记录（无 effect_class 字段）→ manifest 回落（write_file reversible_local → 非 confirm-only）。
+    legacy = dict(record)
+    legacy["inventory"] = [{k: v for k, v in item.items() if k not in {"effect_class", "manifest_dangerous"}} for item in record["inventory"]]
+    fallback = SdkRunToolAuthorityRegistry().restore_run(
+        run_start_record=legacy, run_binding=binding, catalog_resolver=resolver, lease_state="waiting",
+    )
+    assert fallback.specs["write_file"].effect_class == "reversible_local" and not fallback.specs["write_file"].confirm_only
