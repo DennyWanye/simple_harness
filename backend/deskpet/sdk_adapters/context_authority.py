@@ -854,6 +854,37 @@ def _plan_turn_messages(
     return tuple(kept_messages), facts
 
 
+def _visible_provider_specs(exposure: Any, run_id: Any, route_state: Any) -> tuple:
+    """Per-turn model-visible Tool specs.
+
+    S5b Task 1 (design-freeze §4, 整 Run 故障降概率): until the Run is
+    ``ROUTED_TASK`` the frozen SDK has no model-visible rejection for a
+    PROJECT_EFFECT call (the Host authority raises and the whole Run fails
+    closed), so PROJECT_EFFECT Tools are simply not offered before a task
+    route.  The catalog record / fingerprint and the executable exposure are
+    untouched — only this turn's provider-facing spec list shrinks, and the
+    snapshot fingerprint is computed from the shrunk list, so the SDK
+    three-hash chain stays consistent.  An exposure without ``execution_policy``
+    cannot classify and is passed through unchanged.
+    """
+
+    from simple_harness.execution.context_authority import ContextRouteState
+    from simple_harness.tools.runtime_catalog import ToolEffectClass
+
+    specs = tuple(exposure.provider_specs(run_id))
+    if ContextRouteState(route_state) is ContextRouteState.ROUTED_TASK:
+        return specs
+    policy_reader = getattr(exposure, "execution_policy", None)
+    if not callable(policy_reader):
+        return specs
+    return tuple(
+        spec
+        for spec in specs
+        if policy_reader(run_id, spec.name).effect_class
+        is not ToolEffectClass.PROJECT_EFFECT
+    )
+
+
 class ProductRunContextAuthority:
     """Per-turn Host Context authority for the SDK 0.7 react barrier."""
 
@@ -883,7 +914,9 @@ class ProductRunContextAuthority:
         if context.revision != request.prior_context_revision:
             raise SnapshotContractConflict("sdk_context_authority_revision_drift")
         exposure = self._exposure_resolver(request.run_id)
-        tools = tuple(exposure.provider_specs(request.run_id))
+        tools = _visible_provider_specs(
+            exposure, request.run_id, request.route_state
+        )
         start = ports.react_checkpoint.read_start_snapshot(request.run_id.value)
         start_input = start.get("input") if isinstance(start, Mapping) else None
         temperature: float | None = None
