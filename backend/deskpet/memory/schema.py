@@ -34,6 +34,8 @@ from pathlib import Path
 
 from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
+    EFFECT_CLOSURE_MIGRATION,
+    EFFECT_CLOSURE_SCHEMA_VERSION,
     FOREGROUND_EXECUTION_MIGRATION,
     FOREGROUND_EXECUTION_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION,
@@ -305,6 +307,10 @@ def _validate_s4_migration_chain(
         (HUMAN_MEMORY_RECOVERY_MIGRATION, HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION),
         (HUMAN_MEMORY_QUIESCENCE_MIGRATION, HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION),
         (FOREGROUND_EXECUTION_MIGRATION, FOREGROUND_EXECUTION_SCHEMA_VERSION),
+        # v45 (037) is intentionally absent: S5a registered it outside the
+        # S4 chain (no chain row / marker), so an existing v45 database must
+        # keep validating; v46 rejoins the chain.
+        (EFFECT_CLOSURE_MIGRATION, EFFECT_CLOSURE_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:

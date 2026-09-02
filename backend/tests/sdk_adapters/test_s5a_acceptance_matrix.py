@@ -511,7 +511,7 @@ async def test_cutover_v44_forward_migration_and_empty_presented_table(
     legacy_dir = tmp_path / "migrations-v44"
     legacy_dir.mkdir()
     for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
-        if source.name.startswith("037_"):
+        if source.name.startswith(("037_", "038_")):  # 038 = S5b v46（同样不属于 v44 库）
             continue
         shutil.copy2(source, legacy_dir / source.name)
     monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)

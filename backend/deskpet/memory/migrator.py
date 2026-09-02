@@ -117,7 +117,12 @@ FOREGROUND_EXECUTION_MIGRATION = "036_foreground_execution_v44.sql"
 FOREGROUND_EXECUTION_SCHEMA_VERSION = 44
 CONTEXT_ROUTE_MIGRATION = "037_context_route_ledger_v45.sql"
 CONTEXT_ROUTE_SCHEMA_VERSION = 45
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = CONTEXT_ROUTE_SCHEMA_VERSION
+# S5b Task 2 (design-freeze §5): closure receipts, Harness evidence
+# reservations, Memory ingestion outbox, post-turn invocation attempts,
+# EffectGate sticky memo, Host pre-admission audit.
+EFFECT_CLOSURE_MIGRATION = "038_effect_closure_memory_v46.sql"
+EFFECT_CLOSURE_SCHEMA_VERSION = 46
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = EFFECT_CLOSURE_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -131,6 +136,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         HUMAN_MEMORY_QUIESCENCE_MIGRATION,
         FOREGROUND_EXECUTION_MIGRATION,
         CONTEXT_ROUTE_MIGRATION,
+        EFFECT_CLOSURE_MIGRATION,
     }
 )
 
@@ -163,6 +169,7 @@ MIGRATION_STEPS: dict[str, int] = {
     HUMAN_MEMORY_QUIESCENCE_MIGRATION: HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION,
     FOREGROUND_EXECUTION_MIGRATION: FOREGROUND_EXECUTION_SCHEMA_VERSION,
     CONTEXT_ROUTE_MIGRATION: CONTEXT_ROUTE_SCHEMA_VERSION,
+    EFFECT_CLOSURE_MIGRATION: EFFECT_CLOSURE_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -173,6 +180,7 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         HUMAN_MEMORY_RECOVERY_MIGRATION,
         HUMAN_MEMORY_QUIESCENCE_MIGRATION,
         FOREGROUND_EXECUTION_MIGRATION,
+        EFFECT_CLOSURE_MIGRATION,
     }
 )
 
@@ -845,6 +853,29 @@ async def run_migrations(
                                     ("occurrence_presented", "A"),
                                 ),
                             )
+                        if version == EFFECT_CLOSURE_MIGRATION:
+                            initialized_at = time.time()
+                            await db.execute(
+                                "INSERT INTO effect_closure_marker("
+                                "singleton,format_epoch,schema_version,migration_id,"
+                                "migration_sha256,initialized_at) VALUES "
+                                "(1,'human-memory-v1',1,?,?,?)",
+                                (version, migration_sha256, initialized_at),
+                            )
+                            await _register_recovery_tables(
+                                db,
+                                (
+                                    ("effect_closure_marker", "A"),
+                                    ("task_scope_closure_receipts", "A"),
+                                    ("harness_evidence_reservations", "A"),
+                                    ("memory_ingestion_outbox", "A"),
+                                    ("memory_ingestion_evidence_links", "A"),
+                                    ("post_turn_invocation_attempts", "A"),
+                                    ("post_turn_invocation_members", "A"),
+                                    ("effect_gate_rejections", "A"),
+                                    ("host_pre_admission_audit", "A"),
+                                ),
+                            )
                         await _execute_transactional_script(
                             db, _HUMAN_MIGRATION_CHAIN_SQL
                         )
@@ -971,7 +1002,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            FOREGROUND_EXECUTION_SCHEMA_VERSION
+            EFFECT_CLOSURE_SCHEMA_VERSION
+            if EFFECT_CLOSURE_MIGRATION in durable_markers
+            else FOREGROUND_EXECUTION_SCHEMA_VERSION
             if FOREGROUND_EXECUTION_MIGRATION in durable_markers
             else HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION
             if HUMAN_MEMORY_QUIESCENCE_MIGRATION in durable_markers
