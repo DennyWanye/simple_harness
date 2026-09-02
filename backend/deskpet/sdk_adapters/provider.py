@@ -93,6 +93,20 @@ def _provider_failure_stage(error_code: str, status_code: object) -> str:
 
 def _request_diagnostic_summary(request: ProviderRequest) -> dict[str, object]:
     roles = Counter(message.role.value for message in request.messages)
+    # Wire-shape trace (roles only, no content): an OpenAI-compatible endpoint
+    # rejects a tool message whose preceding assistant lost its tool_calls, and
+    # that only shows up on a real provider round trip.
+    logger.debug(
+        "product_provider_wire_shape %s",
+        " ".join(
+            "{}{}{}".format(
+                m.role.value,
+                "+tc" if (m.metadata or {}).get(_PROVIDER_TOOL_CALLS_METADATA_KEY) else "",
+                "+cid" if m.call_id is not None else "",
+            )
+            for m in request.messages
+        ),
+    )
     tool_names = sorted(tool.name for tool in request.tools)
     tool_schema_bytes = sum(
         len(
@@ -157,8 +171,56 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
 
     def _request_payload(self, request: ProviderRequest) -> dict[str, Any]:
         payload = super()._request_payload(request)
+        payload["messages"] = self._wire_messages(request.messages)
         payload.update(self._reasoning_wire)
         return payload
+
+    @classmethod
+    def _wire_messages(cls, messages: Sequence[Message]) -> list[dict[str, Any]]:
+        """Assemble the wire ``messages`` array, restoring assistant tool_calls.
+
+        S5A-UI-F2 (2026-09-02, real desktop UI): an OpenAI-compatible endpoint
+        rejects a ``tool`` message whose preceding ``assistant`` carries no
+        ``tool_calls`` ("function_call_output requires item_reference ids
+        matching each call_id on HTTP requests").  The SDK 0.7.1 contract keeps
+        durable Context free of private provider metadata — a provider
+        assistant message is stored with empty metadata by construction — so
+        ``metadata[provider_tool_calls]`` cannot survive a continuation and the
+        second turn of every tool-using chat used to fail closed with HTTP 400.
+
+        The durable messages themselves carry the missing facts: each tool
+        result holds its ``call_id`` and tool ``name``.  Rebuild the assistant
+        ``tool_calls`` from the tool results that follow it; original arguments
+        are used when the live metadata is still present (same-process turn)
+        and degrade to an empty JSON object otherwise, which keeps the wire
+        shape valid instead of killing the Run.
+        """
+
+        payloads = [cls._message_payload(message) for message in messages]
+        for index, message in enumerate(messages):
+            if message.role is not MessageRole.ASSISTANT:
+                continue
+            if payloads[index].get("tool_calls"):
+                continue
+            followers: list[dict[str, Any]] = []
+            for follower in messages[index + 1 :]:
+                if follower.role is not MessageRole.TOOL:
+                    break
+                if follower.call_id is None:
+                    continue
+                followers.append(
+                    {
+                        "id": follower.call_id.value,
+                        "type": "function",
+                        "function": {
+                            "name": str(follower.name or "unknown"),
+                            "arguments": "{}",
+                        },
+                    }
+                )
+            if followers:
+                payloads[index]["tool_calls"] = followers
+        return payloads
 
     @staticmethod
     def _message_payload(message: Message) -> dict[str, Any]:
