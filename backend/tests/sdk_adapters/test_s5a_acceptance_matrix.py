@@ -511,7 +511,7 @@ async def test_cutover_v44_forward_migration_and_empty_presented_table(
     legacy_dir = tmp_path / "migrations-v44"
     legacy_dir.mkdir()
     for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
-        if source.name.startswith("037_"):
+        if source.name.startswith(("037_", "038_")):  # 038 = S5b v46（同样不属于 v44 库）
             continue
         shutil.copy2(source, legacy_dir / source.name)
     monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)
@@ -521,8 +521,11 @@ async def test_cutover_v44_forward_migration_and_empty_presented_table(
 
     monkeypatch.undo()
     await initialize_human_memory_program_state_db(db)
+    from deskpet.memory.migrator import HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+
     with sqlite3.connect(db) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 45
+        # S5b Task 2 起目标为 v46：前向链一次迁到当前目标（S5a 的 v45 事实仍成立）。
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
         # Cutover receipt fact: the presented table exists and is EMPTY —
         # S5a never writes it.
         rows = conn.execute("SELECT COUNT(*) FROM occurrence_presented").fetchone()

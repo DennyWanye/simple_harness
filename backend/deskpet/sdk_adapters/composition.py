@@ -10,7 +10,7 @@ import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
-from typing import TypeAlias
+from typing import Any, TypeAlias
 
 from simple_harness import (
     ROOT_PROFILE_KEY,
@@ -600,6 +600,88 @@ class ProductSdkRuntimeStack:
                     )
                 ),
             )
+
+    async def read_reserved_fact(self, reservation: Any) -> Any | None:
+        """S5b Task 2 terminal drain: resolve a still-reserved Harness row.
+
+        ``effect:{effect_id}`` → the SDK effect ledger (terminal record →
+        ``ToolInvocationFact`` incl. the objective event);
+        ``provider:{request_id}`` → the SDK provider invocation ledger
+        (terminal record → ``ProviderInvocationFact``).  Anything else, or a
+        record that is not terminal, returns ``None`` and is tombstoned.
+        """
+
+        from simple_harness import EffectId, RequestId, RunId, thaw_json
+        from simple_harness.execution.provider_invocations import (
+            TERMINAL_PROVIDER_INVOCATION_STATES,
+            provider_invocation_id,
+            provider_response_from_json,
+        )
+
+        from deskpet.execution.evidence_ingress import (
+            ProviderInvocationFact,
+            ToolInvocationFact,
+        )
+        from deskpet.sdk_adapters.effect_gate import classify_objective_event
+
+        uow = self._uow
+        if uow is None:
+            return None
+        source_event_id = str(reservation.source_event_id)
+        if source_event_id.startswith("effect:"):
+            record = uow.read_effect(EffectId(source_event_id.removeprefix("effect:")))
+            if record is None or not record.terminal or record.result is None:
+                return None
+            if record.run_id.value != reservation.run_id:
+                return None
+            result = record.result
+            return ToolInvocationFact(
+                run_id=record.run_id.value,
+                effect_id=record.effect_id.value,
+                call_id=record.call_id.value,
+                tool_name=record.tool_name,
+                effect_state=record.state.value,
+                outcome=result.outcome.value,
+                error_code=result.error_code,
+                objective=classify_objective_event(
+                    record.tool_name,
+                    dict(thaw_json(record.arguments)),
+                    result,
+                    effect_id=record.effect_id.value,
+                    call_id=record.call_id.value,
+                ),
+            )
+        if source_event_id.startswith("provider:"):
+            request_id = source_event_id.removeprefix("provider:")
+            invocation = uow.read_provider_invocation(
+                provider_invocation_id(RunId(reservation.run_id), RequestId(request_id))
+            )
+            if invocation is None or invocation.state not in TERMINAL_PROVIDER_INVOCATION_STATES:
+                return None
+            response = None
+            if invocation.response_json is not None:
+                try:
+                    response = provider_response_from_json(thaw_json(invocation.response_json))
+                except Exception:  # noqa: BLE001 - a malformed durable response is public-safe as None
+                    response = None
+            usage = None
+            if isinstance(invocation.usage_json, Mapping):
+                raw_usage = invocation.usage_json.get("usage")
+                if isinstance(raw_usage, Mapping):
+                    usage = {
+                        key: raw_usage.get(key)
+                        for key in ("input_tokens", "output_tokens", "total_tokens")
+                    }
+            return ProviderInvocationFact(
+                run_id=reservation.run_id,
+                request_id=request_id,
+                model=None if response is None else response.model,
+                finish_reason=None if response is None else response.finish_reason,
+                tool_call_count=0 if response is None else len(response.tool_calls),
+                error_code=invocation.error_code,
+                usage=usage,
+            )
+        return None
 
     def read_run_terminal_evidence(
         self, run_id: str

@@ -349,22 +349,105 @@ class ProductEffectExecutor(EffectExecutor):
         registry: ProductToolsAdapter,
         foreground_admission: ForegroundEffectAdmissionPort | None = None,
         effect_gate: EffectGatePort | None = None,
+        evidence_ingress: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(registry=registry, **kwargs)
         self._foreground_admission = foreground_admission
         self._effect_gate = effect_gate
+        # S5b Task 2: Harness evidence reservation before the physical
+        # dispatch, objective event + evidence row + tool_invocation import in
+        # one state.db transaction after the SDK settled the effect.
+        self._evidence_ingress = evidence_ingress
+
+    async def _evidence_scope(self, context: ToolContext) -> tuple[str, str] | None:
+        """(task_scope_id, subject) of the Run's admission scope, or ``None``.
+
+        Foreground Runs resolve through ``foreground_run_sdk_bindings``; a Run
+        carrying a PROJECT_EFFECT envelope falls back to the envelope scope
+        (the gate already proved it equals the frozen admission scope).  A Run
+        with neither has no TaskScope watermark and produces no evidence.
+        """
+
+        ingress = self._evidence_ingress
+        if ingress is None:
+            return None
+        binding = await ingress.resolve_run_scope(context.run_id.value)
+        if binding is not None:
+            return binding.task_scope_id, binding.subject
+        envelope = context.task_execution_envelope
+        scope_id = None if envelope is None else envelope.task_scope_id
+        if not scope_id:
+            return None
+        subject = await ingress.scope_subject(str(scope_id))
+        if subject is None:
+            return None
+        return str(scope_id), subject
+
+    async def _reserve_evidence(self, context: ToolContext, call: ToolCall, scope: tuple[str, str]) -> None:
+        effect_id = context.effect_id
+        if effect_id is None:
+            raise RuntimeError("effect_evidence_identity_missing")
+        await self._evidence_ingress.reserve(
+            run_id=context.run_id.value,
+            task_scope_id=scope[0],
+            kind="tool_invocation",
+            source_event_id=f"effect:{effect_id.value}",
+        )
+
+    async def _commit_evidence(
+        self, context: ToolContext, call: ToolCall, execution: EffectExecution, scope: tuple[str, str]
+    ) -> None:
+        from deskpet.execution.evidence_ingress import ToolInvocationFact
+        from deskpet.sdk_adapters.effect_gate import classify_objective_event
+
+        record = execution.effect
+        if record is None or not record.terminal:
+            # Rejected before an effect existed, or still HANDED_OFF/UNKNOWN:
+            # the reservation stays open for the terminal drain.
+            return
+        ingress = self._evidence_ingress
+        existing = await ingress.reservation(f"effect:{record.effect_id.value}")
+        if existing is not None and existing.status != "reserved":
+            # Already imported (e.g. the context_route ledger transaction).
+            return
+        result = execution.result
+        objective = classify_objective_event(
+            record.tool_name,
+            dict(thaw_json(record.arguments)),
+            result,
+            effect_id=record.effect_id.value,
+            call_id=record.call_id.value,
+        )
+        fact = ToolInvocationFact(
+            run_id=record.run_id.value,
+            effect_id=record.effect_id.value,
+            call_id=record.call_id.value,
+            tool_name=record.tool_name,
+            effect_state=record.state.value,
+            outcome=result.outcome.value,
+            error_code=result.error_code,
+            objective=objective,
+        )
+        await ingress.commit_fact(task_scope_id=scope[0], subject=scope[1], fact=fact)
 
     async def execute(self, **kwargs: Any):
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
-        if self._effect_gate is not None:
+        if self._effect_gate is not None and self._is_first_occurrence(kwargs):
             # S5b EffectGate: re-verify the TaskExecutionEnvelope against the
             # frozen Run authority, the durable route receipt, the S4 binding
             # set and the live filesystem identity before ANY physical project
             # effect.  A rejection is returned as the SDK authorization-deny
             # shape (effect=None): no execution_effects row, no Host event.
+            #
+            # Step 0 (Task 1 review F-1): an effect that already has a durable
+            # SDK ledger record (any state) is an exact replay / reconcile,
+            # never a new physical admission.  The gate must not pre-empt the
+            # SDK's terminal-record replay or HANDED_OFF/UNKNOWN reconcile
+            # with a fabricated terminal ``rejected`` — the admission decision
+            # was made durably on first occurrence.
             call = kwargs.get("call")
             if not isinstance(call, ToolCall):
                 raise TypeError("ProductEffectExecutor requires ToolCall")
@@ -388,11 +471,39 @@ class ProductEffectExecutor(EffectExecutor):
             # authorization decision fails here, so a stale worker's Run
             # cannot produce external Tool side effects.
             await self._foreground_admission.authorize(context.run_id.value)
+        evidence_scope = await self._evidence_scope(context)
+        if evidence_scope is not None:
+            call = kwargs.get("call")
+            if not isinstance(call, ToolCall):
+                raise TypeError("ProductEffectExecutor requires ToolCall")
+            # Reserve the Harness source_sequence BEFORE the physical action
+            # (design-freeze §3): a crash after the SDK settles the effect but
+            # before the Host commit is closed by the terminal drain, which
+            # re-reads the settled effect under this exact sequence.
+            await self._reserve_evidence(context, call, evidence_scope)
         token = _validation_run_id.set(context.run_id.value)
         try:
-            return await super().execute(**kwargs)
+            execution = await super().execute(**kwargs)
         finally:
             _validation_run_id.reset(token)
+        if evidence_scope is not None:
+            await self._commit_evidence(context, kwargs["call"], execution, evidence_scope)
+        return execution
+
+    def _is_first_occurrence(self, kwargs: Mapping[str, Any]) -> bool:
+        """Step 0: only an effect with no durable SDK ledger record is gated.
+
+        ``uow.read_effect`` is the SDK's own replay/reconcile read (sync,
+        same store the executor uses); a record in any state means the SDK
+        owns the outcome (terminal replay returns the original receipt,
+        HANDED_OFF/UNKNOWN goes through ``reconcile``).
+        """
+
+        effect_id = kwargs.get("effect_id")
+        read_effect = getattr(self._uow, "read_effect", None)
+        if effect_id is None or not callable(read_effect):
+            return True
+        return read_effect(effect_id) is None
 
     async def _prepared(self, *, effect_id, call, context):
         token = _validation_run_id.set(context.run_id.value)

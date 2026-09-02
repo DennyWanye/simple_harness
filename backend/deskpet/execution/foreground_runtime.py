@@ -16,7 +16,7 @@ import hashlib
 import json
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -1129,11 +1129,13 @@ class SqliteSdkTerminalObserver:
         runtime_stack: object,
         *,
         run_fault_memo: object | None = None,
+        fault_inject: Callable[[str], None] | None = None,
     ) -> None:
         self._db_path = db_path
         self._ingress = ingress
         self._runtime_stack = runtime_stack
         self._run_fault_memo = run_fault_memo
+        self._fault_inject = fault_inject
 
     def _terminal_error_code(self, sdk_run_id: str, sdk_evidence: object) -> str | None:
         memo = self._run_fault_memo
@@ -1206,14 +1208,11 @@ class SqliteSdkTerminalObserver:
             await cursor.close()
             if row is None:
                 authority_cursor = await db.execute(
-                    "SELECT r.task_scope_id,t.evidence_id,t.evidence_hash,"
-                    "COALESCE(MAX(i.source_sequence),0)+1 AS next_sequence "
+                    "SELECT r.task_scope_id,t.evidence_id,t.evidence_hash "
                     "FROM foreground_runs r "
                     "JOIN foreground_turns t ON t.turn_id=r.turn_id "
-                    "LEFT JOIN task_scope_execution_ingest_receipts i "
-                    "ON i.run_id=? WHERE r.host_run_id=? "
-                    "GROUP BY r.task_scope_id,t.evidence_id,t.evidence_hash",
-                    (sdk_run_id, host_run_id),
+                    "WHERE r.host_run_id=?",
+                    (host_run_id,),
                 )
                 authority = await authority_cursor.fetchone()
                 await authority_cursor.close()
@@ -1224,6 +1223,25 @@ class SqliteSdkTerminalObserver:
                 raise ForegroundRuntimeError(
                     "foreground_terminal_task_scope_authority_missing"
                 )
+            from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+
+            evidence_ingress = ExecutionEvidenceIngress(
+                self._db_path, fault_inject=self._fault_inject
+            )
+            # S5b Task 2 (design-freeze §3): the terminal observer is the
+            # single drainer.  Every still-reserved Harness row is resolved
+            # first — ingested from the SDK ledger when its fact is readable
+            # (objective event included), otherwise a same-kind tombstone —
+            # and only then is run_terminal allocated at
+            # MAX(reservations ∪ receipts) + 1.  Replayed by the next owner
+            # after a crash (idempotent on source_event_id).
+            fact_reader = (
+                self._runtime_stack
+                if callable(getattr(self._runtime_stack, "read_reserved_fact", None))
+                else None
+            )
+            await evidence_ingress.drain_reservations(sdk_run_id, fact_reader=fact_reader)
+            next_sequence = await evidence_ingress.next_sequence(sdk_run_id)
             from simple_harness import (
                 DeliveryRecipient,
                 DisclosureContext,
@@ -1237,8 +1255,6 @@ class SqliteSdkTerminalObserver:
                 ExecutionEvidenceKind,
                 IntendedAudience,
             )
-
-            from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
             disclosure = DisclosureContext(
                 sdk_run_id,
@@ -1279,10 +1295,9 @@ class SqliteSdkTerminalObserver:
                 idempotency_key=f"foreground-terminal:{sdk_evidence.event_id}",
                 occurred_at=float(sdk_evidence.occurred_at),
             )
-            evidence_ingress = ExecutionEvidenceIngress(self._db_path)
             await evidence_ingress.ingest(
                 task_scope_id=str(authority["task_scope_id"]),
-                source_sequence=int(authority["next_sequence"]),
+                source_sequence=next_sequence,
                 evidence=evidence,
             )
             await evidence_ingress.authorize_terminal(sdk_run_id)

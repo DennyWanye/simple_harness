@@ -54,6 +54,39 @@
   （<v35）epoch 无 route 能力，清单工具在该 epoch 下稳定 fail-closed（整 Run 故障）而非静默执行；
   备忘为进程内，crash 后终态证据退回 SDK 公开码。
 
+## S5b Task 2 客观事件同事务直写、Harness 证据预留/排空与脏标记（2026-09-02 生产事实）
+
+- **v46 表**（`memory/migrations/038_effect_closure_memory_v46.sql`，design-freeze §5 全部 7 张一次建齐，后续 Task 只写）：
+  `task_scope_closure_receipts`（UNIQUE(sdk_run_id, closure_watermark, outcome)，outcome ∈ mutate|no_mutation|pending）、
+  `harness_evidence_reservations`（UNIQUE(run_id, source_sequence)、source_event_id UNIQUE、status reserved→ingested|abandoned）、
+  `memory_ingestion_outbox`(+`_evidence_links`)、`post_turn_invocation_attempts`(+`_members`)、`effect_gate_rejections`、
+  `host_pre_admission_audit`；全部 append-only 触发器 + 状态单调守卫；`effect_closure_marker` + 恢复表注册（taxonomy A）+
+  迁移链；旧 runtime（target 45）打开 v46 → `human_memory_future_epoch_unsupported` 稳定拒绝。037（v45）按 S5a 现状不在
+  S4 迁移链/恢复注册内（已知遗留），038 重新入链。
+- **预留/排空契约**（`execution/evidence_ingress.py` 单一 owner，§3）：其它 DB 事实（SDK effect、Provider invocation）在
+  物理动作前 `reserve` 拿 seq（`effect:{effect_id}` / `provider:{request_id}`），完成后 `commit_fact`；state.db 事实
+  （snapshot receipt / route decision / route tool invocation）在 `ContextRouteLedgerStore` 各自写事务内 `ingest_ledger_fact_tx`
+  （reserve+ingest 同 commit，`snapshot:{snapshot_id}` / `route:{decision_id}` / `effect:{effect_id}`）；
+  `next_sequence = MAX(reservations ∪ receipts)+1`（probe A9 的迟到行不再被 terminal 永久拒绝）；
+  `SqliteSdkTerminalObserver` 是唯一排空者：写 `run_terminal` 前对每条 reserved 行经 `ProductSdkRuntimeStack.read_reserved_fact`
+  读 SDK effect/provider 账本——终态记录 → 同一 `commit_fact` 路径导入（含客观事件），否则同 kind tombstone
+  `{"status":"abandoned","reservation_id":…}` 并置 abandoned；`authorize_terminal` 只在无 reserved 行且 durable==terminal 时放行；
+  crash 后新 owner 重放同一排空（source_event_id 幂等；fault lane `objective-event-commit` / `terminal-watermark` /
+  `observer-next-sequence-race` 三 seam 为 kill→replay 用例）。无 foreground 绑定的 Run（无 admission scope）不产 Harness 证据。
+- **客观事件映射**（`sdk_adapters/effect_gate.py` `OBJECTIVE_EVENT_MAP`，§2，确定性、禁关键词/正则）：14 个 PROJECT_EFFECT
+  工具中写/编辑/移动/整理/文档/下载/`workspace_prepare` → `host.file`；`run_shell`/`process_start` 命令首 token 序列 ∈
+  `TEST_RUNNER_COMMANDS`（pytest、python -m pytest、npm test、pnpm test、cargo test、go test、vitest、jest）且结果带退出码 →
+  `host.test`，否则 `host.file`；成功/失败都记；载荷只含 tool/effect/call id、outcome、error_code、targets（路径）或
+  command_head+exit_code（不含文件内容、命令全文、输出）。`ProductEffectExecutor` 在 SDK settle 后由 `commit_fact` 把
+  `host.file|host.test` 事件 + `human_memory_evidence` 行（`host-typed-ingress/v1`，refs 可用）+ `harness.tool_invocation`
+  导入写进**同一 state.db 事务**——SDK `execution_effects` 与 state.db 是两个库，不可能同一 SQLite 事务，二者经预留 seq 幂等关联；
+  crash 于两者之间由 terminal 排空重放收敛。非 PROJECT_EFFECT 工具只记 `harness.tool_invocation`（trivial）。
+- **脏标记**（`execution/semantic_closure.py` `dirty_state`）：自该 scope 最后一条 outcome∈{mutate,no_mutation} 的 closure
+  receipt 的 `closure_watermark` 起，`event_sequence` 更大的 material 事件集合（`host.file`/`host.test`、PROJECT_EFFECT 的
+  `harness.tool_invocation`）；无 receipt 自 0；pending 不清脏。终态门、`task_scope_update` 与兜底留 Task 3。
+- **EffectGate 步骤 0**（Task 1 审查 F-1）：`ProductEffectExecutor.execute` 先查 `uow.read_effect(effect_id)`，已有 durable
+  记录（任一状态）则跳过 gate 直接交 SDK replay/reconcile；仅首次出现才重验。
+
 ## ToolReceipt HMAC key authority（2026-09-01）
 
 - `backend/deskpet/tools/receipt_store.py` 仍对 ToolReceipt 做 HMAC-SHA256 签名/验签，但 receipt key 只存在

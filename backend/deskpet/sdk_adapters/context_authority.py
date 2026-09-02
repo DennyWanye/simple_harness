@@ -347,12 +347,38 @@ class ContextRouteLedgerError(RuntimeError):
 class ContextRouteLedgerStore:
     """Append-only v45 context/route ledger on the Host human-memory state.db."""
 
-    def __init__(self, db_path: Any, *, clock: Any = None) -> None:
+    def __init__(
+        self, db_path: Any, *, clock: Any = None, evidence_ingress: Any = None
+    ) -> None:
         import time as _time
         from pathlib import Path
 
         self._db_path = Path(db_path)
         self._clock = clock or _time.time
+        # S5b Task 2 (design-freeze §3): state.db facts are reserved + imported
+        # as Harness evidence inside this ledger's own write transaction.
+        self._evidence_ingress = evidence_ingress
+
+    async def _ingest_fact_tx(
+        self,
+        db: Any,
+        *,
+        sdk_run_id: str,
+        kind: str,
+        source_event_id: str,
+        public_payload: Mapping[str, Any],
+        now: float,
+    ) -> None:
+        if self._evidence_ingress is None:
+            return
+        await self._evidence_ingress.ingest_ledger_fact_tx(
+            db,
+            run_id=sdk_run_id,
+            kind=kind,
+            source_event_id=source_event_id,
+            public_payload=dict(public_payload),
+            occurred_at=now,
+        )
 
     def user_version(self) -> int:
         """Read-only schema version of the backing database (0 when absent)."""
@@ -378,7 +404,9 @@ class ContextRouteLedgerStore:
         import aiosqlite
 
         db = await aiosqlite.connect(self._db_path)
-        db.row_factory = None
+        # Row supports positional access (ledger reads) and named access
+        # (evidence ingress `_tx` helpers sharing this transaction).
+        db.row_factory = aiosqlite.Row
         await db.execute("PRAGMA foreign_keys=ON")
         await db.execute("PRAGMA busy_timeout=5000")
         return db
@@ -449,6 +477,21 @@ class ContextRouteLedgerStore:
                     receipt_hash,
                     float(self._clock()),
                 ),
+            )
+            await self._ingest_fact_tx(
+                db,
+                sdk_run_id=run,
+                kind="context_snapshot",
+                source_event_id=f"snapshot:{snapshot_id}",
+                public_payload={
+                    "snapshot_id": snapshot_id,
+                    "snapshot_revision": revision,
+                    "provider_turn_ordinal": provider_turn_ordinal,
+                    "prior_context_revision": prior_context_revision,
+                    "payload_hash": payload_hash,
+                    "receipt_hash": receipt_hash,
+                },
+                now=float(self._clock()),
             )
             await db.commit()
             return snapshot_id, revision
@@ -527,6 +570,23 @@ class ContextRouteLedgerStore:
                     decision_hash,
                     float(self._clock()),
                 ),
+            )
+            decision_id = f"route-decision:{receipt.run_id}:{idempotency_key}"
+            await self._ingest_fact_tx(
+                db,
+                sdk_run_id=receipt.run_id,
+                kind="route_decision",
+                source_event_id=f"route:{decision_id}",
+                public_payload={
+                    "decision_id": decision_id,
+                    "route": receipt.route.value,
+                    "origin": origin,
+                    "task_scope_id": receipt.task_scope_id,
+                    "receipt_id": receipt.receipt_id,
+                    "receipt_hash": receipt.receipt_hash,
+                    "provider_turn_ordinal": provider_turn_ordinal,
+                },
+                now=float(self._clock()),
             )
             await db.commit()
         except BaseException:
@@ -663,6 +723,21 @@ class ContextRouteLedgerStore:
                     invocation_hash,
                     float(self._clock()),
                 ),
+            )
+            await self._ingest_fact_tx(
+                db,
+                sdk_run_id=sdk_run_id,
+                kind="tool_invocation",
+                source_event_id=f"effect:{effect_id}",
+                public_payload={
+                    "tool_name": "context_route",
+                    "effect_id": effect_id,
+                    "raw_call_id": raw_call_id,
+                    "verdict": verdict,
+                    "decision_id": decision_id,
+                    "proposal_hash": proposal_hash,
+                },
+                now=float(self._clock()),
             )
             await db.commit()
         except BaseException:

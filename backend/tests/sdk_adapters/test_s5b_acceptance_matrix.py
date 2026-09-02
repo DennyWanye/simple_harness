@@ -201,10 +201,105 @@ async def test_write_file_envelope_reverified_then_executed_and_host_file_event(
     assert decisions == [(envelope.route_receipt_id, envelope.route_receipt_hash, scope_a)]
 
 
-@XF
-def test_write_file_effect_commits_execution_effect_row_and_host_file_event_same_tx() -> None:
-    """Task 2（S5B-AC-1①/§2 映射）：write_file 成功 → execution_effects 行 + host.file material 事件同事务。"""
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_write_file_effect_commits_execution_effect_row_and_host_file_event_same_tx(
+    tmp_path: Path,
+) -> None:
+    """Task 2（S5B-AC-1①/§2 映射）：write_file 成功 → execution_effects 行 + host.file material 事件同事务。
+
+    口径（design-freeze §3）：SDK effect 账本与 state.db 是两个库，不可能同一 SQLite 事务；
+    Host 侧 ``host.file`` 事件 + ``human_memory_evidence`` 行 + ``harness.tool_invocation``
+    导入 **同一 state.db 事务** 提交，并经 ``harness_evidence_reservations``（source_event_id=
+    ``effect:{effect_id}``，物理 dispatch 前预留 seq）与 SDK ``execution_effects`` 行幂等关联。
+    """
+    from deskpet.execution.semantic_closure import dirty_state
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_effect_gate_harness as h
+
+    env = await h.build_env(tmp_path)
+    scope_a, root_a = await h.make_bound_scope(env, "a", "root-a")
+    h.freeze_run(env, task_scope_id=scope_a, workspace_root=root_a)
+    provider = h.ScriptedProvider(
+        [
+            h.tool_call(
+                "context_route",
+                {"route": "resume_existing", "task_scope_id": scope_a},
+                raw_id="raw-route",
+            ),
+            h.tool_call("write_file", {"path": "a.txt", "content": "alpha"}, raw_id="raw-write"),
+            h.answer("done"),
+        ]
+    )
+    out = await h.run_capture(env, provider)
+    assert out["exception"] is None
+    [record] = env.effects.write_file_calls
+    effect_id = record["context"].effect_id.value
+    source_event_id = f"effect:{effect_id}"
+
+    # ① host.file material 事件：由 Host 在物理执行处直接写 S4 recorder（不经 LLM）。
+    [(event_id, kind, payload_json)] = h.rows(
+        env.db_path,
+        "SELECT event_id,event_kind,payload_json FROM task_scope_events "
+        "WHERE task_scope_id=? AND source_kind='host' AND source_event_id=?",
+        scope_a, source_event_id,
+    )
+    assert kind == "host.file"
+    payload = json.loads(payload_json)
+    assert payload["tool_name"] == "write_file"
+    assert payload["effect_id"] == effect_id
+    assert payload["outcome"] == "succeeded"
+    assert payload["targets"] == ["a.txt"]
+    assert "alpha" not in payload_json  # 只记路径，不记文件内容
+
+    # ② evidence 行（refs 可用）：host-typed-ingress/v1 sanitized envelope，链接到该事件。
+    [(evidence_id, content_hash, link_created_at)] = h.rows(
+        env.db_path,
+        "SELECT evidence_id,content_hash,created_at FROM task_scope_evidence_links WHERE event_id=?",
+        event_id,
+    )
+    [(envelope_sha256, filter_policy, run_id)] = h.rows(
+        env.db_path,
+        "SELECT e.envelope_sha256,r.filter_policy_version,e.run_id FROM human_memory_evidence e "
+        "JOIN human_memory_sanitization_receipts r ON r.receipt_id=e.receipt_id "
+        "WHERE e.evidence_id=?",
+        evidence_id,
+    )
+    assert envelope_sha256 == content_hash
+    assert filter_policy == "host-typed-ingress/v1"
+    assert run_id == h.RUN.value
+
+    # ③ 同一 SDK effect 的 Harness 证据（harness.tool_invocation，PROJECT_EFFECT → material）
+    #    经预留 seq 导入，refs 指向同一 evidence 行。
+    [(reservation_status, reservation_seq, resolved_at)] = h.rows(
+        env.db_path,
+        "SELECT status,source_sequence,resolved_at FROM harness_evidence_reservations "
+        "WHERE run_id=? AND source_event_id=?",
+        h.RUN.value, source_event_id,
+    )
+    assert reservation_status == "ingested"
+    [(receipt_seq, harness_kind, harness_payload, committed_at)] = h.rows(
+        env.db_path,
+        "SELECT r.source_sequence,e.event_kind,e.payload_json,r.committed_at "
+        "FROM task_scope_execution_ingest_receipts r "
+        "JOIN task_scope_events e ON e.event_id=r.event_id "
+        "WHERE r.run_id=? AND r.source_event_id=?",
+        h.RUN.value, source_event_id,
+    )
+    assert harness_kind == "harness.tool_invocation"
+    assert receipt_seq == reservation_seq
+    harness = json.loads(harness_payload)
+    assert harness["public_payload"]["tool_name"] == "write_file"
+    assert harness["public_payload"]["effect_state"] == "succeeded"
+    assert [ref["evidence_id"] for ref in harness["evidence_refs"]] == [evidence_id]
+    # 同事务：预留解决时刻 == 导入回执提交时刻 == 链接创建时刻（一个 now）。
+    assert resolved_at == committed_at == link_created_at
+
+    # ④ 脏标记：host.file + PROJECT_EFFECT tool_invocation 都是 material。
+    dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), scope_a)
+    assert dirty.is_dirty
+    assert sorted(item.event_kind for item in dirty.material_events) == [
+        "harness.tool_invocation", "host.file",
+    ]
 
 
 @pytest.mark.asyncio
@@ -371,15 +466,203 @@ async def test_standalone_route_project_effect_is_run_fault_with_stable_code(
 
 
 # ---- S5B-AC-1 / Task 2-3：客观事件、脏标记、终态门、兜底 ----
-@XF
-def test_material_event_sets_dirty_and_terminal_gate_requires_closure_receipt() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_path: Path) -> None:
+    """Task 2（§2 dirty_state）：自最后一条 outcome∈{mutate,no_mutation} 的 closure receipt 的
+    closure_watermark 之后的 material 事件集合；无 receipt 则自 0；pending 不清脏。
+    （原用例中「终态门要求 receipt」半段属 Task 3，拆为下方 strict xfail。）"""
+    import sqlite3
+
+    from deskpet.execution.semantic_closure import dirty_state
+    from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskEventRecorder
+    from tests.sdk_adapters import s5b_effect_gate_harness as h
+
+    env = await h.build_env(tmp_path)
+    scope_a, root_a = await h.make_bound_scope(env, "a", "root-a")
+    h.freeze_run(env, task_scope_id=scope_a, workspace_root=root_a)
+    store = CanonicalTaskScopeStore(env.db_path)
+    recorder = TaskEventRecorder(store)
+    # 无 receipt、无 material 事件：不脏（host.turn 是 trivial）。
+    await recorder.record_turn(task_scope_id=scope_a, source_event_id="turn-1", payload={"turn_id": "t1"})
+    clean = await dirty_state(store, scope_a)
+    assert clean.closure_watermark == 0 and not clean.is_dirty and clean.material_events == ()
+
+    provider = h.ScriptedProvider(
+        [
+            h.tool_call(
+                "context_route",
+                {"route": "resume_existing", "task_scope_id": scope_a},
+                raw_id="raw-route",
+            ),
+            h.tool_call("write_file", {"path": "a.txt", "content": "alpha"}, raw_id="raw-write"),
+            h.tool_call("read_file", {"path": "a.txt"}, raw_id="raw-read"),
+            h.answer("done"),
+        ]
+    )
+    out = await h.run_capture(env, provider)
+    assert out["exception"] is None
+    dirty = await dirty_state(store, scope_a)
+    assert dirty.is_dirty
+    # write_file → host.file(material) + harness.tool_invocation(PROJECT_EFFECT, material)；
+    # read_file / context_route → harness.tool_invocation(trivial)。
+    assert sorted(item.event_kind for item in dirty.material_events) == [
+        "harness.tool_invocation", "host.file",
+    ]
+    watermark = max(item.event_sequence for item in dirty.material_events)
+
+    def receipt(receipt_id: str, wm: int, outcome: str) -> None:
+        with sqlite3.connect(env.db_path) as db:
+            db.execute(
+                "INSERT INTO task_scope_closure_receipts(receipt_id,task_scope_id,sdk_run_id,"
+                "host_run_id,closure_watermark,outcome,plan_id,reason_code,attempt_id,created_at) "
+                "VALUES (?,?,?,?,?,?,NULL,?,NULL,?)",
+                (receipt_id, scope_a, h.RUN.value, "host-run-1", wm, outcome, "test", 1.0),
+            )
+            db.commit()
+
+    # pending 不清脏。
+    receipt("r-pending", watermark, "pending")
+    assert (await dirty_state(store, scope_a)).is_dirty
+    # mutate 覆盖到 watermark → 清脏。
+    receipt("r-mutate", watermark, "mutate")
+    after = await dirty_state(store, scope_a)
+    assert after.closure_watermark == watermark and not after.is_dirty
+    # 新 material 事件在 watermark 之后 → 再脏；no_mutation receipt 覆盖 → 清脏。
+    late = await recorder.record_test(
+        task_scope_id=scope_a,
+        source_event_id="test-late",
+        payload={"command_head": "pytest", "exit_code": 0},
+    )
+    again = await dirty_state(store, scope_a)
+    assert [item.event_sequence for item in again.material_events] == [late.event_sequence]
+    receipt("r-nomut", late.event_sequence, "no_mutation")
+    assert not (await dirty_state(store, scope_a)).is_dirty
 
 
 @XF
-def test_harness_evidence_reservations_drained_before_run_terminal_no_row_loss() -> None:
-    """probe A9 场景：迟到 seq 不再被 terminal 永久拒绝。"""
+def test_terminal_gate_requires_closure_receipt() -> None:
+    """Task 3：终态门要求 receipt 覆盖 watermark，否则 foreground_terminal_closure_pending。"""
     raise NotImplementedError
+
+
+@pytest.mark.asyncio
+async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_loss(
+    tmp_path: Path,
+) -> None:
+    """probe A9 场景：迟到 seq 不再被 terminal 永久拒绝。
+
+    seq1 已导入、seq2/seq3 已预留未导入 → observer 的 next_sequence=4（不是 2）；迟到 seq2 仍被
+    接受；terminal 前 observer 排空：seq3 无事实 → tombstone(abandoned)；run_terminal=seq4；
+    ``authorize_terminal`` 只在排空后放行；crash 后重放排空幂等。
+    """
+    from deskpet.execution import RunState
+    from deskpet.execution.evidence_ingress import (
+        ExecutionEvidenceIngress,
+        TerminalWatermarkPending,
+    )
+    from deskpet.execution.foreground_queue import ForegroundQueueStore
+    from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
+    from tests.execution import test_foreground_queue as fq
+    from tests.sdk_adapters import s5b_effect_gate_harness as h
+
+    run_id = "sdk-run-a9"
+    queue_db, primary_id, clock = await fq._ready(tmp_path / "queue")
+    store = ForegroundQueueStore(queue_db, clock=clock)
+    await fq._enqueue(store, primary_id, 1)
+    admission = await fq._claim_and_bind(store, sdk_run_id=run_id)
+    await store.record_sdk_started(
+        host_run_id=admission.host_run_id, sdk_run_id=run_id, owner_id=admission.owner_id,
+        generation=admission.generation, sdk_event_id="sdk-start-a9",
+        idempotency_key="sdk-start-a9",
+    )
+    ingress = ExecutionEvidenceIngress(queue_db)
+    first = await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="provider_invocation",
+        source_event_id="prov-1",
+    )
+    assert first.source_sequence == 1
+    await ingress.ingest(
+        task_scope_id=fq.SCOPE,
+        evidence=fq._execution_evidence(
+            sdk_run_id=run_id, source_event_id="prov-1", kind="provider_invocation",
+            source_sequence=1,
+        ),
+    )
+    tool = await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="tool-2"
+    )
+    snap = await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="context_snapshot", source_event_id="snap-3"
+    )
+    assert (tool.source_sequence, snap.source_sequence) == (2, 3)
+    # 预留幂等：同 source_event_id 返回同 seq。
+    replay = await ingress.reserve(
+        run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="tool-2"
+    )
+    assert replay.source_sequence == 2
+    assert await ingress.next_sequence(run_id) == 4
+    # 迟到的 seq2（probe P1 中被 execution_source_sequence_conflict 永久拒绝的那一行）被接受。
+    late = await ingress.ingest(
+        task_scope_id=fq.SCOPE,
+        evidence=fq._execution_evidence(
+            sdk_run_id=run_id, source_event_id="tool-2", kind="tool_invocation", source_sequence=2
+        ),
+    )
+    assert late.source_sequence == 2 and late.durable_source_sequence == 2
+    # 排空前不得放行终态（seq3 仍 reserved）。
+    with pytest.raises(TerminalWatermarkPending):
+        await ingress.authorize_terminal(run_id)
+
+    class _Ingress:
+        async def wait_idle(self, r: str) -> None:
+            assert r == run_id
+
+        def query(self, r: str):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(state=SimpleNamespace(value="completed"))
+
+    class _Stack:
+        def read_run_terminal_evidence(self, r: str):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(
+                run_id=r, state="completed", event_id="sdk-terminal-a9",
+                event_hash="7" * 64, occurred_at=9.0, error_code=None,
+            )
+
+        async def read_reserved_fact(self, reservation):  # type: ignore[no-untyped-def]
+            return None  # SDK/coordinator 读不到事实 → tombstone
+
+    observed = await SqliteSdkTerminalObserver(
+        str(queue_db), _Ingress(), _Stack()  # type: ignore[arg-type]
+    ).observe(
+        host_run_id=admission.host_run_id, sdk_run_id=run_id, subject=fq.SUBJECT,
+        owner_id=admission.owner_id, generation=admission.generation,
+    )
+    assert observed is not None and observed.terminal_state is RunState.COMPLETED
+    rows = h.rows(
+        queue_db,
+        "SELECT r.source_sequence,r.evidence_kind,e.payload_json "
+        "FROM task_scope_execution_ingest_receipts r "
+        "JOIN task_scope_events e ON e.event_id=r.event_id WHERE r.run_id=? "
+        "ORDER BY r.source_sequence",
+        run_id,
+    )
+    assert [(seq, kind) for seq, kind, _ in rows] == [
+        (1, "provider_invocation"), (2, "tool_invocation"),
+        (3, "context_snapshot"), (4, "run_terminal"),
+    ]
+    tombstone = json.loads(rows[2][2])["public_payload"]
+    assert tombstone == {"status": "abandoned", "reservation_id": snap.reservation_id}
+    statuses = h.rows(
+        queue_db,
+        "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? "
+        "ORDER BY source_sequence",
+        run_id,
+    )
+    assert statuses == [("prov-1", "ingested"), ("tool-2", "ingested"), ("snap-3", "abandoned")]
+    gate = await ingress.authorize_terminal(run_id)
+    assert gate.durable_source_sequence == gate.terminal_source_sequence == 4
+    # 重放排空（crash 后新 owner）：幂等，无新行。
+    report = await ingress.drain_reservations(run_id, fact_reader=_Stack())
+    assert report.ingested == () and report.abandoned == ()
 
 
 @XF

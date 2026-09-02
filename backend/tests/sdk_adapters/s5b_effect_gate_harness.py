@@ -23,6 +23,11 @@ from simple_harness import (
 from simple_harness.contracts import CallId, RequestId, RunId, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.execution.budget import BudgetSnapshot
+from simple_harness.execution.effects import (
+    EffectRecord,
+    EffectState,
+    effect_request_hash,
+)
 from simple_harness.execution.fences import RunFenceLease
 from simple_harness.execution.uow import ExecutionLease, WorkflowCheckpoint
 from simple_harness.providers import (
@@ -49,6 +54,7 @@ from simple_harness.tools.runtime_catalog import (
     ToolTaskScopeRequirement,
 )
 
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.memory.human_memory_service import (
     AuthenticatedHostSnapshot,
     CreateTaskScopeRequest,
@@ -247,7 +253,9 @@ class PhysicalToolBridge(EffectExecutor):
     reaches through ``super().execute`` once the Host gate admitted the call.
 
     ``write_file`` really writes under the harness workspace so "零写入" is
-    a filesystem fact, not a counter.
+    a filesystem fact, not a counter.  A settled call returns a real SDK
+    ``EffectRecord`` (Task 2: the Host objective-event hook keys on the
+    settled effect state, exactly as with the production SDK ledger).
     """
 
     def __init__(self, **kwargs) -> None:
@@ -292,9 +300,31 @@ class PhysicalToolBridge(EffectExecutor):
                 str(error.get("code") or "tool_failed"),
                 str(error.get("code") or "tool failed"),
             )
+            state = EffectState.FAILED
         else:
             result = ToolResult.succeeded(call.call_id, raw)
-        return EffectExecution(effect=None, result=result)
+            state = EffectState.SUCCEEDED
+        record = EffectRecord(
+            effect_id=values["effect_id"],
+            run_id=context.run_id,
+            call_id=call.call_id,
+            tool_name=call.name,
+            request_hash=effect_request_hash(
+                tool_name=call.name, arguments=dict(call.arguments)
+            ),
+            arguments=dict(call.arguments),
+            state=state,
+            version=2,
+            fence_epoch=1,
+            authorization_receipt_ref="harness:allow",
+            handoff_receipt_ref="harness:handoff",
+            result=result,
+            raw_call_id=values.get("raw_call_id"),
+            turn_ordinal=int(values.get("turn_ordinal", 0)),
+            call_ordinal=int(values.get("call_ordinal", 0)),
+            task_execution_envelope=context.task_execution_envelope,
+        )
+        return EffectExecution(effect=record, result=result)
 
 
 class GatedEffects(ProductEffectExecutor, PhysicalToolBridge):
@@ -305,6 +335,14 @@ class GatedEffects(ProductEffectExecutor, PhysicalToolBridge):
 class _Registry:
     def assert_workspace_current(self, run_id) -> None:
         del run_id
+
+
+class _NoEffectLedger:
+    """SDK effect ledger stand-in: no durable record ever exists, so the
+    production step-0 replay check always runs the gate (first occurrence)."""
+
+    def read_effect(self, effect_id):
+        del effect_id
 
 
 class _NoopReconciliation:
@@ -551,16 +589,19 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         authority_resolver=lambda run_id: frozen["authority"],
         exposure_resolver=lambda run_id: exposure,
     )
+    evidence_ingress = ExecutionEvidenceIngress(db_path)
     effects = GatedEffects(
-        uow=object(),
+        uow=_NoEffectLedger(),
         registry=_Registry(),
         authorization=object(),
         reconciliation=object(),
         effect_gate=gate,
+        evidence_ingress=evidence_ingress,
     )
     effects.service = route_service
     return GateEnv(
         db_path=db_path,
+        evidence_ingress=evidence_ingress,
         ledger=ledger,
         service=service,
         context=context,
