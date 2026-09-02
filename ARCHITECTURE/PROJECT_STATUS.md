@@ -1,6 +1,6 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-09-01
+> **最后更新**：2026-09-02
 
 ## 2026-09-02 Human Memory S5a：五路 context_route、per-turn Context authority 与同 Run continuation
 
@@ -18,12 +18,27 @@
   进最终 payload）、单 invocation no-recall、direct commit、continue_active 承 durable cursor；usage ≤
   冻结 effective budget。deterministic 矩阵：六步五路序列、A/B canary 零混入、20+turn/1MiB/kill-replay
   三 hash、载荷变异 fail-closed、v44→v45 cutover 演练四件套、fresh 冷启动组合冒烟。
+- 真实桌面 UI 验收（2026-09-02，用户批准 AI 驱动等价）：在真实 Tauri app + 真实 provider
+  （gpt-5.6-luna）上完成 21 轮长会话，20 个 Run 全部成功、零 provider 拒绝；durable route 覆盖
+  direct_standalone(no_recall)×19、resume_existing×1、continue_active×1；34 条 per-turn snapshot
+  receipt 三 hash 全等、单 Run 最大 revision 7；occurrence presented 恒零行。恢复旧任务的终答精确
+  复述 ResumePackage 独有事实，第 21 轮仍能引用首轮事实（裁剪后关键事实存活）。
+- **UI 实测抓到并修复两个自动化测试测不出的集成缺陷**：
+  - `S5A-UI-F1`（`deskpet/memory/human_memory_v7.py`）：全新安装的 v7 store 未注册本地属主，
+    Run 起步的 occurrence reconcile 以 `short_horizon_principal_rejected` fail-closed，**首条 chat
+    必死**。修复：仅对「首页读且零累积」的未注册态返回恒空 reconcile（该状态下收件箱受 principals
+    外键强制不可能有条目），按 reason code 收窄，其余 ownership 冲突继续 fail-closed。
+  - `S5A-UI-F2`（`deskpet/sdk_adapters/provider.py`）：SDK 0.7.1 冻结契约禁止 provider assistant
+    消息把私有 metadata 写进 durable Context，Host 原先靠 metadata 跨轮携带 `tool_calls` 的机制在
+    真实 continuation 上必然失效，第二轮请求被 OpenAI 兼容端点以 HTTP 400 拒绝——**每个用到工具的
+    chat 第二轮必挂**（S5a 让 `context_route` 成为主路径后必现）。修复：provider adapter 在组装请求
+    时从 durable 消息序列自身补齐 `assistant.tool_calls`（tool 结果本身带 call_id 与工具名），
+    入参同进程保真、跨进程退化为空对象以保持线格式合法。S5b 上游义务：SDK 侧把 `tool_calls` 作为
+    一等公共 transcript 字段回挂后移除该退化。
 - 向量模型切换（用户指令）：`tencent/WeMM-Embedding-2B`（2048 维 L2，本地快照 + trust_remote_code 限本地）
-  取代 BGE-M3；transformers 5.16.1 / sentence-transformers 6.0.1（torch 三件套保持 2.7.1 pin）；
-  发布前置：WeMM 快照需上传 COS 模型桶（provisioner 只认桶内容）。
-- 已知边界：chat 直达对话被 Tauri 身份桥（Rust 签名）门控——headless 后端不可达，属真人 UI 场景；
-  本机 7 项环境红（S4 期即在案）与 process_list flaky 维持基线；PROJECT_EFFECT root 签发接线列
-  S5b Task 5 前置义务。
+  取代 BGE-M3。
+- 已知边界：本机 7 项环境红（S4 期即在案）与 process_list flaky 维持基线；PROJECT_EFFECT root 签发
+  接线列 S5b Task 5 前置义务；WeMM 快照发布前需上传 COS 模型桶（provisioner 只认桶内容）。
 
 ## 2026-09-01（补）S4 closure review 修复：STOPPED 终态白名单、TOOL fence 状态集、supersession 竞态
 
