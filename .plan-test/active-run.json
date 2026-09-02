@@ -1,7 +1,7 @@
 {
   "acceptance_sha256": "ad387b64a25eba0f015f55c208a17757a0dec4314c8fdcf6446b51576ddb9c80",
-  "candidate_content_digest": "b39c47ba4de23bbf66a6663324fa58c3dbe52de9764e5aaa14b7701f6b8a3f45",
-  "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r1-s5b",
-  "run_id": "run-20260902-200204",
-  "updated_at": "2026-09-02T20:02:06+0800"
+  "candidate_content_digest": "582f2cf83eb798caff6f4e5dc4cf882687d8ea43aa64bcf6f700c5b3b04ef6bb",
+  "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r2-s5b",
+  "run_id": "run-20260903-025923",
+  "updated_at": "2026-09-03T02:59:27+0800"
 }
