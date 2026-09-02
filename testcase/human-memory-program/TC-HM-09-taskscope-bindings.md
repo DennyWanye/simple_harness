@@ -4,10 +4,10 @@ purpose: Verify TaskScope creation, immutable multi-root binding revisions, and 
 status: active
 surface: desktop-ui
 type: hybrid
-obligations: [HM-TO-A3, HM-TO-A8, HM-TO-R2, HM-TO-R4, HM-S4-TO-AUTHORITY]
+obligations: [HM-TO-A3, HM-TO-A8, HM-TO-R2, HM-TO-R4, HM-S4-TO-AUTHORITY, S5B-TO-EFFECT-GATE]
 tags: [human-memory, taskscope, multi-root, binding, auto-mode]
 entrypoint: context_route and project effect
-revision: 4
+revision: 5
 ---
 
 # TC-HM-09 — TaskScope 创建、多根绑定与权限

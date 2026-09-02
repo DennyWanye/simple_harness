@@ -1,0 +1,135 @@
+{
+ "schema_version": "1.0",
+ "status": "final",
+ "inventory": {
+  "testcase_dir": "testcase",
+  "index": "testcase/index.json",
+  "validated_testcase_count": 147,
+  "historical_pass_inherited": false
+ },
+ "required_obligations": [
+  "S5B-TO-CLOSURE",
+  "S5B-TO-ANALYSIS",
+  "S5B-TO-EFFECT-GATE",
+  "S5B-TO-COMPOSITION",
+  "S5B-TO-REGRESSION"
+ ],
+ "candidate_review": [
+  {
+   "testcase_id": "TC-HM-11",
+   "reviewed_revision": 6,
+   "resulting_revision": 6,
+   "conclusion": "复用步骤 5（客观事件不经 LLM 入账；closure gate 以合法 mutation 或显式 no_mutation 收口，可重试不伪造）作为 S5b 收口 oracle；fault lane foreground-fifo-closure 由本增量首次兑现 runner。 frontmatter 追加 S5B-TO-* 义务并 bump revision（正文不改）。"
+  },
+  {
+   "testcase_id": "TC-HM-08",
+   "reviewed_revision": 5,
+   "resulting_revision": 5,
+   "conclusion": "复用步骤 3（LLM 计划变异）与 fault lane memory-mutation-plan；Host durable pre-admission audit 由本增量翻转 BLOCKED_UNTIL_S5。 frontmatter 追加 S5B-TO-* 义务并 bump revision（正文不改）。"
+  },
+  {
+   "testcase_id": "TC-HM-09",
+   "reviewed_revision": 5,
+   "resulting_revision": 5,
+   "conclusion": "复用步骤 3–6；步骤 6 按 behavior_changes bc-s5b-tchm09-step6-single-root-scope 解释执行，文件不改。 frontmatter 追加 S5B-TO-* 义务并 bump revision（正文不改）。"
+  },
+  {
+   "testcase_id": "TC-HM-14",
+   "reviewed_revision": 4,
+   "resulting_revision": 4,
+   "conclusion": "复用 fresh composition/公共入口 smoke 作为 S5b 冷启动与 composition 缺件 oracle。 frontmatter 追加 S5B-TO-* 义务并 bump revision（正文不改）。"
+  }
+ ],
+ "decisions": [
+  {
+   "obligation_id": "S5B-TO-CLOSURE",
+   "decision": "reuse-with-extension",
+   "candidates": [
+    "TC-HM-11",
+    "TC-HM-08"
+   ],
+   "selected_testcases": [
+    "TC-HM-11",
+    "TC-HM-08"
+   ],
+   "selected_revisions": {
+    "TC-HM-11": 6,
+    "TC-HM-08": 5
+   },
+   "reason": "TC-HM-11 步骤 5 是语义收口的冻结 oracle；S5b 扩展 task_scope_update 工具面、三水位终态门、lease-fenced 兜底与 pending 归属 lanes。",
+   "historical_pass_inherited": false
+  },
+  {
+   "obligation_id": "S5B-TO-ANALYSIS",
+   "decision": "reuse-with-extension",
+   "candidates": [
+    "TC-HM-08",
+    "TC-HM-11"
+   ],
+   "selected_testcases": [
+    "TC-HM-08",
+    "TC-HM-11"
+   ],
+   "selected_revisions": {
+    "TC-HM-08": 5,
+    "TC-HM-11": 6
+   },
+   "reason": "memory-mutation-plan lane 与 LLM 变异 oracle 复用 TC-HM-08；真实 provider 物化/召回链复用 TC-HM-11 长会话口径；S5b 扩展五态 attempt、三键幂等与 0.6.1 物化 lanes。",
+   "historical_pass_inherited": false
+  },
+  {
+   "obligation_id": "S5B-TO-EFFECT-GATE",
+   "decision": "reuse-with-extension",
+   "candidates": [
+    "TC-HM-09"
+   ],
+   "selected_testcases": [
+    "TC-HM-09"
+   ],
+   "selected_revisions": {
+    "TC-HM-09": 5
+   },
+   "reason": "复用步骤 3–6 权限 oracle；S5b 扩展 per-effect 重验 reason-code 表、Run fault 三码、frozen-root 分裂与 Auto explicit_only；步骤 6 按 behavior_changes 解释。",
+   "historical_pass_inherited": false
+  },
+  {
+   "obligation_id": "S5B-TO-COMPOSITION",
+   "decision": "reuse-with-extension",
+   "candidates": [
+    "TC-HM-14",
+    "TC-HM-08",
+    "TC-HM-11"
+   ],
+   "selected_testcases": [
+    "TC-HM-14",
+    "TC-HM-08",
+    "TC-HM-11"
+   ],
+   "selected_revisions": {
+    "TC-HM-14": 4,
+    "TC-HM-08": 5,
+    "TC-HM-11": 6
+   },
+   "reason": "复用 fresh composition smoke 与冻结失败边界；S5b 扩展 v46/0.6.1 cutover、缺件 startup fail、真实 UI 通道预演。",
+   "historical_pass_inherited": false
+  },
+  {
+   "obligation_id": "S5B-TO-REGRESSION",
+   "decision": "reuse-as-is",
+   "candidates": [
+    "TC-HM-11",
+    "TC-HM-14"
+   ],
+   "selected_testcases": [
+    "TC-HM-11",
+    "TC-HM-14"
+   ],
+   "selected_revisions": {
+    "TC-HM-11": 6,
+    "TC-HM-14": 4
+   },
+   "reason": "双仓全量回归不低于基线（Host 恰 7 条既有红）。",
+   "historical_pass_inherited": false
+  }
+ ]
+}

@@ -1,10 +1,7 @@
 {
-  "acceptance_sha256": "fa5f50030f6cd8f5dc63c2ec586baf421b64e40083687baca2dbf4ae825f98bd",
-  "candidate_content_digest": "657613c8529196e500dd37282bf2bd75c57efab693160afb3920b52213bcf477",
-  "latest_valid_receipt_digest": "b5d416e372e3d2b8c3bd6ac86428941ce896b4123e291e12003697cee9118dac",
-  "latest_valid_receipt_path": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r3-s5a/gate-receipt.json",
-  "receipt_finalized_at": "2026-09-02T15:59:37+0800",
-  "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r3-s5a",
-  "run_id": "run-20260902-154131",
-  "updated_at": "2026-09-02T15:41:48+0800"
+  "acceptance_sha256": "ad387b64a25eba0f015f55c208a17757a0dec4314c8fdcf6446b51576ddb9c80",
+  "candidate_content_digest": "b39c47ba4de23bbf66a6663324fa58c3dbe52de9764e5aaa14b7701f6b8a3f45",
+  "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r1-s5b",
+  "run_id": "run-20260902-200204",
+  "updated_at": "2026-09-02T20:02:06+0800"
 }

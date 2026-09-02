@@ -4,10 +4,10 @@ purpose: Verify invalid LLM plans and cross-repository initialization fail close
 status: active
 surface: api
 type: scripted
-obligations: [HM-TO-A2, HM-TO-A3, HM-TO-A4, HM-TO-A7, HM-TO-A8, HM-TO-R2, HM-TO-R4, HM-TO-R6, HM-TO-R8, HM-TO-R9]
+obligations: [HM-TO-A2, HM-TO-A3, HM-TO-A4, HM-TO-A7, HM-TO-A8, HM-TO-R2, HM-TO-R4, HM-TO-R6, HM-TO-R8, HM-TO-R9, S5B-TO-CLOSURE, S5B-TO-ANALYSIS, S5B-TO-COMPOSITION]
 tags: [human-memory, llm-adversarial, protocol, initialization, replay]
 entrypoint: public SDK contracts and fresh Host data directory
-revision: 4
+revision: 5
 ---
 
 # TC-HM-08 rev4 — 非法 LLM 计划、关系完整性、初始化与跨仓恢复

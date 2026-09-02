@@ -2400,14 +2400,17 @@
         "HM-TO-R4",
         "HM-TO-R6",
         "HM-TO-R8",
-        "HM-TO-R9"
+        "HM-TO-R9",
+        "S5B-TO-CLOSURE",
+        "S5B-TO-ANALYSIS",
+        "S5B-TO-COMPOSITION"
       ],
       "path": "human-memory-program/TC-HM-08-invalid-plan-recovery.md",
       "preconditions": [],
       "purpose": "Verify invalid LLM plans and cross-repository initialization fail closed and recover without half state",
       "replacement": null,
       "results": [],
-      "revision": 4,
+      "revision": 5,
       "status": "active",
       "surface": "api",
       "tags": [
@@ -2427,14 +2430,15 @@
         "HM-TO-A8",
         "HM-TO-R2",
         "HM-TO-R4",
-        "HM-S4-TO-AUTHORITY"
+        "HM-S4-TO-AUTHORITY",
+        "S5B-TO-EFFECT-GATE"
       ],
       "path": "human-memory-program/TC-HM-09-taskscope-bindings.md",
       "preconditions": [],
       "purpose": "Verify TaskScope creation, immutable multi-root binding revisions, and per-effect workspace authority",
       "replacement": null,
       "results": [],
-      "revision": 4,
+      "revision": 5,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2489,14 +2493,18 @@
         "HM-S4-TO-AUTHORITY",
         "S5A-TO-SNAPSHOT",
         "S5A-TO-BUDGET",
-        "S5A-TO-COMPOSITION"
+        "S5A-TO-COMPOSITION",
+        "S5B-TO-CLOSURE",
+        "S5B-TO-ANALYSIS",
+        "S5B-TO-COMPOSITION",
+        "S5B-TO-REGRESSION"
       ],
       "path": "human-memory-program/TC-HM-11-single-run-context.md",
       "preconditions": [],
       "purpose": "Verify one foreground ReAct Run, durable FIFO, initial routed SDK execution, semantic closure, and bounded causal Context assembly",
       "replacement": null,
       "results": [],
-      "revision": 5,
+      "revision": 6,
       "status": "active",
       "surface": "desktop-ui",
       "tags": [
@@ -2591,7 +2599,9 @@
         "HM-S4-TO-INTEGRATION",
         "HM-S4-TO-DATA",
         "HM-S4-TO-AUTHORITY",
-        "HM-S4-TO-REGRESSION"
+        "HM-S4-TO-REGRESSION",
+        "S5B-TO-COMPOSITION",
+        "S5B-TO-REGRESSION"
       ],
       "path": "human-memory-program/TC-HM-14-host-closure-recovery.md",
       "preconditions": [
@@ -2603,7 +2613,7 @@
       "purpose": "Verify fresh Host runtime composition, authenticated binding, v44 audit retention, durable recovery, emergency export, and affected public API compatibility",
       "replacement": null,
       "results": [],
-      "revision": 3,
+      "revision": 4,
       "status": "active",
       "surface": "api",
       "tags": [

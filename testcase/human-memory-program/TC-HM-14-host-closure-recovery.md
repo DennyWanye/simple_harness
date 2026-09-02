@@ -4,7 +4,7 @@ purpose: Verify fresh Host runtime composition, authenticated binding, v44 audit
 status: active
 surface: api
 type: scripted
-obligations: [HM-S4-TO-INTEGRATION, HM-S4-TO-DATA, HM-S4-TO-AUTHORITY, HM-S4-TO-REGRESSION]
+obligations: [HM-S4-TO-INTEGRATION, HM-S4-TO-DATA, HM-S4-TO-AUTHORITY, HM-S4-TO-REGRESSION, S5B-TO-COMPOSITION, S5B-TO-REGRESSION]
 tags: [human-memory, host-api, primary-authority, recovery, data-integrity, regression]
 entrypoint: public Human Memory Host API/facade
 preconditions:
@@ -12,7 +12,7 @@ preconditions:
   - A public-only adapter is pinned by path and SHA-256 for the current run
   - The exact candidate Harness SDK wheel filename, distribution version, SHA-256, source commit, and module origin are pinned
   - Raw evidence output directory is under ignored .local-test-evidence
-revision: 3
+revision: 4
 ---
 
 # TC-HM-14 — Host 入口、恢复与原始数据守恒
