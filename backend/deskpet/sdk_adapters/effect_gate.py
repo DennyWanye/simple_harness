@@ -270,16 +270,41 @@ def _exit_code(result: ToolResult) -> int | None:
     return None
 
 
-def _targets(arguments: Mapping[str, Any]) -> list[str]:
+def _targets(arguments: Mapping[str, Any]) -> tuple[list[str], bool]:
+    """Public target paths of one call, credential-shaped fragments redacted.
+
+    Task 2 review F-1: the values come straight from model arguments and are
+    recorded after the physical effect settled, so the Host must never raise on
+    them — a credential-shaped fragment (``bearer …``, ``sk-…`` …) is replaced
+    by the stable placeholder and ``redacted`` is reported to the caller.
+    """
+
+    from deskpet.task_scope.protocol import redact_credential_shapes
+
     targets: list[str] = []
+    redacted = False
+    raw: list[str] = []
     for key in _TARGET_ARGUMENT_KEYS:
         value = arguments.get(key)
         if isinstance(value, str) and value:
-            targets.append(value)
+            raw.append(value)
     paths = arguments.get("paths")
     if isinstance(paths, (list, tuple)):
-        targets.extend(str(item) for item in paths if isinstance(item, str) and item)
-    return targets
+        raw.extend(str(item) for item in paths if isinstance(item, str) and item)
+    for item in raw:
+        clean, hit = redact_credential_shapes(item)
+        redacted = redacted or hit
+        targets.append(clean)
+    return targets, redacted
+
+
+def _public_error_code(result: ToolResult) -> tuple[str | None, bool]:
+    from deskpet.task_scope.protocol import redact_credential_shapes
+
+    code = result.error_code
+    if code is None:
+        return None, False
+    return redact_credential_shapes(str(code))
 
 
 def classify_objective_event(
@@ -302,25 +327,32 @@ def classify_objective_event(
     rule = OBJECTIVE_EVENT_MAP.get(tool_name)
     if rule is None:
         return None
+    error_code, error_redacted = _public_error_code(result)
     base: dict[str, object] = {
         "tool_name": tool_name,
         "effect_id": effect_id,
         "call_id": call_id,
         "outcome": result.outcome.value,
-        "error_code": result.error_code,
+        "error_code": error_code,
     }
     if rule == OBJECTIVE_TEST_RUNNER_RULE:
         head = _test_runner_head(_command_tokens(arguments))
         exit_code = _exit_code(result)
         if head is not None and exit_code is not None:
-            return ObjectiveEventSpec(
-                "host.test", {**base, "command_head": head, "exit_code": exit_code}
-            )
-        return ObjectiveEventSpec(
-            "host.file",
-            {**base, "command_head": head, "exit_code": exit_code, "targets": _targets(arguments)},
-        )
-    return ObjectiveEventSpec("host.file", {**base, "targets": _targets(arguments)})
+            payload: dict[str, object] = {**base, "command_head": head, "exit_code": exit_code}
+            if error_redacted:
+                payload["redacted"] = True
+            return ObjectiveEventSpec("host.test", payload)
+        targets, targets_redacted = _targets(arguments)
+        payload = {**base, "command_head": head, "exit_code": exit_code, "targets": targets}
+        if error_redacted or targets_redacted:
+            payload["redacted"] = True
+        return ObjectiveEventSpec("host.file", payload)
+    targets, targets_redacted = _targets(arguments)
+    payload = {**base, "targets": targets}
+    if error_redacted or targets_redacted:
+        payload["redacted"] = True
+    return ObjectiveEventSpec("host.file", payload)
 
 
 __all__ = [
