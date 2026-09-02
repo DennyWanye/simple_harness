@@ -56,11 +56,40 @@ from deskpet.types.task_grants import ResourceSelector, TaskGrant
 from deskpet.types.task_work_context import TaskWorkContext
 from deskpet.workflows.effects import PreparedToolCall
 
+# S5b design-freeze §1: built-in Tools that write into, or execute inside, the
+# bound workspace root.  Every name is PROJECT_EFFECT with route and TaskScope
+# REQUIRED, so the SDK react barrier + Host TaskExecutionEnvelope + EffectGate
+# guard each physical effect.  Read-class Tools (read_file/file_read/glob/
+# file_glob/grep/file_grep/list_directory/doc_read) keep the SDK default and
+# stay subject only to the workspace projection filter.  ``task_scope_update``
+# joins as a direct NON_PROJECT_EFFECT kernel Tool in Task 3.
+PROJECT_EFFECT_TOOL_NAMES: tuple[str, ...] = (
+    "write_file",
+    "file_write",
+    "edit_file",
+    "move_file",
+    "file_organize",
+    "run_shell",
+    "process_start",
+    "doc_create",
+    "doc_edit",
+    "excel_create",
+    "ppt_create",
+    "pdf_export",
+    "download_file",
+    "workspace_prepare",
+)
+
 # SDK execution-policy overrides for Host tools.  Everything absent keeps the
 # SDK defaults (NON_PROJECT_EFFECT / OPTIONAL / OPTIONAL).  CONTEXT_CONTROL
-# structurally forces route/task-scope FORBIDDEN in the SDK record contract.
+# structurally forces route/task-scope FORBIDDEN in the SDK record contract;
+# PROJECT_EFFECT structurally requires route/task-scope REQUIRED.
 SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
     "context_route": ("context_control", "forbidden", "forbidden"),
+    **{
+        name: ("project_effect", "required", "required")
+        for name in PROJECT_EFFECT_TOOL_NAMES
+    },
 }
 
 
@@ -1765,6 +1794,7 @@ class SdkPreparedAuthorizationPolicy:
 
 
 __all__ = (
+    "PROJECT_EFFECT_TOOL_NAMES",
     "SDK_DIRECT_TOOL_KERNEL",
     "SDK_EXPLICIT_DEFERRED_DISCLOSURE_POLICY",
     "SDK_FULL_CATALOG_DISCLOSURE_POLICY",
