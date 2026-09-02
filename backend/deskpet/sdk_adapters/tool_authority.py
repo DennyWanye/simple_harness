@@ -90,6 +90,11 @@ SDK_TOOL_EXECUTION_POLICY_OVERRIDES: dict[str, tuple[str, str, str]] = {
         name: ("project_effect", "required", "required")
         for name in PROJECT_EFFECT_TOOL_NAMES
     },
+    # S5b Task 3 (design-freeze §1/§7): semantic closure is always exposed as a
+    # direct kernel Tool; route/TaskScope REQUIRED makes an UNROUTED call a
+    # model-visible ROUTE_BARRIER_NOT_OBSERVED rejection rather than a whole-Run
+    # fault, and the Host handler gates the rest (scope_unbound / nothing_to_close).
+    "task_scope_update": ("non_project_effect", "required", "required"),
 }
 
 
@@ -112,6 +117,9 @@ SDK_DIRECT_TOOL_KERNEL = frozenset(
         # cheap to request in the same conversation.
         "context_route",
         "task_scope_search",
+        # S5b Task 3: semantic closure must be reachable every provider turn
+        # (a hidden Tool call is a whole-Run fault in the frozen SDK).
+        "task_scope_update",
         "skill_invoke",
         # Project Skill installation is a core product control surface, not a
         # generic deferred capability. Its one-field schema is cheap to expose

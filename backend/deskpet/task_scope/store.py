@@ -8,7 +8,7 @@ import json
 import math
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -231,7 +231,20 @@ class CanonicalTaskScopeStore:
                 raise
         return receipt
 
-    async def apply_mutation_plan(self, plan: object) -> MutationApplyReceipt:
+    async def apply_mutation_plan(
+        self,
+        plan: object,
+        *,
+        commit_hook: Callable[[aiosqlite.Connection, MutationApplyReceipt, bool], Awaitable[None]] | None = None,
+    ) -> MutationApplyReceipt:
+        """Apply one plan (CAS + idempotent) and run ``commit_hook`` in the same transaction.
+
+        S5b Task 3: the closure receipt is written by the hook so ``apply`` and
+        the receipt commit together (or not at all).  The hook also runs on an
+        idempotent replay (``replayed=True``) so a receipt lost between apply
+        and receipt is impossible by construction.
+        """
+
         raw, plan_hash = validate_mutation_plan(plan)
         task_scope_id = str(raw["task_scope_id"])
         async with self._connection() as db:
@@ -250,6 +263,8 @@ class CanonicalTaskScopeStore:
                         await db.commit()
                         raise TaskScopeConflict("mutation_base_revision_conflict")
                     result = await self._mutation_receipt_tx(db, str(raw["plan_id"]))
+                    if commit_hook is not None:
+                        await commit_hook(db, result, True)
                     await db.commit()
                     return result
                 scope = await self._fetchone(
@@ -325,6 +340,12 @@ class CanonicalTaskScopeStore:
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
+                if commit_hook is not None:
+                    await commit_hook(
+                        db,
+                        MutationApplyReceipt(decision_id, str(raw["plan_id"]), plan_hash, task_scope_id, observed, committed, state_hash, event.event_id),
+                        False,
+                    )
                 await db.commit()
             except TaskScopeConflict:
                 # A recorded CAS conflict is committed above; other conflicts
