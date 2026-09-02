@@ -222,3 +222,45 @@ async def test_standalone_route_is_stably_rejected_scope_unbound(tmp_path: Path)
     assert h.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_closure_receipts") == [(0,)]
     assert h.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_mutation_attempts") == [(0,)]
     assert _audits(env) == [(h.RUN.value, "task_scope_update", "task_scope_update_scope_unbound")]
+
+
+@pytest.mark.asyncio
+async def test_replayed_task_scope_update_returns_original_receipt_and_does_not_clear_newer_dirty(tmp_path: Path) -> None:
+    """Task 3 审查 F-1（P1）：已应用 plan 的幂等重放必须返回**首次**写入的 receipt（按 plan_id 查
+    ``task_scope_closure_receipts``），不得以当前 head 水位再写一条——重放前追加的 host.file 事件仍脏，
+    终态门仍 pending；首次 receipt 的 watermark 与 apply 同事务、只覆盖 ≤ 该水位的事件。"""
+
+    from deskpet.execution.semantic_closure import closure_coverage_tx
+
+    env, scope = await _routed_env(tmp_path)
+    store = CanonicalTaskScopeStore(env.db_path)
+    revision = _revision(env, scope)
+    arguments = _arguments(env, scope, "k1", kind="task.pause")
+    first = await _call(env, "k1", arguments)
+    assert isinstance(first, dict) and first["ok"] is True
+    receipt = first["closure_receipt"]
+    [(decision_watermark,)] = h.rows(
+        env.db_path,
+        "SELECT r.event_watermark FROM task_scope_canonical_revisions r JOIN task_scope_mutation_decisions d "
+        "ON d.decision_id=r.decision_id WHERE d.plan_id=?",
+        receipt["plan_id"],
+    )
+    assert receipt["closure_watermark"] == decision_watermark
+    assert not (await dirty_state(store, scope)).is_dirty
+
+    # 重放前又落了一个 material 事件（同 turn 内 write_file b）。
+    await _dirty(env, scope, "e-2")
+    assert (await dirty_state(store, scope)).is_dirty
+    replay = await _call(env, "k1-replay", arguments)  # 同一载荷（同 plan hash）
+    assert isinstance(replay, dict) and replay["replayed"] is True, replay
+    assert replay["closure_receipt"] == receipt
+    assert h.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_closure_receipts WHERE task_scope_id=?", scope) == [(1,)]
+    assert (await dirty_state(store, scope)).is_dirty
+    async with store._connection() as db:
+        coverage = await closure_coverage_tx(db, task_scope_id=scope, sdk_run_id=h.RUN.value)
+    assert not coverage.satisfied
+    # 第二次重放同样返回首条 receipt。
+    replay2 = await _call(env, "k1-replay-2", arguments)
+    assert replay2["closure_receipt"] == receipt
+    del revision
+    assert h.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_closure_receipts WHERE task_scope_id=?", scope) == [(1,)]

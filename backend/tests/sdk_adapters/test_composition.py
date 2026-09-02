@@ -861,3 +861,77 @@ def test_s5b_effect_gate_and_root_resolver_are_constructor_wired_in_main() -> No
     assert '"sdk_effect_gate",' in source  # 缺槽断言 tuple
     assert "run_fault_sink=_ensure_run_fault_memo()" in source
     assert "run_fault_memo=_ensure_run_fault_memo()" in source
+
+
+@pytest.mark.asyncio
+async def test_production_context_authority_injects_closure_instruction_when_admission_scope_dirty(tmp_path: Path) -> None:
+    """Task 3 审查 F-2（P1）：生产装配（``main._build_run_context_authority``）的 ``ProductRunContextAuthority``
+    必须带真实 ``closure_reader``；fresh state.db 上上一 Run pending → 本 Run ``prepare_snapshot`` 的 protected
+    分区含 ``source=semantic_closure`` 收口指令；缺 reader → 组合缺件（startup fail）。"""
+
+    import json as _json
+    from types import SimpleNamespace
+
+    from simple_harness.contracts import RunId
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.execution.context_authority import (
+        ContextRouteState,
+        RunContextAuthorityRequest,
+    )
+    from simple_harness.providers import ProviderToolSpec
+    from simple_harness.runtime.context import ContextSnapshot
+
+    import main
+    from deskpet.sdk_adapters.context_authority import (
+        ContextRouteLedgerStore,
+        ProductRunContextAuthority,
+    )
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    # 上一 Run：脏 + 模型不收口 → pending receipt，终态照常。
+    env = await ch.bound_run(tmp_path, "sdk-run-prev")
+    await ch.material_write(env, "e-1")
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    fallback, _ = ch.build_fallback(env, facts, ch.FakeAdapter([ch.plain_answer()]))
+    assert (await ch.settle(env, fallback)).status == "pending"
+    await ch.record_terminal(env, observed)
+    # 本 Run（同 admission scope）。
+    env2 = await ch.next_run(env, "sdk-run-next")
+
+    class _Context:
+        revision = 1
+        messages = (Message(role=MessageRole.USER, content="继续"),)
+
+        def load(self, run_id):
+            return ContextSnapshot(self.revision, self.messages)
+
+    ports = SimpleNamespace(
+        context=_Context(),
+        react_checkpoint=SimpleNamespace(read_start_snapshot=lambda run_id: {"input": {"context_metadata": {"budget": {"context_window": 32768}}}}),
+    )
+    exposure = SimpleNamespace(provider_specs=lambda run_id: (ProviderToolSpec("task_scope_update", "close", {"type": "object"}),))
+    authority = main._build_run_context_authority(
+        state_db_path=env2.db_path,
+        ports_resolver=lambda: ports,
+        exposure_resolver=lambda run_id: exposure,
+        ledger=ContextRouteLedgerStore(env2.db_path),
+        reconcile=None,
+    )
+    assert isinstance(authority, ProductRunContextAuthority)
+    assert authority._closure_reader is not None
+    snapshot = await authority.prepare_snapshot(
+        RunContextAuthorityRequest(RunId("sdk-run-next"), 1, 1, ContextRouteState.UNROUTED, None, "c" * 64)
+    )
+    protected = [
+        m for m in snapshot.messages
+        if m.role is MessageRole.SYSTEM and dict(getattr(m, "metadata", {}) or {}).get("source") == "semantic_closure"
+    ]
+    assert len(protected) == 1
+    body = _json.loads(str(protected[0].content))
+    assert body["kind"] == "task_scope_closure_required" and body["task_scope_id"] == ch.SCOPE
+    assert [p["reason_code"] for p in body["pending_receipts"]] == ["closure_model_declined"]
+    # 缺件：生产装配把 reader 登记为 service_context 槽 ``sdk_closure_instruction_reader`` 并进缺槽断言。
+    source = Path(main.__file__).read_text(encoding="utf-8")
+    assert 'service_context.register("sdk_closure_instruction_reader"' in source
+    assert '"sdk_closure_instruction_reader",' in source.split("for slot in (")[1].split(")")[0]
