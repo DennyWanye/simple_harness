@@ -18,7 +18,7 @@ import math
 import re
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
@@ -527,8 +527,15 @@ def _validate_protocol_pair(
 class HumanMemoryProgramStore:
     """Host authority for fresh primary identity and append-only raw evidence."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self, db_path: str | Path, *, fault_hook: Callable[[str], None] | None = None
+    ) -> None:
         self._db_path = Path(db_path)
+        self._fault_hook = fault_hook
+
+    def _fault(self, point: str) -> None:
+        if self._fault_hook is not None:
+            self._fault_hook(point)
 
     async def initialize_subject(self, subject: str) -> PrimaryConversationReceipt:
         subject = _bounded_identifier(subject, "subject", maximum=512)
@@ -595,10 +602,12 @@ class HumanMemoryProgramStore:
                 )
                 row = await cursor.fetchone()
                 await cursor.close()
+                self._fault("initialize_subject.before_commit")
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
+        self._fault("initialize_subject.after_commit")
         assert row is not None
         return PrimaryConversationReceipt(
             receipt_id=str(row["receipt_id"]),

@@ -715,6 +715,47 @@ async def initialize_human_memory_program_state_db(
         )
 
 
+async def _repair_chain_registration_before_inspect(path: Path) -> None:
+    """S5b Task 6 review F-1: backfill the 037 chain registration *before* the
+    marker-chain validation runs.
+
+    v45 (037) joined the S4 migration chain in S5b Task 6.  A database that
+    applied 037 in S5a (or reached v46 before Task 6) has no 037 chain row, so
+    ``inspect_startup_epoch`` would reject it as ``human_memory_marker_chain_invalid``
+    before ``initialize_human_memory_program_state_db`` could repair it.  The
+    repair is append-only and idempotent (``repair_context_route_registration``
+    guards ``PRAGMA user_version >= 45`` itself); it only runs for an existing
+    human-epoch database whose version is within this runtime's range, so
+    fresh / legacy / future / corrupt databases still get their stable
+    classification from ``inspect_startup_epoch`` untouched.
+    """
+
+    if not path.exists() or path.stat().st_size == 0:
+        return
+    try:
+        with sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True) as db:
+            version = int(db.execute("PRAGMA user_version").fetchone()[0])
+            bootstrap = db.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' "
+                "AND name='human_memory_program_bootstrap'"
+            ).fetchone()
+    except (OSError, sqlite3.Error, TypeError, ValueError):
+        return
+    if (
+        bootstrap is None
+        or version < CONTEXT_ROUTE_SCHEMA_VERSION
+        or version > HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+    ):
+        return
+    from deskpet.memory.migrator import repair_context_route_registration
+
+    try:
+        await repair_context_route_registration(path)
+    except (OSError, sqlite3.Error):
+        # Leave the stable rejection to ``inspect_startup_epoch``.
+        return
+
+
 async def dispatch_startup_epoch(
     db_path: str | Path,
     *,
@@ -725,6 +766,7 @@ async def dispatch_startup_epoch(
 
     path = Path(db_path)
     async with _startup_epoch_lock(path):
+        await _repair_chain_registration_before_inspect(path)
         decision = inspect_startup_epoch(
             path, approved_fresh_lane=approved_fresh_lane
         )

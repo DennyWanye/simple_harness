@@ -274,6 +274,95 @@ async def test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path: 
     assert {table: _table_hash(backup, table) for table in EVIDENCE_TABLES} == hashes_before
 
 
+# --- 生产启动入口（code-review-task6 F-1 / P1）：链回补先于 marker-chain 校验 ----------------
+
+
+async def _no_repair(path):  # type: ignore[no-untyped-def]
+    del path
+    return False
+
+
+async def _legacy_v45_with_evidence(tmp_path: Path, monkeypatch) -> tuple[Path, dict[str, str]]:  # type: ignore[no-untyped-def]
+    """S5a 口径旧库（v45、037 链外）+ 一条 raw evidence；返回 evidence 表 hash（迁移守恒对象）。"""
+    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+    from deskpet.memory.human_memory_service import build_host_typed_evidence
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+    db = tmp_path / "state.db"
+    _enter_legacy_v45_world(monkeypatch, tmp_path)
+    monkeypatch.setattr(migrator, "repair_context_route_registration", _no_repair)  # S5a 世界没有回补
+    await initialize_human_memory_program_state_db(db)
+    program = HumanMemoryProgramStore(db)
+    primary = await program.initialize_subject("actor-1")
+    envelope, receipt = build_host_typed_evidence(
+        subject="actor-1", authority_ref="host:test:v1", payload={"note": "before startup"},
+        idempotency_key="startup-evidence-1", source_ref="test/startup-1", run_id="run-startup",
+    )
+    async with CanonicalTaskScopeStore(db)._connection() as conn:
+        await conn.execute("BEGIN IMMEDIATE")
+        await program.append_evidence_tx(conn, envelope, receipt, primary_conversation_id=primary.primary_conversation_id, committed_at=1.0)
+        await conn.commit()
+    monkeypatch.undo()
+    assert _user_version(db) == 45
+    assert _rows(db, "SELECT COUNT(*) FROM human_memory_migration_chain WHERE migration_id=?", CONTEXT_ROUTE_MIGRATION) == [(0,)]
+    assert _rows(db, "SELECT COUNT(*) FROM human_memory_evidence") == [(1,)]
+    return db, {table: _table_hash(db, table) for table in EVIDENCE_TABLES}
+
+
+def _assert_startup_opened(db: Path, decision, hashes_before: dict[str, str]) -> None:  # type: ignore[no-untyped-def]
+    assert decision.epoch is StartupEpoch.HUMAN_RESUME and decision.reason_code == "human_memory_resume_database"
+    assert _user_version(db) == 46
+    assert _rows(db, "SELECT COUNT(*) FROM human_memory_evidence") == [(1,)]
+    assert {table: _table_hash(db, table) for table in EVIDENCE_TABLES} == hashes_before
+    _assert_context_route_registered(db)
+    # 回补之后再次 inspect：严格链校验下必须仍是 HUMAN_RESUME。
+    again = inspect_startup_epoch(db, approved_fresh_lane=False)
+    assert again.epoch is StartupEpoch.HUMAN_RESUME and again.reason_code == "human_memory_resume_database"
+
+
+@pytest.mark.asyncio
+async def test_startup_opens_s5a_v45_userdata_after_chain_repair(tmp_path: Path, monkeypatch) -> None:
+    """F-1：S5a 产出的 v45 旧库（037 链外）直接走生产入口 `dispatch_startup_epoch`：链回补先于
+    marker-chain 校验 → 不再 `human_memory_marker_chain_invalid`，前向到 v46，evidence 行数/hash 前后不变。"""
+    from deskpet.memory.schema import dispatch_startup_epoch
+
+    db, hashes_before = await _legacy_v45_with_evidence(tmp_path, monkeypatch)
+    decision = await dispatch_startup_epoch(db, approved_fresh_lane=False)
+    _assert_startup_opened(db, decision, hashes_before)
+    # 幂等：第二次启动仍 HUMAN_RESUME，库内容不变。
+    frozen = db.read_bytes()
+    second = await dispatch_startup_epoch(db, approved_fresh_lane=False)
+    assert second.epoch is StartupEpoch.HUMAN_RESUME and db.read_bytes() == frozen
+
+
+@pytest.mark.asyncio
+async def test_startup_opens_pre_repair_v46_userdata(tmp_path: Path, monkeypatch) -> None:
+    """F-1：Task 6 之前建的 v46 库（有 038 链行、无 037 链行/marker）同样在生产入口被回补后打开；
+    evidence 守恒、037 注册齐全、再次 inspect 为 HUMAN_RESUME。"""
+    from deskpet.memory.schema import dispatch_startup_epoch
+
+    db, hashes_before = await _legacy_v45_with_evidence(tmp_path, monkeypatch)
+    # Task 2–6 之间的世界：038 已在链内、037 仍在链外、启动不做回补。
+    monkeypatch.setattr(migrator, "_S4_HUMAN_MIGRATIONS", migrator._S4_HUMAN_MIGRATIONS - {CONTEXT_ROUTE_MIGRATION})
+    monkeypatch.setattr(schema, "_validate_s4_migration_chain", lambda *a, **k: None)
+    monkeypatch.setattr(migrator, "repair_context_route_registration", _no_repair)
+
+    async def no_repair_tx(db_conn):  # type: ignore[no-untyped-def]
+        del db_conn
+        return False
+
+    monkeypatch.setattr(migrator, "_repair_context_route_registration_tx", no_repair_tx)
+    await initialize_human_memory_program_state_db(db)
+    monkeypatch.undo()
+    assert _user_version(db) == 46
+    assert _rows(db, "SELECT migration_id FROM human_memory_migration_chain WHERE migration_id IN (?,?)", CONTEXT_ROUTE_MIGRATION, EFFECT_CLOSURE_MIGRATION) == [(EFFECT_CLOSURE_MIGRATION,)]
+    assert _rows(db, "SELECT COUNT(*) FROM context_route_marker") == [(0,)]
+    assert {table: _table_hash(db, table) for table in EVIDENCE_TABLES} == hashes_before
+
+    decision = await dispatch_startup_epoch(db, approved_fresh_lane=False)
+    _assert_startup_opened(db, decision, hashes_before)
+
+
 # --- 旧 checkpoint 稳定隔离 --------------------------------------------------------
 
 

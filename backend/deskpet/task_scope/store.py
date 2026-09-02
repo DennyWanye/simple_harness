@@ -93,8 +93,15 @@ def _uuid(label: str) -> str:
 
 
 class CanonicalTaskScopeStore:
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self, db_path: str | Path, *, fault_hook: Callable[[str], None] | None = None
+    ) -> None:
         self._db_path = Path(db_path)
+        self._fault_hook = fault_hook
+
+    def _fault(self, point: str) -> None:
+        if self._fault_hook is not None:
+            self._fault_hook(point)
 
     async def initialize(self) -> None:
         # TaskScope is an opt-in continuation of the same fresh data epoch.
@@ -166,10 +173,12 @@ class CanonicalTaskScopeStore:
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
+                self._fault("create_task_scope.before_commit")
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
+        self._fault("create_task_scope.after_commit")
         return TaskScopeReceipt(task_scope_id, subject, 1, state_hash)
 
     async def append_host_event(
@@ -410,10 +419,12 @@ class CanonicalTaskScopeStore:
                 from deskpet.task_scope.projection_sources import append_projection_source_tx
 
                 await append_projection_source_tx(db, task_scope_id, now=created_at)
+                self._fault("checkpoint.before_commit")
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
+        self._fault("checkpoint.after_commit")
         return CheckpointReceipt(checkpoint_id, task_scope_id, target_revision, checkpoint_hash, int(head["event_watermark"]))
 
     async def append_deterministic_events(
