@@ -359,12 +359,19 @@ class ProductEffectExecutor(EffectExecutor):
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
-        if self._effect_gate is not None:
+        if self._effect_gate is not None and self._is_first_occurrence(kwargs):
             # S5b EffectGate: re-verify the TaskExecutionEnvelope against the
             # frozen Run authority, the durable route receipt, the S4 binding
             # set and the live filesystem identity before ANY physical project
             # effect.  A rejection is returned as the SDK authorization-deny
             # shape (effect=None): no execution_effects row, no Host event.
+            #
+            # Step 0 (Task 1 review F-1): an effect that already has a durable
+            # SDK ledger record (any state) is an exact replay / reconcile,
+            # never a new physical admission.  The gate must not pre-empt the
+            # SDK's terminal-record replay or HANDED_OFF/UNKNOWN reconcile
+            # with a fabricated terminal ``rejected`` — the admission decision
+            # was made durably on first occurrence.
             call = kwargs.get("call")
             if not isinstance(call, ToolCall):
                 raise TypeError("ProductEffectExecutor requires ToolCall")
@@ -393,6 +400,21 @@ class ProductEffectExecutor(EffectExecutor):
             return await super().execute(**kwargs)
         finally:
             _validation_run_id.reset(token)
+
+    def _is_first_occurrence(self, kwargs: Mapping[str, Any]) -> bool:
+        """Step 0: only an effect with no durable SDK ledger record is gated.
+
+        ``uow.read_effect`` is the SDK's own replay/reconcile read (sync,
+        same store the executor uses); a record in any state means the SDK
+        owns the outcome (terminal replay returns the original receipt,
+        HANDED_OFF/UNKNOWN goes through ``reconcile``).
+        """
+
+        effect_id = kwargs.get("effect_id")
+        read_effect = getattr(self._uow, "read_effect", None)
+        if effect_id is None or not callable(read_effect):
+            return True
+        return read_effect(effect_id) is None
 
     async def _prepared(self, *, effect_id, call, context):
         token = _validation_run_id.set(context.run_id.value)

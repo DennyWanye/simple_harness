@@ -14,6 +14,13 @@ the reason code as an ordinary TOOL message and may re-route.
 
 Check order (frozen; the first failing step names the reason):
 
+0. exact replay is never re-verified (Task 1 review F-1): if the SDK effect
+   ledger already holds a record for this ``effect_id`` (any state — settled,
+   HANDED_OFF, UNKNOWN, PREPARED), ``ProductEffectExecutor.execute`` skips the
+   gate and hands the call to the SDK replay / reconcile path.  The admission
+   decision was made durably on first occurrence; a later change of the gate
+   conditions (binding append, scope close, root drift) must not turn an
+   already-physical effect into a fabricated terminal ``rejected``.
 1. envelope present and echoing this exact effect
    (``effect_gate_envelope_missing`` / ``effect_gate_envelope_identity_mismatch``)
 2. *(Task 6)* sticky memo ``effect_gate_route_receipt_rejected``

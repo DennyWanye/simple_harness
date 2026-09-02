@@ -9,6 +9,7 @@ replay / reconcile；仅首次出现的 effect 才跑 gate。
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 from pathlib import Path
 
@@ -108,13 +109,13 @@ class _Case:
         self.reconciliation = _Reconciliation()
 
         async def write_file(arguments, context):  # type: ignore[no-untyped-def]
-            del context
             self.handler_calls += 1
             if self.fail_handler:
-                raise RuntimeError("handler crashed mid-flight")
+                # 进程级中断（BaseException 语义）：registry 不吞，executor 记 UNKNOWN 后上抛。
+                raise asyncio.CancelledError("handler crashed mid-flight")
             target = self.root / str(arguments["path"])
             target.write_text("written", encoding="utf-8")
-            return {"ok": True, "written": str(target)}
+            return ToolResult.succeeded(context.call_id, {"ok": True, "written": str(target)})
 
         self.registry = _Registry(
             [FunctionTool(ToolSpec("write_file", "Write a file.", WRITE_SCHEMA), write_file)]
@@ -125,6 +126,7 @@ class _Case:
             authorization=_AllowAuthorization(),
             reconciliation=self.reconciliation,
             effect_gate=self.gate,
+            clock=lambda: 3.0,  # 与 SDK lease（now=2.0, ttl=1000s）同一时钟
         )
 
     async def initialize(self) -> None:
@@ -145,7 +147,7 @@ class _Case:
     def ledger_state(self, effect_id: str = "effect-1") -> str:
         with sqlite3.connect(self.root / "sdk-execution.sqlite3") as db:
             row = db.execute(
-                "SELECT status FROM execution_effects WHERE effect_id=?", (effect_id,)
+                "SELECT state FROM execution_effects WHERE effect_id=?", (effect_id,)
             ).fetchone()
         return "" if row is None else str(row[0])
 
@@ -197,7 +199,7 @@ async def test_gate_does_not_preempt_unknown_effect_reconciliation(tmp_path: Pat
     await case.initialize()
     try:
         case.fail_handler = True
-        with pytest.raises(RuntimeError, match="handler crashed"):
+        with pytest.raises(asyncio.CancelledError):
             await case.execute()
         assert case.ledger_state() == "unknown"
         assert case.gate.calls == ["write_file"]
