@@ -309,6 +309,8 @@ class ForegroundRuntimeExecutionAuthority:
         effect_gate: ForegroundEffectAdmissionGate | None = None,
         lease_seconds: float = 300.0,
         closure_fallback: object | None = None,
+        run_binding_reader: Callable[[str], object] | None = None,
+        endpoint_identity_resolver: Callable[[Mapping[str, object]], str | None] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -327,6 +329,11 @@ class ForegroundRuntimeExecutionAuthority:
         # S5b Task 3: semantic-closure fallback between the SDK terminal
         # observation and the Host terminal commit (lease-fenced, replayable).
         self._closure_fallback = closure_fallback
+        # S5b Task 4: the durable Run binding (``SdkRunBindingV1`` record) and the
+        # Provider endpoint identity feed the terminal-commit Memory ingestion
+        # outbox row (same transaction as the Host terminal).
+        self._run_binding_reader = run_binding_reader
+        self._endpoint_identity_resolver = endpoint_identity_resolver
         self._lease_seconds = float(lease_seconds)
         self._driver: asyncio.Task[None] | None = None
         self._driver_lock = asyncio.Lock()
@@ -413,6 +420,21 @@ class ForegroundRuntimeExecutionAuthority:
     def _record_audit(self, event: str, **payload: object) -> None:
         if self._audit is not None:
             self._audit.record(event, payload)
+
+    def _terminal_binding(self, sdk_run_id: str) -> tuple[Mapping[str, object] | None, str | None]:
+        """Durable ``SdkRunBindingV1`` record (+ endpoint identity) for the terminal outbox row."""
+
+        reader = self._run_binding_reader
+        if reader is None:
+            return None, None
+        facts = reader(sdk_run_id)
+        record = getattr(facts, "binding_record", facts)
+        if not isinstance(record, Mapping) or not record:
+            raise ForegroundRuntimeError("foreground_runtime_run_binding_unavailable")
+        endpoint = None
+        if self._endpoint_identity_resolver is not None:
+            endpoint = self._endpoint_identity_resolver(record)
+        return dict(record), endpoint
 
     @staticmethod
     def _assert_authority_identity(
@@ -944,6 +966,7 @@ class ForegroundRuntimeExecutionAuthority:
             )
             if settlement.status == "lease_lost":
                 raise ForegroundRuntimeError("foreground_runtime_lease_lost_during_closure")
+        run_binding, endpoint_identity = self._terminal_binding(sdk_run_id)
         await self._store.record_sdk_terminal(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
@@ -953,6 +976,8 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_event_id=terminal.sdk_event_id,
             sdk_event_hash=terminal.sdk_event_hash,
             idempotency_key=f"runtime-terminal:{host_run_id}",
+            run_binding=run_binding,
+            endpoint_identity=endpoint_identity,
         )
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())

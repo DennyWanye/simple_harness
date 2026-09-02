@@ -73,6 +73,7 @@ from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from deskpet.memory.human_memory_v7 import (
     HumanMemoryV7Runtime,
     local_memory_principal,
+    local_memory_scope,
 )
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.sdk_adapters.context_authority import (
@@ -676,38 +677,51 @@ async def test_loop_level_no_recall_gate_with_reconcile_wired(gate) -> None:
 
 
 @pytest.mark.asyncio
-async def test_fresh_install_unregistered_owner_reconciles_empty(
+async def test_fresh_install_registers_owner_and_reconciles_empty(
     tmp_path: Path,
 ) -> None:
-    """S5A-UI-F1 (2026-09-02 真实桌面 UI 实测缺陷): 全新安装的 v7 store 里本地
-    属主尚未注册（首次 typed recall / mutation 才会自注册），run 起步的
-    reconcile 读不得 fail-closed 杀死首条 chat——未注册属主的收件箱在生产
-    写路径上不可能有条目（apply_prospective_signal 同样要求注册），因此
-    该状态下 reconcile 谓词恒空成立。其余错误必须继续抛出。"""
+    """S5b Task 4（替代 S5A-UI-F1 的 fail-open 兜底）：全新安装的 v7 store 在首次构建时经 Memory 0.6.1
+    ``register_principal_owner`` 幂等登记本地属主，run 起步的 reconcile 读直接成功（无 fail-open 分支），
+    重复构建/重复登记返回同一回执。"""
+
+    from simple_harness_memory import PrincipalRegistrationReceipt
 
     memory_db = tmp_path / "fresh_human_memory_v7.db"
     v7 = HumanMemoryV7Runtime(memory_db)
     try:
         pending = await v7.pending_occurrences(())
         assert pending == ()
-        # 幂等：连续 reconcile 不改变判定，也不得注册任何 principal。
+        receipt = v7.registration_receipt
+        assert isinstance(receipt, PrincipalRegistrationReceipt)
+        assert (receipt.deployment_id, receipt.household_id, receipt.actor_id) == (
+            "deskpet-local", "deskpet-local-household", "deskpet-local-owner-v1",
+        )
         assert await v7.pending_occurrences(()) == ()
+        manager = await v7.manager()
+        again = await manager.register_principal_owner(local_memory_principal(), local_memory_scope())
+        assert again == receipt
+        with sqlite3.connect(memory_db) as db:
+            assert db.execute("SELECT deployment_id,household_id,actor_id FROM principals").fetchall() == [
+                ("deskpet-local", "deskpet-local-household", "deskpet-local-owner-v1")
+            ]
     finally:
         await v7.close()
 
 
 @pytest.mark.asyncio
-async def test_other_ownership_conflicts_still_fail_closed(tmp_path: Path) -> None:
-    """审计 P2 补测：fail-open 只认 short_horizon_principal_rejected。
-
-    任何别种 ownership 冲突（例如日后上游加入的属主迁移/篡改检测），以及
-    翻页中途出现的同类冲突，都必须继续 fail-closed 向上抛。"""
+async def test_ownership_conflicts_always_fail_closed(tmp_path: Path) -> None:
+    """S5b Task 4：属主已在构建时登记，任何 ``MemoryOwnershipConflict``（含首页
+    ``short_horizon_principal_rejected``）都不再被吞掉，一律 fail-closed 向上抛。"""
 
     from simple_harness_memory.core.errors import MemoryOwnershipConflict
 
     class _Page:
         entries: tuple = ()
         next_after = (1.0, "cursor-1")
+
+    class _FirstPageRejected:
+        async def read_occurrence_inbox(self, **_kw):
+            raise MemoryOwnershipConflict("short_horizon_principal_rejected")
 
     class _FirstPageOtherConflict:
         async def read_occurrence_inbox(self, **_kw):
@@ -724,13 +738,7 @@ async def test_other_ownership_conflicts_still_fail_closed(tmp_path: Path) -> No
             raise MemoryOwnershipConflict("short_horizon_principal_rejected")
 
     v7 = HumanMemoryV7Runtime(tmp_path / "unused.db")
-
-    # 首页非 principal_rejected 冲突 → 抛出
-    v7._manager = _FirstPageOtherConflict()
-    with pytest.raises(MemoryOwnershipConflict, match="owner_migrated_elsewhere"):
-        await v7.pending_occurrences(())
-
-    # 翻页中途的同类冲突 → 仍然抛出（不属于"全新安装首页"状态）
-    v7._manager = _MidPageSameConflict()
-    with pytest.raises(MemoryOwnershipConflict):
-        await v7.pending_occurrences(())
+    for manager in (_FirstPageRejected(), _FirstPageOtherConflict(), _MidPageSameConflict()):
+        v7._manager = manager
+        with pytest.raises(MemoryOwnershipConflict):
+            await v7.pending_occurrences(())

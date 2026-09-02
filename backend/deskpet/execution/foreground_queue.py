@@ -1825,7 +1825,18 @@ class ForegroundQueueStore:
         sdk_event_id: str,
         sdk_event_hash: str,
         idempotency_key: str,
+        run_binding: Mapping[str, object] | None = None,
+        endpoint_identity: str | None = None,
     ) -> TerminalReceipt:
+        """Host terminal commit: three watermarks, run/turn transitions and — S5b Task 4 —
+        the ``memory_ingestion_outbox`` row (+ evidence links) in the **same transaction**.
+
+        ``run_binding`` is the durable ``SdkRunBindingV1`` record of the Run (the same
+        record the post-turn invoker rebuilds the Provider adapter from); with it the
+        outbox row carries ``model_config_hash`` / ``analysis_lineage_json`` derived from
+        the binding.  ``None`` (unit callers without a binding) writes no outbox row.
+        """
+
         host_run_id = identifier(host_run_id, "host_run_id", 512)
         sdk_run_id = identifier(sdk_run_id, "sdk_run_id", 512)
         owner_id = identifier(owner_id, "owner_id", 512)
@@ -2007,6 +2018,18 @@ class ForegroundQueueStore:
                     "UPDATE foreground_turn_heads SET current_state='SETTLED',last_transition_id=?,last_transition_hash=?,updated_at=? WHERE turn_id=? AND current_state='CLAIMED'",
                     (turn_transition_id, turn_transition_hash, now, head["turn_id"]),
                 )
+                if run_binding is not None:
+                    await self._append_memory_ingestion_outbox_tx(
+                        db,
+                        host_run_id=host_run_id,
+                        sdk_run_id=sdk_run_id,
+                        turn_id=str(head["turn_id"]),
+                        subject=str(head["subject"]),
+                        run_binding=run_binding,
+                        endpoint_identity=endpoint_identity,
+                        now=now,
+                    )
+                    self._fault("terminal.after_outbox")
                 self._fault("terminal.before_commit")
                 row = await self._fetchone(db, "SELECT * FROM foreground_terminal_receipts WHERE host_run_id=?", (host_run_id,))
                 await db.commit()
@@ -2057,44 +2080,164 @@ class ForegroundQueueStore:
                 if str(head["current_state"]) not in allowed_states:
                     raise ForegroundQueueError("foreground_effect_state_rejected")
                 await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
-                if attempt.get("host_run_id") != host_run_id or attempt.get("sdk_run_id") != sdk_run_id:
-                    raise ForegroundQueueError("foreground_post_turn_attempt_identity_mismatch")
-                attempt_id = str(attempt["attempt_id"])
-                await db.execute(
-                    "INSERT INTO post_turn_invocation_attempts(attempt_id,purpose,host_run_id,sdk_run_id,generation,"
-                    "task_scope_id,closure_watermark,request_hash,attempt_ordinal,evidence_set_key,status,unknown_class,"
-                    "provider_id,model_id,model_config_hash,provider_request_id,result_hash,plan_id,reserved_at,"
-                    "handed_off_at,settled_at,reason_code) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,'reserved',NULL,?,?,?,NULL,NULL,?,?,NULL,NULL,NULL)",
-                    (
-                        attempt_id,
-                        str(attempt["purpose"]),
-                        host_run_id,
-                        sdk_run_id,
-                        int(generation),
-                        attempt.get("task_scope_id"),
-                        attempt.get("closure_watermark"),
-                        str(attempt["request_hash"]),
-                        int(attempt["attempt_ordinal"]),  # type: ignore[call-overload]
-                        str(attempt["evidence_set_key"]),
-                        str(attempt["provider_id"]),
-                        str(attempt["model_id"]),
-                        str(attempt["model_config_hash"]),
-                        attempt.get("plan_id"),
-                        float(attempt.get("reserved_at") or now),  # type: ignore[arg-type]
-                    ),
+                attempt_id = await self._insert_post_turn_attempt_tx(
+                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
+                    attempt=attempt, members=members, now=now,
                 )
-                for subject, run_id, evidence_id in members:
-                    await db.execute(
-                        "INSERT OR IGNORE INTO post_turn_invocation_members(attempt_id,subject,run_id,evidence_id) "
-                        "VALUES (?,?,?,?)",
-                        (attempt_id, str(subject), str(run_id), str(evidence_id)),
-                    )
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
         return attempt_id
+
+    async def reserve_analysis_attempt(
+        self,
+        *,
+        host_run_id: str,
+        sdk_run_id: str,
+        attempt: Mapping[str, object],
+        members: Sequence[tuple[str, str, str]] = (),
+    ) -> str:
+        """Insert one ``reserved`` **analysis** attempt row for a terminal Run (S5b Task 4).
+
+        Post-turn analysis runs after the Host terminal, when no foreground lease
+        exists any more: the fence is the Memory job lease (design-freeze §6
+        ``lease_seconds = deadline + 30``), so this only verifies that the Run is
+        durably terminal and bound to ``sdk_run_id`` before inserting the row in
+        one transaction.
+        """
+
+        host_run_id = identifier(host_run_id, "host_run_id", 512)
+        sdk_run_id = identifier(sdk_run_id, "sdk_run_id", 512)
+        now = _clock_value(self._clock)
+        await self.initialize()
+        async with self._connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
+            try:
+                head = await self._fetchone(
+                    db, "SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,)
+                )
+                if head is None:
+                    raise ForegroundQueueError("foreground_run_not_found")
+                if str(head["current_state"]) not in TERMINAL_STATES:
+                    raise ForegroundQueueError("foreground_analysis_run_not_terminal")
+                await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
+                if str(attempt.get("purpose")) != "analysis":
+                    raise ForegroundQueueError("foreground_post_turn_purpose_invalid")
+                attempt_id = await self._insert_post_turn_attempt_tx(
+                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=int(head["generation"]),
+                    attempt=attempt, members=members, now=now,
+                )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return attempt_id
+
+    async def _insert_post_turn_attempt_tx(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        host_run_id: str,
+        sdk_run_id: str,
+        generation: int,
+        attempt: Mapping[str, object],
+        members: Sequence[tuple[str, str, str]],
+        now: float,
+    ) -> str:
+        if attempt.get("host_run_id") != host_run_id or attempt.get("sdk_run_id") != sdk_run_id:
+            raise ForegroundQueueError("foreground_post_turn_attempt_identity_mismatch")
+        attempt_id = str(attempt["attempt_id"])
+        await db.execute(
+            "INSERT INTO post_turn_invocation_attempts(attempt_id,purpose,host_run_id,sdk_run_id,generation,"
+            "task_scope_id,closure_watermark,request_hash,attempt_ordinal,evidence_set_key,status,unknown_class,"
+            "provider_id,model_id,model_config_hash,provider_request_id,result_hash,plan_id,reserved_at,"
+            "handed_off_at,settled_at,reason_code) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,'reserved',NULL,?,?,?,NULL,NULL,?,?,NULL,NULL,NULL)",
+            (
+                attempt_id,
+                str(attempt["purpose"]),
+                host_run_id,
+                sdk_run_id,
+                int(generation),
+                attempt.get("task_scope_id"),
+                attempt.get("closure_watermark"),
+                str(attempt["request_hash"]),
+                int(attempt["attempt_ordinal"]),  # type: ignore[call-overload]
+                str(attempt["evidence_set_key"]),
+                str(attempt["provider_id"]),
+                str(attempt["model_id"]),
+                str(attempt["model_config_hash"]),
+                attempt.get("plan_id"),
+                float(attempt.get("reserved_at") or now),  # type: ignore[arg-type]
+            ),
+        )
+        for subject, run_id, evidence_id in members:
+            await db.execute(
+                "INSERT OR IGNORE INTO post_turn_invocation_members(attempt_id,subject,run_id,evidence_id) "
+                "VALUES (?,?,?,?)",
+                (attempt_id, str(subject), str(run_id), str(evidence_id)),
+            )
+        return attempt_id
+
+    async def _append_memory_ingestion_outbox_tx(
+        self,
+        db: aiosqlite.Connection,
+        *,
+        host_run_id: str,
+        sdk_run_id: str,
+        turn_id: str,
+        subject: str,
+        run_binding: Mapping[str, object],
+        endpoint_identity: str | None,
+        now: float,
+    ) -> str:
+        """S5b Task 4: ``memory_ingestion_outbox(pending)`` + ``memory_ingestion_evidence_links``.
+
+        The turn group's sanitized evidence = the foreground turn's admitted user
+        evidence (``foreground_turns.evidence_id``).  Objective ``host.*`` evidence
+        of the Run stays in the TaskScope ledger (closure), it is not an analysis
+        member: one turn → one Memory batch → one analysis attempt.
+        """
+
+        from deskpet.memory.analysis_lineage import analysis_lineage_payload
+
+        turn = await self._fetchone(
+            db,
+            "SELECT t.evidence_id, e.envelope_sha256 FROM foreground_turns t "
+            "JOIN human_memory_evidence e ON e.evidence_id=t.evidence_id WHERE t.turn_id=?",
+            (turn_id,),
+        )
+        if turn is None:
+            raise ForegroundQueueError("foreground_turn_evidence_missing")
+        evidence_ids = [str(turn["evidence_id"])]
+        envelope_hash = canonical_hash({"envelope_hashes": sorted([str(turn["envelope_sha256"])])})
+        lineage = analysis_lineage_payload(run_binding, endpoint_identity=endpoint_identity)
+        outbox_id = _uuid(f"memory-ingestion-outbox:{sdk_run_id}:{turn_id}")
+        existing = await self._fetchone(
+            db, "SELECT evidence_ids_json,envelope_hash FROM memory_ingestion_outbox WHERE outbox_id=?", (outbox_id,)
+        )
+        if existing is not None:
+            if json.loads(str(existing["evidence_ids_json"])) != evidence_ids or str(existing["envelope_hash"]) != envelope_hash:
+                raise ForegroundQueueError("memory_ingestion_outbox_conflict")
+            return outbox_id
+        await db.execute(
+            "INSERT INTO memory_ingestion_outbox(outbox_id,host_run_id,sdk_run_id,turn_id,subject,evidence_ids_json,"
+            "envelope_hash,model_config_hash,analysis_lineage_json,state,attempts,lease_owner,lease_expires_at,"
+            "receipt_json,last_error,created_at,updated_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,'pending',0,NULL,NULL,NULL,NULL,?,?)",
+            (
+                outbox_id, host_run_id, sdk_run_id, turn_id, subject, canonical_json(evidence_ids),
+                envelope_hash, str(lineage["model_config_hash"]), canonical_json(lineage), now, now,
+            ),
+        )
+        for evidence_id in evidence_ids:
+            await db.execute(
+                "INSERT OR IGNORE INTO memory_ingestion_evidence_links(outbox_id,evidence_id) VALUES (?,?)",
+                (outbox_id, evidence_id),
+            )
+        return outbox_id
 
     async def authorize_effect(
         self,

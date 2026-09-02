@@ -332,6 +332,19 @@ async def write_closure_receipt(
     return receipt
 
 
+async def closure_receipt_for_plan_tx(
+    db: aiosqlite.Connection, *, task_scope_id: str, plan_id: str
+) -> ClosureReceipt | None:
+    """The receipt written together with ``plan_id``'s decision (first write wins; F-1)."""
+
+    row = await CanonicalTaskScopeStore._fetchone(
+        db,
+        "SELECT * FROM task_scope_closure_receipts WHERE task_scope_id=? AND plan_id=? ORDER BY rowid LIMIT 1",
+        (task_scope_id, plan_id),
+    )
+    return None if row is None else _receipt_from_row(row)
+
+
 async def pending_receipts_tx(db: aiosqlite.Connection, task_scope_id: str) -> tuple[ClosureReceipt, ...]:
     """Open ``pending`` receipts: watermark above the last closing receipt."""
 
@@ -751,13 +764,15 @@ class ClosureFallback:
             try:
                 decision = await self._store._fetchone(
                     db,
-                    "SELECT outcome FROM task_scope_mutation_decisions WHERE plan_id=? AND task_scope_id=?",
+                    "SELECT d.outcome, r.event_watermark FROM task_scope_mutation_decisions d "
+                    "JOIN task_scope_canonical_revisions r ON r.decision_id=d.decision_id "
+                    "WHERE d.plan_id=? AND d.task_scope_id=?",
                     (plan_id, scope),
                 )
-                head = await self._store._fetchone(
-                    db, "SELECT event_watermark FROM task_scope_heads WHERE task_scope_id=?", (scope,)
-                )
-                assert head is not None
+                existing = await closure_receipt_for_plan_tx(db, task_scope_id=scope, plan_id=plan_id)
+                if existing is not None:
+                    await db.commit()
+                    return ClosureSettlement(existing.outcome, existing.reason_code, existing, provider_calls, attempt_id)
                 if decision is None:
                     receipt = await write_closure_receipt_tx(
                         db, task_scope_id=scope, sdk_run_id=sdk_run_id, host_run_id=host_run_id,
@@ -769,9 +784,10 @@ class ClosureFallback:
                 else:
                     status = str(decision["outcome"])
                     reason = FALLBACK_CLOSURE_REASON_CODE
+                    # F-1: the decision's own revision watermark, never the live head.
                     receipt = await write_closure_receipt_tx(
                         db, task_scope_id=scope, sdk_run_id=sdk_run_id, host_run_id=host_run_id,
-                        closure_watermark=int(head["event_watermark"]), outcome=status, plan_id=plan_id,
+                        closure_watermark=int(decision["event_watermark"]), outcome=status, plan_id=plan_id,
                         reason_code=reason, attempt_id=attempt_id, now=self._clock(),
                     )
                 await db.commit()

@@ -1,6 +1,29 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-09-02
+> **最后更新**：2026-09-03
+
+## 2026-09-03 Human Memory S5b Task 4：终态同事务 Memory outbox、analysis_proposal、Host analysis executor/delivery authority、v7 接线（价值验证里程碑）
+
+- 基线 main @ e033a781（含 Task 0–3 与 Memory 0.6.1 pin）：新 `memory/analysis_proposal.py`（§9 proposal → 确定性 EvidenceSpanRef
+  派生 → MemoryMutationPlan）、`memory/evidence_authority.py`（Host state.db 只读解析器）、`memory/analysis_lineage.py`
+  （model_config_hash / analysis_lineage_json）、`memory/analysis_executor.py`（executor = delivery authority；三键查重、
+  evidence_set_key 零调用复用、blocked → `memory.analysis.blocked` 审计、lease_lost 结果附着）、`memory/memory_ingestion_outbox.py`
+  （worker + 单一 lane）；`foreground_queue.record_sdk_terminal` 同事务 outbox + `reserve_analysis_attempt`；`foreground_runtime`
+  传 durable binding；`human_memory_v7` 接线（filter policies / evidence & delivery authority / classification policy / 首次
+  `register_principal_owner`、删 fail-open）；`post_turn_invoker` durable 结果与复用；v46（未发布）`post_turn_invocation_attempts.
+  result_envelope_json`；`main.py` 装配 + 缺槽断言（`sdk_evidence_authority` / `sdk_memory_analysis_executor` /
+  `sdk_memory_ingestion_outbox`）；`context.py` 白名单补 `sdk_effect_gate`（Task 1 起 register 但白名单缺失）等槽。
+  Task 3 审查 F-1（幂等重放返回首条 receipt，watermark 取 decision revision 水位）与 F-2（生产 `closure_reader` 注入，
+  `sdk_closure_instruction_reader` 槽）各自单独 commit。
+- 验证：oracle 先行（实装前全红）；矩阵 Task 4 三用例、fault lane `memory-mutation-plan` 11 seam、
+  `tests/memory/test_memory_ingestion_outbox.py`、no_recall_gate 属主注册用例、F-1/F-2 决定性用例、里程碑确定性车道（模型调 / 漏调）
+  全绿；**真实车道** `tests/sdk_adapters/test_s5b_milestone_real_provider.py -m real_provider` 1 passed（125s；Provider 调用 =
+  主 Run 4 + closure 0 + analysis 1；episode 记忆物化，typed_recall 读到 "1.2.0"；transcript `.local-test-evidence/s5b-real-provider/`）；
+  changed-surface ruff 相对基线零新增。
+- 边界：Memory 0.6.1 多 evidence batch 中只引用非首条 evidence 的 operation → `decision_evidence_refs_ordinal_invalid`（Memory 侧，
+  生产一 turn 一 batch 不触发，已在 Task 4 报告登记）；真实车道第二次运行模型把自身 persona 文本追加进 README（版本号正确）；
+  `tests/sdk_adapters/test_composition.py` 中 7 条既有红 + `test_close_during_start_prevents_ready_publication` 挂起为基线既有；
+  Prospective/即时操作仍在 S5c；`sdk_memory_ingestion_outbox` lane 的 worker config 回落三元组取 provider chain 首项。
 
 ## 2026-09-02 Human Memory S5b Task 3：`task_scope_update` 常暴露、三水位终态门与 lease-fenced 兜底状态机
 

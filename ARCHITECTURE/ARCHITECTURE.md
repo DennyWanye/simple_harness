@@ -54,6 +54,78 @@
   （<v35）epoch 无 route 能力，清单工具在该 epoch 下稳定 fail-closed（整 Run 故障）而非静默执行；
   备忘为进程内，crash 后终态证据退回 SDK 公开码。
 
+## S5b Task 4 终态同事务 Memory outbox、analysis_proposal、Host analysis executor/delivery authority 与 v7 接线（2026-09-03 生产事实，价值验证里程碑）
+
+- **终态同事务 outbox**（`foreground_queue.record_sdk_terminal(run_binding=, endpoint_identity=)`）：三水位放行之后、提交之前，
+  同一事务写 `memory_ingestion_outbox(pending)` + `memory_ingestion_evidence_links`。成员 = 本 turn 的 sanitized user evidence
+  （`foreground_turns.evidence_id`）；客观 `host.*` 证据留在 TaskScope 账本（closure 负责），不进 analysis 成员集——一 turn →
+  一 Memory batch → 一次 analysis attempt。`model_config_hash = sha256(canonical{provider_id, provider_incarnation_id,
+  provider_config_revision, model_id, model_params, endpoint_identity})` 与 `analysis_lineage_json`（三元组 + `run_binding`
+  + `endpoint_identity`）由 durable `SdkRunBindingV1`（`_sdk_runtime_stack.read_closure_run_facts`）派生，`foreground_runtime`
+  经 `run_binding_reader`/`endpoint_identity_resolver`（`provider.provider_endpoint_identity`，与 `ProductProviderAdapter` 同配方）
+  传入；UNIQUE(sdk_run_id, turn_id)；kill 在提交前 → 零半状态，重放收敛（`terminal.after_outbox` 故障点）。
+- **摄入 worker + 单一后台 lane**（`memory/memory_ingestion_outbox.py`）：lease claim（`lease_owner/lease_expires_at`，每次 claim
+  计一次 attempt，claimed→pending 仅于重试）→ 复用 Host durable envelope/receipt（`HostEvidenceAuthority.read_admitted`，不重新封装）
+  → exact Memory 0.6.1 `ingest_committed_evidence(envelope, receipt, analysis_lineage=AnalysisLineage(outbox 行))` → receipt 回写
+  `memory_ingestion_outbox.receipt_json`（`task_scope_events` recorder 只收 `host.turn|file|test`，故不新增事件种类；receipt 经
+  links 与 evidence 关联）；失败 `attempts+1` + 指数重试（上限 60s）→ `dead_letter + last_error`；raw 不删；duplicate 投递 →
+  Memory 按 `source_ref` 幂等同 receipt。`MemoryAnalysisLane` 每 tick 先 worker 再 `DurableMemoryJobRunner.run_once()`
+  （`build_worker_config`：`lease_seconds = deadline_ms/1000 + 30`、`batch_size=1`、`max_batch_wait=0`、四个版本常量），
+  finalize/claim 异常只记 `last_error` 不崩溃循环。
+- **v7 接线**（`memory/human_memory_v7.py`）：`build_human_memory_v7(supported_filter_policies={credential-filter/v1,
+  host-public-turn/v1, host-typed-ingress/v1}, evidence_authority=HostEvidenceAuthority(state.db), analysis_delivery_authority=
+  HostMemoryAnalysisExecutor, classification_policy=host PERSONAL)`；首次构建幂等 `register_principal_owner(local principal,
+  personal scope)`；S5a 的 `short_horizon_principal_rejected` fail-open 分支已删（fresh install 首条对话 reconcile 直接成功，
+  ownership 冲突一律 fail-closed）。`HostEvidenceAuthority.resolve_admitted_evidence` 只读 Host state.db durable envelope/receipt
+  并签发 `EvidenceItemAuthority`，绝不回调 Memory backend（物化在 Memory 写锁内调用它）。
+- **analysis_proposal**（`memory/analysis_proposal.py`，design-freeze §9）：`memory_analysis_proposal` 工具只在 post-turn 独立调用
+  暴露；模型填 `outcome/operations[{memory_type ∈ semantic|episode|procedure|prospective, payload, evidence_item_id, exact_quote,
+  reason_code}]`，不填 hash/offset/receipt；Host `text.find(exact_quote)` 唯一命中 → UTF-8 byte range、`quote_hash`、pointer `/text`、
+  `item_ordinal=1`、`item_id`=delivery key、identity normalization、actor USER / AUTHENTICATED_USER / EXPLICIT_USER_ASSERTION；
+  未命中/多命中/空/paraphrase → 该 operation `analysis_quote_not_found`（写 `host_pre_admission_audit(payload_kind='analysis_result')`），
+  全部被拒 → `no_mutation(analysis_all_operations_rejected)`；Host 填 `run_id/subject/disclosure/evidence_refs/idempotency_key`、
+  `turn_id=_stable_id("analysis-batch-turn", job_id)`、`base_revision=current_analysis_apply_head()`。常量
+  `host-analysis-prompt/v1` / `memory-analysis-proposal/v1` / `host-analysis-policy/v1` / `host-analysis-validator/v1`。
+- **Host analysis executor = delivery authority（同一对象）**（`memory/analysis_executor.py`）：`request.ordered_evidence_refs` →
+  `memory_ingestion_evidence_links` → outbox 行的 durable `run_binding`（跨 Run 成员只要求 lineage 三元组一致）；
+  `request.provider_id/model_id/model_config_hash ≠ binding 派生值` → `analysis_lineage_mismatch`（审计，0 调用）；
+  `RunBoundInvoker.invoke(purpose=analysis, request_hash=request.request_hash, evidence_set_key=sha256(canonical(request −
+  {job_id, attempt, idempotency_key})), members=(subject, run_id, evidence_id…))`，fence = Memory job lease
+  （`ForegroundQueueStore.reserve_analysis_attempt` 只要求 Run 已终态且 binding 匹配；返回后按 deadline+30 复验）；
+  三键查重：同 request_hash `succeeded` → durable envelope 原样返回（0 调用）；同 `evidence_set_key` 已 settle 且带 durable 结果
+  （Memory 重试换了 batch id）→ 新 attempt 行零调用复用模型响应（`reason_code=reused:<attempt>`）；任一成员 open
+  `handed_off`/`sent_unknown` → blocked（0 调用）+ Host durable `memory.analysis.blocked:*` 审计行 → Memory 有界重试后
+  `dead_letter`；`not_sent`（binding 不可重建 / httpx Connect*）可 attempt+1；`sent_confirmed` 仅经注入 observer（对仍 open
+  的成员行也生效）；`lease_lost` 把响应作为账本事实附着到已 settle 的行（`ledger_response`，不 apply）供下一 owner 零调用复用。
+  succeeded → 派生/编译 → `MemoryAnalysisResult` + `MemoryAnalysisDeliveryReceipt`（issuer
+  `deskpet-host-analysis-authority/v1`，`attempt=request.attempt`）→ envelope，与 `handed_off→succeeded` 同一事务持久到
+  `post_turn_invocation_attempts.result_envelope_json`（v46 未发布加列，`post-turn-durable-result/v1`：公开 provider 响应 +
+  envelope；终态后只允许 NULL→值一次）；`verify_analysis_delivery` 只认同一 attempt store 的 durable envelope
+  （issuer / request_hash / Memory attempt / result_hash / canonical JSON 相等）。Memory 侧 accepted 且 `mutate` → 0.6.1 仓储内物化
+  （cognitive revisions/heads、`memory.cognitive.committed`、analysis/cognitive head 同步推进）；下一轮 `HumanMemoryV7Runtime.typed_recall`
+  （FULL_TEXT，SEMANTIC/EPISODE/PROCEDURE）可读到。
+- **组合**（`main.py`）：v7 runtime 构建时绑定 `HostEvidenceAuthority(state.db)` 与 `HostMemoryAnalysisExecutor`（adapter 由
+  `SdkRunBindingV1` 经 `_sdk_provider_binding_resolver.build_authority` 重建，不新建 client）；`_activate_memory_analysis_lane` 在
+  stack build 末尾启动唯一 lane；槽 `sdk_evidence_authority` / `sdk_memory_analysis_executor` / `sdk_memory_ingestion_outbox`
+  （及 F-2 的 `sdk_closure_instruction_reader`、Task 1 遗漏的 `sdk_effect_gate`）进 `context.py` 白名单与缺槽断言；lifespan
+  shutdown 关闭 lane。Task 3 审查 F-1（幂等重放返回首条 receipt、watermark 取 decision 的 revision 水位）/ F-2（生产
+  `closure_reader` 注入）已修。
+- **验证**：矩阵 Task 4 三用例 + fault lane `memory-mutation-plan` 全部 11 seam（raw-evidence-commit / invocation-evidence-commit /
+  validation-decision-commit / state-mutation-commit / outbox-commit / commit-before-ack / multi-op-finalize / audit-pending-stuck /
+  reconciliation-observer / lease-reclaim-in-flight / membership-growth：kill → raw 守恒 → replay 收敛 → 再 replay 幂等，Provider
+  成功发送 ≤1）+ `tests/memory/test_memory_ingestion_outbox.py`（duplicate 同 receipt、Memory 只读 → dead-letter + raw 守恒、attempt
+  五态/UNIQUE/终态不可变、lineage mismatch 零调用、evidence authority、v7 接线）+ 里程碑确定性车道
+  `test_s5b_milestone_effect_closure_memory.py`（真 ReActLoop + 真 foreground Run + 真 Memory 0.6.1 生产 builder；模型调 /
+  漏调两种）+ **真实车道** `test_s5b_milestone_real_provider.py -m real_provider`（gpt-5.6-luna：route → write_file → in-Run
+  `task_scope_update(mutate)` → 终答 → outbox delivered → analysis 真实调用 1 次 → episode 物化 → typed_recall 读到
+  "1.2.0"；Provider 调用 = 主 Run 4 + closure 0 + analysis 1；transcript 在 `.local-test-evidence/s5b-real-provider/`）。
+- **已知边界**：① Memory 0.6.1 把 operation 的 decision evidence refs 取为 `plan.evidence_refs` 子集并保留原 ordinal，多 evidence
+  batch 中只引用非首条 evidence 的 operation 会被 `decision_evidence_refs_ordinal_invalid` 拒绝（Memory 侧缺陷，一 turn 一 batch
+  的生产路径不触发；`membership-growth` seam 的 proposal 引用首条 evidence）；② 真实车道第二次运行中继模型把自身 persona 文本追加
+  进了 README（版本号仍正确改为 1.2.0；用例只断言版本号变更与文件不再含旧版本）；③ analysis 成员只含用户 turn 文本，assistant
+  终答与客观事件不进 Memory（避免同 turn 多 batch → 多次 analysis 调用）；④ `AnalysisLeaseFence.revalidate` 以 deadline+30 复验
+  而非回读 Memory lease token（Memory claim 不暴露 token）；⑤ worker config 的 provider/model/config_hash 只作无 lineage 成员的回落。
+
 ## S5b Task 3 `task_scope_update` 常暴露、三水位终态门与 lease-fenced 兜底状态机（2026-09-02 生产事实）
 
 - **`task_scope_update` 工具**（`sdk_adapters/task_scope_mutation.py`，host-composed 注册同 `context_route`；

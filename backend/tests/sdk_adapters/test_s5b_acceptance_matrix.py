@@ -1037,19 +1037,259 @@ async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(tm
 
 
 # ---- S5B-AC-2 / Task 4：终态同事务 outbox、analysis executor、幂等 ----
-@XF
-def test_terminal_commit_writes_ingestion_outbox_same_tx() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_terminal_commit_writes_ingestion_outbox_same_tx(tmp_path: Path) -> None:
+    """Task 4（S5B-AC-2①）：foreground Run 终态提交在**同一事务**内写 Host sanitized evidence link +
+    ``memory_ingestion_outbox(pending)`` 行（含由 durable SdkRunBindingV1 派生的 model_config_hash /
+    analysis_lineage）；kill 在写入前后 → 重放收敛；UNIQUE(sdk_run_id, turn_id)；客观 host.file 证据
+    留在 TaskScope 账本，不进 analysis 成员集。
+    """
+    import sqlite3
+
+    from deskpet.execution.foreground_queue import ForegroundQueueStore
+    from tests.sdk_adapters import s5b_closure_harness as ch
+    from tests.sdk_adapters import s5b_memory_harness as mh
+
+    env = await mh.bound_turn_run(tmp_path, "sdk-run-outbox-1")
+    await ch.material_write(env, "e-1", path="README.md")
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    assert observed is not None
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    fallback, _ = ch.build_fallback(
+        env, facts, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision))])
+    )
+    assert (await ch.settle(env, fallback)).status == "mutate"
+
+    # ① kill 在提交前 → 零半状态：无 terminal receipt、无 outbox 行、无 link。
+    faulty = ForegroundQueueStore(env.db_path, clock=env.clock, fault_hook=ch.OneShot("terminal.before_commit"))
+    with pytest.raises(RuntimeError, match="injected:terminal.before_commit"):
+        await faulty.record_sdk_terminal(
+            host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
+            generation=env.admission.generation, terminal_state=observed.terminal_state,
+            sdk_event_id=observed.sdk_event_id, sdk_event_hash=observed.sdk_event_hash,
+            idempotency_key=f"runtime-terminal:{env.admission.host_run_id}",
+            run_binding={**mh.BINDING, "run_id": env.run_id}, endpoint_identity=mh.ENDPOINT,
+        )
+    assert mh.outbox_rows(env.db_path) == []
+    assert mh.rows(env.db_path, "SELECT COUNT(*) FROM memory_ingestion_evidence_links") == [(0,)]
+    assert mh.rows(env.db_path, "SELECT COUNT(*) FROM foreground_terminal_receipts") == [(0,)]
+
+    # ② 重放 → terminal receipt + outbox 行 + link 同一事务（同一 now）。
+    receipt = await mh.record_terminal(env, observed)
+    [(run, turn, state, attempts, ids_json, config_hash, receipt_json, last_error)] = mh.outbox_rows(env.db_path)
+    assert (run, turn, state, attempts, receipt_json, last_error) == (env.run_id, env.turn_id, "pending", 0, None, None)
+    assert json.loads(ids_json) == [env.evidence_id]
+    assert config_hash == mh.expected_model_config_hash()
+    [(outbox_id, created_at, lineage_json, envelope_hash)] = mh.rows(
+        env.db_path, "SELECT outbox_id,created_at,analysis_lineage_json,envelope_hash FROM memory_ingestion_outbox"
+    )
+    [(recorded_at,)] = mh.rows(env.db_path, "SELECT recorded_at FROM foreground_terminal_receipts WHERE host_run_id=?", env.admission.host_run_id)
+    assert created_at == recorded_at
+    assert mh.rows(env.db_path, "SELECT outbox_id,evidence_id FROM memory_ingestion_evidence_links") == [(outbox_id, env.evidence_id)]
+    lineage = json.loads(lineage_json)
+    assert (lineage["provider_id"], lineage["model_id"], lineage["model_config_hash"]) == (
+        mh.BINDING["provider_id"], mh.BINDING["model_id"], config_hash,
+    )
+    assert lineage["run_binding"]["run_id"] == env.run_id and lineage["endpoint_identity"] == mh.ENDPOINT
+    from deskpet.task_scope.protocol import canonical_hash
+
+    assert envelope_hash == canonical_hash({"envelope_hashes": [env.envelope.envelope_hash]})
+    # 客观 host.file 证据（run_id = sdk_run_id）不在成员集：TaskScope closure 账本负责它。
+    objective = [str(r[0]) for r in mh.rows(env.db_path, "SELECT evidence_id FROM human_memory_evidence WHERE run_id=?", env.run_id)]
+    assert objective and not set(objective) & set(json.loads(ids_json))
+
+    # ③ 幂等：再次 record_sdk_terminal → 同 receipt、仍一行；直接违反 UNIQUE(sdk_run_id, turn_id) 被拒。
+    assert await mh.record_terminal(env, observed) == receipt
+    assert len(mh.outbox_rows(env.db_path)) == 1
+    with sqlite3.connect(env.db_path) as db, pytest.raises(sqlite3.IntegrityError):
+        db.execute(
+            "INSERT INTO memory_ingestion_outbox(outbox_id,host_run_id,sdk_run_id,turn_id,subject,evidence_ids_json,"
+            "envelope_hash,model_config_hash,analysis_lineage_json,state,attempts,created_at,updated_at) "
+            "VALUES ('dup',?,?,?,?,'[]',?,?,'{}','pending',0,1,1)",
+            (env.admission.host_run_id, env.run_id, env.turn_id, mh.SUBJECT, "a" * 64, "b" * 64),
+        )
 
 
-@XF
-def test_analysis_executor_three_key_lookup_zero_second_provider_call() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_analysis_executor_three_key_lookup_zero_second_provider_call(tmp_path: Path) -> None:
+    """Task 4（S5B-AC-2②③④ + A1）：outbox worker 复用 Host durable envelope/receipt 调 0.6.1
+    ``ingest_committed_evidence``（lineage 绑在 ingest）→ job runner → Host executor 由 durable binding 重建
+    adapter 恰一次调用 → proposal 派生/编译 → accepted **并物化**（cognitive head + memory.cognitive.committed）；
+    Host commit 后 Memory result 提交前 kill → 重放三键命中 durable envelope，**Provider 调用计数为 0**；
+    delivery authority 只认同一 attempt store；下一轮 typed_recall 读到该记忆。
+    """
+    from simple_harness.runtime import (
+        MemoryAnalysisRequest,
+        MemoryAnalysisResultEnvelope,
+    )
+
+    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
+    from tests.sdk_adapters import s5b_closure_harness as ch
+    from tests.sdk_adapters import s5b_memory_harness as mh
+
+    env = await mh.bound_turn_run(tmp_path, "sdk-run-analysis-1")
+    _, settlement, closure_adapter = await mh.finish_effect_run(env)
+    assert settlement.provider_calls == 1 and len(closure_adapter.calls) == 1
+    adapter = ch.FakeAdapter([mh.proposal_call([mh.semantic_op(mh.item_id(env), "版本号改成 1.2.0")])])
+    menv = mh.memory_env(env, adapter, memory_fault=ch.OneShot("job.result.before_commit"))
+
+    # ① worker：claim → ingest（不重新封装）→ receipt 回写 delivered。
+    assert await menv.worker.run_once() == "delivered"
+    [(_, _, state, attempts, _, _, receipt_json, _)] = mh.outbox_rows(env.db_path)
+    assert (state, attempts) == ("delivered", 1)
+    receipts = json.loads(receipt_json)["receipts"]
+    assert [r["evidence_id"] for r in receipts] == [env.evidence_id]
+    stored = await mh.memory_rows(menv, "SELECT evidence_id,analysis_lineage_json FROM evidence_envelopes")
+    assert [r[0] for r in stored] == [env.evidence_id]
+    assert json.loads(str(stored[0][1]))["model_config_hash"] == mh.expected_model_config_hash()
+
+    # ② Host attempt succeeded（envelope durable）后、Memory result 提交前 kill。
+    with pytest.raises(RuntimeError, match="injected:job.result.before_commit"):
+        await mh.run_job(menv)
+    assert len(adapter.calls) == 1 and menv.executor.provider_calls == 1
+    assert [(o, s, u, has_envelope) for o, s, u, _, _, _, has_envelope in mh.attempts(env.db_path)] == [(1, "succeeded", None, 1)]
+    request_json = (await mh.memory_rows(menv, "SELECT request_json FROM analysis_batches"))[0][0]
+    request = MemoryAnalysisRequest.from_json(json.loads(str(request_json)))
+    assert (request.provider_id, request.model_id, request.model_config_hash) == (
+        mh.BINDING["provider_id"], mh.BINDING["model_id"], mh.expected_model_config_hash(),
+    )
+
+    # ③ Memory lease（deadline+30）到期后 reclaim → executor 三键命中 → 同 envelope，Provider 计数 0 → APPLIED 且物化。
+    env.clock.now += 40.0
+    assert await mh.run_job(menv) == "applied"
+    assert len(adapter.calls) == 1 and menv.executor.provider_calls == 1
+    snapshot = await mh.memory_snapshot(menv)
+    assert snapshot["jobs"] == [("applied", 1)] and snapshot["batches"] == [("applied",)]
+    assert snapshot["heads"] == 1 and snapshot["decisions"] == 1
+    assert ("memory.cognitive.committed", "pending") in snapshot["outbox"]
+    assert snapshot["analysis_head"] == [(2,)] and snapshot["cognitive_head"] == [(2,)]
+    assert menv.runtime.evidence_authority.resolutions >= 1
+    assert await mh.run_job(menv) == "idle"
+
+    # ④ 同一 request 直接重放 executor → durable envelope，零调用；delivery authority 拒绝篡改。
+    replay = await menv.executor.analyze_memory(request)
+    assert isinstance(replay, MemoryAnalysisResultEnvelope) and len(adapter.calls) == 1
+    await menv.executor.verify_analysis_delivery(request, replay)
+    tampered = MemoryAnalysisResultEnvelope.from_json(
+        {**replay.to_json(), "delivery_receipt": {**replay.delivery_receipt.to_json(), "issuer_id": "someone-else"}}
+    )
+    with pytest.raises(ValueError):
+        await menv.executor.verify_analysis_delivery(request, tampered)
+    other = HostMemoryAnalysisExecutor(tmp_path / "other-state.db", adapter_factory=lambda record: adapter)
+    with pytest.raises((ValueError, OSError, RuntimeError)):
+        await other.verify_analysis_delivery(request, replay)
+
+    # ⑤ 下一轮 typed_recall（memory_standalone lane）读到含 "1.2.0" 的记忆。
+    payloads = await mh.recall_payloads(menv, "README")
+    assert any("1.2.0" in json.dumps(p, ensure_ascii=False) for p in payloads), payloads
+    await mh.close(menv)
 
 
-@XF
 def test_analysis_proposal_span_derivation_rejects_paraphrase() -> None:
-    raise NotImplementedError
+    """Task 4（design-freeze §9）：``text.find(exact_quote)`` 唯一命中 → UTF-8 byte range / quote_hash /
+    pointer ``/text`` / item_ordinal=1；未命中 / 多命中 / 空 / paraphrase → ``analysis_quote_not_found``；
+    四类 payload 编译；全部被拒 → ``no_mutation(analysis_all_operations_rejected)``；常量与 schema 冻结。
+    """
+    import hashlib
+
+    from simple_harness.runtime import (
+        EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
+        AnalysisBudget,
+        EvidenceActorRole,
+        EvidenceProvenance,
+        EvidenceRef,
+        EvidenceSupportKind,
+        LongTermMemoryType,
+        MemoryAnalysisRequest,
+    )
+    from simple_harness_memory.core.mutations import compile_memory_mutation_plan
+
+    from deskpet.memory import analysis_proposal as ap
+    from deskpet.memory.human_memory_service import build_foreground_turn_evidence
+    from tests.sdk_adapters import s5b_memory_harness as mh
+
+    assert (ap.PROMPT_VERSION, ap.RESULT_SCHEMA_VERSION, ap.POLICY_VERSION, ap.VALIDATOR_VERSION) == (
+        "host-analysis-prompt/v1", "memory-analysis-proposal/v1", "host-analysis-policy/v1", "host-analysis-validator/v1",
+    )
+    assert ap.PROPOSAL_TOOL_NAME == "memory_analysis_proposal"
+    schema = ap.PROPOSAL_TOOL_SCHEMA
+    assert schema["additionalProperties"] is False and schema["required"] == ["outcome", "operations"]
+    op_schema = schema["properties"]["operations"]["items"]
+    assert op_schema["required"] == ["operation_id", "memory_type", "evidence_item_id", "exact_quote", "reason_code"]
+    assert op_schema["properties"]["memory_type"]["enum"] == ["semantic", "episode", "procedure", "prospective"]
+    for host_only in ("start_byte", "end_byte", "quote_hash", "envelope_hash", "admission_receipt_id", "base_revision"):
+        assert host_only not in json.dumps(schema)
+
+    text = "把 README 里的版本号改成 1.2.0，顺便把 README 的日期也改一下"
+    envelope, receipt = build_foreground_turn_evidence(subject=mh.SUBJECT, authority_ref=mh.AUTHORITY_REF, delivery_key="turn-x", text=text)
+    item = ap.admitted_item(envelope, receipt)
+    assert item.item_id == "turn-x" and item.text == text and item.quotable
+
+    quote = "版本号改成 1.2.0"
+    span = ap.derive_span(item, quote, span_id="span-1")
+    start = len(text[: text.find(quote)].encode("utf-8"))
+    assert (span.start_byte, span.end_byte) == (start, start + len(quote.encode("utf-8")))
+    assert text.encode("utf-8")[span.start_byte:span.end_byte].decode("utf-8") == quote
+    assert span.quote_hash == hashlib.sha256(quote.encode("utf-8")).hexdigest()
+    assert (span.item_json_pointer, span.item_ordinal, span.item_id) == ("/text", 1, "turn-x")
+    assert span.normalization_version == EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1
+    assert (span.actor_role, span.provenance, span.support_kind) == (
+        EvidenceActorRole.USER, EvidenceProvenance.AUTHENTICATED_USER, EvidenceSupportKind.EXPLICIT_USER_ASSERTION,
+    )
+    assert (span.envelope_hash, span.sanitized_hash, span.admission_receipt_id, span.admission_receipt_hash) == (
+        envelope.envelope_hash, envelope.sanitized_hash, receipt.receipt_id, receipt.receipt_hash,
+    )
+    for bad, reason in (("版本号改为 1.2.0", "quote_not_verbatim"), ("README", "quote_ambiguous"), ("", "quote_empty"), ("1.2.0 版本", "quote_not_verbatim")):
+        with pytest.raises(ap.AnalysisProposalRejected) as rejected:
+            ap.derive_span(item, bad, span_id="span-bad")
+        assert rejected.value.code == "analysis_quote_not_found" and rejected.value.detail["reason"] == reason
+
+    request = MemoryAnalysisRequest(
+        "analysis-batch-test", envelope.run_id, mh.SUBJECT, (EvidenceRef(envelope.evidence_id, envelope.envelope_hash, 1),),
+        ap.PROMPT_VERSION, ap.RESULT_SCHEMA_VERSION, ap.POLICY_VERSION, "provider-1", "model-1", "a" * 64, 1,
+        AnalysisBudget(4096, 1024, 30_000, 1_000_000), envelope.disclosure_context, "analysis-batch-test",
+    )
+    proposal = {
+        "outcome": "mutate",
+        "operations": [
+            mh.semantic_op("turn-x", quote, operation_id="sem"),
+            mh.episode_op("turn-x", "把 README 里的版本号改成 1.2.0", operation_id="epi"),
+            mh.procedure_op("turn-x", "日期也改一下", operation_id="proc"),
+            mh.prospective_op("turn-x", "顺便把 README 的日期也改一下", operation_id="pro"),
+            mh.semantic_op("turn-x", "版本号改为 1.2.0", operation_id="paraphrase"),
+            mh.semantic_op("unknown-item", quote, operation_id="unknown"),
+        ],
+    }
+    compiled = ap.compile_proposal(proposal, request=request, items=[item], base_revision=1, plan_id="host-analysis-plan-test", now=100.0)
+    assert compiled.outcome == "mutate" and compiled.plan is not None, compiled.rejected
+    # MemoryMutationPlan 规范序按 operation_id（无依赖时），故按 id 比较而非插入序。
+    by_id = {op.operation_id: op for op in compiled.plan.operations}
+    assert sorted(by_id) == ["epi", "pro", "proc", "sem"], compiled.rejected
+    assert {k: v.memory_type for k, v in by_id.items()} == {
+        "sem": LongTermMemoryType.SEMANTIC, "epi": LongTermMemoryType.EPISODE,
+        "proc": LongTermMemoryType.PROCEDURE, "pro": LongTermMemoryType.PROSPECTIVE,
+    }
+    assert [(r.operation_id, r.code) for r in compiled.rejected] == [
+        ("paraphrase", "analysis_quote_not_found"), ("unknown", "analysis_quote_not_found"),
+    ]
+    assert compiled.plan.turn_id == ap.analysis_turn_id(request.job_id)
+    assert compiled.plan.run_id == request.run_id and compiled.plan.subject == request.subject
+    assert compiled.plan.idempotency_key == request.idempotency_key and compiled.plan.base_revision == 1
+    assert compiled.plan.evidence_refs == request.ordered_evidence_refs
+    assert len(compile_memory_mutation_plan(compiled.plan).operations) == 4
+    assert compiled.structured_result["outcome"] == "mutate"
+
+    only_bad = ap.compile_proposal(
+        {"outcome": "mutate", "operations": [mh.semantic_op("turn-x", "版本号改为 1.2.0")]},
+        request=request, items=[item], base_revision=1, plan_id="host-analysis-plan-bad", now=100.0,
+    )
+    assert only_bad.plan is None and only_bad.outcome == "no_mutation"
+    assert only_bad.structured_result == {"outcome": "no_mutation", "operations": [], "closure_reason": "analysis_all_operations_rejected"}
+    declined = ap.compile_proposal({"outcome": "no_mutation", "operations": []}, request=request, items=[item], base_revision=1, plan_id="p", now=100.0)
+    assert declined.plan is None and declined.structured_result["outcome"] == "no_mutation"
+    assert ap.compile_proposal(None, request=request, items=[item], base_revision=1, plan_id="p", now=100.0).structured_result["closure_reason"] == "analysis_model_declined"
 
 
 # ---- S5B-AC-6 / Task 6：composition、cutover ----

@@ -1,15 +1,15 @@
 # SPDX-FileCopyrightText: 2026 DennyWanye
 # SPDX-License-Identifier: BUSL-1.1
 
-"""Host composition of the Memory SDK 0.6 cognitive (v7) backend for S5a.
+"""Host composition of the Memory SDK 0.6.1 cognitive (v7) backend (S5a read surfaces + S5b Task 4).
 
 One fresh-only v7 store per user-data dir, owned by the single authenticated
-local subject.  S5a consumes three read/observe surfaces:
+local subject.  Surfaces:
 
 - ``pending_occurrences`` — the mandatory pre-``no_recall`` inbox reconcile
   predicate: ``matched ∧ live/presentable ∧ eligible ∧ occurrence_key ∉
   presented set``.  Non-presentable or ineligible occurrences never block
-  ``no_recall`` (S5b settles them); nothing here ever advances the presented
+  ``no_recall`` (S5c settles them); nothing here ever advances the presented
   set — that cursor authority is the Host v45 ledger's.
 - ``typed_recall`` — the memory_standalone lane over ``execute_typed_recall``
   with Host-constructed DisclosureContext (recipient/purpose can never come
@@ -17,6 +17,14 @@ local subject.  S5a consumes three read/observe surfaces:
 - The short-horizon vector lane runs on the production embedder when one is
   composed (hash/mock embedders are guarded off); without one it degrades
   deterministically and typed/FTS recall stays eligible.
+
+S5b Task 4 wiring (design-freeze §8): ``build_human_memory_v7(...,
+supported_filter_policies={credential-filter/v1, host-public-turn/v1,
+host-typed-ingress/v1}, evidence_authority=<Host state.db resolver>,
+analysis_delivery_authority=<HostMemoryAnalysisExecutor>, classification_policy)``
+and, on first build, the idempotent ``register_principal_owner(local principal,
+personal scope)`` — the S5a fail-open reconcile branch is gone: a fresh install
+registers its owner before the first read.
 """
 
 from __future__ import annotations
@@ -25,7 +33,8 @@ import asyncio
 import hashlib
 import time
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +45,13 @@ _NON_PRESENTABLE_STATES = frozenset(
     {"cancelled", "expired", "forgotten", "completed", "superseded"}
 )
 _ELIGIBLE_PRIVACY_CLASSES = frozenset({"public", "personal"})
+
+HOST_SUPPORTED_FILTER_POLICIES: frozenset[str] = frozenset(
+    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1"}
+)
+HOST_CLASSIFICATION_POLICY_ID = "deskpet-host-classification"
+HOST_CLASSIFICATION_POLICY_VERSION = "1"
+HOST_CLASSIFICATION_AUTHORITY_REF = "host:classification/v1"
 
 
 def local_memory_principal() -> Any:
@@ -49,32 +65,123 @@ def local_memory_principal() -> Any:
     )
 
 
+def local_memory_scope() -> Any:
+    from simple_harness_memory.core.identity import MemoryScope
+
+    return MemoryScope.personal(local_memory_principal().actor_id)
+
+
+def host_classification_policy() -> Any:
+    """Required by Memory 0.6.1 materialization (§8.3): Host evidence is PERSONAL by default."""
+
+    from simple_harness.runtime import PrivacyClass
+    from simple_harness_memory.core.mutations import InformationClassificationPolicy
+
+    return InformationClassificationPolicy(
+        policy_id=HOST_CLASSIFICATION_POLICY_ID,
+        policy_version=HOST_CLASSIFICATION_POLICY_VERSION,
+        authority_ref=HOST_CLASSIFICATION_AUTHORITY_REF,
+        required_privacy_class=PrivacyClass.PERSONAL,
+        required_information_attributes=(),
+    )
+
+
 class HumanMemoryV7Runtime:
     """Lazy singleton over ``build_human_memory_v7`` (fresh-only store)."""
 
-    def __init__(self, db_path: str | Path, *, embedder_getter: Any = None) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        embedder_getter: Any = None,
+        evidence_authority: Any = None,
+        analysis_authority: Any = None,
+        backend_factory: Callable[..., Any] | None = None,
+        principal: Any = None,
+    ) -> None:
         self._db_path = Path(db_path)
+        # Production: the single authenticated local owner.  Tests may bind a
+        # subject-specific principal (same deployment/household shape).
+        self._principal = principal
         self._manager: Any | None = None
         self._lock = asyncio.Lock()
         self._embedder_getter = embedder_getter
+        self._evidence_authority = evidence_authority
+        self._analysis_authority = analysis_authority
+        # Test seam only: build the backend with an injected clock/fault injector
+        # (the production path is always ``build_human_memory_v7``).
+        self._backend_factory = backend_factory
+        self.registration_receipt: Any | None = None
+
+    @property
+    def db_path(self) -> Path:
+        return self._db_path
+
+    def principal(self) -> Any:
+        return self._principal if self._principal is not None else local_memory_principal()
+
+    def scope(self) -> Any:
+        from simple_harness_memory.core.identity import MemoryScope
+
+        return MemoryScope.personal(self.principal().actor_id)
+
+    @property
+    def evidence_authority(self) -> Any:
+        return self._evidence_authority
+
+    @property
+    def analysis_authority(self) -> Any:
+        return self._analysis_authority
+
+    def build_kwargs(self) -> dict[str, Any]:
+        embedder = self._embedder_getter() if self._embedder_getter else None
+        if getattr(embedder, "kind", None) in {"hash", "mock"}:
+            # v7 production guard: deterministic test embeddings never
+            # power the short-horizon vector lane.
+            embedder = None
+        return {
+            "short_horizon_embedder": embedder,
+            "supported_filter_policies": HOST_SUPPORTED_FILTER_POLICIES,
+            "evidence_authority": self._evidence_authority,
+            "analysis_delivery_authority": self._analysis_authority,
+            "classification_policy": host_classification_policy(),
+        }
 
     async def manager(self) -> Any:
         async with self._lock:
             if self._manager is None:
-                from simple_harness_memory import build_human_memory_v7
-
                 self._db_path.parent.mkdir(parents=True, exist_ok=True)
-                embedder = (
-                    self._embedder_getter() if self._embedder_getter else None
+                kwargs = self.build_kwargs()
+                if self._backend_factory is not None:
+                    manager = await self._backend_factory(self._db_path, **kwargs)
+                else:
+                    from simple_harness_memory import build_human_memory_v7
+
+                    manager = await build_human_memory_v7(self._db_path, **kwargs)
+                # Memory 0.6.1 §8.4: idempotent owner registration on every build
+                # (fresh install → the first reconcile read succeeds; replay → same receipt).
+                self.registration_receipt = await manager.register_principal_owner(
+                    self.principal(), self.scope()
                 )
-                if getattr(embedder, "kind", None) in {"hash", "mock"}:
-                    # v7 production guard: deterministic test embeddings never
-                    # power the short-horizon vector lane.
-                    embedder = None
-                self._manager = await build_human_memory_v7(
-                    self._db_path, short_horizon_embedder=embedder
-                )
+                self._manager = manager
             return self._manager
+
+    async def job_runner(self, executor: Any, config: Any, *, worker_id: str, now: Callable[[], float] = time.time) -> Any:
+        """``DurableMemoryJobRunner`` over this store; ``executor`` must be the bound delivery authority."""
+
+        from simple_harness_memory.core.jobs import DurableMemoryJobRunner
+
+        if executor is not self._analysis_authority:
+            raise RuntimeError("memory_analysis_delivery_authority_identity_differs")
+        manager = await self.manager()
+        return DurableMemoryJobRunner(
+            repository=manager.backend,
+            executor=executor,
+            delivery_authority=executor,
+            config=config,
+            worker_id=worker_id,
+            now=now,
+        )
 
     async def close(self) -> None:
         async with self._lock:
@@ -87,35 +194,22 @@ class HumanMemoryV7Runtime:
     async def pending_occurrences(
         self, presented_keys: Iterable[str]
     ) -> tuple[Any, ...]:
-        """Frozen reconcile predicate over the read-only occurrence inbox."""
+        """Frozen reconcile predicate over the read-only occurrence inbox.
 
-        from simple_harness_memory.core.errors import MemoryOwnershipConflict
+        The owner is registered by ``manager()`` (Memory 0.6.1
+        ``register_principal_owner``), so any ``MemoryOwnershipConflict`` here is a
+        real ownership fault and propagates (fail-closed).
+        """
 
         manager = await self.manager()
-        principal = local_memory_principal()
+        principal = self.principal()
         presented = set(presented_keys)
         pending: list[Any] = []
         after: tuple[float, str] | None = None
         while True:
-            try:
-                page = await manager.read_occurrence_inbox(
-                    principal=principal, after=after, limit=200
-                )
-            except MemoryOwnershipConflict as exc:
-                # 按 reason code 收窄，而不是吞掉整类 ownership 冲突：日后上游
-                # 若在读路径首页抛出真正的属主迁移/篡改冲突，必须继续 fail-closed。
-                if str(exc) != "short_horizon_principal_rejected":
-                    raise
-                if after is None and not pending:
-                    # 全新安装：本地属主尚未在 v7 store 注册（SDK 只在首次
-                    # typed recall / mutation 时自注册，读路径按冻结契约拒绝
-                    # 未注册者）。未注册属主的收件箱在生产写路径上不可能有
-                    # 条目——apply_prospective_signal 同样要求注册——因此
-                    # reconcile 谓词在此状态下恒空成立；翻页中途或已有累积
-                    # 结果时出现同类冲突则不属于该状态，继续 fail-closed。
-                    # S5b: 向 memory-sdk 上游补正式的属主注册 API 后移除。
-                    return ()
-                raise
+            page = await manager.read_occurrence_inbox(
+                principal=principal, after=after, limit=200
+            )
             for entry in page.entries:
                 if entry.outcome != "matched":
                     continue
@@ -165,7 +259,7 @@ class HumanMemoryV7Runtime:
         )
 
         manager = await self.manager()
-        principal = local_memory_principal()
+        principal = self.principal()
         moment = time.time() if now is None else float(now)
         subject = principal.actor_id
         # The Host is the only author of disclosure identity; model payloads
@@ -262,9 +356,6 @@ class HumanMemoryV7Runtime:
         except Exception:  # noqa: BLE001 - degraded lane must stay stable
             short_horizon = None
         return RecallLanes(execution=execution, short_horizon=short_horizon)
-
-
-from dataclasses import dataclass
 
 
 @dataclass(frozen=True, slots=True)
@@ -375,8 +466,11 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
 
 
 __all__ = [
+    "HOST_SUPPORTED_FILTER_POLICIES",
     "HumanMemoryV7Runtime",
     "RecallLanes",
+    "host_classification_policy",
     "local_memory_principal",
+    "local_memory_scope",
     "project_recall_fragments",
 ]

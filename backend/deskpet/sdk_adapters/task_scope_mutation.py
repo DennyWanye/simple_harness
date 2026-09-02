@@ -400,11 +400,26 @@ class TaskScopeUpdateService:
         captured: dict[str, Any] = {}
 
         async def commit_hook(hook_db: aiosqlite.Connection, receipt: Any, replayed: bool) -> None:
+            from deskpet.execution.semantic_closure import closure_receipt_for_plan_tx
+
+            # Task 3 review F-1: an idempotent replay returns the receipt written with
+            # the decision — never a second receipt at the *current* head watermark
+            # (which would silently cover material events that landed in between).
+            existing = await closure_receipt_for_plan_tx(hook_db, task_scope_id=task_scope_id, plan_id=derived_plan_id)
+            if existing is not None:
+                captured["receipt"] = existing
+                captured["replayed"] = replayed
+                if commit_extension is not None:
+                    await commit_extension(hook_db)
+                return
+            # First write: the watermark is the decision's own revision watermark
+            # (the mutation.plan event sequence, same transaction as apply), so the
+            # receipt covers exactly the events ≤ that watermark.
             watermark_row = await self._store._fetchone(
                 hook_db,
-                "SELECT h.event_watermark,d.created_at FROM task_scope_heads h "
-                "JOIN task_scope_mutation_decisions d ON d.task_scope_id=h.task_scope_id "
-                "WHERE h.task_scope_id=? AND d.plan_id=?",
+                "SELECT r.event_watermark,d.created_at FROM task_scope_mutation_decisions d "
+                "JOIN task_scope_canonical_revisions r ON r.decision_id=d.decision_id "
+                "WHERE d.task_scope_id=? AND d.plan_id=?",
                 (task_scope_id, derived_plan_id),
             )
             assert watermark_row is not None
