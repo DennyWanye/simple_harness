@@ -1,7 +1,7 @@
 {
-  "producer_type": "runtime-probe",
+  "producer_type": "gate-exec",
   "artifact_kind": "business-result",
-  "generated_at": "2026-09-01T17:40:00Z",
+  "generated_at": "2026-09-02T09:00:00Z",
   "root_run_id": "run-step-4",
   "business_facts": {
     "business_terminal": "six-step sequence terminal answers per TC-HM-10",

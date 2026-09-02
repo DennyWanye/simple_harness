@@ -1,6 +1,6 @@
 {
   "scenario_id": "S5A-S6-COMPOSITION-CUTOVER",
-  "generated_at": "2026-09-02T00:55:00Z",
+  "generated_at": "2026-09-01T17:40:00Z",
   "identity": {
     "root_run_id": "cold-start-boot"
   },
@@ -16,5 +16,6 @@
     "evidence/s6-composition-cutover.log",
     "evidence/s6-cold-start-e2e.log"
   ],
-  "transcripts_present": 6
+  "transcripts_present": 6,
+  "bound_round": "r4 (runs 0041-0054, HEAD 7a5fec3f)"
 }

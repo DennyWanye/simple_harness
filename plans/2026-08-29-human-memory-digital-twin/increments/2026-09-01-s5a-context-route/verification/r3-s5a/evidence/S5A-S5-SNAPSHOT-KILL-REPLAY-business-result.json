@@ -1,6 +1,6 @@
 {
   "scenario_id": "S5A-S5-SNAPSHOT-KILL-REPLAY",
-  "generated_at": "2026-09-01T17:40:00Z",
+  "generated_at": "2026-09-02T09:00:00Z",
   "identity": {
     "root_run_id": "run-twenty"
   },
@@ -15,5 +15,5 @@
     "evidence/s5-kill-replay-twin.log"
   ],
   "transcripts_present": 6,
-  "bound_round": "r4 (runs 0041-0054, HEAD 7a5fec3f)"
+  "bound_round": "r3-s5a final clean run"
 }

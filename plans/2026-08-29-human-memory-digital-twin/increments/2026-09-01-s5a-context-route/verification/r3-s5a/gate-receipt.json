@@ -1,0 +1,59 @@
+{
+  "acceptance_sha256": "fa5f50030f6cd8f5dc63c2ec586baf421b64e40083687baca2dbf4ae825f98bd",
+  "auditor_input_sha256": "22073519e11fd7b45f00d9e42d4975b899ba0fb79476dfc704e3bcc93ed0d863",
+  "auditor_output_sha256": "74b2109219ee5a53790931dee9f02a9b0e42fd59e3d69b5702847f9cb30eb61b",
+  "content_basis": "worktree-content-excluding-declared-scope",
+  "content_digest": "b5d416e372e3d2b8c3bd6ac86428941ce896b4123e291e12003697cee9118dac",
+  "dirty_patch_sha256": "1ac69cfe268afe7532eb4a6b99fd054f2d9869ad4cc76853c077e0fb131f0dac",
+  "evidence_manifest_sha256": "24ad641a3594af6facd663fe1444e89ef49c651851df040bd82474fea1f031a6",
+  "evidence_summary": {
+    "distinct_artifacts": 27,
+    "distinct_root_runs": 17,
+    "records": 28,
+    "shared_artifact_sha256": [
+      "871aad3053640ed5e0eb5233bf4b46e049787a56bf9e46876e05040425a27477"
+    ]
+  },
+  "exclusion_scope": [
+    ".plan-test/active-run.json",
+    "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r3-s5a"
+  ],
+  "finalized_at": "2026-09-02T15:59:37+0800",
+  "fixture_only": false,
+  "head": "d1bb5cce7eaef21b74801f682748276ce23552a0",
+  "ledger_sha256": "2e0c20e8a599600e02eae329508aee7e4577437719a11373ef9b48a90e0c347d",
+  "receipt_version": 1,
+  "retired": false,
+  "run_id": "run-20260902-154131",
+  "scenario_statuses": {
+    "S5A-REG-FULL": "PASS",
+    "S5A-S1-REAL-NO-RECALL": "PASS",
+    "S5A-S2-REAL-RESUME": "PASS",
+    "S5A-S3-DETERMINISTIC-FIVE-ROUTE": "PASS",
+    "S5A-S4-PAYLOAD-MUTATIONS": "PASS",
+    "S5A-S5-SNAPSHOT-KILL-REPLAY": "PASS",
+    "S5A-S6-COMPOSITION-CUTOVER": "PASS"
+  },
+  "schema_version": "1.5.0",
+  "state": "SHIPPABLE",
+  "superseded_by": null,
+  "testcase_lock_sha256": "d430a48ca4215fbf72bdd2b56dc61cd9091242b922e7ebf01704c92cf0eb1807",
+  "tested_code_head": "d1bb5cce7eaef21b74801f682748276ce23552a0",
+  "timing_summary": {
+    "declared_ms": 2700000,
+    "entries": 1,
+    "measured_ms": 0
+  },
+  "toolchain": {
+    "gate_path": "/Users/taiwan/.claude/skills/plan-test/scripts/plan_test_gate.py",
+    "gate_sha256": "7f047b938cedaeae53a175a6a94c0045df4835fa15f7c582cc54d5bf84622901",
+    "gate_version": "1.5.0",
+    "host": "taiwandeMac-mini.local",
+    "platform": "Darwin-25.6.0-arm64",
+    "plugin_version": "",
+    "python_version": "3.9.6",
+    "recorded_at": "2026-09-02T15:41:31+0800"
+  },
+  "validator_version": "1.5.0",
+  "waivers": []
+}

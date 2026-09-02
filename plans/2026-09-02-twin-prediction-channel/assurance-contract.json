@@ -1,0 +1,28 @@
+{
+  "profile": "standard",
+  "acceptance_ids": ["AC-1", "AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"],
+  "protected_assets": [
+    {"id": "ASSET-1", "description": "canonical memory state 完整性（Procedure/applies_to/evidence 只经公开 strict-atomic API 写入）"},
+    {"id": "ASSET-2", "description": "用户隐私：suppressed/erased 内容不进入预测建议或注入 context"},
+    {"id": "ASSET-3", "description": "既有行为不回归：get_twin_graph_view display-only、recall lane 合约、TC-HM-12 步骤 8 探针"}
+  ],
+  "trusted_assumptions": [
+    {"id": "TRUST-1", "description": "开发者账户、OS 与系统绝对路径程序可信"},
+    {"id": "TRUST-2", "description": "Memory/Harness SDK 公开 API 合约按文档行为"},
+    {"id": "TRUST-3", "description": "Agent 运行时结构化痕迹（skill/tool 调用链、完成状态）真实反映执行"}
+  ],
+  "in_scope_failures": [
+    {"id": "FAIL-1", "description": "LLM 情境摘要幻觉导致检索污染或误匹配"},
+    {"id": "FAIL-2", "description": "表面相似但语义不同的任务被误建议历史方法"},
+    {"id": "FAIL-3", "description": "suppression/erasure fence 在预测读路径上泄漏"},
+    {"id": "FAIL-4", "description": "向量索引与 canonical state 漂移"}
+  ],
+  "in_scope_adversaries": [],
+  "out_of_scope_conditions": [
+    {"id": "OOS-1", "description": "UI 操作行为源与外部触发事件源（后续 slice）"},
+    {"id": "OOS-2", "description": "memory-sdk 内部/schema 改动"},
+    {"id": "OOS-3", "description": "序列级预测模型（v3）"},
+    {"id": "OOS-4", "description": "宿主环境被篡改（hostile-host）场景"}
+  ],
+  "maximum_acceptable_impact": "建议错误但用户可拒绝；不可接受：静默执行错误方法、泄漏被遗忘内容、污染 canonical state"
+}

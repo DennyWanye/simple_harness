@@ -1,0 +1,61 @@
+S5a 真实桌面 UI 验收证据（AI 驱动；用户 2026-09-02 原话批准 all-ai 等价，
+record-approval kind=all-ai-driving hash=2eb8b35b8664f18ef45ae1440aa2e11bef1c7300deb85e738da3992517d5ef18）
+
+生成时间: 2026-09-02T07:22:28Z（本文件为审计 P2 整改后的重发版，统一计数窗口 + 补 run/session 绑定）
+Host HEAD（UI 会话执行时）: 6a984091
+真实 provider: gpt-5.6-luna @ ai.svtun.cn（HTTP，非 mock）
+身份门: 自签 Ed25519 bootstrap 完成 companion_profile_bind
+        profile_id=legacy_local_profile generation=1 binding_epoch=1
+
+--- 绑定标识（审计可追溯）---
+session_id            : a59252e7-b0d8-5e60-9c5d-5781d7a783fa
+S2 resume_existing run: product-sdk-90e802856316ac7a88bd016953df6d54b0ff5374b92d4ef3b08ffae5112b23d0
+                        （recorded_at 2026-09-02 05:59:42Z, origin=context_tool,
+                          task_scope_id=29cd009e-db17-5a69-8435-0b26cc263301）
+S3 continue_active run: product-sdk-ef0f514e8895a335ba10f525a5f4c3321238067aee75988bb8eb30f0bbbd85da
+                        （recorded_at 2026-09-02 06:07:40Z, origin=context_tool）
+后端原始日志         : scratchpad/backend_harness.log（窗口起点 startup complete = 2026-09-02T05:58:08.745662Z）
+
+--- 计数口径说明（审计 P2 整改）---
+下列 run 统计取自 backend_harness.log 的单一 harness 实例窗口；
+DB 全表另含该窗口之前 3 个 run 的行（同一 UI 会话、更早的 harness 实例），
+故 DB 全表计数（34 receipts / direct_standalone×19 / 21 decisions）大于窗口内计数。
+两个口径下的结论一致，下表给出窗口内数字，括号内为 DB 全表数字。
+
+--- run 统计（窗口内）---
+sdk_run_completed      : 20
+sdk_run_driver_failed  : 0
+provider HTTP 400      : 0
+provider HTTP 200      : 30
+
+--- durable 证据（DB 全表，同一 session）---
+route decisions        : continue_active(context_tool)×1, direct_standalone(no_recall)×19, resume_existing(context_tool)×1
+snapshot receipts      : 34 条
+three-hash mismatches  : 0
+max revision in one run: 7
+occurrence_presented   : 0 行（S5a 零写不变式）
+
+--- 长上下文裁剪实证（最后一轮 provider 请求形状）---
+message_count=38 system_messages=2 user_messages=11 assistant_messages=16 tool_messages=9
+21 轮真实用户消息经因果组裁剪收敛，全程无 ContextBudgetExceeded。
+
+--- 业务终态实证 ---
+S1 直答无召回（route=direct_standalone, origin=no_recall）:
+    "今天想去公园散步，呼吸新鲜空气。"
+S2 同 Run continuation（route=resume_existing, origin=context_tool）:
+    终答精确复述 ResumePackage 独有事实——斑头雁 1520 只 /
+    无人机航拍章节因禁飞区取消 / 下一步补候鸟迁徙路线图。
+    该三项只可能来自 exact ResumePackage，不可能凭空生成。
+S3 continue_active（origin=context_tool）: 真实走通，同一 UI 会话内。
+S6 全新安装 reconcile 路径: 产品 human_memory_v7.db 的 principals 表恒空、
+    heads=0、events=0 ⇒ 本会话全部 run 均实走 3387007f 新增的全新安装分支。
+长会话第 21 轮: 模型仍能引用前文 "1520只"，证明裁剪后关键事实存活；
+    在文件工具连续失败时拒绝将其当作已核实结论（正确的保守行为）。
+
+--- UI 实测发现并修复的产品缺陷 ---
+S5A-UI-F1 (3387007f, 收窄于 35dff6cc): 全新安装 v7 store 未注册本地属主 →
+    run 起步 reconcile fail-closed（short_horizon_principal_rejected），首条 chat 必死。
+S5A-UI-F2 (6a984091, 补测于 35dff6cc): SDK 0.7.1 契约禁止 provider assistant 私有
+    metadata 进 durable Context → continuation 请求丢 assistant.tool_calls →
+    provider HTTP 400，每个用到工具的 chat 第二轮必挂。
+    线格式实测：修复前 400 invalid_request_error，修复后 200。

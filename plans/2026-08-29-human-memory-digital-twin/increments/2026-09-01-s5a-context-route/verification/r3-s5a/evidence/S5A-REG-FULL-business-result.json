@@ -1,11 +1,20 @@
 {
-  "producer_type": "runtime-probe",
-  "artifact_kind": "business-result",
-  "generated_at": "2026-09-01T17:40:00Z",
-  "root_run_id": "regression-suite",
+  "scenario_id": "S5A-REG-FULL",
+  "generated_at": "2026-09-02T09:00:00Z",
+  "identity": {
+    "root_run_id": "regression-suite"
+  },
   "business_facts": {
     "host_full_pytest_at_baseline": "r4: 6273 passed, 50 skipped, 12 deselected (7 documented machine-baseline reds, see reg-baseline-exclusions)",
     "memory_full_suite_green": "1071 passed, 8 skipped",
     "changed_surface_static_clean": "ruff: 39 findings on the changed surface vs 131 on the same surface at main baseline (no new correctness classes; S5a-added minor items listed for S5b cleanup); mypy: clean on S5a-owned modules"
-  }
+  },
+  "raw_refs": [
+    "evidence/reg-host-full-pytest.log",
+    "evidence/reg-memory-full-suite.log",
+    "evidence/reg-static.log",
+    "evidence/reg-baseline-exclusions.md"
+  ],
+  "transcripts_present": 6,
+  "bound_round": "r3-s5a final clean run"
 }

@@ -1,0 +1,19 @@
+{
+  "producer_type": "manual-observation",
+  "artifact_kind": "execution-log",
+  "generated_at": "2026-09-02T07:22:28Z",
+  "business_facts": {
+    "driver": "AI-driven real desktop UI (user approved all-ai equivalence 2026-09-02)",
+    "real_provider_runs": "20 sdk_run_completed, 0 sdk_run_driver_failed, 0 provider HTTP 400",
+    "routes_exercised_live": "direct_standalone(no_recall) x19, resume_existing(context_tool) x1, continue_active(context_tool) x1",
+    "snapshot_receipts": "34 receipts, 0 three-hash mismatches, max revision 7 in one run",
+    "occurrence_presented_rows": "0 (S5a zero-write invariant held)",
+    "long_session": "21 real user turns in one continuous session; causal-group trimming converged context to 38 messages / 11 user messages with no ContextBudgetExceeded",
+    "resume_business_terminal": "answer reproduced ResumePackage-only facts: bar-headed geese 1520, drone-aerial chapter cancelled for no-fly-zone, next step migration route map",
+    "defects_found_and_fixed": "S5A-UI-F1 fresh-install reconcile fail-closed (3387007f); S5A-UI-F2 continuation lost assistant.tool_calls causing provider 400 (6a984091)",
+    "session_id": "a59252e7-b0d8-5e60-9c5d-5781d7a783fa",
+    "resume_sdk_run_id": "product-sdk-90e802856316ac7a88bd016953df6d54b0ff5374b92d4ef3b08ffae5112b23d0",
+    "continue_active_sdk_run_id": "product-sdk-ef0f514e8895a335ba10f525a5f4c3321238067aee75988bb8eb30f0bbbd85da",
+    "counting_window": "run counts from the single backend_harness.log window; DB totals additionally include 3 earlier runs of the same UI session (both stated explicitly in the evidence file)"
+  }
+}
