@@ -10803,11 +10803,7 @@ async def _activate_product_sdk_runtime(
     try:
         stack = await _build_product_sdk_runtime_stack(state.generation)
     except Exception as exc:
-        logger.error(
-            "product_sdk_runtime_build_failed",
-            reason=str(exc),
-            exc_info=True,
-        )
+        logger.exception("product_sdk_runtime_build_failed", reason=str(exc))
         raise RuntimeError(f"product_sdk_runtime_build_failed: {exc}") from exc
 
     if state.phase == "activated":
