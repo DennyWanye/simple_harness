@@ -8827,6 +8827,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
 
     from deskpet.execution.semantic_closure import closure_instruction_for_run
     from deskpet.sdk_adapters.context_authority import ProductRunContextAuthority
+    from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 
     db_path = Path(state_db_path)
 
@@ -8840,6 +8841,8 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         ledger=ledger,
         reconcile=reconcile,
         closure_reader=closure_reader,
+        # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
+        binding_store=WorkspaceBindingAuthorityStore(db_path),
     )
 
 

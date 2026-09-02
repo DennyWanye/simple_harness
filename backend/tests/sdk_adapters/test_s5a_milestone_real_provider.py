@@ -252,7 +252,8 @@ async def test_real_provider_no_recall_single_invocation(milestone) -> None:  # 
     invocation with zero tool calls and a durable no_recall decision."""
 
     runtime = _runtime()
-    provider = RealRelayProvider(runtime, [])
+    transcript: list = []
+    provider = RealRelayProvider(runtime, transcript)
     provider_no_tools = provider
 
     # Narrow instruction: this lane must not route through tools at all.
@@ -262,6 +263,7 @@ async def test_real_provider_no_recall_single_invocation(milestone) -> None:  # 
         "你是桌面工作台的主模型。当前消息只需当前上下文即可回答时，"
         "禁止调用任何工具，直接给出简短中文回答。"
     )
+    started = time.time()
     try:
         milestone.context.messages[0] = type(milestone.context.messages[0])(
             role=milestone.context.messages[0].role,
@@ -270,10 +272,28 @@ async def test_real_provider_no_recall_single_invocation(milestone) -> None:  # 
         result = await _run(milestone, provider_no_tools)
     finally:
         _SYSTEM = saved
+        # S5b Task 6 (AC-6⑤)：S1 真实无召回车道同样落 transcript（失败路径也落盘）。
+        _EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+        (_EVIDENCE_DIR / f"run-s1-no-recall-{int(started)}.json").write_text(
+            json.dumps(
+                {
+                    "lane": "S5A-S1",
+                    "model": runtime["model"],
+                    "turns": transcript,
+                    "duration_s": round(time.time() - started, 2),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
 
     assert result.termination.route_state == "routed_standalone"
     assert len(provider.calls) == 1, "single invocation required"
     assert milestone.effects.calls == []
+    # S5b Task 6 (AC-6⑤)：无召回车道的终答必须非空（不放宽既有断言，只追加）。
+    answer = str(result.response.message.content)
+    assert answer.strip(), "real model must answer the no-recall turn"
+    assert len(transcript) == 1 and transcript[0]["response_message"].get("content")
     decisions = _rows(
         milestone.db_path,
         "SELECT route,origin FROM context_route_decisions WHERE sdk_run_id=?",
@@ -308,7 +328,7 @@ async def test_real_provider_commits_direct_route_via_tool(milestone) -> None:  
 
 @pytest.mark.asyncio
 async def test_real_provider_continue_active_follows_durable_cursor(
-    milestone, tmp_path
+    milestone, tmp_path  # noqa: F811
 ) -> None:
     """AC-1 third real positive route: continue_active against the durable
     active cursor left by a prior resume decision."""

@@ -413,14 +413,18 @@ class ContextRouteToolService:
         resume_package = opened["resume_package"]
         package_revision = resume_package.get("binding_set_revision")
         package_hash = resume_package.get("binding_receipt_hash")
-        if package_revision is not None and int(package_revision) >= 1:
-            if int(package_revision) != binding["binding_set_revision"] or (
-                package_hash and str(package_hash) != binding["binding_set_receipt_hash"]
-            ):
-                return await self._reject(
-                    run_id, raw_call_id, effect_id, proposal,
-                    "context_route_binding_lineage_stale",
-                )
+        if (
+            package_revision is not None
+            and int(package_revision) >= 1
+            and (
+                int(package_revision) != binding["binding_set_revision"]
+                or (package_hash and str(package_hash) != binding["binding_set_receipt_hash"])
+            )
+        ):
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal,
+                "context_route_binding_lineage_stale",
+            )
         return await self._commit_receipt(
             run_id=run_id,
             raw_call_id=raw_call_id,

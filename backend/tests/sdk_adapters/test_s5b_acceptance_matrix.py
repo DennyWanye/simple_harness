@@ -1458,3 +1458,141 @@ async def test_concurrent_reserve_from_two_connections_never_double_allocates(tm
     ])
     assert sorted(r.source_sequence for r in replay) == sequences
     assert ch.rows(env.db_path, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=?", env.run_id) == [(12,)]
+
+
+
+# ---- S5B-S4 / AC-3⑥（A6）：单根 per-canary 口径 + ≥2 root scope 写工具不可见 ----
+
+
+def _root_hash(root: Path) -> str:
+    import hashlib as _hashlib
+
+    digest = _hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        digest.update(str(path.relative_to(root)).encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Path) -> None:
+    """TC-HM-09 步骤 6（S5b 口径）：每个 canary root 一个单根 scope 逐一执行，每个 canary envelope 绑定 exact
+    task_scope_id / root ref / 当时 revision 并留逐 root hash；**追加断言**：≥2 root scope 的写工具不出现在
+    snapshot tools，强制调用 → 整 Run 故障 + 稳定码 ``sdk_task_execution_root_authority_ambiguous``（durable
+    FAILED 由 terminal observer 携带），两根 canary hash 均不变；Run 内 append 后 superseded sticky 至下一 route。"""
+
+    from deskpet.execution import RunState
+    from deskpet.execution.foreground_queue import ForegroundQueueStore
+    from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
+    from deskpet.sdk_adapters.effect_gate import EFFECT_GATE_STICKY_REASON
+    from deskpet.sdk_adapters.task_execution import TaskExecutionAuthorityError
+    from tests.execution import test_foreground_queue as fq
+    from tests.sdk_adapters import s5b_effect_gate_harness as h
+    from tests.sdk_adapters.test_effect_gate import _code, _context
+
+    canaries: dict[str, dict] = {}
+    for tag in ("a", "b"):
+        env = await h.build_env(tmp_path / tag)
+        scope, root = await h.make_bound_scope(env, tag, f"root-{tag}")
+        h.freeze_run(env, task_scope_id=scope, workspace_root=root)
+        provider = h.ScriptedProvider(
+            [
+                h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope}, raw_id=f"raw-route-{tag}"),
+                h.tool_call("write_file", {"path": f"canary-{tag}.txt", "content": f"canary {tag}"}, raw_id=f"raw-write-{tag}"),
+                h.answer("done"),
+            ]
+        )
+        out = await h.run_capture(env, provider)
+        assert out["exception"] is None and out["result"].termination.route_state == "routed_task"
+        [record] = env.effects.write_file_calls
+        envelope = record["envelope"]
+        head = await env.binding_store.current_receipt(scope)
+        # envelope 绑定 exact scope / root ref / 当时 revision（单根 scope：恰一 root）。
+        assert envelope.task_scope_id == scope and envelope.binding_set_revision == 1 == head.binding_set_revision
+        assert envelope.root_id == head.appended_root.root_id
+        assert envelope.root_identity_hash == head.root_identity_hashes[0] and len(head.root_identity_hashes) == 1
+        assert (root / f"canary-{tag}.txt").read_text(encoding="utf-8") == f"canary {tag}"
+        canaries[tag] = {"env": env, "scope": scope, "root": root, "hash": _root_hash(root), "envelope": envelope}
+    assert canaries["a"]["hash"] != canaries["b"]["hash"]
+
+    # ≥2 root scope：写工具不在任何一轮 snapshot tools 里；强制调用 → 整 Run 故障（零写入）。
+    env_c = await h.build_env(tmp_path / "c")
+    scope_c, root_c1 = await h.make_bound_scope(env_c, "c", "root-c1")
+    root_c2 = env_c.workspace_base / "root-c2"
+    root_c2.mkdir(parents=True)
+    await h.bind_scope_root(env_c.db_path, scope_c, root_c2, base_revision=1, tag="c2")
+    assert len((await env_c.binding_store.current_receipt(scope_c)).root_identity_hashes) == 2
+    h.freeze_run(env_c, task_scope_id=scope_c, workspace_root=None)  # 多 root 冻结 = projectless
+    provider_c = h.ScriptedProvider(
+        [
+            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_c}, raw_id="raw-route-c"),
+            h.tool_call("write_file", {"path": "forced.txt", "content": "must not land"}, raw_id="raw-write-c"),
+            h.answer("never reached"),
+        ]
+    )
+    out_c = await h.run_capture(env_c, provider_c)
+    exposed = h.provider_tool_names(provider_c)
+    assert len(exposed) == 2  # UNROUTED 轮 + ROUTED_TASK（多 root）轮
+    for names in exposed:
+        assert "write_file" not in names and {"context_route", "task_scope_search", "read_file"} <= set(names)
+    exc = out_c["exception"]
+    assert isinstance(exc, TaskExecutionAuthorityError)
+    assert exc.code == "sdk_task_execution_root_authority_ambiguous"
+    assert env_c.effects.calls == ["context_route"] and env_c.effects.write_file_calls == []
+    assert not (root_c1 / "forced.txt").exists() and not (root_c2 / "forced.txt").exists()
+    assert env_c.memo.read(h.RUN.value) == "sdk_task_execution_root_authority_ambiguous"
+    # 两根 canary hash 均不变。
+    for tag in ("a", "b"):
+        assert _root_hash(canaries[tag]["root"]) == canaries[tag]["hash"]
+
+    # durable FAILED：run_terminal.public_payload.error_code 携带稳定码。
+    queue_db, primary_id, clock = await fq._ready(tmp_path / "queue")
+    store = ForegroundQueueStore(queue_db, clock=clock)
+    await fq._enqueue(store, primary_id, 1)
+    admission = await fq._claim_and_bind(store, sdk_run_id=h.RUN.value)
+    await store.record_sdk_started(
+        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, owner_id=admission.owner_id,
+        generation=admission.generation, sdk_event_id="sdk-start-s4", idempotency_key="sdk-start-s4",
+    )
+
+    class _Ingress:
+        async def wait_idle(self, run_id: str) -> None:
+            assert run_id == h.RUN.value
+
+        def query(self, run_id: str):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(state=SimpleNamespace(value="failed"))
+
+    class _Stack:
+        def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(
+                run_id=run_id, state="failed", event_id="sdk-terminal-s4", event_hash="6" * 64,
+                occurred_at=101.0, error_code="driver_failed",
+            )
+
+    observed = await SqliteSdkTerminalObserver(str(queue_db), _Ingress(), _Stack(), run_fault_memo=env_c.memo).observe(  # type: ignore[arg-type]
+        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, subject=fq.SUBJECT,
+        owner_id=admission.owner_id, generation=admission.generation,
+    )
+    assert observed is not None and observed.terminal_state is RunState.FAILED
+    terminal = await store.record_sdk_terminal(
+        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, owner_id=admission.owner_id,
+        generation=admission.generation, terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash, idempotency_key="terminal-s4",
+    )
+    assert terminal.terminal_state is RunState.FAILED
+    [(payload_json,)] = h.rows(
+        queue_db,
+        "SELECT e.payload_json FROM task_scope_execution_ingest_receipts r JOIN task_scope_events e ON e.event_id=r.event_id "
+        "WHERE r.run_id=? AND r.evidence_kind='run_terminal'",
+        h.RUN.value,
+    )
+    assert json.loads(payload_json)["public_payload"]["error_code"] == "sdk_task_execution_root_authority_ambiguous"
+
+    # Run 内 Manual append（同 scope）→ 后续项目 effect superseded（strict），sticky 至下一 route。
+    env_a, scope_a, root_a, envelope_a = (canaries["a"][k] for k in ("env", "scope", "root", "envelope"))
+    root_a2 = env_a.workspace_base / "root-a2"
+    root_a2.mkdir(parents=True)
+    await h.bind_scope_root(env_a.db_path, scope_a, root_a2, base_revision=1, tag="a2")
+    assert _code(await env_a.gate.verify(_context(envelope_a), "write_file")) == "workspace_binding_receipt_superseded"
+    assert _code(await env_a.gate.verify(_context(envelope_a), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert _root_hash(root_a) == canaries["a"]["hash"]
