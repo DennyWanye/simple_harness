@@ -180,8 +180,170 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         HUMAN_MEMORY_RECOVERY_MIGRATION,
         HUMAN_MEMORY_QUIESCENCE_MIGRATION,
         FOREGROUND_EXECUTION_MIGRATION,
+        # S5b Task 6 (Task 2 review): v45 (037) was applied outside the S4
+        # chain in S5a (no marker / chain row / recovery registration → no
+        # fence triggers on the route ledger).  It now joins the chain; an
+        # existing database is repaired by `repair_context_route_registration`.
+        CONTEXT_ROUTE_MIGRATION,
         EFFECT_CLOSURE_MIGRATION,
     }
+)
+
+# Host states that must be quiescent before the v46 cutover (design-freeze §5
+# 迁移前置): a non-terminal foreground Run, or a Run whose SDK side is WAITING,
+# would straddle the schema change with in-flight closure / evidence state.
+_FOREGROUND_TERMINAL_STATES = ("COMPLETED", "FAILED", "STOPPED", "CANCELLED")
+V46_CUTOVER_BLOCKED_FOREGROUND_RUN_ACTIVE = "human_memory_migration_blocked_foreground_run_active"
+V46_CUTOVER_BLOCKED_SDK_RUN_WAITING = "human_memory_migration_blocked_sdk_run_waiting"
+
+
+class MigrationBlocked(RuntimeError):
+    """A migration precondition failed; the database is untouched (stable code)."""
+
+    def __init__(self, code: str, detail: str) -> None:
+        super().__init__(f"{code}: {detail}")
+        self.code = code
+        self.detail = detail
+
+
+async def _table_exists(db: aiosqlite.Connection, name: str) -> bool:
+    cursor = await db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+    )
+    row = await cursor.fetchone()
+    await cursor.close()
+    return row is not None
+
+
+async def _assert_effect_closure_cutover_preconditions(db: aiosqlite.Connection) -> None:
+    """v45 → v46 前置：无非终态 foreground Run、无 WAITING SDK Run（否则 stable reject 并提示）。
+
+    The WAITING check runs first: a WAITING SDK Run is also a non-terminal
+    foreground Run, and the more specific code tells the operator what to do
+    (answer / cancel the pending authorization) instead of "finish the Run".
+    """
+
+    placeholders = ",".join("?" * len(_FOREGROUND_TERMINAL_STATES))
+    if await _table_exists(db, "foreground_execution_reconciliations") and await _table_exists(
+        db, "foreground_run_heads"
+    ):
+        cursor = await db.execute(
+            "SELECT r.host_run_id FROM foreground_execution_reconciliations r "
+            "JOIN (SELECT host_run_id, MAX(recorded_at) AS latest "
+            "FROM foreground_execution_reconciliations GROUP BY host_run_id) l "
+            "ON l.host_run_id=r.host_run_id AND l.latest=r.recorded_at "
+            "JOIN foreground_run_heads h ON h.host_run_id=r.host_run_id "
+            f"WHERE r.observed_state='BOUND_WAITING' AND h.current_state NOT IN ({placeholders}) "
+            "ORDER BY r.host_run_id",
+            _FOREGROUND_TERMINAL_STATES,
+        )
+        waiting = await cursor.fetchall()
+        await cursor.close()
+        if waiting:
+            listed = ", ".join(str(row[0]) for row in waiting[:8])
+            raise MigrationBlocked(
+                V46_CUTOVER_BLOCKED_SDK_RUN_WAITING,
+                f"{len(waiting)} SDK Run(s) still WAITING [{listed}]; answer or cancel the "
+                "pending authorization before upgrading to v46",
+            )
+    if await _table_exists(db, "foreground_run_heads"):
+        cursor = await db.execute(
+            "SELECT host_run_id,current_state FROM foreground_run_heads "
+            f"WHERE current_state NOT IN ({placeholders}) ORDER BY host_run_id",
+            _FOREGROUND_TERMINAL_STATES,
+        )
+        active = await cursor.fetchall()
+        await cursor.close()
+        if active:
+            listed = ", ".join(f"{row[0]}={row[1]}" for row in active[:8])
+            raise MigrationBlocked(
+                V46_CUTOVER_BLOCKED_FOREGROUND_RUN_ACTIVE,
+                f"{len(active)} non-terminal foreground Run(s) [{listed}]; let them reach a "
+                "terminal state (or stop/cancel them) before upgrading to v46",
+            )
+
+
+async def _repair_context_route_registration_tx(db: aiosqlite.Connection) -> bool:
+    """Backfill the v45 (037) marker / chain row / recovery registration on a
+    database that applied 037 before it joined the S4 chain.  Idempotent; returns
+    whether anything was written."""
+
+    if not await _table_exists(db, "context_route_marker"):
+        return False
+    migration_path = DEFAULT_MIGRATIONS_DIR / CONTEXT_ROUTE_MIGRATION
+    migration_sha256 = hashlib.sha256(migration_path.read_bytes()).hexdigest()
+    initialized_at = time.time()
+    wrote = False
+    cursor = await db.execute("SELECT 1 FROM context_route_marker WHERE singleton=1")
+    if await cursor.fetchone() is None:
+        await db.execute(
+            "INSERT INTO context_route_marker("
+            "singleton,format_epoch,schema_version,migration_id,"
+            "migration_sha256,initialized_at) VALUES (1,'human-memory-v1',1,?,?,?)",
+            (CONTEXT_ROUTE_MIGRATION, migration_sha256, initialized_at),
+        )
+        wrote = True
+    await cursor.close()
+    if await _table_exists(db, "human_memory_recovery_table_registry"):
+        cursor = await db.execute(
+            "SELECT table_name FROM human_memory_recovery_table_registry "
+            "WHERE table_name IN (?,?,?,?,?)",
+            tuple(name for name, _ in _CONTEXT_ROUTE_RECOVERY_TABLES),
+        )
+        registered = {str(row[0]) for row in await cursor.fetchall()}
+        await cursor.close()
+        missing = tuple(
+            item for item in _CONTEXT_ROUTE_RECOVERY_TABLES if item[0] not in registered
+        )
+        if missing:
+            await _register_recovery_tables(db, missing)
+            wrote = True
+    await _execute_transactional_script(db, _HUMAN_MIGRATION_CHAIN_SQL)
+    cursor = await db.execute(
+        "SELECT 1 FROM human_memory_migration_chain WHERE migration_id=?",
+        (CONTEXT_ROUTE_MIGRATION,),
+    )
+    if await cursor.fetchone() is None:
+        await db.execute(
+            "INSERT INTO human_memory_migration_chain("
+            "migration_id,schema_version,migration_sha256,applied_at) VALUES (?,?,?,?)",
+            (CONTEXT_ROUTE_MIGRATION, CONTEXT_ROUTE_SCHEMA_VERSION, migration_sha256, initialized_at),
+        )
+        wrote = True
+    await cursor.close()
+    return wrote
+
+
+async def repair_context_route_registration(db_path: str | Path) -> bool:
+    """Public entry of the 037 registration backfill (own connection, one transaction)."""
+
+    path = Path(db_path)
+    if not path.exists():
+        return False
+    async with aiosqlite.connect(path) as db:
+        version_cursor = await db.execute("PRAGMA user_version")
+        row = await version_cursor.fetchone()
+        await version_cursor.close()
+        if int(row[0]) < CONTEXT_ROUTE_SCHEMA_VERSION:
+            return False
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            wrote = await _repair_context_route_registration_tx(db)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            raise
+    if wrote:
+        log.info("context_route_registration_repaired db=%s", path)
+    return wrote
+
+
+_CONTEXT_ROUTE_RECOVERY_TABLES: tuple[tuple[str, str], ...] = (
+    ("context_route_marker", "A"),
+    ("context_route_decisions", "A"),
+    ("run_context_snapshot_receipts", "A"),
+    ("context_route_tool_invocations", "A"),
+    ("occurrence_presented", "A"),
 )
 
 _HUMAN_MIGRATION_CHAIN_SQL = """
@@ -672,6 +834,9 @@ async def run_migrations(
                     raise MigrationError(
                         f"migration {version} contains forbidden transaction control"
                     )
+                if version == EFFECT_CLOSURE_MIGRATION:
+                    # S5b Task 6 cutover precondition (stable reject, DB untouched).
+                    await _assert_effect_closure_cutover_preconditions(db)
                 try:
                     await db.execute("BEGIN IMMEDIATE")
                     await _execute_transactional_script(db, sql)
@@ -844,14 +1009,7 @@ async def run_migrations(
                                 (version, migration_sha256, initialized_at),
                             )
                             await _register_recovery_tables(
-                                db,
-                                (
-                                    ("context_route_marker", "A"),
-                                    ("context_route_decisions", "A"),
-                                    ("run_context_snapshot_receipts", "A"),
-                                    ("context_route_tool_invocations", "A"),
-                                    ("occurrence_presented", "A"),
-                                ),
+                                db, _CONTEXT_ROUTE_RECOVERY_TABLES
                             )
                         if version == EFFECT_CLOSURE_MIGRATION:
                             initialized_at = time.time()
@@ -966,6 +1124,23 @@ async def run_migrations(
         # only to the highest marker actually present; V17 must not claim V18
         # before the V18 DDL transaction commits.
         durable_markers = already | set(applied_now)
+        if (
+            CONTEXT_ROUTE_MIGRATION in durable_markers
+            and CONTEXT_ROUTE_MIGRATION not in applied_now
+        ):
+            # S5b Task 6: a database that applied 037 in S5a (outside the S4
+            # chain) gets its marker / chain row / recovery fence backfilled.
+            try:
+                await db.execute("BEGIN IMMEDIATE")
+                repaired = await _repair_context_route_registration_tx(db)
+                await db.commit()
+            except Exception as exc:
+                await db.rollback()
+                raise MigrationError(
+                    f"context_route registration repair failed: {exc}"
+                ) from exc
+            if repaired:
+                log.info("context_route_registration_repaired db=%s", db_path)
         if _PROVIDER_BINDING_LIFECYCLE_MIGRATION in durable_markers:
             # Recovery tooling can recreate an older table after the v23
             # marker exists. Repair the marker's physical invariant without

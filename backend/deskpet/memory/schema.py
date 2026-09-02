@@ -33,6 +33,8 @@ from enum import StrEnum
 from pathlib import Path
 
 from deskpet.memory.migrator import (
+    CONTEXT_ROUTE_MIGRATION,
+    CONTEXT_ROUTE_SCHEMA_VERSION,
     DEFAULT_MIGRATIONS_DIR,
     EFFECT_CLOSURE_MIGRATION,
     EFFECT_CLOSURE_SCHEMA_VERSION,
@@ -307,9 +309,10 @@ def _validate_s4_migration_chain(
         (HUMAN_MEMORY_RECOVERY_MIGRATION, HUMAN_MEMORY_RECOVERY_SCHEMA_VERSION),
         (HUMAN_MEMORY_QUIESCENCE_MIGRATION, HUMAN_MEMORY_QUIESCENCE_SCHEMA_VERSION),
         (FOREGROUND_EXECUTION_MIGRATION, FOREGROUND_EXECUTION_SCHEMA_VERSION),
-        # v45 (037) is intentionally absent: S5a registered it outside the
-        # S4 chain (no chain row / marker), so an existing v45 database must
-        # keep validating; v46 rejoins the chain.
+        # v45 (037) joined the chain in S5b Task 6; a database that applied it
+        # in S5a (outside the chain) is backfilled by
+        # `migrator.repair_context_route_registration` before this check.
+        (CONTEXT_ROUTE_MIGRATION, CONTEXT_ROUTE_SCHEMA_VERSION),
         (EFFECT_CLOSURE_MIGRATION, EFFECT_CLOSURE_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
@@ -597,6 +600,12 @@ async def initialize_human_memory_program_state_db(
     async with _human_memory_program_lock(path):
         current = await read_user_version(path)
         bootstrap = _has_bootstrap_marker(path)
+        if current >= CONTEXT_ROUTE_SCHEMA_VERSION:
+            # S5b Task 6: 037 registration backfill for databases that applied
+            # v45 before it joined the S4 chain (idempotent, own transaction).
+            from deskpet.memory.migrator import repair_context_route_registration
+
+            await repair_context_route_registration(path)
         if current == HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
             _validate_human_memory_program_marker(
                 path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
