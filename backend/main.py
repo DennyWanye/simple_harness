@@ -3194,6 +3194,10 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         ),
         audit_sink=_AuditSink(),
         effect_gate=_ensure_foreground_effect_gate(),
+        # S5b Task 4: terminal commit writes the Memory ingestion outbox row from the
+        # durable SdkRunBindingV1 (same record the post-turn invoker rebuilds from).
+        run_binding_reader=_sdk_runtime_stack.read_closure_run_facts,
+        endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -5663,6 +5667,12 @@ async def lifespan(app: FastAPI):
                 "human_memory_foreground_runtime_shutdown_failed",
                 error=str(exc),
             )
+    if _memory_analysis_lane is not None:
+        try:
+            await _memory_analysis_lane.close(timeout_seconds=5.0)
+            logger.info("memory_analysis_lane_stopped")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("memory_analysis_lane_shutdown_failed", error=str(exc))
         finally:
             service_context.register(
                 "human_memory_foreground_scheduler_wake", None
@@ -8190,11 +8200,26 @@ async def _build_product_sdk_runtime_stack(
 
         return WorkspaceBindingAuthorityStore(_state_db_path)
 
+    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
+    from deskpet.memory.evidence_authority import HostEvidenceAuthority
     from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+
+    # S5b Task 4: the v7 store is built with the Host state.db evidence resolver and
+    # the Host analysis executor as its delivery authority (identity-bound), so the
+    # accepted analysis plan materializes inside Memory 0.6.1.
+    def _analysis_adapter(record):  # type: ignore[no-untyped-def]
+        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+
+        if _sdk_provider_binding_resolver is None:
+            raise RuntimeError("sdk_provider_binding_resolver_unavailable")
+        binding = SdkRunBindingV1.from_record(record)
+        return _sdk_provider_binding_resolver.build_authority(binding).provider
 
     _human_memory_v7 = HumanMemoryV7Runtime(
         Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
         embedder_getter=lambda: service_context.get("embedder"),
+        evidence_authority=HostEvidenceAuthority(_state_db_path),
+        analysis_authority=HostMemoryAnalysisExecutor(_state_db_path, adapter_factory=_analysis_adapter),
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
 
@@ -8757,12 +8782,18 @@ async def _build_product_sdk_runtime_stack(
             fault_sink=_ensure_run_fault_memo(),
         ),
     )
+    # S5b Task 4: Host↔Memory async face (evidence authority / analysis executor /
+    # ingestion outbox lane) is part of the same composition; each is a slot.
+    _activate_memory_analysis_lane()
     for slot in (
         "sdk_run_context_authority",
         "sdk_runtime_decision_sink",
         "sdk_task_execution_authority",
         "sdk_effect_gate",
         "sdk_closure_instruction_reader",
+        "sdk_evidence_authority",
+        "sdk_memory_analysis_executor",
+        "sdk_memory_ingestion_outbox",
     ):
         if service_context.get(slot) is None:
             raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
@@ -8795,6 +8826,91 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         reconcile=reconcile,
         closure_reader=closure_reader,
     )
+
+
+_memory_analysis_lane = None
+
+
+def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-def]
+    """Endpoint identity of the Run's provider entry (same recipe as ``ProductProviderAdapter``)."""
+
+    from deskpet.sdk_adapters.provider import provider_endpoint_identity
+
+    registry = _provider_registry
+    if registry is None:
+        return None
+    entry = registry.get_entry(str(record.get("provider_id") or ""))
+    if entry is None:
+        return None
+    return provider_endpoint_identity(entry)
+
+
+def _activate_memory_analysis_lane() -> None:
+    """S5b Task 4 composition: evidence authority, analysis executor, ingestion outbox + one lane.
+
+    ``HumanMemoryV7Runtime`` (registered earlier) must be the one bound to these
+    authorities — the executor is the v7 builder's ``analysis_delivery_authority``.
+    """
+
+    global _memory_analysis_lane
+    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
+    from deskpet.memory.memory_ingestion_outbox import (
+        MemoryAnalysisLane,
+        MemoryIngestionOutboxWorker,
+        build_worker_config,
+    )
+    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+
+    v7_runtime = service_context.get("human_memory_v7_runtime")
+    if v7_runtime is None:
+        raise RuntimeError("sdk_context_authority_composition_missing:human_memory_v7_runtime")
+    executor = v7_runtime.analysis_authority
+    evidence_authority = v7_runtime.evidence_authority
+    if not isinstance(executor, HostMemoryAnalysisExecutor) or evidence_authority is None:
+        raise RuntimeError("sdk_context_authority_composition_missing:sdk_memory_analysis_executor")
+    if _sdk_provider_binding_resolver is None:
+        raise RuntimeError("sdk_context_authority_composition_missing:sdk_provider_binding_resolver")
+    service_context.register("sdk_evidence_authority", evidence_authority)
+    service_context.register("sdk_memory_analysis_executor", executor)
+    if _memory_analysis_lane is None:
+        worker = MemoryIngestionOutboxWorker(
+            _state_db_path,
+            v7_runtime.manager,
+            owner_id=f"deskpet-memory-outbox:{os.getpid()}",
+        )
+        provider_id = "deskpet-host"
+        model_id = "deskpet-host"
+        config_hash = hashlib.sha256(b"deskpet-host:memory-analysis-fallback").hexdigest()
+        registry = _provider_registry
+        chain = _provider_chain_or_none(registry) if registry is not None else None
+        if chain:
+            entry = registry.get_entry(str(chain[0]))
+            if entry is not None:
+                record = {
+                    "provider_id": str(chain[0]),
+                    "provider_incarnation_id": str(getattr(entry, "incarnation_id", "")),
+                    "provider_config_revision": int(getattr(entry, "config_revision", 0) or 0),
+                    "model_id": str(getattr(entry, "model", "") or "deskpet-host"),
+                    "model_params": {},
+                }
+                provider_id = record["provider_id"]
+                model_id = record["model_id"]
+                from deskpet.memory.analysis_lineage import binding_model_config_hash
+
+                config_hash = binding_model_config_hash(
+                    record, endpoint_identity=_provider_endpoint_identity_for_binding(record)
+                )
+        _memory_analysis_lane = MemoryAnalysisLane(
+            worker=worker,
+            runtime=v7_runtime,
+            executor=executor,
+            config=build_worker_config(provider_id=provider_id, model_id=model_id, model_config_hash=config_hash),
+            worker_id=f"deskpet-memory-analysis:{os.getpid()}",
+        )
+        _memory_analysis_lane.start()
+        logger.info("memory_analysis_lane_started")
+    service_context.register("sdk_memory_ingestion_outbox", _memory_analysis_lane)
+    del SdkRunBindingV1
 
 
 async def _issue_product_harness_host(
