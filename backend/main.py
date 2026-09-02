@@ -3105,9 +3105,9 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
     from deskpet.sdk_adapters.post_turn_invoker import RunBoundInvoker
     from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
-    _closure_service = service_context.get("task_scope_update_service")
-    if _closure_service is None or _sdk_provider_binding_resolver is None:
-        raise RuntimeError("sdk_context_authority_composition_missing:task_scope_update_service")
+    _closure_service = _ensure_task_scope_update_service()
+    if _sdk_provider_binding_resolver is None:
+        raise RuntimeError("sdk_context_authority_composition_missing:sdk_provider_binding_resolver")
 
     class _RuntimeLeaseFence:
         """Per-Run lease fence resolved lazily from the driver's (owner, generation)."""
@@ -7361,6 +7361,24 @@ _sdk_context_port = None
 _sdk_runtime_catalog: dict[str, Any] | None = None
 _sdk_run_binding_registry = None
 _sdk_provider_binding_resolver = None
+# S5b Task 3: the `task_scope_update` handler shared by the Tool registration and
+# the terminal closure fallback (process-wide, like the binding resolver above).
+_task_scope_update_service = None
+
+
+def _ensure_task_scope_update_service():  # type: ignore[no-untyped-def]
+    global _task_scope_update_service
+    if _task_scope_update_service is None:
+        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+        from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
+        from deskpet.sdk_adapters.tools import active_product_tool_context
+
+        _task_scope_update_service = TaskScopeUpdateService(
+            _state_db_path,
+            tool_context_getter=active_product_tool_context,
+            route_ledger=ContextRouteLedgerStore(_state_db_path),
+        )
+    return _task_scope_update_service
 _sdk_tool_authority_registry = None
 _sdk_runtime_tool_inventory = None
 # Product/UI projections expose the Host canonical root id, while RunClient
@@ -8249,18 +8267,12 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.sdk_adapters.task_scope_mutation import (
         TASK_SCOPE_UPDATE_DESCRIPTION,
         TASK_SCOPE_UPDATE_SCHEMA,
-        TaskScopeUpdateService,
     )
 
-    _task_scope_update_service = TaskScopeUpdateService(
-        _state_db_path,
-        tool_context_getter=active_product_tool_context,
-        route_ledger=_ContextRouteLedgerStore(_state_db_path),
-    )
-    service_context.register("task_scope_update_service", _task_scope_update_service)
+    _closure_tool_service = _ensure_task_scope_update_service()
 
     async def task_scope_update_handler(arguments, _context):
-        return await _task_scope_update_service.handle_task_scope_update(arguments)
+        return await _closure_tool_service.handle_task_scope_update(arguments)
 
     projected_registrations = (
         *projected_registrations,
