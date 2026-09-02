@@ -122,6 +122,10 @@ _VALID_SERVICES = frozenset({
     "sdk_run_context_authority",
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
+    # S5b: EffectGate (Task 1) and the closure instruction reader (Task 3 review
+    # F-2) are explicit composition slots too.
+    "sdk_effect_gate",
+    "sdk_closure_instruction_reader",
     "human_memory_host_service_factory",
     "human_memory_v7_runtime",
     "human_memory_binding_append_authority",
@@ -277,6 +281,8 @@ class ServiceContext:
     sdk_run_context_authority: Any | None = None
     sdk_runtime_decision_sink: Any | None = None
     sdk_task_execution_authority: Any | None = None
+    sdk_effect_gate: Any | None = None
+    sdk_closure_instruction_reader: Any | None = None
     human_memory_host_service_factory: Any | None = None
     human_memory_v7_runtime: Any = None
     human_memory_binding_append_authority: Any | None = None

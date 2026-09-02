@@ -8689,7 +8689,6 @@ async def _build_product_sdk_runtime_stack(
     # proxies in _sdk_runtime_authority_bindings stay fail-closed otherwise.
     from deskpet.sdk_adapters.context_authority import (
         ContextRouteLedgerStore,
-        ProductRunContextAuthority,
         ProductRuntimeDecisionSink,
     )
     from deskpet.sdk_adapters.task_execution import (
@@ -8728,9 +8727,13 @@ async def _build_product_sdk_runtime_stack(
 
     _occurrence_reconcile = _v7_runtime.pending_occurrences
 
+    # S5b Task 3 review F-2: the protected "closure required" instruction of the
+    # next Run (pending merge / dirty admission scope) is a production fact, not
+    # a test-harness one — the reader is a composition slot (missing → startup fail).
     service_context.register(
         "sdk_run_context_authority",
-        ProductRunContextAuthority(
+        _build_run_context_authority(
+            state_db_path=_state_db_path,
             ports_resolver=_authority_ports,
             exposure_resolver=tool_authorities.resolve_exposure,
             ledger=context_route_ledger,
@@ -8759,10 +8762,39 @@ async def _build_product_sdk_runtime_stack(
         "sdk_runtime_decision_sink",
         "sdk_task_execution_authority",
         "sdk_effect_gate",
+        "sdk_closure_instruction_reader",
     ):
         if service_context.get(slot) is None:
             raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
     return stack
+
+
+def _build_run_context_authority(  # type: ignore[no-untyped-def]
+    *,
+    state_db_path,
+    ports_resolver,
+    exposure_resolver,
+    ledger,
+    reconcile,
+):
+    """Production ``ProductRunContextAuthority`` with the real semantic-closure reader (F-2)."""
+
+    from deskpet.execution.semantic_closure import closure_instruction_for_run
+    from deskpet.sdk_adapters.context_authority import ProductRunContextAuthority
+
+    db_path = Path(state_db_path)
+
+    async def closure_reader(run_id):  # type: ignore[no-untyped-def]
+        return await closure_instruction_for_run(db_path, getattr(run_id, "value", str(run_id)))
+
+    service_context.register("sdk_closure_instruction_reader", closure_reader)
+    return ProductRunContextAuthority(
+        ports_resolver=ports_resolver,
+        exposure_resolver=exposure_resolver,
+        ledger=ledger,
+        reconcile=reconcile,
+        closure_reader=closure_reader,
+    )
 
 
 async def _issue_product_harness_host(
