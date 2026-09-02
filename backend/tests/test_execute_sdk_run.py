@@ -791,6 +791,8 @@ async def test_execute_sdk_run_registers_delivery_before_start_first_turn(monkey
                     "permission_policy_version": "sdk-product-policy-v1",
                     "projectless_admission": "requires_project",
                     "dangerous": False,
+                    "effect_class": "read_only",
+                    "manifest_dangerous": False,
                 }
             ]
             delivery = _delivery_adapters.get(sdk_run_id)
