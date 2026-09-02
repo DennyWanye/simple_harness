@@ -382,7 +382,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "4d5d2b7ba5c2f8ef4956af77769d75e1ac7889a037acbdcf853d0b9a5b3a3218"
     )
     assert SDK_MEMORY_WHEEL_SHA256 == (
-        "4b6c7bc665178d85340b80751d2216fd77821b0ae12f7a4c3281ae4fe9d2b5d6"
+        "598678c6a90d6dcc0a0b75e4b7ebb8c2fc9ca52c362c6037334f93692bc2bd05"
     )
     assert SDK_WHEEL_SHA256 not in {
         "1e4d21d58bee0e58ea3bc49768ff63ba9095eefd2e2d3436375576005bbac99a",
@@ -403,6 +403,7 @@ def test_final_candidate_rejects_every_superseded_wheel_hash() -> None:
         "82844d8677e35df7428f13b4282aef57c043f868a1707c8cd75f3527b9bf8c05",
         "a51ca4c6c15fd26320485fd422c75412f764c782ac1beac65421c11d25040e2d",
         "62a3f63cadd7796b1e86e57a9dce2bffc773b3da2ef3e78ba5002fea50f822ff",
+        "4b6c7bc665178d85340b80751d2216fd77821b0ae12f7a4c3281ae4fe9d2b5d6",
     }
 
 
