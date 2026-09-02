@@ -22,6 +22,38 @@
 - 组合根按 state.db epoch 门控：<35 legacy 保持裸路径；≥35 且 <45 stable fail；≥45 注册三
   authority + v7 runtime（缺件 startup fail，无 Noop 降级）。
 
+## S5b Task 1 workspace EffectGate 最小闭环（2026-09-02 生产事实）
+
+- PROJECT_EFFECT 清单（`sdk_adapters/tool_authority.py` `PROJECT_EFFECT_TOOL_NAMES`，design-freeze §1）：
+  write_file/file_write/edit_file/move_file/file_organize/run_shell/process_start/doc_create/doc_edit/
+  excel_create/ppt_create/pdf_export/download_file/workspace_prepare → `(project_effect, required, required)`
+  进 SDK `ExecutableToolRecord`；读取类保持 SDK 默认；`task_scope_update` 留 Task 3。
+- 二分口径：每个物理 PROJECT_EFFECT 只有两种结局。① **rejected**（`sdk_adapters/effect_gate.py`
+  `EffectGate.verify`，在 `ProductEffectExecutor.execute` 的 `assert_workspace_current` 之前）：返回
+  `ToolResult.rejected(稳定码)`、`effect=None`，不落 `execution_effects`、不产 host 事件，模型可见并可再路由；
+  检查顺序 = design-freeze §4 的 1→3→4→5→6（envelope 缺失/身份回声 → 冻结 admission authority：scope /
+  projectless / 冻结写根 → `verify_task_execution_envelope` 对 v45 durable route receipt，S4 码集原样透传 →
+  `workspace_binding_receipt_superseded`（strict head==receipt，Manual/Auto 同规则）→
+  `effect_gate_task_scope_not_active`）；§4 第 2 步 sticky memo 与第 7 步 confirm-only 留 Task 6。
+  ② **整 Run 故障**（不是 rejected）：`sdk_task_execution_route_authority_missing`（standalone 路由下
+  PROJECT_EFFECT）、`sdk_task_execution_root_authority_ambiguous|missing`（`BindingRootResolver` 从 route
+  receipt 的 exact binding-set receipt 解析恰一 root）、`catalog_execution_policy_unavailable`（hidden 工具）
+  → 异常逃出冻结 SDK ReActLoop → SDK `run.failed`（公开码只有 `driver_failed`）→ Host `SqliteSdkTerminalObserver`
+  记 durable FAILED，并把 `RunFaultMemo`（`sdk_adapters/run_faults.py`，进程内、首码优先）里的稳定码写进
+  `run_terminal` ExecutionEvidence `public_payload.error_code`；不新增 host.* 事件种类。
+- 降概率：route ≠ ROUTED_TASK 的 provider turn，`ProductRunContextAuthority.prepare_snapshot` 不向模型暴露
+  PROJECT_EFFECT 工具（只裁本轮 spec 列表；catalog fingerprint/可执行 exposure 不变）。
+- 冻结 authority 口径：foreground 单 root 冻结为 `workspace_resolution.kind=legacy` + exact effective_root
+  （Session-only project_bound validator 被有意绕过），故门的 project-bound 判据 = 存在 exact 冻结写根；
+  projectless/missing/无根 → `effect_gate_projectless_project_effect`。reason code 全表见 Memory 仓
+  `increments/2026-09-02-s5b-effect-closure-memory/design-freeze.md` §4。
+- 组合：`main.py` 在 stack build 时构造 `EffectGate`（binding store + v45 ledger + canonical scope store +
+  registry.resolve/resolve_exposure）注入 `ProductEffectExecutor`，`sdk_task_execution_authority` 带
+  `BindingRootResolver` + 故障备忘，registry/terminal observer 共用同一备忘；`sdk_effect_gate` 进缺槽断言。
+- 已知边界：`execution_effects` 行 + `host.file` 同事务由 Task 2 覆盖（oracle 已留 strict xfail）；legacy
+  （<v35）epoch 无 route 能力，清单工具在该 epoch 下稳定 fail-closed（整 Run 故障）而非静默执行；
+  备忘为进程内，crash 后终态证据退回 SDK 公开码。
+
 ## ToolReceipt HMAC key authority（2026-09-01）
 
 - `backend/deskpet/tools/receipt_store.py` 仍对 ToolReceipt 做 HMAC-SHA256 签名/验签，但 receipt key 只存在

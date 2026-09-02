@@ -2,6 +2,24 @@
 
 > **最后更新**：2026-09-02
 
+## 2026-09-02 Human Memory S5b Task 1：workspace EffectGate 最小闭环
+
+- 分支 `s5b/task-1-effect-gate`（基线 main @ aec5bacf，含 Task 0 骨架）：14 个写/执行类内置工具冻结为
+  PROJECT_EFFECT（route/TaskScope REQUIRED）；`BindingRootResolver` 从 route receipt 的 exact binding-set
+  receipt 解析恰一 root 接入 `ProductTaskExecutionAuthority`；新 `EffectGate` 在 `ProductEffectExecutor`
+  物理 dispatch 前逐次重验（envelope 回声 → 冻结 scope/写根 → S4 `verify_task_execution_envelope` 对
+  v45 durable route receipt → strict head revision → scope active），拒绝即 `ToolResult.rejected` 零写入；
+  standalone/零多 root/hidden 三条整 Run 故障稳定码经 `RunFaultMemo` 写进 `run_terminal` 证据
+  `public_payload.error_code`；standalone turn 不再向模型暴露写工具。
+- 验证：S5b 黑盒矩阵 Task 1 四用例（真 ReActLoop + 真三 authority + v45 ledger + S4 store + 生产
+  executor 前置门）与 gate/resolver/snapshot/terminal 单测全绿；`tests/sdk_adapters tests/execution
+  tests/task_scope` 全绿（`test_composition.py` 中 7 项 production runtime factory 用例为本机既有环境红
+  `SDK candidate installed origin mismatch` 且其后用例挂起，基线同样；本次以源码形状用例覆盖接线）；
+  changed-surface ruff 相对 main 零新增。
+- 边界：`execution_effects` 行 + `host.file` 同事务留 Task 2（strict xfail 占位）；sticky memo /
+  confirm-only / Auto 断言 / inode 漂移矩阵留 Task 6；design-freeze §4 第 3 步「kind ≠ project_bound」
+  按 foreground 冻结事实（单 root = legacy + exact root）实现为「无 exact 冻结写根」，需回写冻结文档措辞。
+
 ## 2026-09-02 Human Memory S5a：五路 context_route、per-turn Context authority 与同 Run continuation
 
 - 在 `feat/human-memory-s5a-context-route` 分支（基线 `fix/human-memory-runtime-p1-closure` @ c9f73349）交付
