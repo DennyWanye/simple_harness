@@ -7253,6 +7253,22 @@ def _ensure_foreground_effect_gate():  # type: ignore[no-untyped-def]
 
         _foreground_effect_gate = ForegroundEffectAdmissionGate()
     return _foreground_effect_gate
+
+
+# S5b Task 1: process-local memo of whole-Run fault codes.  The authorities
+# that raise a Run fault (TaskExecutionEnvelope authority, run Tool exposure)
+# record the stable code; the SDK terminal observer copies it into the
+# ``run_terminal`` evidence ``public_payload.error_code`` on durable FAILED.
+_run_fault_memo = None
+
+
+def _ensure_run_fault_memo():  # type: ignore[no-untyped-def]
+    global _run_fault_memo
+    if _run_fault_memo is None:
+        from deskpet.sdk_adapters.run_faults import RunFaultMemo
+
+        _run_fault_memo = RunFaultMemo()
+    return _run_fault_memo
 _sdk_context_port = None
 _sdk_runtime_catalog: dict[str, Any] | None = None
 _sdk_run_binding_registry = None
@@ -8517,7 +8533,10 @@ async def _build_product_sdk_runtime_stack(
         ProductRunContextAuthority,
         ProductRuntimeDecisionSink,
     )
-    from deskpet.sdk_adapters.task_execution import ProductTaskExecutionAuthority
+    from deskpet.sdk_adapters.task_execution import (
+        BindingRootResolver,
+        ProductTaskExecutionAuthority,
+    )
 
     _state_version = ContextRouteLedgerStore(_state_db_path).user_version()
     if _state_version < 35:
@@ -8563,8 +8582,16 @@ async def _build_product_sdk_runtime_stack(
             ledger=context_route_ledger, reconcile=_occurrence_reconcile
         ),
     )
+    # S5b Task 1: PROJECT_EFFECT envelopes resolve their exact single root
+    # from the route receipt's immutable binding-set receipt (never the live
+    # head, never a default root); zero/multi root is a whole-Run fault whose
+    # stable code is memoised for the terminal evidence.
     service_context.register(
-        "sdk_task_execution_authority", ProductTaskExecutionAuthority()
+        "sdk_task_execution_authority",
+        ProductTaskExecutionAuthority(
+            root_resolver=BindingRootResolver(_context_route_binding_store()),
+            fault_sink=_ensure_run_fault_memo(),
+        ),
     )
     for slot in (
         "sdk_run_context_authority",
