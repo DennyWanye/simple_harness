@@ -694,3 +694,43 @@ async def test_fresh_install_unregistered_owner_reconciles_empty(
         assert await v7.pending_occurrences(()) == ()
     finally:
         await v7.close()
+
+
+@pytest.mark.asyncio
+async def test_other_ownership_conflicts_still_fail_closed(tmp_path: Path) -> None:
+    """审计 P2 补测：fail-open 只认 short_horizon_principal_rejected。
+
+    任何别种 ownership 冲突（例如日后上游加入的属主迁移/篡改检测），以及
+    翻页中途出现的同类冲突，都必须继续 fail-closed 向上抛。"""
+
+    from simple_harness_memory.core.errors import MemoryOwnershipConflict
+
+    class _Page:
+        entries: tuple = ()
+        next_after = (1.0, "cursor-1")
+
+    class _FirstPageOtherConflict:
+        async def read_occurrence_inbox(self, **_kw):
+            raise MemoryOwnershipConflict("owner_migrated_elsewhere")
+
+    class _MidPageSameConflict:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def read_occurrence_inbox(self, **_kw):
+            self.calls += 1
+            if self.calls == 1:
+                return _Page()
+            raise MemoryOwnershipConflict("short_horizon_principal_rejected")
+
+    v7 = HumanMemoryV7Runtime(tmp_path / "unused.db")
+
+    # 首页非 principal_rejected 冲突 → 抛出
+    v7._manager = _FirstPageOtherConflict()
+    with pytest.raises(MemoryOwnershipConflict, match="owner_migrated_elsewhere"):
+        await v7.pending_occurrences(())
+
+    # 翻页中途的同类冲突 → 仍然抛出（不属于"全新安装首页"状态）
+    v7._manager = _MidPageSameConflict()
+    with pytest.raises(MemoryOwnershipConflict):
+        await v7.pending_occurrences(())

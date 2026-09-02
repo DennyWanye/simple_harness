@@ -101,7 +101,11 @@ class HumanMemoryV7Runtime:
                 page = await manager.read_occurrence_inbox(
                     principal=principal, after=after, limit=200
                 )
-            except MemoryOwnershipConflict:
+            except MemoryOwnershipConflict as exc:
+                # 按 reason code 收窄，而不是吞掉整类 ownership 冲突：日后上游
+                # 若在读路径首页抛出真正的属主迁移/篡改冲突，必须继续 fail-closed。
+                if str(exc) != "short_horizon_principal_rejected":
+                    raise
                 if after is None and not pending:
                     # 全新安装：本地属主尚未在 v7 store 注册（SDK 只在首次
                     # typed recall / mutation 时自注册，读路径按冻结契约拒绝

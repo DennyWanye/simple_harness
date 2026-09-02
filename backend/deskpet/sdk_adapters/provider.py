@@ -194,6 +194,14 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         are used when the live metadata is still present (same-process turn)
         and degrade to an empty JSON object otherwise, which keeps the wire
         shape valid instead of killing the Run.
+
+        S5b upstream obligation: the arguments are NOT actually lost — the SDK's
+        durable provider-invocation record round-trips full ``ProviderToolCall``
+        arguments (``execution/provider_invocations.py``), the adapter simply has
+        no handle to them here.  The clean fix is upstream: treat an assistant's
+        ``tool_calls`` as a first-class public transcript field (it is part of the
+        conversation, not provider-private metadata) and re-attach it when the
+        Context rebuilds a request.  Remove this degradation once that lands.
         """
 
         payloads = [cls._message_payload(message) for message in messages]
@@ -206,8 +214,8 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
             for follower in messages[index + 1 :]:
                 if follower.role is not MessageRole.TOOL:
                     break
-                if follower.call_id is None:
-                    continue
+                # call_id 必然存在：Message 契约对 TOOL 角色强制要求它
+                # （contracts/messages.py "tool message requires call_id"）。
                 followers.append(
                     {
                         "id": follower.call_id.value,

@@ -20,6 +20,7 @@ tool_calls 的机制在真实 continuation 上必然失效——第二轮请求�
 
 from __future__ import annotations
 
+import pytest
 from simple_harness.contracts import CallId
 from simple_harness.contracts.messages import Message, MessageRole
 
@@ -128,3 +129,73 @@ def test_multiple_parallel_tool_results_map_to_one_assistant() -> None:
     wire = _ProductOpenAICompatibleProvider._wire_messages(parallel)
     ids = [c["id"] for c in wire[1]["tool_calls"]]
     assert ids == ["call_1", "call_2"]
+
+
+def test_consecutive_tool_rounds_do_not_bleed_across_assistants() -> None:
+    """审计 P2 补测：A1,T1,A2,T2 两轮工具调用不得串台。"""
+
+    rounds = (
+        Message(role=MessageRole.USER, content="查一件事"),
+        Message(role=MessageRole.ASSISTANT, content=""),
+        Message(
+            role=MessageRole.TOOL,
+            content="{}",
+            name="task_scope_search",
+            call_id=CallId("call_r1"),
+        ),
+        Message(role=MessageRole.ASSISTANT, content=""),
+        Message(
+            role=MessageRole.TOOL,
+            content="{}",
+            name="context_route",
+            call_id=CallId("call_r2"),
+        ),
+    )
+    wire = _ProductOpenAICompatibleProvider._wire_messages(rounds)
+    assert [c["id"] for c in wire[1]["tool_calls"]] == ["call_r1"]
+    assert [c["id"] for c in wire[3]["tool_calls"]] == ["call_r2"]
+
+
+def test_tool_message_without_call_id_is_rejected_by_the_contract() -> None:
+    """无 call_id 的 tool 消息在 Message 契约层即被拒绝。
+
+    因此 _wire_messages 无需（也不该）为这种消息编造 tool_calls 条目——
+    该状态在契约上不可达。"""
+
+    from simple_harness.contracts.errors import ContractValidationError
+
+    with pytest.raises(ContractValidationError, match="tool message requires call_id"):
+        Message(role=MessageRole.TOOL, content="{}", name="task_scope_search")
+
+
+def test_request_payload_carries_restored_tool_calls_end_to_end() -> None:
+    """集成面：走完整 _request_payload，而不只是 _wire_messages。"""
+
+    import httpx
+    from simple_harness.contracts import RequestId
+    from simple_harness.providers import ProviderRequest
+    from simple_harness.providers.base import Secret
+
+    provider = _ProductOpenAICompatibleProvider(
+        httpx.AsyncClient(),
+        "http://127.0.0.1:9/v1",
+        "test-model",
+        Secret("unused-test-key"),
+    )
+    request = ProviderRequest(
+        request_id=RequestId("req-1"),
+        messages=(
+            Message(role=MessageRole.USER, content="继续"),
+            Message(role=MessageRole.ASSISTANT, content=""),
+            Message(
+                role=MessageRole.TOOL,
+                content="{}",
+                name="task_scope_search",
+                call_id=CallId("call_e2e"),
+            ),
+        ),
+        tools=(),
+    )
+    payload = provider._request_payload(request)
+    assert payload["messages"][1]["tool_calls"][0]["id"] == "call_e2e"
+    assert payload["messages"][2]["tool_call_id"] == "call_e2e"
