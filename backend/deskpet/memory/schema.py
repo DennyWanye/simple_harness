@@ -691,7 +691,7 @@ async def initialize_human_memory_program_state_db(
                 fault_inject=fault_inject,
                 include_human_memory_program=True,
             )
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             raise InitializeError(
                 f"human memory program initialization failed: {exc}"
             ) from exc
@@ -879,7 +879,7 @@ async def initialize_state_db(
             log.info("state.db migrations applied: %s", applied)
         else:
             log.debug("state.db migrations already up-to-date")
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # Only schema migration failures restore the old state.db.  Once v33
         # commits, external-store deletion is intentionally irreversible and
         # must resume from its durable reset phase instead of reviving an old
@@ -916,6 +916,6 @@ async def initialize_state_db(
         # finish before later schema generations become writable. Continue
         # incremental migrations only after that fence is completed.
         await ensure_v9(db_path, fault_inject=fault_inject)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.error("legacy Session reset incomplete: %s", exc)
         raise InitializeError(f"legacy Session reset incomplete: {exc}") from exc

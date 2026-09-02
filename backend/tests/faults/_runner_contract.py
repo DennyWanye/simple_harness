@@ -13,8 +13,9 @@ import hashlib
 import json
 import sqlite3
 import uuid
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 LANE_SEAMS: Mapping[str, tuple[str, ...]] = {
     "foreground-fifo-closure": (
@@ -71,7 +72,7 @@ def state_hash(db_path: Path, tables: Sequence[str]) -> str:
     digest = hashlib.sha256()
     with sqlite3.connect(db_path) as db:
         for table in tables:
-            rows = db.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()  # noqa: S608 - 表名来自常量
+            rows = db.execute(f"SELECT * FROM {table} ORDER BY 1").fetchall()
             digest.update(table.encode())
             digest.update(json.dumps(rows, ensure_ascii=False, default=str).encode())
     return digest.hexdigest()
