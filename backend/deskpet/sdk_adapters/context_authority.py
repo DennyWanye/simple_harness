@@ -666,6 +666,36 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
+    async def latest_route_decision_for_run(self, sdk_run_id: str) -> Mapping[str, Any] | None:
+        """Most recent durable route decision of one Run (S5b Task 3 handler gate).
+
+        ``task_scope_id`` is ``None`` for standalone routes → ``task_scope_update``
+        is rejected with ``task_scope_update_scope_unbound``.
+        """
+
+        db = await self._connect()
+        try:
+            cursor = await db.execute(
+                "SELECT route,origin,task_scope_id,receipt_id,provider_turn_ordinal,recorded_at "
+                "FROM context_route_decisions WHERE sdk_run_id=? "
+                "ORDER BY provider_turn_ordinal DESC, recorded_at DESC, decision_id DESC LIMIT 1",
+                (str(sdk_run_id),),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        finally:
+            await db.close()
+        if row is None:
+            return None
+        return {
+            "route": row[0],
+            "origin": row[1],
+            "task_scope_id": row[2],
+            "receipt_id": row[3],
+            "provider_turn_ordinal": row[4],
+            "recorded_at": row[5],
+        }
+
     async def record_tool_invocation(
         self,
         *,
@@ -845,7 +875,8 @@ def _plan_turn_messages(
         break
     protected = messages[:split]
     if extra_protected is not None:
-        protected = (*protected, extra_protected)
+        extras = extra_protected if isinstance(extra_protected, (list, tuple)) else (extra_protected,)
+        protected = (*protected, *[item for item in extras if item is not None])
     tail = messages[split:]
     if not tail:
         return tuple(protected), {"causal_groups": 0, "trimmed_groups": 0}
@@ -970,11 +1001,16 @@ class ProductRunContextAuthority:
         exposure_resolver: Any,
         ledger: ContextRouteLedgerStore,
         reconcile: Any = None,
+        closure_reader: Any = None,
     ) -> None:
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
         self._ledger = ledger
         self._reconcile = reconcile
+        # S5b Task 3: ``async (run_id) -> Message | None`` — the protected
+        # "closure required" instruction when the Run's admission scope is
+        # dirty or has pending receipts.  Text only; never Tool visibility.
+        self._closure_reader = closure_reader
 
     async def prepare_snapshot(self, request: Any) -> Any:
         from simple_harness import RequestId
@@ -1013,8 +1049,11 @@ class ProductRunContextAuthority:
             pending = await self._reconcile(presented)
             if pending:
                 inbox_message = _pending_occurrence_message(pending)
+        closure_message = None
+        if self._closure_reader is not None:
+            closure_message = await self._closure_reader(request.run_id)
         messages, assembly_facts = _plan_turn_messages(
-            tuple(context.messages), window_tokens, extra_protected=inbox_message
+            tuple(context.messages), window_tokens, extra_protected=(inbox_message, closure_message)
         )
         probe = ProviderRequest(
             RequestId("hash-only"),

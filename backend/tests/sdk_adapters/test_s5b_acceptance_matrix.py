@@ -71,8 +71,12 @@ def test_project_effect_list_frozen_and_route_required() -> None:
         )
     for name in READ_TOOLS_KEEP_DEFAULT:
         assert name not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES
-    # task_scope_update 留 Task 3（design-freeze §1 第二段）。
-    assert "task_scope_update" not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES
+    # task_scope_update（design-freeze §1 第二段，Task 3 实装）：direct kernel、non_project_effect、
+    # route/TaskScope REQUIRED；它不在 PROJECT_EFFECT 清单内。
+    assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"] == (
+        "non_project_effect", "required", "required"
+    )
+    assert "task_scope_update" not in PROJECT_EFFECT_FROZEN_LIST
 
     # exhaustiveness：清单内每个名字在 manifest 存在，且有冻结 EffectClass。
     manifest = load_tool_manifest()
@@ -539,10 +543,47 @@ async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_pat
     assert not (await dirty_state(store, scope_a)).is_dirty
 
 
-@XF
-def test_terminal_gate_requires_closure_receipt() -> None:
-    """Task 3：终态门要求 receipt 覆盖 watermark，否则 foreground_terminal_closure_pending。"""
-    raise NotImplementedError
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sdk_state,terminal", [("completed", "COMPLETED"), ("failed", "FAILED")])
+async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state: str, terminal: str) -> None:
+    """Task 3（S5B-AC-1③ 三水位）：Harness 证据水位放行后，语义收敛水位仍要求 closure receipt。
+
+    scope 有 material 脏事件而无 receipt → ``record_sdk_terminal`` 稳定拒绝
+    ``foreground_terminal_closure_pending``（COMPLETED/FAILED/CANCELLED/STOPPED 一律生效，零半状态）；
+    本 Run 写下 pending receipt 后照常提交；closing receipt 覆盖 watermark 同样放行。
+    """
+    from deskpet.execution.foreground_queue import ForegroundQueueError
+    from deskpet.execution.semantic_closure import dirty_state, write_closure_receipt
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, "sdk-run-gate")
+    await ch.material_write(env, "e-1")
+    facts = ch.FakeRunFacts(env.run_id, state=sdk_state)
+    observed = await ch.observe_terminal(env, facts)
+    assert observed is not None and observed.terminal_state.value == terminal
+    # Harness 水位已满足（run_terminal 已导入、authorize_terminal 已放行），但语义收敛水位未满足。
+    dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
+    assert dirty.is_dirty
+    before = ch.rows(env.db_path, "SELECT COUNT(*) FROM foreground_terminal_receipts")
+    with pytest.raises(ForegroundQueueError) as blocked:
+        await ch.record_terminal(env, observed)
+    assert blocked.value.code == "foreground_terminal_closure_pending"
+    assert ch.rows(env.db_path, "SELECT COUNT(*) FROM foreground_terminal_receipts") == before
+    assert ch.rows(env.db_path, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", env.admission.host_run_id) == [("RUNNING",)]
+
+    # 本 Run 的 pending receipt（兜底失败/非 COMPLETED 终态）→ 终态照常提交，脏标记仍在。
+    await write_closure_receipt(
+        env.db_path, task_scope_id=ch.SCOPE, sdk_run_id=env.run_id, host_run_id=env.admission.host_run_id,
+        closure_watermark=dirty.event_watermark, outcome="pending", plan_id=None,
+        reason_code="closure_run_not_completed", attempt_id=None,
+    )
+    receipt = await ch.record_terminal(env, observed)
+    assert receipt.terminal_state.value == terminal
+    assert (await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)).is_dirty
+    # 幂等重放同一终态：同一 receipt。
+    again = await ch.record_terminal(env, observed)
+    assert again.terminal_receipt_id == receipt.terminal_receipt_id
 
 
 @pytest.mark.asyncio
@@ -665,19 +706,334 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
     assert report.ingested == () and report.abandoned == ()
 
 
-@XF
-def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(tmp_path: Path) -> None:
+    """Task 3（S5B-AC-1②）：``task_scope_update`` 是常暴露的 direct kernel 工具（strict schema，
+    NON_PROJECT_EFFECT / route REQUIRED / TaskScope REQUIRED）。
+
+    ROUTED_TASK 下 write_file 产生 material 脏事件 → 模型在终答前提交 ``mutate``（refs 属本 scope）→
+    ``apply_mutation_plan`` 与 closure receipt **同一事务**：revision +1、receipt(outcome=mutate,
+    plan_id=sha256(idempotency_key+scope), closure_watermark 覆盖全部 material 事件)、脏标记清零。
+    第二个 Run：``no_mutation`` 缺 ``closure_reason`` → 稳定拒绝 ``task_scope_update_payload_invalid``
+    （不递增 revision、无 receipt、写 pre-admission audit 行），补上 closure_reason 后 no_mutation 收口。
+    """
+    import hashlib
+
+    from simple_harness.contracts.messages import Message, MessageRole
+
+    from deskpet.execution.semantic_closure import dirty_state
+    from deskpet.sdk_adapters.task_scope_mutation import derive_plan_id
+    from deskpet.sdk_adapters.tool_authority import (
+        SDK_DIRECT_TOOL_KERNEL,
+        SDK_TOOL_EXECUTION_POLICY_OVERRIDES,
+    )
+    from deskpet.sdk_adapters.tools import (
+        PRODUCT_TOOL_NAMES,
+        PROJECTLESS_SAFE_TOOL_NAMES,
+    )
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_effect_gate_harness as h
+
+    # 注册面：direct kernel、projectless safe、覆盖表 (non_project_effect, required, required)。
+    assert "task_scope_update" in SDK_DIRECT_TOOL_KERNEL
+    assert "task_scope_update" in PROJECTLESS_SAFE_TOOL_NAMES
+    assert "task_scope_update" in PRODUCT_TOOL_NAMES
+    assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"] == ("non_project_effect", "required", "required")
+
+    env = await h.build_env(tmp_path)
+    scope_a, root_a = await h.make_bound_scope(env, "a", "root-a")
+    h.freeze_run(env, task_scope_id=scope_a, workspace_root=root_a)
+    store = CanonicalTaskScopeStore(env.db_path)
+
+    def evidence_ids() -> list[str]:
+        return [
+            str(r[0])
+            for r in h.rows(
+                env.db_path,
+                "SELECT DISTINCT evidence_id FROM task_scope_evidence_links WHERE task_scope_id=?",
+                scope_a,
+            )
+        ]
+
+    def closure_arguments(outcome: str, key: str, **extra: object) -> dict:
+        [(revision,)] = h.rows(env.db_path, "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?", scope_a)
+        refs = evidence_ids()
+        arguments: dict = {
+            "outcome": outcome, "base_revision": int(revision), "evidence_refs": refs,
+            "idempotency_key": key, **extra,
+        }
+        if outcome == "mutate":
+            arguments["operations"] = [
+                {"operation_id": "op-1", "kind": "plan.step.add", "value": "a.txt 已写入",
+                 "reason_code": "objective_file_change", "evidence_refs": refs},
+            ]
+        return arguments
+
+    class LazyProvider(h.ScriptedProvider):
+        """Closure arguments are computed lazily so they see the live head/refs."""
+
+        async def invoke(self, run_id, request, *, cancel, execution_lease):  # type: ignore[no-untyped-def]
+            if self.responses and callable(self.responses[0]):
+                self.responses[0] = self.responses[0]()
+            return await super().invoke(run_id, request, cancel=cancel, execution_lease=execution_lease)
+
+    def deferred(outcome: str, key: str, **extra: object):  # type: ignore[no-untyped-def]
+        return lambda: h.tool_call("task_scope_update", closure_arguments(outcome, key, **extra), raw_id=f"raw-{key}")
+
+    provider = LazyProvider(
+        [
+            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_a}, raw_id="raw-route"),
+            h.tool_call("write_file", {"path": "a.txt", "content": "alpha"}, raw_id="raw-write"),
+            deferred("mutate", "closure-1"),
+            h.answer("done"),
+        ]
+    )
+    out = await h.run_capture(env, provider)
+    assert out["exception"] is None
+    # task_scope_update 每一轮都暴露（不按脏标记控制可见性）。
+    assert all("task_scope_update" in names for names in h.provider_tool_names(provider))
+    [(revision, watermark)] = h.rows(env.db_path, "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?", scope_a)
+    assert revision == 2
+    receipts = h.rows(
+        env.db_path,
+        "SELECT sdk_run_id,closure_watermark,outcome,plan_id,reason_code FROM task_scope_closure_receipts WHERE task_scope_id=?",
+        scope_a,
+    )
+    plan_id = derive_plan_id("closure-1", scope_a)
+    assert plan_id == hashlib.sha256(("closure-1" + scope_a).encode("utf-8")).hexdigest()
+    assert receipts == [(h.RUN.value, watermark, "mutate", plan_id, "model_closure")]
+    # receipt 与 apply 同事务：decision 与 receipt 的 plan_id 一致，created_at 同一 now。
+    [(decision_plan_id, decision_outcome, decision_created)] = h.rows(
+        env.db_path, "SELECT plan_id,outcome,created_at FROM task_scope_mutation_decisions WHERE task_scope_id=?", scope_a,
+    )
+    [(receipt_created,)] = h.rows(env.db_path, "SELECT created_at FROM task_scope_closure_receipts WHERE plan_id=?", plan_id)
+    assert (decision_plan_id, decision_outcome) == (plan_id, "mutate") and decision_created == receipt_created
+    assert not (await dirty_state(store, scope_a)).is_dirty
+    result_json = json.loads(h.tool_messages(env, "task_scope_update")[0])
+    assert result_json["outcome"] == "succeeded"
+    assert result_json["value"]["ok"] is True and result_json["value"]["closure_receipt"]["outcome"] == "mutate"
+
+    # 第二个 Run（同 scope）：先制造新的 material 事件，再提交缺 closure_reason 的 no_mutation → 拒绝；
+    # 补上 closure_reason → 收口。
+    env.context.messages.append(Message(role=MessageRole.USER, content="再改一次"))
+    env.checkpoint.value = None
+    provider2 = LazyProvider(
+        [
+            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_a}, raw_id="raw-route-2"),
+            h.tool_call("write_file", {"path": "b.txt", "content": "beta"}, raw_id="raw-write-2"),
+            deferred("no_mutation", "closure-2"),
+            deferred("no_mutation", "closure-3", closure_reason="model_no_change"),
+            h.answer("done again"),
+        ]
+    )
+    out = await h.run_capture(env, provider2)
+    assert out["exception"] is None
+    messages = h.tool_messages(env, "task_scope_update")
+    assert len(messages) == 3
+    rejected = json.loads(messages[1])
+    assert rejected["outcome"] == "rejected" and rejected["error_code"] == "task_scope_update_payload_invalid"
+    accepted = json.loads(messages[2])
+    assert accepted["outcome"] == "succeeded"
+    assert accepted["value"]["ok"] is True and accepted["value"]["closure_receipt"]["outcome"] == "no_mutation"
+    [(revision2, watermark2)] = h.rows(env.db_path, "SELECT current_revision,event_watermark FROM task_scope_heads WHERE task_scope_id=?", scope_a)
+    assert revision2 == 3  # no_mutation 也是一次 apply（S4 语义），被拒的那次未递增
+    outcomes = h.rows(env.db_path, "SELECT outcome,closure_watermark FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY created_at", scope_a)
+    assert [o for o, _ in outcomes] == ["mutate", "no_mutation"] and outcomes[1][1] == watermark2
+    assert not (await dirty_state(store, scope_a)).is_dirty
+    audits = h.rows(
+        env.db_path,
+        "SELECT sdk_run_id,payload_kind,reason_code FROM host_pre_admission_audit ORDER BY created_at",
+    )
+    assert audits == [(h.RUN.value, "task_scope_update", "task_scope_update_payload_invalid")]
 
 
-@XF
-def test_missed_call_fallback_invokes_once_and_unknown_never_resends() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_path: Path) -> None:
+    """Task 3（S5B-AC-1③ A3）：模型漏调用 → SDK terminal 之后、Host 终态之前，Host 以 Run 绑定的
+    同一主模型发起**恰一次** closure 调用（仅暴露 task_scope_update）；合法 plan → receipt 与 apply
+    同事务；sent_unknown → durable pending(closure_attempt_unknown)，重启/新 owner 重放 0 重发；
+    timeout/拒绝 → pending 且 Host 终态照常提交。
+    """
+    import asyncio
+
+    from simple_harness.providers.errors import ProviderTimeoutError
+
+    from deskpet.execution.semantic_closure import (
+        closure_plan_id,
+        closure_request_hash,
+        dirty_state,
+    )
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    # ① 漏调用 → 兜底一次 mutate（Provider 计数 1），receipt 与 apply 同事务，终态放行。
+    env = await ch.bound_run(tmp_path / "one", "sdk-run-fb-1")
+    await ch.material_write(env, "e-1")
+    dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    # run_terminal 已导入（其 refs 链接了本轮 turn evidence）→ allowed refs 以此刻的 scope 链接为准。
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    adapter = ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision))])
+    fallback, _invoker = ch.build_fallback(env, facts, adapter)
+    settlement = await ch.settle(env, fallback)
+    assert settlement.status == "mutate" and settlement.provider_calls == 1
+    assert len(adapter.calls) == 1
+    request = adapter.calls[0]
+    assert [spec.name for spec in request.tools] == ["task_scope_update"]
+    observation = json.loads(request.messages[-1].content.split("\n", 1)[1])
+    assert observation["staged_final_answer"] == ch.LAST_ANSWER
+    assert observation["allowed_evidence_refs"] == refs
+    assert observation["task_scope"]["current_revision"] == revision
+    request_hash = closure_request_hash(env.run_id, ch.SCOPE, dirty.event_watermark, ch.sha256_text(ch.LAST_ANSWER))
+    plan_id = closure_plan_id(request_hash)
+    assert ch.receipts(env.db_path)[-1][2:5] == ("mutate", plan_id, "fallback_closure")
+    assert ch.attempts(env.db_path) == [(1, "succeeded", None, None, plan_id, 1)]
+    assert ch.head(env.db_path)[0] == revision + 1
+    assert not (await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)).is_dirty
+    await ch.record_terminal(env, observed)
+    # 重放（同 owner 再 settle）：已收口，0 调用。
+    again = await ch.settle(env, fallback)
+    assert again.status == "already_closed" and len(adapter.calls) == 1
+
+    # ② sent_unknown（请求已发出，结果不明）→ pending(closure_attempt_unknown)，终态照常；
+    #    重启（新 fallback/invoker 实例）重放 → 绝不重发（Provider 计数不变）。
+    env2 = await ch.bound_run(tmp_path / "two", "sdk-run-fb-2")
+    await ch.material_write(env2, "e-2")
+    adapter2 = ch.FakeAdapter([asyncio.CancelledError()])
+    facts2 = ch.FakeRunFacts(env2.run_id)
+    observed2 = await ch.observe_terminal(env2, facts2)
+    fallback2, _ = ch.build_fallback(env2, facts2, adapter2)
+    settlement2 = await ch.settle(env2, fallback2)
+    assert settlement2.status == "pending" and settlement2.reason_code == "closure_attempt_unknown"
+    assert len(adapter2.calls) == 1
+    [(ordinal, status, unknown_class, reason, attempt_plan_id, generation)] = ch.attempts(env2.db_path)
+    assert (ordinal, status, unknown_class, reason, generation) == (1, "unknown", "sent_unknown", "closure_attempt_unknown", 1)
+    assert isinstance(attempt_plan_id, str) and len(attempt_plan_id) == 64  # 预留时即记录派生 plan_id（reconcile 依据）
+    assert ch.receipts(env2.db_path)[-1][2:5] == ("pending", None, "closure_attempt_unknown")
+    await ch.record_terminal(env2, observed2)
+    restarted, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=1))]))
+    replay = await ch.settle(env2, restarted)
+    # 本 Run 已有 durable pending(closure_attempt_unknown) → 重放视为已收口（pending），零调用。
+    assert replay.status == "already_closed" and replay.reason_code == "closure_attempt_unknown"
+    assert replay.provider_calls == 0 and replay.receipt is not None and replay.receipt.outcome == "pending"
+    assert len(ch.attempts(env2.db_path)) == 1  # 无新 attempt
+    assert (await dirty_state(CanonicalTaskScopeStore(env2.db_path), ch.SCOPE)).is_dirty  # pending 不清脏
+
+    # ③ timeout（读超时：已发出）→ pending(closure_timeout)；模型拒绝调用（无 tool call）→ pending；
+    #    handler 拒绝（refs 不属本 scope）→ pending(reason=拒绝码)；三者 Host 终态都照常提交。
+    for suffix, script, reason in (
+        ("three", [ProviderTimeoutError(public_message="timeout")], "closure_timeout"),
+        ("four", [ch.plain_answer()], "closure_model_declined"),
+        ("five", [ch.closure_call(ch.mutate_arguments(["ev-outside"], base_revision=1))], "task_scope_update_refs_outside_scope"),
+    ):
+        env_n = await ch.bound_run(tmp_path / suffix, f"sdk-run-fb-{suffix}")
+        await ch.material_write(env_n, f"e-{suffix}")
+        adapter_n = ch.FakeAdapter(script)
+        facts_n = ch.FakeRunFacts(env_n.run_id)
+        observed_n = await ch.observe_terminal(env_n, facts_n)
+        fallback_n, _ = ch.build_fallback(env_n, facts_n, adapter_n)
+        settlement_n = await ch.settle(env_n, fallback_n)
+        assert (settlement_n.status, settlement_n.reason_code) == ("pending", reason), suffix
+        assert len(adapter_n.calls) == 1
+        assert ch.receipts(env_n.db_path)[-1][2:5] == ("pending", None, reason)
+        assert ch.head(env_n.db_path)[0] == 1  # 零 apply
+        await ch.record_terminal(env_n, observed_n)
 
 
-@XF
-def test_pending_closure_belongs_to_admission_scope_and_next_run_merges() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_pending_closure_belongs_to_admission_scope_and_next_run_merges(tmp_path: Path) -> None:
+    """Task 3（S5B-AC-1③ ⑥）：pending 是 admission scope 的债务。
+
+    Run 1 留下 pending → STATUS 投影显式 ``semantic_closure_pending``；同 scope 的 Run 2 的 snapshot
+    注入合并前序 pending 与 material 事件；Run 2 兜底 closure 的 plan 以提交时 head revision 为
+    base_revision、refs 引用 Run 1 已链接的 evidence → 一条 receipt 覆盖两个 Run 的水位、脏标记清零、
+    STATUS 不再 pending。``force_close_pending``：scope complete/checkpoint 时仍 pending → Host
+    ``no_mutation(closure_abandoned, host_forced)`` 零 Provider 调用。
+    """
+    from deskpet.execution.semantic_closure import (
+        closure_instruction_for_run,
+        dirty_state,
+        force_close_pending,
+        pending_receipts,
+    )
+    from deskpet.task_scope.projections import TaskScopeProjectionStore
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, "sdk-run-p1")
+    await ch.material_write(env, "e-1")
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    adapter = ch.FakeAdapter([ch.plain_answer()])
+    fallback, _ = ch.build_fallback(env, facts, adapter)
+    assert (await ch.settle(env, fallback)).status == "pending"
+    await ch.record_terminal(env, observed)
+    store = CanonicalTaskScopeStore(env.db_path)
+    assert [r.reason_code for r in await pending_receipts(store, ch.SCOPE)] == ["closure_model_declined"]
+
+    async def status_view() -> dict:
+        views = await TaskScopeProjectionStore(env.db_path).materialize(task_scope_id=ch.SCOPE)
+        return json.loads(views["STATUS"].content)
+
+    status = await status_view()
+    assert status["semantic_closure_pending"] is True and status["pending_closure_count"] == 1
+
+    # Run 2（同 admission scope）：snapshot 注入合并前序 pending + material 事件（protected 分区，Host 权威）。
+    env2 = await ch.next_run(env, "sdk-run-p2")
+    await ch.material_write(env2, "e-2", path="b.txt")
+    instruction = await closure_instruction_for_run(env2.db_path, env2.run_id)
+    assert instruction is not None and instruction.metadata["source"] == "semantic_closure"
+    body = json.loads(instruction.content)
+    assert body["task_scope_id"] == ch.SCOPE
+    assert [p["reason_code"] for p in body["pending_receipts"]] == ["closure_model_declined"]
+    assert sorted(e["event_kind"] for e in body["material_events"]) == sorted(
+        ["host.file", "harness.tool_invocation", "host.file", "harness.tool_invocation"]
+    )
+    assert set(body["allowed_evidence_refs"]) == set(ch.scope_evidence_ids(env2.db_path))
+    # 未绑定的 Run（或无脏无 pending）不注入。
+    assert await closure_instruction_for_run(env2.db_path, "sdk-run-unbound") is None
+
+    # Run 2 兜底：跨 Run plan 的口径 = base_revision 取提交时 head、refs 允许引用 Run 1 的 evidence。
+    refs = ch.scope_evidence_ids(env2.db_path)
+    revision, _ = ch.head(env2.db_path)
+    adapter2 = ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision))])
+    facts2 = ch.FakeRunFacts(env2.run_id)
+    observed2 = await ch.observe_terminal(env2, facts2)
+    fallback2, _ = ch.build_fallback(env2, facts2, adapter2)
+    settlement = await ch.settle(env2, fallback2)
+    assert settlement.status == "mutate" and settlement.provider_calls == 1
+    dirty = await dirty_state(store, ch.SCOPE)
+    assert not dirty.is_dirty
+    assert await pending_receipts(store, ch.SCOPE) == ()
+    await ch.record_terminal(env2, observed2)
+    status = await status_view()
+    assert status["semantic_closure_pending"] is False and status["pending_closure_count"] == 0
+
+    # force_close_pending：再留一个 pending，然后 Host 强制 no_mutation(closure_abandoned, host_forced)，零调用。
+    env3 = await ch.next_run(env2, "sdk-run-p3", claim_key="claim-3", index=3)
+    await ch.material_write(env3, "e-3", path="c.txt")
+    facts3 = ch.FakeRunFacts(env3.run_id)
+    observed3 = await ch.observe_terminal(env3, facts3)
+    adapter3 = ch.FakeAdapter([ch.plain_answer()])
+    fallback3, _ = ch.build_fallback(env3, facts3, adapter3)
+    assert (await ch.settle(env3, fallback3)).status == "pending"
+    await ch.record_terminal(env3, observed3)
+    assert (await status_view())["semantic_closure_pending"] is True
+    forced = await force_close_pending(env3.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT)
+    assert forced is not None and forced.outcome == "no_mutation" and forced.reason_code == "host_forced"
+    [(closure_reason,)] = ch.rows(
+        env3.db_path, "SELECT json_extract(plan_json,'$.closure_reason') FROM task_scope_mutation_decisions WHERE plan_id=?", forced.plan_id,
+    )
+    assert closure_reason == "closure_abandoned"
+    assert len(adapter3.calls) == 1  # 强制收口零 Provider 调用
+    assert not (await dirty_state(store, ch.SCOPE)).is_dirty
+    assert (await status_view())["semantic_closure_pending"] is False
+    # 幂等：无 pending 时再强制 → None，无新 receipt。
+    count = len(ch.receipts(env3.db_path))
+    assert await force_close_pending(env3.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    assert len(ch.receipts(env3.db_path)) == count
 
 
 # ---- S5B-AC-2 / Task 4：终态同事务 outbox、analysis executor、幂等 ----

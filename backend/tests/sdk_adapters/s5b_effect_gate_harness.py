@@ -77,7 +77,14 @@ from deskpet.sdk_adapters.task_execution import (
     BindingRootResolver,
     ProductTaskExecutionAuthority,
 )
-from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
+from deskpet.sdk_adapters.task_scope_mutation import (
+    TASK_SCOPE_UPDATE_SCHEMA,
+    TaskScopeUpdateService,
+)
+from deskpet.sdk_adapters.tool_authority import (
+    PROJECT_EFFECT_TOOL_NAMES,
+    SDK_TOOL_EXECUTION_POLICY_OVERRIDES,
+)
 from deskpet.sdk_adapters.tools import ProductEffectExecutor
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 from deskpet.task_scope.workspace_bindings import (
@@ -202,6 +209,9 @@ class RouteExposure:
             ProviderToolSpec(
                 "task_scope_search", "Search task scopes", TASK_SCOPE_SEARCH_SCHEMA
             ),
+            ProviderToolSpec(
+                "task_scope_update", "Close the TaskScope", TASK_SCOPE_UPDATE_SCHEMA
+            ),
             ProviderToolSpec("write_file", "Write a project file", WRITE_FILE_SCHEMA),
             ProviderToolSpec("read_file", "Read a project file", READ_FILE_SCHEMA),
         )
@@ -215,6 +225,15 @@ class RouteExposure:
                 ToolEffectClass.CONTEXT_CONTROL,
                 ToolRouteRequirement.FORBIDDEN,
                 ToolTaskScopeRequirement.FORBIDDEN,
+            )
+        if provider_name == "task_scope_update":
+            effect, route, scope = SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"]
+            return ToolExecutionPolicy(
+                "builtin:task_scope_update",
+                "f" * 64,
+                ToolEffectClass(effect),
+                ToolRouteRequirement(route),
+                ToolTaskScopeRequirement(scope),
             )
         if provider_name in PROJECT_EFFECT_TOOL_NAMES:
             return ToolExecutionPolicy(
@@ -261,6 +280,7 @@ class PhysicalToolBridge(EffectExecutor):
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.service: ContextRouteToolService | None = None
+        self.closure_service: TaskScopeUpdateService | None = None
         self.workspace: Path | None = None
         self.calls: list[str] = []
         self.write_file_calls: list[dict] = []
@@ -275,6 +295,9 @@ class PhysicalToolBridge(EffectExecutor):
                 raw = await self.service.handle_context_route(call.arguments)
             elif call.name == "task_scope_search":
                 raw = await self.service.handle_task_scope_search(call.arguments)
+            elif call.name == "task_scope_update":
+                assert self.closure_service is not None
+                raw = await self.closure_service.handle_task_scope_update(call.arguments)
             elif call.name == "write_file":
                 assert self.workspace is not None
                 target = self.workspace / str(call.arguments["path"])
@@ -293,7 +316,15 @@ class PhysicalToolBridge(EffectExecutor):
                 raise AssertionError(f"unexpected tool {call.name}")
         finally:
             tool_context_var.reset(token)
-        if isinstance(raw, dict) and (raw.get("ok") is False or raw.get("error")):
+        if isinstance(raw, ToolResult):
+            # Host handlers may return the SDK ToolResult directly (rejected /
+            # retryable failed); ``sdk_adapters.tools._result`` passes it through.
+            # A rejection is the SDK authorization-deny shape: no effect record.
+            if raw.outcome.value == "rejected":
+                return EffectExecution(effect=None, result=raw)
+            result = raw
+            state = EffectState.SUCCEEDED if result.outcome.value == "succeeded" else EffectState.FAILED
+        elif isinstance(raw, dict) and (raw.get("ok") is False or raw.get("error")):
             error = raw.get("error") or {}
             result = ToolResult.failed(
                 call.call_id,
@@ -304,15 +335,18 @@ class PhysicalToolBridge(EffectExecutor):
         else:
             result = ToolResult.succeeded(call.call_id, raw)
             state = EffectState.SUCCEEDED
+        # SDK ToolCall arguments are frozen (lists → tuples); the ledger record
+        # and its request hash take the thawed JSON exactly like the SDK executor.
+        thawed_arguments = thaw_json(call.arguments)
         record = EffectRecord(
             effect_id=values["effect_id"],
             run_id=context.run_id,
             call_id=call.call_id,
             tool_name=call.name,
             request_hash=effect_request_hash(
-                tool_name=call.name, arguments=dict(call.arguments)
+                tool_name=call.name, arguments=thawed_arguments
             ),
-            arguments=dict(call.arguments),
+            arguments=thawed_arguments,
             state=state,
             version=2,
             fence_epoch=1,
@@ -567,10 +601,18 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         ledger=ledger,
         tool_context_getter=lambda: tool_context_var.get(),
     )
+    from deskpet.execution.semantic_closure import closure_instruction_for_run
+
     authority = ProductRunContextAuthority(
         ports_resolver=lambda: ports,
         exposure_resolver=lambda run_id: exposure,
         ledger=ledger,
+        closure_reader=lambda run_id: closure_instruction_for_run(db_path, run_id.value),
+    )
+    closure_service = TaskScopeUpdateService(
+        db_path,
+        tool_context_getter=lambda: tool_context_var.get(),
+        route_ledger=ledger,
     )
     sink = ProductRuntimeDecisionSink(ledger=ledger)
     memo = RunFaultMemo()
@@ -599,7 +641,9 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
         evidence_ingress=evidence_ingress,
     )
     effects.service = route_service
+    effects.closure_service = closure_service
     return GateEnv(
+        closure_service=closure_service,
         db_path=db_path,
         evidence_ingress=evidence_ingress,
         ledger=ledger,

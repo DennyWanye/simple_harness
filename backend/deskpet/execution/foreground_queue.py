@@ -15,7 +15,7 @@ import json
 import math
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -68,12 +68,25 @@ class EffectBoundary(StrEnum):
     SDK_START = "sdk_start"
     SDK_CONTROL = "sdk_control"
     TOOL = "tool"
+    # S5b Task 3: the post-turn closure Provider call (after the SDK terminal,
+    # before the Host terminal) is an external side effect of the current lease
+    # owner only; same admitted states as TOOL.
+    CLOSURE = "closure"
 
 
 _EFFECT_BOUNDARY_ALLOWED_STATES: dict[EffectBoundary, frozenset[str]] = {
     EffectBoundary.SDK_START: frozenset({"CLAIMED"}),
     EffectBoundary.SDK_CONTROL: frozenset(
         {"PAUSE_REQUESTED", "STOP_REQUESTED", "CANCEL_REQUESTED"}
+    ),
+    EffectBoundary.CLOSURE: frozenset(
+        {
+            "RUNNING",
+            "PAUSE_REQUESTED",
+            "PAUSED",
+            "STOP_REQUESTED",
+            "CANCEL_REQUESTED",
+        }
     ),
     # The TOOL fence exists to stop STALE WORKERS (lease/generation drift) and
     # terminal runs from producing external side effects.  Control-transition
@@ -1886,6 +1899,17 @@ class ForegroundQueueStore:
                 )
                 if gate is None:
                     raise ForegroundQueueError("foreground_terminal_gate_pending")
+                # S5b Task 3 — third watermark (semantic closure): every material
+                # event of the admission scope must be covered by a closing
+                # receipt, or this Run must have recorded a `pending` receipt.
+                # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.
+                from deskpet.execution.semantic_closure import closure_coverage_tx
+
+                coverage = await closure_coverage_tx(
+                    db, task_scope_id=str(receipt["task_scope_id"]), sdk_run_id=sdk_run_id
+                )
+                if not coverage.satisfied:
+                    raise ForegroundQueueError("foreground_terminal_closure_pending")
                 try:
                     evidence = json.loads(str(receipt["payload_json"]))
                 except (TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -2001,6 +2025,76 @@ class ForegroundQueueStore:
             if head is None:
                 return None
             return await self._snapshot_tx(db, str(head["host_run_id"]))
+
+    async def reserve_post_turn_attempt(
+        self,
+        *,
+        host_run_id: str,
+        sdk_run_id: str,
+        owner_id: str,
+        generation: int,
+        attempt: Mapping[str, object],
+        members: Sequence[tuple[str, str, str]] = (),
+    ) -> str:
+        """Insert one ``reserved`` post-turn attempt row under the current lease (one transaction).
+
+        S5b Task 3 (design-freeze §6): only the current lease owner may start a
+        post-turn Provider call; the ``reserved`` row and ``_validate_lease_tx``
+        share the transaction so a reclaimed lease can never reserve.
+        """
+
+        host_run_id = identifier(host_run_id, "host_run_id", 512)
+        sdk_run_id = identifier(sdk_run_id, "sdk_run_id", 512)
+        owner_id = identifier(owner_id, "owner_id", 512)
+        now = _clock_value(self._clock)
+        await self.initialize()
+        async with self._connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
+            try:
+                head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
+                allowed_states = _EFFECT_BOUNDARY_ALLOWED_STATES[EffectBoundary.CLOSURE]
+                if str(head["current_state"]) not in allowed_states:
+                    raise ForegroundQueueError("foreground_effect_state_rejected")
+                await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
+                if attempt.get("host_run_id") != host_run_id or attempt.get("sdk_run_id") != sdk_run_id:
+                    raise ForegroundQueueError("foreground_post_turn_attempt_identity_mismatch")
+                attempt_id = str(attempt["attempt_id"])
+                await db.execute(
+                    "INSERT INTO post_turn_invocation_attempts(attempt_id,purpose,host_run_id,sdk_run_id,generation,"
+                    "task_scope_id,closure_watermark,request_hash,attempt_ordinal,evidence_set_key,status,unknown_class,"
+                    "provider_id,model_id,model_config_hash,provider_request_id,result_hash,plan_id,reserved_at,"
+                    "handed_off_at,settled_at,reason_code) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,'reserved',NULL,?,?,?,NULL,NULL,?,?,NULL,NULL,NULL)",
+                    (
+                        attempt_id,
+                        str(attempt["purpose"]),
+                        host_run_id,
+                        sdk_run_id,
+                        int(generation),
+                        attempt.get("task_scope_id"),
+                        attempt.get("closure_watermark"),
+                        str(attempt["request_hash"]),
+                        int(attempt["attempt_ordinal"]),  # type: ignore[call-overload]
+                        str(attempt["evidence_set_key"]),
+                        str(attempt["provider_id"]),
+                        str(attempt["model_id"]),
+                        str(attempt["model_config_hash"]),
+                        attempt.get("plan_id"),
+                        float(attempt.get("reserved_at") or now),  # type: ignore[arg-type]
+                    ),
+                )
+                for subject, run_id, evidence_id in members:
+                    await db.execute(
+                        "INSERT OR IGNORE INTO post_turn_invocation_members(attempt_id,subject,run_id,evidence_id) "
+                        "VALUES (?,?,?,?)",
+                        (attempt_id, str(subject), str(run_id), str(evidence_id)),
+                    )
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return attempt_id
 
     async def authorize_effect(
         self,

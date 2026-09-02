@@ -490,6 +490,13 @@ class HumanMemoryHostService:
                 f"{self._auth.subject}:{request.scope_ref}:{request.idempotency_key}",
             )
         )
+        # S5b Task 3: a checkpoint over a scope with an open pending closure
+        # first force-closes it (no_mutation(closure_abandoned, host_forced)).
+        from deskpet.execution.semantic_closure import force_close_pending
+
+        await force_close_pending(
+            self._db_path, task_scope_id=request.scope_ref, subject=self._auth.subject
+        )
         receipt = await self._scopes.create_checkpoint(
             checkpoint_id=checkpoint_id,
             task_scope_id=request.scope_ref,
@@ -525,6 +532,15 @@ class HumanMemoryHostService:
                 f"simple-harness:host-mutation-plan:{self._auth.subject}:{request.idempotency_key}",
             )
         )
+        if kind in {TaskScopeMutationKind.TASK_COMPLETE, TaskScopeMutationKind.RESUME_UPDATE}:
+            # S5b Task 3 (design-freeze §7 / A3): a scope completed or resumed
+            # by the Host while a closure is still pending is force-closed with
+            # no_mutation(closure_abandoned, host_forced) — zero Provider calls.
+            from deskpet.execution.semantic_closure import force_close_pending
+
+            await force_close_pending(
+                self._db_path, task_scope_id=request.scope_ref, subject=self._auth.subject
+            )
         with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
             row = db.execute(
                 "SELECT current_revision FROM task_scope_heads WHERE task_scope_id=?",

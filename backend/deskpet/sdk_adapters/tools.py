@@ -29,14 +29,16 @@ from simple_harness.tools.executor import EffectExecution, EffectExecutor
 logger = logging.getLogger(__name__)
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
-    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workflow_spawn", "workspace_prepare", "workspace_recall", "write_file"]
+    ["agent", "agent_parallel", "agent_reach_doctor", "agent_reach_read", "app_discover", "app_launch", "await_subagents", "capability_build", "capability_repair", "context_page_in", "desktop_create_file", "doc_create", "doc_edit", "doc_read", "download_file", "edit_file", "excel_create", "external_action_wait", "fetch_tool_result", "file_glob", "file_grep", "file_organize", "file_read", "file_write", "generate_image", "glob", "gold_price_lookup", "grep", "image_ocr", "list_directory", "context_route", "memory_forget", "memory_read", "memory_recall", "memory_search", "memory_write", "move_file", "office_pick_file", "pdf_export", "ppt_create", "process_list", "process_start", "process_stop", "process_wait", "project_directory_select", "project_group_send", "read_file", "register_artifacts", "run_browser_task", "run_shell", "scrapling_fetch", "screen_capture", "screen_click", "screen_key", "screen_move", "screen_scroll", "screen_type", "skill_invoke", "spawn_subagents", "spawn_team", "skill_install", "task_scope_search", "task_scope_update", "todo_complete", "todo_write", "tool_activate", "tool_describe", "tool_search", "web_crawl", "web_extract_article", "web_fetch", "web_read_sitemap", "web_search", "window_capture", "window_focus", "window_key", "window_list", "workflow_spawn", "workspace_prepare", "workspace_recall", "write_file"]
 )
 
 # Host-composed administrative tools are registered only after their durable
 # authorization/runtime services exist.  The static catalog can therefore be
 # built without them for conformance and recovery, while production wiring is
 # still checked against PRODUCT_TOOL_NAMES once the registration is appended.
-HOST_COMPOSED_TOOL_NAMES = frozenset({"skill_install", "context_route", "task_scope_search"})
+HOST_COMPOSED_TOOL_NAMES = frozenset(
+    {"skill_install", "context_route", "task_scope_search", "task_scope_update"}
+)
 
 DispatchKind = Literal["sync", "async", "context", "staged", "control", "provider"]
 ProjectlessAdmission = Literal["safe", "requires_project"]
@@ -52,6 +54,8 @@ PROJECTLESS_SAFE_TOOL_NAMES = frozenset(
         "context_page_in",
         "context_route",
         "task_scope_search",
+        # S5b Task 3: semantic closure never touches the workspace.
+        "task_scope_update",
         "gold_price_lookup",
         "memory_forget",
         "memory_read",
@@ -393,6 +397,7 @@ class ProductEffectExecutor(EffectExecutor):
             task_scope_id=scope[0],
             kind="tool_invocation",
             source_event_id=f"effect:{effect_id.value}",
+            tool_name=call.name,
         )
 
     async def _commit_evidence(

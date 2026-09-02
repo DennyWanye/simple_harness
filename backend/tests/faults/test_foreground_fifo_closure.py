@@ -30,14 +30,27 @@ from deskpet.execution.evidence_ingress import (
     TerminalWatermarkPending,
     ToolInvocationFact,
 )
-from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.foreground_queue import (
+    ForegroundQueueError,
+    ForegroundQueueStore,
+)
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.task_scope.store import TaskScopeConflict
 from tests.execution import test_foreground_queue as fq
 from tests.faults._runner_contract import LANE_SEAMS, emit, new_root_run_id, state_hash
 
 LANE = "foreground-fifo-closure"
-IMPLEMENTED = {"objective-event-commit", "terminal-watermark", "observer-next-sequence-race"}
+IMPLEMENTED = {
+    "objective-event-commit",
+    "terminal-watermark",
+    "observer-next-sequence-race",
+    # S5b Task 3：closure 状态机五 seam（kill → replay 收敛，Provider 零重发）。
+    "semantic-closure-commit",
+    "attempt-reserved",
+    "attempt-handed-off",
+    "cross-run-pending-plan",
+    "lease-second-owner",
+}
 CANONICAL_TABLES = (
     "task_scope_events",
     "task_scope_evidence_links",
@@ -219,10 +232,236 @@ async def _observer_next_sequence_race(tmp_path: Path, run_id: str) -> tuple[str
     return before, converged, {"terminal_sequence": 3}
 
 
+# --- S5b Task 3 seams（closure 状态机；真实 store/ingress/invoker/handler，确定性 adapter）----------
+
+CLOSURE_TABLES = (
+    *CANONICAL_TABLES,
+    "task_scope_closure_receipts",
+    "post_turn_invocation_attempts",
+    "post_turn_invocation_members",
+    "task_scope_mutation_decisions",
+    "task_scope_mutation_attempts",
+    "task_scope_canonical_revisions",
+)
+
+
+async def _closure_env(tmp_path: Path, run_id: str):  # type: ignore[no-untyped-def]
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, run_id)
+    await ch.material_write(env, "e-1")
+    facts = ch.FakeRunFacts(run_id)
+    observed = await ch.observe_terminal(env, facts)
+    assert observed is not None
+    return ch, env, facts, observed
+
+
+async def _semantic_closure_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """handler 在 apply_mutation_plan + closure receipt 同一事务提交前 kill → 零半状态
+    （无 receipt、无 decision、revision 不变）；重放同一 plan → 恰一份；再重放 → 同 receipt、hash 不变。"""
+    ch, env, facts, observed = await _closure_env(tmp_path, run_id)
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    arguments = ch.mutate_arguments(refs, base_revision=revision, idempotency_key="seam-closure")
+    before = state_hash(env.db_path, CLOSURE_TABLES)
+    fallback, _ = ch.build_fallback(env, facts, ch.FakeAdapter([ch.closure_call(arguments)]), fault=_OneShot("semantic-closure-commit"))
+    with pytest.raises(RuntimeError, match="injected:semantic-closure-commit"):
+        await ch.settle(env, fallback)
+    # 零半状态：receipt / decision / revision 全无；attempt 仍 handed_off（Provider 已调用一次，结果未落库）。
+    assert ch.receipts(env.db_path) == []
+    assert ch.head(env.db_path)[0] == revision
+    assert _rows(env.db_path, "SELECT COUNT(*) FROM task_scope_mutation_decisions") == [(0,)]
+    assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]
+    with pytest.raises(ForegroundQueueError) as blocked:
+        await ch.record_terminal(env, observed)
+    assert blocked.value.code == "foreground_terminal_closure_pending"
+    # replay（新 owner）：handed_off → 绝不重发 → pending(closure_attempt_unknown)，终态照常。
+    adapter2 = ch.FakeAdapter([])
+    fallback2, _ = ch.build_fallback(env, facts, adapter2)
+    replay = await ch.settle(env, fallback2)
+    assert (replay.status, replay.reason_code, replay.provider_calls) == ("pending", "closure_attempt_unknown", 0)
+    assert len(adapter2.calls) == 0
+    await ch.record_terminal(env, observed)
+    converged = state_hash(env.db_path, CLOSURE_TABLES)
+    assert converged != before
+    # 再重放：幂等。
+    fallback3, _ = ch.build_fallback(env, facts, ch.FakeAdapter([]))
+    assert (await ch.settle(env, fallback3)).provider_calls == 0
+    assert state_hash(env.db_path, CLOSURE_TABLES) == converged
+    return before, converged, {"replay_status": replay.status}
+
+
+async def _attempt_reserved(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """reserved 行落库之后、handed_off 之前 kill → 新 owner reconcile：reserved → failed(not_sent)，
+    新 ordinal 2 发起恰一次 Provider 调用 → mutate；attempt 1 零调用。"""
+    ch, env, facts, observed = await _closure_env(tmp_path, run_id)
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    arguments = ch.mutate_arguments(refs, base_revision=revision, idempotency_key="seam-reserved")
+    before = state_hash(env.db_path, CLOSURE_TABLES)
+    adapter = ch.FakeAdapter([ch.closure_call(arguments)])
+    fallback, _ = ch.build_fallback(env, facts, adapter, fault=_OneShot("attempt-reserved"))
+    with pytest.raises(RuntimeError, match="injected:attempt-reserved"):
+        await ch.settle(env, fallback)
+    assert len(adapter.calls) == 0
+    assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "reserved")]
+    fallback2, _ = ch.build_fallback(env, facts, adapter)
+    replay = await ch.settle(env, fallback2)
+    assert replay.status == "mutate" and replay.provider_calls == 1 and len(adapter.calls) == 1
+    assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "failed", "not_sent"), (2, "succeeded", None)]
+    await ch.record_terminal(env, observed)
+    converged = state_hash(env.db_path, CLOSURE_TABLES)
+    fallback3, _ = ch.build_fallback(env, facts, adapter)
+    assert (await ch.settle(env, fallback3)).provider_calls == 0
+    assert state_hash(env.db_path, CLOSURE_TABLES) == converged
+    return before, converged, {"attempts": 2}
+
+
+async def _attempt_handed_off(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """handed_off 落库之后、Provider 返回之前 kill → 新 owner **绝不重发** → pending(closure_attempt_unknown)，
+    Host 终态照常；再重放仍 0 调用。"""
+    ch, env, facts, observed = await _closure_env(tmp_path, run_id)
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    arguments = ch.mutate_arguments(refs, base_revision=revision, idempotency_key="seam-handed-off")
+    before = state_hash(env.db_path, CLOSURE_TABLES)
+    adapter = ch.FakeAdapter([ch.closure_call(arguments), ch.closure_call(arguments)])
+    fallback, _ = ch.build_fallback(env, facts, adapter, fault=_OneShot("attempt-handed-off"))
+    with pytest.raises(RuntimeError, match="injected:attempt-handed-off"):
+        await ch.settle(env, fallback)
+    assert len(adapter.calls) == 0
+    assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]
+    fallback2, _ = ch.build_fallback(env, facts, adapter)
+    replay = await ch.settle(env, fallback2)
+    assert replay.status == "pending" and replay.reason_code == "closure_attempt_unknown" and replay.provider_calls == 0
+    assert len(adapter.calls) == 0
+    assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]
+    assert ch.receipts(env.db_path)[-1][2:5] == ("pending", None, "closure_attempt_unknown")
+    await ch.record_terminal(env, observed)
+    converged = state_hash(env.db_path, CLOSURE_TABLES)
+    fallback3, _ = ch.build_fallback(env, facts, adapter)
+    assert (await ch.settle(env, fallback3)).provider_calls == 0
+    assert state_hash(env.db_path, CLOSURE_TABLES) == converged
+    return before, converged, {"resent": 0}
+
+
+async def _cross_run_pending_plan(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """Run 1 pending；Run 2（同 admission scope）的 closure plan 以提交时 head revision 为 base_revision、
+    refs 引用 Run 1 的 evidence → 一条 receipt 覆盖两个 Run；过期 base_revision（CAS 冲突）→ pending 可重试。"""
+    from deskpet.execution.semantic_closure import dirty_state
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+    ch, env, facts, observed = await _closure_env(tmp_path, run_id)
+    fallback, _ = ch.build_fallback(env, facts, ch.FakeAdapter([ch.plain_answer()]))
+    assert (await ch.settle(env, fallback)).status == "pending"
+    await ch.record_terminal(env, observed)
+    before = state_hash(env.db_path, CLOSURE_TABLES)
+    run2 = f"{run_id}-r2"
+    env2 = await ch.next_run(env, run2)
+    await ch.material_write(env2, "e-2", path="b.txt")
+    facts2 = ch.FakeRunFacts(run2)
+    observed2 = await ch.observe_terminal(env2, facts2)
+    refs = ch.scope_evidence_ids(env2.db_path)
+    run1_refs = [
+        str(r[0]) for r in _rows(env2.db_path, "SELECT DISTINCT l.evidence_id FROM task_scope_evidence_links l JOIN human_memory_evidence e ON e.evidence_id=l.evidence_id WHERE e.run_id=?", run_id)
+    ]
+    assert run1_refs and set(run1_refs) <= set(refs)
+    revision, _ = ch.head(env2.db_path)
+    # 过期的 base_revision → mutation_base_revision_conflict 原样透传 → pending（可重试，Provider 已用 1 次）；
+    # Run 2 终态照常提交，两条 pending 都归 admission scope。
+    stale = ch.mutate_arguments(refs, base_revision=revision + 5, idempotency_key="seam-cross-stale")
+    fallback2, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(stale)]))
+    stale_settlement = await ch.settle(env2, fallback2)
+    assert (stale_settlement.status, stale_settlement.reason_code) == ("pending", "mutation_base_revision_conflict")
+    assert ch.head(env2.db_path)[0] == revision
+    await ch.record_terminal(env2, observed2)
+    # Run 3（同 scope）：新 request_hash → 新 attempt；正确 base_revision + Run 1 的 refs → 一条 receipt 覆盖三个 Run。
+    run3 = f"{run_id}-r3"
+    env3 = await ch.next_run(env2, run3, claim_key="claim-3", index=3)
+    await ch.material_write(env3, "e-3", path="c.txt")
+    facts3 = ch.FakeRunFacts(run3)
+    observed3 = await ch.observe_terminal(env3, facts3)
+    refs = ch.scope_evidence_ids(env3.db_path)
+    revision, _ = ch.head(env3.db_path)
+    good = ch.mutate_arguments(run1_refs + [r for r in refs if r not in run1_refs], base_revision=revision, idempotency_key="seam-cross-good")
+    adapter3 = ch.FakeAdapter([ch.closure_call(good)])
+    fallback3, _ = ch.build_fallback(env3, facts3, adapter3)
+    settlement = await ch.settle(env3, fallback3)
+    assert settlement.status == "mutate" and settlement.provider_calls == 1
+    dirty = await dirty_state(CanonicalTaskScopeStore(env3.db_path), ch.SCOPE)
+    assert not dirty.is_dirty
+    assert [r[2] for r in ch.receipts(env3.db_path)] == ["pending", "pending", "mutate"]
+    linked = [str(r[0]) for r in _rows(env3.db_path, "SELECT evidence_id FROM task_scope_evidence_links l JOIN task_scope_events e ON e.event_id=l.event_id WHERE e.source_event_id=?", f"mutation-plan:{settlement.receipt.plan_id}")]
+    assert set(run1_refs) <= set(linked)
+    await ch.record_terminal(env3, observed3)
+    converged = state_hash(env3.db_path, CLOSURE_TABLES)
+    fallback4, _ = ch.build_fallback(env3, facts3, adapter3)
+    assert (await ch.settle(env3, fallback4)).provider_calls == 0
+    assert state_hash(env3.db_path, CLOSURE_TABLES) == converged
+    return before, converged, {"runs": 3}
+
+
+async def _lease_second_owner(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """owner-1 reserved+handed_off 后 lease 到期；owner-2 reclaim（generation+1）→ 0 调用、pending(closure_attempt_unknown)
+    并提交终态；owner-1 迟到的 Provider 结果在 apply 前复验 lease 失败 → 不写 receipt/不 apply。"""
+    import asyncio
+
+    ch, env, facts, observed = await _closure_env(tmp_path, run_id)
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    arguments = ch.mutate_arguments(refs, base_revision=revision, idempotency_key="seam-lease")
+    before = state_hash(env.db_path, CLOSURE_TABLES)
+    gate = asyncio.Event()
+
+    async def slow_response(request):  # type: ignore[no-untyped-def]
+        await gate.wait()
+        return ch.closure_call(arguments)
+
+    adapter1 = ch.FakeAdapter([slow_response])
+    fallback1, _ = ch.build_fallback(env, facts, adapter1)
+    owner1 = asyncio.create_task(ch.settle(env, fallback1))
+    for _ in range(200):
+        await asyncio.sleep(0.01)
+        if [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]:
+            break
+    assert [(o, s) for o, s, *_ in ch.attempts(env.db_path)] == [(1, "handed_off")]
+    # lease 到期 → owner-2 reclaim。
+    env.clock.now += 1000
+    await env.store.reclaim_expired(
+        host_run_id=env.admission.host_run_id, new_owner_id="owner-2",
+        expected_generation=env.admission.generation, lease_seconds=10, idempotency_key="reclaim-2",
+    )
+    generation2 = env.admission.generation + 1
+    adapter2 = ch.FakeAdapter([ch.closure_call(arguments)])
+    fallback2, _ = ch.build_fallback(env, facts, adapter2, owner_id="owner-2", generation=generation2)
+    second = await ch.settle(env, fallback2, owner_id="owner-2", generation=generation2)
+    assert second.status == "pending" and second.reason_code == "closure_attempt_unknown" and second.provider_calls == 0
+    assert len(adapter2.calls) == 0
+    await ch.record_terminal(env, observed, owner_id="owner-2", generation=generation2)
+    # owner-1 迟到返回：apply 前复验 lease → 拒绝，不 apply、无第二条 receipt。
+    gate.set()
+    first = await owner1
+    assert first.status == "lease_lost" and first.provider_calls == 1
+    assert ch.head(env.db_path)[0] == revision
+    assert [r[2] for r in ch.receipts(env.db_path)] == ["pending"]
+    assert [(o, s, g) for o, s, _u, _r, _p, g in ch.attempts(env.db_path)] == [(1, "succeeded", 1)]
+    converged = state_hash(env.db_path, CLOSURE_TABLES)
+    fallback3, _ = ch.build_fallback(env, facts, adapter2, owner_id="owner-2", generation=generation2)
+    third = await ch.settle(env, fallback3, owner_id="owner-2", generation=generation2)
+    assert third.provider_calls == 0
+    assert state_hash(env.db_path, CLOSURE_TABLES) == converged
+    return before, converged, {"second_owner_calls": 0}
+
+
 SEAM_RUNNERS = {
     "objective-event-commit": _objective_event_commit,
     "terminal-watermark": _terminal_watermark,
     "observer-next-sequence-race": _observer_next_sequence_race,
+    "semantic-closure-commit": _semantic_closure_commit,
+    "attempt-reserved": _attempt_reserved,
+    "attempt-handed-off": _attempt_handed_off,
+    "cross-run-pending-plan": _cross_run_pending_plan,
+    "lease-second-owner": _lease_second_owner,
 }
 
 

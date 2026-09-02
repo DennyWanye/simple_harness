@@ -47,6 +47,10 @@ CREATE TABLE harness_evidence_reservations (
     status TEXT NOT NULL CHECK(status IN ('reserved','ingested','abandoned')),
     reserved_at REAL NOT NULL,
     resolved_at REAL,
+    -- Task 2 review F-2: the Tool name is recorded at reservation time so an
+    -- abandoned PROJECT_EFFECT (SDK ledger non-terminal at Run terminal) can be
+    -- tombstoned with its effect class and still count as material dirt.
+    tool_name TEXT,
     UNIQUE(run_id, source_sequence),
     CHECK((status='reserved') = (resolved_at IS NULL)),
     FOREIGN KEY(task_scope_id) REFERENCES task_scopes(task_scope_id)
@@ -175,6 +179,7 @@ BEGIN
              OR NEW.source_event_id <> OLD.source_event_id
              OR NEW.kind <> OLD.kind
              OR NEW.reserved_at <> OLD.reserved_at
+             OR NEW.tool_name IS NOT OLD.tool_name
         THEN RAISE(ABORT,'harness_evidence_reservation_identity_immutable')
         WHEN OLD.status <> 'reserved' AND (
              NEW.status <> OLD.status OR NEW.resolved_at IS NOT OLD.resolved_at)

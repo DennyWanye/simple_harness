@@ -102,6 +102,7 @@ class EvidenceReservation:
     status: str
     reserved_at: float
     resolved_at: float | None
+    tool_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,6 +295,7 @@ class ExecutionEvidenceIngress:
         task_scope_id: str,
         kind: str,
         source_event_id: str,
+        tool_name: str | None = None,
     ) -> EvidenceReservation:
         await self._store.initialize()
         async with self._store._connection() as db:
@@ -307,6 +309,7 @@ class ExecutionEvidenceIngress:
                     kind=kind,
                     source_event_id=source_event_id,
                     now=self._clock(),
+                    tool_name=tool_name,
                 )
                 await db.commit()
             except Exception:
@@ -323,18 +326,22 @@ class ExecutionEvidenceIngress:
         kind: str,
         source_event_id: str,
         now: float,
+        tool_name: str | None = None,
     ) -> EvidenceReservation:
         identifier(run_id, "run_id", 512)
         identifier(task_scope_id, "task_scope_id", 512)
         identifier(source_event_id, "source_event_id", 512)
         if kind not in RESERVATION_KINDS:
             raise ValueError("execution_evidence_kind_rejected")
+        if tool_name is not None:
+            identifier(tool_name, "tool_name", 512)
         existing = await self._reservation_tx(db, source_event_id)
         if existing is not None:
             if (
                 existing.run_id != run_id
                 or existing.task_scope_id != task_scope_id
                 or existing.kind != kind
+                or (tool_name is not None and existing.tool_name not in (None, tool_name))
             ):
                 raise TaskScopeConflict("execution_reservation_identity_conflict")
             return existing
@@ -355,9 +362,9 @@ class ExecutionEvidenceIngress:
         reservation_id = _uuid(f"harness-evidence-reservation:{source_event_id}")
         await db.execute(
             "INSERT INTO harness_evidence_reservations(reservation_id,run_id,task_scope_id,"
-            "source_sequence,source_event_id,kind,status,reserved_at,resolved_at) "
-            "VALUES (?,?,?,?,?,?,'reserved',?,NULL)",
-            (reservation_id, run_id, task_scope_id, sequence, source_event_id, kind, float(now)),
+            "source_sequence,source_event_id,kind,status,reserved_at,resolved_at,tool_name) "
+            "VALUES (?,?,?,?,?,?,'reserved',?,NULL,?)",
+            (reservation_id, run_id, task_scope_id, sequence, source_event_id, kind, float(now), tool_name),
         )
         created = await self._reservation_tx(db, source_event_id)
         assert created is not None
@@ -417,6 +424,7 @@ class ExecutionEvidenceIngress:
             str(row["status"]),
             float(row["reserved_at"]),
             None if resolved is None else float(resolved),
+            None if row["tool_name"] is None else str(row["tool_name"]),
         )
 
     async def _assert_run_scope_tx(
@@ -931,12 +939,28 @@ class ExecutionEvidenceIngress:
         subject = await self.scope_subject(reservation.task_scope_id)
         if subject is None:
             raise TaskScopeNotFound(TaskScopeNotFound.code)
+        public_payload: dict[str, object] = {
+            "status": "abandoned",
+            "reservation_id": reservation.reservation_id,
+        }
+        if reservation.kind == "tool_invocation" and reservation.tool_name is not None:
+            # Task 2 review F-2: keep the Tool identity so a PROJECT_EFFECT whose
+            # outcome is unknown at Run terminal stays *material* (the file may
+            # already be written) instead of degrading into a trivial tombstone.
+            from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
+
+            public_payload["tool_name"] = reservation.tool_name
+            public_payload["effect_class"] = (
+                "project_effect"
+                if reservation.tool_name in PROJECT_EFFECT_TOOL_NAMES
+                else "non_project_effect"
+            )
         evidence = _host_evidence(
             run_id=reservation.run_id,
             subject=subject,
             kind=reservation.kind,
             event_id=reservation.source_event_id,
-            public_payload={"status": "abandoned", "reservation_id": reservation.reservation_id},
+            public_payload=public_payload,
             refs=[],
             idempotency_key=f"abandoned:{reservation.reservation_id}",
             occurred_at=reservation.reserved_at,

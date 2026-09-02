@@ -92,7 +92,7 @@ class _Gate:
 
 
 class _Case:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, evidence_ingress=None) -> None:  # type: ignore[no-untyped-def]
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
         self.database = Database.open(self.root / "sdk-execution.sqlite3")
@@ -123,6 +123,7 @@ class _Case:
                 # 进程级中断（BaseException 语义）：registry 不吞，executor 记 UNKNOWN 后上抛。
                 raise asyncio.CancelledError("handler crashed mid-flight")
             target = self.root / str(arguments["path"])
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("written", encoding="utf-8")
             return ToolResult.succeeded(context.call_id, {"ok": True, "written": str(target)})
 
@@ -135,6 +136,7 @@ class _Case:
             authorization=_AllowAuthorization(),
             reconciliation=self.reconciliation,
             effect_gate=self.gate,
+            evidence_ingress=evidence_ingress,
             clock=lambda: 3.0,  # 与 SDK lease（now=2.0, ttl=1000s）同一时钟
         )
 
@@ -227,5 +229,108 @@ async def test_gate_does_not_preempt_unknown_effect_reconciliation(tmp_path: Pat
         assert execution.result.value == {"ok": True, "reconciled": True}
         assert case.handler_calls == 1  # reconcile 不再进 handler
         assert case.ledger_state() == "succeeded"
+    finally:
+        case.close()
+
+
+# --- Task 2 审查 F-1 / F-2（Task 3 附带修复；真实 SDK executor + 真实 ingress + foreground 绑定）------
+
+
+async def _bound_case(tmp_path: Path):  # type: ignore[no-untyped-def]
+    from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path / "state", RUN.value)
+    case = _Case(tmp_path / "case", evidence_ingress=ExecutionEvidenceIngress(env.db_path))
+    await case.initialize()
+    return ch, env, case
+
+
+@pytest.mark.asyncio
+async def test_commit_fact_redacts_credential_like_path_and_never_raises_after_settle(tmp_path: Path) -> None:
+    """F-1（P1）：模型给的路径命中凭据形状（``docs/bearer authentication.md``）时，settle 之后的 Host 记账
+    **永不抛出**：路径片段确定性脱敏为 ``[redacted:credential]``、事件 payload ``redacted=true``、事件照写、
+    material 照标；重放同错不再发生；terminal 排空与放行收敛。"""
+    import json
+
+    from deskpet.execution.semantic_closure import dirty_state
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+    ch, env, case = await _bound_case(tmp_path)
+    try:
+        path = "docs/bearer authentication.md"
+        first = await case.execute(effect_id="effect-cred", path=path)
+        assert first.effect is not None and first.effect.state is EffectState.SUCCEEDED
+        assert first.result.outcome.value == "succeeded"
+        assert (tmp_path / "case" / path).read_text(encoding="utf-8") == "written"
+        [(kind, payload_json)] = ch.rows(
+            env.db_path,
+            "SELECT event_kind,payload_json FROM task_scope_events WHERE source_kind='host' AND source_event_id='effect:effect-cred'",
+        )
+        payload = json.loads(payload_json)
+        assert kind == "host.file" and payload["redacted"] is True
+        # `(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}` 吞掉 "bearer authentication.md" 整段（确定性）。
+        assert payload["targets"] == ["docs/[redacted:credential]"]
+        assert "bearer authentication" not in payload_json
+        assert ch.rows(env.db_path, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-cred'") == [("ingested",)]
+        # 重放（exact replay）：同一结果、不再抛错、恰一份事件。
+        replay = await case.execute(effect_id="effect-cred", path=path)
+        assert replay.result == first.result
+        assert ch.rows(env.db_path, "SELECT COUNT(*) FROM task_scope_events WHERE source_event_id='effect:effect-cred'") == [(1,)]
+        # 另一种凭据形状（sk-…）同样脱敏、不抛。
+        second = await case.execute(effect_id="effect-key", path="keys/sk-abcdefghijklmnopqrst.txt")
+        assert second.result.outcome.value == "succeeded"
+        [(payload_json2,)] = ch.rows(env.db_path, "SELECT payload_json FROM task_scope_events WHERE source_kind='host' AND source_event_id='effect:effect-key'")
+        assert json.loads(payload_json2)["targets"] == ["keys/[redacted:credential].txt"]
+        dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
+        assert sorted(e.event_kind for e in dirty.material_events) == ["harness.tool_invocation", "harness.tool_invocation", "host.file", "host.file"]
+        # terminal：排空 + run_terminal + 放行，收敛。
+        observed = await ch.observe_terminal(env, ch.FakeRunFacts(env.run_id))
+        assert observed is not None
+        gate = await env.ingress.authorize_terminal(env.run_id)
+        assert gate.terminal_source_sequence == 3
+    finally:
+        case.close()
+
+
+@pytest.mark.asyncio
+async def test_abandoned_project_effect_reservation_is_material_dirty(tmp_path: Path) -> None:
+    """F-2（P1）：Run 终态时仍 UNKNOWN/HANDED_OFF 的 PROJECT_EFFECT 预留 → tombstone 保留 kind 并携带
+    ``effect_class=project_effect``（预留行记 tool_name）；映射表把它判为 **material**（closure 必须记账，
+    文件可能已写），dirty_state 不再静默"干净"。"""
+    import json
+
+    from deskpet.execution.semantic_closure import dirty_state, is_material_event
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+    ch, env, case = await _bound_case(tmp_path)
+    try:
+        case.fail_handler = True
+        with pytest.raises(asyncio.CancelledError):
+            await case.execute(effect_id="effect-unknown", path="maybe.txt")
+        assert case.ledger_state("effect-unknown") == "unknown"
+        [(status, tool_name)] = ch.rows(env.db_path, "SELECT status,tool_name FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'")
+        assert (status, tool_name) == ("reserved", "write_file")
+        assert not (await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)).is_dirty
+        # terminal 排空：SDK 账本非终态 → tombstone（同 kind），携带 tool_name / effect_class。
+        observed = await ch.observe_terminal(env, ch.FakeRunFacts(env.run_id))
+        assert observed is not None
+        [(kind, payload_json)] = ch.rows(
+            env.db_path,
+            "SELECT e.event_kind,e.payload_json FROM task_scope_execution_ingest_receipts r JOIN task_scope_events e ON e.event_id=r.event_id WHERE r.source_event_id='effect:effect-unknown'",
+        )
+        public = json.loads(payload_json)["public_payload"]
+        assert kind == "harness.tool_invocation"
+        assert public["status"] == "abandoned" and public["tool_name"] == "write_file" and public["effect_class"] == "project_effect"
+        assert is_material_event("harness.tool_invocation", json.loads(payload_json)) is True
+        dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
+        assert dirty.is_dirty and [e.event_kind for e in dirty.material_events] == ["harness.tool_invocation"]
+        assert dirty.material_events[0].source_event_id == "execution:effect:effect-unknown"
+        # 非 PROJECT_EFFECT 的 abandoned tombstone 仍是 trivial。
+        assert is_material_event(
+            "harness.tool_invocation",
+            {"public_payload": {"status": "abandoned", "tool_name": "read_file", "effect_class": "non_project_effect"}},
+        ) is False
+        assert ch.rows(env.db_path, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-unknown'") == [("abandoned",)]
     finally:
         case.close()

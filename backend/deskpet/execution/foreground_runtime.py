@@ -308,6 +308,7 @@ class ForegroundRuntimeExecutionAuthority:
         audit_sink: ForegroundRuntimeAuditSink | None = None,
         effect_gate: ForegroundEffectAdmissionGate | None = None,
         lease_seconds: float = 300.0,
+        closure_fallback: object | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -323,6 +324,9 @@ class ForegroundRuntimeExecutionAuthority:
         self._terminal = terminal_observer
         self._audit = audit_sink
         self._effect_gate = effect_gate
+        # S5b Task 3: semantic-closure fallback between the SDK terminal
+        # observation and the Host terminal commit (lease-fenced, replayable).
+        self._closure_fallback = closure_fallback
         self._lease_seconds = float(lease_seconds)
         self._driver: asyncio.Task[None] | None = None
         self._driver_lock = asyncio.Lock()
@@ -918,6 +922,28 @@ class ForegroundRuntimeExecutionAuthority:
                 f"runtime-reconcile:{host_run_id}:g{claimed.generation}:terminal"
             ),
         )
+        if self._closure_fallback is not None:
+            # SDK terminal observed (final answer already delivered by the SDK
+            # pump) → drain done by the observer → semantic closure fallback →
+            # Host terminal.  Only the current lease owner may call the
+            # Provider; a lost lease / crash is reconciled by the next owner.
+            settlement = await self._closure_fallback.settle(
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                owner_id=self._owner_id,
+                generation=claimed.generation,
+                terminal_state=terminal.terminal_state,
+            )
+            self._record_audit(
+                "foreground.runtime.closure_settled",
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                status=settlement.status,
+                reason_code=settlement.reason_code,
+                provider_calls=settlement.provider_calls,
+            )
+            if settlement.status == "lease_lost":
+                raise ForegroundRuntimeError("foreground_runtime_lease_lost_during_closure")
         await self._store.record_sdk_terminal(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,

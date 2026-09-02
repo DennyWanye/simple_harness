@@ -683,6 +683,42 @@ class ProductSdkRuntimeStack:
             )
         return None
 
+    def read_closure_run_facts(self, run_id: str):  # type: ignore[no-untyped-def]
+        """S5b Task 3 closure fallback inputs from the durable SDK ledger.
+
+        The Run binding (``context_metadata.run_binding`` of the start
+        snapshot — the same record the provider binding resolver rebuilds the
+        adapter from) and the last assistant message of the Run context.
+        """
+
+        from simple_harness import RunId
+        from simple_harness.runtime import SqliteContextPort
+
+        from deskpet.execution.semantic_closure import ClosureRunFacts
+
+        self.require_ready()
+        uow = self._uow
+        if uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        expected = str(run_id).strip()
+        if not expected:
+            raise ValueError("run_id is required")
+        start = uow.read_start_snapshot(expected)
+        start_input = start.get("input") if isinstance(start, Mapping) else None
+        metadata = start_input.get("context_metadata") if isinstance(start_input, Mapping) else None
+        raw_binding = metadata.get("run_binding") if isinstance(metadata, Mapping) else None
+        binding = dict(raw_binding) if isinstance(raw_binding, Mapping) else None
+        snapshot = SqliteContextPort(uow.database).load(RunId(expected))
+        last_answer: str | None = None
+        for message in reversed(tuple(snapshot.messages)):
+            role = str(getattr(getattr(message, "role", ""), "value", getattr(message, "role", "")))
+            if role == "assistant":
+                content = str(getattr(message, "content", "") or "").strip()
+                if content:
+                    last_answer = content
+                    break
+        return ClosureRunFacts(binding_record=binding, last_assistant_message=last_answer)
+
     def read_run_terminal_evidence(
         self, run_id: str
     ) -> SdkRunTerminalEvidence | None:

@@ -3097,10 +3097,80 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         def record(self, event: str, payload: Mapping[str, object]) -> None:
             logger.info(event, **dict(payload))
 
+    # S5b Task 3: lease-fenced semantic-closure fallback.  The Provider adapter
+    # is rebuilt from the durable Run binding through the same resolver the SDK
+    # Run used (no new client); the handler is the same one behind the
+    # `task_scope_update` Tool; run facts come from the SDK runtime stack.
+    from deskpet.execution.semantic_closure import ClosureFallback
+    from deskpet.sdk_adapters.post_turn_invoker import RunBoundInvoker
+    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+
+    _closure_service = _ensure_task_scope_update_service()
+    if _sdk_provider_binding_resolver is None:
+        raise RuntimeError("sdk_context_authority_composition_missing:sdk_provider_binding_resolver")
+
+    class _RuntimeLeaseFence:
+        """Per-Run lease fence resolved lazily from the driver's (owner, generation)."""
+
+        def __init__(self, owner_id: str) -> None:
+            self.owner_id = owner_id
+            self.host_run_id = ""
+            self.sdk_run_id = ""
+            self.generation = 0
+
+        def bind(self, *, host_run_id: str, sdk_run_id: str, generation: int) -> None:
+            self.host_run_id = host_run_id
+            self.sdk_run_id = sdk_run_id
+            self.generation = int(generation)
+
+        async def reserve_attempt(self, row, members):  # type: ignore[no-untyped-def]
+            await foreground.reserve_post_turn_attempt(
+                host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, owner_id=self.owner_id,
+                generation=self.generation, attempt=row, members=members,
+            )
+
+        async def revalidate(self) -> None:
+            from deskpet.execution.foreground_queue import EffectBoundary
+
+            await foreground.authorize_effect(
+                host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, owner_id=self.owner_id,
+                generation=self.generation, boundary=EffectBoundary.CLOSURE,
+            )
+
+    _runtime_owner_id = f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}"
+    _closure_fence = _RuntimeLeaseFence(_runtime_owner_id)
+
+    def _closure_adapter(record):  # type: ignore[no-untyped-def]
+        binding = SdkRunBindingV1.from_record(record)
+        return _sdk_provider_binding_resolver.build_authority(binding).provider
+
+    class _BoundClosureFallback:
+        """Binds the fence to the (host_run, sdk_run, generation) of each settle call."""
+
+        def __init__(self) -> None:
+            self._inner = ClosureFallback(
+                _state_db_path,
+                invoker=RunBoundInvoker(
+                    _state_db_path, fence=_closure_fence, adapter_factory=_closure_adapter
+                ),
+                service=_closure_service,
+                run_facts_reader=_sdk_runtime_stack,
+            )
+
+        async def settle(self, *, host_run_id, sdk_run_id, owner_id, generation, terminal_state):  # type: ignore[no-untyped-def]
+            if owner_id != _closure_fence.owner_id:
+                raise RuntimeError("foreground_runtime_closure_owner_mismatch")
+            _closure_fence.bind(host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation)
+            return await self._inner.settle(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=owner_id,
+                generation=generation, terminal_state=terminal_state,
+            )
+
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
-        owner_id=f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}",
+        owner_id=_runtime_owner_id,
+        closure_fallback=_BoundClosureFallback(),
         ingress=_sdk_ingress,
         context=TaskScopeForegroundContextPort(
             _state_db_path,
@@ -7291,6 +7361,24 @@ _sdk_context_port = None
 _sdk_runtime_catalog: dict[str, Any] | None = None
 _sdk_run_binding_registry = None
 _sdk_provider_binding_resolver = None
+# S5b Task 3: the `task_scope_update` handler shared by the Tool registration and
+# the terminal closure fallback (process-wide, like the binding resolver above).
+_task_scope_update_service = None
+
+
+def _ensure_task_scope_update_service():  # type: ignore[no-untyped-def]
+    global _task_scope_update_service
+    if _task_scope_update_service is None:
+        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+        from deskpet.sdk_adapters.task_scope_mutation import TaskScopeUpdateService
+        from deskpet.sdk_adapters.tools import active_product_tool_context
+
+        _task_scope_update_service = TaskScopeUpdateService(
+            _state_db_path,
+            tool_context_getter=active_product_tool_context,
+            route_ledger=ContextRouteLedgerStore(_state_db_path),
+        )
+    return _task_scope_update_service
 _sdk_tool_authority_registry = None
 _sdk_runtime_tool_inventory = None
 # Product/UI projections expose the Host canonical root id, while RunClient
@@ -8171,6 +8259,34 @@ async def _build_product_sdk_runtime_stack(
                 "source": "product-context-route",
                 "version": "1",
                 "stable_handler_id": "core.task_scope_search.v1",
+            },
+        ),
+    )
+    # S5b Task 3 — semantic closure Tool (host-composed, direct kernel, always
+    # exposed; the Host handler gates scope_unbound / nothing_to_close).
+    from deskpet.sdk_adapters.task_scope_mutation import (
+        TASK_SCOPE_UPDATE_DESCRIPTION,
+        TASK_SCOPE_UPDATE_SCHEMA,
+    )
+
+    _closure_tool_service = _ensure_task_scope_update_service()
+
+    async def task_scope_update_handler(arguments, _context):
+        return await _closure_tool_service.handle_task_scope_update(arguments)
+
+    projected_registrations = (
+        *projected_registrations,
+        ProductToolRegistration(
+            name="task_scope_update",
+            description=TASK_SCOPE_UPDATE_DESCRIPTION,
+            input_schema=TASK_SCOPE_UPDATE_SCHEMA,
+            handler=task_scope_update_handler,
+            dispatch_kind="async",
+            permission_category="task_scope_update",
+            metadata={
+                "source": "product-task-scope-closure",
+                "version": "1",
+                "stable_handler_id": "core.task_scope_update.v1",
             },
         ),
     )

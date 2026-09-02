@@ -115,6 +115,27 @@ def reject_private_payload(value: object, path: str = "payload") -> None:
     _reject_private(value, path)
 
 
+CREDENTIAL_REDACTION_PLACEHOLDER = "[redacted:credential]"
+
+
+def redact_credential_shapes(text: str) -> tuple[str, bool]:
+    """Deterministically replace credential-shaped fragments in *text*.
+
+    S5b Task 2 review F-1: model-supplied public facts (file paths, targets)
+    recorded *after* the SDK settled an effect must never make the Host raise;
+    every fragment matching a ``_CREDENTIAL_PATTERNS`` shape becomes the stable
+    placeholder and the caller records ``redacted=True``.  The result always
+    passes :func:`reject_private_payload`.
+    """
+
+    redacted = False
+    result = text
+    for pattern in _CREDENTIAL_PATTERNS:
+        result, count = pattern.subn(CREDENTIAL_REDACTION_PLACEHOLDER, result)
+        redacted = redacted or count > 0
+    return result, redacted
+
+
 def _validate_disclosure(value: object, run_id: str, subject: str) -> None:
     if not isinstance(value, Mapping) or set(value) != _DISCLOSURE_KEYS:
         raise TaskScopeProtocolError("disclosure_context_fields_differ")
