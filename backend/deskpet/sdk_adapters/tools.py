@@ -24,7 +24,7 @@ from simple_harness.tools import (
     ToolResult,
     ToolSpec,
 )
-from simple_harness.tools.executor import EffectExecutor
+from simple_harness.tools.executor import EffectExecution, EffectExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -328,6 +328,18 @@ class ForegroundEffectAdmissionPort(Protocol):
     async def authorize(self, sdk_run_id: str) -> None: ...
 
 
+class EffectGatePort(Protocol):
+    """Per-effect workspace admission for PROJECT_EFFECT Tools (S5b).
+
+    Implemented by ``deskpet.sdk_adapters.effect_gate.EffectGate``: returns
+    ``None`` to admit or a ``ToolResult.rejected`` carrying one stable reason.
+    """
+
+    async def verify(
+        self, context: ToolContext, tool_name: str, *, call_id: CallId | None = None
+    ) -> ToolResult | None: ...
+
+
 class ProductEffectExecutor(EffectExecutor):
     """Bind SDK validation and dispatch to the immutable Run authority."""
 
@@ -336,15 +348,39 @@ class ProductEffectExecutor(EffectExecutor):
         *,
         registry: ProductToolsAdapter,
         foreground_admission: ForegroundEffectAdmissionPort | None = None,
+        effect_gate: EffectGatePort | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(registry=registry, **kwargs)
         self._foreground_admission = foreground_admission
+        self._effect_gate = effect_gate
 
     async def execute(self, **kwargs: Any):
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
+        if self._effect_gate is not None:
+            # S5b EffectGate: re-verify the TaskExecutionEnvelope against the
+            # frozen Run authority, the durable route receipt, the S4 binding
+            # set and the live filesystem identity before ANY physical project
+            # effect.  A rejection is returned as the SDK authorization-deny
+            # shape (effect=None): no execution_effects row, no Host event.
+            call = kwargs.get("call")
+            if not isinstance(call, ToolCall):
+                raise TypeError("ProductEffectExecutor requires ToolCall")
+            rejection = await self._effect_gate.verify(
+                context, call.name, call_id=call.call_id
+            )
+            if rejection is not None:
+                logger.warning(
+                    "tool.denied",
+                    extra={
+                        "tool": call.name,
+                        "reason": rejection.error_code or "effect_gate_rejected",
+                        "path": "effect_gate",
+                    },
+                )
+                return EffectExecution(effect=None, result=rejection)
         self._registry.assert_workspace_current(context.run_id)
         if self._foreground_admission is not None:
             # Final current-generation admission immediately before the
@@ -693,6 +729,7 @@ def filter_sdk_catalog_for_workspace(
 __all__ = (
     "PRODUCT_TOOL_NAMES",
     "PROJECTLESS_SAFE_TOOL_NAMES",
+    "EffectGatePort",
     "ForegroundEffectAdmissionPort",
     "ProductEffectExecutor",
     "ProductToolInventoryEntry",

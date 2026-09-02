@@ -536,6 +536,31 @@ class ContextRouteLedgerStore:
             await db.close()
 
 
+    async def read_route_receipt(self, sdk_run_id: str, receipt_id: str) -> Any | None:
+        """Return the durable ``ContextRouteReceipt`` recorded for one Run (S5b gate step 4).
+
+        The v45 decision row is the Host's own frozen route authority; the gate
+        verifies the effect envelope against it instead of trusting the
+        envelope's echo of the receipt.
+        """
+
+        from simple_harness.execution.context_authority import ContextRouteReceipt
+
+        db = await self._connect()
+        try:
+            cursor = await db.execute(
+                "SELECT receipt_json FROM context_route_decisions "
+                "WHERE sdk_run_id=? AND receipt_id=?",
+                (str(sdk_run_id), str(receipt_id)),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+        finally:
+            await db.close()
+        if row is None:
+            return None
+        return ContextRouteReceipt.from_json(json.loads(str(row[0])))
+
     async def presented_occurrence_keys(self) -> frozenset[str]:
         """Read the per-occurrence presented set (S5a: zero rows by design)."""
 

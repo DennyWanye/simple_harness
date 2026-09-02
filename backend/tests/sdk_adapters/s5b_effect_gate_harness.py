@@ -71,6 +71,7 @@ from deskpet.sdk_adapters.task_execution import (
     BindingRootResolver,
     ProductTaskExecutionAuthority,
 )
+from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
 from deskpet.sdk_adapters.tools import ProductEffectExecutor
 from deskpet.task_scope.store import CanonicalTaskScopeStore
 from deskpet.task_scope.workspace_bindings import (
@@ -209,9 +210,9 @@ class RouteExposure:
                 ToolRouteRequirement.FORBIDDEN,
                 ToolTaskScopeRequirement.FORBIDDEN,
             )
-        if provider_name == "write_file":
+        if provider_name in PROJECT_EFFECT_TOOL_NAMES:
             return ToolExecutionPolicy(
-                "builtin:write_file",
+                f"builtin:{provider_name}",
                 "d" * 64,
                 ToolEffectClass.PROJECT_EFFECT,
                 ToolRouteRequirement.REQUIRED,

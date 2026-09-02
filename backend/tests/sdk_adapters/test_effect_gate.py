@@ -310,7 +310,7 @@ async def test_binding_root_resolver_zero_root_and_stale_receipt(tmp_path) -> No
     env = await h.build_env(tmp_path)
     scope_a, _root = await h.make_bound_scope(env, "a", "root-a")
     head = await env.binding_store.current_receipt(scope_a)
-    stale = replace(_receipt(scope_a, head), binding_set_receipt_hash="b" * 64)
+    stale = SimpleNamespace(**{**vars(_receipt(scope_a, head)), "binding_set_receipt_hash": "b" * 64})
     with pytest.raises(TaskExecutionAuthorityError) as exact_stale:
         await BindingRootResolver(env.binding_store)(stale)
     assert exact_stale.value.code == "workspace_binding_exact_receipt_stale"

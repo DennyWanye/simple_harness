@@ -8252,6 +8252,25 @@ async def _build_product_sdk_runtime_stack(
         if projection_pump is not None:
             await projection_pump.close()
 
+    # S5b Task 1: per-effect workspace EffectGate in front of every physical
+    # PROJECT_EFFECT dispatch (envelope echo → frozen Run authority → S4
+    # verify_task_execution_envelope over the durable v45 route receipt →
+    # strict head revision → TaskScope active).  Constructed at stack build so
+    # a missing piece fails startup instead of degrading to "no gate".
+    from deskpet.sdk_adapters.effect_gate import EffectGate
+    from deskpet.task_scope.store import CanonicalTaskScopeStore as _GateScopeStore
+
+    if tool_authorities is None:
+        raise RuntimeError("sdk_effect_gate_composition_missing:tool_authority_registry")
+    effect_gate = EffectGate(
+        binding_store=_context_route_binding_store(),
+        route_ledger=_ContextRouteLedgerStore(_state_db_path),
+        scope_store=_GateScopeStore(_state_db_path),
+        authority_resolver=tool_authorities.resolve,
+        exposure_resolver=tool_authorities.resolve_exposure,
+    )
+    service_context.register("sdk_effect_gate", effect_gate)
+
     def ports_factory(database, uow):
         nonlocal projection_pump
         global _sdk_context_port
@@ -8297,6 +8316,7 @@ async def _build_product_sdk_runtime_stack(
             authorization=authorization_adapter,
             reconciliation=reconciliation_adapter,
             foreground_admission=_ensure_foreground_effect_gate(),
+            effect_gate=effect_gate,
         )
         from simple_harness.execution.context_authority import (
             DurableToolCatalogResolver,
@@ -8597,6 +8617,7 @@ async def _build_product_sdk_runtime_stack(
         "sdk_run_context_authority",
         "sdk_runtime_decision_sink",
         "sdk_task_execution_authority",
+        "sdk_effect_gate",
     ):
         if service_context.get(slot) is None:
             raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
