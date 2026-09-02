@@ -2,6 +2,52 @@
 
 > **最后更新**：2026-09-03
 
+## 2026-09-03 Human Memory S5b Task 6：effect gate 加固、Auto `explicit_only`、composition 真构造、v46 cutover 与遗留义务
+
+- **P0（真实桌面预演）**：`_build_product_sdk_runtime_stack` → `_activate_memory_analysis_lane` 读模块全局
+  `_sdk_provider_binding_resolver`，而该全局在 stack 构建之后才赋值 → 每次真实启动必抛
+  `sdk_context_authority_composition_missing:sdk_provider_binding_resolver`，再被吞成 `product_sdk_runtime_skipped`。
+  修法：`_resolve_sdk_provider_binding_resolver()`（service_context 槽优先）；`_activate_product_sdk_runtime` 构建异常改为
+  raise（AC-6① startup stable fail，不再 warning+skip）；决定性用例 `test_product_sdk_runtime_stack_builds_on_real_startup_order`。
+- 基线 main @ a42835d0（含 Task 0–4，里程碑 PASS）。EffectGate（Task 1 审查 F-2/F-3/F-7/F-8/F-10）：四次读同一 SQLite 读快照 +
+  预留事务（BEGIN IMMEDIATE）内 `reservation_check` 再核 head/scope；durable sticky memo `effect_gate_rejections`
+  （`effect_gate_route_receipt_rejected`，直到同 Run 新 `context_route` 收据）；head 缺行 → `workspace_binding_effect_authority_missing`；
+  `context.effect_id` 缺失 → identity mismatch；步骤 0 只跳非 PREPARED 记录；inode 漂移 / symlink / 跨 Run / 直通 / memo 隔离用例；
+  构造期缺件 TypeError。terminal observer：run_terminal 走预留协议（同事务 reserve+ingest，reservation_id 由 `terminal:{run_id}` 派生，
+  source_event_id 保持 SDK terminal event id）、memo 在 durable 后释放且有界（4096 FIFO）、`mark_terminal` 释放 sink、
+  `error_code` 白名单 `^[a-z][a-z0-9_]{2,63}$`（否则 `driver_failed`）。
+- **Auto `explicit_only`（AC-3⑤ / A5）**：`_FrozenCapabilitySpec.effect_class`（inventory → manifest → unknown）+ manifest dangerous
+  → `confirm_only`；`SdkPreparedAuthorizationPolicy.decide` 传 `plan_prepared_call(explicit_only=…, confirmed=False)`，
+  Auto 下 confirm-only（run_shell/process_start/move_file/file_organize/ppt_create + DESTRUCTIVE 等）→ REQUIRE_USER
+  `product_policy_user_confirmation`，候选 grant 来源 `user`（绝不 `policy:auto`）；write_file（reversible_local）沿用既有 auto；
+  Auto folder-append 零 manual challenge；run_start_record 携带 effect_class（WAITING 重启不按新 manifest 重分类）。
+- **AC-3⑥ 单根 per-canary**：`ProductRunContextAuthority(binding_store=…)` 对 ≥2 root scope 的 ROUTED_TASK 轮隐藏 PROJECT_EFFECT
+  工具；`test_s5b_s4_single_root_per_canary_and_multi_root_hidden`（逐 root hash、强制调用 → durable FAILED +
+  `sdk_task_execution_root_authority_ambiguous`、两根 canary hash 不变、append 后 superseded sticky）。
+- **composition（AC-6①）**：`SDK_COMPOSITION_SLOTS` + `_assert_sdk_composition_slots(context)` 真构造逐槽缺件断言（不再 grep 源码）；
+  `EffectGate` 逐件缺失 TypeError。
+- **v46 cutover（AC-6②）**：037（v45）回补进 `_S4_HUMAN_MIGRATIONS`（新库 marker/链行/恢复注册+fence 触发器齐全；S5a 链外应用的旧库由
+  `repair_context_route_registration` 在启动入口幂等回补，`_validate_s4_migration_chain` 现要求 037）；迁移前置
+  `_assert_effect_closure_cutover_preconditions`（WAITING SDK Run → `human_memory_migration_blocked_sdk_run_waiting`、非终态
+  foreground Run → `..._foreground_run_active`，BEGIN 之前判定、库字节不变）；`tests/memory/test_s5b_v46_cutover.py` 为 Task 8
+  `record-run --exec` 的 cutover 断言集合（前向 + evidence hash 守恒 + 旧 runtime 拒绝 + rollback drill + 旧 checkpoint
+  `catalog_state_fingerprint_stale` 稳定隔离）。
+- **Task 2/3/4 审查 P2**：not_sent（真实 SDK provider 的 redactor 抹掉异常类型 → 按 httpx 连接阶段消息判定；**SDK 0.8 义务**：
+  公开错误保留传输失败阶段/类型）、handoff rowcount≠1 → lease_lost、`asyncio.CancelledError` settle 后传播、多字节 key 按字节 +
+  handler 内协议错误稳定码化、`force_close_pending` 只清 pending 水位、复合 shell 命令降级 host.file、v46 守卫逐列
+  （含 `result_envelope_json` 只允许 response→response+envelope 升级一次）、`read_reserved_fact` 真账本用例、CANCELLED/STOPPED
+  终态门、两连接并发 reserve；Task 4：**F-1** Provider 响应先单事务 settle 再派生（派生失败可重试、0 调用重派生、>16KB 引用确定性拒绝）、
+  **F-4** outbox links 不一致行 claim 事务内有界 dead_letter、**F-5** binding 不可得终态照常提交 + outbox `dead_letter(run_binding_unavailable)`。
+- **遗留义务**：S1 真实无召回车道追加非空回答断言 + transcript dump（只加不放宽，本 Task 未运行 `-m real_provider`）；
+  changed-surface lint（`context_route.py` SIM102、real-provider F811）清零；`write_file` handler 对模型 content 不做拼接
+  （persona 进 README 为纯模型行为，`test_write_file_content_verbatim` 锁定）。
+- 验证：`tests/sdk_adapters tests/execution tests/task_scope tests/memory tests/faults`（deselect
+  `test_close_during_start_prevents_ready_publication`）在 worktree 内 **除 12 条 `test_composition` 环境项**（SDK wheel origin 指向主
+  checkout，与代码无关，基线同样红）外全绿；changed-surface ruff 相对基线零新增（两处减少）。
+- **known-debt**：`backend/uv.lock` 仍指 memory 0.5.2（pin 真相在 `sdk_candidate.py`，未 `uv lock`）；真实启动顺序用例覆盖
+  `_activate_memory_analysis_lane` 与 `_activate_product_sdk_runtime` 的 raise，未跑完整 lifespan；S4 P2"oracle pin 口径统一进 spec"
+  涉及只读 spec，未改。
+
 ## 2026-09-03 Human Memory S5b Task 4：终态同事务 Memory outbox、analysis_proposal、Host analysis executor/delivery authority、v7 接线（价值验证里程碑）
 
 - 基线 main @ e033a781（含 Task 0–3 与 Memory 0.6.1 pin）：新 `memory/analysis_proposal.py`（§9 proposal → 确定性 EvidenceSpanRef

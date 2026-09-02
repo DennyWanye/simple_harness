@@ -22,6 +22,48 @@
 - 组合根按 state.db epoch 门控：<35 legacy 保持裸路径；≥35 且 <45 stable fail；≥45 注册三
   authority + v7 runtime（缺件 startup fail，无 Noop 降级）。
 
+## S5b Task 6 effect gate 加固、Auto `explicit_only`、composition 真构造与 v46 cutover（2026-09-03 生产事实）
+
+- **EffectGate（`sdk_adapters/effect_gate.py`）完整检查顺序（design-freeze §4）**：0 exact replay 不重验（仅非 PREPARED 的 durable
+  记录跳过；PREPARED 重放重验）；1 envelope 存在 + 身份回声（`context.effect_id` 缺失即 identity mismatch）；2 durable sticky memo
+  `effect_gate_rejections(sdk_run_id, route_receipt_id)` → `effect_gate_route_receipt_rejected`，直到同 Run 新 `context_route` 收据
+  （步骤 1 拒绝不入 memo）；3 冻结 authority；4 S4 码集；5 strict head（缺 head 行 → `workspace_binding_effect_authority_missing`）；
+  6 scope active；7 confirm-only 由 SDK 授权路径承担（见下）。**快照纪律**：2/4/5/6 在同一 SQLite 读事务（`BEGIN` 快照）内计算，
+  memo 在快照关闭后写；物理 dispatch 前的 Harness 预留事务（`BEGIN IMMEDIATE`）经 `EffectGate.reservation_check` 再核 head/scope，
+  越过快照的 append 在写锁内被拒（零预留、零写入）；剩余窗口 = 预留提交 → 物理写（append-only 保证旧 root 不被替换）。
+- **SDK 授权路径 Auto `explicit_only`（`tool_authority.py`）**：`_FrozenCapabilitySpec.effect_class`（inventory 属性 → 真实 manifest →
+  unknown）与 `manifest_dangerous`；`confirm_only = EffectClass ∈ _CONFIRM_ONLY ∨ dangerous`；`decide()` 传
+  `plan_prepared_call(explicit_only=…, confirmed=False, 冻结 fences)`，confirm-only 在 Auto 下走与 Manual 相同的 REQUIRE_USER
+  （`product_policy_user_confirmation`，候选 grant 来源 `user`）；reversible_local（write_file 等）沿用既有 auto 策略；
+  `run_start_record.inventory[].effect_class` 随 Run 冻结。PROJECT_EFFECT 清单 confirm-only 子集 =
+  `file_organize / move_file / ppt_create / process_start / run_shell`。
+- **≥2 root scope**：`ProductRunContextAuthority(binding_store=…)` 在 ROUTED_TASK 轮按收据 exact binding set 的 root 数隐藏
+  PROJECT_EFFECT 工具（OOS-MULTI-ROOT-SELECTION）；强制调用仍整 Run 故障 `sdk_task_execution_root_authority_ambiguous`。
+- **terminal observer**：run_terminal 走 `ExecutionEvidenceIngress.ingest_terminal`（同事务 reserve + ingest；reservation_id 由
+  `terminal:{sdk_run_id}` 派生，source_event_id 仍是 SDK terminal event id 以保持 Host 终态 receipt 链——与 §3 字面 `terminal:{run_id}`
+  的偏离在此记录）；durable 行存在即视为 durable（不再要求 gate receipt），重试只重跑幂等 `authorize_terminal`；`RunFaultMemo`
+  有界（4096 FIFO）、durable 后释放、`SdkRunToolAuthorityRegistry.mark_terminal` 亦释放；FAILED 的 `error_code` 仅接受
+  `^[a-z][a-z0-9_]{2,63}$`，否则 `driver_failed`。
+- **预留/排空**：SDK 授权 DENY（effect=None）后的预留立即 `rejected` tombstone（trivial）；排空对 `commit_fact` 的确定性拒绝
+  （私有载荷、`objective_evidence_hash_conflict`）写 `rejected_fact` tombstone（PROJECT_EFFECT 仍 material）；两连接并发 reserve 无双分配。
+- **composition（AC-6①）**：`main.SDK_COMPOSITION_SLOTS` + `_assert_sdk_composition_slots()`；`_activate_product_sdk_runtime`
+  构建异常 raise；`_resolve_sdk_provider_binding_resolver()`（service_context 槽优先，全局兜底）修正真实启动顺序下的构建期 None。
+- **v46 cutover（AC-6②）**：037 加入 `_S4_HUMAN_MIGRATIONS`（新库 marker / 链行 / 恢复注册 + fence 触发器）；旧库由
+  `migrator.repair_context_route_registration` 在启动入口与 `run_migrations` 后置步骤幂等回补；`_validate_s4_migration_chain` 要求 037；
+  应用 038 前 `_assert_effect_closure_cutover_preconditions`（WAITING SDK Run / 非终态 foreground Run → `MigrationBlocked` 稳定码，
+  库字节不变）；旧 checkpoint（PROJECT_EFFECT policy 改变前）恢复 → SDK `catalog_state_fingerprint_stale` → Host
+  `_isolate_unrestorable_sdk_tool_authority` 隔离。
+- **Task 3/4 审查修正**：`RunBoundInvoker`：`_root_cause` 下钻 SDK private cause（redactor 抹类型 → 按 httpx 连接阶段消息判定
+  not_sent，SDK 0.8 义务），`reserved→handed_off` rowcount≠1 → `lease_lost`（零调用），`asyncio.CancelledError` settle 后传播；
+  `task_scope_update` 多字节 key 按字节、handler 内协议错误稳定码 + audit；`force_close_pending` 只清 pending 承载的水位；
+  analysis executor **响应先 settle 再派生**（`result_envelope_json` 先 response-only，派生成功后附着 envelope 一次；派生失败
+  `analysis_derivation_failed:*` 可重试，0 调用重派生；>16KB 引用 `quote_too_long`）；outbox `claim()` 事务内判定 links 不一致
+  → 有界 dead_letter；`_terminal_binding` 不可得 → 终态照常 + outbox `dead_letter(run_binding_unavailable)`；v46 守卫逐列。
+- **write_file / edit_file**：Host handler 对模型 `content` 不做任何拼接（原样 UTF-8 写入 / append 只追加模型字节）；Task 4 真实车道
+  "persona 进 README" 属纯模型行为（oracle 过弱），Host 侧以 `test_write_file_content_verbatim` 锁定。
+- 已知边界：真实启动顺序用例覆盖 `_activate_memory_analysis_lane` / `_activate_product_sdk_runtime` 的 raise，未跑完整 lifespan；
+  `uv.lock` 仍指 memory 0.5.2（known-debt）；S1 真实车道断言与 transcript 已补但本 Task 未运行 `-m real_provider`。
+
 ## S5b Task 1 workspace EffectGate 最小闭环（2026-09-02 生产事实）
 
 - PROJECT_EFFECT 清单（`sdk_adapters/tool_authority.py` `PROJECT_EFFECT_TOOL_NAMES`，design-freeze §1）：
