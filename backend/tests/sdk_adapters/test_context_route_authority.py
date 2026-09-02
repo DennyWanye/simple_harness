@@ -354,3 +354,74 @@ async def test_window_resolves_from_production_start_shapes(state_db: Path) -> N
     snapshot = await authority.prepare_snapshot(_request(1, context.revision))
     # A 3k-CJK persona fits comfortably once the real window is honoured.
     assert big_persona in "".join(str(m.content) for m in snapshot.messages)
+
+
+# --- S5b Task 1：route ≠ ROUTED_TASK 时 snapshot tools 不含 PROJECT_EFFECT 工具 -----------
+
+
+class _PolicyExposure(_FakeExposure):
+    def __init__(self, specs, project_effect: frozenset[str]) -> None:
+        super().__init__(specs)
+        self._project_effect = project_effect
+
+    def execution_policy(self, run_id: RunId, provider_name: str) -> ToolExecutionPolicy:
+        del run_id
+        if provider_name in self._project_effect:
+            return ToolExecutionPolicy(
+                f"builtin:{provider_name}", "d" * 64, ToolEffectClass.PROJECT_EFFECT,
+                ToolRouteRequirement.REQUIRED, ToolTaskScopeRequirement.REQUIRED,
+            )
+        return ToolExecutionPolicy(
+            f"builtin:{provider_name}", "e" * 64, ToolEffectClass.NON_PROJECT_EFFECT,
+            ToolRouteRequirement.OPTIONAL, ToolTaskScopeRequirement.OPTIONAL,
+        )
+
+
+def _policy_authority(state_db: Path, context: _FakeContext, exposure) -> ProductRunContextAuthority:
+    ports = _FakePorts(context, _FakeCheckpoint(None))
+    return ProductRunContextAuthority(
+        ports_resolver=lambda: ports,
+        exposure_resolver=lambda run_id: exposure,
+        ledger=ContextRouteLedgerStore(state_db),
+    )
+
+
+@pytest.mark.asyncio
+async def test_snapshot_hides_project_effect_tools_until_routed_task(state_db: Path) -> None:
+    specs = (
+        ProviderToolSpec("context_route", "Route", {"type": "object", "properties": {}}),
+        ProviderToolSpec("read_file", "Read", {"type": "object", "properties": {}}),
+        ProviderToolSpec("write_file", "Write", {"type": "object", "properties": {}}),
+    )
+    exposure = _PolicyExposure(specs, frozenset({"write_file"}))
+    context = _FakeContext()
+    authority = _policy_authority(state_db, context, exposure)
+
+    # UNROUTED：写工具隐藏；fingerprint 按实际暴露集自洽。
+    unrouted = await authority.prepare_snapshot(_request(1, 1))
+    assert [spec.name for spec in unrouted.tools] == ["context_route", "read_file"]
+    probe = ProviderRequest(RequestId("hash-only"), unrouted.messages, tools=unrouted.tools)
+    assert unrouted.payload_hash == provider_request_fingerprint(probe)
+
+    # routed_standalone：仍隐藏。
+    standalone = ContextRouteReceipt(
+        receipt_id="receipt-standalone", run_id=RUN.value, raw_call_id="raw-1",
+        effect_id="effect-1", route=TaskScopeRoute.DIRECT_STANDALONE,
+        task_scope_id=None, binding_set_revision=None,
+    )
+    routed_standalone = await authority.prepare_snapshot(
+        _request(2, 1, route_receipt=standalone)
+    )
+    assert [spec.name for spec in routed_standalone.tools] == ["context_route", "read_file"]
+
+    # ROUTED_TASK：写工具可见。
+    task = ContextRouteReceipt(
+        receipt_id="receipt-task", run_id=RUN.value, raw_call_id="raw-2",
+        effect_id="effect-2", route=TaskScopeRoute.RESUME_EXISTING,
+        task_scope_id="scope-1", binding_set_revision=1,
+        binding_set_receipt_id="bind-1", binding_set_receipt_hash="d" * 64,
+    )
+    routed_task = await authority.prepare_snapshot(_request(3, 1, route_receipt=task))
+    assert [spec.name for spec in routed_task.tools] == [
+        "context_route", "read_file", "write_file"
+    ]

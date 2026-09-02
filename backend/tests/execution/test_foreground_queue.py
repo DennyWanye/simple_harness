@@ -1531,3 +1531,137 @@ async def test_tool_admission_survives_control_transitions(tmp_path: Path) -> No
             boundary=EffectBoundary.TOOL,
         )
     _assert_code(stale, "foreground_generation_stale")
+
+
+@pytest.mark.asyncio
+async def test_sdk_terminal_observer_writes_stable_run_fault_code_on_failed(
+    tmp_path: Path,
+) -> None:
+    """S5b Task 1：SDK 只暴露 driver_failed；Host 故障备忘的稳定码进 run_terminal public_payload。"""
+    from deskpet.sdk_adapters.run_faults import RunFaultMemo
+
+    db_path, primary_id, _clock = await _ready(tmp_path)
+    store = ForegroundQueueStore(db_path, clock=_clock)
+    await _enqueue(store, primary_id, 1)
+    admission = await _claim_and_bind(store, sdk_run_id="sdk-run-faulted")
+    await store.record_sdk_started(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-faulted",
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        sdk_event_id="sdk-start-faulted",
+        idempotency_key="sdk-start-faulted",
+    )
+    memo = RunFaultMemo()
+    memo.record("sdk-run-faulted", "sdk_task_execution_root_authority_ambiguous")
+
+    class _Ingress:
+        async def wait_idle(self, run_id: str) -> None:
+            assert run_id == "sdk-run-faulted"
+
+        def query(self, run_id: str):  # type: ignore[no-untyped-def]
+            return type("Run", (), {"state": type("State", (), {"value": "failed"})()})()
+
+    class _Stack:
+        def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
+            return type(
+                "Evidence",
+                (),
+                {
+                    "run_id": run_id,
+                    "state": "failed",
+                    "event_id": "sdk-terminal-faulted",
+                    "event_hash": "8" * 64,
+                    "occurred_at": 102.0,
+                    "error_code": "driver_failed",
+                },
+            )()
+
+    observed = await SqliteSdkTerminalObserver(
+        str(db_path), _Ingress(), _Stack(), run_fault_memo=memo  # type: ignore[arg-type]
+    ).observe(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-faulted",
+        subject=SUBJECT,
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+    )
+    assert observed is not None
+    assert observed.terminal_state is RunState.FAILED
+    with sqlite3.connect(db_path) as db:
+        [(payload_json,)] = db.execute(
+            "SELECT e.payload_json FROM task_scope_execution_ingest_receipts r "
+            "JOIN task_scope_events e ON e.event_id=r.event_id "
+            "WHERE r.run_id=? AND r.evidence_kind='run_terminal'",
+            ("sdk-run-faulted",),
+        ).fetchall()
+    public = json.loads(payload_json)["public_payload"]
+    assert public["terminal_state"] == "FAILED"
+    assert public["error_code"] == "sdk_task_execution_root_authority_ambiguous"
+    # 备忘在 terminal 证据落盘后释放。
+    assert memo.read("sdk-run-faulted") is None
+
+    # 无 Host 备忘：退回 SDK 公开码；COMPLETED 不带 error_code。
+    memo_less = RunFaultMemo()
+    await _enqueue(store, primary_id, 2)
+    terminal = await store.record_sdk_terminal(
+        host_run_id=admission.host_run_id,
+        sdk_run_id="sdk-run-faulted",
+        owner_id=admission.owner_id,
+        generation=admission.generation,
+        terminal_state=observed.terminal_state,
+        sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash,
+        idempotency_key="terminal-faulted",
+    )
+    assert terminal.terminal_state is RunState.FAILED
+    second = await _claim_and_bind(store, claim_key="claim-2", sdk_run_id="sdk-run-plain")
+    await store.record_sdk_started(
+        host_run_id=second.host_run_id,
+        sdk_run_id="sdk-run-plain",
+        owner_id=second.owner_id,
+        generation=second.generation,
+        sdk_event_id="sdk-start-plain",
+        idempotency_key="sdk-start-plain",
+    )
+
+    class _PlainIngress:
+        async def wait_idle(self, run_id: str) -> None:
+            assert run_id == "sdk-run-plain"
+
+        def query(self, run_id: str):  # type: ignore[no-untyped-def]
+            return type("Run", (), {"state": type("State", (), {"value": "failed"})()})()
+
+    class _PlainStack:
+        def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
+            return type(
+                "Evidence",
+                (),
+                {
+                    "run_id": run_id,
+                    "state": "failed",
+                    "event_id": "sdk-terminal-plain",
+                    "event_hash": "7" * 64,
+                    "occurred_at": 103.0,
+                    "error_code": "driver_failed",
+                },
+            )()
+
+    plain = await SqliteSdkTerminalObserver(
+        str(db_path), _PlainIngress(), _PlainStack(), run_fault_memo=memo_less  # type: ignore[arg-type]
+    ).observe(
+        host_run_id=second.host_run_id,
+        sdk_run_id="sdk-run-plain",
+        subject=SUBJECT,
+        owner_id=second.owner_id,
+        generation=second.generation,
+    )
+    assert plain is not None and plain.terminal_state is RunState.FAILED
+    with sqlite3.connect(db_path) as db:
+        [(payload_json,)] = db.execute(
+            "SELECT e.payload_json FROM task_scope_execution_ingest_receipts r "
+            "JOIN task_scope_events e ON e.event_id=r.event_id "
+            "WHERE r.run_id=? AND r.evidence_kind='run_terminal'",
+            ("sdk-run-plain",),
+        ).fetchall()
+    assert json.loads(payload_json)["public_payload"]["error_code"] == "driver_failed"

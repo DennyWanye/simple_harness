@@ -1238,3 +1238,28 @@ async def test_same_effect_id_is_isolated_by_run_identity():
 
     assert policy.facts_for(first).authority.run_id == "run-a"
     assert policy.facts_for(second).authority.run_id == "run-b"
+
+
+# --- S5b Task 1：hidden 工具的 catalog_execution_policy_unavailable 进 Run 故障备忘 -------
+
+
+def test_hidden_tool_policy_fault_is_recorded_for_run_terminal() -> None:
+    from simple_harness.tools import RuntimeToolCatalogError
+
+    from deskpet.sdk_adapters.run_faults import RunFaultMemo
+
+    memo = RunFaultMemo()
+    registry = SdkRunToolAuthorityRegistry(run_fault_sink=memo)
+    _prepare(registry, "run-hidden", deferred_names=("read_file",))
+    run_id = RunId("run-hidden")
+    exposure = registry.resolve_exposure(run_id)
+    exposure.restore(run_id, None)
+    assert [spec.name for spec in exposure.provider_specs(run_id)] == ["tool_search"]
+    with pytest.raises(RuntimeToolCatalogError) as hidden:
+        exposure.execution_policy(run_id, "read_file")
+    assert hidden.value.code == "catalog_execution_policy_unavailable"
+    assert memo.read("run-hidden") == "catalog_execution_policy_unavailable"
+    # 可见工具的策略读取不留痕。
+    exposure.execution_policy(run_id, "tool_search")
+    memo.release("run-hidden")
+    assert memo.read("run-hidden") is None

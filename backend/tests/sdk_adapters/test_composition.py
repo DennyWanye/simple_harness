@@ -848,3 +848,16 @@ async def test_prebuilt_workflow_runner_is_rejected_in_favor_of_post_db_factory(
         await stack.start()
     with pytest.raises(SdkRuntimeNotReady):
         stack.require_ready()
+
+
+def test_s5b_effect_gate_and_root_resolver_are_constructor_wired_in_main() -> None:
+    """S5b Task 1：resolver / gate / 故障备忘的接线与服务层同 commit；缺任一 → startup stable fail。"""
+    source = (PROJECT_ROOT / "backend/main.py").read_text(encoding="utf-8")
+
+    assert "root_resolver=BindingRootResolver(" in source
+    assert "fault_sink=_ensure_run_fault_memo()" in source
+    assert "effect_gate=_sdk_effect_gate" in source or "effect_gate=effect_gate" in source
+    assert 'service_context.register("sdk_effect_gate"' in source
+    assert '"sdk_effect_gate",' in source  # 缺槽断言 tuple
+    assert "run_fault_sink=_ensure_run_fault_memo()" in source
+    assert "run_fault_memo=_ensure_run_fault_memo()" in source
