@@ -596,17 +596,22 @@ class ContextRouteLedgerStore:
             await db.close()
 
 
-    async def read_route_receipt(self, sdk_run_id: str, receipt_id: str) -> Any | None:
+    async def read_route_receipt(
+        self, sdk_run_id: str, receipt_id: str, *, db: Any | None = None
+    ) -> Any | None:
         """Return the durable ``ContextRouteReceipt`` recorded for one Run (S5b gate step 4).
 
         The v45 decision row is the Host's own frozen route authority; the gate
         verifies the effect envelope against it instead of trusting the
-        envelope's echo of the receipt.
+        envelope's echo of the receipt.  ``db`` (Task 6): read inside the
+        caller's snapshot instead of a private connection.
         """
 
         from simple_harness.execution.context_authority import ContextRouteReceipt
 
-        db = await self._connect()
+        own = db is None
+        if own:
+            db = await self._connect()
         try:
             cursor = await db.execute(
                 "SELECT receipt_json FROM context_route_decisions "
@@ -616,7 +621,8 @@ class ContextRouteLedgerStore:
             row = await cursor.fetchone()
             await cursor.close()
         finally:
-            await db.close()
+            if own:
+                await db.close()
         if row is None:
             return None
         return ContextRouteReceipt.from_json(json.loads(str(row[0])))

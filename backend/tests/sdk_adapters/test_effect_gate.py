@@ -113,20 +113,30 @@ async def test_gate_envelope_missing_and_identity_mismatch(tmp_path) -> None:
 
 @pytest.mark.asyncio
 async def test_gate_frozen_authority_consistency_codes(tmp_path) -> None:
-    env, scope_a, root_a, envelope = await _routed_write(tmp_path)
+    """Task 6 起每次拒绝对 (Run, route receipt) sticky（§4 步骤 2），三种冻结口径各用一份新 route。"""
+
     # 冻结 scope ≠ envelope scope。
+    env, scope_a, root_a, envelope = await _routed_write(tmp_path / "scope")
     h.freeze_run(env, task_scope_id="another-scope", workspace_root=root_a)
     assert (
         _code(await env.gate.verify(_context(envelope), "write_file"))
         == "effect_gate_frozen_scope_mismatch"
     )
+    # 恢复冻结也不解封：同 receipt sticky，直到下一次 context_route。
+    h.freeze_run(env, task_scope_id=scope_a, workspace_root=root_a)
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file"))
+        == "effect_gate_route_receipt_rejected"
+    )
     # Run 冻结为 projectless（零/多 root 冻结口径）。
+    env, scope_a, root_a, envelope = await _routed_write(tmp_path / "projectless")
     h.freeze_run(env, task_scope_id=scope_a, workspace_root=None)
     assert (
         _code(await env.gate.verify(_context(envelope), "write_file"))
         == "effect_gate_projectless_project_effect"
     )
     # 冻结写根 ≠ verify 出的 canonical root。
+    env, scope_a, root_a, envelope = await _routed_write(tmp_path / "root")
     other = env.workspace_base / "root-other"
     other.mkdir(parents=True)
     h.freeze_run(env, task_scope_id=scope_a, workspace_root=other)
@@ -134,6 +144,8 @@ async def test_gate_frozen_authority_consistency_codes(tmp_path) -> None:
         _code(await env.gate.verify(_context(envelope), "write_file"))
         == "effect_gate_frozen_root_mismatch"
     )
+    # 未被拒过的 receipt 在一致冻结下放行。
+    env, scope_a, root_a, envelope = await _routed_write(tmp_path / "ok")
     h.freeze_run(env, task_scope_id=scope_a, workspace_root=root_a)
     assert await env.gate.verify(_context(envelope), "write_file") is None
 
@@ -141,25 +153,28 @@ async def test_gate_frozen_authority_consistency_codes(tmp_path) -> None:
 @pytest.mark.asyncio
 async def test_gate_passes_s4_codes_through_unchanged(tmp_path) -> None:
     env, _scope, _root, envelope = await _routed_write(tmp_path)
-    # route receipt 不在 v45 ledger → S4 route authority missing。
+    # route receipt 不在 v45 ledger → S4 route authority missing（memo 键是那个不存在的 receipt）。
     unknown = replace(envelope, route_receipt_id="not-a-receipt")
     assert (
         _code(await env.gate.verify(_context(unknown), "write_file"))
         == "workspace_binding_route_authority_missing"
     )
+    assert await env.gate.verify(_context(envelope), "write_file") is None
     # 七元组血缘（receipt hash 被改）→ S4 lineage mismatch。
     tampered = replace(envelope, route_receipt_hash="f" * 64)
     assert (
         _code(await env.gate.verify(_context(tampered), "write_file"))
         == "workspace_binding_envelope_lineage_mismatch"
     )
-    # root_id 不属于该 receipt → S4 root mismatch。
+    # root_id 不属于该 receipt → S4 root mismatch（新 route，避开上一条的 sticky memo）。
+    env, _scope, _root, envelope = await _routed_write(tmp_path / "root")
     foreign_root = replace(envelope, root_id="root-foreign")
     assert (
         _code(await env.gate.verify(_context(foreign_root), "write_file"))
         == "workspace_binding_envelope_root_mismatch"
     )
-    # 根被重命名（文件系统身份）→ S4 root unavailable（矩阵其余漂移类留 Task 6）。
+    # 根被重命名（文件系统身份）→ S4 root unavailable（inode 漂移 / symlink 见 hardening）。
+    env, _scope, _root, envelope = await _routed_write(tmp_path / "moved")
     moved = _root.parent / "moved-a"
     _root.rename(moved)
     assert (
@@ -181,6 +196,11 @@ async def test_gate_receipt_superseded_after_mid_run_append(tmp_path) -> None:
         _code(await env.gate.verify(_context(envelope), "write_file"))
         == "workspace_binding_receipt_superseded"
     )
+    # Task 6：sticky 至下一 context_route（Manual/Auto 同一规则）。
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file"))
+        == "effect_gate_route_receipt_rejected"
+    )
 
 
 @pytest.mark.asyncio
@@ -198,7 +218,11 @@ async def test_gate_task_scope_not_active(tmp_path) -> None:
     await env.service.mutate_task_scope(
         MutateTaskScopeRequest(scope_a, "status", "active", "resume-a")
     )
-    assert await env.gate.verify(_context(envelope), "write_file") is None
+    # Task 6：scope 重新 active 也不解封同 receipt（sticky 至下一 context_route）。
+    assert (
+        _code(await env.gate.verify(_context(envelope), "write_file"))
+        == "effect_gate_route_receipt_rejected"
+    )
 
 
 # --- executor front ----------------------------------------------------------
@@ -227,8 +251,26 @@ async def test_executor_rejection_returns_effect_none_without_dispatch(tmp_path)
     assert execution.result.call_id == envelope.call_id
     assert env.effects.calls == before
     assert not (root_a / "z.txt").exists()
-    # 放行后才到物理层。
+    # Task 6：恢复冻结后同 receipt 仍 sticky（零写入）。
     h.freeze_run(env, task_scope_id=scope_a, workspace_root=root_a)
+    execution = await env.effects.execute(
+        effect_id=envelope.effect_id,
+        call=call,
+        context=_context(envelope),
+        execution_lease=h.LEASE,
+        run_fence=h.FENCE,
+        raw_call_id="raw-write",
+        turn_ordinal=2,
+        call_ordinal=0,
+    )
+    assert execution.effect is None
+    assert execution.result.error_code == "effect_gate_route_receipt_rejected"
+    assert env.effects.calls == before
+    assert not (root_a / "z.txt").exists()
+    # 未被拒过的 route（新 env）：放行后才到物理层。
+    env, scope_a, root_a, envelope = await _routed_write(tmp_path / "ok")
+    call = ToolCall(envelope.call_id, "write_file", {"path": "z.txt", "content": "zeta"})
+    before = list(env.effects.calls)
     execution = await env.effects.execute(
         effect_id=envelope.effect_id,
         call=call,

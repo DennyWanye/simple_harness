@@ -90,6 +90,13 @@ class _Gate:
             return None
         return ToolResult.rejected(call_id or context.call_id, self.reject_with, "gate")
 
+    def reservation_check(self, context, tool_name, *, call_id=None):  # type: ignore[no-untyped-def]
+        # Task 6：预留事务内的 head 再核（真门在 test_effect_gate_hardening 覆盖）。
+        return None
+
+    async def memoize_rejection(self, context, result) -> None:  # type: ignore[no-untyped-def]
+        return None
+
 
 class _Case:
     def __init__(self, root: Path, *, evidence_ingress=None) -> None:  # type: ignore[no-untyped-def]
@@ -229,6 +236,52 @@ async def test_gate_does_not_preempt_unknown_effect_reconciliation(tmp_path: Pat
         assert execution.result.value == {"ok": True, "reconciled": True}
         assert case.handler_calls == 1  # reconcile 不再进 handler
         assert case.ledger_state() == "succeeded"
+    finally:
+        case.close()
+
+
+@pytest.mark.asyncio
+async def test_gate_still_runs_for_prepared_effect(tmp_path: Path) -> None:
+    """Task 2 审查 F-3（Task 6）：crash 于 ``prepare_effect`` 与 ``mark_effect_handed_off`` 之间
+    留下 PREPARED 行（零物理动作）；恢复重放时 SDK 会重新授权并 dispatch，所以步骤 0 **不**跳过
+    PREPARED：gate 条件失效 → rejected、零写入、账本仍 prepared（不是伪造的终态）。"""
+
+    case = _Case(tmp_path / "case")
+    await case.initialize()
+    try:
+        crash = {"armed": True}
+        real_bind = case.executor._authorization.bind_effect_handoff
+
+        async def bind_then_crash(prepared, authorization_receipt_ref, sdk_receipt):  # type: ignore[no-untyped-def]
+            if crash["armed"]:
+                crash["armed"] = False
+                raise asyncio.CancelledError("crash before handoff")
+            return await real_bind(prepared, authorization_receipt_ref, sdk_receipt)
+
+        case.executor._authorization.bind_effect_handoff = bind_then_crash  # type: ignore[method-assign]
+        with pytest.raises(asyncio.CancelledError):
+            await case.execute()
+        assert case.ledger_state() == "prepared"
+        assert case.gate.calls == ["write_file"]
+        assert case.handler_calls == 0
+
+        # 恢复前 gate 条件失效（scope 关闭 / binding 追加 …）→ 重放必须再过门。
+        case.gate.reject_with = "effect_gate_task_scope_not_active"
+        replay = await case.execute()
+        assert case.gate.calls == ["write_file", "write_file"]
+        assert replay.effect is None and replay.result.outcome.value == "rejected"
+        assert replay.result.error_code == "effect_gate_task_scope_not_active"
+        assert case.handler_calls == 0
+        assert not (tmp_path / "case" / "note.txt").exists()
+        assert case.ledger_state() == "prepared"
+
+        # 条件恢复 → 重放放行：SDK 从 PREPARED 继续（重新授权 + dispatch），恰一次物理写。
+        case.gate.reject_with = None
+        admitted = await case.execute()
+        assert case.gate.calls == ["write_file", "write_file", "write_file"]
+        assert admitted.effect is not None and admitted.effect.state is EffectState.SUCCEEDED
+        assert case.handler_calls == 1
+        assert (tmp_path / "case" / "note.txt").read_text(encoding="utf-8") == "written"
     finally:
         case.close()
 

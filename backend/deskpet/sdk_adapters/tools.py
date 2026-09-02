@@ -26,6 +26,8 @@ from simple_harness.tools import (
 )
 from simple_harness.tools.executor import EffectExecution, EffectExecutor
 
+from deskpet.sdk_adapters.effect_gate import EffectGateRejected
+
 logger = logging.getLogger(__name__)
 
 PRODUCT_TOOL_NAMES: tuple[str, ...] = tuple(
@@ -388,7 +390,14 @@ class ProductEffectExecutor(EffectExecutor):
             return None
         return str(scope_id), subject
 
-    async def _reserve_evidence(self, context: ToolContext, call: ToolCall, scope: tuple[str, str]) -> None:
+    async def _reserve_evidence(
+        self,
+        context: ToolContext,
+        call: ToolCall,
+        scope: tuple[str, str],
+        *,
+        pre_commit: Any | None = None,
+    ) -> None:
         effect_id = context.effect_id
         if effect_id is None:
             raise RuntimeError("effect_evidence_identity_missing")
@@ -398,6 +407,24 @@ class ProductEffectExecutor(EffectExecutor):
             kind="tool_invocation",
             source_event_id=f"effect:{effect_id.value}",
             tool_name=call.name,
+            pre_commit=pre_commit,
+        )
+
+    async def _abandon_rejected_reservation(
+        self, context: ToolContext, execution: EffectExecution
+    ) -> None:
+        """Task 6 (Task 2 review F-7): a call the SDK denied after the reservation
+        (``effect=None``) never dispatches, so its reservation is resolved right
+        away as a ``rejected`` tombstone — no drainer has to find it later and
+        the sequence gap never blocks ``run_terminal``."""
+
+        effect_id = context.effect_id
+        if effect_id is None:
+            return
+        await self._evidence_ingress.abandon_reservation(
+            f"effect:{effect_id.value}",
+            status="rejected",
+            reason_code=execution.result.error_code,
         )
 
     async def _commit_evidence(
@@ -440,7 +467,8 @@ class ProductEffectExecutor(EffectExecutor):
         context = kwargs.get("context")
         if not isinstance(context, ToolContext):
             raise TypeError("ProductEffectExecutor requires ToolContext")
-        if self._effect_gate is not None and self._is_first_occurrence(kwargs):
+        gated = self._is_first_occurrence(kwargs)
+        if self._effect_gate is not None and gated:
             # S5b EffectGate: re-verify the TaskExecutionEnvelope against the
             # frozen Run authority, the durable route receipt, the S4 binding
             # set and the live filesystem identity before ANY physical project
@@ -485,30 +513,64 @@ class ProductEffectExecutor(EffectExecutor):
             # (design-freeze §3): a crash after the SDK settles the effect but
             # before the Host commit is closed by the terminal drain, which
             # re-reads the settled effect under this exact sequence.
-            await self._reserve_evidence(context, call, evidence_scope)
+            #
+            # Task 6 (Task 1 review F-2): the reservation's BEGIN IMMEDIATE is
+            # the last Host write lock before the physical dispatch, so the
+            # gate re-checks the binding head / scope status inside it; a head
+            # that moved since the gate snapshot rejects here with no
+            # reservation and no dispatch.
+            pre_commit = None
+            if self._effect_gate is not None and gated:
+                pre_commit = self._effect_gate.reservation_check(
+                    context, call.name, call_id=call.call_id
+                )
+            try:
+                await self._reserve_evidence(
+                    context, call, evidence_scope, pre_commit=pre_commit
+                )
+            except EffectGateRejected as rejected:
+                await self._effect_gate.memoize_rejection(context, rejected.result)
+                logger.warning(
+                    "tool.denied",
+                    extra={
+                        "tool": call.name,
+                        "reason": rejected.result.error_code or "effect_gate_rejected",
+                        "path": "effect_gate_reservation",
+                    },
+                )
+                return EffectExecution(effect=None, result=rejected.result)
         token = _validation_run_id.set(context.run_id.value)
         try:
             execution = await super().execute(**kwargs)
         finally:
             _validation_run_id.reset(token)
         if evidence_scope is not None:
-            await self._commit_evidence(context, kwargs["call"], execution, evidence_scope)
+            if execution.effect is None:
+                await self._abandon_rejected_reservation(context, execution)
+            else:
+                await self._commit_evidence(context, kwargs["call"], execution, evidence_scope)
         return execution
 
     def _is_first_occurrence(self, kwargs: Mapping[str, Any]) -> bool:
-        """Step 0: only an effect with no durable SDK ledger record is gated.
+        """Step 0: only an effect with no durable SDK ledger record — or a
+        record still PREPARED — is gated.
 
         ``uow.read_effect`` is the SDK's own replay/reconcile read (sync,
-        same store the executor uses); a record in any state means the SDK
+        same store the executor uses); a record past PREPARED means the SDK
         owns the outcome (terminal replay returns the original receipt,
-        HANDED_OFF/UNKNOWN goes through ``reconcile``).
+        HANDED_OFF/UNKNOWN goes through ``reconcile``).  A PREPARED row (Task
+        2 review F-3) means no physical action happened yet and the SDK will
+        re-authorize and dispatch on replay, so the gate must re-verify it.
         """
+
+        from simple_harness.execution.effects import EffectState
 
         effect_id = kwargs.get("effect_id")
         read_effect = getattr(self._uow, "read_effect", None)
         if effect_id is None or not callable(read_effect):
             return True
-        return read_effect(effect_id) is None
+        existing = read_effect(effect_id)
+        return existing is None or existing.state is EffectState.PREPARED
 
     async def _prepared(self, *, effect_id, call, context):
         token = _validation_run_id.set(context.run_id.value)
