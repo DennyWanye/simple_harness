@@ -54,6 +54,63 @@
   （<v35）epoch 无 route 能力，清单工具在该 epoch 下稳定 fail-closed（整 Run 故障）而非静默执行；
   备忘为进程内，crash 后终态证据退回 SDK 公开码。
 
+## S5b Task 3 `task_scope_update` 常暴露、三水位终态门与 lease-fenced 兜底状态机（2026-09-02 生产事实）
+
+- **`task_scope_update` 工具**（`sdk_adapters/task_scope_mutation.py`，host-composed 注册同 `context_route`；
+  `PRODUCT_TOOL_NAMES`/`HOST_COMPOSED_TOOL_NAMES`/`PROJECTLESS_SAFE_TOOL_NAMES`/`SDK_DIRECT_TOOL_KERNEL`，覆盖表
+  `(non_project_effect, required, required)`）：**每个 provider turn 始终暴露**（冻结 SDK 下隐藏工具被调用 = 整 Run 故障），
+  "只在脏/pending 时"是 handler 门而非可见性；UNROUTED 调用由 SDK barrier 拒绝。strict schema：模型只填
+  `outcome/base_revision/operations[]/closure_reason/evidence_refs[]（evidence id）/idempotency_key`，Host 填
+  `plan_id=sha256(idempotency_key+task_scope_id)`、`run_id`、`subject`、`task_scope_id`（**admission scope**）、`source_turn_id`、disclosure。
+  handler 顺序与稳定码：standalone 路由 → `task_scope_update_scope_unbound`；载荷/DTO 非法（含 no_mutation 缺 closure_reason）→
+  `task_scope_update_payload_invalid`；无脏无 pending → `task_scope_update_nothing_to_close`（不递增 revision）；refs 不在该 scope
+  已链接 evidence → `task_scope_update_refs_outside_scope`；状态迁移表（design-freeze §7：`{draft,active,in_progress}` 可 pause/block，
+  complete 之后禁 `plan.*`/状态迁移 → `task_scope_update_after_complete`，其余非法 → `task_scope_update_illegal_transition`，
+  `no_mutation` 任何状态合法）；`mutation_base_revision_conflict` 原样透传为 retryable failed。通过 → `CanonicalTaskScopeStore.apply_mutation_plan(plan, commit_hook=…)`
+  与 `task_scope_closure_receipts(outcome=mutate|no_mutation, closure_watermark=head.event_watermark, plan_id)` **同一事务**（同一 `created_at`）；
+  幂等重放同 plan → 同 receipt。每个拒绝点同事务写 `host_pre_admission_audit(payload_kind='task_scope_update')`（`write_pre_admission_audit_tx` 供 Task 5 复用）。
+- **snapshot 注入**（`context_authority.ProductRunContextAuthority(closure_reader=…)` → `semantic_closure.closure_instruction_for_run`）：
+  admission scope 脏或有 pending receipt 时在 protected 分区追加 SYSTEM 消息（`source=semantic_closure`）：material_events 摘要
+  （kind/source_event_id/evidence_refs/tool_name/targets/command_head/exit_code；abandoned 写操作标 `unknown_outcome`）、pending_receipts、
+  `allowed_evidence_refs`、指令文本；只控制文本，不控制工具可见性。
+- **三水位终态门**（`foreground_queue.record_sdk_terminal`）：Harness 证据水位（Task 2）→ 语义收敛水位 `semantic_closure.closure_coverage_tx`：
+  admission scope 的 material 事件全部 ≤ 最后一条 `mutate|no_mutation` receipt 的 `closure_watermark`，或本 Run 已写 `pending` receipt；
+  否则 `foreground_terminal_closure_pending`（COMPLETED/FAILED/CANCELLED/STOPPED 一律生效，零半状态）。`EffectBoundary.CLOSURE`
+  （允许状态同 TOOL）用于兜底调用前后的 lease 复验。mandatory occurrence 水位仍由 S5a `record_no_recall` 门承担。
+- **兜底 `ClosureFallback`**（`execution/semantic_closure.py`，`foreground_runtime` 在 SDK terminal 观察之后、`record_sdk_terminal` 之前调用；
+  终答已由 SDK delivery pump 交付，Host 不扣押）：仅 COMPLETED 且有 last assistant message；`request_hash = sha256(canonical{sdk_run_id,
+  task_scope_id, closure_watermark, last_assistant_message_hash})`、`plan_id = sha256(canonical{"closure-plan": request_hash})`、
+  `evidence_set_key = sha256(sorted material event ids)`；独立 ProviderRequest（spike A1 配方：SYSTEM 指令 + `[closure observation]` JSON，
+  只带 `task_scope_update` spec）经 `RunBoundInvoker` 发出；返回 plan 经**同一 handler**校验（`require_dirty=False`，plan_id 为派生值），
+  receipt 与 apply 与 attempt `succeeded` settle 同一事务；模型不调用/多调用 → `pending(closure_model_declined)`；handler 拒绝 → `pending(拒绝码)`；
+  非 COMPLETED → `pending(closure_run_not_completed)`；无终答 → `pending(closure_no_final_answer)`；binding 缺失 → `pending(closure_binding_unavailable)`；
+  timeout → `pending(closure_timeout)`；sent_unknown/handed_off → `pending(closure_attempt_unknown)`；pending 时 Host 终态照常提交。
+  reconcile（新 owner/重启，全部由 invoker 三键查重实现）：无行/`failed(not_sent)` → 新 ordinal；`reserved` 未 handed_off → `failed(not_sent, reserved_abandoned)` 后新建；
+  `handed_off`/`unknown(sent_unknown)` → 绝不重发；`succeeded` 无 receipt → 从 `task_scope_mutation_decisions` 按 plan_id 派生 receipt，无 decision → `pending(closure_attempt_unapplied)`。
+- **`RunBoundInvoker`**（`sdk_adapters/post_turn_invoker.py`，closure/analysis 共用；v46 `post_turn_invocation_attempts(+_members)`）：
+  查重 `(request_hash, attempt_ordinal)` 命中 `succeeded` → 同行 0 调用（`reused`）；任一成员有 open `handed_off`/`unknown(sent_unknown)` → `blocked` 0 调用；
+  `reserved` 行与 `ForegroundQueueStore.reserve_post_turn_attempt` 的 `_validate_lease_tx` 同一事务（非当前 owner → `foreground_generation_stale`，零行零调用）；
+  `reserved→handed_off→succeeded|failed|unknown`（v46 单调守卫）。unknown 三分类：`not_sent`（httpx Connect* / binding 不可重建：`binding_unrebuildable:*`）可 attempt+1；
+  `sent_unknown`（cancel / 读超时 / 其它传输异常）永不重发；`sent_confirmed` 仅经注入 reconciliation observer 且只作用于仍 `handed_off` 的行（已 settle 的 unknown 不可改）。
+  返回后 `authorize_effect(boundary=CLOSURE)` 复验 lease，失败 → `lease_lost`（行 settle 为 succeeded，结果不 apply）。adapter 由 durable
+  `context_metadata.run_binding`（`SdkRunBindingV1`）经 `_ProductSdkProviderBindingResolver.build_authority` 重建（同 registry/client，不新建）。
+- **pending 归属 admission scope**：`dirty_state`/`pending_receipts` 按 scope；同 scope 下一 Run 的 snapshot 注入合并前序 pending 与 material 事件，
+  其兜底 plan 以提交时 head revision 为 base_revision、refs 可引用前序 Run 已链接的 evidence，一条 receipt 覆盖多 Run 水位。
+  `force_close_pending`（`HumanMemoryHostService.mutate_task_scope` 的 `task.complete`/`resume.update` 与 `save_checkpoint` 之前）：
+  Host 写 `no_mutation(closure_reason=closure_abandoned)` plan（evidence = host-typed `host:forced-closure:v1`），receipt `reason_code=host_forced`，零 Provider 调用。
+  STATUS 投影新增 `semantic_closure_pending` / `pending_closure_count` / `pending_closures`（receipt 写入会 bump projection source）。
+  路由到 standalone 的 Run 若其 admission scope 有债务，同样由终态门/兜底承担（Run 在 admission 时即绑定 scope）。
+- **Task 2 审查 F-1/F-2 修复**：settle 之后的 Host 记账永不抛出——`classify_objective_event` 对模型给的 targets/error_code 做确定性凭据脱敏
+  （`protocol.redact_credential_shapes` → `[redacted:credential]`，payload `redacted=true`）；`harness_evidence_reservations.tool_name`（v46 未发布加列）
+  让 abandoned tombstone 携带 `tool_name/effect_class`，`is_material_event` 把 `abandoned + project_effect` 判 material，closure 观察标出"未知结果的写操作"。
+- 验证：矩阵 Task 3 四用例（终态门 COMPLETED/FAILED、in-Run mutate/no_mutation、漏调用兜底恰一次 + unknown 零重发 + timeout/拒绝 pending、
+  pending 归属与下一 Run 合并/STATUS/force_close）、handler 拒绝码矩阵、invoker 五态/三分类、fault lane `foreground-fifo-closure`
+  五 seam（`semantic-closure-commit`/`attempt-reserved`/`attempt-handed-off`/`cross-run-pending-plan`/`lease-second-owner`）kill→replay 收敛、F-1/F-2 真实 SDK executor 回归。
+  兜底调用全部用确定性 adapter 替身，未跑 `-m real_provider`。
+- 已知边界：`task_scope_update` 不进 hash-bound 的 pre-cutover 77 工具 manifest（与 `context_route`/`task_scope_search` 同为 host-composed 注册）；
+  `resume` 强制收口取 `resume.update` 典型 Host 变更（`open_task_scope`/route resume_existing 不强制，否则下一 Run 无法合并 pending）；
+  Task 6 backlog 见 code-review-task2.md 其余 P2。
+
 ## S5b Task 2 客观事件同事务直写、Harness 证据预留/排空与脏标记（2026-09-02 生产事实）
 
 - **v46 表**（`memory/migrations/038_effect_closure_memory_v46.sql`，design-freeze §5 全部 7 张一次建齐，后续 Task 只写）：

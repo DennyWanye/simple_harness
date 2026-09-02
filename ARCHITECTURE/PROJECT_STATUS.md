@@ -2,6 +2,25 @@
 
 > **最后更新**：2026-09-02
 
+## 2026-09-02 Human Memory S5b Task 3：`task_scope_update` 常暴露、三水位终态门与 lease-fenced 兜底状态机
+
+- 基线 main @ 959725f6（含 Task 0/1/2 与 Memory 0.6.1 pin）：新 `sdk_adapters/task_scope_mutation.py`（strict schema、§7 拒绝码
+  与状态迁移表、apply 与 closure receipt 同事务、pre-admission audit）、`sdk_adapters/post_turn_invoker.py`（`RunBoundInvoker`
+  五态 attempt 账本 + unknown 三分类 + lease 同事务预留/返回后复验）、`execution/semantic_closure.py` 扩展（receipt/coverage/
+  snapshot 收口指令/`ClosureFallback`/`force_close_pending`）；`foreground_queue.record_sdk_terminal` 第三水位
+  `foreground_terminal_closure_pending`（四终态一律生效）+ `EffectBoundary.CLOSURE` + `reserve_post_turn_attempt`；
+  `foreground_runtime` 在 SDK terminal 之后、Host 终态之前调兜底；`context_authority` 注入 protected 收口指令；STATUS 投影
+  `semantic_closure_pending`；`human_memory_service` 在 task.complete/resume.update/checkpoint 前强制收口；`main.py` host-composed
+  注册 `task_scope_update` 并以 durable `SdkRunBindingV1` 经 provider binding resolver 重建兜底 adapter。
+  Task 2 审查 F-1（凭据形状路径脱敏、settle 后永不抛）/ F-2（预留 `tool_name`，abandoned PROJECT_EFFECT 判 material）已修。
+- 验证：oracle 先行（实装前全红）；矩阵 Task 3 四用例 + handler 拒绝码矩阵 + invoker 五态 + fault lane `foreground-fifo-closure`
+  新五 seam kill→replay + F-1/F-2 真实 SDK executor 回归：`tests/sdk_adapters/{test_s5b_acceptance_matrix,test_task_scope_update_tool,
+  test_post_turn_invoker,test_effect_gate_replay}.py tests/faults/test_foreground_fifo_closure.py` 33 passed / 8 xfailed（其余 Task 的 strict xfail）；
+  兜底调用全部确定性 adapter 替身，未跑 `-m real_provider`；changed-surface ruff 相对基线零新增。
+- 边界：`task_scope_update` 不进 pre-cutover manifest（host-composed，同 `context_route`）；`resume` 强制收口取 `resume.update`
+  （route resume_existing 不强制，保留下一 Run 合并 pending 的通道）；`sent_confirmed` 只能确认仍 `handed_off` 的行；
+  Task 2 审查其余 P2 与 F-3~F-8 进 Task 6 backlog；Memory outbox/analysis（Task 4）尚未接入 `record_sdk_terminal`。
+
 ## 2026-09-02 Human Memory S5b Task 2：客观事件同事务直写、Harness 证据预留/排空与脏标记
 
 - 基线 main @ f8097429（含 Task 0/1）：v46 迁移 `038_effect_closure_memory_v46.sql`（§5 全部 7 张表，append-only +
