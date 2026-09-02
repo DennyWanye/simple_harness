@@ -12,7 +12,8 @@ S5b Task 2 实装三条 seam（kill → replay 收敛，append-only 表 before/a
   终态不放行；新 owner 重放排空 → 收敛，run_terminal 恰一条。
 - ``observer-next-sequence-race``：observer 与迟到的预留行竞争 seq（probe A9）→ 迟到行不丢，
   terminal seq = MAX(reservations ∪ receipts)+1。
-其余 seam 在对应 Task 实装前保持 strict xfail。
+S5b Task 3 五条 closure seam、Task 6b 三条 S4 既有故障点（``message-commit`` = enqueue 提交边界、
+``run-admission`` = claim 提交边界、``projection-commit`` = projection materialize 提交边界）见各 runner docstring。
 """
 
 from __future__ import annotations
@@ -50,6 +51,10 @@ IMPLEMENTED = {
     "attempt-handed-off",
     "cross-run-pending-plan",
     "lease-second-owner",
+    # S5b Task 6b：S4 既有故障点接入 lane runner（enqueue / claim / materialize 提交边界）。
+    "message-commit",
+    "run-admission",
+    "projection-commit",
 }
 CANONICAL_TABLES = (
     "task_scope_events",
@@ -457,7 +462,156 @@ async def _lease_second_owner(tmp_path: Path, run_id: str) -> tuple[str, str, di
     return before, converged, {"second_owner_calls": 0}
 
 
+# --- S5b Task 6b seams（S4 既有 `_fault(...)` 提交边界；真实 ForegroundQueueStore / ProjectionStore）---------
+
+FIFO_TABLES = (
+    "foreground_turns",
+    "foreground_turn_heads",
+    "foreground_turn_transitions",
+    "foreground_preparation_drafts",
+    "foreground_runs",
+    "foreground_run_heads",
+    "foreground_run_transitions",
+    "foreground_lease_receipts",
+)
+PROJECTION_TABLES = (
+    "task_scope_projection_sources",
+    "task_scope_projection_source_outbox",
+    "task_scope_projection_materialization_receipts",
+    "task_scope_read_view_revisions",
+    "task_scope_read_blocks",
+)
+
+
+def _fifo_store(queue_db: Path, clock, point: str | None = None) -> ForegroundQueueStore:  # type: ignore[no-untyped-def]
+    return ForegroundQueueStore(queue_db, clock=clock, fault_hook=None if point is None else _OneShot(point))
+
+
+async def _message_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """enqueue 事务（turn + transition + head 同事务）提交前 kill → 零半状态；重放同 idempotency_key →
+    恰一条 turn（seq 1）；随后入队 turn 2 → FIFO 序保持（1,2）；再重放 turn 1 → 同 receipt、hash 不变；
+    提交后/ack 前 kill（after_commit）→ 重放返回同一 receipt，无第二行。"""
+    queue_db, primary_id, clock = await fq._ready(tmp_path / "queue", evidence_count=3)
+    plain = _fifo_store(queue_db, clock)
+    before = state_hash(queue_db, FIFO_TABLES)
+    with pytest.raises(RuntimeError, match="injected:enqueue.before_commit"):
+        await fq._enqueue(_fifo_store(queue_db, clock, "enqueue.before_commit"), primary_id, 1)
+    assert state_hash(queue_db, FIFO_TABLES) == before
+    assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_turns") == [(0,)]
+    assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_turn_heads") == [(0,)]
+    first = await fq._enqueue(plain, primary_id, 1)
+    second = await fq._enqueue(plain, primary_id, 2)
+    assert (first.enqueue_sequence, second.enqueue_sequence) == (1, 2)
+    converged = state_hash(queue_db, FIFO_TABLES)
+    assert converged != before
+    assert await fq._enqueue(plain, primary_id, 1) == first
+    assert state_hash(queue_db, FIFO_TABLES) == converged
+    # commit-before-ack 形态：提交后 kill → 重放拿到同一 receipt，仍只有三行、序 3。
+    with pytest.raises(RuntimeError, match="injected:enqueue.after_commit"):
+        await fq._enqueue(_fifo_store(queue_db, clock, "enqueue.after_commit"), primary_id, 3)
+    after_ack_loss = state_hash(queue_db, FIFO_TABLES)
+    third = await fq._enqueue(plain, primary_id, 3)
+    assert third.enqueue_sequence == 3 and state_hash(queue_db, FIFO_TABLES) == after_ack_loss
+    order = _rows(queue_db, "SELECT evidence_id FROM foreground_turns ORDER BY enqueue_sequence")
+    assert order == [("evidence-1",), ("evidence-2",), ("evidence-3",)]
+    # FIFO preserved：第一个被 claim 的是 turn 1；max foreground run one：run 活跃时第二次 claim 被拒。
+    admission = await fq._claim_and_bind(plain, sdk_run_id=run_id)
+    assert admission.turn_id == first.turn_id
+    draft = await fq._draft(plain, key="prepare-2")
+    with pytest.raises(ForegroundQueueError) as active:
+        await plain.claim_next(
+            subject=fq.SUBJECT, owner_id="owner-2", claim_idempotency_key="claim-2",
+            preparation_draft_id=draft.draft_id, preparation_draft_hash=draft.draft_hash, lease_seconds=10,
+        )
+    assert active.value.code == "foreground_run_already_active"
+    assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_runs") == [(1,)]
+    return before, state_hash(queue_db, FIFO_TABLES), {"turns": 3, "runs": 1}
+
+
+async def _run_admission(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """claim 事务（run + lease receipt + turn 迁移同事务）提交前 kill → 零 run、turn 仍 QUEUED；
+    重放同 claim_idempotency_key → 恰一个 run（recovered=False）；再重放 → recovered=True 且同 host_run_id；
+    run 活跃期间第二 owner claim → foreground_run_already_active（max foreground run one）；turn 2 保持排队（FIFO）。"""
+    queue_db, primary_id, clock = await fq._ready(tmp_path / "queue", evidence_count=2)
+    plain = _fifo_store(queue_db, clock)
+    await fq._enqueue(plain, primary_id, 1)
+    await fq._enqueue(plain, primary_id, 2)
+    draft = await fq._draft(plain)
+    before = state_hash(queue_db, FIFO_TABLES)
+
+    async def claim(store: ForegroundQueueStore, *, owner: str = "owner-1", key: str = "claim-1"):  # type: ignore[no-untyped-def]
+        return await store.claim_next(
+            subject=fq.SUBJECT, owner_id=owner, claim_idempotency_key=key,
+            preparation_draft_id=draft.draft_id, preparation_draft_hash=draft.draft_hash, lease_seconds=10,
+        )
+
+    with pytest.raises(RuntimeError, match="injected:claim.before_commit"):
+        await claim(_fifo_store(queue_db, clock, "claim.before_commit"))
+    assert state_hash(queue_db, FIFO_TABLES) == before
+    assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_runs") == [(0,)]
+    assert _rows(queue_db, "SELECT DISTINCT current_state FROM foreground_turn_heads") == [("QUEUED",)]
+    admission = await claim(plain)
+    assert admission is not None and admission.recovered is False
+    converged = state_hash(queue_db, FIFO_TABLES)
+    assert converged != before
+    # 重放（新 owner 进程，同 key）：recovered=True、同 host_run_id、hash 不变。
+    replay = await claim(plain)
+    assert replay is not None and replay.recovered is True and replay.host_run_id == admission.host_run_id
+    assert state_hash(queue_db, FIFO_TABLES) == converged
+    with pytest.raises(ForegroundQueueError) as active:
+        await claim(plain, owner="owner-2", key="claim-2")
+    assert active.value.code == "foreground_run_already_active"
+    assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_runs") == [(1,)]
+    assert _rows(queue_db, "SELECT COUNT(*) FROM foreground_lease_receipts") == [(1,)]
+    queued = _rows(
+        queue_db,
+        "SELECT t.evidence_id FROM foreground_turn_heads h JOIN foreground_turns t ON t.turn_id=h.turn_id "
+        "WHERE h.current_state='QUEUED'",
+    )
+    assert queued == [("evidence-2",)]
+    assert state_hash(queue_db, FIFO_TABLES) == converged
+    return before, converged, {"host_run_id": admission.host_run_id}
+
+
+async def _projection_commit(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:
+    """projection materialize（read blocks + view revisions + materialization receipt 同事务）提交前 kill →
+    零半状态（无 receipt、无 block）；重放 → 恰一份 receipt；再重放（含 after_commit ack 丢失）→ 同 views、hash 不变。"""
+    from deskpet.task_scope.projections import TaskScopeProjectionStore
+
+    queue_db, _store, _admission = await _bound_run(tmp_path, run_id)
+    ingress = ExecutionEvidenceIngress(queue_db)
+    await ingress.reserve(run_id=run_id, task_scope_id=fq.SCOPE, kind="tool_invocation", source_event_id="effect:e-1")
+    await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT, fact=_fact(run_id, "e-1"))
+    before = state_hash(queue_db, PROJECTION_TABLES)
+    faulty = TaskScopeProjectionStore(queue_db, fault_hook=_OneShot("materialize.before_commit"))
+    with pytest.raises(RuntimeError, match="injected:materialize.before_commit"):
+        await faulty.materialize(task_scope_id=fq.SCOPE)
+    assert state_hash(queue_db, PROJECTION_TABLES) == before
+    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_projection_materialization_receipts") == [(0,)]
+    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_read_blocks") == [(0,)]
+    plain = TaskScopeProjectionStore(queue_db)
+    views = await plain.materialize(task_scope_id=fq.SCOPE)
+    assert set(views) == {"README", "PLAN", "STATUS", "DECISIONS", "RESUME", "EVIDENCE"}
+    converged = state_hash(queue_db, PROJECTION_TABLES)
+    assert converged != before
+    assert _rows(queue_db, "SELECT COUNT(*) FROM task_scope_projection_materialization_receipts") == [(1,)]
+    # 重放（新 owner）与 ack 丢失重放：同 views、hash 不变。
+    assert await plain.materialize(task_scope_id=fq.SCOPE) == views
+    assert state_hash(queue_db, PROJECTION_TABLES) == converged
+    with pytest.raises(RuntimeError, match="injected:materialize.after_commit"):
+        await TaskScopeProjectionStore(queue_db, fault_hook=_OneShot("materialize.after_commit")).materialize(
+            task_scope_id=fq.SCOPE
+        )
+    assert state_hash(queue_db, PROJECTION_TABLES) == converged
+    assert await plain.materialize(task_scope_id=fq.SCOPE) == views
+    assert state_hash(queue_db, PROJECTION_TABLES) == converged
+    return before, converged, {"receipts": 1}
+
+
 SEAM_RUNNERS = {
+    "message-commit": _message_commit,
+    "run-admission": _run_admission,
+    "projection-commit": _projection_commit,
     "objective-event-commit": _objective_event_commit,
     "terminal-watermark": _terminal_watermark,
     "observer-next-sequence-race": _observer_next_sequence_race,
@@ -470,7 +624,7 @@ SEAM_RUNNERS = {
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("seam", [s for s in LANE_SEAMS[LANE] if s in IMPLEMENTED])
+@pytest.mark.parametrize("seam", list(LANE_SEAMS[LANE]))
 async def test_seam_kill_replay_converges(seam: str, tmp_path: Path) -> None:
     root_run_id = new_root_run_id(LANE)
     before, after, extra = await SEAM_RUNNERS[seam](tmp_path, root_run_id)
@@ -478,7 +632,5 @@ async def test_seam_kill_replay_converges(seam: str, tmp_path: Path) -> None:
     emit(LANE, root_run_id, before, after, {"seam": seam, **extra})
 
 
-@pytest.mark.parametrize("seam", [s for s in LANE_SEAMS[LANE] if s not in IMPLEMENTED])
-@pytest.mark.xfail(strict=True, reason="S5b 实装前：seam 注入点尚未接线（NOT_IMPLEMENTED）")
-def test_seam_kill_replay_converges_pending(seam: str) -> None:
-    raise NotImplementedError(f"{LANE}:{seam}")
+def test_lane_covers_every_fixture_seam() -> None:
+    assert set(LANE_SEAMS[LANE]) == IMPLEMENTED == set(SEAM_RUNNERS)

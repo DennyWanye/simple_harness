@@ -7,7 +7,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,8 +74,15 @@ class CheckpointDriftReport:
 
 
 class TaskScopeProjectionStore:
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self, db_path: str | Path, *, fault_hook: Callable[[str], None] | None = None
+    ) -> None:
         self._db_path = Path(db_path)
+        self._fault_hook = fault_hook
+
+    def _fault(self, point: str) -> None:
+        if self._fault_hook is not None:
+            self._fault_hook(point)
 
     async def materialize(
         self, *, task_scope_id: str | None = None, source_id: str | None = None
@@ -136,10 +143,12 @@ class TaskScopeProjectionStore:
                         time.time(),
                     ),
                 )
+                self._fault("materialize.before_commit")
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
+        self._fault("materialize.after_commit")
         return rendered
 
     async def read_view(
