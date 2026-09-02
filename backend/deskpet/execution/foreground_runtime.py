@@ -45,6 +45,9 @@ from deskpet.task_scope.protocol import canonical_hash
 # ``error_code`` may take; everything else degrades to the SDK public code.
 TERMINAL_ERROR_CODE_TOKEN = re.compile(r"[a-z][a-z0-9_]{2,63}")
 TERMINAL_ERROR_CODE_FALLBACK = "driver_failed"
+# Task 4 review F-5: outbox dead-letter reason when the durable Run binding
+# cannot be read at Host terminal time.
+RUN_BINDING_UNAVAILABLE_REASON = "run_binding_unavailable"
 
 
 class ForegroundRuntimeError(RuntimeError):
@@ -433,10 +436,26 @@ class ForegroundRuntimeExecutionAuthority:
         reader = self._run_binding_reader
         if reader is None:
             return None, None
-        facts = reader(sdk_run_id)
-        record = getattr(facts, "binding_record", facts)
+        try:
+            facts = reader(sdk_run_id)
+            record = getattr(facts, "binding_record", facts)
+        except Exception as exc:  # noqa: BLE001 - the terminal must not stall on the Memory side
+            self._record_audit(
+                "foreground.runtime.run_binding_unavailable",
+                sdk_run_id=sdk_run_id,
+                error_code=str(getattr(exc, "code", type(exc).__name__)),
+            )
+            return None, None
         if not isinstance(record, Mapping) or not record:
-            raise ForegroundRuntimeError("foreground_runtime_run_binding_unavailable")
+            # Task 4 review F-5: a missing durable binding is a Memory-ingestion
+            # problem, not a Host-terminal problem.  The terminal still commits;
+            # the turn's outbox row is dead-lettered with this reason.
+            self._record_audit(
+                "foreground.runtime.run_binding_unavailable",
+                sdk_run_id=sdk_run_id,
+                error_code=RUN_BINDING_UNAVAILABLE_REASON,
+            )
+            return None, None
         endpoint = None
         if self._endpoint_identity_resolver is not None:
             endpoint = self._endpoint_identity_resolver(record)
@@ -984,6 +1003,11 @@ class ForegroundRuntimeExecutionAuthority:
             idempotency_key=f"runtime-terminal:{host_run_id}",
             run_binding=run_binding,
             endpoint_identity=endpoint_identity,
+            outbox_dead_letter_reason=(
+                RUN_BINDING_UNAVAILABLE_REASON
+                if run_binding is None and self._run_binding_reader is not None
+                else None
+            ),
         )
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())

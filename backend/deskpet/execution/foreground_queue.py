@@ -1827,6 +1827,7 @@ class ForegroundQueueStore:
         idempotency_key: str,
         run_binding: Mapping[str, object] | None = None,
         endpoint_identity: str | None = None,
+        outbox_dead_letter_reason: str | None = None,
     ) -> TerminalReceipt:
         """Host terminal commit: three watermarks, run/turn transitions and — S5b Task 4 —
         the ``memory_ingestion_outbox`` row (+ evidence links) in the **same transaction**.
@@ -1834,7 +1835,11 @@ class ForegroundQueueStore:
         ``run_binding`` is the durable ``SdkRunBindingV1`` record of the Run (the same
         record the post-turn invoker rebuilds the Provider adapter from); with it the
         outbox row carries ``model_config_hash`` / ``analysis_lineage_json`` derived from
-        the binding.  ``None`` (unit callers without a binding) writes no outbox row.
+        the binding.  ``None`` (unit callers without a binding) writes no outbox row —
+        unless ``outbox_dead_letter_reason`` is given (S5b Task 6, Task 4 review F-5):
+        the production runtime could not read the binding, so the terminal still
+        commits and the turn's outbox row is written directly as ``dead_letter`` with
+        that reason (raw evidence kept, FIFO never stalls on the Memory side).
         """
 
         host_run_id = identifier(host_run_id, "host_run_id", 512)
@@ -2018,7 +2023,7 @@ class ForegroundQueueStore:
                     "UPDATE foreground_turn_heads SET current_state='SETTLED',last_transition_id=?,last_transition_hash=?,updated_at=? WHERE turn_id=? AND current_state='CLAIMED'",
                     (turn_transition_id, turn_transition_hash, now, head["turn_id"]),
                 )
-                if run_binding is not None:
+                if run_binding is not None or outbox_dead_letter_reason is not None:
                     await self._append_memory_ingestion_outbox_tx(
                         db,
                         host_run_id=host_run_id,
@@ -2028,6 +2033,7 @@ class ForegroundQueueStore:
                         run_binding=run_binding,
                         endpoint_identity=endpoint_identity,
                         now=now,
+                        dead_letter_reason=None if run_binding is not None else outbox_dead_letter_reason,
                     )
                     self._fault("terminal.after_outbox")
                 self._fault("terminal.before_commit")
@@ -2189,9 +2195,10 @@ class ForegroundQueueStore:
         sdk_run_id: str,
         turn_id: str,
         subject: str,
-        run_binding: Mapping[str, object],
+        run_binding: Mapping[str, object] | None,
         endpoint_identity: str | None,
         now: float,
+        dead_letter_reason: str | None = None,
     ) -> str:
         """S5b Task 4: ``memory_ingestion_outbox(pending)`` + ``memory_ingestion_evidence_links``.
 
@@ -2199,6 +2206,9 @@ class ForegroundQueueStore:
         evidence (``foreground_turns.evidence_id``).  Objective ``host.*`` evidence
         of the Run stays in the TaskScope ledger (closure), it is not an analysis
         member: one turn → one Memory batch → one analysis attempt.
+
+        ``run_binding is None`` requires ``dead_letter_reason`` (Task 6): the row is
+        written as ``dead_letter`` right away with a ``binding_missing`` lineage.
         """
 
         from deskpet.memory.analysis_lineage import analysis_lineage_payload
@@ -2213,7 +2223,22 @@ class ForegroundQueueStore:
             raise ForegroundQueueError("foreground_turn_evidence_missing")
         evidence_ids = [str(turn["evidence_id"])]
         envelope_hash = canonical_hash({"envelope_hashes": sorted([str(turn["envelope_sha256"])])})
-        lineage = analysis_lineage_payload(run_binding, endpoint_identity=endpoint_identity)
+        if run_binding is not None:
+            lineage: Mapping[str, object] = analysis_lineage_payload(run_binding, endpoint_identity=endpoint_identity)
+            state = "pending"
+            last_error: str | None = None
+        else:
+            reason = str(dead_letter_reason or "").strip()
+            if not reason:
+                raise ForegroundQueueError("memory_ingestion_outbox_binding_missing")
+            lineage = {
+                "schema_version": 1,
+                "binding_missing": True,
+                "reason": reason,
+                "model_config_hash": canonical_hash({"binding_missing": reason}),
+            }
+            state = "dead_letter"
+            last_error = reason
         outbox_id = _uuid(f"memory-ingestion-outbox:{sdk_run_id}:{turn_id}")
         existing = await self._fetchone(
             db, "SELECT evidence_ids_json,envelope_hash FROM memory_ingestion_outbox WHERE outbox_id=?", (outbox_id,)
@@ -2226,10 +2251,10 @@ class ForegroundQueueStore:
             "INSERT INTO memory_ingestion_outbox(outbox_id,host_run_id,sdk_run_id,turn_id,subject,evidence_ids_json,"
             "envelope_hash,model_config_hash,analysis_lineage_json,state,attempts,lease_owner,lease_expires_at,"
             "receipt_json,last_error,created_at,updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,'pending',0,NULL,NULL,NULL,NULL,?,?)",
+            "VALUES (?,?,?,?,?,?,?,?,?,?,0,NULL,NULL,NULL,?,?,?)",
             (
                 outbox_id, host_run_id, sdk_run_id, turn_id, subject, canonical_json(evidence_ids),
-                envelope_hash, str(lineage["model_config_hash"]), canonical_json(lineage), now, now,
+                envelope_hash, str(lineage["model_config_hash"]), canonical_json(lineage), state, last_error, now, now,
             ),
         )
         for evidence_id in evidence_ids:
