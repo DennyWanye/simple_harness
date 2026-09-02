@@ -89,15 +89,29 @@ class HumanMemoryV7Runtime:
     ) -> tuple[Any, ...]:
         """Frozen reconcile predicate over the read-only occurrence inbox."""
 
+        from simple_harness_memory.core.errors import MemoryOwnershipConflict
+
         manager = await self.manager()
         principal = local_memory_principal()
         presented = set(presented_keys)
         pending: list[Any] = []
         after: tuple[float, str] | None = None
         while True:
-            page = await manager.read_occurrence_inbox(
-                principal=principal, after=after, limit=200
-            )
+            try:
+                page = await manager.read_occurrence_inbox(
+                    principal=principal, after=after, limit=200
+                )
+            except MemoryOwnershipConflict:
+                if after is None and not pending:
+                    # 全新安装：本地属主尚未在 v7 store 注册（SDK 只在首次
+                    # typed recall / mutation 时自注册，读路径按冻结契约拒绝
+                    # 未注册者）。未注册属主的收件箱在生产写路径上不可能有
+                    # 条目——apply_prospective_signal 同样要求注册——因此
+                    # reconcile 谓词在此状态下恒空成立；翻页中途或已有累积
+                    # 结果时出现同类冲突则不属于该状态，继续 fail-closed。
+                    # S5b: 向 memory-sdk 上游补正式的属主注册 API 后移除。
+                    return ()
+                raise
             for entry in page.entries:
                 if entry.outcome != "matched":
                     continue

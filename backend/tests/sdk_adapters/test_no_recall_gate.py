@@ -673,3 +673,24 @@ async def test_loop_level_no_recall_gate_with_reconcile_wired(gate) -> None:
     )
     assert "pending_prospective_occurrences" in joined
     assert "发周报" in joined
+
+
+@pytest.mark.asyncio
+async def test_fresh_install_unregistered_owner_reconciles_empty(
+    tmp_path: Path,
+) -> None:
+    """S5A-UI-F1 (2026-09-02 真实桌面 UI 实测缺陷): 全新安装的 v7 store 里本地
+    属主尚未注册（首次 typed recall / mutation 才会自注册），run 起步的
+    reconcile 读不得 fail-closed 杀死首条 chat——未注册属主的收件箱在生产
+    写路径上不可能有条目（apply_prospective_signal 同样要求注册），因此
+    该状态下 reconcile 谓词恒空成立。其余错误必须继续抛出。"""
+
+    memory_db = tmp_path / "fresh_human_memory_v7.db"
+    v7 = HumanMemoryV7Runtime(memory_db)
+    try:
+        pending = await v7.pending_occurrences(())
+        assert pending == ()
+        # 幂等：连续 reconcile 不改变判定，也不得注册任何 principal。
+        assert await v7.pending_occurrences(()) == ()
+    finally:
+        await v7.close()
