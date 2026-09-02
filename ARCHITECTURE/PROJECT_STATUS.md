@@ -2,6 +2,22 @@
 
 > **最后更新**：2026-09-02
 
+## 2026-09-02 Human Memory S5b Task 2：客观事件同事务直写、Harness 证据预留/排空与脏标记
+
+- 基线 main @ f8097429（含 Task 0/1）：v46 迁移 `038_effect_closure_memory_v46.sql`（§5 全部 7 张表，append-only +
+  单调守卫，前向迁移 + 旧 runtime 稳定拒绝）；`ExecutionEvidenceIngress` 扩展为预留/排空单一 owner（reserve →
+  commit_fact 同事务：host.file|host.test + evidence 行 + harness.tool_invocation；ledger 事实写事务内直写；
+  `next_sequence=MAX(reservations∪receipts)+1`；terminal observer 排空后才放行）；`OBJECTIVE_EVENT_MAP` +
+  test-runner 白名单规则；`ProductEffectExecutor`/`ProductProviderInvocationCoordinator`/`ContextRouteLedgerStore`/
+  `SqliteSdkTerminalObserver`/`ProductSdkRuntimeStack.read_reserved_fact` 接线，`main.py` 单例注入；
+  `semantic_closure.dirty_state`。Task 1 审查 F-1（P1）已修：EffectGate 步骤 0 exact replay 不重验。
+- 验证：oracle 先行（实装前全红）；矩阵 Task 2 三用例（write_file 同事务、dirty_state、probe A9 迟到 seq 不丢行）、
+  reservations/objective/replay/v46 迁移单测、fault lane `foreground-fifo-closure` 三 seam kill→replay；
+  `tests/sdk_adapters tests/execution tests/task_scope tests/memory` 477 passed / 9 xfailed（5 项 SDK candidate origin
+  mismatch 与 test_composition 为本机既有环境红，基线同样）；changed-surface ruff 相对基线零新增。
+- 边界：终态门要求 receipt（Task 3 strict xfail）；037（v45）不在 S4 迁移链/恢复注册内属 S5a 遗留；无 foreground 绑定
+  的 Run 不产 Harness 证据；SDK effect 账本与 state.db 分库，"同事务"指 Host 侧三样同 commit + 预留 seq 幂等关联。
+
 ## 2026-09-02 Human Memory S5b Task 1：workspace EffectGate 最小闭环
 
 - 分支 `s5b/task-1-effect-gate`（基线 main @ aec5bacf，含 Task 0 骨架）：14 个写/执行类内置工具冻结为
