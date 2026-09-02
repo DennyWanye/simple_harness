@@ -123,6 +123,7 @@ class _Case:
                 # 进程级中断（BaseException 语义）：registry 不吞，executor 记 UNKNOWN 后上抛。
                 raise asyncio.CancelledError("handler crashed mid-flight")
             target = self.root / str(arguments["path"])
+            target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text("written", encoding="utf-8")
             return ToolResult.succeeded(context.call_id, {"ok": True, "written": str(target)})
 
@@ -268,7 +269,8 @@ async def test_commit_fact_redacts_credential_like_path_and_never_raises_after_s
         )
         payload = json.loads(payload_json)
         assert kind == "host.file" and payload["redacted"] is True
-        assert payload["targets"] == ["docs/[redacted:credential].md"]
+        # `(?i)\bbearer\s+[a-z0-9._~+/=-]{8,}` 吞掉 "bearer authentication.md" 整段（确定性）。
+        assert payload["targets"] == ["docs/[redacted:credential]"]
         assert "bearer authentication" not in payload_json
         assert ch.rows(env.db_path, "SELECT status FROM harness_evidence_reservations WHERE source_event_id='effect:effect-cred'") == [("ingested",)]
         # 重放（exact replay）：同一结果、不再抛错、恰一份事件。
@@ -323,7 +325,7 @@ async def test_abandoned_project_effect_reservation_is_material_dirty(tmp_path: 
         assert is_material_event("harness.tool_invocation", json.loads(payload_json)) is True
         dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
         assert dirty.is_dirty and [e.event_kind for e in dirty.material_events] == ["harness.tool_invocation"]
-        assert dirty.material_events[0].source_event_id == "effect:effect-unknown"
+        assert dirty.material_events[0].source_event_id == "execution:effect:effect-unknown"
         # 非 PROJECT_EFFECT 的 abandoned tombstone 仍是 trivial。
         assert is_material_event(
             "harness.tool_invocation",

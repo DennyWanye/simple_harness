@@ -71,8 +71,12 @@ def test_project_effect_list_frozen_and_route_required() -> None:
         )
     for name in READ_TOOLS_KEEP_DEFAULT:
         assert name not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES
-    # task_scope_update 留 Task 3（design-freeze §1 第二段）。
-    assert "task_scope_update" not in SDK_TOOL_EXECUTION_POLICY_OVERRIDES
+    # task_scope_update（design-freeze §1 第二段，Task 3 实装）：direct kernel、non_project_effect、
+    # route/TaskScope REQUIRED；它不在 PROJECT_EFFECT 清单内。
+    assert SDK_TOOL_EXECUTION_POLICY_OVERRIDES["task_scope_update"] == (
+        "non_project_effect", "required", "required"
+    )
+    assert "task_scope_update" not in PROJECT_EFFECT_FROZEN_LIST
 
     # exhaustiveness：清单内每个名字在 manifest 存在，且有冻结 EffectClass。
     manifest = load_tool_manifest()
@@ -723,7 +727,10 @@ async def test_task_scope_update_mutate_closes_and_no_mutation_requires_reason(t
         SDK_DIRECT_TOOL_KERNEL,
         SDK_TOOL_EXECUTION_POLICY_OVERRIDES,
     )
-    from deskpet.sdk_adapters.tools import PROJECTLESS_SAFE_TOOL_NAMES, PRODUCT_TOOL_NAMES
+    from deskpet.sdk_adapters.tools import (
+        PRODUCT_TOOL_NAMES,
+        PROJECTLESS_SAFE_TOOL_NAMES,
+    )
     from deskpet.task_scope.store import CanonicalTaskScopeStore
     from tests.sdk_adapters import s5b_effect_gate_harness as h
 
@@ -863,11 +870,12 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     env = await ch.bound_run(tmp_path / "one", "sdk-run-fb-1")
     await ch.material_write(env, "e-1")
     dirty = await dirty_state(CanonicalTaskScopeStore(env.db_path), ch.SCOPE)
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    # run_terminal 已导入（其 refs 链接了本轮 turn evidence）→ allowed refs 以此刻的 scope 链接为准。
     refs = ch.scope_evidence_ids(env.db_path)
     revision, _ = ch.head(env.db_path)
     adapter = ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision))])
-    facts = ch.FakeRunFacts(env.run_id)
-    observed = await ch.observe_terminal(env, facts)
     fallback, _invoker = ch.build_fallback(env, facts, adapter)
     settlement = await ch.settle(env, fallback)
     assert settlement.status == "mutate" and settlement.provider_calls == 1
@@ -900,12 +908,16 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     settlement2 = await ch.settle(env2, fallback2)
     assert settlement2.status == "pending" and settlement2.reason_code == "closure_attempt_unknown"
     assert len(adapter2.calls) == 1
-    assert ch.attempts(env2.db_path) == [(1, "unknown", "sent_unknown", "closure_attempt_unknown", None, 1)]
+    [(ordinal, status, unknown_class, reason, attempt_plan_id, generation)] = ch.attempts(env2.db_path)
+    assert (ordinal, status, unknown_class, reason, generation) == (1, "unknown", "sent_unknown", "closure_attempt_unknown", 1)
+    assert isinstance(attempt_plan_id, str) and len(attempt_plan_id) == 64  # 预留时即记录派生 plan_id（reconcile 依据）
     assert ch.receipts(env2.db_path)[-1][2:5] == ("pending", None, "closure_attempt_unknown")
     await ch.record_terminal(env2, observed2)
     restarted, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=1))]))
     replay = await ch.settle(env2, restarted)
-    assert replay.status == "pending" and replay.reason_code == "closure_attempt_unknown" and replay.provider_calls == 0
+    # 本 Run 已有 durable pending(closure_attempt_unknown) → 重放视为已收口（pending），零调用。
+    assert replay.status == "already_closed" and replay.reason_code == "closure_attempt_unknown"
+    assert replay.provider_calls == 0 and replay.receipt is not None and replay.receipt.outcome == "pending"
     assert len(ch.attempts(env2.db_path)) == 1  # 无新 attempt
     assert (await dirty_state(CanonicalTaskScopeStore(env2.db_path), ch.SCOPE)).is_dirty  # pending 不清脏
 

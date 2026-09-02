@@ -154,7 +154,7 @@ def receipts(db_path: Path, scope: str = SCOPE) -> list[tuple]:
     return rows(
         db_path,
         "SELECT sdk_run_id,closure_watermark,outcome,plan_id,reason_code,attempt_id "
-        "FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY created_at,receipt_id",
+        "FROM task_scope_closure_receipts WHERE task_scope_id=? ORDER BY rowid",
         scope,
     )
 

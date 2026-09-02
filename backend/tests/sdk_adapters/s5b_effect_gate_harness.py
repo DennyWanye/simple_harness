@@ -319,6 +319,9 @@ class PhysicalToolBridge(EffectExecutor):
         if isinstance(raw, ToolResult):
             # Host handlers may return the SDK ToolResult directly (rejected /
             # retryable failed); ``sdk_adapters.tools._result`` passes it through.
+            # A rejection is the SDK authorization-deny shape: no effect record.
+            if raw.outcome.value == "rejected":
+                return EffectExecution(effect=None, result=raw)
             result = raw
             state = EffectState.SUCCEEDED if result.outcome.value == "succeeded" else EffectState.FAILED
         elif isinstance(raw, dict) and (raw.get("ok") is False or raw.get("error")):
@@ -332,15 +335,18 @@ class PhysicalToolBridge(EffectExecutor):
         else:
             result = ToolResult.succeeded(call.call_id, raw)
             state = EffectState.SUCCEEDED
+        # SDK ToolCall arguments are frozen (lists → tuples); the ledger record
+        # and its request hash take the thawed JSON exactly like the SDK executor.
+        thawed_arguments = thaw_json(call.arguments)
         record = EffectRecord(
             effect_id=values["effect_id"],
             run_id=context.run_id,
             call_id=call.call_id,
             tool_name=call.name,
             request_hash=effect_request_hash(
-                tool_name=call.name, arguments=dict(call.arguments)
+                tool_name=call.name, arguments=thawed_arguments
             ),
-            arguments=dict(call.arguments),
+            arguments=thawed_arguments,
             state=state,
             version=2,
             fence_epoch=1,

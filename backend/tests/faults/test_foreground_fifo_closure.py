@@ -30,7 +30,10 @@ from deskpet.execution.evidence_ingress import (
     TerminalWatermarkPending,
     ToolInvocationFact,
 )
-from deskpet.execution.foreground_queue import ForegroundQueueError, ForegroundQueueStore
+from deskpet.execution.foreground_queue import (
+    ForegroundQueueError,
+    ForegroundQueueStore,
+)
 from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
 from deskpet.task_scope.store import TaskScopeConflict
 from tests.execution import test_foreground_queue as fq
@@ -364,30 +367,38 @@ async def _cross_run_pending_plan(tmp_path: Path, run_id: str) -> tuple[str, str
     ]
     assert run1_refs and set(run1_refs) <= set(refs)
     revision, _ = ch.head(env2.db_path)
-    # 过期的 base_revision → mutation_base_revision_conflict 原样透传 → pending（可重试，Provider 已用 1 次）。
+    # 过期的 base_revision → mutation_base_revision_conflict 原样透传 → pending（可重试，Provider 已用 1 次）；
+    # Run 2 终态照常提交，两条 pending 都归 admission scope。
     stale = ch.mutate_arguments(refs, base_revision=revision + 5, idempotency_key="seam-cross-stale")
     fallback2, _ = ch.build_fallback(env2, facts2, ch.FakeAdapter([ch.closure_call(stale)]))
     stale_settlement = await ch.settle(env2, fallback2)
     assert (stale_settlement.status, stale_settlement.reason_code) == ("pending", "mutation_base_revision_conflict")
     assert ch.head(env2.db_path)[0] == revision
-    # 同 Run 内可重试：新的 material 事件改变 request_hash → 新 attempt，正确 base_revision + Run 1 的 refs → mutate。
-    await ch.material_write(env2, "e-3", path="c.txt")
-    refs = ch.scope_evidence_ids(env2.db_path)
+    await ch.record_terminal(env2, observed2)
+    # Run 3（同 scope）：新 request_hash → 新 attempt；正确 base_revision + Run 1 的 refs → 一条 receipt 覆盖三个 Run。
+    run3 = f"{run_id}-r3"
+    env3 = await ch.next_run(env2, run3, claim_key="claim-3", index=3)
+    await ch.material_write(env3, "e-3", path="c.txt")
+    facts3 = ch.FakeRunFacts(run3)
+    observed3 = await ch.observe_terminal(env3, facts3)
+    refs = ch.scope_evidence_ids(env3.db_path)
+    revision, _ = ch.head(env3.db_path)
     good = ch.mutate_arguments(run1_refs + [r for r in refs if r not in run1_refs], base_revision=revision, idempotency_key="seam-cross-good")
     adapter3 = ch.FakeAdapter([ch.closure_call(good)])
-    fallback3, _ = ch.build_fallback(env2, facts2, adapter3)
-    settlement = await ch.settle(env2, fallback3)
+    fallback3, _ = ch.build_fallback(env3, facts3, adapter3)
+    settlement = await ch.settle(env3, fallback3)
     assert settlement.status == "mutate" and settlement.provider_calls == 1
-    dirty = await dirty_state(CanonicalTaskScopeStore(env2.db_path), ch.SCOPE)
+    dirty = await dirty_state(CanonicalTaskScopeStore(env3.db_path), ch.SCOPE)
     assert not dirty.is_dirty
-    linked = [str(r[0]) for r in _rows(env2.db_path, "SELECT evidence_id FROM task_scope_evidence_links l JOIN task_scope_events e ON e.event_id=l.event_id WHERE e.source_event_id=?", f"mutation-plan:{settlement.receipt.plan_id}")]
+    assert [r[2] for r in ch.receipts(env3.db_path)] == ["pending", "pending", "mutate"]
+    linked = [str(r[0]) for r in _rows(env3.db_path, "SELECT evidence_id FROM task_scope_evidence_links l JOIN task_scope_events e ON e.event_id=l.event_id WHERE e.source_event_id=?", f"mutation-plan:{settlement.receipt.plan_id}")]
     assert set(run1_refs) <= set(linked)
-    await ch.record_terminal(env2, observed2)
-    converged = state_hash(env2.db_path, CLOSURE_TABLES)
-    fallback4, _ = ch.build_fallback(env2, facts2, adapter3)
-    assert (await ch.settle(env2, fallback4)).provider_calls == 0
-    assert state_hash(env2.db_path, CLOSURE_TABLES) == converged
-    return before, converged, {"runs": 2}
+    await ch.record_terminal(env3, observed3)
+    converged = state_hash(env3.db_path, CLOSURE_TABLES)
+    fallback4, _ = ch.build_fallback(env3, facts3, adapter3)
+    assert (await ch.settle(env3, fallback4)).provider_calls == 0
+    assert state_hash(env3.db_path, CLOSURE_TABLES) == converged
+    return before, converged, {"runs": 3}
 
 
 async def _lease_second_owner(tmp_path: Path, run_id: str) -> tuple[str, str, dict]:

@@ -78,9 +78,9 @@ async def test_success_settles_in_apply_tx_and_replay_reuses_same_row(tmp_path: 
     async with invoker.transaction() as db:
         await invoker.settle_succeeded_tx(db, outcome.attempt_id, response=outcome.response, plan_id="p" * 64)
     assert [(o, s, u, r, p, g) for o, s, u, r, p, g in ch.attempts(env.db_path)] == [(1, "succeeded", None, None, "p" * 64, 1)]
-    [(request_id, result_hash, model_config_hash, provider_id, model_id)] = ch.rows(
+    [(result_hash, model_config_hash, provider_id, model_id)] = ch.rows(
         env.db_path,
-        "SELECT provider_request_id,result_hash,model_config_hash,provider_id,model_id FROM post_turn_invocation_attempts",
+        "SELECT result_hash,model_config_hash,provider_id,model_id FROM post_turn_invocation_attempts",
     )
     assert result_hash is not None and len(result_hash) == 64 and provider_id == "provider-1" and model_id == "model-1"
     assert model_config_hash == binding_model_config_hash({**ch.BINDING_RECORD, "run_id": env.run_id}, endpoint_identity="e" * 64)
@@ -132,22 +132,36 @@ async def test_unknown_taxonomy_not_sent_retries_sent_unknown_never_resends(tmp_
 
 @pytest.mark.asyncio
 async def test_sent_confirmed_only_via_injected_observer_returns_same_row(tmp_path: Path) -> None:
-    adapter = ch.FakeAdapter([asyncio.CancelledError()])
-    env, invoker = await _invoker(tmp_path, adapter)
-    unknown = await _invoke(env, invoker)
-    assert unknown.status == "unknown"
+    """handed_off 行（crash 于 handoff 之后、settle 之前）只能由注入的 reconciliation observer 确认为
+    ``sent_confirmed`` 并返回同一行、零调用；无 observer 时同一行 → blocked。"""
+    adapter = ch.FakeAdapter([ch.plain_answer("never sent")])
+    env, invoker = await _invoker(tmp_path, adapter, fault=ch.OneShot("attempt-handed-off"))
+    with pytest.raises(RuntimeError, match="injected:attempt-handed-off"):
+        await _invoke(env, invoker)
+    assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "handed_off", None)]
+    assert len(adapter.calls) == 0
+    blocked = await _invoke(env, invoker)
+    assert blocked.status == "blocked" and blocked.reason_code == "closure_attempt_unknown" and blocked.provider_calls == 0
     confirmed = ch.plain_answer("confirmed by observer")
+    seen: list[str] = []
 
     async def observer(row):  # type: ignore[no-untyped-def]
-        assert row.attempt_id == unknown.attempt_id
+        seen.append(row.attempt_id)
         return confirmed
 
     invoker.reconciliation_observer = observer
     outcome = await _invoke(env, invoker)
-    assert outcome.status == "succeeded" and outcome.attempt_id == unknown.attempt_id and outcome.response is confirmed
+    assert outcome.status == "succeeded" and outcome.attempt_id == blocked.attempt_id and outcome.response is confirmed
     assert outcome.unknown_class == "sent_confirmed" and outcome.provider_calls == 0
-    assert len(adapter.calls) == 1
+    assert seen == [blocked.attempt_id] and len(adapter.calls) == 0
     assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "unknown", "sent_confirmed")]
+    # 已 settle 的 unknown(sent_unknown) 行不可再改（v46 单调守卫）：observer 不再介入，仍 blocked。
+    adapter2 = ch.FakeAdapter([asyncio.CancelledError()])
+    env2, invoker2 = await _invoker(tmp_path / "two", adapter2)
+    unknown = await _invoke(env2, invoker2)
+    assert (unknown.status, unknown.unknown_class) == ("unknown", "sent_unknown")
+    invoker2.reconciliation_observer = observer
+    assert (await _invoke(env2, invoker2)).status == "blocked"
 
 
 @pytest.mark.asyncio
