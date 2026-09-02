@@ -1669,57 +1669,99 @@ class HumanMemoryHostService:
         source_ref: str,
         run_id: str | None = None,
     ):
-        reject_private_payload(dict(payload), "host_evidence")
-        run_ref = run_id or str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"simple-harness:host-evidence-run:{self._auth.subject}:{idempotency_key}",
-            )
-        )
-        evidence_id = str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"simple-harness:host-evidence:{self._auth.subject}:{idempotency_key}",
-            )
-        )
-        payload_dict = dict(payload)
-        payload_hash = canonical_hash(payload_dict)
-        disclosure = self._disclosure(run_ref)
-        envelope = SanitizedEvidenceEnvelope(
-            evidence_id=evidence_id,
-            run_id=run_ref,
+        envelope, receipt = build_host_typed_evidence(
             subject=self._auth.subject,
-            source_kind=EvidenceSourceKind.USER_MESSAGE,
+            authority_ref=self._auth.authority_ref,
+            payload=payload,
+            idempotency_key=idempotency_key,
             source_ref=source_ref,
-            source_hash=payload_hash,
-            sanitized_payload=payload_dict,
-            sanitized_hash=payload_hash,
-            filter_policy_version="host-typed-ingress/v1",
-            removed_spans=(),
-            disclosure_context=disclosure,
-            evidence_refs=(),
-        )
-        receipt = SanitizedEvidenceReceipt(
-            receipt_id=str(
-                uuid.uuid5(
-                    uuid.NAMESPACE_URL,
-                    f"simple-harness:host-evidence-receipt:{evidence_id}",
-                )
-            ),
-            run_id=run_ref,
-            subject=self._auth.subject,
-            evidence_id=evidence_id,
-            envelope_hash=envelope.envelope_hash,
-            source_hash=payload_hash,
-            sanitized_hash=payload_hash,
-            filter_policy_version="host-typed-ingress/v1",
-            accepted=True,
-            reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
-            disclosure_context=disclosure,
-            evidence_refs=(),
-            admitted_at=0.0,
+            run_id=run_id,
         )
         return await self._program.append_evidence(envelope, receipt)
+
+
+HOST_TYPED_INGRESS_FILTER_POLICY = "host-typed-ingress/v1"
+
+
+def build_host_typed_evidence(
+    *,
+    subject: str,
+    authority_ref: str,
+    payload: Mapping[str, object],
+    idempotency_key: str,
+    source_ref: str,
+    run_id: str | None = None,
+) -> tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt]:
+    """Deterministic sanitized envelope + receipt for one Host-typed payload.
+
+    Shared by the Host service ingress and the S5b objective-event recorder
+    (``execution/evidence_ingress.py``): same ``host-typed-ingress/v1`` filter
+    policy, same id derivation, so replays converge on the same evidence row.
+    """
+
+    reject_private_payload(dict(payload), "host_evidence")
+    run_ref = run_id or str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"simple-harness:host-evidence-run:{subject}:{idempotency_key}",
+        )
+    )
+    evidence_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"simple-harness:host-evidence:{subject}:{idempotency_key}",
+        )
+    )
+    payload_dict = dict(payload)
+    payload_hash = canonical_hash(payload_dict)
+    disclosure = DisclosureContext(
+        run_id=run_ref,
+        subject=subject,
+        recipient=DeliveryRecipient.USER_SELF,
+        recipient_id=subject,
+        intended_audience=IntendedAudience.USER_SELF,
+        purpose=DisclosurePurpose.TASK_EXECUTION,
+        source=DisclosureSource.AUTHENTICATED_HOST,
+        trust=DisclosureTrust.TRUSTED_AUTHORITY,
+        generation=DisclosureGeneration.CURRENT,
+        authority_ref=authority_ref,
+        reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
+    )
+    envelope = SanitizedEvidenceEnvelope(
+        evidence_id=evidence_id,
+        run_id=run_ref,
+        subject=subject,
+        source_kind=EvidenceSourceKind.USER_MESSAGE,
+        source_ref=source_ref,
+        source_hash=payload_hash,
+        sanitized_payload=payload_dict,
+        sanitized_hash=payload_hash,
+        filter_policy_version=HOST_TYPED_INGRESS_FILTER_POLICY,
+        removed_spans=(),
+        disclosure_context=disclosure,
+        evidence_refs=(),
+    )
+    receipt = SanitizedEvidenceReceipt(
+        receipt_id=str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"simple-harness:host-evidence-receipt:{evidence_id}",
+            )
+        ),
+        run_id=run_ref,
+        subject=subject,
+        evidence_id=evidence_id,
+        envelope_hash=envelope.envelope_hash,
+        source_hash=payload_hash,
+        sanitized_hash=payload_hash,
+        filter_policy_version=HOST_TYPED_INGRESS_FILTER_POLICY,
+        accepted=True,
+        reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
+        disclosure_context=disclosure,
+        evidence_refs=(),
+        admitted_at=0.0,
+    )
+    return envelope, receipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -1748,6 +1790,7 @@ class HumanMemoryHostServiceFactory:
 
 
 __all__ = (
+    "HOST_TYPED_INGRESS_FILTER_POLICY",
     "AppendBindingRequest",
     "AppendDeterministicEventsRequest",
     "AppendPrimaryEventRequest",
@@ -1771,4 +1814,5 @@ __all__ = (
     "SaveCheckpointRequest",
     "SearchTaskScopesRequest",
     "WorkspaceBindingAppendPort",
+    "build_host_typed_evidence",
 )

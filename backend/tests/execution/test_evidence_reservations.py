@@ -18,7 +18,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from simple_harness.execution.context_authority import ContextRouteReceipt, TaskScopeRoute
+from simple_harness.execution.context_authority import (
+    ContextRouteReceipt,
+    TaskScopeRoute,
+)
 
 from deskpet.execution import RunState
 from deskpet.execution.evidence_ingress import (
@@ -181,6 +184,7 @@ async def test_gap_in_reservations_keeps_terminal_pending_until_drained(tmp_path
     await ingress.ingest(task_scope_id=fq.SCOPE, evidence=fq._execution_evidence(sdk_run_id=RUN, source_event_id="t-2", kind="tool_invocation", source_sequence=2))
     terminal = await ingress.ingest(
         task_scope_id=fq.SCOPE,
+        source_sequence=3,
         evidence=fq._execution_evidence(sdk_run_id=RUN, source_event_id="term-3", kind="run_terminal", source_sequence=3, terminal_state=RunState.COMPLETED),
     )
     assert terminal.durable_source_sequence == 0 and terminal.terminal_source_sequence == 3
@@ -268,5 +272,11 @@ async def test_reservation_and_tombstone_tables_are_append_only_and_monotonic(tm
             db.execute("UPDATE harness_evidence_reservations SET status='reserved' WHERE source_event_id='t-1'")
         with pytest.raises(sqlite3.IntegrityError, match="append_only"):
             db.execute("DELETE FROM harness_evidence_reservations WHERE source_event_id='t-1'")
+        db.execute(
+            "INSERT INTO task_scope_closure_receipts(receipt_id,task_scope_id,sdk_run_id,host_run_id,"
+            "closure_watermark,outcome,plan_id,reason_code,attempt_id,created_at) "
+            "VALUES ('c1',?,?,'host-1',1,'pending',NULL,'r',NULL,1.0)",
+            (fq.SCOPE, RUN),
+        )
         with pytest.raises(sqlite3.IntegrityError, match="append_only"):
             db.execute("DELETE FROM task_scope_closure_receipts")

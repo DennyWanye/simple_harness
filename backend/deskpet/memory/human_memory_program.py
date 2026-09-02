@@ -629,11 +629,8 @@ class HumanMemoryProgramStore:
         envelope: SanitizedEvidenceEnvelopeLike,
         receipt: SanitizedEvidenceReceiptLike,
     ) -> CommittedHostEvidence:
-        envelope_json, receipt_json, kind = _validate_protocol_pair(
-            envelope, receipt
-        )
+        _validate_protocol_pair(envelope, receipt)
         primary = await self.initialize_subject(envelope.subject)
-        payload_json = _canonical_json(envelope_json["sanitized_payload"])
         committed_at = time.time()
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -642,79 +639,13 @@ class HumanMemoryProgramStore:
             await db.execute("BEGIN IMMEDIATE")
             await assert_human_memory_ingress_open_tx(db)
             try:
-                cursor = await db.execute(
-                    "SELECT evidence.*, receipt.receipt_sha256 AS "
-                    "linked_receipt_sha256 FROM human_memory_evidence AS evidence "
-                    "JOIN human_memory_sanitization_receipts AS receipt "
-                    "ON receipt.receipt_id=evidence.receipt_id "
-                    "WHERE evidence.evidence_id=?",
-                    (envelope.evidence_id,),
+                committed = await self.append_evidence_tx(
+                    db,
+                    envelope,
+                    receipt,
+                    primary_conversation_id=primary.primary_conversation_id,
+                    committed_at=committed_at,
                 )
-                existing = await cursor.fetchone()
-                await cursor.close()
-                if existing is not None:
-                    if (
-                        str(existing["envelope_sha256"]) != envelope.envelope_hash
-                        or str(existing["receipt_id"]) != receipt.receipt_id
-                        or str(existing["linked_receipt_sha256"])
-                        != receipt.receipt_hash
-                    ):
-                        raise HumanMemoryProgramConflict(
-                            HumanMemoryProgramConflict.code
-                        )
-                    await db.rollback()
-                    return self._evidence_from_row(existing)
-
-                await db.execute(
-                    "INSERT INTO human_memory_sanitization_receipts("
-                    "receipt_id,evidence_id,subject,run_id,envelope_sha256,"
-                    "source_sha256,sanitized_sha256,filter_policy_version,"
-                    "receipt_sha256,receipt_json,admitted_at,committed_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        receipt.receipt_id,
-                        receipt.evidence_id,
-                        receipt.subject,
-                        receipt.run_id,
-                        receipt.envelope_hash,
-                        receipt.source_hash,
-                        receipt.sanitized_hash,
-                        receipt.filter_policy_version,
-                        receipt.receipt_hash,
-                        _canonical_json(receipt_json),
-                        float(receipt.admitted_at),
-                        committed_at,
-                    ),
-                )
-                await db.execute(
-                    "INSERT INTO human_memory_evidence("
-                    "evidence_id,primary_conversation_id,subject,run_id,source_kind,"
-                    "source_ref,source_sha256,sanitized_sha256,envelope_sha256,"
-                    "receipt_id,payload_json,envelope_json,occurred_at,committed_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        envelope.evidence_id,
-                        primary.primary_conversation_id,
-                        envelope.subject,
-                        envelope.run_id,
-                        kind,
-                        envelope.source_ref,
-                        envelope.source_hash,
-                        envelope.sanitized_hash,
-                        envelope.envelope_hash,
-                        receipt.receipt_id,
-                        payload_json,
-                        _canonical_json(envelope_json),
-                        float(receipt.admitted_at),
-                        committed_at,
-                    ),
-                )
-                cursor = await db.execute(
-                    "SELECT * FROM human_memory_evidence WHERE evidence_id=?",
-                    (envelope.evidence_id,),
-                )
-                row = await cursor.fetchone()
-                await cursor.close()
                 await db.commit()
             except aiosqlite.IntegrityError as exc:
                 await db.rollback()
@@ -724,6 +655,98 @@ class HumanMemoryProgramStore:
             except Exception:
                 await db.rollback()
                 raise
+        return committed
+
+    async def append_evidence_tx(
+        self,
+        db: aiosqlite.Connection,
+        envelope: SanitizedEvidenceEnvelopeLike,
+        receipt: SanitizedEvidenceReceiptLike,
+        *,
+        primary_conversation_id: str,
+        committed_at: float,
+    ) -> CommittedHostEvidence:
+        """Append one evidence row inside a caller-owned transaction (idempotent).
+
+        S5b Task 2: the objective-event recorder writes the ``host.file``/
+        ``host.test`` event, this evidence row and the Harness import in one
+        state.db transaction.  The caller has already run ``BEGIN IMMEDIATE``
+        and the ingress fence check; ``aiosqlite.Row`` factory is required.
+        """
+
+        envelope_json, receipt_json, kind = _validate_protocol_pair(
+            envelope, receipt
+        )
+        payload_json = _canonical_json(envelope_json["sanitized_payload"])
+        cursor = await db.execute(
+            "SELECT evidence.*, receipt.receipt_sha256 AS "
+            "linked_receipt_sha256 FROM human_memory_evidence AS evidence "
+            "JOIN human_memory_sanitization_receipts AS receipt "
+            "ON receipt.receipt_id=evidence.receipt_id "
+            "WHERE evidence.evidence_id=?",
+            (envelope.evidence_id,),
+        )
+        existing = await cursor.fetchone()
+        await cursor.close()
+        if existing is not None:
+            if (
+                str(existing["envelope_sha256"]) != envelope.envelope_hash
+                or str(existing["receipt_id"]) != receipt.receipt_id
+                or str(existing["linked_receipt_sha256"]) != receipt.receipt_hash
+            ):
+                raise HumanMemoryProgramConflict(HumanMemoryProgramConflict.code)
+            return self._evidence_from_row(existing)
+
+        await db.execute(
+            "INSERT INTO human_memory_sanitization_receipts("
+            "receipt_id,evidence_id,subject,run_id,envelope_sha256,"
+            "source_sha256,sanitized_sha256,filter_policy_version,"
+            "receipt_sha256,receipt_json,admitted_at,committed_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                receipt.receipt_id,
+                receipt.evidence_id,
+                receipt.subject,
+                receipt.run_id,
+                receipt.envelope_hash,
+                receipt.source_hash,
+                receipt.sanitized_hash,
+                receipt.filter_policy_version,
+                receipt.receipt_hash,
+                _canonical_json(receipt_json),
+                float(receipt.admitted_at),
+                committed_at,
+            ),
+        )
+        await db.execute(
+            "INSERT INTO human_memory_evidence("
+            "evidence_id,primary_conversation_id,subject,run_id,source_kind,"
+            "source_ref,source_sha256,sanitized_sha256,envelope_sha256,"
+            "receipt_id,payload_json,envelope_json,occurred_at,committed_at) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                envelope.evidence_id,
+                primary_conversation_id,
+                envelope.subject,
+                envelope.run_id,
+                kind,
+                envelope.source_ref,
+                envelope.source_hash,
+                envelope.sanitized_hash,
+                envelope.envelope_hash,
+                receipt.receipt_id,
+                payload_json,
+                _canonical_json(envelope_json),
+                float(receipt.admitted_at),
+                committed_at,
+            ),
+        )
+        cursor = await db.execute(
+            "SELECT * FROM human_memory_evidence WHERE evidence_id=?",
+            (envelope.evidence_id,),
+        )
+        row = await cursor.fetchone()
+        await cursor.close()
         assert row is not None
         return self._evidence_from_row(row)
 

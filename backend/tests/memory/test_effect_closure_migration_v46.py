@@ -91,7 +91,7 @@ async def test_v45_database_migrates_forward_to_v46_keeping_ledger_rows(tmp_path
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         assert set(V46_TABLES) <= tables
         for table in V46_TABLES:
-            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0  # noqa: S608
+            assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
         # v45 行原样保留（append-only 前向迁移）。
         assert conn.execute("SELECT COUNT(*) FROM context_route_decisions").fetchone()[0] == 1
         # 迁移链 + marker + 恢复表注册。
@@ -100,7 +100,7 @@ async def test_v45_database_migrates_forward_to_v46_keeping_ledger_rows(tmp_path
         assert conn.execute("SELECT schema_version,migration_id FROM effect_closure_marker WHERE singleton=1").fetchone() == (1, EFFECT_CLOSURE_MIGRATION)
         registry = dict(conn.execute(
             "SELECT table_name,taxonomy FROM human_memory_recovery_table_registry WHERE table_name IN "
-            "(%s)" % ",".join("?" * len(V46_TABLES)), V46_TABLES,  # noqa: S608
+            f"({','.join('?' * len(V46_TABLES))})", V46_TABLES,
         ).fetchall())
         assert registry == {name: "A" for name in V46_TABLES}
     # 再次打开：幂等 resume。
