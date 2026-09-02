@@ -635,23 +635,28 @@ class CanonicalTaskScopeStore:
         assert row is not None
         return MutationApplyReceipt(str(row["decision_id"]), plan_id, str(row["plan_hash"]), str(row["task_scope_id"]), int(row["prior_revision"]), int(row["committed_revision"]), str(row["state_hash"]), str(row["event_id"]))
 
-    async def read_head_status(self, task_scope_id: str) -> str | None:
+    async def read_head_status(
+        self, task_scope_id: str, *, db: aiosqlite.Connection | None = None
+    ) -> str | None:
         """Return the canonical head ``status`` of one TaskScope (None if absent).
 
         S5b EffectGate step 6: a PROJECT_EFFECT is admitted only while the
         scope status is in the active set; the read is head-exact (current
-        canonical revision), never a projection.
+        canonical revision), never a projection.  ``db``: the caller's read
+        snapshot (Task 6 single-snapshot gate).
         """
 
-        async with self._connection() as db:
-            row = await self._fetchone(
-                db,
-                "SELECT r.state_json FROM task_scope_heads h "
-                "JOIN task_scope_canonical_revisions r "
-                "ON r.task_scope_id=h.task_scope_id AND r.revision=h.current_revision "
-                "WHERE h.task_scope_id=?",
-                (task_scope_id,),
-            )
+        if db is None:
+            async with self._connection() as own:
+                return await self.read_head_status(task_scope_id, db=own)
+        row = await self._fetchone(
+            db,
+            "SELECT r.state_json FROM task_scope_heads h "
+            "JOIN task_scope_canonical_revisions r "
+            "ON r.task_scope_id=h.task_scope_id AND r.revision=h.current_revision "
+            "WHERE h.task_scope_id=?",
+            (task_scope_id,),
+        )
         if row is None:
             return None
         state = json.loads(str(row["state_json"]))

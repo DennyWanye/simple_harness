@@ -49,6 +49,8 @@ log = logging.getLogger(__name__)
 
 DEFAULT_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0, 8.0)
 MAX_RETRY_DELAY_SECONDS = 60.0
+# Task 4 review F-4: evidence_ids_json ≠ memory_ingestion_evidence_links.
+LINKS_MISMATCH_ERROR = "memory_ingestion_outbox_links_mismatch"
 
 
 class OutboxRunOutcome(StrEnum):
@@ -140,6 +142,45 @@ class MemoryIngestionOutboxWorker:
                     await db.commit()
                     return None
                 outbox_id = str(row["outbox_id"])
+                cursor = await db.execute(
+                    "SELECT evidence_id FROM memory_ingestion_evidence_links WHERE outbox_id=? ORDER BY evidence_id",
+                    (outbox_id,),
+                )
+                links = [str(r[0]) for r in await cursor.fetchall()]
+                await cursor.close()
+                declared = sorted(str(v) for v in json.loads(str(row["evidence_ids_json"])))
+                if declared != sorted(links):
+                    # Task 4 review F-4: an inconsistent row (evidence_ids_json ≠
+                    # links) can never deliver.  It is judged INSIDE the claim
+                    # transaction, bounded like any other failure: each detection
+                    # consumes one attempt and the row goes back to pending with
+                    # ``last_error`` until ``max_attempts`` → dead_letter — never an
+                    # exception that leaves it claimed and endlessly reclaimable.
+                    attempts = int(row["attempts"]) + 1
+                    error = LINKS_MISMATCH_ERROR
+                    if attempts >= self._max_attempts:
+                        await db.execute(
+                            "UPDATE memory_ingestion_outbox SET state='dead_letter',attempts=?,lease_owner=NULL,"
+                            "lease_expires_at=NULL,last_error=?,updated_at=? WHERE outbox_id=?",
+                            (attempts, error, now, outbox_id),
+                        )
+                        log.warning(
+                            "memory_ingestion_outbox_dead_letter outbox_id=%s error=%s", outbox_id, error
+                        )
+                    else:
+                        delay = self._retry_delay(attempts)
+                        await db.execute(
+                            "UPDATE memory_ingestion_outbox SET state='pending',attempts=?,lease_owner=?,"
+                            "lease_expires_at=?,last_error=?,updated_at=? WHERE outbox_id=?",
+                            (
+                                attempts,
+                                f"retry:{token}" if delay > 0 else None,
+                                now + delay if delay > 0 else None,
+                                error, now, outbox_id,
+                            ),
+                        )
+                    await db.commit()
+                    return None
                 if str(row["state"]) == "claimed":
                     # Lease reclaim: the previous owner's claim expired; every claim
                     # consumes one bounded attempt.
@@ -160,12 +201,6 @@ class MemoryIngestionOutboxWorker:
                 )
                 claimed = await cursor.fetchone()
                 await cursor.close()
-                cursor = await db.execute(
-                    "SELECT evidence_id FROM memory_ingestion_evidence_links WHERE outbox_id=? ORDER BY evidence_id",
-                    (outbox_id,),
-                )
-                links = [str(r[0]) for r in await cursor.fetchall()]
-                await cursor.close()
                 self._fault("outbox.claim.before_commit")
                 await db.commit()
             except Exception:
@@ -174,8 +209,6 @@ class MemoryIngestionOutboxWorker:
         if claimed is None:
             return None
         evidence_ids = tuple(str(v) for v in json.loads(str(claimed["evidence_ids_json"])))
-        if sorted(evidence_ids) != sorted(links):
-            raise RuntimeError("memory_ingestion_outbox_links_mismatch")
         return OutboxClaim(
             outbox_id=outbox_id,
             host_run_id=str(claimed["host_run_id"]),

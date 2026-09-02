@@ -17,6 +17,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any, Protocol
 
 from simple_harness import RunId, thaw_json
@@ -33,11 +34,13 @@ from simple_harness.tools import (
     ToolExposureMode,
 )
 
+from deskpet.permissions.effect_policy import _CONFIRM_ONLY
 from deskpet.permissions.runtime import (
     PreparedAuthorizationPlan,
     PreparedAuthorizationRuntime,
 )
 from deskpet.product_state.authorization_saga import AuthorizationSagaIdentity
+from deskpet.tools.build_identity import EffectClass
 from deskpet.tools.capabilities import (
     PreparedToolCapability,
     PreparedToolSet,
@@ -239,12 +242,87 @@ class _FrozenCapabilitySpec:
     execution_identity: str
     projectless_admission: str = "requires_project"
     dangerous: bool = False
+    # S5b Task 6 (AC-3⑤ / A5): the frozen EffectClass of the Tool (inventory
+    # attribute, else the real Tool manifest, else ``unknown``) and whether the
+    # manifest marks it dangerous.  ``confirm_only`` (EffectClass ∈
+    # ``_CONFIRM_ONLY`` or manifest-dangerous) is what ``decide`` feeds into
+    # ``plan_prepared_call(explicit_only=…)``: never auto-granted.
+    effect_class: str = "unknown"
+    manifest_dangerous: bool = False
+
+    @property
+    def confirm_only(self) -> bool:
+        return is_confirm_only_effect(self.effect_class, self.manifest_dangerous)
 
     def env_satisfied(self) -> bool:
         return True
 
     def is_visible(self, _eligibility: ToolEligibilityContext) -> bool:
         return True
+
+
+def _manifest_effect_index() -> Mapping[str, tuple[str, bool]]:
+    """``name → (effect_class, dangerous)`` of the real Tool manifest (loaded once)."""
+
+    global _MANIFEST_EFFECT_INDEX
+    if _MANIFEST_EFFECT_INDEX is None:
+        from deskpet.tool_catalog.manifest import load_tool_manifest
+
+        index: dict[str, tuple[str, bool]] = {}
+        for item in load_tool_manifest().tools:
+            name = str(item.get("name") or "")
+            if not name:
+                continue
+            index[name] = (
+                str(item.get("effect_class") or EffectClass.UNKNOWN.value),
+                bool(item.get("dangerous", False)),
+            )
+        _MANIFEST_EFFECT_INDEX = MappingProxyType(index)
+    return _MANIFEST_EFFECT_INDEX
+
+
+_MANIFEST_EFFECT_INDEX: Mapping[str, tuple[str, bool]] | None = None
+
+
+def frozen_tool_effect(name: str, inventory_item: object = None) -> tuple[str, bool]:
+    """Frozen ``(effect_class, manifest_dangerous)`` for one Tool name.
+
+    Precedence: an explicit inventory ``effect_class`` (durable run-start
+    records / MCP descriptors) → the real Tool manifest entry → ``unknown``
+    (which is confirm-only by policy, so an unclassified Tool can never be
+    auto-granted).
+    """
+
+    raw = _field(inventory_item, "effect_class", None) if inventory_item is not None else None
+    manifest = _manifest_effect_index().get(str(name))
+    if raw is not None and str(raw).strip():
+        try:
+            effect = EffectClass(str(raw)).value
+        except ValueError:
+            effect = EffectClass.UNKNOWN.value
+    elif manifest is not None:
+        effect = manifest[0]
+    else:
+        effect = EffectClass.UNKNOWN.value
+    dangerous = bool(manifest[1]) if manifest is not None else False
+    raw_dangerous = _field(inventory_item, "manifest_dangerous", None) if inventory_item is not None else None
+    if isinstance(raw_dangerous, bool):
+        dangerous = dangerous or raw_dangerous
+    return effect, dangerous
+
+
+def is_confirm_only_effect(effect_class: str, manifest_dangerous: bool = False) -> bool:
+    try:
+        effect = EffectClass(str(effect_class))
+    except ValueError:
+        effect = EffectClass.UNKNOWN
+    return bool(manifest_dangerous) or effect in _CONFIRM_ONLY
+
+
+def confirm_only_tool_names(authority: SdkRunToolAuthorityV1) -> tuple[str, ...]:
+    """Sorted names of the Run's Tools that can never be auto-granted."""
+
+    return tuple(sorted(name for name, spec in authority.specs.items() if spec.confirm_only))
 
 
 @dataclass(frozen=True, slots=True)
@@ -360,6 +438,10 @@ class SdkRunToolAuthorityV1:
                     "permission_policy_version": spec.permission_policy_version,
                     "projectless_admission": spec.projectless_admission,
                     "dangerous": spec.dangerous,
+                    # S5b Task 6: the frozen EffectClass travels with the Run so a
+                    # WAITING restart never re-classifies from a newer manifest.
+                    "effect_class": spec.effect_class,
+                    "manifest_dangerous": spec.manifest_dangerous,
                 }
                 for name, spec in self.specs.items()
             ],
@@ -598,6 +680,7 @@ class SdkRunToolAuthorityRegistry:
             )
             if projectless_admission not in {"safe", "requires_project"}:
                 raise ValueError(f"{name}.projectless_admission is invalid")
+            effect_class, manifest_dangerous = frozen_tool_effect(name, inventory_item)
             if (
                 normalized_workspace_resolution["kind"] == "projectless"
                 and projectless_admission != "safe"
@@ -651,6 +734,8 @@ class SdkRunToolAuthorityRegistry:
                 execution_identity=execution_identity,
                 projectless_admission=projectless_admission,
                 dangerous=dangerous,
+                effect_class=effect_class,
+                manifest_dangerous=manifest_dangerous,
             )
             permissions[name] = permission
             dispatch_kinds[name] = dispatch
@@ -1218,6 +1303,11 @@ class SdkRunToolAuthorityRegistry:
         self.scope_store.purge(record.prepared_tool_set.scope_id)
         for listener in tuple(self._terminal_listeners):
             listener(record)
+        # S5b Task 6 (review F-6): every terminal path — foreground observer or
+        # not — releases the process-local whole-Run fault memo of this Run.
+        release = getattr(self._run_fault_sink, "release", None)
+        if callable(release):
+            release(record.run_id)
         return record
 
 
@@ -1622,15 +1712,36 @@ class SdkPreparedAuthorizationPolicy:
             call_id=prepared.call.call_id.value,
             effect_id=prepared.effect_id.value,
         )
+        # S5b Task 6 (AC-3⑤ / A5, design-freeze §4 step 7): ``explicit_only``
+        # comes from the frozen EffectClass of the Tool.  A confirm-only class
+        # (external_send / destructive / payment / credential / privacy /
+        # unknown, or manifest-dangerous) is never covered by an existing grant
+        # and never auto-granted: Auto mode returns REQUIRE_USER exactly like
+        # Manual mode does, and the candidate grant's source is ``user``.
+        explicit_only = authority.specs[call.tool_name].confirm_only
+        explicit_fences: dict[str, str] = (
+            {
+                "decision_nonce": _canonical_sha256(
+                    {"effect_id": prepared.effect_id.value, "confirm_only": True}
+                ),
+                "confirm_only_snapshot_ref": authority.prepared_tool_set.scope_id,
+                "confirm_only_snapshot_hash": authority.authority_fingerprint,
+            }
+            if explicit_only
+            else {}
+        )
         plan = await self._runtime.plan_prepared_call(
             call=call,
             context=context,
             permission_category=authority.permission_categories[call.tool_name],
             task_grant_id=None,
             principal_id=authority.principal_id,
+            explicit_only=explicit_only,
+            confirmed=False,
+            **explicit_fences,
         )
         self._policy_generation = plan.policy_state.generation
-        if plan.action != "allow" and plan.policy_state.mode == "manual":
+        if plan.action != "allow" and (plan.policy_state.mode == "manual" or explicit_only):
             # SDK owns the final decision nonce.  Compute the exact user grant
             # candidate now, but return REQUIRE_USER so it remains prepared
             # until the SDK's durable decision bind activates it.
@@ -1641,11 +1752,13 @@ class SdkPreparedAuthorizationPolicy:
                 task_grant_id=None,
                 principal_id=authority.principal_id,
                 confirmed=True,
+                explicit_only=explicit_only,
                 # Manual grants are immutable.  Bind their instance identity
                 # to the stable SDK effect so replay is idempotent while two
                 # different Tool effects in one Run cannot collide merely
                 # because they request the same resource category.
                 decision_id=prepared.effect_id.value,
+                **explicit_fences,
             )
             self._policy_generation = plan.policy_state.generation
             if plan.action != "allow" or plan.committed_task_grant is None:
@@ -1852,4 +1965,7 @@ __all__ = (
     "SkillInstallPreflightOutcome",
     "SkillInstallPreflightReady",
     "SkillInstallPreflightRejected",
+    "confirm_only_tool_names",
+    "frozen_tool_effect",
+    "is_confirm_only_effect",
 )

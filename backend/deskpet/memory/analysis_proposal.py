@@ -244,6 +244,9 @@ def prompt_items(items: Sequence[AdmittedItem]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------- derivation
 
 
+_MAX_QUOTE_BYTES = 16_384  # simple_harness.runtime.evidence_protocol EvidenceSpanRef exact_quote bound
+
+
 def derive_span(item: AdmittedItem, exact_quote: str, *, span_id: str) -> Any:
     """Deterministic ``EvidenceSpanRef`` over ``/text``; fails closed on anything but one exact hit."""
 
@@ -266,6 +269,11 @@ def derive_span(item: AdmittedItem, exact_quote: str, *, span_id: str) -> Any:
         raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="quote_ambiguous", item_id=item.item_id)
     start = len(item.text[:first].encode("utf-8"))
     end = start + len(exact_quote.encode("utf-8"))
+    if end - start > _MAX_QUOTE_BYTES:
+        # Task 4 review F-1: the Harness bounds ``exact_quote`` at 16 KiB; a
+        # longer verbatim quote is a deterministic rejection of this operation,
+        # never a ``ValueError`` escaping after the Provider already answered.
+        raise AnalysisProposalRejected(QUOTE_NOT_FOUND, reason="quote_too_long", item_id=item.item_id)
     envelope = item.envelope
     receipt = item.receipt
     return EvidenceSpanRef(

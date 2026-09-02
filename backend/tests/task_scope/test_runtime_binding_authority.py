@@ -250,6 +250,16 @@ async def test_auto_binding_uses_only_current_foreground_run_snapshot(
     )
     assert bound["payload"]["ok"] is True, bound
     assert bound["payload"]["result"]["binding_set_revision"] == 1
+    # S5b AC-3⑤ (c)：Auto 豁免 folder-append 确认——零 manual challenge，grant 来源 auto。
+    import sqlite3 as _sqlite3
+
+    with _sqlite3.connect(db_path) as _db:
+        assert _db.execute("SELECT COUNT(*) FROM task_workspace_manual_challenges").fetchone()[0] == 0
+        assert _db.execute(
+            "SELECT COUNT(*) FROM task_workspace_run_mode_snapshots WHERE mode='auto'"
+        ).fetchone()[0] == 1
+        grants = _db.execute("SELECT grant_json FROM task_workspace_binding_grants").fetchall()
+    assert len(grants) == 1 and '"source": "auto"' in grants[0][0].replace('":"', '": "')
 
     other = await _request(
         factory,

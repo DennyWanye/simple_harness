@@ -37,6 +37,7 @@ Memory attempt and the canonical envelope must match the durable record.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -65,6 +66,7 @@ from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.sdk_adapters.post_turn_invoker import (
     RunBoundInvoker,
     durable_envelope_json,
+    durable_response,
     durable_result_json,
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
@@ -98,6 +100,12 @@ class ResolvedOutbox:
     run_binding: dict[str, Any]
     endpoint_identity: str | None
     lineage: dict[str, Any]
+
+
+def _host_plan_id(request_hash: str, attempt_id: str) -> str:
+    """Deterministic Host analysis plan id (known before derivation — Task 6 F-1)."""
+
+    return f"host-analysis-plan-{hashlib.sha256(f'{request_hash}:{attempt_id}'.encode()).hexdigest()[:32]}"
 
 
 def evidence_set_key(request: Any) -> str:
@@ -342,10 +350,19 @@ class HostMemoryAnalysisExecutor:
         self.provider_calls += int(outcome.provider_calls)
         if outcome.status == "reused":
             durable, _ = await self._durable_envelope(request.request_hash)
-            if durable is None:
+            if durable is not None:
+                durable.verify_request(request)
+                return durable
+            # Task 4 review F-1: the settled row carries the Provider response but
+            # no envelope yet (derivation failed / crashed after settle) →
+            # re-derive from the durable response, zero Provider calls.
+            response, settled_attempt = await self._durable_response(request.request_hash)
+            if response is None or settled_attempt is None:
                 raise HostAnalysisExecutorError("analysis_attempt_result_unavailable", attempt_id=outcome.attempt_id)
-            durable.verify_request(request)
-            return durable
+            return await self._derive_and_attach(
+                request, outbox, invoker, response, settled_attempt,
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
         if outcome.status == "blocked":
             await self._audit(
                 outbox.sdk_run_id,
@@ -369,14 +386,95 @@ class HostMemoryAnalysisExecutor:
                 status=outcome.status, unknown_class=outcome.unknown_class, attempt_id=outcome.attempt_id,
             )
         assert outcome.attempt_id is not None and outcome.response is not None
-        return await self._deliver(
-            request, outbox, invoker, outcome, latency_ms=int((time.monotonic() - started) * 1000)
+        attempt_id = str(outcome.attempt_id)
+        # Task 4 review F-1 (P1): the Provider answered — settle the row
+        # ``succeeded`` with the public response durable in ONE transaction
+        # BEFORE any derivation / compilation / audit.  A Host exception after
+        # this point can no longer strand the attempt in ``handed_off`` (which
+        # would block every re-delivery until dead_letter): the next delivery
+        # re-derives from the durable response with zero Provider calls.
+        async with invoker.transaction() as db:
+            await invoker.settle_succeeded_tx(
+                db, attempt_id, response=outcome.response, plan_id=_host_plan_id(request.request_hash, attempt_id),
+                result_envelope_json=durable_result_json(response=outcome.response, envelope_json=None),
+            )
+            self._fault_point("analysis-response-settled")
+        return await self._derive_and_attach(
+            request, outbox, invoker, outcome.response, attempt_id,
+            latency_ms=int((time.monotonic() - started) * 1000),
         )
+
+    async def _durable_response(self, request_hash: str) -> tuple[Any | None, str | None]:
+        """Newest settled attempt of ``request_hash`` whose durable copy holds a response."""
+
+        if not self._db_path.exists():
+            return None, None
+        try:
+            async with aiosqlite.connect(f"file:{self._db_path}?mode=ro", uri=True) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT attempt_id,result_envelope_json FROM post_turn_invocation_attempts "
+                    "WHERE request_hash=? AND purpose='analysis' AND result_envelope_json IS NOT NULL "
+                    "AND status='succeeded' ORDER BY attempt_ordinal DESC LIMIT 1",
+                    (request_hash,),
+                )
+                row = await cursor.fetchone()
+                await cursor.close()
+        except aiosqlite.Error:
+            return None, None
+        if row is None:
+            return None, None
+        response = durable_response(row["result_envelope_json"])
+        if response is None:
+            return None, None
+        return response, str(row["attempt_id"])
+
+    async def _derive_and_attach(
+        self, request: Any, outbox: ResolvedOutbox, invoker: RunBoundInvoker, response: Any, attempt_id: str, *,
+        latency_ms: int,
+    ) -> Any:
+        """Derive the result envelope from a settled response and attach it once.
+
+        Any derivation failure is reported as a retryable
+        ``analysis_derivation_failed:*`` — the attempt row stays ``succeeded``
+        with its durable response, so the retry never calls the Provider.
+        """
+
+        try:
+            envelope, durable = await self._derive_envelope(request, outbox, response, attempt_id, latency_ms=latency_ms)
+        except asyncio.CancelledError:
+            raise
+        except HostAnalysisExecutorError:
+            raise
+        except Exception as exc:  # derivation taxonomy (retry from the durable response)
+            self._fault_point("analysis-derivation-failed")
+            raise HostAnalysisExecutorError(
+                f"analysis_derivation_failed:{type(exc).__name__}", attempt_id=attempt_id, detail=str(exc)[:200]
+            ) from exc
+        async with invoker.transaction() as db:
+            await db.execute(
+                "UPDATE post_turn_invocation_attempts SET result_envelope_json=? "
+                "WHERE attempt_id=? AND (result_envelope_json IS NULL "
+                "OR json_extract(result_envelope_json,'$.envelope') IS NULL)",
+                (durable, attempt_id),
+            )
+            self._fault_point("analysis-result-settled")
+        return envelope
 
     async def _deliver(
         self, request: Any, outbox: ResolvedOutbox, invoker: RunBoundInvoker, outcome: Any, *, latency_ms: int,
         attach_only: bool = False,
     ) -> Any:
+        """Lease-lost / observer-confirmed rows: the row is already settled, only the
+        envelope may be attached (once)."""
+
+        del attach_only
+        response = outcome.response if outcome.response is not None else outcome.ledger_response
+        return await self._derive_and_attach(request, outbox, invoker, response, str(outcome.attempt_id), latency_ms=latency_ms)
+
+    async def _derive_envelope(
+        self, request: Any, outbox: ResolvedOutbox, response: Any, attempt_id: str, *, latency_ms: int,
+    ) -> tuple[Any, str]:
         from simple_harness.runtime import (
             MemoryAnalysisDeliveryReceipt,
             MemoryAnalysisResult,
@@ -384,8 +482,7 @@ class HostMemoryAnalysisExecutor:
         )
         from simple_harness_memory.core.jobs import current_analysis_apply_head
 
-        response = outcome.response if outcome.response is not None else outcome.ledger_response
-        attempt_id = str(outcome.attempt_id)
+        self._fault_point("analysis-before-derive")
         base_revision = current_analysis_apply_head() or 1
         items = [admitted_item(*(await self._evidence.read_admitted(ref.evidence_id))) for ref in request.ordered_evidence_refs]
         compiled = compile_proposal(
@@ -393,7 +490,7 @@ class HostMemoryAnalysisExecutor:
             request=request,
             items=items,
             base_revision=int(base_revision),
-            plan_id=f"host-analysis-plan-{hashlib.sha256(f'{request.request_hash}:{attempt_id}'.encode()).hexdigest()[:32]}",
+            plan_id=_host_plan_id(request.request_hash, attempt_id),
             now=float(self._clock()),
         )
         for rejected in compiled.rejected:
@@ -427,25 +524,7 @@ class HostMemoryAnalysisExecutor:
             host_receipt_hash=hashlib.sha256(f"{request.request_hash}:{result.result_hash}:{request.attempt}".encode()).hexdigest(),
         )
         envelope = MemoryAnalysisResultEnvelope(result, delivery)
-        durable = durable_result_json(response=response, envelope_json=envelope.to_json())
-        if attach_only or outcome.unknown_class == "sent_confirmed":
-            # Row already settled (observer-confirmed `unknown(sent_confirmed)` or a
-            # lease-lost `succeeded`): only the durable result may be attached, once,
-            # so the delivery authority / next owner can verify or replay it.
-            async with invoker.transaction() as db:
-                await db.execute(
-                    "UPDATE post_turn_invocation_attempts SET result_envelope_json=? "
-                    "WHERE attempt_id=? AND result_envelope_json IS NULL",
-                    (durable, attempt_id),
-                )
-        else:
-            async with invoker.transaction() as db:
-                await invoker.settle_succeeded_tx(
-                    db, attempt_id, response=response, plan_id=compiled.plan.plan_id if compiled.plan is not None else None,
-                    result_hash=result.result_hash, result_envelope_json=durable,
-                )
-                self._fault_point("analysis-result-settled")
-        return envelope
+        return envelope, durable_result_json(response=response, envelope_json=envelope.to_json())
 
     def _fault_point(self, point: str) -> None:
         if self._fault_inject is not None:

@@ -209,3 +209,144 @@ async def test_v7_runtime_registers_owner_and_passes_host_policies(tmp_path: Pat
         assert again == first
     finally:
         await runtime.close()
+
+
+
+# ---- S5b Task 6：Task 4 审查 F-1 / F-4 / F-5 ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_derivation_failure_after_provider_response_does_not_strand_attempt(tmp_path: Path) -> None:
+    """F-1（P1）：Provider 响应到手后、派生/编译前的 Host 异常 → attempt 已 ``succeeded`` 且公开响应 durable
+    （不停留 handed_off）；Memory 重试第二次投递 **0 Provider 调用** 从 durable 响应重派生并 applied；
+    无 ``memory.analysis.blocked`` 审计行。>16KB 逐字引用是确定性拒绝（quote_too_long），不是 ValueError。"""
+
+    from deskpet.memory.analysis_executor import blocked_audit_rows
+    from deskpet.memory.analysis_proposal import AnalysisProposalRejected, derive_span
+
+    env = await mh.bound_turn_run(tmp_path, "sdk-run-derive")
+    await mh.finish_effect_run(env)
+    adapter = ch.FakeAdapter([mh.proposal_call([mh.semantic_op(mh.item_id(env), "版本号改成 1.2.0")])])
+    menv = mh.memory_env(env, adapter, fault=ch.OneShot("analysis-before-derive"))
+    assert await menv.worker.run_once() == "delivered"
+    # 第一次投递：响应先 settle（succeeded + 公开响应 durable），随后派生失败 → 可重试错误；
+    # Memory 的重试（同 run_job 内或下一次）从 durable 响应重派生：**恰一次 Provider 调用**。
+    outcomes: list[str] = []
+    for _ in range(4):
+        try:
+            outcomes.append(await mh.run_job(menv))
+        except Exception as exc:  # noqa: BLE001 - Memory runner may surface the executor error
+            outcomes.append(f"raised:{type(exc).__name__}")
+        if "applied" in outcomes:
+            break
+        env.clock.now += 40.0
+    assert "applied" in outcomes, outcomes
+    assert len(adapter.calls) == 1 and menv.executor.provider_calls == 1
+    rows = mh.attempts(env.db_path)
+    assert rows and all(status == "succeeded" for _, status, *_ in rows), rows  # 绝不停留 handed_off
+    durable_rows = [
+        json.loads(raw) for (raw,) in mh.rows(
+            env.db_path,
+            "SELECT result_envelope_json FROM post_turn_invocation_attempts WHERE purpose='analysis' ORDER BY attempt_ordinal",
+        )
+    ]
+    assert all(item["response"] is not None for item in durable_rows)
+    assert any(item["envelope"] is not None for item in durable_rows)
+    assert await blocked_audit_rows(env.db_path) == []
+    snapshot = await mh.memory_snapshot(menv)
+    assert snapshot["heads"] == 1
+    await mh.close(menv)
+
+    # 确定性：>16KB 引用 → AnalysisProposalRejected(quote_too_long)，永不 ValueError。
+    from deskpet.memory.analysis_proposal import admitted_item
+
+    long_text = "甲" * 9000
+    long_envelope, long_receipt = mh.build_foreground_turn_evidence(
+        subject=mh.SUBJECT, authority_ref=mh.AUTHORITY_REF, delivery_key="turn-long", text=long_text
+    )
+    item = admitted_item(long_envelope, long_receipt)
+    with pytest.raises(AnalysisProposalRejected) as too_long:
+        derive_span(item, long_text, span_id="span-long")
+    assert too_long.value.detail["reason"] == "quote_too_long"
+
+
+@pytest.mark.asyncio
+async def test_inconsistent_outbox_row_dead_letters_after_bounded_reclaims(tmp_path: Path) -> None:
+    """F-4：evidence_ids_json ≠ links 的行在 claim 事务内判定：每次消耗一次 attempt、回 pending 带 last_error，
+    到上限 → dead_letter（不再无限 reclaim）；队列里的好行照常投递。"""
+
+    from deskpet.memory.memory_ingestion_outbox import LINKS_MISMATCH_ERROR
+
+    env = await mh.bound_turn_run(tmp_path, "sdk-run-bad")
+    await mh.finish_clean_run(env)
+    env2 = await mh.next_turn_run(env, "sdk-run-good", text="第二轮", delivery_key="turn-2")
+    await mh.finish_clean_run(env2)
+    bad_id, good_id = [r[0] for r in mh.rows(env.db_path, "SELECT outbox_id FROM memory_ingestion_outbox ORDER BY created_at")]
+    with sqlite3.connect(env.db_path) as db:
+        db.execute("INSERT INTO memory_ingestion_evidence_links(outbox_id,evidence_id) VALUES (?,?)", (bad_id, "phantom-evidence"))
+        db.commit()
+    menv = mh.memory_env(env, ch.FakeAdapter([]), worker_max_attempts=3)
+    outcomes = []
+    for _ in range(8):
+        outcomes.append(await menv.worker.run_once())
+        env.clock.now += 3.0
+    states = {r[0]: r[1:] for r in mh.rows(env.db_path, "SELECT outbox_id,state,attempts,last_error FROM memory_ingestion_outbox")}
+    assert states[bad_id] == ("dead_letter", 3, LINKS_MISMATCH_ERROR)
+    assert states[good_id][0] == "delivered"
+    assert "delivered" in outcomes
+    # 终态后不再被挑中。
+    assert await menv.worker.claim() is None
+    await mh.close(menv)
+
+
+@pytest.mark.asyncio
+async def test_terminal_commit_without_binding_does_not_stall_fifo(tmp_path: Path) -> None:
+    """F-5：durable Run binding 不可得 → Host 终态照常提交，同事务写 outbox ``dead_letter(run_binding_unavailable)``
+    （raw 不丢），FIFO 下一 turn 可继续；``_terminal_binding`` 不再抛错而是审计。"""
+
+    from deskpet.execution.foreground_runtime import (
+        RUN_BINDING_UNAVAILABLE_REASON,
+        ForegroundRuntimeExecutionAuthority,
+    )
+
+    env = await mh.bound_turn_run(tmp_path, "sdk-run-nobinding")
+    facts = ch.FakeRunFacts(env.run_id, binding=None)
+    observed = await ch.observe_terminal(env, facts)
+    assert observed is not None
+    receipt = await env.store.record_sdk_terminal(
+        host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
+        generation=env.admission.generation, terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash, idempotency_key=f"runtime-terminal:{env.admission.host_run_id}",
+        run_binding=None, endpoint_identity=None, outbox_dead_letter_reason=RUN_BINDING_UNAVAILABLE_REASON,
+    )
+    assert receipt.terminal_state.value == "COMPLETED"
+    [(sdk_run_id, _turn, state, attempts, evidence_ids_json, _hash, receipt_json, last_error)] = mh.outbox_rows(env.db_path)
+    assert (sdk_run_id, state, attempts, receipt_json, last_error) == (env.run_id, "dead_letter", 0, None, RUN_BINDING_UNAVAILABLE_REASON)
+    assert json.loads(evidence_ids_json) == [env.evidence_id]
+    [(lineage_json,)] = mh.rows(env.db_path, "SELECT analysis_lineage_json FROM memory_ingestion_outbox")
+    assert json.loads(lineage_json)["binding_missing"] is True
+    assert mh.rows(env.db_path, "SELECT COUNT(*) FROM human_memory_evidence WHERE evidence_id=?", env.evidence_id) == [(1,)]
+    # FIFO 不卡：下一 turn 照常入队/claim/终态（带 binding → pending 行）→ worker 投递它，跳过 dead_letter 行。
+    env2 = await mh.next_turn_run(env, "sdk-run-after", text="下一轮", delivery_key="turn-2")
+    await mh.finish_clean_run(env2)
+    menv = mh.memory_env(env, ch.FakeAdapter([]))
+    assert await menv.worker.run_once() == "delivered"
+    states = dict(mh.rows(env.db_path, "SELECT sdk_run_id,state FROM memory_ingestion_outbox"))
+    assert states == {env.run_id: "dead_letter", env2.run_id: "delivered"}
+    await mh.close(menv)
+
+    # 生产 runtime 的 _terminal_binding：reader 返回无 binding / 抛错 → (None, None) + 审计，不抛。
+    audits: list[tuple[str, dict]] = []
+    runtime = ForegroundRuntimeExecutionAuthority.__new__(ForegroundRuntimeExecutionAuthority)
+    runtime._audit = type("Audit", (), {"record": staticmethod(lambda event, payload: audits.append((event, dict(payload))))})()
+    runtime._endpoint_identity_resolver = None
+    runtime._run_binding_reader = lambda run_id: ch.ClosureRunFacts(binding_record=None, last_assistant_message=None)
+    assert runtime._terminal_binding("sdk-run-x") == (None, None)
+
+    def broken(run_id: str):  # type: ignore[no-untyped-def]
+        raise RuntimeError("stack not ready")
+
+    runtime._run_binding_reader = broken
+    assert runtime._terminal_binding("sdk-run-y") == (None, None)
+    assert [event for event, _ in audits] == ["foreground.runtime.run_binding_unavailable"] * 2
+    assert audits[0][1]["error_code"] == RUN_BINDING_UNAVAILABLE_REASON

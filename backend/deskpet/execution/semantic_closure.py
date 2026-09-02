@@ -142,9 +142,17 @@ def is_material_event(event_kind: str, payload: Mapping[str, object] | None) -> 
         if not isinstance(public, Mapping):
             return False
         tool_name = public.get("tool_name")
-        if public.get("status") == "abandoned":
-            # Task 2 review F-2: an unknown-outcome PROJECT_EFFECT is dirt.
-            return public.get("effect_class") == "project_effect"
+        status = public.get("status")
+        if status is not None:
+            from deskpet.execution.evidence_ingress import MATERIAL_TOMBSTONE_STATUSES
+
+            # Task 2 review F-2 / Task 6: an unknown-outcome or Host-rejected
+            # PROJECT_EFFECT tombstone is dirt (the file may be written); an
+            # SDK-denied (``rejected``) effect never dispatched → trivial.
+            return (
+                status in MATERIAL_TOMBSTONE_STATUSES
+                and public.get("effect_class") == "project_effect"
+            )
         return isinstance(tool_name, str) and tool_name in PROJECT_EFFECT_TOOL_NAMES
     return False
 
@@ -890,16 +898,20 @@ async def force_close_pending(
     captured: dict[str, ClosureReceipt] = {}
 
     async def commit_hook(hook_db: aiosqlite.Connection, _receipt: Any, _replayed: bool) -> None:
-        watermark = await store._fetchone(
-            hook_db, "SELECT event_watermark FROM task_scope_heads WHERE task_scope_id=?", (task_scope_id,)
-        )
-        assert watermark is not None
+        existing = await closure_receipt_for_plan_tx(hook_db, task_scope_id=task_scope_id, plan_id=plan.plan_id)
+        if existing is not None:
+            captured["receipt"] = existing
+            return
+        # Task 3 review F-7: the forced closure only settles the debt the pending
+        # receipt carried — its own ``closure_watermark`` — never the live head
+        # (which may already contain material events of a Run still executing;
+        # those keep the scope dirty for that Run's own closure).
         captured["receipt"] = await write_closure_receipt_tx(
             hook_db,
             task_scope_id=task_scope_id,
             sdk_run_id=latest.sdk_run_id,
             host_run_id=latest.host_run_id,
-            closure_watermark=int(watermark["event_watermark"]),
+            closure_watermark=int(latest.closure_watermark),
             outcome="no_mutation",
             plan_id=plan.plan_id,
             reason_code=HOST_FORCED_REASON_CODE,

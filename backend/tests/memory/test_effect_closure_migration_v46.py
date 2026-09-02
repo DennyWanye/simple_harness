@@ -223,3 +223,83 @@ async def test_v46_tables_are_append_only_with_monotonic_state_guards(tmp_path: 
         with pytest.raises(sqlite3.IntegrityError, match="append_only"):
             conn.execute("UPDATE host_pre_admission_audit SET reason_code='y'")
         conn.commit()
+
+
+
+@pytest.mark.asyncio
+async def test_v46_guard_covers_every_mutable_column(tmp_path: Path) -> None:
+    """Task 6（Task 2 审查 F-5）：单调守卫逐列——outbox 终态冻结 lease/last_error、analysis_lineage_json 为身份列；
+    attempts 的 provider_request_id 写一次、settled 后 reason_code/provider_request_id 冻结、unknown_class 只随
+    终态、handed_off_at 只随 status→handed_off；durable 结果只允许 response→response+envelope 升级一次。"""
+
+    import json as _json
+
+    db = tmp_path / "state.db"
+    await initialize_human_memory_program_state_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO memory_ingestion_outbox(outbox_id,host_run_id,sdk_run_id,turn_id,subject,evidence_ids_json,"
+            "envelope_hash,model_config_hash,analysis_lineage_json,state,attempts,lease_owner,lease_expires_at,receipt_json,"
+            "last_error,created_at,updated_at) VALUES ('o1','host-1','run-1','turn-1','actor-1','[]',?,?,'{}','pending',0,"
+            "NULL,NULL,NULL,NULL,1.0,1.0)",
+            ("a" * 64, "b" * 64),
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="memory_ingestion_outbox_identity_immutable"):
+            conn.execute("UPDATE memory_ingestion_outbox SET analysis_lineage_json='{\"x\":1}' WHERE outbox_id='o1'")
+        # pending → dead_letter 直达（Task 4 审查 F-4：claim 事务内判定不一致行）。
+        conn.execute("UPDATE memory_ingestion_outbox SET state='claimed',lease_owner='w',lease_expires_at=5.0 WHERE outbox_id='o1'")
+        conn.execute("UPDATE memory_ingestion_outbox SET state='delivered',lease_owner=NULL,lease_expires_at=NULL WHERE outbox_id='o1'")
+        for column, value in (("lease_owner", "'w2'"), ("last_error", "'late'"), ("lease_expires_at", "9.0")):
+            with pytest.raises(sqlite3.IntegrityError, match="memory_ingestion_outbox_monotonic"):
+                conn.execute(f"UPDATE memory_ingestion_outbox SET {column}={value} WHERE outbox_id='o1'")
+        conn.execute(
+            "INSERT INTO memory_ingestion_outbox(outbox_id,host_run_id,sdk_run_id,turn_id,subject,evidence_ids_json,"
+            "envelope_hash,model_config_hash,analysis_lineage_json,state,attempts,lease_owner,lease_expires_at,receipt_json,"
+            "last_error,created_at,updated_at) VALUES ('o2','host-1','run-1','turn-2','actor-1','[]',?,?,'{}','pending',0,"
+            "NULL,NULL,NULL,NULL,1.0,1.0)",
+            ("a" * 64, "b" * 64),
+        )
+        conn.execute("UPDATE memory_ingestion_outbox SET state='dead_letter',last_error='mismatch' WHERE outbox_id='o2'")
+
+        # attempts
+        conn.execute(
+            "INSERT INTO post_turn_invocation_attempts(attempt_id,purpose,host_run_id,sdk_run_id,generation,task_scope_id,"
+            "closure_watermark,request_hash,attempt_ordinal,evidence_set_key,status,unknown_class,provider_id,model_id,"
+            "model_config_hash,provider_request_id,result_hash,plan_id,reserved_at,handed_off_at,settled_at,reason_code) "
+            "VALUES ('a1','analysis','host-1','run-1',1,NULL,NULL,?,1,?,'reserved',NULL,'p','m',?,NULL,NULL,NULL,1.0,NULL,NULL,NULL)",
+            ("c" * 64, "d" * 64, "e" * 64),
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+            conn.execute("UPDATE post_turn_invocation_attempts SET handed_off_at=2.0 WHERE attempt_id='a1'")  # 仍 reserved
+        with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+            conn.execute("UPDATE post_turn_invocation_attempts SET unknown_class='sent_unknown' WHERE attempt_id='a1'")
+        conn.execute("UPDATE post_turn_invocation_attempts SET status='handed_off',handed_off_at=2.0 WHERE attempt_id='a1'")
+        with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+            conn.execute("UPDATE post_turn_invocation_attempts SET unknown_class='sent_unknown' WHERE attempt_id='a1'")  # 未终态
+        conn.execute("UPDATE post_turn_invocation_attempts SET provider_request_id='req-1' WHERE attempt_id='a1'")
+        with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+            conn.execute("UPDATE post_turn_invocation_attempts SET provider_request_id='req-2' WHERE attempt_id='a1'")
+        response_only = _json.dumps({"schema_version": 1, "response": {"x": 1}, "envelope": None})
+        with_envelope = _json.dumps({"schema_version": 1, "response": {"x": 1}, "envelope": {"e": 1}})
+        conn.execute(
+            "UPDATE post_turn_invocation_attempts SET status='succeeded',settled_at=3.0,result_hash=?,reason_code='ok',"
+            "result_envelope_json=? WHERE attempt_id='a1'",
+            ("f" * 64, response_only),
+        )
+        for statement in (
+            "UPDATE post_turn_invocation_attempts SET reason_code='changed' WHERE attempt_id='a1'",
+            "UPDATE post_turn_invocation_attempts SET provider_request_id='req-3' WHERE attempt_id='a1'",
+            "UPDATE post_turn_invocation_attempts SET result_hash=? WHERE attempt_id='a1'",
+            "UPDATE post_turn_invocation_attempts SET status='failed' WHERE attempt_id='a1'",
+        ):
+            with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+                conn.execute(statement, ("9" * 64,) if "?" in statement else ())
+        # response-only → response+envelope：允许恰一次（Task 4 审查 F-1）；再改 / 换 response / 置空 → 拒绝。
+        tampered = _json.dumps({"schema_version": 1, "response": {"x": 2}, "envelope": {"e": 1}})
+        with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+            conn.execute("UPDATE post_turn_invocation_attempts SET result_envelope_json=? WHERE attempt_id='a1'", (tampered,))
+        conn.execute("UPDATE post_turn_invocation_attempts SET result_envelope_json=? WHERE attempt_id='a1'", (with_envelope,))
+        for value in (_json.dumps({"schema_version": 1, "response": {"x": 1}, "envelope": {"e": 2}}), None):
+            with pytest.raises(sqlite3.IntegrityError, match="post_turn_invocation_attempt_monotonic"):
+                conn.execute("UPDATE post_turn_invocation_attempts SET result_envelope_json=? WHERE attempt_id='a1'", (value,))
+        conn.commit()

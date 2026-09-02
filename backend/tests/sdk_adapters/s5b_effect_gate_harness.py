@@ -603,11 +603,14 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
     )
     from deskpet.execution.semantic_closure import closure_instruction_for_run
 
+    binding_store = WorkspaceBindingAuthorityStore(db_path)
     authority = ProductRunContextAuthority(
         ports_resolver=lambda: ports,
         exposure_resolver=lambda run_id: exposure,
         ledger=ledger,
         closure_reader=lambda run_id: closure_instruction_for_run(db_path, run_id.value),
+        # Task 6 (AC-3⑥)：≥2 root scope 的 snapshot 不暴露 PROJECT_EFFECT 工具（与生产装配一致）。
+        binding_store=binding_store,
     )
     closure_service = TaskScopeUpdateService(
         db_path,
@@ -616,7 +619,6 @@ async def build_env(tmp_path: Path, *, first_message: str = "继续以前的 A")
     )
     sink = ProductRuntimeDecisionSink(ledger=ledger)
     memo = RunFaultMemo()
-    binding_store = WorkspaceBindingAuthorityStore(db_path)
     task_authority = RecordingTaskExecutionAuthority(
         ProductTaskExecutionAuthority(
             root_resolver=BindingRootResolver(binding_store),

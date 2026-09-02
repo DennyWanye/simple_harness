@@ -8210,10 +8210,11 @@ async def _build_product_sdk_runtime_stack(
     def _analysis_adapter(record):  # type: ignore[no-untyped-def]
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
-        if _sdk_provider_binding_resolver is None:
+        resolver = _resolve_sdk_provider_binding_resolver()
+        if resolver is None:
             raise RuntimeError("sdk_provider_binding_resolver_unavailable")
         binding = SdkRunBindingV1.from_record(record)
-        return _sdk_provider_binding_resolver.build_authority(binding).provider
+        return resolver.build_authority(binding).provider
 
     _human_memory_v7 = HumanMemoryV7Runtime(
         Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
@@ -8785,19 +8786,33 @@ async def _build_product_sdk_runtime_stack(
     # S5b Task 4: Host↔Memory async face (evidence authority / analysis executor /
     # ingestion outbox lane) is part of the same composition; each is a slot.
     _activate_memory_analysis_lane()
-    for slot in (
-        "sdk_run_context_authority",
-        "sdk_runtime_decision_sink",
-        "sdk_task_execution_authority",
-        "sdk_effect_gate",
-        "sdk_closure_instruction_reader",
-        "sdk_evidence_authority",
-        "sdk_memory_analysis_executor",
-        "sdk_memory_ingestion_outbox",
-    ):
-        if service_context.get(slot) is None:
-            raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
+    _assert_sdk_composition_slots()
     return stack
+
+
+# S5b AC-6①: every authority the SDK runtime composition must carry; a missing
+# one is a startup failure (raised from `_activate_product_sdk_runtime`), never
+# a Noop/fake fallback.  Kept as data so the composition test can construct the
+# same check against a real service_context instead of grepping this file.
+SDK_COMPOSITION_SLOTS: tuple[str, ...] = (
+    "sdk_provider_binding_resolver",
+    "sdk_tool_authority_registry",
+    "sdk_run_context_authority",
+    "sdk_runtime_decision_sink",
+    "sdk_task_execution_authority",
+    "sdk_effect_gate",
+    "sdk_closure_instruction_reader",
+    "sdk_evidence_authority",
+    "sdk_memory_analysis_executor",
+    "sdk_memory_ingestion_outbox",
+)
+
+
+def _assert_sdk_composition_slots(context=None) -> None:  # type: ignore[no-untyped-def]
+    registry = service_context if context is None else context
+    for slot in SDK_COMPOSITION_SLOTS:
+        if registry.get(slot) is None:
+            raise RuntimeError(f"sdk_context_authority_composition_missing:{slot}")
 
 
 def _build_run_context_authority(  # type: ignore[no-untyped-def]
@@ -8812,6 +8827,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
 
     from deskpet.execution.semantic_closure import closure_instruction_for_run
     from deskpet.sdk_adapters.context_authority import ProductRunContextAuthority
+    from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
 
     db_path = Path(state_db_path)
 
@@ -8825,10 +8841,24 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         ledger=ledger,
         reconcile=reconcile,
         closure_reader=closure_reader,
+        # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
+        binding_store=WorkspaceBindingAuthorityStore(db_path),
     )
 
 
 _memory_analysis_lane = None
+
+
+def _resolve_sdk_provider_binding_resolver():  # type: ignore[no-untyped-def]
+    """The Run→Provider binding resolver: service_context slot first, module global second.
+
+    S5b Task 6 P0: the slot is registered by `_build_product_sdk_runtime_stack`
+    while the module global is only assigned after the stack is built, so any
+    composition step running during the build must read the slot.
+    """
+
+    resolver = service_context.get("sdk_provider_binding_resolver")
+    return resolver if resolver is not None else _sdk_provider_binding_resolver
 
 
 def _provider_endpoint_identity_for_binding(record):  # type: ignore[no-untyped-def]
@@ -8868,7 +8898,12 @@ def _activate_memory_analysis_lane() -> None:
     evidence_authority = v7_runtime.evidence_authority
     if not isinstance(executor, HostMemoryAnalysisExecutor) or evidence_authority is None:
         raise RuntimeError("sdk_context_authority_composition_missing:sdk_memory_analysis_executor")
-    if _sdk_provider_binding_resolver is None:
+    # S5b Task 6 P0: this runs inside `_build_product_sdk_runtime_stack`, i.e.
+    # BEFORE `_activate_product_sdk_runtime` copies the resolver into the module
+    # global (`_sdk_provider_binding_resolver`), so the global is None on every
+    # real startup.  The builder registered the resolver in service_context a few
+    # lines earlier — that slot is the composition truth here.
+    if _resolve_sdk_provider_binding_resolver() is None:
         raise RuntimeError("sdk_context_authority_composition_missing:sdk_provider_binding_resolver")
     service_context.register("sdk_evidence_authority", evidence_authority)
     service_context.register("sdk_memory_analysis_executor", executor)
@@ -10777,15 +10812,16 @@ async def _activate_product_sdk_runtime(
 
     # Runtime activation is independent of the current Provider chain. Fresh
     # installs can add their first Provider later without replacing the stack.
+    #
+    # S5b Task 6 (AC-6①, Task 4 review F-9 / P0 real-desktop rehearsal): a
+    # composition failure is a startup failure.  Swallowing it as
+    # `product_sdk_runtime_skipped` left the Host running with no SDK runtime
+    # at all (every chat turn then fails later, far from the cause).
     try:
         stack = await _build_product_sdk_runtime_stack(state.generation)
     except Exception as exc:
-        logger.warning(
-            "product_sdk_runtime_skipped",
-            reason=f"build_failed: {exc}",
-            exc_info=True,
-        )
-        return
+        logger.exception("product_sdk_runtime_build_failed", reason=str(exc))
+        raise RuntimeError(f"product_sdk_runtime_build_failed: {exc}") from exc
 
     if state.phase == "activated":
         state = await uow.activate_runtime(command=RuntimeActivationCommand.advance())

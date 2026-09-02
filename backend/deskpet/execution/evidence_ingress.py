@@ -27,9 +27,10 @@ TaskScope archive:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -38,6 +39,7 @@ import aiosqlite
 
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.task_scope.protocol import (
+    TaskScopeProtocolError,
     canonical_hash,
     identifier,
     reject_private_payload,
@@ -61,6 +63,28 @@ RESERVATION_KINDS: frozenset[str] = frozenset(
     }
 )
 RESERVATION_STATUSES: frozenset[str] = frozenset({"reserved", "ingested", "abandoned"})
+# Tombstone ``public_payload.status`` values (the row itself always resolves as
+# ``abandoned``): ``abandoned`` = fact unreadable at Run terminal (PROJECT_EFFECT
+# stays material), ``rejected_fact`` = fact readable but rejected by the Host
+# commit (material likewise), ``rejected`` = the SDK denied the effect after the
+# reservation, nothing dispatched (trivial).
+TOMBSTONE_STATUSES: frozenset[str] = frozenset({"abandoned", "rejected_fact", "rejected"})
+MATERIAL_TOMBSTONE_STATUSES: frozenset[str] = frozenset({"abandoned", "rejected_fact"})
+
+
+_STABLE_CODE = re.compile(r"[a-z][A-Za-z0-9_:.\[\]/-]{0,127}")
+
+
+def _stable_code(exc: BaseException) -> str:
+    """Public reason token of a Host rejection: the specific message when it is a
+    token (``objective_evidence_hash_conflict``, ``credential_value_rejected:…``),
+    else the class-level ``code``, never free text."""
+
+    text = str(exc).strip()
+    if text and _STABLE_CODE.fullmatch(text):
+        return text[:128]
+    code = getattr(exc, "code", None)
+    return str(code or type(exc).__name__)[:128]
 HOST_OBJECTIVE_AUTHORITY_REF = "host:objective-event-recorder:v1"
 HOST_HARNESS_FACT_AUTHORITY_REF = "host:harness-fact-ingress:v1"
 
@@ -296,7 +320,16 @@ class ExecutionEvidenceIngress:
         kind: str,
         source_event_id: str,
         tool_name: str | None = None,
+        pre_commit: Callable[[aiosqlite.Connection], Awaitable[None]] | None = None,
     ) -> EvidenceReservation:
+        """Allocate the Harness ``source_sequence`` before the physical action.
+
+        ``pre_commit`` (S5b Task 6, EffectGate step-5 re-check) runs inside the
+        same ``BEGIN IMMEDIATE`` after the row is written; if it raises, the
+        reservation is rolled back and the exception propagates — nothing is
+        dispatched and no sequence is consumed.
+        """
+
         await self._store.initialize()
         async with self._store._connection() as db:
             await db.execute("BEGIN IMMEDIATE")
@@ -311,11 +344,34 @@ class ExecutionEvidenceIngress:
                     now=self._clock(),
                     tool_name=tool_name,
                 )
+                if pre_commit is not None:
+                    await pre_commit(db)
                 await db.commit()
             except Exception:
                 await db.rollback()
                 raise
         return reservation
+
+    async def abandon_reservation(
+        self,
+        source_event_id: str,
+        *,
+        status: str = "abandoned",
+        reason_code: str | None = None,
+    ) -> bool:
+        """Resolve one still-``reserved`` row right away with a same-kind tombstone.
+
+        Used by the executor when the SDK denied the effect after the
+        reservation (``status='rejected'``: nothing was dispatched, not
+        material).  Returns ``False`` when the row is absent or already
+        resolved.
+        """
+
+        reservation = await self.reservation(source_event_id)
+        if reservation is None or reservation.status != "reserved":
+            return False
+        await self._tombstone(reservation, status=status, reason_code=reason_code)
+        return True
 
     async def reserve_tx(
         self,
@@ -327,6 +383,7 @@ class ExecutionEvidenceIngress:
         source_event_id: str,
         now: float,
         tool_name: str | None = None,
+        reservation_label: str | None = None,
     ) -> EvidenceReservation:
         identifier(run_id, "run_id", 512)
         identifier(task_scope_id, "task_scope_id", 512)
@@ -359,7 +416,9 @@ class ExecutionEvidenceIngress:
         if watermark is not None and watermark["terminal_source_sequence"] is not None:
             raise TaskScopeConflict("execution_after_terminal_rejected")
         sequence = await self._next_sequence_tx(db, run_id)
-        reservation_id = _uuid(f"harness-evidence-reservation:{source_event_id}")
+        reservation_id = _uuid(
+            f"harness-evidence-reservation:{reservation_label or source_event_id}"
+        )
         await db.execute(
             "INSERT INTO harness_evidence_reservations(reservation_id,run_id,task_scope_id,"
             "source_sequence,source_event_id,kind,status,reserved_at,resolved_at,tool_name) "
@@ -520,6 +579,70 @@ class ExecutionEvidenceIngress:
                     evidence_hash=evidence_hash,
                     refs=refs,
                     source_sequence=source_sequence,
+                    now=now,
+                )
+                from deskpet.task_scope.projection_sources import (
+                    append_projection_source_tx,
+                )
+
+                await append_projection_source_tx(db, task_scope_id, now=now)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return self._receipt(row, watermark)
+
+    async def ingest_terminal(
+        self,
+        *,
+        task_scope_id: str,
+        evidence: object,
+    ) -> ExecutionIngestReceipt:
+        """``run_terminal``: reserve ``terminal:{run_id}`` and ingest in ONE transaction (§3).
+
+        S5b Task 6 (Task 2 review F-6): the terminal sequence is allocated by
+        the same reservation protocol as every other Harness fact —
+        ``MAX(reservations ∪ receipts) + 1`` computed under the write lock —
+        instead of a ``next_sequence()`` read outside any transaction.  The
+        reservation row's ``source_event_id`` is the SDK terminal event id (the
+        Host terminal receipt chain is keyed by it); the reservation id is
+        derived from ``terminal:{run_id}`` so one Run has exactly one terminal
+        reservation.  Idempotent on replay (same event id → same row).
+        """
+
+        raw, evidence_hash = validate_execution_evidence(evidence)
+        if raw["kind"] != "run_terminal":
+            raise ValueError("ingest_terminal requires run_terminal evidence")
+        refs = validate_refs(raw["evidence_refs"])
+        run_id = str(raw["run_id"])
+        await self._store.initialize()
+        async with self._store._connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
+            try:
+                now = self._clock()
+                existing = await self._store._fetchone(
+                    db,
+                    "SELECT 1 FROM task_scope_execution_ingest_receipts WHERE source_event_id=?",
+                    (str(raw["event_id"]),),
+                )
+                if existing is None:
+                    await self.reserve_tx(
+                        db,
+                        run_id=run_id,
+                        task_scope_id=task_scope_id,
+                        kind="run_terminal",
+                        source_event_id=str(raw["event_id"]),
+                        now=now,
+                        reservation_label=f"terminal:{run_id}",
+                    )
+                row, watermark = await self._ingest_tx(
+                    db,
+                    task_scope_id=task_scope_id,
+                    raw=raw,
+                    evidence_hash=evidence_hash,
+                    refs=refs,
+                    source_sequence=None,
                     now=now,
                 )
                 from deskpet.task_scope.projection_sources import (
@@ -925,24 +1048,46 @@ class ExecutionEvidenceIngress:
                 subject = await self.scope_subject(reservation.task_scope_id)
                 if subject is None:
                     raise TaskScopeNotFound(TaskScopeNotFound.code)
-                await self.commit_fact(
-                    task_scope_id=reservation.task_scope_id, subject=subject, fact=fact
-                )
-                ingested.append(reservation.source_event_id)
+                try:
+                    await self.commit_fact(
+                        task_scope_id=reservation.task_scope_id, subject=subject, fact=fact
+                    )
+                except (TaskScopeConflict, TaskScopeProtocolError) as exc:
+                    # Task 6 (Task 3 review F-8): a readable fact the Host
+                    # rejects deterministically (objective_evidence_hash_conflict,
+                    # private-payload rejection …) must not strand the Run —
+                    # it is tombstoned as ``rejected_fact`` (same kind, still
+                    # material for a PROJECT_EFFECT) so the terminal converges.
+                    await self._tombstone(
+                        reservation, status="rejected_fact", reason_code=_stable_code(exc)
+                    )
+                    abandoned.append(reservation.source_event_id)
+                else:
+                    ingested.append(reservation.source_event_id)
             else:
                 await self._tombstone(reservation)
                 abandoned.append(reservation.source_event_id)
             self._fault("terminal-watermark")
         return DrainReport(run_id, tuple(ingested), tuple(abandoned))
 
-    async def _tombstone(self, reservation: EvidenceReservation) -> None:
+    async def _tombstone(
+        self,
+        reservation: EvidenceReservation,
+        *,
+        status: str = "abandoned",
+        reason_code: str | None = None,
+    ) -> None:
+        if status not in TOMBSTONE_STATUSES:
+            raise ValueError("reservation_tombstone_status_invalid")
         subject = await self.scope_subject(reservation.task_scope_id)
         if subject is None:
             raise TaskScopeNotFound(TaskScopeNotFound.code)
         public_payload: dict[str, object] = {
-            "status": "abandoned",
+            "status": status,
             "reservation_id": reservation.reservation_id,
         }
+        if reason_code:
+            public_payload["reason_code"] = str(reason_code)[:128]
         if reservation.kind == "tool_invocation" and reservation.tool_name is not None:
             # Task 2 review F-2: keep the Tool identity so a PROJECT_EFFECT whose
             # outcome is unknown at Run terminal stays *material* (the file may

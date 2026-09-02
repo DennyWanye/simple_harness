@@ -1100,21 +1100,37 @@ class WorkspaceBindingAuthorityStore:
         binding_set_receipt_id: str,
         binding_set_receipt_hash: str,
         root_identity_hash: str,
+        db: aiosqlite.Connection | None = None,
     ) -> WorkspaceBindingEffectAuthority:
-        await self.initialize()
-        async with self._connection() as db:
-            receipt_row = await self._fetchone(
-                db,
-                "SELECT receipt_json FROM task_workspace_binding_revisions "
-                "WHERE task_scope_id=? AND binding_set_revision=?",
-                (task_scope_id, binding_set_revision),
-            )
-            root_row = await self._fetchone(
-                db,
-                "SELECT root_json FROM task_workspace_binding_roots WHERE task_scope_id=? "
-                "AND root_identity_hash=? AND first_binding_set_revision<=?",
-                (task_scope_id, root_identity_hash, binding_set_revision),
-            )
+        """Verify one exact binding revision + root membership + live root identity.
+
+        ``db``: an open connection of the caller's read snapshot (S5b Task 6,
+        EffectGate single-snapshot verification); ``None`` opens its own.
+        """
+
+        if db is None:
+            await self.initialize()
+            async with self._connection() as own:
+                return await self.verify_effect_authority(
+                    task_scope_id=task_scope_id,
+                    binding_set_revision=binding_set_revision,
+                    binding_set_receipt_id=binding_set_receipt_id,
+                    binding_set_receipt_hash=binding_set_receipt_hash,
+                    root_identity_hash=root_identity_hash,
+                    db=own,
+                )
+        receipt_row = await self._fetchone(
+            db,
+            "SELECT receipt_json FROM task_workspace_binding_revisions "
+            "WHERE task_scope_id=? AND binding_set_revision=?",
+            (task_scope_id, binding_set_revision),
+        )
+        root_row = await self._fetchone(
+            db,
+            "SELECT root_json FROM task_workspace_binding_roots WHERE task_scope_id=? "
+            "AND root_identity_hash=? AND first_binding_set_revision<=?",
+            (task_scope_id, root_identity_hash, binding_set_revision),
+        )
         if receipt_row is None or root_row is None:
             raise WorkspaceBindingError("workspace_binding_effect_authority_missing")
         receipt = WorkspaceBindingSetReceipt.from_json(json.loads(str(receipt_row["receipt_json"])))
@@ -1135,7 +1151,7 @@ class WorkspaceBindingAuthorityStore:
         )
 
     async def verify_route_binding(
-        self, receipt: ContextRouteReceipt
+        self, receipt: ContextRouteReceipt, *, db: aiosqlite.Connection | None = None
     ) -> WorkspaceBindingSetReceipt:
         """Verify a schema-v2 project route against one exact immutable binding receipt."""
 
@@ -1147,14 +1163,16 @@ class WorkspaceBindingAuthorityStore:
             or receipt.binding_set_receipt_hash is None
         ):
             raise WorkspaceBindingError("workspace_binding_route_authority_missing")
-        await self.initialize()
-        async with self._connection() as db:
-            row = await self._fetchone(
-                db,
-                "SELECT receipt_json FROM task_workspace_binding_revisions "
-                "WHERE task_scope_id=? AND binding_set_revision=?",
-                (receipt.task_scope_id, receipt.binding_set_revision),
-            )
+        if db is None:
+            await self.initialize()
+            async with self._connection() as own:
+                return await self.verify_route_binding(receipt, db=own)
+        row = await self._fetchone(
+            db,
+            "SELECT receipt_json FROM task_workspace_binding_revisions "
+            "WHERE task_scope_id=? AND binding_set_revision=?",
+            (receipt.task_scope_id, receipt.binding_set_revision),
+        )
         if row is None:
             raise WorkspaceBindingError("workspace_binding_route_authority_missing")
         durable = WorkspaceBindingSetReceipt.from_json(json.loads(str(row["receipt_json"])))
@@ -1169,12 +1187,18 @@ class WorkspaceBindingAuthorityStore:
         self,
         envelope: TaskExecutionEnvelope,
         route_receipt: ContextRouteReceipt,
+        *,
+        db: aiosqlite.Connection | None = None,
     ) -> WorkspaceBindingEffectAuthority:
-        """Verify route→envelope→binding-set lineage before a physical project effect."""
+        """Verify route→envelope→binding-set lineage before a physical project effect.
+
+        ``db`` lets the EffectGate run the whole verification (route binding,
+        exact revision, root membership) inside one read snapshot.
+        """
 
         if not isinstance(envelope, TaskExecutionEnvelope):
             raise TypeError("envelope must use TaskExecutionEnvelope")
-        durable = await self.verify_route_binding(route_receipt)
+        durable = await self.verify_route_binding(route_receipt, db=db)
         exact = (
             (envelope.run_id.value, route_receipt.run_id),
             (envelope.route_receipt_id, route_receipt.receipt_id),
@@ -1197,21 +1221,26 @@ class WorkspaceBindingAuthorityStore:
             binding_set_receipt_id=envelope.binding_set_receipt_id,
             binding_set_receipt_hash=envelope.binding_set_receipt_hash,
             root_identity_hash=envelope.root_identity_hash,
+            db=db,
         )
         if envelope.root_id != authority.root.root_id:
             raise WorkspaceBindingError("workspace_binding_envelope_root_mismatch")
         return authority
 
-    async def current_receipt(self, task_scope_id: str) -> WorkspaceBindingSetReceipt:
-        await self.initialize()
-        async with self._connection() as db:
-            row = await self._fetchone(
-                db,
-                "SELECT r.receipt_json FROM task_workspace_binding_heads h "
-                "JOIN task_workspace_binding_revisions r "
-                "ON r.receipt_id=h.current_receipt_id WHERE h.task_scope_id=?",
-                (task_scope_id,),
-            )
+    async def current_receipt(
+        self, task_scope_id: str, *, db: aiosqlite.Connection | None = None
+    ) -> WorkspaceBindingSetReceipt:
+        if db is None:
+            await self.initialize()
+            async with self._connection() as own:
+                return await self.current_receipt(task_scope_id, db=own)
+        row = await self._fetchone(
+            db,
+            "SELECT r.receipt_json FROM task_workspace_binding_heads h "
+            "JOIN task_workspace_binding_revisions r "
+            "ON r.receipt_id=h.current_receipt_id WHERE h.task_scope_id=?",
+            (task_scope_id,),
+        )
         if row is None:
             raise TaskScopeNotFound("workspace_binding_set_not_found")
         return WorkspaceBindingSetReceipt.from_json(json.loads(str(row["receipt_json"])))

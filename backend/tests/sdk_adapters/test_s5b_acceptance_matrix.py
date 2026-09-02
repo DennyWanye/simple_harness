@@ -544,7 +544,10 @@ async def test_material_event_sets_dirty_state_from_last_closure_receipt(tmp_pat
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("sdk_state,terminal", [("completed", "COMPLETED"), ("failed", "FAILED")])
+@pytest.mark.parametrize(
+    "sdk_state,terminal",
+    [("completed", "COMPLETED"), ("failed", "FAILED"), ("cancelled", "CANCELLED"), ("cancelled", "STOPPED")],
+)
 async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state: str, terminal: str) -> None:
     """Task 3（S5B-AC-1③ 三水位）：Harness 证据水位放行后，语义收敛水位仍要求 closure receipt。
 
@@ -559,6 +562,18 @@ async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state:
 
     env = await ch.bound_run(tmp_path, "sdk-run-gate")
     await ch.material_write(env, "e-1")
+    if terminal == "STOPPED":
+        # Task 6（Task 3 审查 F-9.1）：STOP 意图下 SDK cancelled → Host STOPPED，门同样生效。
+        from deskpet.execution.foreground_queue import EffectBoundary
+
+        await env.store.request_control(
+            host_run_id=env.admission.host_run_id, subject=ch.SUBJECT, generation=env.admission.generation,
+            control_kind="stop", reason="user_stop", idempotency_key="stop-gate",
+        )
+        await env.store.authorize_effect(
+            host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id, owner_id=env.admission.owner_id,
+            generation=env.admission.generation, boundary=EffectBoundary.TOOL,
+        )
     facts = ch.FakeRunFacts(env.run_id, state=sdk_state)
     observed = await ch.observe_terminal(env, facts)
     assert observed is not None and observed.terminal_state.value == terminal
@@ -570,7 +585,9 @@ async def test_terminal_gate_requires_closure_receipt(tmp_path: Path, sdk_state:
         await ch.record_terminal(env, observed)
     assert blocked.value.code == "foreground_terminal_closure_pending"
     assert ch.rows(env.db_path, "SELECT COUNT(*) FROM foreground_terminal_receipts") == before
-    assert ch.rows(env.db_path, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", env.admission.host_run_id) == [("RUNNING",)]
+    assert ch.rows(env.db_path, "SELECT current_state FROM foreground_run_heads WHERE host_run_id=?", env.admission.host_run_id) == [
+        ("STOP_REQUESTED" if terminal == "STOPPED" else "RUNNING",)
+    ]
 
     # 本 Run 的 pending receipt（兜底失败/非 COMPLETED 终态）→ 终态照常提交，脏标记仍在。
     await write_closure_receipt(
@@ -698,7 +715,11 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
         "ORDER BY source_sequence",
         run_id,
     )
-    assert statuses == [("prov-1", "ingested"), ("tool-2", "ingested"), ("snap-3", "abandoned")]
+    # Task 6（Task 2 审查 F-6）：run_terminal 同样走预留协议（seq4 预留 + 同事务导入）。
+    assert statuses == [
+        ("prov-1", "ingested"), ("tool-2", "ingested"), ("snap-3", "abandoned"),
+        ("sdk-terminal-a9", "ingested"),
+    ]
     gate = await ingress.authorize_terminal(run_id)
     assert gate.durable_source_sequence == gate.terminal_source_sequence == 4
     # 重放排空（crash 后新 owner）：幂等，无新行。
@@ -854,7 +875,6 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
     同事务；sent_unknown → durable pending(closure_attempt_unknown)，重启/新 owner 重放 0 重发；
     timeout/拒绝 → pending 且 Host 终态照常提交。
     """
-    import asyncio
 
     from simple_harness.providers.errors import ProviderTimeoutError
 
@@ -899,9 +919,11 @@ async def test_missed_call_fallback_invokes_once_and_unknown_never_resends(tmp_p
 
     # ② sent_unknown（请求已发出，结果不明）→ pending(closure_attempt_unknown)，终态照常；
     #    重启（新 fallback/invoker 实例）重放 → 绝不重发（Provider 计数不变）。
+    from simple_harness.providers.errors import ProviderCancelledError
+
     env2 = await ch.bound_run(tmp_path / "two", "sdk-run-fb-2")
     await ch.material_write(env2, "e-2")
-    adapter2 = ch.FakeAdapter([asyncio.CancelledError()])
+    adapter2 = ch.FakeAdapter([ProviderCancelledError()])
     facts2 = ch.FakeRunFacts(env2.run_id)
     observed2 = await ch.observe_terminal(env2, facts2)
     fallback2, _ = ch.build_fallback(env2, facts2, adapter2)
@@ -1293,11 +1315,284 @@ def test_analysis_proposal_span_derivation_rejects_paraphrase() -> None:
 
 
 # ---- S5B-AC-6 / Task 6：composition、cutover ----
-@XF
-def test_composition_missing_piece_startup_fail_each() -> None:
-    raise NotImplementedError
+def test_composition_missing_piece_startup_fail_each(tmp_path: Path) -> None:
+    """AC-6①：逐槽缺件 → 真构造断言 startup stable fail（不是源码 grep、不是 warning+skip）。
+
+    ① 生产装配的缺槽断言 ``main._assert_sdk_composition_slots`` 对真实 ``ServiceContext`` 逐槽置 None →
+       ``sdk_context_authority_composition_missing:<slot>``；② ``EffectGate`` 构造期逐件缺失 → TypeError；
+    ③ ``ProductRunContextAuthority`` 缺 closure_reader 由 ``_build_run_context_authority`` 保证非 None；
+    ④ ``_activate_product_sdk_runtime`` 把构建异常 raise（见 test_composition 的真实启动顺序用例）。"""
+
+    import main
+    from context import ServiceContext
+    from deskpet.sdk_adapters.effect_gate import EffectGate
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+    context = ServiceContext()
+    for slot in main.SDK_COMPOSITION_SLOTS:
+        context.register(slot, object())
+    main._assert_sdk_composition_slots(context)
+    assert {"sdk_effect_gate", "sdk_task_execution_authority", "sdk_closure_instruction_reader",
+            "sdk_evidence_authority", "sdk_memory_analysis_executor", "sdk_memory_ingestion_outbox",
+            "sdk_provider_binding_resolver"} <= set(main.SDK_COMPOSITION_SLOTS)
+    for slot in main.SDK_COMPOSITION_SLOTS:
+        probe = ServiceContext()
+        for other in main.SDK_COMPOSITION_SLOTS:
+            probe.register(other, None if other == slot else object())
+        with pytest.raises(RuntimeError, match=f"sdk_context_authority_composition_missing:{slot}$"):
+            main._assert_sdk_composition_slots(probe)
+    # ② EffectGate 真构造：任一件缺失 → TypeError（stack 构建期即失败）。
+    pieces = {
+        "binding_store": object(), "route_ledger": object(),
+        "scope_store": CanonicalTaskScopeStore(tmp_path / "s.db"),
+        "authority_resolver": lambda run_id: None, "exposure_resolver": lambda run_id: None,
+    }
+    EffectGate(**pieces)
+    for name in pieces:
+        with pytest.raises(TypeError, match=f"sdk_effect_gate_composition_missing:{name}"):
+            EffectGate(**{**pieces, name: None})
+    # ③ 生产 builder 的 closure_reader 非 None（Task 3 审查 F-2 的真对象断言在 test_composition）。
+    source = Path(main.__file__).read_text(encoding="utf-8")
+    assert "_assert_sdk_composition_slots()" in source.split("def _build_product_sdk_runtime_stack")[1]
 
 
-@XF
-def test_v46_forward_migration_and_old_runtime_rejects() -> None:
-    raise NotImplementedError
+@pytest.mark.asyncio
+async def test_v46_forward_migration_and_old_runtime_rejects(tmp_path: Path, monkeypatch) -> None:
+    """AC-6②：v45 → v46 前向（旧行/evidence 守恒）、旧 runtime 打开 v46 稳定拒绝、rollback drill 不删 evidence。
+    决定性用例集合在 tests/memory/test_s5b_v46_cutover.py（Task 8 record-run --exec）；此处直接调用。"""
+
+    from tests.memory import test_s5b_v46_cutover as cutover
+
+    await cutover.test_v46_forward_migration_and_rollback_drill_keep_evidence(tmp_path, monkeypatch)
+
+
+
+# ---- S5b Task 6：Task 3 审查 F-7 / F-9.5 ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_force_close_does_not_swallow_in_flight_run_dirty(tmp_path: Path) -> None:
+    """F-7：Run A 留下 pending(W)；Run B 同 scope 执行中已写文件（新 material 事件）；此时 Host checkpoint /
+    complete 强制收口 → receipt 水位 = pending 承载的 W（不是 head），B 的事件仍脏、由 B 自己收口。"""
+
+    from deskpet.execution.semantic_closure import (
+        dirty_state,
+        force_close_pending,
+        pending_receipts,
+    )
+    from deskpet.task_scope.store import CanonicalTaskScopeStore
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, "sdk-run-a")
+    await ch.material_write(env, "e-a1")
+    facts = ch.FakeRunFacts(env.run_id)
+    observed = await ch.observe_terminal(env, facts)
+    fallback, _ = ch.build_fallback(env, facts, ch.FakeAdapter([ch.plain_answer()]))
+    settled = await ch.settle(env, fallback)
+    assert settled.status == "pending"
+    await ch.record_terminal(env, observed)
+    store = CanonicalTaskScopeStore(env.db_path)
+    [pending] = await pending_receipts(store, ch.SCOPE)
+    pending_watermark = pending.closure_watermark
+
+    # Run B（同 scope）执行中：两条 material 事件落在 pending 水位之后。
+    env_b = await ch.next_run(env, "sdk-run-b")
+    await ch.material_write(env_b, "e-b1", path="b1.txt")
+    await ch.material_write(env_b, "e-b2", path="b2.txt")
+    before = await dirty_state(store, ch.SCOPE)
+    assert {e.source_event_id for e in before.material_events} >= {"execution:effect:e-b1", "execution:effect:e-b2"}
+
+    receipt = await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT)
+    assert receipt is not None and receipt.outcome == "no_mutation"
+    assert receipt.closure_watermark == pending_watermark
+    after = await dirty_state(store, ch.SCOPE)
+    assert after.is_dirty
+    assert {e.source_event_id for e in after.material_events} >= {"execution:effect:e-b1", "execution:effect:e-b2"}
+    assert "execution:effect:e-a1" not in {e.source_event_id for e in after.material_events}
+    # pending 已被清（不再重复强制收口）；幂等重放不再写第二条 receipt。
+    assert not await pending_receipts(store, ch.SCOPE)
+    assert await force_close_pending(env.db_path, task_scope_id=ch.SCOPE, subject=ch.SUBJECT) is None
+    receipts = ch.receipts(env.db_path)
+    assert [r[2] for r in receipts].count("no_mutation") == 1
+    # B 自己的收口覆盖 B 的事件。
+    facts_b = ch.FakeRunFacts(env_b.run_id)
+    observed_b = await ch.observe_terminal(env_b, facts_b)
+    refs = ch.scope_evidence_ids(env.db_path)
+    revision, _ = ch.head(env.db_path)
+    fallback_b, _ = ch.build_fallback(env_b, facts_b, ch.FakeAdapter([ch.closure_call(ch.mutate_arguments(refs, base_revision=revision, idempotency_key="closure-b"))]))
+    settled_b = await ch.settle(env_b, fallback_b)
+    assert settled_b.status == "mutate"
+    assert not (await dirty_state(store, ch.SCOPE)).is_dirty
+    await ch.record_terminal(env_b, observed_b)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_reserve_from_two_connections_never_double_allocates(tmp_path: Path) -> None:
+    """F-9.5：两个 ``ExecutionEvidenceIngress``（两条连接）真正并发 ``reserve`` → 序号互不重复、无冲突；
+    幂等重放同 source 得同序号；UNIQUE(run_id, source_sequence) 兜底。"""
+
+    import asyncio
+
+    from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+    from tests.sdk_adapters import s5b_closure_harness as ch
+
+    env = await ch.bound_run(tmp_path, "sdk-run-concurrent")
+    a = ExecutionEvidenceIngress(env.db_path)
+    b = ExecutionEvidenceIngress(env.db_path)
+    reservations = await asyncio.gather(*[
+        (a if index % 2 == 0 else b).reserve(
+            run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id=f"effect:c-{index}",
+            tool_name="write_file",
+        )
+        for index in range(12)
+    ])
+    sequences = sorted(r.source_sequence for r in reservations)
+    assert sequences == list(range(1, 13))
+    assert len({r.reservation_id for r in reservations}) == 12
+    # 幂等重放（并发再来一轮同 source）→ 同序号，无新行。
+    replay = await asyncio.gather(*[
+        (b if index % 2 == 0 else a).reserve(
+            run_id=env.run_id, task_scope_id=ch.SCOPE, kind="tool_invocation", source_event_id=f"effect:c-{index}",
+        )
+        for index in range(12)
+    ])
+    assert sorted(r.source_sequence for r in replay) == sequences
+    assert ch.rows(env.db_path, "SELECT COUNT(*) FROM harness_evidence_reservations WHERE run_id=?", env.run_id) == [(12,)]
+
+
+
+# ---- S5B-S4 / AC-3⑥（A6）：单根 per-canary 口径 + ≥2 root scope 写工具不可见 ----
+
+
+def _root_hash(root: Path) -> str:
+    import hashlib as _hashlib
+
+    digest = _hashlib.sha256()
+    for path in sorted(p for p in root.rglob("*") if p.is_file()):
+        digest.update(str(path.relative_to(root)).encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_s5b_s4_single_root_per_canary_and_multi_root_hidden(tmp_path: Path) -> None:
+    """TC-HM-09 步骤 6（S5b 口径）：每个 canary root 一个单根 scope 逐一执行，每个 canary envelope 绑定 exact
+    task_scope_id / root ref / 当时 revision 并留逐 root hash；**追加断言**：≥2 root scope 的写工具不出现在
+    snapshot tools，强制调用 → 整 Run 故障 + 稳定码 ``sdk_task_execution_root_authority_ambiguous``（durable
+    FAILED 由 terminal observer 携带），两根 canary hash 均不变；Run 内 append 后 superseded sticky 至下一 route。"""
+
+    from deskpet.execution import RunState
+    from deskpet.execution.foreground_queue import ForegroundQueueStore
+    from deskpet.execution.foreground_runtime import SqliteSdkTerminalObserver
+    from deskpet.sdk_adapters.effect_gate import EFFECT_GATE_STICKY_REASON
+    from deskpet.sdk_adapters.task_execution import TaskExecutionAuthorityError
+    from tests.execution import test_foreground_queue as fq
+    from tests.sdk_adapters import s5b_effect_gate_harness as h
+    from tests.sdk_adapters.test_effect_gate import _code, _context
+
+    canaries: dict[str, dict] = {}
+    for tag in ("a", "b"):
+        env = await h.build_env(tmp_path / tag)
+        scope, root = await h.make_bound_scope(env, tag, f"root-{tag}")
+        h.freeze_run(env, task_scope_id=scope, workspace_root=root)
+        provider = h.ScriptedProvider(
+            [
+                h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope}, raw_id=f"raw-route-{tag}"),
+                h.tool_call("write_file", {"path": f"canary-{tag}.txt", "content": f"canary {tag}"}, raw_id=f"raw-write-{tag}"),
+                h.answer("done"),
+            ]
+        )
+        out = await h.run_capture(env, provider)
+        assert out["exception"] is None and out["result"].termination.route_state == "routed_task"
+        [record] = env.effects.write_file_calls
+        envelope = record["envelope"]
+        head = await env.binding_store.current_receipt(scope)
+        # envelope 绑定 exact scope / root ref / 当时 revision（单根 scope：恰一 root）。
+        assert envelope.task_scope_id == scope and envelope.binding_set_revision == 1 == head.binding_set_revision
+        assert envelope.root_id == head.appended_root.root_id
+        assert envelope.root_identity_hash == head.root_identity_hashes[0] and len(head.root_identity_hashes) == 1
+        assert (root / f"canary-{tag}.txt").read_text(encoding="utf-8") == f"canary {tag}"
+        canaries[tag] = {"env": env, "scope": scope, "root": root, "hash": _root_hash(root), "envelope": envelope}
+    assert canaries["a"]["hash"] != canaries["b"]["hash"]
+
+    # ≥2 root scope：写工具不在任何一轮 snapshot tools 里；强制调用 → 整 Run 故障（零写入）。
+    env_c = await h.build_env(tmp_path / "c")
+    scope_c, root_c1 = await h.make_bound_scope(env_c, "c", "root-c1")
+    root_c2 = env_c.workspace_base / "root-c2"
+    root_c2.mkdir(parents=True)
+    await h.bind_scope_root(env_c.db_path, scope_c, root_c2, base_revision=1, tag="c2")
+    assert len((await env_c.binding_store.current_receipt(scope_c)).root_identity_hashes) == 2
+    h.freeze_run(env_c, task_scope_id=scope_c, workspace_root=None)  # 多 root 冻结 = projectless
+    provider_c = h.ScriptedProvider(
+        [
+            h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope_c}, raw_id="raw-route-c"),
+            h.tool_call("write_file", {"path": "forced.txt", "content": "must not land"}, raw_id="raw-write-c"),
+            h.answer("never reached"),
+        ]
+    )
+    out_c = await h.run_capture(env_c, provider_c)
+    exposed = h.provider_tool_names(provider_c)
+    assert len(exposed) == 2  # UNROUTED 轮 + ROUTED_TASK（多 root）轮
+    for names in exposed:
+        assert "write_file" not in names and {"context_route", "task_scope_search", "read_file"} <= set(names)
+    exc = out_c["exception"]
+    assert isinstance(exc, TaskExecutionAuthorityError)
+    assert exc.code == "sdk_task_execution_root_authority_ambiguous"
+    assert env_c.effects.calls == ["context_route"] and env_c.effects.write_file_calls == []
+    assert not (root_c1 / "forced.txt").exists() and not (root_c2 / "forced.txt").exists()
+    assert env_c.memo.read(h.RUN.value) == "sdk_task_execution_root_authority_ambiguous"
+    # 两根 canary hash 均不变。
+    for tag in ("a", "b"):
+        assert _root_hash(canaries[tag]["root"]) == canaries[tag]["hash"]
+
+    # durable FAILED：run_terminal.public_payload.error_code 携带稳定码。
+    queue_db, primary_id, clock = await fq._ready(tmp_path / "queue")
+    store = ForegroundQueueStore(queue_db, clock=clock)
+    await fq._enqueue(store, primary_id, 1)
+    admission = await fq._claim_and_bind(store, sdk_run_id=h.RUN.value)
+    await store.record_sdk_started(
+        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, owner_id=admission.owner_id,
+        generation=admission.generation, sdk_event_id="sdk-start-s4", idempotency_key="sdk-start-s4",
+    )
+
+    class _Ingress:
+        async def wait_idle(self, run_id: str) -> None:
+            assert run_id == h.RUN.value
+
+        def query(self, run_id: str):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(state=SimpleNamespace(value="failed"))
+
+    class _Stack:
+        def read_run_terminal_evidence(self, run_id: str):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(
+                run_id=run_id, state="failed", event_id="sdk-terminal-s4", event_hash="6" * 64,
+                occurred_at=101.0, error_code="driver_failed",
+            )
+
+    observed = await SqliteSdkTerminalObserver(str(queue_db), _Ingress(), _Stack(), run_fault_memo=env_c.memo).observe(  # type: ignore[arg-type]
+        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, subject=fq.SUBJECT,
+        owner_id=admission.owner_id, generation=admission.generation,
+    )
+    assert observed is not None and observed.terminal_state is RunState.FAILED
+    terminal = await store.record_sdk_terminal(
+        host_run_id=admission.host_run_id, sdk_run_id=h.RUN.value, owner_id=admission.owner_id,
+        generation=admission.generation, terminal_state=observed.terminal_state, sdk_event_id=observed.sdk_event_id,
+        sdk_event_hash=observed.sdk_event_hash, idempotency_key="terminal-s4",
+    )
+    assert terminal.terminal_state is RunState.FAILED
+    [(payload_json,)] = h.rows(
+        queue_db,
+        "SELECT e.payload_json FROM task_scope_execution_ingest_receipts r JOIN task_scope_events e ON e.event_id=r.event_id "
+        "WHERE r.run_id=? AND r.evidence_kind='run_terminal'",
+        h.RUN.value,
+    )
+    assert json.loads(payload_json)["public_payload"]["error_code"] == "sdk_task_execution_root_authority_ambiguous"
+
+    # Run 内 Manual append（同 scope）→ 后续项目 effect superseded（strict），sticky 至下一 route。
+    env_a, scope_a, root_a, envelope_a = (canaries["a"][k] for k in ("env", "scope", "root", "envelope"))
+    root_a2 = env_a.workspace_base / "root-a2"
+    root_a2.mkdir(parents=True)
+    await h.bind_scope_root(env_a.db_path, scope_a, root_a2, base_revision=1, tag="a2")
+    assert _code(await env_a.gate.verify(_context(envelope_a), "write_file")) == "workspace_binding_receipt_superseded"
+    assert _code(await env_a.gate.verify(_context(envelope_a), "write_file")) == EFFECT_GATE_STICKY_REASON
+    assert _root_hash(root_a) == canaries["a"]["hash"]

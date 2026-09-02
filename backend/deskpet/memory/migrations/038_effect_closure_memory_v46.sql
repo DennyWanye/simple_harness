@@ -203,14 +203,22 @@ BEGIN
              OR NEW.evidence_ids_json <> OLD.evidence_ids_json
              OR NEW.envelope_hash <> OLD.envelope_hash
              OR NEW.model_config_hash <> OLD.model_config_hash
+             OR NEW.analysis_lineage_json <> OLD.analysis_lineage_json
              OR NEW.created_at <> OLD.created_at
         THEN RAISE(ABORT,'memory_ingestion_outbox_identity_immutable')
         WHEN NEW.state <> OLD.state AND NOT (
-             (OLD.state = 'pending' AND NEW.state = 'claimed')
+             (OLD.state = 'pending' AND NEW.state IN ('claimed','dead_letter'))
              OR (OLD.state = 'claimed' AND NEW.state IN ('pending','delivered','dead_letter')))
         THEN RAISE(ABORT,'memory_ingestion_outbox_monotonic')
+        -- Task 6 (Task 2 review F-5): a terminal row is frozen in every mutable
+        -- column, not only attempts / receipt_json.
         WHEN OLD.state IN ('delivered','dead_letter') AND (
-             NEW.attempts <> OLD.attempts OR NEW.receipt_json IS NOT OLD.receipt_json)
+             NEW.attempts <> OLD.attempts
+             OR NEW.receipt_json IS NOT OLD.receipt_json
+             OR NEW.last_error IS NOT OLD.last_error
+             OR NEW.lease_owner IS NOT OLD.lease_owner
+             OR NEW.lease_expires_at IS NOT OLD.lease_expires_at
+             OR NEW.state <> OLD.state)
         THEN RAISE(ABORT,'memory_ingestion_outbox_monotonic')
         WHEN NEW.attempts < OLD.attempts
         THEN RAISE(ABORT,'memory_ingestion_outbox_monotonic')
@@ -239,15 +247,36 @@ BEGIN
              (OLD.status = 'reserved' AND NEW.status IN ('handed_off','failed'))
              OR (OLD.status = 'handed_off' AND NEW.status IN ('succeeded','failed','unknown')))
         THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
+        -- Task 6 (Task 2 review F-5): a settled row freezes every audit column;
+        -- the durable result may only grow from "response only" to
+        -- "response + envelope" exactly once (Task 4 review F-1: the Provider
+        -- response is settled before derivation, the envelope attached after).
         WHEN OLD.status IN ('succeeded','failed','unknown') AND (
-             NEW.settled_at IS NOT OLD.settled_at
+             NEW.status <> OLD.status
+             OR NEW.settled_at IS NOT OLD.settled_at
              OR NEW.unknown_class IS NOT OLD.unknown_class
              OR NEW.result_hash IS NOT OLD.result_hash
              OR NEW.plan_id IS NOT OLD.plan_id
+             OR NEW.reason_code IS NOT OLD.reason_code
+             OR NEW.provider_request_id IS NOT OLD.provider_request_id
              OR (OLD.result_envelope_json IS NOT NULL
-                 AND NEW.result_envelope_json IS NOT OLD.result_envelope_json))
+                 AND NEW.result_envelope_json IS NOT OLD.result_envelope_json
+                 AND (NEW.result_envelope_json IS NULL
+                      OR json_extract(OLD.result_envelope_json, '$.envelope') IS NOT NULL
+                      OR json_extract(NEW.result_envelope_json, '$.envelope') IS NULL
+                      OR json_extract(NEW.result_envelope_json, '$.response')
+                         IS NOT json_extract(OLD.result_envelope_json, '$.response'))))
         THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
+        -- provider_request_id: write-once (never rewritten once known).
+        WHEN OLD.provider_request_id IS NOT NULL AND NEW.provider_request_id IS NOT OLD.provider_request_id
+        THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
+        -- unknown_class only travels with a terminal status.
+        WHEN NEW.unknown_class IS NOT OLD.unknown_class AND NEW.status NOT IN ('failed','unknown')
+        THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
+        -- handed_off_at: write-once, and only together with status → handed_off.
         WHEN OLD.handed_off_at IS NOT NULL AND NEW.handed_off_at IS NOT OLD.handed_off_at
+        THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
+        WHEN OLD.handed_off_at IS NULL AND NEW.handed_off_at IS NOT NULL AND NEW.status <> 'handed_off'
         THEN RAISE(ABORT,'post_turn_invocation_attempt_monotonic')
     END;
 END;

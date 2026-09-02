@@ -596,17 +596,22 @@ class ContextRouteLedgerStore:
             await db.close()
 
 
-    async def read_route_receipt(self, sdk_run_id: str, receipt_id: str) -> Any | None:
+    async def read_route_receipt(
+        self, sdk_run_id: str, receipt_id: str, *, db: Any | None = None
+    ) -> Any | None:
         """Return the durable ``ContextRouteReceipt`` recorded for one Run (S5b gate step 4).
 
         The v45 decision row is the Host's own frozen route authority; the gate
         verifies the effect envelope against it instead of trusting the
-        envelope's echo of the receipt.
+        envelope's echo of the receipt.  ``db`` (Task 6): read inside the
+        caller's snapshot instead of a private connection.
         """
 
         from simple_harness.execution.context_authority import ContextRouteReceipt
 
-        db = await self._connect()
+        own = db is None
+        if own:
+            db = await self._connect()
         try:
             cursor = await db.execute(
                 "SELECT receipt_json FROM context_route_decisions "
@@ -616,7 +621,8 @@ class ContextRouteLedgerStore:
             row = await cursor.fetchone()
             await cursor.close()
         finally:
-            await db.close()
+            if own:
+                await db.close()
         if row is None:
             return None
         return ContextRouteReceipt.from_json(json.loads(str(row[0])))
@@ -960,7 +966,9 @@ def _plan_turn_messages(
     return tuple(kept_messages), facts
 
 
-def _visible_provider_specs(exposure: Any, run_id: Any, route_state: Any) -> tuple:
+def _visible_provider_specs(
+    exposure: Any, run_id: Any, route_state: Any, *, hide_project_effects: bool = False
+) -> tuple:
     """Per-turn model-visible Tool specs.
 
     S5b Task 1 (design-freeze §4, 整 Run 故障降概率): until the Run is
@@ -972,13 +980,16 @@ def _visible_provider_specs(exposure: Any, run_id: Any, route_state: Any) -> tup
     snapshot fingerprint is computed from the shrunk list, so the SDK
     three-hash chain stays consistent.  An exposure without ``execution_policy``
     cannot classify and is passed through unchanged.
+
+    ``hide_project_effects`` (S5b Task 6, AC-3⑥): the routed scope's exact
+    binding set holds ≥2 roots — the same shrink applies under ROUTED_TASK.
     """
 
     from simple_harness.execution.context_authority import ContextRouteState
     from simple_harness.tools.runtime_catalog import ToolEffectClass
 
     specs = tuple(exposure.provider_specs(run_id))
-    if ContextRouteState(route_state) is ContextRouteState.ROUTED_TASK:
+    if ContextRouteState(route_state) is ContextRouteState.ROUTED_TASK and not hide_project_effects:
         return specs
     policy_reader = getattr(exposure, "execution_policy", None)
     if not callable(policy_reader):
@@ -1002,6 +1013,7 @@ class ProductRunContextAuthority:
         ledger: ContextRouteLedgerStore,
         reconcile: Any = None,
         closure_reader: Any = None,
+        binding_store: Any = None,
     ) -> None:
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
@@ -1011,6 +1023,37 @@ class ProductRunContextAuthority:
         # "closure required" instruction when the Run's admission scope is
         # dirty or has pending receipts.  Text only; never Tool visibility.
         self._closure_reader = closure_reader
+        # S5b Task 6 (AC-3⑥ / A6, OOS-MULTI-ROOT-SELECTION): the S4 binding
+        # store lets the snapshot hide PROJECT_EFFECT Tools when the routed
+        # scope's exact binding set holds ≥2 roots — the multi-root selection
+        # protocol is out of scope, so a write there is a whole-Run fault
+        # (``sdk_task_execution_root_authority_ambiguous``); not offering the
+        # Tools keeps the model from walking into it.
+        self._binding_store = binding_store
+
+    async def _hide_project_effects(self, request: Any) -> bool:
+        """True when the ROUTED_TASK receipt's exact binding set holds ≥2 roots."""
+
+        from simple_harness.execution.context_authority import ContextRouteState
+
+        receipt = getattr(request, "route_receipt", None)
+        if (
+            self._binding_store is None
+            or ContextRouteState(request.route_state) is not ContextRouteState.ROUTED_TASK
+            or receipt is None
+            or getattr(receipt, "task_scope_id", None) is None
+            or getattr(receipt, "binding_set_revision", None) is None
+            or getattr(receipt, "binding_set_receipt_id", None) is None
+            or getattr(receipt, "binding_set_receipt_hash", None) is None
+        ):
+            return False
+        exact = await self._binding_store.exact_receipt(
+            task_scope_id=str(receipt.task_scope_id),
+            binding_set_revision=int(receipt.binding_set_revision),
+            binding_set_receipt_id=str(receipt.binding_set_receipt_id),
+            binding_set_receipt_hash=str(receipt.binding_set_receipt_hash),
+        )
+        return len(tuple(getattr(exact, "root_identity_hashes", ()))) >= 2
 
     async def prepare_snapshot(self, request: Any) -> Any:
         from simple_harness import RequestId
@@ -1026,7 +1069,10 @@ class ProductRunContextAuthority:
             raise SnapshotContractConflict("sdk_context_authority_revision_drift")
         exposure = self._exposure_resolver(request.run_id)
         tools = _visible_provider_specs(
-            exposure, request.run_id, request.route_state
+            exposure,
+            request.run_id,
+            request.route_state,
+            hide_project_effects=await self._hide_project_effects(request),
         )
         start = ports.react_checkpoint.read_start_snapshot(request.run_id.value)
         start_input = start.get("input") if isinstance(start, Mapping) else None
