@@ -799,72 +799,13 @@ class HumanMemoryHostService:
         await assert_human_memory_ingress_open(self._db_path)
         await self._assert_owned_scope(request.scope_ref)
         primary = await self._program.initialize_subject(self._auth.subject)
-        payload = {
-            "schema_version": 1,
-            "delivery_key": request.delivery_key,
-            "text": request.text,
-        }
-        payload_hash = canonical_hash(payload)
-        run_id = str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                f"simple-harness:foreground-evidence-run:{self._auth.subject}",
-            )
-        )
-        evidence_id = str(
-            uuid.uuid5(
-                uuid.NAMESPACE_URL,
-                "simple-harness:foreground-evidence:"
-                f"{self._auth.subject}:{request.delivery_key}",
-            )
-        )
-        disclosure = DisclosureContext(
-            run_id=run_id,
+        envelope, receipt = build_foreground_turn_evidence(
             subject=self._auth.subject,
-            recipient=DeliveryRecipient.USER_SELF,
-            recipient_id=self._auth.subject,
-            intended_audience=IntendedAudience.USER_SELF,
-            purpose=DisclosurePurpose.TASK_EXECUTION,
-            source=DisclosureSource.AUTHENTICATED_HOST,
-            trust=DisclosureTrust.TRUSTED_AUTHORITY,
-            generation=DisclosureGeneration.CURRENT,
             authority_ref=self._auth.authority_ref,
-            reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
+            delivery_key=request.delivery_key,
+            text=request.text,
         )
-        envelope = SanitizedEvidenceEnvelope(
-            evidence_id=evidence_id,
-            run_id=run_id,
-            subject=self._auth.subject,
-            source_kind=EvidenceSourceKind.USER_MESSAGE,
-            source_ref=f"foreground-turn:{request.delivery_key}",
-            source_hash=payload_hash,
-            sanitized_payload=payload,
-            sanitized_hash=payload_hash,
-            filter_policy_version="host-public-turn/v1",
-            removed_spans=(),
-            disclosure_context=disclosure,
-            evidence_refs=(),
-        )
-        receipt = SanitizedEvidenceReceipt(
-            receipt_id=str(
-                uuid.uuid5(
-                    uuid.NAMESPACE_URL,
-                    f"simple-harness:foreground-evidence-receipt:{evidence_id}",
-                )
-            ),
-            run_id=run_id,
-            subject=self._auth.subject,
-            evidence_id=evidence_id,
-            envelope_hash=envelope.envelope_hash,
-            source_hash=payload_hash,
-            sanitized_hash=payload_hash,
-            filter_policy_version="host-public-turn/v1",
-            accepted=True,
-            reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
-            disclosure_context=disclosure,
-            evidence_refs=(),
-            admitted_at=0.0,
-        )
+        payload = dict(envelope.sanitized_payload)
         committed = await self._program.append_evidence(envelope, receipt)
         queued = await self._foreground.enqueue_turn(
             subject=self._auth.subject,
@@ -1697,6 +1638,91 @@ class HumanMemoryHostService:
 
 
 HOST_TYPED_INGRESS_FILTER_POLICY = "host-typed-ingress/v1"
+HOST_PUBLIC_TURN_FILTER_POLICY = "host-public-turn/v1"
+
+
+def build_foreground_turn_evidence(
+    *,
+    subject: str,
+    authority_ref: str,
+    delivery_key: str,
+    text: str,
+) -> tuple[SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt]:
+    """Deterministic sanitized envelope + receipt of one foreground user turn.
+
+    Payload keys ``schema_version`` / ``delivery_key`` / ``text`` (``/text`` is the
+    only quotable pointer of the S5b analysis proposal); ``run_id`` is the
+    per-subject foreground evidence run so every turn of the subject batches
+    together in Memory; the same recipe is shared with the S5b test harness.
+    """
+
+    payload = {
+        "schema_version": 1,
+        "delivery_key": delivery_key,
+        "text": text,
+    }
+    payload_hash = canonical_hash(payload)
+    run_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"simple-harness:foreground-evidence-run:{subject}",
+        )
+    )
+    evidence_id = str(
+        uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            "simple-harness:foreground-evidence:"
+            f"{subject}:{delivery_key}",
+        )
+    )
+    disclosure = DisclosureContext(
+        run_id=run_id,
+        subject=subject,
+        recipient=DeliveryRecipient.USER_SELF,
+        recipient_id=subject,
+        intended_audience=IntendedAudience.USER_SELF,
+        purpose=DisclosurePurpose.TASK_EXECUTION,
+        source=DisclosureSource.AUTHENTICATED_HOST,
+        trust=DisclosureTrust.TRUSTED_AUTHORITY,
+        generation=DisclosureGeneration.CURRENT,
+        authority_ref=authority_ref,
+        reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
+    )
+    envelope = SanitizedEvidenceEnvelope(
+        evidence_id=evidence_id,
+        run_id=run_id,
+        subject=subject,
+        source_kind=EvidenceSourceKind.USER_MESSAGE,
+        source_ref=f"foreground-turn:{delivery_key}",
+        source_hash=payload_hash,
+        sanitized_payload=payload,
+        sanitized_hash=payload_hash,
+        filter_policy_version=HOST_PUBLIC_TURN_FILTER_POLICY,
+        removed_spans=(),
+        disclosure_context=disclosure,
+        evidence_refs=(),
+    )
+    receipt = SanitizedEvidenceReceipt(
+        receipt_id=str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"simple-harness:foreground-evidence-receipt:{evidence_id}",
+            )
+        ),
+        run_id=run_id,
+        subject=subject,
+        evidence_id=evidence_id,
+        envelope_hash=envelope.envelope_hash,
+        source_hash=payload_hash,
+        sanitized_hash=payload_hash,
+        filter_policy_version=HOST_PUBLIC_TURN_FILTER_POLICY,
+        accepted=True,
+        reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
+        disclosure_context=disclosure,
+        evidence_refs=(),
+        admitted_at=0.0,
+    )
+    return envelope, receipt
 
 
 def build_host_typed_evidence(

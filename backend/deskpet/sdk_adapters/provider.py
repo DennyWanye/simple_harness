@@ -474,6 +474,25 @@ class ProductPriceSnapshot:
         ).hexdigest()
 
 
+def provider_endpoint_identity(entry: Any, *, base_url: str | None = None) -> str:
+    """Immutable endpoint identity of one registry entry (base_url + config_revision + incarnation).
+
+    Shared by ``ProductProviderAdapter`` and the S5b Task 4 Memory-analysis
+    lineage (``model_config_hash``), so the terminal outbox row and the attempt
+    ledger derive the same value from the same durable facts.
+    """
+
+    resolved = str(base_url if base_url is not None else getattr(entry, "base_url", "")).strip().rstrip("/")
+    endpoint_payload = {
+        "base_url": resolved,
+        "config_revision": int(getattr(entry, "config_revision", 0) or 0),
+        "incarnation_id": str(getattr(entry, "incarnation_id", "")),
+    }
+    return hashlib.sha256(
+        json.dumps(endpoint_payload, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
 class ProductProviderAdapter:
     """One immutable provider/model/config/price snapshot for an SDK Run."""
 
@@ -525,14 +544,7 @@ class ProductProviderAdapter:
             int(price[1]),
             str(price[2]),
         )
-        endpoint_payload = {
-            "base_url": base_url,
-            "config_revision": int(getattr(entry, "config_revision", 0) or 0),
-            "incarnation_id": str(getattr(entry, "incarnation_id", "")),
-        }
-        endpoint_identity = hashlib.sha256(
-            json.dumps(endpoint_payload, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
+        endpoint_identity = provider_endpoint_identity(entry, base_url=base_url)
         pricing_key = (
             f"{provider_id}:{frozen_model}:{self.price_snapshot.fingerprint}"
         )
