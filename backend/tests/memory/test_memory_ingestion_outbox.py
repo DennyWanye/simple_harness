@@ -188,6 +188,8 @@ async def test_v7_runtime_registers_owner_and_passes_host_policies(tmp_path: Pat
     from deskpet.memory.human_memory_v7 import (
         HOST_SUPPORTED_FILTER_POLICIES,
         HumanMemoryV7Runtime,
+        local_memory_principal,
+        local_memory_scope,
     )
 
     assert HOST_SUPPORTED_FILTER_POLICIES == {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1"}
@@ -203,7 +205,7 @@ async def test_v7_runtime_registers_owner_and_passes_host_policies(tmp_path: Pat
         envelope, receipt = mh.build_foreground_turn_evidence(subject="deskpet-local-owner-v1", authority_ref=mh.AUTHORITY_REF, delivery_key="k", text="探针")
         accepted = await manager.ingest_committed_evidence(envelope, receipt)
         assert accepted.evidence_id == envelope.evidence_id
-        again = await manager.register_principal_owner(mh.local_memory_principal(), mh.local_memory_scope())
+        again = await manager.register_principal_owner(local_memory_principal(), local_memory_scope())
         assert again == first
     finally:
         await runtime.close()

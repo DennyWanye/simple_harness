@@ -3196,7 +3196,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         effect_gate=_ensure_foreground_effect_gate(),
         # S5b Task 4: terminal commit writes the Memory ingestion outbox row from the
         # durable SdkRunBindingV1 (same record the post-turn invoker rebuilds from).
-        run_binding_reader=_sdk_runtime_stack.read_closure_run_facts,
+        run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id),
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)

@@ -1263,11 +1263,14 @@ def test_analysis_proposal_span_derivation_rejects_paraphrase() -> None:
         ],
     }
     compiled = ap.compile_proposal(proposal, request=request, items=[item], base_revision=1, plan_id="host-analysis-plan-test", now=100.0)
-    assert compiled.outcome == "mutate" and compiled.plan is not None
-    assert [op.operation_id for op in compiled.plan.operations] == ["sem", "epi", "proc", "pro"]
-    assert [op.memory_type for op in compiled.plan.operations] == [
-        LongTermMemoryType.SEMANTIC, LongTermMemoryType.EPISODE, LongTermMemoryType.PROCEDURE, LongTermMemoryType.PROSPECTIVE,
-    ]
+    assert compiled.outcome == "mutate" and compiled.plan is not None, compiled.rejected
+    # MemoryMutationPlan 规范序按 operation_id（无依赖时），故按 id 比较而非插入序。
+    by_id = {op.operation_id: op for op in compiled.plan.operations}
+    assert sorted(by_id) == ["epi", "pro", "proc", "sem"], compiled.rejected
+    assert {k: v.memory_type for k, v in by_id.items()} == {
+        "sem": LongTermMemoryType.SEMANTIC, "epi": LongTermMemoryType.EPISODE,
+        "proc": LongTermMemoryType.PROCEDURE, "pro": LongTermMemoryType.PROSPECTIVE,
+    }
     assert [(r.operation_id, r.code) for r in compiled.rejected] == [
         ("paraphrase", "analysis_quote_not_found"), ("unknown", "analysis_quote_not_found"),
     ]

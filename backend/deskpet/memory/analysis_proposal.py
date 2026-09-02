@@ -362,7 +362,8 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
         elif memory_type == "procedure":
             payload = ProcedureMemoryPayload(
                 str(body["name"]),
-                _strings(body.get("applicability")),
+                # Harness requires a non-empty applicability; the model may omit it.
+                _strings(body.get("applicability"), default=("general",)),
                 _strings(body["steps"]),
                 ProcedureRiskLevel(str(body.get("risk_level") or "low")),
             )
