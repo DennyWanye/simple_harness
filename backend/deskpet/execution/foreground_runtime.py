@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import re
 import time
 import uuid
 from collections.abc import Callable, Mapping
@@ -39,6 +40,11 @@ from deskpet.execution.foreground_queue import (
 )
 from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from deskpet.task_scope.protocol import canonical_hash
+
+# S5b Task 6 (review F-9): the only shape a FAILED terminal's public
+# ``error_code`` may take; everything else degrades to the SDK public code.
+TERMINAL_ERROR_CODE_TOKEN = re.compile(r"[a-z][a-z0-9_]{2,63}")
+TERMINAL_ERROR_CODE_FALLBACK = "driver_failed"
 
 
 class ForegroundRuntimeError(RuntimeError):
@@ -1189,13 +1195,25 @@ class SqliteSdkTerminalObserver:
         self._fault_inject = fault_inject
 
     def _terminal_error_code(self, sdk_run_id: str, sdk_evidence: object) -> str | None:
+        """Stable ``error_code`` of a FAILED terminal: Host memo first, else SDK public code.
+
+        S5b Task 6 (review F-9): the value lands in ``run_terminal.public_payload``
+        (durable, disclosable), so only a stable token
+        (``^[a-z][a-z0-9_]{2,63}$``) is accepted; anything else — a path, an
+        exception message, a tampered payload — degrades to ``driver_failed``.
+        """
+
         memo = self._run_fault_memo
         read = getattr(memo, "read", None)
         code = read(sdk_run_id) if callable(read) else None
         if not code:
             code = getattr(sdk_evidence, "error_code", None)
         code = str(code or "").strip()
-        return code or None
+        if not code:
+            return None
+        if TERMINAL_ERROR_CODE_TOKEN.fullmatch(code) is None:
+            return TERMINAL_ERROR_CODE_FALLBACK
+        return code
 
     async def observe(
         self,
@@ -1245,18 +1263,27 @@ class SqliteSdkTerminalObserver:
             )
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
+            # S5b Task 6 (review F-6): the durable run_terminal row is looked up
+            # WITHOUT requiring the gate receipt, so a retry after a crash
+            # between ingest and authorize_terminal never rebuilds the
+            # evidence (the memo may be gone; a rebuilt payload would conflict)
+            # — it only re-runs the idempotent authorize step.
             cursor = await db.execute(
                 "SELECT r.source_event_id,r.evidence_hash,e.payload_json "
                 "FROM task_scope_execution_ingest_receipts r "
                 "JOIN task_scope_events e ON e.event_id=r.event_id "
-                "JOIN task_scope_terminal_gate_receipts g ON g.run_id=r.run_id "
-                "AND g.task_scope_id=r.task_scope_id "
                 "WHERE r.run_id=? AND r.evidence_kind='run_terminal' "
                 "ORDER BY r.source_sequence DESC LIMIT 1",
                 (sdk_run_id,),
             )
             row = await cursor.fetchone()
             await cursor.close()
+            gate_cursor = await db.execute(
+                "SELECT 1 FROM task_scope_terminal_gate_receipts WHERE run_id=?",
+                (sdk_run_id,),
+            )
+            gate_receipt = await gate_cursor.fetchone()
+            await gate_cursor.close()
             if row is None:
                 authority_cursor = await db.execute(
                     "SELECT r.task_scope_id,t.evidence_id,t.evidence_hash "
@@ -1269,16 +1296,16 @@ class SqliteSdkTerminalObserver:
                 await authority_cursor.close()
             else:
                 authority = None
+        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+
+        evidence_ingress = ExecutionEvidenceIngress(
+            self._db_path, fault_inject=self._fault_inject
+        )
         if row is None:
             if authority is None or authority["task_scope_id"] is None:
                 raise ForegroundRuntimeError(
                     "foreground_terminal_task_scope_authority_missing"
                 )
-            from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
-
-            evidence_ingress = ExecutionEvidenceIngress(
-                self._db_path, fault_inject=self._fault_inject
-            )
             # S5b Task 2 (design-freeze §3): the terminal observer is the
             # single drainer.  Every still-reserved Harness row is resolved
             # first — ingested from the SDK ledger when its fact is readable
@@ -1292,7 +1319,6 @@ class SqliteSdkTerminalObserver:
                 else None
             )
             await evidence_ingress.drain_reservations(sdk_run_id, fact_reader=fact_reader)
-            next_sequence = await evidence_ingress.next_sequence(sdk_run_id)
             from simple_harness import (
                 DeliveryRecipient,
                 DisclosureContext,
@@ -1346,15 +1372,30 @@ class SqliteSdkTerminalObserver:
                 idempotency_key=f"foreground-terminal:{sdk_evidence.event_id}",
                 occurred_at=float(sdk_evidence.occurred_at),
             )
-            await evidence_ingress.ingest(
+            # S5b Task 6 (Task 2 review F-6): run_terminal is reserved
+            # (``terminal:{sdk_run_id}``) and ingested in ONE transaction —
+            # the sequence is allocated under the write lock, never read
+            # outside a transaction.
+            await evidence_ingress.ingest_terminal(
                 task_scope_id=str(authority["task_scope_id"]),
-                source_sequence=next_sequence,
                 evidence=evidence,
             )
+            # The stable code is now durable in the run_terminal row: release
+            # the process-local memo here, before any later step can raise
+            # (review F-6) — a retry reads the durable row, not the memo.
+            release = getattr(self._run_fault_memo, "release", None)
+            if callable(release):
+                release(sdk_run_id)
+            if self._fault_inject is not None:
+                self._fault_inject("terminal-ingested")
+            gate_receipt = None
+        if gate_receipt is None:
+            # Idempotent: returns the existing gate receipt on replay.
             await evidence_ingress.authorize_terminal(sdk_run_id)
             release = getattr(self._run_fault_memo, "release", None)
             if callable(release):
                 release(sdk_run_id)
+        if row is None:
             async with aiosqlite.connect(self._db_path) as db:
                 db.row_factory = aiosqlite.Row
                 cursor = await db.execute(

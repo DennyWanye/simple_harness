@@ -193,7 +193,11 @@ async def _terminal_watermark(tmp_path: Path, run_id: str) -> tuple[str, str, di
     observed = await _observe(queue_db, admission, stack, run_id)
     assert observed is not None and observed.terminal_state is RunState.COMPLETED
     statuses = _rows(queue_db, "SELECT source_event_id,status FROM harness_evidence_reservations WHERE run_id=? ORDER BY source_sequence", run_id)
-    assert statuses == [("p-1", "abandoned"), ("effect:e-2", "ingested"), ("s-3", "abandoned")]
+    # Task 6：run_terminal 也经预留协议（同事务预留+导入），seq 4。
+    assert statuses == [
+        ("p-1", "abandoned"), ("effect:e-2", "ingested"), ("s-3", "abandoned"),
+        (f"sdk-terminal:{run_id}", "ingested"),
+    ]
     kinds = _rows(queue_db, "SELECT source_sequence,evidence_kind FROM task_scope_execution_ingest_receipts WHERE run_id=? ORDER BY source_sequence", run_id)
     assert kinds == [(1, "provider_invocation"), (2, "tool_invocation"), (3, "context_snapshot"), (4, "run_terminal")]
     gate = await ingress.authorize_terminal(run_id)

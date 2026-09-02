@@ -698,7 +698,11 @@ async def test_harness_evidence_reservations_drained_before_run_terminal_no_row_
         "ORDER BY source_sequence",
         run_id,
     )
-    assert statuses == [("prov-1", "ingested"), ("tool-2", "ingested"), ("snap-3", "abandoned")]
+    # Task 6（Task 2 审查 F-6）：run_terminal 同样走预留协议（seq4 预留 + 同事务导入）。
+    assert statuses == [
+        ("prov-1", "ingested"), ("tool-2", "ingested"), ("snap-3", "abandoned"),
+        ("sdk-terminal-a9", "ingested"),
+    ]
     gate = await ingress.authorize_terminal(run_id)
     assert gate.durable_source_sequence == gate.terminal_source_sequence == 4
     # 重放排空（crash 后新 owner）：幂等，无新行。

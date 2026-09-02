@@ -1218,6 +1218,11 @@ class SdkRunToolAuthorityRegistry:
         self.scope_store.purge(record.prepared_tool_set.scope_id)
         for listener in tuple(self._terminal_listeners):
             listener(record)
+        # S5b Task 6 (review F-6): every terminal path — foreground observer or
+        # not — releases the process-local whole-Run fault memo of this Run.
+        release = getattr(self._run_fault_sink, "release", None)
+        if callable(release):
+            release(record.run_id)
         return record
 
 

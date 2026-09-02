@@ -383,6 +383,7 @@ class ExecutionEvidenceIngress:
         source_event_id: str,
         now: float,
         tool_name: str | None = None,
+        reservation_label: str | None = None,
     ) -> EvidenceReservation:
         identifier(run_id, "run_id", 512)
         identifier(task_scope_id, "task_scope_id", 512)
@@ -415,7 +416,9 @@ class ExecutionEvidenceIngress:
         if watermark is not None and watermark["terminal_source_sequence"] is not None:
             raise TaskScopeConflict("execution_after_terminal_rejected")
         sequence = await self._next_sequence_tx(db, run_id)
-        reservation_id = _uuid(f"harness-evidence-reservation:{source_event_id}")
+        reservation_id = _uuid(
+            f"harness-evidence-reservation:{reservation_label or source_event_id}"
+        )
         await db.execute(
             "INSERT INTO harness_evidence_reservations(reservation_id,run_id,task_scope_id,"
             "source_sequence,source_event_id,kind,status,reserved_at,resolved_at,tool_name) "
@@ -576,6 +579,70 @@ class ExecutionEvidenceIngress:
                     evidence_hash=evidence_hash,
                     refs=refs,
                     source_sequence=source_sequence,
+                    now=now,
+                )
+                from deskpet.task_scope.projection_sources import (
+                    append_projection_source_tx,
+                )
+
+                await append_projection_source_tx(db, task_scope_id, now=now)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+                raise
+        return self._receipt(row, watermark)
+
+    async def ingest_terminal(
+        self,
+        *,
+        task_scope_id: str,
+        evidence: object,
+    ) -> ExecutionIngestReceipt:
+        """``run_terminal``: reserve ``terminal:{run_id}`` and ingest in ONE transaction (§3).
+
+        S5b Task 6 (Task 2 review F-6): the terminal sequence is allocated by
+        the same reservation protocol as every other Harness fact —
+        ``MAX(reservations ∪ receipts) + 1`` computed under the write lock —
+        instead of a ``next_sequence()`` read outside any transaction.  The
+        reservation row's ``source_event_id`` is the SDK terminal event id (the
+        Host terminal receipt chain is keyed by it); the reservation id is
+        derived from ``terminal:{run_id}`` so one Run has exactly one terminal
+        reservation.  Idempotent on replay (same event id → same row).
+        """
+
+        raw, evidence_hash = validate_execution_evidence(evidence)
+        if raw["kind"] != "run_terminal":
+            raise ValueError("ingest_terminal requires run_terminal evidence")
+        refs = validate_refs(raw["evidence_refs"])
+        run_id = str(raw["run_id"])
+        await self._store.initialize()
+        async with self._store._connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            await assert_human_memory_ingress_open_tx(db)
+            try:
+                now = self._clock()
+                existing = await self._store._fetchone(
+                    db,
+                    "SELECT 1 FROM task_scope_execution_ingest_receipts WHERE source_event_id=?",
+                    (str(raw["event_id"]),),
+                )
+                if existing is None:
+                    await self.reserve_tx(
+                        db,
+                        run_id=run_id,
+                        task_scope_id=task_scope_id,
+                        kind="run_terminal",
+                        source_event_id=str(raw["event_id"]),
+                        now=now,
+                        reservation_label=f"terminal:{run_id}",
+                    )
+                row, watermark = await self._ingest_tx(
+                    db,
+                    task_scope_id=task_scope_id,
+                    raw=raw,
+                    evidence_hash=evidence_hash,
+                    refs=refs,
+                    source_sequence=None,
                     now=now,
                 )
                 from deskpet.task_scope.projection_sources import (
