@@ -546,6 +546,14 @@ class TaskScopeProjectionStore:
             )
             roots = [dict(row) for row in await root_cursor.fetchall()]
             await root_cursor.close()
+        # S5b Task 3: open semantic-closure debt is projected explicitly (STATUS)
+        # so a pending closure is never presented as a consistent state.
+        try:
+            from deskpet.execution.semantic_closure import pending_receipts_tx
+
+            pending_closures = await pending_receipts_tx(db, source.task_scope_id)
+        except Exception:  # noqa: BLE001 - pre-v46 database has no receipts table
+            pending_closures = ()
         step_map: dict[str, list[dict[str, object]]] = {}
         for step in steps:
             step_map.setdefault(str(step["event_id"]), []).append(step)
@@ -568,6 +576,15 @@ class TaskScopeProjectionStore:
             ],
             "binding": binding,
             "roots": roots,
+            "pending_closures": [
+                {
+                    "receipt_id": item.receipt_id,
+                    "sdk_run_id": item.sdk_run_id,
+                    "closure_watermark": item.closure_watermark,
+                    "reason_code": item.reason_code,
+                }
+                for item in pending_closures
+            ],
         }
 
     async def _render_tx(
@@ -606,6 +623,9 @@ class TaskScopeProjectionStore:
                     "event_watermark": source.event_watermark,
                     "checkpoint_sequence": source.checkpoint_sequence,
                     "binding_set_revision": source.binding_set_revision,
+                    "semantic_closure_pending": bool(model.get("pending_closures")),
+                    "pending_closure_count": len(model.get("pending_closures") or ()),
+                    "pending_closures": list(model.get("pending_closures") or ()),
                 }
             ),
             "DECISIONS": canonical_json(
