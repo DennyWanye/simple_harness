@@ -58,11 +58,11 @@
       ]
     },
     "input_hashes": {
-      "acceptance": "ad387b64a25eba0f015f55c208a17757a0dec4314c8fdcf6446b51576ddb9c80",
+      "acceptance": "5417090d06056318e1de5153960bf94c5b9080984b1e2725a6cbc53bdf80fe6f",
       "assurance_contract": "11d7b89afbc5b46d07c1cada83e23762cc424a4b04602cc21855d9fd15acdcb1",
       "reuse_report": "8f504421b3727ac1d70ad804bef8a0b1842b39b94bd224853d1bd07d56449b8b",
       "testcase_inventory": "c7c40b3ac92ff41411c819fe02d789cbec83d5d8d970dc37ff7886965b6131dc",
-      "verification_spec": "9e4099251905468a66215e0a01ee604d22673a42c39df8917111af218f52efa7"
+      "verification_spec": "9cea8df124d92ca14b4bfbbaa25731c53ab9c44284d21c19b7eed1dc34367a9e"
     },
     "input_paths": {
       "acceptance": "/Users/taiwan/PROJECTS/SimplaHarness/simple-harness-memory-sdk/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/acceptance.md",
@@ -71,7 +71,7 @@
       "testcase_inventory": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/index.json",
       "verification_spec": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/testcase/human-memory-program/s5b-effect-closure-memory-verification-spec.json"
     },
-    "seal_sha256": "78e65d8b4c494b843028b4d63e57bb2e00df300ab8e0e18f9a03d8d5d8efc1cb",
+    "seal_sha256": "12aabc834d79aff1b968e25f4d7af0e2a4030b1532d445614f7c051cd1ba3179",
     "selected_testcase_ids": [
       "TC-HM-08",
       "TC-HM-09",
@@ -113,8 +113,7 @@
         ],
         "required_artifact_kinds": [
           "business-result",
-          "execution-log",
-          "ui-capture"
+          "execution-log"
         ],
         "required_business_facts": [
           "business_terminal",
@@ -164,13 +163,14 @@
       },
       "required": true,
       "scenario_id": "S5B-S1-REAL-EFFECT-CLOSURE-MEMORY",
+      "scope_note": "载体面缩减（acceptance A14 + 独立裁决 D，2026-09-03；用户原话 sha256 6086418dcc44ba2e7f4be13c9ced929cc7241f614cc16662bfa25e3fc3c2c41b）：缩的只是「真人桌面点击」这个载体（其 UI 入口属 S6），实质要求不降级——改由唯一现存生产入口兑现：对真实运行后端经控制 WebSocket 发 human_memory_request/queue.enqueue（memory/human_memory_api.py:207），自然用户语言 + 真实 provider + 真实文件 diff + 人工核对。**不得以 pytest 里程碑车道顶替**（该车道替换了 freeze/binding/claim 多处生产接缝，S5B-UI-F1 即由此漏检）；补不上则本增量 BLOCKED。≥20 turn 长会话随载体面移交 S6。",
       "testcase_ids": [
         "TC-HM-11"
       ],
       "testcase_revisions": {
         "TC-HM-11": 6
       },
-      "ui": true
+      "ui": false
     },
     {
       "cold_start": false,
