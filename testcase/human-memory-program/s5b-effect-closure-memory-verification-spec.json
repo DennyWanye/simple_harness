@@ -557,5 +557,9 @@
     ]
    }
   }
+ ],
+ "related_run_dirs": [
+  "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r1-s5b",
+  "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r2-s5b"
  ]
 }
