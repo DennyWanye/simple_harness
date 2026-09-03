@@ -904,7 +904,15 @@ class ForegroundRuntimeExecutionAuthority:
                             "version": int(getattr(discovered, "version", 0)),
                         }
                     ),
-                    idempotency_key=f"runtime-start-query:{host_run_id}:found",
+                    # 幂等键必须含 Run 版本：驱动可能被多次唤醒（授权决策后
+                    # `after_control` 会重入），每次 query 到的 record.version 不同，
+                    # 用同一把键写不同内容会撞
+                    # ``foreground_execution_start_observation_idempotency_conflict``
+                    # （实测 .local-test-evidence/real-ui-channel/final-ui）。
+                    idempotency_key=(
+                        f"runtime-start-query:{host_run_id}:found:"
+                        f"v{getattr(discovered, 'version', 0)}"
+                    ),
                 )
                 start_returned = False
                 result_ref = (
