@@ -122,7 +122,7 @@
    "gate_type": "positive-value",
    "input_class": "real-provider-effect-closure-memory",
    "ui": false,
-   "manual_required": false,
+   "manual_required": true,
    "min_root_runs": 2,
    "cold_start": false,
    "expected_run_created": true,
@@ -172,7 +172,7 @@
      "single_foreground_run"
     ]
    },
-   "scope_note": "真实桌面 UI 面移交 S6（acceptance A14，用户 2026-09-03 显式批准，原话 sha256 6086418dcc44ba2e7f4be13c9ced929cc7241f614cc16662bfa25e3fc3c2c41b）：S5b 生产链由 enqueue_turn 驱动，而桌面 UI 普通聊天走 chat_v2 从不入队、前端亦无 queue.enqueue 入口，该入口属 S6。业务判据一字未改，驱动入口改为生产 enqueue_turn 真实 provider 车道；≥20 turn 长会话一并移交 S6。"
+   "scope_note": "载体面缩减（acceptance A14 + 独立裁决 D，2026-09-03；用户原话 sha256 6086418dcc44ba2e7f4be13c9ced929cc7241f614cc16662bfa25e3fc3c2c41b）：缩的只是「真人桌面点击」这个载体（其 UI 入口属 S6），实质要求不降级——改由唯一现存生产入口兑现：对真实运行后端经控制 WebSocket 发 human_memory_request/queue.enqueue（memory/human_memory_api.py:207），自然用户语言 + 真实 provider + 真实文件 diff + 人工核对。**不得以 pytest 里程碑车道顶替**（该车道替换了 freeze/binding/claim 多处生产接缝，S5B-UI-F1 即由此漏检）；补不上则本增量 BLOCKED。≥20 turn 长会话随载体面移交 S6。"
   },
   {
    "scenario_id": "S5B-S2-CLOSURE-FAULT-MATRIX",
