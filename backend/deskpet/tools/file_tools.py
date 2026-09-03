@@ -222,8 +222,19 @@ def _resolve_within_workspace(
     return candidate
 
 
-def _err(msg: str, retriable: bool = False) -> str:
-    return json.dumps({"error": msg, "retriable": retriable}, ensure_ascii=False)
+def _err(msg: str, retriable: bool = False, code: str = "") -> str:
+    """错误信封。
+
+    ``code`` 是**不含路径的**稳定分类，经 ``_result()`` 进入
+    ``product_tool.failed tool=%s code=%s`` 日志。此前所有拒绝都退化成通用的
+    ``tool_failed``，拒因只在给模型的 payload 里而不入日志——排障时无法归因，
+    本增量为此四次靠写探针复现机制才定位（见 journal 遗留问题 8）。
+    路径仍然只回给模型，不进日志。
+    """
+    body = {"error": msg, "retriable": retriable}
+    if code:
+        body["error_code"] = code
+    return json.dumps(body, ensure_ascii=False)
 
 
 def _workspace_rel(path: Path, workspace: Path) -> str | None:
@@ -346,15 +357,15 @@ async def _handle_file_read(
     workspace = _context_workspace_root(context)
     target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
-        return _err("path outside workspace", retriable=False)
+        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
     offset = int(args.get("offset", 0) or 0)
     limit = int(args.get("limit", 2000) or 2000)
     if offset < 0 or limit < 0:
-        return _err("offset and limit must be non-negative", retriable=False)
+        return _err("offset and limit must be non-negative", retriable=False, code="invalid_range")
     if not target.exists():
-        return _err(f"file not found: {args.get('path')}", retriable=False)
+        return _err(f"file not found: {args.get('path')}", retriable=False, code="file_not_found")
     if not target.is_file():
-        return _err(f"not a regular file: {args.get('path')}", retriable=False)
+        return _err(f"not a regular file: {args.get('path')}", retriable=False, code="not_a_regular_file")
     try:
         with target.open("r", encoding="utf-8", errors="replace") as f:
             lines: list[str] = []
@@ -365,7 +376,7 @@ async def _handle_file_read(
                     break
                 lines.append(line)
     except OSError as exc:
-        return _err(f"read failed: {exc}", retriable=True)
+        return _err(f"read failed: {exc}", retriable=True, code="read_failed")
     rel_path = str(target.relative_to(workspace)).replace("\\", "/")
     content = "".join(lines)
     await _record_workspace_action(
@@ -424,7 +435,7 @@ async def _handle_file_write(
     workspace = _context_workspace_root(context)
     target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
-        return _err("path outside workspace", retriable=False)
+        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
     content = args.get("content", "")
     if not isinstance(content, str):
         return _err("content must be a string", retriable=False)
@@ -495,7 +506,7 @@ def _handle_file_glob(
     workspace = _context_workspace_root(context)
     root = _resolve_within_workspace(root_rel, workspace)
     if root is None:
-        return _err("path outside workspace", retriable=False)
+        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
     if not root.exists():
         return json.dumps({"matches": [], "count": 0})
     matches: list[str] = []
@@ -570,12 +581,12 @@ def _handle_file_grep(
     workspace = _context_workspace_root(context)
     target = _resolve_within_workspace(str(args.get("path", "")), workspace)
     if target is None:
-        return _err("path outside workspace", retriable=False)
+        return _err("path outside workspace", retriable=False, code="path_outside_workspace")
     max_matches = int(args.get("max_matches", 50) or 50)
     if max_matches <= 0:
         return _err("max_matches must be positive", retriable=False)
     if not target.exists() or not target.is_file():
-        return _err(f"file not found: {args.get('path')}", retriable=False)
+        return _err(f"file not found: {args.get('path')}", retriable=False, code="file_not_found")
     try:
         rx = re.compile(pattern)
     except re.error as exc:
