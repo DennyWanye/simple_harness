@@ -107,3 +107,55 @@ async def test_binding_succeeds_once_a_foreground_run_exists(tmp_path: Path) -> 
     # （此处不再往下跑真实 append_binding：基座的工作区根与 configured_root 同源，
     #   会先撞上无关的 ``workspace_root_too_broad`` 根宽度校验，与本缺口无关。）
     assert snapshot.host_run_id
+
+
+@pytest.mark.asyncio
+async def test_production_workspace_binding_bootstrap_is_deadlocked(
+    state_db: Path, tmp_path: Path
+) -> None:
+    """**生产上造不出第一个 workspace binding**（S5B-P0-BOOTSTRAP）。
+
+    三条腿互相咬死，实测于真实运行后端（证据
+    `.local-test-evidence/real-ui-channel/20260903T1500-wsentry` / `…T1520-wsentry`）：
+
+    1. `foreground_runtime_ports.ProductForegroundToolPort.freeze:305-311` 要求候选带
+       `binding_set_revision >= 1`，否则抛 `foreground_tool_binding_authority_missing`
+       —— **未绑定的任务域，前台 Run 起不来**。
+    2. AUTO 模式下 `binding.append` → `_append_auto`
+       （`task_scope/runtime_binding_authority.py:288`）要求**已存在的前台 Run 快照**
+       —— **没有 Run 就绑不了**。
+    3. `binding.manual.propose`（`runtime_binding_authority.py:133`）在非 MANUAL 模式下
+       直接抛 `workspace_binding_manual_mode_required`，而产品默认 AUTO
+       —— **手动仪式也走不通**。
+
+    pytest 里程碑车道之所以能跑，是因为 `s5b_effect_gate_harness.bind_scope_root:473-501`
+    自建 `WorkspaceBindingAuthorityStore` 并注入 `_ManualAuthority()` 桩，**同时绕过**
+    模式检查与前台 Run 检查——它制造了一个生产路径造不出来的绑定。
+    """
+
+    foreground = ForegroundQueueStore(state_db)
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    # 腿 2：AUTO 模式下没有前台 Run 就绑不了（上面第一条测试已单独锁住，这里复用同一断言）。
+    auto = WorkspaceBindingRuntimeAuthority(
+        state_db, subject=SUBJECT, foreground=foreground,
+        policy=_AutoPolicy(), configured_workspace_root=workspace,
+    )
+    assert await foreground.current_snapshot(SUBJECT) is None
+    with pytest.raises(WorkspaceBindingError) as auto_err:
+        await auto.append_binding(
+            subject=SUBJECT, task_scope_id="scope-bootstrap", root=str(workspace),
+            idempotency_key="k1", interaction_evidence_id="e1",
+            interaction_evidence_hash="a" * 64,
+        )
+    assert str(auto_err.value) == "workspace_binding_current_run_authority_missing"
+
+    # 腿 3：AUTO 模式下手动仪式被拒——生产默认就是 AUTO，所以这条也不通。
+    with pytest.raises(WorkspaceBindingError) as manual_err:
+        await auto.propose_manual_binding(
+            subject=SUBJECT, task_scope_id="scope-bootstrap", root=str(workspace),
+            idempotency_key="k2", interaction_evidence_id="e2",
+            interaction_evidence_hash="b" * 64,
+        )
+    assert str(manual_err.value) == "workspace_binding_manual_mode_required"
