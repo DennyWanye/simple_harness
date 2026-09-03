@@ -3191,6 +3191,26 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         context_sources = service_context.get("sdk_context_source_repository")
         if context_sources is None:
             raise RuntimeError("SDK context source repository is unavailable")
+        # Memory 身份绑定要求 ``memory_session_identities.session_id`` 有一条真实
+        # ``sessions`` 行（``memory/identity.py:76-79`` 的外键）。前台 Run 用的是
+        # ``foreground_runtime.py:207-209`` 从 host_run_id 确定性派生的
+        # ``foreground-execution-<sha256>``，此前不存在该行 → FOREIGN KEY 失败，
+        # **前台链因此从未启动过一个 SDK Run**。
+        #
+        # 这里为该派生 id 建一条普通 sessions 行。**不用主对话 id**：
+        # ``memory/primary_authority.py`` 的 ``assert_not_primary_authority`` 是有意闸门，
+        # 主对话不得被当作普通会话写入（``session_db.py:1393``/``:1421`` 两处强制），
+        # 绕开它等于削弱已批准的不可变性。也**不放宽外键**（那等于允许记忆身份挂空）。
+        # 与 TC-HM-11 S4-7 不冲突：该条禁的是 production foreground **ports 读取**
+        # SessionDB、以及把派生 id 当作 SessionDB **selector** 取上下文；这里既不读
+        # 也不选，只为身份外键补一条属于本 Run 的会话行。
+        session_store = service_context.get("session_db")
+        if session_store is None:
+            raise RuntimeError("session store is unavailable")
+        await session_store.ensure_session(
+            session_id,
+            {"origin": "foreground-execution", "sdk_run_id": sdk_run_id},
+        )
         identity = await identity_authority.bind(session_id=session_id)
         _binding_id, source_ref = await context_sources.put_pending(
             root_run_id=sdk_run_id,
