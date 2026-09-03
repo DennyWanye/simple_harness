@@ -610,11 +610,11 @@ def test_public_narration_prompt_matches_optional_tolerant_tool_schema():
         _SDK_PUBLIC_WORK_NARRATION_PROMPT
     )
     assert "deskpet_public_progress" in schema["properties"]
-    # S5B-UI-F2 起，必填清单不再随 schema 发布给 SDK（发布 required 会让冻结 SDK 在
-    # 进入处理器之前抛 MalformedToolArgumentsError 打掉整个 Run），而是由 Host 的
-    # _sdk_tool 包装层执行。这里断言的不变量不变：deskpet_public_progress 永远不是
-    # 必填，而工具自己声明的 path 仍然被强制。
-    assert "required" not in schema
+    # 不变量：deskpet_public_progress 永远不是必填，工具自己声明的 required 照常
+    # 发布给模型（S5B-UI-F2 一度把 required 摘掉，独立审查 F-1 判定为模型可见契约
+    # 缩水——校验失败现由 ProductToolsAdapter.validate 接住，摘除不再必要）。
+    assert "deskpet_public_progress" not in schema["required"]
+    assert tuple(schema["required"]) == ("path",)
 
 
 @pytest.mark.asyncio

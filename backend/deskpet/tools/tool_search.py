@@ -113,14 +113,12 @@ def _activation_rejection(
             code, _DEFAULT_ACTIVATION_NEXT_ACTION
         )
         message = f"tool_activate rejected for {capability_id}: {code}. {next_action}"
+    # 字段拼进 message（structlog foreign_pre_chain 无 ExtraAdder，extra= 会被丢弃）。
     logger.warning(
-        "tool_activate.rejected",
-        extra={
-            "tool": "tool_activate",
-            "code": code,
-            "reason": reason,
-            "capability_id": capability_id,
-        },
+        "tool_activate.rejected code=%s reason=%s capability_id=%s",
+        code,
+        reason or "-",
+        capability_id,
     )
     payload: dict[str, Any] = {
         "error": code if reason is None else f"{code}:{reason}",
@@ -149,10 +147,8 @@ def _missing_argument_rejection(tool: str, missing: list[str], hint: str) -> dic
     next_action = (
         f"Call {tool} again with {names}. {hint}"
     )
-    logger.warning(
-        "tool_arguments.missing",
-        extra={"tool": tool, "missing": names},
-    )
+    # 字段拼进 message（structlog foreign_pre_chain 无 ExtraAdder，extra= 会被丢弃）。
+    logger.warning("tool_arguments.missing tool=%s missing=%s", tool, names)
     return {
         "error": MISSING_ARGUMENT_ERROR_CODE,
         "error_code": MISSING_ARGUMENT_ERROR_CODE,

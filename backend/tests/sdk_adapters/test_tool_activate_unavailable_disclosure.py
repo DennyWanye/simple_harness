@@ -290,13 +290,20 @@ async def test_activate_unscoped_mcp_returns_stable_code_and_next_action(
     assert "Do not retry tool_activate" in message
     assert "context_route" in message
     assert "/tmp/ui-b" not in message
+    # 断言必须落在**渲染后**的消息上：本项目 structlog 的 foreign_pre_chain 没有
+    # ExtraAdder，``extra=`` 传的字段在渲染阶段会被整体丢弃。早先版本断言
+    # ``record.code`` 这类渲染前属性，字段其实一个都没落盘、测试却照样绿
+    # （独立审查 F-6 认定为假绿）。
     rejected = [
-        record for record in caplog.records if record.getMessage() == "tool_activate.rejected"
+        record
+        for record in caplog.records
+        if record.getMessage().startswith("tool_activate.rejected")
     ]
     assert len(rejected) == 1
-    assert rejected[0].code == "tool_unavailable"
-    assert rejected[0].reason == "workspace_unscoped"
-    assert rejected[0].capability_id == MCP_CAPABILITY
+    rendered = rejected[0].getMessage()
+    assert "code=tool_unavailable" in rendered
+    assert "reason=workspace_unscoped" in rendered
+    assert f"capability_id={MCP_CAPABILITY}" in rendered
     # Run exposure 未被污染：filesystem MCP 仍不在 provider 投影里。
     assert MCP_CAPABILITY not in {
         f"builtin:{spec.name}" for spec in run.exposure.provider_specs(run.run_id)
@@ -402,9 +409,7 @@ async def test_missing_arguments_are_model_visible_not_run_fatal() -> None:
             "describe_nonce",
         ),
     ):
-        # 1) schema 不再声明 required：SDK 校验不会在处理器之前抛异常。
-        spec = run.tools.get(tool).spec
-        assert "required" not in spec.input_schema, tool
+        # 1) SDK 校验失败被 Host 的 registry 子类接住，不会在处理器之前抛异常杀 Run。
         run.tools.validate(
             ToolCall(call_id=CallId(f"call-validate-{tool}"), name=tool, arguments=args)
         )
@@ -467,8 +472,8 @@ async def test_product_tool_missing_required_is_not_run_fatal() -> None:
     )
     tool = _sdk_tool(registration)
 
-    # 发布给 SDK 的 schema 不再带 required：validate 不会在处理器之前抛异常。
-    assert "required" not in tool.spec.input_schema
+    # required 照常发布给模型；校验失败由 Host 接住而不是杀 Run。
+    assert tuple(tool.spec.input_schema["required"]) == ("route",)
 
     from deskpet.sdk_adapters.tools import _current_call_id
 
@@ -635,3 +640,108 @@ async def test_nested_schema_violation_is_model_visible_not_run_fatal() -> None:
         _current_call_id.reset(token)
     assert ok.outcome is ToolOutcome.SUCCEEDED
     assert seen == [{"subagents": [{"description": "d", "prompt": "p"}]}]
+
+
+@pytest.mark.asyncio
+async def test_wrong_types_out_of_range_and_unknown_properties_are_not_run_fatal() -> None:
+    """类型错、越界、多余属性同样必须是模型可见拒绝（独立审查 F-3）。
+
+    这三类在真实模型上的发生率不低于漏填，且冻结 SDK 对它们一视同仁地抛
+    ``MalformedToolArgumentsError`` → 整 Run ``driver_failed``。
+    """
+
+    from deskpet.sdk_adapters.tools import (
+        INVALID_ARGUMENTS_ERROR_CODE,
+        ProductToolRegistration,
+        ProductToolsAdapter,
+        _current_call_id,
+        _sdk_tool,
+    )
+
+    seen: list[dict[str, Any]] = []
+    registration = ProductToolRegistration(
+        name="tool_search",
+        description="search",
+        input_schema={
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "query": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 10},
+            },
+            "required": ["query"],
+        },
+        handler=lambda arguments, _context: seen.append(dict(arguments)) or {"ok": True},
+        dispatch_kind="control",
+        permission_category="control",
+        metadata={"source": "builtin", "version": "1"},
+    )
+    tools = ProductToolsAdapter((_sdk_tool(registration),))
+
+    for idx, args in enumerate(
+        (
+            {"query": "x", "limit": 20},          # 越界
+            {"query": 123},                        # 类型错
+            {"query": "x", "bogus": 1},            # 多余属性
+        )
+    ):
+        call_id = CallId(f"call-bad-{idx}")
+        token = _current_call_id.set(call_id)
+        try:
+            result = await tools.invoke(
+                ToolCall(call_id=call_id, name="tool_search", arguments=args),
+                ToolContext(
+                    RunId(RUN_ID), RequestId("request-ui-b"), CancellationToken(), {},
+                    call_id=call_id,
+                ),
+            )
+        finally:
+            _current_call_id.reset(token)
+        assert result.outcome is ToolOutcome.FAILED, args
+        assert result.error_code == INVALID_ARGUMENTS_ERROR_CODE, args
+        assert "schema" in str(result.public_message), args
+    assert seen == []  # 处理器一次都没拿到非法参数
+
+
+def test_every_manifest_required_argument_is_enforced_by_the_host_wrapper() -> None:
+    """真实工具清单里声明的必填，必须逐个仍被强制（独立审查 F-8）。
+
+    此前 12 条测试全用手写的合成 registration，清单换来源或某工具丢了 required
+    都不会被发现。
+    """
+
+    from deskpet.sdk_adapters.tools import ProductToolRegistration, _sdk_tool
+    from simple_harness.tools.schema import SchemaDefinitionError
+
+    from deskpet.tool_catalog.manifest import load_tool_manifest
+
+    checked = 0
+    for tool in load_tool_manifest().tools:
+        name = str(tool["name"])
+        raw = thaw_json(tool.get("schema") or {})
+        schema = dict((raw or {}).get("parameters") or {})
+        declared = schema.get("required")
+        if not declared:
+            continue
+        # required 必须都在 properties 里，否则 SDK 的 schema 校验会在启动时炸。
+        assert set(declared) <= set(schema.get("properties") or ()), name
+        registration = ProductToolRegistration(
+            name=name,
+            description=str((raw or {}).get("description") or name),
+            input_schema=schema,
+            handler=lambda _a, _c: {"ok": True},
+            dispatch_kind="sync",
+            permission_category="test",
+            metadata={"source": "builtin", "version": "1"},
+        )
+        try:
+            published = _sdk_tool(registration).spec.input_schema.get("required")
+        except (SchemaDefinitionError, TypeError, ValueError):
+            # 少数 pre-cutover schema 不符合 SDK 的可执行子集（enum 里放 list、
+            # additionalProperties 非 false 等，与本不变量无关）；
+            # 上面的 required ⊆ properties 断言对它们仍然生效。
+            continue
+        assert published is not None, name
+        assert set(published) == set(declared), name
+        checked += 1
+    assert checked >= 10, f"清单里只检到 {checked} 个带 required 的工具，来源可能变了"

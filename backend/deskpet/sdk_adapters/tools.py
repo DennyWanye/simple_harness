@@ -242,8 +242,7 @@ class ProductToolsAdapter(ToolRegistry):
             tool = self.get(call.name)
             _record_invalid_arguments(str(call.call_id), str(exc))
             logger.warning(
-                "tool_arguments.invalid",
-                extra={"tool": call.name},
+                "tool_arguments.invalid tool=%s", call.name
             )
             return tool
 
@@ -706,23 +705,22 @@ INVALID_ARGUMENTS_ERROR_CODE = "invalid_tool_arguments"
 # 因此在 Host 自己拥有的 registry 子类里接住校验失败：记下该 call 的失败原因并照常
 # 返回 Tool，随后产品包装层在**调用真实处理器之前**把它转成模型可见的稳定拒绝。
 # 处理器因此永远拿不到非法参数，语义没有放宽，Run 也不再因为模型的一次参数失误而死。
-_invalid_arguments: contextvars.ContextVar[
-    frozenset[tuple[str, str]] | None
-] = contextvars.ContextVar("product_sdk_invalid_arguments", default=None)
+# 标记用**模块级有界表**而不是 ContextVar：``ToolRegistry.invoke`` 在当前 context 里
+# validate，随后 ``asyncio.create_task(dispatch())`` 复制一份 context，在副本里删除
+# 不会回写父 context，长 Run 内会单调泄漏（独立审查预警）。call_id 全局唯一，普通
+# dict 即可；消费即删，并按上限淘汰最旧，异常路径下也不会无界增长。
+_INVALID_ARGUMENTS_MAX = 256
+_invalid_arguments: dict[str, str] = {}
 
 
 def _record_invalid_arguments(call_id: str, detail: str) -> None:
-    current = dict(_invalid_arguments.get() or ())
-    current[str(call_id)] = detail
-    _invalid_arguments.set(frozenset(current.items()))
+    _invalid_arguments[str(call_id)] = detail
+    while len(_invalid_arguments) > _INVALID_ARGUMENTS_MAX:
+        _invalid_arguments.pop(next(iter(_invalid_arguments)))
 
 
 def _take_invalid_arguments(call_id: str) -> str | None:
-    current = dict(_invalid_arguments.get() or ())
-    detail = current.pop(str(call_id), None)
-    if detail is not None:
-        _invalid_arguments.set(frozenset(current.items()))
-    return detail
+    return _invalid_arguments.pop(str(call_id), None)
 
 
 def _missing_required_arguments(
@@ -746,10 +744,29 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
     async def invoke(arguments, context):
         call_id = active_product_tool_call_id()
         invalid = _take_invalid_arguments(str(call_id))
-        if invalid is not None:
+        missing = _missing_required_arguments(arguments, host_required)
+        if missing:
+            # 缺必填是最常见的一类，给指名道姓的稳定码（比通用 schema 拒绝更可行动）。
+            names = ", ".join(missing)
             logger.warning(
-                "product_tool.invalid_arguments",
-                extra={"tool": registration.name},
+                "tool_arguments.missing tool=%s missing=%s",
+                registration.name,
+                names,
+            )
+            return ToolResult.failed(
+                call_id,
+                MISSING_ARGUMENT_ERROR_CODE,
+                (
+                    f"{registration.name} rejected: missing required "
+                    f"argument(s) {names}. Call {registration.name} again with "
+                    f"{names} filled in; see the tool description for the "
+                    "expected values."
+                ),
+            )
+        if invalid is not None:
+            # 其余 schema 违规（类型、枚举、范围、多余属性、嵌套必填）统一走这条。
+            logger.warning(
+                "product_tool.invalid_arguments tool=%s", registration.name
             )
             return ToolResult.failed(
                 call_id,
@@ -758,24 +775,8 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
                     f"{registration.name} rejected: the arguments do not match "
                     "its schema. Re-read the tool schema and call it again with "
                     "every required field present and correctly typed, "
-                    "including fields nested inside objects and arrays."
-                ),
-            )
-        missing = _missing_required_arguments(arguments, host_required)
-        if missing:
-            names = ", ".join(missing)
-            logger.warning(
-                "tool_arguments.missing",
-                extra={"tool": registration.name, "missing": names},
-            )
-            return ToolResult.failed(
-                active_product_tool_call_id(),
-                MISSING_ARGUMENT_ERROR_CODE,
-                (
-                    f"{registration.name} rejected: missing required "
-                    f"argument(s) {names}. Call {registration.name} again with "
-                    f"{names} filled in; see the tool description for the "
-                    "expected values."
+                    "including fields nested inside objects and arrays, and "
+                    "without extra properties."
                 ),
             )
         raw = registration.handler(arguments, context)
@@ -785,9 +786,12 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
         if result.outcome is ToolOutcome.FAILED:
             # Host-side trace of every failed product Tool call: stable code
             # only, never the handler payload (it may carry private data).
+            # 字段拼进 message：本项目 structlog 的 foreign_pre_chain 没有
+            # ExtraAdder，``extra=`` 的字段在渲染阶段会被整体丢弃（独立审查 F-5 实测）。
             logger.warning(
-                "product_tool.failed",
-                extra={"tool": registration.name, "code": result.error_code},
+                "product_tool.failed tool=%s code=%s",
+                registration.name,
+                result.error_code,
             )
         return result
 
@@ -806,8 +810,11 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
             ),
         }
         input_schema["properties"] = properties
-    # 必填清单从发布 schema 移到 Host 包装层（见上方 S5B-UI-F2 说明）。
-    declared_required = input_schema.pop("required", None)
+    # `required` **保留在发布 schema 里**：模型必须看得见哪些参数是必填的。
+    # （独立审查 F-1：先前把它摘掉使 66/77 个工具对模型呈现为"全可选"，反而放大了
+    # 漏填概率，且属于已批准的模型可见契约缩水。校验失败现已被 Host 接住，摘除不再必要。）
+    # Host 侧另留一份同样的清单，只为在拒绝时能指名道姓说缺了哪个参数。
+    declared_required = input_schema.get("required")
     host_required: tuple[str, ...] = (
         tuple(
             str(item)
