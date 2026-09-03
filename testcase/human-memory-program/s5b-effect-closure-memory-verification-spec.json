@@ -121,8 +121,8 @@
    },
    "gate_type": "positive-value",
    "input_class": "real-provider-effect-closure-memory",
-   "ui": true,
-   "manual_required": true,
+   "ui": false,
+   "manual_required": false,
    "min_root_runs": 2,
    "cold_start": false,
    "expected_run_created": true,
@@ -153,8 +153,7 @@
     ],
     "required_artifact_kinds": [
      "business-result",
-     "execution-log",
-     "ui-capture"
+     "execution-log"
     ],
     "required_identity": [
      "root_run_id",
@@ -172,7 +171,8 @@
      "provider_call_count_bounded",
      "single_foreground_run"
     ]
-   }
+   },
+   "scope_note": "真实桌面 UI 面移交 S6（acceptance A14，用户 2026-09-03 显式批准，原话 sha256 6086418dcc44ba2e7f4be13c9ced929cc7241f614cc16662bfa25e3fc3c2c41b）：S5b 生产链由 enqueue_turn 驱动，而桌面 UI 普通聊天走 chat_v2 从不入队、前端亦无 queue.enqueue 入口，该入口属 S6。业务判据一字未改，驱动入口改为生产 enqueue_turn 真实 provider 车道；≥20 turn 长会话一并移交 S6。"
   },
   {
    "scenario_id": "S5B-S2-CLOSURE-FAULT-MATRIX",
