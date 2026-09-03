@@ -81,8 +81,19 @@ schema 里取出、留在 Host 包装层；调用进来先按同一张必填清�
 **语义没有放宽**——必填字段照样被拒绝，只是拒绝从「杀 Run」变成「模型可见且可重试」；已提供字段的
 类型校验仍由 SDK 负责。空字符串与 `None` 与缺项同等对待。
 
-仍登记一条**上游 SDK 义务**：`MalformedToolArgumentsError` 本身应作为模型可见的 rejected ToolResult
-返回，而不是驱动级失败（动态 MCP 工具的 schema 由远端提供，Host 无法一并接管），待 SDK 0.8。
+只搬顶层 `required` **仍不够**：真实模型随后用 `agent_parallel {"subagents":[{...}]}` 打掉了又一个 Run，
+顶层字段在场但数组元素缺 schema 要求的字段——冻结 SDK 的 `validate` 对**整个** schema 求值
+（顶层/嵌套 required、类型、枚举），任何一条不符都是驱动级失败。因此收口点下沉到 Host 自己拥有的
+registry 子类 `ProductToolsAdapter.validate`：接住 `MalformedToolArgumentsError`、把失败记在该 call
+名下并照常返回 Tool，`_sdk_tool` 包装层在**调用真实处理器之前**将其转成稳定码
+`invalid_tool_arguments` + 一句「重读 schema、补齐所有必填字段（含对象与数组内部嵌套字段）」的可执行提示，
+并记 `tool_arguments.invalid` / `product_tool.invalid_arguments` 日志。
+
+**处理器永远拿不到非法参数**，语义因此没有放宽（不合规照样被拒绝），只是拒绝从「杀 Run」变成
+「模型可见且可重试」。该收口点覆盖经 `ProductToolsAdapter` 注册的全部产品 Tool，含动态 MCP 工具。
+
+仍登记一条**上游 SDK 义务**：`MalformedToolArgumentsError` 本身宜由 SDK 直接作为模型可见的 rejected
+ToolResult 返回，而不是驱动级失败，待 SDK 0.8。
 
 2026-08-29，user-global Skill 安装进入同一 SDK-first 目录：每个前台 Run 在 publish lock 内冻结 exact
 user-global Hub snapshot，并把 body-free Skill records 合并进 Run catalog。`skill` namespace 由统一的

@@ -547,3 +547,91 @@ async def test_empty_string_is_a_valid_required_value() -> None:
         assert "content" in str(blocked.public_message)
     finally:
         _current_call_id.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_nested_schema_violation_is_model_visible_not_run_fatal() -> None:
+    """**嵌套**字段不合规同样不得打掉整个 Run。
+
+    真实 UI（20260903T1130-uiA，Host 1c511a66）里 gpt-5.6-luna 发出
+    ``agent_parallel {"subagents":[{"kind":...,"prompt":...}]}``——顶层 ``subagents``
+    在场，但数组元素缺 schema 要求的字段。只把顶层 required 搬到 Host 拦不住它：
+    冻结 SDK 仍在 ``validate`` 抛 ``MalformedToolArgumentsError``，整个 Run 判
+    ``driver_failed``。收口点因此下沉到 Host 自己的 registry 子类。
+    """
+
+    from deskpet.sdk_adapters.tools import (
+        INVALID_ARGUMENTS_ERROR_CODE,
+        ProductToolRegistration,
+        ProductToolsAdapter,
+        _current_call_id,
+        _sdk_tool,
+    )
+
+    seen: list[dict[str, Any]] = []
+    registration = ProductToolRegistration(
+        name="agent_parallel",
+        description="fan out",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "subagents": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string"},
+                            "prompt": {"type": "string"},
+                        },
+                        "required": ["description", "prompt"],
+                    },
+                }
+            },
+            "required": ["subagents"],
+        },
+        handler=lambda arguments, _context: seen.append(dict(arguments)) or {"ok": True},
+        dispatch_kind="async",
+        permission_category="delegation",
+        metadata={"source": "builtin", "version": "1"},
+    )
+    tools = ProductToolsAdapter((_sdk_tool(registration),))
+    context = ToolContext(
+        RunId(RUN_ID),
+        RequestId("request-ui-b"),
+        CancellationToken(),
+        {},
+        call_id=CallId("call-nested"),
+    )
+
+    # 元素缺 description：SDK 校验会失败，但必须被 Host 接住。
+    bad = ToolCall(
+        call_id=CallId("call-nested"),
+        name="agent_parallel",
+        arguments={"subagents": [{"prompt": "改 README"}]},
+    )
+    token = _current_call_id.set(CallId("call-nested"))
+    try:
+        result = await tools.invoke(bad, context)
+    finally:
+        _current_call_id.reset(token)
+    assert result.outcome is ToolOutcome.FAILED
+    assert result.error_code == INVALID_ARGUMENTS_ERROR_CODE
+    assert "schema" in str(result.public_message)
+    assert seen == []  # 处理器没有拿到非法参数
+
+    # 合规调用照常放行，语义未放宽。
+    good = ToolCall(
+        call_id=CallId("call-nested-ok"),
+        name="agent_parallel",
+        arguments={"subagents": [{"description": "d", "prompt": "p"}]},
+    )
+    token = _current_call_id.set(CallId("call-nested-ok"))
+    try:
+        ok = await tools.invoke(good, ToolContext(
+            RunId(RUN_ID), RequestId("request-ui-b"), CancellationToken(), {},
+            call_id=CallId("call-nested-ok"),
+        ))
+    finally:
+        _current_call_id.reset(token)
+    assert ok.outcome is ToolOutcome.SUCCEEDED
+    assert seen == [{"subagents": [{"description": "d", "prompt": "p"}]}]

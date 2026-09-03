@@ -224,6 +224,29 @@ class ProductToolsAdapter(ToolRegistry):
         self._execution_identities = dict(execution_identities or {})
         self._run_authorities: object | None = None
 
+    def validate(self, call):
+        """接住 schema 校验失败，转交产品包装层变成模型可见拒绝。
+
+        冻结 SDK 在进入处理器之前校验参数，失败即整 Run ``driver_failed``。这里
+        把失败记在 call 名下并照常返回 Tool；``_sdk_tool`` 的包装层会在调用真实
+        处理器之前拦下它（处理器永远拿不到非法参数）。校验失败信息里可能带
+        JSON path 与原因，属产品自己的 schema 描述，但仍按稳定码白名单收敛后
+        才对模型可见。
+        """
+
+        from simple_harness.tools import MalformedToolArgumentsError
+
+        try:
+            return super().validate(call)
+        except MalformedToolArgumentsError as exc:
+            tool = self.get(call.name)
+            _record_invalid_arguments(str(call.call_id), str(exc))
+            logger.warning(
+                "tool_arguments.invalid",
+                extra={"tool": call.name},
+            )
+            return tool
+
     def bind_run_authorities(self, authorities: object) -> None:
         if (
             self._run_authorities is not None
@@ -672,6 +695,34 @@ def _sdk_input_schema(value: Mapping[str, Any]) -> dict[str, Any]:
 # 语义没有放宽——缺项照样被拒绝，只是拒绝从「杀 Run」变成「模型可见且可重试」。
 # 已提供字段的类型校验仍由 SDK 负责，不受影响。
 MISSING_ARGUMENT_ERROR_CODE = "missing_required_argument"
+INVALID_ARGUMENTS_ERROR_CODE = "invalid_tool_arguments"
+
+# 冻结 SDK 的 ``ToolRegistry.validate`` 对**整个** schema 求值（顶层 required、嵌套
+# required、类型、枚举……），任何一条不符就抛 ``MalformedToolArgumentsError``；kernel
+# 据此把整个 Run 判 ``driver_failed``。把顶层 required 搬到 Host 只解决了其中一类：
+# 真实 gpt-5.6-luna 用 ``agent_parallel {"subagents":[{...}]}``（**嵌套**字段不合规）
+# 照样打掉过一整个 Run（证据 20260903T1130-uiA）。
+#
+# 因此在 Host 自己拥有的 registry 子类里接住校验失败：记下该 call 的失败原因并照常
+# 返回 Tool，随后产品包装层在**调用真实处理器之前**把它转成模型可见的稳定拒绝。
+# 处理器因此永远拿不到非法参数，语义没有放宽，Run 也不再因为模型的一次参数失误而死。
+_invalid_arguments: contextvars.ContextVar[
+    frozenset[tuple[str, str]] | None
+] = contextvars.ContextVar("product_sdk_invalid_arguments", default=None)
+
+
+def _record_invalid_arguments(call_id: str, detail: str) -> None:
+    current = dict(_invalid_arguments.get() or ())
+    current[str(call_id)] = detail
+    _invalid_arguments.set(frozenset(current.items()))
+
+
+def _take_invalid_arguments(call_id: str) -> str | None:
+    current = dict(_invalid_arguments.get() or ())
+    detail = current.pop(str(call_id), None)
+    if detail is not None:
+        _invalid_arguments.set(frozenset(current.items()))
+    return detail
 
 
 def _missing_required_arguments(
@@ -693,6 +744,23 @@ def _missing_required_arguments(
 
 def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
     async def invoke(arguments, context):
+        call_id = active_product_tool_call_id()
+        invalid = _take_invalid_arguments(str(call_id))
+        if invalid is not None:
+            logger.warning(
+                "product_tool.invalid_arguments",
+                extra={"tool": registration.name},
+            )
+            return ToolResult.failed(
+                call_id,
+                INVALID_ARGUMENTS_ERROR_CODE,
+                (
+                    f"{registration.name} rejected: the arguments do not match "
+                    "its schema. Re-read the tool schema and call it again with "
+                    "every required field present and correctly typed, "
+                    "including fields nested inside objects and arrays."
+                ),
+            )
         missing = _missing_required_arguments(arguments, host_required)
         if missing:
             names = ", ".join(missing)
