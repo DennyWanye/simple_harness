@@ -195,7 +195,15 @@ def _resolve_within_workspace(
     # Accept a model joining that root with a filename, but keep the resolved
     # descendant check below as the authority boundary.  Absolute paths,
     # traversal and symlinks that escape the trusted root remain rejected.
-    p = Path(path_str)
+    # ``~`` 必须在后代校验之前展开。不展开时 Path("~/x") 不是绝对路径，
+    # 会被当作相对路径拼成 ``<root>/~/x``——既通过了 relative_to(root) 校验，
+    # 又指向一个不存在的文件，模型只会收到 "file not found" 而无从改正。
+    # 实测：同一条指令用 ``~/SimpleHarnessWorkSpace/...`` 表述时 file_read
+    # 连挂 5 次，整轮无副作用而 Run 仍 SETTLED
+    # （.local-test-evidence/real-ui-channel/20260904T001049）。
+    # 展开后它成为绝对路径，下面的 relative_to(root) 依旧是唯一边界权威：
+    # 指向工作区外的 ``~`` 路径仍然被拒，本改动不放宽任何边界。
+    p = Path(path_str).expanduser()
     if (
         path_str.startswith(("\\\\", "//"))
         or re.match(r"^[A-Za-z]:[\\/]", path_str)
