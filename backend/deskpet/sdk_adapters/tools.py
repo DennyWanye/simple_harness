@@ -677,15 +677,18 @@ MISSING_ARGUMENT_ERROR_CODE = "missing_required_argument"
 def _missing_required_arguments(
     arguments: Mapping[str, Any], required: Sequence[str]
 ) -> list[str]:
-    missing: list[str] = []
-    for name in required:
-        if name not in arguments:
-            missing.append(name)
-            continue
-        value = arguments[name]
-        if value is None or (isinstance(value, str) and not value.strip()):
-            missing.append(name)
-    return missing
+    """缺失或显式 ``None`` 才算缺参。
+
+    空字符串**不算**：``write_file`` 的 ``content`` 是必填，而写一个空文件是合法
+    请求；把空串当缺参会把合法调用误拒。各工具自己对空值的语义（例如
+    ``tool_search`` 的空 query 无意义）留在它们的处理器里判断。
+    """
+
+    return [
+        name
+        for name in required
+        if name not in arguments or arguments[name] is None
+    ]
 
 
 def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:

@@ -493,3 +493,57 @@ async def test_product_tool_missing_required_is_not_run_fatal() -> None:
         assert calls == [{"route": "continue_active"}]
     finally:
         _current_call_id.reset(token)
+
+
+@pytest.mark.asyncio
+async def test_empty_string_is_a_valid_required_value() -> None:
+    """空串不算缺参：``write_file(content="")`` 是合法的「写空文件」请求。
+
+    必填下沉到 Host 后若把空串一并当缺参，会把这类合法调用误拒。
+    """
+
+    from deskpet.sdk_adapters.tools import (
+        ProductToolRegistration,
+        _current_call_id,
+        _sdk_tool,
+    )
+
+    seen: list[dict[str, Any]] = []
+    registration = ProductToolRegistration(
+        name="write_file",
+        description="write",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+            },
+            "required": ["path", "content"],
+        },
+        handler=lambda arguments, _context: seen.append(dict(arguments)) or {"ok": True},
+        dispatch_kind="sync",
+        permission_category="filesystem_write",
+        metadata={"source": "builtin", "version": "1"},
+    )
+    tool = _sdk_tool(registration)
+    call_id = CallId("call-empty")
+    context = ToolContext(
+        RunId(RUN_ID),
+        RequestId("request-ui-b"),
+        CancellationToken(),
+        {},
+        call_id=call_id,
+    )
+    token = _current_call_id.set(call_id)
+    try:
+        ok = await tool.handler({"path": "a.txt", "content": ""}, context)
+        assert ok.outcome is ToolOutcome.SUCCEEDED
+        assert seen == [{"path": "a.txt", "content": ""}]
+
+        # 显式 None 仍算缺参。
+        blocked = await tool.handler({"path": "a.txt", "content": None}, context)
+        assert blocked.outcome is ToolOutcome.FAILED
+        assert blocked.error_code == "missing_required_argument"
+        assert "content" in str(blocked.public_message)
+    finally:
+        _current_call_id.reset(token)
