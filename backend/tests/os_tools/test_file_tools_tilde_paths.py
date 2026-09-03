@@ -61,3 +61,16 @@ def test_no_bogus_tilde_segment_is_ever_produced(home_ws) -> None:
     got = _resolve_within_workspace("~/SimpleHarnessWorkSpace/demo-project/README.md", ws)
     assert got is not None
     assert "~" not in str(got)
+
+
+def test_unresolvable_tilde_user_does_not_raise_and_stays_inside(home_ws) -> None:
+    """``~nosuchuser/x`` 曾从 expanduser 抛未捕获 RuntimeError（独立审计 P1）。
+
+    兜底退回原串后它是相对路径，解析到根内的字面目录 —— 不抛异常、不越界，
+    调用方拿到的是"文件不存在"这一稳定拒绝信封。安全属性由"仍在根内"承载。
+    """
+    _, ws = home_ws
+    got = _resolve_within_workspace("~nosuchuser9z/x", ws)   # 不抛
+    assert got is not None
+    assert got.is_relative_to(ws.resolve())
+    assert not got.exists()

@@ -50,7 +50,23 @@ def list_directory(args: dict[str, Any], task_id: str = "") -> str:
     from ._scope_paths import normalize_model_path
 
     context = legacy_execution_context(args, task_id)
-    path = normalize_model_path(path, context.write_scope_root)
+    _scope_root = context.write_scope_root
+    path = normalize_model_path(path, _scope_root)
+    # AC-3① 声称读取类「仍受 workspace 投影过滤」——独立审计实测该声称对本
+    # handler 不成立（scope_root 设定时仍能读出 ~/.ssh/id_rsa）。这里补上与写
+    # 侧同一个根、同一个判据的包含性校验：越界即拒，不读盘。
+    # scope_root 为 None（未启用作用域）时保持既有 Strangler-Fig 回退：不拦。
+    if _scope_root:
+        from agent.write_scope import write_scope_check as _ws_check
+
+        _violation = _ws_check(path, scope_root=_scope_root)
+        if _violation is not None:
+            return _err(
+                "path outside workspace",
+                "该路径在本次任务的工作区之外，读取被拒绝。"
+                "请改用工作区内的相对路径，或先用 list_directory 确认可读范围。",
+                path=path,
+            )
     p = Path(path)
     if not p.exists():
         return _err(

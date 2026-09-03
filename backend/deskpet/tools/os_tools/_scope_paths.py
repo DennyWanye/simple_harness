@@ -28,7 +28,12 @@ def normalize_model_path(path: str, scope_root: Path | str | None) -> str:
     """
     if not isinstance(path, str) or not path:
         return path
-    p = Path(path).expanduser()
+    try:
+        p = Path(path).expanduser()
+    except RuntimeError:
+        # ``~nosuchuser/...``：家目录解析不出来。退回原串，让下游既有的
+        # 越界/不存在判定给出稳定拒绝信封——不要让异常穿出 handler。
+        p = Path(path)
     if not p.is_absolute() and scope_root:
         p = Path(scope_root) / p
     return str(p)

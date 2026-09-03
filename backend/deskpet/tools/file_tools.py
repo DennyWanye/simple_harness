@@ -203,7 +203,11 @@ def _resolve_within_workspace(
     # （.local-test-evidence/real-ui-channel/20260904T001049）。
     # 展开后它成为绝对路径，下面的 relative_to(root) 依旧是唯一边界权威：
     # 指向工作区外的 ``~`` 路径仍然被拒，本改动不放宽任何边界。
-    p = Path(path_str).expanduser()
+    try:
+        p = Path(path_str).expanduser()
+    except RuntimeError:
+        # ``~nosuchuser/...``：退回原串，走下面的后代校验拒绝，不抛异常。
+        p = Path(path_str)
     if (
         path_str.startswith(("\\\\", "//"))
         or re.match(r"^[A-Za-z]:[\\/]", path_str)

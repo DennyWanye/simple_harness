@@ -127,3 +127,67 @@ def test_absolute_path_outside_scope_still_refused(tmp_path: Path) -> None:
     out = json.loads(_write(root, str(outside), "nope"))
     assert out.get("ok") is False, out
     assert not outside.exists()
+
+
+# --- 读工具：边界（独立审计 P1 补测） ---------------------------------------
+
+def _sec(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    (home / ".ssh").mkdir(parents=True)
+    (home / ".ssh" / "id_rsa").write_text("SUPER-SECRET-KEY", encoding="utf-8")
+    ws = home / "ws"
+    ws.mkdir()
+    (ws / "ok.md").write_text("inside", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(home))
+    return home, ws
+
+
+def test_read_file_refuses_tilde_path_outside_workspace(tmp_path, monkeypatch) -> None:
+    """AC-3① 声称读取类仍受 workspace 过滤——这条钉死该声称对 read_file 成立。
+
+    独立审计实测过改前能读出 ~/.ssh/id_rsa 的明文。
+    """
+    home, ws = _sec(tmp_path, monkeypatch)
+    out = json.loads(read_file(_args("~/.ssh/id_rsa", ws)))
+    assert out.get("ok") is False, out
+    assert "SUPER-SECRET-KEY" not in json.dumps(out)
+
+
+def test_read_file_refuses_absolute_path_outside_workspace(tmp_path, monkeypatch) -> None:
+    home, ws = _sec(tmp_path, monkeypatch)
+    out = json.loads(read_file(_args(str(home / ".ssh" / "id_rsa"), ws)))
+    assert out.get("ok") is False, out
+    assert "SUPER-SECRET-KEY" not in json.dumps(out)
+
+
+def test_read_file_still_reads_inside_workspace(tmp_path, monkeypatch) -> None:
+    """边界不得误伤正常读取。"""
+    _, ws = _sec(tmp_path, monkeypatch)
+    out = json.loads(read_file(_args("ok.md", ws)))
+    assert out.get("ok") is not False, out
+    assert out["content"] == "inside"
+
+
+def test_list_directory_refuses_outside_workspace(tmp_path, monkeypatch) -> None:
+    home, ws = _sec(tmp_path, monkeypatch)
+    out = json.loads(list_directory({"path": "~/.ssh", "_write_scope_root": str(ws)}))
+    assert out.get("ok") is False, out
+
+
+def test_read_tools_unrestricted_when_no_scope_root(tmp_path, monkeypatch) -> None:
+    """scope_root 未启用时保持既有 Strangler-Fig 回退：不拦（不是新增放宽）。"""
+    home, _ = _sec(tmp_path, monkeypatch)
+    out = json.loads(read_file({"path": str(home / ".ssh" / "id_rsa")}))
+    assert out.get("ok") is not False
+
+
+# --- expanduser 异常兜底（独立审计 P1 补测） --------------------------------
+
+def test_unresolvable_tilde_user_is_rejected_not_raised(tmp_path) -> None:
+    """``~nosuchuser/x`` 曾从 expanduser 抛未捕获 RuntimeError，把稳定拒绝
+    退化成异常穿出 handler。这里钉死它回到拒绝信封。"""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    assert normalize_model_path("~nosuchuser9z/x", ws)  # 不抛
+    out = json.loads(read_file(_args("~nosuchuser9z/x", ws)))
+    assert out.get("ok") is False, out
