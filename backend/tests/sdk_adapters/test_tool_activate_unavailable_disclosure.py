@@ -375,3 +375,54 @@ async def test_activatable_builtin_file_tool_still_activates_through_same_handle
     assert receipt["capability_id"] == "builtin:read_file"
     run.exposure.observe_tool_result(run.run_id, "tool_activate", receipt)
     assert "read_file" in {spec.name for spec in run.exposure.provider_specs(run.run_id)}
+
+
+# ---------------------------------------------------------------- S5B-UI-F2
+
+
+@pytest.mark.asyncio
+async def test_missing_arguments_are_model_visible_not_run_fatal() -> None:
+    """空参数必须是模型可见的拒绝，而不是打掉整个 Run。
+
+    真实 UI（UI-B 重跑，Host 951538bd）里 gpt-5.6-luna 返回过
+    ``tool_search {}``：冻结 SDK 0.7.1 在 ``ToolRegistry.validate`` 按 schema 的
+    ``required`` 校验，缺项直接抛 ``MalformedToolArgumentsError``，kernel 把整个
+    Run 判 ``driver_failed``（证据 20260903T0600-uiB-fix）。三个直出控制工具因此
+    把「必填」下沉到处理器。
+    """
+
+    run = _UiBRun()
+    for tool, args, missing in (
+        ("tool_search", {}, "query"),
+        ("tool_describe", {}, "capability_id"),
+        ("tool_activate", {}, "capability_id"),
+        (
+            "tool_activate",
+            {"capability_id": "builtin:read_file", "schema_hash": "a" * 64},
+            "describe_nonce",
+        ),
+    ):
+        # 1) schema 不再声明 required：SDK 校验不会在处理器之前抛异常。
+        spec = run.tools.get(tool).spec
+        assert "required" not in spec.input_schema, tool
+        run.tools.validate(
+            ToolCall(call_id=CallId(f"call-validate-{tool}"), name=tool, arguments=args)
+        )
+
+        # 2) 处理器给出稳定码 + 可执行的 next_action，Run 得以继续。
+        result = await run.invoke(tool, args)
+        assert result.outcome is ToolOutcome.FAILED, tool
+        assert result.error_code == "missing_required_argument", tool
+        message = str(result.public_message)
+        assert missing in message, tool
+        assert tool in message, tool
+
+
+@pytest.mark.asyncio
+async def test_present_arguments_still_reach_the_handler() -> None:
+    """去掉 schema required 不得放宽语义：参数齐全时行为不变。"""
+
+    run = _UiBRun()
+    result = await run.invoke("tool_search", {"query": "read file"})
+    assert result.outcome is ToolOutcome.SUCCEEDED
+    assert _value(result)["count"] >= 1

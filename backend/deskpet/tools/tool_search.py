@@ -135,6 +135,37 @@ def _activation_rejection(
         payload["availability_reason"] = reason
     return payload
 
+MISSING_ARGUMENT_ERROR_CODE = "missing_required_argument"
+
+
+def _missing_argument_rejection(tool: str, missing: list[str], hint: str) -> dict[str, Any]:
+    """缺必填参数的模型可见拒绝（S5B-UI-F2）。
+
+    schema 不再用 ``required`` 让冻结 SDK 在处理器之前抛异常杀掉整个 Run；
+    改为在这里返回稳定码 + 一条可执行的 next_action，模型下一轮即可补齐重试。
+    """
+
+    names = ", ".join(missing)
+    next_action = (
+        f"Call {tool} again with {names}. {hint}"
+    )
+    logger.warning(
+        "tool_arguments.missing",
+        extra={"tool": tool, "missing": names},
+    )
+    return {
+        "error": MISSING_ARGUMENT_ERROR_CODE,
+        "error_code": MISSING_ARGUMENT_ERROR_CODE,
+        "public_message": (
+            f"{tool} rejected: missing required argument(s) {names}. {next_action}"
+        ),
+        "retriable": True,
+        "replan_required": False,
+        "missing_arguments": missing,
+        "next_action": next_action,
+    }
+
+
 _SCHEMA: dict[str, Any] = {
     "name": "tool_search",
     "description": (
@@ -161,7 +192,14 @@ _SCHEMA: dict[str, Any] = {
                 ),
             },
         },
-        "required": ["query"],
+        # S5B-UI-F2（S5b 真实 UI 验收 UI-B 抓到）：冻结 SDK 0.7.1 在
+        # ``ToolRegistry.validate`` 里按 schema 的 ``required`` 校验参数，
+        # 缺项直接抛 ``MalformedToolArgumentsError``，kernel 据此把**整个 Run**
+        # 判 ``driver_failed``——模型没有任何自纠机会。真实 gpt-5.6-luna 就用
+        # ``tool_search {}`` 打掉过一整个 Run。这三个工具在每个 Run 都直出，
+        # 是最容易被漏填的入口，因此把「必填」下沉到处理器：schema 不再声明
+        # ``required``，处理器缺项时返回稳定码 + 可执行的 next_action。
+        # 语义没有放宽（缺项照样拒绝），只是拒绝从「杀 Run」变成「模型可见」。
     },
 }
 
@@ -240,7 +278,14 @@ _DESCRIBE_SCHEMA: dict[str, Any] = {
                 ),
             }
         },
-        "required": ["capability_id"],
+        # S5B-UI-F2（S5b 真实 UI 验收 UI-B 抓到）：冻结 SDK 0.7.1 在
+        # ``ToolRegistry.validate`` 里按 schema 的 ``required`` 校验参数，
+        # 缺项直接抛 ``MalformedToolArgumentsError``，kernel 据此把**整个 Run**
+        # 判 ``driver_failed``——模型没有任何自纠机会。真实 gpt-5.6-luna 就用
+        # ``tool_search {}`` 打掉过一整个 Run。这三个工具在每个 Run 都直出，
+        # 是最容易被漏填的入口，因此把「必填」下沉到处理器：schema 不再声明
+        # ``required``，处理器缺项时返回稳定码 + 可执行的 next_action。
+        # 语义没有放宽（缺项照样拒绝），只是拒绝从「杀 Run」变成「模型可见」。
     },
 }
 
@@ -267,7 +312,14 @@ _ACTIVATE_SCHEMA: dict[str, Any] = {
                 "description": "Exact top-level describe_nonce from tool_describe.",
             },
         },
-        "required": ["capability_id", "schema_hash", "describe_nonce"],
+        # S5B-UI-F2（S5b 真实 UI 验收 UI-B 抓到）：冻结 SDK 0.7.1 在
+        # ``ToolRegistry.validate`` 里按 schema 的 ``required`` 校验参数，
+        # 缺项直接抛 ``MalformedToolArgumentsError``，kernel 据此把**整个 Run**
+        # 判 ``driver_failed``——模型没有任何自纠机会。真实 gpt-5.6-luna 就用
+        # ``tool_search {}`` 打掉过一整个 Run。这三个工具在每个 Run 都直出，
+        # 是最容易被漏填的入口，因此把「必填」下沉到处理器：schema 不再声明
+        # ``required``，处理器缺项时返回稳定码 + 可执行的 next_action。
+        # 语义没有放宽（缺项照样拒绝），只是拒绝从「杀 Run」变成「模型可见」。
     },
 }
 
@@ -279,6 +331,16 @@ def register_capability_bridge_tools(
     """Replace legacy search and add describe/activate for Context OS ON."""
 
     def search_handler(args: dict[str, Any], _task_id: str) -> str:
+        if not str(args.get("query", "") or "").strip():
+            return json.dumps(
+                _missing_argument_rejection(
+                    "tool_search",
+                    ["query"],
+                    "query is a short space-separated keyword string, for "
+                    "example \"read edit file\".",
+                ),
+                ensure_ascii=False,
+            )
         try:
             result = service.search(
                 str(args.get("query", "")),
@@ -291,6 +353,15 @@ def register_capability_bridge_tools(
 
     def describe_handler(args: dict[str, Any], _task_id: str) -> str:
         requested = str(args.get("capability_id", ""))
+        if not requested.strip():
+            return json.dumps(
+                _missing_argument_rejection(
+                    "tool_describe",
+                    ["capability_id"],
+                    "Copy one full capability_id from a tool_search match.",
+                ),
+                ensure_ascii=False,
+            )
         try:
             return json.dumps(
                 service.describe(requested),
@@ -332,6 +403,21 @@ def register_capability_bridge_tools(
 
     def activate_handler(args: dict[str, Any], _task_id: str) -> str:
         requested = str(args.get("capability_id", ""))
+        missing = [
+            name
+            for name in ("capability_id", "schema_hash", "describe_nonce")
+            if not str(args.get(name, "") or "").strip()
+        ]
+        if missing:
+            return json.dumps(
+                _missing_argument_rejection(
+                    "tool_activate",
+                    missing,
+                    "Copy the three top-level fields returned by tool_describe "
+                    "exactly (capability_id, schema_hash, describe_nonce).",
+                ),
+                ensure_ascii=False,
+            )
         try:
             proposal = service.activate(
                 requested,
