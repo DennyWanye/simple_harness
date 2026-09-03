@@ -37,6 +37,13 @@ def _err(error: str, hint: str, **extra: Any) -> str:
         "error": error,
         "hint": hint,
         "examples": _EXAMPLES,
+        # ``sdk_adapters/tools.py::_result`` 只把**稳定码**与 ``public_message``
+        # 透给模型；``error``/``hint`` 是自然语言，会被压成通用的 "tool_failed" /
+        # "Tool execution failed."。真实生产 Run 里模型因此连挂 4 次 edit_file 却
+        # 不知道哪里错（证据 .local-test-evidence/real-ui-channel/probe-06）。
+        # 这里显式给出稳定码与可执行提示，让模型能自纠。
+        "error_code": "edit_file_rejected",
+        "public_message": f"edit_file rejected: {error}. {hint}",
     }
     body.update(extra)
     return json.dumps(body, ensure_ascii=False)
@@ -165,7 +172,14 @@ def edit_file(
             got=type(new).__name__,
         )
 
+    # 相对路径按**本 Run 绑定的工作区根**解析，而不是进程当前目录。
+    # 前台 Run 的 cwd 是后端进程目录，模型给的 "README.md" 因此永远找不到——
+    # 实测模型连挂 4 次（.local-test-evidence/real-ui-channel/probe-06/08）。
+    # write_scope_root 就是上面 _ws_check 已经用来做越界校验的那个根，
+    # 用同一个基准解析，不会扩大可写范围。
     p = Path(path)
+    if not p.is_absolute() and _scope_root:
+        p = Path(_scope_root) / p
     if not p.exists() or not p.is_file():
         return _err(
             "FileNotFoundError",

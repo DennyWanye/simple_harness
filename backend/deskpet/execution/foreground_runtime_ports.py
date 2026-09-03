@@ -198,7 +198,8 @@ class TaskScopeForegroundContextPort:
         # ``host_initial`` 与模型自选的 ``context_tool`` 区分开。
         await self._route_ledger.record_route_decision(
             receipt=receipt,
-            provider_turn_ordinal=0,
+            # 账本约束 provider_turn_ordinal > 0；Host 首轮回执归属第 1 个 provider turn。
+            provider_turn_ordinal=1,
             origin="host_initial",
             idempotency_key=f"foreground-initial-route:{receipt.receipt_id}",
         )
