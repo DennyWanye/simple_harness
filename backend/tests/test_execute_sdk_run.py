@@ -610,7 +610,68 @@ def test_public_narration_prompt_matches_optional_tolerant_tool_schema():
         _SDK_PUBLIC_WORK_NARRATION_PROMPT
     )
     assert "deskpet_public_progress" in schema["properties"]
-    assert "deskpet_public_progress" not in schema["required"]
+    # S5B-UI-F2 起，必填清单不再随 schema 发布给 SDK（发布 required 会让冻结 SDK 在
+    # 进入处理器之前抛 MalformedToolArgumentsError 打掉整个 Run），而是由 Host 的
+    # _sdk_tool 包装层执行。这里断言的不变量不变：deskpet_public_progress 永远不是
+    # 必填，而工具自己声明的 path 仍然被强制。
+    assert "required" not in schema
+
+
+@pytest.mark.asyncio
+async def test_public_progress_never_required_while_tool_required_still_enforced() -> None:
+    """行为不变量：deskpet_public_progress 永不阻断调用，工具自己的必填仍被强制。
+
+    S5B-UI-F2 把必填校验从发布 schema 下沉到 Host 包装层后，这条不变量改由行为断言
+    守护（发布 schema 里已没有 required 可断言）。
+    """
+
+    from simple_harness import CallId, RequestId, RunId
+    from simple_harness.tools import CancellationToken, ToolContext, ToolOutcome
+
+    from deskpet.sdk_adapters.tools import (
+        ProductToolRegistration,
+        _current_call_id,
+        _sdk_tool,
+    )
+
+    seen: list[dict] = []
+    registration = ProductToolRegistration(
+        name="read_file",
+        description="Read a file",
+        input_schema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+        handler=lambda arguments, _context: seen.append(dict(arguments)) or {"ok": True},
+        dispatch_kind="sync",
+        permission_category="filesystem_read",
+        metadata={"source": "deskpet", "version": "1"},
+    )
+    tool = _sdk_tool(registration)
+    call_id = CallId("call-progress")
+    context = ToolContext(
+        RunId("product-sdk-progress"),
+        RequestId("request-progress"),
+        CancellationToken(),
+        {},
+        call_id=call_id,
+    )
+    token = _current_call_id.set(call_id)
+    try:
+        # 只给 deskpet_public_progress、不给 path：仍按缺 path 拒绝，且不杀 Run。
+        blocked = await tool.handler({"deskpet_public_progress": "读文件"}, context)
+        assert blocked.outcome is ToolOutcome.FAILED
+        assert blocked.error_code == "missing_required_argument"
+        assert "path" in str(blocked.public_message)
+        assert seen == []
+
+        # 给了 path、没给 deskpet_public_progress：正常放行。
+        ok = await tool.handler({"path": "a.txt"}, context)
+        assert ok.outcome is ToolOutcome.SUCCEEDED
+        assert seen == [{"path": "a.txt"}]
+    finally:
+        _current_call_id.reset(token)
 
 
 @pytest.fixture
