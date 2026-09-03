@@ -602,6 +602,39 @@ Context。
 projection 脱敏的工具输入/结果和最终回答，不返回原始 provider reasoning。这样保留了
 Run 级可审计性，同时避免普通对话不断膨胀或把隐藏思维链重新注入模型。
 
+## 前台任务执行链（human-memory 前台队列，2026-09-03 首次在生产上跑通）
+
+普通聊天走 `chat_v2`；**human-memory 的任务执行链是另一条路**，由控制通道的
+`human_memory_request` / `operation:"queue.enqueue"`（`memory/human_memory_api.py:207`）
+驱动：`HumanMemoryHostService.enqueue_turn` → 前台队列准入 →
+`ForegroundRuntimeExecutionAuthority._drive_claimed`（provider/tools/context 三 freeze →
+Host 自签 HOST_INITIAL 路由回执 → `ingress.start`）→ SDK ReActLoop（工具三跳披露 →
+EffectGate → 语义收口）→ 终态观察 → 终态提交（同事务写 Memory ingestion outbox）→
+analysis → 认知记忆物化。
+
+**这条链在 2026-09-03 之前从未在生产上跑通过。** 原因是整个 `_drive_claimed` 流程在 pytest 里
+零覆盖——测试基座手工按序调 `prepare_candidate/claim_next/record_*/bind_sdk_run` 把任务推着走，
+真正的驱动器一步没跑，于是每处生产装配缺口都被基座恰好补上。逐处修复如下，**均为既有缺陷**：
+
+| # | 缺陷 | 现在的契约 |
+|---|---|---|
+| 1 | 首次 workspace binding 死锁：`_append_auto` 要已存在前台 Run，而 `ProductForegroundToolPort.freeze` 要 `binding_set_revision>=1` 才能起 Run | AUTO 模式下 `_append_auto` 支持 pre-admission bootstrap（合成确定性 `CurrentRunBindingAuthority` 登记在 `_pre_admission`，store 仍逐字段核对身份血缘，用完即清）；`append_binding` 入口按任务在**既定 workspace root 的真实后代**位置建目录。非 AUTO 模式不变，仍走弹窗确认 |
+| 2 | `ingress.start` 不传 `conversation`，冻结 SDK 抛 `conversation_entrypoint_required` | `ForegroundRuntimeExecutionAuthority` 新增 `conversation_entrypoint`，用与 chat 路径同一套身份权威与 context source 仓库构造 |
+| 3 | 派生 `foreground-execution-<sha256>` 无 `sessions` 行 → Memory 身份绑定外键失败 | 会话入口为该派生 id 建一条普通 `sessions` 行。**不用主对话 id**（`assert_not_primary_authority` 是有意闸门），**不放宽外键** |
+| 4 | context source 载荷缺 `provider_messages` → `_product_messages` 抛 TypeError | 载荷带上 `FrozenContextAuthority.provider_messages` |
+| 5 | Host 自签的 HOST_INITIAL 路由回执只校验、不落账 → 首轮 `latest_task_route_decision()` 恒 None，模型的 `continue_active` 必然失败 | `TaskScopeForegroundContextPort` 校验通过后记一条 `origin=host_initial` 的路由决策（与模型自选的 `context_tool` 区分） |
+| 6 | `edit_file` 相对路径按**进程 cwd** 解析，且拒绝被压成通用 `tool_failed` | 相对路径按 `write_scope_root`（越界校验用的同一个根）解析；拒绝给稳定码 `edit_file_rejected` + 含原因的 `public_message` |
+| 7 | 驱动在 `BOUND_WAITING` 后 return，而唤醒它的 `after_control` **生产零调用者** → 用户批准后无人叫醒，回合永停 CLAIMED、终态提交不执行、Memory outbox 永不产生 | `_signal_product_harness_decision` 在决策落地后调 `after_control`；唤醒失败只记 warning |
+
+**闭环实证**（`.local-test-evidence/real-ui-channel/prod-lane-05` 与 `prod-lane-08`，两次独立
+root run，真实 provider `gpt-5.6-luna`，自然用户语言）：README `1.1.3→1.2.0` 真实写入 →
+客观事件 39/41 行 → 语义收口回执 1 行 `outcome=mutate` → 前台回合 `SETTLED` →
+`memory_ingestion_outbox` + `memory_ingestion_evidence_links` 各 1 行 →
+`cognitive_memory_heads` 1 行（episode）。
+
+**留给 S6 的义务**：该链目前**没有任何桌面 UI 入口**——前端零调用 `queue.enqueue`，
+`binding.manual.decide` 同样仅控制通道可达。在 S6 建出入口之前，这条链的用户可见价值为零。
+
 ## 当前生产链路
 
 ```mermaid
