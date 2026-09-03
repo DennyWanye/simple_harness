@@ -45,6 +45,12 @@ def list_directory(args: dict[str, Any], task_id: str = "") -> str:
             "例如 {\"path\": \".\"} 列出当前目录。",
         )
 
+    # 相对路径按**本 Run 绑定的工作区根**解析、``~`` 展开；理由见 _scope_paths。
+    from ..context_adapter import legacy_execution_context
+    from ._scope_paths import normalize_model_path
+
+    context = legacy_execution_context(args, task_id)
+    path = normalize_model_path(path, context.write_scope_root)
     p = Path(path)
     if not p.exists():
         return _err(

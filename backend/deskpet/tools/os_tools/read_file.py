@@ -113,6 +113,10 @@ def read_file(
             "read_file 的 path 字段必填，必须是要读取文件的路径字符串。"
             "例如 {\"path\": \"README.md\"}。可选 offset / limit 控制读取行范围。",
         )
+    # 相对路径按**本 Run 绑定的工作区根**解析、``~`` 展开；理由见 _scope_paths。
+    from ._scope_paths import normalize_model_path
+
+    path = normalize_model_path(path, context.write_scope_root)
     p = Path(path)
     if not p.exists():
         suggestions = _did_you_mean(p)

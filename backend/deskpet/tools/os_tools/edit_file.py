@@ -145,6 +145,11 @@ def edit_file(
     # OpenSpec §D3 — companion session write-scope（见 write_file 注释）。
     context = legacy_execution_context(args, task_id, execution_context)
     _scope_root = context.write_scope_root
+    # ``~`` 必须在越界校验**之前**展开：否则 ``~/x`` 会被 write_scope_check
+    # 当成相对路径判成"在 scope_root 内"，而实际落到 $HOME/x——那是越界通道。
+    from ._scope_paths import normalize_model_path
+
+    path = normalize_model_path(path, _scope_root)
     if isinstance(path, str) and path and _scope_root:
         from agent.write_scope import write_scope_check as _ws_check
 
