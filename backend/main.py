@@ -3166,6 +3166,43 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
                 generation=generation, terminal_state=terminal_state,
             )
 
+    async def _foreground_conversation_entrypoint(
+        *,
+        session_id: str,
+        sdk_run_id: str,
+        text: str,
+        context_snapshot_id: str,
+    ) -> object:
+        """前台 Run 的主对话入口。
+
+        冻结 SDK ``runtime/kernel.py:729-733`` 规定：启用 Agent Memory 时 ``start()``
+        必须带 ``conversation``。前台链此前不传，于是生产上从未真正启动过一个前台
+        SDK Run（实测 ``conversation_entrypoint_required``）。这里用与 chat 路径
+        （``main.py:10409``/``:10440``）**同一套**身份权威与 context source 仓库构造它。
+        """
+
+        from simple_harness.contracts.messages import Message, MessageRole
+        from simple_harness.runtime import ConversationTurnInput
+
+        identity_authority = service_context.get("memory_identity_authority")
+        if identity_authority is None:
+            raise RuntimeError("validated Memory identity authority is unavailable")
+        context_sources = service_context.get("sdk_context_source_repository")
+        if context_sources is None:
+            raise RuntimeError("SDK context source repository is unavailable")
+        identity = await identity_authority.bind(session_id=session_id)
+        _binding_id, source_ref = await context_sources.put_pending(
+            root_run_id=sdk_run_id,
+            continuation_id=None,
+            payload={"foreground_context_snapshot_id": context_snapshot_id},
+        )
+        return ConversationTurnInput(
+            identity=identity,
+            message=Message(MessageRole.USER, text),
+            memory_text=text,
+            context_source_snapshot_ref=source_ref,
+        )
+
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
@@ -3198,6 +3235,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         # durable SdkRunBindingV1 (same record the post-turn invoker rebuilds from).
         run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id),
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
+        conversation_entrypoint=_foreground_conversation_entrypoint,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(

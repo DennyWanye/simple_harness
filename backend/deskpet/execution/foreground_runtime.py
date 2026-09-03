@@ -17,7 +17,7 @@ import json
 import re
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -320,6 +320,7 @@ class ForegroundRuntimeExecutionAuthority:
         closure_fallback: object | None = None,
         run_binding_reader: Callable[[str], object] | None = None,
         endpoint_identity_resolver: Callable[[Mapping[str, object]], str | None] | None = None,
+        conversation_entrypoint: Callable[..., Awaitable[object]] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -333,6 +334,12 @@ class ForegroundRuntimeExecutionAuthority:
         self._provider = provider
         self._tools = tools
         self._terminal = terminal_observer
+        # 冻结 SDK ``runtime/kernel.py:729-733``：启用 Agent Memory 时 ``start()`` 必须带
+        # ``conversation``，否则 ``conversation_entrypoint_required``。此前前台链调
+        # ``ingress.start`` 时不传它，于是**生产上从未真正启动过一个前台 SDK Run**
+        # （实测证据 ``.local-test-evidence/real-ui-channel/20260903T1640-wsentry``）。
+        # pytest 车道用基座自建 runtime，绕过了这里，所以一直是绿的。
+        self._conversation_entrypoint = conversation_entrypoint
         self._audit = audit_sink
         self._effect_gate = effect_gate
         # S5b Task 3: semantic-closure fallback between the SDK terminal
@@ -818,6 +825,14 @@ class ForegroundRuntimeExecutionAuthority:
             )
             start_returned = True
             try:
+                conversation = None
+                if self._conversation_entrypoint is not None:
+                    conversation = await self._conversation_entrypoint(
+                        session_id=execution_session_id,
+                        sdk_run_id=sdk_run_id,
+                        text=context.current_text,
+                        context_snapshot_id=context.snapshot_id,
+                    )
                 receipt = await self._ingress.start(
                     session_id=execution_session_id,
                     request_id=request_id,
@@ -826,6 +841,7 @@ class ForegroundRuntimeExecutionAuthority:
                     session_generation=catalog_generation,
                     tool_catalog_fingerprint=catalog_fingerprint,
                     provider_budget_fingerprint=budget_fingerprint,
+                    conversation=conversation,
                     initial_route_receipt=route,
                     initial_route_receipt_hash=route.receipt_hash,
                 )
