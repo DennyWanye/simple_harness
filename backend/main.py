@@ -9492,6 +9492,25 @@ async def _signal_product_harness_decision(
             sdk_run_id,
             authorization_ws=projection_ws,
         )
+    # 前台 Run 的驱动循环在观察到 BOUND_WAITING（等待用户授权）后就返回，
+    # 而它只被 ``after_enqueue`` / ``after_control`` 唤醒——``after_control`` 在生产上
+    # **零调用者**（此前只有测试调）。于是用户批准之后没有任何东西把驱动叫醒，
+    # Run 虽然跑完却永远收不了尾：回合停在 CLAIMED、终态提交不执行、
+    # Memory ingestion outbox 行（写在终态事务里）永远不产生。
+    # 实测证据 .local-test-evidence/real-ui-channel/prod-lane-04。
+    foreground_runtime = service_context.get(
+        "human_memory_foreground_runtime_execution_authority"
+    )
+    if foreground_runtime is not None:
+        try:
+            await foreground_runtime.after_control(
+                subject="deskpet-local-owner-v1"
+            )
+        except Exception as exc:  # noqa: BLE001 - 唤醒失败不得影响本次决策落地
+            logger.warning(
+                "foreground_runtime_wake_after_decision_failed error_type=%s",
+                type(exc).__name__,
+            )
     return receipt
 
 
