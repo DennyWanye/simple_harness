@@ -499,9 +499,15 @@ class ForegroundRuntimeExecutionAuthority:
             raise
         except Exception as exc:  # noqa: BLE001 - durable state remains recoverable
             self._last_error = exc
+            # 只记 error_code 时，SQLite IntegrityError 这类异常会退化成一个无从下手的
+            # 类名（实测 20260903T1700-wsentry 卡住时只看到 "IntegrityError"）。
+            # 追加异常类型与消息：这条日志只进 Host 日志、不对模型可见，且内容是
+            # 我们自己的约束名/表名，不含凭据。
             self._record_audit(
                 "foreground.runtime.failed",
                 error_code=str(getattr(exc, "code", type(exc).__name__)),
+                error_type=type(exc).__name__,
+                error_detail=str(exc)[:500],
             )
 
     async def _drive_once(self) -> bool:
