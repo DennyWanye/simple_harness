@@ -139,7 +139,11 @@ async def test_absolute_path_cannot_expand_trusted_workspace(
         )
     )
 
-    assert result == {"error": "path outside workspace", "retriable": False}
+    assert result == {
+            "error": "path outside workspace",
+            "retriable": False,
+            "error_code": "path_outside_workspace",
+        }
     assert not outside.exists()
 
 
@@ -204,7 +208,11 @@ def test_write_rejects_invalid_mode(sandbox: Path):
 )
 def test_read_rejects_escaping_paths(sandbox: Path, evil: str):
     r = json.loads(registry.dispatch("file_read", {"path": evil}))
-    assert r == {"error": "path outside workspace", "retriable": False}
+    assert r == {
+            "error": "path outside workspace",
+            "retriable": False,
+            "error_code": "path_outside_workspace",
+        }
 
 
 @pytest.mark.parametrize(
