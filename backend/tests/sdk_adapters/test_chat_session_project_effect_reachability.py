@@ -21,12 +21,12 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.task_scope.runtime_binding_authority import (
     WorkspaceBindingRuntimeAuthority,
 )
+from deskpet.task_scope.store import CanonicalTaskScopeStore
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
 
 SUBJECT = "deskpet-local-owner-v1"
@@ -47,18 +47,32 @@ async def state_db(tmp_path: Path) -> Path:
 
 
 @pytest.mark.asyncio
-async def test_chat_session_cannot_bind_workspace_without_a_foreground_run(
+async def test_agent_binds_a_task_directory_before_any_foreground_run(
     state_db: Path, tmp_path: Path
 ) -> None:
-    """没有前台 Run 时（= 桌面普通聊天的形态），建域绑定必然失败。
+    """AUTO 模式下 Agent 可在**任务启动前**为任务域绑定既定 workspace 下的目录。
 
-    这是 ``context_route(route="create_new")`` 内部调用的同一段生产代码
-    （``sdk_adapters/context_route.py:489`` → ``append_binding``）。
+    用户 2026-09-03 决定：「让 Agent 自己按照任务在既定 workspace 里面建立目录，
+    auto 模式下不需要用户授权，非 auto 模式下弹窗让用户同意」。
+
+    这解开了此前实测到的死锁（证据 `20260903T15{00,20}-wsentry`）：
+    `ProductForegroundToolPort.freeze:305-311` 要求候选带 `binding_set_revision >= 1`
+    才能起前台 Run，而旧实现的 `_append_auto` 又要求**已存在**的前台 Run 才能绑定，
+    于是生产上造不出第一个绑定。
     """
 
-    workspace = tmp_path / "project"
-    workspace.mkdir()
-    (workspace / "README.md").write_text("version: 1.1.3\n", encoding="utf-8")
+    configured = tmp_path / "SimpleHarnessWorkSpace"
+    configured.mkdir()
+    task_dir = configured / "demo-project"  # 尚不存在：由 Agent 建
+
+    scope_store = CanonicalTaskScopeStore(state_db)
+    await scope_store.initialize()
+    await scope_store.create_task_scope(
+        task_scope_id="scope-bootstrap-1",
+        subject=SUBJECT,
+        title="Demo Project README 版本维护",
+        goal="更新 README 的 version 字段",
+    )
 
     foreground = ForegroundQueueStore(state_db)
     authority = WorkspaceBindingRuntimeAuthority(
@@ -66,24 +80,54 @@ async def test_chat_session_cannot_bind_workspace_without_a_foreground_run(
         subject=SUBJECT,
         foreground=foreground,
         policy=_AutoPolicy(),
-        configured_workspace_root=workspace,
+        configured_workspace_root=configured,
+    )
+    # 前置事实：没有任何前台 Run。
+    assert await foreground.current_snapshot(SUBJECT) is None
+    assert not task_dir.exists()
+
+    outcome = await authority.append_binding(
+        subject=SUBJECT,
+        task_scope_id="scope-bootstrap-1",
+        root=str(task_dir),
+        idempotency_key="bootstrap-1",
+        interaction_evidence_id="evidence-1",
+        interaction_evidence_hash="a" * 64,
     )
 
-    # 前置事实：聊天会话不入前台队列，所以没有任何 active head。
-    assert await foreground.current_snapshot(SUBJECT) is None
+    assert str(outcome.get("status")) == "bound"
+    assert task_dir.is_dir(), "Agent 应当为任务建出目录"
+    # 绑定真的落了账，且 revision >= 1（正是 freeze 要求的那个前提）。
+    assert int(outcome.get("binding_set_revision") or 0) >= 1
 
-    with pytest.raises(WorkspaceBindingError) as excinfo:
+
+@pytest.mark.asyncio
+async def test_bootstrap_binding_still_refuses_roots_outside_the_workspace(
+    state_db: Path, tmp_path: Path
+) -> None:
+    """安全边界不因 bootstrap 放宽：既定 workspace 之外的根照旧拒绝，且不建目录。"""
+
+    configured = tmp_path / "SimpleHarnessWorkSpace"
+    configured.mkdir()
+    outside = tmp_path / "elsewhere" / "secret"
+
+    authority = WorkspaceBindingRuntimeAuthority(
+        state_db,
+        subject=SUBJECT,
+        foreground=ForegroundQueueStore(state_db),
+        policy=_AutoPolicy(),
+        configured_workspace_root=configured,
+    )
+    with pytest.raises(WorkspaceBindingError):
         await authority.append_binding(
             subject=SUBJECT,
-            task_scope_id="scope-chat-1",
-            root=str(workspace),
-            idempotency_key="context-route:run-chat-1:effect-1",
-            interaction_evidence_id="context-route:run-chat-1:effect-1",
-            interaction_evidence_hash="a" * 64,
+            task_scope_id="scope-outside-1",
+            root=str(outside),
+            idempotency_key="outside-1",
+            interaction_evidence_id="evidence-2",
+            interaction_evidence_hash="b" * 64,
         )
-
-    # 这正是真实桌面 UI 上观察到的那个码（证据 20260903T1300-uiB）。
-    assert str(excinfo.value) == "workspace_binding_current_run_authority_missing"
+    assert not outside.exists(), "workspace 之外的目录一律不得创建"
 
 
 @pytest.mark.asyncio
@@ -107,55 +151,3 @@ async def test_binding_succeeds_once_a_foreground_run_exists(tmp_path: Path) -> 
     # （此处不再往下跑真实 append_binding：基座的工作区根与 configured_root 同源，
     #   会先撞上无关的 ``workspace_root_too_broad`` 根宽度校验，与本缺口无关。）
     assert snapshot.host_run_id
-
-
-@pytest.mark.asyncio
-async def test_production_workspace_binding_bootstrap_is_deadlocked(
-    state_db: Path, tmp_path: Path
-) -> None:
-    """**生产上造不出第一个 workspace binding**（S5B-P0-BOOTSTRAP）。
-
-    三条腿互相咬死，实测于真实运行后端（证据
-    `.local-test-evidence/real-ui-channel/20260903T1500-wsentry` / `…T1520-wsentry`）：
-
-    1. `foreground_runtime_ports.ProductForegroundToolPort.freeze:305-311` 要求候选带
-       `binding_set_revision >= 1`，否则抛 `foreground_tool_binding_authority_missing`
-       —— **未绑定的任务域，前台 Run 起不来**。
-    2. AUTO 模式下 `binding.append` → `_append_auto`
-       （`task_scope/runtime_binding_authority.py:288`）要求**已存在的前台 Run 快照**
-       —— **没有 Run 就绑不了**。
-    3. `binding.manual.propose`（`runtime_binding_authority.py:133`）在非 MANUAL 模式下
-       直接抛 `workspace_binding_manual_mode_required`，而产品默认 AUTO
-       —— **手动仪式也走不通**。
-
-    pytest 里程碑车道之所以能跑，是因为 `s5b_effect_gate_harness.bind_scope_root:473-501`
-    自建 `WorkspaceBindingAuthorityStore` 并注入 `_ManualAuthority()` 桩，**同时绕过**
-    模式检查与前台 Run 检查——它制造了一个生产路径造不出来的绑定。
-    """
-
-    foreground = ForegroundQueueStore(state_db)
-    workspace = tmp_path / "project"
-    workspace.mkdir()
-
-    # 腿 2：AUTO 模式下没有前台 Run 就绑不了（上面第一条测试已单独锁住，这里复用同一断言）。
-    auto = WorkspaceBindingRuntimeAuthority(
-        state_db, subject=SUBJECT, foreground=foreground,
-        policy=_AutoPolicy(), configured_workspace_root=workspace,
-    )
-    assert await foreground.current_snapshot(SUBJECT) is None
-    with pytest.raises(WorkspaceBindingError) as auto_err:
-        await auto.append_binding(
-            subject=SUBJECT, task_scope_id="scope-bootstrap", root=str(workspace),
-            idempotency_key="k1", interaction_evidence_id="e1",
-            interaction_evidence_hash="a" * 64,
-        )
-    assert str(auto_err.value) == "workspace_binding_current_run_authority_missing"
-
-    # 腿 3：AUTO 模式下手动仪式被拒——生产默认就是 AUTO，所以这条也不通。
-    with pytest.raises(WorkspaceBindingError) as manual_err:
-        await auto.propose_manual_binding(
-            subject=SUBJECT, task_scope_id="scope-bootstrap", root=str(workspace),
-            idempotency_key="k2", interaction_evidence_id="e2",
-            interaction_evidence_hash="b" * 64,
-        )
-    assert str(manual_err.value) == "workspace_binding_manual_mode_required"

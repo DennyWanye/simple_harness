@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import hashlib
 import time
 import uuid
 from collections.abc import Mapping
@@ -66,6 +67,12 @@ class WorkspaceBindingRuntimeAuthority:
         self._foreground = foreground
         self._policy = policy
         self._clock_millis = clock_millis or (lambda: int(time.time() * 1000))
+        # 首次绑定的 bootstrap（用户 2026-09-03 决定）：AUTO 模式下 Agent 可以在任务
+        # 启动**之前**把既定 workspace 下的目录绑给任务域，不需要用户授权；非 AUTO
+        # 模式仍走弹窗确认。这里登记 pre-admission 的绑定上下文，使 store 的
+        # ``_verify_current_run_authority`` 仍能逐字段核对身份与血缘（校验不放宽，
+        # 只是承认"还没有前台 Run"这一合法状态）。
+        self._pre_admission: dict[str, CurrentRunBindingAuthority] = {}
         self._store = WorkspaceBindingAuthorityStore(
             self._db_path,
             configured_workspace_root=configured_workspace_root,
@@ -86,6 +93,7 @@ class WorkspaceBindingRuntimeAuthority:
         interaction_evidence_hash: str,
     ) -> Mapping[str, object]:
         self._assert_subject(subject)
+        self._ensure_task_directory(root)
         state = await self._policy.get_policy_state()
         mode = str(getattr(state, "mode", ""))
         if mode == WorkspaceBindingMode.MANUAL.value:
@@ -117,6 +125,37 @@ class WorkspaceBindingRuntimeAuthority:
                     "workspace_binding_auto_root_outside_configured_workspace"
                 ) from exc
             raise
+
+    def _ensure_task_directory(self, root: str) -> None:
+        """按任务在**既定 workspace 下**建目录（用户 2026-09-03 决定）。
+
+        ``canonical_workspace_root`` 用 ``resolve(strict=True)``，目录不存在就绑不了，
+        所以 Agent 要能为任务新建目录必须先落盘。安全边界不放宽：只在既定
+        workspace root 的真实后代位置创建，其余一律不建、交给既有校验拒绝
+        （根宽度、公共父目录、静默换根等检查全部照旧在后面执行）。
+        """
+
+        configured = self._store.configured_root()
+        base = Path(configured.canonical_path)
+        candidate = Path(root).expanduser()
+        if not candidate.is_absolute():
+            return
+        try:
+            resolved_parent = candidate.parent.resolve(strict=False)
+        except OSError:
+            return
+        # 只认「既定 root 的真实后代」；candidate 本身等于 base 时不建（后面会以
+        # workspace_root_too_broad 拒绝），parent 不在 base 之下时也不建。
+        if base != resolved_parent and base not in resolved_parent.parents:
+            return
+        if candidate.exists():
+            return
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            # 建不出来就让后续 canonical_workspace_root 以既有错误码拒绝，
+            # 不在这里造新的失败语义。
+            return
 
     async def propose_manual_binding(
         self,
@@ -207,6 +246,9 @@ class WorkspaceBindingRuntimeAuthority:
     async def load_current_run_binding(
         self, run_id: str
     ) -> CurrentRunBindingAuthority | None:
+        pending = self._pre_admission.get(run_id)
+        if pending is not None:
+            return pending
         snapshot = await self._foreground.current_snapshot(self._subject)
         if snapshot is None or snapshot.host_run_id != run_id:
             return None
@@ -283,35 +325,78 @@ class WorkspaceBindingRuntimeAuthority:
         idempotency_key: str,
         policy_generation: int,
     ) -> Mapping[str, object]:
-        current = await self._foreground.current_snapshot(self._subject)
-        if current is None:
-            raise WorkspaceBindingError("workspace_binding_current_run_authority_missing")
-        if current.task_scope_id != task_scope_id:
-            raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
-        proposal = self._proposal(
-            run_id=current.host_run_id,
-            task_scope_id=task_scope_id,
-            root=root,
-            idempotency_key=idempotency_key,
-            base_revision=current.binding_set_revision,
-        )
         configured = self._store.configured_root()
-        request = RunBindingModeSnapshotRequest(
-            request_id=_uuid(f"workspace-binding-mode-request:{proposal.proposal_hash}"),
-            run_id=current.host_run_id,
-            subject=self._subject,
-            run_revision=current.generation,
-            task_scope_id=task_scope_id,
-            binding_set_revision=current.binding_set_revision,
-            context_snapshot_id=current.context_snapshot_id,
-            context_snapshot_revision=current.context_snapshot_revision,
-            context_snapshot_hash=current.context_snapshot_hash,
-            configured_workspace_root=configured,
-            configuration_revision=policy_generation + 1,
-        )
-        snapshot = await self._store.issue_run_binding_mode_snapshot(request)
-        grant = await self._store.authorize_auto_binding(proposal, snapshot)
-        receipt = await self._store.append_binding(proposal, grant)
+        current = await self._foreground.current_snapshot(self._subject)
+        if current is not None and current.task_scope_id != task_scope_id:
+            raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
+
+        if current is not None:
+            run_id = current.host_run_id
+            run_revision = current.generation
+            base_revision = current.binding_set_revision
+            snapshot_id = current.context_snapshot_id
+            snapshot_revision = current.context_snapshot_revision
+            snapshot_hash = current.context_snapshot_hash
+            pre_admission_key: str | None = None
+        else:
+            # **首次绑定 bootstrap**（用户 2026-09-03 决定）。此前这里直接抛
+            # ``current_run_authority_missing``，与 ``ProductForegroundToolPort.freeze``
+            # 要求候选带 ``binding_set_revision >= 1`` 形成死锁：没绑定就起不了 Run，
+            # 没 Run 就绑不了——生产上造不出第一个绑定（实测证据
+            # ``.local-test-evidence/real-ui-channel/20260903T15{00,20}-wsentry``）。
+            # AUTO 模式下改为承认「还没有前台 Run」这一合法状态，由 Agent 直接绑定。
+            run_id = _uuid(
+                f"workspace-binding-preadmission-run:{self._subject}:{task_scope_id}:{idempotency_key}"
+            )
+            # run_revision 契约要求正整数（disclosure_protocol._positive_int）。
+            run_revision = 1
+            base_revision = self._binding_revision(task_scope_id)
+            snapshot_id = _uuid(f"workspace-binding-preadmission-context:{run_id}")
+            snapshot_revision = 1
+            snapshot_hash = hashlib.sha256(snapshot_id.encode("utf-8")).hexdigest()
+            pre_admission_key = run_id
+            self._pre_admission[run_id] = CurrentRunBindingAuthority(
+                run_id=run_id,
+                subject=self._subject,
+                run_revision=run_revision,
+                task_scope_id=task_scope_id,
+                binding_set_revision=base_revision,
+                context_snapshot_id=snapshot_id,
+                context_snapshot_revision=snapshot_revision,
+                context_snapshot_hash=snapshot_hash,
+                configured_workspace_root=configured,
+                configuration_revision=policy_generation + 1,
+                binding_mode=WorkspaceBindingMode.AUTO,
+                lifecycle="active",
+            )
+
+        try:
+            proposal = self._proposal(
+                run_id=run_id,
+                task_scope_id=task_scope_id,
+                root=root,
+                idempotency_key=idempotency_key,
+                base_revision=base_revision,
+            )
+            request = RunBindingModeSnapshotRequest(
+                request_id=_uuid(f"workspace-binding-mode-request:{proposal.proposal_hash}"),
+                run_id=run_id,
+                subject=self._subject,
+                run_revision=run_revision,
+                task_scope_id=task_scope_id,
+                binding_set_revision=base_revision,
+                context_snapshot_id=snapshot_id,
+                context_snapshot_revision=snapshot_revision,
+                context_snapshot_hash=snapshot_hash,
+                configured_workspace_root=configured,
+                configuration_revision=policy_generation + 1,
+            )
+            snapshot = await self._store.issue_run_binding_mode_snapshot(request)
+            grant = await self._store.authorize_auto_binding(proposal, snapshot)
+            receipt = await self._store.append_binding(proposal, grant)
+        finally:
+            if pre_admission_key is not None:
+                self._pre_admission.pop(pre_admission_key, None)
         return self._binding_result(receipt, status="bound")
 
     def _proposal(
