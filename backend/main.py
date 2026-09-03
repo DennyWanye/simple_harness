@@ -3172,6 +3172,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         sdk_run_id: str,
         text: str,
         context_snapshot_id: str,
+        provider_messages: tuple = (),
     ) -> object:
         """前台 Run 的主对话入口。
 
@@ -3194,7 +3195,10 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         _binding_id, source_ref = await context_sources.put_pending(
             root_run_id=sdk_run_id,
             continuation_id=None,
-            payload={"foreground_context_snapshot_id": context_snapshot_id},
+            payload={
+                "provider_messages": [dict(item) for item in provider_messages],
+                "foreground_context_snapshot_id": context_snapshot_id,
+            },
         )
         return ConversationTurnInput(
             identity=identity,

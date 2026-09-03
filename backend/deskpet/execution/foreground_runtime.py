@@ -838,6 +838,7 @@ class ForegroundRuntimeExecutionAuthority:
                         sdk_run_id=sdk_run_id,
                         text=context.current_text,
                         context_snapshot_id=context.snapshot_id,
+                        provider_messages=context.provider_messages,
                     )
                 receipt = await self._ingress.start(
                     session_id=execution_session_id,
