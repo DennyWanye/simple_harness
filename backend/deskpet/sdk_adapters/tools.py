@@ -11,6 +11,7 @@ import hashlib
 import inspect
 import json
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Literal, Protocol
@@ -20,6 +21,7 @@ from simple_harness.tools import (
     FunctionTool,
     ToolCall,
     ToolContext,
+    ToolOutcome,
     ToolRegistry,
     ToolResult,
     ToolSpec,
@@ -591,6 +593,14 @@ class ProductEffectExecutor(EffectExecutor):
             _validation_run_id.reset(token)
 
 
+# A handler may opt into a stable, model-visible failure by returning
+# ``{"error": ..., "error_code": "<stable_code>", "public_message": "..."}``.
+# The code must use this alphabet (no paths, stack frames, secrets) and the
+# message is bounded; anything else keeps the opaque default mapping.
+_SAFE_HANDLER_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_MAX_HANDLER_PUBLIC_MESSAGE = 2048
+
+
 def _result(raw: Any) -> ToolResult:
     call_id = active_product_tool_call_id()
     if isinstance(raw, ToolResult):
@@ -612,6 +622,14 @@ def _result(raw: Any) -> ToolResult:
         if isinstance(error, Mapping):
             code = str(error.get("code") or code)
             message = str(error.get("message") or message)
+        declared_code = value.get("error_code")
+        if isinstance(declared_code, str) and _SAFE_HANDLER_ERROR_CODE.fullmatch(
+            declared_code
+        ):
+            code = declared_code
+            declared_message = value.get("public_message")
+            if isinstance(declared_message, str) and declared_message.strip():
+                message = declared_message.strip()[:_MAX_HANDLER_PUBLIC_MESSAGE]
         return ToolResult.failed(call_id, code, message)
     return ToolResult.succeeded(call_id, value)
 
@@ -648,7 +666,15 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
         raw = registration.handler(arguments, context)
         if inspect.isawaitable(raw):
             raw = await raw
-        return _result(raw)
+        result = _result(raw)
+        if result.outcome is ToolOutcome.FAILED:
+            # Host-side trace of every failed product Tool call: stable code
+            # only, never the handler payload (it may carry private data).
+            logger.warning(
+                "product_tool.failed",
+                extra={"tool": registration.name, "code": result.error_code},
+            )
+        return result
 
     input_schema = _sdk_input_schema(registration.input_schema)
     if input_schema.get("type") == "object":

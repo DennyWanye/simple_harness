@@ -42,6 +42,31 @@ hash；投影内部 input-schema hash 不再以同名字段重复暴露，避免
 授权和 workspace 校验均保持不变。真实 `deepseek-v4-flash` 已分别在逐项手动授权与 Agent 全开模式完成
 `search → describe → activate → write_file`，两次写入都只落在同一 immutable Project root。
 
+2026-09-03（S5b 真实桌面 UI 验收 UI-B 抓到的缺陷 S5B-UI-F1）：**「本 Run 内不可激活」必须在披露侧说清楚，
+拒绝侧必须给稳定码而不是不透明失败**。project-bound Run 会把进程级 `mcp:filesystem` 判为
+`workspace_unscoped`（它的根是应用 userdata，不能重绑到 Session 的冻结 workspace，见
+`PROJECT_BOUND_UNSCOPED_MCP_SOURCES`）。此前这类 capability 与普通 deferred 工具在 `tool_search` 里毫无区别、
+`tool_describe` 照常返回 `activation_required=true`，而 `tool_activate` 抛出的
+`tool_unavailable:workspace_unscoped` 在 `deskpet/sdk_adapters/tools.py::_result` 被压成
+`tool_failed` / “Tool execution failed.” 且 Host 无任何日志——真实模型据此原样重试三次，直到
+`react_repeated_tool_exceeded` 整 Run 失败。现在的契约：
+
+- `tool_search` 结果对这类 capability 标 `activatable=false` + `availability_reason` + `next_action`，
+  并在 Host 侧把可激活项稳定排在描述符项之前（SDK 按 token 命中排序，长 MCP 描述会盖过内建文件工具）；
+  分页在重排后的列表上进行，cursor 语义不变。
+- `tool_describe` 对这类 capability 返回 `activatable=false` / `activation_required=false` 与
+  “不要调用 tool_activate”的 `next_action`，不再诱导模型浪费一轮。
+- `tool_activate` 的拒绝返回**稳定 error_code**（`tool_unavailable`、`activation_schema_hash_stale`、
+  `catalog_describe_nonce_invalid`、`catalog_capability_not_found`、`activation_scope_stale` 等，
+  白名单字母表 `^[a-z][a-z0-9_]{0,63}$`）+ 一条可执行的 `next_action`，绝不泄露路径、堆栈或私密内容；
+  Host 记 `tool_activate.rejected` 结构化日志（只含稳定码与 capability id）。
+- 产品 Tool handler 可以通过返回 `error_code`/`public_message` 让稳定码穿过 `_result` 映射；
+  任何不合白名单的取值仍退回不透明默认值。每个失败的产品 Tool 调用都会记一条 `product_tool.failed`
+  （只含工具名与稳定码）。
+
+决定性测试：`backend/tests/sdk_adapters/test_tool_activate_unavailable_disclosure.py`（用生产投影、
+真实 registry 与真实 handler 复现 UI-B 的 Run 形态）。
+
 2026-08-29，user-global Skill 安装进入同一 SDK-first 目录：每个前台 Run 在 publish lock 内冻结 exact
 user-global Hub snapshot，并把 body-free Skill records 合并进 Run catalog。`skill` namespace 由统一的
 `product-skill-catalog` authority 管理，具体 pack owner 与版本/hash 留在 metadata；因此 builtin 与不同用户

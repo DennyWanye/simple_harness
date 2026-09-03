@@ -22,11 +22,118 @@ the tool is a hit. We sort hits by number of tokens matched
 from __future__ import annotations
 
 import json
+import logging
+import re
 from typing import Any
 
 from .capabilities import ToolCapabilityBridgeService
 
+logger = logging.getLogger(__name__)
+
 _legacy_registry = None
+
+# Stable, model-facing rejection codes may only use this alphabet so a handler
+# exception can never smuggle a path, stack frame or secret into
+# ``ToolResult.error_code``.  Anything else collapses to the opaque default.
+_SAFE_ERROR_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_SAFE_CAPABILITY_ID = re.compile(r"^[A-Za-z0-9_:.\-]{1,200}$")
+
+_ACTIVATION_NEXT_ACTIONS: dict[str, str] = {
+    "activation_schema_hash_stale": (
+        "Call tool_describe again for this capability_id and copy the "
+        "top-level schema_hash and describe_nonce exactly into tool_activate."
+    ),
+    "catalog_describe_nonce_invalid": (
+        "The describe_nonce is stale or wrong. Call tool_describe again and "
+        "copy the top-level describe_nonce exactly into tool_activate."
+    ),
+    "catalog_capability_not_found": (
+        "Do not retry guessed capability ids. Call tool_search with a short "
+        "query, then copy one returned full capability_id exactly."
+    ),
+    "capability_denied": (
+        "Do not retry guessed capability ids. Call tool_search with a short "
+        "query, then copy one returned full capability_id exactly."
+    ),
+    "catalog_capability_already_direct": (
+        "This tool is already available directly; call it now without "
+        "tool_activate."
+    ),
+    "activation_scope_stale": (
+        "The activation scope moved. Call tool_describe again and retry "
+        "tool_activate once with the fresh describe_nonce."
+    ),
+}
+_DEFAULT_ACTIVATION_NEXT_ACTION = (
+    "Do not retry the same tool_activate arguments. Call tool_search again "
+    "and pick an activatable match, or continue with the tools already "
+    "exposed."
+)
+
+
+def _classify_bridge_error(exc: BaseException) -> tuple[str, str | None]:
+    """Map a bridge exception onto (stable_code, optional_reason).
+
+    Accepts SDK ``RuntimeToolCatalogError.code`` and the Host's own stable
+    ``RuntimeError("code")`` / ``RuntimeError("code:reason")`` messages; every
+    other message collapses to ``tool_activation_failed``.
+    """
+
+    raw = str(getattr(exc, "code", None) or exc or "").strip()
+    code, _sep, reason = raw.partition(":")
+    if not _SAFE_ERROR_CODE.fullmatch(code):
+        return "tool_activation_failed", None
+    if reason and not _SAFE_ERROR_CODE.fullmatch(reason):
+        reason = "unspecified"
+    return code, reason or None
+
+
+def _activation_rejection(
+    exc: BaseException, requested_capability_id: str
+) -> dict[str, Any]:
+    code, reason = _classify_bridge_error(exc)
+    capability_id = (
+        requested_capability_id
+        if _SAFE_CAPABILITY_ID.fullmatch(requested_capability_id)
+        else "<invalid capability_id>"
+    )
+    if code == "tool_unavailable":
+        from deskpet.sdk_adapters.tool_authority import (
+            unavailable_capability_next_action,
+        )
+
+        next_action = unavailable_capability_next_action(reason or "")
+        message = (
+            f"tool_activate rejected for {capability_id}: not activatable in "
+            f"this Run (availability_reason={reason or 'unspecified'}). "
+            f"Do not retry tool_activate for it. {next_action}"
+        )
+    else:
+        next_action = _ACTIVATION_NEXT_ACTIONS.get(
+            code, _DEFAULT_ACTIVATION_NEXT_ACTION
+        )
+        message = f"tool_activate rejected for {capability_id}: {code}. {next_action}"
+    logger.warning(
+        "tool_activate.rejected",
+        extra={
+            "tool": "tool_activate",
+            "code": code,
+            "reason": reason,
+            "capability_id": capability_id,
+        },
+    )
+    payload: dict[str, Any] = {
+        "error": code if reason is None else f"{code}:{reason}",
+        "error_code": code,
+        "public_message": message,
+        "retriable": False,
+        "replan_required": True,
+        "requested_capability_id": capability_id,
+        "next_action": next_action,
+    }
+    if reason is not None:
+        payload["availability_reason"] = reason
+    return payload
 
 _SCHEMA: dict[str, Any] = {
     "name": "tool_search",
@@ -195,29 +302,39 @@ def register_capability_bridge_tools(
                 "error": error,
                 "retriable": False,
             }
-            if error == "capability_denied":
+            code, _reason = _classify_bridge_error(exc)
+            if code != "tool_activation_failed":
+                # Stable code survives the SDK ``_result`` mapping instead of
+                # collapsing into an opaque ``tool_failed``.
+                payload["error_code"] = code
+            if code in {"capability_denied", "catalog_capability_not_found"}:
                 try:
                     suggestions = service.suggestions(requested)
                 except Exception:  # noqa: BLE001
                     suggestions = []
+                next_action = (
+                    "Do not retry guessed capability ids. Call tool_search "
+                    "with a short query, then copy one returned full "
+                    "capability_id exactly."
+                )
                 payload.update(
                     {
                         "requested_capability_id": requested,
                         "suggestions": suggestions,
                         "replan_required": True,
-                        "next_action": (
-                            "Do not retry guessed capability ids. Call tool_search "
-                            "with a short query, then copy one returned full "
-                            "capability_id exactly."
+                        "next_action": next_action,
+                        "public_message": (
+                            f"tool_describe rejected: {code}. {next_action}"
                         ),
                     }
                 )
             return json.dumps(payload, ensure_ascii=False)
 
     def activate_handler(args: dict[str, Any], _task_id: str) -> str:
+        requested = str(args.get("capability_id", ""))
         try:
             proposal = service.activate(
-                str(args.get("capability_id", "")),
+                requested,
                 str(args.get("schema_hash", "")),
                 str(args.get("describe_nonce", "")),
             )
@@ -241,7 +358,14 @@ def register_capability_bridge_tools(
                 ensure_ascii=False,
             )
         except Exception as exc:  # noqa: BLE001
-            return json.dumps({"error": str(exc), "retriable": False})
+            # UI-B (S5b phase-4): the raw ``str(exc)`` used to be flattened
+            # into an opaque ``tool_failed`` by the SDK result mapping with no
+            # Host log, so the model retried the identical call until the
+            # repeated-tool limit failed the whole Run.  Return a stable code
+            # plus one actionable next step and log the rejection.
+            return json.dumps(
+                _activation_rejection(exc, requested), ensure_ascii=False
+            )
 
     search_schema = {
         **_SCHEMA,

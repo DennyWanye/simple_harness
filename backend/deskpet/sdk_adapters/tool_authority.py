@@ -33,6 +33,7 @@ from simple_harness.tools import (
     RuntimeToolCatalogError,
     ToolExposureMode,
 )
+from simple_harness.tools.runtime_catalog import MAX_SEARCH_RESULTS
 
 from deskpet.permissions.effect_policy import _CONFIRM_ONLY
 from deskpet.permissions.runtime import (
@@ -958,6 +959,16 @@ class SdkRunToolAuthorityRegistry:
         key = run_id.value if isinstance(run_id, RunId) else str(run_id)
         return self._unavailable_capabilities.get(key, {}).get(str(capability_id))
 
+    def unavailable_capabilities(self, run_id: object) -> Mapping[str, str]:
+        """capability_id -> availability_reason for descriptor-only records.
+
+        These capabilities are searchable/describable (the model may learn why
+        they are absent) but can never be activated in this Run.
+        """
+
+        key = run_id.value if isinstance(run_id, RunId) else str(run_id)
+        return dict(self._unavailable_capabilities.get(key, {}))
+
     def is_tool_exposed(self, run_id: object, tool_name: str) -> bool:
         """Return whether the SDK Run may currently project ``tool_name``.
 
@@ -1410,6 +1421,39 @@ class SdkCapabilityBridgeAdapter:
         return proposal
 
 
+# Model-facing guidance for capabilities that are searchable/describable in a
+# Run but can never be activated there (``ProductToolInventoryEntry.
+# availability_reason``).  UI-B (S5b phase-4) showed a real model looping on
+# ``tool_activate`` of a ``workspace_unscoped`` filesystem MCP tool because the
+# disclosure carried no reason and the refusal was an opaque ``tool_failed``.
+# The text names the product path that does work in that Run; it is not a
+# system-prompt change and contains no private data.
+UNAVAILABLE_CAPABILITY_NEXT_ACTIONS: Mapping[str, str] = {
+    "workspace_unscoped": (
+        "This capability is not bound to the Run workspace and cannot be "
+        "activated in this Run. Do not retry tool_activate for it. Use the "
+        "built-in workspace file tools instead (for example builtin:read_file, "
+        "builtin:list_directory, builtin:grep, builtin:edit_file, "
+        "builtin:write_file) via tool_describe -> tool_activate; project file "
+        "effects such as edit_file/write_file require calling context_route "
+        "first so the task scope and workspace root are bound."
+    ),
+}
+# One SDK search page when the Host re-ranks descriptor-only matches.
+MAX_SDK_SEARCH_PAGE = int(MAX_SEARCH_RESULTS)
+_DEFAULT_UNAVAILABLE_NEXT_ACTION = (
+    "This capability cannot be activated in this Run. Do not retry "
+    "tool_activate for it; choose a match without availability_reason or "
+    "call tool_search again with a different query."
+)
+
+
+def unavailable_capability_next_action(reason: str) -> str:
+    return UNAVAILABLE_CAPABILITY_NEXT_ACTIONS.get(
+        str(reason), _DEFAULT_UNAVAILABLE_NEXT_ACTION
+    )
+
+
 class SdkRuntimeCapabilityBridgeAdapter:
     """Delegate discovery and activation to the SDK-owned Runtime catalog."""
 
@@ -1427,13 +1471,64 @@ class SdkRuntimeCapabilityBridgeAdapter:
 
     def search(self, query: str, *, limit: int = 10, cursor: int = 0) -> dict[str, Any]:
         run_id, exposure = self._binding()
-        page = exposure.search(run_id, query, limit=limit, cursor=cursor)
-        return {
-            "matches": [item.to_json() for item in page.items],
-            "count": len(page.items),
+        unavailable = self._authorities.unavailable_capabilities(run_id)
+        if not unavailable:
+            page = exposure.search(run_id, query, limit=limit, cursor=cursor)
+            return {
+                "matches": [item.to_json() for item in page.items],
+                "count": len(page.items),
+                "query": str(query),
+                "next_cursor": page.next_cursor,
+            }
+        # Descriptor-only capabilities stay searchable so the model learns why
+        # they are absent, but they must never crowd out activatable matches:
+        # the SDK ranks by token hits, and a long MCP description outranked
+        # every built-in file tool in UI-B.  Re-rank on the Host side (stable
+        # partition, SDK order preserved within each group) and paginate the
+        # re-ranked list so cursor semantics stay consistent.
+        activatable: list[dict[str, Any]] = []
+        descriptor_only: list[dict[str, Any]] = []
+        sdk_cursor = 0
+        while True:
+            page = exposure.search(run_id, query, limit=MAX_SDK_SEARCH_PAGE, cursor=sdk_cursor)
+            for item in page.items:
+                value = item.to_json()
+                reason = unavailable.get(str(value.get("capability_id")))
+                if reason is None:
+                    activatable.append(value)
+                else:
+                    descriptor_only.append(
+                        {
+                            **value,
+                            "activatable": False,
+                            "availability_reason": reason,
+                            "next_action": unavailable_capability_next_action(reason),
+                        }
+                    )
+            if page.next_cursor is None:
+                break
+            sdk_cursor = page.next_cursor
+        ranked = [*activatable, *descriptor_only]
+        start = max(0, int(cursor))
+        stop = start + max(1, int(limit))
+        matches = ranked[start:stop]
+        result: dict[str, Any] = {
+            "matches": matches,
+            "count": len(matches),
             "query": str(query),
-            "next_cursor": page.next_cursor,
+            "next_cursor": stop if stop < len(ranked) else None,
         }
+        unavailable_count = sum(1 for item in matches if "availability_reason" in item)
+        if unavailable_count:
+            result["unavailable_count"] = unavailable_count
+            reasons = sorted({str(item["availability_reason"]) for item in matches if "availability_reason" in item})
+            result["next_action"] = (
+                f"{unavailable_count} match(es) carry availability_reason "
+                f"({', '.join(reasons)}) and cannot be activated in this Run; "
+                "prefer matches without availability_reason. "
+                + unavailable_capability_next_action(reasons[0])
+            )
+        return result
 
     def suggestions(self, capability_id: str, *, limit: int = 3) -> list[dict[str, Any]]:
         query = str(capability_id).replace(":", " ")
@@ -1461,6 +1556,19 @@ class SdkRuntimeCapabilityBridgeAdapter:
         value["schema_hash"] = value["capability_hash"]
         value["describe_nonce"] = value["nonce"]
         value["capability_id"] = descriptor["capability_id"]
+        reason = self._authorities.unavailable_reason(run_id, descriptor["capability_id"])
+        if reason is not None:
+            # Descriptor-only in this Run: say so before the model wastes a
+            # tool_activate turn (UI-B looped three times on exactly this).
+            value["activatable"] = False
+            value["activation_required"] = False
+            value["availability_reason"] = reason
+            value["next_action"] = (
+                "Do not call tool_activate for this capability_id. "
+                + unavailable_capability_next_action(reason)
+            )
+            return value
+        value["activatable"] = True
         value["activation_required"] = True
         value["next_action"] = (
             "Call tool_activate now, copying the top-level capability_id, "
