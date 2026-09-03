@@ -1,6 +1,28 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-09-03
+> **最后更新**：2026-09-04
+
+## 2026-09-04 Human Memory S5b Task 7：前台任务执行链生产入口跑通与路径契约收口
+
+- **前台执行链首次在生产入口跑通**：控制通道 `queue.enqueue` → `_drive_claimed` → SDK ReActLoop →
+  终态提交 → 认知记忆物化。该链此前从未在生产上跑通——`_drive_claimed` 在 pytest 里零覆盖，
+  测试基座手工按序推进状态机，把每处生产装配缺口都恰好补上。共修 9 处**既有缺陷**，
+  逐处契约见 [`AGENT_HARNESS.md` 前台任务执行链](./AGENT_HARNESS.md)。
+- **P0-12（路径契约）**：`file_read`/`file_write` 的 `_resolve_within_workspace` 不展开 `~`，
+  `Path("~/x")` 不是绝对路径 → 被拼成 `<root>/~/x` → 通过后代校验却指向不存在的文件。
+  本项目提示词习惯用 `~/SimpleHarnessWorkSpace/...` 表述，这条路径几乎必踩。
+  **性质**：决定性验收项的通过与否取决于模型当次随机选了哪种路径写法，同一条指令时绿时红，
+  极易被误判成模型抖动。修法：`~` 在后代校验**之前**展开，`relative_to(root)` 仍是唯一边界权威。
+- **P0-11（os_tools 路径归一化）**：`read_file`/`list_directory` 相对路径按进程 cwd 解析；
+  `write_file`/`edit_file` 的 `~` 在越界校验**之后**才展开——后者是越界通道（`~/x` 被判成
+  scope 内而实际写向 `$HOME/x`）。四个工具统一走 `os_tools/_scope_paths.normalize_model_path`，
+  次序钉死为"先展开、后校验"，变异验证：调换次序用例立刻转红。
+- **终态语义澄清**：`foreground_turn_heads.current_state = SETTLED` 只表示回合终止，不表示成功；
+  业务结果由 `foreground_terminal_receipts.terminal_state` 与 `task_scope_closure_receipts` 承载。
+  上游 provider 502 / 60s timeout 得到 `SETTLED` + `terminal_state=FAILED` + 零收口回执，是正确行为。
+- **默认全开**：以上修复无开关，随交付即生效。
+- **遗留义务（S6）**：该链**没有任何桌面 UI 入口**，前端零调用 `queue.enqueue`，
+  在 S6 建出入口之前用户可见价值为零。
 
 ## 2026-09-03 Human Memory S5b Task 6：effect gate 加固、Auto `explicit_only`、composition 真构造、v46 cutover 与遗留义务
 

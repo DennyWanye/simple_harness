@@ -625,12 +625,22 @@ analysis → 认知记忆物化。
 | 5 | Host 自签的 HOST_INITIAL 路由回执只校验、不落账 → 首轮 `latest_task_route_decision()` 恒 None，模型的 `continue_active` 必然失败 | `TaskScopeForegroundContextPort` 校验通过后记一条 `origin=host_initial` 的路由决策（与模型自选的 `context_tool` 区分） |
 | 6 | `edit_file` 相对路径按**进程 cwd** 解析，且拒绝被压成通用 `tool_failed` | 相对路径按 `write_scope_root`（越界校验用的同一个根）解析；拒绝给稳定码 `edit_file_rejected` + 含原因的 `public_message` |
 | 7 | 驱动在 `BOUND_WAITING` 后 return，而唤醒它的 `after_control` **生产零调用者** → 用户批准后无人叫醒，回合永停 CLAIMED、终态提交不执行、Memory outbox 永不产生 | `_signal_product_harness_decision` 在决策落地后调 `after_control`；唤醒失败只记 warning |
+| 8 | `file_read` / `file_write` 的 `_resolve_within_workspace` 不展开 `~`：`Path("~/x")` 不是绝对路径，被拼成 `<root>/~/x`——既通过 `relative_to(root)` 后代校验，又指向不存在的文件，模型只收到 "file not found" 而无从改正 | `~` 在后代校验**之前**展开；展开后成为绝对路径，`relative_to(root)` 仍是唯一边界权威（`~/.ssh/id_rsa`、`~/../../etc/passwd` 照拒） |
+| 9 | `read_file` / `list_directory` 相对路径按**进程 cwd** 解析（同 #6，但当时只修了 `edit_file`）；`write_file`/`edit_file` 的 `~` 在**越界校验之后**才展开 | 四个 os_tool 统一走 `os_tools/_scope_paths.normalize_model_path`：`~` 展开 → 相对路径按 `write_scope_root` 解析。**次序是安全要求**：先校验后展开时 `~/x` 会被判成 scope 内而实际写向 `$HOME/x` |
 
-**闭环实证**（`.local-test-evidence/real-ui-channel/prod-lane-05` 与 `prod-lane-08`，两次独立
-root run，真实 provider `gpt-5.6-luna`，自然用户语言）：README `1.1.3→1.2.0` 真实写入 →
-客观事件 39/41 行 → 语义收口回执 1 行 `outcome=mutate` → 前台回合 `SETTLED` →
-`memory_ingestion_outbox` + `memory_ingestion_evidence_links` 各 1 行 →
-`cognitive_memory_heads` 1 行（episode）。
+**闭环实证**（`.local-test-evidence/real-ui-channel/` 下多次独立 root run，真实 provider
+`gpt-5.6-luna`，自然用户语言）：README `1.1.3→1.2.0` 真实写入 → 客观事件 34~48 行 →
+语义收口回执 1 行 `outcome=mutate` → 前台回合 `SETTLED` → `memory_ingestion_outbox` +
+`memory_ingestion_evidence_links` 各 1 行 → `cognitive_memory_heads` 1 行（episode）。
+
+**终态语义（判读实证时必须分清）**：`foreground_turn_heads.current_state = SETTLED` 只表示
+"回合已终止"，**不表示成功**。业务结果由 `foreground_terminal_receipts.terminal_state`
+（`COMPLETED` / `FAILED`）与 `task_scope_closure_receipts` 承载。上游 provider 502 或
+60s transport timeout 会得到 `SETTLED` + `terminal_state=FAILED` + 零收口回执——这是正确行为，
+不要据 `SETTLED` 判成通过，也不要把上游故障记成业务失败。
+
+**缺陷 #8 的性质**：它让决定性验收项的通过与否取决于模型当次随机选了哪种路径写法——
+绝对路径通过、`~` 路径必挂。同一条指令连续跑会时绿时红，极易被误判成"模型抖动"而放过。
 
 **留给 S6 的义务**：该链目前**没有任何桌面 UI 入口**——前端零调用 `queue.enqueue`，
 `binding.manual.decide` 同样仅控制通道可达。在 S6 建出入口之前，这条链的用户可见价值为零。
