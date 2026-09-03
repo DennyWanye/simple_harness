@@ -71,26 +71,32 @@ hash；投影内部 input-schema hash 不再以同名字段重复暴露，避免
 `ToolRegistry.validate` 按 schema `required` 校验参数，缺项抛 `MalformedToolArgumentsError`，
 kernel 据此记 `sdk_run_driver_failed` 并把 Run 判 `driver_failed`——发生在进入处理器之前，
 模型没有任何自纠机会。真实 `gpt-5.6-luna` 用一次 `tool_search {}` 打掉过一整个 Run。
-同一模型随后又用 `context_route {}` 打掉了另一个 Run，证明只覆盖控制工具不够。因此**必填由 Host
-自己执行**：`_sdk_tool` 在把产品 Tool 包成 SDK `FunctionTool` 时，把 `required` 从发布给 SDK 的
-schema 里取出、留在 Host 包装层；调用进来先按同一张必填清单校验，缺项直接返回稳定码
-`missing_required_argument` + 指名缺了哪些参数的 `public_message`，并记 `tool_arguments.missing`
-结构化日志，处理器根本不会被调用。三个 capability bridge 工具（`tool_search` / `tool_describe` /
-`tool_activate`）走另一条注册路径，在各自处理器里做同样的校验并额外给出 `next_action`。
+同一模型随后又用 `context_route {}` 打掉另一个 Run，再用 `agent_parallel {"subagents":[{…}]}`
+（顶层字段在场、**数组元素**缺字段）打掉第三个——说明「把顶层 `required` 搬走」这条路根本不够：
+冻结 SDK 的 `validate` 对**整张** schema 求值（顶层/嵌套 required、类型、枚举、范围、多余属性），
+任何一条不符都是驱动级失败。
 
-**语义没有放宽**——必填字段照样被拒绝，只是拒绝从「杀 Run」变成「模型可见且可重试」；已提供字段的
-类型校验仍由 SDK 负责。空字符串与 `None` 与缺项同等对待。
+**定稿形态**：收口点放在 Host 自己拥有的 registry 子类 `ProductToolsAdapter.validate`——接住
+`MalformedToolArgumentsError`、把失败按 call_id 记进一张模块级有界表并照常返回 Tool；`_sdk_tool`
+包装层在**调用真实处理器之前**消费该标记：缺必填时返回 `missing_required_argument`（指名缺了哪些
+参数），其余 schema 违规返回 `invalid_tool_arguments`（提示重读 schema、补齐含嵌套在内的字段、
+去掉多余属性）。**处理器永远拿不到非法参数**，语义没有放宽——不合规照样被拒绝，只是拒绝从
+「杀 Run」变成「模型可见且可重试」。该收口覆盖经 `ProductToolsAdapter` 注册的全部产品 Tool，
+含动态 MCP 工具。
 
-只搬顶层 `required` **仍不够**：真实模型随后用 `agent_parallel {"subagents":[{...}]}` 打掉了又一个 Run，
-顶层字段在场但数组元素缺 schema 要求的字段——冻结 SDK 的 `validate` 对**整个** schema 求值
-（顶层/嵌套 required、类型、枚举），任何一条不符都是驱动级失败。因此收口点下沉到 Host 自己拥有的
-registry 子类 `ProductToolsAdapter.validate`：接住 `MalformedToolArgumentsError`、把失败记在该 call
-名下并照常返回 Tool，`_sdk_tool` 包装层在**调用真实处理器之前**将其转成稳定码
-`invalid_tool_arguments` + 一句「重读 schema、补齐所有必填字段（含对象与数组内部嵌套字段）」的可执行提示，
-并记 `tool_arguments.invalid` / `product_tool.invalid_arguments` 日志。
+`required` **保留在发布给模型的 schema 里**。一度把它摘掉，使 66/77 个工具对模型呈现为「全可选」，
+反而放大漏填概率，且属于已批准的模型可见契约缩水（独立审查 F-1）；校验失败既已被接住，摘除不再必要。
+Host 侧另存一份同样的清单，只为在拒绝时能指名道姓。空串是合法的必填取值（`write_file(content="")`
+是合法的写空文件），只有缺失与显式 `None` 算缺参。
 
-**处理器永远拿不到非法参数**，语义因此没有放宽（不合规照样被拒绝），只是拒绝从「杀 Run」变成
-「模型可见且可重试」。该收口点覆盖经 `ProductToolsAdapter` 注册的全部产品 Tool，含动态 MCP 工具。
+三个 capability bridge 工具（`tool_search` / `tool_describe` / `tool_activate`）走另一条注册路径，
+在各自处理器里做同样的校验并额外给出 `next_action`。
+
+新增日志（`tool_arguments.missing` / `tool_arguments.invalid` / `tool_activate.rejected` /
+`product_tool.failed`）的字段**拼进 message** 而不用 `extra=`：本项目 structlog 的 `foreign_pre_chain`
+没有 `ExtraAdder`，`extra=` 的字段在渲染阶段会被整体丢弃（独立审查 F-5 实测），断言也必须落在
+渲染后的消息上，否则是假绿（F-6）。
+
 
 仍登记一条**上游 SDK 义务**：`MalformedToolArgumentsError` 本身宜由 SDK 直接作为模型可见的 rejected
 ToolResult 返回，而不是驱动级失败，待 SDK 0.8。
