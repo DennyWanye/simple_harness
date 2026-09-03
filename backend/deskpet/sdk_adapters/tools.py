@@ -661,8 +661,52 @@ def _sdk_input_schema(value: Mapping[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+# S5B-UI-F2（S5b 真实 UI 验收）：冻结 SDK 0.7.1 在 ``ToolRegistry.validate``
+# 按 schema 的 ``required`` 校验参数，缺项抛 ``MalformedToolArgumentsError``，
+# kernel 据此把**整个 Run** 判 ``driver_failed``——发生在进入处理器之前，模型没有
+# 任何自纠机会。真实 gpt-5.6-luna 在两个不同工具（``tool_search {}``、
+# ``context_route {}``）上各打掉过一整个 Run。
+#
+# 因此「必填」由 Host 自己执行：发布给 SDK 的 schema 不再带 ``required``，
+# 在这里的产品包装层按同一张必填清单校验，缺项返回稳定码 + 可执行 next_action。
+# 语义没有放宽——缺项照样被拒绝，只是拒绝从「杀 Run」变成「模型可见且可重试」。
+# 已提供字段的类型校验仍由 SDK 负责，不受影响。
+MISSING_ARGUMENT_ERROR_CODE = "missing_required_argument"
+
+
+def _missing_required_arguments(
+    arguments: Mapping[str, Any], required: Sequence[str]
+) -> list[str]:
+    missing: list[str] = []
+    for name in required:
+        if name not in arguments:
+            missing.append(name)
+            continue
+        value = arguments[name]
+        if value is None or (isinstance(value, str) and not value.strip()):
+            missing.append(name)
+    return missing
+
+
 def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
     async def invoke(arguments, context):
+        missing = _missing_required_arguments(arguments, host_required)
+        if missing:
+            names = ", ".join(missing)
+            logger.warning(
+                "tool_arguments.missing",
+                extra={"tool": registration.name, "missing": names},
+            )
+            return ToolResult.failed(
+                active_product_tool_call_id(),
+                MISSING_ARGUMENT_ERROR_CODE,
+                (
+                    f"{registration.name} rejected: missing required "
+                    f"argument(s) {names}. Call {registration.name} again with "
+                    f"{names} filled in; see the tool description for the "
+                    "expected values."
+                ),
+            )
         raw = registration.handler(arguments, context)
         if inspect.isawaitable(raw):
             raw = await raw
@@ -691,11 +735,17 @@ def _sdk_tool(registration: ProductToolRegistration) -> FunctionTool:
             ),
         }
         input_schema["properties"] = properties
-        required = input_schema.get("required")
-        if isinstance(required, list):
-            input_schema["required"] = [
-                item for item in required if item != "deskpet_public_progress"
-            ]
+    # 必填清单从发布 schema 移到 Host 包装层（见上方 S5B-UI-F2 说明）。
+    declared_required = input_schema.pop("required", None)
+    host_required: tuple[str, ...] = (
+        tuple(
+            str(item)
+            for item in declared_required
+            if str(item) != "deskpet_public_progress"
+        )
+        if isinstance(declared_required, (list, tuple))
+        else ()
+    )
     return FunctionTool(
         ToolSpec(
             registration.name,

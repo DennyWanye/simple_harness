@@ -426,3 +426,70 @@ async def test_present_arguments_still_reach_the_handler() -> None:
     result = await run.invoke("tool_search", {"query": "read file"})
     assert result.outcome is ToolOutcome.SUCCEEDED
     assert _value(result)["count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_product_tool_missing_required_is_not_run_fatal() -> None:
+    """产品工具（非三件套）漏填必填参数同样必须是模型可见拒绝。
+
+    真实 UI 第二次复现用的是 ``context_route {}``：修复只覆盖 tool_search/
+    tool_describe/tool_activate 时，这一发照样打掉整个 Run（证据
+    20260903T0710-uiB）。因此必填清单统一由 ``_sdk_tool`` 包装层执行。
+    """
+
+    from deskpet.sdk_adapters.tools import (
+        MISSING_ARGUMENT_ERROR_CODE,
+        ProductToolRegistration,
+        _sdk_tool,
+    )
+
+    calls: list[dict[str, Any]] = []
+
+    def handler(arguments, _context):
+        calls.append(arguments)
+        return {"ok": True}
+
+    registration = ProductToolRegistration(
+        name="context_route",
+        description="route",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "route": {"type": "string"},
+                "goal": {"type": "string"},
+            },
+            "required": ["route"],
+        },
+        handler=handler,
+        dispatch_kind="context",
+        permission_category="context",
+        metadata={"source": "builtin", "version": "1"},
+    )
+    tool = _sdk_tool(registration)
+
+    # 发布给 SDK 的 schema 不再带 required：validate 不会在处理器之前抛异常。
+    assert "required" not in tool.spec.input_schema
+
+    from deskpet.sdk_adapters.tools import _current_call_id
+
+    call_id = CallId("call-missing")
+    context = ToolContext(
+        RunId(RUN_ID),
+        RequestId("request-ui-b"),
+        CancellationToken(),
+        {},
+        call_id=call_id,
+    )
+    token = _current_call_id.set(call_id)
+    try:
+        result = await tool.handler({}, context)
+        assert result.outcome is ToolOutcome.FAILED
+        assert result.error_code == MISSING_ARGUMENT_ERROR_CODE
+        assert "route" in str(result.public_message)
+        assert calls == []  # 处理器根本没被调用
+
+        ok = await tool.handler({"route": "continue_active"}, context)
+        assert ok.outcome is ToolOutcome.SUCCEEDED
+        assert calls == [{"route": "continue_active"}]
+    finally:
+        _current_call_id.reset(token)

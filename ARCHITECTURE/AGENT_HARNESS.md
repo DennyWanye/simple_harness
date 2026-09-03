@@ -71,15 +71,18 @@ hash；投影内部 input-schema hash 不再以同名字段重复暴露，避免
 `ToolRegistry.validate` 按 schema `required` 校验参数，缺项抛 `MalformedToolArgumentsError`，
 kernel 据此记 `sdk_run_driver_failed` 并把 Run 判 `driver_failed`——发生在进入处理器之前，
 模型没有任何自纠机会。真实 `gpt-5.6-luna` 用一次 `tool_search {}` 打掉过一整个 Run。
-`tool_search` / `tool_describe` / `tool_activate` 在每个 Run 都直出、被调用得最频繁，
-因此把「必填」从 schema 下沉到处理器：三者的 `parameters` 不再声明 `required`，处理器缺项时返回
-稳定码 `missing_required_argument` + 列出 `missing_arguments` + 一条可执行的 `next_action`，
-并记 `tool_arguments.missing` 结构化日志。**语义没有放宽**——缺项照样被拒绝，只是拒绝从「杀 Run」
-变成「模型可见且可重试」。
+同一模型随后又用 `context_route {}` 打掉了另一个 Run，证明只覆盖控制工具不够。因此**必填由 Host
+自己执行**：`_sdk_tool` 在把产品 Tool 包成 SDK `FunctionTool` 时，把 `required` 从发布给 SDK 的
+schema 里取出、留在 Host 包装层；调用进来先按同一张必填清单校验，缺项直接返回稳定码
+`missing_required_argument` + 指名缺了哪些参数的 `public_message`，并记 `tool_arguments.missing`
+结构化日志，处理器根本不会被调用。三个 capability bridge 工具（`tool_search` / `tool_describe` /
+`tool_activate`）走另一条注册路径，在各自处理器里做同样的校验并额外给出 `next_action`。
 
-其余工具仍受 schema `required` 保护，因而仍继承该 SDK 行为：这是登记在册的**上游 SDK 义务**
-（`MalformedToolArgumentsError` 应作为模型可见的 rejected ToolResult 返回，而不是驱动级失败），
-在 SDK 0.8 之前作为 known-debt 保留。
+**语义没有放宽**——必填字段照样被拒绝，只是拒绝从「杀 Run」变成「模型可见且可重试」；已提供字段的
+类型校验仍由 SDK 负责。空字符串与 `None` 与缺项同等对待。
+
+仍登记一条**上游 SDK 义务**：`MalformedToolArgumentsError` 本身应作为模型可见的 rejected ToolResult
+返回，而不是驱动级失败（动态 MCP 工具的 schema 由远端提供，Host 无法一并接管），待 SDK 0.8。
 
 2026-08-29，user-global Skill 安装进入同一 SDK-first 目录：每个前台 Run 在 publish lock 内冻结 exact
 user-global Hub snapshot，并把 body-free Skill records 合并进 Run catalog。`skill` namespace 由统一的
