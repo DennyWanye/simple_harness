@@ -3166,6 +3166,15 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
                 generation=generation, terminal_state=terminal_state,
             )
 
+    def _foreground_route_ledger():  # type: ignore[no-untyped-def]
+        """前台首轮 HOST_INITIAL 路由回执的落账目标（与 chat 路径同一实现）。"""
+
+        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+
+        return ContextRouteLedgerStore(
+            _state_db_path, evidence_ingress=_ensure_evidence_ingress()
+        )
+
     async def _foreground_conversation_entrypoint(
         *,
         session_id: str,
@@ -3236,6 +3245,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         context=TaskScopeForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
+            route_ledger=_foreground_route_ledger(),
         ),
         provider=ProductForegroundProviderPort(
             _provider_registry,

@@ -53,10 +53,23 @@ def _turn_text(candidate: PreparationCandidate) -> str:
 class TaskScopeForegroundContextPort:
     """Freeze the bounded TaskScope ResumePackage as foreground Context."""
 
-    def __init__(self, db_path: str | Path, *, subject: str) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        subject: str,
+        route_ledger: Any | None = None,
+    ) -> None:
         self._subject = subject
         self._search = TaskScopeSearchStore(db_path)
         self._bindings = WorkspaceBindingAuthorityStore(db_path)
+        # Host 自签的首轮 HOST_INITIAL 路由回执此前只做校验、不落账
+        # （``context_authority.record_route_decision`` 的唯一调用者是模型调
+        # ``context_route`` 那条路径）。于是前台首轮
+        # ``latest_task_route_decision()`` 恒为 None，模型选 ``continue_active``
+        # 必得 ``context_route_no_active_task_scope``——实测连挂 10 次直到 Run 失败
+        # （证据 ``.local-test-evidence/real-ui-channel/probe-04``）。
+        self._route_ledger = route_ledger
 
     async def _open(
         self,
@@ -178,6 +191,17 @@ class TaskScopeForegroundContextPort:
 
     async def verify_initial_route(self, receipt: ContextRouteReceipt) -> None:
         await self._bindings.verify_route_binding(receipt)
+        if self._route_ledger is None:
+            return
+        # 校验通过后立刻落账：前台 Run 的任务域从第一个 provider turn 起就是
+        # 「活跃」的，模型的 ``continue_active`` 因此成立。origin 记
+        # ``host_initial`` 与模型自选的 ``context_tool`` 区分开。
+        await self._route_ledger.record_route_decision(
+            receipt=receipt,
+            provider_turn_ordinal=0,
+            origin="host_initial",
+            idempotency_key=f"foreground-initial-route:{receipt.receipt_id}",
+        )
 
 
 class ProductForegroundProviderPort:
