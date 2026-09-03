@@ -807,7 +807,14 @@ class ForegroundRuntimeExecutionAuthority:
                             "version": int(getattr(record, "version", 0)),
                         }
                     ),
-                    idempotency_key=f"runtime-restart-query:{host_run_id}:found",
+                    # 同上：驱动重入时 record.version 会变，键必须含版本，
+                    # 否则同键写不同 result_hash 触发
+                    # ``foreground_execution_start_observation_idempotency_conflict``
+                    # （实测 .local-test-evidence/real-ui-channel/verify-03）。
+                    idempotency_key=(
+                        f"runtime-restart-query:{host_run_id}:found:"
+                        f"v{getattr(record, 'version', 0)}"
+                    ),
                 )
                 current = await self._store.current_snapshot(self._subject)
                 if current is not None and current.state is RunState.CLAIMED:
