@@ -67,7 +67,41 @@ def product_delegation_tool_catalog() -> dict[str, tuple[Any, dict[str, Any]]]:
     from .spawn_team_tool import _SCHEMA as team
 
     async def boundary_only(*_args: Any, **_kwargs: Any) -> str:
-        raise RuntimeError("delegation tool escaped the ReAct ChildRun boundary")
+        """委派未接线时的 fail-closed 出口——但拒绝必须让模型看得懂。
+
+        S5B-UI-F3（S5b 真实桌面 UI 验收抓到）：``agent`` / ``agent_parallel`` /
+        ``spawn_team`` / ``spawn_subagents`` 在每个前台 Run 的直出目录里都可见，
+        而真正的执行入口 ``build_subagent_batch_delegate`` **全仓零调用者**——
+        SDK 前台路径上这四个工具必然落到本占位符。原先它 ``raise``，冻结 SDK 按
+        契约把任何 handler 异常统一回成 ``tool_handler_failed`` /
+        "Tool execution failed."（异常原文只进 Host 日志，且因含空格被收敛成
+        ``unclassified``），模型因此完全无法判断"这条路在本 Run 走不通"，
+        只能反复重试直到 ``react_max_turns_exceeded`` 打光整轮——实测两次。
+
+        改为**返回**稳定错误载荷：语义仍是 fail-closed（什么都没执行），但模型
+        拿得到稳定码与一条可执行的替代路径，能立刻改走自己直接调用工具的方案。
+        """
+
+        return json.dumps(
+            {
+                "error": "delegation_unavailable",
+                "error_code": "delegation_unavailable",
+                "public_message": (
+                    "Delegation is not available in this Run: child-run "
+                    "execution is not wired here. Do not retry any of agent / "
+                    "agent_parallel / spawn_team / spawn_subagents. Do the work "
+                    "yourself with the tools already exposed to you (for "
+                    "example file_read / file_grep / edit_file / write_file)."
+                ),
+                "retriable": False,
+                "replan_required": True,
+                "next_action": (
+                    "Complete the task directly with your own tool calls "
+                    "instead of delegating."
+                ),
+            },
+            ensure_ascii=False,
+        )
 
     return {name: (boundary_only, dict(schema)) for name, schema in (
         ("agent", agent), ("agent_parallel", parallel),

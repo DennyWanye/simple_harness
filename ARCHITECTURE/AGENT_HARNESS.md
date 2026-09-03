@@ -101,6 +101,21 @@ Host 侧另存一份同样的清单，只为在拒绝时能指名道姓。空串
 仍登记一条**上游 SDK 义务**：`MalformedToolArgumentsError` 本身宜由 SDK 直接作为模型可见的 rejected
 ToolResult 返回，而不是驱动级失败，待 SDK 0.8。
 
+2026-09-03（同轮 UI 验收抓到的 **S5B-UI-F3**）：**委派类工具在前台 Run 里恒不可用，拒绝必须让模型看得懂**。
+`agent` / `agent_parallel` / `spawn_team` / `spawn_subagents` 属 `SDK_DIRECT_TOOL_KERNEL`，每个前台 Run
+都直出可见；但它们在产品目录里绑定的是 `product_delegation_tool_catalog()` 的占位处理器，而真正的执行
+入口 `build_subagent_batch_delegate` **全仓零调用者**——SDK 前台路径上这四个工具必然落到占位符。
+
+冻结 SDK 对 handler 抛出的**任何**异常一律回成 `tool_handler_failed` / “Tool execution failed.”
+（异常原文只进 Host 日志，且因含空格被收敛为 `unclassified`），所以"抛异常"无法把原因传给模型。
+真实 `gpt-5.6-luna` 因此判断不出"这条路在本 Run 走不通"，反复重试委派直到 `react_max_turns_exceeded`
+打光整轮，实测两次（`20260903T1200-uiB` / `20260903T1230-uiB`），并因此拿不到 README 里程碑。
+
+占位处理器改为**返回**稳定错误载荷而不是抛：稳定码 `delegation_unavailable` + “不要重试这四个工具、
+请用已暴露给你的工具（file_read / file_grep / edit_file / write_file 等）自己完成”。
+**fail-closed 语义不变**——什么都没有被执行，只是拒绝从不透明变成可行动。委派本身的接线属委派子系统，
+不在本增量范围。
+
 2026-08-29，user-global Skill 安装进入同一 SDK-first 目录：每个前台 Run 在 publish lock 内冻结 exact
 user-global Hub snapshot，并把 body-free Skill records 合并进 Run catalog。`skill` namespace 由统一的
 `product-skill-catalog` authority 管理，具体 pack owner 与版本/hash 留在 metadata；因此 builtin 与不同用户

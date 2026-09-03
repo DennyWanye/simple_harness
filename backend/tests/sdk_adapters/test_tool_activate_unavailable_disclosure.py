@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -745,3 +746,91 @@ def test_every_manifest_required_argument_is_enforced_by_the_host_wrapper() -> N
         assert set(published) == set(declared), name
         checked += 1
     assert checked >= 10, f"清单里只检到 {checked} 个带 required 的工具，来源可能变了"
+
+
+# ---------------------------------------------------------------- S5B-UI-F3
+
+
+@pytest.mark.asyncio
+async def test_delegation_boundary_rejection_is_stable_and_actionable() -> None:
+    """委派在本 Run 不可用时，拒绝必须带稳定码与替代路径（S5B-UI-F3）。
+
+    ``agent`` / ``agent_parallel`` / ``spawn_team`` / ``spawn_subagents`` 在每个
+    前台 Run 的直出目录里都可见，而真正的执行入口
+    ``build_subagent_batch_delegate`` 全仓零调用者，因此必然落到占位处理器。
+    原先它抛异常，冻结 SDK 按契约一律回成 ``tool_handler_failed`` /
+    "Tool execution failed."，模型无从判断此路不通，反复重试直到轮次打光
+    （真实 UI 实测两次：20260903T1200-uiB / 20260903T1230-uiB）。
+    """
+
+    from deskpet.sdk_adapters.tools import (
+        ProductToolRegistration,
+        ProductToolsAdapter,
+        _current_call_id,
+        _sdk_tool,
+    )
+    from deskpet.tools.code_tools.spawn_subagents_tool import (
+        product_delegation_tool_catalog,
+    )
+
+    catalog = product_delegation_tool_catalog()
+    assert set(catalog) == {"agent", "agent_parallel", "spawn_team", "spawn_subagents"}
+
+    for name, (handler, schema) in catalog.items():
+        registration = ProductToolRegistration(
+            name=name,
+            description=str(schema.get("description") or name),
+            input_schema=dict(schema["parameters"]),
+            handler=lambda arguments, _context, _h=handler: _h(arguments),
+            dispatch_kind="async",
+            permission_category="delegation",
+            metadata={"source": "builtin", "version": "1"},
+        )
+        tool = _sdk_tool(registration)
+        # 传合法参数：否则先被必填校验拦下，验不到委派边界本身。
+        required = tuple(registration.input_schema.get("required") or ())
+        args: dict[str, Any] = {}
+        for field in required:
+            spec = (registration.input_schema.get("properties") or {}).get(field) or {}
+            args[field] = (
+                [{"prompt": "p", "task_id": "t", "description": "d"}]
+                if spec.get("type") == "array"
+                else "x"
+            )
+        call_id = CallId(f"call-delegate-{name}")
+        token = _current_call_id.set(call_id)
+        try:
+            result = await tool.handler(
+                args,
+                ToolContext(
+                    RunId(RUN_ID), RequestId("request-ui-b"), CancellationToken(), {},
+                    call_id=call_id,
+                ),
+            )
+        finally:
+            _current_call_id.reset(token)
+
+        assert result.outcome is ToolOutcome.FAILED, name
+        # 稳定码而不是 SDK 兜底的 tool_handler_failed / unclassified。
+        assert result.error_code == "delegation_unavailable", name
+        message = str(result.public_message)
+        assert "Do not retry" in message, name
+        # 必须给出可执行的替代路径，否则模型只会继续重试。
+        assert "yourself" in message, name
+        assert "file_read" in message, name
+
+
+def test_delegation_boundary_never_executes_anything() -> None:
+    """fail-closed 语义不得被削弱：占位处理器什么都不执行。"""
+
+    import asyncio
+
+    from deskpet.tools.code_tools.spawn_subagents_tool import (
+        product_delegation_tool_catalog,
+    )
+
+    handler, _schema = product_delegation_tool_catalog()["agent"]
+    payload = json.loads(asyncio.run(handler({"prompt": "改 README"})))
+    assert payload["error_code"] == "delegation_unavailable"
+    assert payload["retriable"] is False
+    assert payload["replan_required"] is True
