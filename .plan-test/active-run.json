@@ -1,7 +1,7 @@
 {
   "acceptance_sha256": "5417090d06056318e1de5153960bf94c5b9080984b1e2725a6cbc53bdf80fe6f",
-  "candidate_content_digest": "84d2bec3935915a1f3583eae2b8b94bcbddc5f853030ef83c06a30d21f9a7c19",
+  "candidate_content_digest": "fb3702a4c1876b20644d3b43e9fe0f0629911ca3f3159beb72309f8648837788",
   "run_dir": "plans/2026-08-29-human-memory-digital-twin/increments/2026-09-02-s5b-effect-closure-memory/verification/r3-s5b",
   "run_id": "run-20260903-183637",
-  "updated_at": "2026-09-04T01:13:27+0800"
+  "updated_at": "2026-09-04T13:30:54+0800"
 }
