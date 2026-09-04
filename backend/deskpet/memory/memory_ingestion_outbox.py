@@ -337,7 +337,14 @@ def build_worker_config(
     deadline_ms: int = 60_000,
     max_attempts: int = 3,
     max_input_tokens: int = 16_384,
-    max_output_tokens: int = 2_048,
+    # A16：2048 对真实提案余量不足。8 轮实测 output_tokens 分布
+    # 457/908/1111/1381/1561/1939 全部物化成功，而两次失败轮**恰好顶格 2048**——
+    # 成功上界距上限仅剩 109 token。取 6144（≈ 最大成功值的 3 倍），按「留够余量」
+    # 定值，不是凑一个刚好能过的数。
+    # 不走「截断后重试」：现有重试是从持久响应重放、永不再调 Provider
+    # （analysis_executor.py:440-442），重放被截断的响应只会重复失败到 dead_letter；
+    # 而重新调用 Provider 违反 acceptance 已批准的「零重复 Provider 调用」约束。
+    max_output_tokens: int = 6_144,
     max_cost_microunits: int = 5_000_000,
 ) -> Any:
     """``MemoryJobWorkerConfig`` for the Host lane (design-freeze §6/§9 constants).
