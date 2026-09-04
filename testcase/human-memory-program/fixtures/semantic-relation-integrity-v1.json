@@ -10,15 +10,19 @@
       "distribution": "simple-harness-sdk",
       "version": "0.7.0",
       "source_commit": "3e7a71af1dfea2e065530208225ac13fc5f17300",
-      "wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
-      "reproducible_second_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd"
+      "wheel_sha256": "a0dc68f985ae69678836099b50f03f6a31e942988c0f5e078e43c9212e358ac1",
+      "reproducible_second_wheel_sha256": "a0dc68f985ae69678836099b50f03f6a31e942988c0f5e078e43c9212e358ac1",
+      "pre_migration_wheel_sha256": "d241052d4bb7397971da8a99f680e397288bbbefc0d9304fa97f059941dd93bd",
+      "repin_note": "2026-09-05 迁移边界重钉：原产物随系统迁移丢失、本机不可复现；从同一 source_commit 重建并钉定。旧身份见 pre_migration_wheel_sha256，仅作谱系。依据 plans/2026-08-29-human-memory-digital-twin/MIGRATION-EVIDENCE-BOUNDARY.md"
     },
     "memory": {
       "distribution": "simple-harness-memory-sdk",
       "version": "0.6.0",
       "source_commit": "64284059f9ee82d886d85151a95c542660d09c1a",
-      "wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
-      "reproducible_second_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e"
+      "wheel_sha256": "0758a92c8c46d43c77eb752fc053d9af687d569482dddbde01b7ad85124f793b",
+      "reproducible_second_wheel_sha256": "0758a92c8c46d43c77eb752fc053d9af687d569482dddbde01b7ad85124f793b",
+      "pre_migration_wheel_sha256": "844cbabaddb33b6ed48d1104ba1427335dcc267a33f10ff93f13c8fec5d06d5e",
+      "repin_note": "2026-09-05 迁移边界重钉：原产物随系统迁移丢失、本机不可复现；从同一 source_commit 重建并钉定。旧身份见 pre_migration_wheel_sha256，仅作谱系。依据 plans/2026-08-29-human-memory-digital-twin/MIGRATION-EVIDENCE-BOUNDARY.md"
     },
     "integrity_adapter_sha256": "f98ba55ed7d44170363bbac5de1e0b07fcc6f8e285a5913c7a55bf2a2e1956d8"
   },
