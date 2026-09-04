@@ -274,6 +274,8 @@ _DESCRIBE_SCHEMA: dict[str, Any] = {
                 ),
             }
         },
+        # 同上：处理器强制 capability_id，schema 如实声明。
+        "required": ["capability_id"],
         # S5B-UI-F2（S5b 真实 UI 验收 UI-B 抓到）：冻结 SDK 0.7.1 在
         # ``ToolRegistry.validate`` 里按 schema 的 ``required`` 校验参数，
         # 缺项直接抛 ``MalformedToolArgumentsError``，kernel 据此把**整个 Run**
@@ -308,6 +310,18 @@ _ACTIVATE_SCHEMA: dict[str, Any] = {
                 "description": "Exact top-level describe_nonce from tool_describe.",
             },
         },
+        # 沿革：S5B-UI-F2 曾把「必填」只下沉到处理器、schema 不声明 ``required``，
+        # 因为冻结 SDK 0.7.1 的 ``ToolRegistry.validate`` 缺项即抛
+        # ``MalformedToolArgumentsError``，kernel 据此把**整个 Run** 判
+        # ``driver_failed``，模型没有自纠机会。
+        # **该前提已在本增量失效**：``ProductToolsAdapter.validate`` 现在接住该异常
+        # 并转成模型可见的可恢复拒绝（``sdk_adapters/tools.py``）。
+        # 而只靠处理器校验的代价在 S5b 终验实测出来了：模型看到的 JSON Schema 说
+        # 这些字段可选、处理器却强制校验，依赖 schema 的模型反复踩空——DeepSeek 连挂
+        # 10 次 ``tool_activate:missing_required_argument`` 直到撞上重复护栏，
+        # 决定性场景取不到证。现在两边都声明：schema 如实告知契约，
+        # 处理器仍给稳定码 + next_action。
+        "required": ["capability_id", "schema_hash", "describe_nonce"],
         # S5B-UI-F2（S5b 真实 UI 验收 UI-B 抓到）：冻结 SDK 0.7.1 在
         # ``ToolRegistry.validate`` 里按 schema 的 ``required`` 校验参数，
         # 缺项直接抛 ``MalformedToolArgumentsError``，kernel 据此把**整个 Run**
