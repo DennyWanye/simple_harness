@@ -352,6 +352,12 @@ class ForegroundRuntimeExecutionAuthority:
         self._endpoint_identity_resolver = endpoint_identity_resolver
         self._lease_seconds = float(lease_seconds)
         self._driver: asyncio.Task[None] | None = None
+        # 驱动仍在运行时到达的唤醒：不能新建任务，但必须留痕，否则驱动一旦
+        # 因「无进展」退出，这次唤醒就被永久丢弃（见 _run_driver 的退出复查）。
+        self._rewake_pending = False
+        # 「从未起过驱动」与「驱动跑完后置空引用」都会让 _driver 为 None，
+        # 但 close() 对两者的处理不同：前者无租约可清，后者必须清。
+        self._driver_started = False
         self._driver_lock = asyncio.Lock()
         self._control_wake = asyncio.Event()
         self._closed = False
@@ -374,10 +380,19 @@ class ForegroundRuntimeExecutionAuthority:
             raise ForegroundRuntimeError("foreground_runtime_closed")
         async with self._driver_lock:
             if self._driver is None or self._driver.done():
+                self._rewake_pending = False
+                self._driver_started = True
                 self._driver = asyncio.create_task(
                     self._run_driver(),
                     name=f"foreground-runtime:{hashlib.sha256(subject.encode()).hexdigest()[:12]}",
                 )
+            else:
+                # 驱动仍在跑 → 不新建任务。但这次唤醒必须留痕：驱动可能正处在
+                # 本轮 _drive_once 的末尾、马上要因「无进展」退出，退出后就再没有
+                # 东西去观察 SDK 终态。实测该丢失会让回合永停 CLAIMED、终态受理
+                # 为空、Memory 摄入永不发生
+                # （.local-test-evidence/real-ui-channel/20260904T120431）。
+                self._rewake_pending = True
 
     async def after_control(self, *, subject: str) -> None:
         """Wake the active Run's control pump after a durable control commit.
@@ -406,13 +421,18 @@ class ForegroundRuntimeExecutionAuthority:
     async def close(self, *, timeout: float = 5.0) -> None:
         self._closed = True
         task = self._driver
-        if task is None:
+        # ``_driver`` 为 None 有两种情形，处理不同：
+        #  · 从未起过驱动 → 没有租约可清，照旧提前返回；
+        #  · 驱动已正常退出并在退出时置空引用（见 _run_driver）→ **必须**继续
+        #    走下面的租约清理，否则驱动跑完后租约永不关闭。
+        if task is None and not self._driver_started:
             return
-        try:
-            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
-        except TimeoutError:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        if task is not None:
+            try:
+                await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+            except TimeoutError:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
         snapshot = await self._store.current_snapshot(self._subject)
         if snapshot is None or snapshot.owner_id != self._owner_id:
             return
@@ -493,7 +513,18 @@ class ForegroundRuntimeExecutionAuthority:
         try:
             while not self._closed:
                 progressed = await self._drive_once()
-                if not progressed:
+                if progressed:
+                    continue
+                # 无进展就该退出——但退出前必须在锁内复查唤醒标记，并把 _driver
+                # 置空。置空是为了消除最后一点窗口：只复查标记的话，标记可能在
+                # 「复查为假」与「任务真正 done()」之间被设上，而那一瞬 after_enqueue
+                # 看到的 done() 仍是 False，于是既不新建任务、留下的痕迹也没人再看。
+                # 置空后 after_enqueue 判 `is None` 成立，必定新建。
+                async with self._driver_lock:
+                    if self._rewake_pending:
+                        self._rewake_pending = False
+                        continue
+                    self._driver = None
                     return
         except asyncio.CancelledError:
             raise
