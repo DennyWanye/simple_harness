@@ -1311,7 +1311,12 @@ def test_analysis_proposal_span_derivation_rejects_paraphrase() -> None:
     assert only_bad.structured_result == {"outcome": "no_mutation", "operations": [], "closure_reason": "analysis_all_operations_rejected"}
     declined = ap.compile_proposal({"outcome": "no_mutation", "operations": []}, request=request, items=[item], base_revision=1, plan_id="p", now=100.0)
     assert declined.plan is None and declined.structured_result["outcome"] == "no_mutation"
-    assert ap.compile_proposal(None, request=request, items=[item], base_revision=1, plan_id="p", now=100.0).structured_result["closure_reason"] == "analysis_model_declined"
+    # 原断言把 proposal=None 期望成 "analysis_model_declined" —— 那正是缺陷本身：
+    # 拿不到合规 proposal（响应被 max_output_tokens 截断/不可解析）被伪装成
+    # 「模型看过内容、主动认为无可记」，导致记忆静默丢失而系统自认成功
+    # （实测 .local-test-evidence/real-ui-channel/20260904T131633，output_tokens
+    # 正好顶满 2048）。两种成因现已分开，见 tests/memory/test_analysis_response_unusable.py。
+    assert ap.compile_proposal(None, request=request, items=[item], base_revision=1, plan_id="p", now=100.0).structured_result["closure_reason"] == "analysis_response_unusable"
 
 
 # ---- S5B-AC-6 / Task 6：composition、cutover ----

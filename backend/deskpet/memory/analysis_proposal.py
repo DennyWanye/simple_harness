@@ -457,7 +457,20 @@ def compile_proposal(
     from simple_harness.runtime import MemoryMutationPlan, MemoryMutationPlanOutcome
 
     if not isinstance(proposal, Mapping):
-        return CompiledProposal(None, no_mutation_result("analysis_model_declined"), (), "no_mutation")
+        # ``proposal_from_response`` 返 None = **拿不到**合规的 proposal 工具调用
+        # （响应被 max_output_tokens 截断、或结构不可解析）。这与「模型看过内容、
+        # 主动判定无可记」是两回事，绝不能共用一个理由码：
+        # S5b 终验实测有一轮 output_tokens 正好顶满 2048 上限 → 工具调用发不完整
+        # → 这里塌缩成 analysis_model_declined → attempt 记 succeeded、batch 记
+        # applied、记忆零物化、无死信无重试无告警，事后完全无法与「确实无可记」
+        # 区分（.local-test-evidence/real-ui-channel/20260904T131633）。
+        # 该轮因此被误判为 INCONCLUSIVE 而非缺陷。
+        return CompiledProposal(
+            None,
+            no_mutation_result("analysis_response_unusable"),
+            (),
+            "no_mutation",
+        )
     by_item = {item.item_id: item for item in items}
     outcome = str(proposal.get("outcome") or "")
     raw_operations = proposal.get("operations")

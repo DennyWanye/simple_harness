@@ -48,6 +48,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 import aiosqlite
 
 from deskpet.execution.foreground_queue import ForegroundQueueStore
@@ -496,6 +498,26 @@ class HostMemoryAnalysisExecutor:
         for rejected in compiled.rejected:
             await self._audit(outbox.sdk_run_id, rejected.code, canonical_hash(rejected.to_json()))
         usage = getattr(response, "usage", None)
+        # 「响应不可用」必须留下可观测信号，不能与「模型主动判定无可记」一样静悄悄
+        # 收敛成成功。实测：output_tokens 顶满 max_output_tokens 时工具调用发不完整，
+        # 记忆静默丢失而系统认为自己成功了。
+        if (
+            isinstance(compiled.structured_result, Mapping)
+            and compiled.structured_result.get("closure_reason")
+            == "analysis_response_unusable"
+        ):
+            _truncated = int(getattr(usage, "output_tokens", 0) or 0)
+            logger.warning(
+                "memory.analysis_response_unusable job=%s output_tokens=%s "
+                "(输出可能被 max_output_tokens 截断；本轮记忆未物化)",
+                request.job_id,
+                _truncated,
+            )
+            await self._audit(
+                outbox.sdk_run_id,
+                "analysis_response_unusable",
+                canonical_hash({"output_tokens": _truncated}),
+            )
         provider_response_id = str(getattr(response, "provider_request_id", None) or f"host-attempt:{attempt_id}")
         result = MemoryAnalysisResult(
             job_id=request.job_id,
