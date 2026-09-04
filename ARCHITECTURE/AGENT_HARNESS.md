@@ -630,6 +630,14 @@ analysis → 认知记忆物化。
 | 10 | `main.py` 给前台 driver 设了 `max_turns=25` / `max_tool_calls=50`，唯独漏设 `max_consecutive_same_tool` → 取 SDK 默认值 **3**。「总共允许 50 次、同一工具连续 3 次即掐断 Run」是漏配：连读 4 个文件即触发；工具返回可纠正错误后模型改对重试，也在第 4 次被杀 | 显式设为 **10**：覆盖连读 5~10 个文件与 2~3 次纠错重试；只占 50 次预算的五分之一，真死循环仍在烧掉五分之一预算前被终止 |
 | 11 | 三跳披露的 `tool_search` / `tool_describe` / `tool_activate`：处理器强制校验必填字段，**schema 却不声明 `required`**——模型看到的契约说「可选」，运行时以 `missing_required_argument` 拒绝，要求只写在描述文字里 | 三处 schema 如实声明 `required`，处理器校验保留。**省略原本有正当理由**（缺项会被冻结 SDK 判 `driver_failed` 打死整个 Run），但**该前提已被本表 #F2 修掉**——缺参现由 `ProductToolsAdapter.validate` 接住成可恢复拒绝。前提消失后省略只剩坏处 |
 
+| 12 | **驱动唤醒丢失** → 回合永停 `CLAIMED`、终态永不提交、Memory 摄入永不发生。`_run_driver` 「无进展即 return」；而 `after_control` 唤醒时若驱动**仍在运行**，`after_enqueue` 只看 `driver.done()`，判假就什么都不做——它设的 `_control_wake` 由 `_pump_controls` 消费，与「重新进入驱动」无关。决策在本轮 `_drive_once` 期间落地即丢失唤醒。#7 只接上了唤醒，没处理唤醒被吞 | ① `after_enqueue` 发现驱动在跑时置 `_rewake_pending` 留痕；② `_run_driver` 退出前在 `_driver_lock` 内复查该标记，并把 `_driver` 置空以消除「标记设上但 `done()` 尚为假」的残余窗口。`close()` 随之区分「从未起过驱动」（照旧早返回）与「跑完置空」（必须清租约） |
+
+**#12 的诊断依据**：通过的轮次 `foreground.runtime.bound` 出现 **2 次**（驱动被重新进入），
+挂住的只有 **1 次**；两者 SDK 事件序列**完全相同**（created → activated → decision.open →
+decision.allowed → completed）——同样的顺序既能通过也能挂住，据此判定是竞态而非顺序问题。
+故障轮的业务侧全部做对：README 真被改、收口 `outcome=mutate`、10 个 effect 全结算、
+SDK Run `completed`，唯独宿主侧没提交终态。
+
 **#10 / #11 的发现方式值得记**：二者都由**更换 provider** 暴露。此前 `gpt-5.6-luna` 能跑通，
 只是它碰巧不重复调用、也碰巧照着描述文字填参；换成其他模型后两处立刻致命。
 **「当前模型能过」不等于「契约正确」**——工具契约的正确性不应依赖某个模型的习惯。
