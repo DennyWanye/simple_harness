@@ -627,6 +627,12 @@ analysis → 认知记忆物化。
 | 7 | 驱动在 `BOUND_WAITING` 后 return，而唤醒它的 `after_control` **生产零调用者** → 用户批准后无人叫醒，回合永停 CLAIMED、终态提交不执行、Memory outbox 永不产生 | `_signal_product_harness_decision` 在决策落地后调 `after_control`；唤醒失败只记 warning |
 | 8 | `file_read` / `file_write` 的 `_resolve_within_workspace` 不展开 `~`：`Path("~/x")` 不是绝对路径，被拼成 `<root>/~/x`——既通过 `relative_to(root)` 后代校验，又指向不存在的文件，模型只收到 "file not found" 而无从改正 | `~` 在后代校验**之前**展开；展开后成为绝对路径，`relative_to(root)` 仍是唯一边界权威（`~/.ssh/id_rsa`、`~/../../etc/passwd` 照拒） |
 | 9 | `read_file` / `list_directory` 相对路径按**进程 cwd** 解析（同 #6，但当时只修了 `edit_file`）；`write_file`/`edit_file` 的 `~` 在**越界校验之后**才展开 | 四个 os_tool 统一走 `os_tools/_scope_paths.normalize_model_path`：`~` 展开 → 相对路径按 `write_scope_root` 解析。**次序是安全要求**：先校验后展开时 `~/x` 会被判成 scope 内而实际写向 `$HOME/x` |
+| 10 | `main.py` 给前台 driver 设了 `max_turns=25` / `max_tool_calls=50`，唯独漏设 `max_consecutive_same_tool` → 取 SDK 默认值 **3**。「总共允许 50 次、同一工具连续 3 次即掐断 Run」是漏配：连读 4 个文件即触发；工具返回可纠正错误后模型改对重试，也在第 4 次被杀 | 显式设为 **10**：覆盖连读 5~10 个文件与 2~3 次纠错重试；只占 50 次预算的五分之一，真死循环仍在烧掉五分之一预算前被终止 |
+| 11 | 三跳披露的 `tool_search` / `tool_describe` / `tool_activate`：处理器强制校验必填字段，**schema 却不声明 `required`**——模型看到的契约说「可选」，运行时以 `missing_required_argument` 拒绝，要求只写在描述文字里 | 三处 schema 如实声明 `required`，处理器校验保留。**省略原本有正当理由**（缺项会被冻结 SDK 判 `driver_failed` 打死整个 Run），但**该前提已被本表 #F2 修掉**——缺参现由 `ProductToolsAdapter.validate` 接住成可恢复拒绝。前提消失后省略只剩坏处 |
+
+**#10 / #11 的发现方式值得记**：二者都由**更换 provider** 暴露。此前 `gpt-5.6-luna` 能跑通，
+只是它碰巧不重复调用、也碰巧照着描述文字填参；换成其他模型后两处立刻致命。
+**「当前模型能过」不等于「契约正确」**——工具契约的正确性不应依赖某个模型的习惯。
 
 **闭环实证**（`.local-test-evidence/real-ui-channel/` 下多次独立 root run，真实 provider
 `gpt-5.6-luna`，自然用户语言）：README `1.1.3→1.2.0` 真实写入 → 客观事件 34~48 行 →

@@ -20,6 +20,13 @@
 - **终态语义澄清**：`foreground_turn_heads.current_state = SETTLED` 只表示回合终止，不表示成功；
   业务结果由 `foreground_terminal_receipts.terminal_state` 与 `task_scope_closure_receipts` 承载。
   上游 provider 502 / 60s timeout 得到 `SETTLED` + `terminal_state=FAILED` + 零收口回执，是正确行为。
+- **P0-13（终止护栏漏配）**：前台 driver 的 `max_consecutive_same_tool` 漏设 → 取 SDK 默认值 3，
+  而同处已放到 25 轮 / 50 次工具调用。连读 4 个文件即掐断 Run。显式设为 10。
+- **P0-14（契约与强制不一致）**：三跳披露的三个工具处理器强制校验必填字段，schema 却不声明
+  `required`。依赖 schema 的模型必然反复踩空。三处如实声明；省略原本的理由（缺项打死 Run）
+  已被本增量的 `ProductToolsAdapter.validate` 修掉，前提消失。
+- **这两处由更换 provider 暴露**：`gpt-5.6-luna` 碰巧不触发，换模型后立刻致命。
+  工具契约的正确性不应依赖某个模型的习惯。
 - **默认全开**：以上修复无开关，随交付即生效。
 - **遗留义务（S6）**：该链**没有任何桌面 UI 入口**，前端零调用 `queue.enqueue`，
   在 S6 建出入口之前用户可见价值为零。
