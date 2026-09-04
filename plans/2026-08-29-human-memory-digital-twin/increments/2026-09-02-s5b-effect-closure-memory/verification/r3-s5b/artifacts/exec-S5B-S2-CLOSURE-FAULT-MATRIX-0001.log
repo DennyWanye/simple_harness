@@ -1,0 +1,11 @@
+command: bash /private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/119591b6-098b-45ae-ba12-512b9cb48363/scratchpad/lane_s2.sh
+exit_code: 0
+started_at: 2026-09-03T10:38:23Z
+ended_at: 2026-09-03T10:38:52Z
+elapsed_ms: 28315
+---- stdout ----
+................................................                         [100%]
+48 passed in 25.64s
+
+---- stderr ----
+

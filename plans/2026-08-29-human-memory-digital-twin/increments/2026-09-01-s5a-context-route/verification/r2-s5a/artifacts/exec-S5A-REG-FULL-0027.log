@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest -q -p no:cacheprovider --deselect tests/capabilities/test_registry_publisher.py::test_atomic_publisher_install_update_rollback_and_uninstall --deselect tests/capabilities/test_registry_publisher.py::test_shared_publish_lock_never_exposes_mixed_snapshot --deselect tests/companion/test_capability_owner_scope.py::test_workflow_fresh_schema_installs_capability_v2_idempotently --deselect tests/product_state/test_host_control_downgrade.py::test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs --deselect tests/test_agent_storage_reset.py::test_dev_reset_rebuilds_three_databases_and_removes_sidecars --deselect tests/test_error_handling_fixes.py::test_health_check_timeout_values --deselect tests/test_process_list_error.py::test_process_list_with_query 2>&1 | tail -2 | tee /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r2-s5a/evidence/reg-host-full-pytest.log; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-01T17:00:18Z
+ended_at: 2026-09-01T17:06:45Z
+elapsed_ms: 387047
+---- stdout ----
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+6272 passed, 50 skipped, 12 deselected, 3 warnings in 385.40s (0:06:25)
+
+---- stderr ----
+

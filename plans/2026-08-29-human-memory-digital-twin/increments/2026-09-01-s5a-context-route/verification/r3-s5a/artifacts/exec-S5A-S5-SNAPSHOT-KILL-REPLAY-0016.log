@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest tests/sdk_adapters/test_s5a_acceptance_matrix.py -q -k 'kill or replay or twenty' 2>&1 | tail -2; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-02T07:54:31Z
+ended_at: 2026-09-02T07:54:32Z
+elapsed_ms: 840
+---- stdout ----
+.                                                                        [100%]
+1 passed, 8 deselected in 0.47s
+
+---- stderr ----
+

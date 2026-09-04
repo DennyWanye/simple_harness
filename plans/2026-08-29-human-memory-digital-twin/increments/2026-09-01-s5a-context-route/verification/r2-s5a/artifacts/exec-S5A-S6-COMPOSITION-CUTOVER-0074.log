@@ -1,0 +1,13 @@
+command: bash -c cd /Users/taiwan/PROJECTS/SimplaHarness/simple_harness && S5A_COLDSTART_ROOT=/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/d3cb7731-a811-4ca9-ac3a-6ac7b4b1e95e/scratchpad/coldstart backend/.venv/bin/python scripts/e2e_s5a_cold_start.py --port 8154 2>&1 | tail -4; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-02T07:11:16Z
+ended_at: 2026-09-02T07:12:00Z
+elapsed_ms: 44807
+---- stdout ----
+    }
+  ]
+}
+PASS
+
+---- stderr ----
+

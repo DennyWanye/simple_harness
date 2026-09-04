@@ -1,0 +1,12 @@
+# attempt-e（冻结 HEAD d0065b97 上的第 5 次 S1 尝试）
+# 该轮未达终态即被重试循环终止：无 foreground_terminal_receipts、无收口回执、记忆零物化。
+# 如实入账，不作为通过证据；用于披露同 HEAD 上的真实成功率。
+--- harness.log 尾部 ---
+[2026-09-04T13:26:26] shared secret captured (len=32) -> /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260904T132624/.backend_secret (0600)
+[2026-09-04T13:26:38] backend healthy
+[2026-09-04T13:26:38] challenge received connection_id=ef07af86-a6f1-45e4-88cb-a8fa742ee5cc control_epoch=1 request_seq=1 binding_epoch=1
+[2026-09-04T13:26:38] IDENTITY BOUND: {"profile_id": "legacy_local_profile", "profile_generation": 1, "owner_key": "companion:legacy_local_profile:1", "binding_epoch": "1", "next_request_seq": "2", "session_id": "f392b200-5941-4a6c-a865-498f1f1e6e7c"}
+[2026-09-04T13:26:38] holding backend alive; send SIGTERM to stop
+[2026-09-04T13:27:43] backend exited rc=-15
+--- production-entry.log（若有）---
+(该轮未产生 production-entry.log)

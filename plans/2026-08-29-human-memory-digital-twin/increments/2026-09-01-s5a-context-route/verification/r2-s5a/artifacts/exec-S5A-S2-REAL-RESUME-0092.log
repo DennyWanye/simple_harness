@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest tests/sdk_adapters/test_s5a_milestone_real_provider.py -q -m real_provider -k 'resume or continue_active' 2>&1 | tail -2; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-02T07:28:24Z
+ended_at: 2026-09-02T07:28:51Z
+elapsed_ms: 26539
+---- stdout ----
+..                                                                       [100%]
+2 passed, 2 deselected in 26.12s
+
+---- stderr ----
+

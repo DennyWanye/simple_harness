@@ -1,0 +1,12 @@
+[13:16:48] primary.open -> {"ok": true, "operation": "primary.open", "result": {"primary_ref": "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1", "receipt_ref": "40caa17f-5bb1-5d2a-8d76-d8b0fe843d4b", "receipt_hash": "fc37fcdfdd9a71d356b796f1820d71468bc9b9685b253d6a6bae346d7b2f13a0"}}
+[13:16:48] task_scope.create -> {"ok": true, "operation": "task_scope.create", "result": {"scope_ref": "073330a7-05ef-5edb-8ca2-bcc4a5ab04ab", "ref": "073330a7-05ef-5edb-8ca2-bcc4a5ab04ab", "revision": 1, "state_hash": "456afe400de4794654f163ef287dd80c4c809e5e3b4c994c7325075f2c0a64d9", "goal": "维护 Demo Project 的 README.md：按用户要求更新其中的 version 字段。"}}
+[13:16:48] binding.append -> {"ok": true, "operation": "binding.append", "result": {"status": "bound", "scope_ref": "073330a7-05ef-5edb-8ca2-bcc4a5ab04ab", "binding_set_revision": 1, "receipt_ref": "420c1887-05df-5c98-a8a8-ab10979a2c6f", "binding_set_receipt_ref": "420c1887-05df-5c98-a8a8-ab10979a2c6f", "receipt_hash": "b43aa023f219cd78b9772ed41129bf0c25136ca973d36ecb4ada2b1fda11e2bf", "root_set_digest": "5248187a71a1bbf61411
+[13:16:48] README before: '# Demo Project\n\nversion: 1.1.3\n\n发布说明见 CHANGELOG。'
+[13:16:48] queue.enqueue -> {"ok": true, "operation": "queue.enqueue", "result": {"turn_ref": "0d2427c6-ea42-5ea1-942a-075333d0dbdf", "receipt_ref": "0d2427c6-ea42-5ea1-942a-075333d0dbdf", "scope_ref": "073330a7-05ef-5edb-8ca2-bcc4a5ab04ab", "enqueue_sequence": 1, "content_sha256": "bd50a5d440354a72cd1d417e3c2f853b867dd3f67d562992014b421a2f7a9b1e", "delivery_key": "prod-entry-479e765f"}}
+[13:16:48] 已入队，等待前台 Run 完成（观察 README 变化）…
+[13:17:39] README changed -> '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+[13:18:23] permission_response allow -> authorization:effect-8e66a742dd4d7496d97317d… v0
+[13:18:32] run reached terminal state
+[13:18:32] README after: '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+[13:18:32] 等待 analysis 落地（cognitive_memory_heads >= 1）…
+[13:23:33] WARN: 等待 analysis 落地超时

@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest -q 2>&1 | tail -2; exit 0
+exit_code: 0
+started_at: 2026-09-02T06:36:43Z
+ended_at: 2026-09-02T06:43:11Z
+elapsed_ms: 388404
+---- stdout ----
+FAILED tests/test_process_list_error.py::test_process_list_with_query - asser...
+7 failed, 6278 passed, 50 skipped, 5 deselected, 3 warnings in 386.75s (0:06:26)
+
+---- stderr ----
+

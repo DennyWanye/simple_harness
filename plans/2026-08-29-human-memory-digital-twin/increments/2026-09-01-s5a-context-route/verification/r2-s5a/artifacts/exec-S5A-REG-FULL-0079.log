@@ -1,0 +1,31 @@
+command: bash -c 
+set -o pipefail
+.venv/bin/python -m pytest -q 2>&1 | tee /tmp/reg_r6.txt | tail -3
+echo "--- FAILED roster (must match reg-baseline-exclusions.md) ---"
+grep "^FAILED" /tmp/reg_r6.txt | sed "s/ - .*//"
+echo "--- baseline gate: pass only if exactly the 7 documented reds ---"
+N=$(grep -c "^FAILED" /tmp/reg_r6.txt)
+UNEXPECTED=$(grep "^FAILED" /tmp/reg_r6.txt | grep -vcE "test_atomic_publisher_install_update_rollback_and_uninstall|test_shared_publish_lock_never_exposes_mixed_snapshot|test_workflow_fresh_schema_installs_capability_v2_idempotently|test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs|test_dev_reset_rebuilds_three_databases_and_removes_sidecars|test_health_check_timeout_values|test_process_list_with_query")
+echo "failed_total=$N unexpected=$UNEXPECTED"
+[ "$N" -eq 7 ] && [ "$UNEXPECTED" -eq 0 ]
+exit_code: 0
+started_at: 2026-09-02T07:13:55Z
+ended_at: 2026-09-02T07:20:26Z
+elapsed_ms: 391215
+---- stdout ----
+FAILED tests/test_error_handling_fixes.py::test_health_check_timeout_values
+FAILED tests/test_process_list_error.py::test_process_list_with_query - asser...
+7 failed, 6282 passed, 50 skipped, 5 deselected, 3 warnings in 389.53s (0:06:29)
+--- FAILED roster (must match reg-baseline-exclusions.md) ---
+FAILED tests/capabilities/test_registry_publisher.py::test_atomic_publisher_install_update_rollback_and_uninstall
+FAILED tests/capabilities/test_registry_publisher.py::test_shared_publish_lock_never_exposes_mixed_snapshot
+FAILED tests/companion/test_capability_owner_scope.py::test_workflow_fresh_schema_installs_capability_v2_idempotently
+FAILED tests/product_state/test_host_control_downgrade.py::test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs
+FAILED tests/test_agent_storage_reset.py::test_dev_reset_rebuilds_three_databases_and_removes_sidecars
+FAILED tests/test_error_handling_fixes.py::test_health_check_timeout_values
+FAILED tests/test_process_list_error.py::test_process_list_with_query
+--- baseline gate: pass only if exactly the 7 documented reds ---
+failed_total=7 unexpected=0
+
+---- stderr ----
+

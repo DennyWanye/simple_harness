@@ -1,0 +1,23 @@
+command: bash /private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/119591b6-098b-45ae-ba12-512b9cb48363/scratchpad/lane_reg.sh
+exit_code: 0
+started_at: 2026-09-03T10:43:20Z
+ended_at: 2026-09-03T10:51:54Z
+elapsed_ms: 513706
+---- stdout ----
+host_head=399b38917eae41947685eaf3645a3766fea40945
+FAILED tests/test_process_list_error.py::test_process_list_with_query - asser...
+7 failed, 6459 passed, 50 skipped, 6 deselected, 3 warnings in 466.75s (0:07:46)
+--- FAILED roster ---
+FAILED tests/capabilities/test_registry_publisher.py::test_atomic_publisher_install_update_rollback_and_uninstall
+FAILED tests/capabilities/test_registry_publisher.py::test_shared_publish_lock_never_exposes_mixed_snapshot
+FAILED tests/companion/test_capability_owner_scope.py::test_workflow_fresh_schema_installs_capability_v2_idempotently
+FAILED tests/product_state/test_host_control_downgrade.py::test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs
+FAILED tests/test_agent_storage_reset.py::test_dev_reset_rebuilds_three_databases_and_removes_sidecars
+FAILED tests/test_error_handling_fixes.py::test_health_check_timeout_values
+FAILED tests/test_process_list_error.py::test_process_list_with_query
+known_red=7 unexpected=0
+memory_head=a1484b4d0b2c83334a896b53ce83783b2db84397
+1113 passed, 8 skipped in 43.12s
+
+---- stderr ----
+

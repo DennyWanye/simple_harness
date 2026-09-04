@@ -1,0 +1,12 @@
+command: bash -c .venv/bin/python -m ruff check deskpet/sdk_adapters deskpet/memory/human_memory_v7.py deskpet/memory/wemm_embedder.py deskpet/memory/migrator.py tests/sdk_adapters 2>&1 | tail -2 | tee /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r2-s5a/evidence/reg-static.log; .venv/bin/python -m mypy deskpet/sdk_adapters/task_execution.py deskpet/sdk_adapters/causal_groups.py deskpet/sdk_adapters/context_partitions.py deskpet/memory/wemm_embedder.py 2>&1 | tail -2 | tee -a /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r2-s5a/evidence/reg-static.log; exit 0
+exit_code: 0
+started_at: 2026-09-01T17:24:11Z
+ended_at: 2026-09-01T17:24:25Z
+elapsed_ms: 13456
+---- stdout ----
+Found 39 errors.
+No fixes available (8 hidden fixes can be enabled with the `--unsafe-fixes` option).
+Success: no issues found in 4 source files
+
+---- stderr ----
+

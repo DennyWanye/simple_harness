@@ -1,0 +1,166 @@
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+..................................................F.F................... [  4%]
+........................................................................ [  5%]
+................................................F....................... [  6%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+..................s.sssssssss........................................... [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 13%]
+...............................................F........................ [ 14%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+................................................F....................... [ 22%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 32%]
+........................................................................ [ 33%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+.........................................s.............................. [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+..............................s.....s..sss.............................F [ 48%]
+........................................................................ [ 49%]
+......................................ssssss............................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 53%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+...............ss....................................................... [ 57%]
+...............................................s........................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+..............................................................ssssssss.. [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+......................................................................ss [ 67%]
+sssss..sssssss.......................................................... [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+................................................................s....... [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+........................................................................ [ 84%]
+........................................................................ [ 86%]
+.....s.................................................................. [ 87%]
+..............................s......................................... [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+........................................................................ [ 92%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+........................................................................ [ 97%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+...............                                                          [100%]
+=================================== FAILURES ===================================
+E   AssertionError: assert (CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')) is not None and False)
+     +  where False = CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')).executable
+----------------------------- Captured stderr call -----------------------------
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-01T10:02:21.025505Z"}
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-01T10:02:21.027593Z"}
+------------------------------ Captured log call -------------------------------
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/capabilities/test_registry_publisher.py:213: AssertionError: assert (CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')) is not None and False)
+E   AssertionError: assert (CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')) is not None and False)
+     +  where False = CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')).executable
+----------------------------- Captured stderr call -----------------------------
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-01T10:02:21.172500Z"}
+{"event": "capability_registry_tool_excluded_missing_build_identity name=godot__check", "level": "info", "logger": "deskpet.capabilities.hub", "timestamp": "2026-09-01T10:02:21.177301Z"}
+------------------------------ Captured log call -------------------------------
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+INFO     deskpet.capabilities.hub:hub.py:114 capability_registry_tool_excluded_missing_build_identity name=godot__check
+/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/capabilities/test_registry_publisher.py:336: AssertionError: assert (CapabilityDescriptor(version=CapabilityVersionDescriptor(capability_id='godot', display_name='Godot', version='1.0.0',...n=1, skill_revision=0, mcp_revision=0, fingerprint='451c856bc85e870adc6ffcc49a00024d077dbb23d54b06c8a31e061b98c81e39')) is not None and False)
+E   assert (4,) == (2,)
+      
+      At index 0 diff: 4 != 2
+      Use -v to get more diff
+/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/companion/test_capability_owner_scope.py:224: assert (4,) == (2,)
+E   assert None is not None
+/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/product_state/test_host_control_downgrade.py:187: assert None is not None
+E   assert 7 == 6
+----------------------------- Captured stderr call -----------------------------
+{"event": "state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-01T10-03-34", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-01T10:03:34.670142Z"}
+{"event": "state.db fresh (user_version=0), running all migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-01T10:03:34.670502Z"}
+{"event": "state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-01T10:03:34.712322Z"}
+{"event": "state.db user_version=34 >= 34, applying any pending incremental migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-01T10:03:34.728385Z"}
+{"event": "SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)", "level": "info", "logger": "deskpet.memory.session_db", "timestamp": "2026-09-01T10:03:34.738454Z"}
+{"event": "state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-01T10-03-34", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-01T10:03:34.742454Z"}
+{"event": "state.db fresh (user_version=0), running all migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-01T10:03:34.742807Z"}
+{"event": "state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']", "level": "info", "logger": "deskpet.memory.schema", "timestamp": "2026-09-01T10:03:34.784414Z"}
+{"event": "state.db user_version=34 >= 34, applying any pending incremental migrations", "level": "info", "logger": "deskpet.memory.migrator", "timestamp": "2026-09-01T10:03:34.800270Z"}
+{"event": "SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)", "level": "info", "logger": "deskpet.memory.session_db", "timestamp": "2026-09-01T10:03:34.810125Z"}
+{"db_path_hash": "df11a0e11ac82f2b", "event": "memory.backend_initialized", "fts5": true, "level": "info", "logger": "simple_harness_memory.backends.sqlite", "schema_version": 4, "sqlite_version": "3.53.1", "timestamp": "2026-09-01T10:03:34.823930Z"}
+{"db_path_hash": "df11a0e11ac82f2b", "event": "memory.backend_closed", "level": "info", "logger": "simple_harness_memory.backends.sqlite", "timestamp": "2026-09-01T10:03:34.824648Z"}
+------------------------------ Captured log call -------------------------------
+INFO     deskpet.memory.schema:schema.py:812 state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-01T10-03-34
+INFO     deskpet.memory.migrator:migrator.py:1051 state.db fresh (user_version=0), running all migrations
+INFO     deskpet.memory.schema:schema.py:822 state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']
+INFO     deskpet.memory.migrator:migrator.py:1060 state.db user_version=34 >= 34, applying any pending incremental migrations
+INFO     deskpet.memory.session_db:session_db.py:321 SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)
+INFO     deskpet.memory.schema:schema.py:812 state.db backed up before migration: /private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db.bak.2026-09-01T10-03-34
+INFO     deskpet.memory.migrator:migrator.py:1051 state.db fresh (user_version=0), running all migrations
+INFO     deskpet.memory.schema:schema.py:822 state.db migrations applied: ['001_p4_initial_v9.sql', '002_p4s20_summarize_archive.sql', '003_p4s22_code_todos.sql', '004_p4s24_reasoning_content.sql', '005_p4s25_code_sessions.sql', '006_p5s1_supervisor_hints.sql', '007_p5s2_code_session_provider.sql', '008_p5s2_code_session_model_params.sql', '009_memory_v2_v17.sql', '010_context_os_v18.sql', '011_message_projection_visibility_v19.sql', '012_task_conversation_scope_v20.sql', '013_companion_projection.sql', '014_context_usage_history_v22.sql', '015_provider_binding_lifecycle_v23.sql', '016_context_usage_authority_v24.sql', '017_provider_workload_audit_v25.sql', '018_message_archive_projection_v26.sql', '019_provider_fault_correlation_v27.sql', '020_sdk_context_authority_v28.sql', '021_sdk_provider_projection_sequence_v29.sql', '022_agent_runtime_memory_v30.sql', '023_official_memory_integration_v31.sql', '024_project_scoped_sessions_v32.sql', '025_legacy_session_reset_v33.sql', '026_automatic_session_workspace_v34.sql']
+INFO     deskpet.memory.migrator:migrator.py:1060 state.db user_version=34 >= 34, applying any pending incremental migrations
+INFO     deskpet.memory.session_db:session_db.py:321 SessionDB ready (db=/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-29/test_dev_reset_rebuilds_three_0/userdata/data/state.db, vec=on)
+INFO     simple_harness_memory.backends.sqlite:sqlite.py:529 {'db_path_hash': 'df11a0e11ac82f2b', 'schema_version': 4, 'sqlite_version': '3.53.1', 'fts5': True, 'event': 'memory.backend_initialized', 'logger': 'simple_harness_memory.backends.sqlite', 'level': 'info', 'timestamp': '2026-09-01T10:03:34.823930Z'}
+INFO     simple_harness_memory.backends.sqlite:sqlite.py:2430 {'db_path_hash': 'df11a0e11ac82f2b', 'event': 'memory.backend_closed', 'logger': 'simple_harness_memory.backends.sqlite', 'level': 'info', 'timestamp': '2026-09-01T10:03:34.824648Z'}
+/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/test_agent_storage_reset.py:38: assert 7 == 6
+E   FileNotFoundError: [Errno 2] No such file or directory: '/Users/denny/projects/simple_harness/tauri-app/src/code-panel/controlWs.ts'
+/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/test_error_handling_fixes.py:111: FileNotFoundError: [Errno 2] No such file or directory: '/Users/denny/projects/simple_harness/tauri-app/src/code-panel/controlWs.ts'
+=============================== warnings summary ===============================
+observability/crash_reports.py:74
+  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/observability/crash_reports.py:74: DeprecationWarning: There is no current event loop
+    loop = asyncio.get_event_loop()
+
+tests/test_extreme_scenarios.py:238
+  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/tests/test_extreme_scenarios.py:238: PytestUnknownMarkWarning: Unknown pytest.mark.timeout - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.timeout(30)  # 30秒超时保护
+
+tests/test_metrics_event_endpoint.py::test_metrics_event_rejects_invalid_json
+  /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/backend/.venv/lib/python3.12/site-packages/httpx/_models.py:408: DeprecationWarning: Use 'content=<...>' to upload raw bytes/text content.
+    headers, stream = encode_request(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/capabilities/test_registry_publisher.py::test_atomic_publisher_install_update_rollback_and_uninstall
+FAILED tests/capabilities/test_registry_publisher.py::test_shared_publish_lock_never_exposes_mixed_snapshot
+FAILED tests/companion/test_capability_owner_scope.py::test_workflow_fresh_schema_installs_capability_v2_idempotently
+FAILED tests/product_state/test_host_control_downgrade.py::test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs
+FAILED tests/test_agent_storage_reset.py::test_dev_reset_rebuilds_three_databases_and_removes_sidecars
+FAILED tests/test_error_handling_fixes.py::test_health_check_timeout_values
+6 failed, 6223 passed, 50 skipped, 1 deselected, 3 warnings in 377.13s (0:06:17)

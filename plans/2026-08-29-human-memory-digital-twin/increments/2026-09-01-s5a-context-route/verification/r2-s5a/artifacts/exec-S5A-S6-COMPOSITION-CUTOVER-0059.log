@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest tests/sdk_adapters/test_no_recall_gate.py tests/test_provider_runtime_refresh.py -q 2>&1 | tail -2; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-02T06:29:21Z
+ended_at: 2026-09-02T06:29:26Z
+elapsed_ms: 4741
+---- stdout ----
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+18 passed, 1 warning in 3.96s
+
+---- stderr ----
+

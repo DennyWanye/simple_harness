@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest tests/sdk_adapters/test_s5a_milestone_real_provider.py -q -m real_provider -k 'no_recall or direct_route' 2>&1 | tail -2; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-02T07:57:30Z
+ended_at: 2026-09-02T07:57:42Z
+elapsed_ms: 12088
+---- stdout ----
+..                                                                       [100%]
+2 passed, 2 deselected in 11.70s
+
+---- stderr ----
+

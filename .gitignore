@@ -251,6 +251,9 @@ plans/**/verification/**/.plan-test-gate.lock
 # 验证证据：文本类产物（run log / 业务事实 / 断层 seam / UI 文本捕获）入库，
 # 它们是交付凭证的一部分，另一台机器接手时必须能看到。
 # 仍然排除：截图、原始数据库、隔离 userdata、密钥文件——体积大或含本机敏感态。
+# 验证证据里的 run log 是交付凭证本身（全局 *.log 规则对它开例外）：
+# 账本 plan-test-run.json 逐条引用它们，缺了就是一份「引用不存在文件」的账本。
+!plans/**/verification/**/artifacts/**/*.log
 plans/**/verification/**/artifacts/**/*.png
 plans/**/verification/**/artifacts/**/*.jpg
 plans/**/verification/**/artifacts/**/*.jpeg

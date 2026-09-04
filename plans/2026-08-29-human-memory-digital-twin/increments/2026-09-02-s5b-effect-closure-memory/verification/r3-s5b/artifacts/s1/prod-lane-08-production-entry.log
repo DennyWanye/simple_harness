@@ -1,0 +1,10 @@
+[17:59:26] primary.open -> {"ok": true, "operation": "primary.open", "result": {"primary_ref": "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1", "receipt_ref": "40caa17f-5bb1-5d2a-8d76-d8b0fe843d4b", "receipt_hash": "c39b7d368d5252e7cd10fd297f82e17034ea32ae38a14070f915e917853c0615"}}
+[17:59:26] task_scope.create -> {"ok": true, "operation": "task_scope.create", "result": {"scope_ref": "0f699f84-860f-56db-8307-5ca7ed96d74b", "ref": "0f699f84-860f-56db-8307-5ca7ed96d74b", "revision": 1, "state_hash": "543557c3bfd78a1017389d443967238351b58a3f39f235296bc5a3fa01569a18", "goal": "维护 Demo Project 的 README.md：按用户要求更新其中的 version 字段。"}}
+[17:59:26] binding.append -> {"ok": true, "operation": "binding.append", "result": {"status": "bound", "scope_ref": "0f699f84-860f-56db-8307-5ca7ed96d74b", "binding_set_revision": 1, "receipt_ref": "a065df2d-beae-5498-8663-5234caa1d462", "binding_set_receipt_ref": "a065df2d-beae-5498-8663-5234caa1d462", "receipt_hash": "68454db013f6df1d8b84549991dd109e4fa9e4af06d6e4c1d0017f0861cbb748", "root_set_digest": "7434c28215e1162961d7
+[17:59:26] README before: '# Demo Project\n\nversion: 1.1.3\n\n发布说明见 CHANGELOG。'
+[17:59:26] queue.enqueue -> {"ok": true, "operation": "queue.enqueue", "result": {"turn_ref": "9684ac14-a956-5fce-b11a-dceb407c31ee", "receipt_ref": "9684ac14-a956-5fce-b11a-dceb407c31ee", "scope_ref": "0f699f84-860f-56db-8307-5ca7ed96d74b", "enqueue_sequence": 1, "content_sha256": "ce0c08dc7926b567d1940c0b363c816ac9590b8386dc779c0683c776e8c7313b", "delivery_key": "prod-entry-2ee542f8"}}
+[17:59:26] 已入队，等待前台 Run 完成（观察 README 变化）…
+[18:01:19] README changed -> '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+[18:01:44] permission_response allow -> authorization:effect-984ee00aa3885d9cf2918da… v0
+[18:07:27] TIMEOUT: README 未变化
+[18:07:27] README after: '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'

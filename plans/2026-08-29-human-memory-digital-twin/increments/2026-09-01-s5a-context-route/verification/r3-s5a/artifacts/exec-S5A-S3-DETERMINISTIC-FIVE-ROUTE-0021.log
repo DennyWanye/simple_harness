@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest tests/sdk_adapters/test_s5a_milestone_route_loop.py tests/sdk_adapters/test_context_route_tool.py -q 2>&1 | tail -2; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-02T07:57:11Z
+ended_at: 2026-09-02T07:57:14Z
+elapsed_ms: 2572
+---- stdout ----
+.................                                                        [100%]
+17 passed in 2.20s
+
+---- stderr ----
+

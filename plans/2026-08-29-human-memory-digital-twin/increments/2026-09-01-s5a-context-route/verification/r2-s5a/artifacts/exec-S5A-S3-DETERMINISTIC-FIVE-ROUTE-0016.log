@@ -1,0 +1,11 @@
+command: bash -c .venv/bin/python -m pytest tests/sdk_adapters/test_s5a_acceptance_matrix.py::test_six_step_five_route_sequence_over_one_durable_state tests/sdk_adapters/test_s5a_milestone_route_loop.py tests/sdk_adapters/test_context_route_tool.py -q -p no:cacheprovider 2>&1 | tail -2 | tee /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r2-s5a/evidence/s3-deterministic-six-step.log; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-01T16:57:35Z
+ended_at: 2026-09-01T16:57:38Z
+elapsed_ms: 2901
+---- stdout ----
+.................                                                        [100%]
+17 passed in 2.51s
+
+---- stderr ----
+

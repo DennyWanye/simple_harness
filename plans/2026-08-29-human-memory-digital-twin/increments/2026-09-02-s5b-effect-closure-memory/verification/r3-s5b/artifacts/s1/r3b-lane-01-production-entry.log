@@ -1,0 +1,28 @@
+run_dir=/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260904T001519
+=== identity bound ===
+--- README before ---
+# Demo Project
+
+version: 1.1.3
+[00:15:33] primary.open -> {"ok": true, "operation": "primary.open", "result": {"primary_ref": "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1", "receipt_ref": "40caa17f-5bb1-5d2a-8d76-d8b0fe843d4b", "receipt_hash": "c21862fc7287f53638fe11adb50966f8e15dccfe5cf56fce68dc5042bc9fec73"}}
+[00:15:33] task_scope.create -> {"ok": true, "operation": "task_scope.create", "result": {"scope_ref": "ac46b099-08ac-5c9a-a62c-0e6096cde912", "ref": "ac46b099-08ac-5c9a-a62c-0e6096cde912", "revision": 1, "state_hash": "1b5bf18c3a1afba58c5e25cd90f0282cbab652b80f09ad14d832de7fdefe4777", "goal": "维护 Demo Project 的 README.md：按用户要求更新其中的 version 字段。"}}
+[00:15:34] binding.append -> {"ok": true, "operation": "binding.append", "result": {"status": "bound", "scope_ref": "ac46b099-08ac-5c9a-a62c-0e6096cde912", "binding_set_revision": 1, "receipt_ref": "b70b5c29-1976-5017-a52a-bd7298e56a75", "binding_set_receipt_ref": "b70b5c29-1976-5017-a52a-bd7298e56a75", "receipt_hash": "479b6a5104a6c3a6844d84ebcc433adb51b08a6371464840c9d73636f1585700", "root_set_digest": "f44eda27a8e1ca50b1ea
+[00:15:34] README before: '# Demo Project\n\nversion: 1.1.3\n\n发布说明见 CHANGELOG。'
+[00:15:34] queue.enqueue -> {"ok": true, "operation": "queue.enqueue", "result": {"turn_ref": "b2c87cb5-6863-5082-8086-a79060e4566e", "receipt_ref": "b2c87cb5-6863-5082-8086-a79060e4566e", "scope_ref": "ac46b099-08ac-5c9a-a62c-0e6096cde912", "enqueue_sequence": 1, "content_sha256": "c6f12cfa3bc9660dfd59ff448595575e6199fa1994cf95ce53b838477e9a71c7", "delivery_key": "prod-entry-9250b1ed"}}
+[00:15:34] 已入队，等待前台 Run 完成（观察 README 变化）…
+[00:17:23] permission_response allow -> authorization:effect-1ada37ea3cc48d2cca84c5a… v0
+[00:17:40] permission_response allow -> authorization:effect-ede5193f07874541d5690d5… v0
+[00:18:35] README changed -> '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+[00:19:02] permission_response allow -> authorization:effect-f680c77ca358d631fe6dd59… v0
+[00:19:09] permission_response allow -> authorization:effect-3c11ec826ff9bdbaaffffd3… v0
+[00:19:21] permission_response allow -> authorization:effect-21469a57dd3627bf3cb19e0… v0
+[00:22:34] TIMEOUT: README 未变化
+[00:22:34] README after: '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+=== driver rc=0 ===
+--- README after ---
+# Demo Project
+
+version: 1.2.0
+
+发布说明见 CHANGELOG。
+ORACLE readme_mutated=PASS

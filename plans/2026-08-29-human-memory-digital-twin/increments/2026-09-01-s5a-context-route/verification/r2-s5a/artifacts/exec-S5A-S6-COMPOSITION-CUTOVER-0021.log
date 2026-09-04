@@ -1,0 +1,21 @@
+command: bash -c cd /Users/taiwan/PROJECTS/SimplaHarness/simple_harness && S5A_COLDSTART_ROOT=/private/tmp/claude-501/-Users-taiwan-PROJECTS-SimplaHarness/d3cb7731-a811-4ca9-ac3a-6ac7b4b1e95e/scratchpad/s5a-cold backend/.venv/bin/python scripts/e2e_s5a_cold_start.py --port 8160 2>&1 | tail -12 | tee /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r2-s5a/evidence/s6-cold-start-e2e.log; exit ${PIPESTATUS[0]}
+exit_code: 0
+started_at: 2026-09-01T16:58:09Z
+ended_at: 2026-09-01T16:58:54Z
+elapsed_ms: 44738
+---- stdout ----
+      "name": "state_db_v45",
+      "ok": true,
+      "detail": "user_version=45"
+    },
+    {
+      "name": "presented_table_empty",
+      "ok": true,
+      "detail": "rows=0"
+    }
+  ]
+}
+PASS
+
+---- stderr ----
+

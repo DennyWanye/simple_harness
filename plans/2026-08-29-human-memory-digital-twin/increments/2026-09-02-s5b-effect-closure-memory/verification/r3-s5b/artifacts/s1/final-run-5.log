@@ -1,0 +1,37 @@
+run_dir=/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260904T143312
+=== identity bound ===
+--- README before ---
+# Demo Project
+
+version: 1.1.3
+[14:33:26] primary.open -> {"ok": true, "operation": "primary.open", "result": {"primary_ref": "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1", "receipt_ref": "40caa17f-5bb1-5d2a-8d76-d8b0fe843d4b", "receipt_hash": "0438caa0958db5b4ff2ca9fa95e2684cbf8adddfce7e17b86aa346614e07811b"}}
+[14:33:26] task_scope.create -> {"ok": true, "operation": "task_scope.create", "result": {"scope_ref": "5248a95a-b1da-5177-aa7d-64a9c9e21c6f", "ref": "5248a95a-b1da-5177-aa7d-64a9c9e21c6f", "revision": 1, "state_hash": "043566bf7e9d2c1f8656ae3767eb68a72d76a6ec3e757c233817b0514cc4b695", "goal": "维护 Demo Project 的 README.md：按用户要求更新其中的 version 字段。"}}
+[14:33:26] binding.append -> {"ok": true, "operation": "binding.append", "result": {"status": "bound", "scope_ref": "5248a95a-b1da-5177-aa7d-64a9c9e21c6f", "binding_set_revision": 1, "receipt_ref": "c699979e-e51f-5939-9ec8-65fff7a61b62", "binding_set_receipt_ref": "c699979e-e51f-5939-9ec8-65fff7a61b62", "receipt_hash": "8fad8437ae794f3430bc5cfa0887d1721a57e32f98ba69625ffa331102cdee53", "root_set_digest": "ac5bb1d8267cbd1d568f
+[14:33:26] README before: '# Demo Project\n\nversion: 1.1.3\n\n发布说明见 CHANGELOG。'
+[14:33:26] queue.enqueue -> {"ok": true, "operation": "queue.enqueue", "result": {"turn_ref": "88c268c1-65d3-5ceb-9c87-54bebf9a98f0", "receipt_ref": "88c268c1-65d3-5ceb-9c87-54bebf9a98f0", "scope_ref": "5248a95a-b1da-5177-aa7d-64a9c9e21c6f", "enqueue_sequence": 1, "content_sha256": "a4a7f81d2c1beb9e0cb9bf824a4ca2f4f8861240cc028a2acd5a1e4c4a960051", "delivery_key": "prod-entry-2eb479ce"}}
+[14:33:26] 已入队，等待前台 Run 完成（观察 README 变化）…
+[14:40:27] TIMEOUT: 等待 Run 终态超时（README 是否已变见下一行）
+[14:40:27] README after: '# Demo Project\n\nversion: 1.1.3\n\n发布说明见 CHANGELOG。'
+[14:40:27] 等待 analysis 落地（cognitive_memory_heads >= 1）…
+[14:45:28] WARN: 等待 analysis 落地超时
+=== driver rc=0 ===
+--- README after ---
+# Demo Project
+
+version: 1.1.3
+
+发布说明见 CHANGELOG。
+write_file_envelope_verified: NOT_MEASURED：本轮零成功文件写工具调用（run_shell 成功 0 次），README 变更无法归因到写工具信封
+provider_call_count_bounded: harness.provider_invocation 事件=5；post_turn analysis attempts=0 states=[]；attempt 内去重 provider_request_id=0 个 （契约：每个 committed turn group ≤1 次 post-tur
+closure_receipt_mutate: receipts=0 outcome=- reason_code=-
+--- 业务事实 ---
+terminal_state=
+events=18
+receipts=0 outcome=-
+turn_state=CLAIMED
+outbox=0
+links=0
+memory_heads=0 type=-
+ORACLE business_terminal=FAIL（terminal_state= closure=）
+  → 上游 provider 故障
+error_code=provider_timeout status_code=missing

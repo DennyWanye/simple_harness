@@ -1,0 +1,65 @@
+command: bash -c .venv/bin/python -m pytest 'tests/sdk_adapters/test_s5a_milestone_real_provider.py::test_real_provider_resume_existing_same_run_continuation' -m real_provider -q -p no:cacheprovider 2>&1 | tee /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/plans/2026-08-29-human-memory-digital-twin/increments/2026-09-01-s5a-context-route/verification/r2-s5a/evidence/s2-real-resume-run2.log; exit ${PIPESTATUS[0]}
+exit_code: 1
+started_at: 2026-09-01T16:44:15Z
+ended_at: 2026-09-01T16:44:42Z
+elapsed_ms: 27441
+---- stdout ----
+F                                                                        [100%]
+=================================== FAILURES ===================================
+___________ test_real_provider_resume_existing_same_run_continuation ___________
+
+milestone = namespace(db_path=PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-177/test...object at 0x10c0bbc50>, sink=<deskpet.sdk_adapters.context_authority.ProductRuntimeDecisionSink object at 0x10c0bbc80>)
+tmp_path = PosixPath('/private/var/folders/mp/b_1xsc9s50q1c2034tpd4nxm0000gn/T/pytest-of-taiwan/pytest-177/test_real_provider_resume_exis0')
+
+    @pytest.mark.asyncio
+    async def test_real_provider_resume_existing_same_run_continuation(
+        milestone, tmp_path  # noqa: F811
+    ) -> None:
+        runtime = _runtime()
+        created = await milestone.service.create_task_scope(
+            CreateTaskScopeRequest(
+                "task-a",
+                "季度报告 A",
+                "撰写 Q3 季度报告 任务 A：已完成收入与成本部分，已取消附录C（数据源不可用），下一步补市场份额图表",
+                "create-a",
+            )
+        )
+        scope_id = str(created["scope_ref"])
+        await milestone.service.rebuild_derived(scope_id)
+        workspace = tmp_path / "workspace" / "root-a"
+        workspace.mkdir(parents=True)
+        await _bind_scope_root(milestone.db_path, scope_id, workspace)
+    
+        transcript: list = []
+        provider = RealRelayProvider(runtime, transcript)
+        started = time.time()
+        try:
+            result = await _run(milestone, provider)
+        finally:
+            _EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
+            (_EVIDENCE_DIR / f"run-{int(started)}.json").write_text(
+                json.dumps(
+                    {
+                        "model": runtime["model"],
+                        "turns": transcript,
+                        "duration_s": round(time.time() - started, 2),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+    
+        # Route evidence: the real model committed resume_existing with exact ID.
+>       assert result.termination.route_state == "routed_task"
+E       AssertionError: assert 'routed_standalone' == 'routed_task'
+E         
+E         - routed_task
+E         + routed_standalone
+
+tests/sdk_adapters/test_s5a_milestone_real_provider.py:195: AssertionError
+=========================== short test summary info ============================
+FAILED tests/sdk_adapters/test_s5a_milestone_real_provider.py::test_real_provider_resume_existing_same_run_continuation
+1 failed in 27.02s
+
+---- stderr ----
+

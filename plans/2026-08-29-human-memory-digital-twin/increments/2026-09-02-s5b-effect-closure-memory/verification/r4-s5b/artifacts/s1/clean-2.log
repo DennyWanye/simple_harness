@@ -1,0 +1,37 @@
+run_dir=/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260905T002540
+=== identity bound ===
+--- README before ---
+# Demo Project
+
+version: 1.1.3
+[00:25:57] primary.open -> {"ok": true, "operation": "primary.open", "result": {"primary_ref": "4d5a6efc-75d1-580e-9ca4-eb2d3d4a7dc1", "receipt_ref": "40caa17f-5bb1-5d2a-8d76-d8b0fe843d4b", "receipt_hash": "28cf6353ca9ef4ed7cffe189056300798d49879b9bcfd9d991cc12841b9c1dcb"}}
+[00:25:57] task_scope.create -> {"ok": true, "operation": "task_scope.create", "result": {"scope_ref": "8e8940a5-7091-51f9-a9db-a98ba48f3387", "ref": "8e8940a5-7091-51f9-a9db-a98ba48f3387", "revision": 1, "state_hash": "75395e99fb81a12171705b036fe53d9cab543e1a2794a967e3b6af0cf9b453a0", "goal": "维护 Demo Project 的 README.md：按用户要求更新其中的 version 字段。"}}
+[00:25:57] binding.append -> {"ok": true, "operation": "binding.append", "result": {"status": "bound", "scope_ref": "8e8940a5-7091-51f9-a9db-a98ba48f3387", "binding_set_revision": 1, "receipt_ref": "962f6baf-0992-543e-9c9e-4465fd470f86", "binding_set_receipt_ref": "962f6baf-0992-543e-9c9e-4465fd470f86", "receipt_hash": "1741e14b81d23c7d571f6169afb9cdbb1971ada835e0b09e47b71946a66a7f61", "root_set_digest": "b9f166cffea9ab86da15
+[00:25:57] README before: '# Demo Project\n\nversion: 1.1.3\n\n发布说明见 CHANGELOG。'
+[00:25:57] queue.enqueue -> {"ok": true, "operation": "queue.enqueue", "result": {"turn_ref": "2a24ef54-03ab-5426-abba-2adf54c690db", "receipt_ref": "2a24ef54-03ab-5426-abba-2adf54c690db", "scope_ref": "8e8940a5-7091-51f9-a9db-a98ba48f3387", "enqueue_sequence": 1, "content_sha256": "25a6cd28da56cd22799bdfcd294f8598c5912ab3690c1e2c61ce0dbd3f78b0e7", "delivery_key": "prod-entry-1924beb0"}}
+[00:25:57] 已入队，等待前台 Run 完成（观察 README 变化）…
+[00:26:44] README changed -> '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+[00:27:24] permission_response allow -> authorization:effect-e5eac59cf7eec6e2642d5ee… v0
+[00:27:33] run reached terminal state
+[00:27:33] README after: '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+[00:27:33] 等待 analysis 落地（cognitive_memory_heads >= 1）…
+[00:28:19] analysis 已落地：cognitive_memory_heads=3
+=== driver rc=0 ===
+--- README after ---
+# Demo Project
+
+version: 1.2.0
+
+发布说明见 CHANGELOG。
+write_file_envelope_verified: 经文件写工具完成：['edit_file']；README 终值 '# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。'
+provider_call_count_bounded: harness.provider_invocation 事件=10；post_turn analysis attempts=1 states=['succeeded']；attempt 内去重 provider_request_id=0 个 （契约：每个 committed turn group ≤
+closure_receipt_mutate: receipts=1 outcome=mutate reason_code=model_closure
+--- 业务事实 ---
+terminal_state=COMPLETED
+events=34
+receipts=1 outcome=mutate
+turn_state=SETTLED
+outbox=1
+links=1
+memory_heads=3 type=episode
+ORACLE readme_mutated=PASS
