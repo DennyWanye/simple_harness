@@ -334,16 +334,23 @@ def build_worker_config(
     provider_id: str,
     model_id: str,
     model_config_hash: str,
-    deadline_ms: int = 60_000,
+    # 随 max_output_tokens 同步上调（见其注释）：6144 token 按实测 24.1ms/token
+    # 约需 147s，取 180s 留约 20% 余量。lease_seconds = deadline/1000 + 30 自动跟随。
+    deadline_ms: int = 180_000,
     max_attempts: int = 3,
     max_input_tokens: int = 16_384,
     # A16：2048 对真实提案余量不足。8 轮实测 output_tokens 分布
     # 457/908/1111/1381/1561/1939 全部物化成功，而两次失败轮**恰好顶格 2048**——
-    # 成功上界距上限仅剩 109 token。取 6144（≈ 最大成功值的 3 倍），按「留够余量」
-    # 定值，不是凑一个刚好能过的数。
-    # 不走「截断后重试」：现有重试是从持久响应重放、永不再调 Provider
-    # （analysis_executor.py:440-442），重放被截断的响应只会重复失败到 dead_letter；
-    # 而重新调用 Provider 违反 acceptance 已批准的「零重复 Provider 调用」约束。
+    # 成功上界距上限仅剩 109 token。
+    #
+    # **预算必须与 deadline 一起定**（独立评审 F-01 抓到的 P0）：同批数据线性拟合
+    # latency ≈ 24.1ms/token，60s 的 deadline 只够约 2500 token。若只把预算提到
+    # 6144 而不动 deadline，超过约 2500 token 就撞超时——失败模式从「succeeded +
+    # no_mutation（可观测、可审计）」翻转成 sent_unknown → 拒绝再投递 → dead_letter，
+    # 比它要修的截断更糟。实测 20260904T141720 在 2048 token 已耗 55.9s（deadline 的 93%）。
+    #
+    # 因此两个常量同步上调，并由 test_analysis_output_budget 的一致性用例钉死
+    # 「预算 × 实测 ms/token + 截距 <= deadline」，防止再各改各的。
     max_output_tokens: int = 6_144,
     max_cost_microunits: int = 5_000_000,
 ) -> Any:

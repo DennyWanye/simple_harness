@@ -67,3 +67,25 @@ def test_the_two_causes_are_distinguishable_from_the_result_alone() -> None:
     declined = _reason(_compile({"outcome": "no_mutation", "closure_reason": "x"}))
     empty = _reason(_compile({"outcome": "mutate", "operations": []}))
     assert len({unusable, declined, empty}) == 3
+
+
+# --- executor 侧的可观测性（独立评审 F-06：此前整段删掉零转红）-------------
+
+def test_executor_emits_a_signal_for_unusable_responses() -> None:
+    """A16② 的另一半：响应不可用必须留下告警 + 审计事件。
+
+    评审实测：把 analysis_executor 的该分支整段删除，tests/memory 全绿——
+    这条契约此前没有任何用例守护。本用例直接对生产源做结构断言：
+    分支存在、走 warning、且写审计行（三者缺一即红）。
+    """
+    import inspect
+
+    from deskpet.memory import analysis_executor as ax
+
+    src = inspect.getsource(ax)
+    marker = "analysis_response_unusable"
+    assert marker in src, "executor 不再识别 analysis_response_unusable"
+    branch = src[src.index(marker) :][:1200]
+    assert "logger.warning" in branch, "响应不可用必须记 warning"
+    assert "self._audit" in branch, "响应不可用必须写审计行，否则账本无痕"
+    assert "output_tokens" in branch, "告警须带 output_tokens 才能判断是否撞上预算"
