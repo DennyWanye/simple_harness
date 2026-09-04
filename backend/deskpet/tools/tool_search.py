@@ -188,6 +188,9 @@ _SCHEMA: dict[str, Any] = {
                 ),
             },
         },
+        # 同 tool_describe / tool_activate：处理器强制 query 非空，
+        # schema 如实声明（缺项由 ProductToolsAdapter.validate 接住成可恢复拒绝）。
+        "required": ["query"],
         # S5B-UI-F2（S5b 真实 UI 验收 UI-B 抓到）：冻结 SDK 0.7.1 在
         # ``ToolRegistry.validate`` 里按 schema 的 ``required`` 校验参数，
         # 缺项直接抛 ``MalformedToolArgumentsError``，kernel 据此把**整个 Run**

@@ -18,7 +18,11 @@ import json
 import pytest
 
 from deskpet.sdk_adapters.tools import ProductToolsAdapter
-from deskpet.tools.tool_search import _ACTIVATE_SCHEMA, _DESCRIBE_SCHEMA
+from deskpet.tools.tool_search import (
+    _ACTIVATE_SCHEMA,
+    _DESCRIBE_SCHEMA,
+    _SCHEMA as _SEARCH_SCHEMA,
+)
 
 
 def _required(schema) -> list[str]:
@@ -37,8 +41,15 @@ def test_describe_schema_declares_its_enforced_field() -> None:
     assert _required(_DESCRIBE_SCHEMA) == ["capability_id"]
 
 
+def test_search_schema_declares_its_enforced_field() -> None:
+    """tool_search 的处理器要求 query 非空——schema 同样要说。"""
+    assert _required(_SEARCH_SCHEMA) == ["query"]
+
+
 @pytest.mark.parametrize(
-    "schema", [_ACTIVATE_SCHEMA, _DESCRIBE_SCHEMA], ids=["activate", "describe"]
+    "schema",
+    [_ACTIVATE_SCHEMA, _DESCRIBE_SCHEMA, _SEARCH_SCHEMA],
+    ids=["activate", "describe", "search"],
 )
 def test_every_required_field_is_a_declared_property(schema) -> None:
     props = schema["parameters"]["properties"]
