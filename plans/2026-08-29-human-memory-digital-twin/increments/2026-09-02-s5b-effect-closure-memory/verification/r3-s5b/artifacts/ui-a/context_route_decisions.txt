@@ -1,0 +1,14 @@
+# sqlite3 /Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/uiA-final/userdata/data/state.db
+## context_route_decisions（全部行）
+decision_id                                                                                                                                                                           sdk_run_id                                                                    provider_turn_ordinal  route              origin     task_scope_id  binding_set_revision  raw_call_id                                                                               recorded_utc       
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------  ----------------------------------------------------------------------------  ---------------------  -----------------  ---------  -------------  --------------------  ----------------------------------------------------------------------------------------  -------------------
+route-decision:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:no-recall:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:1  product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba  1                      direct_standalone  no_recall                                       no-recall:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:1  2026-09-03 10:53:57
+
+## context_route_decisions（receipt_json / recall_refs_json）
+     decision_id = route-decision:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:no-recall:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:1
+      receipt_id = 7811605c-e766-58aa-adf2-7b5440a5f1e8
+    receipt_hash = ee871dbc3d279c14c2f7cda2212ef7c4bbae841426b261c17875b81be6597598
+   decision_hash = aecaf207a5cbf7b691ef49a14918d019bbf5f85580e34c2f56188978c0cb5f1e
+ idempotency_key = no-recall:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:1
+recall_refs_json = []
+    receipt_json = {"binding_set_receipt_hash":null,"binding_set_receipt_id":null,"binding_set_revision":null,"effect_id":"no-recall:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:1","raw_call_id":"no-recall:product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba:1","recall_refs":[],"receipt_id":"7811605c-e766-58aa-adf2-7b5440a5f1e8","route":"direct_standalone","run_id":"product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba","schema_version":2,"task_scope_id":null}

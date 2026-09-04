@@ -1,0 +1,8 @@
+# S5B-S3-ANALYSIS-IDEMPOTENCY-FAULTS 负向断言：本场景不创建产品 Run
+lane：memory-mutation-plan（11 seam kill/replay）+ post_turn_invoker + memory_ingestion_outbox
+      + s5b_milestone_effect_closure_memory
+断言：故障矩阵在 tmp_path 内构造 state.db 与替身 Provider，验证的是 attempt 五态、
+      账本三键先查后调（Provider 调用计数 0）、unknown 三分类、dead-letter 与原始证据守恒；
+      全程不经产品 ingress，不创建 SDK Run。
+实测：root_run_id=fault-memory-mutation-plan-0aab549167b2（故障运行器自造的 lane 标识，
+      非产品 Run）；lane 退出码 0。

@@ -1,0 +1,17 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "real-ui-channel/collect_evidence.sh/v1",
+ "artifact_kind": "execution-log",
+ "root_run_id": "product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba",
+ "session_id": "81f02a60-4e8d-598b-a992-03f469bc3ab6",
+ "generated_at": "2026-09-03T10:54:00Z",
+ "business_facts": {
+  "fresh_userdata_v46_direct_chat": "fresh isolated userdata：state.db user_version 0→46 全量迁移（含 038_effect_closure_memory_v46.sql），product_sdk_runtime_ready 且无 product_sdk_runtime_skipped；Browser pane 真实 1-turn 直达对话终答非空，context_route_decisions 1 行 direct_standalone/no_recall",
+  "composition_missing_startup_fail": "tests/sdk_adapters/test_composition.py 覆盖逐缺件 startup stable fail（S7 确定性 lane，exit 0）",
+  "old_runtime_rejects_v46": "tests/memory/test_s5b_v46_cutover.py 覆盖旧 runtime 拒 v46（同 lane）",
+  "payload_mutations_fail_closed": "tests/sdk_adapters/test_no_recall_gate.py + test_s5b_acceptance_matrix.py 覆盖 task_scope_update / analysis result 载荷五类变异 fail-closed 无半状态",
+  "pre_admission_audit_row": "host_pre_admission_audit 由 test_s5b_v46_cutover.py 断言（同 lane）",
+  "memory_061_forward_open": "test_s5b_v46_cutover.py 覆盖 Memory 0.6.x forward-open（同 lane）",
+  "wrong_wheel_hash_fail_closed": "test_composition.py 覆盖 wrong wheel hash fail-closed（同 lane）"
+ }
+}

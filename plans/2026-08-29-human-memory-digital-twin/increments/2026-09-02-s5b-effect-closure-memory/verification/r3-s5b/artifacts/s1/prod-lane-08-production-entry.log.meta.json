@@ -1,0 +1,8 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "production_entry_run/v1",
+ "artifact_kind": "execution-log",
+ "root_run_id": "prod-lane-08",
+ "session_id": "prod-lane-08",
+ "generated_at": "2026-09-03T11:12:00Z"
+}

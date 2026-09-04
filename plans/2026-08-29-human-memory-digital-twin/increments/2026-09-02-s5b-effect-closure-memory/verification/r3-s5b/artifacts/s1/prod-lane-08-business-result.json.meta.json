@@ -1,0 +1,20 @@
+{
+ "producer_type": "runtime-probe",
+ "producer_version": "production_entry_run/v1",
+ "artifact_kind": "business-result",
+ "root_run_id": "prod-lane-08",
+ "business_facts": {
+  "business_terminal": "completed+valid",
+  "write_file_envelope_verified": "# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。",
+  "host_file_event_recorded": "task_scope_events=41",
+  "closure_receipt_mutate": "receipts=1 outcome=mutate",
+  "outbox_delivered_same_tx": "turn_head=SETTLED outbox=1 links=1",
+  "analysis_applied_and_materialized": "cognitive_memory_heads=1",
+  "single_foreground_run": "foreground_runs=1",
+  "production_entry": "WS human_memory_request/queue.enqueue（memory/human_memory_api.py:207）",
+  "provider_call_count_bounded": "单一前台 Run；provider_attempt_started=0（含收口/分析车道）",
+  "next_turn_typed_recall_hit": "cognitive_memory_heads 已物化（episode），可供下一轮 typed_recall；本 root run 未再发第二轮（≥20 turn 长会话按 A14 移交 S6）"
+ },
+ "session_id": "prod-lane-08",
+ "generated_at": "2026-09-03T11:12:00Z"
+}

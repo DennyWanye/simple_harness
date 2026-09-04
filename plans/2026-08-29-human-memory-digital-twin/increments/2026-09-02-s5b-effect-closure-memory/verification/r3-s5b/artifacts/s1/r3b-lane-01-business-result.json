@@ -1,0 +1,14 @@
+{
+ "business_terminal": "terminal_state=COMPLETED（COMPLETED=成功；SETTLED 只表示终止）",
+ "write_file_envelope_verified": "# Demo Project\n\nversion: 1.2.0\n\n发布说明见 CHANGELOG。\n",
+ "host_file_event_recorded": "task_scope_events=48",
+ "closure_receipt_mutate": "receipts=1 outcome=mutate",
+ "outbox_delivered_same_tx": "turn_head=SETTLED outbox=1 links=1",
+ "analysis_applied_and_materialized": "cognitive_memory_heads=1 type=episode",
+ "single_foreground_run": "foreground_runs=1",
+ "production_entry": "WS human_memory_request/queue.enqueue（memory/human_memory_api.py:207）",
+ "provider_call_count_bounded": "单一前台 Run；无并发驱动",
+ "next_turn_typed_recall_hit": "cognitive_memory_heads 已物化（episode），可供下一轮 typed_recall；本 root run 未再发第二轮（≥20 turn 长会话按 A14 移交 S6）",
+ "run_dir": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260904T001519",
+ "lane": "r3b-lane-01"
+}

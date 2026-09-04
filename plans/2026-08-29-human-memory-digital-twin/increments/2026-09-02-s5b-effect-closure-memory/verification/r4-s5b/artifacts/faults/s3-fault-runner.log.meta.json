@@ -1,0 +1,22 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "fault-matrix/v2",
+ "artifact_kind": "fault-recovery-log",
+ "root_run_id": "fault-memory-mutation-plan-2fdf0f67270d",
+ "generated_at": "2026-09-04T16:44:16Z",
+ "business_facts": {
+  "recovered_state": "11 seam kill/replay 全部恢复（audit-pending-stuck, commit-before-ack, invocation-evidence-commit, lease-reclaim-in-flight, membership-growth, multi-op-finalize, outbox-commit, raw-evidence-commit, reconciliation-observer, state-mutation-commit, validation-decision-commit）",
+  "five_state_attempts": "state-mutation-commit / commit-before-ack / invocation-evidence-commit seam 覆盖 attempt 五态",
+  "three_key_lookup_zero_provider_call": "validation-decision-commit seam：账本三键先查后调",
+  "unknown_taxonomy_terminal": "reconciliation-observer seam 覆盖 unknown 三分类",
+  "reconciliation_observer_confirmed": "reconciliation-observer seam 恢复",
+  "multi_op_finalize_converges": "multi-op-finalize seam 恢复",
+  "audit_pending_seam_dead_letter": "audit-pending-stuck seam 恢复",
+  "lease_reclaim_in_flight_zero_call": "lease-reclaim-in-flight seam 恢复",
+  "membership_growth_refused": "membership-growth seam 恢复",
+  "memory_unavailable_dead_letter": "outbox-commit seam 恢复（Memory unavailable → dead-letter）",
+  "raw_evidence_conserved": "raw-evidence-commit seam 恢复，原始证据守恒",
+  "tested_head": "c0c829b038507a736e3ce9ee14a56714d2163f4c",
+  "seam_count": "11"
+ }
+}

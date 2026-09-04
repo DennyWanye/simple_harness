@@ -1,0 +1,7 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "fault-matrix/v2",
+ "artifact_kind": "execution-log",
+ "root_run_id": "fault-memory-mutation-plan-0aab549167b2",
+ "generated_at": "2026-09-03T11:10:00Z"
+}

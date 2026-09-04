@@ -1,0 +1,27 @@
+{
+ "business_terminal": "terminal_state=COMPLETED（COMPLETED=成功；SETTLED 只表示回合终止，不表示成功）",
+ "write_file_envelope_verified": "经文件写工具完成：['edit_file']；README 终值 '# Demo Project\\n\\nversion: 1.2.0\\n\\n发布说明见 CHANGELOG。'",
+ "host_file_event_recorded": "task_scope_events=34；host.file 来源工具=[]",
+ "closure_receipt_mutate": "receipts=1 outcome=mutate reason_code=model_closure",
+ "outbox_delivered_same_tx": "turn_head=SETTLED outbox=1 links=1",
+ "analysis_applied_and_materialized": "cognitive_memory_heads=2 type=episode；记忆内容='{\"actions\":[\"将 ~/SimpleHarnessWorkSpace/demo-project/README.md 中的 version 字段从 1.1.3 修改为 1.2.0\",\"要求仅修改这一处\",\"要求使用文件编辑工具而非 shell 命令\"],\"goals\":[\"更新项目 README.md 的版本号至 1.2.0\"],\"impacts\":[],\"memory_type\":\"episode\",\"occurred_end\":1788539115.19489,\"occurred_start\":1788539115.19489,\"participants\":[\"user\"],\"results\":[\"用户已发出编辑请求，等待执行\"],\"thread_ref\":null,\"title\":\"请求更新 README.md 版本号\"}'",
+ "single_foreground_run": "foreground_runs=1；SDK runs states=['completed']",
+ "production_entry": "WS human_memory_request/queue.enqueue（memory/human_memory_api.py:207）",
+ "provider_call_count_bounded": "harness.provider_invocation 事件=10；post_turn analysis attempts=1 states=['succeeded']；attempt 内去重 provider_request_id=0 个 （契约：每个 committed turn group ≤1 次 post-turn analysis 调用 → 看 attempts 数）",
+ "next_turn_typed_recall_hit": "NOT_MEASURED（**结构性不可达**，acceptance A15 已移交下一切，用户批准 hash ead12cfb…）：typed_recall_attempts 无行。typed recall 仅在模型选 context_route(memory_standalone) 时执行，而前台任务链首轮由 Host 自签路由（origin=host_initial），模型无机会选择。实测 10 轮（5 轮业务全链通过）该表恒为 0 行，context_route 后端日志 0 次。",
+ "run_dir": "/Users/taiwan/PROJECTS/SimplaHarness/simple_harness/.local-test-evidence/real-ui-channel/20260905T002322",
+ "lane": "run-1",
+ "tool_sequence": [
+  "1. tool_search -> succeeded",
+  "2. tool_describe -> succeeded",
+  "3. tool_describe -> succeeded",
+  "4. tool_activate -> succeeded",
+  "5. tool_activate -> failed catalog_describe_nonce_invalid",
+  "6. tool_describe -> succeeded",
+  "7. tool_activate -> succeeded",
+  "8. read_file -> succeeded",
+  "9. edit_file -> succeeded",
+  "10. read_file -> succeeded",
+  "11. task_scope_update -> succeeded"
+ ]
+}

@@ -1,0 +1,11 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "real-ui-channel/collect_evidence.sh/v1",
+ "artifact_kind": "execution-log",
+ "root_run_id": "product-sdk-afa9e3163b11079d477c30b54476bba20d54b2acb8abbd06b4ab5b2d471e46ba",
+ "session_id": "81f02a60-4e8d-598b-a992-03f469bc3ab6",
+ "generated_at": "2026-09-03T11:15:00Z",
+ "business_facts": {
+  "ui_channel_one_turn_real_provider": "真实 UI 通道 1-turn：context_route_decisions 1 行 direct_standalone/no_recall，SDK Run completed，终答非空"
+ }
+}

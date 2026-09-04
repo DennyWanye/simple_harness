@@ -1,0 +1,17 @@
+# UI-A（被测 HEAD c0c829b038507a736e3ce9ee14a56714d2163f4c）真实 UI 操作记录（Browser pane，http://127.0.0.1:5199/）
+1. start_channel.sh：fresh isolated userdata 首次启动 → state.db user_version 0 → 46 全量迁移；
+   product_sdk_runtime_ready，无 product_sdk_runtime_skipped
+2. navigate → 已连接、模型 gpt-5.6-luna、消息流为空
+3. 真实点击输入框 → type「今天想去公园散步」→ 点击「发送」
+4. 第 1 次：run_failed — sdk_run_failed。查明为**上游 provider 502**
+   （provider_attempt_failed error_code=provider_server_error status_code=502），
+   非被测面缺陷；按本增量口径记 INCONCLUSIVE 而非业务 FAIL。
+5. 第 2 次（真实重发）：SDK Run completed；终答非空且自然：
+   「去呀。公园散步很适合放松一下。选个人少、树多的路线，慢慢走半小时，记得带水和耳机。」
+6. context_route_decisions：Host 自签 origin=host_initial（见 A15：模型不选路由，
+   typed recall 因此不可达，已移交下一切）
+# PNG 落盘不可用（Browser pane 截图不落盘、screencapture 需屏幕录制权限），
+# 以页面文本捕获 + 后端日志 + DB 行为证据形态，与 S5a 口径一致。
+state.db user_version = 46
+state.db user_version = 46（本轮冷启动 0→46）
+state.db user_version = 46（本轮冷启动 0→46）

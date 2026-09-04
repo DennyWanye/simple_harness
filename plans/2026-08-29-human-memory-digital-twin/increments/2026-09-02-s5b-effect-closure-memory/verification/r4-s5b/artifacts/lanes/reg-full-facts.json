@@ -1,0 +1,10 @@
+{
+ "business_terminal": "completed+valid",
+ "harness_full_regression": "backend pytest 全量：6531 passed / 6 failed / 6 deselected（被测 HEAD c0c829b038507a736e3ce9ee14a56714d2163f4c）",
+ "exactly_seven_known_red": "6 条红全部落在 baseline.md 的既有环境红名单内，零新增；名单本身为 7 条，本轮 test_process_list_with_query 这一条偶发转绿，故实测 6 条",
+ "memory_full_suite_green": "Memory 仓全量 1113 passed / 8 skipped（2026-09-05 实测）",
+ "oracle_self_checks": "twin-graph 与 relation-integrity 两个冻结 oracle 自检 PASS",
+ "tested_head": "c0c829b038507a736e3ce9ee14a56714d2163f4c",
+ "host_full_suite_baseline_or_better": "6531 passed ≥ baseline 6525（2026-09-04 锁定基线）；红仅既有环境红，零新增",
+ "generated_at": "2026-09-04T23:20:59Z"
+}

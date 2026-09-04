@@ -1,0 +1,22 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "fault-matrix/v2",
+ "artifact_kind": "fault-recovery-log",
+ "root_run_id": "fault-foreground-fifo-closure-4eea6e4dd2cc",
+ "generated_at": "2026-09-04T16:44:16Z",
+ "business_facts": {
+  "recovered_state": "11 seam kill/replay 全部恢复（attempt-handed-off, attempt-reserved, cross-run-pending-plan, lease-second-owner, message-commit, objective-event-commit, observer-next-sequence-race, projection-commit, run-admission, semantic-closure-commit, terminal-watermark）",
+  "multi_tool_batch_single_receipt": "projection-commit seam receipts=1",
+  "missed_call_fallback_once": "semantic-closure-commit seam replay_status=pending",
+  "refusal_timeout_pending": "semantic-closure-commit replay_status=pending（拒绝/超时→ semantic_closure_pending）",
+  "cas_conflict_retryable": "observer-next-sequence-race seam terminal_sequence=3",
+  "duplicate_plan_same_receipt": "cross-run-pending-plan seam runs=3",
+  "projection_failure_no_rollback": "projection-commit seam 恢复且 receipts 保持 1",
+  "observer_drain_no_row_loss": "observer-next-sequence-race seam 恢复，terminal_sequence 单调",
+  "standalone_update_rejected": "test_task_scope_update_tool.py 覆盖（同 lane 命令内，exit 0）",
+  "unknown_zero_resend": "attempt-handed-off seam resent=0",
+  "lease_second_owner_zero_call": "lease-second-owner seam second_owner_calls=0",
+  "tested_head": "c0c829b038507a736e3ce9ee14a56714d2163f4c",
+  "seam_count": "11"
+ }
+}

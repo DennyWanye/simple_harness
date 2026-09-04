@@ -1,0 +1,6 @@
+# S5B-REG-FULL 负向断言：全量回归不创建任何产品 Run
+命令：Host 全量 pytest + Memory 全量 pytest（见 exec-S5B-REG-FULL-0007.log）
+断言：两套测试套件均在各自临时 userdata / tmp_path 内运行，不触碰产品 userdata，
+      因此不产生任何 foreground Run 或 SDK Run。
+实测：Host 6459 passed / 恰好 7 条已知环境红 / 零意外；Memory 全量绿。
+      exec 日志中 known_red=7 unexpected=0 由脚本自判，退出码保真。

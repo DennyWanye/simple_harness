@@ -1,0 +1,57 @@
+{
+ "lanes": [
+  {
+   "lane": "s4-value-100k",
+   "exit": 0
+  },
+  {
+   "lane": "s4-critical-affected",
+   "exit": 0
+  },
+  {
+   "lane": "s4-execution-value",
+   "exit": 1
+  },
+  {
+   "lane": "s4-execution-faults",
+   "exit": 1
+  },
+  {
+   "lane": "pytest-views",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-fifo",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-integration",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-data-recovery",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-authority",
+   "exit": 0
+  },
+  {
+   "lane": "changed-surface-ruff",
+   "exit": 0
+  },
+  {
+   "lane": "changed-surface-mypy",
+   "exit": 0
+  },
+  {
+   "lane": "full-surface-route-smoke",
+   "exit": 0
+  },
+  {
+   "lane": "host-full-pytest",
+   "exit": 1
+  }
+ ],
+ "provenance": "machine output of the all-lanes-3 batch (candidate 70b08da9). The s4-execution-value/s4-execution-faults exit=1 rows are transient failures from reused gate-1 artifact dirs (stale sdk-runtime state blocking scheduler start); both lanes were rerun into fresh gate-3 dirs at 18:09-18:10 with status PASS (see s4-execution-value.log / s4-execution-faults.log and the attached result JSONs)."
+}

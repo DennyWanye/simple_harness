@@ -1,0 +1,12 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "reg-lane/v1",
+ "artifact_kind": "execution-log",
+ "root_run_id": "reg-full-no-product-run",
+ "generated_at": "2026-09-03T11:10:00Z",
+ "business_facts": {
+  "host_full_suite_baseline_or_better": "6459 passed（基线 6282 以上）",
+  "exactly_seven_known_red": "known_red=7 unexpected=0",
+  "memory_full_suite_green": "Memory 全量 pytest 退出码 0"
+ }
+}

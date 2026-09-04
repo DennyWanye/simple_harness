@@ -1,0 +1,57 @@
+{
+ "provenance": "machine output of the first all-lanes batch (16:03), reconstructed verbatim from scratchpad all-lanes-2.log LANE lines; the three exit=1 rows were transient failures caused by reused artifact dirs (stale sdk-runtime state) and were superseded by the 16:21-16:22 gate-2 fresh-dir reruns",
+ "lanes": [
+  {
+   "lane": "s4-value-100k",
+   "exit": 0
+  },
+  {
+   "lane": "s4-critical-affected",
+   "exit": 1
+  },
+  {
+   "lane": "s4-execution-value",
+   "exit": 1
+  },
+  {
+   "lane": "s4-execution-faults",
+   "exit": 1
+  },
+  {
+   "lane": "pytest-views",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-fifo",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-integration",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-data-recovery",
+   "exit": 0
+  },
+  {
+   "lane": "pytest-authority",
+   "exit": 0
+  },
+  {
+   "lane": "changed-surface-ruff",
+   "exit": 0
+  },
+  {
+   "lane": "changed-surface-mypy",
+   "exit": 0
+  },
+  {
+   "lane": "full-surface-route-smoke",
+   "exit": 0
+  },
+  {
+   "lane": "host-full-pytest",
+   "exit": 1
+  }
+ ]
+}

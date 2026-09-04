@@ -1,0 +1,12 @@
+{
+ "channel": "浏览器 dev 舱口 + 反向代理注入 Tauri IPC shim + 自持 Ed25519 身份绑定（真实点击/键入）",
+ "cold_start": "fresh userdata：.local-test-evidence/real-ui-channel/20260905T004204/userdata（entries_before=[]）",
+ "identity_bound": "IDENTITY BOUND（harness.log）",
+ "turns": "1 轮真实 provider",
+ "provider": "kimi-k2.6-256K（UI 右上角显示）",
+ "terminal_answer_nonempty": "你好！我可以陪你工作、解答问题、调用各种工具帮你完成任务，还能记住你的偏好～会话畅通哦！",
+ "sessions_rows": 2,
+ "messages_rows": 2,
+ "tested_head": "c0c829b038507a736e3ce9ee14a56714d2163f4c",
+ "run_dir": ".local-test-evidence/real-ui-channel/20260905T004204"
+}

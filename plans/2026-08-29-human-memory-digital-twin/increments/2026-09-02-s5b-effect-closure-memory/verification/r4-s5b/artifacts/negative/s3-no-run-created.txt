@@ -1,0 +1,6 @@
+# 负向断言（被测 HEAD c0c829b038507a736e3ce9ee14a56714d2163f4c，2026-09-04T23:17:37Z 重新核实）
+# 场景 S5B-S3-ANALYSIS-IDEMPOTENCY-FAULTS 声明「不应创建前台 Run」。
+# 核实方式：该场景为纯 pytest 车道，不经控制通道 queue.enqueue，
+#   不触碰 foreground_runs / foreground_turn_heads。
+# 对应执行日志行数: 2
+foreground_run_created = 0

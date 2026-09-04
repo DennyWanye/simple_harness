@@ -248,7 +248,17 @@ plans/**/verification/**/.plan-test-gate.lock
 # Raw evidence stays on this Mac until a verified LAN NAS archive exists.
 /.local-test-evidence/
 /local-test-evidence/
-plans/**/verification/**/artifacts/
+# 验证证据：文本类产物（run log / 业务事实 / 断层 seam / UI 文本捕获）入库，
+# 它们是交付凭证的一部分，另一台机器接手时必须能看到。
+# 仍然排除：截图、原始数据库、隔离 userdata、密钥文件——体积大或含本机敏感态。
+plans/**/verification/**/artifacts/**/*.png
+plans/**/verification/**/artifacts/**/*.jpg
+plans/**/verification/**/artifacts/**/*.jpeg
+plans/**/verification/**/artifacts/**/*.db
+plans/**/verification/**/artifacts/**/*.sqlite*
+plans/**/verification/**/artifacts/**/userdata/
+plans/**/verification/**/artifacts/**/secrets/
+plans/**/verification/**/artifacts/**/*.key
 plans/**/manual-results-*/screenshots/
 plans/**/manual-results-*/logs/
 plans/**/manual-results-*/recordings/

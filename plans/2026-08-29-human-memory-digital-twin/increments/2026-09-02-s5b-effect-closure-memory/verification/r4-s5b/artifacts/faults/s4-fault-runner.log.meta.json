@@ -1,0 +1,24 @@
+{
+ "producer_type": "gate-exec",
+ "producer_version": "fault-matrix/v2",
+ "artifact_kind": "fault-recovery-log",
+ "root_run_id": "fault-taskscope-init-binding-eb4ceff835d6",
+ "generated_at": "2026-09-04T16:44:16Z",
+ "business_facts": {
+  "run_fault_three_codes": "run-fault-route-authority-missing / root-authority-ambiguous / catalog-policy-unavailable 三 seam",
+  "project_effect_list_frozen": "test_tool_authority.py 覆盖 PROJECT_EFFECT 冻结清单（同 lane，exit 0）",
+  "per_effect_reverify_codes": "test_effect_gate.py / test_effect_gate_hardening.py 覆盖逐 effect 重验 reason-code 表",
+  "six_rejections": "test_effect_gate.py 覆盖六类拒绝",
+  "inode_drift_rejected": "binding-revision seam 覆盖 root 漂移",
+  "same_batch_barrier": "test_effect_gate.py 覆盖同批 route+write 拒绝",
+  "forged_authority_rejected": "test_effect_gate.py 覆盖模型伪造 authority 字段",
+  "frozen_root_split_rejected": "frozen-root-split seam",
+  "auto_destructive_requires_user": "auto-destructive seam",
+  "root_resolver_single_root": "test_tool_authority.py 覆盖单根签发",
+  "two_root_scope_fail_closed": "test_effect_gate.py 覆盖多 root fail-closed",
+  "single_root_per_canary": "taskscope-row / task-home-create seam（A6 单根 per-canary 口径）",
+  "recovered_state": "11 seam kill/replay 全部恢复（auto-destructive, binding-revision, checkpoint, commit-before-ack, frozen-root-split, primary-conversation-create, run-fault-catalog-policy-unavailable, run-fault-root-authority-ambiguous, run-fault-route-authority-missing, task-home-create, taskscope-row）",
+  "tested_head": "c0c829b038507a736e3ce9ee14a56714d2163f4c",
+  "seam_count": "11"
+ }
+}

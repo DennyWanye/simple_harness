@@ -1,0 +1,17 @@
+# S5B-S1 的 UI 动作证据（被测 HEAD c0c829b038507a736e3ce9ee14a56714d2163f4c）
+
+按 acceptance **A14**（用户 2026-09-03 批准，hash 6086418d…），S5B-S1 的
+**真实桌面 UI 载体面已移交 S6**：本增量内前端零调用 queue.enqueue，
+该链只能由控制通道驱动。S1 的驱动入口因此是生产 WS queue.enqueue（非 UI）。
+
+本条 ui_action 证据记录的是**同一条链在真实 UI 下的可达性**，由 S5B-S8 同轮取得：
+- 通道：浏览器 dev 舱口 + 反向代理注入 Tauri IPC shim + 自持 Ed25519 身份绑定
+- 冷启动 fresh userdata，state.db user_version 0 → 46
+- 真实点击输入框 → 键入 → 点击发送（Browser pane 真实交互，非脚本回放）
+- SDK Run completed，终答自然非空：
+  「你好！我可以陪你工作、解答问题、调用各种工具帮你完成任务，还能记住你的偏好～会话畅通哦！」
+- 模型 kimi-k2.6-256K
+
+**口径声明**：本证据证明真实 UI 通道可达且冷启动可用；它**不**证明 S1 的
+业务动作（改文件 → 语义收口 → 记忆物化）经由 UI 完成——那部分按 A14 移交 S6。
+S1 的业务证据见 artifacts/s1/clean-1..6（生产 WS 入口，6 轮全绿）。
