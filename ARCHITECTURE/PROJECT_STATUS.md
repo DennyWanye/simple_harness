@@ -1,6 +1,11 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-09-04
+> **最后更新**：2026-09-05
+
+## 2026-09-05 Typed recall 执行桥：分支测试工具验证状态
+
+- `feature/human-memory-typed-recall-runner` 已交付执行桥，代码提交 `fca215e6` 本机提交态 **40 个桥回归通过**；Harness 0.7.1 + Memory 0.6.3 真实 public probe 为 **1 OBSERVED、0/401 正式 PASS**，其余 390 public cells BLOCKED、10 source cells 未执行。
+- **A2 oracle 修订方案待最终批准；尚未并入主树，合并暂缓。** 仅登记测试工具验证事实，S3/program 完成度及其他模块状态不变。边界、证据索引与方案见 [Memory SDK 边界](MEMORY_SDK_BOUNDARY.md#2026-09-05-typed-recall-执行桥验证工具仅独立分支)。
 
 ## 2026-09-04 Human Memory S5b Task 7：前台任务执行链生产入口跑通与路径契约收口
 

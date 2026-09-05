@@ -1,6 +1,6 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-09-01
+> 最后更新：2026-09-05
 > 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
 > Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`
 > 发布标记：Harness `v0.3.0` → `fbb156f`；Memory `v0.4.0` → `3d4247b`；主分支与 tags 已推送；
@@ -8,6 +8,13 @@
 
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
+
+## 2026-09-05 Typed recall 执行桥验证工具（仅独立分支）
+
+- `feature/human-memory-typed-recall-runner` 已交付可执行 public consumer 桥：隔离调用、exact wheel 文件身份核验、public/source 两层证据汇总及缺失/重复/过期拒绝。代码提交 `fca215e6` 在本机提交态验证为 **40 个桥回归通过**。
+- Harness 0.7.1 + Memory 0.6.3 的真实 public probe 完成 mutation、receipt、typed recall、exact replay 与分页：**1 OBSERVED，0/401 正式 PASS**；其余 390 public cells BLOCKED、10 source cells 未执行。桥回归不计入 TC-HM-13 验收 PASS。
+- 本机证据索引：`.local-test-evidence/2026-09-05/typed-recall-063-committed-fca215e6/bridge-summary.json`；SHA-256 `b393c3f21af7585b97832db2ac7317f05f25de3c69c5bbcbfbd332dba5c85b54`。复跑命令与边界见 [A2 oracle 修订方案](../testcase/human-memory-program/runners/TYPED-RECALL-ORACLE-REVISION-PROPOSAL.md)。
+- **A2 方案待最终批准，未修改冻结 fixture/acceptance；本分支尚未并入主树，合并暂缓。** 此处仅记录测试工具状态，不标记 S3 或 program 完成，不改变其他模块的生产状态。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 
