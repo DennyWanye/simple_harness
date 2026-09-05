@@ -3,6 +3,15 @@
 > **最后更新**：2026-09-05
 
 
+## 2026-09-05 主对话历史跨层遗忘验证
+
+隔离组合 `888efe0c` 上，真实 Host/Harness/Memory SQLite 与 ProductProviderAdapter 的确定性
+HTTP transport 完成两轮普通对话，随后只抑制一个真实 memory ID：公共 page/detail 隐去原用户及
+两个依赖回复，独立 USER 保留；重启不重发，下一次实际适配器请求不含已忘内容。三项组合 **3 passed**。
+旧 scoped observer 缺完整来源时仅保留原 USER；该测试不覆盖生产初始 scoped guard 的现存 P1。
+无外部模型/原生 UI/main SDK 切换或全 program 通过声明，见
+[跨层验证](../plans/2026-09-05-s6-primary-preparation/HISTORY-CROSS-COMPONENT.md)。
+
 ## 2026-09-05 Primary history runtime review slice — not production-ready
 
 隔离history树（base284ea40b）接shared primary visibility policy、真实start/terminal依赖、

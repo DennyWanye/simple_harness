@@ -257,7 +257,7 @@ async def materialize(manager, principal, envelope, receipt):
         "history-memory",
         envelope.run_id,
         "actual-user-turn",
-        AUTH.subject,
+        principal.actor_id,
         1,
         h.MemoryMutationPlanOutcome.MUTATE,
         (operation,),
@@ -267,7 +267,7 @@ async def materialize(manager, principal, envelope, receipt):
     )
     applied = await manager.apply_memory_mutation_plan(
         principal=principal,
-        scope=m.MemoryScope.personal(AUTH.subject),
+        scope=m.MemoryScope.personal(principal.actor_id),
         plan=plan,
     )
     assert applied.outcome is h.MemoryMutationApplyOutcome.COMMITTED
