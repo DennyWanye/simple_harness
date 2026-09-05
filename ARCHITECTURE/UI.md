@@ -7,7 +7,9 @@
 Host `87c42b43` / SimpleHarness Primary P18120 的真实原生输入已得到 gpt-5.5 回复，
 草稿清空、队列回空闲、TaskScope=0。正常退出重启看到两条消息恢复，账本无已完成调用重发。
 解锁后第二轮追问已通过且实际出站包含原用户/助手历史；新项目因控制工具注册缺失失败，
-修复后仍待原生复验，不能据此声明完整遗忘或 S6 完成。
+目录和路由指引修复后，`5da24d6f` 已实际到达 SDK 工具授权等待；Primary 未显示该授权卡，
+因此新建项目仍失败。原生停止该等待后 Host STOPPED / SDK cancelled / 授权 cancelled，界面回空闲。
+尚未显示历史停止原因，批准/拒绝/过期恢复与 Manual binding 仍待接线，不能据此声明完整遗忘或 S6 完成。
 固定候选、失败启动记录和本地证据哈希见 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
 
 ## 2026-09-05 工具活动调用关联修复

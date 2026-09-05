@@ -39,7 +39,7 @@ Raw evidence stays under the main checkout's ignored `.local-test-evidence/2026-
 ## Remaining boundaries
 
 - Full history suppression still lacks Memory-owned reverse lineage and a batch visibility snapshot; a separate SDK candidate is being implemented. Existing source-level filtering is not a complete memory-forget proof.
-- CREATE_NEW child-root and active-run binding now pass deterministic production-path tests, but the first native run exposed missing control tools; the catalog correction still needs native retest.
+- CREATE_NEW child-root and active-run binding now pass deterministic production-path tests, but the first native run exposed missing control tools; catalog and guidance now reach the real SDK authorization decision, whose primary UI presentation is still missing.
 - Manual binding UI, attachments/slash/realtime, task/artifact/context inspection and original program quality gates remain incomplete.
 - The old provider-unknown root and gate failures remain historical evidence; this run does not replace them.
 
@@ -68,3 +68,21 @@ Additional native evidence, relative to main checkout's ignored human-memory-res
 Native c283e51c did expose all nine direct tools, including the three Context controls, but the model made no tool call and repeated the previous missing-location reply. New request Run `defcef60-9dc1-5ea5-aad0-0fd70b8fe2b3` completed without creating a Scope; this CREATE_NEW attempt remains **FAIL**, independently of the repaired catalog. Native `primary-ui-ccwhd61e/project-no-route.json` SHA-256 `f44c9fbdd11529b54d12ba4ed1c27f43454c8018f920e3c21bcb73fb3005d36b` retains the exact nine direct names and invocation result. An initial native paste/Return did not enqueue; the visible draft was then verified and sent by its actual button, resulting in this single new invocation.
 
 The primary system instruction now explains the existing route: for a requested new project, call create_new with its title; the Host selects the workspace and the current tool result determines whether a user location/approval is required. Historical capability failures are historical observations, not current authorization. Binding/effect checks are unchanged. Real SDK/SQLite primary runtime regression: **16 passed in 11.37s**; actual model behavior must still be retested.
+
+
+## Native authorization wait and stop
+
+At exact Host `5da24d6f67331aeb190f5cb23defd2863674d670`, unchanged binary/wheels/userdata, the same natural project request did call `context_route(create_new)`. One real foreground Provider invocation succeeded in 16423 ms. SDK Run `product-sdk-812aa644b05ec98c7ca6fd52584895102c851f9ad8ec55dfab664cfa7f49d48a` entered `waiting` with a real `tool_authorization` decision. Host Run `6db4545d-f074-5797-bbad-09dd3c468430` remained RUNNING and Primary showed executing with no authorization card. No route-handler invocation, TaskScope or file effect was created. CREATE_NEW remains **FAIL: authorization presentation gap**; this is before the separate Manual binding challenge.
+
+The native Stop button was clicked once. Host reached STOPPED, SDK reached cancelled, and the pending decision was cancelled; the interface returned to idle. No additional foreground invocation/effect occurred. Runtime closure reported clean with zero closure Provider calls; subsequent analysis made its separate 8390 ms call. This proves stop during an authorization wait only, not pause/resume, full decision interaction, or project completion. The interface still lacks an explicit stopped outcome in the historical group.
+
+A stale computer-use app handle initially returned noWindowsAvailable and did not enqueue; reselecting the same running bundle by identifier restored input, without restarting the process. The visible draft was verified before the single Send. Raw evidence remains in the main checkout under `human-memory-resume/primary-ui-84iu5du1/`:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| 01-project-request.png | 7ff7262fd6eb8f1a00607ee0e30e780e9bd598b6dda39e33b74a5e41cf562c62 |
+| 02-project-progress.png | 9b4b8c65e2ae05193d2d978c680dcb01602d894e9544851110b32567c12a0ea5 |
+| 03-stopped.png | c109e39b12edf9074f15d7056e712c76d5943e4c5e4a398b8193f3e764a2451d |
+| authorization-stop-ledger.json | 9470fb9f5373011fbba9cb68ca52b38dd76762705284208c06d7070247ca79c5 |
+
+The 16-test context-instruction log above has SHA-256 `a28de7cdeeb4f88e9180ac63421e2af6a8d702e9c27d63cb94da572def80bb1c`. The actual stop evidence does not substitute for the remaining authorization UI fix or memory-history candidate integration.
