@@ -3021,6 +3021,29 @@ async def _authorization_auto_mode() -> bool:
     return (await store.get_policy_state()).mode == "auto"
 
 
+async def _activate_terminal_operation_audit():
+    """Default-on audit of actual foreground terminals; no Provider work here."""
+    import sqlite3
+
+    from deskpet.operation_audit.composition import compose_terminal_audit
+
+    consumer = service_context.get("terminal_operation_audit")
+    if consumer is None:
+        try:
+            consumer = await compose_terminal_audit(
+                _state_db_path,
+                stack_getter=lambda: _sdk_runtime_stack,
+                subject="deskpet-local-owner-v1",
+            )
+        except (OSError, sqlite3.Error):
+            service_context.register("terminal_operation_audit_status", "storage_unavailable")
+            logger.warning("terminal_operation_audit_storage_unavailable")
+            return None
+        service_context.register("terminal_operation_audit", consumer)
+        service_context.register("terminal_operation_audit_status", "started")
+    return consumer
+
+
 async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ignore[no-untyped-def]
     """Publish fresh-HUMAN authorities only after their dependencies are ready."""
 
@@ -3186,6 +3209,8 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
     async def _primary_state_changed() -> None:
         await _broadcast_control({"type": "human_memory_changed", "payload": {}})
 
+    _terminal_audit = await _activate_terminal_operation_audit()
+
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
@@ -3224,6 +3249,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
         conversation_entrypoint=_foreground_conversation_entrypoint,
         state_changed=_primary_state_changed,
+        terminal_audit_wake=_terminal_audit.wake if _terminal_audit is not None else None,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -5708,6 +5734,14 @@ async def lifespan(app: FastAPI):
                 "human_memory_foreground_runtime_shutdown_failed",
                 error=str(exc),
             )
+    _terminal_audit = service_context.get("terminal_operation_audit")
+    if _terminal_audit is not None:
+        try:
+            await _terminal_audit.close(timeout=5.0)
+        except Exception:
+            logger.warning("terminal_operation_audit_shutdown_incomplete")
+        finally:
+            service_context.register("terminal_operation_audit", None)
     if _memory_analysis_lane is not None:
         try:
             await _memory_analysis_lane.close(timeout_seconds=5.0)
