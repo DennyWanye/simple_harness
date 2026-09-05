@@ -544,6 +544,38 @@ class HumanMemoryHostService:
     async def forget_primary_memory(self, **request):
         return await self._cognitive_controls().forget(**request)
 
+    def _human_audit_runtime(self):
+        from deskpet.memory.writer_fence import require_human_audit_request
+        from deskpet.sdk_adapters.context_route import local_owner_auth
+
+        require_human_audit_request()
+        if self._auth != local_owner_auth():
+            raise HumanMemoryHostServiceError("primary_audit_subject_mismatch")
+        runtime = self._cognitive_runtime_getter() if self._cognitive_runtime_getter else None
+        access = getattr(runtime, "audit_access_authority", None)
+        if access is None:
+            raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
+        return runtime, access
+
+    async def primary_audit(self, operation, **request):
+        from deskpet.memory.writer_fence import require_human_audit_request
+
+        runtime, access = self._human_audit_runtime()
+        if operation == "primary.audit.close":
+            return await access.close(auth=self._auth, **request)
+        # Lazy SDK initialization can be slow; it must not retain a stale lease.
+        lease = require_human_audit_request()
+        manager = await runtime.manager()
+        if require_human_audit_request() != lease:
+            raise HumanMemoryHostServiceError("primary_audit_connection_changed")
+        method = access.open if operation == "primary.audit.open" else access.page
+        return await method(manager=manager, principal=runtime.principal(), auth=self._auth, **request)
+
+    def check_primary_audit_response(self, operation, payload):
+        _, access = self._human_audit_runtime()
+        access.final_check(auth=self._auth, primary_ref=payload["primary_ref"],
+                           audit_ref=payload["audit_ref"], allow_closed=operation == "primary.audit.close")
+
     async def create_task_scope(
         self, request: CreateTaskScopeRequest
     ) -> Mapping[str, object]:

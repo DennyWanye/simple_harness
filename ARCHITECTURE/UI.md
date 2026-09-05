@@ -1,5 +1,18 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-06 HUMAN metadata audit source entry
+
+Last updated: 2026-09-06. PrimaryMemoryPanel adds an explicit operation-record tab;
+PrimaryAuditPanel uses the existing bound PrimaryPort for primary.audit.open/page/
+close. Grants require a user click; pages require explicit reads. Unknown ACK keeps
+the original logical action while transport IDs change. Hiding/rebinding/expiry
+removes metadata immediately, and a new owner cannot replay the old capability.
+Actual ControlChannel cached bound replay is distinguished from a fresh bound
+frame; the full React parent chain regression and counterfactual red are recorded.
+Frontend25 focused tests and no-emit typecheck pass; browser/native and fixed-source
+independent acceptance remain pending. Graph, Agent input and ordinary memory
+forget semantics are unchanged. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
 ## 2026-09-06 原生遗忘确认通过；重启验收因内存中断
 
 最后更新：2026-09-06。native b32a96d9 / H0.7.2 M0.6.12 S0.3.12实际点击遗忘，UI显示成功确认，图谱由6条更新为5条且恢复可用。

@@ -30,6 +30,9 @@ def compose_human_memory_runtime(
     Lazy getters resolve the runtime only after construction. The optional
     backend/clock/fault seams support deterministic real-store verification.
     """
+    from deskpet.operation_audit.human_access import HumanAuditAccess
+
+    audit_access = HumanAuditAccess(state_db_path, clock=clock)
     authority = SemanticCorrectionAuthority(
         state_db_path,
         manager_getter=lambda: runtime.manager(),
@@ -50,6 +53,7 @@ def compose_human_memory_runtime(
         analysis_authority=executor,
         memory_action_authority=authority,
         history_source_authority=HostHistorySourceAuthority(state_db_path),
+        audit_access_authority=audit_access,
         backend_factory=backend_factory,
         principal=principal,
     )

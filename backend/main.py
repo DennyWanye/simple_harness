@@ -15037,6 +15037,7 @@ async def control_channel(ws: WebSocket):
             elif msg_type == "human_memory_request":
                 from deskpet.memory.human_memory_api import (
                     handle_human_memory_command,
+                    send_human_memory_response,
                 )
                 try:
                     _hm_auth = human_memory_control_binding.authenticate(
@@ -15071,8 +15072,15 @@ async def control_channel(ws: WebSocket):
                             "human_memory_foreground_scheduler_wake"
                         ),
                     )
-                if _hm_response is not None:
-                    await ws.send_json(_hm_response)
+                    if _hm_response is not None:
+                        await send_human_memory_response(
+                            _hm_response,
+                            factory=service_context.get(
+                                "human_memory_host_service_factory"
+                            ),
+                            auth=_hm_auth,
+                            send=ws.send_json,
+                        )
 
             elif msg_type in {
                 "project_preview_register", "project_register", "session_create",

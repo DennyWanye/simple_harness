@@ -1,5 +1,20 @@
 # simple_harness Agent Harness 架构
 
+## 2026-09-06 Signed HUMAN Memory audit source leaf
+
+Last updated: 2026-09-06. Production composition supplies a Host audit authority to
+the public Memory builder. Only a real current HUMAN connection task can issue a
+local-subject grant, use its public SDK reader, or disclose a cached logical page.
+Host S1 fixes the source action and first committed timestamp; operation-audit.db
+records requested before SDK read and saves the exact bounded metadata ACK.
+Unknown outcomes never re-read automatically or refund budget. Close/expiry/rebind
+and runtime close revoke serving capabilities; snapshots are not mixed or resumed
+through a new live read. Actual WS send remains under the signed lease with a
+five-second send timeout. SDK receipt/nonce/cursor remain server-side.
+Installed Memory0.6.12/Harness0.7.2 backend40 focused tests pass. Source review/main
+integration/native are pending; full operation coverage and usage/cost aggregation
+are not supplied by this leaf. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
 ## 2026-09-06 SDK073审计组合验证通过
 
 最后更新：2026-09-06。组合源码78647bb0集成独审通过的终态身份叶子；主组合专用venv安装H073/M0612/S0312，348个SDK文件与本树vendor逐字节一致。

@@ -5,7 +5,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+import asyncio
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Any
 
 from deskpet.memory.human_memory_service import (
@@ -29,6 +30,7 @@ from deskpet.memory.human_memory_service import (
 )
 
 HUMAN_MEMORY_COMMAND = "human_memory_request"
+HUMAN_AUDIT_OPERATIONS = frozenset({"primary.audit.open", "primary.audit.page", "primary.audit.close"})
 _AUTHORITY_FIELDS = frozenset(
     {
         "subject",
@@ -102,6 +104,11 @@ async def handle_human_memory_command(
         changes = getattr(factory, "display_invalidation", None) if operation == "primary.memory.graph" else None
         generation = changes.generation if changes is not None else None
         payload = await _dispatch(service, operation, dict(request), request_id)
+        if operation in HUMAN_AUDIT_OPERATIONS:
+            from deskpet.memory.writer_fence import human_memory_request_boundary
+
+            async with human_memory_request_boundary():
+                service.check_primary_audit_response(operation, payload)
         if operation in {
             "primary.state",
             "primary.messages.page",
@@ -130,11 +137,63 @@ async def handle_human_memory_command(
     }
 
 
+async def send_human_memory_response(
+    response: dict[str, Any],
+    *,
+    factory: HumanMemoryHostServiceFactory | None,
+    auth: AuthenticatedHostSnapshot,
+    send: Callable[[dict[str, Any]], Awaitable[None]],
+) -> None:
+    """Keep audit disclosure inside the actual signed connection's final lease.
+
+    A saved delivery is replayable, but never authority to disclose after expiry,
+    close or rebinding. Transport failure propagates; it is not a rejected read.
+    """
+    from deskpet.memory.writer_fence import human_memory_request_boundary
+
+    payload = response.get("payload", {})
+    operation = payload.get("operation")
+    if not payload.get("ok") or operation not in HUMAN_AUDIT_OPERATIONS:
+        await send(response)
+        return
+    checked = False
+    try:
+        async with human_memory_request_boundary():
+            if factory is None:
+                raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
+            factory.bind(auth).check_primary_audit_response(operation, payload["result"])
+            checked = True
+            # Bound the time a slow socket may retain the shared revocation
+            # lease. Timeout is an uncertain delivery, never a new read.
+            async with asyncio.timeout(5):
+                await send(response)
+    except Exception as exc:
+        if checked:
+            raise
+        await send(_error(
+            response["request_id"],
+            str(getattr(exc, "code", "primary_audit_delivery_rejected")),
+        ))
+
+
 async def _dispatch(  # type: ignore[no-untyped-def]
     service, operation: str, request: dict[str, Any], request_id: str
 ):
     if operation == "primary.open":
         return await service.open_primary()
+    if operation in HUMAN_AUDIT_OPERATIONS:
+        from deskpet.operation_audit.human_access import HumanAuditError
+        from deskpet.memory.writer_fence import require_human_audit_request
+
+        require_human_audit_request()
+        fields = {
+            "primary.audit.open": {"primary_ref", "open_action_id"},
+            "primary.audit.page": {"primary_ref", "audit_ref", "page_action_id", "cursor_ref"},
+            "primary.audit.close": {"primary_ref", "audit_ref"},
+        }[operation]
+        if set(request) != fields:
+            raise HumanAuditError("primary_audit_request_invalid")
+        return await service.primary_audit(operation, **request)
     if operation in {"primary.memory.list", "primary.memory.graph", "primary.memory.forget"}:
         from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveError
 
