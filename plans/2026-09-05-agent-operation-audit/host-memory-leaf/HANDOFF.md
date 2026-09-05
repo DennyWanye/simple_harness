@@ -103,3 +103,14 @@ hashes and independently compared the exact Memory wheel to installed72 files/71
 No suite rerun or native claim. Safe review record is retained ignored as
 `independent-review.txt`, SHA-256 `80468b773e7819ebb832d789f128588f5a21c944d4b7e57168d29dc94f072faf`.
 This follow-up commit changes conclusion documents only; source remains fixed.
+
+## Coordinator installed integration
+
+Integrated source3ba25c42 and reviewed documents into combined Host06348031 with
+installed Memory0611/Harness072/Service0312, no SDK source overlay. Audit attempts,
+sealed reader, preparation rejection and real graph/display producer combination:
+49PASS16.43s. Only architecture text merge conflicts; business sources unchanged.
+This preserves the missing production grant issuer/all-operations/native boundaries.
+Raw log in combined candidate `.local-test-evidence/2026-09-05/primary-candidate/`:
+`memory-audit-graph-installed.log`, SHA256
+691904f3cd98391ace7a666e3e7ff7318473877bf0a22f5194040b6bcd479d6b.
