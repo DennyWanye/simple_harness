@@ -56,8 +56,7 @@ empty production graph must stay empty until actual new analysis materializes it
 No HM-AC6/full program/401 cells/native relation PASS claim.
 
 Dirac independent WIP review found final-boundary P1: retained original probe red, moved
-stamp check after last API await, original probe rerun accepted. Frontend pending/owner
-and llm_inference fixes narrowly accepted in WIP; fixed source final review requested.
+stamp check after last API await, original probe rerun accepted. Fixed source7c50da00b72ea3133fc46313a55ef8a26a1adf25 independently reviewed by Dirac: scoped source + renderer ACCEPT, no remaining P0/P1. All ten evidence hashes matched; actual API-to-Cytoscape case was not skipped. Native remains coordinator-owned.
 Full suites are deliberately not rerun. Ruff on changed source reports two pre-existing
 human_memory_service findings (BLE001 and unsorted __all__), not modified by this leaf.
 
@@ -78,3 +77,9 @@ Browser harness moved out of tauri-app; no raw evidence staged. No auth material
 | `02-zoom.png` | `7cec5ef77cf388c3aae7bea4fd5c7a1b293edf9cd1d232c1bad0d00d6a4f2172` |
 | `03-details.png` | `0eddb0d0d8479046fce2d3c4aafff4638a26e19c37c99d98b6e62c4a937a8712` |
 | `04-suppressed.png` | `ff815d392996e67a94359507cc76f786ed448b7f8a0d5eae6c70f1b485835d6d` |
+
+## Final source handoff
+
+2026-09-05: source7c50da00 merged by coordinator as7cf2a39c; native cherry21c built. Initial shared-venv origin rejection was correctly fail-closed; coordinator reports independent exact three-SDK venv and36 startup/display tests passing. Native rerun is in progress, not counted as PASS here. No further graph source edits or suite runs.
+
+JOURNAL_VERDICT: scoped source + renderer ACCEPT (independent Dirac review); original native and full HM-AC6/program gates remain outside this leaf and pending with coordinator. No full-audit receipt claimed.
