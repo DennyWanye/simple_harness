@@ -6,8 +6,12 @@ c3c59f4210ed5e238a2833c47db62039b6d10300, wheel SHA256
 The limited complete-public-identifier exception fixes terminal history false positives;
 existing credential patterns and negative controls remain. Frozen0610/0611 unchanged.
 Source ce1a85b and captured actual Host history first/reopen were independently accepted.
-Owner reports identical offline builds,38 installed public controls and captured actual
-Host page/reopen PASS with no Provider/new CREATE; artifact independent review pending.
+Independent artifact/exact-installed review ACCEPT: identical offline builds,38 installed
+public controls and captured actual Host page/reopen PASS with no Provider/new CREATE.
+Reviewer independently checked Memory72/Harness151 fixed source/wheel/installed bytes,
+16 dependencies,213 origins,16 previous snapshots and frozen0610/0611 wheels; no suite
+rerun/native claim. Manifest SHA256
+637b7217c0c397dde79d24cdf8a97f4dad83f7a03cfdaf88ea7dfffda07f0580.
 
 This checkout installs from its own vendor path into its dedicated evidence venv;
 startup identity uses all four updated Memory fields. Lock changes only Memory identity.
