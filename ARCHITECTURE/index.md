@@ -8,7 +8,8 @@ queued 下界计数及 history keyset 有界；仅证明 Host source suppression
 [接口契约](../plans/2026-09-05-s6-primary-preparation/PRIMARY-API.md)。
 
 2026-09-05 S6隔离分支新增control verified connection复用与无scope admission，聚焦29 passed；
-standalone runtime因共享terminal事务与S5c交叉尚未闭环，UI未接。详见
+standalone/dynamic route→生产effect/terminal identity及状态通知聚焦181 passed；
+完整历史来源suppression未闭合，UI/API组合待验证，不可合main。详见
 [实施交接](../plans/2026-09-05-s6-primary-preparation/IMPLEMENTATION.md)，不改变main完成度。
 
 2026-09-05 当前接续已安装 Harness 0.7.2 / Memory 0.6.3，两个真实 queue.enqueue root 完成

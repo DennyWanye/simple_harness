@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import aiosqlite
+from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.schema import initialize_human_memory_program_state_db
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
@@ -540,7 +541,7 @@ class HumanMemoryProgramStore:
     async def initialize_subject(self, subject: str) -> PrimaryConversationReceipt:
         subject = _bounded_identifier(subject, "subject", maximum=512)
         await initialize_human_memory_program_state_db(self._db_path)
-        async with aiosqlite.connect(self._db_path) as db:
+        async with human_memory_connection(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("PRAGMA busy_timeout=5000")
@@ -641,7 +642,7 @@ class HumanMemoryProgramStore:
         _validate_protocol_pair(envelope, receipt)
         primary = await self.initialize_subject(envelope.subject)
         committed_at = time.time()
-        async with aiosqlite.connect(self._db_path) as db:
+        async with human_memory_connection(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA foreign_keys=ON")
             await db.execute("PRAGMA busy_timeout=5000")
@@ -764,7 +765,7 @@ class HumanMemoryProgramStore:
     ) -> list[CommittedHostEvidence]:
         primary = await self.initialize_subject(subject)
         bounded = max(1, min(int(limit), 10_000))
-        async with aiosqlite.connect(self._db_path) as db:
+        async with human_memory_connection(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
                 "SELECT * FROM human_memory_evidence "

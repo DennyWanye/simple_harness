@@ -1443,3 +1443,64 @@ def test_restored_run_keeps_frozen_effect_class_and_older_records_fall_back_to_m
         run_start_record=legacy, run_binding=binding, catalog_resolver=resolver, lease_state="waiting",
     )
     assert fallback.specs["write_file"].effect_class == "reversible_local" and not fallback.specs["write_file"].confirm_only
+
+
+def test_primary_tool_authority_restores_exact_projectless_context(tmp_path):
+    catalog, inventory = _catalog()
+    catalog["specs"] = catalog["specs"][:1]
+    inventory = (replace(inventory[0], projectless_admission="safe"),)
+    with Database.open(tmp_path / "primary-sdk.db") as database:
+        uow = SqliteExecutionUnitOfWork(database)
+        snapshot = uow.put_tool_catalog_snapshot(tuple(
+            ProviderToolSpec(item["name"], item["description"], item["input_schema"])
+            for item in catalog["specs"]
+        ))
+        catalog.update(generation=snapshot.generation, content_fingerprint=snapshot.content_fingerprint)
+        registry = SdkRunToolAuthorityRegistry()
+        authority = registry.prepare_run(
+            run_id="primary-run", session_id="execution-session", request_id="request", root_run_id="host-run",
+            task_scope_id=None, workspace_root=None, binding_version=0,
+            workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
+            catalog=catalog, inventory=inventory,
+        )
+        binding = SimpleNamespace(run_id="primary-run", session_id="execution-session", request_id="request",
+                                  catalog_generation=snapshot.generation, catalog_fingerprint=snapshot.content_fingerprint)
+        restored = SdkRunToolAuthorityRegistry().restore_run(
+            run_start_record=authority.run_start_record(), run_binding=binding,
+            catalog_resolver=DurableToolCatalogResolver(uow), lease_state="waiting",
+        )
+        assert restored.task_work_context == authority.task_work_context
+        assert restored.task_work_context.task_scope_id is None
+        assert restored.task_work_context.binding_version == 0
+        assert restored.execution_context().write_scope_root is None
+        assert restored.authority_fingerprint == authority.authority_fingerprint
+
+
+@pytest.mark.parametrize("overrides", [
+    {"workspace_root": "/tmp/project"},
+    {"binding_version": 1},
+    {"binding_version": False},
+    {"workspace_resolution": {"kind": "legacy"}},
+    {"workspace_resolution": {"kind": "project_bound", "effective_root": None}},
+])
+def test_primary_tool_authority_cannot_smuggle_scope_or_workspace(overrides):
+    catalog, inventory = _catalog()
+    values = dict(run_id="primary-run", session_id="execution-session", request_id="request", root_run_id="host-run",
+                  task_scope_id=None, workspace_root=None, binding_version=0,
+                  workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
+                  catalog=catalog, inventory=inventory)
+    values.update(overrides)
+    with pytest.raises(ValueError, match="unscoped primary"):
+        SdkRunToolAuthorityRegistry().prepare_run(**values)
+
+
+
+def test_primary_tool_authority_rejects_project_effect_inventory():
+    catalog, inventory = _catalog()
+    with pytest.raises(RuntimeError, match="projectless_catalog_contains_project_tool"):
+        SdkRunToolAuthorityRegistry().prepare_run(
+            run_id="primary-run", session_id="execution-session", request_id="request", root_run_id="host-run",
+            task_scope_id=None, workspace_root=None, binding_version=0,
+            workspace_resolution={"kind": "projectless", "effective_root": None, "binding_version": 0},
+            catalog=catalog, inventory=inventory,
+        )

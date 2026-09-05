@@ -3087,10 +3087,10 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         ForegroundRuntimeExecutionAuthority,
         SqliteSdkTerminalObserver,
     )
+    from deskpet.execution.primary_context import PrimaryForegroundContextPort
     from deskpet.execution.foreground_runtime_ports import (
         ProductForegroundProviderPort,
         ProductForegroundToolPort,
-        TaskScopeForegroundContextPort,
     )
 
     class _AuditSink:
@@ -3175,66 +3175,16 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             _state_db_path, evidence_ingress=_ensure_evidence_ingress()
         )
 
-    async def _foreground_conversation_entrypoint(
-        *,
-        session_id: str,
-        sdk_run_id: str,
-        text: str,
-        context_snapshot_id: str,
-        provider_messages: tuple = (),
-    ) -> object:
-        """前台 Run 的主对话入口。
+    from deskpet.execution.primary_context import ForegroundConversationEntrypoint
 
-        冻结 SDK ``runtime/kernel.py:729-733`` 规定：启用 Agent Memory 时 ``start()``
-        必须带 ``conversation``。前台链此前不传，于是生产上从未真正启动过一个前台
-        SDK Run（实测 ``conversation_entrypoint_required``）。这里用与 chat 路径
-        （``main.py:10409``/``:10440``）**同一套**身份权威与 context source 仓库构造它。
-        """
+    _foreground_conversation_entrypoint = ForegroundConversationEntrypoint(
+        session_store=service_context.get("session_db"),
+        identity_authority=service_context.get("memory_identity_authority"),
+        context_sources=service_context.get("sdk_context_source_repository"),
+    )
 
-        from simple_harness.contracts.messages import Message, MessageRole
-        from simple_harness.runtime import ConversationTurnInput
-
-        identity_authority = service_context.get("memory_identity_authority")
-        if identity_authority is None:
-            raise RuntimeError("validated Memory identity authority is unavailable")
-        context_sources = service_context.get("sdk_context_source_repository")
-        if context_sources is None:
-            raise RuntimeError("SDK context source repository is unavailable")
-        # Memory 身份绑定要求 ``memory_session_identities.session_id`` 有一条真实
-        # ``sessions`` 行（``memory/identity.py:76-79`` 的外键）。前台 Run 用的是
-        # ``foreground_runtime.py:207-209`` 从 host_run_id 确定性派生的
-        # ``foreground-execution-<sha256>``，此前不存在该行 → FOREIGN KEY 失败，
-        # **前台链因此从未启动过一个 SDK Run**。
-        #
-        # 这里为该派生 id 建一条普通 sessions 行。**不用主对话 id**：
-        # ``memory/primary_authority.py`` 的 ``assert_not_primary_authority`` 是有意闸门，
-        # 主对话不得被当作普通会话写入（``session_db.py:1393``/``:1421`` 两处强制），
-        # 绕开它等于削弱已批准的不可变性。也**不放宽外键**（那等于允许记忆身份挂空）。
-        # 与 TC-HM-11 S4-7 不冲突：该条禁的是 production foreground **ports 读取**
-        # SessionDB、以及把派生 id 当作 SessionDB **selector** 取上下文；这里既不读
-        # 也不选，只为身份外键补一条属于本 Run 的会话行。
-        session_store = service_context.get("session_db")
-        if session_store is None:
-            raise RuntimeError("session store is unavailable")
-        await session_store.ensure_session(
-            session_id,
-            {"origin": "foreground-execution", "sdk_run_id": sdk_run_id},
-        )
-        identity = await identity_authority.bind(session_id=session_id)
-        _binding_id, source_ref = await context_sources.put_pending(
-            root_run_id=sdk_run_id,
-            continuation_id=None,
-            payload={
-                "provider_messages": [dict(item) for item in provider_messages],
-                "foreground_context_snapshot_id": context_snapshot_id,
-            },
-        )
-        return ConversationTurnInput(
-            identity=identity,
-            message=Message(MessageRole.USER, text),
-            memory_text=text,
-            context_source_snapshot_ref=source_ref,
-        )
+    async def _primary_state_changed() -> None:
+        await _broadcast_control({"type": "human_memory_changed", "payload": {}})
 
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
@@ -3242,10 +3192,11 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         owner_id=_runtime_owner_id,
         closure_fallback=_BoundClosureFallback(),
         ingress=_sdk_ingress,
-        context=TaskScopeForegroundContextPort(
+        context=PrimaryForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
             route_ledger=_foreground_route_ledger(),
+            settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
         ),
         provider=ProductForegroundProviderPort(
             _provider_registry,
@@ -3270,6 +3221,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id),
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
         conversation_entrypoint=_foreground_conversation_entrypoint,
+        state_changed=_primary_state_changed,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -3304,10 +3256,22 @@ async def lifespan(app: FastAPI):
         _state_db_path,
         approved_fresh_lane=approved_fresh_lane,
     )
+    async def _primary_suppression_resolver(candidate, purpose):
+        runtime = service_context.get("human_memory_v7_runtime")
+        if runtime is None:
+            raise RuntimeError("human_memory_v7_runtime_unavailable")
+        manager = await runtime.manager()
+        return await manager.backend.resolve_suppression(candidate, purpose)
+
     service_context.register(
         "human_memory_host_service_factory",
         (
-            HumanMemoryHostServiceFactory(_state_db_path, startup_epoch)
+            HumanMemoryHostServiceFactory(
+                _state_db_path, startup_epoch,
+                settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
+                suppression_resolver=_primary_suppression_resolver,
+                run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
+            )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None
         ),
@@ -8121,10 +8085,12 @@ async def _build_product_sdk_runtime_stack(
         effect_id = str(getattr(effect, "value", effect) or "")
         if not effect_id:
             raise RuntimeError("SDK product Tool effect identity is unavailable")
-        return tool_authorities.resolve(run_id).execution_context(
+        from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
+        base = tool_authorities.resolve(run_id).execution_context(
             call_id=active_product_tool_call_id().value,
             effect_id=effect_id,
         )
+        return project_tool_execution_context(base, tool_context)
 
     capability_bridge = SdkRuntimeCapabilityBridgeAdapter(
         tool_authorities, execution_context_getter
@@ -15007,22 +14973,25 @@ async def control_channel(ws: WebSocket):
                     })
                     continue
 
-                _hm_response = await handle_human_memory_command(
-                    raw,
-                    factory=service_context.get(
-                        "human_memory_host_service_factory"
-                    ),
-                    auth=_hm_auth,
-                    binding_append=service_context.get(
-                        "human_memory_binding_append_authority"
-                    ),
-                    recovery=service_context.get(
-                        "human_memory_recovery_lifecycle"
-                    ),
-                    scheduler_wake=service_context.get(
-                        "human_memory_foreground_scheduler_wake"
-                    ),
-                )
+                with human_memory_control_binding.request_scope(
+                    _companion_control_ingress, companion_challenge
+                ):
+                    _hm_response = await handle_human_memory_command(
+                        raw,
+                        factory=service_context.get(
+                            "human_memory_host_service_factory"
+                        ),
+                        auth=_hm_auth,
+                        binding_append=service_context.get(
+                            "human_memory_binding_append_authority"
+                        ),
+                        recovery=service_context.get(
+                            "human_memory_recovery_lifecycle"
+                        ),
+                        scheduler_wake=service_context.get(
+                            "human_memory_foreground_scheduler_wake"
+                        ),
+                    )
                 if _hm_response is not None:
                     await ws.send_json(_hm_response)
 

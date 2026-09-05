@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.schema import initialize_human_memory_program_state_db
@@ -700,7 +701,7 @@ class CanonicalTaskScopeStore:
 
     @asynccontextmanager
     async def _connection(self):
-        async with aiosqlite.connect(self._db_path) as connection:
+        async with human_memory_connection(self._db_path) as connection:
             connection.row_factory = aiosqlite.Row
             await connection.execute("PRAGMA foreign_keys=ON")
             await connection.execute("PRAGMA busy_timeout=5000")
