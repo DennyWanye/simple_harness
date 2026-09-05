@@ -3,35 +3,24 @@ import json
 from pathlib import Path
 import pytest
 from simple_harness_memory import MemoryManager, MemoryPrincipal
-from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
-from deskpet.memory.semantic_correction import SemanticCorrectionAuthority
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
-from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+from deskpet.memory.runtime_composition import compose_human_memory_runtime
 from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
 from tests.sdk_adapters import s5b_memory_harness as mh
 from tests.sdk_adapters import s5b_closure_harness as ch
 
 
 def memory_env(env, adapter, *, fault=None):
-    authority = SemanticCorrectionAuthority(env.db_path, manager_getter=lambda: runtime.manager(),
-        principal_getter=lambda: runtime.principal(), clock=env.clock)
-    class ObservedExecutor(HostMemoryAnalysisExecutor):
-        async def analyze_memory(self, request):
-            try:
-                return await super().analyze_memory(request)
-            except Exception:
-                import traceback
-                traceback.print_exc()
-                raise
-    executor = ObservedExecutor(env.db_path, adapter_factory=lambda _: adapter,
-        clock=env.clock, semantic_correction_authority=authority, fault_inject=fault)
     async def public_builder(path, **kwargs):
-        return await MemoryManager.build_human_memory_v7(path, **kwargs,
-            memory_action_authority=authority, clock=env.clock, allow_development_embedder=True)
-    runtime = HumanMemoryV7Runtime(env.db_path.parent / 'semantic.db',
-        evidence_authority=HostEvidenceAuthority(env.db_path), analysis_authority=executor,
+        return await MemoryManager.build_human_memory_v7(
+            path, **kwargs, clock=env.clock, allow_development_embedder=True)
+    runtime = compose_human_memory_runtime(
+        env.db_path, env.db_path.parent / 'semantic.db',
+        adapter_factory=lambda _: adapter, clock=env.clock, fault_inject=fault,
         backend_factory=public_builder,
         principal=MemoryPrincipal('deskpet-local','deskpet-local-household',mh.SUBJECT,'primary-conversation'))
+    executor = runtime.analysis_authority
+    authority = runtime._memory_action_authority
     worker = MemoryIngestionOutboxWorker(env.db_path, runtime.manager, owner_id='correction-worker',
         clock=env.clock, lease_seconds=30.0, retry_delays=(1.0,2.0))
     config = mh.build_worker_config(provider_id=mh.BINDING['provider_id'],model_id=mh.BINDING['model_id'],

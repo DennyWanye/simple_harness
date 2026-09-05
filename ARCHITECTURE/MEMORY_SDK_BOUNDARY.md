@@ -1,5 +1,17 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Shared semantic correction production composition
+
+Primary startup now uses one production factory binding the same semantic action
+authority to Host analysis and the public Memory builder. The real-store test
+harness uses that factory:29 distinct semantic/API/barrier cases pass across an
+initial26PASS3test-importFAIL and affected3PASS rerun. Reviewed semantic sources
+are integrated; installed067 verification does not cover069 migration or native
+model behavior. See [results](../plans/2026-09-05-semantic-correction/RESULTS.md).
+User-requested cross-SDK operation recording/audit is now an explicit additional
+[implementation scope](../plans/2026-09-05-agent-operation-audit/PLAN.md); current
+rotating diagnostics must not be described as complete automatic auditing.
+
 ## 2026-09-05 Typed selection forget barrier exercised
 
 Actual public typed selection/Context route now uses the cognitive forget API

@@ -8275,9 +8275,7 @@ async def _build_product_sdk_runtime_stack(
 
         return WorkspaceBindingAuthorityStore(_state_db_path)
 
-    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
-    from deskpet.memory.evidence_authority import HostEvidenceAuthority
-    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+    from deskpet.memory.runtime_composition import compose_human_memory_runtime
 
     # S5b Task 4: the v7 store is built with the Host state.db evidence resolver and
     # the Host analysis executor as its delivery authority (identity-bound), so the
@@ -8291,11 +8289,11 @@ async def _build_product_sdk_runtime_stack(
         binding = SdkRunBindingV1.from_record(record)
         return resolver.build_authority(binding).provider
 
-    _human_memory_v7 = HumanMemoryV7Runtime(
+    _human_memory_v7 = compose_human_memory_runtime(
+        _state_db_path,
         Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
         embedder_getter=lambda: service_context.get("embedder"),
-        evidence_authority=HostEvidenceAuthority(_state_db_path),
-        analysis_authority=HostMemoryAnalysisExecutor(_state_db_path, adapter_factory=_analysis_adapter),
+        adapter_factory=_analysis_adapter,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
 

@@ -1,5 +1,17 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Semantic correction connected in the combined candidate
+
+Main startup and deterministic real-store tests share one authority composition;
+29 distinct affected cases pass after repairing one test import. The current
+candidate adds actual correction wiring, while real UI/provider memory-loop and
+SDK069 existing-data migration verification remain pending. Main running checkout
+has not switched. See [results](../plans/2026-09-05-semantic-correction/RESULTS.md).
+The user's new Host/Harness/Memory/Service operation-audit requirement is recorded
+in [its scope and oracles](../plans/2026-09-05-agent-operation-audit/PLAN.md).
+Existing diagnostic streams are available; complete recording and batch auditing
+are not yet claimed.
+
 ## 2026-09-05 Typed selection forget barrier exercised
 
 Actual public typed selection/Context route now uses the cognitive forget API

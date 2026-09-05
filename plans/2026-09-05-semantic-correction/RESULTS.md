@@ -80,3 +80,26 @@ no testcase was removed. `canonical-chinese.log` SHA256
 `93b490a5c2051f0b40556528818a78a1ed38d3a406e96f46d623a098f493bd9e`.
 These deterministic public-SDK tests verify the canonical slot's real mutation path,
 not a real model following the new prompt. Alias/intent/authority code is unchanged.
+# Production composition, 2026-09-05
+
+Candidate integrated reviewed sources800ff419 and588c58ec as d0cce501/5238227b.
+The main startup now uses `compose_human_memory_runtime`: one lazy action authority
+is bound to both the analysis executor and the public Memory SDK builder. The
+semantic regression harness uses this same production factory, with only the
+clock/transport/public backend construction made deterministic; it no longer
+injects an authority separately in its own builder.
+
+Combined semantic20 + cognitive API7 + typed-only barrier2 first yielded26PASS,
+3FAIL in23.58s. The three failures were a removed test import
+`HostEvidenceAuthority` after the successful revision assertions. Restoring that
+import and rerunning only those affected valid/recover/zh_valid scenarios yielded
+3PASS,17deselected in3.28s. Original red output is retained. This covers29 distinct
+cases across the two executions, not a single all-green29 run. New production
+factory Ruff and main.py compile checks pass. Current installed067, deterministic
+Provider/SQLite only; native model wording compliance and069 migration remain
+separate pending gates.
+
+Raw local evidence under `.local-test-evidence/2026-09-05/primary-candidate/`:
+
+- `semantic-production-combined.log`: SHA256 a3a2891c38924a55e793916c9f1f5cd1b3a638c6e91757bda6383810552500e2
+- `semantic-production-fixed-import.log`: SHA256 36a56e2ca2fb782d539789dfedb79b93188984c62a42b17de5870283c3a9a031
