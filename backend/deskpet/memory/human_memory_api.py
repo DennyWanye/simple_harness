@@ -207,7 +207,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
     if operation == "queue.enqueue":
         return await service.enqueue_turn(
             QueueTurnRequest(
-                str(request["scope_ref"]),
+                request.get("scope_ref"),
                 str(request.get("delivery_key") or request_id),
                 str(request.get("text") or ""),
             )
