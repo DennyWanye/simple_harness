@@ -5,6 +5,8 @@ JSON domain envelope. That newly discovered contract difference blocks admission
 """
 import hashlib
 import json
+import re
+import copy
 
 
 def canonical(value):
@@ -48,6 +50,13 @@ def protected_hash(manifest, payload_hash, protected_tables):
     names = [root["table_name"] for root in roots]
     if len(names) != len(set(names)) or any(set(root) != ROOT_FIELDS for root in roots):
         raise ValueError("duplicate table or invalid root fields")
+    for root in roots:
+        count = root["row_count"]
+        if type(count) is not int or count < 0 or not re.fullmatch("[0-9a-f]{64}", str(root["root_hash"])):
+            raise ValueError("invalid manifest root/count")
+        for field in ("first_leaf_hash", "last_leaf_hash"):
+            if (count == 0 and root[field] is not None) or (count > 0 and not re.fullmatch("[0-9a-f]{64}", str(root[field]))):
+                raise ValueError("invalid manifest leaf binding")
     if roots != sorted(roots, key=lambda r: (r["category"], r["table_name"])):
         raise ValueError("noncanonical root order")
     if protected_tables != sorted(set(protected_tables)) or not set(protected_tables) <= set(names):
@@ -121,6 +130,57 @@ def judge_rejection(row, observed):
     return "BLOCKED"
 
 
+def check_attack_inputs(fixture, row, observed, baseline):
+    """Verify exact mutated arguments separately from exception observations.
+
+    JSON-envelope context hashing here checks the documented candidate wire's
+    companion binding only. It does not change approved NUL gold or admit a cell.
+    """
+    if baseline is None:
+        raise ValueError("mutation baseline evidence missing")
+    context, plan = copy.deepcopy(baseline["context"]), copy.deepcopy(baseline["plan"])
+    original = fixture["request_hash_oracle"]["base_request"]
+    if (context["subject"] != original["principal_id"] or context["run_id"] != original["run_id"]
+            or context["context_revision"] != original["context_revision"]
+            or context["budget"] != original["budget"] or plan["plan_id"] != original["plan_id"]):
+        raise ValueError("mutation baseline differs from frozen inputs")
+    actor, field, value = context["subject"], row["original_attack"], row["mutation"]
+    if field == "principal_id":
+        actor = value
+    elif field == "context_hash":
+        plan["context_hash"] = value
+    elif field == "plan_id":
+        plan["plan_id"] = value
+    elif field == "plan_hash":
+        plan["reason_codes"] = value
+    else:
+        if field == "run_id":
+            context["run_id"] = value
+            context["disclosure_context"]["run_id"] = value
+        elif field == "context_revision":
+            context["context_revision"] = value
+        elif field.startswith("budget."):
+            context["budget"][field.split(".")[1]] = value
+        else:
+            context["disclosure_context"]["authority_ref" if field == "disclosure_hash" else field] = value
+        for key in ("run_id", "context_revision", "query", "disclosure_context", "budget"):
+            plan[key] = copy.deepcopy(context[key])
+        plan["context_hash"] = hash_json({"domain": "simple-harness/recall-context/v2", "payload": context})
+    if observed.get("context") != context or observed.get("plan") != plan or observed.get("principal_actor_id") != actor:
+        raise ValueError("attack or required companion inputs differ from frozen mapping")
+
+
+def check_page(page, result, result_hash, result_item_hashes):
+    if (page["result_id"] != result["result_id"] or page["result_hash"] != result_hash
+            or page["page_ordinal"] != 1 or page["item_offset"] != 0 or page["complete"] is not True):
+        raise ValueError("successful page header/result binding differs")
+    expected = [{"binding_kind": "selected_item", "ordinal": item["selected_item"]["ordinal"],
+        "item_id": item["selected_item"]["item_id"], "item_hash": item_hash}
+        for item, item_hash in zip(result["items"], result_item_hashes, strict=True)]
+    if not expected or page["bindings"] != expected or page["byte_count"] != sum(len(canonical(b)) for b in expected):
+        raise ValueError("successful page empty/content/item binding differs")
+
+
 def check_fault(phase, *, control_business_valid, before, immediate, control_after,
                 replay_exact, replay_query_count):
     if not control_business_valid:
@@ -133,3 +193,103 @@ def check_fault(phase, *, control_business_valid, before, immediate, control_aft
             raise ValueError("post-commit terminal or exact replay differs")
     else:
         raise ValueError("fault phase must be fixed before execution")
+
+
+def assess_cell(fixture, cell, baseline=None):
+    """Evaluate independent business assertions, then retain remaining gates.
+
+    Returning BLOCKED is deliberate: the approved domain preimage difference
+    precludes a complete decision/result/request oracle even for sound business
+    observations. A failed business assertion always takes precedence.
+    """
+    name, observed = cell["cell_id"], cell["observations"]
+    if cell["status"] != "OBSERVED":
+        return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
+    checks, blockers = [], ["DOMAIN_PREIMAGE_DIFFERENCE"]
+    try:
+        if name == "eligibility/valid-until-null-unbounded":
+            vector = next(v for v in fixture["approved_oracle"]["semantic_source_vectors"] if v["id"] == "incumbent")
+            items = observed["result"]["items"]
+            if len(items) != 1 or items[0]["public_payload"] != vector["provider_payload"]:
+                raise ValueError("recall payload differs from independent seed input")
+            selected = items[0]["selected_item"]
+            operation = observed["mutation_receipt"]["operations"][0]
+            if (selected["source_content_hash"] != vector["source_content_hash"]
+                    or selected["public_payload_hash"] != hash_json(vector["provider_payload"])
+                    or selected["source_ref"] != operation["memory_id"]
+                    or selected["source_revision"] != 1 or operation["revision"] != 1
+                    or selected["source_kind"] != "cognitive_memory" or selected["memory_type"] != "semantic"):
+                raise ValueError("source/content/projection/receipt binding differs")
+            if observed["candidate_query_count"] != 1 or observed["replay_candidate_query_count"] != 0:
+                raise ValueError("recall/replay candidate count differs")
+            checks += ["input-derived source and projection hashes", "mutation receipt identity and revision", "candidate1/replay0"]
+            if (observed["decision"]["outcome"] != "recall" or items[0]["score"] != round(.30 / 61, 12)
+                    or items[0]["evidence_manifest_hash"] != hash_json(["evidence-relation-1"])
+                    or observed["decision"]["selected_items"] != [selected]):
+                raise ValueError("seed outcome/rank/evidence/decision item binding differs")
+            if observed["page"].get("exception_reason") == "typed_recall_result_expired":
+                blockers.append("PUBLIC_PAGE_CLOCK_NOT_INJECTABLE_AT_FROZEN_NOW")
+            elif "exception_reason" in observed["page"]:
+                raise ValueError("unexpected page rejection")
+            else:
+                check_page(observed["page"], observed["result"], observed["result_hash"], observed["result_item_hashes"])
+                checks.append("successful page exact header/content/result-item bindings")
+        elif name == "unsupported-replay/exact-replay":
+            first, replay = observed["first"], observed["replay"]
+            vector = next(v for v in fixture["approved_oracle"]["semantic_source_vectors"] if v["id"] == "incumbent")
+            if (first["decision"]["outcome"] != "recall" or len(first["result"]["items"]) != 1
+                    or first["result"]["items"][0]["public_payload"] != vector["provider_payload"]
+                    or first["result"]["items"][0]["selected_item"]["source_content_hash"] != vector["source_content_hash"]):
+                raise ValueError("replay no-fault baseline business content differs")
+            if (canonical(first["decision"]) != canonical(replay["decision"])
+                    or canonical(first["result"]) != canonical(replay["result"])
+                    or replay["candidate_query_count"] != 0 or replay["candidate_query_started"]
+                    or not replay["replayed"]):
+                raise ValueError("exact replay bytes/query/fence differs")
+            checks.append("actual decision/result byte-identical replay and zero candidate query")
+        elif name.startswith("unsupported-replay/request-hash:"):
+            row = next(row for row in fixture["approved_oracle"]["mutation_mapping"] if row["cell_id"] == name)
+            judge_rejection(row, observed)
+            check_attack_inputs(fixture, row, observed, baseline)
+            for key in ("before_manifest", "after_manifest"):
+                access = observed[key]
+                observed_hash = protected_hash(access["manifest"], access["payload_hash"], sorted(set(MUTATION_TABLES + FINAL_TABLES)))
+                if key == "before_manifest":
+                    before = observed_hash
+                elif before != observed_hash:
+                    raise ValueError("rejected replay changed protected durable state")
+            before_roots = {r["table_name"]: r for r in observed["before_manifest"]["manifest"]["table_roots"]}
+            after_roots = {r["table_name"]: r for r in observed["after_manifest"]["manifest"]["table_roots"]}
+            if set(before_roots) != set(after_roots) or any(before_roots[n] != after_roots[n]
+                    for n in before_roots if n != "canonical_manifest_access_events"):
+                raise ValueError("unknown/non-audit table changed during rejected replay")
+            checks += ["frozen attack and companion inputs", "observed public exception class/message and Memory call",
+                       "real manifest protected state unchanged"]
+            blockers.append("PUBLIC_EXCEPTION_HAS_NO_PER_INVOCATION_CANDIDATE_READ_WITNESS")
+            blockers.append("INTERNAL_REJECTION_LAYER_HAS_NO_PUBLIC_WITNESS")
+        elif name == "unsupported-replay/conflicting-replay":
+            if observed.get("exception_type") != "MemoryIdempotencyConflict" or observed.get("exception_reason") != "IDEMPOTENCY_CONFLICT":
+                raise ValueError("conflicting replay failed to reject at idempotency")
+            checks.append("actual idempotency rejection")
+            blockers.append("PUBLIC_EXCEPTION_HAS_NO_PER_INVOCATION_CANDIDATE_READ_WITNESS")
+        elif name.startswith("unsupported-replay/"):
+            original = next(row for row in fixture["unsupported_cases"] if name.endswith("/" + row["id"]))
+            # A supported mandatory carrier cannot erase/change attack reasons.
+            reason_map = {"UNSUPPORTED_SELECTOR_EVENT": "selector:event",
+                "UNSUPPORTED_SELECTOR_ENVIRONMENT": "selector:environment",
+                "UNSUPPORTED_SELECTOR_TASK_PHASE": "selector:task_phase",
+                "UNSUPPORTED_MODE_EXACT": "retrieval:exact", "UNSUPPORTED_MODE_TEMPORAL": "retrieval:temporal",
+                "UNSUPPORTED_MODE_GRAPH": "retrieval:graph"}
+            value = observed["execution"]
+            if (value["unsupported_capabilities"] != [reason_map[r] for r in original["ordered_reasons"]]
+                    or value["candidate_query_count"] != 0 or value["candidate_query_started"]
+                    or value["decision"]["outcome"] != "rejected"
+                    or value["decision"]["reason_codes"] != ["recall_invalid_plan"]
+                    or value["result"]["items"] or value["result"]["confirmation_groups"]):
+                raise ValueError("unsupported reason/order/zero-query/empty-payload assertion failed")
+            checks.append("all original unsupported reasons in exact order; rejected invalid plan, zero query/payload")
+        else:
+            blockers.append("INDEPENDENT_CELL_ORACLE_NOT_IMPLEMENTED")
+        return {"status": "BLOCKED", "reason": ";".join(blockers), "business_assertions": checks}
+    except (ValueError, KeyError, IndexError, TypeError, StopIteration) as exc:
+        return {"status": "FAIL", "reason": str(exc) or type(exc).__name__, "business_assertions": checks}

@@ -226,11 +226,18 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
             raise bridge.BridgeError("source is dirty")
         return {"source_commit": "test", "tree_clean_or_exact_diff_hash": "clean"}
     monkeypatch.setattr(bridge, "source_identity", source_identity)
+    # This test isolates transport; synthetic observations cannot pass the
+    # separate real-business oracle (covered by test_typed_recall_a2_oracle).
+    monkeypatch.setattr(bridge, "assess_observed_cells", lambda *_: {})
     invocations = []
     def run_child(command, cwd, *, timeout):
         request = bridge.read_json(command[command.index("--request") + 1])
         response_path = Path(command[command.index("--response") + 1])
-        assert set(request["inputs"]) == {"claim", "validity"}
+        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported"}
+        assert all(set(row) == {"original_attack", "public_path", "mutation"}
+                   for row in request["inputs"]["mutations"])
+        assert all(set(row) == {"id", "selectors", "modes"}
+                   for row in request["inputs"]["unsupported"])
         assert "expected" not in request and "oracle" not in request
         assert "-I" in command and cwd.name == request["layer"]
         invocations.append(request)

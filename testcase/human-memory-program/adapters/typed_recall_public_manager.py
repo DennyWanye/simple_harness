@@ -17,9 +17,9 @@ import simple_harness as harness
 import simple_harness_memory as memory
 
 
-def _helpers():
+def _helpers(filename="semantic_relation_public_manager.py"):
     spec = importlib.util.spec_from_file_location(
-        "relation_validation_helpers", Path(__file__).with_name("semantic_relation_public_manager.py")
+        filename.removesuffix(".py"), Path(__file__).with_name(filename)
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -33,10 +33,12 @@ async def run(request, workspace):
     if cell_id not in request["cell_ids"]:
         raise ValueError("public dispatch cell is absent from the frozen partition")
     helpers = _helpers()
+    public_cases = _helpers("typed_recall_public_cases.py")
     raw, validity = request["inputs"]["claim"], request["inputs"]["validity"]
-    # The public builder has no clock-injection API. Use a fresh authorization
-    # time and preserve the frozen time in observations; this is not a cell PASS.
-    now = time.time()
+    # Recall uses the frozen explicit now. Audit authority uses current time;
+    # paging lacks an internal clock input, so expiry remains an explicit blocker.
+    actual_now = time.time()
+    now = datetime.fromisoformat(validity["now"].replace("Z", "+00:00")).timestamp()
     valid_from = datetime.fromisoformat(validity["valid_from"].replace("Z", "+00:00")).timestamp()
     subject = "principal-1"
     principal = memory.MemoryPrincipal("bridge-deployment", "bridge-household", subject, "bridge-session")
@@ -55,16 +57,23 @@ async def run(request, workspace):
     policy = memory.InformationClassificationPolicy(policy_id="bridge-policy", policy_version="1",
         authority_ref="bridge-policy-authority", required_privacy_class=harness.PrivacyClass.PERSONAL,
         required_information_attributes=())
-    # The empty fixture object is an explicit diagnostic normalization to the
-    # public tuple type. It does NOT authorize replacing a frozen content hash.
-    if raw["qualifiers"] != {}:
-        raise ValueError("nonempty qualifier mapping has no approved diagnostic normalization")
+    # The approved source vector uses the complete Semantic wire and array type.
+    if raw["qualifiers"] != []:
+        raise ValueError("claim vector requires the approved empty qualifier array")
     payload = harness.SemanticMemoryPayload(raw["subject_entity"], raw["predicate"], raw["object_value"], ())
+    audit_authority, audit_ref = public_cases.audit_authority(principal, actual_now)
     manager = await memory.build_human_memory_v6(workspace / "public.sqlite",
+        audit_access_authority=audit_authority,
         evidence_authority=authority, memory_action_authority=authority,
         classification_policy=policy)
     calls = ["build_human_memory_v6"]
+    extra_cells = []
     try:
+        async def snapshot():
+            value = await manager.export_canonical_state_manifest(requester=principal,
+                target_principal=principal, access_receipt=audit_receipt)
+            return {"manifest": value.manifest.to_json(), "payload_hash": value.manifest.payload_hash,
+                    "access_event_hash": value.access_event_hash}
         await manager.ingest_committed_evidence(envelope, admission)
         calls.append("ingest_committed_evidence")
         operation = helpers._shared_operation(span, operation_id="bridge-create",
@@ -84,6 +93,8 @@ async def run(request, workspace):
             raise AssertionError("public seed mutation did not commit")
         receipt = await manager.get_memory_mutation_receipt_view(principal=principal, receipt_ref=applied.receipt_ref)
         calls.append("get_memory_mutation_receipt_view")
+        audit_receipt = await manager.authorize_audit_access(principal=principal, authority_ref=audit_ref)
+        calls.append("authorize_audit_access")
         budget = harness.RecallBudget(8, 16384, 2048, 2000)
         context = harness.RecallContext(run_id=envelope.run_id, subject=subject, turn_id="bridge-turn",
             context_revision=1, expires_at=now + 300, query=str(raw["object_value"]), active_task_scope_id=None,
@@ -110,24 +121,29 @@ async def run(request, workspace):
         calls.append("execute_typed_recall:replay")
         if replay.result.to_json() != execution.result.to_json():
             raise AssertionError("durable result replay changed")
-        page = await manager.page_typed_recall_result(principal=principal,
-            request=harness.RecallResultPageRequestV1(execution.result.result_id,
-                execution.result.result_hash, 1, 0, 8, 16384, now))
         calls.append("page_typed_recall_result")
-        if not page.bindings:
-            raise AssertionError("public result page has no bindings")
+        try:
+            page = await manager.page_typed_recall_result(principal=principal,
+                request=harness.RecallResultPageRequestV1(execution.result.result_id,
+                    execution.result.result_hash, 1, 0, 8, 16384, now))
+            page_wire = page.to_json()
+        except memory.MemoryValidationError as exc:
+            page_wire = {"exception_type": type(exc).__name__, "exception_reason": str(exc)}
         observations = {"calls": calls, "mutation_receipt": receipt.to_json(),
             "recall_context": context.to_json(), "recall_plan": plan.to_json(),
             "decision": execution.decision.to_json(), "result": execution.result.to_json(),
-            "page": page.to_json(), "candidate_query_count": execution.candidate_query_count,
+            "result_hash": execution.result.result_hash,
+            "result_item_hashes": [item.result_item_hash for item in execution.result.items],
+            "page": page_wire, "candidate_query_count": execution.candidate_query_count,
             "replay_candidate_query_count": replay.candidate_query_count,
-            "normalizations": ["empty qualifier object -> public empty tuple; canonical oracle still pending",
-                {"frozen_now": validity["now"], "observed_now": now,
-                 "reason": "public builder has no clock injection; observation only"}]}
+            "source_input": raw, "recall_now": now, "audit_now": actual_now,
+            "state_manifest": await snapshot()}
+        extra_cells = await public_cases.replay_cases(manager, principal, context, plan,
+            request["inputs"], now, snapshot)
     finally:
         await manager.close()
         calls.append("close")
     cells = [{"cell_id": name, "status": "BLOCKED", "reason": "CELL_EXECUTOR_NOT_IMPLEMENTED",
-              "observations": {}} for name in request["cell_ids"] if name != cell_id]
+              "observations": {}} for name in request["cell_ids"] if name != cell_id and name not in {row["cell_id"] for row in extra_cells}]
     cells.append({"cell_id": cell_id, "status": "OBSERVED", "reason": "", "observations": observations})
-    return cells
+    return cells + extra_cells

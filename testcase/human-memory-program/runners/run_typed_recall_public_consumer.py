@@ -387,6 +387,9 @@ def _check_exhaustive_axes(fixture: dict[str, Any], errors: list[str]) -> tuple[
 
 def self_check(fixture_path: Path, execution_layers_path: Path) -> dict[str, Any]:
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    if fixture.get("fixture_revision") == 4:
+        return {"status": "NOT_RUN/BLOCKED", "passed_cells": [],
+                "reason": "rev4 uses independent A2 oracle regressions; legacy 401 synthetic artifact self-check is disabled"}
     errors: list[str] = []
     if fixture.get("fixture_revision") != 3:
         errors.append("fixture_revision must be 3")
@@ -628,8 +631,8 @@ def _validate_execution_layers(
             "errors": [f"invalid execution-layers fixture: {type(exc).__name__}"],
         }
     errors: list[str] = []
-    if layers.get("schema_version") != 1 or layers.get("fixture_revision") != 1:
-        errors.append("execution-layers schema/revision must be 1")
+    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2):
+        errors.append("execution-layers schema/revision unsupported")
     if layers.get("quality_gate") != "NOT_RUN/BLOCKED":
         errors.append("execution-layers semantic quality gate must remain NOT_RUN/BLOCKED")
     if layers.get("typed_recall_fixture") != fixture_path.name:
@@ -744,6 +747,8 @@ def _expected_state_hashes(
     """
 
     oracle = fixture["state_hash_oracle"]
+    if fixture.get("fixture_revision") != 3:
+        raise ValueError("legacy cell tags are not actual state hashes for revised fixtures")
     fields = oracle["canonical_payload_fields"]
     prefix = oracle["domain_prefix_utf8_with_nul"].replace("\\0", "\0").encode("utf-8")
 
@@ -776,6 +781,8 @@ def _validate_candidate_artifacts(
     identity: dict[str, Any],
     invocation_started: datetime,
 ) -> dict[str, Any] | None:
+    if fixture.get("fixture_revision") != 3:
+        return {"status": "FAIL", "reason": "legacy synthetic state commitments cannot admit revised fixture artifacts"}
     expected_fixture_hash = _sha256_bytes(fixture_path.read_bytes())
     index_path = artifact_dir / "evidence-index.json"
     if index_path.is_symlink():
@@ -1119,7 +1126,7 @@ def main() -> int:
     if args.self_check:
         checked = self_check(args.fixture.resolve(), args.execution_layers.resolve())
         print(json.dumps(checked, ensure_ascii=False, sort_keys=True))
-        return 0 if checked["status"] == "PASS" else 1
+        return 0 if checked["status"] == "PASS" else BLOCKED_EXIT if checked["status"] == "NOT_RUN/BLOCKED" else 1
     result = _execute_candidate(args)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if result["status"] == "PASS":

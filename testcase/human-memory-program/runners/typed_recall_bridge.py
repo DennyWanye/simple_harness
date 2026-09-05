@@ -1,12 +1,12 @@
-"""Execution transport for TC-HM-13; observations never override frozen oracles.
+"""TC-HM-13 real consumers with transport and independent business assessment.
 
-The v1 transport is NOT the frozen product-artifact format. Its purpose is to
-execute real consumers while the canonical-hash review is pending. Neither an
-adapter nor this aggregator can award a TC-HM-13 cell PASS in this revision.
+V1 observations cannot award PASS. Approved fixture rev4 still has explicit
+contract gaps; missing executors and observed-but-incomplete cells stay separate.
 """
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -20,10 +20,9 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12"
-LAYERS_SHA = "2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca"
-ORACLE_BLOCKERS = ["CANONICAL_SOURCE_HASH_REVIEW_REQUIRED", "REQUEST_HASH_REVIEW_REQUIRED",
-                   "AUTHORITY_STATE_HASH_REVIEW_REQUIRED"]
+FIXTURE_SHA = "02419918d27237faf2af5e6d75f4180275c1e816cbad183c29ed871f508be649"
+LAYERS_SHA = "594189edb4c46ff1c52a778c1caeef9a94d324bfd67f778ce61a3ec1c5f63d8a"
+ORACLE_BLOCKERS = ["DOMAIN_PREIMAGE_DIFFERENCE"]
 
 
 class BridgeError(ValueError):
@@ -205,6 +204,17 @@ def validate_runtime(request, runtime):
             raise BridgeError("runtime package identity differs")
 
 
+def assess_observed_cells(fixture, response):
+    path = Path(__file__).with_name("typed_recall_a2_oracle.py")
+    spec = importlib.util.spec_from_file_location("a2_oracle", path)
+    oracle = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(oracle)
+    baseline = next((row["observations"] for row in response["cells"]
+                     if row["cell_id"] == "unsupported-replay/exact-replay" and row["status"] == "OBSERVED"), None)
+    return {row["cell_id"]: {"execution_status": row["status"], **oracle.assess_cell(fixture, row, baseline)}
+            for row in response["cells"]}
+
+
 def execute(args, layers, expected):
     inventory = partition(expected, layers)
     run_path = Path(args.artifact_dir).absolute()
@@ -259,6 +269,7 @@ def _execute(args, layers, expected):
     shutil.copyfile(adapter_dir / worker.name, worker)
     shutil.copyfile(adapter_dir / public.name, public)
     shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
+    shutil.copyfile(adapter_dir / "typed_recall_public_cases.py", workspace / "typed_recall_public_cases.py")
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     python = args.consumer_python
     isolation = "isolated-process-verified-installed-wheels"
@@ -283,9 +294,17 @@ def _execute(args, layers, expected):
                "oracle_blockers": ORACLE_BLOCKERS, "candidate_pin_differences": pin_changes,
                "passed_cells": [], "layers": {}, "artifacts": []}
     fixture = read_json(args.fixture)
-    inputs = {"claim": fixture["conflict_write_oracle"]["canonical_payloads"]["incumbent"],
+    summary["cell_results"] = {name: {"execution_status": "NOT_RUN", "status": "BLOCKED",
+        "reason": "SOURCE_EXECUTOR_NOT_CONFIGURED" if layer == "source" else "CELL_EXECUTOR_NOT_IMPLEMENTED",
+        "business_assertions": []} for layer, ids in inventory.items() for name in ids}
+    summary["oracle_code_sha256"] = file_sha(runner_dir / "typed_recall_a2_oracle.py")
+    inputs = {"claim": next(row["source"] for row in fixture["approved_oracle"]["semantic_source_vectors"] if row["id"] == "incumbent"),
               "validity": {key: value for key, value in fixture["eligibility_cases"][0].items()
                            if key in {"now", "valid_from", "valid_until"}}}
+    inputs["mutations"] = [{key: row[key] for key in ("original_attack", "public_path", "mutation")}
+                            for row in fixture["approved_oracle"]["mutation_mapping"]]
+    inputs["unsupported"] = [{key: row[key] for key in ("id", "selectors", "modes")}
+                             for row in fixture["unsupported_cases"]]
     for layer in ("public", "source"):
         layer_workspace = workspace / layer
         layer_workspace.mkdir()
@@ -332,6 +351,19 @@ def _execute(args, layers, expected):
             validate_runtime(request, read_json(runtime_path))
             if runtime_path.stat().st_mtime < timestamp(request["started_at"]).timestamp():
                 raise BridgeError("stale runtime evidence file")
+            if layer == "public":
+                judged = assess_observed_cells(fixture, response)
+                summary["cell_results"].update(judged)
+                if any(row["status"] == "FAIL" for row in judged.values()):
+                    summary["layers"][layer]["status"] = "FAIL"
+                    summary["layers"][layer]["failed_cells"] = sorted(
+                        name for name, row in judged.items() if row["status"] == "FAIL")
+            else:
+                summary["cell_results"].update({row["cell_id"]: {
+                    "execution_status": row["status"],
+                    "status": "FAIL" if row["status"] == "FAIL" else "BLOCKED",
+                    "reason": "SOURCE_CELL_ORACLE_NOT_IMPLEMENTED" if row["status"] == "OBSERVED" else row["reason"],
+                    "business_assertions": []} for row in response["cells"]})
             summary["artifacts"].append({"layer": layer, "request_path": request_path.name,
                                          "request_sha256": file_sha(request_path), "relative_path": response_path.name,
                                          "sha256": file_sha(response_path), "runtime_path": runtime_path.name,
@@ -351,6 +383,10 @@ def _execute(args, layers, expected):
             summary["layers"][artifact["layer"]].update(status="FAIL", reason=str(exc))
     if any(layer["status"] == "FAIL" for layer in summary["layers"].values()):
         summary["status"] = "FAIL"
+    if file_sha(runner_dir / "typed_recall_a2_oracle.py") != summary["oracle_code_sha256"]:
+        summary.update(status="FAIL", reason="oracle code changed during execution")
+    summary["acceptance_counts"] = {status: sum(row["status"] == status for row in summary["cell_results"].values())
+                                    for status in ("PASS", "FAIL", "BLOCKED")}
     summary["completed_at"] = utcnow()
     summary["required_cells"] = sum(len(ids) for ids in inventory.values())
     write_json(run_dir / "bridge-summary.json", summary)

@@ -96,3 +96,58 @@ def test_revision_preserves_all_original_scenarios_thresholds_and_negatives():
     for vector in revised["semantic_source_vectors"]:
         assert oracle.hash_json(vector["source"]) == vector["source_content_hash"]
     assert revised["state"]["old_new_tags_are_state_evidence"] is False
+
+
+def test_replay_of_wrong_business_result_is_not_a_valid_control():
+    fixture = json.loads((ROOT / "fixtures/typed-recall-v3.json").read_text())
+    value = {"decision": {"outcome": "recall"}, "result": {"items": []},
+             "candidate_query_count": 0, "candidate_query_started": False, "replayed": True}
+    row = {"cell_id": "unsupported-replay/exact-replay", "status": "OBSERVED",
+           "reason": "", "observations": {"first": value, "replay": copy.deepcopy(value)}}
+    result = oracle.assess_cell(fixture, row)
+    assert result["status"] == "FAIL"
+    assert "baseline business" in result["reason"]
+
+
+def test_early_parser_rejection_cannot_verify_replay_attack():
+    fixture = json.loads((ROOT / "fixtures/typed-recall-v3.json").read_text())
+    row = {"cell_id": "unsupported-replay/request-hash:run_id", "status": "OBSERVED", "reason": "",
+        "observations": {"memory_called": False, "exception_type": "ValueError",
+                         "exception_reason": "disclosure_context run_id differs"}}
+    result = oracle.assess_cell(fixture, row)
+    assert result["status"] == "FAIL"
+    assert "wrong rejection" in result["reason"]
+
+
+def test_noop_attack_and_changed_idempotency_key_are_rejected():
+    fixture = json.loads((ROOT / "fixtures/typed-recall-v3.json").read_text())
+    original = fixture["request_hash_oracle"]["base_request"]
+    baseline = {"context": {"subject": original["principal_id"], "run_id": original["run_id"],
+        "context_revision": original["context_revision"], "budget": original["budget"]},
+        "plan": {"plan_id": "plan-1", "idempotency_key": "same-key"}}
+    row = next(r for r in oracle.mutation_map() if r["original_attack"] == "plan_id")
+    observed = {**copy.deepcopy(baseline), "principal_actor_id": "principal-1"}
+    with pytest.raises(ValueError, match="attack or required"):
+        oracle.check_attack_inputs(fixture, row, observed, baseline)
+    observed["plan"]["plan_id"] = "plan-2"
+    oracle.check_attack_inputs(fixture, row, observed, baseline)
+    observed["plan"]["idempotency_key"] = "different-key"
+    with pytest.raises(ValueError, match="attack or required"):
+        oracle.check_attack_inputs(fixture, row, observed, baseline)
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda p: p.update(result_id="other-result"),
+    lambda p: p.update(bindings=[]),
+    lambda p: p["bindings"][0].update(item_hash="b" * 64),
+    lambda p: p.update(byte_count=0),
+])
+def test_successful_but_misbound_or_empty_page_fails(mutation):
+    result = {"result_id": "result-1", "items": [{"selected_item": {"ordinal": 1, "item_id": "item-1"}}]}
+    binding = {"binding_kind": "selected_item", "ordinal": 1, "item_id": "item-1", "item_hash": "a" * 64}
+    page = {"result_id": "result-1", "result_hash": "c" * 64, "page_ordinal": 1,
+            "item_offset": 0, "complete": True, "bindings": [binding], "byte_count": len(oracle.canonical(binding))}
+    oracle.check_page(page, result, "c" * 64, ["a" * 64])
+    mutation(page)
+    with pytest.raises(ValueError, match="successful page"):
+        oracle.check_page(page, result, "c" * 64, ["a" * 64])
