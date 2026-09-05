@@ -1,5 +1,17 @@
 # ResumePackage source closure — proposed implementation contract
 
+> Current source-index contract (2026-09-05, runtime `e31c6efd`):
+> [SOURCE-MIGRATION-CONTRACT](../2026-09-05-primary-effect-sources/SOURCE-MIGRATION-CONTRACT.md)
+> supersedes the earlier reservation-only search/page-in enumeration and pre-fix
+> completion statements below. Global v47 records exact SDK effect identities at
+> real primary handler entry, including unscoped calls; public `read_effect`
+> verifies results, and producer prefixes use the exact indexed sequence.
+> `harness_evidence_reservations` remains scoped evidence/watermark state, not the
+> complete dependency index. The 8e896472 independent late-forget P1 was reproduced
+> and fixed; independent review of e31c6efd is required before integration.
+> Earlier investigation and test results below are retained as historical stages.
+
+
 2026-09-05. Investigation on runtime888efe0c + fixed shared API2645d8b2.
 This is a concrete source/compatibility proposal for coordinator and Memory review,
 not an implemented capability. Initial scoped is still P1; dynamic resume currently
@@ -151,8 +163,9 @@ Initial scoped preparation keeps its original exact Host lineage/route authority
 but sends only the filtered package; immutable start metadata freezes the package.
 The guard crosschecks actual public SDK start bytes and Host initial receipt.
 Dynamic resume and search return the same renderer's packages; actual tool results
-are reverified at each Provider entry. Search effect IDs come from existing Host
-harness_evidence_reservations and SDK public read_effect, not private SDK SQL.
+are reverified at each Provider entry. Historical 8e896472 search enumeration used Host
+harness_evidence_reservations and SDK public read_effect. This was incomplete
+for unscoped search and is superseded by the v47 exact-effect index above.
 Project page-in can only contribute exact initial projection bytes; an unknown
 history carrier cannot become a complete producer proof. Skill configuration is
 separate. No new ordinary raw archive/block references are emitted. Generic

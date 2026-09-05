@@ -1,5 +1,17 @@
 # Primary history current-use contract — 2026-09-05
 
+> Current source-index contract (2026-09-05, runtime `e31c6efd`):
+> [SOURCE-MIGRATION-CONTRACT](../2026-09-05-primary-effect-sources/SOURCE-MIGRATION-CONTRACT.md)
+> supersedes the earlier reservation-only search/page-in enumeration and pre-fix
+> completion statements below. Global v47 records exact SDK effect identities at
+> real primary handler entry, including unscoped calls; public `read_effect`
+> verifies results, and producer prefixes use the exact indexed sequence.
+> `harness_evidence_reservations` remains scoped evidence/watermark state, not the
+> complete dependency index. The 8e896472 independent late-forget P1 was reproduced
+> and fixed; independent review of e31c6efd is required before integration.
+> Earlier investigation and test results below are retained as historical stages.
+
+
 Authorized continuation of EXECUTION-REVISION-2026-09-05, AC1/AC7. Host base
 87c42b43 in an isolated worktree; original program thresholds and raw archives stay
 intact. SDK source a96a5008 exposes current batch visibility; installed candidate
