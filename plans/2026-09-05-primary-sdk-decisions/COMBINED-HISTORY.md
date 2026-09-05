@@ -30,3 +30,5 @@ Affected API/history/foreground adjacent suite:53 passed34.90s. Targeted ruff ch
 | decisions-combined-red.log | 81cd6ebe31a8675e6fb634ae48cd90c5f9e75f58f45a2e268b379fe97c3a6a7a |
 | decisions-combined-green.log | b808ce06991054c7e44fd8639269609b4bd62b65b7ad2a07b0120d7fabc65887 |
 | decisions-history-adjacent.log | 3e492617228794b46905ae8d1fa1b0532c4e7930f71a861aa3be6efd5486495d |
+
+BOUND_WAITING notification from61436ccc runtime/test only is now combined. Runtime suite16 passed3.28s; waiting-notify.log SHA-256 `0a75fdbddd1badbcf6fedfb60fcab212ebd6fe2d326d9132cfddea5ac0037946`. Notification remains post-commit/best-effort and is not an authorization ACK.
