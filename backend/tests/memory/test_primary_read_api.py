@@ -288,6 +288,7 @@ async def settled(
     observation=True,
     dependencies=True,
     inherited=(),
+    short_horizon=(),
 ):
     from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
     from deskpet.execution.foreground_queue import RunState
@@ -351,7 +352,7 @@ async def settled(
                 **(
                     {
                         "visibility_dependencies": {
-                            "schema_version": 1,
+                            "schema_version": 2 if short_horizon else 1,
                             "evidence": [
                                 {
                                     "evidence_id": evidence_id,
@@ -360,6 +361,7 @@ async def settled(
                                 *inherited,
                             ],
                             "recall": [],
+                            **({"short_horizon": list(short_horizon)} if short_horizon else {}),
                         }
                     }
                     if dependencies

@@ -86,12 +86,16 @@ def _dependencies(proof):
     except ImportError as exc:
         raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
 
-    _fields(proof, ("schema_version", "evidence", "recall"))
-    if type(proof["schema_version"]) is not int or proof["schema_version"] != 1:
+    if not isinstance(proof, Mapping):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
-    if not all(isinstance(proof[k], (list, tuple)) for k in ("evidence", "recall")):
+    version = proof.get("schema_version")
+    if type(version) is not int or version not in (1, 2):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
-    if len(proof["evidence"]) + len(proof["recall"]) > MAX_BINDINGS:
+    lanes = ("evidence", "recall") if version == 1 else ("evidence", "recall", "short_horizon")
+    _fields(proof, ("schema_version", *lanes))
+    if not all(isinstance(proof[k], (list, tuple)) for k in lanes):
+        raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
+    if sum(len(proof[k]) for k in lanes) > MAX_BINDINGS:
         raise PrimaryVisibilityError("primary_visibility_limit")
     evidence, recalls = {}, []
     for item in proof["evidence"]:
@@ -107,6 +111,14 @@ def _dependencies(proof):
     for item in proof["recall"]:
         _fields(item, ("result_id", "result_hash", "item_id", "item_hash"))
         recalls.append(HistoryRecallBinding(**dict(item)))
+    if version == 2:
+        try:
+            from simple_harness_memory import HistoryShortHorizonBinding
+        except ImportError as exc:
+            raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
+        for item in proof["short_horizon"]:
+            _fields(item, ("audit_id", "chunk_ref", "content_hash"))
+            recalls.append(HistoryShortHorizonBinding(**dict(item)))
     return evidence, recalls
 
 

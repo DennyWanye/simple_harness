@@ -3,6 +3,15 @@
 > 最后更新：2026-09-05
 
 
+## 2026-09-05 短期来源的历史读取契约
+
+Primary shared history helper 增加 v2 的独立 short_horizon 三元组，旧 v1 原样兼容；所有来源仍在
+同一公开 Memory batch 校验，递归终态与旧 detail 引用不绕过。Memory0.6.7 独立安装环境下，
+Host shape/batch/递归 API 及既有历史用例 **53 passed**；正向短项为明确的 policy fixture，另有
+真实 Manager 拒绝未选择 audit。该层通过不代表 Host 对话登记/短期索引已有生产数据。
+实际短期生产登记、runtime 组合和原生验收继续单列，见
+[SHORT-V2](../plans/2026-09-05-primary-history-api/SHORT-V2.md)。
+
 ## 2026-09-05 主对话历史跨层遗忘验证
 
 隔离组合 `888efe0c` 上，真实 Host/Harness/Memory SQLite 与 ProductProviderAdapter 的确定性

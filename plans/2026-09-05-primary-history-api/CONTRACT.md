@@ -106,3 +106,14 @@ injects the new callback; reads requiring the new capability reject if unavailab
 
 Library/API tests use an isolated exact installed0.6.6/0.7.2 environment here; main owns
 production composition, main pin/environment and native/provider acceptance. Independent review by main/Dirac before final integration.
+
+
+## Version2 short binding extension
+
+The original v1 contract above stays readable. [SHORT-V2](SHORT-V2.md) adds the exact
+fourth short_horizon lane only under schema_version2 and installed Memory0.6.7.
+Its entries preserve actual audit_id/chunk_ref/content_hash and pass
+HistoryShortHorizonBinding in the same public batch with evidence/typed recall.
+Runtime completeness and actual short ingestion are separate obligations; old v1
+archives are not upgraded or rewritten. The earlier unsupported-carrier boundary
+continues to apply wherever the new complete production carrier is absent.
