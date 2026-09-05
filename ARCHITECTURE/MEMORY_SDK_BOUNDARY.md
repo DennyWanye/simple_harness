@@ -22,8 +22,14 @@ closure_reason 被原样持久与恢复，仍零认知写入；不可用响应�
 公共 API 和 schema v7.1 保持原契约，旧 0.6.2 wheel 保留。
 
 当前精确 wheel 的 Host 集成 51 passed、Memory 恢复/API 16 passed；原始证据在
-`.local-test-evidence/2026-09-05/human-memory-resume/`。真实生产 `queue.enqueue`、
-新 wheel 的原生 UI 与整个 S5b 机器门仍待验收，不由这些自动化结果代替。
+`.local-test-evidence/2026-09-05/human-memory-resume/`。新 wheel 原生 UI/gpt-5.5 root
+`c2af5326a8d05023868f7994f1a4e0be` 已取得非空回复；r5 保留早期失败，S8 FLAKY。
+A14 真实 queue.enqueue root `142bdb3b-9026-5264-b244-69e94bf0e388` 写 README 后被 Harness 0.7.1
+initial/current route 恢复 P1 阻断：terminal FAILED、closure pending、accepted/head=0。
+用户已批准 A17 限定 SDK route 修复和必需 port/回归/新候选接入，其余 SDK 功能继续冻结；
+本次只记录事实与证据，不改 Memory plan/base_revision/evidence，不改产品源码/pin。
+原始失败与 metadata 位于上述根的 `verification/r5-local/artifacts/s1-route-failure/`；
+S5b 机器门及 program 未完成，A15 typed recall 仍 NOT_MEASURED，交 S5c/S6。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 

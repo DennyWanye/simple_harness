@@ -6,6 +6,19 @@
 
 ## 一句话说明
 
+### S5b SDK route 恢复 P1（2026-09-05，当前阻塞）
+
+Host `26b50ee8` / Harness 0.7.1 / Memory 0.6.3 的真实 A14 Run，start snapshot 的 initial route
+为 host_initial/resume_existing；合法 context_route 后 checkpoint v4–v49 的 current 为 continue_active，
+Run、TaskScope、binding revision 未变。后续 task_scope_update 已收到 exact public allow，恢复时报
+`ReAct checkpoint initial Context route differs from start snapshot`，SDK/Host terminal FAILED。
+README 已写 1.2.0，closure pending、accepted/head=0；不能把文件效果当收口成功。
+用户已批准限定修复 initial/current 校验及必需 port/回归/新候选接入（Memory acceptance A17），
+其余 SDK 功能冻结，保留 immutable initial、current 合法来源及权限/重放不变量；SDK 源码修复已提交
+`2b8428465cbd41032ba024a0b7199183161f5ecd` / 0.7.2 并经 review，Host 安装与真实生产复验尚未闭合。
+原始记录与 SHA-256：`.local-test-evidence/2026-09-05/human-memory-resume/tools/HANDOFF-SDK-ROUTE-FAILURE.md`；
+r5 已 metadata attach，S1 FAIL/S8 FLAKY 保留。新 Memory wheel 的 UI 成功仅覆盖 chat_v2 通道。
+
 ### S5b post-turn attempt 恢复竞态（2026-09-05）
 
 恢复者观察到 `reserved` 后，必须用限定旧状态的原子更新将该 attempt 标为

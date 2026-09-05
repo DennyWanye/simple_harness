@@ -4,14 +4,17 @@
 
 ## 2026-09-05 Human Memory 接续：当前验收重建与恢复竞态
 
+SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate 0.7.2）；主执行者报告真实 runtime route→WAITING→授权重启新增 2 用例先红后绿、独立 review 4 passed。Host 正在 revendor/安装，尚未完成新候选身份核验及 A14/S8；本地 S1 FAIL/S8 FLAKY 保留。
+
 - **Memory 0.6.3 已接入**：source `2f3d73814fe6a884e0458d87567b918c5863033e`，
   wheel SHA-256 `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`，
   两次构建字节一致，安装来源/版本/hash 校验通过。IR-02/IR-03 独立复审接受；
-  Host 关键集成 51 passed，安装版 SDK 恢复/API 16 passed。下方“正在处理”是本轮早期状态，
-  两个 finding 现已闭合；S5b 完整生产入口与机器门仍未交付。
-- **本机原生 UI 通道已跑通一轮**：当前 Tauri App + Memory 0.6.2 + gpt-5.5，
-  schema v46、身份就绪，真实回复与 Run 可追溯。此证据不替代新 wheel 的重测或
-  A14 `queue.enqueue` 前台任务链。S6 仍须解决空态模型设置丢失并接入唯一主对话。
+  Host 关键集成 51 passed，安装版 SDK 恢复/API 16 passed。两个 finding 已闭合；
+  S5b 完整生产入口与机器门仍未交付。
+- **新 wheel 原生 UI 冷启动成功一轮**：Host `26b50ee8` / Memory 0.6.3 / gpt-5.5，
+  root `c2af5326a8d05023868f7994f1a4e0be`、session `56908147-fbf7-447b-880b-8a798dfe7660`；
+  schema v46、身份就绪、非空真实回复。早期 kimi-k3 失败保留，r5 S8 **FLAKY**，不以该 UI 证据替代 A14。
+  S6 仍须解决空态模型设置丢失并接入唯一主对话。
 
 - Host 与三个 SDK 已同步远端；以 Memory SDK 原始 Human Memory plan 和
   `HANDOFF-2026-09-05.md` 为基准继续。旧机器 r3/r4 原始机器账本未同步到本机，
@@ -19,9 +22,14 @@
 - **IR-01 已修复并独立复审**：post-turn 恢复使用限定状态的原子更新，阻止
   reserved 观察过期后覆盖已 handed_off 的 attempt 并重复发送。决定性回归旧版红、
   新版绿，相关 35 条自动化通过；详见 `AGENT_HARNESS.md`。
-- **S5b 尚未完成**：独立复审另发现 Memory apply 失败后的批次次序/固定 revision
-  恢复问题（IR-02）与 no_mutation 字段契约不一致（IR-03），正在独立工作树处理。
-  当前机器真实启动、Provider、UI 和全量验收仍待运行。
+- **S5b 当前阻塞为 SDK route P1**：A14 root `142bdb3b-9026-5264-b244-69e94bf0e388`
+  已真实写 README，context_route/task_scope_update exact approval 均接受，SDK 恢复却将合法 current route
+  与 immutable initial 全等比较而失败。terminal FAILED、closure pending、accepted/head=0，第二 root 未跑。
+  IR-02/03 已修复；此处不回退固定 plan/evidence，也不以模型重跑规避 SDK 缺陷。
+- 用户批准 A17 限定解冻及另线 S3 契约修订；主执行者修 SDK，其余 SDK 功能/原 AC/权限/预算/oracle 继续冻结。
+  批准 hash 与完整边界见 Memory S5b `SDK-ROUTE-UNFREEZE-PROPOSAL.md`。r5 metadata 追加 6 项 S1 失败证据
+  与 1 项批准记录，保留 S1 FAIL、S8 FLAKY、a2-001 OPEN；无 provider/finalize/豁免。
+  原始材料在 `.local-test-evidence/2026-09-05/human-memory-resume/verification/r5-local/artifacts/`。
 - **S3 状态校正**：typed recall、graph 和 audit 已有实现，最小回归 62 条通过；
   完整消费 runner 仍缺执行桥，冻结的旧候选身份/content hash 与当前 API 不一致，
   401 格 oracle 自检不构成产品验收。240 条语料尚未独立人工冻结。
