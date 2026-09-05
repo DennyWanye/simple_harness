@@ -94,6 +94,14 @@ plan = 完整 RecallPlan wire
 
 保留原 14 个 one-field mutation cell ID：principal 修改 envelope；run/context revision/context hash/plan ID/disclosure/recipient/purpose/budget 修改对应公开字段并明确所需配套绑定；“plan_hash”通过变更可控 plan 输入触发派生 hash，不能向 strict wire 注入不存在的字段。protocol_version mutation 在 Host strict parser 层拒绝，记录 Memory 未调用；独立 hash 单元向量与真实 API 拒绝分开。每个 cell 应保留其原始攻击点和拒绝语义；不能用“计算两个 hash 不同”替代真实重放/零 candidate 证据。无法保持原语义者仍 BLOCKED，交 A2 逐项确认。
 
+#### 独立审查 P2：14 个变异的执行前映射约束
+
+实现执行器及运行候选之前，必须固定并审阅完整的 14 行映射表，每行绑定原 cell ID，并明确：**原攻击点 → 新公开字段/精确路径及变异值 → 必须同步或必须故意保持不变的配套绑定 → 预期拒绝层与 exact reason**。同时列明到达目标拒绝层的前置条件、是否允许调用 Memory、预期 candidate query count。不得在看过候选返回后调整映射或 reason。
+
+- 配套绑定必须区分“为到达原攻击点而同步重算”的合法派生字段与“原攻击本就要求不一致而保留”的字段；不能因无关 parser/binding 错误提前拒绝，就声称原攻击得到验证。
+- 派生 `plan_hash` 等字段必须说明具体可控输入与传播链，证明仍攻击原先的 replay/binding 语义；仅保留 cell ID 或获得不同 hash 不构成等价映射。
+- 每行必须实际调用规定的公开入口，并记录真实拒绝层、原始 reason、调用边界与零候选访问见证。hash 计算/向量自检只能作辅助证据，不能替代真实拒绝；映射缺失、目标层不可达或无法保留原攻击语义时，该 cell 保持 BLOCKED，不以其他拒绝结果替代。
+
 ### 3.3 current-use receipt 与事件日志
 
 旧 receipt oracle hash 的对象是事件描述：`event,before_epoch,after_epoch,before_policy_hash,after_policy_hash,evaluated_at,authorized_at,authority_expires_at,context_expires_at,use_at,decision_hash,result_hash,item_hashes,snapshot_hash,run_id,turn_id,continuation_id,provider_attempt,outcome`；它不是公开 use receipt。
@@ -133,7 +141,17 @@ wire 完整字段：`schema_version,receipt_id,request_hash,subject,run_id,turn_
 - mutation/conflict 的零状态增量：`cognitive_apply_heads,cognitive_memory_heads,cognitive_memory_revisions,cognitive_evidence_spans,cognitive_revision_task_scope_origins,cognitive_relations,cognitive_conflict_groups,cognitive_conflict_members,cognitive_conflict_resolutions,cognitive_classification_decisions,cognitive_classification_evidence_authorities,recall_authority_heads,recall_authority_events`。对同一拒绝操作应完全相等。合法 invocation/audit append 独立展示，不能掩盖此集合的变化。
 - recall final transaction：`typed_recall_decisions,typed_recall_decision_items,typed_recall_results,typed_recall_result_items,typed_recall_confirmation_groups,typed_recall_confirmation_members,typed_recall_terminals`。保留 start request/attempt 的允许增量（`typed_recall_requests,typed_recall_attempts`）为独立见证，不将其混进“没有半 terminal”的判定。
 - current-use：在前述 recall final 集合上增加 `recall_authority_heads,recall_authority_events,recall_context_use_receipts`；按 case 比较预先声明的 epoch/receipt 变化，不能通用要求所有拒绝前后全库相等。
-- source/fault 10：在 exact clean source commit 的隔离数据库用候选实现之外的观察器读取上述 final 集合，并独立按 PK 排序、逐列 canonical。状态只能为 before 完整终态，或独立 no-fault 对照执行所得完整 after 终态；允许 start attempt，禁止任一 header/item/fence 半组合。对照运行也是真实执行，不是从 `expected` 合成 rows。
+- source/fault 10：在 exact clean source commit 的隔离数据库用候选实现之外的观察器读取上述 final 集合，并独立按 PK 排序、逐列 canonical。no-fault 对照先通过下述独立业务断言，才可提供完整 after 终态参照；每个 fault 的允许状态按其事务阶段预先固定，不能统一任选 old/new。对照运行也是真实执行，不是从 `expected` 合成 rows。
+
+#### 独立审查 P2：no-fault 对照与事务阶段约束
+
+no-fault 对照必须先满足执行前固定的独立业务断言：请求的业务 outcome/reason 正确；selected/confirmation 内容、顺序和精确 source/evidence bindings 符合场景；decision/result/header/items/terminal 关联完整且唯一；预算与资格约束满足原 plan。断言从受审场景输入与业务契约定义，不调用候选 scorer、不从对照返回值生成预期。仅“运行未抛错”“hash 自洽”或“与 fault 运行一致”不够；对照断言失败应报告实际失败，并禁止该对照成为事务参照。
+
+每个 fault cell 在执行前固定注入点、commit 是否已完成、观察时点与允许增量：
+
+- **commit 前故障**：即时 durable 观察允许已写入的 start request/attempt；final transaction 集合必须保持提交前状态，不能残留任何 decision/result header、item 或 terminal fence 半组合。不能以“等于 no-fault 的 new 状态”接受一个本应回滚的 pre-commit 故障。
+- **commit 后 ACK 丢失**：必须已持久化完整 committed terminal；重启或以同 key、同 request 重试后必须 exact replay，同一 decision/result 的 bytes/hash 不变、candidate query=0、不重复写入。返回 old、重新检索重算结果或生成新的 decision/result，即使业务内容相同也不能通过。
+- **restart/recovery**：即时故障快照与恢复后的快照分别记录；未提交 attempt 的重试/过期终结依原 Task5.5 时限规则预先声明。恢复成功不能抹去先前出现的半状态，也不能把 post-commit ACK-loss 降格为可重新执行的 dangling attempt。
 
 public manifest 内部 leaf 现定义 `H({schema_version:1,table:table_name,row:canonical_row})`，root 为 `H({schema_version:1,table:table_name,leaves:有序leafhash数组})`；public 消费者验证返回 manifest commitment 和受审不变量，不能宣称仅凭 root 能独立重建隐藏 rows。source 层才可重算 row/leaf。
 manifest 的读取 access event 被下一次 snapshot 纳入；它及其他被明确允许的只读审计增量不加入 protected projection，但完整 manifest 仍保存。新增表、覆盖缺口或未知写入不可自动排除。两次 full manifest 不相等也不能直接判产品失败。
