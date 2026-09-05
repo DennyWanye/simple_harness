@@ -66,9 +66,9 @@ def assistant_message_pair(terminal, terminal_receipt, user, *, host_run_id):
     return envelope, receipt
 
 
-async def append_new_primary_message_evidence_tx(
-    db, *, store, host_run_id: str, terminal_envelope, terminal_receipt,
-) -> PrimaryMessageProduction:
+async def _prepare_message_tx(
+    db, *, host_run_id: str, terminal_envelope, terminal_receipt,
+):
     """Append new public-message sources; do not commit the caller's transaction.
 
     Call only in record_terminal_observation's *new* row path, after the exact
@@ -115,9 +115,41 @@ async def append_new_primary_message_evidence_tx(
     if dependencies.get(user.evidence_id) != user.envelope_hash:
         return PrimaryMessageProduction((), "conversation_input_dependency_unproved")
     message, receipt = assistant_message_pair(original, admission, user, host_run_id=host_run_id)
+    return row, user, message, receipt
+
+
+async def append_new_primary_message_evidence_tx(
+    db, *, store, host_run_id: str, terminal_envelope, terminal_receipt,
+) -> PrimaryMessageProduction:
+    """Only new observer branch: append under its transaction, never commit."""
+    prepared = await _prepare_message_tx(db, host_run_id=host_run_id,
+        terminal_envelope=terminal_envelope, terminal_receipt=terminal_receipt)
+    if isinstance(prepared, PrimaryMessageProduction):
+        return prepared
+    row, user, message, receipt = prepared
     await store.append_evidence_tx(db, message, receipt, primary_conversation_id=row["primary_conversation_id"],
         committed_at=float(row["committed_at"]))
     return PrimaryMessageProduction((user.evidence_id, message.evidence_id))
+
+
+async def verify_new_primary_message_evidence_tx(
+    db, *, host_run_id: str, terminal_envelope, terminal_receipt,
+) -> PrimaryMessageProduction:
+    """For marked new-producer observation replay: read-only, missing is corruption.
+
+    Legacy observations have no producer marker and the caller must NOT call
+    this function for them. Unsupported groups return their original reason.
+    """
+    prepared = await _prepare_message_tx(db, host_run_id=host_run_id,
+        terminal_envelope=terminal_envelope, terminal_receipt=terminal_receipt)
+    if isinstance(prepared, PrimaryMessageProduction):
+        return prepared
+    row, user, _, _ = prepared
+    found = await verify_primary_message_evidence_tx(db, primary_ref=row["primary_conversation_id"],
+        host_run_id=host_run_id, terminal_envelope=terminal_envelope, terminal_receipt=terminal_receipt, user=user)
+    if found is None:
+        raise RuntimeError("primary_message_source_missing")
+    return PrimaryMessageProduction((user.evidence_id, found[0].evidence_id))
 
 
 async def verify_primary_message_evidence_tx(db, *, primary_ref, host_run_id, terminal_envelope, terminal_receipt, user):
