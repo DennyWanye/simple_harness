@@ -1,5 +1,17 @@
 # Memory SDK 边界与 Host 接口契约
 
+> 本次 leaf 更新：2026-09-05
+
+## Selected short-source reader isolated candidate
+
+新增 SelectedShortSourceReader，消费公开069 selected-source snapshot，经原有
+PrimaryConversationAuthority核实完整group/S1，再逐hit复用PrimaryHistoryPolicy递归
+USER/terminal祖先。只返回accepted selected来源root+实际shortbinding依赖union，不用
+all-indexed roots、不伪typed、不读SDK私SQL。主仍负责registration默认hookup、RecallLanes
+接线与最后出站fresh fence；本观察不能替代最终授权，reconcile全扫描cost不变。
+新leaf19项source-overlay与定向ruff绿；069尚非本次installed候选，未运行native/真实Provider。
+接口/测试边界见[契约](../plans/2026-09-05-selected-short-sources/CONTRACT.md)。
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，

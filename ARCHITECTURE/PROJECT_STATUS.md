@@ -1,5 +1,15 @@
 # simple_harness — 全局项目状态与架构完成度
 
+> 本次 leaf 更新：2026-09-05
+
+## Selected short-source reader isolated candidate
+
+`feat/human-memory-selected-short-sources`从54aa2f88提取固定55b9e402 registration/indexing
+依赖，新增selected-only来源reader与契约；19项聚焦source-overlay、定向ruff通过。
+缺proof整hit拒，未选root不进入union。main.py/runtime/context及默认调度未改，由主组合；
+原reconcile全扫描、最终writer边界和installed069验证仍独立保留，未合主/无native或付费
+Provider，不改变program完成度。详见[契约](../plans/2026-09-05-selected-short-sources/CONTRACT.md)。
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
