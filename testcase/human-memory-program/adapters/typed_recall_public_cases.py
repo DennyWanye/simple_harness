@@ -11,6 +11,9 @@ def execution_wire(value):
     return {"decision": value.decision.to_json(), "result": value.result.to_json(),
             "candidate_query_started": value.candidate_query_started,
             "candidate_query_count": value.candidate_query_count, "replayed": value.replayed,
+            "degradation_codes": list(value.degradation_codes),
+            "decision_hash": value.decision.decision_hash, "result_hash": value.result.result_hash,
+            "result_item_hashes": [item.result_item_hash for item in value.result.items],
             "unsupported_capabilities": list(value.unsupported_capabilities)}
 
 

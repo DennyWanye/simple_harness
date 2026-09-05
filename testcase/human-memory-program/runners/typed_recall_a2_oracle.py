@@ -138,8 +138,8 @@ def judge_rejection(row, observed):
 def check_attack_inputs(fixture, row, observed, baseline):
     """Verify exact mutated arguments separately from exception observations.
 
-    JSON-envelope context hashing here checks the documented candidate wire's
-    companion binding only. It does not change approved NUL gold or admit a cell.
+    JSON-envelope hashing checks the existing public context companion binding.
+    The separate validation-state commitment retains its NUL preimage.
     """
     if baseline is None:
         raise ValueError("mutation baseline evidence missing")
@@ -203,14 +203,19 @@ def check_fault(phase, *, control_business_valid, before, immediate, control_aft
 def assess_cell(fixture, cell, baseline=None):
     """Evaluate independent business assertions, then retain remaining gates.
 
-    Returning BLOCKED is deliberate: the approved domain preimage difference
-    precludes a complete decision/result/request oracle even for sound business
-    observations. A failed business assertion always takes precedence.
+    Only complete independent business and binding checks admit a cell.
+    Missing witnesses stay BLOCKED; a failed assertion takes precedence.
     """
     name, observed = cell["cell_id"], cell["observations"]
     if cell["status"] != "OBSERVED":
         return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
-    checks, blockers = [], ["DOMAIN_PREIMAGE_DIFFERENCE"]
+    if "return_recipe" in observed:
+        return assess_return(fixture,cell)
+    if "conflict_recipe" in observed:
+        return assess_conflict(fixture,cell)
+    if "recipe" in observed:
+        return assess_normal(fixture, cell)
+    checks, blockers = [], []
     try:
         if name == "eligibility/valid-until-null-unbounded":
             vector = next(v for v in fixture["approved_oracle"]["semantic_source_vectors"] if v["id"] == "incumbent")
@@ -295,6 +300,357 @@ def assess_cell(fixture, cell, baseline=None):
             checks.append("all original unsupported reasons in exact order; rejected invalid plan, zero query/payload")
         else:
             blockers.append("INDEPENDENT_CELL_ORACLE_NOT_IMPLEMENTED")
+        if not blockers:
+            blockers.append("FULL_ORIGINAL_CELL_ADMISSION_PENDING")
         return {"status": "BLOCKED", "reason": ";".join(blockers), "business_assertions": checks}
     except (ValueError, KeyError, IndexError, TypeError, StopIteration) as exc:
         return {"status": "FAIL", "reason": str(exc) or type(exc).__name__, "business_assertions": checks}
+
+
+def check_execution_wire(value, context, plan):
+    decision, result = value['decision'], value['result']
+    if (value['decision_hash'] != sdk_domain_hash('simple-harness/recall-decision/v4',decision)
+            or value['result_hash'] != sdk_domain_hash('simple-harness/typed-recall-result/v1',result)
+            or result['decision_hash'] != value['decision_hash']
+            or result['decision_id'] != decision['decision_id']
+            or decision['context_hash'] != sdk_domain_hash('simple-harness/recall-context/v2',context)
+            or decision['plan_hash'] != sdk_domain_hash('simple-harness/recall-plan/v2',plan)
+            or decision['subject'] != context['subject'] or decision['run_id'] != context['run_id']
+            or decision['plan_id'] != plan['plan_id'] or decision['context_revision'] != context['context_revision']
+            or decision['disclosure_context'] != context['disclosure_context']):
+        raise ValueError('full public hash/identity/context binding differs')
+    if decision['selected_items'] != [r['selected_item'] for r in result['items']]:
+        raise ValueError('decision/result item bindings differ')
+    if value['result_item_hashes'] != [sdk_domain_hash('simple-harness/typed-recall-result-item/v1',r) for r in result['items']]:
+        raise ValueError('result item hash differs')
+    if (result['evaluated_at'] != decision['decided_at'] or result['authority_expires_at'] > context['expires_at']
+            or result['authority_expires_at'] <= result['evaluated_at']):
+        raise ValueError('result authority interval differs')
+    if [r['selected_item']['ordinal'] for r in result['items']] != list(range(1,len(result['items'])+1)):
+        raise ValueError('selected ordinals differ')
+
+
+def normal_expected(fixture, recipe):
+    name, spec = recipe['cell_id'],recipe['seed']
+    if recipe['family'] in {'validity','lifecycle'}:
+        row = next(r for r in fixture['eligibility_cases']+fixture['lifecycle_cases'] if name=='eligibility/'+r['id'])
+        return row['expected']=='ELIGIBLE'
+    if recipe['family']=='epistemic':
+        return any(spec['memory_type'] in r['memory_types'] and spec['epistemic']==r['epistemic']
+            and spec['verification']==r['verification'] and r['expected']=='ELIGIBLE'
+            for r in fixture['epistemic_verification_cases'])
+    if recipe['family']=='disclosure':
+        return any(r['recipient']==recipe['recipient'] and r['purpose']==recipe['purpose']
+            and recipe['privacy'] in r['allowed'] for r in fixture['disclosure_cases'])
+    if recipe['family']=='attribute':
+        return False
+    return recipe.get('modes') != ['vector']
+
+
+def normal_projection(spec):
+    payload = copy.deepcopy(spec['payload'])
+    if spec['memory_type']=='semantic':
+        payload['qualifiers'] = []
+    elif spec['memory_type']=='episode':
+        from datetime import datetime
+        interval=payload.pop('occurred_interval')
+        payload.update(occurred_start=datetime.fromisoformat(interval['start'].replace('Z','+00:00')).timestamp(),
+                       occurred_end=datetime.fromisoformat(interval['end'].replace('Z','+00:00')).timestamp())
+    return payload
+
+
+def assess_normal(fixture, cell):
+    import importlib.util
+    from pathlib import Path
+    spec=importlib.util.spec_from_file_location('normal_inputs',Path(__file__).with_name('typed_recall_normal_inputs.py'))
+    compiler=importlib.util.module_from_spec(spec);spec.loader.exec_module(compiler)
+    recipe=next(r for r in compiler.recipes(fixture) if r['cell_id']==cell['cell_id'])
+    observed=cell['observations'];checks=[];blockers=[]
+    try:
+        if observed['recipe']!=recipe or not observed['calls']:
+            raise ValueError('consumer recipe/input identity differs')
+        if observed.get('exception'):
+            # Seed/DTO refusal is a real observation, never a recall PASS.
+            return dict(status='BLOCKED',reason='PUBLIC_CASE_PRECONDITION_REJECTED:'+observed['exception']['type']+':'+observed['exception']['reason'],
+                business_assertions=['actual public operation and exact rejection recorded'])
+        if recipe['seed']['memory_type'] in {'procedure','prospective'}:
+            blockers.append('REQUIRED_APPLICABILITY_OR_SIGNAL_AUTHORITY_NOT_ESTABLISHED')
+        if recipe['family']=='projection':
+            blockers.append('FULL_SOURCE_RECORD_CANARY_AND_CROSS_SCOPE_SETUP_NOT_ESTABLISHED')
+            if recipe['seed']['memory_type']=='episode':
+                blockers.append('ORIGINAL_EPISODE_OCCURRED_INTERVAL_DIFFERS_FROM_PUBLIC_PROJECTION')
+        if not observed['sources'] or len(observed['recalls']) != (2 if recipe['family']=='budget' else 1):
+            raise ValueError('missing actual source or recall')
+        source=observed['sources'][0]
+        op=source['receipt']['operations'][0]
+        projection=normal_projection(recipe['seed'])
+        kind=recipe['seed']['memory_type']
+        full_source = (semantic_source(**projection) if kind=='semantic' else
+            {'memory_type':'episode',**projection,'thread_ref':None} if kind=='episode' else None)
+        if source['input']!=recipe['seed'] or (full_source is not None and source['source_wire']!=full_source):
+            raise ValueError('source DTO differs from independent inputs')
+        check_seed_authority(observed,recipe,full_source)
+        for index, recall in enumerate(observed['recalls']):
+            value=recall['execution'];decision=value['decision'];result=value['result'];items=result['items']
+            context,plan=recall['context'],recall['plan']
+            payload_input=recipe['seed']['payload']
+            query=str(payload_input.get('object_value',payload_input.get('title',payload_input.get('name',payload_input.get('action')))))
+            if (context['query']!=query or plan['query']!=query
+                    or context['available_memory_types']!=[kind] or plan['requested_memory_types']!=[kind]
+                    or context['allowed_retrieval_modes']!=recipe.get('modes',['full_text'])
+                    or plan['retrieval_modes']!=context['allowed_retrieval_modes']
+                    or context['disclosure_context']['recipient']!=recipe.get('recipient','user_self').lower()
+                    or context['disclosure_context']['purpose']!=recipe.get('purpose','personalization').lower()
+                    or context['subject']!='principal-1' or not context['evidence_refs']):
+                raise ValueError('actual recall arguments differ from frozen recipe')
+            mutation=next(event['plan'] for event in observed['calls'] if event['call']=='apply_memory_mutation_plan')
+            operation=mutation['operations'][0]
+            if (operation['payload']!=source['source_wire'] or operation['kind']!='create'
+                    or operation['epistemic_status']!=recipe['seed'].get('epistemic','explicit_user')
+                    or operation['verification_state']!=recipe['seed'].get('verification','source_bound')
+                    or operation['lifecycle_state']!=recipe['seed'].get('state','pending' if kind=='prospective' else 'active')
+                    or operation['proposed_privacy_class']!=recipe.get('privacy','personal').lower()
+                    or operation['proposed_information_attributes']!=recipe.get('attributes',[])):
+                raise ValueError('actual mutation arguments differ from frozen recipe')
+            from datetime import datetime
+            frozen_time=recipe.get('now',1788170400.0)
+            if isinstance(frozen_time,str):frozen_time=datetime.fromisoformat(frozen_time.replace('Z','+00:00')).timestamp()
+            if recall['now']!=frozen_time or decision['decided_at']!=frozen_time or result['evaluated_at']!=frozen_time:
+                raise ValueError('actual recall/evaluation clock differs from frozen input')
+            if recipe['family']=='validity':
+                interval={key: None if recipe['seed'].get(key) is None else datetime.fromisoformat(recipe['seed'][key].replace('Z','+00:00')).timestamp() for key in ('valid_from','valid_until')}
+                if operation['valid_time_interval']!=interval:
+                    raise ValueError('actual validity interval differs from frozen boundary')
+            check_execution_wire(value,recall['context'],recall['plan'])
+            replay=recall['replay']
+            if (replay['decision']!=decision or replay['result']!=result or not replay['replayed']
+                    or replay['candidate_query_count']!=0 or replay['candidate_query_started']):
+                raise ValueError('durable exact replay differs')
+            selected=normal_expected(fixture,recipe) and not (recipe['family']=='budget' and index==1)
+            if not blockers or kind not in {'procedure','prospective'}:
+                if len(items)!=int(selected) or result['confirmation_groups'] or decision['confirmation_groups']:
+                    raise ValueError('original inclusion/exclusion oracle differs')
+                globally_denied=(recipe.get('recipient','user_self').lower() not in {'user_self','household','task_collaborator'}
+                    or recipe.get('purpose','personalization').lower() not in {'task_execution','personalization','task_resume','user_review'})
+                expected_outcome='recall' if selected else 'rejected' if globally_denied else 'no_recall'
+                expected_reason=['recall_user_fact_dependency'] if selected else ['recall_disclosure_denied'] if globally_denied else ['recall_budget_exhausted'] if recipe['family']=='budget' and index==1 else ['recall_no_eligible_memory']
+                if decision['outcome']!=expected_outcome or decision['reason_codes']!=expected_reason:
+                    raise ValueError('eligibility execution outcome/reason differs; invalid-plan rejection cannot pass')
+                if value['candidate_query_count']!=int(not globally_denied) or value['candidate_query_started']!=bool(not globally_denied):
+                    raise ValueError('actual eligibility execution witness differs')
+                filtered=int(selected)
+                if decision['filtered_candidate_count']!=filtered or decision['candidate_count_stage']!='after_all_eligibility_gates':
+                    raise ValueError('filtered candidate count/gate stage differs')
+            for item in items:
+                selected_item=item['selected_item']
+                if (item['public_payload']!=projection or selected_item['public_payload_hash']!=hash_json(projection)
+                        or selected_item['source_ref']!=op['memory_id'] or selected_item['source_revision']!=op['revision']
+                        or op['revision']!=1 or selected_item['source_kind']!='cognitive_memory'
+                        or selected_item['memory_type']!=kind or item['evidence_manifest_hash']!=hash_json([source['evidence_id']])
+                        or full_source is None or selected_item['source_content_hash']!=hash_json(full_source)
+                        or item['score']!=round(.30/61,12) or item['cross_scope'] or item['source_task_scope_ids']
+                        or item['effective_privacy_class']!=recipe.get('privacy','personal').lower()
+                        or item['information_attributes']!=recipe.get('attributes',[])):
+                    raise ValueError('input-derived source/projection/rank/classification/evidence binding differs')
+            if recipe['family']=='budget':
+                limits={**recipe['limits'][0],**(recipe['limits'][1] if index else {})}
+                if any(recall['plan']['budget'][key]!=value for key,value in limits.items()):
+                    raise ValueError('literal limits changed')
+                envelope=[dict(memory_type=kind,payload=projection,source_kind='cognitive_memory')]
+                raw=canonical(envelope);tokens=max(1,len(raw.decode()),(len(raw)+2)//3)
+                original=next(r for r in fixture['budget_oracle']['literal_cases'] if cell['cell_id'].endswith(r['id']))
+                if len(raw)!=original['utf8_bytes'] or tokens!=original['token_estimate']:
+                    raise ValueError('independent literal units differ; no threshold migration allowed')
+                if index==1 and (not result['truncated'] or decision['outcome']!='no_recall' or decision['reason_codes']!=['recall_budget_exhausted']):
+                    raise ValueError('budget rejection lacks truncation signal')
+            if recipe['family']=='vector':
+                codes=['cognitive_vector_unavailable'] if 'vector' in recipe['modes'] else []
+                if value['degradation_codes']!=codes:
+                    raise ValueError('ordered vector degradation reason differs')
+                blockers.append('PUBLIC_EXECUTED_LANE_WITNESS_UNAVAILABLE')
+        checks += ['original eligibility/whole-item selection assertions','independent full source/projection/evidence/rank bindings',
+                   'full public hash and result identity bindings','actual durable exact replay with zero candidate reads']
+        return dict(status='BLOCKED' if blockers else 'PASS',reason=';'.join(sorted(set(blockers))),business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError,StopIteration) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def check_two_source_control(control, sources):
+    """Must succeed before any source-side injected fault runs."""
+    value=control['execution'];check_execution_wire(value,control['context'],control['plan'])
+    items=value['result']['items'];decision=value['decision']
+    if len(sources)!=2 or len(items)!=2 or decision['filtered_candidate_count']!=2 or decision['outcome']!='recall':
+        raise ValueError('no-fault control must independently recall two seeded sources')
+    if value['result']['confirmation_groups'] or value['result']['truncated'] or value['replayed']:
+        raise ValueError('no-fault control carrier/budget differs')
+    ordered=sorted(sources,key=lambda s:s['receipt']['operations'][0]['memory_id'])
+    for rank,(source,item) in enumerate(zip(ordered,items,strict=True),1):
+        payload=source['input']['payload'];op=source['receipt']['operations'][0]
+        wire=semantic_source(**payload);binding=item['selected_item']
+        if (source['source_wire']!=wire or item['public_payload']!=payload or binding['source_content_hash']!=hash_json(wire)
+                or binding['public_payload_hash']!=hash_json(payload) or binding['source_ref']!=op['memory_id']
+                or binding['source_revision']!=1 or op['revision']!=1 or binding['memory_type']!='semantic'
+                or item['evidence_manifest_hash']!=hash_json([source['evidence_id']])
+                or item['score']!=round(.30/(60+rank),12)):
+            raise ValueError('no-fault source/content/evidence/order oracle differs')
+    return True
+
+
+def assess_source(cell):
+    o=cell['observations'];checks=[]
+    if cell['status']!='OBSERVED':return dict(status=cell['status'],reason=cell['reason'],business_assertions=[])
+    try:
+        if o.get('corruption'):
+            control=o['control'];check_execution_wire(control['execution'],control['context'],control['plan'])
+            members=control['execution']['decision']['confirmation_groups'][0]['members']
+            if [m['source_revision'] for m in members]!=[7,8] or len(o['before_members'])!=2:
+                raise ValueError('corruption no-fault source pair differs')
+            expected_count=1 if 'one-member' in cell['cell_id'] else 3 if 'three-members' in cell['cell_id'] else 2
+            if len(o['after_members'])!=expected_count or 'recalled' in o or not o.get('exception'):
+                raise ValueError('actual corrupted member state did not reject reopen')
+            return dict(status='BLOCKED',reason='CORRUPTION_EXACT_REJECTION_LAYER_AND_FULL_MEMBER_HASH_ORACLE_PENDING',
+                business_assertions=['real revision7/8 no-fault confirmation control','actual member corruption followed by reopen rejection'])
+        check_two_source_control(o['control'],o['sources'])
+        checks.append('independent two-source no-fault business control before injection')
+        seam=cell['cell_id'].split('fault:',1)[1]
+        mapping={'decision-header':('typed_recall.after_decision_header',1,'pre_commit'),
+            'between-decision-items':('typed_recall.after_decision_item',1,'pre_commit'),
+            'before-result-header':('typed_recall.after_decision_item',2,'pre_commit'),
+            'between-result-items':('typed_recall.after_result_item',1,'pre_commit'),
+            'before-terminal-fence':('typed_recall.after_result_item',2,'pre_commit'),
+            'commit-before-ack':('typed_recall.after_commit',1,'post_commit_ack_loss')}
+        recovered=o['recovery']['execution'];control=o['control']['execution']
+        check_execution_wire(recovered,o['recovery']['context'],o['recovery']['plan'])
+        exact=recovered['decision']==control['decision'] and recovered['result']==control['result']
+        if seam=='restart-open-rebuild':
+            if not exact or not recovered['replayed'] or recovered['candidate_query_count']!=0 or o['immediate']!=o['control_after']:
+                raise ValueError('restart exact terminal replay differs')
+        else:
+            point,ordinal,phase=mapping[seam]
+            if (o['fault_point'],o['fault_ordinal'],o['phase'])!=(point,ordinal,phase):
+                raise ValueError('wrong source fault location/ordinal')
+            if o['exception']!={'type':'InjectedFault','reason':point} or o['hits'].count(point)!=ordinal or o['hits'][-1]!=point:
+                raise ValueError('fault did not execute at the frozen transaction seam')
+            if set(o['before'])!=set(FINAL_TABLES) or set(o['immediate'])!=set(FINAL_TABLES) or set(o['control_after'])!=set(FINAL_TABLES):
+                raise ValueError('source final-table projection incomplete')
+            check_fault(phase,control_business_valid=True,before=o['before'],immediate=o['immediate'],
+                control_after=o['control_after'],replay_exact=exact and recovered['replayed'],replay_query_count=recovered['candidate_query_count'])
+            if not exact:raise ValueError('recovery business result differs from valid control')
+        checks += ['exact injected seam/ordinal or restart','fixed pre-commit old / post-ACK exact committed state','reopened real recovery and hash-identical business result']
+        # Still require full schema/PK association and non-final protected roots.
+        return dict(status='BLOCKED',reason='SOURCE_FULL_STATE_PK_AND_NONFINAL_ROOT_BINDINGS_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def assess_conflict(fixture,cell):
+    o=cell['observations'];checks=[]
+    try:
+        op=o['revision7']
+        if op['revision']!=7 or op['evidence_ids']!=['evidence-user-python-311']:
+            raise ValueError('original revision7/incumbent evidence setup differs')
+        sources=o['sources']
+        if [s['receipt']['operations'][0]['revision'] for s in sources[:7]]!=list(range(1,8)):
+            raise ValueError('revision7 is not backed by actual append history')
+        checks.append('real authorized append history 1..7 with frozen incumbent evidence')
+        if o.get('exception') or o.get('rejection'):
+            return dict(status='BLOCKED',reason='CONFLICT_REJECTION_OR_PRECONDITION_REQUIRES_FULL_ORACLE',business_assertions=checks)
+        value=o['confirmation']['execution'];check_execution_wire(value,o['confirmation']['context'],o['confirmation']['plan'])
+        decision=value['decision'];groups=decision['confirmation_groups']
+        if len(groups)!=1 or decision['selected_items'] or decision['filtered_candidate_count']!=2 or decision['outcome']!='needs_user_confirmation':
+            raise ValueError('complete contested pair not one atomic confirmation carrier')
+        members=groups[0]['members']
+        if [m['source_revision'] for m in members]!=[7,8] or any(m['source_ref']!=op['memory_id'] for m in members):
+            raise ValueError('confirmation exact revision/identity binding differs')
+        for member,name in zip(members,('incumbent','challenger'),strict=True):
+            payload={**fixture['conflict_write_oracle']['canonical_payloads'][name],'qualifiers':[]}
+            if member['source_content_hash']!=hash_json(semantic_source(**payload)) or member['public_payload_hash']!=hash_json(payload):
+                raise ValueError('conflict source and projection hashes differ')
+        checks.append('one real atomic confirmation group with exact r7/r8 and distinct independent hashes')
+        if 'after_resolution' in o:
+            after=o['after_resolution']['execution'];check_execution_wire(after,o['after_resolution']['context'],o['after_resolution']['plan'])
+            if o['revision9']['revision']!=9 or after['decision']['confirmation_groups'] or after['result']['confirmation_groups']:
+                raise ValueError('resolution must append revision9 and remove active group')
+            checks.append('real authorized revision9; resolved group absent from new recall')
+        return dict(status='BLOCKED',reason='CONFLICT_DURABLE_GROUP_MEMBER_RESOLUTION_HASH_ORACLE_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def check_seed_authority(observed,recipe,full_source):
+    source=observed['sources'][0];view=source['receipt'];op=view['operations'][0]
+    event=next(e for e in observed['calls'] if e['call']=='apply_memory_mutation_plan')
+    plan=event['plan'];operation=plan['operations'][0];result=event['result']
+    plan_hash=sdk_domain_hash('simple-harness/memory-mutation-plan/v5',plan)
+    if (event['result_hash']!=sdk_domain_hash('simple-harness/memory-mutation-apply-result/v4',result)
+            or result['outcome']!='committed' or result['confirmation_items']
+            or result['plan_hash']!=plan_hash or view['plan_hash']!=plan_hash
+            or result['plan_id']!=plan['plan_id'] or view['plan_id']!=plan['plan_id']
+            or result['subject']!=plan['subject'] or result['run_id']!=plan['run_id']
+            or result['turn_id']!=plan['turn_id'] or view['apply_mode']!=plan['apply_mode']
+            or result['receipt_ref']!={'receipt_id':view['receipt_id'],'receipt_hash':view['receipt_hash']}
+            or len(view['operations'])!=1 or op['operation_id']!=operation['operation_id']
+            or op['memory_type']!=recipe['seed']['memory_type']
+            or op['epistemic_status']!=operation['epistemic_status']
+            or op['content_hash']!=hash_json(source['source_wire'])
+            or (full_source is not None and op['content_hash']!=hash_json(full_source))):
+        raise ValueError('mutation result/ref/view/source/plan binding differs')
+    spans=operation['evidence_spans'];eid=source['evidence_id']
+    if len(spans)!=1 or spans[0]['evidence_id']!=eid or op['evidence_ids']!=[eid]:
+        raise ValueError('operation spans/receipt evidence membership differs')
+    admitted=next(e for e in observed['calls'] if e['call']=='ingest_committed_evidence' and e['evidence_id']==eid)
+    envelope,admission,span=admitted['envelope'],admitted['admission'],spans[0]
+    eh=sdk_domain_hash('simple-harness/sanitized-evidence-envelope/v2',envelope)
+    ah=sdk_domain_hash('simple-harness/sanitized-evidence-receipt/v2',admission)
+    text='User memory assertion: '+canonical(recipe['seed']['payload']).decode()
+    source_hash=hashlib.sha256(text.encode()).hexdigest()
+    if (envelope['sanitized_payload']!={'item_id':eid+'-item','public_text':text}
+            or envelope['sanitized_hash']!=hash_json(envelope['sanitized_payload'])
+            or envelope['source_hash']!=source_hash or admitted['envelope_hash']!=eh
+            or admission['envelope_hash']!=eh or not admission['accepted'] or admitted['admission_hash']!=ah
+            or admission['evidence_id']!=eid or admission['source_hash']!=source_hash
+            or admission['sanitized_hash']!=envelope['sanitized_hash']
+            or span['admission_receipt_hash']!=ah or span['admission_receipt_id']!=admission['receipt_id']
+            or span['envelope_hash']!=eh or span['sanitized_hash']!=envelope['sanitized_hash']
+            or span['source_hash']!=source_hash or span['quote_hash']!=source_hash
+            or span['exact_quote']!=text or span['start_byte']!=0 or span['end_byte']!=len(text.encode())):
+        raise ValueError('admitted evidence/envelope/span authority chain differs')
+    refs=[{'evidence_id':eid,'content_hash':eh,'ordinal':1}]
+    if plan['evidence_refs']!=refs or any(r['context']['evidence_refs']!=refs or r['plan']['evidence_refs']!=refs for r in observed['recalls']):
+        raise ValueError('mutation/recall evidence refs differ from admitted source')
+
+
+def assess_return(fixture,cell):
+    o=cell['observations'];name=cell['cell_id'].split('/',1)[1];checks=[]
+    try:
+        baseline=o['baseline'];value=baseline['execution'];check_execution_wire(value,baseline['context'],baseline['plan'])
+        payload=next(r['provider_payload'] for r in fixture['approved_oracle']['semantic_source_vectors'] if r['id']=='incumbent')
+        if len(value['result']['items'])!=1 or value['result']['items'][0]['public_payload']!=payload:
+            raise ValueError('return-path no-fault baseline business content differs')
+        expected={
+            'strict-v3-rejected':('ValueError','unsupported RecallDecisionV4 schema_version'),
+            'invalid-source-discriminant':('ValueError',"'unknown_source' is not a valid RecallSourceKind"),
+            'cognitive-missing-revision':('ValueError','cognitive memory requires memory_type and exact revision'),
+            'short-fake-revision':('ValueError','short-horizon item cannot carry memory_type or revision'),
+            'naked-source-ref':('TypeError','request must use RecallResultPageRequestV1'),
+            'page-wrong-result-hash':('MemoryValidationError','typed_recall_result_binding_invalid'),
+            'page-wrong-coordinate':('MemoryValidationError','typed_recall_page_offset_invalid'),
+            'page-expired-result':('MemoryValidationError','typed_recall_result_expired')}
+        if name=='page-correct-binding':
+            if o.get('exception')=={'type':'MemoryLimitError','reason':'typed_recall_page_budget_too_small'}:
+                if o['page_input']['max_bytes']!=128:raise ValueError('original page bound changed')
+                return dict(status='BLOCKED',reason='FROZEN_128_BYTE_PAGE_BOUND_CANNOT_FIT_PUBLIC_BINDING',
+                    business_assertions=['actual result-bound page attempted at unchanged 128-byte bound'])
+            check_page(o['returned'],value['result'],value['result_hash'],value['result_item_hashes'])
+        else:
+            if o.get('exception')!={'type':expected[name][0],'reason':expected[name][1]} or 'returned' in o:
+                raise ValueError('public parser/page did not reject at exact contract reason')
+        for access in ('before','after'):
+            bound=o[access];digest=protected_hash(bound['manifest'],bound['payload_hash'],sorted(set(MUTATION_TABLES+FINAL_TABLES)))
+            if access=='before':before=digest
+            elif digest!=before:raise ValueError('parser/page changed protected state')
+        checks += ['real no-fault public result before attack','exact public parser/page rejection or page binding',
+                   'independent protected manifest unchanged']
+        return dict(status='BLOCKED',reason='RETURN_CELL_COMPLETE_ATTACK_AND_READ_WITNESS_ADMISSION_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)

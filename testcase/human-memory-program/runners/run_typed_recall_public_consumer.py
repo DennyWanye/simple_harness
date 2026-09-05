@@ -387,7 +387,7 @@ def _check_exhaustive_axes(fixture: dict[str, Any], errors: list[str]) -> tuple[
 
 def self_check(fixture_path: Path, execution_layers_path: Path) -> dict[str, Any]:
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
-    if fixture.get("fixture_revision") == 4:
+    if fixture.get("fixture_revision", 0) >= 4:
         return {"status": "NOT_RUN/BLOCKED", "passed_cells": [],
                 "reason": "rev4 uses independent A2 oracle regressions; legacy 401 synthetic artifact self-check is disabled"}
     errors: list[str] = []
@@ -631,7 +631,7 @@ def _validate_execution_layers(
             "errors": [f"invalid execution-layers fixture: {type(exc).__name__}"],
         }
     errors: list[str] = []
-    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2):
+    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2, 3, 4):
         errors.append("execution-layers schema/revision unsupported")
     if layers.get("quality_gate") != "NOT_RUN/BLOCKED":
         errors.append("execution-layers semantic quality gate must remain NOT_RUN/BLOCKED")

@@ -20,8 +20,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "6baeeafac59a405c9c177bf09f5c4071bcdd5b70aa639be8f3a77348549e586a"
-LAYERS_SHA = "1a9861e34c4b3fd7d1a5d0273035714bbc66e12d68102be66cf54a1e67352064"
+FIXTURE_SHA = "4c0032e8abe6e62cbb5ffe071d0adce7d9cd96dd8a21141c8550bf838f29dd3b"
+LAYERS_SHA = "45d77ad06642c87141b3f96d4450f92ad1bfe7081238573fed89c45d462c6814"
 ORACLE_BLOCKERS = []
 
 
@@ -215,6 +215,19 @@ def assess_observed_cells(fixture, response):
             for row in response["cells"]}
 
 
+def assess_source_cells(response):
+    spec=importlib.util.spec_from_file_location("source_oracle",Path(__file__).with_name("typed_recall_a2_oracle.py"))
+    oracle=importlib.util.module_from_spec(spec);spec.loader.exec_module(oracle)
+    return {row["cell_id"]:{"execution_status":row["status"],**oracle.assess_source(row)} for row in response["cells"]}
+
+
+def invalidate_admissions(summary, layer, reason):
+    info=summary["layers"][layer]
+    for name in list(info.get("passed_cells",[])):
+        summary["cell_results"][name].update(status="FAIL",reason=reason)
+    info.update(status="FAIL",reason=reason,passed_cells=[])
+
+
 def execute(args, layers, expected):
     inventory = partition(expected, layers)
     run_path = Path(args.artifact_dir).absolute()
@@ -270,7 +283,14 @@ def _execute(args, layers, expected):
     shutil.copyfile(adapter_dir / public.name, public)
     shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
     shutil.copyfile(adapter_dir / "typed_recall_public_cases.py", workspace / "typed_recall_public_cases.py")
+    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py"):
+        shutil.copyfile(adapter_dir / filename, workspace / filename)
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
+    execution_code = {str(path):file_sha(path) for path in [
+        *[adapter_dir / name for name in validation_code],
+        runner_dir / "typed_recall_a2_oracle.py",runner_dir / "typed_recall_normal_inputs.py"]}
+    if args.source_adapter:
+        execution_code[str(Path(args.source_adapter).resolve())]=file_sha(args.source_adapter)
     python = args.consumer_python
     isolation = "isolated-process-verified-installed-wheels"
     if python is None:
@@ -292,7 +312,7 @@ def _execute(args, layers, expected):
                "started_at": started, "candidate_identity": candidates, "isolation": isolation,
                "fixture_sha256": FIXTURE_SHA, "execution_layers_sha256": LAYERS_SHA,
                "oracle_blockers": ORACLE_BLOCKERS, "candidate_pin_differences": pin_changes,
-               "passed_cells": [], "layers": {}, "artifacts": []}
+               "passed_cells": [], "layers": {}, "artifacts": [], "execution_code_sha256": execution_code}
     fixture = read_json(args.fixture)
     summary["cell_results"] = {name: {"execution_status": "NOT_RUN", "status": "BLOCKED",
         "reason": "SOURCE_EXECUTOR_NOT_CONFIGURED" if layer == "source" else "CELL_EXECUTOR_NOT_IMPLEMENTED",
@@ -305,13 +325,26 @@ def _execute(args, layers, expected):
                             for row in fixture["approved_oracle"]["mutation_mapping"]]
     inputs["unsupported"] = [{key: row[key] for key in ("id", "selectors", "modes")}
                              for row in fixture["unsupported_cases"]]
+    spec = importlib.util.spec_from_file_location("normal_inputs", runner_dir / "typed_recall_normal_inputs.py")
+    compiler = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(compiler)
+    inputs["normal"] = compiler.recipes(fixture)
+    conflict = fixture["conflict_write_oracle"]
+    inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
+        "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}
+
+    return_rows = [fixture["source_binding_cases"][2],*fixture["protocol_negative_cases"],*fixture["result_page_cases"]]
+    input_keys = {"id","request","wire_protocol_version","source_kind","source_ref","source_revision","chunk_ref","result_hash","coordinate","use_at","bounds"}
+    inputs["returns"] = {"seed":{"memory_type":"semantic","payload":{key:inputs["claim"][key] for key in ("subject_entity","predicate","object_value","qualifiers")}},
+        "expires_at":next(row["use_at"] for row in fixture["result_page_cases"] if "use_at" in row),
+        "cases":[{key:value for key,value in row.items() if key in input_keys} for row in return_rows]}
     for layer in ("public", "source"):
         layer_workspace = workspace / layer
         layer_workspace.mkdir()
         request = {"schema": SCHEMA, "run_id": run_id, "layer": layer, "started_at": utcnow(),
                    "candidate_identity": candidates, "cell_ids": inventory[layer], "inputs": inputs,
                    "fixture_sha256": FIXTURE_SHA, "execution_layers_sha256": LAYERS_SHA,
-                   "isolation": isolation, "validation_code_sha256": validation_code}
+                   "isolation": isolation, "validation_code_sha256": validation_code, "execution_code_sha256": execution_code}
         adapter = public
         if layer == "source":
             if not args.source_adapter or not args.source_checkout:
@@ -354,16 +387,20 @@ def _execute(args, layers, expected):
             if layer == "public":
                 judged = assess_observed_cells(fixture, response)
                 summary["cell_results"].update(judged)
+                if pin_changes:
+                    for row in judged.values():
+                        if row["status"] == "PASS":
+                            row.update(status="BLOCKED", reason="CANDIDATE_PIN_REVIEW_REQUIRED")
+                summary["layers"][layer]["passed_cells"] = sorted(name for name,row in judged.items() if row["status"] == "PASS")
                 if any(row["status"] == "FAIL" for row in judged.values()):
                     summary["layers"][layer]["status"] = "FAIL"
                     summary["layers"][layer]["failed_cells"] = sorted(
                         name for name, row in judged.items() if row["status"] == "FAIL")
             else:
-                summary["cell_results"].update({row["cell_id"]: {
-                    "execution_status": row["status"],
-                    "status": "FAIL" if row["status"] == "FAIL" else "BLOCKED",
-                    "reason": "SOURCE_CELL_ORACLE_NOT_IMPLEMENTED" if row["status"] == "OBSERVED" else row["reason"],
-                    "business_assertions": []} for row in response["cells"]})
+                judged = assess_source_cells(response)
+                summary["cell_results"].update(judged)
+                if any(row["status"]=="FAIL" for row in judged.values()):
+                    summary["layers"][layer]["status"]="FAIL"
             summary["artifacts"].append({"layer": layer, "request_path": request_path.name,
                                          "request_sha256": file_sha(request_path), "relative_path": response_path.name,
                                          "sha256": file_sha(response_path), "runtime_path": runtime_path.name,
@@ -380,11 +417,14 @@ def _execute(args, layers, expected):
                 if path.is_symlink() or file_sha(path) != artifact[sha_key]:
                     raise BridgeError("layer evidence changed before final aggregation")
         except (BridgeError, OSError) as exc:
-            summary["layers"][artifact["layer"]].update(status="FAIL", reason=str(exc))
+            invalidate_admissions(summary,artifact["layer"],str(exc))
     if any(layer["status"] == "FAIL" for layer in summary["layers"].values()):
         summary["status"] = "FAIL"
-    if file_sha(runner_dir / "typed_recall_a2_oracle.py") != summary["oracle_code_sha256"]:
-        summary.update(status="FAIL", reason="oracle code changed during execution")
+    if any(file_sha(path)!=sha for path,sha in execution_code.items()):
+        summary.update(status="FAIL", reason="validation or oracle code changed during execution")
+        for layer in summary["layers"]:
+            invalidate_admissions(summary,layer,summary["reason"])
+    summary["passed_cells"] = sorted(name for name,row in summary["cell_results"].items() if row["status"]=="PASS")
     summary["acceptance_counts"] = {status: sum(row["status"] == status for row in summary["cell_results"].values())
                                     for status in ("PASS", "FAIL", "BLOCKED")}
     summary["completed_at"] = utcnow()

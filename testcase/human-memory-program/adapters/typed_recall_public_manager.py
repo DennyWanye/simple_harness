@@ -10,6 +10,7 @@ import dataclasses
 import hashlib
 import importlib.util
 import time
+import inspect
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +40,9 @@ async def run(request, workspace):
     # paging lacks an internal clock input, so expiry remains an explicit blocker.
     actual_now = time.time()
     now = datetime.fromisoformat(validity["now"].replace("Z", "+00:00")).timestamp()
+    clock_kwargs = {"clock":lambda:now} if "clock" in inspect.signature(memory.MemoryManager.build_human_memory_v7).parameters else {}
+    if clock_kwargs:
+        actual_now = now
     valid_from = datetime.fromisoformat(validity["valid_from"].replace("Z", "+00:00")).timestamp()
     subject = "principal-1"
     principal = memory.MemoryPrincipal("bridge-deployment", "bridge-household", subject, "bridge-session")
@@ -65,7 +69,7 @@ async def run(request, workspace):
     manager = await memory.build_human_memory_v6(workspace / "public.sqlite",
         audit_access_authority=audit_authority,
         evidence_authority=authority, memory_action_authority=authority,
-        classification_policy=policy)
+        classification_policy=policy, **clock_kwargs)
     calls = ["build_human_memory_v6"]
     extra_cells = []
     try:
@@ -143,6 +147,9 @@ async def run(request, workspace):
     finally:
         await manager.close()
         calls.append("close")
+    extra_cells += await _helpers("typed_recall_normal_cases.py").run_cases(request["inputs"]["normal"], workspace)
+    extra_cells += await _helpers("typed_recall_conflict_cases.py").run_cases(request["inputs"]["conflict"], workspace)
+    extra_cells += await _helpers("typed_recall_return_cases.py").run_cases(request["inputs"]["returns"], workspace)
     cells = [{"cell_id": name, "status": "BLOCKED", "reason": "CELL_EXECUTOR_NOT_IMPLEMENTED",
               "observations": {}} for name in request["cell_ids"] if name != cell_id and name not in {row["cell_id"] for row in extra_cells}]
     cells.append({"cell_id": cell_id, "status": "OBSERVED", "reason": "", "observations": observations})
