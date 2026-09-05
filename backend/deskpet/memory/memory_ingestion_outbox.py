@@ -420,6 +420,13 @@ class MemoryAnalysisLane:
         self._stop = asyncio.Event()
         self._wake = asyncio.Event()
         self.last_error: BaseException | None = None
+        self._closing = False
+        self.short_indexer = None
+        self.last_short_step = None
+        self.last_short_error: BaseException | None = None
+        if getattr(runtime, "conversation_evidence_authority", None) is not None:
+            from deskpet.memory.short_index_worker import PrimaryShortIndexWorker
+            self.short_indexer = PrimaryShortIndexWorker(runtime)
 
     async def runner(self) -> Any:
         if self._runner is None:
@@ -429,7 +436,17 @@ class MemoryAnalysisLane:
     async def tick(self) -> tuple[OutboxRunOutcome, Any]:
         """Drive one ingestion delivery then one analysis job; never raises the loop dead."""
 
+        self.last_short_step = None
+        self.last_short_error = None
         outbox = await self._worker.run_once()
+        if self.short_indexer is not None:
+            try:
+                self.last_short_step = await self.short_indexer.step()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # local indexing failure cannot starve analysis
+                self.last_short_error = exc
+                log.warning("memory_short_index_unavailable type=%s", type(exc).__name__)
         runner = await self.runner()
         try:
             job = await runner.run_once()
@@ -454,6 +471,8 @@ class MemoryAnalysisLane:
         self._wake.set()
 
     def start(self) -> None:
+        if self._closing:
+            return
         if self._task is None or self._task.done():
             self._stop.clear()
             self._task = asyncio.create_task(self._run(), name="memory-analysis-lane")
@@ -469,6 +488,9 @@ class MemoryAnalysisLane:
                 log.warning("memory_analysis_lane_tick_error error=%s", f"{type(exc).__name__}:{str(exc)[:200]}")
                 outbox, job = OutboxRunOutcome.IDLE, None
             busy = outbox is not OutboxRunOutcome.IDLE or (job is not None and str(job) != "idle")
+            busy = busy or (self.last_short_step is not None
+                            and self.last_short_step.scanned > 0
+                            and not self.last_short_step.wrapped)
             if busy:
                 continue
             self._wake.clear()
@@ -478,16 +500,23 @@ class MemoryAnalysisLane:
                 pass
 
     async def close(self, *, timeout_seconds: float = 5.0) -> None:
+        self._closing = True
         self._stop.set()
         self._wake.set()
-        task, self._task = self._task, None
-        if task is None:
-            return
+        task = self._task
         try:
-            await asyncio.wait_for(task, timeout=timeout_seconds)
-        except TimeoutError:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+            if task is not None:
+                try:
+                    await asyncio.wait_for(task, timeout=timeout_seconds)
+                except TimeoutError:
+                    task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            if self.short_indexer is not None:
+                await self.short_indexer.close()
+            self._runner = None
+        finally:
+            self._task = None
+            self._closing = False
 
 
 __all__ = [
