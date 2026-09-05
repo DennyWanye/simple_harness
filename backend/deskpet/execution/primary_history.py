@@ -99,6 +99,14 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
                     or payload["terminal_state"] != terminal.value
                     or payload["messages"] != list(messages)):
                 raise RuntimeError("primary_runtime_terminal_conflict")
+            marker = payload.get("message_source_contract")
+            if marker is not None:
+                if marker != "primary-message-v1":
+                    raise RuntimeError("primary_message_contract_unknown")
+                from deskpet.memory.primary_message_evidence import verify_new_primary_message_evidence_tx
+                prior_envelope, prior_receipt = evidence_pair(subject, sdk_run_id, payload, float(row["occurred_at"]))
+                await verify_new_primary_message_evidence_tx(db, host_run_id=host_run_id,
+                    terminal_envelope=prior_envelope, terminal_receipt=prior_receipt)
             await db.commit()
             return row["evidence_id"], row["envelope_sha256"]
         run = await queue._run_tx(db, host_run_id)
@@ -111,6 +119,7 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             "sdk_event_id": sdk_evidence.event_id, "sdk_event_hash": sdk_evidence.event_hash,
             "messages": list(messages), "error_code": error_code,
             "visibility_dependencies": visibility_dependencies,
+            "message_source_contract": "primary-message-v1",
         }
         reject_private_payload(payload)
         envelope, receipt = evidence_pair(subject, sdk_run_id, payload, float(sdk_evidence.occurred_at))
