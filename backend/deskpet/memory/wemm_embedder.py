@@ -14,6 +14,7 @@ only (``local_files_only=True``).
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -31,22 +32,76 @@ class WeMMEmbedder(Embedder):
         revision: str = "local-cache",
         model_name: str = "tencent/WeMM-Embedding-2B",
     ) -> None:
-        try:
-            from sentence_transformers import SentenceTransformer
-        except ImportError as exc:  # pragma: no cover - dependency guard
-            raise ImportError("WeMMEmbedder requires sentence-transformers") from exc
         model_ref = str(model_path)
         if not model_ref.strip():
             raise ValueError("model_path must be non-empty")
         self._model_name = model_name
         self._revision = revision
-        self._model = SentenceTransformer(
-            model_ref,
-            device=device,
-            local_files_only=True,
-            trust_remote_code=True,
-        )
-        self._lock = asyncio.Lock()
+        self._model_ref = model_ref
+        self._device = device
+        self._model: Any = None
+        self._load_task: asyncio.Task[None] | None = None
+        # A cancelled asyncio waiter does not stop its underlying thread.
+        # This lock is held by the thread through physical load/encode completion.
+        self._encode_queue = asyncio.Lock()
+        self._physical_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._state = "cold"
+        self._reason: str | None = None
+
+    def status_snapshot(self) -> dict[str, Any]:
+        with self._state_lock:
+            return {
+                "state": self._state, "is_ready": self._state == "ready",
+                "is_mock": False, "model_path": self._model_ref,
+                "model_name": self._model_name,
+                **({"reason": self._reason} if self._reason else {}),
+            }
+
+    def is_ready(self) -> bool:
+        return bool(self.status_snapshot()["is_ready"])
+
+    def _set_state(self, state: str, reason: str | None = None) -> None:
+        with self._state_lock:
+            self._state, self._reason = state, reason
+
+    @staticmethod
+    def _observe_completion(task: asyncio.Task[Any]) -> None:
+        # A departed waiter must not leave an unobserved exception warning.
+        if not task.cancelled():
+            task.exception()
+
+    def _load_sync(self) -> None:
+        with self._physical_lock:
+            try:
+                from sentence_transformers import SentenceTransformer
+
+                model = SentenceTransformer(
+                    self._model_ref, device=self._device,
+                    local_files_only=True, trust_remote_code=True,
+                )
+                getter = getattr(model, "get_embedding_dimension", None) or (
+                    model.get_sentence_embedding_dimension
+                )
+                dimension = getter()
+                if isinstance(dimension, bool) or dimension != self.dim:
+                    raise ValueError("WeMM model dimension must be 2048")
+                self._model = model
+            except Exception:
+                self._set_state("failed", "wemm_load_failed")
+                raise
+            self._set_state("ready")
+
+    async def _ensure_loaded(self) -> None:
+        if self._model is not None:
+            return
+        # No await between inspecting and publishing the shared task. Completed
+        # failures retry only on a later explicit embedding request, never status.
+        if self._load_task is None or self._load_task.done():
+            self._set_state("loading")
+            self._load_task = asyncio.create_task(asyncio.to_thread(self._load_sync))
+            self._load_task.add_done_callback(self._observe_completion)
+        await asyncio.shield(self._load_task)
 
     @property
     def kind(self) -> str:
@@ -54,10 +109,7 @@ class WeMMEmbedder(Embedder):
 
     @property
     def dim(self) -> int:
-        getter = getattr(self._model, "get_embedding_dimension", None) or (
-            self._model.get_sentence_embedding_dimension
-        )
-        return int(getter() or 2048)
+        return 2048
 
     @property
     def lineage(self) -> EmbeddingLineage:
@@ -74,15 +126,37 @@ class WeMMEmbedder(Embedder):
     async def embed(self, text: str) -> list[float]:
         if not isinstance(text, str):
             raise TypeError("text must be a string")
-        async with self._lock:
-            vector = await asyncio.to_thread(self._encode, text)
-        return [float(value) for value in vector]
+        await self._ensure_loaded()
+        cancelled = threading.Event()
+        worker = asyncio.create_task(self._encode_owned(text, cancelled))
+        worker.add_done_callback(self._observe_completion)
+        try:
+            return await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
 
-    def _encode(self, text: str):
-        encode_document = getattr(self._model, "encode_document", None)
-        if callable(encode_document):
-            return encode_document([text], normalize_embeddings=True)[0]
-        return self._model.encode([text], normalize_embeddings=True)[0]
+    async def _encode_owned(self, text: str, cancelled: threading.Event) -> list[float]:
+        # The owned task, not its cancellable caller, holds this lock until the
+        # thread finishes. Queued work consumes no default-executor threads.
+        async with self._encode_queue:
+            if cancelled.is_set():
+                return []
+            return await asyncio.to_thread(self._encode, text, cancelled)
+
+    def _encode(self, text: str, cancelled: threading.Event) -> list[float]:
+        with self._physical_lock:
+            # Requests cancelled while queued must not start a physical encode.
+            if cancelled.is_set():
+                return []  # Only consumed by the detached completion observer.
+            encode_document = getattr(self._model, "encode_document", None)
+            if callable(encode_document):
+                vector = encode_document([text], normalize_embeddings=True)[0]
+            else:
+                vector = self._model.encode([text], normalize_embeddings=True)[0]
+            if len(vector) != self.dim:
+                raise ValueError("WeMM output dimension must be 2048")
+            return [float(value) for value in vector]
 
 
 __all__ = ["WeMMEmbedder"]

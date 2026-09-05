@@ -1,5 +1,17 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 WeMM lazy Host isolated leaf
+
+最后更新：2026-09-06。构造/metadata/状态不import或加载WeMM；首次真实embed共享
+加载，实际worker持异步encode队列锁+线程互斥。取消不终止物理线程、不自动卸载，
+排队取消不占executor线程。dim2048/L2/原lineage保留，加载及输出维度验证。
+WeMM状态cold/loading/ready/failed及真实模型名称接现P4卡片；未改main启动或SDK。
+installed Memory0612空库public build_production确认0模型构造；旧库ensure回填仍可能加载。
+独立树simple_harness-wemm-lazy/base134bc4b8，backend最终唯一13例、React2例通过，
+应用tsc0；原构造红保留。fake模型/真线程，无权重、native或build，独审待固定源核查。
+[契约、实际命令、结果及边界](../plans/2026-09-06-wemm-lazy/RESULTS.md)。
+
+
 ## 2026-09-06 短期索引及 Service0313 已组合验证
 
 最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。

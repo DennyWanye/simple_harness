@@ -1,5 +1,17 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 WeMM Host lazy loading leaf
+
+最后更新：2026-09-06。WeMM构造、dim/lineage和P4 status仅访问元数据；首次embed
+才import/加载本地模型，加载维度必须2048，保留L2及原fingerprint。共享shield load
+task与owned异步encode队列保持实际线程互斥，取消排队请求不提交executor线程。
+cold/loading/ready/failed不触发加载，卡片显示真实名称与按需状态。线程取消不等于
+物理终止或释放权重；没有新增warmup/close/unload。SDK0612 public空库builder以
+fake模型证明0构造，旧库ensure缺向量仍可启动加载，未改冻结SDK/catchup契约。
+backend唯一13例、React2例、tsc0；没有真实权重/native。独立worktree尚未合main。
+[固定叶子验证与边界](../plans/2026-09-06-wemm-lazy/RESULTS.md)。
+
+
 ## 2026-09-06 短期索引及 Service0313 已组合验证
 
 最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。
