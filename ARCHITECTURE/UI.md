@@ -2,6 +2,17 @@
 
 > 最后更新：2026-09-05（primary 跨重试未决身份修复；真实项目 route 交互未验证）
 
+## 2026-09-05 工具活动调用关联修复
+
+真实 `ProductDeliveryAdapter` → presenter → WebSocket 的 `tool_call` 补齐 SDK
+`call_id`，与既有 `tool_result` 一致；PrimaryRunPanel 才能关联执行中/返回两种状态。
+既有真实 SessionDB 投影用例修前因缺字段失败，修后 delivery 文件 **14 passed**。
+仅为事件契约验证，尚未原生工具操作验收。原始日志在该隔离树 ignored
+`.local-test-evidence/2026-09-05/primary-tool-identity/`：red SHA-256
+`558cf677e0abb183892a374aa992dffa8190da30c32872f1c42d14238f6bc09e`，green
+`f374d45aa1a832cf5c888b78fa022f02ac39cdea4b2c0a2fd154f44805163a71`。
+命令：`PYTHONPATH=$PWD/backend /Users/denny/projects/simple_harness/backend/.venv/bin/python -m pytest backend/tests/test_product_delivery_adapter.py -q -p no:cacheprovider`。
+
 ## 2026-09-05 单主对话前端候选（尚非完整 S6 cutover）
 
 `feat/human-memory-primary-ui` 从 Host `c183fe70` 建立独立树，仅修改前端与本节/PROJECT_STATUS。
