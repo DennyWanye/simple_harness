@@ -1,5 +1,15 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Memory0611 installed audit and retry successor
+
+Last updated: 2026-09-05. Main-owned candidate pins exact0611, combining reviewed
+privacy, bounded SDK audit and current-attempt reclaim repair. Installed55 startup/
+composition/graph/runtime checks pass; no source overlay. Main running environment
+and isolated native graph0610 remain unchanged. Full Host operation coverage and
+Harness successor are still pending. See
+[installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0611-INSTALLED.md).
+
+
 ## 2026-09-05 Public TwinGraph HUMAN projection and completion invalidation
 
 Last updated: 2026-09-05. Host reads manager.get_twin_graph_view using actual principal/primary and signed late API boundary. Node and edge output is bounded with closed endpoints; SDK collection remains a full scan. Main shares content-free completion invalidation between actual suppress and MemoryAnalysisLane APPLIED (including no_mutation). Server generation is checked after the final identity await; no SDK global epoch or Agent graph input is introduced.

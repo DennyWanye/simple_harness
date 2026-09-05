@@ -1,5 +1,15 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Memory0611 installed audit and retry successor
+
+Last updated: 2026-09-05. Main-owned candidate pins exact0611, combining reviewed
+privacy, bounded SDK audit and current-attempt reclaim repair. Installed55 startup/
+composition/graph/runtime checks pass; no source overlay. Main running environment
+and isolated native graph0610 remain unchanged. Full Host operation coverage and
+Harness successor are still pending. See
+[installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0611-INSTALLED.md).
+
+
 ## 2026-09-05 Cytoscape graph source leaf ready for independent review
 
 Last updated: 2026-09-05. Isolated feat/human-memory-cytoscape-graph based on bf8f9f7d: backend24/frontend21 plus build/typecheck/focused ESLint pass; actual API-fixture browser selection/zoom/suppression replacement verified. Native verification stays coordinator-owned on043c candidate. No audit/pin changes, no full HM-AC6 or program PASS. Old cytoscape-ui tree preserved, inactive.
