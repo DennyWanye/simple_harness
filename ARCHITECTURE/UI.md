@@ -1,5 +1,11 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-06 原生遗忘确认通过；重启验收因内存中断
+
+最后更新：2026-09-06。native b32a96d9 / H0.7.2 M0.6.12 S0.3.12实际点击遗忘，UI显示成功确认，图谱由6条更新为5条且恢复可用。
+正常退出后重启验证被系统内存告警中断，未记通过。清理两个约6GB的测试模型后端与子进程后内存回落；本地启动器补进程组清理与单实例/资源准入。
+仅该遗忘确认闭环完成，关系展示/标签可读性和重启持久化仍有剩余。[证据与边界](../plans/2026-09-06-primary-forget-ack/NATIVE.md)。
+
 ## 2026-09-06 Forget ACK survives primary content invalidation
 
 Last updated: 2026-09-06. Isolated `feat/primary-forget-ack` fromcf4d8e0a retains
