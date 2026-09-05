@@ -2,6 +2,14 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 下一主对话候选依赖固定
+
+隔离 primary-candidate 树固定 Memory0.6.7/既有 Harness0.7.2/Service0.3.12，并将滞后的 uv.lock
+对齐既有 pyproject 要求；九项非 SDK 版本变化与已真测主环境一致。三个 SDK 从本树 vendor 装入
+独立环境，身份/生产 composition **21 passed**，offline lock check 通过。未 sync 主环境或启动 App，
+完整历史/恢复/短登记/授权 UI 仍待合入；见
+[CANDIDATE-067](../plans/2026-09-05-s6-primary-preparation/CANDIDATE-067.md)。
+
 ## 2026-09-05 Primary 生产目录修复
 
 真实原生普通回复/重启追问通过；新项目请求在 `607acc7d` 暴露三项 Context 控制被
