@@ -1,5 +1,11 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-05 Native0612 startup ready; UI lock-screen blocker
+
+Last updated: 2026-09-05. Candidate65a604f8 with installed0612 starts successfully
+on18120, but CUA reports the Mac locked. No native graph click acceptance yet.
+See [continuation state](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0612-READINESS.md).
+
 ## 2026-09-05 Native graph blocked by SDK credential false positive
 
 Last updated: 2026-09-05. Actual21c55cf9/native18120 with installedMemory0610

@@ -1,5 +1,11 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Native0612 startup ready; UI lock-screen blocker
+
+Last updated: 2026-09-05. Candidate65a604f8 with installed0612 starts successfully
+on18120, but CUA reports the Mac locked. No native graph click acceptance yet.
+See [continuation state](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0612-READINESS.md).
+
 ## 2026-09-05 Memory0612 installed credential successor
 
 Last updated: 2026-09-05. Exact0612 fixes public tool-name credential false positives;
