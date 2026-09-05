@@ -11,11 +11,11 @@
 
 ## 2026-09-05 Typed recall 执行桥验证工具（仅独立分支）
 
-- `feature/human-memory-typed-recall-runner`：用户已批准 §3–4 有界 oracle 修订；批准记录 `38356e7f`、执行前 oracle/14 攻击映射 `e46edaa0`。fixture rev4/layers rev2 保留原401 IDs、391+10分层、全部负例与阈值。
-- 受测代码 `d4036037` 提交态 **54 个验证器/桥回归通过**；新 clean venv 运行 Harness0.7.2 + Memory0.6.3，首批 **19 OBSERVED，正式 0 PASS / 0 FAIL / 401 BLOCKED**。371 public 执行器未实现、1 protocol-version 攻击缺 public input、10 source 未执行；不混为已通过。
-- 真实调用覆盖 mutation/receipt、typed recall/replay、13 个输入变异、3 个 unsupported 负例及 public canonical manifest；原冻结时钟下分页返回 expired。内部拒绝层和异常路径 candidate-read=0 缺公共见证，尚不宣称通过。已批准提案的 NUL preimage 与 SDK JSON-domain hash 不符，明确 BLOCKED，未用产品输出回填预期。
-- 本机提交态索引：`.local-test-evidence/2026-09-05/typed-recall-a2-committed-d4036037/bridge-summary.json`，SHA-256 `456d9d330e1d5d1cc23c1bd360bcdaeff8883926e5e5619d3b1f6d3bc30b950b`。命令、文件/提交边界和最小修正见 [首批记录](../testcase/human-memory-program/runners/TYPED-RECALL-A2-FIRST-BATCH.md)。
-- **本分支尚未并入主树，合并暂缓。** 仅更新测试工具事实，不标记 S3/program 完成，不改变其他模块生产状态；没有 provider/UI/MPS 或 SDK 全量测试。
+- `feature/human-memory-typed-recall-runner`：已批准§3–4修订，纠正§3为既有JSON-domain hash、§4 state NUL保留；独立向量先于执行，401 IDs/391+10/14攻击/全部阈值保持。fixture rev6/layers rev4。
+- 受测代码 `4b1c6dcf`：**59个桥回归通过**；Harness0.7.2 + Memory0.6.4 clean consumer提交态 **132 PASS / 0 FAIL / 269 BLOCKED**。Public334 OBSERVED、56未实现、1版本输入缺口；source10全部真实OBSERVED但完整绑定未闭合，0 source PASS。
+- 真实执行包括入库/recall/replay/资格与预算、r7→r8冲突→r9解决、parser/page、7处fault/restart和3处腐败reopen。初审3P1/1P2已整改并通过独立复审；未把不完整业务断言、self-check或历史receipt当通过。
+- 本机提交态索引 `.local-test-evidence/2026-09-05/typed-recall-committed-clock064-r3/bridge-summary.json`，SHA256 `39ff6c293f6e83635f8d3356f9e2fb34a3e082d693603c852f719a2a7a250805`。命令、候选身份及剩余项见 [本批记录](../testcase/human-memory-program/runners/TYPED-RECALL-NORMAL-BATCH-2026-09-05.md)。
+- **仅独立分支测试工具事实；未并入主树，合并暂缓，S3/program未完成。** 主共享venv保持Memory0.6.3；无provider/UI/MPS或SDK全量测试。版本5整数攻击映射已在0.6.5执行前冻结，当前不冒充其已经执行。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 
