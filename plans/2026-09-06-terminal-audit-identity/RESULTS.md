@@ -3,7 +3,8 @@
 Last updated: 2026-09-06. Base 3dd76242c5fb33e23cfaf82e4105f5125b5040d1.
 Isolated worktree simple_harness-terminal-audit-identity; coordinator WIP retained and
 completed here. No SDK source change, rebuild, push, main runtime switch or native run.
-Independent fixed-source review requested after local commit; not yet accepted.
+Dirac independently scoped ACCEPT fixed source756011caffe1837875934bf458f053a8685eb701;
+no leaf P0/P1. Review used fixed source and existing installed evidence only.
 
 ## Installed inputs
 
@@ -82,3 +83,20 @@ Logs/DBs/watchdog remain ignored. Resource-admitted temp DBs were copied to
 - `identity-narrow.log` SHA256 `0f756cfd33f42f4e339eace28b1a1cfc7d666f94c80b547be73f165308a0ea9a`.
 - `identity-narrow-resource.json` SHA256 `8098b53a33e328f8f486f44152acfee3585fb95fbe71915a2464c4c667d508f2`.
 - `installed-identity.json` SHA256 `20316e125be720228e229d05871d30e06fdc64a76b838216f3523120625d0b39`.
+
+
+## Independent review closure
+
+Dirac checked fixed756011ca, the seven evidence hashes, exact vendored wheel/manifest
+and existing164-file installed identity proof using git/text/shasum only. No Python,
+pytest, model, build or database probe was repeated. Public typed proof, one Host
+read-only source/identity transaction, legacy raw SDK unwrapping, exact page matching
+and v1/v2 journal separation are scoped accepted. No native/full-suite or whole-program
+completion follows from this review.
+
+Precise late-source evidence limit: the test switches Host source DB before
+PublicAuditReader returns, and the existing second sources.verify rejects it with
+source_binding_invalid. It does not independently exercise source replacement after
+every await inside the new verify_terminal_page. The same-transaction implementation
+was reviewed; those individual windows are not reported runtime-tested. No additional
+test is required for this accepted leaf.

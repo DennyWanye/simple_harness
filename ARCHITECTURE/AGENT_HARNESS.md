@@ -9,8 +9,8 @@ uses its original envelope and terminal gate. RULE terminal-run-v2 preserves all
 Selective installed group21PASS2FAIL then necessary repairs2PASS; failures were a guarded
 fixture mutation and obsolete global error-count expectation, retained verbatim. Non-null
 committed-turn public head/receipt + same-cursor reopen, namespace negatives and late-source
-rejection passed. Peak owned RSS147MiB; no model/native/full suite. Independent fixed-source
-review pending; no main production switch or whole-operation completion claim.
+rejection passed. Peak owned RSS147MiB; no model/native/full suite. Dirac fixed-source756011ca
+scoped ACCEPT; no main production switch or whole-operation completion claim.
 See [contract and measured results](../plans/2026-09-06-terminal-audit-identity/RESULTS.md).
 
 ## 2026-09-05 Terminal audit and privacy combined source verification
