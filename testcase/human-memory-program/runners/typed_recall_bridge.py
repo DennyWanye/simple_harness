@@ -20,9 +20,9 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "02419918d27237faf2af5e6d75f4180275c1e816cbad183c29ed871f508be649"
-LAYERS_SHA = "594189edb4c46ff1c52a778c1caeef9a94d324bfd67f778ce61a3ec1c5f63d8a"
-ORACLE_BLOCKERS = ["DOMAIN_PREIMAGE_DIFFERENCE"]
+FIXTURE_SHA = "6baeeafac59a405c9c177bf09f5c4071bcdd5b70aa639be8f3a77348549e586a"
+LAYERS_SHA = "1a9861e34c4b3fd7d1a5d0273035714bbc66e12d68102be66cf54a1e67352064"
+ORACLE_BLOCKERS = []
 
 
 class BridgeError(ValueError):

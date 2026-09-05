@@ -25,6 +25,18 @@ def test_canonical_source_known_answer_and_domain_distinction():
         oracle.canonical(float("nan"))
 
 
+def test_frozen_full_public_vectors_use_json_domain_and_state_keeps_nul():
+    fixture = json.loads((ROOT / "fixtures/typed-recall-v3.json").read_text())
+    answers = ["79cf1d1cd36907e9840d0d231444ae9289c90d694220d94a3ad962ec0bc33a47",
+               "b2a130ca51bedfe98d88bf9616d5988d872f698b6b6e9ad9632c33516e2903df",
+               "49f834c86095bb51f6c7cdfc5989fc33f5c1297b463daf4efd7851cc656ac379",
+               "4941b2effff255ba3889d7bedd3e32aa0c9acb2a8df3aceb90663ab988b2b0f4"]
+    for vector, answer in zip(fixture["approved_oracle"]["public_hash_vectors"], answers, strict=True):
+        assert oracle.sdk_domain_hash(vector["domain"], vector["payload"]) == answer == vector["expected_sha256"]
+        assert hashlib.sha256(vector["canonical_preimage"].encode()).hexdigest() == answer
+        assert oracle.domain_hash(vector["domain"], vector["payload"]) != answer
+
+
 def manifest():
     return {"schema_version": 1, "storage_schema_version": 7, "schema_checksum": "a" * 64,
             "initialization_receipt_hash": "b" * 64, "principal_ref_hash": "c" * 64,

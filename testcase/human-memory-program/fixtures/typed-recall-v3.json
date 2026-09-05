@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 4,
+  "fixture_revision": 5,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -2713,11 +2713,11 @@
     "require_quality_gate_blocked": true
   },
   "approved_oracle": {
-    "revision": 1,
+    "revision": 2,
     "approval": "runners/TYPED-RECALL-A2-APPROVAL-2026-09-05.md",
     "proposal_scope": "sections 3-4, including both P2 constraints",
     "canonical_json": "UTF-8; sorted keys; compact separators; arrays ordered; null retained; reject nonfinite",
-    "domain_preimage": "UTF8(domain) + one NUL byte + canonical_json(payload)",
+    "domain_preimage": "canonical_json({domain: domain, payload: payload})",
     "legacy_status": "Original scenarios, IDs, negative semantics and budgets retained; legacy literal request/receipt/conflict/state commitments are NOT active acceptance evidence",
     "legacy_commitment_sections": [
       "state_hash_oracle",
@@ -3105,7 +3105,8 @@
         "typed_recall_attempts"
       ],
       "full_manifest_required": true,
-      "old_new_tags_are_state_evidence": false
+      "old_new_tags_are_state_evidence": false,
+      "domain_preimage": "UTF8(domain) + one NUL byte + canonical_json(payload)"
     },
     "fault_controls": {
       "business_assertions": [
@@ -3161,21 +3162,7 @@
         "allow_arbitrary_old_or_new": false
       }
     },
-    "unresolved_contract_differences": [
-      {
-        "id": "DOMAIN_PREIMAGE_DIFFERENCE",
-        "approved": "UTF8(domain)+NUL+C(payload)",
-        "candidate_at_frozen_sources": "C({domain:domain,payload:payload})",
-        "affected": [
-          "context",
-          "plan",
-          "request",
-          "receipt",
-          "domain-separated DTOs"
-        ],
-        "disposition": "BLOCKED; no automatic expected-hash replacement"
-      }
-    ],
+    "unresolved_contract_differences": [],
     "candidate_identity": {
       "harness": {
         "status": "PINNED",
@@ -3208,6 +3195,274 @@
         "wheel_sha256": "cd324e68aa851e0cb7940b44bfe0bbf1b3a5cbb33a6803e035ab503e1760de1c",
         "status": "PINNED"
       }
-    }
+    },
+    "hash_correction": {
+      "previous_fixture_sha256": "02419918d27237faf2af5e6d75f4180275c1e816cbad183c29ed871f508be649",
+      "reason": "Our proposal misstated existing public hashing. User explicitly authorized factual correction to E, no production changes; state NUL unchanged.",
+      "previous_sdk_domain_preimage": "UTF8(domain) + one NUL byte + canonical_json(payload)"
+    },
+    "public_hash_vectors": [
+      {
+        "id": "context",
+        "domain": "simple-harness/recall-context/v2",
+        "payload": {
+          "schema_version": 2,
+          "run_id": "run-1",
+          "subject": "principal-1",
+          "turn_id": "turn-1",
+          "context_revision": 7,
+          "expires_at": 1788170700.0,
+          "query": "3.11",
+          "active_task_scope_id": null,
+          "available_memory_types": [
+            "semantic"
+          ],
+          "short_horizon_allowed": false,
+          "allowed_selector_domains": [
+            "memory_type"
+          ],
+          "allowed_retrieval_modes": [
+            "full_text"
+          ],
+          "allowed_task_scope_ids": [],
+          "allowed_entity_constraints": [],
+          "earliest_occurred_at": null,
+          "latest_occurred_at": null,
+          "event_constraint_refs": [],
+          "environment_constraint_refs": [],
+          "task_phase_authority_refs": [],
+          "procedure_applicability_fingerprints": [],
+          "disclosure_context": {
+            "schema_version": 1,
+            "run_id": "run-1",
+            "subject": "principal-1",
+            "recipient": "user_self",
+            "recipient_id": "principal-1",
+            "intended_audience": "user_self",
+            "purpose": "task_execution",
+            "source": "authenticated_host",
+            "trust": "trusted_authority",
+            "generation": "current",
+            "authority_ref": "host-disclosure-1",
+            "reason_codes": [
+              "disclosure_minimum_necessary"
+            ]
+          },
+          "evidence_refs": [],
+          "budget": {
+            "max_items": 4,
+            "max_bytes": 4096,
+            "max_tokens": 1024,
+            "deadline_ms": 2000
+          }
+        },
+        "canonical_preimage": "{\"domain\":\"simple-harness/recall-context/v2\",\"payload\":{\"active_task_scope_id\":null,\"allowed_entity_constraints\":[],\"allowed_retrieval_modes\":[\"full_text\"],\"allowed_selector_domains\":[\"memory_type\"],\"allowed_task_scope_ids\":[],\"available_memory_types\":[\"semantic\"],\"budget\":{\"deadline_ms\":2000,\"max_bytes\":4096,\"max_items\":4,\"max_tokens\":1024},\"context_revision\":7,\"disclosure_context\":{\"authority_ref\":\"host-disclosure-1\",\"generation\":\"current\",\"intended_audience\":\"user_self\",\"purpose\":\"task_execution\",\"reason_codes\":[\"disclosure_minimum_necessary\"],\"recipient\":\"user_self\",\"recipient_id\":\"principal-1\",\"run_id\":\"run-1\",\"schema_version\":1,\"source\":\"authenticated_host\",\"subject\":\"principal-1\",\"trust\":\"trusted_authority\"},\"earliest_occurred_at\":null,\"environment_constraint_refs\":[],\"event_constraint_refs\":[],\"evidence_refs\":[],\"expires_at\":1788170700.0,\"latest_occurred_at\":null,\"procedure_applicability_fingerprints\":[],\"query\":\"3.11\",\"run_id\":\"run-1\",\"schema_version\":2,\"short_horizon_allowed\":false,\"subject\":\"principal-1\",\"task_phase_authority_refs\":[],\"turn_id\":\"turn-1\"}}",
+        "expected_sha256": "79cf1d1cd36907e9840d0d231444ae9289c90d694220d94a3ad962ec0bc33a47"
+      },
+      {
+        "id": "plan",
+        "domain": "simple-harness/recall-plan/v2",
+        "payload": {
+          "schema_version": 2,
+          "run_id": "run-1",
+          "subject": "principal-1",
+          "context_revision": 7,
+          "query": "3.11",
+          "earliest_occurred_at": null,
+          "latest_occurred_at": null,
+          "event_constraint_refs": [],
+          "environment_constraint_refs": [],
+          "task_phase_authority_refs": [],
+          "disclosure_context": {
+            "schema_version": 1,
+            "run_id": "run-1",
+            "subject": "principal-1",
+            "recipient": "user_self",
+            "recipient_id": "principal-1",
+            "intended_audience": "user_self",
+            "purpose": "task_execution",
+            "source": "authenticated_host",
+            "trust": "trusted_authority",
+            "generation": "current",
+            "authority_ref": "host-disclosure-1",
+            "reason_codes": [
+              "disclosure_minimum_necessary"
+            ]
+          },
+          "evidence_refs": [],
+          "budget": {
+            "max_items": 4,
+            "max_bytes": 4096,
+            "max_tokens": 1024,
+            "deadline_ms": 2000
+          },
+          "plan_id": "plan-1",
+          "context_hash": "79cf1d1cd36907e9840d0d231444ae9289c90d694220d94a3ad962ec0bc33a47",
+          "requested_memory_types": [
+            "semantic"
+          ],
+          "include_short_horizon": false,
+          "selector_domains": [
+            "memory_type"
+          ],
+          "retrieval_modes": [
+            "full_text"
+          ],
+          "task_scope_ids": [],
+          "entity_constraints": [],
+          "idempotency_key": "request-1",
+          "reason_codes": [
+            "recall_user_fact_dependency"
+          ]
+        },
+        "canonical_preimage": "{\"domain\":\"simple-harness/recall-plan/v2\",\"payload\":{\"budget\":{\"deadline_ms\":2000,\"max_bytes\":4096,\"max_items\":4,\"max_tokens\":1024},\"context_hash\":\"79cf1d1cd36907e9840d0d231444ae9289c90d694220d94a3ad962ec0bc33a47\",\"context_revision\":7,\"disclosure_context\":{\"authority_ref\":\"host-disclosure-1\",\"generation\":\"current\",\"intended_audience\":\"user_self\",\"purpose\":\"task_execution\",\"reason_codes\":[\"disclosure_minimum_necessary\"],\"recipient\":\"user_self\",\"recipient_id\":\"principal-1\",\"run_id\":\"run-1\",\"schema_version\":1,\"source\":\"authenticated_host\",\"subject\":\"principal-1\",\"trust\":\"trusted_authority\"},\"earliest_occurred_at\":null,\"entity_constraints\":[],\"environment_constraint_refs\":[],\"event_constraint_refs\":[],\"evidence_refs\":[],\"idempotency_key\":\"request-1\",\"include_short_horizon\":false,\"latest_occurred_at\":null,\"plan_id\":\"plan-1\",\"query\":\"3.11\",\"reason_codes\":[\"recall_user_fact_dependency\"],\"requested_memory_types\":[\"semantic\"],\"retrieval_modes\":[\"full_text\"],\"run_id\":\"run-1\",\"schema_version\":2,\"selector_domains\":[\"memory_type\"],\"subject\":\"principal-1\",\"task_phase_authority_refs\":[],\"task_scope_ids\":[]}}",
+        "expected_sha256": "b2a130ca51bedfe98d88bf9616d5988d872f698b6b6e9ad9632c33516e2903df"
+      },
+      {
+        "id": "request",
+        "domain": "simple-harness-memory/typed-recall-request/v1",
+        "payload": {
+          "harness_protocol": "recall-v4",
+          "memory_protocol": "typed-recall-v1",
+          "principal_id": "principal-1",
+          "context": {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "subject": "principal-1",
+            "turn_id": "turn-1",
+            "context_revision": 7,
+            "expires_at": 1788170700.0,
+            "query": "3.11",
+            "active_task_scope_id": null,
+            "available_memory_types": [
+              "semantic"
+            ],
+            "short_horizon_allowed": false,
+            "allowed_selector_domains": [
+              "memory_type"
+            ],
+            "allowed_retrieval_modes": [
+              "full_text"
+            ],
+            "allowed_task_scope_ids": [],
+            "allowed_entity_constraints": [],
+            "earliest_occurred_at": null,
+            "latest_occurred_at": null,
+            "event_constraint_refs": [],
+            "environment_constraint_refs": [],
+            "task_phase_authority_refs": [],
+            "procedure_applicability_fingerprints": [],
+            "disclosure_context": {
+              "schema_version": 1,
+              "run_id": "run-1",
+              "subject": "principal-1",
+              "recipient": "user_self",
+              "recipient_id": "principal-1",
+              "intended_audience": "user_self",
+              "purpose": "task_execution",
+              "source": "authenticated_host",
+              "trust": "trusted_authority",
+              "generation": "current",
+              "authority_ref": "host-disclosure-1",
+              "reason_codes": [
+                "disclosure_minimum_necessary"
+              ]
+            },
+            "evidence_refs": [],
+            "budget": {
+              "max_items": 4,
+              "max_bytes": 4096,
+              "max_tokens": 1024,
+              "deadline_ms": 2000
+            }
+          },
+          "plan": {
+            "schema_version": 2,
+            "run_id": "run-1",
+            "subject": "principal-1",
+            "context_revision": 7,
+            "query": "3.11",
+            "earliest_occurred_at": null,
+            "latest_occurred_at": null,
+            "event_constraint_refs": [],
+            "environment_constraint_refs": [],
+            "task_phase_authority_refs": [],
+            "disclosure_context": {
+              "schema_version": 1,
+              "run_id": "run-1",
+              "subject": "principal-1",
+              "recipient": "user_self",
+              "recipient_id": "principal-1",
+              "intended_audience": "user_self",
+              "purpose": "task_execution",
+              "source": "authenticated_host",
+              "trust": "trusted_authority",
+              "generation": "current",
+              "authority_ref": "host-disclosure-1",
+              "reason_codes": [
+                "disclosure_minimum_necessary"
+              ]
+            },
+            "evidence_refs": [],
+            "budget": {
+              "max_items": 4,
+              "max_bytes": 4096,
+              "max_tokens": 1024,
+              "deadline_ms": 2000
+            },
+            "plan_id": "plan-1",
+            "context_hash": "79cf1d1cd36907e9840d0d231444ae9289c90d694220d94a3ad962ec0bc33a47",
+            "requested_memory_types": [
+              "semantic"
+            ],
+            "include_short_horizon": false,
+            "selector_domains": [
+              "memory_type"
+            ],
+            "retrieval_modes": [
+              "full_text"
+            ],
+            "task_scope_ids": [],
+            "entity_constraints": [],
+            "idempotency_key": "request-1",
+            "reason_codes": [
+              "recall_user_fact_dependency"
+            ]
+          }
+        },
+        "canonical_preimage": "{\"domain\":\"simple-harness-memory/typed-recall-request/v1\",\"payload\":{\"context\":{\"active_task_scope_id\":null,\"allowed_entity_constraints\":[],\"allowed_retrieval_modes\":[\"full_text\"],\"allowed_selector_domains\":[\"memory_type\"],\"allowed_task_scope_ids\":[],\"available_memory_types\":[\"semantic\"],\"budget\":{\"deadline_ms\":2000,\"max_bytes\":4096,\"max_items\":4,\"max_tokens\":1024},\"context_revision\":7,\"disclosure_context\":{\"authority_ref\":\"host-disclosure-1\",\"generation\":\"current\",\"intended_audience\":\"user_self\",\"purpose\":\"task_execution\",\"reason_codes\":[\"disclosure_minimum_necessary\"],\"recipient\":\"user_self\",\"recipient_id\":\"principal-1\",\"run_id\":\"run-1\",\"schema_version\":1,\"source\":\"authenticated_host\",\"subject\":\"principal-1\",\"trust\":\"trusted_authority\"},\"earliest_occurred_at\":null,\"environment_constraint_refs\":[],\"event_constraint_refs\":[],\"evidence_refs\":[],\"expires_at\":1788170700.0,\"latest_occurred_at\":null,\"procedure_applicability_fingerprints\":[],\"query\":\"3.11\",\"run_id\":\"run-1\",\"schema_version\":2,\"short_horizon_allowed\":false,\"subject\":\"principal-1\",\"task_phase_authority_refs\":[],\"turn_id\":\"turn-1\"},\"harness_protocol\":\"recall-v4\",\"memory_protocol\":\"typed-recall-v1\",\"plan\":{\"budget\":{\"deadline_ms\":2000,\"max_bytes\":4096,\"max_items\":4,\"max_tokens\":1024},\"context_hash\":\"79cf1d1cd36907e9840d0d231444ae9289c90d694220d94a3ad962ec0bc33a47\",\"context_revision\":7,\"disclosure_context\":{\"authority_ref\":\"host-disclosure-1\",\"generation\":\"current\",\"intended_audience\":\"user_self\",\"purpose\":\"task_execution\",\"reason_codes\":[\"disclosure_minimum_necessary\"],\"recipient\":\"user_self\",\"recipient_id\":\"principal-1\",\"run_id\":\"run-1\",\"schema_version\":1,\"source\":\"authenticated_host\",\"subject\":\"principal-1\",\"trust\":\"trusted_authority\"},\"earliest_occurred_at\":null,\"entity_constraints\":[],\"environment_constraint_refs\":[],\"event_constraint_refs\":[],\"evidence_refs\":[],\"idempotency_key\":\"request-1\",\"include_short_horizon\":false,\"latest_occurred_at\":null,\"plan_id\":\"plan-1\",\"query\":\"3.11\",\"reason_codes\":[\"recall_user_fact_dependency\"],\"requested_memory_types\":[\"semantic\"],\"retrieval_modes\":[\"full_text\"],\"run_id\":\"run-1\",\"schema_version\":2,\"selector_domains\":[\"memory_type\"],\"subject\":\"principal-1\",\"task_phase_authority_refs\":[],\"task_scope_ids\":[]},\"principal_id\":\"principal-1\"}}",
+        "expected_sha256": "49f834c86095bb51f6c7cdfc5989fc33f5c1297b463daf4efd7851cc656ac379"
+      },
+      {
+        "id": "receipt",
+        "domain": "simple-harness/recall-context-use-receipt/v1",
+        "payload": {
+          "schema_version": 1,
+          "receipt_id": "receipt-1",
+          "request_hash": "49f834c86095bb51f6c7cdfc5989fc33f5c1297b463daf4efd7851cc656ac379",
+          "subject": "principal-1",
+          "run_id": "run-1",
+          "turn_id": "turn-1",
+          "provider_attempt_id": "attempt-1",
+          "decision_id": "decision-1",
+          "decision_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+          "result_id": "result-1",
+          "result_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "item_bindings": [
+            {
+              "item_id": "item-1",
+              "item_hash": "3333333333333333333333333333333333333333333333333333333333333333"
+            }
+          ],
+          "snapshot_manifest_hash": "4444444444444444444444444444444444444444444444444444444444444444",
+          "authority_epoch": 1,
+          "policy_hash": "5555555555555555555555555555555555555555555555555555555555555555",
+          "authorized_at": 1788170400.0,
+          "expires_at": 1788170700.0
+        },
+        "canonical_preimage": "{\"domain\":\"simple-harness/recall-context-use-receipt/v1\",\"payload\":{\"authority_epoch\":1,\"authorized_at\":1788170400.0,\"decision_hash\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"decision_id\":\"decision-1\",\"expires_at\":1788170700.0,\"item_bindings\":[{\"item_hash\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"item_id\":\"item-1\"}],\"policy_hash\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"provider_attempt_id\":\"attempt-1\",\"receipt_id\":\"receipt-1\",\"request_hash\":\"49f834c86095bb51f6c7cdfc5989fc33f5c1297b463daf4efd7851cc656ac379\",\"result_hash\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"result_id\":\"result-1\",\"run_id\":\"run-1\",\"schema_version\":1,\"snapshot_manifest_hash\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"principal-1\",\"turn_id\":\"turn-1\"}}",
+        "expected_sha256": "4941b2effff255ba3889d7bedd3e32aa0c9acb2a8df3aceb90663ab988b2b0f4"
+      }
+    ]
   }
 }

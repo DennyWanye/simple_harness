@@ -1,7 +1,8 @@
 """Approved validation-side oracles. No SDK imports and no candidate-derived gold.
 
-The approved NUL preimage is intentionally NOT silently replaced with the SDK's
-JSON domain envelope. That newly discovered contract difference blocks admission.
+SDK hashes follow the existing JSON domain envelope. The prior proposal's NUL
+description was a factual error corrected under the user's alignment authority.
+Only the validation-side protected-state commitment continues to use NUL.
 """
 import hashlib
 import json
@@ -20,6 +21,10 @@ def hash_json(value):
 
 def domain_hash(domain, value):
     return hashlib.sha256(domain.encode() + b"\0" + canonical(value)).hexdigest()
+
+
+def sdk_domain_hash(domain, value):
+    return hash_json({"domain": domain, "payload": value})
 
 
 def semantic_source(subject_entity, predicate, object_value, qualifiers):

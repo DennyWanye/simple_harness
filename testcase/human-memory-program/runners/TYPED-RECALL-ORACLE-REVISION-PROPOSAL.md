@@ -1,8 +1,9 @@
+<!-- 2026-09-05 factual correction: SDK hashes E; state NUL unchanged; independently frozen vectors before candidate execution. -->
 # TC-HM-13 oracle 修订提案（A2 已批准，有界实施）
 
 日期：2026-09-05。状态：**§3–4 及两项 P2 已获用户明确批准；批准先于修改固化于 `38356e7f`。**
 批准记录见 `TYPED-RECALL-A2-APPROVAL-2026-09-05.md`。下文保留受审原文；当前 fixture rev4/layers rev2 实施范围以 `approved_oracle` 为准。
-执行前补充：提案 D 的 NUL preimage 与两个 SDK 已存在的 JSON domain envelope 不同；保留已批准公式，列 DOMAIN_PREIMAGE_DIFFERENCE，禁止按实际输出修 gold。Harness 候选依用户后续明确指令升级0.7.2/source2b842846/wheel53bded3f；Memory0.6.3不变。
+本轮纠正：SDK 的既有 hash 为 E=H(C({domain,payload}))；先前NUL为提案事实性错误，用户明确授权自主纠正，独立向量先于候选执行固定。§4测试state NUL保持。Harness 候选依用户后续明确指令升级0.7.2/source2b842846/wheel53bded3f；Memory0.6.3不变。
 当前首批执行及 blocker 见 [执行记录](TYPED-RECALL-A2-FIRST-BATCH.md)。下列详细方案/早期桥记录保留受审历史，实际 fixture 已按有界批准升 revision；原始 program acceptance 与 SDK 生产源码未由本分支修改。独立 S5b 工作继续。
 本次 runner 是执行/观察桥，**TC-HM-13 验收 PASS = 0**。桥回归与真实 API probe 分开计数。
 
@@ -54,7 +55,7 @@
 
 ## 3. canonical 定义与字段级修订
 
-统一记号：`C(x)` = UTF-8 JSON，键按字符串排序，separators `(',', ':')`，ensure_ascii=False，禁止 NaN/Infinity；数组保持契约顺序、null 保留，不自动丢字段。`H(x)=sha256(C(x))`。`D(domain,x)=sha256(UTF8(domain)+单个0x00+C(x))`，不是两个可见字符 `\\0`。有数值时间的 wire 使用公开序列化后的秒值，不把 ISO 字符串混进其 hash。
+统一记号：`C(x)` = UTF-8 JSON，键按字符串排序，separators `(',', ':')`，ensure_ascii=False，禁止 NaN/Infinity；数组保持契约顺序、null 保留，不自动丢字段。`H(x)=sha256(C(x))`。`E(domain,x)=H({domain:domain,payload:x})`，即 canonical JSON domain envelope。先前 NUL 写法为本提案事实性错误，现依用户已批准对齐既有公共契约的目的纠正；§4验证侧state仍用NUL。有数值时间的 wire 使用公开序列化后的秒值，不把 ISO 字符串混进其 hash。
 独立 oracle 必须在运行候选之前从受审输入/契约计算；禁止从实际返回值反填 gold。实际动态 ID/time 可以用命名变量绑定到真实公共返回值，再验证字段结构/关联/独立重算 hash，但不得因此声称匹配一个预冻结 literal gold。
 
 ### 3.1 source content 与 provider projection
@@ -83,10 +84,10 @@ plan = 完整 RecallPlan wire
 ```
 
 `RecallContext` 完整字段：`schema_version,run_id,subject,turn_id,context_revision,expires_at,query,active_task_scope_id,available_memory_types,short_horizon_allowed,allowed_selector_domains,allowed_retrieval_modes,allowed_task_scope_ids,allowed_entity_constraints,earliest_occurred_at,latest_occurred_at,event_constraint_refs,environment_constraint_refs,task_phase_authority_refs,procedure_applicability_fingerprints,disclosure_context,evidence_refs,budget`。
-`context_hash=D('simple-harness/recall-context/v2',context)`。
+`context_hash=E('simple-harness/recall-context/v2',context)`。
 
 `RecallPlan` 完整字段：`schema_version,plan_id,run_id,subject,context_hash,context_revision,query,requested_memory_types,include_short_horizon,selector_domains,retrieval_modes,task_scope_ids,entity_constraints,earliest_occurred_at,latest_occurred_at,event_constraint_refs,environment_constraint_refs,task_phase_authority_refs,disclosure_context,evidence_refs,budget,idempotency_key,reason_codes`。
-`plan_hash=D('simple-harness/recall-plan/v2',plan)`；派生 plan_hash 不回填进自身 wire。
+`plan_hash=E('simple-harness/recall-plan/v2',plan)`；派生 plan_hash 不回填进自身 wire。
 
 嵌套字段完整定义：
 
@@ -109,7 +110,7 @@ plan = 完整 RecallPlan wire
 旧 receipt oracle hash 的对象是事件描述：`event,before_epoch,after_epoch,before_policy_hash,after_policy_hash,evaluated_at,authorized_at,authority_expires_at,context_expires_at,use_at,decision_hash,result_hash,item_hashes,snapshot_hash,run_id,turn_id,continuation_id,provider_attempt,outcome`；它不是公开 use receipt。
 拟保留这些字段作为**场景/事件输入和事件观察**，与公开 receipt 分开命名，不再冒充其 hash。
 
-公开 `RecallContextUseReceiptV1` hash：`D('simple-harness/recall-context-use-receipt/v1',receipt_wire)`。
+公开 `RecallContextUseReceiptV1` hash：`E('simple-harness/recall-context-use-receipt/v1',receipt_wire)`。
 wire 完整字段：`schema_version,receipt_id,request_hash,subject,run_id,turn_id,provider_attempt_id,decision_id,decision_hash,result_id,result_hash,item_bindings,snapshot_manifest_hash,authority_epoch,policy_hash,authorized_at,expires_at`。
 `item_bindings` 为有序 `{item_id,item_hash}` 数组；不含 receipt_hash 自身。receipt 的 expires_at 不能被“authority_expires_at”同名替换。
 拒绝场景不能伪造 receipt。真实异常/拒绝 DTO、零 payload/candidate、epoch 与状态见证共同判定；reason 字符串只有受审的一对一对应可映射，未知 reason 直接 FAIL/BLOCKED。
