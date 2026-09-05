@@ -1,5 +1,12 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Memory0612 installed credential successor
+
+Last updated: 2026-09-05. Exact0612 fixes public tool-name credential false positives;
+64PASS8.76s startup/composition/Memory audit/preparation rejection. Installed SDK bytes match wheels/source, no source overlay.
+Native graph recovery and full operation coverage are not yet claimed.
+See [installed identity and checks](../plans/2026-09-05-s6-primary-preparation/SDK-0612-INSTALLED.md).
+
 ## 2026-09-05 Host Memory attempt and pre-SDK rejection audit leaf
 
 Coordinator combined06348031 with installed0611: audit/preparation/graph producer
