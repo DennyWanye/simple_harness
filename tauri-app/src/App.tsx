@@ -888,7 +888,7 @@ function App() {
           ) : undefined
         }
         chatProps={{ activeSid, secret, onSwitchSid: switchActiveSid }}
-        sessionProps={{ activeSid, onSwitchSid: switchActiveSid }}
+        primaryChannel={getControlChannel()}
         routeKind={routeKind}
         moreActions={{
           onMemory: () => setMemoryOpen(true),

@@ -22,7 +22,7 @@ import React, { useState } from "react";
 import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import type { WorkbenchView } from "./WorkbenchShell";
-import { SessionList, type SessionListProps } from "./SessionList";
+import type { SessionListProps } from "./SessionList";
 import { Icon, type IconName } from "./Icon";
 import {
   useControlWsState,
@@ -87,7 +87,7 @@ const NAV_ITEMS: ReadonlyArray<{
   icon: string;
   label: string;
 }> = [
-  { view: "chat", icon: "💬", label: "会话" },
+  { view: "chat", icon: "💬", label: "主对话" },
   { view: "skills", icon: "🧩", label: "技能中心" },
   { view: "artifacts", icon: "📄", label: "产物库" },
 ];
@@ -96,7 +96,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   view,
   onViewChange,
   connectionState,
-  sessionProps,
   routeKind = null,
   moreActions,
 }) => {
@@ -159,28 +158,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
             testId={`nav-${item.view}`}
             onClick={() => onViewChange(item.view)}
           />
-          {/* T7（WB-5）：「会话」项展开区 — chat 视图激活时展开会话列表。 */}
-          {item.view === "chat" && view === "chat" && sessionProps && (
-            <div
-              data-testid="sidebar-session-area"
-              style={{
-                flex: 1,
-                minHeight: 0,
-                display: "flex",
-                flexDirection: "column",
-                paddingLeft: tokens.space.sm,
-              }}
-            >
-              <SessionList {...sessionProps} />
-            </div>
-          )}
         </React.Fragment>
       ))}
 
-      {/* 弹性空隙 — 会话区未展开时把设置与状态徽章推到底部 */}
-      {!(view === "chat" && sessionProps) && (
-        <div style={{ flex: 1, minHeight: 0 }} />
-      )}
+      <div style={{ flex: 1, minHeight: 0 }} />
 
       {/* T13：「更多」折叠组 — 记忆/Trace/反馈（原 Toolbar 入口，
           点击行为=原浮层打开，能力不减；icon+tooltip 与原 Toolbar 同构）。 */}

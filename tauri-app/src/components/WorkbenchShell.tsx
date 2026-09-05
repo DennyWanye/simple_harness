@@ -30,7 +30,9 @@ import { tokens } from "../theme/tokens";
 import { dark } from "../theme/components";
 import { Sidebar, type RouteKind, type SidebarMoreActions } from "./Sidebar";
 import type { SessionListProps } from "./SessionList";
-import { ChatView, type ChatViewProps } from "../views/ChatView";
+import type { ChatViewProps } from "../views/ChatView";
+import { PrimaryChatView } from "../views/PrimaryChatView";
+import type { ControlChannel } from "../ws/ControlChannel";
 import { SkillsView, type SkillsViewProps } from "../views/SkillsView";
 import { ArtifactsView } from "../views/ArtifactsView";
 import { SettingsView, type SettingsViewProps } from "../views/SettingsView";
@@ -46,6 +48,7 @@ export interface WorkbenchShellProps {
   connectionState?: "disconnected" | "connecting" | "connected";
   /** 视图 props 通道 — 显式合同，见文件头注释。 */
   chatProps: ChatViewProps;
+  primaryChannel?: ControlChannel | null;
   skillsProps: SkillsViewProps;
   settingsProps: SettingsViewProps;
   /** T7（WB-5）：Sidebar「会话」展开区的会话列表 props。 */
@@ -61,10 +64,9 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
   onViewChange,
   banner,
   connectionState,
-  chatProps,
+  primaryChannel,
   skillsProps,
   settingsProps,
-  sessionProps,
   routeKind,
   moreActions,
 }) => {
@@ -88,7 +90,6 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
         view={view}
         onViewChange={onViewChange}
         connectionState={connectionState}
-        sessionProps={sessionProps}
         routeKind={routeKind}
         moreActions={moreActions}
       />
@@ -123,7 +124,7 @@ export const WorkbenchShell: React.FC<WorkbenchShellProps> = ({
             flexDirection: "column",
           }}
         >
-          <ChatView {...chatProps} />
+          <PrimaryChatView channel={primaryChannel} onOpenSettings={() => onViewChange("settings")} />
         </div>
         {view === "skills" && <SkillsView {...skillsProps} />}
         {view === "artifacts" && <ArtifactsView />}

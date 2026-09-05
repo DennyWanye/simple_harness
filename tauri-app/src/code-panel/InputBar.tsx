@@ -112,15 +112,27 @@ function filterCommands(all: SlashCommand[], q: string): SlashCommand[] {
   return [...prefix, ...substr];
 }
 
+export interface PrimaryComposer {
+  submit(text: string, attachments: Record<string, unknown>[]): Promise<void>;
+  stop?: () => void;
+  status?: string;
+}
+
 export function InputBar({
   placeholder,
   sessionId,
   disabled = false,
+  primary,
 }: {
   placeholder?: string;
   sessionId?: string;
   disabled?: boolean;
+  primary?: PrimaryComposer;
 } = {}) {
+  const submittingRef = useRef(false);
+  const [submitting, setSubmitting] = useState(false);
+  const inputDisabled = disabled || submitting;
+  const isPrimary = Boolean(primary);
   const [text, set_text] = useState("");
   const [attachments, setAttachments] = useState<TextAttachment[]>([]);
   const [attachmentError, setAttachmentError] = useState("");
@@ -143,7 +155,7 @@ export function InputBar({
   const selectedProjection = session?.selected_run_id
     ? session.run_projections?.[session.selected_run_id]
     : undefined;
-  const inflight =
+  const inflight = primary ? Boolean(primary.stop) :
     !!session?.inflight ||
     selectedProjection?.status === "starting" ||
     selectedProjection?.status === "running" ||
@@ -153,6 +165,7 @@ export function InputBar({
   // mounted. Fetch when the active Session changes; opening slash autocomplete
   // refreshes again so a newly installed global Skill is visible immediately.
   useEffect(() => {
+    if (isPrimary) return;
     let current = true;
     fetchCommands().then((commands) => {
       if (current) setAllCommands(commands);
@@ -160,7 +173,7 @@ export function InputBar({
       if (current) setAllCommands([]);
     });
     return () => { current = false; };
-  }, [sid]);
+  }, [sid, isPrimary]);
 
   useEffect(
     () => () => {
@@ -210,7 +223,7 @@ export function InputBar({
   );
 
   const send = useCallback(async () => {
-    if (disabled) return;
+    if (disabled || submittingRef.current) return;
     const t = text.trim();
     if (!t) return;
     const attachmentBlocks = attachments.map((attachment) => ({
@@ -220,6 +233,30 @@ export function InputBar({
       media_type: attachment.mediaType,
       size: attachment.size,
     }));
+    if (primary) {
+      if (t.startsWith("/")) {
+        setAttachmentError("主对话命令接线尚未就绪；草稿已保留。");
+        return;
+      }
+      submittingRef.current = true;
+      setSubmitting(true);
+      setAttachmentError("");
+      try {
+        await primary.submit(t, attachmentBlocks);
+        // Only a durable enqueue ACK may consume this exact submitted draft.
+        set_text((current) => current === text ? "" : current);
+        setAttachments((current) => current.filter((item) => !attachments.includes(item)));
+        setHistoryIdx(null);
+        setDropdownOpen(false);
+        setArgHintCmd(null);
+      } catch (error) {
+        setAttachmentError(error instanceof Error ? error.message : "发送失败，草稿已保留。");
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
+      return;
+    }
     if (!sid) {
       // 空态直发（保留会话 `default` 移除后的唯一入口）：没有当前会话时，
       // 让后端在同一条 chat_v2 里新建会话再投递 —— `new_session: true` 走
@@ -382,13 +419,13 @@ export function InputBar({
       setAttachments([]);
       setAttachmentError("");
     }
-  }, [text, sid, disabled, attachments]);
+  }, [text, sid, disabled, attachments, primary]);
 
   const onAttachmentChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(event.target.files ?? []);
       event.target.value = "";
-      if (disabled || files.length === 0) return;
+      if (inputDisabled || files.length === 0) return;
       const unsupported = files.find((file) => !isSupportedTextFile(file));
       if (unsupported) {
         setAttachmentError(`不支持 ${unsupported.name}：请选择文本文件`);
@@ -421,10 +458,11 @@ export function InputBar({
         setAttachmentError("读取附件失败，请重新选择");
       }
     },
-    [attachments, disabled],
+    [attachments, inputDisabled],
   );
 
   const stop = useCallback(() => {
+    if (primary) { primary.stop?.(); return; }
     if (!sid) return;
     controlWS.send({
       type: "chat_v2_interrupt",
@@ -435,14 +473,14 @@ export function InputBar({
           useSessionsStore.getState().sessions[sid]?.active_run_id,
       },
     });
-  }, [sid]);
+  }, [sid, primary]);
 
   const onChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value;
     set_text(v);
     setHistoryIdx(null);
     // 状态机：开/关 dropdown + arg hint
-    if (v.startsWith("/")) {
+    if (!primary && v.startsWith("/")) {
       // 每次开始一个新的 slash 输入都刷新本机全局 catalog。这样 Skill 在
       // 页面挂载后安装、或切换到显式目录的新 Session 时不会沿用旧缓存。
       if (v === "/" || allCommands.length === 0) {
@@ -547,7 +585,7 @@ export function InputBar({
     }
 
     // 历史浏览 — 空输入 + ↑ → 上一条 history
-    if (!dropdownOpen && e.key === "ArrowUp" && _slashInputHistory.length > 0) {
+    if (!primary && !dropdownOpen && e.key === "ArrowUp" && _slashInputHistory.length > 0) {
       const ta = e.currentTarget;
       const atTop = ta.selectionStart === 0 && ta.selectionEnd === 0;
       // 仅在空输入 或 光标在最顶且无 selection 时启 history
@@ -562,7 +600,7 @@ export function InputBar({
         return;
       }
     }
-    if (!dropdownOpen && e.key === "ArrowDown" && historyIdx !== null) {
+    if (!primary && !dropdownOpen && e.key === "ArrowDown" && historyIdx !== null) {
       e.preventDefault();
       const nextIdx = historyIdx + 1;
       if (nextIdx >= _slashInputHistory.length) {
@@ -581,7 +619,7 @@ export function InputBar({
       // 该 Run 的 FIFO，并在 Driver 释放安全边界后绑定。空文字时才停止。
       if (text.trim()) {
         void send();
-      } else if (session?.inflight) {
+      } else if (inflight) {
         stop();
       }
     }
@@ -595,6 +633,7 @@ export function InputBar({
       ? selectedProjection
       : undefined;
   const status = (() => {
+    if (primary) return submitting ? "等待入队确认" : primary.status ?? "等待主对话就绪";
     if (!selectedProjection) return session?.status ?? "idle";
     if (
       selectedProjection.inflight ||
@@ -658,6 +697,7 @@ export function InputBar({
               <button
                 type="button"
                 aria-label={`移除附件 ${attachment.name}`}
+                disabled={inputDisabled}
                 onClick={() =>
                   setAttachments((current) =>
                     current.filter((item) => item.id !== attachment.id),
@@ -714,7 +754,7 @@ export function InputBar({
             type="file"
             multiple
             accept=".txt,.md,.csv,.json,.yaml,.yml,.log,text/plain,text/markdown,text/csv,application/json,application/yaml"
-            disabled={disabled}
+            disabled={inputDisabled}
             onChange={(event) => void onAttachmentChange(event)}
             style={{ display: "none" }}
           />
@@ -726,7 +766,7 @@ export function InputBar({
           onCompositionStart={onCompositionStart}
           onCompositionEnd={onCompositionEnd}
           onKeyDown={onKeyDown}
-          disabled={disabled}
+          disabled={inputDisabled}
           placeholder={
             disabled && placeholder
               ? placeholder
@@ -762,7 +802,7 @@ export function InputBar({
           onClick={() =>
             text.trim() ? void send() : inflight ? stop() : undefined
           }
-          disabled={disabled || (!inflight && !text.trim())}
+          disabled={inputDisabled || (!inflight && !text.trim())}
           style={{
             alignSelf: "flex-end",
             height: INPUT_H,
@@ -819,7 +859,7 @@ export function InputBar({
               whiteSpace: "nowrap",
             }}
           >
-            Enter 发送 · Shift+Enter 换行 · 📎 文本附件 · / 命令
+            {primary ? "Enter 发送 · Shift+Enter 换行 · 附件与命令尚待接通" : "Enter 发送 · Shift+Enter 换行 · 📎 文本附件 · / 命令"}
           </span>
         </div>
       </div>
