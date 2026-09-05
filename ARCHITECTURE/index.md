@@ -1,5 +1,18 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 Installed H073 exact terminal identity leaf
+
+Last updated: 2026-09-06. Isolated Host candidate consumes exact H073 (wheel1a9ed5c9…)
+through public RunTerminalAuditEvidenceV1.matches and existing Host raw-SDK normalization.
+Every persisted page binds actual Run/event/full payload/state; legacy scoped evidence
+uses its original envelope and terminal gate. RULE terminal-run-v2 preserves all v1 jobs.
+Selective installed group21PASS2FAIL then necessary repairs2PASS; failures were a guarded
+fixture mutation and obsolete global error-count expectation, retained verbatim. Non-null
+committed-turn public head/receipt + same-cursor reopen, namespace negatives and late-source
+rejection passed. Peak owned RSS147MiB; no model/native/full suite. Independent fixed-source
+review pending; no main production switch or whole-operation completion claim.
+See [contract and measured results](../plans/2026-09-06-terminal-audit-identity/RESULTS.md).
+
 ## 2026-09-05 Host terminal audit candidate
 
 最后更新：2026-09-05。独立树 eaccab33 + 3e911c14 接入默认 terminal audit consumer；持久读取 attempt、

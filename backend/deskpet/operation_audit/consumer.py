@@ -250,6 +250,9 @@ class TerminalAuditConsumer:
                     await self.store.unavailable(claim, "source_binding_invalid")
                     continue
                 page = validated_page(result, claim, self.page_size)
+                if not await self.sources.verify_terminal_page(claim.job, page):
+                    await self.store.unavailable(claim, "terminal_identity_unverified")
+                    continue
             except AuditCapabilityUnavailable:
                 await self.store.unavailable(claim, "capability_unavailable")
                 continue

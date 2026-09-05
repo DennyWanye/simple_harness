@@ -23,14 +23,14 @@ from tests.execution.test_primary_foreground_runtime import Provider, build
 pytestmark = pytest.mark.asyncio
 
 
-async def setup(tmp_path, *, wake=None, ready=None, provider=None):
+async def setup(tmp_path, *, wake=None, ready=None, provider=None, memory=None):
     state = tmp_path / "state.db"
     epoch = await dispatch_startup_epoch(state, approved_fresh_lane=True)
     service = HumanMemoryHostServiceFactory(state, epoch).bind(local_owner_auth())
     await service.open_primary()
     provider = provider or Provider()
     runtime, stack, queue = await build(
-        tmp_path, state, provider, terminal_audit_wake=wake
+        tmp_path, state, provider, terminal_audit_wake=wake, memory=memory
     )
     if ready is not None:
         await ready(stack)
