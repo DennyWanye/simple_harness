@@ -75,9 +75,10 @@ async def read_run_dependencies(*, db, stack, sdk_run_id):
             raise ValueError("primary_dependencies_host_binding_missing")
         return None
     cursor = await db.execute(
-        "SELECT receipt_json FROM context_route_decisions WHERE sdk_run_id=? ORDER BY rowid",
+        "SELECT receipt_json,origin,provider_turn_ordinal FROM context_route_decisions WHERE sdk_run_id=? ORDER BY rowid",
         (sdk_run_id,))
-    routes = [json.loads(row[0]) for row in await cursor.fetchall()]
+    decisions = [(json.loads(row[0]), row[1], row[2]) for row in await cursor.fetchall()]
+    routes = [raw for raw, origin, _ in decisions if origin == "context_tool"]
     await cursor.close()
     start, effects = stack.read_primary_dependency_facts(sdk_run_id, tuple(r["effect_id"] for r in routes))
     metadata = start.get("input", {}).get("context_metadata", {})
@@ -89,7 +90,29 @@ async def read_run_dependencies(*, db, stack, sdk_run_id):
         raise ValueError("primary_dependencies_current_user_missing")
     recall = list(proof["recall"])
     from simple_harness.execution.context_authority import ContextRouteReceipt
+    from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
     from simple_harness import thaw_json
+    import uuid
+    for raw, origin, ordinal in decisions:
+        if origin == "context_tool":
+            continue
+        if origin == "no_recall":
+            # ProductRuntimeDecisionSink records an exact Host synthetic marker,
+            # not a tool effect. It carries no historical content or scope.
+            marker = f"no-recall:{sdk_run_id}:{ordinal}"
+            expected = ContextRouteReceipt(
+                receipt_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{marker}")),
+                run_id=sdk_run_id, raw_call_id=marker, effect_id=marker,
+                route=TaskScopeRoute.DIRECT_STANDALONE, task_scope_id=None,
+                binding_set_revision=None)
+            if raw != expected.to_json():
+                raise ValueError("primary_dependencies_no_recall_mismatch")
+        elif origin == "host_initial":
+            # Initial scope authority is not a tool effect either. Its historical
+            # snapshot still needs the scoped source contract; never exempt it.
+            raise ValueError("primary_dependencies_initial_scope_sources_missing")
+        else:
+            raise ValueError("primary_dependencies_origin_invalid")
     for raw, fact in zip(routes, effects, strict=True):
         route = ContextRouteReceipt.from_json(raw)
         if (fact is None or not fact.terminal or fact.result is None

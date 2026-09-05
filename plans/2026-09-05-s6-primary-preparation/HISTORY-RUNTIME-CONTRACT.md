@@ -250,3 +250,29 @@ evidence directory. Coordinator-owned runtime/API integration test was modified
 concurrently and was neither edited nor staged by this owner. Remaining scoped,
 other historical carrier and short functionality gaps still block production;
 these tests do not claim a native app startup or real Provider validation.
+
+### Origin correction and mandatory adjacent contracts
+
+Independent review rejected f1ecd984: its ALL-route effect interpretation treated
+Host no_recall synthetic markers as tool effects. The existing ordinary/reopen
+history testcase consequently hid the actual assistant. 21/71/10 earlier greens
+did not cover this direct dependency and do not clear that regression.
+
+The correction keeps all durable decisions but reads actual SDK effects only for
+context_tool. Host no_recall must equal the exact production marker/UUID/Run/turn/
+direct_standalone/no-scope/no-refs receipt; it cannot cover arbitrary historical
+content. host_initial is also not a tool effect and still requires the unresolved
+scoped source contract (no scope exemption). Unknown origin rejects.
+
+Installed066/no-overlay adjacent command:
+```sh
+PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-history/venv066/bin/python -m pytest backend/tests/execution/test_primary_foreground_runtime.py backend/tests/execution/test_primary_dynamic_resume_visibility.py backend/tests/execution/test_primary_history_outbound.py backend/tests/execution/test_primary_create_new_runtime.py backend/tests/sdk_adapters/test_primary_provider_preflight.py backend/tests/sdk_adapters/test_provider_timeout_is_a_safety_net.py .local-test-evidence/2026-09-05/primary-history/scoped_entry_probe.py -q -p no:cacheprovider
+```
+**41 passed, 1 failed in30.65s, exit1**. Sole failure is the correct initial-scoped
+expectation (COMPLETED/one physical send versus actual FAILED/zero). Ordinary None
+completion/inheritance/reopen, dynamic resume denial, typed recall binding and
+short rejection, late denied versus post-send unknown, and create_new effects
+pass. This is explicitly NOT an overall PASS or a releasable candidate. The
+coordinator's concurrent API integration testcase is not part of this command.
+Log `adjacent-contracts.log`, SHA256
+`e0f8fdaae8fbd06a0856322639dcbe44d8129373084e0218c9f6ff888ef01a51`.

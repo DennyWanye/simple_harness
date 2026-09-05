@@ -4,7 +4,7 @@
 
 2026-09-05 Primary history runtime隔离切片94项聚焦绿，**预先scoped ResumePackage首Provider仍有1项P1红**；
 后继动态ResumePackage漏发纠正21项聚焦绿；来源功能闭合及其他carrier完整性审计仍未完成。
-固定API/helper已入树，无helper加载层组合71绿；installed066窄验10绿。
+固定API/helper已入树；后继no_recall origin纠正，相邻合跑41绿/初始scoped1红，exit1。
 不得合主生产。见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
 
 2026-09-05 primary history API 隔离候选已接公开 Memory batch visibility，50项聚焦通过；

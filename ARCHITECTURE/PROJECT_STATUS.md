@@ -7,6 +7,8 @@
 
 隔离history树（base284ea40b）接shared primary visibility policy、真实start/terminal依赖、
 actual typed recall四元组与每次physical Provider前fresh check；cold USER/terminal S1无需先ingest。
+后继独立review发现no_recall marker被误当effect导致ordinary历史丢失，已按真实origin纠正；
+相邻契约合跑41 passed/1 failed（仅初始scoped），exit1，非整体PASS。
 原切片94 passed不证明动态历史来源完整；后继动态ResumePackage漏发已先红后绿，聚焦21 passed。
 每条实际route交叉验证SDKeffect/receipt；无来源证明的ResumePackage在delegate前拒绝，
 FAILED且第二次物理发送为0。真实create_new在逐次guard下完成effect/terminal；已发送unknown分类未改。
