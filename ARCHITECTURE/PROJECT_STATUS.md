@@ -1,5 +1,14 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Short worker bounded leaf
+
+最后更新：2026-09-06。隔离feat/short-index-worker源426db3bb限定ACCEPT：生产唯一lane
+默认登记完整两消息组、固定upper分页环绕、低seq晚delivery补入、ACK确认及reopen重放。
+新控制8PASS/6.20s、追加3PASS/4.81s、实际analysis/装配等最后6PASS/9.30s分别列示。
+全部测试进程退出；峰值355.4MiB，测试槽已交Carver。未执行主树合并、模型/native或SDK重构建。
+全subject projection成本/增量SDK口、多消息producer、新模型short协议仍是后继项；
+不标S3/S6/program完成。[交付及边界](../plans/2026-09-06-short-index-worker/RESULTS.md)。
+
 ## 2026-09-06 Selected short runtime bounded leaf
 
 最后更新：2026-09-06。隔离`feat/selected-short-runtime`/base49249dbd：actual factory

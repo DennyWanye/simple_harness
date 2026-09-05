@@ -1,5 +1,15 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 Short index worker 隔离叶子
+
+最后更新：2026-09-06。`feat/short-index-worker`/basefe006f59，源426db3bb获Dirac限定ACCEPT。
+默认复用唯一MemoryAnalysisLane：outbox→whole-group short step→analysis；固定upper的
+turn keyset环绕，晚delivered旧组重查、坏组不阻合法后组；仅实际registration+projection ACK
+进入有限内存缓存，manager reopen清空。主退出在borrowers停止后关闭v7 owner。
+分批8PASS/6.20s、3PASS/4.81s、相邻6PASS/9.30s；非相加质量分。无模型/native或SDK制品改动。
+SDK0612 projection仍全subject扫描，Host16不等于总成本/P99界；多消息tool来源、新模型short协议
+仍未交付，S3/S6/program仍未完成。[契约和实际证据](../plans/2026-09-06-short-index-worker/RESULTS.md)。
+
 ## 2026-09-06 Selected short runtime 隔离叶子
 
 最后更新：2026-09-06。`feat/selected-short-runtime` 从49249dbd接入实际factory共享
