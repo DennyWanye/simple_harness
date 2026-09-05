@@ -50,7 +50,7 @@ async def recalled(menv, query, ordinal):
 async def test_actual_semantic_revise_and_reopen(tmp_path, mode):
     chinese = mode.startswith('zh_')
     ambiguous = mode in {'ambiguous', 'zh_alias_collision'}
-    predicate = 'unregistered_beverage_slot' if mode == 'zh_unknown_slot' else 'preferred_drink'
+    predicate = 'unregistered_beverage_slot' if mode == 'zh_unknown_slot' else ('drink_preference' if chinese else 'preferred_drink')
     old_value, new_value = ('无糖乌龙茶', '柠檬水') if chinese else ('coffee', 'tea')
     text = '我的默认饮品偏好是无糖乌龙茶' if chinese else 'My preferred drink is coffee.'
     env = await mh.bound_turn_run(tmp_path, 'origin-run', text=text)
@@ -58,7 +58,7 @@ async def test_actual_semantic_revise_and_reopen(tmp_path, mode):
     originals = [mh.semantic_op(mh.item_id(env),text,predicate=predicate,object_value=old_value)]
     if ambiguous:
         originals.append({**originals[0], 'operation_id':'duplicate-fact', 'semantic':{**originals[0]['semantic'], 'qualifiers':['evening']}})
-    if mode == 'zh_alias_collision': originals[1]['semantic']['predicate'] = 'drink_preference'
+    if mode == 'zh_alias_collision': originals[1]['semantic']['predicate'] = 'preferred_drink'
     adapter = ch.FakeAdapter([mh.proposal_call(originals)])
     menv = memory_env(env, adapter)
     try:

@@ -119,3 +119,12 @@ A quote or negative can retrieve an actual candidate; independent fullmatch inte
 compiler and issuer checks still reject mutation. Fresh source visibility is checked
 again immediately before delegate invocation; a Host ProviderRequestRejectedError
 subclass is thrown before transport on denial. Sent timeout/cancel taxonomy is untouched.
+
+## Canonical naming for new supported-slot CREATE
+
+The v2 analysis system prompt now specifies `subject_entity=user:self` and
+`predicate=drink_preference` for newly created user drink/default-drink preferences.
+The value must come from evidence; no particular drink is preselected. This is a
+product vocabulary convention. General CREATE remains freeform; old candidates are
+not renamed and REVISE must preserve their actual predicate. No new alias, target
+lookup or grant is introduced. Model compliance still requires the future native loop.
