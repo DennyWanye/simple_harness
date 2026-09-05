@@ -62,3 +62,9 @@ Additional native evidence, relative to main checkout's ignored human-memory-res
 | primary-ui-h_39qzgm/second-turn-start-context.json | fb31c013ae01bf96fece5939ef77d5c90e623159e3b5179b35463165ecb0ec7b |
 | primary-ui-yteyuzxm/catalog-failure.json | 014d086aed1c24e40f1a2c4d7f001121a770bab215d355045f8960152775abff |
 | primary-ui-yteyuzxm/03-project-result.png | 1555245a5fcc5b5ecc9965bfcf35c299378148762ecd6138f6c64f63ad319ff4 |
+
+## Current-route guidance after catalog repair
+
+Native c283e51c did expose all nine direct tools, including the three Context controls, but the model made no tool call and repeated the previous missing-location reply. New request Run `defcef60-9dc1-5ea5-aad0-0fd70b8fe2b3` completed without creating a Scope; this CREATE_NEW attempt remains **FAIL**, independently of the repaired catalog. Native `primary-ui-ccwhd61e/project-no-route.json` SHA-256 `f44c9fbdd11529b54d12ba4ed1c27f43454c8018f920e3c21bcb73fb3005d36b` retains the exact nine direct names and invocation result. An initial native paste/Return did not enqueue; the visible draft was then verified and sent by its actual button, resulting in this single new invocation.
+
+The primary system instruction now explains the existing route: for a requested new project, call create_new with its title; the Host selects the workspace and the current tool result determines whether a user location/approval is required. Historical capability failures are historical observations, not current authorization. Binding/effect checks are unchanged. Real SDK/SQLite primary runtime regression: **16 passed in 11.37s**; actual model behavior must still be retested.

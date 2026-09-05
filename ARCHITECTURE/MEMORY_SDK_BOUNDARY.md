@@ -6,7 +6,8 @@
 
 真实原生普通回复/重启追问通过；新项目请求在 `607acc7d` 暴露三项 Context 控制被
 requires_project 默认值过滤，零 Scope/文件。仅三项 Host 注册补 safe，真实生产 composition
-红→绿与相邻验证 **34 passed**；修后原生复验仍待进行。原始失败与命令/哈希见
+红→绿与相邻验证 **34 passed**；修后原生目录已完整，但模型仍沿旧历史要求目录、零工具调用。
+已补主对话当前路由指引，原运行回归 **16 passed**；项目请求原生仍待新候选复验。原始失败与命令/哈希见
 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
 
 ## 2026-09-05 主对话隔离组合验证
