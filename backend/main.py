@@ -3267,6 +3267,9 @@ async def lifespan(app: FastAPI):
             candidate, purpose, principal=runtime.principal(),
         )
 
+    from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
+
+    memory_display_invalidation = MemoryDisplayInvalidation(_broadcast_control)
     service_context.register(
         "human_memory_host_service_factory",
         (
@@ -3278,6 +3281,7 @@ async def lifespan(app: FastAPI):
                 run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
                 decision_ingress_getter=lambda: _sdk_ingress,
                 cognitive_runtime_getter=lambda: service_context.get("human_memory_v7_runtime"),
+                display_invalidation=memory_display_invalidation,
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None
@@ -9023,6 +9027,9 @@ def _activate_memory_analysis_lane() -> None:
             executor=executor,
             config=build_worker_config(provider_id=provider_id, model_id=model_id, model_config_hash=config_hash),
             worker_id=f"deskpet-memory-analysis:{os.getpid()}",
+            display_invalidation=getattr(
+                service_context.get("human_memory_host_service_factory"), "display_invalidation", None
+            ),
         )
         _memory_analysis_lane.start()
         logger.info("memory_analysis_lane_started")
