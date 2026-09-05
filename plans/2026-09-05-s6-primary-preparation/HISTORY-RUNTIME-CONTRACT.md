@@ -276,3 +276,50 @@ pass. This is explicitly NOT an overall PASS or a releasable candidate. The
 coordinator's concurrent API integration testcase is not part of this command.
 Log `adjacent-contracts.log`, SHA256
 `e0f8fdaae8fbd06a0856322639dcbe44d8129373084e0218c9f6ff888ef01a51`.
+
+### 067 runtime bridge and new-message composition (2026-09-05)
+
+Scope restoration is fixed at8e896472 (separate review). WAITING invalidation is
+61436ccc, unit recovery + actual primary32green. New-only terminal message S1
+hook3918b55d formally consumes producer7fe6b178 as9e2be493; high-level verifier
+64dea62c is c53effc6, and marker/prior-read-only hook is c6533e6e. Existing terminal
+observations are never backfilled; marked new eligible groups missing children
+raise rather than repair. Observer/message writes are atomic, not the later
+foreground terminal receipt transaction. Hegel owns11group/registration/fault
+acceptance. This tree's new-message/runtime/API adjacent33passed45.03s.
+
+Runtime now accepts closed proof v1 and v2. Non-short newly built proof may remain
+v1; an explicitly supplied v2 (including empty short list) is never downgraded.
+Exact short is `(audit_id,chunk_ref,content_hash)`; actual UTF8 payload bytes and
+route recall_refs must match. No conversion to typed result/item identity. Scope
+manifests, initial start, inherited terminal and producer snapshots preserve all
+short entries and original schema semantics. No old archive/hash rewriting.
+
+RecallLanes.short_history_dependencies accepts the Host indexing service's actual
+roots proof, freezes it deeply, and projects a separate history_source_dependencies
+next to each exact short history_binding. Missing Host roots rejects ordinary
+outbound use. The SDK triple does not magically prove complete Host selected-item
+lineage; Hegel's initial conservative all-indexed-roots contract is a separate
+production integration, not claimed complete by these parser/negative tests.
+Main has not yet injected an indexing-service getter into HumanMemoryV7Runtime.
+
+The DTO transport test found a real mutable-source alias (1failed6passed before
+fix); the frozen copy fix plus codec, actual SQLite/SDK forged-audit/byte/source
+denials, existing scope/primary and shared API tests yielded:
+
+```sh
+PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-history/venv067/bin/python -m pytest backend/tests/execution/test_primary_dependency_v2.py backend/tests/execution/test_primary_history_outbound.py backend/tests/execution/test_scope_disclosure_runtime.py backend/tests/execution/test_primary_foreground_runtime.py backend/tests/memory/test_primary_short_visibility.py backend/tests/memory/test_primary_runtime_api_integration.py -q -p no:cacheprovider
+```
+
+**60 passed in54.31s, exit0**. This is not a real selected Host short-pipeline
+positive or native Provider/UI result. Shared helper/API7dcfce8b and coordinator
+2299ef55 tests were consumed unchanged. Exact independently installed Memory0.6.7
+sourcefa6badd086d089e3e1752df45993ce0ccba98377, wheel SHA256
+7dd224c29923ab1346a78bb8529d9426559bb1e3a38b8c0964f57cc8687e9c3d;
+interpreter imports its own067 site-packages and only borrows Host test/Harness
+packages read-only via.pth. No SDK/source PYTHONPATH overlay or main install edits.
+066 earlier results remain explicitly066; they are not067 evidence.
+
+Ignored logs under `.local-test-evidence/2026-09-05/primary-history/`:
+- runtime-v2-codec.log (alias red) SHA256 7c236ec52f9f94e49ad3f0767cdb0efac4ab7276fa8dff02f58770483d7d0679
+- runtime-v2-combined.log SHA256 b9bcd48e8682f149a2598e84e3932d63447f9e13f2895dba413e52996c9e5e79

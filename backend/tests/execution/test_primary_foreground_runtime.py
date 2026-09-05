@@ -88,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -108,15 +108,18 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     specs = [dict(name=name, description=name, input_schema={"type": "object", "properties": {}})
              for name in ("tool_search", "tool_describe", "tool_activate")]
     if dynamic:
-        from deskpet.sdk_adapters.context_route import CONTEXT_ROUTE_SCHEMA
+        from deskpet.sdk_adapters.context_route import CONTEXT_ROUTE_SCHEMA, TASK_SCOPE_SEARCH_SCHEMA
         from deskpet.sdk_adapters.task_scope_mutation import TASK_SCOPE_UPDATE_SCHEMA
         from tests.sdk_adapters.s5b_effect_gate_harness import WRITE_FILE_SCHEMA
         specs.extend(dict(name=name, description=name, input_schema=schema) for name, schema in (
-            ("context_route", CONTEXT_ROUTE_SCHEMA), ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA),
+            ("context_route", CONTEXT_ROUTE_SCHEMA), ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA), ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA),
             ("write_file", WRITE_FILE_SCHEMA)))
         for spec in specs:
             if spec["name"].startswith("tool_"):
                 spec["input_schema"] = {"type": "object", "properties": {key: {"type": "string"} for key in ("query", "capability_id", "schema_hash", "describe_nonce")}}
+    if page_in_store is not None:
+        from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
+        specs.append(dict(name="context_page_in", description="Load exact context", input_schema=CONTEXT_PAGE_IN_SCHEMA["parameters"]))
     inventory = tuple(ProductToolInventoryEntry(name=s["name"], dispatch_kind="control", permission_category="read_file",
                         source="fixture", version="v1", execution_identity="fixture",
                         projectless_admission="requires_project" if s["name"] == "write_file" else "safe") for s in specs)
@@ -126,8 +129,11 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         async def authorize(self, prepared):
             if prepared.call.name == "write_file":
                 authority = registry.resolve(prepared.run_id)
-                assert authority.task_work_context.task_scope_id is None
-                assert authority.task_work_context.workspace_root is None
+                with sqlite3.connect(state_path) as db:
+                    initial_scope = db.execute("SELECT r.task_scope_id FROM foreground_runs r JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id WHERE b.sdk_run_id=?", (prepared.run_id.value,)).fetchone()[0]
+                assert authority.task_work_context.task_scope_id == initial_scope
+                if initial_scope is None:
+                    assert authority.task_work_context.workspace_root is None
                 context = authority.execution_context(call_id=prepared.call.call_id.value, effect_id=prepared.effect_id.value)
                 assert context.write_scope_root is not None
                 assert context.binding_epoch == 1
@@ -144,7 +150,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store)
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
         result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
@@ -174,6 +180,9 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
             closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
         ))
+    from deskpet.task_scope.disclosure import ScopeDisclosureReader
+    scope_reader = ScopeDisclosureReader(state_path, stack_getter=lambda: stack,
+        policy_factory=lambda _: history_policy)
     expected = build_candidate_identity()
     origin = json.loads(metadata.distribution("simple-harness-sdk").read_text("direct_url.json"))["url"]
     # Reuse the exact installed 0.7.2 wheel path; normal production verifier
@@ -212,7 +221,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject, checker)
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
-        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy),
+        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
         provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate,
@@ -598,7 +607,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -616,7 +625,9 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
         service_factory_getter=lambda: factory,
         binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
         binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context,
-        recall_executor=recall_executor)
+        recall_executor=recall_executor,
+        scope_disclosure_reader=None if scope_reader is None else scope_reader.read,
+        producer_dependencies_reader=None if scope_reader is None else scope_reader.producer_dependencies)
     closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)
     tools = ProductToolsAdapter(execution_identities={i.name: "fixture" for i in inventory})
     tools.bind_run_authorities(authorities)
@@ -624,6 +635,12 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
         async def invoke(args, context, name=item.name):
             if name == "context_route":
                 result = await route.handle_context_route(args)
+            elif name == "context_page_in":
+                from deskpet.tools.context_page_in_tools import build_context_page_in_handler
+                result = json.loads(await build_context_page_in_handler(page_in_store,
+                    execution_context_getter=execution_context)(dict(args), ""))
+            elif name == "task_scope_search":
+                result = await route.handle_task_scope_search(args)
             elif name == "task_scope_update":
                 return await closure.handle_task_scope_update(args)
             elif name == "tool_search":

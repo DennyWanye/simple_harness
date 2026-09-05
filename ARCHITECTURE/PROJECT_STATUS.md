@@ -1,5 +1,16 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Source/auth/action combination verified
+
+Fixed e31c6efd source index closes the independent unscoped-search/late-forget P1;
+combined with exact SDK decisions, source-aware history, schema47 and action evidence:
+**51 passed** on installed067. Only test-fixture signature required merge resolution.
+The separate f9cbb7c8 native candidate also passed expanded visible authorization
+by real mouse click; this combined tree has not run native. Cognitive UI/SDK suppress
+and selected-source indexing remain incomplete; no main cutover or full program PASS.
+See [combined evidence and boundaries](../plans/2026-09-05-primary-effect-sources/COMBINED.md).
+
+
 > **最后更新**：2026-09-05
 
 ## 2026-09-05 Cognitive action evidence callback prepared
@@ -9,7 +20,7 @@
 真实Host SQLite四项通过，无新Run/分析outbox；尚未接认知面板/SDK suppress/真实UI，
 不是已默认可用的忘记能力。接口和边界见[ACTION-EVIDENCE](../plans/2026-09-05-primary-cognitive-controls/ACTION-EVIDENCE.md)。
 
-## 2026-09-05 Primary 授权 portal 布局候选（native 视觉待复验）
+## 2026-09-05 Primary 授权 portal 布局候选（历史记录；后继 native 见顶部）
 
 decisions 树从1862e383修 Primary modal 的 DOM 挂载层级与隐藏视图 Escape 生命周期，
 不改后端/SDK/授权语义。实际 WebKit 两种窗口尺寸布局通过；前端59、backend decision18、
@@ -67,6 +78,44 @@ requires_project 默认值过滤，零 Scope/文件。仅三项 Host 注册补 s
 但停在 SDK 工具授权等待，Primary 未显示授权卡，仍零 Scope/文件。真实点击停止后 Host STOPPED、
 SDK cancelled、待决授权 cancelled，界面回空闲；仅此等待状态的停止通过。原始失败与命令/哈希见
 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
+
+## 2026-09-05 Primary source effect index v47 — reviewed local candidate
+
+8e896472 independent P1 confirmed: unscoped search could escape source checks when
+TaskScope reservations were absent. A Host append-only exact SDK effect identity
+index now records real handler entry under the captured foreground lease; Provider
+preflight reads actual SDK results and preserves search→create dependency prefixes.
+No scope grant/watermark, SDK change or old evidence restamp. Default schema is47;
+coordinator owns deferred S5c's explicit48 remap (historical47 AC remains historical).
+Fixed real late-forget counterexample is green; adjacent search/scope17, page-in1,
+startup/create32 and migration11 passed. Independent fixed-counterexample review accepted e31c6efd; no
+main/native or full privacy completion claim. Ordinary page-in lacking source proof
+rejects; generic page-in source projection and short source-only admission remain open.
+Details and raw-log hashes: [source migration contract](../plans/2026-09-05-primary-effect-sources/SOURCE-MIGRATION-CONTRACT.md).
+
+## 2026-09-05 Runtime v2 / new message producer combination
+
+运行层保持v1可读并保真v2 short triple/actual UTF8及Host source roots；缺source proof或伪audit
+拒出站，不伪typed。深冻结来源快照修复先红后绿；installed exact067（7dd224…）相邻60 passed。
+首次terminal observer同tx追加真实message S1，marked replay只验证不修复，旧无marker不补造；
+helper模块已正式入树。Hegel11group登记/selected来源闭合仍另线，不把此60绿称Host short pipeline
+或native完成。精确命令、版本和证据见[运行契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
+## 2026-09-05 Waiting state invalidation
+
+Foreground在BOUND_WAITING reconciliation提交后调用现有空payload、有界非阻塞刷新。
+回归刻意等此前SDKbind通知完成，旧代码1红，修复后runtime/真实primary相邻32 passed16.31s。
+这是状态通知证据，真实授权卡/decision UI组合由另一所有者验证。原始日志位于
+`.local-test-evidence/2026-09-05/primary-history/waiting-notify-{red,green}.log`（ignored）。
+
+## 2026-09-05 Scoped ordinary projection restoration candidate
+
+初始scoped、动态resume/search共用确定派生manifest，无新ledger。真实CREATE_NEW操作前
+依赖快照+actualSDK effect/route绑定保留title/goal；旧/抑制文字明确fieldgap，仅结构+真实
+binding+当前USER继续。实际保留字节与原fullview hash分开，start/dependency每次出站重验。
+相邻96 passed（含真实MEMORY-only抑制后fileeffect/terminal）、最终start负例2 passed；
+初始scoped旧功能红已恢复。未知旧mutation/checkpoint文本仍不声称可恢复，short登记另线，
+等待独立review与主组合，不称native/program完成。详见[来源契约](../plans/2026-09-05-primary-resume-sources/CONTRACT.md)。
 
 ## 2026-09-05 短期来源的历史读取契约
 

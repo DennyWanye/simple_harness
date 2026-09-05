@@ -1,6 +1,38 @@
 # ARCHITECTURE 索引
 
+## 2026-09-05 Source/auth/action combination verified
+
+Fixed e31c6efd source index closes the independent unscoped-search/late-forget P1;
+combined with exact SDK decisions, source-aware history, schema47 and action evidence:
+**51 passed** on installed067. Only test-fixture signature required merge resolution.
+The separate f9cbb7c8 native candidate also passed expanded visible authorization
+by real mouse click; this combined tree has not run native. Cognitive UI/SDK suppress
+and selected-source indexing remain incomplete; no main cutover or full program PASS.
+See [combined evidence and boundaries](../plans/2026-09-05-primary-effect-sources/COMBINED.md).
+
+
+## 2026-09-05 Primary source effect index v47 — reviewed local candidate
+
+8e896472 independent P1 confirmed: unscoped search could escape source checks when
+TaskScope reservations were absent. A Host append-only exact SDK effect identity
+index now records real handler entry under the captured foreground lease; Provider
+preflight reads actual SDK results and preserves search→create dependency prefixes.
+No scope grant/watermark, SDK change or old evidence restamp. Default schema is47;
+coordinator owns deferred S5c's explicit48 remap (historical47 AC remains historical).
+Fixed real late-forget counterexample is green; adjacent search/scope17, page-in1,
+startup/create32 and migration11 passed. Independent fixed-counterexample review accepted e31c6efd; no
+main/native or full privacy completion claim. Ordinary page-in lacking source proof
+rejects; generic page-in source projection and short source-only admission remain open.
+Details and raw-log hashes: [source migration contract](../plans/2026-09-05-primary-effect-sources/SOURCE-MIGRATION-CONTRACT.md).
+
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
+
+2026-09-05 installed067运行层v2保真/严格拒绝与new-message producer组合60绿；旧archive不改，
+真实short登记/选中来源由Hegel另线验证，不称native/program完成。见[运行契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
+2026-09-05 scoped普通投影恢复候选：initial/resume/search实际manifest、MEMORY-only抑制后
+结构effect/terminal相邻96绿；最终start字节负例2绿。原initialscoped红已恢复，仍待独立review，
+不声称所有旧producer/short/native完成。见[来源契约](../plans/2026-09-05-primary-resume-sources/CONTRACT.md)。
 
 2026-09-05 Primary history runtime隔离切片94项聚焦绿，**预先scoped ResumePackage首Provider仍有1项P1红**；
 后继动态ResumePackage漏发纠正21项聚焦绿；来源功能闭合及其他carrier完整性审计仍未完成。

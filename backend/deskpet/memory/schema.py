@@ -38,6 +38,8 @@ from deskpet.memory.migrator import (
     DEFAULT_MIGRATIONS_DIR,
     EFFECT_CLOSURE_MIGRATION,
     EFFECT_CLOSURE_SCHEMA_VERSION,
+    PRIMARY_EFFECT_SOURCES_MIGRATION,
+    PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION,
     FOREGROUND_EXECUTION_MIGRATION,
     FOREGROUND_EXECUTION_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION,
@@ -314,6 +316,7 @@ def _validate_s4_migration_chain(
         # `migrator.repair_context_route_registration` before this check.
         (CONTEXT_ROUTE_MIGRATION, CONTEXT_ROUTE_SCHEMA_VERSION),
         (EFFECT_CLOSURE_MIGRATION, EFFECT_CLOSURE_SCHEMA_VERSION),
+        (PRIMARY_EFFECT_SOURCES_MIGRATION, PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:
@@ -344,6 +347,36 @@ def _validate_s4_migration_chain(
             raise HumanMemoryProgramEpochError(
                 "human_memory_migration_chain_invalid"
             )
+    if expected_user_version >= PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION:
+        _validate_primary_effect_index(db_path)
+
+
+def _validate_primary_effect_index(db_path: Path) -> None:
+    """A migration receipt alone cannot prove the actual source index exists."""
+    try:
+        with sqlite3.connect(":memory:") as expected, sqlite3.connect(
+            f"file:{db_path.resolve()}?mode=ro", uri=True
+        ) as actual:
+            expected.executescript((DEFAULT_MIGRATIONS_DIR / PRIMARY_EFFECT_SOURCES_MIGRATION).read_text())
+            for kind, name, sql in expected.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL AND name<>'sqlite_sequence'"
+            ):
+                row = actual.execute("SELECT type,sql FROM sqlite_master WHERE name=?", (name,)).fetchone()
+                if row != (kind, sql):
+                    raise ValueError("source index schema differs")
+            registration = actual.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name='primary_effect_identities'").fetchone()
+            if registration != ("A",):
+                raise ValueError("source index recovery registration missing")
+            for operation in ("insert", "update", "delete"):
+                name = f"hm_recovery_fence_primary_effect_identities_{operation}"
+                row = actual.execute("SELECT sql FROM sqlite_master WHERE name=? AND type='trigger'", (name,)).fetchone()
+                expected_sql = (f'CREATE TRIGGER "{name}" BEFORE {operation.upper()} ON "primary_effect_identities" '
+                    "WHEN (SELECT state FROM human_memory_recovery_fence WHERE singleton=1)<>'OPEN' "
+                    "BEGIN SELECT RAISE(ABORT,'human_memory_ingress_fenced'); END")
+                if row != (expected_sql,):
+                    raise ValueError("source index recovery fence differs")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HumanMemoryProgramEpochError("primary_effect_index_schema_invalid") from exc
 
 
 def _validate_recovery_marker(
@@ -599,6 +632,10 @@ async def initialize_human_memory_program_state_db(
     path.parent.mkdir(parents=True, exist_ok=True)
     async with _human_memory_program_lock(path):
         current = await read_user_version(path)
+        if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+            raise HumanMemoryProgramEpochError(
+                "human_memory_program_future_database_unsupported"
+            )
         bootstrap = _has_bootstrap_marker(path)
         if current >= CONTEXT_ROUTE_SCHEMA_VERSION:
             # S5b Task 6: 037 registration backfill for databases that applied
@@ -626,10 +663,6 @@ async def initialize_human_memory_program_state_db(
                 path, expected_user_version=HUMAN_MEMORY_TARGET_SCHEMA_VERSION
             )
             return
-        if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
-            raise HumanMemoryProgramEpochError(
-                "human_memory_program_future_database_unsupported"
-            )
         if current == HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION:
             _validate_human_memory_program_marker(
                 path, expected_user_version=HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION

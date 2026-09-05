@@ -29,6 +29,8 @@ registers its owner before the first read.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 import asyncio
 import hashlib
 import time
@@ -364,6 +366,14 @@ class RecallLanes:
 
     execution: Any
     short_horizon: Any | None
+    short_history_dependencies: Mapping[str, Any] | None = None
+
+    def __post_init__(self):
+        if self.short_history_dependencies is not None:
+            from simple_harness import freeze_json
+            from deskpet.execution.primary_dependencies import parse_dependencies
+            object.__setattr__(self, "short_history_dependencies",
+                freeze_json(parse_dependencies(self.short_history_dependencies)))
 
     @property
     def degradation_codes(self) -> tuple[str, ...]:
@@ -468,6 +478,10 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 "bytes": bytes_len,
                 "tokens": tokens,
                 "lane": "short_horizon",
+                "history_binding": {"audit_id": short_horizon.audit_id,
+                    "chunk_ref": hit.chunk_ref, "content_hash": hit.content_hash},
+                **({"history_source_dependencies": thaw_json(lanes.short_history_dependencies)}
+                   if getattr(lanes, "short_history_dependencies", None) is not None else {}),
             }
         )
     return tuple(fragments)

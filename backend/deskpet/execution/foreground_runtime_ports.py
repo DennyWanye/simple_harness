@@ -122,6 +122,7 @@ class TaskScopeForegroundContextPort:
         sdk_run_id: str,
         provider: FrozenProviderAuthority,
         tools: FrozenToolAuthority,
+        ordinary_projection: Mapping[str, object] | None = None,
     ) -> FrozenContextAuthority:
         candidate = claimed.candidate
         if candidate.subject != self._subject or candidate.task_scope_id is None:
@@ -168,7 +169,7 @@ class TaskScopeForegroundContextPort:
             text=_turn_text(candidate),
             provider_binding=provider_binding,
             catalog=tools.catalog,
-            project_task_snapshot=opened.resume_package,
+            project_task_snapshot=opened.resume_package if ordinary_projection is None else ordinary_projection,
         )
         private = snapshot.private_record()
         messages = tuple(

@@ -98,8 +98,12 @@ class FrozenContextAuthority:
     current_text: str
     resume_refs: tuple[str, ...]
     visibility_dependencies: Mapping[str, object] | None = None
+    scope_disclosure: Mapping[str, object] | None = None
 
     def __post_init__(self):
+        if self.scope_disclosure is not None:
+            from simple_harness import freeze_json, thaw_json
+            object.__setattr__(self, "scope_disclosure", freeze_json(thaw_json(self.scope_disclosure)))
         if self.visibility_dependencies is not None:
             from simple_harness import freeze_json
             from deskpet.execution.primary_dependencies import parse_dependencies
@@ -769,6 +773,8 @@ class ForegroundRuntimeExecutionAuthority:
                 "request_id": request_id,
                 "task_scope_id": candidate.task_scope_id,
                 "visibility_dependencies": thaw_json(context.visibility_dependencies),
+                "primary_effect_index_version": 1,
+                "scope_disclosure": thaw_json(context.scope_disclosure),
                 "context_authority_ref": context.authority_ref,
                 "context_authority_hash": context.authority_hash,
                 "provider_authority_ref": bound_provider.authority_ref,
