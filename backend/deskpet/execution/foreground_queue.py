@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
 from deskpet.memory.writer_fence import human_memory_connection
@@ -33,6 +34,13 @@ from deskpet.task_scope.protocol import (
     identifier,
     reject_private_payload,
 )
+
+if TYPE_CHECKING:
+    from deskpet.memory.human_memory_program import (
+        SanitizedEvidenceEnvelopeLike,
+        SanitizedEvidenceReceiptLike,
+    )
+
 
 TERMINAL_STATES = frozenset({"COMPLETED", "FAILED", "STOPPED", "CANCELLED"})
 FOREGROUND_SCHEDULER_KIND = "foreground_scheduler"
@@ -365,6 +373,9 @@ class ForegroundQueueStore:
         idempotency_key: str,
         turn_payload: Mapping[str, object],
         task_scope_id: str | None = None,
+        admitted_evidence_pair: tuple[
+            SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike
+        ] | None = None,
     ) -> EnqueueReceipt:
         subject = identifier(subject, "subject", 512)
         primary_conversation_id = identifier(primary_conversation_id, "primary_conversation_id", 512)
@@ -377,6 +388,15 @@ class ForegroundQueueStore:
             raise ForegroundQueueError("foreground_turn_payload_invalid")
         payload = dict(turn_payload)
         reject_private_payload(payload, "foreground_turn")
+        if admitted_evidence_pair is not None:
+            envelope, receipt = admitted_evidence_pair
+            if (
+                envelope.subject != subject
+                or envelope.evidence_id != evidence_id
+                or envelope.envelope_hash != evidence_hash
+                or dict(envelope.sanitized_payload) != payload
+            ):
+                raise ForegroundQueueError("foreground_evidence_pair_mismatch")
         request = {
             "schema_version": 1,
             "subject": subject,
@@ -401,10 +421,49 @@ class ForegroundQueueStore:
                     (subject, idempotency_key),
                 )
                 if existing is not None:
-                    if existing["turn_hash"] != turn_hash:
+                    # Replay the actual persisted format, never upgrade an old
+                    # split-admission row into a new atomic-origin assertion.
+                    existing_request = json.loads(str(existing["turn_json"]))
+                    if existing_request.get("schema_version") == 2:
+                        request["schema_version"] = 2
+                        request["source_admission"] = "atomic-evidence-and-turn/v1"
+                        turn_hash = canonical_hash(request)
+                    if (
+                        existing["turn_hash"] != turn_hash
+                        or canonical_hash(existing_request) != turn_hash
+                    ):
                         raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                    if admitted_evidence_pair is not None:
+                        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+                        # Even a replay must validate the complete supplied pair;
+                        # an existing turn cannot launder a forged S1 receipt.
+                        await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
+                            db, envelope, receipt,
+                            primary_conversation_id=primary_conversation_id,
+                            committed_at=now,
+                        )
                     await db.commit()
                     return self._enqueue_receipt(existing)
+                if admitted_evidence_pair is not None:
+                    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+                    # Only a real insertion in THIS transaction can establish
+                    # atomic source order. Already admitted evidence stays legacy.
+                    prior_source = await self._fetchone(
+                        db, "SELECT evidence_id FROM human_memory_evidence WHERE evidence_id=?",
+                        (evidence_id,),
+                    )
+                    await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
+                        db, envelope, receipt,
+                        primary_conversation_id=primary_conversation_id,
+                        committed_at=now,
+                    )
+                    self._fault("enqueue.after_evidence_insert")
+                    if prior_source is None:
+                        request["schema_version"] = 2
+                        request["source_admission"] = "atomic-evidence-and-turn/v1"
+                        turn_hash = canonical_hash(request)
                 await self._verify_evidence_tx(
                     db,
                     subject=subject,

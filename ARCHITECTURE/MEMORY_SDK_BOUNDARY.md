@@ -1,5 +1,14 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 USER source and queue admission now atomic
+
+Last updated: 2026-09-05. The service now persists new USER S1 and its queue row in
+one fenced transaction. Only first insertion marks a v2 atomic origin; existing
+S1/turns retain legacy format and exact replay. Source/queue/runtime-history checks
+pass with independent scoped ACCEPT. This closes the source-before-queue crash
+window, while duplicate-source suppression and native retest remain incomplete.
+See [implementation and validation](../plans/2026-09-05-semantic-correction/ATOMIC-SOURCE-ADMISSION.md).
+
 ## 2026-09-05 Native correction passed; duplicate-source forget remains P1
 
 Last updated: 2026-09-05. Backend c2836c12 with exact Memory0.6.9 successfully

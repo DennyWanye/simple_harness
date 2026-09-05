@@ -931,15 +931,15 @@ class HumanMemoryHostService:
             text=request.text,
         )
         payload = dict(envelope.sanitized_payload)
-        committed = await self._program.append_evidence(envelope, receipt)
         queued = await self._foreground.enqueue_turn(
             subject=self._auth.subject,
             primary_conversation_id=primary.primary_conversation_id,
-            evidence_id=committed.evidence_id,
-            evidence_hash=committed.envelope_sha256,
+            evidence_id=envelope.evidence_id,
+            evidence_hash=envelope.envelope_hash,
             idempotency_key=request.delivery_key,
             turn_payload=payload,
             task_scope_id=request.scope_ref,
+            admitted_evidence_pair=(envelope, receipt),
         )
         if self._scheduler_wake is not None:
             await self._wake_committed("after_enqueue", queued.turn_id)
