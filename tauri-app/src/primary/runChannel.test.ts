@@ -70,11 +70,20 @@ describe("authenticated Primary decisions", () => {
     h.response(2, { pending: [item], truncated: false }); await tick();
     expect(h.received).toHaveBeenCalledWith({ type: "permissions_pending_list_response", payload: { pending: [item] } });
   });
+  it("a pending refresh cannot swallow the uncertain approval timeout", async () => {
+    vi.useFakeTimers(); const h = fixture();
+    h.channel.send({ type: "permission_response", payload: { ...item, decision: "allow" } });
+    h.emit({ type: "human_memory_changed", payload: {} });
+    h.response(1, { pending: [item], truncated: false, sdk_state: "waiting" }); await tick();
+    await vi.advanceTimersByTimeAsync(15001);
+    expect(h.send).toHaveBeenCalledTimes(2);
+    expect(h.received.mock.calls.some(([m]) => m.type === "permission_response_applied" && m.payload.ok === false)).toBe(true);
+  });
   it("timeout never automatically resends an approval", async () => {
     vi.useFakeTimers(); const h = fixture();
     h.channel.send({ type: "permission_response", payload: { ...item, decision: "allow" } });
     await vi.advanceTimersByTimeAsync(15001);
     expect(h.send).toHaveBeenCalledTimes(1);
-    expect(h.received).toHaveBeenCalledWith(expect.objectContaining({ type: "permission_response_applied", payload: expect.objectContaining({ ok: false }) }));
+    expect(h.received.mock.calls.some(([m]) => m.type === "permission_response_applied" && m.payload.ok === false)).toBe(true);
   });
 });

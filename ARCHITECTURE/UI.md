@@ -13,7 +13,7 @@ permission_response 对 Primary binding 拒绝。UI 仅允许本次 allow/deny�
 
 真实生产授权策略 + installed SDK + SQLite + signed HUMAN scope + 实际 scheduler wake
 的确定性 fixture 完成 challenge→批准→项目文件 effect→终态；受影响 backend 66 passed，
-最终新增聚焦 18 passed，前端 35 passed + typecheck。独立 review 在初始候选提交时待完成；
+最终新增聚焦 18 passed，前端后继 36 passed + typecheck。批准后并发补读不能吞超时错误，已补红绿；独立 review 待完成；
 未起 native/真实 Provider，不是 S6/program PASS。Carver 的 WAITING 通知须另行组合。
 SDK read_decision 是 public port，但旧 open-decision 列表仍是 Host 内部 SDK SQL；本片未扩
 私有 SQL，仅限制返回最多32，不能声称底层扫描有界。停止结果历史缺口维持独立未闭合。

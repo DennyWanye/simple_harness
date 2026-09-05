@@ -41,9 +41,10 @@ export function primaryRunChannel(port: PrimaryPort, run: DecisionTarget, events
     } catch {
       if (sequence === readSequence) emit({ type: "primary_decision_status", payload: { error: "授权状态读取未确认，请刷新状态重试。" } });
     } finally {
-      if (life !== lifetime) return;
-      reading = false;
-      if (readAgain) { readAgain = false; void read(); }
+      if (life === lifetime) {
+        reading = false;
+        if (readAgain) { readAgain = false; void read(); }
+      }
     }
   };
   const handle = (raw: unknown) => {
@@ -88,7 +89,7 @@ export function primaryRunChannel(port: PrimaryPort, run: DecisionTarget, events
         // Exact SDK-issued nonce/version remain in this request's memory only.
         const request = { ...target, decision_id: p.decision_id, nonce: p.nonce, version: p.version, decision: p.decision };
         const life = lifetime;
-        const sequence = ++readSequence; // An older snapshot must not dismiss a submitted card.
+        ++readSequence; // An older snapshot must not dismiss a submitted card.
         void requests.request("primary.decisions.respond", request).then((result) => {
           if (disposed || life !== lifetime) return;
           if (!exact(result) || result.decision_id !== p.decision_id || result.version !== p.version ||
@@ -100,7 +101,7 @@ export function primaryRunChannel(port: PrimaryPort, run: DecisionTarget, events
           emit({ type: "primary_decision_status", payload: { outcome: result.outcome, error: "" } });
           void read();
         }).catch(() => {
-          if (disposed || life !== lifetime || sequence !== readSequence) return;
+          if (disposed || life !== lifetime) return;
           emit({ type: "permission_response_applied", payload: { ok: false, decision_id: p.decision_id,
             error: { message: "授权结果未确认，请补读状态后重试；不会自动批准。" } } });
         });
