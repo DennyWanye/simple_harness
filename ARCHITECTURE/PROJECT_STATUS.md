@@ -34,6 +34,11 @@ frontend/native及自然语言纠正尚未完成，不能称用户闭环已完�
 
 ## 2026-09-05 Explicit semantic correction isolated leaf
 
+Follow-up: fixed800ff419 independently scoped ACCEPT (no blocking P0/P1). The v2
+prompt now names new drink preferences `user:self + drink_preference`; no alias or
+authority expansion. Five Chinese public-SDK cases passed (5.01s). Native model
+compliance and coordinator builder integration remain pending; details in results.
+
 From9ec0ec97, the isolated semantic-correction candidate adds actual public typed
 semantic candidates, Host independent full-sentence intent and exact public REVISE
 authority. **32 focused tests passed (19.13s)** on installed067; Chinese natural

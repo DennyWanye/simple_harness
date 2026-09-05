@@ -62,3 +62,21 @@ Raw files remain ignored in `.local-test-evidence/2026-09-05/semantic-correction
 Independent contract98f3ae6b review was limited ACCEPT; fixed source review is pending.
 Chinese natural wording is a subsequent contract refinement. Original HM AC and native
 remember/use/correct/forget loop remain required; production main integration is not claimed.
+
+## Canonical naming follow-up and independent review
+
+Dirac fixed800ff419 review: scoped ACCEPT, no blocking P0/P1; additional independent
+disabled→enabled CREATE response recovery probe **2 passed1.38s**, zero new Provider.
+Review report is local to primary-api tree:
+`.local-test-evidence/2026-09-05/semantic-800ff419-review/REVIEW.md`,
+SHA256 `3983ee235d6d3d66fcce20ead909ff97d7bc996229337a649825ae8d1b336c2d`.
+
+A separate follow-up adds the supported-slot naming convention to the actual v2
+system prompt. Chinese fixtures now use `drink_preference`, with a distinct existing
+`preferred_drink` candidate for alias-collision rejection. Command: same Python and
+`PYTHONPATH=backend`, `-m pytest backend/tests/memory/test_semantic_correction.py -k zh_ -q -p no:cacheprovider`.
+**5 passed,15 deselected,5.01s,exit0**. The selector excludes the English cases;
+no testcase was removed. `canonical-chinese.log` SHA256
+`93b490a5c2051f0b40556528818a78a1ed38d3a406e96f46d623a098f493bd9e`.
+These deterministic public-SDK tests verify the canonical slot's real mutation path,
+not a real model following the new prompt. Alias/intent/authority code is unchanged.
