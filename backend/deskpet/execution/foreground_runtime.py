@@ -244,9 +244,10 @@ class ForegroundEffectAdmissionGate:
         sdk_run_id: str,
         owner_id: str,
         generation: int,
+        start_ready: asyncio.Event | None = None,
     ) -> None:
         self._bindings[sdk_run_id] = _ForegroundEffectBinding(
-            store, host_run_id, sdk_run_id, owner_id, generation
+            store, host_run_id, sdk_run_id, owner_id, generation, start_ready
         )
 
     def release(self, sdk_run_id: str) -> None:
@@ -256,6 +257,14 @@ class ForegroundEffectAdmissionGate:
         binding = self._bindings.get(sdk_run_id)
         if binding is None:
             return
+        # SDK.start schedules its driver before the Host start observation is
+        # durable. Wait only for this captured invocation, then re-authorize the
+        # unchanged owner/generation against the ordinary RUNNING-state fence.
+        if binding.start_ready is not None:
+            try:
+                await asyncio.wait_for(binding.start_ready.wait(), timeout=5.0)
+            except TimeoutError as exc:
+                raise ForegroundRuntimeError("foreground_tool_start_barrier_timeout") from exc
         await binding.store.authorize_effect(
             host_run_id=binding.host_run_id,
             sdk_run_id=binding.sdk_run_id,
@@ -273,6 +282,7 @@ class _ForegroundEffectBinding:
     sdk_run_id: str
     owner_id: str
     generation: int
+    start_ready: asyncio.Event | None = None
 
 
 def resolve_host_terminal(
@@ -801,6 +811,7 @@ class ForegroundRuntimeExecutionAuthority:
             idempotency_key=f"runtime-sdk-bind:{host_run_id}",
         )
         self._notify_state_changed()
+        tool_start_ready = asyncio.Event()
         if self._effect_gate is not None:
             self._effect_gate.register(
                 store=self._store,
@@ -808,6 +819,7 @@ class ForegroundRuntimeExecutionAuthority:
                 sdk_run_id=sdk_run_id,
                 owner_id=self._owner_id,
                 generation=claimed.generation,
+                start_ready=tool_start_ready,
             )
 
         should_start = previously_bound_sdk_run_id is None
@@ -1022,6 +1034,7 @@ class ForegroundRuntimeExecutionAuthority:
                 sdk_event_id=result_ref,
                 idempotency_key=f"runtime-running:{host_run_id}",
             )
+        tool_start_ready.set()
         self._notify_state_changed()
         self._record_audit(
             "foreground.runtime.bound",
