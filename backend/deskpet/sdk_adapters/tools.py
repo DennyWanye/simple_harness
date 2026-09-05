@@ -193,6 +193,14 @@ def _product_tool_execution_identity(
     )
 
 
+_foreground_invocation_origin = contextvars.ContextVar("foreground_invocation_origin", default=None)
+
+
+def active_product_foreground_origin():
+    """Exact admission captured before dispatch; never a lookup of latest Run."""
+    return _foreground_invocation_origin.get()
+
+
 def active_product_tool_call_id() -> CallId:
     """Return the SDK-owned identity of the currently dispatched Tool call."""
 
@@ -355,7 +363,7 @@ class ForegroundEffectAdmissionPort(Protocol):
     through unchanged.
     """
 
-    async def authorize(self, sdk_run_id: str) -> None: ...
+    async def authorize(self, sdk_run_id: str) -> object | None: ...
 
 
 class EffectGatePort(Protocol):
@@ -522,12 +530,13 @@ class ProductEffectExecutor(EffectExecutor):
                 )
                 return EffectExecution(effect=None, result=rejection)
         self._registry.assert_workspace_current(context.run_id)
+        origin = None
         if self._foreground_admission is not None:
             # Final current-generation admission immediately before the
             # physical Tool effect.  A foreground lease reclaimed after the
             # authorization decision fails here, so a stale worker's Run
             # cannot produce external Tool side effects.
-            await self._foreground_admission.authorize(context.run_id.value)
+            origin = await self._foreground_admission.authorize(context.run_id.value)
         evidence_scope = await self._evidence_scope(context)
         if evidence_scope is not None:
             call = kwargs.get("call")
@@ -564,6 +573,7 @@ class ProductEffectExecutor(EffectExecutor):
                 )
                 return EffectExecution(effect=None, result=rejected.result)
         token = _validation_run_id.set(context.run_id.value)
+        origin_token = _foreground_invocation_origin.set(origin)
         try:
             from contextlib import nullcontext
             binding_scope = getattr(self._effect_gate, "execution_scope", None)
@@ -571,6 +581,7 @@ class ProductEffectExecutor(EffectExecutor):
             async with scope:
                 execution = await super().execute(**kwargs)
         finally:
+            _foreground_invocation_origin.reset(origin_token)
             _validation_run_id.reset(token)
         if evidence_scope is not None:
             if execution.effect is None:

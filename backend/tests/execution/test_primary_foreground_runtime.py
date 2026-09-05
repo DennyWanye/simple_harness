@@ -129,6 +129,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
                 assert context.binding_epoch == 1
                 assert context.workspace == context.write_scope_root
             return await super().authorize(prepared)
+    from deskpet.execution.foreground_runtime import ForegroundEffectAdmissionGate
+    foreground_gate = ForegroundEffectAdmissionGate()
     noop = AuthorityCheckingAuthorization() if dynamic else Noop()
     def ports(database, uow):
         tools = ToolRegistry()
@@ -160,7 +162,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             gate = EffectGate(binding_store=bindings, route_ledger=ledger, scope_store=CanonicalTaskScopeStore(state_path),
                               authority_resolver=registry.resolve, exposure_resolver=registry.resolve_exposure)
             result = replace(result, tools=ProductEffectExecutor(uow=uow, registry=tools, authorization=noop, reconciliation=noop,
-                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path)),
+                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate),
                               task_execution_authority=ProductTaskExecutionAuthority(root_resolver=BindingRootResolver(bindings)))
         from deskpet.execution.semantic_closure import closure_instruction_for_run
         return replace(result, run_context_authority=ProductRunContextAuthority(
@@ -198,7 +200,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger),
         provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
-        state_changed=state_changed,
+        state_changed=state_changed, effect_gate=foreground_gate,
     )
     return runtime, stack, queue
 
