@@ -3,6 +3,14 @@
 > 最后更新：2026-09-05
 
 
+## 2026-09-05 Runtime v2 / new message producer combination
+
+运行层保持v1可读并保真v2 short triple/actual UTF8及Host source roots；缺source proof或伪audit
+拒出站，不伪typed。深冻结来源快照修复先红后绿；installed exact067（7dd224…）相邻60 passed。
+首次terminal observer同tx追加真实message S1，marked replay只验证不修复，旧无marker不补造；
+helper模块已正式入树。Hegel11group登记/selected来源闭合仍另线，不把此60绿称Host short pipeline
+或native完成。精确命令、版本和证据见[运行契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
 ## 2026-09-05 Waiting state invalidation
 
 Foreground在BOUND_WAITING reconciliation提交后调用现有空payload、有界非阻塞刷新。

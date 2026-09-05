@@ -16,11 +16,19 @@ class PrimaryHistoryDisclosureRejected(ProviderRequestRejectedError):
     default_message = "Current history dependencies cannot be verified for this request."
 
 
-def dependencies(evidence=(), recall=()):
-    """Canonical bounded proof; None/unknown carriers are never an empty allow."""
+def dependencies(evidence=(), recall=(), short_horizon=(), *, schema_version=None):
+    """Canonical bounded proof; v1 remains readable without rewriting archives."""
+    short_horizon = tuple(short_horizon)
+    version = (2 if short_horizon else 1) if schema_version is None else schema_version
+    if type(version) is not int or version not in {1, 2} or (version == 1 and short_horizon):
+        raise ValueError("primary_dependencies_invalid")
     rows = {"evidence": {}, "recall": {}}
-    for kind, values, fields in (("evidence", evidence, ("evidence_id", "envelope_hash")),
-                                 ("recall", recall, ("result_id", "result_hash", "item_id", "item_hash"))):
+    fields_by_kind = [("evidence", evidence, ("evidence_id", "envelope_hash")),
+                      ("recall", recall, ("result_id", "result_hash", "item_id", "item_hash"))]
+    if version == 2:
+        rows["short_horizon"] = {}
+        fields_by_kind.append(("short_horizon", short_horizon, ("audit_id", "chunk_ref", "content_hash")))
+    for kind, values, fields in fields_by_kind:
         for value in values:
             if not isinstance(value, Mapping) or set(value) != set(fields):
                 raise ValueError("primary_dependencies_invalid")
@@ -30,15 +38,19 @@ def dependencies(evidence=(), recall=()):
             rows[kind][canonical_json(value)] = value
     if sum(map(len, rows.values())) > 256:
         raise ValueError("primary_dependencies_limit")
-    return {"schema_version": 1, **{kind: [items[key] for key in sorted(items)] for kind, items in rows.items()}}
+    return {"schema_version": version, **{kind: [items[key] for key in sorted(items)] for kind, items in rows.items()}}
 
 
 def parse_dependencies(value):
-    if (not isinstance(value, Mapping) or set(value) != {"schema_version", "evidence", "recall"}
-            or type(value["schema_version"]) is not int or value["schema_version"] != 1
-            or not all(isinstance(value[k], (tuple, list)) for k in ("evidence", "recall"))):
+    if not isinstance(value, Mapping):
         raise ValueError("primary_dependencies_missing")
-    return dependencies(value["evidence"], value["recall"])
+    version = value.get("schema_version")
+    if type(version) is not int or version not in {1, 2}:
+        raise ValueError("primary_dependencies_missing")
+    fields = {"schema_version", "evidence", "recall"} | ({"short_horizon"} if version == 2 else set())
+    if set(value) != fields or not all(isinstance(value[k], (tuple, list)) for k in fields - {"schema_version"}):
+        raise ValueError("primary_dependencies_missing")
+    return dependencies(value["evidence"], value["recall"], value.get("short_horizon", ()), schema_version=version)
 
 
 def current_disclosure(*, run_id, subject, request_id):
@@ -94,6 +106,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
         raise ValueError("primary_dependencies_current_user_missing")
     recall = list(proof["recall"])
     evidence = list(proof["evidence"])
+    short = list(proof.get("short_horizon", ()))
     from deskpet.task_scope.disclosure import verify_scope_disclosure
     cursor = await db.execute("PRAGMA database_list")
     host_path = next(row[2] for row in await cursor.fetchall() if row[1] == "main")
@@ -109,6 +122,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
         scope_proof = await verify_scope_disclosure(db_path=host_path, package=initial_package, subject=run["subject"], stack=stack)
         evidence.extend(scope_proof["evidence"])
         recall.extend(scope_proof["recall"])
+        short.extend(scope_proof.get("short_horizon", ()))
     from simple_harness.execution.context_authority import ContextRouteReceipt
     from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
     from simple_harness import thaw_json
@@ -157,6 +171,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
             scope_proof = await verify_scope_disclosure(db_path=host_path, package=package, subject=run["subject"], stack=stack)
             evidence.extend(scope_proof["evidence"])
             recall.extend(scope_proof["recall"])
+            short.extend(scope_proof.get("short_horizon", ()))
         if raw["route"] != "memory_standalone":
             continue
         if not isinstance(value.get("fragments"), (list, tuple)):
@@ -165,6 +180,24 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
         if tuple(dict.fromkeys(f["ref"] for f in fragments)) != tuple(route.recall_refs):
             raise ValueError("primary_dependencies_recall_refs_mismatch")
         for fragment in fragments:
+            if fragment.get("lane") == "short_horizon":
+                import hashlib
+                binding = dependencies(short_horizon=[fragment.get("history_binding")])["short_horizon"][0]
+                payload = fragment.get("payload")
+                if (not isinstance(payload, str) or binding["chunk_ref"] != fragment["ref"]
+                        or hashlib.sha256(payload.encode("utf-8")).hexdigest() != binding["content_hash"]
+                        or fragment.get("payload_hash") != binding["content_hash"]):
+                    raise ValueError("primary_dependencies_short_bytes_mismatch")
+                # Host registration sources must accompany the exact selection;
+                # the SDK triple alone cannot supply missing Host causal closure.
+                sources = parse_dependencies(fragment.get("history_source_dependencies"))
+                if not sources["evidence"]:
+                    raise ValueError("primary_dependencies_short_sources_missing")
+                evidence.extend(sources["evidence"])
+                recall.extend(sources["recall"])
+                short.extend(sources.get("short_horizon", ()))
+                short.append(binding)
+                continue
             if fragment.get("lane") != "long_term_typed":
                 raise ValueError("primary_dependencies_carrier_unsupported")
             binding = fragment.get("history_binding")
@@ -213,7 +246,8 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
             scope_proof = await verify_scope_disclosure(db_path=host_path, package=package, subject=run["subject"], stack=stack)
             evidence.extend(scope_proof["evidence"])
             recall.extend(scope_proof["recall"])
-    return run, dependencies(evidence, recall)
+            short.extend(scope_proof.get("short_horizon", ()))
+    return run, dependencies(evidence, recall, short, schema_version=2 if short else proof["schema_version"])
 
 
 async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, policy_factory):

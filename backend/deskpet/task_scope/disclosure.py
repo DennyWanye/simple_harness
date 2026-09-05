@@ -102,7 +102,9 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
         "retained_utf8_hash": text_hash(canonical_json(retained)), "fragments": fields,
         "missing_fields": missing,
         "dependencies": dependencies([v for row in fields.values() for v in row["dependencies"]["evidence"]],
-                                     [v for row in fields.values() for v in row["dependencies"]["recall"]])}
+                                     [v for row in fields.values() for v in row["dependencies"]["recall"]],
+                                     [v for row in fields.values() for v in row["dependencies"].get("short_horizon", ())],
+                                     schema_version=max((row["dependencies"]["schema_version"] for row in fields.values()), default=1))}
     manifest = {**body, "manifest_hash": canonical_hash(body)}
     return {**structural, "schema_version": 1, "disclosure": retained, "disclosure_manifest": manifest}
 

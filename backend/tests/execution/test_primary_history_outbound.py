@@ -76,7 +76,7 @@ async def test_late_history_denial_is_failed_while_sent_ambiguity_stays_unknown(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("corrupt", [None, "missing", "public_payload_hash", "short", "late_forget"])
+@pytest.mark.parametrize("corrupt", [None, "missing", "public_payload_hash", "short", "late_forget", "unselected_short", "short_bytes", "short_missing_sources"])
 async def test_new_recall_four_tuple_checked_before_next_physical_provider(tmp_path, corrupt, monkeypatch):
     """Real USER -> analysis -> typed recall -> production route -> next invoke."""
     import json
@@ -125,6 +125,19 @@ async def test_new_recall_four_tuple_checked_before_next_physical_provider(tmp_p
         elif corrupt == "short":
             rows[0]["lane"] = "short_horizon"
             rows[0].pop("history_binding")
+        elif corrupt in {"unselected_short", "short_bytes", "short_missing_sources"}:
+            import hashlib
+            payload = "short fixture has no actual selected audit"
+            digest = hashlib.sha256(payload.encode()).hexdigest()
+            with sqlite3.connect(state) as db:
+                source = db.execute("SELECT evidence_id,evidence_hash FROM foreground_turns ORDER BY enqueue_sequence LIMIT 1").fetchone()
+            rows[0].update(lane="short_horizon", payload=payload, payload_hash=digest,
+                history_binding={"audit_id":"unselected-audit", "chunk_ref":rows[0]["ref"], "content_hash":digest},
+                history_source_dependencies={"schema_version":2,"evidence":[{"evidence_id":source[0],"envelope_hash":source[1]}],"recall":[],"short_horizon":[]})
+            if corrupt == "short_bytes":
+                rows[0]["payload"] += " altered"
+            if corrupt == "short_missing_sources":
+                rows[0].pop("history_source_dependencies")
         return tuple(rows)
     monkeypatch.setattr(human_memory_v7, "project_recall_fragments", projection)
     sends, requests = [], []
