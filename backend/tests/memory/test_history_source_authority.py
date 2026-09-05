@@ -174,3 +174,31 @@ async def test_same_subject_and_primary_in_fresh_stores_do_not_share_source_epoc
     assert origins[0].evidence_id == origins[1].evidence_id
     assert origins[0].namespace.source_stream == origins[1].namespace.source_stream
     assert origins[0].namespace.store_epoch != origins[1].namespace.store_epoch
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("capability", [None, True])
+async def test_composed_runtime_rejects_protocol_only_or_invalid_enforcement_capability(tmp_path, capability):
+    class ProtocolOnlyManager:
+        history_source_enforcement_version = capability
+        closed = False
+
+        async def close(self):
+            self.closed = True
+
+        async def register_principal_owner(self, *_):
+            raise AssertionError("unsupported enforcement must reject before registration")
+
+    manager = ProtocolOnlyManager()
+
+    async def build(_path, **kwargs):
+        assert kwargs["history_source_authority"] is authority
+        return manager
+
+    authority = HostHistorySourceAuthority(tmp_path / "state.db")
+    runtime = HumanMemoryV7Runtime(
+        tmp_path / "memory.db", backend_factory=build, history_source_authority=authority,
+    )
+    with pytest.raises(RuntimeError, match="memory_history_source_enforcement_unavailable"):
+        await runtime.manager()
+    assert manager.closed

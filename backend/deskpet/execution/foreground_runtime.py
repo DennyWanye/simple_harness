@@ -694,19 +694,40 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_run_id=sdk_run_id,
         )
         _check_identity(tools)
-        context = await self._context.prepare(
-            claimed=claimed,
-            expected_context=ContextLineage(
-                snapshot.context_snapshot_id,
-                snapshot.context_snapshot_revision,
-                snapshot.context_snapshot_hash,
-            ),
-            execution_session_id=execution_session_id,
-            request_id=request_id,
-            sdk_run_id=sdk_run_id,
-            provider=provider,
-            tools=tools,
-        )
+        from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
+
+        try:
+            context = await self._context.prepare(
+                claimed=claimed,
+                expected_context=ContextLineage(
+                    snapshot.context_snapshot_id,
+                    snapshot.context_snapshot_revision,
+                    snapshot.context_snapshot_hash,
+                ),
+                execution_session_id=execution_session_id,
+                request_id=request_id,
+                sdk_run_id=sdk_run_id,
+                provider=provider,
+                tools=tools,
+            )
+        except PreparationDisclosureRejected as exc:
+            rejection = exc.rejection
+            candidate = claimed.candidate
+            if (
+                rejection.host_run_id != host_run_id
+                or rejection.subject != candidate.subject
+                or rejection.turn_id != candidate.turn_id
+                or rejection.turn_hash != candidate.turn_hash
+                or rejection.candidate_hash != candidate.candidate_hash
+                or rejection.evidence_id != candidate.evidence_id
+                or rejection.evidence_hash != candidate.evidence_hash
+            ):
+                raise ForegroundRuntimeError("foreground_preparation_rejection_identity_mismatch") from exc
+            await self._store.settle_preparation_rejection(
+                rejection=exc.rejection, owner_id=claimed.owner_id, generation=claimed.generation,
+            )
+            self._notify_state_changed()
+            return
         _check_identity(context)
         bound_provider = await self._provider.bind(
             frozen=provider,

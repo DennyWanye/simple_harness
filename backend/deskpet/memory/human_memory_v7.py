@@ -99,6 +99,7 @@ class HumanMemoryV7Runtime:
         evidence_authority: Any = None,
         analysis_authority: Any = None,
         memory_action_authority: Any = None,
+        history_source_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
     ) -> None:
@@ -112,6 +113,7 @@ class HumanMemoryV7Runtime:
         self._evidence_authority = evidence_authority
         self._analysis_authority = analysis_authority
         self._memory_action_authority = memory_action_authority
+        self._history_source_authority = history_source_authority
         # Test seam only: build the backend with an injected clock/fault injector
         # (the production path is always ``build_human_memory_v7``).
         self._backend_factory = backend_factory
@@ -173,12 +175,19 @@ class HumanMemoryV7Runtime:
                 kwargs = self.build_kwargs()
                 if self._memory_action_authority is not None:
                     kwargs["memory_action_authority"] = self._memory_action_authority
+                if self._history_source_authority is not None:
+                    kwargs["history_source_authority"] = self._history_source_authority
                 if self._backend_factory is not None:
                     manager = await self._backend_factory(self._db_path, **kwargs)
                 else:
                     from simple_harness_memory import build_human_memory_v7
 
                     manager = await build_human_memory_v7(self._db_path, **kwargs)
+                if self._history_source_authority is not None:
+                    enforcement = getattr(manager, "history_source_enforcement_version", None)
+                    if type(enforcement) is not int or enforcement != 1:
+                        await manager.close()
+                        raise RuntimeError("memory_history_source_enforcement_unavailable")
                 # Memory 0.6.1 §8.4: idempotent owner registration on every build
                 # (fresh install → the first reconcile read succeeds; replay → same receipt).
                 self.registration_receipt = await manager.register_principal_owner(

@@ -3263,7 +3263,9 @@ async def lifespan(app: FastAPI):
         if runtime is None:
             raise RuntimeError("human_memory_v7_runtime_unavailable")
         manager = await runtime.manager()
-        return await manager.backend.resolve_suppression(candidate, purpose)
+        return await manager.backend.resolve_suppression(
+            candidate, purpose, principal=runtime.principal(),
+        )
 
     service_context.register(
         "human_memory_host_service_factory",

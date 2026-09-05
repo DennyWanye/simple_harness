@@ -385,6 +385,15 @@ class PrimaryReadModel:
             (turn["host_run_id"], turn["turn_id"], self.subject, primary),
         )
         if len(rows) != 1:
+            from deskpet.execution.preparation_rejection import read_preparation_rejection_tx
+
+            rejection = await read_preparation_rejection_tx(
+                db, host_run_id=turn["host_run_id"], subject=self.subject, primary_ref=primary,
+            )
+            if rejection is not None:
+                # Only original USER evidence exists for this verified Host
+                # rejection; there is no generated SDK conversation to invent.
+                return messages
             raise PrimaryReadError("primary_terminal_missing")
         run = rows[0]
         binding, terminal = (

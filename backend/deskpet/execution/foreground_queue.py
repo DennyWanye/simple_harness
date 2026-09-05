@@ -1874,6 +1874,13 @@ class ForegroundQueueStore:
                 raise
         return snapshot
 
+    async def settle_preparation_rejection(self, *, rejection, owner_id, generation):
+        from deskpet.execution.preparation_rejection import settle_preparation_rejection
+
+        return await settle_preparation_rejection(
+            self, rejection=rejection, owner_id=owner_id, generation=generation,
+        )
+
     async def record_sdk_terminal(
         self,
         *,
@@ -2854,6 +2861,7 @@ class ForegroundQueueStore:
         causal_evidence_ref: str | None,
         causal_evidence_hash: str | None,
         recorded_at: float,
+        preparation_rejection: Mapping[str, object] | None = None,
     ) -> tuple[str, str]:
         transition_id = _uuid(f"foreground-run-transition:{host_run_id}:{idempotency_key}")
         payload = {
@@ -2871,6 +2879,8 @@ class ForegroundQueueStore:
             "causal_evidence_hash": causal_evidence_hash,
             "recorded_at": recorded_at,
         }
+        if preparation_rejection is not None:
+            payload["preparation_rejection"] = dict(preparation_rejection)
         transition_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_run_transitions(transition_id,host_run_id,subject,from_state,to_state,generation,owner_id,sdk_event_id,idempotency_key,causal_evidence_ref,causal_evidence_hash,transition_hash,transition_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

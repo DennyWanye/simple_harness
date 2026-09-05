@@ -1,5 +1,19 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Memory0610 installed privacy and queue successor
+
+Last updated: 2026-09-05. Candidate production composition now binds actual Host
+source/cut authority to Memory0610 shared disclosure enforcement. An old late-enqueued
+USER denied before SDK start becomes an immutable Host preparation rejection:
+Run FAILED, turn SETTLED, no fabricated SDK terminal, and subsequent work progresses.
+Cross-source rejection reuse is rejected from actual S1 binding; first-action cuts
+and legacy unknown boundaries remain distinct. Installed86 tests pass and independent
+source/artifact scoped reviews accept. Main and historical native failure remain
+unchanged; native successor and full program verification are still outstanding.
+See [installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0610-INSTALLED.md)
+and [queue contract](../plans/2026-09-05-semantic-correction/PREPARATION-REJECTION.md).
+
+
 ## 2026-09-05 Original source and first forget-cut public facts prepared
 
 Last updated: 2026-09-05. Host now captures a v2 forget action's original queue
