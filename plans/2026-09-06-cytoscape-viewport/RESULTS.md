@@ -61,8 +61,10 @@ Raw evidence is ignored under `.local-test-evidence/2026-09-05/canvas-native-lay
 
 ## Review and remaining boundary
 
-Dirac's initial source challenge found no P0/P1; fixed-byte review is requested
-separately. This handoff does not claim native, HM-AC6, relation generation or full
+Dirac independently ACCEPTED fixed source `c9907e14f365c3d0ebe001f0b179d6d32795a64c`
+with no P0/P1. All three product files match that commit; all eight evidence hashes
+above were independently checked, along with red/green counts, an actual renderer
+screenshot and build log. The reviewer did not rerun the suites. This handoff does not claim native, HM-AC6, relation generation or full
 program PASS. Main owns exact native rebuild and visible canvas/node selection,
 filter, fit/zoom verification against the existing autumn memory, without repeating
 CREATE. No native processes, port18120, user data or runtime environments touched.

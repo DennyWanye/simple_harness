@@ -9,6 +9,7 @@ authority/invalidations are unchanged. Actual WebKit 1000x700/800x560 oracle:
 original 8 failures, candidate22 checks pass; focused frontend9 pass/1 optional
 API-fixture skip, typecheck/build/ESLint pass. Native exact-build verification is
 coordinator-owned and pending; not a renderer-engine diagnosis or full HM-AC6 PASS.
+Dirac fixed-byte review of c9907e14: scoped ACCEPT, no P0/P1; eight evidence hashes verified.
 Isolated `feat/cytoscape-native-canvas` from65a604f8, not yet integrated here.
 See [scoped result and evidence](../plans/2026-09-06-cytoscape-viewport/RESULTS.md).
 
