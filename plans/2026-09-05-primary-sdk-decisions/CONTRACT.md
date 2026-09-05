@@ -110,14 +110,15 @@ It uses a deterministic Provider, signed profile binding/request_scope, the actu
 HUMAN command dispatcher and scheduler_wake=runtime + drain. It opens context_route
 before any TaskScope exists, approves sequential actual decisions, writes one fresh.txt,
 and closes the Host Run. Exact replay returns duplicate without a new Provider call;
-closed-record wrong version also rejects. Negative branches cover different subject/
+closed-record wrong version also rejects. A refresh interleaved with an uncertain
+approval cannot swallow its timeout error; the regression failed before the follow-up fix. Negative branches cover different subject/
 primary/Run/generation/decision/nonce/version, bool fields, forbidden allow_session,
 late same-owner rebind, late STOP, cancelled and expired SDK decisions. Committed deny
 ACK survives wake failure. A direct production legacy signal entry probe cannot bypass
 the Primary guard. No real Provider or native UI was started.
 
 Affected backend suite: 66 passed; final focused production-decision suite: 18 passed.
-Frontend Primary/controller/view suite: 35 passed; tsc -b --noEmit passed. These are
+Frontend Primary/controller/view suite: initial 35, follow-up 36 passed; tsc -b --noEmit passed. These are
 isolated automated fixtures, not native E2E or a S6/program gate. Exact commands and
 ignored log digests are in RESULTS.md. Independent correctness review is pending at
 this initial candidate commit; main owns native verification.
