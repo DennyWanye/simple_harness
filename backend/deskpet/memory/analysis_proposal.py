@@ -212,14 +212,14 @@ def item_text(envelope: Any) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def admitted_item(envelope: Any, receipt: Any) -> AdmittedItem:
+def admitted_item(envelope: Any, receipt: Any, *, occurred_at: float | None = None) -> AdmittedItem:
     return AdmittedItem(
         evidence_id=str(envelope.evidence_id),
         item_id=item_id_for(envelope),
         text=item_text(envelope),
         envelope=envelope,
         receipt=receipt,
-        occurred_at=float(getattr(receipt, "admitted_at", 0.0) or 0.0),
+        occurred_at=float(receipt.admitted_at if occurred_at is None else occurred_at),
     )
 
 
@@ -352,7 +352,9 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
             attributes: tuple[Any, ...] = (InformationAttribute.PREFERENCE,)
             long_term = LongTermMemoryType.SEMANTIC
         elif memory_type == "episode":
-            occurred = float(item.occurred_at or now)
+            # The Host supplies the durable source time; zero is a valid epoch,
+            # never a reason to substitute the time of analysis or recovery.
+            occurred = float(item.occurred_at)
             payload = EpisodeMemoryPayload(
                 str(body["title"]),
                 _strings(body.get("participants"), default=("user",)),

@@ -57,7 +57,6 @@ from deskpet.memory.analysis_lineage import binding_model_config_hash
 from deskpet.memory.analysis_proposal import (
     ANALYSIS_SYSTEM_INSTRUCTION,
     AdmittedItem,
-    admitted_item,
     compile_proposal,
     prompt_items,
     proposal_from_response,
@@ -295,10 +294,10 @@ class HostMemoryAnalysisExecutor:
             raise HostAnalysisExecutorError("analysis_lineage_mismatch")
         items: list[AdmittedItem] = []
         for ref in request.ordered_evidence_refs:
-            envelope, receipt = await self._evidence.read_admitted(ref.evidence_id)
-            if envelope.envelope_hash != ref.content_hash:
+            item = await self._evidence.read_analysis_item(ref.evidence_id)
+            if item.envelope.envelope_hash != ref.content_hash:
                 raise HostAnalysisExecutorError("analysis_evidence_hash_mismatch", evidence_id=ref.evidence_id)
-            items.append(admitted_item(envelope, receipt))
+            items.append(item)
         deadline_seconds = float(request.budget.deadline_ms) / 1000.0
         fence = AnalysisLeaseFence(self._store, clock=self._clock, lease_seconds=deadline_seconds + self._lease_margin)
         fence.bind(host_run_id=outbox.host_run_id, sdk_run_id=outbox.sdk_run_id)
@@ -486,7 +485,7 @@ class HostMemoryAnalysisExecutor:
 
         self._fault_point("analysis-before-derive")
         base_revision = current_analysis_apply_head() or 1
-        items = [admitted_item(*(await self._evidence.read_admitted(ref.evidence_id))) for ref in request.ordered_evidence_refs]
+        items = [await self._evidence.read_analysis_item(ref.evidence_id) for ref in request.ordered_evidence_refs]
         compiled = compile_proposal(
             proposal_from_response(response),
             request=request,

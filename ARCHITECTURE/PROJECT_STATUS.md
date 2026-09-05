@@ -15,7 +15,7 @@ A14 两个独立真实 gpt-5.5 / queue.enqueue root 均完成 README 1.1.3→1.2
 语义收口、终态 outbox 与 Memory accepted plan，每个 root 物化 episode+semantic 两个 head。
 root 为 `2fa7d7b1-3430-5052-bc10-5cfb77beb32a`、`870babc5-3842-56d7-bae5-05d1477119c0`；
 前台调用分别 13/12 次，analysis 各 1 次，无重发。旧 0.7.1 失败证据保留。
-独立 AI 质量复核确认原句/spans/实际效果/绑定一致；发现 episode 误用 analysis 时间的 P2 正在修复，
+独立 AI 质量复核确认原句/spans/实际效果/绑定一致；发现 episode 误用 analysis 时间的 P2 已改用首次 Host committed_at，26 条聚焦回归通过、主执行者复审接受，真实生产复验待执行；
 另一个补读 before 来源 P2 已用衍生纠正包闭合并独立接受，原封口 834 文件未改。
 不能把两条机械通过当成 S5b 完成，也不将物化计作 typed recall 命中（A15 仍 NOT_MEASURED）。
 
