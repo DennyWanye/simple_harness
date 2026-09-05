@@ -167,3 +167,74 @@ class TerminalSources:
             and rows[0].owner_ref == job["owner_ref"]
             and rows[0].admission_hash == job["admission_hash"]
         )
+
+    async def verify_terminal_page(self, job: dict, page: dict) -> bool:
+        """Bind public SDK proof to the verified raw identity in Host evidence."""
+        import aiosqlite
+        import simple_harness as sdk
+
+        from deskpet.execution.terminal_identity import (
+            read_primary_terminal_identity_tx,
+        )
+
+        proof_type = getattr(sdk, "RunTerminalAuditEvidenceV1", None)
+        raw_proof = page.get("metadata", {}).get("terminal_evidence")
+        if proof_type is None or raw_proof is None:
+            return False
+        try:
+            proof = proof_type.from_json(raw_proof)
+        except (KeyError, TypeError, ValueError):
+            return False
+        if page.get("run_id") != job["sdk_run_id"]:
+            return False
+        async with aiosqlite.connect(
+            self.state_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2
+        ) as db:
+            db.row_factory = sqlite3.Row
+            await db.execute("BEGIN")
+            async with db.execute(
+                "SELECT t.*,r.primary_conversation_id,r.subject,r.admission_json,"
+                "r.admission_receipt_hash,r.admission_receipt_id,"
+                "h.sdk_run_id AS head_sdk_run,h.subject AS head_subject,"
+                "h.generation AS head_generation,h.current_state AS head_state "
+                "FROM foreground_terminal_receipts t "
+                "JOIN foreground_runs r ON r.host_run_id=t.host_run_id "
+                "LEFT JOIN foreground_run_heads h ON h.host_run_id=t.host_run_id "
+                "WHERE r.host_run_id=? AND r.subject=?",
+                (job["host_run_id"], self.subject),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                return False
+            source = self._source(row)
+            if (
+                source.job_id != job["job_id"]
+                or source.sdk_run_id != job["sdk_run_id"]
+                or source.owner_ref != job["owner_ref"]
+                or source.admission_hash != job["admission_hash"]
+            ):
+                return False
+            identity = await read_primary_terminal_identity_tx(
+                db,
+                subject=self.subject,
+                primary_ref=row["primary_conversation_id"],
+                host_run_id=job["host_run_id"],
+                sdk_run_id=job["sdk_run_id"],
+            )
+            if (
+                identity is None
+                or identity.sdk_run_id != job["sdk_run_id"]
+                or identity.host_receipt_ref != job["terminal_ref"]
+                or identity.host_receipt_hash != job["terminal_hash"]
+                or identity.terminal_state != job["terminal_state"]
+            ):
+                return False
+            return proof.matches(
+                event_id=identity.raw_sdk_event_id,
+                payload_hash=identity.raw_sdk_event_hash,
+                state=(
+                    "cancelled"
+                    if identity.terminal_state == "STOPPED"
+                    else identity.terminal_state.lower()
+                ),
+            )

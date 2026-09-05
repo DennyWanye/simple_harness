@@ -261,7 +261,7 @@ async def test_findings_bind_actual_provider_operation_and_unknown_pricing(
                 or original.get("effect_id")
                 or original["operation_id"]
             )
-            assert finding["rule_version"] == "terminal-run-v1"
+            assert finding["rule_version"] == "terminal-run-v2"
             assert finding["owner_ref"] == source.owner_ref
             assert finding["owner_component"].startswith("harness.")
             payload = json.loads(finding["payload_json"])
@@ -280,17 +280,27 @@ async def test_findings_bind_actual_provider_operation_and_unknown_pricing(
                 for f in record["findings"]
                 if f["rule_id"] == "operation_error_observed"
             ]
-            assert len(errors) == 1
-            error_sources = {
-                op["source_hash"]
-                for op in operations
-                if op.get("error_code") or op.get("error_code_hash")
+            # H073 additionally records the failed driver execution interval.
+            # Its error is a separate operation, not a second Provider call.
+            error_operations = [op for op in operations
+                                if op.get("error_code") or op.get("error_code_hash")]
+            assert {op["operation_name"] for op in error_operations} == {
+                "provider.invoke", "runtime.driver",
             }
-            assert {
-                s["source_hash"]
-                for s in record["finding_sources"]
-                if s["finding_id"] == errors[0]["finding_id"]
-            } == error_sources
+            assert {op["error_code"] for op in error_operations} == {
+                "provider_request_rejected",
+            }
+            by_owner = {}
+            for op in error_operations:
+                owner = op.get("provider_invocation_id") or op.get("effect_id") or op["operation_id"]
+                by_owner.setdefault(owner, set()).add(op["source_hash"])
+            assert len(errors) == len(by_owner) == 2
+            assert {f["operation_id"] for f in errors} == set(by_owner)
+            for finding in errors:
+                assert {
+                    s["source_hash"] for s in record["finding_sources"]
+                    if s["finding_id"] == finding["finding_id"]
+                } == by_owner[finding["operation_id"]]
         assert len(provider.requests) == 1
     finally:
         await runtime.close()

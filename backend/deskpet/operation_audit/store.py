@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-RULE_VERSION = "terminal-run-v1"
+RULE_VERSION = "terminal-run-v2"
 
 
 def canonical(value: object) -> str:
@@ -367,6 +367,7 @@ class AuditStore:
             "reader_failed",
             "page_invalid",
             "source_binding_invalid",
+            "terminal_identity_unverified",
         }:
             raise ValueError("invalid audit degradation code")
 
