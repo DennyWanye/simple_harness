@@ -186,3 +186,28 @@ A2 可以批准上述建议及候选升级的分别处理，而不批准任何�
 
 预期 exit 3、`NOT_RUN/BLOCKED`、passed_cells=[]；真实产品/传输异常 exit 1/FAIL，不能被 oracle BLOCKED 掩盖。`--observe-candidate` 只授权观察本次明确传入的候选，绝不修改冻结 pin。
 source 接口为验证侧 `.py` 的 `async run(request, workspace)`，必须另给 exact clean `--source-checkout`；本次没有实现 fault10，不提供伪造默认 source adapter。所有原始 request/response/runtime/log/SQLite 留 ignored `.local-test-evidence`，仅方案、代码和文字验证结论入 Git。
+
+### 框架交付补充（方案批准状态不变）
+
+本机桥回归 **40 passed**（transport 合成样本只测桥，不能作401产品证据）。独立初审的字节码读取、Windows 路径分隔符、环境失败丢失清单三个问题已加回归修复；末次汇总还重验已收集文件，防后执行层改写前层证据。
+2026-09-05 用用户指定 Memory **0.6.3** + Harness **0.7.1** 实际执行同一 public probe：candidate query=1，exact replay query=0，分页非空；installed package 逐字节核验 Harness 151 文件、Memory 61 文件。结果仍 exit3 / NOT_RUN/BLOCKED，1 OBSERVED、390 public BLOCKED、10 source 未配置，**0 验收 PASS**。
+本机原始观察索引：`.local-test-evidence/2026-09-05/typed-recall-bridge-063-smoke/bridge-summary.json`，引用同目录 request/observations/runtime 的 SHA-256。该观察早于代码提交，只代表这次实际执行；提交后复跑需使用新目录。
+
+可复跑的 exact 0.6.3 命令（从 worktree 根执行；换一个未存在的目录名）：
+
+```sh
+/Users/denny/projects/simple_harness/backend/.venv/bin/python -B testcase/human-memory-program/runners/run_typed_recall_public_consumer.py \
+  --consumer-python /Users/denny/projects/simple_harness/backend/.venv/bin/python \
+  --harness-wheel /Users/denny/projects/simple_harness/backend/vendor/simple_harness_sdk-0.7.1-py3-none-any.whl \
+  --harness-wheel-sha256 4d5d2b7ba5c2f8ef4956af77769d75e1ac7889a037acbdcf853d0b9a5b3a3218 \
+  --harness-source-commit f5fe0dc7e8c5b521444e01c40cab176f3666c627 \
+  --memory-wheel /Users/denny/projects/simple_harness/backend/vendor/simple_harness_memory_sdk-0.6.3-py3-none-any.whl \
+  --memory-wheel-sha256 6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78 \
+  --memory-source-commit 2f3d73814fe6a884e0458d87567b918c5863033e \
+  --observe-candidate --artifact-dir .local-test-evidence/2026-09-05/typed-recall-063-NEW_RUN
+```
+
+仅 runner/helpers/adapter、桥回归和此提案属于本次交付；不宣称原 program/S3 Task5 已完成，不修改 ARCHITECTURE 的产品完成度。原冻结自检和 SDK 全量/provider/UI 本轮均未重跑。
+
+框架独立复审结论：只读复查确认上述三项修复，所审范围未发现新 P1；未代跑产品验收。review task `01a06efe-4c98-75c1-bdee-89ab69345f89`，本机索引 `.local-test-evidence/2026-09-05/typed-recall-bridge-review-followup.log`。
+0.6.3 probe summary SHA-256：`6047fb279035247872d8411584c686471b8109cfe71f8a8c48a959e4b69b8879`。

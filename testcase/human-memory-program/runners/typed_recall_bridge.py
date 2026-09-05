@@ -1,0 +1,357 @@
+"""Execution transport for TC-HM-13; observations never override frozen oracles.
+
+The v1 transport is NOT the frozen product-artifact format. Its purpose is to
+execute real consumers while the canonical-hash review is pending. Neither an
+adapter nor this aggregator can award a TC-HM-13 cell PASS in this revision.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import uuid
+import zipfile
+from datetime import datetime, timezone
+from email.parser import BytesParser
+from pathlib import Path
+
+SCHEMA = "typed-recall-execution-bridge/v1"
+FIXTURE_SHA = "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12"
+LAYERS_SHA = "2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca"
+ORACLE_BLOCKERS = ["CANONICAL_SOURCE_HASH_REVIEW_REQUIRED", "REQUEST_HASH_REVIEW_REQUIRED",
+                   "AUTHORITY_STATE_HASH_REVIEW_REQUIRED"]
+
+
+class BridgeError(ValueError):
+    pass
+
+
+def encoded(value):
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+
+
+def digest(value):
+    return hashlib.sha256(encoded(value)).hexdigest()
+
+
+def file_sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def read_json(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise BridgeError(f"duplicate JSON key: {key}")
+            result[key] = value
+        return result
+    path = Path(path)
+    if path.is_symlink():
+        raise BridgeError("symlink evidence is forbidden")
+    try:
+        return json.loads(path.read_text(), object_pairs_hook=unique,
+                          parse_constant=lambda value: (_ for _ in ()).throw(BridgeError("nonfinite JSON")))
+    except (OSError, ValueError) as exc:
+        raise BridgeError(f"invalid JSON: {path.name}: {exc}") from exc
+
+
+def write_json(path, value):
+    Path(path).write_bytes(encoded(value) + b"\n")
+
+
+def utcnow():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def timestamp(value):
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("missing timezone")
+        return parsed
+    except (AttributeError, ValueError) as exc:
+        raise BridgeError("invalid timestamp") from exc
+
+
+def partition(expected, layers):
+    all_ids = sorted(f"{lane}/{cell}" for lane, cells in expected.items() for cell in cells)
+    source = layers["source_exact_commit_integration"]["exact_cells"]
+    if len(source) != len(set(source)) or not set(source) <= set(all_ids):
+        raise BridgeError("invalid source cell partition")
+    public = sorted(set(all_ids) - set(source))
+    for section, ids in [(layers["all_cells"], all_ids),
+                         (layers["clean_wheel_public_manager"], public),
+                         (layers["source_exact_commit_integration"], sorted(source))]:
+        if section["count"] != len(ids) or section["sorted_lane_cell_ids_sha256"] != digest(ids):
+            raise BridgeError("frozen cell set/hash differs")
+    return {"public": public, "source": sorted(source)}
+
+
+def validate_layer(request, response, *, now):
+    fields = {"schema", "run_id", "layer", "request_sha256", "started_at", "completed_at", "candidate_identity", "cells"}
+    if not isinstance(response, dict) or set(response) != fields:
+        raise BridgeError("layer envelope fields differ")
+    for name in ("schema", "run_id", "layer", "candidate_identity"):
+        if response[name] != request[name]:
+            raise BridgeError(f"layer {name} mismatch")
+    if response["request_sha256"] != digest(request):
+        raise BridgeError("layer request hash mismatch")
+    if not timestamp(request["started_at"]) <= timestamp(response["started_at"]) <= timestamp(response["completed_at"]) <= timestamp(now):
+        raise BridgeError("stale, future or reversed layer timestamps")
+    expected, seen, observed, blocked, failed = set(request["cell_ids"]), set(), [], [], []
+    if not isinstance(response["cells"], list):
+        raise BridgeError("cells must be a list")
+    for cell in response["cells"]:
+        if not isinstance(cell, dict) or set(cell) != {"cell_id", "status", "reason", "observations"}:
+            raise BridgeError("cell fields differ")
+        name = cell["cell_id"]
+        if not isinstance(name, str) or name in seen or name not in expected:
+            raise BridgeError("duplicate, unknown or wrong-layer cell")
+        seen.add(name)
+        if not isinstance(cell["reason"], str) or not isinstance(cell["observations"], dict):
+            raise BridgeError("invalid reason or observations")
+        status = cell["status"]
+        if status == "OBSERVED":
+            if not cell["observations"]:
+                raise BridgeError("empty product observation")
+            observed.append(name)
+        elif status in {"BLOCKED", "FAIL"} and cell["reason"]:
+            (blocked if status == "BLOCKED" else failed).append(name)
+        else:
+            raise BridgeError("adapters cannot award PASS or omit a failure reason")
+    return {"status": "FAIL" if failed else "NOT_RUN/BLOCKED", "passed_cells": [],
+            "observed_cells": sorted(observed), "blocked_cells": sorted(blocked),
+            "failed_cells": sorted(failed), "missing_cells": sorted(expected - seen)}
+
+
+def create_run_dir(path):
+    path = Path(path).absolute()
+    if path.exists() or path.is_symlink():
+        raise BridgeError("artifact run directory must not pre-exist")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.mkdir()
+    return path
+
+
+def run_child(command, cwd, *, timeout):
+    # No inherited provider credentials, PYTHONPATH, user site or Host config.
+    if timeout <= 0:
+        raise BridgeError("child timeout must be positive")
+    (Path(cwd) / "home").mkdir(exist_ok=True)
+    env = {key: os.environ[key] for key in ("PATH", "SYSTEMROOT", "WINDIR", "TMPDIR", "TEMP", "TMP") if key in os.environ}
+    env.update(HOME=str(Path(cwd) / "home"), PYTHONNOUSERSITE="1", PYTHONDONTWRITEBYTECODE="1")
+    try:
+        return subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise BridgeError("child execution timeout") from exc
+
+
+def wheel_identity(path, sha, source_commit, distribution, package):
+    if not re.fullmatch(r"[0-9a-f]{64}", sha or "") or not re.fullmatch(r"[0-9a-f]{40}", source_commit or ""):
+        raise BridgeError("exact wheel SHA-256 and source commit are required")
+    path = Path(path).resolve()
+    if path.suffix != ".whl" or not path.is_file() or file_sha(path) != sha:
+        raise BridgeError(f"candidate wheel missing or hash mismatch: {distribution}")
+    with zipfile.ZipFile(path) as archive:
+        metadata = [name for name in archive.namelist() if name.endswith(".dist-info/METADATA")]
+        if len(metadata) != 1:
+            raise BridgeError("wheel METADATA must be unique")
+        parsed = BytesParser().parsebytes(archive.read(metadata[0]))
+        if re.sub(r"[-_.]+", "-", parsed["Name"]).lower() != distribution:
+            raise BridgeError("wheel distribution mismatch")
+        version = parsed["Version"]
+        if not version:
+            raise BridgeError("wheel version missing")
+    return {"distribution": distribution, "package": package, "version": version,
+            "source_commit": source_commit, "source_provenance": "caller-declared-build-commit",
+            "wheel_sha256": sha, "wheel_path": str(path)}
+
+
+def source_identity(checkout, candidate):
+    def git(*args):
+        run = subprocess.run(["git", "-C", str(checkout), *args], capture_output=True, timeout=10)
+        if run.returncode:
+            raise BridgeError("cannot verify source checkout")
+        return run.stdout
+    head = git("rev-parse", "HEAD").decode().strip()
+    if head != candidate["source_commit"] or git("status", "--porcelain", "--untracked-files=all"):
+        raise BridgeError("source layer requires the exact clean candidate commit")
+    return {"source_commit": head, "tree_clean_or_exact_diff_hash": "clean",
+            "checkout": str(Path(checkout).resolve())}
+
+
+def validate_runtime(request, runtime):
+    if not isinstance(runtime, dict) or not isinstance(runtime.get("packages"), dict):
+        raise BridgeError("runtime evidence must contain package identities")
+    if (runtime.get("request_sha256") != digest(request) or runtime.get("isolated") is not True
+            or runtime.get("source_identity") != request.get("source_identity")):
+        raise BridgeError("runtime identity/request binding differs")
+    if not runtime.get("python_version") or not runtime.get("executable") or not runtime.get("test_command"):
+        raise BridgeError("runtime provenance missing")
+    if set(runtime.get("packages", {})) != set(request["candidate_identity"]):
+        raise BridgeError("runtime package identities missing")
+    for name, candidate in request["candidate_identity"].items():
+        package = runtime["packages"][name]
+        if not isinstance(package, dict):
+            raise BridgeError("runtime package must be an object")
+        if (package.get("version") != candidate["version"]
+                or re.sub(r"[-_.]+", "-", package.get("distribution", "")).lower() != candidate["distribution"]
+                or not package.get("module_origin") or package.get("verified_wheel_files", 0) <= 0):
+            raise BridgeError("runtime package identity differs")
+
+
+def execute(args, layers, expected):
+    inventory = partition(expected, layers)
+    run_path = Path(args.artifact_dir).absolute()
+    existed = run_path.exists() or run_path.is_symlink()
+    fallback = {"schema": SCHEMA, "run_id": uuid.uuid4().hex, "started_at": utcnow(),
+                "required_cells": sum(map(len, inventory.values())), "passed_cells": [],
+                "oracle_blockers": ORACLE_BLOCKERS}
+    try:
+        result = _execute(args, layers, expected)
+    except (BridgeError, OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+        result = {"status": "FAIL", "reason": str(exc), "passed_cells": []}
+    if "layers" not in result:
+        result = {**fallback, **result, "completed_at": utcnow(), "layers": {
+            layer: {"status": result["status"], "reason": result.get("reason", "not executed"),
+                    "passed_cells": [], "missing_cells": ids} for layer, ids in inventory.items()}}
+        # Preserve setup-failure evidence only in the fresh directory this call
+        # created. Never modify a pre-existing or symlink artifact directory.
+        if not existed and run_path.is_dir() and not run_path.is_symlink():
+            write_json(run_path / "bridge-summary.json", result)
+    return result
+
+
+def _execute(args, layers, expected):
+    if args.consumer_entrypoint:
+        raise BridgeError("product test-helper entrypoints are prohibited")
+    if file_sha(args.fixture) != FIXTURE_SHA or file_sha(args.execution_layers) != LAYERS_SHA:
+        raise BridgeError("frozen fixture identity differs; no implicit oracle upgrade")
+    inventory = partition(expected, layers)
+    candidates = {}
+    for name, distribution, package in [("harness", "simple-harness-sdk", "simple_harness"),
+                                         ("memory", "simple-harness-memory-sdk", "simple_harness_memory")]:
+        path = getattr(args, name + "_wheel")
+        if not path:
+            return {"status": "NOT_RUN/BLOCKED", "reason": "exact candidate wheels are required", "passed_cells": []}
+        candidates[name] = wheel_identity(path, getattr(args, name + "_wheel_sha256"),
+                                           getattr(args, name + "_source_commit"), distribution, package)
+    pin_changes = [name for name in candidates if any(
+        candidates[name][key] != layers["clean_wheel_public_manager"][f"candidate_{name}_identity"][key]
+        for key in ("version", "wheel_sha256", "source_commit"))]
+    if pin_changes and not args.observe_candidate:
+        return {"status": "NOT_RUN/BLOCKED", "reason": "CANDIDATE_PIN_REVIEW_REQUIRED",
+                "candidate_pin_differences": pin_changes, "passed_cells": []}
+    run_dir = create_run_dir(args.artifact_dir)
+    workspace = run_dir / "workspace"
+    workspace.mkdir()
+    started, run_id = utcnow(), uuid.uuid4().hex
+    runner_dir = Path(__file__).resolve().parent
+    adapter_dir = runner_dir.parent / "adapters"
+    # Copy only reviewed validation code, never a source checkout into sys.path.
+    worker = workspace / "typed_recall_worker.py"
+    public = workspace / "typed_recall_public_manager.py"
+    shutil.copyfile(adapter_dir / worker.name, worker)
+    shutil.copyfile(adapter_dir / public.name, public)
+    shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
+    validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
+    python = args.consumer_python
+    isolation = "isolated-process-verified-installed-wheels"
+    if python is None:
+        uv = shutil.which("uv")
+        if uv is None:
+            raise BridgeError("uv required for a clean consumer environment")
+        venv = workspace / "venv"
+        commands = [[uv, "venv", "--python", sys.executable, str(venv)],
+                    [uv, "pip", "install", "--python", str(venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")),
+                     *[item["wheel_path"] for item in candidates.values()]]]
+        for index, command in enumerate(commands):
+            run = run_child(command, workspace, timeout=args.child_timeout)
+            (run_dir / f"environment-{index}.log").write_text(run.stdout + run.stderr)
+            if run.returncode:
+                raise BridgeError("clean consumer environment setup failed")
+        python = str(venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python"))
+        isolation = "clean-venv-isolated-process"
+    summary = {"schema": SCHEMA, "run_id": run_id, "status": "NOT_RUN/BLOCKED",
+               "started_at": started, "candidate_identity": candidates, "isolation": isolation,
+               "fixture_sha256": FIXTURE_SHA, "execution_layers_sha256": LAYERS_SHA,
+               "oracle_blockers": ORACLE_BLOCKERS, "candidate_pin_differences": pin_changes,
+               "passed_cells": [], "layers": {}, "artifacts": []}
+    fixture = read_json(args.fixture)
+    inputs = {"claim": fixture["conflict_write_oracle"]["canonical_payloads"]["incumbent"],
+              "validity": {key: value for key, value in fixture["eligibility_cases"][0].items()
+                           if key in {"now", "valid_from", "valid_until"}}}
+    for layer in ("public", "source"):
+        layer_workspace = workspace / layer
+        layer_workspace.mkdir()
+        request = {"schema": SCHEMA, "run_id": run_id, "layer": layer, "started_at": utcnow(),
+                   "candidate_identity": candidates, "cell_ids": inventory[layer], "inputs": inputs,
+                   "fixture_sha256": FIXTURE_SHA, "execution_layers_sha256": LAYERS_SHA,
+                   "isolation": isolation, "validation_code_sha256": validation_code}
+        adapter = public
+        if layer == "source":
+            if not args.source_adapter or not args.source_checkout:
+                summary["layers"][layer] = {"status": "NOT_RUN/BLOCKED", "missing_cells": inventory[layer],
+                                              "passed_cells": [], "reason": "SOURCE_EXECUTOR_NOT_CONFIGURED"}
+                continue
+            try:
+                request["source_identity"] = source_identity(args.source_checkout, candidates["memory"])
+                adapter = Path(args.source_adapter).resolve()
+                if not adapter.is_file():
+                    raise BridgeError("source adapter missing")
+            except (BridgeError, OSError, subprocess.TimeoutExpired) as exc:
+                summary["layers"][layer] = {"status": "FAIL", "reason": str(exc),
+                    "passed_cells": [], "missing_cells": inventory[layer]}
+                continue
+        request["adapter_sha256"] = file_sha(adapter)
+        request_path, response_path = run_dir / f"{layer}-request.json", run_dir / f"{layer}-observations.json"
+        write_json(request_path, request)
+        command = [str(python), "-B", "-I", str(worker), "--adapter", str(adapter),
+                   "--request", str(request_path), "--response", str(response_path)]
+        try:
+            run = run_child(command, layer_workspace, timeout=args.child_timeout)
+            (run_dir / f"{layer}-child.log").write_text(run.stdout + run.stderr)
+            if run.returncode:
+                raise BridgeError(f"{layer} consumer exited {run.returncode}")
+            if file_sha(adapter) != request["adapter_sha256"]:
+                raise BridgeError("adapter changed during execution")
+            if any(file_sha(workspace / name) != sha for name, sha in validation_code.items()):
+                raise BridgeError("validation code changed during execution")
+            if layer == "source" and source_identity(args.source_checkout, candidates["memory"]) != request["source_identity"]:
+                raise BridgeError("source checkout changed during execution")
+            response = read_json(response_path)
+            if response_path.stat().st_mtime < timestamp(request["started_at"]).timestamp():
+                raise BridgeError("stale evidence file")
+            summary["layers"][layer] = validate_layer(request, response, now=utcnow())
+            runtime_path = run_dir / f"{layer}-runtime.json"
+            validate_runtime(request, read_json(runtime_path))
+            if runtime_path.stat().st_mtime < timestamp(request["started_at"]).timestamp():
+                raise BridgeError("stale runtime evidence file")
+            summary["artifacts"].append({"layer": layer, "request_path": request_path.name,
+                                         "request_sha256": file_sha(request_path), "relative_path": response_path.name,
+                                         "sha256": file_sha(response_path), "runtime_path": runtime_path.name,
+                                         "runtime_sha256": file_sha(runtime_path)})
+        except (BridgeError, OSError, subprocess.TimeoutExpired, TypeError) as exc:
+            summary["layers"][layer] = {"status": "FAIL", "reason": str(exc), "passed_cells": [],
+                "missing_cells": inventory[layer]}
+    # A later source adapter must not invalidate already-checked public evidence.
+    for artifact in summary["artifacts"]:
+        try:
+            for path_key, sha_key in (("request_path", "request_sha256"),
+                                      ("relative_path", "sha256"), ("runtime_path", "runtime_sha256")):
+                path = run_dir / artifact[path_key]
+                if path.is_symlink() or file_sha(path) != artifact[sha_key]:
+                    raise BridgeError("layer evidence changed before final aggregation")
+        except (BridgeError, OSError) as exc:
+            summary["layers"][artifact["layer"]].update(status="FAIL", reason=str(exc))
+    if any(layer["status"] == "FAIL" for layer in summary["layers"].values()):
+        summary["status"] = "FAIL"
+    summary["completed_at"] = utcnow()
+    summary["required_cells"] = sum(len(ids) for ids in inventory.values())
+    write_json(run_dir / "bridge-summary.json", summary)
+    return summary

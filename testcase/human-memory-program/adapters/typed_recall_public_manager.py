@@ -1,0 +1,133 @@
+"""Public calls for the bridge's first executable path, not a 391-cell oracle.
+
+Only validation-side helpers and SDK package roots are imported. Inputs contain
+no expected outcome, source hash or oracle scorer. Unimplemented cells retain
+BLOCKED; actual returned objects are recorded verbatim, never made to fit gold.
+"""
+from __future__ import annotations
+
+import dataclasses
+import hashlib
+import importlib.util
+import time
+from datetime import datetime
+from pathlib import Path
+
+import simple_harness as harness
+import simple_harness_memory as memory
+
+
+def _helpers():
+    spec = importlib.util.spec_from_file_location(
+        "relation_validation_helpers", Path(__file__).with_name("semantic_relation_public_manager.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+async def run(request, workspace):
+    if request["layer"] != "public":
+        raise ValueError("public adapter cannot execute source/fault cells")
+    cell_id = "eligibility/valid-until-null-unbounded"
+    if cell_id not in request["cell_ids"]:
+        raise ValueError("public dispatch cell is absent from the frozen partition")
+    helpers = _helpers()
+    raw, validity = request["inputs"]["claim"], request["inputs"]["validity"]
+    # The public builder has no clock-injection API. Use a fresh authorization
+    # time and preserve the frozen time in observations; this is not a cell PASS.
+    now = time.time()
+    valid_from = datetime.fromisoformat(validity["valid_from"].replace("Z", "+00:00")).timestamp()
+    subject = "principal-1"
+    principal = memory.MemoryPrincipal("bridge-deployment", "bridge-household", subject, "bridge-session")
+    envelope, admission, span = helpers._evidence(subject)
+    text = f"My {raw['predicate']} is {raw['object_value']}."
+    source_hash = hashlib.sha256(text.encode()).hexdigest()
+    evidence_payload = {"item_id": span.item_id, "public_text": text}
+    envelope = dataclasses.replace(envelope, source_hash=source_hash,
+        sanitized_payload=evidence_payload, sanitized_hash=harness.fingerprint_json(evidence_payload))
+    admission = dataclasses.replace(admission, envelope_hash=envelope.envelope_hash,
+        source_hash=source_hash, sanitized_hash=envelope.sanitized_hash)
+    span = dataclasses.replace(span, envelope_hash=envelope.envelope_hash,
+        sanitized_hash=envelope.sanitized_hash, admission_receipt_hash=admission.receipt_hash,
+        source_hash=source_hash, end_byte=len(text.encode()), exact_quote=text, quote_hash=source_hash)
+    authority = helpers._Authority(harness.AdmittedEvidenceAuthority(envelope, admission, helpers._item_authority(span)))
+    policy = memory.InformationClassificationPolicy(policy_id="bridge-policy", policy_version="1",
+        authority_ref="bridge-policy-authority", required_privacy_class=harness.PrivacyClass.PERSONAL,
+        required_information_attributes=())
+    # The empty fixture object is an explicit diagnostic normalization to the
+    # public tuple type. It does NOT authorize replacing a frozen content hash.
+    if raw["qualifiers"] != {}:
+        raise ValueError("nonempty qualifier mapping has no approved diagnostic normalization")
+    payload = harness.SemanticMemoryPayload(raw["subject_entity"], raw["predicate"], raw["object_value"], ())
+    manager = await memory.build_human_memory_v6(workspace / "public.sqlite",
+        evidence_authority=authority, memory_action_authority=authority,
+        classification_policy=policy)
+    calls = ["build_human_memory_v6"]
+    try:
+        await manager.ingest_committed_evidence(envelope, admission)
+        calls.append("ingest_committed_evidence")
+        operation = helpers._shared_operation(span, operation_id="bridge-create",
+            kind=harness.MemoryMutationKind.CREATE, memory_type=harness.LongTermMemoryType.SEMANTIC,
+            payload=payload, lifecycle_state=harness.SemanticLifecycleState.ACTIVE,
+            proposed_information_attributes=(), valid_time_interval=harness.ValidTimeInterval(valid_from, validity["valid_until"]))
+        mutation = harness.MemoryMutationPlan(plan_id="bridge-mutation", run_id=envelope.run_id,
+            turn_id="bridge-turn", subject=subject, base_revision=1,
+            outcome=harness.MemoryMutationPlanOutcome.MUTATE, operations=(operation,),
+            disclosure_context=envelope.disclosure_context,
+            evidence_refs=(harness.EvidenceRef(envelope.evidence_id, envelope.envelope_hash, 1),),
+            idempotency_key="bridge-mutation")
+        applied = await manager.apply_memory_mutation_plan(principal=principal,
+            scope=memory.MemoryScope.personal(subject), plan=mutation)
+        calls.append("apply_memory_mutation_plan")
+        if applied.outcome is not harness.MemoryMutationApplyOutcome.COMMITTED or applied.receipt_ref is None:
+            raise AssertionError("public seed mutation did not commit")
+        receipt = await manager.get_memory_mutation_receipt_view(principal=principal, receipt_ref=applied.receipt_ref)
+        calls.append("get_memory_mutation_receipt_view")
+        budget = harness.RecallBudget(8, 16384, 2048, 2000)
+        context = harness.RecallContext(run_id=envelope.run_id, subject=subject, turn_id="bridge-turn",
+            context_revision=1, expires_at=now + 300, query=str(raw["object_value"]), active_task_scope_id=None,
+            available_memory_types=(harness.LongTermMemoryType.SEMANTIC,), short_horizon_allowed=False,
+            allowed_selector_domains=(harness.RecallSelectorDomain.MEMORY_TYPE,),
+            allowed_retrieval_modes=(harness.RecallRetrievalMode.FULL_TEXT,), allowed_task_scope_ids=(),
+            allowed_entity_constraints=(), earliest_occurred_at=None, latest_occurred_at=None,
+            event_constraint_refs=(), environment_constraint_refs=(), task_phase_authority_refs=(),
+            procedure_applicability_fingerprints=(), disclosure_context=envelope.disclosure_context,
+            evidence_refs=mutation.evidence_refs, budget=budget)
+        plan = harness.RecallPlan(plan_id="bridge-recall", run_id=context.run_id, subject=subject,
+            context_hash=context.context_hash, context_revision=context.context_revision, query=context.query,
+            requested_memory_types=context.available_memory_types, include_short_horizon=False,
+            selector_domains=context.allowed_selector_domains, retrieval_modes=context.allowed_retrieval_modes,
+            task_scope_ids=(), entity_constraints=(), earliest_occurred_at=None, latest_occurred_at=None,
+            event_constraint_refs=(), environment_constraint_refs=(), task_phase_authority_refs=(),
+            disclosure_context=context.disclosure_context, evidence_refs=context.evidence_refs, budget=budget,
+            idempotency_key="bridge-recall", reason_codes=(harness.RecallReasonCode.USER_FACT_DEPENDENCY,))
+        execution = await manager.execute_typed_recall(principal=principal, context=context, plan=plan, now=now)
+        calls.append("execute_typed_recall")
+        if not execution.result.items:
+            raise AssertionError("the valid unbounded Semantic source was not recalled")
+        replay = await manager.execute_typed_recall(principal=principal, context=context, plan=plan, now=now)
+        calls.append("execute_typed_recall:replay")
+        if replay.result.to_json() != execution.result.to_json():
+            raise AssertionError("durable result replay changed")
+        page = await manager.page_typed_recall_result(principal=principal,
+            request=harness.RecallResultPageRequestV1(execution.result.result_id,
+                execution.result.result_hash, 1, 0, 8, 16384, now))
+        calls.append("page_typed_recall_result")
+        if not page.bindings:
+            raise AssertionError("public result page has no bindings")
+        observations = {"calls": calls, "mutation_receipt": receipt.to_json(),
+            "recall_context": context.to_json(), "recall_plan": plan.to_json(),
+            "decision": execution.decision.to_json(), "result": execution.result.to_json(),
+            "page": page.to_json(), "candidate_query_count": execution.candidate_query_count,
+            "replay_candidate_query_count": replay.candidate_query_count,
+            "normalizations": ["empty qualifier object -> public empty tuple; canonical oracle still pending",
+                {"frozen_now": validity["now"], "observed_now": now,
+                 "reason": "public builder has no clock injection; observation only"}]}
+    finally:
+        await manager.close()
+        calls.append("close")
+    cells = [{"cell_id": name, "status": "BLOCKED", "reason": "CELL_EXECUTOR_NOT_IMPLEMENTED",
+              "observations": {}} for name in request["cell_ids"] if name != cell_id]
+    cells.append({"cell_id": cell_id, "status": "OBSERVED", "reason": "", "observations": observations})
+    return cells
