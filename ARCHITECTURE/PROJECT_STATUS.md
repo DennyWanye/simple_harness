@@ -2683,3 +2683,9 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 4. 发现新的项目级已知问题 / 测试纪律 → 更新 §5
 
 每次更新都改顶部"最后更新"日期。生产链路和边界写对应模块架构；本文件只保留聚合状态、里程碑、已知问题和证据链接。`STATUS/` 兼容文件禁止新增正文。
+
+2026-09-05：独立short-ingestion叶子接入0.6.8 source-only公开入口，前置缺失即不可用、无full-ingest fallback。
+17项限定测试通过；实际11USER分析任务成功、11assistant来源不入分析队列，重启idle且早组short hit可读。
+此前067assistant enqueue集成缺陷在此组合测试中解除；SDK独立审/最终冻结及main/native接线仍待完成。
+原067字节/环境不变，fresh7.2限定；all-indexed-roots不等于selected-only来源证明或S3/program完成。
+[交付事实](../plans/2026-09-05-primary-short-ingestion/JOURNAL.md)。

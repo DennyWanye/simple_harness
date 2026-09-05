@@ -359,3 +359,9 @@ fail closed。
 - r7 独立审计因附件截图错配、recall fault 缺直接 attestation、S6-A8 状态文字与导入 custody 不完整而
   判 FAIL；这些证据/文档缺口已在继任 Gate 输入前修复，r7 不作为发布 receipt。原始截图、日志、进程
   attestation 和 Gate ledger 仅在 ignored `.local-test-evidence/2026-08-22/`，Git 只保存结论与 hash 索引。
+
+2026-09-05：独立short-ingestion叶子接入0.6.8 source-only公开入口，前置缺失即不可用、无full-ingest fallback。
+17项限定测试通过；实际11USER分析任务成功、11assistant来源不入分析队列，重启idle且早组short hit可读。
+此前067assistant enqueue集成缺陷在此组合测试中解除；SDK独立审/最终冻结及main/native接线仍待完成。
+原067字节/环境不变，fresh7.2限定；all-indexed-roots不等于selected-only来源证明或S3/program完成。
+[交付事实](../plans/2026-09-05-primary-short-ingestion/JOURNAL.md)。

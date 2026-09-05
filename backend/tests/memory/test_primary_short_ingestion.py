@@ -399,3 +399,111 @@ async def test_recreated_memory_preserves_original_user_analysis_lineage(tmp_pat
         assert replay.evidence_id == user.envelope.evidence_id
     finally:
         await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_missing_source_only_port_rejects_before_any_user_or_group_work():
+    from types import SimpleNamespace
+
+    from deskpet.memory.conversation_registration import (
+        ConversationRegistrationUnavailable,
+    )
+    calls = []
+    class Authority:
+        subject = local_memory_principal().actor_id
+        async def completed_run_ids(self):
+            calls.append('scan')
+            raise AssertionError('capability must be checked before group work')
+    async def full_ingest(*args, **kwargs):
+        calls.append('full_ingest')
+        raise AssertionError('no full-ingest fallback')
+    service = PrimaryShortIndexingService(Authority(),
+        manager=SimpleNamespace(ingest_committed_evidence=full_ingest), principal=local_memory_principal())
+    with pytest.raises(ConversationRegistrationUnavailable, match='short_source_admission_unavailable'):
+        await service.reconcile()
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_real_eleven_user_jobs_and_source_only_assistants_no_retry_or_deadletter(tmp_path):
+    import json
+    import time
+
+    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
+    from deskpet.memory.analysis_proposal import PROPOSAL_TOOL_NAME
+    from deskpet.memory.evidence_authority import HostEvidenceAuthority
+    from deskpet.memory.memory_ingestion_outbox import build_worker_config
+    from simple_harness import CallId
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers import ProviderResponse, ProviderToolCall
+    from simple_harness_memory import DurableMemoryJobRunner
+
+    state, _, authority, manager = await real_turns(tmp_path, 11)
+    result = await PrimaryShortIndexingService(authority, manager=manager,
+        principal=local_memory_principal()).reconcile()
+    users = {group.registrations[0].envelope.evidence_id for group in result.groups}
+    assistants = {group.registrations[1].envelope.evidence_id for group in result.groups}
+    assert len(users) == len(assistants) == 11 and not users & assistants
+    pending = await manager.read_outbox(principal=local_memory_principal())
+    assert len(pending.entries) == 11
+    assert {entry.idempotency_key for entry in pending.entries} == users
+    assert {entry.topic for entry in pending.entries} == {'memory.mutation.requested'}
+    await manager.close()
+
+    class AnalysisProvider:
+        target = Provider.target  # exact target from the actual foreground fixture Run
+        def __init__(self):
+            self.requests = []
+        async def invoke(self, request, *, cancel):
+            self.requests.append(request)
+            return ProviderResponse(request_id=request.request_id,
+                message=Message(MessageRole.ASSISTANT, ''), model='model', finish_reason='tool_calls',
+                tool_calls=(ProviderToolCall(CallId(f'analysis-{len(self.requests)}'), PROPOSAL_TOOL_NAME,
+                    {'outcome': 'no_mutation', 'operations': []}),))
+
+    provider = AnalysisProvider()
+    executor = HostMemoryAnalysisExecutor(state, adapter_factory=lambda record: provider)
+    kwargs = {"supported_filter_policies": HOST_SUPPORTED_FILTER_POLICIES,
+        "conversation_evidence_authority": authority, "classification_policy": host_classification_policy(),
+        "evidence_authority": HostEvidenceAuthority(state), "analysis_delivery_authority": executor}
+    manager = await MemoryManager.build_human_memory_v7(tmp_path / 'index.db', **kwargs)
+    config = build_worker_config(provider_id='fixture', model_id='model',
+        model_config_hash=result.groups[0].user_analysis_lineage.model_config_hash)
+    try:
+        runner = DurableMemoryJobRunner(manager.backend, executor, executor, config,
+            'actual-user-analysis', time.time)
+        outcomes = [str(await runner.run_once()) for _ in range(11)]
+        assert outcomes == ['applied'] * 11
+        assert str(await runner.run_once()) == 'idle'
+        assert executor.calls == len(provider.requests) == 11
+        # These are Host-owned immutable attempt/member facts, not SDK SQL.
+        with sqlite3.connect(state) as db:
+            attempts = db.execute("SELECT status FROM post_turn_invocation_attempts WHERE purpose='analysis'").fetchall()
+            assert len(attempts) == 11
+            assert {row[0] for row in attempts} == {'succeeded'}
+            members = db.execute("SELECT DISTINCT evidence_id FROM post_turn_invocation_members").fetchall()
+            assert {row[0] for row in members} == users
+            outbox = db.execute("SELECT state,attempts,last_error FROM memory_ingestion_outbox").fetchall()
+            assert len(outbox) == 11 and all(row[0] == 'delivered' and row[2] is None for row in outbox)
+        all_entries = await manager.read_outbox(principal=local_memory_principal(),
+            states=('pending','claimed','applied','dead_letter'))
+        analysis_entries = [e for e in all_entries.entries if e.topic == 'memory.mutation.requested']
+        assert len(analysis_entries) == 11
+        assert {e.idempotency_key for e in analysis_entries} == users
+        assert not any(e.state == 'dead_letter' for e in analysis_entries)
+        assert len((await recall(manager, 'quartznebula')).hits) == 1
+        # Persist compact review facts alongside pytest's ignored database evidence.
+        (tmp_path / 'job-combination.json').write_text(json.dumps({
+            "user_evidence": sorted(users), "assistant_evidence": sorted(assistants),
+            "outcomes": outcomes, "provider_calls": len(provider.requests), "assistant_analysis_calls": len({row[0] for row in members} & assistants),
+        }, indent=2))
+    finally:
+        await manager.close()
+    manager = await MemoryManager.build_human_memory_v7(tmp_path / 'index.db', **kwargs)
+    try:
+        assert str(await DurableMemoryJobRunner(manager.backend, executor, executor, config,
+            'reopened-user-analysis', time.time).run_once()) == 'idle'
+        assert executor.calls == len(provider.requests) == 11
+        assert len((await recall(manager, 'quartznebula')).hits) == 1
+    finally:
+        await manager.close()

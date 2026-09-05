@@ -90,3 +90,44 @@ would have hidden it. One overly strong FTS-empty assertion and two fixture/API 
 contracts and exact real APIs earlier; do not repeat green SDK/source suites to compensate.
 
 VERDICT: BLOCKED — default short indexing integration; bounded B producer/registration leaf15 PASS and Scoped ACCEPT — 2026-09-05 — 2fb1d1905138a57ce7acfb93495112d95aca16fe — successor public source-only admission required.
+
+
+## 2026-09-05 — authorized0.6.8 source-only composition (independent branch)
+User approved SOURCE-ONLY-ADMISSION; no changes to main/native environment or frozen067.
+Only short_indexing.py switches assistant to public admit_evidence_source(principal,envelope,receipt).
+The new capability is checked before scanning or any USER replay/write. Missing API yields
+short_source_admission_unavailable with no fallback. Original USER actual outbox AnalysisLineage,
+producer/atomic terminal, complete group and recursive suppression authority remain unchanged.
+
+Exact test wheel (pending independent SDK source review/final freeze): Memory0.6.8 source
+5e8397b1d1b35b868e738b8b7962e02775f494e0, wheel98a9c788a07177319909ab83c1e356aadc685aa952cb49008d6536530b82dddc.
+Harness0.7.2 wheel53bded3f unchanged. New isolated env under
+.local-test-evidence/2026-09-05/source-only-068-host/venv; previous067venv retained untouched.
+
+value-r1.log:2 decisive tests PASS. Actual production foreground + SDK terminal + Host atomic
+producer/outbox generated11 complete groups.11 original USER full-ingest jobs and11 assistant
+source-only receipts. Public read_outbox shows exactly11 analysis entries, all bound to original
+USER evidence; production HostMemoryAnalysisExecutor and real SDK DurableMemoryJobRunner process
+11 real requests via deterministic analysis transport,11 APPLIED/Host attempts succeeded, next
+run IDLE, no assistant request/attempt/deadletter. Reopen stays idle and returns the actual early
+short hit. This is deterministic actual stack evidence, not external provider or native UI proof.
+SDK-side read-only inspection of this test DB independently confirmed11 applied jobs (attempt1),
+11 full USER receipts and11 assistant source receipts with no assistant job. Host code/tests do
+not query SDK SQL/private APIs; Host-owned outbox/attempt facts and public SDK ports are used.
+
+adjacent-r1.log:17 PASS in36.61s — whole bounded short-ingestion leaf plus2 primary-history
+adjacent cases. Contains prior crash/reopen/source+terminal suppression/incomplete/tool/legacy/
+marked-source rejection gates. Source-only SDK own source tests additionally prove zero enqueue/
+analysis-table writes and MEMORY-only original USER+assistant reverse suppression. Test counts
+are separate layers, not additive program acceptance totals.
+
+Reproduce from backend with PY=../.local-test-evidence/2026-09-05/source-only-068-host/venv/bin/python:
+`env -u PYTHONPATH -u PYTHONHOME $PY -m pytest tests/memory/test_primary_short_ingestion.py -q`
+Focused value: `... -m pytest tests/memory/test_primary_short_ingestion.py::test_real_eleven_user_jobs_and_source_only_assistants_no_retry_or_deadletter tests/memory/test_primary_short_ingestion.py::test_missing_source_only_port_rejects_before_any_user_or_group_work -q`.
+
+Remaining: independent review/final candidate delivery; fresh Memory7.2 only (no migration or
+cleanup of067 assistant full-ingest jobs), main/native startup wiring owned by main/Carver.
+All-indexed-roots is still a bounded failclosed guard, not proof of actual selected-only source
+coverage or full short-lane availability. No selected-source interface, no original401/threshold
+changes; S3/program/native product completion not claimed.
+JOURNAL_VERDICT: IN_PROGRESS — bounded tests green; independent review/freeze delivery pending.
