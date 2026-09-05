@@ -427,6 +427,7 @@ class HumanMemoryHostService:
         history_visibility_checker: object | None = None,
         decision_ingress_getter: object | None = None,
         cognitive_runtime_getter: object | None = None,
+        display_invalidation: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -445,6 +446,7 @@ class HumanMemoryHostService:
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
         self._cognitive_runtime_getter = cognitive_runtime_getter
+        self._display_invalidation = display_invalidation
         from deskpet.memory.primary_read_model import PrimaryReadModel
 
         self._primary_read = PrimaryReadModel(
@@ -530,10 +532,14 @@ class HumanMemoryHostService:
         return PrimaryCognitiveControls(
             self._db_path, auth=self._auth,
             runtime_getter=self._cognitive_runtime_getter,
+            display_invalidation=self._display_invalidation,
         )
 
     async def list_primary_memories(self, **request):
         return await self._cognitive_controls().list(**request)
+
+    async def read_primary_memory_graph(self, **request):
+        return await self._cognitive_controls().graph(**request)
 
     async def forget_primary_memory(self, **request):
         return await self._cognitive_controls().forget(**request)
@@ -1941,6 +1947,7 @@ class HumanMemoryHostServiceFactory:
     history_visibility_checker: object | None = None
     decision_ingress_getter: object | None = None
     cognitive_runtime_getter: object | None = None
+    display_invalidation: object | None = None
 
     def bind(
         self,
@@ -1965,6 +1972,7 @@ class HumanMemoryHostServiceFactory:
             history_visibility_checker=self.history_visibility_checker,
             decision_ingress_getter=self.decision_ingress_getter,
             cognitive_runtime_getter=self.cognitive_runtime_getter,
+            display_invalidation=self.display_invalidation,
         )
 
 

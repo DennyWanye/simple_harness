@@ -405,6 +405,7 @@ class MemoryAnalysisLane:
         worker_id: str,
         clock: Callable[[], float] = time.time,
         poll_seconds: float = 2.0,
+        display_invalidation: Any | None = None,
     ) -> None:
         self._worker = worker
         self._runtime = runtime
@@ -413,6 +414,7 @@ class MemoryAnalysisLane:
         self._worker_id = str(worker_id)
         self._clock = clock
         self._poll_seconds = float(poll_seconds)
+        self._display_invalidation = display_invalidation
         self._runner: Any | None = None
         self._task: asyncio.Task[None] | None = None
         self._stop = asyncio.Event()
@@ -440,6 +442,12 @@ class MemoryAnalysisLane:
             self.last_error = exc
             log.warning("memory_analysis_lane_job_error error=%s", f"{type(exc).__name__}:{str(exc)[:200]}")
             job = None
+        # APPLIED is the public runner completion (including NO_MUTATION), not
+        # a claim that a particular memory was written. No idle polling events.
+        from simple_harness_memory import WorkerRunOutcome
+
+        if job is WorkerRunOutcome.APPLIED and self._display_invalidation is not None:
+            await self._display_invalidation.changed()
         return outbox, job
 
     def wake(self) -> None:

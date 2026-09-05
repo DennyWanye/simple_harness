@@ -97,12 +97,17 @@ async def handle_human_memory_command(
             recovery=recovery,  # type: ignore[arg-type]
             scheduler_wake=scheduler_wake,  # type: ignore[arg-type]
         )
+        # Server-owned display generation only; never accepted in the wire DTO.
+        # Capture before the read and validate AFTER the final async identity fence.
+        changes = getattr(factory, "display_invalidation", None) if operation == "primary.memory.graph" else None
+        generation = changes.generation if changes is not None else None
         payload = await _dispatch(service, operation, dict(request), request_id)
         if operation in {
             "primary.state",
             "primary.messages.page",
             "primary.messages.detail",
             "primary.memory.list",
+            "primary.memory.graph",
             "primary.memory.forget",
         }:
             from deskpet.memory.writer_fence import human_memory_request_boundary
@@ -111,6 +116,8 @@ async def handle_human_memory_command(
             # A reconnect during a slow read must not disclose through the old lease.
             async with human_memory_request_boundary():
                 pass
+        if changes is not None and changes.generation != generation:
+            raise HumanMemoryHostServiceError("primary_memory_view_invalidated")
     except Exception as exc:  # noqa: BLE001 - stable public error projection
         return _error(
             request_id,
@@ -128,9 +135,13 @@ async def _dispatch(  # type: ignore[no-untyped-def]
 ):
     if operation == "primary.open":
         return await service.open_primary()
-    if operation in {"primary.memory.list", "primary.memory.forget"}:
+    if operation in {"primary.memory.list", "primary.memory.graph", "primary.memory.forget"}:
         from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveError
 
+        if operation == "primary.memory.graph":
+            if "primary_ref" not in request or not set(request) <= {"primary_ref", "node_limit", "edge_limit"}:
+                raise PrimaryCognitiveError("primary_memory_request_invalid")
+            return await service.read_primary_memory_graph(**request)
         if operation == "primary.memory.list":
             if "primary_ref" not in request or not set(request) <= {"primary_ref", "limit", "cursor"}:
                 raise PrimaryCognitiveError("primary_memory_request_invalid")
