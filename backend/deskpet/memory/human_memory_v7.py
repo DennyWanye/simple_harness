@@ -104,6 +104,8 @@ class HumanMemoryV7Runtime:
         principal: Any = None,
     ) -> None:
         self._db_path = Path(db_path)
+        from deskpet.operation_audit.memory_attempts import MemoryAttemptJournal
+        self.operation_audit = MemoryAttemptJournal(self._db_path.with_name("operation-audit.db"))
         # Production: the single authenticated local owner.  Tests may bind a
         # subject-specific principal (same deployment/household shape).
         self._principal = principal
@@ -372,8 +374,9 @@ class HumanMemoryV7Runtime:
             f"context-route:{run_id}:{turn_ordinal}",
             (RecallReasonCode.USER_FACT_DEPENDENCY,),
         )
-        execution = await manager.execute_typed_recall(
-            principal=principal, context=context, plan=plan, now=moment
+        execution = await self.operation_audit.execute_typed_recall(
+            manager, principal=principal, context=context, plan=plan, now=moment,
+            caller="foreground_recall",
         )
         try:
             short_horizon = await manager.recall_short_horizon(

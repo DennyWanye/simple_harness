@@ -1,5 +1,20 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Host Memory attempt and pre-SDK rejection audit leaf
+
+Last updated: 2026-09-05. Isolated feat/host-memory-operation-audit from7cf2a39c
+wires durable Host started/settled around actual foreground typed recall and semantic
+correction candidate recall. The default audit composition additionally discovers
+verified Host preparation rejections with no SDKRun. Original errors/cancellation
+and business results are preserved; recovery never repeats a business effect.
+Installed Memory0611 exact-wheel/Host combination32 tests pass, including public
+sealed snapshot pages and concurrent reader recovery. Trusted receipt-supplied OA1
+reader is implemented, but Host production grant issuance/authorized external
+readthrough and all other inventory boundaries remain unfinished. No usage/cost
+aggregation or all-operation/native completion claim. Independent final review is
+pending for this fixed candidate.
+See [scope and handoff](../plans/2026-09-05-agent-operation-audit/host-memory-leaf/HANDOFF.md).
+
 ## 2026-09-05 Public TwinGraph HUMAN projection and completion invalidation
 
 Last updated: 2026-09-05. Host reads manager.get_twin_graph_view using actual principal/primary and signed late API boundary. Node and edge output is bounded with closed endpoints; SDK collection remains a full scan. Main shares content-free completion invalidation between actual suppress and MemoryAnalysisLane APPLIED (including no_mutation). Server generation is checked after the final identity await; no SDK global epoch or Agent graph input is introduced.

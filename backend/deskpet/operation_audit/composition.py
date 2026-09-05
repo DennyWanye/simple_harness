@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from deskpet.operation_audit.consumer import PublicAuditReader, TerminalAuditConsumer
+from deskpet.operation_audit.preparation_sources import PreparationAuditConsumer
 from deskpet.operation_audit.sources import TerminalSources
 from deskpet.operation_audit.store import AuditStore
 
@@ -33,6 +34,7 @@ async def compose_terminal_audit(
         page_size=page_size,
         poll_seconds=poll_seconds,
     )
+    consumer.preparation_sources = PreparationAuditConsumer(state_path, path, subject=subject)
     if start:
         consumer.start()
     return consumer
