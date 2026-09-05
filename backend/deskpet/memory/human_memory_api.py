@@ -16,6 +16,7 @@ from deskpet.memory.human_memory_service import (
     ControlRunRequest,
     CreateTaskScopeRequest,
     DecideManualBindingRequest,
+    ExactControlRunRequest,
     HumanMemoryHostServiceError,
     HumanMemoryHostServiceFactory,
     ListEvidenceGroupsRequest,
@@ -106,6 +107,28 @@ async def _dispatch(  # type: ignore[no-untyped-def]
 ):
     if operation == "primary.open":
         return await service.open_primary()
+    if operation in {
+        "primary.state", "primary.messages.page", "primary.messages.detail"
+    }:
+        from deskpet.memory.primary_read_model import PrimaryReadError
+
+        allowed, required = {
+            "primary.state": (set(), set()),
+            "primary.messages.page": (
+                {"primary_ref", "cursor", "limit"}, {"primary_ref"}
+            ),
+            "primary.messages.detail": (
+                {"primary_ref", "message_ref", "offset", "limit"},
+                {"primary_ref", "message_ref"},
+            ),
+        }[operation]
+        if not required <= set(request) or not set(request) <= allowed:
+            raise PrimaryReadError("primary_read_request_invalid")
+        if operation == "primary.state":
+            return await service.read_primary_state()
+        if operation == "primary.messages.page":
+            return await service.read_primary_messages(**request)
+        return await service.read_primary_message_detail(**request)
     if operation == "primary.append":
         event = request.get("event")
         if not isinstance(event, Mapping):
@@ -213,6 +236,19 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             )
         )
     if operation == "queue.control":
+        if {"expected_run_ref", "expected_generation"} & set(request):
+            from deskpet.memory.primary_read_model import PrimaryReadError
+
+            required = {"expected_run_ref", "expected_generation", "control"}
+            if not required <= set(request) or not set(request) <= required | {"reason"}:
+                raise PrimaryReadError("primary_exact_control_invalid")
+            return await service.control_current_run(
+                ExactControlRunRequest(
+                    request["expected_run_ref"], request["expected_generation"],
+                    request["control"], request.get("reason", "user_requested"),
+                    request_id,
+                )
+            )
         return await service.control_current_run(
             ControlRunRequest(
                 str(request["control"]),
