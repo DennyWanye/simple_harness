@@ -1,6 +1,46 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-08-30（Project Skill 历史链路、全局 Skill 与 Realtime 单一入口校准）
+> 最后更新：2026-09-05（primary 前端候选；真实项目 route 交互未验证）
+
+## 2026-09-05 单主对话前端候选（尚非完整 S6 cutover）
+
+`feat/human-memory-primary-ui` 从 Host `c183fe70` 建立独立树，仅修改前端与本节/PROJECT_STATUS。
+Workbench 默认入口为 `PrimaryChatView`，Sidebar 不再挂载 Session catalog/CRUD；原 ChatView/SessionList
+保留历史代码与测试，不由 Workbench 生产路由挂载。设置、技能中心、产物库入口保留。
+
+主对话复用 App 已有 `ControlChannel` 的 signed `companion_profile_bind` 连接，只有当前连接真实 bound
+才读取 `primary.open/state/messages.page`；global identity_status 不作为本 socket 授权。晚挂载复用当前
+连接 bound cache；disconnect/unbind/rechallenge 清 cache。未知 enqueue 的 delivery_key 在同 owner
+rechallenge/重连时保留，只有重新 bound 确认 owner 改变才丢弃。无 `chat_v2` fallback 或伪造 Session ID。
+
+输入框仅在 request_id/operation/delivery_key 关联的完整 enqueue receipt 后清草稿；拒绝、超时、断连
+保留草稿，无自动 mutation 重发。停止固定按钮渲染时的 Host run_ref/generation，并核验响应目标、
+receipt 与 outcome；拒绝、过期、superseded、already_terminal 不当作控制已受理。
+
+历史为服务端过滤的非流式 durable page：默认扫描十 turns、前端每页最多20消息，preview1024 Unicode
+codepoints；详情每次4096 codepoints，逐段替换。opaque revision 不是 privacy epoch，不跳过服务端
+suppression 检查；`human_memory_changed` 立即清页/详情、取消旧 read，再补读，保留在途 queue ACK。
+有界兜底最多12次，真实事件/focus/手动刷新恢复预算；耗尽不伪报运行失败。队列 truncated 显示“至少 N”。
+
+权限 popup 和 bounded 工具活动按 Host 返回的真实 `execution_session_ref` + `sdk_run_ref` 关联，
+权限补读指定 execution session，保留原 request/decision/nonce/version；不将 primary_ref 代成旧 sid。
+模型入口进入当前 foreground 使用的全局 Provider 设置，不发旧 `session_set_model`。附件选择 UI 保留，
+queue 附件尚未支持时明确拒绝发送并保留草稿/附件；slash 命令同样明确提示尚未接通。
+
+**项目交互/恢复未验证**：旧 `project_directory_request` 卡为 live-only，若生产使用该路径，事件先于
+mapping、同 Run 重挂载或重连会丢卡（条件性 P1）。但旧 `project_directory_response` 仍走旧 Host
+execution，新 SDK 的 `project_directory_select` 可能只是 fail-closed 注册，不能据此断言当前
+`context_route` 会走该交互。主协调已暂停兼容 pending API 扩展，待 Carver 确认真正 TaskScope
+manual binding / route 路径，再定 UI 与恢复测试。当前目录卡仅显示“已提交，等待运行确认”，
+不把后端 logger 当成功 ACK。TaskScope/Context Inspector、完整 Artifact 卡、primary slash/附件/
+Realtime 等保留项也仍未接完。
+
+验证：聚焦前端100 passed + PrimaryRunPanel 实际权限组件集成1 passed；typecheck 通过。
+新增 primary 源文件 lint 通过；受影响 InputBar 的 `react-refresh/only-export-components` 单项红在
+`c183fe70` 原文件复现（旧 `_testing` 导出），未放宽规则。原始日志在 ignored
+`.local-test-evidence/2026-09-05/primary-ui/`，测试契约见
+[`UI-CONTRACT.md`](../tauri-app/src/primary/UI-CONTRACT.md)。未起 App/Provider，未改 backend/SDK，
+不声称首价值真测通过、完整 S6 cutover 或 program/full-audit gate PASS。
 
 ## 1.0 Project-scoped Capability Center（2026-08-29）
 

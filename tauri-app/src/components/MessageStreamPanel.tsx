@@ -1052,14 +1052,16 @@ function ThinkingProcessGroup({
   );
 }
 
-function ProjectDirectoryCard({
+export function ProjectDirectoryCard({
   request,
   error,
   onConfirm,
+  submittedLabel = "项目位置已确认",
 }: {
   request: ProjectDirectoryRequest["payload"];
   error?: string | null;
   onConfirm?: MessageStreamPanelProps["onProjectDirectoryConfirm"];
+  submittedLabel?: string;
 }) {
   const [parent, setParent] = useState(request.parent_directory ?? "");
   const [folderName, setFolderName] = useState(request.folder_name);
@@ -1122,7 +1124,7 @@ function ProjectDirectoryCard({
       }}
     >
       <div style={{ fontWeight: 650 }}>
-        {submitted ? "项目位置已确认" : request.title || "选择项目保存位置"}
+        {submitted ? submittedLabel : request.title || "选择项目保存位置"}
       </div>
       <div style={{ color: "#94a3b8", lineHeight: 1.45 }}>
         {request.directory_mode === "use_existing"

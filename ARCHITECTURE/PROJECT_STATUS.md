@@ -2,6 +2,21 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 primary 前端独立候选（集成待续）
+
+独立 worktree `/Users/denny/projects/simple_harness-primary-ui`，分支 `feat/human-memory-primary-ui`，
+base `c183fe70`：Workbench 单主对话入口、真实 bound 连接上的 durable 历史/ACK 草稿提交、精确
+run/generation 控制与回执分类、read invalidation/有界补读、真实 hidden execution mapping 的权限组件
+接线已完成本次前端实现。聚焦100 passed + 权限组件集成1 passed，typecheck 通过；InputBar 旧 lint
+导出规则同因红已在 base 复现。见 [UI 当前事实](UI.md) 与前端 `primary/UI-CONTRACT.md`。
+
+真实项目交互/恢复未验证：旧目录 live-only 卡存在映射晚到/重挂载/重连丢失的条件性 P1，但其旧 Host
+execution 回传未必是新 SDK context_route 的实际路径。主协调已暂停兼容 pending API 扩展，待 Carver
+确认真正 TaskScope manual binding/route，再接 UI 与恢复测试；不得把该前端包当成首项目任务可验收。
+模型使用全局 Provider 设置；附件/slash/Realtime、完整 Artifact/Context/TaskScope 保留项尚待接线。
+未起 App/Provider、未修改 backend/SDK、未写 gate，原 S5b FAIL 与全量限制继续保留。原始证据仅在
+该树 ignored `.local-test-evidence/2026-09-05/primary-ui/`。
+
 ## 2026-09-05 当前修复与受影响验证
 
 Host episode 时间修复提交 `4eb1eb7c` 后，effect/closure/analysis/FIFO 受影响集合 **150 passed**。
