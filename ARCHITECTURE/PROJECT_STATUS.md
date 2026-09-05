@@ -1,5 +1,15 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Original source and first forget-cut public facts prepared
+
+Last updated: 2026-09-05. Host now captures a v2 forget action's original queue
+frontier atomically with its S1, and exposes read-only source/cut facts through
+public SDK carriers. Exact retries preserve the first cut; old v1 actions remain
+unchanged and explicitly lack a verified cut. Source-overlay fact/API13 pass,
+with independent scoped ACCEPT. SDK enforcement/builder/native integration remain
+pending; this is not a duplicate-forget PASS.
+See [contract and evidence](../plans/2026-09-05-semantic-correction/HOST-SOURCE-CUT.md).
+
 ## 2026-09-05 USER source and queue admission now atomic
 
 Last updated: 2026-09-05. The service now persists new USER S1 and its queue row in
