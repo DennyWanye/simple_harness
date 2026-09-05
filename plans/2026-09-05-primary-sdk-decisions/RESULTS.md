@@ -2,7 +2,7 @@
 
 2026-09-05. Isolated base 5da24d6f67331aeb190f5cb23defd2863674d670.
 
-Automated fixtures only. No App, real Provider, native database or SDK/pin changes.
+Initial candidate evidence below is automated fixtures only; the subsequent native section records actual App/Provider results. SDK pins remain unchanged.
 Independent review pending at initial candidate commit. Main owns native acceptance.
 
 ## Verification
@@ -79,3 +79,43 @@ call `_notify_state_changed()` only for `BOUND_WAITING`. Its runtime/test patch 
 `git apply --check` against this candidate. It has not been merged into this owner branch;
 no history branch is required for the Stage1 patch. Main owns a fresh native Run on its
 previous isolated data; no cancelled/unknown Run replay, privacy/forget or cutover claim.
+
+## Native project run on dfdaec4a — function passed, dialog layout open
+
+Real native App and remote gpt-5.5, exact installed Harness0.7.2 / Memory0.6.3 / Service0.3.12.
+Source `dfdaec4a3951043a689f861f5df2fcdf77124b77`, App binary SHA-256
+`f29afbc5509ee4af4d0d4ed2c0c195eef6b3d23037d2dc1f6e57ec3613e66860`.
+WAITING notification combined; runtime regression 16 passed in 3.34s. Native debug App build passed.
+
+A NEW natural project request was submitted through native text input and Send. The previous stopped
+Run was not replayed. Native AX clicks expanded and approved exact context_route(create_new) and
+later task_scope_update. Host `e53d0e6b-108d-5383-8026-0d87f3ecf7f2` COMPLETED;
+SDK `product-sdk-2eb6601d68486c87fdd6d659a09b794e8c749ee543d1ebf76ab112f2f2d65c17` completed,
+two decisions allowed, 11 successful physical foreground Provider invocations. Three failed activation
+attempts (one missing arguments, two wrong describe nonce) recovered within this same Run; these are
+not clean single-shot tool activation proof. The model recorded task completion and returned the file location.
+
+Actual Scope `e43aa74e-95b2-57bd-a372-c9bd5c127e7b`, title primary-ui-0905.
+Actual file `/Users/denny/SimpleHarnessWorkSpace/task-e43aa74e-95b2-57bd-a372-c9bd5c127e7b/primary-ui-0905/README.md`
+contains exactly 25 bytes `PRIMARY_NATIVE_PROJECT_OK`, SHA-256
+`b2161b533e476855bee6884c82eaeaf492723fb8bea2d96774f69cc904090c82`.
+UI final reply and idle status captured. All six accumulated Memory jobs applied before normal App exit 0.
+
+**Open visual defect:** initial authorization modal appeared visibly, but later Primary dialogs were
+present/clickable through native AX while absent in screenshots. Native file/terminal behavior passed;
+visible authorization usability has NOT passed. Do not count this as complete Stage1, privacy, .067 or full-program acceptance.
+
+Evidence stays ignored in main checkout `.local-test-evidence/2026-09-05/human-memory-resume/primary-ui-ox31zoi3/`:
+
+| File | SHA-256 |
+| --- | --- |
+| 01-authorization.png | 333fa9e4a6fcf7e3b4db835afbb18e3594c054b3928f6901668d73c7850ea4d1 |
+| 02-authorization-details.png | a7cf65d3ea5e8ef6ebf7c93e6aa1465a226924fd85a0a7639fa0377245e45b9a |
+| 04-file-authorization.png | a7cf65d3ea5e8ef6ebf7c93e6aa1465a226924fd85a0a7639fa0377245e45b9a |
+| 05-completed.png | c0f76a7bf5ccdf6e511b8365e7960ed01a3af4beb5e76c3ea89ac870148f9853 |
+| native-project-ledger.json | da337efc3e64bbf31b7b2a7cd27488e4b1e74534bdadcd014fd90c9d4e70cc8d |
+
+Current worktree build/regression logs stay ignored in `.local-test-evidence/2026-09-05/primary-decisions-native/`:
+
+- waiting-combined.log: `453b4f84b3f55d4ad11efa13ad1a5b92aff5ee90da8c718afa213d088164b8b4`.
+- native-build.log: `4f9920f994e859864608aa10ecb82babdb6a6725e36e6f1034bbe237a5b3ab18`.

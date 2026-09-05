@@ -2,6 +2,8 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-09-05 原生新项目已真实写入文件并完成；授权卡可视布局仍有缺陷，Stage1不报全绿。见 [验证结果](../plans/2026-09-05-primary-sdk-decisions/RESULTS.md)。
+
 2026-09-05 Primary 精确 SDK 授权新增独立候选：生产授权策略/installed SDK/真实文件 effect
 确定性 fixture 通过，HUMAN bound socket 接权限补读与响应。native 未验收，WAITING通知
 由运行层另行组合；底层旧列表非 SDK public port。见 [UI](UI.md) 与

@@ -2,6 +2,15 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Primary native project result and open visual defect
+
+候选 dfdaec4a 在真实原生 UI 输入新请求，经两次原生 AX 精确授权，实际创建新 Scope 和
+README（25字节与指定内容相符），Host/SDK 均完成、最终回复可见、正常退出0。
+11次真实前台 Provider 调用全部成功，期间3次工具激活参数失败后恢复；不称最短工具链。
+初始权限弹窗可见，但后继授权卡仅AX可读/可点、截图不可见，布局缺陷未闭合，因此
+项目写入行为通过不等于 Stage1 全部通过。仍使用 Memory0.6.3，非遗忘/.067/全program验收。
+命令、运行ID、文件与原始证据hash见 [RESULTS](../plans/2026-09-05-primary-sdk-decisions/RESULTS.md)。
+
 ## 2026-09-05 Waiting state invalidation
 
 Foreground 在 BOUND_WAITING reconciliation 提交后调用现有空 payload、有界非阻塞刷新。
