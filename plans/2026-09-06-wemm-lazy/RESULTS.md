@@ -144,3 +144,48 @@ Exit0; monitor 2.308s; peak 608496KiB; stop=None.
 `.local-test-evidence/2026-09-06/wemm-lazy/types.json` SHA256 `36602fa9fe0d4c29085881f7a179ddbad9d6befcd64e862a6cf4c8bd03276a4c`.
 
 `.local-test-evidence/2026-09-06/wemm-lazy/types.log` SHA256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+## Failed-load task retention follow-up
+
+2026-09-06, after19b851f2. Main identified self._load_task retaining a completed
+failure traceback and therefore its rejected local model. New load-specific callback
+observes a completed task and drops self._load_task only if still that exact task.
+Pending/newer tasks are untouched. It never clears exception tracebacks, changes
+waiter errors, changes failed status, triggers retries or stops a physical thread.
+Encode completion remains unchanged (no permanent self task field).
+
+Decisive fake-model weakref oracle initially failed: after two actual concurrent
+waiters got the dimension error, dropped their exception references and gc ran, the
+rejected instance remained alive. After correction the same oracle passes: one
+construction, both original errors, failed state and collected instance. A callback
+identity guard oracle checks pending/current/stale tasks, with existing explicit
+retry2 and cancelled-loader1 as necessary neighbors:5PASS0.20s, exit0. These add only
+2 unique tests beyond earlier13 backend tests (15 unique total), not5 new cases.
+No real model/weights loaded. No claim of allocator/GPU memory reclamation.
+
+Dirac19b851f2 static scoped ACCEPT remains historical; this follow-up is sent for
+independent read-only review. His nonblocking UI wording comment is also addressed:
+ready now says '模型已加载，可处理语义嵌入请求。' rather than complete semantic-search
+activation. Literal copy-only change; React/backend unrelated suites not rerun.
+
+```sh
+/Users/denny/projects/simple_harness-primary-candidate/.local-test-evidence/2026-09-05/primary-candidate/venv/bin/python -m pytest backend/tests/memory/test_wemm_lazy.py::test_failed_dimension_load_releases_model_after_waiters_release_errors -q -p no:cacheprovider -p pytest_asyncio.plugin
+```
+
+Exit1; monitor0.722s; peak115856KiB.
+
+`.local-test-evidence/2026-09-06/wemm-lazy/retention-red.log` SHA256 `6e7948ae8a82828b6f436694ffd53c06140a780f951922817715b7e515d9c9db`.
+
+`.local-test-evidence/2026-09-06/wemm-lazy/retention-red.json` SHA256 `0f4e429872730bb5fbe52f8d6f36be269fa4cb52d6141da2e6ceab3393d06757`.
+
+```sh
+/Users/denny/projects/simple_harness-primary-candidate/.local-test-evidence/2026-09-05/primary-candidate/venv/bin/python -m pytest backend/tests/memory/test_wemm_lazy.py::test_failed_dimension_load_releases_model_after_waiters_release_errors backend/tests/memory/test_wemm_lazy.py::test_load_completion_never_clears_pending_or_newer_task backend/tests/memory/test_wemm_lazy.py::test_failed_load_is_honest_and_retries_only_on_explicit_use backend/tests/memory/test_wemm_lazy.py::test_cancel_loading_does_not_duplicate_or_encode_cancelled_request -q -p no:cacheprovider -p pytest_asyncio.plugin
+```
+
+Exit0; monitor0.713s; peak115600KiB.
+
+`.local-test-evidence/2026-09-06/wemm-lazy/retention-green.log` SHA256 `f40dc4889a5251e74fd5c12a6f6381b5832ccec301af19e7358daf1a4ed3a52b`.
+
+`.local-test-evidence/2026-09-06/wemm-lazy/retention-green.json` SHA256 `b3cd55bb9e3f173e0646ca1e75422be46cafbdc87ccde298e597fc2e98f9fab0`.
+
+Owned pytest16951/16966 exited; no background test/build/model/native. Slot released.

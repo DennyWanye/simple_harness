@@ -2,6 +2,11 @@
 
 ## 2026-09-06 WeMM lazy Host isolated leaf
 
+2026-09-06 follow-up：加载完成回调仅清理同一done task引用，避免失败traceback
+长期持有维度拒绝模型；不改waiter异常、不清traceback、不自动重试。fake weakref
+原红→绿，含必要邻居5PASS0.20s；pending/新task不会被旧回调清掉。ready措辞收紧
+为已加载，非完整搜索质量保证。物理线程/权重分配器释放仍不作推断。
+
 最后更新：2026-09-06。构造/metadata/状态不import或加载WeMM；首次真实embed共享
 加载，实际worker持异步encode队列锁+线程互斥。取消不终止物理线程、不自动卸载，
 排队取消不占executor线程。dim2048/L2/原lineage保留，加载及输出维度验证。

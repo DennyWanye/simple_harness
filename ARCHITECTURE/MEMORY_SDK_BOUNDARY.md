@@ -2,6 +2,11 @@
 
 ## 2026-09-06 WeMM Host lazy loading leaf
 
+2026-09-06 follow-up：加载完成回调仅清理同一done task引用，避免失败traceback
+长期持有维度拒绝模型；不改waiter异常、不清traceback、不自动重试。fake weakref
+原红→绿，含必要邻居5PASS0.20s；pending/新task不会被旧回调清掉。ready措辞收紧
+为已加载，非完整搜索质量保证。物理线程/权重分配器释放仍不作推断。
+
 最后更新：2026-09-06。WeMM构造、dim/lineage和P4 status仅访问元数据；首次embed
 才import/加载本地模型，加载维度必须2048，保留L2及原fingerprint。共享shield load
 task与owned异步encode队列保持实际线程互斥，取消排队请求不提交executor线程。

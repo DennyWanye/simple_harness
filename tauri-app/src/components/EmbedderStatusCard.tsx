@@ -138,7 +138,7 @@ export function EmbedderStatusCard({ getChannel }: Props) {
       {status.kind === "real" && (
         <>
           <Badge color="#10b981" label={`${modelName} 已就绪 ✓`} />
-          <Hint>语义搜索完整激活（向量召回 + 跨语言）。</Hint>
+          <Hint>模型已加载，可处理语义嵌入请求。</Hint>
           <PathLine path={status.modelPath} />
         </>
       )}

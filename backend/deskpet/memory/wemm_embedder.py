@@ -71,6 +71,18 @@ class WeMMEmbedder(Embedder):
         if not task.cancelled():
             task.exception()
 
+    def _load_completed(self, task: asyncio.Task[None]) -> None:
+        if not task.done():
+            return
+        try:
+            self._observe_completion(task)
+        finally:
+            # A completed failure can own a traceback containing the rejected
+            # model. Drop only our reference, not the waiters' exception frames,
+            # and never clear a newer load task installed by explicit use.
+            if self._load_task is task:
+                self._load_task = None
+
     def _load_sync(self) -> None:
         with self._physical_lock:
             try:
@@ -100,7 +112,7 @@ class WeMMEmbedder(Embedder):
         if self._load_task is None or self._load_task.done():
             self._set_state("loading")
             self._load_task = asyncio.create_task(asyncio.to_thread(self._load_sync))
-            self._load_task.add_done_callback(self._observe_completion)
+            self._load_task.add_done_callback(self._load_completed)
         await asyncio.shield(self._load_task)
 
     @property

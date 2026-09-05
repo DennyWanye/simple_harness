@@ -210,3 +210,81 @@ async def test_async_queue_does_not_occupy_executor_threads(fake_model, monkeypa
     finally:
         fake_model.encode_gate.set()
         await asyncio.gather(first, *queued, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_failed_dimension_load_releases_model_after_waiters_release_errors(monkeypatch):
+    import gc
+    import weakref
+
+    models = []
+    entered, release = threading.Event(), threading.Event()
+
+    class WrongDimensionModel:
+        def __init__(self, *args, **kwargs):
+            models.append(weakref.ref(self))
+            entered.set()
+            assert release.wait(3)
+
+        def get_sentence_embedding_dimension(self):
+            return 12
+
+    monkeypatch.setitem(sys.modules, 'sentence_transformers', SimpleNamespace(
+        SentenceTransformer=WrongDimensionModel,
+    ))
+    emb = WeMMEmbedder('/local/wemm')
+
+    async def rejected():
+        # Return only the message: no caller-owned exception/traceback remains.
+        try:
+            await emb.embed('reject')
+        except ValueError as error:
+            return str(error)
+        raise AssertionError('dimension mismatch must reject')
+
+    first = asyncio.create_task(rejected())
+    second = None
+    try:
+        await until(entered.is_set)
+        second = asyncio.create_task(rejected())
+        await asyncio.sleep(.01)
+        assert len(models) == 1
+        release.set()
+        assert await asyncio.gather(first, second) == [
+            'WeMM model dimension must be 2048', 'WeMM model dimension must be 2048',
+        ]
+        del first, second
+        for _ in range(3):
+            await asyncio.sleep(0)
+            gc.collect()
+        assert emb.status_snapshot()['state'] == 'failed'
+        assert len(models) == 1  # Neither status nor completion retries loading.
+        assert models[0]() is None
+    finally:
+        release.set()
+        tasks = [task for task in (locals().get('first'), locals().get('second'))
+                 if task is not None]
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_load_completion_never_clears_pending_or_newer_task():
+    emb = WeMMEmbedder('/local/wemm')
+    gate = asyncio.Event()
+    newer = asyncio.create_task(gate.wait())
+    older = asyncio.create_task(asyncio.sleep(0))
+    try:
+        emb._load_task = newer
+        emb._load_completed(newer)
+        assert emb._load_task is newer
+        await older
+        emb._load_completed(older)
+        assert emb._load_task is newer
+        gate.set()
+        await newer
+        emb._load_completed(newer)
+        assert emb._load_task is None
+        assert emb.status_snapshot()['state'] == 'cold'
+    finally:
+        gate.set()
+        await asyncio.gather(newer, older, return_exceptions=True)
