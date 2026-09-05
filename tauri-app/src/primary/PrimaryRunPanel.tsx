@@ -10,7 +10,7 @@ import type { PrimaryRun, PrimaryPort } from "./controller";
 import { primaryRunChannel } from "./runChannel";
 import { record } from "./requests";
 
-export function PrimaryRunPanel({ run, primaryRef, port, onStop }: { run: PrimaryRun; primaryRef: string; port: PrimaryPort; onStop: () => void }) {
+export function PrimaryRunPanel({ run, primaryRef, port, onStop, visible = true }: { run: PrimaryRun; primaryRef: string; port: PrimaryPort; onStop: () => void; visible?: boolean }) {
   const { execution_session_ref, sdk_run_ref, run_ref, generation } = run;
   const channel = useMemo(() => primaryRunChannel(port, { execution_session_ref, sdk_run_ref, run_ref, generation, primary_ref: primaryRef }, controlWS), [port,execution_session_ref, sdk_run_ref, run_ref, generation, primaryRef]);
   useEffect(() => { channel.start(); return () => channel.dispose(); }, [channel]);
@@ -51,7 +51,7 @@ export function PrimaryRunPanel({ run, primaryRef, port, onStop }: { run: Primar
         decision_id: directory.decision_id, nonce: directory.nonce, version: directory.version, wait_ref: directory.wait_ref,
         parent_directory: parent, folder_name: folder, directory_mode: directory.directory_mode ?? "create_new",
       } })} />}
-    <PermissionPopup allowSession={false} request={permissions.current} onResolve={permissions.resolve}
+    <PermissionPopup portalToBody allowSession={false} request={visible ? permissions.current : null} onResolve={permissions.resolve}
       resolving={permissions.resolving} resolveError={permissions.resolveError} onStopRun={onStop} />
   </>;
 }

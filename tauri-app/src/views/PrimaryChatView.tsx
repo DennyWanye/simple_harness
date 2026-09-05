@@ -17,12 +17,13 @@ const disconnected: PrimaryPort = {
 export interface PrimaryChatViewProps {
   channel?: ControlChannel | null;
   onOpenSettings?: () => void;
+  active?: boolean;
 }
 const runLabels: Record<string, string> = {
   CLAIMED: "已领取，等待执行进展", RUNNING: "执行中", WAITING: "等待处理", PAUSED: "已暂停",
   SUCCEEDED: "执行已结束", FAILED: "执行失败", CANCELLED: "已取消", STOPPED: "已停止",
 };
-export function PrimaryChatView({ channel, onOpenSettings }: PrimaryChatViewProps) {
+export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const primaryPort = useMemo(() => channel ? boundPrimaryPort(channel) : disconnected, [channel]);
@@ -52,7 +53,7 @@ export function PrimaryChatView({ channel, onOpenSettings }: PrimaryChatViewProp
     </div>
     {snapshot.ready && snapshot.state && run?.execution_session_ref && run.sdk_run_ref && <div style={{ padding: "0 16px", maxHeight: "35%", overflowY: "auto" }}>
       <PrimaryRunPanel key={`${snapshot.draftEpoch}:${run.run_ref}:${run.generation}:${run.execution_session_ref}:${run.sdk_run_ref}`}
-        run={run} port={primaryPort} primaryRef={snapshot.state.primary_ref} onStop={() => void controller.control("stop", run)} />
+        run={run} port={primaryPort} primaryRef={snapshot.state.primary_ref} visible={active} onStop={() => void controller.control("stop", run)} />
     </div>}
     {run && (!run.execution_session_ref || !run.sdk_run_ref) && <p style={{ margin: "4px 16px" }}>正在等待执行绑定；权限与工具详情将在绑定后恢复。</p>}
     <InputBar key={snapshot.draftEpoch} disabled={!canSend} placeholder="输入消息，Enter 发送…"
