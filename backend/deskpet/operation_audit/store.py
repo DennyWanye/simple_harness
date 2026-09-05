@@ -463,11 +463,18 @@ class AuditStore:
                             page["page_index"],
                         ),
                     )
-                status = "enumerated" if page["next_cursor"] is None else "pending"
+                status, code = "pending", None
+                if page["next_cursor"] is None:
+                    if self._complete_valid(db, claim.job["job_id"], header):
+                        status = "enumerated"
+                    else:
+                        # Preserve corrupt evidence and the returned final read.
+                        # Do not reopen to repair a previously selected snapshot.
+                        status, code = "unavailable", "journal_page_invalid"
                 db.execute(
                     "UPDATE audit_jobs SET status=?,snapshot_hash=?,next_cursor=?,next_page=?,"
                     "total_pages=?,total_operations=?,processed_operations=processed_operations+?,"
-                    "header_json=?,lease_owner=NULL,lease_until=NULL,last_code=NULL,updated_at=? WHERE job_id=?",
+                    "header_json=?,lease_owner=NULL,lease_until=NULL,last_code=?,updated_at=? WHERE job_id=?",
                     (
                         status,
                         page["snapshot_hash"],
@@ -477,6 +484,7 @@ class AuditStore:
                         page["total_operations"],
                         len(page["operations"]),
                         header,
+                        code,
                         now,
                         claim.job["job_id"],
                     ),
@@ -489,6 +497,51 @@ class AuditStore:
             self.fault("audit.page.after_commit")
 
         await asyncio.to_thread(commit)
+
+    @staticmethod
+    def _complete_valid(db: sqlite3.Connection, job_id: str, header: str) -> bool:
+        """One Run, one page in memory, once before enumerated; no SDK read."""
+        expected = json.loads(header)
+        pages, operations = 0, 0
+        rows = db.execute(
+            "SELECT * FROM audit_pages WHERE job_id=? ORDER BY page_index", (job_id,)
+        )
+        try:
+            for row in rows:
+                if len(row["payload_json"].encode()) > 2 * 1024 * 1024:
+                    return False
+                value = json.loads(row["payload_json"])
+                if (
+                    row["page_index"] != pages
+                    or value["page_index"] != pages
+                    or digest(value) != row["input_hash"]
+                    or row["snapshot_hash"] != expected["snapshot_hash"]
+                    or row["page_hash"] != value["page_hash"]
+                    or canonical({key: value[key] for key in expected}) != header
+                    or value.get("snapshot_source_complete") is not True
+                    or type(value["operations"]) is not list
+                    or len(value["operations"])
+                    != min(
+                        expected["page_size"],
+                        expected["total_operations"] - pages * expected["page_size"],
+                    )
+                ):
+                    return False
+                last = pages + 1 == expected["total_pages"]
+                cursor = value["next_cursor"]
+                if (last and cursor is not None) or (
+                    not last
+                    and (type(cursor) is not str or not 1 <= len(cursor) <= 4096)
+                ):
+                    return False
+                pages += 1
+                operations += len(value["operations"])
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return False
+        return (
+            pages == expected["total_pages"]
+            and operations == expected["total_operations"]
+        )
 
     async def inspect(self, job_id: str) -> dict[str, Any]:
         """Trusted in-process read; not a remotely authorized audit endpoint."""

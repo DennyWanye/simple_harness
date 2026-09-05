@@ -597,3 +597,37 @@ async def test_expired_reader_cannot_commit_after_winner_selects_snapshot(tmp_pa
             await asyncio.gather(task, return_exceptions=True)
         await runtime.close()
         await stack.close()
+
+
+@pytest.mark.parametrize("page_index", [0, 1])
+async def test_nonlast_saved_page_corruption_blocks_completion_without_reopen(
+    tmp_path, page_index
+):
+    state, _, provider, runtime, stack, _ = await setup(tmp_path)
+    consumer = await consumer_at(state, stack, [100.0])
+    try:
+        source = (await consumer.sources.read())[0]
+        assert await consumer.tick(max_pages=3) == 3
+        before = await consumer.store.inspect(source.job_id)
+        assert before["job"]["total_pages"] > 3
+        with consumer.store.connect() as db:
+            db.execute(
+                "UPDATE audit_pages SET payload_json='{}' WHERE job_id=? AND page_index=?",
+                (source.job_id, page_index),
+            )
+        await drain(consumer)
+        after = await consumer.store.inspect(source.job_id)
+        assert after["job"]["status"] == "unavailable"
+        assert after["job"]["last_code"] == "journal_page_invalid"
+        assert after["job"]["snapshot_hash"] == before["job"]["snapshot_hash"]
+        assert (
+            next(p for p in after["pages"] if p["page_index"] == page_index)[
+                "payload_json"
+            ]
+            == "{}"
+        )
+        assert sum(snapshot is None for snapshot, _ in consumer.reader.calls) == 1
+        assert len(provider.requests) == 1
+    finally:
+        await runtime.close()
+        await stack.close()
