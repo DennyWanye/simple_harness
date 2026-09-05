@@ -68,7 +68,21 @@ async def test_wrong_connection_and_unbound_after_clear(tmp_path):
         binding.authenticate(ingress, challenge)
 
 
-def test_default_control_socket_requires_its_own_verified_bind(tmp_path, monkeypatch):
+@pytest.fixture
+def socket_memory_runtime(tmp_path):
+    import asyncio
+    from deskpet.memory.runtime_composition import compose_human_memory_runtime
+
+    runtime = compose_human_memory_runtime(
+        tmp_path / "state.db", tmp_path / "memory.db", adapter_factory=lambda **_: None)
+    yield runtime
+    asyncio.run(runtime.close())
+
+
+@pytest.mark.parametrize("audit_enabled", [False, True])
+def test_default_control_socket_requires_its_own_verified_bind(
+    tmp_path, monkeypatch, socket_memory_runtime, audit_enabled,
+):
     """Exercise the production WS dispatcher without lifespan/App/Provider startup."""
     import asyncio
     import hashlib
@@ -83,7 +97,17 @@ def test_default_control_socket_requires_its_own_verified_bind(tmp_path, monkeyp
     from tests.memory.test_primary_read_api import Policy
     policy = Policy()
     factory = HumanMemoryHostServiceFactory(path, startup, suppression_resolver=policy,
-                                           history_visibility_checker=policy.history)
+        history_visibility_checker=policy.history,
+        cognitive_runtime_getter=(lambda: socket_memory_runtime) if audit_enabled else None)
+    if audit_enabled:
+        async def seed_audit_operation():
+            import simple_harness_memory as memory
+            manager = await socket_memory_runtime.manager()
+            principal = socket_memory_runtime.principal()
+            await manager.suppress(principal=principal, request=memory.SuppressionRequest(
+                "socket-seed", principal.actor_id, memory.SuppressionScopeKind.EVIDENCE,
+                "socket-private-source", "user_forget", 1.0))
+        asyncio.run(seed_audit_operation())
     monkeypatch.setattr(main, "_companion_control_ingress", ingress)
     monkeypatch.setattr(main, "_companion_identity_gate", gate)
     monkeypatch.setattr(main, "_companion_notification_service", None)
@@ -143,6 +167,35 @@ def test_default_control_socket_requires_its_own_verified_bind(tmp_path, monkeyp
         assert disclosure.purpose is h.DisclosurePurpose.USER_REVIEW
         assert disclosure.trust is h.DisclosureTrust.TRUSTED_AUTHORITY
         assert disclosure.recipient_id == subject
+        if audit_enabled:
+            import json
+            import sqlite3
+
+            def audit_call(operation, fields, request_id):
+                ws.send_json({"type": "human_memory_request", "request_id": request_id,
+                    "operation": operation, "request": {"primary_ref": primary, **fields}})
+                return receive(ws, "human_memory_response")["payload"]
+
+            opened = audit_call("primary.audit.open", {"open_action_id": "socket-open"}, "audit-open")
+            assert opened["ok"], opened
+            audit_ref = opened["result"]["audit_ref"]
+            fields = {"audit_ref": audit_ref, "page_action_id": "socket-page", "cursor_ref": None}
+            first_page = audit_call("primary.audit.page", fields, "audit-page-1")
+            assert first_page["ok"], first_page
+            delivered = first_page["result"]
+            assert delivered["items"] and delivered["all_operations_recorded"] is False
+            assert "socket-private-source" not in json.dumps(delivered)
+            assert {"nonce", "receipt", "sdk_cursor"}.isdisjoint(delivered)
+            # New transport request, same logical page: durable replay, no extra read.
+            replay = audit_call("primary.audit.page", fields, "audit-page-2")
+            assert replay["ok"] and replay["result"] == delivered
+            with sqlite3.connect(tmp_path / "operation-audit.db") as db:
+                assert db.execute("SELECT reads FROM human_audit_grants").fetchone()[0] == 1
+                assert db.execute("SELECT count(*) FROM human_audit_deliveries").fetchone()[0] == 1
+            closed = audit_call("primary.audit.close", {"audit_ref": audit_ref}, "audit-close")
+            assert closed["ok"], closed
+            refused = audit_call("primary.audit.page", fields, "audit-after-close")
+            assert refused["error"]["code"] == "primary_audit_closed"
 
 
 @pytest.mark.asyncio
