@@ -10,9 +10,11 @@ revision, or worker authority fields.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
+import logging
 import sqlite3
 import uuid
 from collections.abc import Awaitable, Mapping
@@ -57,6 +59,9 @@ from deskpet.task_scope.protocol import (
 )
 from deskpet.task_scope.search import TaskScopeSearchStore
 from deskpet.task_scope.store import CanonicalTaskScopeStore
+
+logger = logging.getLogger(__name__)
+SCHEDULER_WAKE_TIMEOUT_SECONDS = 0.5
 
 
 class HumanMemoryHostServiceError(RuntimeError):
@@ -784,7 +789,7 @@ class HumanMemoryHostService:
         # committed above; wake the active Runtime so pause/stop/cancel are
         # delivered immediately instead of waiting for the next poll.
         if self._scheduler_wake is not None and receipt.outcome == "signalled":
-            await self._scheduler_wake.after_control(subject=self._auth.subject)
+            await self._wake_committed("after_control", receipt.control_id)
         return {
             "control_ref": receipt.control_id,
             "receipt_ref": receipt.control_id,
@@ -844,6 +849,24 @@ class HumanMemoryHostService:
             )
         return await self._recovery.emergency_export(subject=self._auth.subject)
 
+    async def _wake_committed(self, operation: str, receipt_ref: str) -> None:
+        # Called only after the store returned a committed receipt. Durable
+        # queue/signal rows remain the recovery source if this hint fails.
+        try:
+            async with asyncio.timeout(SCHEDULER_WAKE_TIMEOUT_SECONDS):
+                await getattr(self._scheduler_wake, operation)(
+                    subject=self._auth.subject
+                )
+        except Exception:
+            logger.warning(
+                "human_memory_scheduler_wake_deferred",
+                extra={
+                    "operation": operation,
+                    "receipt_ref": receipt_ref,
+                    "recovery_state": "durable_work_pending",
+                },
+            )
+
     async def enqueue_turn(self, request: QueueTurnRequest) -> Mapping[str, object]:
         # Recovery fencing is a global Host lifecycle boundary.  Check it
         # before scope authorization so callers cannot observe a lower-level
@@ -871,7 +894,7 @@ class HumanMemoryHostService:
             task_scope_id=request.scope_ref,
         )
         if self._scheduler_wake is not None:
-            await self._scheduler_wake.after_enqueue(subject=self._auth.subject)
+            await self._wake_committed("after_enqueue", queued.turn_id)
         return {
             "turn_ref": queued.turn_id,
             "receipt_ref": queued.turn_id,

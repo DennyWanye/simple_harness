@@ -2,6 +2,18 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Primary API P1 后继修复
+
+`fbc026a0` 的40项局部绿色未覆盖实际 Host authority/raw SDK hash 差异，独立组合 probe
+已复现真实完成历史拒读。后继 API 改用 Carver 唯一 terminal_identity helper 验来源链，
+再精确核对真实 SDK event；还修正 active source 抑制、slow reader 后整页 source 复查、
+SQLite 已 commit 后 wake 失败仍返回 durable ACK（0.5秒通知预算）。没有新增权限或 ledger。
+公开 suppression 没有 batch/snapshot/epoch，最终逐来源复查不等于原子隐私快照，
+memory/entity lineage 扩展仍后续。该提交必须与 Carver helper 组合；真实 runtime API
+集成测试由主维护并待其运行，不能把局部测试算产品闭环。
+聚焦 source overlay 验证45 passed（29 API+16既有），尚待主组合测试与独立复核。
+详见 [PRIMARY-API](../plans/2026-09-05-s6-primary-preparation/PRIMARY-API.md)。
+
 ## 2026-09-05 Primary API 隔离切片
 
 `feat/human-memory-primary-api`（base `29902ea4`）实现 `primary.state`、

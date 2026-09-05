@@ -173,9 +173,13 @@ class PrimaryReadModel:
                 db,
                 (
                     "SELECT "
-                    "host_run_id,generation,current_state,sdk_run_id "
-                    "FROM foreground_run_heads WHERE subject=? AND "
-                    "primary_conversation_id=? AND current_state NOT IN "
+                    "h.host_run_id,h.generation,h.current_state,"
+                    "h.sdk_run_id,t.evidence_id "
+                    "FROM foreground_run_heads h JOIN foreground_turns t "
+                    "ON t.turn_id=h.turn_id AND t.subject=h.subject "
+                    "AND t.primary_conversation_id=h.primary_conversation_id "
+                    "WHERE h.subject=? AND h.primary_conversation_id=? "
+                    "AND h.current_state NOT IN "
                     "('COMPLETED','FAILED','STOPPED','CANCELLED') LIMIT 2"
                 ),
                 (self.subject, primary),
@@ -195,11 +199,8 @@ class PrimaryReadModel:
                 ),
                 (self.subject, primary),
             )
-            count = 0
-            for row in queued[:100]:
-                count += int(await self._visible(row[0]))
             current = None
-            if active:
+            if active and await self._visible(active[0]["evidence_id"]):
                 head = active[0]
                 session = None
                 if head["sdk_run_id"] is not None:
@@ -241,9 +242,17 @@ class PrimaryReadModel:
                     "sdk_run_ref": head["sdk_run_id"],
                     "execution_session_ref": session,
                 }
+            revision = await self._revision(db, primary)
+            count = 0
+            for row in queued[:100]:
+                count += int(await self._visible(row[0]))
+            if current is not None and not await self._visible(
+                active[0]["evidence_id"]
+            ):
+                current = None
             return {
                 "primary_ref": primary,
-                "revision": await self._revision(db, primary),
+                "revision": revision,
                 "current_run": current,
                 "queued_count": count,
                 "queued_count_truncated": len(queued) > 100,
@@ -352,7 +361,15 @@ class PrimaryReadModel:
             raise PrimaryReadError("primary_turn_corrupt")
         text = wire["payload"]["text"]
         source = envelope.envelope_hash
-        messages = [(0, "user", redact_credential_shapes(text)[0], source)]
+        messages = [
+            (
+                0,
+                "user",
+                redact_credential_shapes(text)[0],
+                source,
+                (turn["evidence_id"],),
+            )
+        ]
         if turn["turn_state"] != "SETTLED":
             return messages
         rows = await _rows(
@@ -422,34 +439,36 @@ class PrimaryReadModel:
             if (
                 any(
                     body.get(k) != run[k]
-                    for k in (
-                        "host_run_id",
-                        "sdk_run_id",
-                        "terminal_state",
-                        "sdk_event_id",
-                        "sdk_event_hash",
-                    )
+                    for k in ("host_run_id", "sdk_run_id", "terminal_state")
                 )
                 or body.get("turn_id") != turn["turn_id"]
             ):
                 raise PrimaryReadError("primary_terminal_corrupt")
+        from deskpet.execution.terminal_identity import (
+            read_primary_terminal_identity_tx,
+        )
+
+        try:
+            identity = await read_primary_terminal_identity_tx(
+                db,
+                subject=self.subject,
+                primary_ref=primary,
+                host_run_id=run["host_run_id"],
+                sdk_run_id=run["sdk_run_id"],
+            )
+        except RuntimeError as exc:
+            raise PrimaryReadError(str(exc)) from exc
+        if identity is None:
+            raise PrimaryReadError("primary_terminal_missing")
         if self.reader is None:
             raise PrimaryReadError("primary_history_reader_unavailable")
         evidence, transcript = await _resolved(
             self.reader(run["sdk_run_id"], current_text=text)
         )
-        expected_state = (
-            "cancelled"
-            if run["terminal_state"] == "STOPPED"
-            else run["terminal_state"].lower()
-        )
-        if (
-            evidence.run_id != run["sdk_run_id"]
-            or evidence.state != expected_state
-            or evidence.event_id != run["sdk_event_id"]
-            or evidence.event_hash != run["sdk_event_hash"]
-        ):
-            raise PrimaryReadError("primary_history_terminal_mismatch")
+        try:
+            identity.verify_sdk_terminal(evidence)
+        except RuntimeError as exc:
+            raise PrimaryReadError("primary_history_terminal_mismatch") from exc
         if (
             not isinstance(transcript, (list, tuple))
             or not transcript
@@ -461,7 +480,14 @@ class PrimaryReadModel:
         for index, raw in enumerate(transcript[1:], start=1):
             public = self._public_message(raw)
             if public is not None:
-                messages.append((index, *public, run["receipt_hash"]))
+                messages.append(
+                    (
+                        index,
+                        *public,
+                        run["receipt_hash"],
+                        (turn["evidence_id"], *(row[0] for row in observations)),
+                    )
+                )
         # Never reuse a pre-await policy decision to disclose a new transcript.
         if not await self._visible(turn["evidence_id"]):
             return []
@@ -500,7 +526,7 @@ class PrimaryReadModel:
         )
 
     def _item(self, primary, turn, message):
-        index, role, text, source = message
+        index, role, text, source, _policy_sources = message
         ref = _token(
             {
                 "v": 1,
@@ -543,7 +569,7 @@ class PrimaryReadModel:
                     key = (turn["enqueue_sequence"], message[0])
                     if key >= before:
                         continue
-                    selected.append(self._item(primary, turn, message))
+                    selected.append((self._item(primary, turn, message), message[4]))
                     if len(selected) == limit:
                         next_key = key
                         break
@@ -564,10 +590,21 @@ class PrimaryReadModel:
                     }
                 )
             )
+            # Reader awaits for older turns must not preserve an earlier
+            # visibility decision for already-selected newer source text.
+            visible = {}
+            for _, sources in selected:
+                for source in sources:
+                    if source not in visible:
+                        visible[source] = await self._visible(source)
             return {
                 "primary_ref": primary,
                 "revision": revision,
-                "items": list(reversed(selected)),
+                "items": [
+                    item
+                    for item, sources in reversed(selected)
+                    if all(visible[source] for source in sources)
+                ],
                 "next_cursor": next_cursor,
             }
 
@@ -594,6 +631,9 @@ class PrimaryReadModel:
                 if offset > len(text):
                     raise PrimaryReadError("primary_read_request_invalid")
                 end = min(len(text), offset + limit)
+                for source in message[4]:
+                    if not await self._visible(source):
+                        raise PrimaryReadError("primary_message_unavailable")
                 return {
                     "message_ref": message_ref,
                     "text": text[offset:end],

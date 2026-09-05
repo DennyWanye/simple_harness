@@ -2,6 +2,10 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-09-05 Primary API 后继修复处理 terminal authority/raw SDK hash 差异、当前 source
+过滤及 commit 后唤醒失败的 durable ACK；依赖 Carver 统一 helper，真实组合测试待主运行。
+公开 suppression 无原子 snapshot/epoch，不将逐来源复查或既有40项局部绿色称为完整闭环。
+
 2026-09-05 Primary API 隔离切片完成 source-bound history/state 与 exact control，聚焦40 passed。
 queued 下界计数及 history keyset 有界；仅证明 Host source suppression，来源谱系扩展仍后续。
 实际组合/UI 验证待主协调，不改变 S6/program 完成度。详见

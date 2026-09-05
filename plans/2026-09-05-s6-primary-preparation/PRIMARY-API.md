@@ -2,6 +2,22 @@
 
 2026-09-05，`feat/human-memory-primary-api`，base `29902ea4`。按原 P-PROJECT/P-PRIV/P-QUEUE（HM-AC1/7/8）授权实施 API 切片；原 AC 不变，S5c e2702006 暂停。本分支不改 main/runtime/fence/SDK/pin，完整 UI 与组合接线由主协调。
 
+## fbc026a0 后继 P1 修复（2026-09-05）
+
+独立真实 runtime probe 发现旧 API 将 Host terminal authority hash 当作 raw SDK terminal hash，导致真实 unscoped/legacy scoped 完成历史拒读；旧40项测试中 terminal fixture 混用了这两种 hash，不能作为组合链通过证明。修复复用 Carver 的唯一 `execution/terminal_identity.py::read_primary_terminal_identity_tx`：校验 Host receipt/binding/observation 或 ExecutionEvidence+gate 链，提取 raw SDK identity，再调用 DTO.verify_sdk_terminal；不弱化 event ID/hash/state 比较。scoped observation 同样与 ExecutionEvidence 交叉核对；generation 允许 observation <= terminal receipt，保留 reclaim/crash 恢复。API 自身继续核验 input envelope/receipt/turn、subject/source policy、transcript exact user anchor。该提交依赖 Carver 的 helper 同批组合，不复制未提交业务源码，不可单独视为可运行发布候选。
+
+Popper 的两个 source P1 已转决定性回归：state.current_run 先检查 active turn evidence，mapping reader 返回后再次检查；page 所有 slow reader 完成后统一复查将返回项目的全部 Host source IDs，任何来源已被抑制则移除该项目。detail 同样在返回前复查。每页仍最多10 turns/50items；无新增全历史扫描、计数账本或 SDK pagination。
+
+**非原子边界**：公开 SuppressionResolution 只有 denied/directive_ids/checked_at，resolve_suppression 每次调用内部锁仅覆盖单 candidate；没有公开 batch/snapshot/epoch。checked_at 不可充当 epoch，因此最终逐条 await 期间仍可能跨 policy 变化。本修复证明 slow transcript read 后统一重查，不能证明整响应的原子隐私快照；不造 permission authority，也不宣称 memory/entity lineage 展开。UI 继续不持久缓存并处理失效事件。
+
+**Durable ACK**：enqueue/control 返回真实 store committed receipt 后，scheduler wake 仅作0.5秒有界通知。抛错/超时记录脱敏 `human_memory_scheduler_wake_deferred` 与 `durable_work_pending`，仍返回相同 receipt；既有 queue/signal outbox 是恢复源，没有新增状态账本。真正 admission/commit 异常不在 catch 中，继续报错。同 delivery retry 只有1turn；control 的已提交 signal 不能因 wake 异常被表述为失败。响应字段不变。
+
+测试新增5项（wake抛错及delivery replay、control wake抛错、wake超时、active source抑制、整页slowread后来源抑制），均先红后绿。原 source fixture 修正为真实 raw SDK hash，并在 terminal commit 前记录实际 Host observation。真实 runtime API page/detail/reopen/raw-event篡改的组合测试由主拥有 `test_primary_runtime_api_integration.py`；本分支不复制或替代该文件，最终组合验真待主运行。原始独立 probe 与两种真实拒读保留在 `.local-test-evidence/2026-09-05/carver-runtime-review/`。
+
+后继聚焦结果：**45 passed / 16.82s**（29 API + 16既有），1条 pytest assertion-rewrite 导入顺序 warning；不是 provider/runtime 组合验收。执行使用 ignored `run_composed.py` import overlay，仅三个 API-owned 模块来自本树，其余 Host runtime/helper 直接读取 Carver 隔离树，不复制业务源码。`PYTHONPATH=/Users/denny/projects/simple_harness-s6-primary-preparation/backend`，main venv Python，pytest `--import-mode=importlib`，用例仍为下方四个 memory 测试文件。首次 overlay 未预绑定 package 被 pytest路径覆盖，5 failed/24 passed/1 skipped，作为测试载入失败保留；修正后45项通过。新模块/测试 Ruff E,F,I、service E4,E7,E9,F,I 与 diff check 通过。
+
+证据：`p1-final.log` SHA-256 `de2b18c4e8d08fbc82d33c16c21dd9efd5c0d390e897943f84d1fca66e70f230`；独立后继索引 `p1-SHA256SUMS.json` SHA-256 `8f27a0917cb1e19e1780fdbaa29ee1089465ad36a912f1a5ec3681c3c033a06d`。`p1-source-provenance.json` 记录 Carver WIP 文件 hash，不能用其后续改动冒充本轮执行输入；原 fbc026a0 的 SHA256SUMS 与所有失败日志保留不改。下一步是主组合测试及 Popper 独立复核，尚未宣称完成。
+
 ## 前端契约
 
 沿用 `human_memory_request` 的 request_id/operation/request 与现有 success/error wrapper。先 `primary.open` 获取 durable primary_ref，不创建假 Session。

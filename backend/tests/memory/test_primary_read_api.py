@@ -1,5 +1,6 @@
 """Public primary API + real Host SQLite; no provider/server startup."""
 
+import hashlib
 import json
 import sqlite3
 from types import SimpleNamespace
@@ -29,7 +30,7 @@ class Policy:
         return SuppressionResolution(denied, ("directive",) if denied else (), 1.0)
 
 
-async def setup(tmp_path, policy=True, reader=None, run_binding_reader=None):
+async def setup(tmp_path, policy=True, reader=None, run_binding_reader=None, wake=None):
     path = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
     policy = Policy() if policy is True else policy
@@ -51,6 +52,7 @@ async def setup(tmp_path, policy=True, reader=None, run_binding_reader=None):
             },
             factory=factory,
             auth=auth,
+            scheduler_wake=wake,
         )
 
     primary = result(await send("primary.open"))["primary_ref"]
@@ -221,7 +223,7 @@ async def claimed(f, *, key="first", text="real admitted source"):
     return store, admission
 
 
-async def settled(f, *, key="first", text="real admitted source"):
+async def settled(f, *, key="first", text="real admitted source", observation=False):
     from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
     from deskpet.execution.foreground_queue import RunState
     from deskpet.sdk_adapters.composition import SdkRunTerminalEvidence
@@ -250,10 +252,41 @@ async def settled(f, *, key="first", text="real admitted source"):
     raw["evidence_refs"] = [
         {"evidence_id": evidence_id, "content_hash": evidence_hash, "ordinal": 1}
     ]
+    raw_hash = hashlib.sha256(("sdk-terminal:" + key).encode()).hexdigest()
+    raw["public_payload"]["sdk_terminal_event_hash"] = raw_hash
     source = _ExecutionEvidence(raw)
     ingress = ExecutionEvidenceIngress(f.path)
     await ingress.ingest(task_scope_id=SCOPE, source_sequence=1, evidence=source)
     await ingress.authorize_terminal("sdk-" + key)
+    if observation:
+        from deskpet.execution.primary_history import evidence_pair
+        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+        with sqlite3.connect(f.path) as db:
+            turn_id = db.execute(
+                "SELECT turn_id FROM foreground_runs WHERE host_run_id=?",
+                (admission.host_run_id,),
+            ).fetchone()[0]
+        envelope, receipt = evidence_pair(
+            AUTH.subject,
+            "sdk-" + key,
+            {
+                "schema_version": 1,
+                "kind": "primary_run_terminal",
+                "subject": AUTH.subject,
+                "host_run_id": admission.host_run_id,
+                "sdk_run_id": "sdk-" + key,
+                "turn_id": turn_id,
+                "generation": 1,
+                "terminal_state": "COMPLETED",
+                "sdk_event_id": source.event_id,
+                "sdk_event_hash": raw_hash,
+                "messages": [],
+                "error_code": None,
+            },
+            100.0,
+        )
+        await HumanMemoryProgramStore(f.path).append_evidence(envelope, receipt)
     await store.record_sdk_terminal(
         host_run_id=admission.host_run_id,
         sdk_run_id="sdk-" + key,
@@ -265,7 +298,7 @@ async def settled(f, *, key="first", text="real admitted source"):
         idempotency_key="terminal-" + key,
     )
     return admission, SdkRunTerminalEvidence(
-        "sdk-" + key, "completed", source.event_id, source.evidence_hash, 100.0
+        "sdk-" + key, "completed", source.event_id, raw_hash, 100.0
     )
 
 
@@ -618,13 +651,6 @@ async def test_policy_wrong_type_or_exception_is_not_disclosure_authority(
 async def test_terminal_observation_source_suppression_hides_old_assistant_detail(
     tmp_path,
 ):
-    import uuid
-    from dataclasses import replace
-
-    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-    from deskpet.memory.human_memory_service import build_host_typed_evidence
-    from simple_harness import EvidenceSourceKind
-
     facts = {}
     f = await setup(
         tmp_path,
@@ -636,43 +662,17 @@ async def test_terminal_observation_source_suppression_hides_old_assistant_detai
             ),
         ),
     )
-    admission, terminal = await settled(f)
+    _, terminal = await settled(f, observation=True)
     facts[terminal.run_id] = terminal
     with sqlite3.connect(f.path) as db:
-        turn_id = db.execute(
-            ("SELECT turn_id FROM foreground_runs WHERE host_run_id=?"),
-            (admission.host_run_id,),
+        observation_id = db.execute(
+            "SELECT evidence_id FROM human_memory_evidence WHERE source_ref=?",
+            ("primary-runtime:" + terminal.run_id,),
         ).fetchone()[0]
-    payload = {
-        "host_run_id": admission.host_run_id,
-        "sdk_run_id": terminal.run_id,
-        "terminal_state": "COMPLETED",
-        "sdk_event_id": terminal.event_id,
-        "sdk_event_hash": terminal.event_hash,
-        "turn_id": turn_id,
-    }
-    source_ref = "primary-runtime:" + terminal.run_id
-    envelope, receipt = build_host_typed_evidence(
-        subject=AUTH.subject,
-        authority_ref=AUTH.authority_ref,
-        payload=payload,
-        idempotency_key="observation",
-        source_ref=source_ref,
-        run_id=terminal.run_id,
-    )
-    envelope = replace(
-        envelope,
-        evidence_id=str(uuid.uuid5(uuid.NAMESPACE_URL, source_ref)),
-        source_kind=EvidenceSourceKind.RUNTIME_EVENT,
-    )
-    receipt = replace(
-        receipt, evidence_id=envelope.evidence_id, envelope_hash=envelope.envelope_hash
-    )
-    await HumanMemoryProgramStore(f.path).append_evidence(envelope, receipt)
     first = result(await f.send("primary.messages.page", {"primary_ref": f.primary}))
     ref = first["items"][-1]["message_ref"]
     assert first["items"][-1]["role"] == "assistant"
-    f.policy.denied.add(envelope.evidence_id)
+    f.policy.denied.add(observation_id)
     second = result(await f.send("primary.messages.page", {"primary_ref": f.primary}))
     assert [item["role"] for item in second["items"]] == ["user"]
     error(
@@ -681,3 +681,115 @@ async def test_terminal_observation_source_suppression_hides_old_assistant_detai
         ),
         "primary_message_unavailable",
     )
+
+
+class BrokenWake:
+    async def after_enqueue(self, **kwargs):
+        raise RuntimeError("PRIVATE_WAKE_EXCEPTION")
+
+    async def after_control(self, **kwargs):
+        raise RuntimeError("PRIVATE_WAKE_EXCEPTION")
+
+
+@pytest.mark.asyncio
+async def test_committed_enqueue_ack_survives_wake_error_and_delivery_replay(
+    tmp_path, caplog
+):
+    f = await setup(tmp_path, wake=BrokenWake())
+    first = result(
+        await f.send("queue.enqueue", {"text": "one durable delivery"}, key="same")
+    )
+    replay = result(
+        await f.send("queue.enqueue", {"text": "one durable delivery"}, key="same")
+    )
+    assert first == replay
+    with sqlite3.connect(f.path) as db:
+        assert db.execute("SELECT COUNT(*) FROM foreground_turns").fetchone()[0] == 1
+    assert "human_memory_scheduler_wake_deferred" in caplog.text
+    assert "PRIVATE_WAKE_EXCEPTION" not in caplog.text
+    # A genuine admission conflict still fails, never becoming an ACK.
+    assert not (await f.send("queue.enqueue", {"text": "changed"}, key="same"))[
+        "payload"
+    ]["ok"]
+
+
+@pytest.mark.asyncio
+async def test_committed_control_ack_survives_wake_error(tmp_path):
+    f = await setup(tmp_path, wake=BrokenWake())
+    queue, active = await claimed(f)
+    body = {
+        "expected_run_ref": active.host_run_id,
+        "expected_generation": 1,
+        "control": "pause",
+    }
+    first = result(await f.send("queue.control", body, key="same-control"))
+    assert first["run_ref"] == active.host_run_id and first["outcome"] == "signalled"
+    assert first == result(await f.send("queue.control", body, key="same-control"))
+    assert len(await queue.pending_signals(active.host_run_id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_committed_ack_does_not_wait_forever_for_wake(tmp_path, monkeypatch):
+    import asyncio
+
+    import deskpet.memory.human_memory_service as service_module
+
+    monkeypatch.setattr(
+        service_module, "SCHEDULER_WAKE_TIMEOUT_SECONDS", 0.01, raising=False
+    )
+
+    class SlowWake:
+        async def after_enqueue(self, **kwargs):
+            await asyncio.Event().wait()
+
+    f = await setup(tmp_path, wake=SlowWake())
+    ack = result(
+        await asyncio.wait_for(f.send("queue.enqueue", {"text": "durable"}), 1)
+    )
+    assert ack["delivery_key"] == "request"
+
+
+@pytest.mark.asyncio
+async def test_active_source_suppression_hides_current_run_mapping(tmp_path):
+    # Missing mapping reader must not be consulted for a suppressed active source.
+    f = await setup(tmp_path)
+    await claimed(f)
+    with sqlite3.connect(f.path) as db:
+        evidence_id = db.execute("SELECT evidence_id FROM foreground_turns").fetchone()[
+            0
+        ]
+    f.policy.denied.add(evidence_id)
+    assert (
+        result(await f.send("primary.messages.page", {"primary_ref": f.primary}))[
+            "items"
+        ]
+        == []
+    )
+    assert result(await f.send("primary.state"))["current_run"] is None
+
+
+@pytest.mark.asyncio
+async def test_page_rechecks_previously_selected_source_after_later_reader_await(
+    tmp_path,
+):
+    facts = {}
+    f = None
+
+    async def reader(run_id, *, current_text):
+        # Newer queued text was already selected before reading this older Run.
+        with sqlite3.connect(f.path) as db:
+            source = db.execute(
+                "SELECT evidence_id FROM foreground_turns WHERE idempotency_key='newer'"
+            ).fetchone()[0]
+        f.policy.denied.add(source)
+        return facts[run_id], (
+            {"role": "user", "content": current_text},
+            {"role": "assistant", "content": "old answer"},
+        )
+
+    f = await setup(tmp_path, reader=reader)
+    _, terminal = await settled(f)
+    facts[terminal.run_id] = terminal
+    result(await f.send("queue.enqueue", {"text": "NEWER_SOURCE_CANARY"}, key="newer"))
+    page = result(await f.send("primary.messages.page", {"primary_ref": f.primary}))
+    assert "NEWER_SOURCE_CANARY" not in json.dumps(page)
