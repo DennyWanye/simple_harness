@@ -16,6 +16,7 @@
  * 规格：openspec/specs/permission-gate/spec.md
  */
 import React, { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 import type {
   PermissionRequest,
@@ -39,6 +40,8 @@ interface Props {
   allowSession?: boolean;
   resolving?: boolean;
   resolveError?: string | null;
+  /** Escape scroll/containing blocks; the owner must suppress hidden-view requests. */
+  portalToBody?: boolean;
 }
 
 interface CategoryMeta {
@@ -126,13 +129,14 @@ export const PermissionPopup: React.FC<Props> = ({
   onStopRun,
   resolving = false,
   resolveError = null,
+  portalToBody = false,
 }) => {
   const allowOnceRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     if (!request) return;
     // 自动聚焦"允许一次"，回车确认
-    allowOnceRef.current?.focus();
+    allowOnceRef.current?.focus({ preventScroll: true });
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !resolving) {
         e.preventDefault();
@@ -154,7 +158,7 @@ export const PermissionPopup: React.FC<Props> = ({
       ? tokens.color.warning.bg
       : tokens.color.info.bg;
 
-  return (
+  const popup = (
     <div
       style={{ ...backdropStyle, zIndex: 9999 }}
       role="dialog"
@@ -360,6 +364,7 @@ export const PermissionPopup: React.FC<Props> = ({
       </div>
     </div>
   );
+  return portalToBody ? createPortal(popup, document.body) : popup;
 };
 
 export default PermissionPopup;

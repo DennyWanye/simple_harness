@@ -2,6 +2,15 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Primary 授权 portal 布局候选（native 视觉待复验）
+
+decisions 树从1862e383修 Primary modal 的 DOM 挂载层级与隐藏视图 Escape 生命周期，
+不改后端/SDK/授权语义。实际 WebKit 两种窗口尺寸布局通过；前端59、backend decision18、
+tsc/lint通过。修前复现的是 containing-block 压力控制越界及隐藏视图响应 Escape，
+不是 native 合成失效的完整根因复现。主将 cherry-pick 至完整候选并重建 native；
+后继卡不可见的 Stage1 阻项仍待实际可见鼠标点击关闭。loop2仅完成只读缺口交还，未扩业务。
+详见 [UI](UI.md) 与 [布局验证记录](../plans/2026-09-05-primary-sdk-decisions/RESULTS.md#portal-layout-candidate-after-1862e383)。
+
 ## 2026-09-05 Primary native project result and open visual defect
 
 候选 dfdaec4a 在真实原生 UI 输入新请求，经两次原生 AX 精确授权，实际创建新 Scope 和

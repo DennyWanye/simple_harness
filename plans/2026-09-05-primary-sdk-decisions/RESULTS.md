@@ -1,5 +1,52 @@
 # Primary SDK authorization candidate results
 
+## Portal layout candidate after 1862e383
+
+Primary-only body portal plus explicit visible-chat gating; fixed-modal focus uses preventScroll.
+The existing exact decision target, authenticated port, ACK/unknown handling and permission defaults
+are unchanged. Only four frontend product files changed; backend/SDK/pins and loop2 untouched.
+
+Actual WebKit 26.5 (Playwright webkit2311) loads production Workbench, PrimaryChatView,
+PrimaryRunPanel and PermissionPopup with the real CSS. The fixture replaces transport only and
+intercepts outbound network, uses synthetic decisions, and never starts App/backend/Provider.
+1000x700 and 800x560 both pass screenshot + viewport geometry + elementFromPoint + ordinary
+mouse hit-testing for expanded details, scrolling, containing-block stress, refresh, remount,
+reconnect, hidden/show view and two sequential decisions. The narrow successor screenshot was
+also inspected by the implementer. This is browser layout evidence, not independent/native acceptance.
+
+Before the fix, hidden-view Escape issued a deny despite the popup being invisible. Separately,
+a deliberate translateZ(0) on the real Run scroll container placed the allow button below the viewport
+(top744 in height700; top604 in height560), with hit=false. Both controls pass after the fix.
+The baseline without this stress transform did NOT reproduce the native disappearance: native
+compositor trigger remains unproven and its visual FAIL is not overwritten. Main owns rebuilding
+the integrated candidate and verifying visible mouse interaction on a fresh authorized request.
+
+Focused frontend59 passed, installed existing backend decision18 passed, typecheck and targeted
+eslint passed. No full suite or new remote Provider run. Browser scripts live in
+`tauri-app/tests/browser/`; this fixture is not part of the production entry or build.
+
+```sh
+# repository root; Python must have Playwright and its installed WebKit
+/Users/denny/projects/simple_harness/backend/.venv/bin/python tauri-app/tests/browser/primary-permission-layout.py --output .local-test-evidence/2026-09-05/primary-permission-layout/green
+PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-decisions-native/venv/bin/python -m pytest backend/tests/execution/test_primary_decisions.py -q --tb=short --show-capture=no -o log_cli=false
+# tauri-app directory
+./node_modules/.bin/vitest run src/primary src/views/PrimaryChatView.test.tsx src/components/PermissionPopup.test.tsx src/components/WorkbenchShell.test.tsx src/hooks/usePermissionRequests.test.tsx --maxWorkers=1 --reporter=dot
+./node_modules/.bin/tsc -b --noEmit
+./node_modules/.bin/eslint src/components/PermissionPopup.tsx src/components/WorkbenchShell.tsx src/primary/PrimaryRunPanel.tsx src/primary/PrimaryRunPanel.test.tsx src/views/PrimaryChatView.tsx
+```
+
+Raw evidence remains ignored under this tree `.local-test-evidence/2026-09-05/`:
+
+| Relative evidence | SHA-256 |
+| --- | --- |
+| primary-permission-layout-red4.log (hidden Escape red) | `79a5a1edf27a9355a3a5078c229896a181f3ea0061d4cd4143cb73f1ea1d9f5c` |
+| primary-permission-layout-red-containment.log | `1b9886b48e67fb72553335d41ac891914fb9852d46734b2aac46e750007fc636` |
+| primary-permission-layout-green.log | `88b89b57379bb19402a1d53325f408a3460d35a7c6d4ed93b100634d15a8ad9c` |
+| primary-permission-layout/frontend.log | `fcadbf989e285a911e88ea0d37950b0982f5fb9b4fd0ac4ba3370b9442056962` |
+| primary-permission-layout/backend-decisions.log | `36403792e8269f8497b9e7f3030749f28f68e4556fa22f3b55d528b007c96ba5` |
+| primary-permission-layout/typecheck.log; lint.log (both empty, exit0) | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| primary-permission-layout/green/webkit/800x560-next-expanded.png | `845e1c36367920ab1987c3602e1a75b3f3dbea20e23de2260bddf9b523955b6c` |
+
 2026-09-05. Isolated base 5da24d6f67331aeb190f5cb23defd2863674d670.
 
 Initial candidate evidence below is automated fixtures only; the subsequent native section records actual App/Provider results. SDK pins remain unchanged.

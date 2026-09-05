@@ -1,6 +1,21 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-09-05（Primary exact SDK 授权隔离候选；native 待主验收）
+> 最后更新：2026-09-05（Primary 授权 portal 布局候选；native 视觉待主复验）
+
+## 2026-09-05 Primary 授权布局后继候选
+
+从 `1862e383` 小改：Primary PermissionPopup portal 至 body，避开运行区域的滚动与
+containing block；Workbench 显式传当前 chat 可见性，隐藏时撤下 popup 及其 Escape handler，
+运行订阅和未决授权保持原样。旧 ChatView 的 popup 默认仍按原位置挂载。未改授权默认、
+exact target、未知 ACK 或自动重试规则。
+
+真实 WebKit 26.5 浏览器加载实际 Workbench/Primary/PermissionPopup/CSS，仅替换网络边界：
+1000×700、800×560 两套布局场景通过，含参数展开、滚动、含 transform 容器压力控制、
+补读/重挂载/重连、切页和后继授权；截图与真实鼠标命中均检查。修前压力控制按钮越出视口、
+隐藏视图 Escape 否决分别实测红，修后绿；未加 transform 的浏览器基线没有复现 native
+消失，故不能将压力控制等同 native 根因证明。前端59、backend decision18、tsc/lint 通过。
+原生 `dfdaec4a` 的视觉 FAIL 保留，主负责新 candidate 的可见鼠标点击复验；本片不运行 Provider。
+命令/原始证据索引和hash见 [RESULTS](../plans/2026-09-05-primary-sdk-decisions/RESULTS.md#portal-layout-candidate-after-1862e383)。
 
 ## 2026-09-05 Primary 精确 SDK 授权独立候选
 

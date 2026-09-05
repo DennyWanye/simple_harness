@@ -28,6 +28,25 @@ function fixture() {
   return { port, run, item, send, respond, states };
 }
 describe("Primary production decision wire UI", () => {
+  it("portals outside the run scroll container and removes hidden-view keyboard handling", async () => {
+    const h = fixture();
+    const props = { primaryRef: "primary", port: h.port, run: h.run, onStop: vi.fn() };
+    const view = render(<PrimaryRunPanel {...props} />);
+    await h.respond({ pending: [h.item], truncated: false });
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.parentElement).toBe(document.body);
+    expect(view.container.contains(dialog)).toBe(false);
+    const reads = h.send.mock.calls.length;
+    view.rerender(<PrimaryRunPanel {...props} visible={false} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(h.send).toHaveBeenCalledTimes(reads);
+    view.rerender(<PrimaryRunPanel {...props} />);
+    expect(screen.getByText("写入任务 README")).toBeTruthy();
+    expect(h.send).toHaveBeenCalledTimes(reads);
+    view.unmount();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("cold mount reads an earlier decision; only click sends exact approval on the bound socket", async () => {
     const h = fixture();
     render(<PrimaryRunPanel primaryRef="primary" port={h.port} run={h.run} onStop={vi.fn()} />);
