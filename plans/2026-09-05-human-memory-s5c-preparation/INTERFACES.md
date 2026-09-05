@@ -1,6 +1,6 @@
 # S5c 具体接口设计（拟议，供 review）
 
-2026-09-05。下文 `Host*`/`Immediate*` 是拟议新接口；标为“现有”的方法已从源码核对。没有实现/注册/调用它们。范围及任务见 [README](README.md)，原文/hash 见 [SOURCES](SOURCES.md)。
+2026-09-05。**这是初次准备稿；本切已定稿并实现的内部接口及G6版本化限制见 [T1-T2-INTERFACE.md](T1-T2-INTERFACE.md)，优先于下文旧的kwargs草案。** 下文 `Host*`/`Immediate*` 是拟议新接口；标为“现有”的方法已从源码核对。没有实现/注册/调用它们。范围及任务见 [README](README.md)，原文/hash 见 [SOURCES](SOURCES.md)。
 
 ## 1. Authority 与 ownership
 
