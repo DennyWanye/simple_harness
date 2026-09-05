@@ -11,10 +11,11 @@
 
 ## 2026-09-05 Typed recall 执行桥验证工具（仅独立分支）
 
-- `feature/human-memory-typed-recall-runner` 已交付可执行 public consumer 桥：隔离调用、exact wheel 文件身份核验、public/source 两层证据汇总及缺失/重复/过期拒绝。代码提交 `fca215e6` 在本机提交态验证为 **40 个桥回归通过**。
-- Harness 0.7.1 + Memory 0.6.3 的真实 public probe 完成 mutation、receipt、typed recall、exact replay 与分页：**1 OBSERVED，0/401 正式 PASS**；其余 390 public cells BLOCKED、10 source cells 未执行。桥回归不计入 TC-HM-13 验收 PASS。
-- 本机证据索引：`.local-test-evidence/2026-09-05/typed-recall-063-committed-fca215e6/bridge-summary.json`；SHA-256 `b393c3f21af7585b97832db2ac7317f05f25de3c69c5bbcbfbd332dba5c85b54`。复跑命令与边界见 [A2 oracle 修订方案](../testcase/human-memory-program/runners/TYPED-RECALL-ORACLE-REVISION-PROPOSAL.md)。
-- **A2 方案待最终批准，未修改冻结 fixture/acceptance；本分支尚未并入主树，合并暂缓。** 此处仅记录测试工具状态，不标记 S3 或 program 完成，不改变其他模块的生产状态。
+- `feature/human-memory-typed-recall-runner`：用户已批准 §3–4 有界 oracle 修订；批准记录 `38356e7f`、执行前 oracle/14 攻击映射 `e46edaa0`。fixture rev4/layers rev2 保留原401 IDs、391+10分层、全部负例与阈值。
+- 受测代码 `d4036037` 提交态 **54 个验证器/桥回归通过**；新 clean venv 运行 Harness0.7.2 + Memory0.6.3，首批 **19 OBSERVED，正式 0 PASS / 0 FAIL / 401 BLOCKED**。371 public 执行器未实现、1 protocol-version 攻击缺 public input、10 source 未执行；不混为已通过。
+- 真实调用覆盖 mutation/receipt、typed recall/replay、13 个输入变异、3 个 unsupported 负例及 public canonical manifest；原冻结时钟下分页返回 expired。内部拒绝层和异常路径 candidate-read=0 缺公共见证，尚不宣称通过。已批准提案的 NUL preimage 与 SDK JSON-domain hash 不符，明确 BLOCKED，未用产品输出回填预期。
+- 本机提交态索引：`.local-test-evidence/2026-09-05/typed-recall-a2-committed-d4036037/bridge-summary.json`，SHA-256 `456d9d330e1d5d1cc23c1bd360bcdaeff8883926e5e5619d3b1f6d3bc30b950b`。命令、文件/提交边界和最小修正见 [首批记录](../testcase/human-memory-program/runners/TYPED-RECALL-A2-FIRST-BATCH.md)。
+- **本分支尚未并入主树，合并暂缓。** 仅更新测试工具事实，不标记 S3/program 完成，不改变其他模块生产状态；没有 provider/UI/MPS 或 SDK 全量测试。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 

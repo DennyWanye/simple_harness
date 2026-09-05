@@ -4,8 +4,8 @@
 
 ## 2026-09-05 Typed recall 执行桥：分支测试工具验证状态
 
-- `feature/human-memory-typed-recall-runner` 已交付执行桥，代码提交 `fca215e6` 本机提交态 **40 个桥回归通过**；Harness 0.7.1 + Memory 0.6.3 真实 public probe 为 **1 OBSERVED、0/401 正式 PASS**，其余 390 public cells BLOCKED、10 source cells 未执行。
-- **A2 oracle 修订方案待最终批准；尚未并入主树，合并暂缓。** 仅登记测试工具验证事实，S3/program 完成度及其他模块状态不变。边界、证据索引与方案见 [Memory SDK 边界](MEMORY_SDK_BOUNDARY.md#2026-09-05-typed-recall-执行桥验证工具仅独立分支)。
+- `feature/human-memory-typed-recall-runner`：§3–4 A2 修订已获批准并在执行前固化，401 IDs/391+10/负例/阈值保持不变。代码 `d4036037` 本机提交态 **54 个验证器/桥回归通过**；Harness0.7.2 + Memory0.6.3 clean consumer 首批 **19 OBSERVED，0 PASS / 0 FAIL / 401 BLOCKED**。
+- **仍未并入主树，合并暂缓；S3/program 未完成。** 371 public 执行器未实现、1 protocol-version public input 缺口、10 source 未执行；hash preimage/冻结时钟/异常读取及内部拒绝层见证差异保留 BLOCKED。只登记测试工具事实，不变更其他模块完成度。具体证据、命令与最小修正见 [Memory SDK 边界](MEMORY_SDK_BOUNDARY.md#2026-09-05-typed-recall-执行桥验证工具仅独立分支)。
 
 ## 2026-09-04 Human Memory S5b Task 7：前台任务执行链生产入口跑通与路径契约收口
 
