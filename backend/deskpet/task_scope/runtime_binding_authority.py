@@ -16,6 +16,8 @@ import sqlite3
 import hashlib
 import time
 import uuid
+from contextvars import ContextVar
+from dataclasses import dataclass
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Protocol
@@ -48,6 +50,17 @@ def _uuid(label: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"simple-harness:{label}"))
 
 
+@dataclass(frozen=True)
+class _PrimaryBindingTarget:
+    """One owned target proposal, not a replacement for Run admission scope."""
+    run_id: str
+    task_scope_id: str
+    root: str
+    idempotency_key: str
+    evidence_id: str
+    evidence_hash: str
+
+
 class WorkspaceBindingRuntimeAuthority:
     """Constructor-bound production port used by ``HumanMemoryHostService``."""
 
@@ -73,6 +86,9 @@ class WorkspaceBindingRuntimeAuthority:
         # ``_verify_current_run_authority`` 仍能逐字段核对身份与血缘（校验不放宽，
         # 只是承认"还没有前台 Run"这一合法状态）。
         self._pre_admission: dict[str, CurrentRunBindingAuthority] = {}
+        self._primary_target: ContextVar[_PrimaryBindingTarget | None] = ContextVar(
+            "primary_workspace_binding_target", default=None
+        )
         self._store = WorkspaceBindingAuthorityStore(
             self._db_path,
             configured_workspace_root=configured_workspace_root,
@@ -118,6 +134,8 @@ class WorkspaceBindingRuntimeAuthority:
                 root=root,
                 idempotency_key=idempotency_key,
                 policy_generation=int(getattr(state, "generation", -1)),
+                interaction_evidence_id=interaction_evidence_id,
+                interaction_evidence_hash=interaction_evidence_hash,
             )
         except WorkspaceBindingError as exc:
             if exc.code == "workspace_root_not_configured_descendant":
@@ -252,13 +270,23 @@ class WorkspaceBindingRuntimeAuthority:
         snapshot = await self._foreground.current_snapshot(self._subject)
         if snapshot is None or snapshot.host_run_id != run_id:
             return None
+        target = self._primary_target.get()
+        if snapshot.task_scope_id is None:
+            if target is None or target.run_id != run_id:
+                return None
+            self._verify_primary_target(snapshot, target)
+            target_scope = target.task_scope_id
+            target_revision = self._binding_revision(target_scope)
+        else:
+            target_scope = snapshot.task_scope_id
+            target_revision = snapshot.binding_set_revision
         state = await self._policy.get_policy_state()
         return CurrentRunBindingAuthority(
             run_id=snapshot.host_run_id,
             subject=snapshot.subject,
             run_revision=snapshot.generation,
-            task_scope_id=snapshot.task_scope_id or "",
-            binding_set_revision=snapshot.binding_set_revision,
+            task_scope_id=target_scope,
+            binding_set_revision=target_revision,
             context_snapshot_id=snapshot.context_snapshot_id,
             context_snapshot_revision=snapshot.context_snapshot_revision,
             context_snapshot_hash=snapshot.context_snapshot_hash,
@@ -324,16 +352,24 @@ class WorkspaceBindingRuntimeAuthority:
         root: str,
         idempotency_key: str,
         policy_generation: int,
+        interaction_evidence_id: str,
+        interaction_evidence_hash: str,
     ) -> Mapping[str, object]:
         configured = self._store.configured_root()
         current = await self._foreground.current_snapshot(self._subject)
-        if current is not None and current.task_scope_id != task_scope_id:
+        if current is not None and current.task_scope_id is not None and current.task_scope_id != task_scope_id:
             raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
 
+        target = None
+        target_token = None
         if current is not None:
             run_id = current.host_run_id
+            if current.task_scope_id is None:
+                target = _PrimaryBindingTarget(run_id, task_scope_id, root, idempotency_key,
+                    interaction_evidence_id, interaction_evidence_hash)
+                self._verify_primary_target(current, target)
             run_revision = current.generation
-            base_revision = current.binding_set_revision
+            base_revision = self._binding_revision(task_scope_id) if current.task_scope_id is None else current.binding_set_revision
             snapshot_id = current.context_snapshot_id
             snapshot_revision = current.context_snapshot_revision
             snapshot_hash = current.context_snapshot_hash
@@ -371,6 +407,8 @@ class WorkspaceBindingRuntimeAuthority:
             )
 
         try:
+            if target is not None:
+                target_token = self._primary_target.set(target)
             proposal = self._proposal(
                 run_id=run_id,
                 task_scope_id=task_scope_id,
@@ -395,9 +433,34 @@ class WorkspaceBindingRuntimeAuthority:
             grant = await self._store.authorize_auto_binding(proposal, snapshot)
             receipt = await self._store.append_binding(proposal, grant)
         finally:
+            if target_token is not None:
+                self._primary_target.reset(target_token)
             if pre_admission_key is not None:
                 self._pre_admission.pop(pre_admission_key, None)
         return self._binding_result(receipt, status="bound")
+
+    def _verify_primary_target(self, current, target: _PrimaryBindingTarget) -> None:
+        """Re-read real Run ownership and durable proposal on every Auto check."""
+        if (current.host_run_id != target.run_id or current.subject != self._subject
+                or current.task_scope_id is not None or current.sdk_run_id is None
+                or current.state.value not in {"CLAIMED", "RUNNING"}
+                or current.lease_expires_at * 1000 <= self._clock_millis()):
+            raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
+        expected = {"schema_version": 1, "action": "binding.append", "scope_ref": target.task_scope_id,
+                    "root": target.root, "idempotency_key": target.idempotency_key}
+        with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
+            row = db.execute(
+                "SELECT e.envelope_sha256,e.payload_json FROM human_memory_evidence e "
+                "JOIN task_scopes s ON s.task_scope_id=? AND s.subject=e.subject "
+                "JOIN foreground_runs r ON r.host_run_id=? AND r.subject=e.subject "
+                "AND r.primary_conversation_id=e.primary_conversation_id "
+                "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
+                "WHERE e.evidence_id=? AND e.subject=? AND e.source_ref=? AND b.sdk_run_id=?",
+                (target.task_scope_id, current.host_run_id, target.evidence_id, self._subject,
+                 f"host-binding-append:{target.idempotency_key}", current.sdk_run_id),
+            ).fetchone()
+        if row is None or row[0] != target.evidence_hash or json.loads(row[1]) != expected:
+            raise WorkspaceBindingError("workspace_binding_primary_target_evidence_not_durable")
 
     def _proposal(
         self,

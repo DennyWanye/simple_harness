@@ -39,7 +39,7 @@ class _FakeBindingStore:
         self.receipts: dict[str, SimpleNamespace] = {}
 
     def configured_root(self):
-        return self._root
+        return None if self._root is None else SimpleNamespace(canonical_path=self._root)
 
     async def current_receipt(self, task_scope_id: str):
         try:
@@ -68,6 +68,10 @@ class _FakeService:
 
     async def create_task_scope(self, request):
         return {"scope_ref": "scope-new-1", "revision": 1, "goal": request.goal}
+
+    async def append_binding(self, request):
+        return await self.binding_append.append_binding(task_scope_id=request.scope_ref,
+            root=request.root, idempotency_key=request.idempotency_key)
 
     async def search_task_scopes(self, request):
         return {
@@ -107,6 +111,7 @@ def _service(
     context=None,
 ) -> ContextRouteToolService:
     service = _FakeService()
+    service.binding_append = binding_append
     bound = SimpleNamespace(bind=lambda auth, **kw: service) if factory is None else factory
     return ContextRouteToolService(
         service_factory_getter=lambda: bound,

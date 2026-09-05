@@ -18,8 +18,10 @@ Provider和authorization response为deterministic测试适配，真实SDK/ReAct/
 route service、binding验证、EffectGate、semantic closure和terminal事务均非mock。
 已绑定TaskScope是fixture前置条件；这不证明create/manual UI闭环。
 
-`create_new`调用WorkspaceBindingRuntimeAuthority，Manual返回真实binding challenge，
-route handler目前只返回context_route_binding_authorization_required；**不会产生旧
+`create_new`现在通过service持久化binding proposal，以configured.canonical_path/task-{scope_id}
+走原WorkspaceBindingRuntimeAuthority。active None使用真实Run/context和有据owned目标scope授权，
+不造bootstrap Run。Manual返回真实binding challenge，route错误携带binding_challenge及
+required_action=binding.manual.decide（新UI投影尚未接通）；**不会产生旧
 project_directory_request/SDK external wait**。现有效响应是绑定human_memory_request的
 binding.manual.propose(scope_ref,root) / binding.manual.decide(challenge_ref,decision)，
 完成后resume_existing。旧project_directory_response不是这条产品链。
@@ -106,3 +108,5 @@ ForegroundQueueStore.record_sdk_terminal是单一事务：绑定/lease/真实终
 T4 occurrence settle应在同一db事务接入；当前没有placeholder callback。
 T5复用UUID5(memory-ingestion-outbox:{sdk_run_id}:{turn_id})及同一user evidence link；
 不按runtime observation另建第二analysis job。source lineage补足另交主/Hegel设计。
+
+CREATE_NEW后继实现与红→绿证据见[CREATE-NEW-BINDING.md](CREATE-NEW-BINDING.md)。

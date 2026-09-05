@@ -66,6 +66,14 @@ SDK event ID/hash/state；旧式scoped fixture不删除原始证据。helper用�
 main已惰性注入API三reader/resolver，**依赖Dirac API提交及terminal helper接入后继进行组合验证**。
 **完整历史Memory/evidence/entity来源suppression留下一提交，尚未闭合**；当前候选不得据此
 合main或宣称S6 Task1/2完成。create_new Manual路径也未有新UI验收，不走旧目录卡/external wait。
+
+CREATE_NEW后继已完成生产backend修复：配置CanonicalWorkspaceRoot取canonical_path后使用稳定task子目录；
+service先持久化真实binding proposal；active None Run以实际Run/context+owned目标scope取得原AUTO authority，
+不走无Run bootstrap，不改变admission scope。Manual返回可消费真challenge，旧scoped不可跨scope。
+相关回归66 passed（含5条新增、真实AUTO落盘/terminal/重开、lease丢失及伪造evidence负例）。
+Manual UI/失败结果投影仍未接通，完整Memory-forget history仍未闭合。详见
+[CREATE_NEW交付](../plans/2026-09-05-s6-primary-preparation/CREATE-NEW-BINDING.md)。
+
 本记录仅为隔离分支状态，未合main；不表示S6 Task1/2或program验收完成。
 
 实现/命令/原始证据hash与交叉点见
