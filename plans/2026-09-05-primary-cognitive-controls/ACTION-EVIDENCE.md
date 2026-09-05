@@ -39,7 +39,11 @@ Four real Host SQLite tests passed0.89s: exact first committed_at/reopen/replay,
 conflict, generic primary.append colliding ID rejected by its different source domain, and
 subject/input separation. No foreground Run or memory-ingestion outbox is created by action
 admission. No SDK suppression, current-node authorization, connection/UI or external Provider
-completion is claimed. Consumer wiring and independent review remain pending.
+completion is claimed. Independent review accepted exact48968c8f within this callback scope; consumer wiring remains pending.
+Review raw SHA256 `2c5e60bd99405b3cc596e152f49cf18b8093f456c1a047af992526b62d3ff3ae`
+in primary-api local `cognitive-action-48968c8f-review/REVIEW.md`. Real connection
+revocation between stages and suppression-commit/ACK-loss replay remain mandatory
+integration controls, not proven by the callback tests.
 
 Command: `PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-candidate/venv/bin/python -m pytest backend/tests/memory/test_primary_cognitive_evidence.py -q -p no:cacheprovider`.
 Ruff import/format corrections only afterward. Raw log stays ignored at
