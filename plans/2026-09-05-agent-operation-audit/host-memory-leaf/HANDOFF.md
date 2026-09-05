@@ -1,6 +1,6 @@
 # Host Memory audit leaf handoff
 
-2026-09-05. Isolated source candidate; final independent source review pending.
+2026-09-05. Fixed source3ba25c4263394751d3d5661e12a26bebec343eaf; Dirac independent scoped ACCEPT, no remaining P0/P1.
 Tree `simple_harness-memory-operation-audit`, branch `feat/host-memory-operation-audit`,
 base7cf2a39c. Native/graph/main environments were not changed. Parent all-operation
 coverage remains unfinished. Original contract/oracle was written before implementation:
@@ -93,3 +93,13 @@ human-authorized audit readthrough, Harness/Service/Realtime call/transport/cont
 coverage and their combination artifacts. No total costs/usage or physical Provider
 call counts are computed here. OA1 enumeration_complete is not all_operations_recorded;
 all_operations_recorded remains false. No native/full-program/allops PASS.
+
+## Final independent review
+
+Dirac independently accepted the fixed source above after checking the paired-witness
+controls, actual two-live-reader late success/failure, selected cursor expiry, production
+callers and preparation source verification. He verified the32-case log/five evidence
+hashes and independently compared the exact Memory wheel to installed72 files/71.py.
+No suite rerun or native claim. Safe review record is retained ignored as
+`independent-review.txt`, SHA-256 `80468b773e7819ebb832d789f128588f5a21c944d4b7e57168d29dc94f072faf`.
+This follow-up commit changes conclusion documents only; source remains fixed.
