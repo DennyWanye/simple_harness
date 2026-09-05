@@ -2,6 +2,16 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-09-05 Primary history runtime隔离切片94项聚焦绿，**预先scoped ResumePackage首Provider仍有1项P1红**；
+后继动态ResumePackage漏发纠正21项聚焦绿；来源功能闭合及其他carrier完整性审计仍未完成。
+固定API/helper已入树；后继no_recall origin纠正，相邻合跑41绿/初始scoped1红，exit1。
+不得合主生产。见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
+2026-09-05 primary history API 隔离候选已接公开 Memory batch visibility，50项聚焦通过；
+真实 memory-only forget / 跨 Run 来源 / recall binding / signed WS late fence 已有 library/API
+证据。runtime 组合、独立复核、short exact carrier 与真实 UI/provider 仍独立待续，未改 gate。
+见 [Memory 当前边界](MEMORY_SDK_BOUNDARY.md) 与 [验证记录](../plans/2026-09-05-primary-history-api/VALIDATION.md)。
+
 2026-09-05 Primary API 后继修复处理 terminal authority/raw SDK hash 差异、当前 source
 过滤及 commit 后唤醒失败的 durable ACK；依赖 Carver 统一 helper，真实组合测试待主运行。
 公开 suppression 无原子 snapshot/epoch，不将逐来源复查或既有40项局部绿色称为完整闭环。

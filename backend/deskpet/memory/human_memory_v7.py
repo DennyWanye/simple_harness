@@ -47,7 +47,7 @@ _NON_PRESENTABLE_STATES = frozenset(
 _ELIGIBLE_PRIVACY_CLASSES = frozenset({"public", "personal"})
 
 HOST_SUPPORTED_FILTER_POLICIES: frozenset[str] = frozenset(
-    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1"}
+    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1", "host-primary-runtime-v1"}
 )
 HOST_CLASSIFICATION_POLICY_ID = "deskpet-host-classification"
 HOST_CLASSIFICATION_POLICY_VERSION = "1"
@@ -405,6 +405,8 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     anything enters Context and deduplicates by public payload hash.
     """
 
+    from simple_harness import thaw_json
+
     execution = getattr(lanes, "execution", lanes)
     short_horizon = getattr(lanes, "short_horizon", None)
     fragments: list[dict[str, Any]] = []
@@ -430,12 +432,18 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 ),
                 "privacy_class": privacy,
                 "score": float(item.score),
-                "payload": item.public_payload,
+                "payload": thaw_json(item.public_payload),
                 "payload_hash": payload_hash,
                 "source_task_scope_ids": list(item.source_task_scope_ids),
                 "bytes": bytes_len,
                 "tokens": tokens,
                 "lane": "long_term_typed",
+                "history_binding": {
+                    "result_id": execution.result.result_id,
+                    "result_hash": execution.result.result_hash,
+                    "item_id": item.selected_item.item_id,
+                    "item_hash": item.result_item_hash,
+                },
             }
         )
     for hit in getattr(short_horizon, "hits", ()) or ():
@@ -454,7 +462,7 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 "memory_type": "short_horizon",
                 "privacy_class": privacy,
                 "score": float(hit.score),
-                "payload": hit.content,
+                "payload": thaw_json(hit.content),
                 "payload_hash": hit.content_hash,
                 "source_task_scope_ids": [],
                 "bytes": bytes_len,

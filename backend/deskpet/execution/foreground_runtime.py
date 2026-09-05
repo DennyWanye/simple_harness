@@ -97,6 +97,13 @@ class FrozenContextAuthority:
     provider_messages: tuple[Mapping[str, object], ...]
     current_text: str
     resume_refs: tuple[str, ...]
+    visibility_dependencies: Mapping[str, object] | None = None
+
+    def __post_init__(self):
+        if self.visibility_dependencies is not None:
+            from simple_harness import freeze_json
+            from deskpet.execution.primary_dependencies import parse_dependencies
+            object.__setattr__(self, "visibility_dependencies", freeze_json(parse_dependencies(self.visibility_dependencies)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -749,6 +756,7 @@ class ForegroundRuntimeExecutionAuthority:
         tool_names = tools.catalog.get("tool_names")
         if not isinstance(tool_names, (list, tuple)):
             raise ForegroundRuntimeError("foreground_runtime_tool_catalog_invalid")
+        from simple_harness import thaw_json
         start_payload = {
             "input": {"text": context.current_text},
             "messages": [dict(item) for item in context.provider_messages],
@@ -760,6 +768,7 @@ class ForegroundRuntimeExecutionAuthority:
                 "root_run_id": host_run_id,
                 "request_id": request_id,
                 "task_scope_id": candidate.task_scope_id,
+                "visibility_dependencies": thaw_json(context.visibility_dependencies),
                 "context_authority_ref": context.authority_ref,
                 "context_authority_hash": context.authority_hash,
                 "provider_authority_ref": bound_provider.authority_ref,
@@ -1421,11 +1430,24 @@ class SqliteSdkTerminalObserver:
                 raise ForegroundRuntimeError("foreground_terminal_run_binding_missing")
             text = json.loads(turn[0])["payload"]["text"]
             messages = read_messages(sdk_run_id, current_text=text)
+            from deskpet.execution.primary_dependencies import read_run_dependencies
+            proof = None
+            if callable(getattr(self._runtime_stack, "read_primary_dependency_facts", None)):
+                async with aiosqlite.connect(self._db_path) as dependency_db:
+                    dependency_db.row_factory = aiosqlite.Row
+                    try:
+                        source = await read_run_dependencies(db=dependency_db,
+                            stack=self._runtime_stack, sdk_run_id=sdk_run_id)
+                        proof = None if source is None else source[1]
+                    except (ValueError, TypeError, KeyError):
+                        # Unverifiable/old source stays archived; never fabricate
+                        # an empty complete proof to make generated history visible.
+                        proof = None
             from deskpet.execution.primary_history import record_terminal_observation
             primary_event_id, primary_event_hash = await record_terminal_observation(
                 self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
                 owner_id=owner_id, generation=generation, terminal=terminal,
-                sdk_evidence=sdk_evidence, messages=messages,
+                sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
                 error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
             )
             if effective_scope is None:

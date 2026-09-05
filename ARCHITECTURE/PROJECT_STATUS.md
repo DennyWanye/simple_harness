@@ -2,6 +2,14 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 首批固定 history 候选组合
+
+Memory0.6.7 依赖候选与固定 history/helper7dcfce8b 已组合，未带入子代理未提交代码。
+实际 runtime/API/遗忘与出站、v2 helper、生产组装、未知调用分类和 CREATE_NEW 自动绑定效果
+受影响组合 **42 passed**。预先 scoped 的来源功能 P1、真实授权 UI 和短期登记生产者尚在后继修复，
+本组合未起 App、不能称完整产品可用。命令与本地 hash 见
+[CANDIDATE-067](../plans/2026-09-05-s6-primary-preparation/CANDIDATE-067.md)。
+
 ## 2026-09-05 下一主对话候选依赖固定
 
 隔离 primary-candidate 树固定 Memory0.6.7/既有 Harness0.7.2/Service0.3.12，并将滞后的 uv.lock
@@ -20,11 +28,63 @@ requires_project 默认值过滤，零 Scope/文件。仅三项 Host 注册补 s
 SDK cancelled、待决授权 cancelled，界面回空闲；仅此等待状态的停止通过。原始失败与命令/哈希见
 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
 
+## 2026-09-05 短期来源的历史读取契约
+
+Primary shared history helper 增加 v2 的独立 short_horizon 三元组，旧 v1 原样兼容；所有来源仍在
+同一公开 Memory batch 校验，递归终态与旧 detail 引用不绕过。Memory0.6.7 独立安装环境下，
+Host shape/batch/递归 API 及既有历史用例 **53 passed**；正向短项为明确的 policy fixture，另有
+真实 Manager 拒绝未选择 audit。该层通过不代表 Host 对话登记/短期索引已有生产数据。
+实际短期生产登记、runtime 组合和原生验收继续单列，见
+[SHORT-V2](../plans/2026-09-05-primary-history-api/SHORT-V2.md)。
+
+## 2026-09-05 主对话历史跨层遗忘验证
+
+隔离组合 `888efe0c` 上，真实 Host/Harness/Memory SQLite 与 ProductProviderAdapter 的确定性
+HTTP transport 完成两轮普通对话，随后只抑制一个真实 memory ID：公共 page/detail 隐去原用户及
+两个依赖回复，独立 USER 保留；重启不重发，下一次实际适配器请求不含已忘内容。三项组合 **3 passed**。
+旧 scoped observer 缺完整来源时仅保留原 USER；该测试不覆盖生产初始 scoped guard 的现存 P1。
+无外部模型/原生 UI/main SDK 切换或全 program 通过声明，见
+[跨层验证](../plans/2026-09-05-s6-primary-preparation/HISTORY-CROSS-COMPONENT.md)。
+
+## 2026-09-05 Primary history runtime review slice — not production-ready
+
+隔离history树（base284ea40b）接shared primary visibility policy、真实start/terminal依赖、
+actual typed recall四元组与每次physical Provider前fresh check；cold USER/terminal S1无需先ingest。
+后继独立review发现no_recall marker被误当effect导致ordinary历史丢失，已按真实origin纠正；
+相邻契约合跑41 passed/1 failed（仅初始scoped），exit1，非整体PASS。
+原切片94 passed不证明动态历史来源完整；后继动态ResumePackage漏发已先红后绿，聚焦21 passed。
+每条实际route交叉验证SDKeffect/receipt；无来源证明的ResumePackage在delegate前拒绝，
+FAILED且第二次物理发送为0。真实create_new在逐次guard下完成effect/terminal；已发送unknown分类未改。
+**仍有P1：既有预先scoped ResumePackage无完整proof，新guard会拒绝首Provider（真实probe1红）**。
+不得以94绿抵消该回归或用scope豁免。共享API ea315525已正式cherry为2645d8b2，移除helper加载层后组合71绿；
+独立venv已安装exact Memory0.6.6（其他Host依赖只读借用），窄复验10绿。仍仅隔离组合，
+没有生产切换/native隐私完成结论；独立short-horizon carrier仍不支持。原证据不删除。
+命令、边界及hash见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
 ## 2026-09-05 Primary 工具活动事件契约
 
 隔离组合树补齐真实 SDK 调用到 `tool_call` 的 `call_id`，使主对话可对应工具开始/返回。
 既有真实 SessionDB 用例精确复现缺字段，修后 delivery **14 passed**；原生工具交互仍待验证，
 不计 S6/program 完成。证据哈希与命令见 [UI](UI.md)。
+
+## 2026-09-05 primary history visibility API 隔离候选
+
+`feat/human-memory-primary-history-api` 从 `87c42b43` 增加 Host shared
+`PrimaryHistoryPolicy.check_evidence_ids/check_dependencies`：真实 S1 subject/primary/hash
+与终态身份校验，递归 evidence/recall 依赖合并为一次公开 Memory batch；state/page/detail
+在慢读取后 fresh 检查，真实 WS request_id + authenticated subject 构造 USER_REVIEW，
+输出前重验现有 connection fence。旧终态无依赖证明只隐藏 generated group，原始 USER
+不依赖异步 analysis。未改变归档、SDK、schema、pin、main.py 或 runtime 文件。
+
+本隔离实现聚焦 **50 passed**，使用独立环境 exact Memory0.6.6 / Harness0.7.2：真实
+Memory memory-only forget 反向隐藏原始 USER、其 assistant 及跨 Run 继承 assistant，
+无关 USER 仍可见；真实 recall 四元绑定正负、reopen 和 Host 证据字节不变通过；
+in-process production WS 验真实绑定/request_id，慢 batch 期间重连拒绝旧响应。
+这些是 library/API 证据；SDK transcript fixture 不替代 Carver runtime 组合测试。
+尚待 Dirac 独立审查、主组合与 native/provider 验证。short-horizon 仍缺本轮可用的 exact
+carrier，必须在运行层拒绝复用/出站；不称 S6/S5b/program gate 完成。
+见 [接口与验证](../plans/2026-09-05-primary-history-api/CONTRACT.md)、
+[验证记录](../plans/2026-09-05-primary-history-api/VALIDATION.md)。
 
 ## 2026-09-05 主对话隔离组合验证
 

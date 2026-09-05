@@ -424,6 +424,7 @@ class HumanMemoryHostService:
         settled_run_reader: object | None = None,
         suppression_resolver: object | None = None,
         run_binding_reader: object | None = None,
+        history_visibility_checker: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -449,6 +450,7 @@ class HumanMemoryHostService:
             settled_run_reader=settled_run_reader,
             suppression_resolver=suppression_resolver,
             run_binding_reader=run_binding_reader,
+            history_visibility_checker=history_visibility_checker,
         )
         self._evidence_group_ref_cache: dict[
             tuple[str, str, str], tuple[dict[str, object], ...]
@@ -466,14 +468,25 @@ class HumanMemoryHostService:
             "receipt_hash": receipt.receipt_sha256,
         }
 
-    async def read_primary_state(self) -> Mapping[str, object]:
-        return await self._primary_read.state()
+    def _history_disclosure(self, request_id: str) -> DisclosureContext:
+        identifier(request_id, "request_id", 512)
+        return DisclosureContext(
+            run_id=request_id, subject=self._auth.subject,
+            recipient=DeliveryRecipient.USER_SELF, recipient_id=self._auth.subject,
+            intended_audience=IntendedAudience.USER_SELF, purpose=DisclosurePurpose.USER_REVIEW,
+            source=DisclosureSource.AUTHENTICATED_HOST, trust=DisclosureTrust.TRUSTED_AUTHORITY,
+            generation=DisclosureGeneration.CURRENT, authority_ref=self._auth.authority_ref,
+            reason_codes=(DisclosureReasonCode.MINIMUM_NECESSARY,),
+        )
 
-    async def read_primary_messages(self, **request) -> Mapping[str, object]:
-        return await self._primary_read.page(**request)
+    async def read_primary_state(self, *, request_id: str) -> Mapping[str, object]:
+        return await self._primary_read.state(disclosure_context=self._history_disclosure(request_id))
 
-    async def read_primary_message_detail(self, **request) -> Mapping[str, object]:
-        return await self._primary_read.detail(**request)
+    async def read_primary_messages(self, *, request_id: str, **request) -> Mapping[str, object]:
+        return await self._primary_read.page(disclosure_context=self._history_disclosure(request_id), **request)
+
+    async def read_primary_message_detail(self, *, request_id: str, **request) -> Mapping[str, object]:
+        return await self._primary_read.detail(disclosure_context=self._history_disclosure(request_id), **request)
 
     async def append_primary_event(
         self, request: AppendPrimaryEventRequest
@@ -1890,6 +1903,7 @@ class HumanMemoryHostServiceFactory:
     settled_run_reader: object | None = None
     suppression_resolver: object | None = None
     run_binding_reader: object | None = None
+    history_visibility_checker: object | None = None
 
     def bind(
         self,
@@ -1911,6 +1925,7 @@ class HumanMemoryHostServiceFactory:
             settled_run_reader=self.settled_run_reader,
             suppression_resolver=self.suppression_resolver,
             run_binding_reader=self.run_binding_reader,
+            history_visibility_checker=self.history_visibility_checker,
         )
 
 

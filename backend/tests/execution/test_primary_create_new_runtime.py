@@ -73,14 +73,28 @@ async def fixture(tmp_path, mode="auto"):
 
 
 @pytest.mark.asyncio
-async def test_active_primary_create_new_auto_real_binding_effect_terminal(tmp_path):
+@pytest.mark.parametrize("fresh_guard", [False, True])
+async def test_active_primary_create_new_auto_real_binding_effect_terminal(tmp_path, fresh_guard):
     state, factory, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "fresh-project", "Create a new project and write its file"))
     provider = CreateProvider()
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
+    guarded_requests = []
+    if fresh_guard:
+        from deskpet.execution.primary_dependencies import check_runtime_dependencies
+        original_invoke = provider.invoke
+        async def invoke(request, *, cancel):
+            current = await queue.current_snapshot(local_owner_auth().subject)
+            await check_runtime_dependencies(db_path=state, stack=stack, sdk_run_id=current.sdk_run_id,
+                request=request, policy_factory=lambda _: runtime.history_policy)
+            guarded_requests.append(request.request_id)
+            return await original_invoke(request, cancel=cancel)
+        provider.invoke = invoke
     try:
         assert await asyncio.wait_for(runtime._drive_once(), 20)
+        if fresh_guard:
+            assert len(guarded_requests) == 7
         with sqlite3.connect(state) as db:
             db.row_factory = sqlite3.Row
             run = db.execute("SELECT * FROM foreground_runs").fetchone()

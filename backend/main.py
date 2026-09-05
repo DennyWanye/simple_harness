@@ -3195,6 +3195,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         context=PrimaryForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
+            policy=_primary_history_policy("deskpet-local-owner-v1"),
             route_ledger=_foreground_route_ledger(),
             settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
         ),
@@ -3270,6 +3271,7 @@ async def lifespan(app: FastAPI):
                 _state_db_path, startup_epoch,
                 settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
                 suppression_resolver=_primary_suppression_resolver,
+                history_visibility_checker=_primary_history_visibility_checker,
                 run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
@@ -7673,6 +7675,23 @@ def _freeze_sdk_catalog(
     }
 
 
+async def _primary_history_visibility_checker(*, subject, disclosure_context, bindings):
+    runtime = service_context.get("human_memory_v7_runtime")
+    if runtime is None:
+        raise RuntimeError("human_memory_v7_runtime_unavailable")
+    principal = runtime.principal()
+    if principal.actor_id != subject or disclosure_context.subject != subject:
+        raise RuntimeError("primary_history_principal_mismatch")
+    manager = await runtime.manager()
+    return await manager.check_history_visibility(principal=principal,
+        disclosure_context=disclosure_context, bindings=bindings)
+
+
+def _primary_history_policy(subject):
+    from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
+    return PrimaryHistoryPolicy(_state_db_path, subject, _primary_history_visibility_checker)
+
+
 class _ProductSdkProviderBindingResolver:
     """SDK resolver backed only by immutable per-Run product bindings."""
 
@@ -7700,6 +7719,11 @@ class _ProductSdkProviderBindingResolver:
             != binding.provider_config_revision
         ):
             raise RuntimeError("SDK bound Provider incarnation changed")
+        async def primary_guard(request):
+            from deskpet.execution.primary_dependencies import check_runtime_dependencies
+            await check_runtime_dependencies(db_path=_state_db_path, stack=_sdk_runtime_stack,
+                sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy)
+
         provider = ProductProviderAdapter(
             self._provider_registry,
             provider_id=binding.provider_id,
@@ -7707,6 +7731,7 @@ class _ProductSdkProviderBindingResolver:
             price_resolver=_sdk_price_snapshot,
             model=binding.model_id,
             model_params=thaw_json(binding.model_params),
+            pre_invoke_guard=primary_guard,
         )
         price = provider.price_snapshot
         estimator = FrozenPriceEstimator(

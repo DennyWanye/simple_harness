@@ -514,6 +514,7 @@ class ProductProviderAdapter:
         # （.local-test-evidence/real-ui-channel/20260904T165832、T170608）。
         # 取 240s：高于当前最大车道 deadline（analysis 180s）并留余量。
         timeout: float = 240.0,
+        pre_invoke_guard=None,
     ) -> None:
         entry = registry.get_entry(provider_id)
         if entry is None or not bool(getattr(entry, "enabled", True)):
@@ -575,6 +576,7 @@ class ProductProviderAdapter:
             pricing_key=pricing_key,
             reasoning_wire=self.reasoning_wire,
         )
+        self._pre_invoke_guard = pre_invoke_guard
         self._timeout_seconds = float(timeout)
         self._target = ProviderTarget(
             provider_id,
@@ -591,6 +593,10 @@ class ProductProviderAdapter:
     async def invoke(
         self, request: ProviderRequest, *, cancel: CancelToken
     ) -> ProviderResponse:
+        # Only this pre-delegate boundary may reject as a definite request
+        # failure. Do not reclassify errors after a physical handoff.
+        if self._pre_invoke_guard is not None:
+            await self._pre_invoke_guard(request)
         started_at = time.monotonic()
         request_ref = _opaque_ref(request.request_id.value)
         summary = _request_diagnostic_summary(request)

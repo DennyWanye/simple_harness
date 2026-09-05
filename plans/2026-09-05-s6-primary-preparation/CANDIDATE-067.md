@@ -41,3 +41,23 @@ Raw files stay ignored under `.local-test-evidence/2026-09-05/primary-candidate/
 | candidate-composition.log | 23f6435b8137672fef7ba3609555ef7746cdc4f3f48eb44bd450e74b0ac80f44 |
 | lock-check.log | 0c669d29a4335b09a390175701b75c13d29b6c452bcd323267ee264cbac1ca13 |
 | dependency-delta.json | afb1a2c7c3a029946b5463d99e1a1c54334df5ed472eb60de1942f9f3fbf533d |
+
+## First fixed history integration
+
+Merged fixed history/helper7dcfce8b into dependency candidate1f9c008d. Production source
+merged automatically; conflicts were limited to retaining both sets of architecture
+facts and the newer shared runtime fixtures/guarded CREATE_NEW test parameters. No
+agent's uncommitted source work was included. Memory0.6.7 remains installed from this
+checkout's vendor. Runtime→public API memory-only forgetting/reopen/outbound, v2 helper,
+actual production composition, late Provider denial/unknown classification and actual
+CREATE_NEW binding/effect tests: **42 passed in24.61s**, one existing deprecation warning.
+
+```sh
+PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-candidate/venv/bin/python -m pytest backend/tests/memory/test_primary_runtime_api_integration.py backend/tests/memory/test_primary_short_visibility.py backend/tests/test_provider_runtime_refresh.py backend/tests/execution/test_primary_history_outbound.py backend/tests/execution/test_primary_create_new_runtime.py -q -p no:cacheprovider
+```
+
+Raw history-combined.log SHA-256 `1aab8744f752fbcbbdc1e593e5ce013d583b2a78ce4b437cff76206e652f3e7b`. The old unproved ResumePackage
+currently rejects use; initial-scoped functionality remains an open P1. Source-bound
+resume restoration, real authorization UI and short production registration are still
+separate in-progress branches.42green does not close these obligations or permit a
+whole-product completion claim; native app has not been started at this combination.

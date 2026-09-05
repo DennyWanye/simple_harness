@@ -72,17 +72,25 @@ async def handle_human_memory_command(
 ) -> dict[str, Any] | None:
     if raw.get("type") != HUMAN_MEMORY_COMMAND:
         return None
-    request_id = str(raw.get("request_id") or "").strip()
+    request_id = raw.get("request_id")
     operation = str(raw.get("operation") or "").strip()
     request = raw.get("request") or {}
-    if not request_id or not operation or not isinstance(request, Mapping):
-        return _error(request_id, "human_memory_invalid_request")
+    if (
+        not isinstance(request_id, str)
+        or not request_id.strip()
+        or len(request_id) > 512
+        or "\x00" in request_id
+        or not operation
+        or not isinstance(request, Mapping)
+    ):
+        return _error(
+            request_id if isinstance(request_id, str) else "",
+            "human_memory_invalid_request",
+        )
     try:
         _reject_authority_fields(request)
         if factory is None:
-            raise HumanMemoryHostServiceError(
-                "human_memory_legacy_epoch_unsupported"
-            )
+            raise HumanMemoryHostServiceError("human_memory_legacy_epoch_unsupported")
         service = factory.bind(
             auth,
             binding_append=binding_append,  # type: ignore[arg-type]
@@ -90,6 +98,17 @@ async def handle_human_memory_command(
             scheduler_wake=scheduler_wake,  # type: ignore[arg-type]
         )
         payload = await _dispatch(service, operation, dict(request), request_id)
+        if operation in {
+            "primary.state",
+            "primary.messages.page",
+            "primary.messages.detail",
+        }:
+            from deskpet.memory.writer_fence import human_memory_request_boundary
+
+            # Production /ws/control already supplies the verified connection scope.
+            # A reconnect during a slow read must not disclose through the old lease.
+            async with human_memory_request_boundary():
+                pass
     except Exception as exc:  # noqa: BLE001 - stable public error projection
         return _error(
             request_id,
@@ -108,14 +127,17 @@ async def _dispatch(  # type: ignore[no-untyped-def]
     if operation == "primary.open":
         return await service.open_primary()
     if operation in {
-        "primary.state", "primary.messages.page", "primary.messages.detail"
+        "primary.state",
+        "primary.messages.page",
+        "primary.messages.detail",
     }:
         from deskpet.memory.primary_read_model import PrimaryReadError
 
         allowed, required = {
             "primary.state": (set(), set()),
             "primary.messages.page": (
-                {"primary_ref", "cursor", "limit"}, {"primary_ref"}
+                {"primary_ref", "cursor", "limit"},
+                {"primary_ref"},
             ),
             "primary.messages.detail": (
                 {"primary_ref", "message_ref", "offset", "limit"},
@@ -125,10 +147,12 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         if not required <= set(request) or not set(request) <= allowed:
             raise PrimaryReadError("primary_read_request_invalid")
         if operation == "primary.state":
-            return await service.read_primary_state()
+            return await service.read_primary_state(request_id=request_id)
         if operation == "primary.messages.page":
-            return await service.read_primary_messages(**request)
-        return await service.read_primary_message_detail(**request)
+            return await service.read_primary_messages(request_id=request_id, **request)
+        return await service.read_primary_message_detail(
+            request_id=request_id, **request
+        )
     if operation == "primary.append":
         event = request.get("event")
         if not isinstance(event, Mapping):
@@ -166,9 +190,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         )
     if operation == "task_scope.view":
         return await service.read_view(
-            ReadTaskScopeViewRequest(
-                str(request["scope_ref"]), str(request["kind"])
-            )
+            ReadTaskScopeViewRequest(str(request["scope_ref"]), str(request["kind"]))
         )
     if operation == "task_scope.evidence_groups":
         return await service.list_evidence_groups(
@@ -240,12 +262,16 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             from deskpet.memory.primary_read_model import PrimaryReadError
 
             required = {"expected_run_ref", "expected_generation", "control"}
-            if not required <= set(request) or not set(request) <= required | {"reason"}:
+            if not required <= set(request) or not set(request) <= required | {
+                "reason"
+            }:
                 raise PrimaryReadError("primary_exact_control_invalid")
             return await service.control_current_run(
                 ExactControlRunRequest(
-                    request["expected_run_ref"], request["expected_generation"],
-                    request["control"], request.get("reason", "user_requested"),
+                    request["expected_run_ref"],
+                    request["expected_generation"],
+                    request["control"],
+                    request.get("reason", "user_requested"),
                     request_id,
                 )
             )

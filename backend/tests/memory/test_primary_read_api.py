@@ -21,6 +21,7 @@ class Policy:
     def __init__(self):
         self.denied = set()
         self.calls = []
+        self.history_calls = []
 
     async def __call__(self, candidate, purpose):
         self.calls.append((candidate, purpose))
@@ -29,8 +30,63 @@ class Policy:
         )
         return SuppressionResolution(denied, ("directive",) if denied else (), 1.0)
 
+    async def history(self, *, subject, disclosure_context, bindings):
+        from deskpet.task_scope.protocol import canonical_hash
+        from simple_harness_memory import (
+            HistoryVisibilityItem,
+            HistoryVisibilitySnapshot,
+        )
+        from simple_harness_memory.core.suppression import (
+            OrdinaryMemoryPurpose,
+            SuppressionCandidate,
+        )
 
-async def setup(tmp_path, policy=True, reader=None, run_binding_reader=None, wake=None):
+        self.history_calls.append((subject, disclosure_context, bindings))
+        items = []
+        for binding in bindings:
+            envelope = getattr(binding, "envelope", None)
+            resolution = await self(
+                SuppressionCandidate(
+                    subject,
+                    evidence_id=None if envelope is None else envelope.evidence_id,
+                ),
+                OrdinaryMemoryPurpose.READ,
+            )
+            visible = (
+                not resolution.denied
+                and getattr(binding, "item_id", None) not in self.denied
+            )
+            items.append(
+                HistoryVisibilityItem(
+                    canonical_hash(
+                        {
+                            "domain": "memory.history.binding.v1",
+                            "payload": binding.to_json(),
+                        }
+                    ),
+                    visible,
+                    "history_visible" if visible else "history_suppressed",
+                )
+            )
+        return HistoryVisibilitySnapshot(
+            subject,
+            canonical_hash(disclosure_context.to_json()),
+            1.0,
+            None,
+            1,
+            "a" * 64,
+            tuple(items),
+        )
+
+
+async def setup(
+    tmp_path,
+    policy=True,
+    reader=None,
+    run_binding_reader=None,
+    wake=None,
+    history_checker=None,
+):
     path = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
     policy = Policy() if policy is True else policy
@@ -40,6 +96,7 @@ async def setup(tmp_path, policy=True, reader=None, run_binding_reader=None, wak
         suppression_resolver=policy,
         settled_run_reader=reader,
         run_binding_reader=run_binding_reader,
+        history_visibility_checker=history_checker or getattr(policy, "history", None),
     )
 
     async def send(op, body=None, key="request", auth=AUTH):
@@ -223,7 +280,16 @@ async def claimed(f, *, key="first", text="real admitted source"):
     return store, admission
 
 
-async def settled(f, *, key="first", text="real admitted source", observation=False):
+async def settled(
+    f,
+    *,
+    key="first",
+    text="real admitted source",
+    observation=True,
+    dependencies=True,
+    inherited=(),
+    short_horizon=(),
+):
     from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
     from deskpet.execution.foreground_queue import RunState
     from deskpet.sdk_adapters.composition import SdkRunTerminalEvidence
@@ -283,6 +349,24 @@ async def settled(f, *, key="first", text="real admitted source", observation=Fa
                 "sdk_event_hash": raw_hash,
                 "messages": [],
                 "error_code": None,
+                **(
+                    {
+                        "visibility_dependencies": {
+                            "schema_version": 2 if short_horizon else 1,
+                            "evidence": [
+                                {
+                                    "evidence_id": evidence_id,
+                                    "envelope_hash": evidence_hash,
+                                },
+                                *inherited,
+                            ],
+                            "recall": [],
+                            **({"short_horizon": list(short_horizon)} if short_horizon else {}),
+                        }
+                    }
+                    if dependencies
+                    else {}
+                ),
             },
             100.0,
         )
@@ -475,13 +559,30 @@ async def test_queue_count_has_explicit_bound_and_no_unbounded_policy_scan(tmp_p
 async def test_memory_suppression_invalidates_old_refs_without_host_write(
     tmp_path,
 ):
+    from simple_harness_memory import MemoryPrincipal, SuppressionRequest
     from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
-    from simple_harness_memory.core.suppression import SuppressionRequest
+    from tests.memory.test_primary_visibility import FILTERS, classification_policy
 
-    backend = SQLiteHumanMemoryBackend(tmp_path / "memory.db")
+    principal = MemoryPrincipal("host", "household", AUTH.subject, "ui")
+    backend = SQLiteHumanMemoryBackend(
+        tmp_path / "memory.db",
+        classification_policy=classification_policy(),
+        supported_filter_policies=FILTERS,
+    )
     await backend.initialize()
+
+    async def check(*, subject, disclosure_context, bindings):
+        assert subject == principal.actor_id
+        return await backend.check_history_visibility(
+            principal=principal,
+            disclosure_context=disclosure_context,
+            bindings=bindings,
+        )
+
     try:
-        f = await setup(tmp_path / "host", policy=backend.resolve_suppression)
+        f = await setup(
+            tmp_path / "host", policy=backend.resolve_suppression, history_checker=check
+        )
         for i in range(3):
             result(
                 await f.send(
