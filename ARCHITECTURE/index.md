@@ -1,5 +1,11 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 SDK073审计组合验证通过
+
+最后更新：2026-09-06。组合源码78647bb0集成独审通过的终态身份叶子；主组合专用venv安装H073/M0612/S0312，348个SDK文件与本树vendor逐字节一致。
+审计目录及candidate/composition组合100PASS/31.62s，单进程峰值258MiB，无本地模型、真实Provider或native。v1历史保留；全操作覆盖及受控审计UI仍待完成。
+[实际结果及边界](../plans/2026-09-06-terminal-audit-identity/COMBINED.md)。
+
 ## 2026-09-06 Installed H073 exact terminal identity leaf
 
 Last updated: 2026-09-06. Isolated Host candidate consumes exact H073 (wheel1a9ed5c9…)
