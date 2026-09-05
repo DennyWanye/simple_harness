@@ -32,3 +32,12 @@ Affected API/history/foreground adjacent suite:53 passed34.90s. Targeted ruff ch
 | decisions-history-adjacent.log | 3e492617228794b46905ae8d1fa1b0532c4e7930f71a861aa3be6efd5486495d |
 
 BOUND_WAITING notification from61436ccc runtime/test only is now combined. Runtime suite16 passed3.28s; waiting-notify.log SHA-256 `0a75fdbddd1badbcf6fedfb60fcab212ebd6fe2d326d9132cfddea5ac0037946`. Notification remains post-commit/best-effort and is not an authorization ACK.
+
+## Fixed independent review
+
+Dirac reviewed5d37439f +6d7db130 +d946b317 (no WIP): Scoped ACCEPT, no new
+in-scope P0/P1. Verified actual authenticated request_id/subject/authority/current
+USER_REVIEW propagation, genuine067 checker and exact negative decision outcomes;
+UI81 and postcommit614 unchanged. It checked20/53/16 logs and hashes without repeating
+the suites. This does not close source-search P1, full MEMORY-only decision provenance,
+native067 layout or program acceptance. Read-only review delivered to main task2026-09-05.
