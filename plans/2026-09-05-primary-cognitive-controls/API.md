@@ -65,3 +65,22 @@ being forgotten; that separate claim remains untested here. Final narrow correct
 adds the missing required primary_ref to the foreign-subject oracle, asserts the actual
 subject-mismatch code, bounds status text and checks the returned SDK effective_at.
 All7 cognitive API tests passed3.36s. Raw `cognitive-final-api.log` SHA256 `5aa8d79f16e8a16a9cfda086c2af4fdeb6393fcdb57ea75c3ce1ef2954074970`.
+
+## Actual typed selection -> API forget -> final outbound guard
+
+After the scoped506 review, replaced the late-forget branch of the existing real
+USER -> deterministic analysis -> public typed recall -> actual Context route
+integration with the new primary.memory.list/forget API. The actual selected
+memory ID is taken from the real audited result; the current public view supplies
+revision/hash. On the second pre-invoke boundary API forget commits, then actual
+check_runtime_dependencies rejects the stale binding before physical transport.
+
+Two controls passed2.18s: `test_new_recall_four_tuple_checked_before_next_physical_provider[None]`
+and `[late_forget]` in `backend/tests/execution/test_primary_history_outbound.py`.
+Positive performs2 actual MockTransport sends and contains the selected version;
+negative selects once and attempts two guards but performs only1 physical send.
+No paid Provider or native UI. API signed-connection authority is covered separately
+by the7 cognitive cases; this cross-stack fixture calls the facade with Host auth.
+Raw `cognitive-typed-outbound.log` SHA256 `48d7720e36fa73d4466ba56d46a9bf3512f01f395e9e35759d2821e14d0b4299`.
+This supplies the previously missing typed-source barrier evidence within the
+automated runtime lane, not full native remember/use/correct/forget acceptance.

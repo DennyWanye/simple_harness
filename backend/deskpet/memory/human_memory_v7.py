@@ -98,6 +98,7 @@ class HumanMemoryV7Runtime:
         embedder_getter: Any = None,
         evidence_authority: Any = None,
         analysis_authority: Any = None,
+        memory_action_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
     ) -> None:
@@ -110,10 +111,12 @@ class HumanMemoryV7Runtime:
         self._embedder_getter = embedder_getter
         self._evidence_authority = evidence_authority
         self._analysis_authority = analysis_authority
+        self._memory_action_authority = memory_action_authority
         # Test seam only: build the backend with an injected clock/fault injector
         # (the production path is always ``build_human_memory_v7``).
         self._backend_factory = backend_factory
         self.registration_receipt: Any | None = None
+        self.schema_upgrade_receipt: Any | None = None
 
     @property
     def db_path(self) -> Path:
@@ -153,7 +156,23 @@ class HumanMemoryV7Runtime:
         async with self._lock:
             if self._manager is None:
                 self._db_path.parent.mkdir(parents=True, exist_ok=True)
+                # The successor SDK owns old-catalog recognition, WAL-aware
+                # backup, migration and replay. Host never probes its schema.
+                # Older SDKs retain their existing initializer behavior.
+                if self._backend_factory is None and self._db_path.exists():
+                    from simple_harness_memory import migrations
+
+                    upgrade = getattr(migrations, "migrate_human_memory_v7_to_v7_2", None)
+                    if upgrade is not None:
+                        self.schema_upgrade_receipt = await upgrade(
+                            self._db_path,
+                            backup_path=self._db_path.with_name(
+                                f"{self._db_path.name}.pre-schema-7.2.backup"
+                            ),
+                        )
                 kwargs = self.build_kwargs()
+                if self._memory_action_authority is not None:
+                    kwargs["memory_action_authority"] = self._memory_action_authority
                 if self._backend_factory is not None:
                     manager = await self._backend_factory(self._db_path, **kwargs)
                 else:

@@ -1,5 +1,16 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Typed selection forget barrier exercised
+
+Actual public typed selection/Context route now uses the cognitive forget API
+before the next production pre-invoke guard. Positive sends2; late forget sends1
+and rejects the next stale request. Two controls passed2.18s with deterministic
+analysis/MockTransport; no native or paid Provider. This adds the previously missing
+typed-source proof to the existing history/reopen coverage. See [API evidence](../plans/2026-09-05-primary-cognitive-controls/API.md).
+SDK069 migration and semantic-action builder hooks are prepared but those new
+branches still await their actual successor candidates; see [runtime preparation](../plans/2026-09-05-s6-primary-preparation/RUNTIME-SUCCESSOR.md).
+
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，

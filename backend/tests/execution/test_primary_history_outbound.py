@@ -160,11 +160,30 @@ async def test_new_recall_four_tuple_checked_before_next_physical_provider(tmp_p
         current = await queue.current_snapshot(local_owner_auth().subject)
         requests.append(request)
         if corrupt == "late_forget" and len(requests) == 2:
-            from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
-            manager = await menv.runtime.manager()
-            await manager.backend.suppress(SuppressionRequest("forget-after-recall", local_owner_auth().subject,
-                SuppressionScopeKind.MEMORY, executions[0].result.items[0].selected_item.source_ref,
-                "user_forget", time.time()), principal=menv.runtime.principal())
+            from deskpet.memory.human_memory_api import handle_human_memory_command
+
+            primary = (await service.open_primary())["primary_ref"]
+            factory = HumanMemoryHostServiceFactory(
+                state, service.startup_decision, cognitive_runtime_getter=lambda: menv.runtime
+            )
+
+            async def command(operation, fields):
+                return await handle_human_memory_command(
+                    {"type": "human_memory_request", "request_id": "typed-forget-test",
+                     "operation": operation, "request": {"primary_ref": primary, **fields}},
+                    factory=factory, auth=local_owner_auth(),
+                )
+
+            listing = await command("primary.memory.list", {})
+            assert listing["payload"]["ok"], listing
+            memory_id = executions[0].result.items[0].selected_item.source_ref
+            target, = [item for item in listing["payload"]["result"]["items"] if item["memory_id"] == memory_id]
+            forgotten = await command("primary.memory.forget", {
+                "action_id": "forget-after-real-selection", "memory_id": memory_id,
+                "expected_revision": target["revision"], "expected_content_hash": target["content_hash"],
+            })
+            assert forgotten["payload"]["ok"], forgotten
+            assert forgotten["payload"]["result"]["status"] == "applied"
         await check_runtime_dependencies(db_path=state, stack=stack, sdk_run_id=current.sdk_run_id,
             request=request, policy_factory=lambda subject: runtime.history_policy)
     provider._pre_invoke_guard = guard
@@ -172,6 +191,8 @@ async def test_new_recall_four_tuple_checked_before_next_physical_provider(tmp_p
         assert await asyncio.wait_for(runtime._drive_once(), 20)
         assert len(executions) == 1 and len(requests) == 2
         assert len(sends) == (2 if corrupt is None else 1)
+        if corrupt is None:
+            assert "1.2.0" in sends[1].content.decode()
         with sqlite3.connect(state) as db:
             assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts ORDER BY rowid DESC LIMIT 1").fetchone()[0] == ("COMPLETED" if corrupt is None else "FAILED")
     finally:
