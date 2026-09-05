@@ -1,5 +1,17 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-06 Forget ACK survives primary content invalidation
+
+Last updated: 2026-09-06. Isolated `feat/primary-forget-ack` fromcf4d8e0a retains
+only the verified primary ID/readiness across read invalidation, keeping the parent
+MemoryPanel's same-connection write correlation alive. Content/detail/graph readers
+still retract; actual authority changes clear the reference and preserve unknown
+safety. React parent first-red/expanded-red evidence and focused47 tests pass, with
+typecheck/build/ESLint. Dirac pre-review found no P0/P1; fixed review pending.
+Main owns native integration/ACK proof; no backend/pin or native process changes.
+No new native/SDK success claim; seven-node label overlap P2 remains separate.
+See [scoped handoff](../plans/2026-09-06-primary-forget-ack/RESULTS.md).
+
 ## 2026-09-06 Native viewport verified; forget ACK recovery remains FAIL
 
 Last updated: 2026-09-06. Actual9b57c5c8 rebuilt native app shows real nodes and
