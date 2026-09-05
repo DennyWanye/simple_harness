@@ -1,5 +1,10 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Cytoscape graph source leaf ready for independent review
+
+Last updated: 2026-09-05. Isolated feat/human-memory-cytoscape-graph based on bf8f9f7d: backend24/frontend21 plus build/typecheck/focused ESLint pass; actual API-fixture browser selection/zoom/suppression replacement verified. Native verification stays coordinator-owned on043c candidate. No audit/pin changes, no full HM-AC6 or program PASS. Old cytoscape-ui tree preserved, inactive.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
 ## 2026-09-05 Original native duplicate-forget regression passes on0610
 
 Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the

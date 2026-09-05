@@ -1,0 +1,59 @@
+import { useEffect, useRef } from "react";
+import cytoscape, { type Core, type StylesheetJson } from "cytoscape";
+import { graphElements } from "../primary/graphElements";
+import type { GraphEdge, GraphNode } from "../primary/graphRequests";
+
+export type GraphSelection = { kind: "node" | "edge"; id: string } | null;
+const style: StylesheetJson = [
+  { selector: "node", style: { label: "data(label)", "background-color": "#8baaff", color: "#f1f5f9",
+    width: 44, height: 44, "font-size": 12, "text-wrap": "wrap", "text-max-width": "130px",
+    "text-valign": "center", "text-halign": "right", "text-margin-x": 12, "border-width": 2, "border-color": "#cbd5e1" } },
+  { selector: 'node[memory_type = "episode"]', style: { shape: "ellipse", "background-color": "#57bd9b" } },
+  { selector: 'node[memory_type = "semantic"]', style: { shape: "round-rectangle" } },
+  { selector: 'node[memory_type = "procedure"]', style: { shape: "hexagon", "background-color": "#dfb970" } },
+  { selector: 'node[memory_type = "prospective"]', style: { shape: "diamond", "background-color": "#c3a0ee" } },
+  { selector: 'node[tentative = "yes"]', style: { "border-style": "dashed", "background-opacity": 0.6 } },
+  { selector: 'node[contested = "yes"]', style: { "border-color": "#fb923c", "border-width": 5 } },
+  { selector: "edge", style: { label: "data(label)", width: 2, "line-color": "#94a3b8", "target-arrow-color": "#94a3b8",
+    "target-arrow-shape": "triangle", "curve-style": "bezier", color: "#cbd5e1", "font-size": 11,
+    "text-background-color": "#111827", "text-background-opacity": 1, "text-background-padding": "3px" } },
+  { selector: ":selected", style: { "border-color": "#ffffff", "border-width": 5, "line-color": "#ffffff", "target-arrow-color": "#ffffff" } },
+];
+export function MemoryGraphCanvas({ nodes, edges, selected, onSelect }: {
+  nodes: GraphNode[]; edges: GraphEdge[]; selected: GraphSelection; onSelect: (selection: GraphSelection) => void;
+}) {
+  const container = useRef<HTMLDivElement>(null), core = useRef<Core | null>(null);
+  const select = useRef(onSelect);
+  useEffect(() => { select.current = onSelect; }, [onSelect]);
+  useEffect(() => {
+    if (!container.current) return;
+    const cy = cytoscape({ container: container.current, elements: graphElements(nodes, edges), style,
+      layout: { name: "breadthfirst", directed: true, animate: false, padding: 32, spacingFactor: 1.3 },
+      minZoom: 0.12, maxZoom: 3, wheelSensitivity: 0.3, boxSelectionEnabled: false, autounselectify: false });
+    core.current = cy;
+    cy.on("tap", "node, edge", (event) => {
+      select.current({ kind: event.target.data("kind"), id: event.target.data("source_id") });
+    });
+    cy.on("tap", (event) => { if (event.target === cy) select.current(null); });
+    const resize = () => { if (!cy.destroyed()) { cy.resize(); cy.fit(undefined, 32); } };
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(resize);
+    observer?.observe(container.current);
+    window.addEventListener("resize", resize);
+    return () => { observer?.disconnect(); window.removeEventListener("resize", resize); cy.destroy(); core.current = null; };
+  }, [nodes, edges]);
+  useEffect(() => {
+    const cy = core.current;
+    if (!cy) return;
+    cy.$(":selected").unselect();
+    if (selected) cy.getElementById(`${selected.kind}:${selected.id}`).select();
+  }, [selected, nodes, edges]);
+  return <div>
+    <div style={{ display: "flex", gap: 8, margin: "8px 0" }}>
+      <button onClick={() => core.current?.zoom(Math.min(3, core.current.zoom() * 1.3))}>放大</button>
+      <button onClick={() => core.current?.zoom(Math.max(0.12, core.current.zoom() / 1.3))}>缩小</button>
+      <button onClick={() => core.current?.fit(undefined, 32)}>显示全图</button>
+    </div>
+    <div ref={container} role="img" aria-label={`记忆关系图：${nodes.length}条记忆，${edges.length}条关系。可使用下方文字列表选择。`}
+      style={{ width: "100%", height: 340, minWidth: 0, background: "#111827", borderRadius: 10, overflow: "hidden" }} />
+  </div>;
+}

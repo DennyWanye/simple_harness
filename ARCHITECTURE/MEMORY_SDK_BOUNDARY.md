@@ -1,5 +1,10 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Public TwinGraph HUMAN projection and completion invalidation
+
+Last updated: 2026-09-05. Host reads manager.get_twin_graph_view using actual principal/primary and signed late API boundary. Node and edge output is bounded with closed endpoints; SDK collection remains a full scan. Main shares content-free completion invalidation between actual suppress and MemoryAnalysisLane APPLIED (including no_mutation). Server generation is checked after the final identity await; no SDK global epoch or Agent graph input is introduced.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
 ## 2026-09-05 Original native duplicate-forget regression passes on0610
 
 Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the

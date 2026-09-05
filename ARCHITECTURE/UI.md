@@ -1,5 +1,10 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-05 Cytoscape primary graph display source candidate
+
+Last updated: 2026-09-05. PrimaryMemoryPanel adds a default-available graph tab over verified HUMAN primary.memory.graph. Real canonical nodes/relations only; local Cytoscape3.34.2 with keyboard/text selection, filter, zoom, pan and details. Pending/unknown forget, owner change and real completion hints invalidate old data. API-fixture browser renderer verification passes; coordinator native verification remains pending.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
