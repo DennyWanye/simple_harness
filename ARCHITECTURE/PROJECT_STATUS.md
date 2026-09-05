@@ -103,6 +103,10 @@ main已惰性注入API三reader/resolver，**依赖Dirac API提交及terminal he
 **完整历史Memory/evidence/entity来源suppression留下一提交，尚未闭合**；当前候选不得据此
 合main或宣称S6 Task1/2完成。create_new Manual路径也未有新UI验收，不走旧目录卡/external wait。
 
+CREATE_NEW候选62f44631曾发现generation origin P1，后继冻结原Host/SDK Run、owner/gen，
+首次选择与写锁内commit前重复核验；真实reclaim/终态后旧context回归及相关套件85 passed。
+首tool早于Host RUNNING的独立启动竞态仍待下一修复，不能以fixture等待放行新项目UI。
+
 CREATE_NEW后继已完成生产backend修复：配置CanonicalWorkspaceRoot取canonical_path后使用稳定task子目录；
 service先持久化真实binding proposal；active None Run以实际Run/context+owned目标scope取得原AUTO authority，
 不走无Run bootstrap，不改变admission scope。Manual返回可消费真challenge，旧scoped不可跨scope。

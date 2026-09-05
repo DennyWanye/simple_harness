@@ -21,8 +21,16 @@ class CreateProvider(Provider):
     def __init__(self):
         super().__init__()
         self.route_result = None
+        self.start_queue = None
 
     async def invoke(self, request, *, cancel):
+        if not self.requests and self.start_queue is not None:
+            async with asyncio.timeout(5):
+                while True:
+                    current = await self.start_queue.current_snapshot(local_owner_auth().subject)
+                    if current is not None and current.state.value == "RUNNING":
+                        break
+                    await asyncio.sleep(0.001)
         n = len(self.requests)
         self.requests.append(request)
         values = [json.loads(m.content)["value"] for m in request.messages
@@ -77,6 +85,7 @@ async def test_active_primary_create_new_auto_real_binding_effect_terminal(tmp_p
     state, factory, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "fresh-project", "Create a new project and write its file"))
     provider = CreateProvider()
+    provider.start_queue = authority._foreground
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     try:
@@ -167,6 +176,7 @@ async def test_active_primary_create_auto_rechecks_lease_before_binding(tmp_path
     state, _, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "lease-lost", "Create a fresh project"))
     provider = CreateProvider()
+    provider.start_queue = authority._foreground
     runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     original = authority._store.append_binding
@@ -206,7 +216,9 @@ async def test_active_primary_auto_rejects_fabricated_proposal(tmp_path, monkeyp
             rejected.append(exc.code)
             raise
     monkeypatch.setattr(authority, "append_binding", corrupt_proof)
-    runtime, stack, _ = await build(tmp_path, state, CreateProvider(), dynamic=True,
+    provider = CreateProvider()
+    provider.start_queue = authority._foreground
+    runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     try:
         assert await asyncio.wait_for(runtime._drive_once(), 20)
@@ -216,6 +228,110 @@ async def test_active_primary_auto_rejects_fabricated_proposal(tmp_path, monkeyp
             assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_grants").fetchone()[0] == 0
             assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE task_scope_id IS NOT NULL").fetchone()[0] == 0
         assert authority._primary_target.get() is None
+    finally:
+        await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reclaim_at", ["proposal", "before_transaction"])
+async def test_create_new_cannot_borrow_reclaimed_generation(tmp_path, monkeypatch, reclaim_at):
+    """An old effect cannot adopt the latest owner, even after grant validation."""
+    from deskpet.execution.foreground_queue import ForegroundQueueError
+    from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
+    state, _, service, configured, authority = await fixture(tmp_path)
+    await service.enqueue_turn(QueueTurnRequest(None, "origin-race", "Create a project"))
+    rejected = []
+    origins = []
+
+    async def reclaim():
+        from deskpet.sdk_adapters import tools as product_tools
+        origin = getattr(product_tools, "active_product_foreground_origin", lambda: None)()
+        current = await authority._foreground.current_snapshot(local_owner_auth().subject)
+        origins.append((current.owner_id, current.generation))
+        # The effect origin is captured before create_scope and proposal awaits.
+        if origin is not None:
+            assert (origin.host_run_id, origin.sdk_run_id, origin.owner_id, origin.generation) == (
+                current.host_run_id, current.sdk_run_id, current.owner_id, current.generation)
+        await authority._foreground.close_current_lease(host_run_id=current.host_run_id,
+            owner_id=current.owner_id, generation=current.generation, idempotency_key="origin-close")
+        new = await authority._foreground.reclaim_expired(host_run_id=current.host_run_id,
+            new_owner_id="new-worker", expected_generation=current.generation,
+            lease_seconds=60, idempotency_key="origin-reclaim")
+        assert new.generation == current.generation + 1
+
+    original_append = authority.append_binding
+    async def append(**kwargs):
+        if reclaim_at == "proposal":
+            await reclaim()
+        try:
+            return await original_append(**kwargs)
+        except WorkspaceBindingError as exc:
+            rejected.append(exc.code)
+            raise
+    monkeypatch.setattr(authority, "append_binding", append)
+    if reclaim_at == "before_transaction":
+        original_load = authority._store._load_auto_append_authority
+        async def load(*args, **kwargs):
+            result = await original_load(*args, **kwargs)
+            await reclaim()  # validated grant, but not yet holding the DB write lock
+            return result
+        monkeypatch.setattr(authority._store, "_load_auto_append_authority", load)
+    provider = CreateProvider()
+    provider.start_queue = authority._foreground
+    runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured)
+    try:
+        with pytest.raises(ForegroundQueueError, match="foreground_generation_stale"):
+            await asyncio.wait_for(runtime._drive_once(), 20)
+        with sqlite3.connect(state) as db:
+            assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_heads").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE task_scope_id IS NOT NULL").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 0
+            if reclaim_at == "proposal":
+                assert db.execute("SELECT COUNT(*) FROM task_workspace_run_mode_snapshots").fetchone()[0] == 0
+                assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_grants").fetchone()[0] == 0
+        assert rejected == ["workspace_binding_invocation_origin_stale"]
+        assert len(origins) == 1 and origins[0][1] == 1
+        assert authority._primary_target.get() is None and authority._pre_admission == {}
+        assert not list(configured.glob("*/fresh.txt"))
+    finally:
+        await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_completed_invocation_cannot_fall_back_to_bootstrap(tmp_path, monkeypatch):
+    import contextvars
+    from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
+    state, _, service, configured, authority = await fixture(tmp_path)
+    await service.enqueue_turn(QueueTurnRequest(None, "gone-origin", "Create a project"))
+    inherited = []
+    original = authority.append_binding
+    async def capture(**kwargs):
+        inherited.append((contextvars.copy_context(), dict(kwargs)))
+        return await original(**kwargs)
+    monkeypatch.setattr(authority, "append_binding", capture)
+    provider = CreateProvider()
+    provider.start_queue = authority._foreground
+    runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured)
+    try:
+        assert await asyncio.wait_for(runtime._drive_once(), 20)
+        assert await queue.current_snapshot(local_owner_auth().subject) is None
+        assert len(inherited) == 1
+        context, kwargs = inherited[0]
+        kwargs["idempotency_key"] += ":late"
+        # A child retaining the genuine completed effect context must not gain
+        # the separate no-Run pre-admission bootstrap authority.
+        with pytest.raises(WorkspaceBindingError, match="workspace_binding_invocation_origin_stale"):
+            await asyncio.create_task(original(**kwargs), context=context)
+        assert authority._pre_admission == {}
+        with sqlite3.connect(state) as db:
+            assert db.execute("SELECT COUNT(*) FROM foreground_runs").fetchone()[0] == 1
+            assert db.execute("SELECT COUNT(*) FROM task_workspace_run_mode_snapshots").fetchone()[0] == 1
+            assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
     finally:
         await runtime.close()
         await stack.close()

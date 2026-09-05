@@ -60,3 +60,30 @@ PYTHONPATH=backend /Users/denny/projects/simple_harness/backend/.venv/bin/python
 禁止主生产切换/合main或声称S6全部隐私完成。普通fresh UI首回路须由主独立验真。
 
 最终候选日志：`.local-test-evidence/2026-09-05/s6-primary/runtime/create-review-candidate.log`，SHA-256 `a224cd0b7010ee3e2e0123148f7a1f1df272e2460009027b0413b08a11ef5e7b`。
+
+## 62f44631独立审查P1与origin纠正
+
+62f44631的66绿不足以放行：Dirac真实reclaim探针证明旧调用在service proposal等待之后
+能借用新owner/generation提交binding。本后继从现ForegroundEffectAdmissionGate捕获不可变
+Host Run/SDK Run/owner/generation，在任何create/append handler await之前由ProductEffectExecutor
+安装调用ContextVar。_append_auto首次选择current必须匹配原origin；每次primary target读取
+（含既有BEGIN IMMEDIATE写锁内commit前验证）重复核对。同一DB的reclaim写入不能越过该锁。
+真实调用current消失时拒绝，不能降级为无Run bootstrap。finally清除调用/target ContextVar。
+
+决定性回归：proposal后gen1→gen2零snapshot/grant/binding；grant已验证、事务开始前reclaim
+零binding（原实现本窗口已能拒绝revision变化，本后继增加明确原origin核对）；真实终态后
+继承原调用context再append不得bootstrap。把三份生产文件临时恢复62后重跑：3 failed，exit1；
+其中proposal用例实际binding计数1，bootstrap用例进入旧bootstrap后撞重复root。源码finally恢复。
+聚焦8文件 **85 passed in 29.89s，exit0**，沿上节7文件命令增加
+`backend/tests/execution/test_foreground_runtime.py`。CREATE_NEW文件现8条，不重复累计。
+
+独立启动竞态仍未修：无Provider等待时，SDK driver可能在Host record_sdk_started之前发首tool，
+真实foreground gate拒绝CLAIMED（原始origin-green.log：1 failed/6 passed）。origin隔离用例
+暂在deterministic Provider首响应前等真实RUNNING，只隔离该变量，不构成生产竞态修复。
+下一独立commit必须解决生产启动排序并新增无Provider等待的决定性回归；新项目UI需等待。
+未运行App/真实Provider，Manual投影及完整历史suppression边界不变。候选待Dirac独立复核。
+
+本次原始日志（本机ignored）：
+- `.local-test-evidence/2026-09-05/s6-primary/runtime/origin-confirmed-red2.log` — SHA-256 `02f3eef7502433d1406eb8e05d1e4273484db8a99e73ef74977c15f691e85a37`
+- `.local-test-evidence/2026-09-05/s6-primary/runtime/origin-candidate.log` — SHA-256 `a21fcb9f19adae748d47c03cf33def14c89f4ccc44f6a22c17ca3c9812f13195`
+- `.local-test-evidence/2026-09-05/s6-primary/runtime/origin-green.log` — SHA-256 `e81b2d27164afebf5a4be38058083516595e644dd20bdf412712391907e3c911`
