@@ -148,7 +148,7 @@ manifest 的读取 access event 被下一次 snapshot 纳入；它及其他被�
 | 当前候选版本/source 升级 | 对应候选升级批准与 exact-wheel 验证 | candidate identity 及准确的新验证记录 | 不自动改 oracle；源码 SHA 不能仅由 wheel version 推断 |
 | 本提案 canonical/state 修订 | **本文件 A2 最终批准**，独立挑战后实现 | §3–4 精确列出的字段/公式/见证语义；新增 revision 与旧 hash 谱系 | 不删除 cells、降低阈值、把 self-check 计入产品 PASS |
 
-用户本轮提供的新候选：Memory **0.6.3**，source `2f3d73814fe6a884e0458d87567b918c5863033e`，wheel SHA-256 `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`；Host main `26b50ee81e7ccd290e8da6c88d0053d7d8f8ecb1`。
+本轮经独立复审采用的新候选：Memory **0.6.3**，source `2f3d73814fe6a884e0458d87567b918c5863033e`，wheel SHA-256 `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`；Host main `26b50ee81e7ccd290e8da6c88d0053d7d8f8ecb1`。该候选由主执行者为修复主动构建；用户授权继续原 plan，并未亲自指定该版本。
 该身份列为本提案目标 pin；此处不修改冻结 pin、不冒充已用 0.6.3 跑过 TC13。Harness 继续以候选 manifest 的 exact version/source/wheel 三元组审阅。
 
 两种契约选择及影响供 A2 判定：
@@ -190,7 +190,7 @@ source 接口为验证侧 `.py` 的 `async run(request, workspace)`，必须另�
 ### 框架交付补充（方案批准状态不变）
 
 本机桥回归 **40 passed**（transport 合成样本只测桥，不能作401产品证据）。独立初审的字节码读取、Windows 路径分隔符、环境失败丢失清单三个问题已加回归修复；末次汇总还重验已收集文件，防后执行层改写前层证据。
-2026-09-05 用用户指定 Memory **0.6.3** + Harness **0.7.1** 实际执行同一 public probe：candidate query=1，exact replay query=0，分页非空；installed package 逐字节核验 Harness 151 文件、Memory 61 文件。结果仍 exit3 / NOT_RUN/BLOCKED，1 OBSERVED、390 public BLOCKED、10 source 未配置，**0 验收 PASS**。
+2026-09-05 用本轮经独立复审采用的 Memory **0.6.3** + Harness **0.7.1** 实际执行同一 public probe：candidate query=1，exact replay query=0，分页非空；installed package 逐字节核验 Harness 151 文件、Memory 61 文件。结果仍 exit3 / NOT_RUN/BLOCKED，1 OBSERVED、390 public BLOCKED、10 source 未配置，**0 验收 PASS**。
 本机原始观察索引：`.local-test-evidence/2026-09-05/typed-recall-bridge-063-smoke/bridge-summary.json`，引用同目录 request/observations/runtime 的 SHA-256。该观察早于代码提交，只代表这次实际执行；提交后复跑需使用新目录。
 
 可复跑的 exact 0.6.3 命令（从 worktree 根执行；换一个未存在的目录名）：
