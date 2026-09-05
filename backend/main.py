@@ -3271,6 +3271,7 @@ async def lifespan(app: FastAPI):
                 settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
                 suppression_resolver=_primary_suppression_resolver,
                 run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
+                decision_ingress_getter=lambda: _sdk_ingress,
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None
@@ -9444,6 +9445,9 @@ async def _signal_product_harness_decision(
     if not run_id or not decision_id or not nonce or version is None:
         raise ValueError("decision response requires run_id/decision_id/nonce/version")
     sdk_run_id = _sdk_run_ids_by_root.get(run_id, run_id)
+    from deskpet.memory.primary_decisions import is_primary_sdk_target
+    if is_primary_sdk_target(_state_db_path, sdk_run_id):
+        raise ValueError("primary_decision_requires_authenticated_control")
     if authorization:
         receipt = await _sdk_ingress.decide_authorization(
             run_id=sdk_run_id,

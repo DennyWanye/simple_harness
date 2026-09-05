@@ -84,7 +84,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, authorization_factory=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -132,6 +132,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     from deskpet.execution.foreground_runtime import ForegroundEffectAdmissionGate
     foreground_gate = ForegroundEffectAdmissionGate()
     noop = AuthorityCheckingAuthorization() if dynamic else Noop()
+    authorization = authorization_factory(registry) if authorization_factory else noop
     def ports(database, uow):
         tools = ToolRegistry()
         async def handler(_args, _ctx):
@@ -143,8 +144,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
         result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
-                            tools=EffectExecutor(uow=uow, registry=tools, authorization=noop, reconciliation=noop),
-                            authorization=noop, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
+                            tools=EffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop),
+                            authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
                             tool_reconciliation=noop, reconciliation=noop, provider_reconciliation=noop,
                             react_checkpoint=uow, tool_catalog=DurableToolCatalogResolver(uow),
                             runtime_decision_sink=ProductRuntimeDecisionSink(ledger=ledger),
@@ -161,7 +162,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             bindings = WorkspaceBindingAuthorityStore(state_path)
             gate = EffectGate(binding_store=bindings, route_ledger=ledger, scope_store=CanonicalTaskScopeStore(state_path),
                               authority_resolver=registry.resolve, exposure_resolver=registry.resolve_exposure)
-            result = replace(result, tools=ProductEffectExecutor(uow=uow, registry=tools, authorization=noop, reconciliation=noop,
+            result = replace(result, tools=ProductEffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop,
                               effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate),
                               task_execution_authority=ProductTaskExecutionAuthority(root_resolver=BindingRootResolver(bindings)))
         from deskpet.execution.semantic_closure import closure_instruction_for_run

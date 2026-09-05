@@ -2,6 +2,23 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Primary 精确 SDK 授权独立候选
+
+`feat/human-memory-primary-decisions`（base `5da24d6f`）接入 authenticated HUMAN
+`primary.decisions.list/respond`。主对话权限卡通过 App 已 bound 的 ControlChannel
+读取实际当前 Run 的 SDK decision；不使用 secondary controlWS 的旧权限补读/ACK。
+提交前重验当前 Host run/generation 与连接 scope，复用 SDK exact decision API；旧未认证
+permission_response 对 Primary binding 拒绝。UI 仅允许本次 allow/deny，区分 expired，
+超时不自动重发，重挂载/重连/通知补读，不把 Primary ID 当 Session ID。
+
+真实生产授权策略 + installed SDK + SQLite + signed HUMAN scope + 实际 scheduler wake
+的确定性 fixture 完成 challenge→批准→项目文件 effect→终态；受影响 backend 66 passed，
+最终新增聚焦 18 passed，前端 35 passed + typecheck。独立 review 在初始候选提交时待完成；
+未起 native/真实 Provider，不是 S6/program PASS。Carver 的 WAITING 通知须另行组合。
+SDK read_decision 是 public port，但旧 open-decision 列表仍是 Host 内部 SDK SQL；本片未扩
+私有 SQL，仅限制返回最多32，不能声称底层扫描有界。停止结果历史缺口维持独立未闭合。
+详见 [契约与测试边界](../plans/2026-09-05-primary-sdk-decisions/CONTRACT.md)。
+
 ## 2026-09-05 Primary 生产目录修复
 
 真实原生普通回复/重启追问通过；新项目请求在 `607acc7d` 暴露三项 Context 控制被

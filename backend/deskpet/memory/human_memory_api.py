@@ -129,6 +129,16 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         if operation == "primary.messages.page":
             return await service.read_primary_messages(**request)
         return await service.read_primary_message_detail(**request)
+    if operation in {"primary.decisions.list", "primary.decisions.respond"}:
+        from deskpet.memory.primary_read_model import PrimaryReadError
+        fields = {"primary_ref", "expected_run_ref", "expected_generation"}
+        if operation == "primary.decisions.respond":
+            fields |= {"decision_id", "nonce", "version", "decision"}
+        if set(request) != fields:
+            raise PrimaryReadError("primary_decision_request_invalid")
+        if operation == "primary.decisions.list":
+            return await service.list_primary_decisions(**request)
+        return await service.respond_primary_decision(**request)
     if operation == "primary.append":
         event = request.get("event")
         if not isinstance(event, Mapping):

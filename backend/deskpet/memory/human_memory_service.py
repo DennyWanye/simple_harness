@@ -424,6 +424,7 @@ class HumanMemoryHostService:
         settled_run_reader: object | None = None,
         suppression_resolver: object | None = None,
         run_binding_reader: object | None = None,
+        decision_ingress_getter: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -450,6 +451,11 @@ class HumanMemoryHostService:
             suppression_resolver=suppression_resolver,
             run_binding_reader=run_binding_reader,
         )
+        from deskpet.memory.primary_decisions import PrimaryDecisions
+        self._primary_decisions = PrimaryDecisions(
+            self._db_path, subject=auth.subject, read_model=self._primary_read,
+            ingress_getter=decision_ingress_getter,
+        )
         self._evidence_group_ref_cache: dict[
             tuple[str, str, str], tuple[dict[str, object], ...]
         ] = {}
@@ -474,6 +480,15 @@ class HumanMemoryHostService:
 
     async def read_primary_message_detail(self, **request) -> Mapping[str, object]:
         return await self._primary_read.detail(**request)
+
+    async def list_primary_decisions(self, **request):
+        return await self._primary_decisions.list(**request)
+
+    async def respond_primary_decision(self, **request):
+        result = await self._primary_decisions.respond(**request)
+        if self._scheduler_wake is not None:
+            await self._wake_committed("after_control", result["decision_id"])
+        return result
 
     async def append_primary_event(
         self, request: AppendPrimaryEventRequest
@@ -1890,6 +1905,7 @@ class HumanMemoryHostServiceFactory:
     settled_run_reader: object | None = None
     suppression_resolver: object | None = None
     run_binding_reader: object | None = None
+    decision_ingress_getter: object | None = None
 
     def bind(
         self,
@@ -1911,6 +1927,7 @@ class HumanMemoryHostServiceFactory:
             settled_run_reader=self.settled_run_reader,
             suppression_resolver=self.suppression_resolver,
             run_binding_reader=self.run_binding_reader,
+            decision_ingress_getter=self.decision_ingress_getter,
         )
 
 
