@@ -1,5 +1,16 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Original native duplicate-forget regression passes on0610
+
+Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the
+original native data. The exact prior failing drink query now visibly answers
+“不知道”; canonical physical Provider request contains neither original nor revised
+drink text. One foreground call, separate analysis call; app closes normally.
+Original failure/action preserved. This is scoped native regression evidence,
+not a new complete memory loop or full program PASS.
+See [native evidence](../plans/2026-09-05-semantic-correction/NATIVE-0610-REOPEN.md).
+
+
 ## 2026-09-05 Memory0610 installed privacy and queue successor
 
 Last updated: 2026-09-05. Candidate production composition now binds actual Host
