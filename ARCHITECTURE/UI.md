@@ -2,6 +2,13 @@
 
 > 最后更新：2026-09-05（primary 跨重试未决身份修复；真实项目 route 交互未验证）
 
+## 2026-09-05 隔离组合原生观察
+
+Host `87c42b43` / SimpleHarness Primary P18120 的真实原生输入已得到 gpt-5.5 回复，
+草稿清空、队列回空闲、TaskScope=0。正常退出重启看到两条消息恢复，账本无已完成调用重发。
+第二轮历史使用仍待解锁后的原生验证；不能据此声明项目交互、完整遗忘或 S6 完成。
+固定候选、失败启动记录和本地证据哈希见 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
+
 ## 2026-09-05 单主对话前端候选（尚非完整 S6 cutover）
 
 `feat/human-memory-primary-ui` 从 Host `c183fe70` 建立独立树，仅修改前端与本节/PROJECT_STATUS。
