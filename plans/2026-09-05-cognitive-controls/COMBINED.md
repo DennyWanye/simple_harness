@@ -26,7 +26,7 @@ Final commands from tauri-app, using explicit project binaries:
 
 ```sh
 ./node_modules/.bin/vitest run src/views/PrimaryChatView.test.tsx src/primary/controller.test.ts
-./node_modules/.bin/tsc --noEmit
+./node_modules/.bin/tsc -b --noEmit
 ./node_modules/.bin/eslint src/primary/controller.ts src/primary/controller.test.ts src/views/PrimaryChatView.tsx src/views/PrimaryChatView.test.tsx
 ```
 
@@ -40,3 +40,6 @@ Raw evidence under `.local-test-evidence/2026-09-05/primary-candidate/`:
 - `cognitive-view-combined.log` SHA256 `23eb26f21d2f99d6696182257e5912ea5861822f1fe0b982d980e6afab68d702`.
 - `cognitive-view-typecheck.log` SHA256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
 - `cognitive-view-lint.log` SHA256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
+
+Root `tsc --noEmit` alone does not traverse referenced projects; corrected to actual
+`tsc -b --noEmit`, which passed. `cognitive-view-typecheck-build.log` SHA256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
