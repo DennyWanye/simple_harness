@@ -15,8 +15,9 @@ const labels: Record<string, string> = {
   expired: "已过期", superseded: "已替代", user_confirmed: "用户确认",
 };
 const label = (value: string) => labels[value] ?? value;
-export function PrimaryMemoryGraph({ port, primaryRef, verifiedOwnerKey, ready, cognitive }: {
+export function PrimaryMemoryGraph({ port, primaryRef, verifiedOwnerKey, ready, cognitive, claimInitialReveal }: {
   port: PrimaryPort; primaryRef: string; verifiedOwnerKey: string | null; ready: boolean; cognitive: CognitiveRequests;
+  claimInitialReveal: () => boolean;
 }) {
   const [client] = useState(() => new GraphRequests());
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
@@ -50,7 +51,7 @@ export function PrimaryMemoryGraph({ port, primaryRef, verifiedOwnerKey, ready, 
       </div>
       {(state.graph.truncated.nodes || state.graph.truncated.edges) && <p role="status">当前仅展示部分记忆与关系；筛选只作用于当前视图。</p>}
       <p>{nodes.length} 条记忆 · {edges.length} 条关系。虚线表示候选或推断，橙色边框表示争议。</p>
-      {nodes.length ? <MemoryGraphCanvas nodes={nodes} edges={edges} selected={selected} onSelect={setSelected} /> : <p>当前没有符合条件的记忆关系可展示。</p>}
+      {nodes.length ? <MemoryGraphCanvas nodes={nodes} edges={edges} selected={selected} onSelect={setSelected} claimInitialReveal={claimInitialReveal} /> : <p>当前没有符合条件的记忆关系可展示。</p>}
       <details open><summary>文字视图与键盘选择</summary>
         <ul aria-label="图中记忆">{nodes.map((n) => <li key={n.node_id}>
           <button aria-pressed={node?.node_id === n.node_id} onClick={() => setSelected({ kind: "node", id: n.node_id })}>
