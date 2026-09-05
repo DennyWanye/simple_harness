@@ -81,3 +81,39 @@ remaining differences are explicit ORACLE_GAP, zero formal PASS until full bindi
 No invented continuation->provider mapping and no raised128-byte limit. The loop uses the
 existing normal recall budget16384 for its separate valid page control. Unexpected business
 assertion failures are FAIL; precondition failure is recorded at its actual phase for diagnosis.
+
+Pre-acceptance probe1 executed the full loop but exposed a validation-side target-wire omission:
+`ExistingMemoryTarget.to_json` includes `target_kind=existing_memory` (public protocol, also
+already checked by our lifecycle oracle). Corrected this oracle field before acceptance;
+probe1 FAIL evidence is retained. No product output used as expected payload/hash.
+
+## Context-use batch2 — reviewed local result
+
+Six original cells actually executed: **0 PASS / 0 FAIL / 6 BLOCKED**, each with independent
+remember3.11 -> correct3.12 -> all-purpose forget -> reopen no-fresh-disclosure checks plus
+real page/fragment/request/receipt binding and stale-use rejection. Original two-item,
+epoch40..49 and continuation oracle gaps remain ORACLE_GAP, not product defects or PASS.
+One bridge regression runs six real paths and eight tamper/failure counterexamples; it passed
+on installed0.6.5. A preliminary run on main0.6.3 correctly failed its missing public clock
+precondition; main venv was not changed, and that run is not candidate evidence.
+
+Review1 found two P2 oracle weaknesses: unexpected execution exceptions downgraded to BLOCKED,
+and whole initial-use bundles could substitute corrected-use/reopen bundles. Both fixed;
+scoped independent review2 ACCEPT. Batch1 business assertions are superseded by batch2, not
+silently relabeled. Unexpected valid-loop exceptions now FAIL; phase/attempt/time/fragment
+binding is independently fixed. No six-cell formal PASS was ever awarded.
+
+Ignored evidence: `.local-test-evidence/2026-09-05/typed-recall-context-batch2/bridge-summary.json`,
+SHA256 `cb356539dec90683a47551628f1a64f26de5045366c9b084cfdc1470f3711175`.
+Review: `.local-test-evidence/2026-09-05/typed-recall-context-review-r2.log`.
+
+Across leaf and context batches:18 distinct original public cells,7 PASS/0FAIL/11BLOCKED;
+this is a selected-set report, not a new full401 result. Six originally unimplemented current-use
+executors now produce real observations; historical42 unimplemented therefore has36 remaining
+in code (not a fresh aggregate execution claim). No source, provider, UI, MPS or fullSDK run.
+
+Minimal repeat (fresh artifact directory, exit3 expected):
+
+```sh
+/Users/denny/projects/simple_harness/backend/.venv/bin/python testcase/human-memory-program/runners/run_typed_recall_public_consumer.py --consumer-python /Users/denny/projects/simple_harness-typed-recall-runner/.local-test-evidence/2026-09-05/typed-recall-clock065-r5/workspace/venv/bin/python --artifact-dir .local-test-evidence/2026-09-05/typed-recall-context-reproduce --harness-wheel /Users/denny/projects/simple_harness/backend/vendor/simple_harness_sdk-0.7.2-py3-none-any.whl --harness-wheel-sha256 53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed --harness-source-commit 2b8428465cbd41032ba024a0b7199183161f5ecd --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-recall-observability/.local-test-evidence/2026-09-05/rejection-candidate/build1/simple_harness_memory_sdk-0.6.5-py3-none-any.whl --memory-wheel-sha256 0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df --memory-source-commit 30743bb17ed8301d01028357de6e4c5adcdde26b --cell current-use/authority:suppression --cell current-use/context:duplicate-same-provider-attempt --cell current-use/context:new-provider-attempt --cell current-use/context:receipt-first --cell current-use/context:suppression-first --cell current-use/context:wrong-snapshot
+```

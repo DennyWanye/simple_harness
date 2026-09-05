@@ -244,6 +244,8 @@ def assess_cell(fixture, cell, baseline=None):
     name, observed = cell["cell_id"], cell["observations"]
     if cell["status"] != "OBSERVED":
         return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
+    if "context_use_cell" in observed:
+        return assess_context_use(fixture,cell)
     if "short_recipe" in observed:
         return assess_short(fixture,cell)
     if "state_cell" in observed:
@@ -896,3 +898,131 @@ def check_action_grant(observed,plan):
             or event['authority_hash']!=authority_hash or ref!=expected_ref
             or not grant['issued_at']<=event['now']<grant['expires_at']):
         raise ValueError('resolved memory action grant/intent/target/hash/time binding differs')
+
+
+def assess_context_use(fixture,cell):
+    o=cell['observations'];checks=[]
+    try:
+        if o.get('exception'):
+            return dict(status='FAIL',reason='PUBLIC_LOOP_EXECUTION_FAILED:'+o['phase']+':'+o['exception']['reason'],
+                business_assertions=[],failure_phase=o['phase'])
+        payloads=[{**fixture['conflict_write_oracle']['canonical_payloads'][name],'qualifiers':[]}
+                  for name in ('incumbent','challenger')]
+        memory_id=o['sources'][0]['receipt']['operations'][0]['memory_id']
+        for index,(key,payload) in enumerate(zip(('initial','corrected'),payloads,strict=True)):
+            source=o['sources'][index];op=source['receipt']['operations'][0]
+            check_seed_authority(o,{'seed':{'memory_type':'semantic','payload':payload}},semantic_source(**payload),
+                source_index=index,check_recall_refs=False)
+            mutation=next(e['plan'] for e in o['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['plan_id']==source['receipt']['plan_id'])
+            operation=mutation['operations'][0]
+            if (op['memory_id']!=memory_id or op['revision']!=index+1 or operation['payload']!=semantic_source(**payload)
+                    or operation['kind']!=('create' if index==0 else 'revise')):
+                raise ValueError('product loop mutation input/head differs')
+            if index:
+                if operation['target']!={'target_kind':'existing_memory','memory_id':memory_id,'revision':1}:
+                    raise ValueError('product loop correction did not target exact original head')
+                check_action_grant(o,mutation)
+            recall=o[key];value=recall['execution'];check_execution_wire(value,recall['context'],recall['plan'])
+            items=value['result']['items']
+            if (len(items)!=1 or items[0]['public_payload']!=payload or value['decision']['confirmation_groups']
+                    or items[0]['selected_item']['source_ref']!=memory_id
+                    or items[0]['selected_item']['source_revision']!=index+1
+                    or items[0]['selected_item']['source_content_hash']!=hash_json(semantic_source(**payload))
+                    or items[0]['selected_item']['public_payload_hash']!=hash_json(payload)):
+                raise ValueError('product loop recall exposed wrong value/head/hash')
+        checks.append('public remember and authorized exact-head correction return independent3.11 then3.12')
+        expected_uses={
+            'initial_use':('initial','attempt-initial'),
+            'initial_duplicate':('initial','attempt-initial'),
+            'initial_new_attempt':('initial','attempt-initial-new'),
+            'old_after_correction':('initial','attempt-old-after-correction'),
+            'corrected_use':('corrected','attempt-corrected'),
+            'corrected_replay_after_reopen':('corrected','attempt-corrected'),
+            'new_after_forget':('corrected','attempt-new-after-forget'),
+        }
+        if cell['cell_id']=='current-use/context:suppression-first':
+            expected_uses={k:v for k,v in expected_uses.items() if k in {'old_after_correction','new_after_forget'}}
+        if set(o['uses'])!=set(expected_uses):raise ValueError('current-use phase coverage differs')
+        for key,(recall_key,attempt) in expected_uses.items():
+            bundle=o['uses'][key]
+            if (bundle['recall']!=o[recall_key] or bundle['request']['provider_attempt_id']!=attempt
+                    or bundle['request']['requested_at']!=o[recall_key]['now']
+                    or bundle['fragment']['fragment_id']!='fragment-'+recall_key):
+                raise ValueError('current-use bundle substituted across recall phase or attempt: '+key)
+            check_context_use_bundle(bundle)
+        if cell['cell_id']!='current-use/context:suppression-first':
+            for key in ('initial_use','initial_duplicate','initial_new_attempt','corrected_use','corrected_replay_after_reopen'):
+                if 'receipt' not in o['uses'][key]:raise ValueError('legal current use rejected: '+key)
+            if o['uses']['initial_use']['receipt']!=o['uses']['initial_duplicate']['receipt']:
+                raise ValueError('same attempt receipt replay differs')
+            if o['uses']['corrected_use']['receipt']!=o['uses']['corrected_replay_after_reopen']['receipt']:
+                raise ValueError('durable identical use receipt replay differs')
+            if o['uses']['initial_use']['receipt']['receipt_id']==o['uses']['initial_new_attempt']['receipt']['receipt_id']:
+                raise ValueError('new provider attempt reused old use receipt')
+        for key in ('old_after_correction','new_after_forget'):
+            event=o['uses'][key]
+            if event.get('exception')!={'type':'MemoryValidationError','reason':'RECALL_AUTHORITY_STALE'}:
+                raise ValueError('fresh use of stale result was not rejected: '+key)
+        if cell['cell_id']=='current-use/context:suppression-first' and any('receipt' in e for e in o['uses'].values()):
+            raise ValueError('suppression-first obtained an earlier use receipt')
+        if cell['cell_id']=='current-use/context:wrong-snapshot':
+            attack=o['wrong_snapshot']
+            base=o['uses']['corrected_use']['request']
+            if attack['input']!={**base,'snapshot_manifest_hash':'f'*64} or attack.get('exception')!={
+                    'type':'ValueError','reason':'snapshot_manifest_hash differs from fragment bindings'}:
+                raise ValueError('wrong snapshot did not reject exact independent mutation')
+        suppression=o['suppression'];request=suppression['request'];decision=suppression['decision']
+        if (request['scope_kind']!='memory' or request['scope_ref']!=memory_id or request['purpose'] is not None
+                or request['subject']!='principal-1' or request['reason_code']!='user_forget'
+                or decision['scope_ref']!=memory_id or decision['action']!='directive'):
+            raise ValueError('forget was not all-purpose exact-memory public suppression')
+        fresh=o['after_reopen'];check_execution_wire(fresh['execution'],fresh['context'],fresh['plan'])
+        if (fresh['execution']['result']['items'] or fresh['execution']['decision']['confirmation_groups']
+                or fresh['execution']['decision']['outcome']!='no_recall'):
+            raise ValueError('forgotten memory leaked after reopen')
+        old=o['corrected']['execution'];replay=o['old_recall_replay']
+        if replay['result']!=old['result'] or replay['decision']!=old['decision'] or not replay['replayed'] or replay['candidate_query_count']!=0:
+            raise ValueError('historical recall replay lost its exact durable binding')
+        checks+=['real page/fragment/request/receipt hashes and invocation bindings',
+            'fresh attempts reject stale result after correction and all-purpose forget',
+            'reopen has zero fresh disclosure, historical identical replay remains separate']
+        return dict(status='BLOCKED',reason='CURRENT_USE_ORIGINAL_TWO_ITEM_EPOCH_CONTINUATION_ORACLE_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError,StopIteration) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def check_context_use_bundle(bundle):
+    recall=bundle['recall'];value=recall['execution'];check_execution_wire(value,recall['context'],recall['plan'])
+    result=value['result'];decision=value['decision'];page=bundle['page'];fragment=bundle['fragment'];request=bundle['request']
+    check_page(page,result,value['result_hash'],value['result_item_hashes'])
+    page_hash=sdk_domain_hash('simple-harness/recall-result-page/v1',page)
+    item=result['items'][0];selected=item['selected_item']
+    binding=dict(decision_id=decision['decision_id'],decision_hash=value['decision_hash'],result_id=result['result_id'],
+        result_hash=value['result_hash'],item_id=selected['item_id'],item_hash=value['result_item_hashes'][0],
+        conflict_group_id=None,confirmation_hash=None,result_group_hash=None,page_id=page['page_id'],page_hash=page_hash,
+        use_receipt_id=None,use_receipt_hash=None,public_payload_hash=hash_json(item['public_payload']))
+    if (bundle['page_hash']!=page_hash or fragment['recall_binding']!=binding or fragment['public_payload']!=item['public_payload']
+            or fragment['public_payload_hash']!=binding['public_payload_hash'] or fragment['subject']!=recall['context']['subject']
+            or fragment['run_id']!=recall['context']['run_id'] or fragment['source_ref']!=selected['source_ref']
+            or fragment['source_revision']!=selected['source_revision'] or fragment['fragment_type']!='recalled_memory'
+            or fragment['disclosure_context']!=recall['context']['disclosure_context']
+            or fragment['evidence_refs']!=recall['context']['evidence_refs']):
+        raise ValueError('actual page-to-context fragment binding differs')
+    fragment_hash=sdk_domain_hash('simple-harness/context-fragment/v2',fragment)
+    refs=[{'fragment_id':fragment['fragment_id'],'fragment_hash':fragment_hash}]
+    if (bundle['fragment_hash']!=fragment_hash or request['snapshot_fragment_bindings']!=refs
+            or request['snapshot_manifest_hash']!=hash_json(refs)
+            or request['item_bindings']!=[{'item_id':selected['item_id'],'item_hash':value['result_item_hashes'][0]}]
+            or request['decision_id']!=decision['decision_id'] or request['decision_hash']!=value['decision_hash']
+            or request['result_id']!=result['result_id'] or request['result_hash']!=value['result_hash']
+            or any(request[k]!=recall['context'][k] for k in ('subject','run_id','turn_id'))):
+        raise ValueError('current-use request fragment/result/invocation binding differs')
+    if 'receipt' in bundle:
+        receipt=bundle['receipt']
+        if (bundle['receipt_hash']!=sdk_domain_hash('simple-harness/recall-context-use-receipt/v1',receipt)
+                or receipt['request_hash']!=sdk_domain_hash('simple-harness/recall-context-use-request/v1',request)
+                or any(receipt[k]!=request[k] for k in ('subject','run_id','turn_id','provider_attempt_id','decision_id',
+                    'decision_hash','result_id','result_hash','item_bindings','snapshot_manifest_hash'))
+                or not request['requested_at']<=receipt['authorized_at']<receipt['expires_at']
+                or receipt['expires_at']>result['authority_expires_at']):
+            raise ValueError('current-use receipt request/hash/time binding differs')

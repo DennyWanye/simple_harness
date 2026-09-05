@@ -16,6 +16,7 @@
 - 独立复审接受拒绝基线P1/跨principal P2，以及lifecycle中间payload/action grant两项P2修复。旧 provisional PASS不倒填，当前来自加强控制后重跑；执行代码hash与提交Git blob逐字节一致。
 - 本机索引 `.local-test-evidence/2026-09-05/typed-recall-clock065-r5/bridge-summary.json`，SHA256 `255e40bb644ecbd32b4987eb892d67318348bd7bc6331fd40f148e2f6aabc2c0`。命令、身份、setup与oracle剩余项见 [本批记录](../testcase/human-memory-program/runners/TYPED-RECALL-NORMAL-BATCH-2026-09-05.md)。
 - 2026-09-05 增量 leaf 小批：12 public真实OBSERVED，**7 PASS / 0 FAIL / 5 BLOCKED**；其余389本轮未运行，不能与历史178相加。合法USER+TOOL双span已接通；leaf本机10测试通过。4个剩余适用性/信号setup、原128byte反例保留；无新产品缺陷结论。[小批命令与证据](../testcase/human-memory-program/runners/TYPED-RECALL-PUBLIC-LOOP-BATCH.md)。
+- 2026-09-05 current-use增量：6 public真实OBSERVED，**0 PASS/0 FAIL/6 BLOCKED**；记住→纠正→忘记→reopen及新attempt拒旧result业务断言通过加强后的oracle，两个桥P2已修并独立复审ACCEPT。完整原epoch/continuation门仍未闭合；与leaf合计18个本批distinct cells为7/0/11，不替代完整401历史结果。新增[历史可见性只读设计](../testcase/human-memory-program/runners/TYPED-RECALL-HISTORY-VISIBILITY-GAP.md)，未实现SDK入口。
 - **仅独立分支工具事实；未并入主树，合并暂缓，S3/program未完成。** 主共享venv仍Memory0.6.3；无provider/UI/MPS或SDK全量测试。128byte、原AUDIT/epistemic不可构造组合及short时间/hash差异保持BLOCKED；未将setup缺失报告成产品缺陷。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
