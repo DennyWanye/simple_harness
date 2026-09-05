@@ -35,7 +35,7 @@ async def recalled(menv, query, ordinal):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["valid", "recover", "unknown", "quote", "forget", "ambiguous", "no_intent", "quoted", "hypothetical", "negative", "historical", "qualifiers", "slot", "create_bypass", "zh_valid", "zh_quoted", "zh_negative", "zh_alias_collision", "zh_unknown_slot", "late_forget"])
+@pytest.mark.parametrize("mode", ["valid", "recover", "unknown", "quote", "forget", "ambiguous", "no_intent", "quoted", "hypothetical", "negative", "historical", "qualifiers", "slot", "create_bypass", "zh_valid", "zh_quoted", "zh_negative", "zh_alias_collision", "zh_unknown_slot", "late_forget", "empty_revise", "empty_create_bypass"])
 async def test_actual_semantic_revise_and_reopen(tmp_path, mode):
     chinese = mode.startswith('zh_')
     ambiguous = mode in {'ambiguous', 'zh_alias_collision'}
@@ -83,6 +83,10 @@ async def test_actual_semantic_revise_and_reopen(tmp_path, mode):
             op = mh.semantic_op(mh.item_id(current),newtext,predicate=predicate,object_value=new_value)
             op.update(action='revise_semantic',candidate_key=candidates[0]['candidate_key'])
             if mode == 'unknown': op['candidate_key'] = 'model-invented-target'
+            if mode == 'empty_revise': op['candidate_key'] = ''
+            if mode == 'empty_create_bypass':
+                op['action'] = 'create'
+                op['candidate_key'] = ''
             if mode == 'create_bypass':
                 op['action'] = 'create'
                 del op['candidate_key']
@@ -151,7 +155,7 @@ async def test_actual_semantic_revise_and_reopen(tmp_path, mode):
             assert not await recalled(menv, new_value, 2)
             return
         assert result == 'applied'
-        if mode in {'unknown','quote','ambiguous','qualifiers','slot','create_bypass','zh_alias_collision','zh_unknown_slot', *unsupported}:
+        if mode in {'unknown','quote','ambiguous','qualifiers','slot','create_bypass','empty_revise','empty_create_bypass','zh_alias_collision','zh_unknown_slot', *unsupported}:
             import sqlite3
             with sqlite3.connect(env.db_path) as host_db:
                 assert host_db.execute("SELECT count(*) FROM human_memory_evidence WHERE evidence_id LIKE 'semantic-action%'").fetchone()[0] == 0

@@ -1,5 +1,13 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Native memory loop remains incomplete
+
+First069 real remembered-preference Run completed but the actual analysis CREATE
+was rejected for an invented candidate key; memory panel confirmed no new memory.
+Versioned v3 CREATE representation now passes source/real-store controls and
+independent review, pending native rerun. Stage3 truthful memory-pending/failure
+presentation is still outstanding. [Evidence](../plans/2026-09-05-semantic-correction/CREATE-SLOT-V3.md).
+
 ## 2026-09-05 Memory069 candidate installation and existing data
 
 First native startup exposed a stale067 startup identity pin. Four constants now

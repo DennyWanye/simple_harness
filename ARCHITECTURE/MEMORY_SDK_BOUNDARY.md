@@ -1,5 +1,14 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Native CREATE slot failure and v3 source fix
+
+Real069 native startup/history/current Run worked, but remember failed: the model
+invented a CREATE target key, Host rejected it, and no preference was materialized.
+V3 now explicitly represents CREATE with an empty candidate slot while retaining
+all REVISE/intent/target guards. Source tests and independent review pass; native
+retest remains required. Assistant "remembered" text does not establish Memory
+write success. See [failure and evidence](../plans/2026-09-05-semantic-correction/CREATE-SLOT-V3.md).
+
 ## 2026-09-05 Memory069 installed successor verified
 
 Actual startup additionally required updating the four Memory candidate identity

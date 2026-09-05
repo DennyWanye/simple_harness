@@ -16,7 +16,7 @@ the independent post-turn analysis call).  The Host then derives every
   AUTHENTICATED_USER, support EXPLICIT_USER_ASSERTION;
 * no hit / several hits / a paraphrase → that operation is rejected with
   ``analysis_quote_not_found`` (never repaired, never fuzzy-matched);
-* Host policy ``host-analysis-policy/v2``: rejected operations are dropped from
+* Host policy ``host-analysis-policy/v3``: rejected operations are dropped from
   the plan and audited; a plan whose operations were all rejected degrades to
   ``no_mutation`` (``analysis_all_operations_rejected``).
 
@@ -38,10 +38,10 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
-PROMPT_VERSION = "host-analysis-prompt/v2"
-RESULT_SCHEMA_VERSION = "memory-analysis-proposal/v2"
-POLICY_VERSION = "host-analysis-policy/v2"
-VALIDATOR_VERSION = "host-analysis-validator/v2"
+PROMPT_VERSION = "host-analysis-prompt/v3"
+RESULT_SCHEMA_VERSION = "memory-analysis-proposal/v3"
+POLICY_VERSION = "host-analysis-policy/v3"
+VALIDATOR_VERSION = "host-analysis-validator/v3"
 
 PROPOSAL_TOOL_NAME = "memory_analysis_proposal"
 TEXT_POINTER = "/text"
@@ -72,7 +72,7 @@ PROPOSAL_TOOL_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "operation_id": _STRING,
                     "action": {"type": "string", "enum": ["create", "revise_semantic"]},
-                    "candidate_key": _STRING,
+                    "candidate_key": {"type": "string", "maxLength": 1024, "description": "CREATE: empty string (no target). REVISE: copy one exact issued semantic_candidates candidate_key; never invent a key."},
                     "memory_type": {"type": "string", "enum": list(MEMORY_TYPES)},
                     "semantic": {
                         "type": "object",
@@ -149,7 +149,7 @@ PROPOSAL_TOOL_DESCRIPTION = (
 )
 
 ANALYSIS_SYSTEM_INSTRUCTION = (
-    "你是桌面工作台的主模型，正在做 post-turn 记忆分析（prompt host-analysis-prompt/v2）。"
+    "你是桌面工作台的主模型，正在做 post-turn 记忆分析（prompt host-analysis-prompt/v3）。"
     "证据项是用户在本轮任务里说的话；只根据给定证据项提出长期记忆变更，每条 operation 必须引用"
     " evidence_item_id 并给出 exact_quote（必须是该证据 text 的逐字子串，不得改写、不得拼接）。"
     "稳定事实/偏好（含项目里的文件、版本号、名称、决定）用 semantic；用户本轮要求做的事及其结果用 episode"
@@ -161,6 +161,7 @@ ANALYSIS_SYSTEM_INSTRUCTION = (
     "不要为这个已支持的 slot 另造 preferred_beverage 等同义 predicate。其他 semantic CREATE 的"
     " subject_entity/predicate 仍按证据表达，不受此饮品词表限制。此命名约定不授予修改已有记忆的权限，"
     "也不重命名旧候选；REVISE 必须保留实际候选的原 subject_entity/predicate。"
+    "CREATE 新记忆时 action=create，candidate_key 必须是空字符串；不要为新记忆编造 candidate_key。"
     "明确纠正已有 semantic 时，action=revise_semantic 并选择 semantic_candidates 中的 candidate_key；"
     "保持原 subject_entity/predicate，不编造目标。候选有歧义时 no_mutation，说明原因；不可用 create 绕过纠正。"
     "新 object_value 必须逐字出现在当前 USER 引文中。无对应候选时不能覆盖旧记忆。"
@@ -434,7 +435,7 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
             kind = MemoryMutationKind.REVISE
             target = ExistingMemoryTarget(candidate["memory_id"], candidate["revision"])
             span = replace(span, support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION)
-        elif proposal.get("candidate_key") is not None:
+        elif proposal.get("candidate_key") not in (None, ""):
             raise AnalysisProposalRejected("analysis_create_cannot_select_target")
         elif memory_type == 'semantic' and any(
             c.get('correction_intent') is not None
