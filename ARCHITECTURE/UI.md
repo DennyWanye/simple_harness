@@ -28,10 +28,10 @@ suppression 检查；`human_memory_changed` 立即清页/详情、取消旧 read
 queue 附件尚未支持时明确拒绝发送并保留草稿/附件；slash 命令同样明确提示尚未接通。
 
 **项目交互/恢复未验证**：旧 `project_directory_request` 卡为 live-only，若生产使用该路径，事件先于
-mapping、同 Run 重挂载或重连会丢卡（条件性 P1）。但旧 `project_directory_response` 仍走旧 Host
-execution，新 SDK 的 `project_directory_select` 可能只是 fail-closed 注册，不能据此断言当前
-`context_route` 会走该交互。主协调已暂停兼容 pending API 扩展，待 Carver 确认真正 TaskScope
-manual binding / route 路径，再定 UI 与恢复测试。当前目录卡仅显示“已提交，等待运行确认”，
+mapping、同 Run 重挂载或重连会丢卡（条件性 P1）。Carver 源码接线确认动态 `context_route.create_new` 不触发该卡；Manual append 只返回
+`context_route_binding_authorization_required`。真实待接路径是 `binding.manual.propose(scope_ref,root)`
+→ `binding.manual.decide(challenge_ref,decision)` → `route.resume_existing`。主协调已暂停旧目录
+pending API 扩展；以上 Manual/route UI 尚未实现或真测。当前目录卡仅显示“已提交，等待运行确认”，
 不把后端 logger 当成功 ACK。TaskScope/Context Inspector、完整 Artifact 卡、primary slash/附件/
 Realtime 等保留项也仍未接完。
 

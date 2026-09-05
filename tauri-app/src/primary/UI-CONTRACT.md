@@ -24,7 +24,7 @@ Runtime events use current_run.sdk_run_ref + execution_session_ref, never primar
 
 ## Handoff blocker and verification
 
-UNVERIFIED: actual TaskScope manual-binding/context-route project interaction. Legacy project_directory_request is live-only: if used, early mapping/remount/reconnect can lose the decision (conditional P1). But its response currently enters old Host execution and may not be on the new SDK context_route path. Main explicitly paused legacy pending API expansion; Carver will establish the real production path first. No new pending API or recovery claim is made. This package is not first-project-task acceptance.
+UNVERIFIED: actual TaskScope manual-binding/context-route project interaction. Legacy project_directory_request is live-only: if used, early mapping/remount/reconnect can lose the decision (conditional P1). Carver confirmed dynamic context_route.create_new does not emit that card. Manual append returns context_route_binding_authorization_required; the real path to wire is binding.manual.propose(scope_ref,root) → binding.manual.decide(challenge_ref,decision) → route.resume_existing. Main explicitly paused legacy pending API expansion. This Manual/route UI is not implemented or production-tested. No new pending API or recovery claim is made. This package is not first-project-task acceptance.
 
 Commands (from tauri-app):
 - `./node_modules/.bin/vitest run src/primary src/views/PrimaryChatView.test.tsx src/code-panel/InputBar.primary.test.tsx src/code-panel/InputBar.chat.test.tsx src/code-panel/__tests__/InputBar.slash.test.tsx src/components/WorkbenchShell.test.tsx src/ws/ControlChannel.test.ts src/hooks/usePermissionRequests.test.tsx --maxWorkers=1`

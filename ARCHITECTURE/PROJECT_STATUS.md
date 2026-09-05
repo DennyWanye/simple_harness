@@ -19,8 +19,9 @@ run/generation 控制与回执分类、read invalidation/有界补读、真实 h
 导出规则同因红已在 base 复现。见 [UI 当前事实](UI.md) 与前端 `primary/UI-CONTRACT.md`。
 
 真实项目交互/恢复未验证：旧目录 live-only 卡存在映射晚到/重挂载/重连丢失的条件性 P1，但其旧 Host
-execution 回传未必是新 SDK context_route 的实际路径。主协调已暂停兼容 pending API 扩展，待 Carver
-确认真正 TaskScope manual binding/route，再接 UI 与恢复测试；不得把该前端包当成首项目任务可验收。
+execution 回传不是 Carver 确认的动态 context_route.create_new 路径。实际待接为
+`binding.manual.propose` → `binding.manual.decide` → `route.resume_existing`；主协调已暂停旧目录
+pending API 扩展。Manual/route UI 未实现/未真测，不得把该前端包当成首项目任务可验收。
 模型使用全局 Provider 设置；附件/slash/Realtime、完整 Artifact/Context/TaskScope 保留项尚待接线。
 未起 App/Provider、未修改 backend/SDK、未写 gate，原 S5b FAIL 与全量限制继续保留。原始证据仅在
 该树 ignored `.local-test-evidence/2026-09-05/primary-ui/`。
