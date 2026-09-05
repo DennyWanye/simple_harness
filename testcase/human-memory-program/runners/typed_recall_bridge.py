@@ -265,6 +265,12 @@ def _execute(args, layers, expected):
     if file_sha(args.fixture) != FIXTURE_SHA or file_sha(args.execution_layers) != LAYERS_SHA:
         raise BridgeError("frozen fixture identity differs; no implicit oracle upgrade")
     inventory = partition(expected, layers)
+    requested=getattr(args,'cell',None)
+    selected=set(requested or [name for ids in inventory.values() for name in ids])
+    if requested and (len(requested)!=len(selected) or selected-set().union(*map(set,inventory.values()))):
+        raise BridgeError('batch selection must contain unique original cell IDs')
+    if any(name=='eligibility/valid-until-null-unbounded' or name.startswith('unsupported-replay/') for name in selected):
+        selected.update(name for name in inventory['public'] if name=='eligibility/valid-until-null-unbounded' or name.startswith('unsupported-replay/'))
     candidates = {}
     for name, distribution, package in [("harness", "simple-harness-sdk", "simple_harness"),
                                          ("memory", "simple-harness-memory-sdk", "simple_harness_memory")]:
@@ -292,7 +298,7 @@ def _execute(args, layers, expected):
     shutil.copyfile(adapter_dir / public.name, public)
     shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
     shutil.copyfile(adapter_dir / "typed_recall_public_cases.py", workspace / "typed_recall_public_cases.py")
-    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py"):
+    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py", "typed_recall_fixture_authorities.py"):
         shutil.copyfile(adapter_dir / filename, workspace / filename)
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     execution_code = {str(path):file_sha(path) for path in [
@@ -326,6 +332,11 @@ def _execute(args, layers, expected):
     summary["cell_results"] = {name: {"execution_status": "NOT_RUN", "status": "BLOCKED",
         "reason": "SOURCE_EXECUTOR_NOT_CONFIGURED" if layer == "source" else "CELL_EXECUTOR_NOT_IMPLEMENTED",
         "business_assertions": []} for layer, ids in inventory.items() for name in ids}
+    if requested:
+        summary.update(execution_scope='selected_batch',requested_cells=sorted(requested),execution_cells=sorted(selected),
+            dependency_cells=sorted(selected-set(requested)))
+        for name,row in summary['cell_results'].items():
+            if name not in selected:row.update(reason='CELL_NOT_SELECTED_THIS_BATCH',assessment_scope='NOT_SELECTED')
     summary["oracle_code_sha256"] = file_sha(runner_dir / "typed_recall_a2_oracle.py")
     inputs = {"claim": next(row["source"] for row in fixture["approved_oracle"]["semantic_source_vectors"] if row["id"] == "incumbent"),
               "validity": {key: value for key, value in fixture["eligibility_cases"][0].items()
@@ -351,12 +362,17 @@ def _execute(args, layers, expected):
         "expires_at":next(row["use_at"] for row in fixture["result_page_cases"] if "use_at" in row),
         "cases":[{key:value for key,value in row.items() if key in input_keys} for row in return_rows]}
     for layer in ("public", "source"):
+        if requested and not selected.intersection(inventory[layer]):
+            summary['layers'][layer]={'status':'NOT_RUN/BLOCKED','reason':'LAYER_NOT_SELECTED_THIS_BATCH',
+                'passed_cells':[],'missing_cells':inventory[layer]}
+            continue
         layer_workspace = workspace / layer
         layer_workspace.mkdir()
         request = {"schema": SCHEMA, "run_id": run_id, "layer": layer, "started_at": utcnow(),
                    "candidate_identity": candidates, "cell_ids": inventory[layer], "inputs": inputs,
                    "fixture_sha256": FIXTURE_SHA, "execution_layers_sha256": LAYERS_SHA,
                    "isolation": isolation, "validation_code_sha256": validation_code, "execution_code_sha256": execution_code}
+        if requested:request['selected_cells']=sorted(selected.intersection(inventory[layer]))
         adapter = public
         if layer == "source":
             if not args.source_adapter or not args.source_checkout:
@@ -441,5 +457,20 @@ def _execute(args, layers, expected):
                                     for status in ("PASS", "FAIL", "BLOCKED")}
     summary["completed_at"] = utcnow()
     summary["required_cells"] = sum(len(ids) for ids in inventory.values())
+    if requested:
+        summary['batch_acceptance_counts']={status:sum(summary['cell_results'][name]['status']==status for name in selected)
+            for status in ('PASS','FAIL','BLOCKED')}
+    for row in summary['cell_results'].values():
+        if row['status']=='BLOCKED':
+            reason=row.get('reason','')
+            if reason=='CELL_NOT_SELECTED_THIS_BATCH':
+                row.update(assessment_scope='NOT_SELECTED',blocker_categories=[])
+            elif reason=='CELL_EXECUTOR_NOT_IMPLEMENTED':row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
+            elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:')) or any(v in reason for v in (
+                    'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','128_BYTE','SHORT_PUBLIC_PRECONDITION')):
+                row['blocker_categories']=['FIXTURE_INVALID_OR_INSUFFICIENT']
+            elif any(v in reason for v in ('CANDIDATE_PIN','SOURCE_EXECUTOR_NOT_CONFIGURED','environment','wheel')):
+                row['blocker_categories']=['EXTERNAL_DEPENDENCY']
+            else:row['blocker_categories']=['ORACLE_GAP']
     write_json(run_dir / "bridge-summary.json", summary)
     return summary

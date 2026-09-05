@@ -226,3 +226,63 @@ async def test_short_real_registration_projection_and_mixed_public_dispatch(tmp_
         assert 'exception' not in row['observations'],(row['cell_id'],row['observations'].get('exception'))
         judged=oracle.assess_short(fixture,row)
         assert judged['status']=='BLOCKED' and judged['business_assertions'],(row['cell_id'],judged)
+
+
+@pytest.mark.asyncio
+async def test_leaf_dual_support_is_independently_bound_in_real_recall(tmp_path):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    recipes=[r for r in load(ROOT/'runners/typed_recall_normal_inputs.py').recipes(fixture)
+        if r['family']=='epistemic' and r['seed']['epistemic']=='explicit_user'
+        and r['seed']['verification'] in {'source_verified','repeated_observation'}]
+    rows=await load(ROOT/'adapters/typed_recall_normal_cases.py').run_cases(recipes,tmp_path)
+    assert len(rows)==8
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    for row in rows:
+        assert 'exception' not in row['observations'],(row['cell_id'],row['observations'].get('exception'))
+        judged=oracle.assess_normal(fixture,row)
+        assert judged['status']!='FAIL' and judged['business_assertions'],judged
+        if row['observations']['recipe']['seed']['memory_type'] in {'semantic','episode'}:
+            assert judged['status']=='PASS',judged
+        changed=copy.deepcopy(row)
+        event=next(e for e in changed['observations']['calls'] if e['call']=='resolve_typed_observation')
+        event['receipt']['value_hash']='f'*64
+        assert oracle.assess_normal(fixture,changed)['status']=='FAIL'
+
+
+@pytest.mark.asyncio
+async def test_selected_public_batch_does_not_execute_baseline_or_unselected_cells(tmp_path,monkeypatch):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    recipe=next(r for r in load(ROOT/'runners/typed_recall_normal_inputs.py').recipes(fixture) if r['cell_id']=='eligibility/not-suppressed')
+    adapter=load(ROOT/'adapters/typed_recall_public_manager.py')
+    async def forbidden(*args):raise AssertionError('unselected replay baseline executed')
+    monkeypatch.setattr(adapter,'baseline_cases',forbidden)
+    request={'layer':'public','cell_ids':[recipe['cell_id'],'unsupported-replay/exact-replay'],
+        'selected_cells':[recipe['cell_id']], 'inputs':{'normal':[recipe],
+        'conflict':{'cases':[],'state_cells':[],'payloads':{}},'returns':{'cases':[]},'short':{'cases':[]}}}
+    rows=await adapter.run(request,tmp_path)
+    assert len(rows)==2
+    assert next(r for r in rows if r['cell_id']==recipe['cell_id'])['status']=='OBSERVED'
+    skipped=next(r for r in rows if r['cell_id']!=recipe['cell_id'])
+    assert skipped['reason']=='CELL_NOT_SELECTED_THIS_BATCH' and skipped['observations']=={}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('family',['fault-recovery/fault:restart-open-rebuild','conflict-state/corrupt-result-member'])
+async def test_selected_source_batch_does_not_set_up_other_family(tmp_path,monkeypatch,family):
+    # Test dispatch in isolation, not product fault evidence.
+    import zipfile
+    source=load(ROOT/'adapters/typed_recall_source_cases.py')
+    wheel=tmp_path/'empty.whl'
+    with zipfile.ZipFile(wheel,'w'):pass
+    calls=[]
+    async def selected(*args):
+        calls.append(family)
+        return [dict(cell_id=family,status='BLOCKED',reason='test dispatch only',observations={})]
+    async def forbidden(*args):raise AssertionError('unselected source family executed')
+    fault=family.startswith('fault-recovery/')
+    monkeypatch.setattr(source,'fault_cases',selected if fault else forbidden)
+    monkeypatch.setattr(source,'corruption_cases',forbidden if fault else selected)
+    request=dict(layer='source',source_identity={'checkout':str(tmp_path)},
+        candidate_identity={'memory':{'wheel_path':str(wheel)}},cell_ids=[family])
+    rows=await source.execute_source(request,tmp_path)
+    assert calls==[family] and rows[0]['cell_id']==family

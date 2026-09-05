@@ -456,8 +456,9 @@ def assess_normal(fixture, cell):
                     or (ordinal and (operation['target']!=target or actual['memory_id']!=target['memory_id']
                                      or operation['action_authority_ref'] is None))):
                 raise ValueError('lifecycle actual kind/target/revision/authority differs')
-            evidence_refs.append({'evidence_id':entry['evidence_id'],
-                'content_hash':operation['evidence_spans'][0]['envelope_hash'],'ordinal':ordinal+1})
+            for span in operation['evidence_spans']:
+                evidence_refs.append({'evidence_id':span['evidence_id'],
+                    'content_hash':span['envelope_hash'],'ordinal':len(evidence_refs)+1})
         if any(r['context']['evidence_refs']!=evidence_refs or r['plan']['evidence_refs']!=evidence_refs for r in observed['recalls']):
             raise ValueError('recall does not bind complete lifecycle evidence history')
         for index, recall in enumerate(observed['recalls']):
@@ -516,7 +517,7 @@ def assess_normal(fixture, cell):
                 if (item['public_payload']!=projection or selected_item['public_payload_hash']!=hash_json(projection)
                         or selected_item['source_ref']!=op['memory_id'] or selected_item['source_revision']!=op['revision']
                         or op['revision']!=len(history) or selected_item['source_kind']!='cognitive_memory'
-                        or selected_item['memory_type']!=kind or item['evidence_manifest_hash']!=hash_json([source['evidence_id']])
+                        or selected_item['memory_type']!=kind or item['evidence_manifest_hash']!=hash_json(sorted(source.get('evidence_ids',[source['evidence_id']])))
                         or full_source is None or selected_item['source_content_hash']!=hash_json(full_source)
                         or item['score']!=round(.30/61,12) or item['cross_scope'] or item['source_task_scope_ids']
                         or item['effective_privacy_class']!=recipe.get('privacy','personal').lower()
@@ -666,13 +667,29 @@ def check_seed_authority(observed,recipe,full_source,*,source_index=0,check_reca
             or (full_source is not None and op['content_hash']!=hash_json(full_source))):
         raise ValueError('mutation result/ref/view/source/plan binding differs')
     spans=operation['evidence_spans'];eid=source['evidence_id']
-    if len(spans)!=1 or spans[0]['evidence_id']!=eid or op['evidence_ids']!=[eid]:
+    dual=recipe['seed'].get('epistemic','explicit_user')=='explicit_user' and recipe['seed'].get('verification') in {'source_verified','repeated_observation'}
+    expected_ids=[eid,eid+'-verification'] if dual else [eid]
+    if [s['evidence_id'] for s in spans]!=expected_ids or op['evidence_ids']!=sorted(expected_ids):
         raise ValueError('operation spans/receipt evidence membership differs')
+    refs=[]
+    for index,span in enumerate(spans):
+        prefix='User memory assertion: ' if index==0 else 'Fixture tool observation: '
+        eh=check_admitted_span(observed,recipe,span,expected_ids[index],prefix)
+        refs.append({'evidence_id':expected_ids[index],'content_hash':eh,'ordinal':index+1})
+    if dual and (spans[0]['actor_role']!='user' or spans[0]['provenance']!='authenticated_user'
+            or spans[0]['support_kind'] not in {'explicit_user_assertion','explicit_user_correction'}
+            or spans[0]['typed_observation'] is not None or spans[1]['typed_observation'] is None):
+        raise ValueError('verified user assertion lost independent USER plus TOOL support')
+    if plan['evidence_refs']!=refs or (check_recall_refs and any(r['context']['evidence_refs']!=refs or r['plan']['evidence_refs']!=refs for r in observed['recalls'])):
+        raise ValueError('mutation/recall evidence refs differ from admitted source')
+
+
+def check_admitted_span(observed,recipe,span,eid,prefix):
     admitted=next(e for e in observed['calls'] if e['call']=='ingest_committed_evidence' and e['evidence_id']==eid)
-    envelope,admission,span=admitted['envelope'],admitted['admission'],spans[0]
+    envelope,admission=admitted['envelope'],admitted['admission']
     eh=sdk_domain_hash('simple-harness/sanitized-evidence-envelope/v2',envelope)
     ah=sdk_domain_hash('simple-harness/sanitized-evidence-receipt/v2',admission)
-    text='User memory assertion: '+canonical(recipe['seed']['payload']).decode()
+    text=prefix+canonical(recipe['seed']['payload']).decode()
     source_hash=hashlib.sha256(text.encode()).hexdigest()
     if (envelope['sanitized_payload']!={'item_id':eid+'-item','public_text':text}
             or envelope['sanitized_hash']!=hash_json(envelope['sanitized_payload'])
@@ -686,7 +703,7 @@ def check_seed_authority(observed,recipe,full_source,*,source_index=0,check_reca
             or span['exact_quote']!=text or span['start_byte']!=0 or span['end_byte']!=len(text.encode())):
         raise ValueError('admitted evidence/envelope/span authority chain differs')
     if span.get('typed_observation') is not None:
-        typed=next(e for e in observed['calls'] if e['call']=='resolve_typed_observation')
+        typed=next(e for e in observed['calls'] if e['call']=='resolve_typed_observation' and e['receipt']['evidence_id']==eid)
         receipt=typed['receipt'];ref=span['typed_observation']
         schema={'type':'string','description':'Admitted public memory assertion text'}
         expected_ref=dict(schema_id='observation/typed-recall-public-text',schema_version=1,
@@ -706,9 +723,7 @@ def check_seed_authority(observed,recipe,full_source,*,source_index=0,check_reca
                 or span['provenance']!=('external_source' if external else 'trusted_tool')
                 or span['support_kind']!='typed_observation'):
             raise ValueError('typed authority provenance differs')
-    refs=[{'evidence_id':eid,'content_hash':eh,'ordinal':1}]
-    if plan['evidence_refs']!=refs or (check_recall_refs and any(r['context']['evidence_refs']!=refs or r['plan']['evidence_refs']!=refs for r in observed['recalls'])):
-        raise ValueError('mutation/recall evidence refs differ from admitted source')
+    return eh
 
 
 def assess_return(fixture,cell):

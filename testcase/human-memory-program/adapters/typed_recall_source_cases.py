@@ -14,6 +14,13 @@ def load(path):
 
 
 async def run(request,workspace):
+    selected=request.get('selected_cells',request['cell_ids'])
+    rows=await execute_source({**request,'cell_ids':selected},workspace)
+    return rows+[dict(cell_id=name,status='BLOCKED',reason='CELL_NOT_SELECTED_THIS_BATCH',observations={})
+        for name in request['cell_ids'] if name not in selected]
+
+
+async def execute_source(request,workspace):
     if request['layer']!='source':raise ValueError('source adapter cannot execute public cells')
     # Installed private source must byte-match both the exact wheel and clean git checkout.
     checkout=Path(request['source_identity']['checkout'])/'src'
@@ -36,6 +43,15 @@ async def run(request,workspace):
             raise
         backends[str(path)]=backend
         return m.MemoryManager(backend,None)
+    cells=[]
+    if any(name.startswith('fault-recovery/') for name in request['cell_ids']):
+        cells += await fault_cases(request,workspace,factory,helpers,oracle,backends,now)
+    if any(name.startswith('conflict-state/') for name in request['cell_ids']):
+        cells += await corruption_cases(request,workspace,factory,helpers,oracle)
+    return cells
+
+
+async def fault_cases(request,workspace,factory,helpers,oracle,backends,now):
     def snapshot(path):
         with sqlite3.connect(path) as db:
             return {table:sorted([list(row) for row in db.execute('SELECT * FROM '+table)],key=helpers.canonical)
@@ -108,7 +124,6 @@ async def run(request,workspace):
             observed['recovery_after']=snapshot(path)
         finally:await case.close()
         cells.append(dict(cell_id=name,status='OBSERVED',reason='',observations=observed))
-    cells += await corruption_cases(request,workspace,factory,helpers,oracle)
     return cells
 
 

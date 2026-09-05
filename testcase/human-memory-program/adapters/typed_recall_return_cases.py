@@ -7,6 +7,7 @@ import simple_harness as h
 
 
 async def run_cases(inputs,workspace):
+    if not inputs['cases']:return []
     spec=importlib.util.spec_from_file_location('case_manager',Path(__file__).with_name('typed_recall_case_manager.py'))
     helper=importlib.util.module_from_spec(spec);spec.loader.exec_module(helper)
     case=await helper.CaseManager(workspace/'return.sqlite').open()

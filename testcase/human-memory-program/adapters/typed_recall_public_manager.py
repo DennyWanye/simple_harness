@@ -27,7 +27,7 @@ def _helpers(filename="semantic_relation_public_manager.py"):
     return module
 
 
-async def run(request, workspace):
+async def baseline_cases(request, workspace):
     if request["layer"] != "public":
         raise ValueError("public adapter cannot execute source/fault cells")
     cell_id = "eligibility/valid-until-null-unbounded"
@@ -147,12 +147,25 @@ async def run(request, workspace):
     finally:
         await manager.close()
         calls.append("close")
-    extra_cells += await _helpers("typed_recall_normal_cases.py").run_cases(request["inputs"]["normal"], workspace)
-    extra_cells += await _helpers("typed_recall_conflict_cases.py").run_cases(request["inputs"]["conflict"], workspace)
-    extra_cells += await _helpers("typed_recall_return_cases.py").run_cases(request["inputs"]["returns"], workspace)
-    extra_cells += await _helpers("typed_recall_conflict_cases.py").run_state_cases(request["inputs"]["conflict"], workspace)
-    extra_cells += await _helpers("typed_recall_short_cases.py").run_cases(request["inputs"]["short"], workspace)
-    cells = [{"cell_id": name, "status": "BLOCKED", "reason": "CELL_EXECUTOR_NOT_IMPLEMENTED",
-              "observations": {}} for name in request["cell_ids"] if name != cell_id and name not in {row["cell_id"] for row in extra_cells}]
-    cells.append({"cell_id": cell_id, "status": "OBSERVED", "reason": "", "observations": observations})
-    return cells + extra_cells
+    return [{"cell_id":cell_id,"status":"OBSERVED","reason":"","observations":observations}] + extra_cells
+
+
+async def run(request, workspace):
+    inputs=request['inputs'];selected=set(request.get('selected_cells',request['cell_ids']))
+    cells=[]
+    if any(name=='eligibility/valid-until-null-unbounded' or name.startswith('unsupported-replay/') for name in selected):
+        cells += await baseline_cases(request,workspace)
+    cells += await _helpers('typed_recall_normal_cases.py').run_cases([r for r in inputs['normal'] if r['cell_id'] in selected],workspace)
+    conflict={**inputs['conflict'],'cases':[r for r in inputs['conflict']['cases'] if 'conflict-state/'+r['id'] in selected],
+        'state_cells':[name for name in inputs['conflict']['state_cells'] if name in selected]}
+    cells += await _helpers('typed_recall_conflict_cases.py').run_cases(conflict,workspace)
+    cells += await _helpers('typed_recall_conflict_cases.py').run_state_cases(conflict,workspace)
+    returns={**inputs['returns'],'cases':[r for r in inputs['returns']['cases'] if 'protocol/'+r['id'] in selected]}
+    cells += await _helpers('typed_recall_return_cases.py').run_cases(returns,workspace)
+    short={**inputs['short'],'cases':[r for r in inputs['short']['cases'] if r['cell_id'] in selected]}
+    cells += await _helpers('typed_recall_short_cases.py').run_cases(short,workspace)
+    done={row['cell_id'] for row in cells}
+    cells += [{'cell_id':name,'status':'BLOCKED',
+        'reason':'CELL_EXECUTOR_NOT_IMPLEMENTED' if name in selected else 'CELL_NOT_SELECTED_THIS_BATCH',
+        'observations':{}} for name in request['cell_ids'] if name not in done]
+    return cells

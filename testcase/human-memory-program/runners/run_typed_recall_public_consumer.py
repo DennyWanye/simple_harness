@@ -1121,6 +1121,7 @@ def main() -> int:
     parser.add_argument("--observe-candidate", action="store_true", help="Execute supplied candidate despite historical pin differences; cannot award PASS or repin fixtures.")
     parser.add_argument("--source-adapter", help="Validation-side Python file exporting async run(request, workspace) for the 10 source cells.")
     parser.add_argument("--source-checkout", help="Exact clean Memory checkout for the source adapter.")
+    parser.add_argument("--cell", action="append", default=None, help="Run an original cell in a bounded batch; repeat as needed. Full401 inventory remains; unselected cells are not current evidence.")
     parser.add_argument("--child-timeout", type=float, default=60.0)
     args = parser.parse_args()
     if args.self_check:

@@ -5,6 +5,7 @@
 ## 2026-09-05 Typed recall 执行桥：分支测试工具验证状态
 
 - 独立分支 `feature/human-memory-typed-recall-runner`，代码 `1e72f2ff`：**76个桥回归通过**；Harness0.7.2 + Memory0.6.5 clean两层消费者 **178 PASS / 0 FAIL / 223 BLOCKED**，public349+source10真实OBSERVED。401/391+10/14攻击/阈值不变；拒绝基线/跨principal及lifecycle grant/历史payload问题均已整改并复审接受。
+- 2026-09-05 增量 leaf 小批：12 public真实OBSERVED，**7 PASS / 0 FAIL / 5 BLOCKED**；其余389本轮未运行，不能与历史178相加。合法USER+TOOL双span已接通；leaf本机10测试通过。4个剩余适用性/信号setup、原128byte反例保留；无新产品缺陷结论。[小批命令与证据](../testcase/human-memory-program/runners/TYPED-RECALL-PUBLIC-LOOP-BATCH.md)。
 - **仍未并入主树，合并暂缓；S3/program未完成。** 42 public未实现，合法setup、完整oracle/state等门继续；source10无正式PASS。仅更新工具事实，主共享venv仍0.6.3。命令、hash与明确契约差异见 [Memory边界](MEMORY_SDK_BOUNDARY.md#2026-09-05-typed-recall-执行桥验证工具仅独立分支)。
 
 ## 2026-09-04 Human Memory S5b Task 7：前台任务执行链生产入口跑通与路径契约收口
