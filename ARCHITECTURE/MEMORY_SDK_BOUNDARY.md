@@ -2,6 +2,13 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 Waiting state invalidation
+
+Foreground 在 BOUND_WAITING reconciliation 提交后调用现有空 payload、有界非阻塞刷新。
+从 61436ccc 组合两项 runtime/test 变更；上游旧代码 1 红、修后相邻 32 passed，
+独立审查接受通知发生在持久提交之后。当前候选仅组合授权卡必需通知，原生验收待执行。
+原始日志索引：primary-history 树 `.local-test-evidence/2026-09-05/primary-history/waiting-notify-{red,green}.log`。
+
 ## 2026-09-05 Primary 生产目录修复
 
 真实原生普通回复/重启追问通过；新项目请求在 `607acc7d` 暴露三项 Context 控制被

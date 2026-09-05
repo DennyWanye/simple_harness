@@ -2,6 +2,13 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Waiting state invalidation
+
+Foreground 在 BOUND_WAITING reconciliation 提交后调用现有空 payload、有界非阻塞刷新。
+从 61436ccc 组合两项 runtime/test 变更；上游旧代码 1 红、修后相邻 32 passed，
+独立审查接受通知发生在持久提交之后。当前候选仅组合授权卡必需通知，原生验收待执行。
+原始日志索引：primary-history 树 `.local-test-evidence/2026-09-05/primary-history/waiting-notify-{red,green}.log`。
+
 ## 2026-09-05 Primary 精确 SDK 授权独立候选
 
 `feat/human-memory-primary-decisions`（base `5da24d6f`）接入 authenticated HUMAN
@@ -15,7 +22,7 @@ permission_response 对 Primary binding 拒绝。UI 仅允许本次 allow/deny�
 的确定性 fixture 完成 challenge→批准→项目文件 effect→终态；受影响 backend 66 passed，
 最终新增聚焦 18 passed，前端后继 36 passed + typecheck。批准后并发补读不能吞超时错误，已补红绿；固定81eeb8b0已获独立AI Scoped ACCEPT，无范围内P0/P1/P2；
 正式前端 build 通过；未起 native/真实 Provider，不是 S6/program PASS。Carver WAITING通知
-61436ccc的runtime/test补丁兼容检查通过，须另行组合，未合入此owner树。
+61436ccc 的 runtime/test 通知现已组合；真实界面验收仍待执行。
 SDK read_decision 是 public port，但旧 open-decision 列表仍是 Host 内部 SDK SQL；本片未扩
 私有 SQL，仅限制返回最多32，不能声称底层扫描有界。停止结果历史缺口维持独立未闭合。
 详见 [契约与测试边界](../plans/2026-09-05-primary-sdk-decisions/CONTRACT.md)。
