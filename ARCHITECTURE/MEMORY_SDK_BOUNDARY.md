@@ -1,5 +1,13 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Memory069 installed successor verified
+
+Combined candidate now pins exact Memory0.6.9; same Harness0.7.2/Service0.3.12.
+Independent source/wheel/install comparisons and29 affected tests pass. Production
+factory upgrades a copy of actual native0.6.3 data and reopens with the same receipt
+and unmodified backup; original data unchanged. No native069 claim yet.
+See [installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-069-INSTALLED.md).
+
 ## 2026-09-05 Shared semantic correction production composition
 
 Primary startup now uses one production factory binding the same semantic action

@@ -1,5 +1,12 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Memory069 candidate installation and existing data
+
+Exact0.6.9 installed in dedicated candidate environment:29 affected tests PASS and
+actual earlier native-data copy upgrade/reopen PASS, with original bytes unchanged.
+No other lock dependency changed. Main running checkout remains on its earlier
+composition. [Evidence and remaining gates](../plans/2026-09-05-s6-primary-preparation/SDK-069-INSTALLED.md).
+
 ## 2026-09-05 Semantic correction connected in the combined candidate
 
 Main startup and deterministic real-store tests share one authority composition;
