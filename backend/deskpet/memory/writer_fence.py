@@ -117,3 +117,14 @@ __all__ = [
     "assert_human_memory_ingress_open",
     "assert_human_memory_ingress_open_tx",
 ]
+
+
+def require_human_audit_request() -> str:
+    """Audit grants require a real current signed HUMAN serving lease, never fallback."""
+    from deskpet.memory.control_binding import _ConnectionRequestFence
+    from deskpet.memory.human_memory_service import HumanMemoryHostServiceError
+
+    scope = _request_scope()
+    if scope is None or not isinstance(scope.fence, _ConnectionRequestFence):
+        raise HumanMemoryHostServiceError("primary_audit_verified_request_required")
+    return scope.fence.audit_lease_ref()

@@ -1,5 +1,18 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-06 HUMAN metadata audit source entry
+
+Last updated: 2026-09-06. PrimaryMemoryPanel adds an explicit operation-record tab;
+PrimaryAuditPanel uses the existing bound PrimaryPort for primary.audit.open/page/
+close. Grants require a user click; pages require explicit reads. Unknown ACK keeps
+the original logical action while transport IDs change. Hiding/rebinding/expiry
+removes metadata immediately, and a new owner cannot replay the old capability.
+Actual ControlChannel cached bound replay is distinguished from a fresh bound
+frame; the full React parent chain regression and counterfactual red are recorded.
+Frontend25 focused tests and no-emit typecheck pass; browser/native and fixed-source
+independent acceptance remain pending. Graph, Agent input and ordinary memory
+forget semantics are unchanged. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
 ## 2026-09-05 Cytoscape primary graph display source candidate
 
 Last updated: 2026-09-05. PrimaryMemoryPanel adds a default-available graph tab over verified HUMAN primary.memory.graph. Real canonical nodes/relations only; local Cytoscape3.34.2 with keyboard/text selection, filter, zoom, pan and details. Pending/unknown forget, owner change and real completion hints invalidate old data. API-fixture browser renderer verification passes; coordinator native verification remains pending.

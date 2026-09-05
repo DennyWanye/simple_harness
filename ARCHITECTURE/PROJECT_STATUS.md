@@ -1,5 +1,17 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 HUMAN Memory audit access source candidate
+
+Last updated: 2026-09-06. Isolated `feat/human-memory-audit-access` from54156f1e
+adds explicit signed HUMAN metadata grant/open-page-close, Host S1 action source,
+durable logical page delivery, unknown-safe replay and final WS disclosure fence.
+Default UI entry appears in PrimaryMemoryPanel; it never auto-grants or auto-pages.
+Backend40/frontend25 focused combination and no-emit typecheck pass. Actual
+ControlChannel cached-bound P1 has counterfactual red and restored-source green.
+Independent fixed-source review and main integration/native remain pending; this
+does not close all-operation producer/coverage gaps. No source change to SDK pins
+or terminal-audit identity. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
 ## 2026-09-05 Memory0612 installed credential successor
 
 Last updated: 2026-09-05. Exact0612 fixes public tool-name credential false positives;

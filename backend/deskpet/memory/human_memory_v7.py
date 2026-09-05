@@ -100,6 +100,7 @@ class HumanMemoryV7Runtime:
         analysis_authority: Any = None,
         memory_action_authority: Any = None,
         history_source_authority: Any = None,
+        audit_access_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
     ) -> None:
@@ -116,6 +117,7 @@ class HumanMemoryV7Runtime:
         self._analysis_authority = analysis_authority
         self._memory_action_authority = memory_action_authority
         self._history_source_authority = history_source_authority
+        self.audit_access_authority = audit_access_authority
         # Test seam only: build the backend with an injected clock/fault injector
         # (the production path is always ``build_human_memory_v7``).
         self._backend_factory = backend_factory
@@ -179,6 +181,8 @@ class HumanMemoryV7Runtime:
                     kwargs["memory_action_authority"] = self._memory_action_authority
                 if self._history_source_authority is not None:
                     kwargs["history_source_authority"] = self._history_source_authority
+                if self.audit_access_authority is not None:
+                    kwargs["audit_access_authority"] = self.audit_access_authority
                 if self._backend_factory is not None:
                     manager = await self._backend_factory(self._db_path, **kwargs)
                 else:
@@ -217,6 +221,8 @@ class HumanMemoryV7Runtime:
 
     async def close(self) -> None:
         async with self._lock:
+            if self.audit_access_authority is not None:
+                self.audit_access_authority.invalidate_all()
             if self._manager is not None:
                 await self._manager.close()
                 self._manager = None

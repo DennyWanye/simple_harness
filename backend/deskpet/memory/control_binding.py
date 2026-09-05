@@ -89,3 +89,18 @@ class _ConnectionRequestFence:
 
     def verify(self):
         self._binding._verify(self._ingress, self._challenge)
+
+    def audit_lease_ref(self):
+        """Opaque binding of this exact verified owner/connection generation."""
+        from deskpet.task_scope.protocol import canonical_hash
+
+        self.verify()
+        identity = self._ingress.identity_gate.freeze()
+        return canonical_hash({
+            "domain": "host.human.audit.lease.v1",
+            "owner_key": identity.owner_key,
+            "binding_epoch": identity.binding_epoch,
+            "connection_id": self._challenge.connection_id,
+            "challenge_hash": self._challenge.challenge_hash,
+            "process": self._ingress.verifier.backend_process_instance_id,
+        })
