@@ -1,5 +1,16 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 Selected short runtime 隔离叶子
+
+最后更新：2026-09-06。`feat/selected-short-runtime` 从49249dbd接入实际factory共享
+conversation authority；默认已有short请求逐actual triple携带完整group来源，每次group
+读取同只读事务验证primary/epoch。显式长期选择不附带short；不使用all-indexed roots。
+真实11组/两hit裁减后遗忘/reopen分批18PASS/7.04s、3PASS/8.03s；相邻24PASS/19.99s
+独立列示（含1必要重验，不累计作质量分）。最后门为实际PrimaryHistoryPolicy直接fresh复查，
+不是新physical outbound/native。借用组合venv，无独立安装身份。源2d98e083获Dirac限定ACCEPT，未合主树。
+生产索引worker/增量登记、多消息tool完整producer、新模型short协议仍未完成；不改S3/program完成度。
+见[契约及实际结果](../plans/2026-09-06-selected-short-runtime/RESULTS.md)。
+
 ## 2026-09-06 模型召回类型选择局部完成
 
 最后更新：2026-09-06。memory_standalone工具显式类型经Host校验传入已安装Memory0612公共计划，保留Host身份/权限/预算；显式长期选择不偷偷附带短期查询。成功类型枚举写既有Host审计记录，原proposal仅hash，非公共SDK完整参数回读。

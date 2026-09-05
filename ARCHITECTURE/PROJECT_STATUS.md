@@ -1,5 +1,16 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Selected short runtime bounded leaf
+
+最后更新：2026-09-06。隔离`feat/selected-short-runtime`/base49249dbd：actual factory
+共享真实authority，现有short请求按每hit完整来源投影；保留显式长期零short和最终fresh fence。
+分批18PASS/7.04s、3PASS/8.03s，相邻24PASS/19.99s（含1必要重验，不累计作质量分）。
+最后门为实际PrimaryHistoryPolicy直接fresh复查，非新physical outbound/native。
+峰值202.4MiB；所有pytest退出，测试槽已释放。
+固定源2d98e083获Dirac限定ACCEPT，未合主组合，无模型/native/独立install验收。
+自动生产索引、多消息tool来源、新模型short协议仍待实现；S3/S6/program仍未完成。
+[交付范围、红绿及命令](../plans/2026-09-06-selected-short-runtime/RESULTS.md)。
+
 ## 2026-09-06 模型召回类型选择局部完成
 
 最后更新：2026-09-06。memory_standalone工具显式类型经Host校验传入已安装Memory0612公共计划，保留Host身份/权限/预算；显式长期选择不偷偷附带短期查询。成功类型枚举写既有Host审计记录，原proposal仅hash，非公共SDK完整参数回读。
