@@ -88,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -224,7 +224,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
         provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
-        state_changed=state_changed, effect_gate=foreground_gate,
+        state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
     )
     runtime.history_policy = history_policy
     runtime.history_memory = visibility_memory

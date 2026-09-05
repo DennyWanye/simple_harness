@@ -1,5 +1,12 @@
 # ARCHITECTURE 索引
 
+## 2026-09-05 Host terminal audit candidate
+
+最后更新：2026-09-05。独立树 eaccab33 + 3e911c14 接入默认 terminal audit consumer；持久读取 attempt、
+固定 snapshot/pages 和幂等 findings，不产生 Provider calls/usage/cost 总计。
+仅 source-overlay/focused composition 验证，尚非 main installed successor 或完整 operation coverage。
+[当前边界与交接](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md)。
+
 ## 2026-09-05 Source/auth/action combination verified
 
 Fixed e31c6efd source index closes the independent unscoped-search/late-forget P1;

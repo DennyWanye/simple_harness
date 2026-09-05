@@ -344,6 +344,7 @@ class ForegroundRuntimeExecutionAuthority:
         endpoint_identity_resolver: Callable[[Mapping[str, object]], str | None] | None = None,
         conversation_entrypoint: Callable[..., Awaitable[object]] | None = None,
         state_changed: Callable[[], Awaitable[None]] | None = None,
+        terminal_audit_wake: Callable[[], None] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -386,6 +387,7 @@ class ForegroundRuntimeExecutionAuthority:
         self._closed = False
         self._last_error: Exception | None = None
         self._state_changed = state_changed
+        self._terminal_audit_wake = terminal_audit_wake
         self._notification_task: asyncio.Task[None] | None = None
         self._notification_pending = False
 
@@ -1164,6 +1166,13 @@ class ForegroundRuntimeExecutionAuthority:
                 else None
             ),
         )
+        if self._terminal_audit_wake is not None:
+            try:
+                self._terminal_audit_wake()
+            except Exception:
+                # Wake is only an optimization. Durable terminal discovery recovers
+                # missed notifications without changing the business result.
+                pass
         self._notify_state_changed()
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
