@@ -220,3 +220,33 @@ Ignored evidence:
 - `dynamic-resume-red.log` SHA256 `5dde12ebab202f6c123c1bb8fe1885a5f8c9a0525339eea416f1d0d0c8657714`
 - `dynamic-route-final.log` SHA256 `033ca18c6a51bde7001adfac78915e015839c242991baeeaf8f4ef83715e09f6`
 Both under `.local-test-evidence/2026-09-05/primary-history/`.
+
+### Fixed source composition and installed interpreter
+
+`ea315525` is now cherry-picked as `2645d8b2`; only the three ARCH documents
+conflicted and both runtime/API status sections were retained. The tracked tree
+contains primary_visibility.py and the actual history_visibility_checker API.
+Earlier94/21 results used a fixed helper loading plugin and must not be described
+as a standalone startable tree. Reverification without that plugin: **71 passed
+in39.38s, exit0**, on the21 runtime cases above plus test_primary_visibility.py,
+test_primary_read_api.py and test_primary_control_binding.py. Log
+`combined-no-helper-overlay.log`, SHA256
+`c7722facb0054576cfd8d4b9b021015161630cb883aa71b035665ebc513e92ab`.
+
+An independent local interpreter is now available at
+`.local-test-evidence/2026-09-05/primary-history/venv066/bin/python`.
+It offline-installs the exact Memory0.6.6 wheel381d8543 and reads existing Host
+pytest/Harness dependencies through a .pth pointing to the main venv site-packages.
+Main packages were not modified; this is not a fully standalone dependency install.
+The new interpreter imports Memory from its own site-packages. No helper or Memory
+source PYTHONPATH overlay is required:
+
+```sh
+PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-history/venv066/bin/python -m pytest backend/tests/execution/test_primary_dynamic_resume_visibility.py backend/tests/execution/test_primary_history_outbound.py -q -p no:cacheprovider
+```
+
+**10 passed in7.24s, exit0**, log `installed066-smoke.log` in the same ignored
+evidence directory. Coordinator-owned runtime/API integration test was modified
+concurrently and was neither edited nor staged by this owner. Remaining scoped,
+other historical carrier and short functionality gaps still block production;
+these tests do not claim a native app startup or real Provider validation.

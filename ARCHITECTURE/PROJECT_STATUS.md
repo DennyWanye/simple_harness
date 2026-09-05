@@ -11,7 +11,8 @@ actual typed recall四元组与每次physical Provider前fresh check；cold USER
 每条实际route交叉验证SDKeffect/receipt；无来源证明的ResumePackage在delegate前拒绝，
 FAILED且第二次物理发送为0。真实create_new在逐次guard下完成effect/terminal；已发送unknown分类未改。
 **仍有P1：既有预先scoped ResumePackage无完整proof，新guard会拒绝首Provider（真实probe1红）**。
-不得以94绿抵消该回归或用scope豁免。共享API ea315525和Memory0.6.6仅隔离组合依赖，
+不得以94绿抵消该回归或用scope豁免。共享API ea315525已正式cherry为2645d8b2，移除helper加载层后组合71绿；
+独立venv已安装exact Memory0.6.6（其他Host依赖只读借用），窄复验10绿。仍仅隔离组合，
 没有生产切换/native隐私完成结论；独立short-horizon carrier仍不支持。原证据不删除。
 命令、边界及hash见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
 
