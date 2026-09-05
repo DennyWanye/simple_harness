@@ -14,7 +14,7 @@ queued 下界计数及 history keyset 有界；仅证明 Host source suppression
 2026-09-05 S6隔离分支新增control verified connection复用与无scope admission，聚焦29 passed；
 standalone/dynamic route→生产effect/terminal identity及状态通知聚焦181 passed；
 CREATE_NEW active None生产AUTO binding后继66 passed后发现origin P1；冻结来源纠正85 passed，
-独立首tool启动竞态尚待修复；完整历史来源suppression未闭合，
+origin获独立限定ACCEPT；首tool启动同步后继87 passed，仍需独立复核/native验收；完整历史来源suppression未闭合，
 Manual UI未接，UI/API组合待验证，不可合main。详见
 [实施交接](../plans/2026-09-05-s6-primary-preparation/IMPLEMENTATION.md)，不改变main完成度。
 
