@@ -1,5 +1,11 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 短期索引及 Service0313 已组合验证
+
+最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。
+Service工具审计新增发送attempt/UNKNOWN/真实ACK/后继响应，仍非持久sink或完整Run绑定；全操作落盘、增量projection、多消息producer、模型short协议及原program未闭合。未切换用户main/runtime，无新模型/native。
+[命令、身份、结果与边界](../plans/2026-09-06-short-index-worker/COMBINED.md)。
+
 ## 2026-09-06 Short index worker 隔离叶子
 
 最后更新：2026-09-06。`feat/short-index-worker`/basefe006f59，源426db3bb获Dirac限定ACCEPT。
