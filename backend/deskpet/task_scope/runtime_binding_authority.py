@@ -59,6 +59,7 @@ class _PrimaryBindingTarget:
     idempotency_key: str
     evidence_id: str
     evidence_hash: str
+    origin: object
 
 
 class WorkspaceBindingRuntimeAuthority:
@@ -356,7 +357,11 @@ class WorkspaceBindingRuntimeAuthority:
         interaction_evidence_hash: str,
     ) -> Mapping[str, object]:
         configured = self._store.configured_root()
+        from deskpet.sdk_adapters.tools import active_product_foreground_origin
+        origin = active_product_foreground_origin()
         current = await self._foreground.current_snapshot(self._subject)
+        if origin is not None:
+            self._verify_invocation_origin(current, origin)
         if current is not None and current.task_scope_id is not None and current.task_scope_id != task_scope_id:
             raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
 
@@ -366,7 +371,7 @@ class WorkspaceBindingRuntimeAuthority:
             run_id = current.host_run_id
             if current.task_scope_id is None:
                 target = _PrimaryBindingTarget(run_id, task_scope_id, root, idempotency_key,
-                    interaction_evidence_id, interaction_evidence_hash)
+                    interaction_evidence_id, interaction_evidence_hash, origin)
                 self._verify_primary_target(current, target)
             run_revision = current.generation
             base_revision = self._binding_revision(task_scope_id) if current.task_scope_id is None else current.binding_set_revision
@@ -439,8 +444,17 @@ class WorkspaceBindingRuntimeAuthority:
                 self._pre_admission.pop(pre_admission_key, None)
         return self._binding_result(receipt, status="bound")
 
+    def _verify_invocation_origin(self, current, origin) -> None:
+        if (origin is None or current is None
+                or current.host_run_id != origin.host_run_id
+                or current.sdk_run_id != origin.sdk_run_id
+                or current.owner_id != origin.owner_id
+                or current.generation != origin.generation):
+            raise WorkspaceBindingError("workspace_binding_invocation_origin_stale")
+
     def _verify_primary_target(self, current, target: _PrimaryBindingTarget) -> None:
         """Re-read real Run ownership and durable proposal on every Auto check."""
+        self._verify_invocation_origin(current, target.origin)
         if (current.host_run_id != target.run_id or current.subject != self._subject
                 or current.task_scope_id is not None or current.sdk_run_id is None
                 or current.state.value not in {"CLAIMED", "RUNNING"}

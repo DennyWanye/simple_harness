@@ -252,7 +252,7 @@ class ForegroundEffectAdmissionGate:
     def release(self, sdk_run_id: str) -> None:
         self._bindings.pop(sdk_run_id, None)
 
-    async def authorize(self, sdk_run_id: str) -> None:
+    async def authorize(self, sdk_run_id: str) -> _ForegroundEffectBinding | None:
         binding = self._bindings.get(sdk_run_id)
         if binding is None:
             return
@@ -263,6 +263,7 @@ class ForegroundEffectAdmissionGate:
             generation=binding.generation,
             boundary=EffectBoundary.TOOL,
         )
+        return binding
 
 
 @dataclass(frozen=True, slots=True)
