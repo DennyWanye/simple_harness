@@ -326,30 +326,36 @@ class ProductForegroundToolPort:
         sdk_run_id: str,
     ) -> FrozenToolAuthority:
         candidate = claimed.candidate
-        if candidate.task_scope_id is None:
-            raise RuntimeError("foreground_tool_scope_missing")
-        if (
-            candidate.binding_set_revision < 1
-            or candidate.binding_set_receipt_id is None
-            or candidate.binding_set_receipt_hash is None
-        ):
-            raise RuntimeError("foreground_tool_binding_authority_missing")
-        receipt = await self._bindings.exact_receipt(
-            task_scope_id=candidate.task_scope_id,
-            binding_set_revision=candidate.binding_set_revision,
-            binding_set_receipt_id=candidate.binding_set_receipt_id,
-            binding_set_receipt_hash=candidate.binding_set_receipt_hash,
-        )
         roots = []
-        for root_hash in receipt.root_identity_hashes:
-            authority = await self._bindings.verify_effect_authority(
+        binding_revision = candidate.binding_set_revision
+        if candidate.task_scope_id is not None:
+            if (
+                candidate.binding_set_revision < 1
+                or candidate.binding_set_receipt_id is None
+                or candidate.binding_set_receipt_hash is None
+            ):
+                raise RuntimeError("foreground_tool_binding_authority_missing")
+            receipt = await self._bindings.exact_receipt(
                 task_scope_id=candidate.task_scope_id,
-                binding_set_revision=receipt.binding_set_revision,
-                binding_set_receipt_id=receipt.receipt_id,
-                binding_set_receipt_hash=receipt.receipt_hash,
-                root_identity_hash=root_hash,
+                binding_set_revision=candidate.binding_set_revision,
+                binding_set_receipt_id=candidate.binding_set_receipt_id,
+                binding_set_receipt_hash=candidate.binding_set_receipt_hash,
             )
-            roots.append(authority.root)
+            for root_hash in receipt.root_identity_hashes:
+                authority = await self._bindings.verify_effect_authority(
+                    task_scope_id=candidate.task_scope_id,
+                    binding_set_revision=receipt.binding_set_revision,
+                    binding_set_receipt_id=receipt.receipt_id,
+                    binding_set_receipt_hash=receipt.receipt_hash,
+                    root_identity_hash=root_hash,
+                )
+                roots.append(authority.root)
+        elif (
+            binding_revision != 0
+            or candidate.binding_set_receipt_id is not None
+            or candidate.binding_set_receipt_hash is not None
+        ):
+            raise RuntimeError("foreground_tool_binding_authority_invalid")
         if len(roots) == 1:
             workspace_root = roots[0].canonical_path
             resolution_kind = "project_bound"
@@ -362,12 +368,13 @@ class ProductForegroundToolPort:
             workspace_resolution = {
                 "kind": "projectless",
                 "effective_root": None,
-                "binding_version": receipt.binding_set_revision,
+                "binding_version": binding_revision,
             }
         catalog, inventory = filter_sdk_catalog_for_workspace(
             self._catalog,
             self._inventory,
             workspace_resolution_kind=resolution_kind,
+            primary_route_capable=candidate.task_scope_id is None,
         )
         visible = frozenset(str(item) for item in catalog["tool_names"])
         direct = visible & SDK_DIRECT_TOOL_KERNEL
@@ -389,7 +396,7 @@ class ProductForegroundToolPort:
                 if deferred
                 else SDK_FULL_CATALOG_DISCLOSURE_POLICY
             ),
-            binding_version=receipt.binding_set_revision,
+            binding_version=binding_revision,
             workspace_resolution=workspace_resolution,
         )
         start_record = authority.run_start_record()

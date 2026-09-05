@@ -123,3 +123,52 @@ def test_default_control_socket_requires_its_own_verified_bind(tmp_path, monkeyp
         assert first["payload"]["ok"]
         ws.send_json(request)
         assert receive(ws, "human_memory_response") == first
+
+
+@pytest.mark.asyncio
+async def test_inflight_scope_write_rechecks_lease_after_signed_reconnect(tmp_path, monkeypatch):
+    import asyncio
+    import sqlite3
+
+    private, _, _, ingress = _ingress(tmp_path)
+    binding = HumanMemoryControlBinding()
+    challenge = await _bind(private, ingress, binding)
+    path = tmp_path / "state.db"
+    factory = HumanMemoryHostServiceFactory(path, await dispatch_startup_epoch(path, approved_fresh_lane=True))
+    auth = binding.authenticate(ingress, challenge)
+    service = factory.bind(auth)
+    entered, release = asyncio.Event(), asyncio.Event()
+    create = service._scopes.create_task_scope
+
+    async def paused(**kwargs):
+        entered.set()
+        await release.wait()
+        return await create(**kwargs)
+
+    monkeypatch.setattr(service._scopes, "create_task_scope", paused)
+
+    class Bound:
+        def bind(self, *args, **kwargs):
+            return service
+
+    async def dispatch():
+        # Same connection scope installed by the production /ws/control branch.
+        with binding.request_scope(ingress, challenge):
+            return await handle_human_memory_command(
+                {"type": "human_memory_request", "request_id": "inflight-old", "operation": "task_scope.create",
+                 "request": {"title": "old connection", "goal": "must not commit"}},
+                factory=Bound(), auth=auth,
+            )
+
+    pending = asyncio.create_task(dispatch())
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        replacement = HumanMemoryControlBinding()
+        await asyncio.wait_for(_bind(private, ingress, replacement), 5)
+    finally:
+        release.set()
+    response = await asyncio.wait_for(pending, 5)
+    assert not response["payload"]["ok"], response
+    assert response["payload"]["error"]["code"] == "human_memory_connection_stale"
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0

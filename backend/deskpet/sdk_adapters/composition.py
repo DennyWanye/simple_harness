@@ -719,6 +719,29 @@ class ProductSdkRuntimeStack:
                     break
         return ClosureRunFacts(binding_record=binding, last_assistant_message=last_answer)
 
+    def read_settled_primary_run(self, run_id: str, *, current_text: str):
+        """Rebuild pre-S6 history from the real terminal and public Context."""
+        terminal = self.read_run_terminal_evidence(run_id)
+        if terminal is None:
+            raise RuntimeError("primary_history_sdk_terminal_missing")
+        return terminal, self.read_primary_run_messages(run_id, current_text=current_text)
+
+    def read_primary_run_messages(self, run_id: str, *, current_text: str) -> tuple[dict, ...]:
+        """Public transcript of this turn, excluding seeded history/system data.
+
+        Read the real SDK Context through its public port, not a checkpoint JSON
+        layout. The admitted current user message anchors the turn suffix. Missing
+        or changed anchors fail closed rather than inventing history.
+        """
+        from simple_harness.runtime import SqliteContextPort
+
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        messages = tuple(SqliteContextPort(self._uow.database).load(RunId(run_id)).messages)
+
+        return project_primary_transcript(messages, current_text=current_text)
+
     def read_run_terminal_evidence(
         self, run_id: str
     ) -> SdkRunTerminalEvidence | None:
@@ -983,3 +1006,42 @@ __all__ = (
     "WorkflowRuntimeBuild",
     "build_product_runtime",
 )
+
+
+def project_primary_transcript(messages, *, current_text):
+    """Whitelist public SDK Context messages; no provider/private block promotion."""
+    from deskpet.task_scope.protocol import redact_credential_shapes
+    def text_content(message):
+        if isinstance(message.content, str):
+            return message.content
+        return "".join(str(block.data.get("text", "")) for block in message.content
+                       if block.type in {"text", "input_text", "output_text"})
+
+    anchors = [i for i, message in enumerate(messages)
+               if message.role.value == "user" and text_content(message) == current_text]
+    if not anchors:
+        raise RuntimeError("primary_history_current_turn_missing")
+    public = []
+    for message in messages[anchors[-1]:]:
+        if message.role.value == "system":
+            continue
+        content = redact_credential_shapes(text_content(message))[0]
+        if not isinstance(message.content, str):
+            artifacts = []
+            for block in message.content:
+                if block.type != "artifact":
+                    continue
+                data = {key: redact_credential_shapes(block.data[key])[0]
+                        for key in ("artifact_ref", "name", "mime_type", "uri")
+                        if isinstance(block.data.get(key), str)}
+                if data:
+                    artifacts.append({"type": "artifact", "data": data})
+            if artifacts:
+                content = ([{"type": "text", "data": {"text": content}}] if content else []) + artifacts
+        item = {"role": message.role.value, "content": content}
+        if message.role.value == "tool":
+            item["call_id"] = message.call_id.value
+            if message.name:
+                item["name"] = message.name
+        public.append(item)
+    return tuple(public)

@@ -565,7 +565,11 @@ class ProductEffectExecutor(EffectExecutor):
                 return EffectExecution(effect=None, result=rejected.result)
         token = _validation_run_id.set(context.run_id.value)
         try:
-            execution = await super().execute(**kwargs)
+            from contextlib import nullcontext
+            binding_scope = getattr(self._effect_gate, "execution_scope", None)
+            scope = binding_scope(context, kwargs["call"].name) if gated and callable(binding_scope) else nullcontext()
+            async with scope:
+                execution = await super().execute(**kwargs)
         finally:
             _validation_run_id.reset(token)
         if evidence_scope is not None:
@@ -976,6 +980,7 @@ def filter_sdk_catalog_for_workspace(
     inventory: Sequence[ProductToolInventoryEntry],
     *,
     workspace_resolution_kind: str,
+    primary_route_capable: bool = False,
 ) -> tuple[dict[str, Any], tuple[ProductToolInventoryEntry, ...]]:
     """Return the per-Run model/tool projection for one workspace tag.
 
@@ -984,6 +989,8 @@ def filter_sdk_catalog_for_workspace(
     restart can deterministically reapply the same projection before exact
     authority reconstruction.
     """
+
+    from deskpet.sdk_adapters.tool_authority import PROJECT_EFFECT_TOOL_NAMES
 
     kind = str(workspace_resolution_kind).strip()
     if kind == "legacy":
@@ -1034,7 +1041,8 @@ def filter_sdk_catalog_for_workspace(
             item,
             availability_reason=(
                 item.availability_reason
-                if item.projectless_admission == "safe"
+                if (item.projectless_admission == "safe"
+                    or (primary_route_capable and item.name in PROJECT_EFFECT_TOOL_NAMES))
                 else item.availability_reason or "workspace_unscoped"
             ),
         )

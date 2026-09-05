@@ -53,6 +53,24 @@ class TaskWorkContext:
 
 
 @dataclass(frozen=True, slots=True)
+class PrimaryRunWorkContext:
+    """An unscoped primary Run carries no project/workspace authority."""
+    session_id: str
+    root_run_id: str
+    task_scope_id: None = None
+    workspace_root: None = None
+    workspace_source: WorkspaceSource = "none"
+    binding_version: int = 0
+
+    def __post_init__(self) -> None:
+        if not self.session_id or not self.root_run_id:
+            raise ValueError("primary run identity is required")
+        if (self.task_scope_id is not None or self.workspace_root is not None
+                or self.workspace_source != "none" or type(self.binding_version) is not int or self.binding_version != 0):
+            raise ValueError("unscoped primary context cannot carry workspace authority")
+
+
+@dataclass(frozen=True, slots=True)
 class MainSessionBinding:
     session_id: str
     generation: int
@@ -262,6 +280,7 @@ __all__ = [
     "TaskIngressEnvelope",
     "TaskRunProjection",
     "TaskWorkContext",
+    "PrimaryRunWorkContext",
     "TaskWorkContextResolver",
     "UserContinuationState",
     "WorkspaceSource",

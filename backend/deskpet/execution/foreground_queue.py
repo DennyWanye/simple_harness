@@ -22,6 +22,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import aiosqlite
+from deskpet.memory.writer_fence import human_memory_connection
 
 from deskpet.memory.recovery_work_items import is_human_memory_work_item_parked_tx
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
@@ -1881,68 +1882,90 @@ class ForegroundQueueStore:
                 head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
                 await self._validate_sdk_binding_tx(db, host_run_id, sdk_run_id)
                 run = await self._run_tx(db, host_run_id)
-                receipt = await self._fetchone(
-                    db,
-                    "SELECT r.task_scope_id,r.source_sequence,r.event_id,e.payload_json "
-                    "FROM task_scope_execution_ingest_receipts r "
-                    "JOIN task_scope_events e ON e.event_id=r.event_id "
-                    "AND e.task_scope_id=r.task_scope_id AND e.payload_hash=r.evidence_hash "
-                    "WHERE r.source_event_id=? AND r.run_id=? AND r.evidence_hash=? "
-                    "AND r.evidence_kind='run_terminal'",
-                    (sdk_event_id, sdk_run_id, sdk_event_hash),
+                from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+                from deskpet.execution.primary_history import terminal_observation_tx
+                effective_scope = await ExecutionEvidenceIngress(self._db_path).resolve_run_scope_tx(db, sdk_run_id)
+                observed = await terminal_observation_tx(
+                    db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=str(head["subject"]),
                 )
-                if receipt is None:
-                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
-                if (
-                    run["task_scope_id"] is None
-                    or receipt["task_scope_id"] != run["task_scope_id"]
-                ):
-                    raise ForegroundQueueError("foreground_terminal_scope_mismatch")
-                gate = await self._fetchone(
-                    db,
-                    "SELECT g.gate_receipt_id,g.terminal_source_sequence,"
-                    "g.durable_source_sequence,w.durable_source_sequence AS current_durable_sequence,"
-                    "w.terminal_source_sequence AS current_terminal_sequence "
-                    "FROM task_scope_terminal_gate_receipts g "
-                    "JOIN task_scope_run_watermarks w ON w.run_id=g.run_id "
-                    "AND w.task_scope_id=g.task_scope_id "
-                    "WHERE g.run_id=? AND g.task_scope_id=? "
-                    "AND g.terminal_source_sequence=? "
-                    "AND g.durable_source_sequence>=g.terminal_source_sequence "
-                    "AND w.terminal_source_sequence=g.terminal_source_sequence "
-                    "AND w.durable_source_sequence>=g.terminal_source_sequence",
-                    (sdk_run_id, receipt["task_scope_id"], receipt["source_sequence"]),
-                )
-                if gate is None:
-                    raise ForegroundQueueError("foreground_terminal_gate_pending")
-                # S5b Task 3 — third watermark (semantic closure): every material
-                # event of the admission scope must be covered by a closing
-                # receipt, or this Run must have recorded a `pending` receipt.
-                # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.
-                from deskpet.execution.semantic_closure import closure_coverage_tx
+                if effective_scope is None:
+                    residual = await self._fetchone(
+                        db, "SELECT source_event_id FROM task_scope_execution_ingest_receipts WHERE run_id=? "
+                        "UNION ALL SELECT source_event_id FROM harness_evidence_reservations WHERE run_id=? LIMIT 1",
+                        (sdk_run_id, sdk_run_id),
+                    )
+                    if residual is not None or run["task_scope_id"] is not None:
+                        raise ForegroundQueueError("foreground_terminal_scope_mismatch")
+                    if observed is None:
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
+                    observation, public_payload = observed
+                    if (observation["evidence_id"] != sdk_event_id
+                            or observation["envelope_sha256"] != sdk_event_hash
+                            or public_payload.get("kind") != "primary_run_terminal"):
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                    gate = None
+                else:
+                    receipt = await self._fetchone(
+                        db,
+                        "SELECT r.task_scope_id,r.source_sequence,r.event_id,e.payload_json "
+                        "FROM task_scope_execution_ingest_receipts r "
+                        "JOIN task_scope_events e ON e.event_id=r.event_id "
+                        "AND e.task_scope_id=r.task_scope_id AND e.payload_hash=r.evidence_hash "
+                        "WHERE r.source_event_id=? AND r.run_id=? AND r.evidence_hash=? "
+                        "AND r.evidence_kind='run_terminal'",
+                        (sdk_event_id, sdk_run_id, sdk_event_hash),
+                    )
+                    if receipt is None:
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_missing")
+                    if (
+                        receipt["task_scope_id"] != effective_scope.task_scope_id
+                    ):
+                        raise ForegroundQueueError("foreground_terminal_scope_mismatch")
+                    gate = await self._fetchone(
+                        db,
+                        "SELECT g.gate_receipt_id,g.terminal_source_sequence,"
+                        "g.durable_source_sequence,w.durable_source_sequence AS current_durable_sequence,"
+                        "w.terminal_source_sequence AS current_terminal_sequence "
+                        "FROM task_scope_terminal_gate_receipts g "
+                        "JOIN task_scope_run_watermarks w ON w.run_id=g.run_id "
+                        "AND w.task_scope_id=g.task_scope_id "
+                        "WHERE g.run_id=? AND g.task_scope_id=? "
+                        "AND g.terminal_source_sequence=? "
+                        "AND g.durable_source_sequence>=g.terminal_source_sequence "
+                        "AND w.terminal_source_sequence=g.terminal_source_sequence "
+                        "AND w.durable_source_sequence>=g.terminal_source_sequence",
+                        (sdk_run_id, receipt["task_scope_id"], receipt["source_sequence"]),
+                    )
+                    if gate is None:
+                        raise ForegroundQueueError("foreground_terminal_gate_pending")
+                    # S5b Task 3 — third watermark (semantic closure): every material
+                    # event of the admission scope must be covered by a closing
+                    # receipt, or this Run must have recorded a `pending` receipt.
+                    # Applies to COMPLETED / FAILED / CANCELLED / STOPPED alike.
+                    from deskpet.execution.semantic_closure import closure_coverage_tx
 
-                coverage = await closure_coverage_tx(
-                    db, task_scope_id=str(receipt["task_scope_id"]), sdk_run_id=sdk_run_id
-                )
-                if not coverage.satisfied:
-                    raise ForegroundQueueError("foreground_terminal_closure_pending")
-                try:
-                    evidence = json.loads(str(receipt["payload_json"]))
-                except (TypeError, ValueError, json.JSONDecodeError) as exc:
-                    raise ForegroundQueueError(
-                        "foreground_terminal_sdk_evidence_invalid"
-                    ) from exc
-                if (
-                    not isinstance(evidence, dict)
-                    or evidence.get("event_id") != sdk_event_id
-                    or evidence.get("run_id") != sdk_run_id
-                    or evidence.get("subject") != head["subject"]
-                    or evidence.get("kind") != "run_terminal"
-                ):
-                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
-                public_payload = evidence.get("public_payload")
-                if not isinstance(public_payload, dict):
-                    raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                    coverage = await closure_coverage_tx(
+                        db, task_scope_id=str(receipt["task_scope_id"]), sdk_run_id=sdk_run_id
+                    )
+                    if not coverage.satisfied:
+                        raise ForegroundQueueError("foreground_terminal_closure_pending")
+                    try:
+                        evidence = json.loads(str(receipt["payload_json"]))
+                    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+                        raise ForegroundQueueError(
+                            "foreground_terminal_sdk_evidence_invalid"
+                        ) from exc
+                    if (
+                        not isinstance(evidence, dict)
+                        or evidence.get("event_id") != sdk_event_id
+                        or evidence.get("run_id") != sdk_run_id
+                        or evidence.get("subject") != head["subject"]
+                        or evidence.get("kind") != "run_terminal"
+                    ):
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
+                    public_payload = evidence.get("public_payload")
+                    if not isinstance(public_payload, dict):
+                        raise ForegroundQueueError("foreground_terminal_sdk_evidence_invalid")
                 payload_generation = public_payload.get("generation")
                 if (
                     isinstance(payload_generation, bool)
@@ -1981,15 +2004,19 @@ class ForegroundQueueStore:
                     "generation": generation,
                     "sdk_event_id": sdk_event_id,
                     "sdk_event_hash": sdk_event_hash,
-                    "terminal_gate_receipt_id": gate["gate_receipt_id"],
-                    "terminal_source_sequence": int(
+                    "terminal_authority_kind": "primary_runtime_observation" if gate is None else "task_scope_watermarks",
+                    "terminal_gate_receipt_id": None if gate is None else gate["gate_receipt_id"],
+                    "terminal_source_sequence": None if gate is None else int(
                         gate["terminal_source_sequence"]
                     ),
-                    "terminal_gate_durable_source_sequence": int(
+                    "terminal_gate_durable_source_sequence": None if gate is None else int(
                         gate["durable_source_sequence"]
                     ),
                     "recorded_at": now,
                 }
+                if observed is not None:
+                    terminal_payload["primary_observation_ref"] = observed[0]["evidence_id"]
+                    terminal_payload["primary_observation_hash"] = observed[0]["envelope_sha256"]
                 terminal_hash = canonical_hash(terminal_payload)
                 await db.execute(
                     "INSERT INTO foreground_terminal_receipts(terminal_receipt_id,host_run_id,sdk_run_id,terminal_state,generation,sdk_event_id,sdk_event_hash,receipt_hash,receipt_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -2989,7 +3016,7 @@ class ForegroundQueueStore:
 
     @asynccontextmanager
     async def _connection(self):
-        async with aiosqlite.connect(self._db_path) as connection:
+        async with human_memory_connection(self._db_path) as connection:
             connection.row_factory = aiosqlite.Row
             await connection.execute("PRAGMA foreign_keys=ON")
             await connection.execute("PRAGMA busy_timeout=5000")

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 from deskpet.companion.control_ingress import CompanionControlIngress
 from deskpet.companion.identity_gate import FrozenOwnerIdentity
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceError
@@ -26,6 +28,17 @@ class HumanMemoryControlBinding:
         self._connection_id = None
 
     def authenticate(self, ingress: CompanionControlIngress | None, challenge):
+        self._verify(ingress, challenge)
+        return local_owner_auth()
+
+    @contextmanager
+    def request_scope(self, ingress, challenge):
+        from deskpet.memory.writer_fence import authenticated_memory_request
+        self._verify(ingress, challenge)
+        with authenticated_memory_request(_ConnectionRequestFence(self, ingress, challenge)):
+            yield
+
+    def _verify(self, ingress: CompanionControlIngress | None, challenge):
         if (
             ingress is None
             or challenge is None
@@ -62,4 +75,17 @@ class HumanMemoryControlBinding:
         # Keep the existing single-local-owner namespace and stable evidence
         # authority across reconnects. Connection epochs are admission checks,
         # not a new identity or a changing delivery-idempotency payload.
-        return local_owner_auth()
+
+
+
+class _ConnectionRequestFence:
+    """Keep verified connection facts live until a protected write commits."""
+
+    def __init__(self, binding, ingress, challenge):
+        self._binding = binding
+        self._ingress = ingress
+        self._challenge = challenge
+        self.barrier = ingress.coordinator.barrier
+
+    def verify(self):
+        self._binding._verify(self._ingress, self._challenge)

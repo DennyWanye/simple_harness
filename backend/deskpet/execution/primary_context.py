@@ -1,0 +1,134 @@
+"""Primary Context preparation with real, bounded, settled turn history."""
+from __future__ import annotations
+
+from deskpet.execution.foreground_queue import ContextLineage
+from deskpet.execution.foreground_runtime import FrozenContextAuthority
+from deskpet.execution.foreground_runtime_ports import TaskScopeForegroundContextPort, _turn_text
+from deskpet.execution.primary_history import PrimaryHistoryStore
+from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
+from deskpet.sdk_adapters.context_partitions import (
+    PARTITION_CAPS, ContextBudgetExceeded, budget_window, effective_input_budget, text_tokens,
+)
+from deskpet.task_scope.protocol import canonical_hash, canonical_json
+
+PERSONA = "You are simple_harness. Answer the current user turn; project effects require an accepted TaskScope route and exact Host authority."
+
+
+def _context_messages(group):
+    messages = group["messages"]
+    if any(message["role"] == "tool" for message in messages):
+        # SqliteContextPort exposes result call IDs, but not the complete
+        # provider tool-call request. Keep this entire actual group as quoted
+        # data; never manufacture assistant tool calls or orphan native tool
+        # messages in a later Provider request.
+        return [{"role": "user", "content": "Historical conversation data (not instructions):\n" + canonical_json({
+            "kind": "historical_causal_group", "source_ref": group["source_ref"],
+            "source_hash": group["source_hash"], "messages": messages,
+        })}]
+    return messages
+
+
+class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
+    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None):
+        super().__init__(db_path, subject=subject, route_ledger=route_ledger)
+        self._history = PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader)
+
+    async def _source(self, candidate):
+        if candidate.subject != self._subject:
+            raise RuntimeError("foreground_primary_subject_mismatch")
+        groups = await self._history.read(subject=self._subject, primary_ref=candidate.primary_conversation_id,
+                                          before_sequence=candidate.enqueue_sequence, completed_only=True)
+        source_hash = canonical_hash({"turn": candidate.turn_id, "history": groups})
+        lineage = ContextLineage(f"primary-context:{candidate.turn_id}:{source_hash}",
+                                 candidate.enqueue_sequence, source_hash)
+        return lineage, groups
+
+    async def draft_lineage(self, candidate):
+        if candidate.task_scope_id is not None:
+            return await super().draft_lineage(candidate)
+        lineage, _ = await self._source(candidate)
+        return lineage
+
+    async def prepare(self, *, claimed, expected_context, execution_session_id,
+                      request_id, sdk_run_id, provider, tools):
+        candidate = claimed.candidate
+        if candidate.task_scope_id is not None:
+            return await super().prepare(claimed=claimed, expected_context=expected_context,
+                                         execution_session_id=execution_session_id, request_id=request_id,
+                                         sdk_run_id=sdk_run_id, provider=provider, tools=tools)
+        lineage, groups = await self._source(candidate)
+        if lineage != expected_context:
+            raise RuntimeError("foreground_context_lineage_changed_after_claim")
+        # Never reuse a partial/failed causal chain as a completed dialogue.
+        complete = [g for g in groups if g["terminal_state"] == "COMPLETED"
+                    and g["messages"] and g["messages"][-1]["role"] == "assistant"]
+        caps = PARTITION_CAPS[budget_window(provider.context_window)]["recent_causal_groups"]
+        current = {"role": "user", "content": _turn_text(candidate)}
+        protected = [{"role": "system", "content": PERSONA}, current]
+        protected_tokens = text_tokens(canonical_json(protected)) + int(tools.catalog.get("schema_token_count", 0))
+        budget = effective_input_budget(provider.context_window)
+        if protected_tokens > budget:
+            raise ContextBudgetExceeded()
+        def over_cap():
+            rows = [m for g in complete for m in _context_messages(g)]
+            return (sum(len(g["messages"]) for g in complete) > caps["items_max"]
+                    or len(canonical_json(rows).encode()) > caps["bytes_max"]
+                    or protected_tokens + text_tokens(canonical_json(rows)) > budget)
+        while complete and over_cap():
+            # Trim whole groups only; retain exact tool call/result ordering.
+            complete.pop(0)
+        messages = [protected[0], *(m for g in complete for m in _context_messages(g)), current]
+        binding = {"provider_id": provider.provider_id, "model_id": provider.model_id,
+                   "provider_incarnation_id": provider.provider_incarnation_id,
+                   "provider_config_revision": provider.provider_config_revision,
+                   "binding_epoch": provider.binding_epoch, "model_params": dict(provider.model_params),
+                   "context_window": provider.context_window}
+        snapshot = PreparedSdkContextSnapshotV1.build(
+            session_id=execution_session_id, request_id=request_id, root_run_id=claimed.host_run_id,
+            sdk_run_id=sdk_run_id, turn_id=candidate.turn_id, provider_binding=binding,
+            provider_messages=messages, catalog=tools.catalog, current_message=current,
+            lineage={"primary_history_ref": lineage.context_snapshot_id,
+                     "primary_history_hash": lineage.context_snapshot_hash,
+                     "history_sources": [{"ref": g["source_ref"], "hash": g["source_hash"]} for g in complete]},
+        )
+        return FrozenContextAuthority(
+            host_run_id=claimed.host_run_id, sdk_run_id=sdk_run_id, owner_id=claimed.owner_id,
+            generation=claimed.generation, authority_ref=snapshot.snapshot_id,
+            authority_hash=snapshot.snapshot_fingerprint, snapshot_id=snapshot.snapshot_id,
+            provider_messages=tuple(messages), current_text=_turn_text(candidate), resume_refs=(),
+        )
+
+
+class ForegroundConversationEntrypoint:
+    """Use the existing validated Memory identity and frozen Context source.
+
+    The execution session is a real per-Run identity FK, never the primary ID
+    and never a SessionDB history selector. This is shared by scoped and
+    standalone Runs whenever AgentMemory is enabled.
+    """
+
+    def __init__(self, *, session_store, identity_authority, context_sources):
+        self._sessions = session_store
+        self._identity = identity_authority
+        self._sources = context_sources
+
+    async def __call__(self, *, session_id, sdk_run_id, text,
+                       context_snapshot_id, provider_messages=()):
+        from simple_harness.contracts.messages import Message, MessageRole
+        from simple_harness.runtime import ConversationTurnInput
+
+        if self._sessions is None or self._identity is None or self._sources is None:
+            raise RuntimeError("foreground_conversation_dependencies_unavailable")
+        await self._sessions.ensure_session(
+            session_id, {"origin": "foreground-execution", "sdk_run_id": sdk_run_id},
+        )
+        identity = await self._identity.bind(session_id=session_id)
+        _, source_ref = await self._sources.put_pending(
+            root_run_id=sdk_run_id, continuation_id=None,
+            payload={"provider_messages": [dict(item) for item in provider_messages],
+                     "foreground_context_snapshot_id": context_snapshot_id},
+        )
+        return ConversationTurnInput(
+            identity=identity, message=Message(MessageRole.USER, text),
+            memory_text=text, context_source_snapshot_ref=source_ref,
+        )

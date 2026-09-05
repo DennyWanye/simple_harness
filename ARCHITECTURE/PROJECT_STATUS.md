@@ -9,12 +9,18 @@
 不再只凭全局ready或shared secret，保持原local subject、primary-ID fence及exact effect授权。
 没有新增账户、socket、Rust/TS scope或每次读签名。
 
-P2当前只完成service/API无scope admission：真实SQLite重开与delivery幂等通过，
-显式scope仍校验，没有创建假TaskScope。聚焦29 passed，新增transport request_id重试断言后
-admission窄重测5 passed。**standalone runtime未闭环、UI未接、App/真实Provider未跑**：
-生产context port仍拒绝无scope；terminal observer/queue要求TaskScope gate。
-该共享terminal事务与Dirac S5c T4/T5（occurrence settle/immediate outbox）有明确交叉，
-待主协调同一owner后继续，不占v47、不放宽closure，不将入队视为对话完成。
+P2 runtime本树已通过真实SQLite/Harness + deterministic Provider测试：无scope实际完成、
+重开/终态事务故障恢复、真实消息投影、unscoped队首后scoped FIFO，以及None→生产
+context_route.resume_existing→工具发现/激活→生产write_file→semantic closure/terminal。
+项目effect从真实route/binding验证exact root，保留scoped冻结检查；binding head更新负例不落盘。
+统一terminal_identity先验Host receipt/binding/observation或ExecutionEvidence链，再比raw
+SDK event ID/hash/state；旧式scoped fixture不删除原始证据。helper用于runtime/API共享解释。
+轻量state_changed接现control broadcast空payload，独立合并限时500ms；control请求事务前
+重验原verified connection/epoch/lease，保留原撤销barrier。
+2026-09-05聚焦181 passed（含动态正负、SDK身份替换拒绝、crash/reopen及通知），无App/真实Provider。
+main已惰性注入API三reader/resolver，**依赖Dirac API提交及terminal helper接入后继进行组合验证**。
+**完整历史Memory/evidence/entity来源suppression留下一提交，尚未闭合**；当前候选不得据此
+合main或宣称S6 Task1/2完成。create_new Manual路径也未有新UI验收，不走旧目录卡/external wait。
 本记录仅为隔离分支状态，未合main；不表示S6 Task1/2或program验收完成。
 
 实现/命令/原始证据hash与交叉点见

@@ -68,10 +68,18 @@ single root as ``workspace_root`` = canonical path with resolution kind
 ``legacy`` (the Session-only ``project_bound`` validator is bypassed on
 purpose), and zero/multi root as ``projectless`` with no root.  "Project-bound"
 for this gate therefore means *an exact frozen root exists*; ``projectless`` /
-``missing`` / no root is rejected.
+``missing`` / no root is rejected for scoped admission. An explicit
+PrimaryRunWorkContext keeps admission scope/root empty and derives each project
+effect root from its exact verified route/binding envelope, only during dispatch.
 """
 
 from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
+from dataclasses import replace
+from deskpet.types.task_work_context import PrimaryRunWorkContext
+
 
 import inspect
 import time
@@ -87,6 +95,24 @@ from simple_harness.tools.runtime_catalog import ToolEffectClass
 from deskpet.execution.evidence_ingress import ObjectiveEventSpec
 from deskpet.task_scope.store import CanonicalTaskScopeStore, TaskScopeNotFound, _uuid
 from deskpet.task_scope.workspace_bindings import WorkspaceBindingError
+
+_primary_effect_root = ContextVar("primary_effect_root", default=None)
+
+
+def project_tool_execution_context(base, context=None):
+    """Apply only the exact verified effect root, for this dispatch lifetime."""
+    projection = _primary_effect_root.get()
+    if projection is None:
+        return base
+    envelope, root = projection
+    if (base.run_id != envelope.run_id.value or base.effect_id != envelope.effect_id.value
+            or base.call_id != envelope.call_id.value):
+        raise RuntimeError("primary_effect_context_identity_mismatch")
+    if context is not None and (context.task_execution_envelope != envelope or context.run_id != envelope.run_id or context.effect_id != envelope.effect_id):
+        raise RuntimeError("primary_effect_context_identity_mismatch")
+    return replace(base, workspace=root, write_scope_root=root, binding_epoch=envelope.binding_set_revision)
+
+
 
 EFFECT_GATE_PUBLIC_MESSAGE = (
     "Project effect was rejected by the workspace effect gate; "
@@ -282,13 +308,14 @@ class EffectGate:
         authority = self._authority_resolver(run_id)
         work = authority.task_work_context
         resolution = dict(getattr(authority, "workspace_resolution", None) or {})
-        if envelope.task_scope_id != work.task_scope_id:
+        primary = isinstance(work, PrimaryRunWorkContext)
+        if not primary and envelope.task_scope_id != work.task_scope_id:
             return await self._reject_and_memo(
                 context, reject("effect_gate_frozen_scope_mismatch")
             )
         frozen_root = work.workspace_root
         kind = str(resolution.get("kind") or "")
-        if kind in {"projectless", "missing"} or not frozen_root:
+        if not primary and (kind in {"projectless", "missing"} or not frozen_root):
             return await self._reject_and_memo(
                 context, reject("effect_gate_projectless_project_effect")
             )
@@ -321,7 +348,7 @@ class EffectGate:
         receipt_id: str,
         scope_id: str,
         envelope: Any,
-        frozen_root: str,
+        frozen_root: str | None,
     ) -> str | None:
         """Steps 2/4/3(cont.)/5/6 over one read snapshot; returns the reason code or None."""
 
@@ -344,7 +371,7 @@ class EffectGate:
                     return exc.code
                 await self._fault("effect-gate-after-verify")
                 # 3 (cont.). verified root must be the frozen write root
-                if verified.root.canonical_path != frozen_root:
+                if frozen_root is not None and verified.root.canonical_path != frozen_root:
                     return "effect_gate_frozen_root_mismatch"
                 # 5. strict head == receipt revision (same snapshot)
                 superseded = await self._head_mismatch_tx(db, envelope, scope_id)
@@ -357,6 +384,24 @@ class EffectGate:
                 return None
             finally:
                 await db.rollback()
+
+    @asynccontextmanager
+    async def execution_scope(self, context, tool_name):
+        """Reverify the routed root just before dispatch; never mutate Run admission."""
+        authority = self._authority_resolver(context.run_id)
+        if not isinstance(authority.task_work_context, PrimaryRunWorkContext) or not self._is_project_effect(context.run_id, tool_name):
+            yield
+            return
+        envelope = context.task_execution_envelope
+        receipt = await self._route_ledger.read_route_receipt(context.run_id.value, envelope.route_receipt_id)
+        if receipt is None:
+            raise RuntimeError("workspace_binding_route_authority_missing")
+        verified = await self._binding_store.verify_task_execution_envelope(envelope, receipt)
+        token = _primary_effect_root.set((envelope, verified.root.canonical_path))
+        try:
+            yield
+        finally:
+            _primary_effect_root.reset(token)
 
     async def _head_mismatch_tx(
         self, db: aiosqlite.Connection, envelope: Any, scope_id: str

@@ -3,7 +3,8 @@
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
 2026-09-05 S6隔离分支新增control verified connection复用与无scope admission，聚焦29 passed；
-standalone runtime因共享terminal事务与S5c交叉尚未闭环，UI未接。详见
+standalone/dynamic route→生产effect/terminal identity及状态通知聚焦181 passed；
+完整历史来源suppression未闭合，UI/API组合待验证，不可合main。详见
 [实施交接](../plans/2026-09-05-s6-primary-preparation/IMPLEMENTATION.md)，不改变main完成度。
 
 2026-09-05 当前接续已安装 Harness 0.7.2 / Memory 0.6.3，两个真实 queue.enqueue root 完成

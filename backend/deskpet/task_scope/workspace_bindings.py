@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 import aiosqlite
+from deskpet.memory.writer_fence import human_memory_connection
 from simple_harness import (
     EMPTY_WORKSPACE_BINDING_ROOT_SET_DIGEST,
     CanonicalWorkspaceRoot,
@@ -1436,13 +1437,10 @@ class WorkspaceBindingAuthorityStore:
 
     @asynccontextmanager
     async def _connection(self) -> AsyncIterator[aiosqlite.Connection]:
-        db = await aiosqlite.connect(self._db_path)
-        db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys=ON")
-        try:
+        async with human_memory_connection(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA foreign_keys=ON")
             yield db
-        finally:
-            await db.close()
 
 
 __all__ = [

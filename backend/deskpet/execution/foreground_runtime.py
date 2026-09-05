@@ -321,6 +321,7 @@ class ForegroundRuntimeExecutionAuthority:
         run_binding_reader: Callable[[str], object] | None = None,
         endpoint_identity_resolver: Callable[[Mapping[str, object]], str | None] | None = None,
         conversation_entrypoint: Callable[..., Awaitable[object]] | None = None,
+        state_changed: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -362,6 +363,30 @@ class ForegroundRuntimeExecutionAuthority:
         self._control_wake = asyncio.Event()
         self._closed = False
         self._last_error: Exception | None = None
+        self._state_changed = state_changed
+        self._notification_task: asyncio.Task[None] | None = None
+        self._notification_pending = False
+
+    def _notify_state_changed(self) -> None:
+        """Best-effort invalidation after commit; coalesce without delaying the driver."""
+        if self._state_changed is None or self._closed:
+            return
+        self._notification_pending = True
+        if self._notification_task is None or self._notification_task.done():
+            self._notification_task = asyncio.create_task(
+                self._flush_state_changes(), name="foreground-state-invalidation"
+            )
+
+    async def _flush_state_changes(self) -> None:
+        while self._notification_pending and not self._closed:
+            self._notification_pending = False
+            try:
+                async with asyncio.timeout(0.5):
+                    await self._state_changed()
+            except Exception:
+                # Reconnection reads SQLite; this hint is neither ledger nor ACK.
+                # Never publish callback errors, which may contain private data.
+                pass
 
     @property
     def subject(self) -> str:
@@ -409,6 +434,7 @@ class ForegroundRuntimeExecutionAuthority:
         if self._closed:
             raise ForegroundRuntimeError("foreground_runtime_closed")
         self._control_wake.set()
+        self._notify_state_changed()
         await self.after_enqueue(subject=subject)
 
     async def drain(self) -> None:
@@ -420,6 +446,9 @@ class ForegroundRuntimeExecutionAuthority:
 
     async def close(self, *, timeout: float = 5.0) -> None:
         self._closed = True
+        if self._notification_task is not None:
+            self._notification_task.cancel()
+            await asyncio.gather(self._notification_task, return_exceptions=True)
         task = self._driver
         # ``_driver`` 为 None 有两种情形，处理不同：
         #  · 从未起过驱动 → 没有租约可清，照旧提前返回；
@@ -530,6 +559,7 @@ class ForegroundRuntimeExecutionAuthority:
             raise
         except Exception as exc:  # noqa: BLE001 - durable state remains recoverable
             self._last_error = exc
+            self._notify_state_changed()
             # 只记 error_code 时，SQLite IntegrityError 这类异常会退化成一个无从下手的
             # 类名（实测 20260903T1700-wsentry 卡住时只看到 "IntegrityError"）。
             # 追加异常类型与消息：这条日志只进 Host 日志、不对模型可见，且内容是
@@ -568,6 +598,7 @@ class ForegroundRuntimeExecutionAuthority:
             )
             if admission is None:
                 return False
+            self._notify_state_changed()
             snapshot = await self._store.current_snapshot(self._subject)
             if snapshot is None:
                 raise ForegroundRuntimeError("foreground_runtime_claim_disappeared")
@@ -665,9 +696,8 @@ class ForegroundRuntimeExecutionAuthority:
         )
         _check_identity(bound_provider)
         candidate = claimed.candidate
-        if (
-            candidate.task_scope_id is None
-            or candidate.binding_set_revision < 1
+        if candidate.task_scope_id is not None and (
+            candidate.binding_set_revision < 1
             or candidate.binding_set_receipt_id is None
             or candidate.binding_set_receipt_hash is None
         ):
@@ -676,28 +706,30 @@ class ForegroundRuntimeExecutionAuthority:
             raise ForegroundRuntimeError(
                 "foreground_runtime_admission_receipt_missing"
             )
-        host_ref = claimed.admission_receipt_id
-        host_hash = claimed.admission_receipt_hash
-        route_receipt_id = _uuid(
-            f"foreground-initial-route:{host_run_id}:{host_ref}:{host_hash}"
-        )
-        route = ContextRouteReceipt(
-            route_receipt_id,
-            sdk_run_id,
-            None,
-            None,
-            TaskScopeRoute.RESUME_EXISTING,
-            candidate.task_scope_id,
-            candidate.binding_set_revision,
-            context.resume_refs,
-            schema_version=3,
-            binding_set_receipt_id=candidate.binding_set_receipt_id,
-            binding_set_receipt_hash=candidate.binding_set_receipt_hash,
-            origin=ContextRouteOrigin.HOST_INITIAL,
-            host_authority_ref=host_ref,
-            host_authority_hash=host_hash,
-        )
-        await self._context.verify_initial_route(route)
+        route = None
+        if candidate.task_scope_id is not None:
+            host_ref = claimed.admission_receipt_id
+            host_hash = claimed.admission_receipt_hash
+            route_receipt_id = _uuid(
+                f"foreground-initial-route:{host_run_id}:{host_ref}:{host_hash}"
+            )
+            route = ContextRouteReceipt(
+                route_receipt_id,
+                sdk_run_id,
+                None,
+                None,
+                TaskScopeRoute.RESUME_EXISTING,
+                candidate.task_scope_id,
+                candidate.binding_set_revision,
+                context.resume_refs,
+                schema_version=3,
+                binding_set_receipt_id=candidate.binding_set_receipt_id,
+                binding_set_receipt_hash=candidate.binding_set_receipt_hash,
+                origin=ContextRouteOrigin.HOST_INITIAL,
+                host_authority_ref=host_ref,
+                host_authority_hash=host_hash,
+            )
+            await self._context.verify_initial_route(route)
         turn_payload = _candidate_turn_payload(candidate)
         run_binding = bound_provider.binding
         catalog_generation = int(run_binding.catalog_generation)
@@ -726,8 +758,8 @@ class ForegroundRuntimeExecutionAuthority:
                 "snapshot_id": context.snapshot_id,
                 "run_binding": run_binding.to_record(),
                 "tool_authority": dict(tools.run_start_record),
-                "initial_route_receipt_id": route.receipt_id,
-                "initial_route_receipt_hash": route.receipt_hash,
+                "initial_route_receipt_id": None if route is None else route.receipt_id,
+                "initial_route_receipt_hash": None if route is None else route.receipt_hash,
             },
             "turn": turn_payload,
         }
@@ -749,7 +781,7 @@ class ForegroundRuntimeExecutionAuthority:
             {
                 "sdk_run_id": sdk_run_id,
                 "execution_request_hash": execution_request_hash,
-                "route_receipt_hash": route.receipt_hash,
+                "route_receipt_hash": None if route is None else route.receipt_hash,
             }
         )
         await self._store.record_start_intent(
@@ -767,6 +799,7 @@ class ForegroundRuntimeExecutionAuthority:
             generation=claimed.generation,
             idempotency_key=f"runtime-sdk-bind:{host_run_id}",
         )
+        self._notify_state_changed()
         if self._effect_gate is not None:
             self._effect_gate.register(
                 store=self._store,
@@ -888,7 +921,7 @@ class ForegroundRuntimeExecutionAuthority:
                     provider_budget_fingerprint=budget_fingerprint,
                     conversation=conversation,
                     initial_route_receipt=route,
-                    initial_route_receipt_hash=route.receipt_hash,
+                    initial_route_receipt_hash=None if route is None else route.receipt_hash,
                 )
             except Exception as exc:
                 await self._store.record_start_observation(
@@ -988,13 +1021,14 @@ class ForegroundRuntimeExecutionAuthority:
                 sdk_event_id=result_ref,
                 idempotency_key=f"runtime-running:{host_run_id}",
             )
+        self._notify_state_changed()
         self._record_audit(
             "foreground.runtime.bound",
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
             generation=claimed.generation,
-            route_receipt_id=route.receipt_id,
-            route_receipt_hash=route.receipt_hash,
+            route_receipt_id=None if route is None else route.receipt_id,
+            route_receipt_hash=None if route is None else route.receipt_hash,
         )
         await self._deliver_controls(
             host_run_id=host_run_id,
@@ -1078,6 +1112,7 @@ class ForegroundRuntimeExecutionAuthority:
                 else None
             ),
         )
+        self._notify_state_changed()
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         if self._effect_gate is not None:
@@ -1152,6 +1187,7 @@ class ForegroundRuntimeExecutionAuthority:
                         # moot and the superseding signal delivers next pass.
                         continue
                     raise
+                self._notify_state_changed()
                 self._record_audit(
                     "foreground.runtime.paused",
                     host_run_id=host_run_id,
@@ -1317,7 +1353,6 @@ class SqliteSdkTerminalObserver:
         owner_id: str,
         generation: int,
     ) -> AuthenticatedTerminalObservation | None:
-        del owner_id
         await self._ingress.wait_idle(sdk_run_id)
         record = self._ingress.query(sdk_run_id)
         raw_state = str(
@@ -1354,6 +1389,37 @@ class SqliteSdkTerminalObserver:
             raise ForegroundRuntimeError(
                 "foreground_sdk_terminal_evidence_mismatch"
             )
+        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+        evidence_ingress = ExecutionEvidenceIngress(self._db_path, fault_inject=self._fault_inject)
+        effective_scope = await evidence_ingress.resolve_run_scope(sdk_run_id)
+        read_messages = getattr(self._runtime_stack, "read_primary_run_messages", None)
+        if callable(read_messages):
+            async with aiosqlite.connect(self._db_path) as source_db:
+                cursor = await source_db.execute(
+                    "SELECT t.turn_json FROM foreground_runs r "
+                    "JOIN foreground_turns t ON t.turn_id=r.turn_id "
+                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
+                    "WHERE r.host_run_id=? AND b.sdk_run_id=? AND r.subject=?",
+                    (host_run_id, sdk_run_id, subject),
+                )
+                turn = await cursor.fetchone()
+            if turn is None:
+                raise ForegroundRuntimeError("foreground_terminal_run_binding_missing")
+            text = json.loads(turn[0])["payload"]["text"]
+            messages = read_messages(sdk_run_id, current_text=text)
+            from deskpet.execution.primary_history import record_terminal_observation
+            primary_event_id, primary_event_hash = await record_terminal_observation(
+                self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
+                owner_id=owner_id, generation=generation, terminal=terminal,
+                sdk_evidence=sdk_evidence, messages=messages,
+                error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
+            )
+            if effective_scope is None:
+                if self._fault_inject is not None:
+                    self._fault_inject("primary-terminal-observed")
+                return AuthenticatedTerminalObservation(terminal, primary_event_id, primary_event_hash)
+        elif effective_scope is None:
+            raise ForegroundRuntimeError("foreground_primary_message_reader_unavailable")
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             # S5b Task 6 (review F-6): the durable run_terminal row is looked up
@@ -1395,7 +1461,7 @@ class SqliteSdkTerminalObserver:
             self._db_path, fault_inject=self._fault_inject
         )
         if row is None:
-            if authority is None or authority["task_scope_id"] is None:
+            if authority is None or effective_scope is None:
                 raise ForegroundRuntimeError(
                     "foreground_terminal_task_scope_authority_missing"
                 )
@@ -1470,7 +1536,7 @@ class SqliteSdkTerminalObserver:
             # the sequence is allocated under the write lock, never read
             # outside a transaction.
             await evidence_ingress.ingest_terminal(
-                task_scope_id=str(authority["task_scope_id"]),
+                task_scope_id=effective_scope.task_scope_id,
                 evidence=evidence,
             )
             # The stable code is now durable in the run_terminal row: release
