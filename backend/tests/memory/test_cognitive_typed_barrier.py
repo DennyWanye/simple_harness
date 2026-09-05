@@ -41,7 +41,7 @@ async def test_selected_memory_barrier_without_incidental_history_suppression(
                         "function": {
                             "name": "context_route",
                             "arguments": json.dumps(
-                                {"route": "memory_standalone", "query": "concise"}
+                                {"route": "memory_standalone", "query": "concise", "memory_types": ["semantic"]}
                             ),
                         },
                     }

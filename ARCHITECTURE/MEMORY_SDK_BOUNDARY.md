@@ -1,5 +1,11 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 模型召回类型选择局部完成
+
+最后更新：2026-09-06。memory_standalone工具显式类型经Host校验传入已安装Memory0612公共计划，保留Host身份/权限/预算；显式长期选择不偷偷附带短期查询。成功类型枚举写既有Host审计记录，原proposal仅hash，非公共SDK完整参数回读。
+独立叶子最终77项通过（50.57秒、峰值191MiB），包括实际选中来源/最终出站/任务披露链；没有真实Provider或native。固定源码独审待回传，完整类型质量、短期与调度、审计UI及原program仍未完成。
+[契约、命令、历史红与证据边界](../plans/2026-09-06-model-recall-selection/RESULTS.md)。
+
 ## 2026-09-05 Memory0612 installed credential successor
 
 Independent artifact/exact-installed review ACCEPT, including captured actual Host

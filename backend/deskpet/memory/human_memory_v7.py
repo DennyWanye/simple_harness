@@ -268,6 +268,7 @@ class HumanMemoryV7Runtime:
         run_id: str,
         turn_ordinal: int,
         now: float | None = None,
+        memory_types: tuple[str, ...] | None = None,
     ) -> Any:
         """Execute a Host-authored typed RecallPlan; degraded lanes stay stable."""
 
@@ -290,6 +291,14 @@ class HumanMemoryV7Runtime:
             RecallSelectorDomain,
         )
 
+        from deskpet.memory.recall_selection import (
+            HOST_DEFAULT_MEMORY_TYPES, REQUESTABLE_MEMORY_TYPES, parse_memory_types,
+        )
+
+        explicit_selection = memory_types is not None
+        requested_names = (
+            parse_memory_types(memory_types) if explicit_selection else HOST_DEFAULT_MEMORY_TYPES
+        )
         manager = await self.manager()
         principal = self.principal()
         moment = time.time() if now is None else float(now)
@@ -316,11 +325,10 @@ class HumanMemoryV7Runtime:
             ).hexdigest(),
             1,
         )
-        memory_types = (
-            LongTermMemoryType.SEMANTIC,
-            LongTermMemoryType.EPISODE,
-            LongTermMemoryType.PROCEDURE,
-        )
+        available_types = tuple(LongTermMemoryType(name) for name in (
+            REQUESTABLE_MEMORY_TYPES if explicit_selection else HOST_DEFAULT_MEMORY_TYPES
+        ))
+        requested_types = tuple(LongTermMemoryType(name) for name in requested_names)
         context = RecallContext(
             run_id,
             subject,
@@ -329,7 +337,7 @@ class HumanMemoryV7Runtime:
             moment + 60.0,
             query,
             None,
-            memory_types,
+            available_types,
             False,
             (RecallSelectorDomain.MEMORY_TYPE,),
             (RecallRetrievalMode.FULL_TEXT,),
@@ -357,7 +365,7 @@ class HumanMemoryV7Runtime:
             context.context_hash,
             context.context_revision,
             context.query,
-            context.available_memory_types,
+            requested_types,
             context.short_horizon_allowed,
             context.allowed_selector_domains,
             context.allowed_retrieval_modes,
@@ -378,6 +386,10 @@ class HumanMemoryV7Runtime:
             manager, principal=principal, context=context, plan=plan, now=moment,
             caller="foreground_recall",
         )
+        if explicit_selection:
+            # The model requested long-term types only. Do not silently add a
+            # second, unrequested source lane or imply it was model-selected.
+            return RecallLanes(execution=execution, short_horizon=None, short_horizon_requested=False)
         try:
             short_horizon = await manager.recall_short_horizon(
                 principal=principal,
@@ -398,6 +410,7 @@ class RecallLanes:
     execution: Any
     short_horizon: Any | None
     short_history_dependencies: Mapping[str, Any] | None = None
+    short_horizon_requested: bool = True
 
     def __post_init__(self):
         if self.short_history_dependencies is not None:
@@ -412,9 +425,9 @@ class RecallLanes:
             getattr(code, "value", str(code))
             for code in self.execution.degradation_codes
         )
-        if self.short_horizon is None:
+        if self.short_horizon_requested and self.short_horizon is None:
             codes = (*codes, "short_horizon_unavailable")
-        elif self.short_horizon.degradation_code is not None:
+        elif self.short_horizon is not None and self.short_horizon.degradation_code is not None:
             codes = (
                 *codes,
                 getattr(

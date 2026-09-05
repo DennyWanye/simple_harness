@@ -145,7 +145,7 @@ async def test_new_recall_four_tuple_checked_before_next_physical_provider(tmp_p
         sends.append(request)
         message = ({"role": "assistant", "content": None, "tool_calls": [{"id": "actual-recall-call",
             "type": "function", "function": {"name": "context_route", "arguments": json.dumps(
-                {"route": "memory_standalone", "query": "README"})}}]} if len(sends) == 1
+                {"route": "memory_standalone", "query": "README", "memory_types": ["semantic", "episode", "procedure"]})}}]} if len(sends) == 1
             else {"role": "assistant", "content": "Actual recalled answer"})
         return httpx.Response(200, json={"id": f"p-{len(sends)}", "model": "model-a", "choices": [
             {"message": message, "finish_reason": "tool_calls" if len(sends) == 1 else "stop"}],

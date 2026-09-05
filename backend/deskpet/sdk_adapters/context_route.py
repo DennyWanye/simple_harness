@@ -34,6 +34,7 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
+from deskpet.memory.recall_selection import REQUESTABLE_MEMORY_TYPES, parse_memory_types
 
 ROUTES = (
     "direct_standalone",
@@ -52,6 +53,11 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "properties": {
         "route": {"type": "string", "enum": list(ROUTES)},
         "query": {"type": "string", "maxLength": _MAX_TEXT},
+        "memory_types": {
+            "type": "array", "minItems": 1, "maxItems": 4,
+            "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
+            "description": "Required for memory_standalone. Select only the needed long-term types: semantic (facts/preferences), episode (past events), procedure (applicable steps), prospective (future intentions/reminders). Selection grants no permission to disclose or execute.",
+        },
         "task_scope_id": {"type": "string", "maxLength": 128},
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
@@ -172,6 +178,7 @@ class ContextRouteToolService:
         binding: Mapping[str, Any] | None = None,
         extras: Mapping[str, Any] | None = None,
         recall_refs: tuple[str, ...] = (),
+        recall_types: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -209,7 +216,13 @@ class ContextRouteToolService:
             proposal=proposal,
             verdict="accepted",
             decision_id=f"route-decision:{run_id}:{effect_id}",
-            detail={"route": route.value, "task_scope_id": task_scope_id},
+            detail={
+                "route": route.value, "task_scope_id": task_scope_id,
+                **({"recall_selection": {
+                    "origin": "model_proposal",
+                    "requested_memory_types": list(recall_types),
+                }} if recall_types else {}),
+            },
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
@@ -317,10 +330,17 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_recall_query_required",
             )
+        try:
+            memory_types = parse_memory_types(proposal.get("memory_types"))
+        except ValueError as exc:
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal, str(exc),
+            )
         from deskpet.memory.human_memory_v7 import project_recall_fragments
 
         execution = await self._recall_executor(
-            query=query, run_id=run_id, turn_ordinal=turn_ordinal
+            query=query, run_id=run_id, turn_ordinal=turn_ordinal,
+            memory_types=memory_types,
         )
         fragments = project_recall_fragments(execution)
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
@@ -332,6 +352,7 @@ class ContextRouteToolService:
             route=TaskScopeRoute.MEMORY_STANDALONE,
             proposal=proposal,
             recall_refs=refs,
+            recall_types=memory_types,
             extras={
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),

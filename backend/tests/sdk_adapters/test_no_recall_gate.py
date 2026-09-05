@@ -571,7 +571,7 @@ async def test_memory_standalone_route_returns_typed_fragments(gate) -> None:
         recall_executor=recall_executor,
     )
     result = await tool.handle_context_route(
-        {"route": "memory_standalone", "query": "concise report"}
+        {"route": "memory_standalone", "query": "concise report", "memory_types": ["semantic"]}
     )
     assert "context_route_receipt" in result, result
     receipt = result["context_route_receipt"]
