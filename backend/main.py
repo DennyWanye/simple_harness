@@ -3196,6 +3196,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             _state_db_path,
             subject="deskpet-local-owner-v1",
             policy=_primary_history_policy("deskpet-local-owner-v1"),
+            stack_getter=lambda: _sdk_runtime_stack,
             route_ledger=_foreground_route_ledger(),
             settled_run_reader=lambda run_id, **kwargs: _sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
         ),
@@ -8296,6 +8297,8 @@ async def _build_product_sdk_runtime_stack(
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
 
+    from deskpet.task_scope.disclosure import ScopeDisclosureReader
+    scope_disclosure = ScopeDisclosureReader(_state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
     _context_route_service = ContextRouteToolService(
         service_factory_getter=lambda: service_context.get(
             "human_memory_host_service_factory"
@@ -8309,6 +8312,8 @@ async def _build_product_sdk_runtime_stack(
         ),
         tool_context_getter=active_product_tool_context,
         recall_executor=_human_memory_v7.typed_recall,
+        scope_disclosure_reader=scope_disclosure.read,
+        producer_dependencies_reader=scope_disclosure.producer_dependencies,
     )
 
     async def context_route_handler(arguments, _context):

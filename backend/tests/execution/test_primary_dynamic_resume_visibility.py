@@ -14,7 +14,21 @@ from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
 from tests.execution.test_primary_foreground_runtime import build
 
 @pytest.mark.asyncio
-async def test_dynamic_resume_does_not_send_unproved_scope_carrier(tmp_path):
+@pytest.mark.parametrize("fault", ["missing_manifest", "text_bytes", "scope_identity"])
+async def test_dynamic_resume_does_not_send_unproved_scope_carrier(tmp_path, monkeypatch, fault):
+    # Inject at the ordinary projection boundary; actual route/effect/SDK ledger
+    # remain production. Verifier independently reconstructs original sources.
+    from deskpet.task_scope.disclosure import ScopeDisclosureReader
+    original_read = ScopeDisclosureReader.read
+    async def corrupt_read(self, *args):
+        package = await original_read(self, *args)
+        if fault == "missing_manifest":
+            package.pop("disclosure_manifest")
+        elif fault == "scope_identity":
+            package["task_scope_id"] = "wrong-owned-scope"
+        package["disclosure"]["fields"]["title"] = "EXTERNAL_SCOPE_CANARY_591"
+        return package
+    monkeypatch.setattr(ScopeDisclosureReader, "read", corrupt_read)
     state = tmp_path / 'state.db'
     service = HumanMemoryHostServiceFactory(state, await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
     await service.open_primary()

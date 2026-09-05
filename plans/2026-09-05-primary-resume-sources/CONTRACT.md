@@ -77,10 +77,9 @@ For mixed old scopes, retain verified structural fields and independently proven
 text groups, report missing field names/reasons without their text. Use current
 USER request and real scope binding to continue work; this is a reduced honest
 projection, not empty history and not a fabricated complete package. If essential
-instructions are absent, accurately explain that missing context. Whether an
-entirely provenance-less legacy scope may continue with structural fields alone
-is a coordinator product/compatibility decision; do not silently use that case to
-turn the current initial-scoped positive green. The decisive restored positive
+instructions are absent, accurately explain that missing context. Coordinator has approved continuation of entirely provenance-less legacy scopes
+with verified structural fields, real binding and current USER. This case remains
+separate from complete-source positives. The decisive restored positive
 must carry actual source-bound title/goal or a later real mutation, plus effect
 and terminal. Preserve a separate legacy-gap case.
 
@@ -136,3 +135,55 @@ Agreed short proof v2 exact top-level keys: schema_version/evidence/recall/
 short_horizon; short entries audit_id/chunk_ref/content_hash. Preserve v1 parsing
 and all old archives. ResumePackage manifest is deliberately separate from this
 short extension pending Host source-contract review; it is not a Memory binding.
+
+## Implemented candidate (2026-09-05)
+
+One deterministic Host reader in task_scope/disclosure.py; no new ledger or archive
+rewrite. Actual successful CREATE_NEW result stores producer_dependencies captured
+before the operation. Retained title/goal must match original canonical fields,
+real public SDK effect arguments, exact route receipt and reconstructed pre-effect
+consumption prefix. It never points at a future terminal. A later goal mutation,
+even to identical text, prevents attributing that goal to the create producer.
+Old mutation operations/checkpoint metadata/binding paths remain explicit field
+gaps; their source reconstruction is not claimed complete in this slice.
+
+Initial scoped preparation keeps its original exact Host lineage/route authority
+but sends only the filtered package; immutable start metadata freezes the package.
+The guard crosschecks actual public SDK start bytes and Host initial receipt.
+Dynamic resume and search return the same renderer's packages; actual tool results
+are reverified at each Provider entry. Search effect IDs come from existing Host
+harness_evidence_reservations and SDK public read_effect, not private SDK SQL.
+Project page-in can only contribute exact initial projection bytes; an unknown
+history carrier cannot become a complete producer proof. Skill configuration is
+separate. No new ordinary raw archive/block references are emitted. Generic
+page-in feature completeness/native UI is not asserted by this slice.
+
+Manifest commits original source/full-view hashes, actual retained UTF8 hash,
+fragment producer identities, dependency union and explicit missing fields. It is
+reconstructed from immutable materialized views; fresh Memory suppression checks
+still run on all retained dependencies at outbound, and terminal carries the
+resulting source union for inheritance. Recursion is bounded32, producers256,
+text fragments4096 UTF8 bytes; scope metadata is deeply frozen.
+
+Tests use real Host SQLite + installed public Harness0.7.2 + fixed Memory0.6.6,
+current tracked helper7dcfce8b (v1 scope proof; no short claim), deterministic
+Provider. Real public MEMORY-only materialization/suppression uses the coordinator's
+existing helper with HostEvidenceAuthority. Fourteen new cases: initial/dynamic/
+search × production source create/legacy gap/EVIDENCE suppression/MEMORY-only
+suppression, all file effect + terminal; plus actual start bytes/binding mismatch
+reject before Provider. Dynamic malformed manifest/bytes/scope cases use real
+route/effect persistence and reject second physical send/no replay.
+
+```sh
+PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-history/venv066/bin/python -m pytest backend/tests/execution/test_primary_foreground_runtime.py backend/tests/execution/test_primary_dynamic_resume_visibility.py backend/tests/execution/test_primary_history_outbound.py backend/tests/execution/test_primary_create_new_runtime.py backend/tests/execution/test_scope_disclosure_runtime.py backend/tests/sdk_adapters/test_primary_provider_preflight.py backend/tests/sdk_adapters/test_provider_timeout_is_a_safety_net.py backend/tests/sdk_adapters/test_product_host_ports.py -q -p no:cacheprovider
+```
+
+96 passed in62.94s, exit0. Final stricter duplicate start-snapshot check: the two
+start/binding negatives rerun2 passed in1.78s, exit0. This replaces the previous
+initial-scoped functional red, not full program/native or all historical producer
+coverage. Independent review required before main integration.
+
+Ignored evidence in `.local-test-evidence/2026-09-05/primary-history/`:
+- scope-combined.log SHA256 ec37fceb69102b88fc570778438b8107cd8ec1d4ca4b7e1348e64c25ae2cb060
+- scope-start-bytes-final.log SHA256 4d30655d6add2f9c65a7578e48ebb39f379803dd59124a0ea4fe805dbd27ec20
+Original scoped red log remains unchanged. No App/Provider/main/pin/SDK changes.

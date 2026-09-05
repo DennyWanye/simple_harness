@@ -2,6 +2,10 @@
 
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
+2026-09-05 scoped普通投影恢复候选：initial/resume/search实际manifest、MEMORY-only抑制后
+结构effect/terminal相邻96绿；最终start字节负例2绿。原initialscoped红已恢复，仍待独立review，
+不声称所有旧producer/short/native完成。见[来源契约](../plans/2026-09-05-primary-resume-sources/CONTRACT.md)。
+
 2026-09-05 Primary history runtime隔离切片94项聚焦绿，**预先scoped ResumePackage首Provider仍有1项P1红**；
 后继动态ResumePackage漏发纠正21项聚焦绿；来源功能闭合及其他carrier完整性审计仍未完成。
 固定API/helper已入树；后继no_recall origin纠正，相邻合跑41绿/初始scoped1红，exit1。

@@ -41,11 +41,12 @@ def _context_messages(group):
 
 
 class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
-    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None):
+    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None, stack_getter=None):
         super().__init__(db_path, subject=subject, route_ledger=route_ledger)
         self._history = PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
         self._history_policy = policy
         self._history_path = db_path
+        self._stack_getter = stack_getter
 
     async def _source(self, candidate):
         if candidate.subject != self._subject:
@@ -75,9 +76,9 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                       request_id, sdk_run_id, provider, tools):
         candidate = claimed.candidate
         if candidate.task_scope_id is not None:
-            return await super().prepare(claimed=claimed, expected_context=expected_context,
-                                         execution_session_id=execution_session_id, request_id=request_id,
-                                         sdk_run_id=sdk_run_id, provider=provider, tools=tools)
+            return await self._prepare_scoped(claimed=claimed, expected_context=expected_context,
+                execution_session_id=execution_session_id, request_id=request_id,
+                sdk_run_id=sdk_run_id, provider=provider, tools=tools)
         lineage, groups = await self._source(candidate)
         if lineage != expected_context:
             raise RuntimeError("foreground_context_lineage_changed_after_claim")
@@ -131,6 +132,35 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             provider_messages=tuple(messages), current_text=_turn_text(candidate), resume_refs=(),
             visibility_dependencies=proof,
         )
+
+
+    async def _prepare_scoped(self, *, claimed, expected_context, execution_session_id,
+                              request_id, sdk_run_id, provider, tools):
+        from dataclasses import replace
+        from deskpet.task_scope.disclosure import render_scope_disclosure
+        candidate = claimed.candidate
+        opened = await self._open(candidate.task_scope_id, source_id=expected_context.context_snapshot_id)
+        self._verify_binding(candidate, opened.resume_package)
+        if opened.resume_package_hash != expected_context.context_snapshot_hash:
+            raise RuntimeError("foreground_context_lineage_changed_after_claim")
+        if self._stack_getter is None:
+            raise RuntimeError("scope_disclosure_reader_missing")
+        disclosure = current_disclosure(run_id=sdk_run_id, subject=self._subject, request_id=request_id)
+        package = await render_scope_disclosure(db_path=self._history_path, package=opened.resume_package,
+            subject=self._subject, stack=self._stack_getter(), policy=self._history_policy,
+            disclosure_context=disclosure)
+        proof = package["disclosure_manifest"]["dependencies"]
+        proof = dependencies([{"evidence_id": candidate.evidence_id, "envelope_hash": candidate.evidence_hash},
+                              *proof["evidence"]], proof["recall"])
+        async with aiosqlite.connect(self._history_path) as db:
+            db.row_factory = aiosqlite.Row
+            if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,
+                    dependencies=proof, disclosure_context=disclosure):
+                raise RuntimeError("primary_context_dependencies_not_visible")
+        context = await super().prepare(claimed=claimed, expected_context=expected_context,
+            execution_session_id=execution_session_id, request_id=request_id,
+            sdk_run_id=sdk_run_id, provider=provider, tools=tools, ordinary_projection=package)
+        return replace(context, visibility_dependencies=proof, scope_disclosure=package)
 
 
 class ForegroundConversationEntrypoint:

@@ -103,6 +103,8 @@ class ContextRouteToolService:
         tool_context_getter: Any,
         auth_factory: Any = local_owner_auth,
         recall_executor: Any = None,
+        scope_disclosure_reader: Any = None,
+        producer_dependencies_reader: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -111,6 +113,8 @@ class ContextRouteToolService:
         self._tool_context_getter = tool_context_getter
         self._auth_factory = auth_factory
         self._recall_executor = recall_executor
+        self._scope_disclosure_reader = scope_disclosure_reader
+        self._producer_dependencies_reader = producer_dependencies_reader
 
     # -- shared -----------------------------------------------------------
 
@@ -428,6 +432,9 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_lineage_stale",
             )
+        if self._scope_disclosure_reader is None:
+            return await self._reject(run_id, raw_call_id, effect_id, proposal, "scope_disclosure_reader_missing")
+        resume_package = await self._scope_disclosure_reader(run_id, resume_package, effect_id)
         return await self._commit_receipt(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -439,7 +446,7 @@ class ContextRouteToolService:
             binding=binding,
             extras={
                 "resume_package": resume_package,
-                "resume_sha256": opened["resume_sha256"],
+                "resume_sha256": canonical_sha256(resume_package),
                 "drift_report": opened.get("drift_report"),
             },
         )
@@ -461,6 +468,8 @@ class ContextRouteToolService:
         service = self._bind_service(binding_append=self._binding_append_getter())
         from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
 
+        producer_dependencies = (None if self._producer_dependencies_reader is None
+            else await self._producer_dependencies_reader(run_id))
         created = await service.create_task_scope(
             CreateTaskScopeRequest(
                 fixture_key=f"chat:{canonical_sha256({'title': title})[:16]}",
@@ -511,7 +520,7 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=scope,
             binding=binding,
-            extras={"created": dict(created)},
+            extras={"created": dict(created), "producer_dependencies": producer_dependencies},
         )
 
     # -- task_scope_search ------------------------------------------------
@@ -542,8 +551,20 @@ class ContextRouteToolService:
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
             code = str(getattr(exc, "code", "") or "task_scope_search_failed")
             return _error(code)
+        from deskpet.memory.human_memory_service import OpenTaskScopeRequest
+        if self._scope_disclosure_reader is None:
+            return _error("scope_disclosure_reader_missing")
+        run_id, _, effect_id, _ = self._identity()
+        candidates = []
+        for item in result["candidates"]:
+            scope_id = item["scope_ref"]
+            opened = await service.open_task_scope(OpenTaskScopeRequest(scope_ref=scope_id,
+                expected_source_hash=item["source_hash"]))
+            package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
+            candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
+                "source_hash": package["source_hash"], "scope_disclosure": package})
         return {
-            "candidates": list(result["candidates"]),
+            "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
             "receipt_hash": result.get("receipt_hash"),
             "note": "Candidates are permission-first hits only; they grant no "

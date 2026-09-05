@@ -3,6 +3,15 @@
 > 最后更新：2026-09-05
 
 
+## 2026-09-05 Scoped ordinary projection restoration candidate
+
+初始scoped、动态resume/search共用确定派生manifest，无新ledger。真实CREATE_NEW操作前
+依赖快照+actualSDK effect/route绑定保留title/goal；旧/抑制文字明确fieldgap，仅结构+真实
+binding+当前USER继续。实际保留字节与原fullview hash分开，start/dependency每次出站重验。
+相邻96 passed（含真实MEMORY-only抑制后fileeffect/terminal）、最终start负例2 passed；
+初始scoped旧功能红已恢复。未知旧mutation/checkpoint文本仍不声称可恢复，short登记另线，
+等待独立review与主组合，不称native/program完成。详见[来源契约](../plans/2026-09-05-primary-resume-sources/CONTRACT.md)。
+
 ## 2026-09-05 短期来源的历史读取契约
 
 Primary shared history helper 增加 v2 的独立 short_horizon 三元组，旧 v1 原样兼容；所有来源仍在
