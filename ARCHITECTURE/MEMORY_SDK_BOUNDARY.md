@@ -11,8 +11,8 @@ Installed Memory0611 exact-wheel/Host combination32 tests pass, including public
 sealed snapshot pages and concurrent reader recovery. Trusted receipt-supplied OA1
 reader is implemented, but Host production grant issuance/authorized external
 readthrough and all other inventory boundaries remain unfinished. No usage/cost
-aggregation or all-operation/native completion claim. Independent final review is
-pending for this fixed candidate.
+aggregation or all-operation/native completion claim. Fixed source3ba25c42 has Dirac independent scoped ACCEPT, no remaining P0/P1.
+This acceptance applies only to the leaf above.
 See [scope and handoff](../plans/2026-09-05-agent-operation-audit/host-memory-leaf/HANDOFF.md).
 
 ## 2026-09-05 Memory0611 installed audit and retry successor
