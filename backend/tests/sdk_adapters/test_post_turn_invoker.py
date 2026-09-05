@@ -18,6 +18,12 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueError
+from deskpet.sdk_adapters.post_turn_invoker import (
+    ForegroundLeaseFence,
+    RunBoundInvoker,
+    binding_model_config_hash,
+)
 from simple_harness import RequestId
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderRequest
@@ -25,13 +31,6 @@ from simple_harness.providers.errors import (
     ProviderCancelledError,
     ProviderRequestRejectedError,
     ProviderTimeoutError,
-)
-
-from deskpet.execution.foreground_queue import EffectBoundary, ForegroundQueueError
-from deskpet.sdk_adapters.post_turn_invoker import (
-    ForegroundLeaseFence,
-    RunBoundInvoker,
-    binding_model_config_hash,
 )
 from tests.sdk_adapters import s5b_closure_harness as ch
 
@@ -247,7 +246,9 @@ async def test_invoker_not_sent_classification_with_real_adapter_error(tmp_path:
     except ImportError:  # pragma: no cover - SDK layout guard
         from simple_harness.providers.secrets import Secret  # type: ignore[no-redef]
 
-    client = httpx.AsyncClient()
+    # Exercise a refused loopback connection, never an environment proxy's
+    # response or timeout (which correctly has different retry semantics).
+    client = httpx.AsyncClient(trust_env=False)
     provider = OpenAICompatibleProvider(client, "http://127.0.0.1:1", "model-x", Secret("not-a-real-key"), timeout=2.0)
     try:
         # 先证明真实 adapter 的异常形状：__cause__ 为 None、私有原因是 httpx 连接错误。
@@ -297,6 +298,84 @@ async def test_invoker_handoff_requires_rowcount_one(tmp_path: Path) -> None:
     assert outcome.status == "lease_lost" and outcome.reason_code == "attempt_reserved_row_lost"
     assert outcome.provider_calls == 0 and len(adapter.calls) == 0
     assert [(o, s, u) for o, s, u, *_ in ch.attempts(env.db_path)] == [(1, "failed", "not_sent")]
+
+
+@pytest.mark.asyncio
+async def test_reclaim_cannot_mark_concurrent_handoff_not_sent(tmp_path: Path) -> None:
+    """A stale reserved read never permits a second send after handoff wins."""
+    from deskpet.memory.analysis_executor import AnalysisLeaseFence
+    from tests.sdk_adapters import s5b_memory_harness as mh
+
+    env = await mh.bound_turn_run(tmp_path, "sdk-reclaim-handoff")
+    await mh.finish_clean_run(env)
+    reserved, old_go = asyncio.Event(), asyncio.Event()
+    reclaim_read, reclaim_go = asyncio.Event(), asyncio.Event()
+    recovered, sent, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    calls: list[object] = []
+
+    class Adapter:
+        target = SimpleNamespace(endpoint_identity=mh.ENDPOINT)
+
+        async def invoke(self, request, *, cancel):
+            calls.append(request)
+            sent.set()
+            await finish.wait()
+            return mh.proposal_call([], outcome="no_mutation")
+
+    class PausedFence(AnalysisLeaseFence):
+        async def reserve_attempt(self, row, members):
+            await super().reserve_attempt(row, members)
+            reserved.set()
+            await old_go.wait()
+
+    class Reclaimer(RunBoundInvoker):
+        async def _settle_failed(self, attempt_id, **kwargs):
+            if kwargs["reason"] == "reserved_abandoned":
+                reclaim_read.set()
+                await reclaim_go.wait()
+            result = await super()._settle_failed(attempt_id, **kwargs)
+            recovered.set()
+            return result
+
+    adapter = Adapter()
+    fences = [PausedFence(env.store, clock=env.clock, lease_seconds=35),
+              AnalysisLeaseFence(env.store, clock=env.clock, lease_seconds=35)]
+    for fence in fences:
+        fence.bind(host_run_id=env.admission.host_run_id, sdk_run_id=env.run_id)
+    invokers = [kind(env.db_path, fence=fence, adapter_factory=lambda _: adapter, clock=env.clock)
+                for kind, fence in zip((RunBoundInvoker, Reclaimer), fences, strict=True)]
+    kwargs = {
+        "purpose": "analysis", "host_run_id": env.admission.host_run_id, "sdk_run_id": env.run_id,
+        "generation": 1, "task_scope_id": None, "closure_watermark": None,
+        "request_hash": REQUEST_HASH, "evidence_set_key": SET_KEY,
+        "members": ((mh.SUBJECT, "evidence-origin-run", env.evidence_id),),
+        "binding_record": mh.BINDING, "build_request": _request, "deadline_seconds": 5,
+    }
+    tasks: list[asyncio.Task] = []
+    try:
+        async with asyncio.timeout(5):
+            tasks.append(asyncio.create_task(invokers[0].invoke(**kwargs)))
+            await reserved.wait()
+            env.clock.now += 40
+            tasks.append(asyncio.create_task(invokers[1].invoke(**kwargs)))
+            await reclaim_read.wait()
+            old_go.set()
+            await sent.wait()
+            reclaim_go.set()
+            await recovered.wait()
+            finish.set()
+            outcomes = await asyncio.gather(*tasks)
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+    assert len(calls) == 1
+    assert outcomes[1].status == "blocked" and outcomes[1].provider_calls == 0
+    rows = mh.rows(env.db_path,
+                   "SELECT attempt_ordinal,status,unknown_class FROM post_turn_invocation_attempts")
+    assert rows == [(1, "succeeded", None)]  # expired sender saved its response for recovery
 
 
 @pytest.mark.asyncio

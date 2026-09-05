@@ -1,10 +1,23 @@
 # simple_harness Agent Harness 架构
 
-> 最后更新：2026-08-30
+> 最后更新：2026-09-05
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
+
+### S5b post-turn attempt 恢复竞态（2026-09-05）
+
+恢复者观察到 `reserved` 后，必须用限定旧状态的原子更新将该 attempt 标为
+`failed/reserved_abandoned`，成功才可预留新 attempt。若原 sender 已推进为
+`handed_off`，恢复者返回 blocked，不能覆盖发送状态再发起第二次 Provider 调用。
+adapter 创建失败同样仅结算 `reserved`；传输与 Provider 失败仅结算 `handed_off`。
+
+决定性回归 `test_reclaim_cannot_mark_concurrent_handoff_not_sent` 使用真实 store 和事件屏障
+复现过期 lease 与交接交错：旧实现出现两次调用，修复后仅一次且无第二条 attempt。
+相关 35 条自动化通过，独立复审接受 IR-01；原始日志保存在
+`.local-test-evidence/2026-09-05/human-memory-resume/`。此结论仅覆盖该竞态，
+不替代 S5b 真实运行栈、冷启动、UI 与完整机器门验收。
 
 ### Project-scoped Skill 安装与验证 Run（2026-08-29，当前）
 

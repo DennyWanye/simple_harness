@@ -1,6 +1,22 @@
 # simple_harness — 全局项目状态与架构完成度
 
-> **最后更新**：2026-09-04
+> **最后更新**：2026-09-05
+
+## 2026-09-05 Human Memory 接续：当前验收重建与恢复竞态
+
+- Host 与三个 SDK 已同步远端；以 Memory SDK 原始 Human Memory plan 和
+  `HANDOFF-2026-09-05.md` 为基准继续。旧机器 r3/r4 原始机器账本未同步到本机，
+  当前 r5-local 从 NOT_RUN 重建，不把历史文字 PASS 导入为本次验收。
+- **IR-01 已修复并独立复审**：post-turn 恢复使用限定状态的原子更新，阻止
+  reserved 观察过期后覆盖已 handed_off 的 attempt 并重复发送。决定性回归旧版红、
+  新版绿，相关 35 条自动化通过；详见 `AGENT_HARNESS.md`。
+- **S5b 尚未完成**：独立复审另发现 Memory apply 失败后的批次次序/固定 revision
+  恢复问题（IR-02）与 no_mutation 字段契约不一致（IR-03），正在独立工作树处理。
+  当前机器真实启动、Provider、UI 和全量验收仍待运行。
+- **S3 状态校正**：typed recall、graph 和 audit 已有实现，最小回归 62 条通过；
+  完整消费 runner 仍缺执行桥，冻结的旧候选身份/content hash 与当前 API 不一致，
+  401 格 oracle 自检不构成产品验收。240 条语料尚未独立人工冻结。
+- S5c、S6 与整个 Human Memory program 仍未交付。原始证据仅存本机 ignored 目录。
 
 ## 2026-09-04 Human Memory S5b Task 7：前台任务执行链生产入口跑通与路径契约收口
 

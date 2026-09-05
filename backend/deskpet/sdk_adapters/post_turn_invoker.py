@@ -261,12 +261,15 @@ class RunBoundInvoker:
             cursor = await db.execute(sql, (*params, attempt_id))
             return int(cursor.rowcount)
 
-    async def _settle_failed(self, attempt_id: str, *, unknown_class: str | None, reason: str) -> None:
-        await self._update(
+    async def _settle_failed(
+        self, attempt_id: str, *, unknown_class: str | None, reason: str,
+        expected_status: str = "handed_off",
+    ) -> int:
+        return await self._update(
             attempt_id,
             "UPDATE post_turn_invocation_attempts SET status='failed',unknown_class=?,reason_code=?,settled_at=? "
-            "WHERE attempt_id=? AND status IN ('reserved','handed_off')",
-            (unknown_class, reason, self._clock()),
+            "WHERE status=? AND attempt_id=?",
+            (unknown_class, reason, self._clock(), expected_status),
         )
 
     async def _settle_unknown(self, attempt_id: str, *, reason: str) -> None:
@@ -382,8 +385,17 @@ class RunBoundInvoker:
             if latest.status == "unknown" and latest.unknown_class == "sent_confirmed":
                 return InvocationOutcome("blocked", latest.attempt_id, latest.attempt_ordinal, reason_code=f"{purpose}_attempt_confirmed")
             if latest.status == "reserved":
-                # Crash between reserve and handoff: nothing was sent.
-                await self._settle_failed(latest.attempt_id, unknown_class="not_sent", reason="reserved_abandoned")
+                # A sender can hand off after the recovery read. Only winning
+                # the reserved CAS proves nothing was sent and permits retry.
+                moved = await self._settle_failed(
+                    latest.attempt_id, unknown_class="not_sent", reason="reserved_abandoned",
+                    expected_status="reserved",
+                )
+                if moved != 1:
+                    return InvocationOutcome(
+                        "blocked", latest.attempt_id, latest.attempt_ordinal,
+                        reason_code=f"{purpose}_attempt_unknown",
+                    )
             elif latest.status == "failed" and latest.unknown_class != "not_sent":
                 return InvocationOutcome(
                     "blocked", latest.attempt_id, latest.attempt_ordinal, reason_code=f"{purpose}_attempt_failed"
@@ -439,7 +451,9 @@ class RunBoundInvoker:
         await self._fence.reserve_attempt(row, members)
         self._fault("attempt-reserved")
         if adapter is None:
-            await self._settle_failed(attempt_id, unknown_class="not_sent", reason=str(adapter_error))
+            await self._settle_failed(
+                attempt_id, unknown_class="not_sent", reason=str(adapter_error), expected_status="reserved",
+            )
             return InvocationOutcome("failed", attempt_id, ordinal, reason_code=adapter_error, unknown_class="not_sent")
         attempt = AttemptRow(
             attempt_id, purpose, host_run_id, sdk_run_id, int(generation), task_scope_id, closure_watermark,
