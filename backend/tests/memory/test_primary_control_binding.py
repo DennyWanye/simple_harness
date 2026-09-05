@@ -1,10 +1,12 @@
 from dataclasses import asdict
 
 import pytest
-
 from deskpet.memory.control_binding import HumanMemoryControlBinding
 from deskpet.memory.human_memory_api import handle_human_memory_command
-from deskpet.memory.human_memory_service import HumanMemoryHostServiceError, HumanMemoryHostServiceFactory
+from deskpet.memory.human_memory_service import (
+    HumanMemoryHostServiceError,
+    HumanMemoryHostServiceFactory,
+)
 from deskpet.memory.schema import dispatch_startup_epoch
 from tests.companion.test_window_control_credentials import _credential, _ingress
 
@@ -72,13 +74,16 @@ def test_default_control_socket_requires_its_own_verified_bind(tmp_path, monkeyp
     import hashlib
     monkeypatch.setenv("DESKPET_USER_DATA_DIR", str(tmp_path / "userdata"))
     import main
-    from fastapi.testclient import TestClient
     from deskpet.companion.control_ingress import ControlConnectionChallenge
+    from fastapi.testclient import TestClient
 
     private, store, gate, ingress = _ingress(tmp_path)
     path = tmp_path / "state.db"
     startup = asyncio.run(dispatch_startup_epoch(path, approved_fresh_lane=True))
-    factory = HumanMemoryHostServiceFactory(path, startup)
+    from tests.memory.test_primary_read_api import Policy
+    policy = Policy()
+    factory = HumanMemoryHostServiceFactory(path, startup, suppression_resolver=policy,
+                                           history_visibility_checker=policy.history)
     monkeypatch.setattr(main, "_companion_control_ingress", ingress)
     monkeypatch.setattr(main, "_companion_identity_gate", gate)
     monkeypatch.setattr(main, "_companion_notification_service", None)
@@ -123,6 +128,21 @@ def test_default_control_socket_requires_its_own_verified_bind(tmp_path, monkeyp
         assert first["payload"]["ok"]
         ws.send_json(request)
         assert receive(ws, "human_memory_response") == first
+        primary = first["payload"]["result"]["primary_ref"]
+        ws.send_json({**request, "request_id": "actual-input", "operation": "queue.enqueue",
+                      "request": {"text": "signed connection original USER"}})
+        assert receive(ws, "human_memory_response")["payload"]["ok"]
+        ws.send_json({**request, "request_id": "actual-ws-read", "operation": "primary.messages.page",
+                      "request": {"primary_ref": primary}})
+        page = receive(ws, "human_memory_response")
+        assert page["payload"]["result"]["items"][0]["text"] == "signed connection original USER"
+        subject, disclosure, bindings = policy.history_calls[-1]
+        import simple_harness as h
+        assert disclosure.run_id == "actual-ws-read"
+        assert disclosure.subject == subject == bindings[0].envelope.subject
+        assert disclosure.purpose is h.DisclosurePurpose.USER_REVIEW
+        assert disclosure.trust is h.DisclosureTrust.TRUSTED_AUTHORITY
+        assert disclosure.recipient_id == subject
 
 
 @pytest.mark.asyncio
@@ -172,3 +192,40 @@ async def test_inflight_scope_write_rechecks_lease_after_signed_reconnect(tmp_pa
     assert response["payload"]["error"]["code"] == "human_memory_connection_stale"
     with sqlite3.connect(path) as db:
         assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_signed_reconnect_during_history_batch_rejects_old_read(tmp_path):
+    import asyncio
+
+    from tests.memory.test_primary_read_api import Policy, error, result, setup
+
+    private, _, _, ingress = _ingress(tmp_path)
+    binding = HumanMemoryControlBinding()
+    challenge = await _bind(private, ingress, binding)
+    auth = binding.authenticate(ingress, challenge)
+    entered, release = asyncio.Event(), asyncio.Event()
+    policy = Policy()
+
+    async def slow_checker(**kwargs):
+        snapshot = await policy.history(**kwargs)
+        entered.set()
+        await release.wait()
+        return snapshot
+
+    f = await setup(tmp_path / "host", policy=policy, history_checker=slow_checker)
+    primary = result(await f.send("primary.open", auth=auth))["primary_ref"]
+    result(await f.send("queue.enqueue", {"text": "old socket private source"}, auth=auth))
+
+    async def read():
+        with binding.request_scope(ingress, challenge):
+            return await f.send("primary.messages.page", {"primary_ref": primary}, auth=auth)
+
+    pending = asyncio.create_task(read())
+    await asyncio.wait_for(entered.wait(), 5)
+    replacement = HumanMemoryControlBinding()
+    await _bind(private, ingress, replacement)
+    release.set()
+    response = await asyncio.wait_for(pending, 5)
+    error(response, "human_memory_connection_stale")
+    assert "old socket private source" not in str(response)
