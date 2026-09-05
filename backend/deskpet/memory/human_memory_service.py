@@ -198,6 +198,30 @@ class ControlRunRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class ExactControlRunRequest:
+    expected_run_ref: str
+    expected_generation: int
+    control: str
+    reason: str
+    idempotency_key: str
+
+    def __post_init__(self) -> None:
+        from deskpet.memory.primary_read_model import PrimaryReadError
+
+        try:
+            identifier(self.expected_run_ref, "expected_run_ref", 512)
+            if (type(self.expected_generation) is not int
+                    or not 1 <= self.expected_generation <= 2**63 - 1):
+                raise ValueError("invalid generation")
+            if self.control not in {"pause", "stop", "cancel"}:
+                raise ValueError("invalid control")
+            identifier(self.reason, "reason", 2048)
+            identifier(self.idempotency_key, "idempotency_key", 512)
+        except (TypeError, ValueError) as exc:
+            raise PrimaryReadError("primary_exact_control_invalid") from exc
+
+
+@dataclass(frozen=True, slots=True)
 class AuditRefsRequest:
     scope_ref: str
 
@@ -392,6 +416,9 @@ class HumanMemoryHostService:
         binding_append: WorkspaceBindingAppendPort | None = None,
         recovery: RecoveryLifecyclePort | None = None,
         scheduler_wake: ForegroundSchedulerWakePort | None = None,
+        settled_run_reader: object | None = None,
+        suppression_resolver: object | None = None,
+        run_binding_reader: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -409,6 +436,15 @@ class HumanMemoryHostService:
         self._binding_append = binding_append
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
+        from deskpet.memory.primary_read_model import PrimaryReadModel
+
+        self._primary_read = PrimaryReadModel(
+            self._db_path,
+            subject=auth.subject,
+            settled_run_reader=settled_run_reader,
+            suppression_resolver=suppression_resolver,
+            run_binding_reader=run_binding_reader,
+        )
         self._evidence_group_ref_cache: dict[
             tuple[str, str, str], tuple[dict[str, object], ...]
         ] = {}
@@ -424,6 +460,15 @@ class HumanMemoryHostService:
             "receipt_ref": receipt.receipt_id,
             "receipt_hash": receipt.receipt_sha256,
         }
+
+    async def read_primary_state(self) -> Mapping[str, object]:
+        return await self._primary_read.state()
+
+    async def read_primary_messages(self, **request) -> Mapping[str, object]:
+        return await self._primary_read.page(**request)
+
+    async def read_primary_message_detail(self, **request) -> Mapping[str, object]:
+        return await self._primary_read.detail(**request)
 
     async def append_primary_event(
         self, request: AppendPrimaryEventRequest
@@ -715,15 +760,22 @@ class HumanMemoryHostService:
         )
 
     async def control_current_run(
-        self, request: ControlRunRequest
+        self, request: ControlRunRequest | ExactControlRunRequest
     ) -> Mapping[str, object]:
-        current = await self._foreground.current_snapshot(self._auth.subject)
-        if current is None:
-            raise HumanMemoryHostServiceError("human_memory_foreground_run_not_found")
+        if isinstance(request, ExactControlRunRequest):
+            run_ref = request.expected_run_ref
+            generation = request.expected_generation
+        else:
+            current = await self._foreground.current_snapshot(self._auth.subject)
+            if current is None:
+                raise HumanMemoryHostServiceError(
+                    "human_memory_foreground_run_not_found"
+                )
+            run_ref, generation = current.host_run_id, current.generation
         receipt = await self._foreground.request_control(
-            host_run_id=current.host_run_id,
+            host_run_id=run_ref,
             subject=self._auth.subject,
-            generation=current.generation,
+            generation=generation,
             control_kind=request.control,
             reason=request.reason,
             idempotency_key=request.idempotency_key,
@@ -1812,6 +1864,9 @@ def build_host_typed_evidence(
 class HumanMemoryHostServiceFactory:
     db_path: Path
     startup: StartupEpochDecision
+    settled_run_reader: object | None = None
+    suppression_resolver: object | None = None
+    run_binding_reader: object | None = None
 
     def bind(
         self,
@@ -1830,6 +1885,9 @@ class HumanMemoryHostServiceFactory:
             binding_append=binding_append,
             recovery=recovery,
             scheduler_wake=scheduler_wake,
+            settled_run_reader=self.settled_run_reader,
+            suppression_resolver=self.suppression_resolver,
+            run_binding_reader=self.run_binding_reader,
         )
 
 
@@ -1841,6 +1899,7 @@ __all__ = (
     "AuditRefsRequest",
     "AuthenticatedHostSnapshot",
     "ControlRunRequest",
+    "ExactControlRunRequest",
     "CreateTaskScopeRequest",
     "DecideManualBindingRequest",
     "DeterministicEventSeedPort",

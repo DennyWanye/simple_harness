@@ -9,6 +9,24 @@
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
 
+## 2026-09-05 Primary API 隔离切片
+
+`feat/human-memory-primary-api`（base `29902ea4`）实现 `primary.state`、
+`primary.messages.page/detail` 与 exact targeted `queue.control`。读取真实 Host
+primary/turn/source/binding/terminal receipts，并通过注入的 SDK 公开 transcript/binding reader
+验 run/event/hash/user anchor；queued user 可读，公开长文本可分块完整取回。
+revision 读取既有 append-only 表尾及当前 head，page 最多扫描10 turns，queued policy
+最多100项，超限计数明确为下界。无新 schema/计数 ledger/Session。
+
+过滤结论仅覆盖当前 subject、Host 输入及终态观察 evidence；Memory resolver 不展开
+memory/entity lineage，不能声称所有 memory-derived 历史的隐私已闭合。缺 policy/reader
+拒绝对应读取。Carver 已在其隔离树注入三个 factory kwargs，组合树运行与 UI 验证尚待主协调；
+本分支不改 main/runtime/fence/SDK/pin，不代表 S6/program 完成。
+
+聚焦验证：新增24 + 既有16 = **40 passed**（公共 API/真实 Host SQLite 与已安装 Memory
+suppression backend；SDK transcript/binding 为注入 fixtures），未跑 provider/UI/全量。
+契约、命令与 ignored 证据索引见 [PRIMARY-API](../plans/2026-09-05-s6-primary-preparation/PRIMARY-API.md)。
+
 ## 2026-09-05 S6隔离分支：control复用与无scope admission
 
 `feat/human-memory-s6-primary-preparation`（base `4eb1eb7c`）已实现P1：沿现

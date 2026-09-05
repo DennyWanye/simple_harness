@@ -23,6 +23,24 @@ REG 的 downgrade 新原因已独立确定为测试 fixture 版本错误：原 A
 只读诊断见 `tools/gate-candidate-continuation-20260905T100858/HANDOFF.md`。
 未删历史、未修改 gate 工具、未豁免稳定性；S5b 和 program 均未得到 machine finalize PASS。
 
+## 2026-09-05 Primary API 隔离切片
+
+`feat/human-memory-primary-api`（base `29902ea4`）实现 `primary.state`、
+`primary.messages.page/detail` 与 exact targeted `queue.control`。读取真实 Host
+primary/turn/source/binding/terminal receipts，并通过注入的 SDK 公开 transcript/binding reader
+验 run/event/hash/user anchor；queued user 可读，公开长文本可分块完整取回。
+revision 读取既有 append-only 表尾及当前 head，page 最多扫描10 turns，queued policy
+最多100项，超限计数明确为下界。无新 schema/计数 ledger/Session。
+
+过滤结论仅覆盖当前 subject、Host 输入及终态观察 evidence；Memory resolver 不展开
+memory/entity lineage，不能声称所有 memory-derived 历史的隐私已闭合。缺 policy/reader
+拒绝对应读取。Carver 已在其隔离树注入三个 factory kwargs，组合树运行与 UI 验证尚待主协调；
+本分支不改 main/runtime/fence/SDK/pin，不代表 S6/program 完成。
+
+聚焦验证：新增24 + 既有16 = **40 passed**（公共 API/真实 Host SQLite 与已安装 Memory
+suppression backend；SDK transcript/binding 为注入 fixtures），未跑 provider/UI/全量。
+契约、命令与 ignored 证据索引见 [PRIMARY-API](../plans/2026-09-05-s6-primary-preparation/PRIMARY-API.md)。
+
 ## 2026-09-05 S6隔离分支：control复用与无scope admission
 
 `feat/human-memory-s6-primary-preparation`（base `4eb1eb7c`）已实现P1：沿现
