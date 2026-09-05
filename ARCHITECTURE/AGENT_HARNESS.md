@@ -15,7 +15,7 @@
 新增真实持久化/重复入库/延迟/重开/零时间五例先红后绿，相关 26 条通过，主执行者复审接受；
 见 `backend/tests/memory/test_analysis_episode_time.py` 和本机
 `.local-test-evidence/2026-09-05/human-memory-resume/independent-review/a14-q1-fix/`。
-修复默认生效；新代码的真实生产入口尚待复验，不能用确定性测试代替 A14。
+修复默认生效；当前受影响集合 150 passed。新真实入口遭第七次 Provider handoff 后的传输 unknown，未到 analysis；该试次 FAIL 并保留，无重发。不能用确定性测试代替 A14。
 
 ### 当前 route 恢复链（2026-09-05）
 

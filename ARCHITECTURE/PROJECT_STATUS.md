@@ -2,6 +2,27 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 当前修复与受影响验证
+
+Host episode 时间修复提交 `4eb1eb7c` 后，effect/closure/analysis/FIFO 受影响集合 **150 passed**。
+新真实入口 root `5aa01b80-6fc6-5880-9f1d-3b68e06d3dcf` 在第七次 Provider handoff 后发生传输错误，
+SDK durable invocation=`unknown/provider_error_after_handoff`、rehandoff=0，Host 仍 CLAIMED。
+六次已成功调用保留，README 尚未改变、analysis 未执行；主执行者停止该隔离 backend，
+该次复验 **FAIL / 外部传输受阻**，第二 root 未启动。不重发未知调用，不用旧候选两根覆盖此结果。
+
+REG 的 downgrade 新原因已独立确定为测试 fixture 版本错误：原 AC 要求旧 runtime 拒绝未来 schema。
+测试现由 exact SDK 0.6.2 自建 v6 空库验证两次 reopen，创建真实 recoverable Run 验证拒绝，
+另以当前 SDK 的 v7 库验证旧版拒绝，三个路径均核对原文件 hash 不变。整文件 **9 passed**，主审接受，
+无产品 schema/gate 放宽。全量原六红中新增候选 hash 字面量（20 passed）及该项均已有定向闭合；
+剩四项历史同因失败保留，不声称重跑全量绿。日志索引：`q1-current-affected.log`、
+`tools/a14-20260905T101023-yk7hji3c/root-1/stop-reason.json`、
+`independent-review/downgrade-v6-v7/REPORT.md`、`independent-review/downgrade-test-correction/pytest-green.log`，
+均相对本机 `.local-test-evidence/2026-09-05/human-memory-resume/`。
+
+现有 r5 保存旧候选 FAIL/FLAKY；gate 对跨候选 root 聚合及批准后 acceptance hash 接续存在限制，
+只读诊断见 `tools/gate-candidate-continuation-20260905T100858/HANDOFF.md`。
+未删历史、未修改 gate 工具、未豁免稳定性；S5b 和 program 均未得到 machine finalize PASS。
+
 ## 2026-09-05 Harness 0.7.2 接入与当前验证
 
 Host `8d57441517836aaaa30ac16a33576f4d68a9d1ad` 已安装 Harness 0.7.2，source
