@@ -2,6 +2,13 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Cognitive action evidence callback prepared
+
+主协调候选新增显式忘记动作的Host evidence回调，复用既有S1表和首committed_at；
+独立source域区分generic primary.append，精确动作重试保持同一时间/SDK请求ID。
+真实Host SQLite四项通过，无新Run/分析outbox；尚未接认知面板/SDK suppress/真实UI，
+不是已默认可用的忘记能力。接口和边界见[ACTION-EVIDENCE](../plans/2026-09-05-primary-cognitive-controls/ACTION-EVIDENCE.md)。
+
 ## 2026-09-05 Primary 授权 portal 布局候选（native 视觉待复验）
 
 decisions 树从1862e383修 Primary modal 的 DOM 挂载层级与隐藏视图 Escape 生命周期，

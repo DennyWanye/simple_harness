@@ -2,6 +2,13 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 Cognitive action evidence callback prepared
+
+主协调候选新增显式忘记动作的Host evidence回调，复用既有S1表和首committed_at；
+独立source域区分generic primary.append，精确动作重试保持同一时间/SDK请求ID。
+真实Host SQLite四项通过，无新Run/分析outbox；尚未接认知面板/SDK suppress/真实UI，
+不是已默认可用的忘记能力。接口和边界见[ACTION-EVIDENCE](../plans/2026-09-05-primary-cognitive-controls/ACTION-EVIDENCE.md)。
+
 ## 2026-09-05 Combined decisions retain authenticated history context
 
 在067隔离候选中组合精确SDK授权，保留实际HUMAN request_id派生的USER_REVIEW披露上下文；
