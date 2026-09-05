@@ -6,12 +6,23 @@
 
 ## 一句话说明
 
+### S5b episode 首次观察时间（2026-09-05）
+
+分析专用 evidence 读取从同一 Host SQLite 行获得签名 envelope/receipt 与首次 `committed_at`。
+初次分析和 durable response 恢复均把该时间交给 episode 编译，排队与重启不改变它；合法 0.0
+不再回退到分析时钟。该值表示 Host 首次持久化观察时间，不声称是外部事件实际发生时刻。
+既有 `read_admitted` 二元接口、receipt/envelope hash、schema 与历史结果不变，已附着结果不重写。
+新增真实持久化/重复入库/延迟/重开/零时间五例先红后绿，相关 26 条通过，主执行者复审接受；
+见 `backend/tests/memory/test_analysis_episode_time.py` 和本机
+`.local-test-evidence/2026-09-05/human-memory-resume/independent-review/a14-q1-fix/`。
+修复默认生效；当前受影响集合 150 passed。新真实入口遭第七次 Provider handoff 后的传输 unknown，未到 analysis；该试次 FAIL 并保留，无重发。不能用确定性测试代替 A14。
+
 ### 当前 route 恢复链（2026-09-05）
 
 Harness 0.7.2 的 v0 checkpoint anchor 与 current checkpoint 分别核验；合法 route 后授权/重启继续同 Run。
 Host exact wheel 已接入，两个独立真实生产 root 已完成 effect/closure/outbox/analysis；
 详见 [当前验证与边界](PROJECT_STATUS.md#2026-09-05-harness-072-接入与当前验证)。
-S5b 仍在修复独立质量审查的 episode 时间 P2，未宣称 machine gate 通过。
+episode 时间 P2 源码与确定性回归已闭合，真实生产复验和 machine gate 尚未通过。
 
 ### S5b SDK route 恢复 P1（2026-09-05，旧候选复现）
 

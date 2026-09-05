@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import site
@@ -175,13 +176,9 @@ def test_gate_requires_explicit_shutdown_claims(tmp_path: Path) -> None:
         )
 
 
-def test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs(
-    tmp_path: Path,
-) -> None:
-    from simple_harness.execution.sqlite import Database
-
-    path = tmp_path / "sdk.sqlite3"
-    Database.open(path).close()
+@pytest.fixture
+def sdk_062_python(tmp_path: Path) -> Path:
+    """Install the exact legacy wheel without changing the Host environment."""
     environment = tmp_path / "sdk-062-venv"
     uv = shutil.which("uv")
     assert uv is not None
@@ -208,6 +205,101 @@ def test_exact_pinned_sdk_062_reopens_twice_and_rejects_recoverable_runs(
         capture_output=True,
         text=True,
     )
-    accepted, detail = pinned_sdk_062_reopen_probe(python)(path)
+    return python
+
+
+def _create_sdk_062_database(python: Path, path: Path, *, recoverable: bool = False) -> None:
+    # Both schema and recoverable Run are created by the pinned SDK, never by the
+    # current Host SDK or by editing migration markers/Run rows with SQL.
+    program = r"""
+import importlib.metadata
+import sys
+from pathlib import Path
+
+from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+
+assert importlib.metadata.version("simple-harness-sdk") == "0.6.2"
+database = Database.open(Path(sys.argv[1]))
+try:
+    assert [tuple(row) for row in database.connection.execute(
+        "SELECT version,name FROM sdk_schema_migrations"
+    )] == [(6, "0006_fresh")]
+    uow = SqliteExecutionUnitOfWork(database)
+    if sys.argv[2] == "recoverable":
+        uow.create_with_start_snapshot(
+            execution_session_id="session-probe", run_id="run-probe",
+            request_id="request-probe", profile_key="agent.general",
+            driver_kind="react", snapshot={"catalog_generation": 1},
+            event_id="event-probe", now=1.0,
+        )
+        roots = uow.list_recoverable_root_runs()
+        assert len(roots) == 1
+        assert roots[0].run_id == "run-probe" and roots[0].state.value == "created"
+    else:
+        assert not uow.list_recoverable_root_runs()
+    assert not uow.list_recoverable_child_runs()
+finally:
+    database.close()
+"""
+    subprocess.run(
+        [str(python), "-I", "-c", program, str(path),
+         "recoverable" if recoverable else "empty"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+
+def test_exact_pinned_sdk_062_reopens_its_fresh_v6_twice(
+    tmp_path: Path, sdk_062_python: Path,
+) -> None:
+    path = tmp_path / "sdk-v6.sqlite3"
+    _create_sdk_062_database(sdk_062_python, path)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    accepted, detail = pinned_sdk_062_reopen_probe(sdk_062_python)(path)
+
     assert accepted, detail
-    assert '"sdk_version": "0.6.2"' in detail
+    assert json.loads(detail) == {"sdk_version": "0.6.2", "reopens": 2}
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_exact_pinned_sdk_062_rejects_recoverable_v6_run_without_mutation(
+    tmp_path: Path, sdk_062_python: Path,
+) -> None:
+    path = tmp_path / "sdk-v6-recoverable.sqlite3"
+    _create_sdk_062_database(sdk_062_python, path, recoverable=True)
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    accepted, detail = pinned_sdk_062_reopen_probe(sdk_062_python)(path)
+
+    assert not accepted
+    assert detail == "recoverable Runs remain"
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before
+
+
+def test_exact_pinned_sdk_062_rejects_current_fresh_v7_without_mutation(
+    tmp_path: Path, sdk_062_python: Path,
+) -> None:
+    from simple_harness.execution.sqlite import Database, SqliteExecutionUnitOfWork
+
+    path = tmp_path / "sdk-v7.sqlite3"
+    database = Database.open(path)
+    try:
+        assert [tuple(row) for row in database.connection.execute(
+            "SELECT version,name FROM sdk_schema_migrations"
+        )] == [(7, "0007_fresh")]
+        uow = SqliteExecutionUnitOfWork(database)
+        assert not uow.list_recoverable_root_runs()
+        assert not uow.list_recoverable_child_runs()
+    finally:
+        database.close()
+    before = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    accepted, detail = pinned_sdk_062_reopen_probe(sdk_062_python)(path)
+
+    assert not accepted
+    assert "ExecutionSchemaIncompatible" in detail
+    assert "execution database requires a fresh schema v6 storage set" in detail
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == before

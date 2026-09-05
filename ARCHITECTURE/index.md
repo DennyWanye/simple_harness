@@ -3,8 +3,8 @@
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
 2026-09-05 当前接续已安装 Harness 0.7.2 / Memory 0.6.3，两个真实 queue.enqueue root 完成
-workspace effect、TaskScope closure 与认知物化；独立质量审查发现的 episode 时间 P2 正在修复。
-原生 chat 冷启动通过，S6 UI 仍未交付；完整 machine gate 尚未通过。
+workspace effect、TaskScope closure 与认知物化；独立质量审查发现了 episode 时间 P2。
+该 P2 已完成源码修复与 26 条回归，待真实入口复验。原生 chat 冷启动通过，S6 UI 仍未交付；完整 machine gate 尚未通过。
 最新候选、测试统计与历史失败边界见 [PROJECT_STATUS](PROJECT_STATUS.md)。
 
 2026-09-01 Human Memory Program 已完成 S4 Task 5–8 Host TaskScope + Runtime Execution Closure（含用户

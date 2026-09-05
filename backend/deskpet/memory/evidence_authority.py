@@ -23,6 +23,8 @@ from typing import Any
 
 import aiosqlite
 
+from deskpet.memory.analysis_proposal import AdmittedItem, admitted_item
+
 HOST_CLASSIFICATION_AUTHORITY_REF = "host:classification/v1"
 HOST_EVIDENCE_ISSUER_REF = "host:evidence-authority/v1"
 
@@ -46,6 +48,19 @@ class HostEvidenceAuthority:
     async def read_admitted(self, evidence_id: str) -> tuple[Any, Any]:
         """(envelope, receipt) exactly as committed by the Host, or ``HostEvidenceUnavailable``."""
 
+        envelope, receipt, _ = await self._read_admitted(evidence_id)
+        return envelope, receipt
+
+    async def read_analysis_item(self, evidence_id: str) -> AdmittedItem:
+        """Use the first Host persistence time as the request's observed time.
+
+        ``committed_at`` survives duplicate ingress and reopen. It is Host
+        metadata, not a replacement for the signed receipt's ``admitted_at``.
+        """
+        envelope, receipt, committed_at = await self._read_admitted(evidence_id)
+        return admitted_item(envelope, receipt, occurred_at=committed_at)
+
+    async def _read_admitted(self, evidence_id: str) -> tuple[Any, Any, float]:
         from simple_harness.runtime import (
             SanitizedEvidenceEnvelope,
             SanitizedEvidenceReceipt,
@@ -57,7 +72,7 @@ class HostEvidenceAuthority:
         async with aiosqlite.connect(f"file:{self._db_path}?mode=ro", uri=True) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT e.envelope_json, e.envelope_sha256, r.receipt_json, r.receipt_sha256 "
+                "SELECT e.envelope_json, e.envelope_sha256, e.committed_at, r.receipt_json, r.receipt_sha256 "
                 "FROM human_memory_evidence e "
                 "JOIN human_memory_sanitization_receipts r ON r.receipt_id=e.receipt_id "
                 "WHERE e.evidence_id=?",
@@ -76,7 +91,7 @@ class HostEvidenceAuthority:
             raise HostEvidenceUnavailable("host_evidence_hash_mismatch")
         if receipt.evidence_id != envelope.evidence_id or receipt.envelope_hash != envelope.envelope_hash:
             raise HostEvidenceUnavailable("host_evidence_receipt_mismatch")
-        return envelope, receipt
+        return envelope, receipt, float(row["committed_at"])
 
     async def resolve_admitted_evidence(self, span: Any) -> Any:
         from simple_harness.runtime import (
