@@ -15,13 +15,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import aiosqlite
-from simple_harness.runtime import SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt
 from simple_harness_memory.core.suppression import (
     OrdinaryMemoryPurpose,
     SuppressionCandidate,
     SuppressionResolution,
 )
 
+from deskpet.memory.primary_visibility import (
+    PrimaryHistoryPolicy,
+    PrimaryVisibilityError,
+    read_evidence_pair,
+)
 from deskpet.task_scope.protocol import (
     canonical_hash,
     canonical_json,
@@ -87,10 +91,14 @@ class PrimaryReadModel:
         settled_run_reader=None,
         suppression_resolver=None,
         run_binding_reader=None,
+        history_visibility_checker=None,
     ):
         self.path, self.subject = Path(db_path), subject
         self.reader, self.policy = settled_run_reader, suppression_resolver
         self.run_binding_reader = run_binding_reader
+        self.history_policy = PrimaryHistoryPolicy(
+            db_path, subject, history_visibility_checker
+        )
 
     async def _visible(self, evidence_id=None):
         if self.policy is None:
@@ -136,8 +144,6 @@ class PrimaryReadModel:
                 raise PrimaryReadError("primary_not_found")
             await self._subject_visible()
             yield db, rows[0][0]
-            # Re-evaluate current policy after any asynchronous reader work.
-            await self._subject_visible()
 
     async def _revision(self, db, primary):
         # Global append-only table tails avoid subject-filtered scans where the
@@ -167,7 +173,20 @@ class PrimaryReadModel:
             {"primary": primary, "facts": facts, "heads": [list(r) for r in heads]}
         )
 
-    async def state(self):
+    async def _check_sources(self, db, primary, evidence_ids, disclosure_context):
+        # The SDK batch is the final policy read, after every slow transcript/binding read.
+        await self._subject_visible()
+        try:
+            return await self.history_policy.check_evidence_ids(
+                db=db,
+                primary_ref=primary,
+                evidence_ids=tuple(dict.fromkeys(evidence_ids)),
+                disclosure_context=disclosure_context,
+            )
+        except PrimaryVisibilityError as exc:
+            raise PrimaryReadError(exc.code) from exc
+
+    async def state(self, *, disclosure_context):
         async with self._snapshot() as (db, primary):
             active = await _rows(
                 db,
@@ -200,7 +219,8 @@ class PrimaryReadModel:
                 (self.subject, primary),
             )
             current = None
-            if active and await self._visible(active[0]["evidence_id"]):
+            mapping_error = None
+            if active:
                 head = active[0]
                 session = None
                 if head["sdk_run_id"] is not None:
@@ -220,21 +240,26 @@ class PrimaryReadModel:
                         wire.get(k) != head[k] for k in ("host_run_id", "sdk_run_id")
                     ):
                         raise PrimaryReadError("primary_runtime_binding_mismatch")
-                    if self.run_binding_reader is None:
-                        raise PrimaryReadError("primary_runtime_binding_unavailable")
-                    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+                    try:
+                        if self.run_binding_reader is None:
+                            raise PrimaryReadError(
+                                "primary_runtime_binding_unavailable"
+                            )
+                        from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
-                    resolved = await _resolved(
-                        self.run_binding_reader(head["sdk_run_id"])
-                    )
-                    if isinstance(resolved, Mapping):
-                        resolved = SdkRunBindingV1.from_record(resolved)
-                    if (
-                        type(resolved) is not SdkRunBindingV1
-                        or resolved.run_id != head["sdk_run_id"]
-                    ):
-                        raise PrimaryReadError("primary_runtime_binding_mismatch")
-                    session = resolved.session_id
+                        resolved = await _resolved(
+                            self.run_binding_reader(head["sdk_run_id"])
+                        )
+                        if isinstance(resolved, Mapping):
+                            resolved = SdkRunBindingV1.from_record(resolved)
+                        if (
+                            type(resolved) is not SdkRunBindingV1
+                            or resolved.run_id != head["sdk_run_id"]
+                        ):
+                            raise PrimaryReadError("primary_runtime_binding_mismatch")
+                        session = resolved.session_id
+                    except PrimaryReadError as exc:
+                        mapping_error = exc
                 current = {
                     "run_ref": head["host_run_id"],
                     "generation": head["generation"],
@@ -243,13 +268,17 @@ class PrimaryReadModel:
                     "execution_session_ref": session,
                 }
             revision = await self._revision(db, primary)
-            count = 0
-            for row in queued[:100]:
-                count += int(await self._visible(row[0]))
-            if current is not None and not await self._visible(
-                active[0]["evidence_id"]
-            ):
+            source_ids = [row[0] for row in queued[:100]]
+            if active:
+                source_ids.append(active[0]["evidence_id"])
+            visible = await self._check_sources(
+                db, primary, source_ids, disclosure_context
+            )
+            count = sum(visible[row[0]] for row in queued[:100])
+            if current is not None and not visible[active[0]["evidence_id"]]:
                 current = None
+            if current is not None and mapping_error is not None:
+                raise mapping_error
             return {
                 "primary_ref": primary,
                 "revision": revision,
@@ -259,44 +288,16 @@ class PrimaryReadModel:
             }
 
     async def _evidence(self, db, primary, evidence_id):
-        rows = await _rows(
-            db,
-            (
-                "SELECT e.*,s.receipt_json,s.receipt_sha256 FROM "
-                "human_memory_evidence e JOIN "
-                "human_memory_sanitization_receipts s ON "
-                "s.receipt_id=e.receipt_id AND "
-                "s.evidence_id=e.evidence_id AND s.subject=e.subject "
-                "WHERE e.subject=? AND e.primary_conversation_id=? AND "
-                "e.evidence_id=?"
-            ),
-            (self.subject, primary, evidence_id),
-        )
-        if len(rows) != 1:
-            raise PrimaryReadError("primary_source_missing")
-        row = rows[0]
         try:
-            envelope = SanitizedEvidenceEnvelope.from_json(
-                json.loads(row["envelope_json"])
+            envelope, _receipt = await read_evidence_pair(
+                db=db,
+                subject=self.subject,
+                primary_ref=primary,
+                evidence_id=evidence_id,
             )
-            receipt = SanitizedEvidenceReceipt.from_json(
-                json.loads(row["receipt_json"])
-            )
-            receipt.verify(envelope)
-            if (
-                not receipt.accepted
-                or envelope.subject != self.subject
-                or envelope.evidence_id != evidence_id
-                or envelope.run_id != row["run_id"]
-                or envelope.envelope_hash != row["envelope_sha256"]
-                or receipt.receipt_hash != row["receipt_sha256"]
-                or canonical_json(envelope.to_json()["sanitized_payload"])
-                != canonical_json(json.loads(row["payload_json"]))
-            ):
-                raise ValueError()
-        except (ValueError, TypeError, KeyError) as exc:
-            raise PrimaryReadError("primary_source_corrupt") from exc
-        return envelope
+            return envelope
+        except PrimaryVisibilityError as exc:
+            raise PrimaryReadError(exc.code) from exc
 
     @staticmethod
     def _public_message(raw):
@@ -343,8 +344,6 @@ class PrimaryReadModel:
         return raw["role"], redact_credential_shapes(text)[0]
 
     async def _messages(self, db, primary, turn):
-        if not await self._visible(turn["evidence_id"]):
-            return []
         envelope = await self._evidence(db, primary, turn["evidence_id"])
         wire = json.loads(turn["turn_json"])
         if (
@@ -409,8 +408,7 @@ class PrimaryReadModel:
             )
         ):
             raise PrimaryReadError("primary_terminal_corrupt")
-        # S6 observation evidence is also a suppressible source. Pre-S6 runs
-        # have no observation; their input evidence still gates the transcript.
+        # Only dependency-proved generated groups are eligible. Legacy USER stays independent.
         observations = await _rows(
             db,
             (
@@ -431,11 +429,13 @@ class PrimaryReadModel:
                 "primary-runtime:" + run["sdk_run_id"],
             ),
         )
+        if not observations:
+            return messages
         for row in observations:
-            if not await self._visible(row[0]):
-                return messages
             observed = await self._evidence(db, primary, row[0])
             body = observed.sanitized_payload
+            if not isinstance(body.get("visibility_dependencies"), Mapping):
+                return messages
             if (
                 any(
                     body.get(k) != run[k]
@@ -488,12 +488,6 @@ class PrimaryReadModel:
                         (turn["evidence_id"], *(row[0] for row in observations)),
                     )
                 )
-        # Never reuse a pre-await policy decision to disclose a new transcript.
-        if not await self._visible(turn["evidence_id"]):
-            return []
-        for row in observations:
-            if not await self._visible(row[0]):
-                return messages[:1]
         return messages
 
     async def _turns(self, db, primary, *, before, limit, turn_ref=None):
@@ -547,7 +541,7 @@ class PrimaryReadModel:
             "has_more": len(text) > 1024,
         }
 
-    async def page(self, *, primary_ref, cursor=None, limit=20):
+    async def page(self, *, primary_ref, disclosure_context, cursor=None, limit=20):
         bounded_int(limit, minimum=1, maximum=50)
         async with self._snapshot(primary_ref) as (db, primary):
             revision = await self._revision(db, primary)
@@ -590,13 +584,12 @@ class PrimaryReadModel:
                     }
                 )
             )
-            # Reader awaits for older turns must not preserve an earlier
-            # visibility decision for already-selected newer source text.
-            visible = {}
-            for _, sources in selected:
-                for source in sources:
-                    if source not in visible:
-                        visible[source] = await self._visible(source)
+            visible = await self._check_sources(
+                db,
+                primary,
+                [source for _, sources in selected for source in sources],
+                disclosure_context,
+            )
             return {
                 "primary_ref": primary,
                 "revision": revision,
@@ -608,7 +601,9 @@ class PrimaryReadModel:
                 "next_cursor": next_cursor,
             }
 
-    async def detail(self, *, primary_ref, message_ref, offset=0, limit=4096):
+    async def detail(
+        self, *, primary_ref, message_ref, disclosure_context, offset=0, limit=4096
+    ):
         bounded_int(offset, minimum=0, maximum=2**63 - 1)
         bounded_int(limit, minimum=1, maximum=4096)
         decoded = _decode(message_ref, ("v", "p", "t", "i", "h"))
@@ -631,9 +626,11 @@ class PrimaryReadModel:
                 if offset > len(text):
                     raise PrimaryReadError("primary_read_request_invalid")
                 end = min(len(text), offset + limit)
-                for source in message[4]:
-                    if not await self._visible(source):
-                        raise PrimaryReadError("primary_message_unavailable")
+                visible = await self._check_sources(
+                    db, primary, message[4], disclosure_context
+                )
+                if not all(visible[source] for source in message[4]):
+                    raise PrimaryReadError("primary_message_unavailable")
                 return {
                     "message_ref": message_ref,
                     "text": text[offset:end],

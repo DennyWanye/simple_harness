@@ -21,6 +21,25 @@ FAILED且第二次物理发送为0。真实create_new在逐次guard下完成effe
 既有真实 SessionDB 用例精确复现缺字段，修后 delivery **14 passed**；原生工具交互仍待验证，
 不计 S6/program 完成。证据哈希与命令见 [UI](UI.md)。
 
+## 2026-09-05 primary history visibility API 隔离候选
+
+`feat/human-memory-primary-history-api` 从 `87c42b43` 增加 Host shared
+`PrimaryHistoryPolicy.check_evidence_ids/check_dependencies`：真实 S1 subject/primary/hash
+与终态身份校验，递归 evidence/recall 依赖合并为一次公开 Memory batch；state/page/detail
+在慢读取后 fresh 检查，真实 WS request_id + authenticated subject 构造 USER_REVIEW，
+输出前重验现有 connection fence。旧终态无依赖证明只隐藏 generated group，原始 USER
+不依赖异步 analysis。未改变归档、SDK、schema、pin、main.py 或 runtime 文件。
+
+本隔离实现聚焦 **50 passed**，使用独立环境 exact Memory0.6.6 / Harness0.7.2：真实
+Memory memory-only forget 反向隐藏原始 USER、其 assistant 及跨 Run 继承 assistant，
+无关 USER 仍可见；真实 recall 四元绑定正负、reopen 和 Host 证据字节不变通过；
+in-process production WS 验真实绑定/request_id，慢 batch 期间重连拒绝旧响应。
+这些是 library/API 证据；SDK transcript fixture 不替代 Carver runtime 组合测试。
+尚待 Dirac 独立审查、主组合与 native/provider 验证。short-horizon 仍缺本轮可用的 exact
+carrier，必须在运行层拒绝复用/出站；不称 S6/S5b/program gate 完成。
+见 [接口与验证](../plans/2026-09-05-primary-history-api/CONTRACT.md)、
+[验证记录](../plans/2026-09-05-primary-history-api/VALIDATION.md)。
+
 ## 2026-09-05 主对话隔离组合验证
 
 运行层、API 与新前端已组合；真实 SDK + SQLite + deterministic Provider 经公共历史 API
