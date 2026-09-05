@@ -28,6 +28,10 @@ from deskpet.execution.foreground_runtime import (
 from deskpet.execution.foreground_runtime_ports import ProductForegroundToolPort
 from deskpet.execution.primary_context import PrimaryForegroundContextPort
 from deskpet.execution.primary_history import PrimaryHistoryStore
+from deskpet.execution.primary_dependencies import current_disclosure
+
+def history_disclosure():
+    return current_disclosure(run_id="history-read-request", subject=local_owner_auth().subject, request_id="history-read-request")
 from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory, QueueTurnRequest
 from deskpet.memory.schema import dispatch_startup_epoch
 from deskpet.sdk_adapters.composition import ProductSdkRuntimeStack, SdkRuntimeBuildInputs
@@ -84,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -99,7 +103,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         identity_authority=ValidatedLocalMemoryIdentityAuthority(state_path, user_data_dir=tmp_path),
         context_sources=sources,
     )
-    binding = ProviderBinding(provider, FrozenPriceEstimator("fixture-prices", "model", 1, 1), BudgetPolicy(), ProviderContinuationCapability(ProviderContinuationMode.OPAQUE_REFERENCE))
+    binding = ProviderBinding(provider, FrozenPriceEstimator("fixture-prices", provider.target.pricing_key, 1, 1), BudgetPolicy(), ProviderContinuationCapability(ProviderContinuationMode.OPAQUE_REFERENCE))
     registry = SdkRunToolAuthorityRegistry()
     specs = [dict(name=name, description=name, input_schema={"type": "object", "properties": {}})
              for name in ("tool_search", "tool_describe", "tool_activate")]
@@ -139,7 +143,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor)
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
         result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
@@ -195,13 +199,31 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             read_run_terminal_evidence = stack.read_run_terminal_evidence
             read_reserved_fact = stack.read_reserved_fact
         observer_stack = LegacyScopedStack()
+    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+    from deskpet.memory.primary_visibility import PrimaryHistoryPolicy
+    owns_visibility_memory = visibility_memory is None
+    visibility_memory = visibility_memory or HumanMemoryV7Runtime(tmp_path / "visibility-memory.db")
+    async def checker(*, subject, disclosure_context, bindings):
+        assert visibility_memory.principal().actor_id == subject
+        manager = await visibility_memory.manager()
+        return await manager.check_history_visibility(principal=visibility_memory.principal(),
+            disclosure_context=disclosure_context, bindings=bindings)
+    history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject, checker)
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
-        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger),
+        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy),
         provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate,
     )
+    runtime.history_policy = history_policy
+    runtime.history_memory = visibility_memory
+    original_close = runtime.close
+    async def close(**kwargs):
+        await original_close(**kwargs)
+        if owns_visibility_memory:
+            await visibility_memory.close()
+    runtime.close = close
     return runtime, stack, queue
 
 
@@ -219,7 +241,7 @@ async def test_primary_real_runtime_terminal_outbox_history_reopen(tmp_path):
         assert runtime.last_error is None
         assert await queue.current_snapshot(local_owner_auth().subject) is None
         assert len(provider.requests) == 1
-        history = await PrimaryHistoryStore(state).read(subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2)
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
         assert [m["content"] for m in history[0]["messages"]] == ["First actual user turn", "Actual response 1"]
         assert "PRIVATE_CANARY" not in json.dumps(history)
         assert "HIDDEN_CANARY" not in json.dumps(history)
@@ -266,8 +288,8 @@ async def test_primary_terminal_crash_reopen_does_not_resend_or_publish_partial(
         await service.enqueue_turn(QueueTurnRequest(None, "crash", "Durable actual turn"))
         with pytest.raises(RuntimeError, match="injected-terminal-crash"):
             await asyncio.wait_for(runtime._drive_once(), 15)
-        history = await PrimaryHistoryStore(state).read(
-            subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2,
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
+            subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2,
         )
         committed = int(point == "terminal.after_commit")
         assert len(history) == committed
@@ -285,8 +307,8 @@ async def test_primary_terminal_crash_reopen_does_not_resend_or_publish_partial(
         await asyncio.wait_for(runtime._drive_once(), 15)
         assert len(provider.requests) == 1
         assert await queue.current_snapshot(local_owner_auth().subject) is None
-        history = await PrimaryHistoryStore(state).read(
-            subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2,
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(
+            subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2,
         )
         assert [m["content"] for m in history[0]["messages"]] == ["Durable actual turn", "Actual response 1"]
         with sqlite3.connect(state) as db:
@@ -345,7 +367,7 @@ async def test_primary_failed_provider_settles_without_inventing_an_answer(tmp_p
         await service.enqueue_turn(QueueTurnRequest(None, "failed", "Actual failed turn"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         assert await queue.current_snapshot(local_owner_auth().subject) is None
-        history = await PrimaryHistoryStore(state).read(subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2)
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
         assert history[0]["terminal_state"] == "FAILED"
         assert history[0]["messages"] == [{"role": "user", "content": "Actual failed turn"}]
         assert len(provider.requests) == 1
@@ -366,18 +388,18 @@ async def test_primary_recent_history_is_bounded_and_subject_partitioned(tmp_pat
         for index in range(12):
             await service.enqueue_turn(QueueTurnRequest(None, f"bounded-{index}", f"Actual bounded turn {index}"))
             assert await asyncio.wait_for(runtime._drive_once(), 15)
-        history_store = PrimaryHistoryStore(state)
-        history = await history_store.read(subject=local_owner_auth().subject, primary_ref=primary, before_sequence=13)
+        history_store = PrimaryHistoryStore(state, policy=runtime.history_policy)
+        history = await history_store.read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=13)
         assert len(history) == 10
         assert [g["messages"][0]["content"] for g in history] == [f"Actual bounded turn {i}" for i in range(2, 12)]
         sent = [(m.role.value, m.content) for m in provider.requests[-1].messages]
         assert ("user", "Actual bounded turn 0") not in sent
         assert ("user", "Actual bounded turn 1") in sent
         assert sent.count(("user", "Actual bounded turn 11")) == 1
-        assert await history_store.read(subject="different-owner", primary_ref=primary, before_sequence=13) == ()
-        assert await history_store.read(subject=local_owner_auth().subject, primary_ref="different-primary", before_sequence=13) == ()
+        assert await history_store.read(subject="different-owner", primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=13) == ()
+        assert await history_store.read(subject=local_owner_auth().subject, primary_ref="different-primary", disclosure_context=history_disclosure(), before_sequence=13) == ()
         with pytest.raises(ValueError, match="primary_history_limit_invalid"):
-            await history_store.read(subject=local_owner_auth().subject, primary_ref=primary, before_sequence=13, limit=11)
+            await history_store.read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=13, limit=11)
     finally:
         await runtime.close()
         await stack.close()
@@ -408,7 +430,7 @@ async def test_primary_tool_history_uses_actual_group_not_fabricated_tool_calls(
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "tool", "Actual tool turn"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
-        history = await PrimaryHistoryStore(state).read(subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2)
+        history = await PrimaryHistoryStore(state, policy=runtime.history_policy).read(subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
         messages = history[0]["messages"]
         assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
         assert messages[2]["name"] == "tool_search"
@@ -557,17 +579,17 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
             assert receipt["terminal_authority_kind"] == "task_scope_watermarks"
             assert "primary_observation_ref" not in receipt
         for _ in range(2):
-            history = await PrimaryHistoryStore(state, settled_run_reader=stack.read_settled_primary_run).read(
-                subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2)
-            assert [m["content"] for m in history[0]["messages"]] == ["Actual old scoped user", "Actual response 1"]
-            assert history[0]["source_ref"].startswith("primary-terminal:")
+            history = await PrimaryHistoryStore(state, policy=runtime.history_policy, settled_run_reader=stack.read_settled_primary_run).read(
+                subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
+            assert [m["content"] for m in history[0]["messages"]] == ["Actual old scoped user"]
+            assert not history[0]["source_ref"].startswith("primary-terminal:")
         for field, bad in (("event_id", "other-sdk-event"), ("event_hash", "0" * 64)):
             def mismatched_reader(run_id, **kwargs):
                 terminal, messages = stack.read_settled_primary_run(run_id, **kwargs)
                 return replace(terminal, **{field: bad}), messages
             with pytest.raises(RuntimeError, match="primary_history_terminal_mismatch"):
-                await PrimaryHistoryStore(state, settled_run_reader=mismatched_reader).read(
-                    subject=local_owner_auth().subject, primary_ref=primary, before_sequence=2)
+                await PrimaryHistoryStore(state, policy=runtime.history_policy, settled_run_reader=mismatched_reader).read(
+                    subject=local_owner_auth().subject, primary_ref=primary, disclosure_context=history_disclosure(), before_sequence=2)
         with sqlite3.connect(state) as db:
             assert db.execute("SELECT evidence_id,envelope_sha256 FROM human_memory_evidence ORDER BY evidence_id").fetchall() == before
     finally:
@@ -575,7 +597,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -592,7 +614,8 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
     route = ContextRouteToolService(
         service_factory_getter=lambda: factory,
         binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
-        binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context)
+        binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context,
+        recall_executor=recall_executor)
     closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)
     tools = ProductToolsAdapter(execution_identities={i.name: "fixture" for i in inventory})
     tools.bind_run_authorities(authorities)

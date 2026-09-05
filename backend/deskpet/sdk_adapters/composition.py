@@ -719,6 +719,17 @@ class ProductSdkRuntimeStack:
                     break
         return ClosureRunFacts(binding_record=binding, last_assistant_message=last_answer)
 
+    def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
+        """Public start and effect facts, never SDK-private history SQL."""
+        from simple_harness import EffectId, thaw_json
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        start = self._uow.read_start_snapshot(run_id)
+        if start is None:
+            raise RuntimeError("primary_dependencies_start_missing")
+        return thaw_json(start), tuple(self._uow.read_effect(EffectId(value)) for value in effect_ids)
+
     def read_settled_primary_run(self, run_id: str, *, current_text: str):
         """Rebuild pre-S6 history from the real terminal and public Context."""
         terminal = self.read_run_terminal_evidence(run_id)

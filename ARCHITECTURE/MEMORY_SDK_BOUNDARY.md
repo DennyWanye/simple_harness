@@ -2,6 +2,17 @@
 
 > 最后更新：2026-09-05
 
+
+## 2026-09-05 Primary history runtime review slice — not production-ready
+
+隔离history树（base284ea40b）接shared primary visibility policy、真实start/terminal依赖、
+actual typed recall四元组与每次physical Provider前fresh check；cold USER/terminal S1无需先ingest。
+None主对话及动态route/typedrecall链相关94 passed；已发送unknown分类未改。
+**仍有P1：既有预先scoped ResumePackage无完整proof，新guard会拒绝首Provider（真实probe1红）**。
+不得以94绿抵消该回归或用scope豁免。共享API ea315525和Memory0.6.6仅隔离组合依赖，
+没有生产切换/native隐私完成结论；独立short-horizon carrier仍不支持。原证据不删除。
+命令、边界及hash见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
+
 ## 2026-09-05 主对话隔离组合验证
 
 运行层、API 与新前端已组合；真实 SDK + SQLite + deterministic Provider 经公共历史 API

@@ -5,6 +5,8 @@ from deskpet.execution.foreground_queue import ContextLineage
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
 from deskpet.execution.foreground_runtime_ports import TaskScopeForegroundContextPort, _turn_text
 from deskpet.execution.primary_history import PrimaryHistoryStore
+from deskpet.execution.primary_dependencies import dependencies, current_disclosure
+import aiosqlite
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
 from deskpet.sdk_adapters.context_partitions import (
     PARTITION_CAPS, ContextBudgetExceeded, budget_window, effective_input_budget, text_tokens,
@@ -29,15 +31,25 @@ def _context_messages(group):
 
 
 class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
-    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None):
+    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None):
         super().__init__(db_path, subject=subject, route_ledger=route_ledger)
-        self._history = PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader)
+        self._history = PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
+        self._history_policy = policy
+        self._history_path = db_path
 
     async def _source(self, candidate):
         if candidate.subject != self._subject:
             raise RuntimeError("foreground_primary_subject_mismatch")
+        from deskpet.memory.primary_visibility import read_evidence_pair
+        async with aiosqlite.connect(self._history_path) as db:
+            db.row_factory = aiosqlite.Row
+            envelope, _ = await read_evidence_pair(db=db, subject=self._subject,
+                primary_ref=candidate.primary_conversation_id, evidence_id=candidate.evidence_id)
+            if envelope.envelope_hash != candidate.evidence_hash:
+                raise RuntimeError("primary_current_user_hash_mismatch")
+        disclosure = current_disclosure(run_id=envelope.run_id, subject=self._subject, request_id=candidate.turn_id)
         groups = await self._history.read(subject=self._subject, primary_ref=candidate.primary_conversation_id,
-                                          before_sequence=candidate.enqueue_sequence, completed_only=True)
+                                          before_sequence=candidate.enqueue_sequence, completed_only=True, disclosure_context=disclosure)
         source_hash = canonical_hash({"turn": candidate.turn_id, "history": groups})
         lineage = ContextLineage(f"primary-context:{candidate.turn_id}:{source_hash}",
                                  candidate.enqueue_sequence, source_hash)
@@ -61,7 +73,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             raise RuntimeError("foreground_context_lineage_changed_after_claim")
         # Never reuse a partial/failed causal chain as a completed dialogue.
         complete = [g for g in groups if g["terminal_state"] == "COMPLETED"
-                    and g["messages"] and g["messages"][-1]["role"] == "assistant"]
+                    and g["messages"]]
         caps = PARTITION_CAPS[budget_window(provider.context_window)]["recent_causal_groups"]
         current = {"role": "user", "content": _turn_text(candidate)}
         protected = [{"role": "system", "content": PERSONA}, current]
@@ -77,6 +89,16 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         while complete and over_cap():
             # Trim whole groups only; retain exact tool call/result ordering.
             complete.pop(0)
+        proof = dependencies([{"evidence_id": candidate.evidence_id, "envelope_hash": candidate.evidence_hash},
+            *({"evidence_id": g["source_ref"], "envelope_hash": g["source_hash"]} for g in complete)])
+        if self._history_policy is None:
+            raise RuntimeError("primary_history_policy_unavailable")
+        async with aiosqlite.connect(self._history_path) as db:
+            db.row_factory = aiosqlite.Row
+            if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,
+                    dependencies=proof, disclosure_context=current_disclosure(run_id=sdk_run_id,
+                        subject=self._subject, request_id=request_id)):
+                raise RuntimeError("primary_context_dependencies_not_visible")
         messages = [protected[0], *(m for g in complete for m in _context_messages(g)), current]
         binding = {"provider_id": provider.provider_id, "model_id": provider.model_id,
                    "provider_incarnation_id": provider.provider_incarnation_id,
@@ -87,7 +109,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             session_id=execution_session_id, request_id=request_id, root_run_id=claimed.host_run_id,
             sdk_run_id=sdk_run_id, turn_id=candidate.turn_id, provider_binding=binding,
             provider_messages=messages, catalog=tools.catalog, current_message=current,
-            lineage={"primary_history_ref": lineage.context_snapshot_id,
+            lineage={"visibility_dependencies": proof,
+                     "primary_history_ref": lineage.context_snapshot_id,
                      "primary_history_hash": lineage.context_snapshot_hash,
                      "history_sources": [{"ref": g["source_ref"], "hash": g["source_hash"]} for g in complete]},
         )
@@ -96,6 +119,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             generation=claimed.generation, authority_ref=snapshot.snapshot_id,
             authority_hash=snapshot.snapshot_fingerprint, snapshot_id=snapshot.snapshot_id,
             provider_messages=tuple(messages), current_text=_turn_text(candidate), resume_refs=(),
+            visibility_dependencies=proof,
         )
 
 

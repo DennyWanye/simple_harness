@@ -80,7 +80,7 @@ async def terminal_observation_tx(db, *, host_run_id, sdk_run_id, subject):
 
 
 async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subject,
-                                      owner_id, generation, terminal, sdk_evidence, messages, error_code=None):
+                                      owner_id, generation, terminal, sdk_evidence, messages, error_code=None, visibility_dependencies=None):
     from deskpet.execution.foreground_queue import ForegroundQueueStore
     queue = ForegroundQueueStore(db_path)
     async with aiosqlite.connect(db_path) as db:
@@ -110,6 +110,7 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             "generation": generation, "terminal_state": terminal.value,
             "sdk_event_id": sdk_evidence.event_id, "sdk_event_hash": sdk_evidence.event_hash,
             "messages": list(messages), "error_code": error_code,
+            "visibility_dependencies": visibility_dependencies,
         }
         reject_private_payload(payload)
         envelope, receipt = evidence_pair(subject, sdk_run_id, payload, float(sdk_evidence.occurred_at))
@@ -121,12 +122,13 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
 
 
 class PrimaryHistoryStore:
-    def __init__(self, db_path: str | Path, *, settled_run_reader=None):
+    def __init__(self, db_path: str | Path, *, settled_run_reader=None, policy=None):
         self._db_path = db_path
         self._settled_run_reader = settled_run_reader
+        self._policy = policy
 
     async def read(self, *, subject: str, primary_ref: str, before_sequence: int,
-                   limit: int = 10, completed_only: bool = False) -> tuple[dict, ...]:
+                   limit: int = 10, completed_only: bool = False, disclosure_context=None) -> tuple[dict, ...]:
         identifier(subject, "subject")
         identifier(primary_ref, "primary_ref")
         if type(limit) is not int or not 1 <= limit <= 10:
@@ -136,7 +138,7 @@ class PrimaryHistoryStore:
         async with aiosqlite.connect(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute(
-                "SELECT r.host_run_id,r.task_scope_id,b.sdk_run_id,t.enqueue_sequence,t.turn_id,t.turn_json,"
+                "SELECT r.host_run_id,r.task_scope_id,b.sdk_run_id,t.enqueue_sequence,t.turn_id,t.turn_json,t.evidence_id,t.evidence_hash,"
                 "f.terminal_receipt_id,f.receipt_hash,f.receipt_json,f.terminal_state "
                 "FROM foreground_runs r JOIN foreground_turns t ON t.turn_id=r.turn_id "
                 "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
@@ -198,4 +200,29 @@ class PrimaryHistoryStore:
                 result.append({"source_ref": row["evidence_id"], "source_hash": row["envelope_sha256"],
                                "turn_id": payload["turn_id"], "terminal_state": payload["terminal_state"],
                                "messages": payload["messages"]})
-            return tuple(result)
+            if self._policy is None or disclosure_context is None:
+                raise RuntimeError("primary_history_policy_unavailable")
+            # Policy runs after potentially slow public SDK reads. Check both
+            # generated and original USER sources in the same current batch.
+            roots = tuple(dict.fromkeys([r["evidence_id"] for r in rows] +
+                [g["source_ref"] for g in result if not g["source_ref"].startswith("primary-terminal:")]))
+            visible = await self._policy.check_evidence_ids(db=db, primary_ref=primary_ref,
+                evidence_ids=roots, disclosure_context=disclosure_context)
+            from deskpet.memory.primary_visibility import read_evidence_pair
+            filtered = []
+            by_turn = {r["turn_id"]: r for r in rows}
+            for group in result:
+                if visible.get(group["source_ref"], False):
+                    filtered.append(group)
+                else:
+                    original = by_turn[group["turn_id"]]
+                    eid = original["evidence_id"]
+                    if visible.get(eid, False):
+                        envelope, _ = await read_evidence_pair(db=db, subject=subject,
+                            primary_ref=primary_ref, evidence_id=eid)
+                        if envelope.envelope_hash != original["evidence_hash"]:
+                            raise RuntimeError("primary_history_user_hash_mismatch")
+                        filtered.append({"source_ref": eid, "source_hash": envelope.envelope_hash,
+                            "turn_id": group["turn_id"], "terminal_state": group["terminal_state"],
+                            "messages": [{"role": "user", "content": envelope.sanitized_payload["text"]}]})
+            return tuple(filtered)
