@@ -53,3 +53,5 @@ dynamic-negative-artifact为54pass+1个Provider artifact fixture失败；最终1
 历史186pass含已撤销错误删除fixture，不作为当前交付证据；本次真实legacy fixture取代该错误正例。
 
 接口与消费边界见[PRIMARY-INTEGRATION-CONTRACT.md](PRIMARY-INTEGRATION-CONTRACT.md)。
+
+CREATE_NEW后继已单独修复，见[CREATE-NEW-BINDING.md](CREATE-NEW-BINDING.md)；上文74425388验收范围不追溯扩大。

@@ -23,6 +23,7 @@ every non-commit outcome is a stable ``{"ok": false, "error": {...}}`` failure
 from __future__ import annotations
 
 import uuid
+from pathlib import Path
 from collections.abc import Mapping
 from typing import Any
 
@@ -113,10 +114,12 @@ class ContextRouteToolService:
 
     # -- shared -----------------------------------------------------------
 
-    def _bind_service(self) -> Any:
+    def _bind_service(self, *, binding_append: Any = None) -> Any:
         factory = self._service_factory_getter()
         if factory is None:
             raise _CompositionUnavailable()
+        if binding_append is not None:
+            return factory.bind(self._auth_factory(), binding_append=binding_append)
         return factory.bind(self._auth_factory())
 
     def _identity(self) -> tuple[str, str, str, int]:
@@ -455,8 +458,8 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_title_required",
             )
-        service = self._bind_service()
-        from deskpet.memory.human_memory_service import CreateTaskScopeRequest
+        service = self._bind_service(binding_append=self._binding_append_getter())
+        from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
 
         created = await service.create_task_scope(
             CreateTaskScopeRequest(
@@ -482,19 +485,21 @@ class ContextRouteToolService:
                 "context_route_workspace_root_not_configured",
                 task_scope_id=scope,
             )
-        outcome = await binding_append.append_binding(
-            subject=self._auth_factory().subject,
-            task_scope_id=scope,
-            root=str(root),
+        # configured_root is an authority DTO, not a path string. Each task
+        # gets a stable direct child; title/model text never selects a root.
+        task_root = Path(root.canonical_path) / f"task-{scope}"
+        outcome = await service.append_binding(AppendBindingRequest(
+            scope_ref=scope,
+            root=str(task_root),
             idempotency_key=f"context-route:{run_id}:{effect_id}",
-            interaction_evidence_id=f"context-route:{run_id}:{effect_id}",
-            interaction_evidence_hash=canonical_sha256(dict(proposal)),
-        )
+        ))
         if str(outcome.get("status", "")) == "authorization_required":
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_binding_authorization_required",
                 task_scope_id=scope,
+                binding_challenge=dict(outcome),
+                required_action="binding.manual.decide",
             )
         binding = await self._binding_head(scope)
         return await self._commit_receipt(

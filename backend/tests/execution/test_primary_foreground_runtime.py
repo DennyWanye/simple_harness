@@ -84,7 +84,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -137,7 +137,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root)
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
         result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
@@ -573,7 +573,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -589,8 +589,8 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory):
     bridge = SdkRuntimeCapabilityBridgeAdapter(authorities, execution_context)
     route = ContextRouteToolService(
         service_factory_getter=lambda: factory,
-        binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path),
-        binding_append_getter=lambda: None, ledger=ledger, tool_context_getter=active_product_tool_context)
+        binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
+        binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context)
     closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)
     tools = ProductToolsAdapter(execution_identities={i.name: "fixture" for i in inventory})
     tools.bind_run_authorities(authorities)
@@ -610,7 +610,8 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory):
                 result = json.loads(write_file(dict(args), execution_context=execution_context()))
             else:
                 raise AssertionError(name)
-            return ToolResult.succeeded(context.call_id, result)
+            from deskpet.sdk_adapters.tools import _result
+            return _result(result)
         tools.register(FunctionTool(source_tools.get(item.name).spec, invoke))
     return tools
 
