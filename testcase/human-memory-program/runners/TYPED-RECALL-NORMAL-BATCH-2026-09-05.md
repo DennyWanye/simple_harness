@@ -1,5 +1,42 @@
 # TC-HM-13 normal/source execution increment
 
+## 0.6.5 已复审增量（2026-09-05）
+
+代码 `0a3cd209`，fixture rev7/layers rev5 pin `18324022`。本机 fresh clean venv 两层实际结果：
+**174 PASS / 0 FAIL / 227 BLOCKED**；343 public + 10 source OBSERVED，48 public executor未实现。
+74桥专项回归通过，均不计产品cell。独立复审接受拒绝控制P1和跨principal setup P2修复。
+首次0.6.5的14攻击PASS曾撤回；现在要求独立非空业务基线、完整hash、exactreplay、公开manifest
+的终态行精确增量和攻击前后绑定，再消费immutable invocation-bound receipt，整数5只接受
+protocol/typed_recall_protocol_unsupported。14攻击、可信typed authority新增6、UNKNOWN新增20
+均由真实调用及独立oracle通过；额外6状态路径仍因完整绑定欠缺BLOCKED。旧候选和错误证据保留。
+
+当前完整运行索引 `.local-test-evidence/2026-09-05/typed-recall-clock065-r3/bridge-summary.json`，
+SHA256 `5f2b4be4e06849b54ba8b101481725a747e91fbc12d3299cf9d27d53183b8dd0`。执行时工作树
+随后提交为0a3cd209；提交后逐一核验11个execution_code_sha256对应文件和Git blob字节一致，
+没有为了提交重复跑同一401。独立review `typed-recall-witness-review-r2.log`；它确认P1/P2
+resolved并另跑34个专项通过。SDK public安装身份每层151 Harness /61 Memory文件一致；
+source为独立detached30743bb。未使用用户提供的producer测试数冒充本机验证。
+
+Memory0.6.5 source `30743bb17ed8301d01028357de6e4c5adcdde26b`，wheel SHA
+`0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df`。最小复跑沿用下方命令，
+将memory-wheel替换为`/Users/denny/projects/simple-harness-memory-sdk-recall-observability/.local-test-evidence/2026-09-05/rejection-candidate/build1/simple_harness_memory_sdk-0.6.5-py3-none-any.whl`，
+memory-wheel-sha256/source-commit用本段身份，source-checkout用
+`/Users/denny/projects/simple-harness-memory-sdk-typed-recall-source-30743bb`，RUN_DIR取新目录。
+Harness身份不变，退出3（总体BLOCKED），不启provider/UI/MPS，不安装主树venv。
+
+剩余项分层：
+- 执行/setup工作：48执行器、合法lifecycle历史、typed双span、procedure applicability/
+  prospective signal、short conversation及current-use；Popper正独立提供typed helper叶子，尚未整合。
+- 完整oracle工作：冲突/返回/source PK与非final状态绑定、projection canary、vector executed-lane。
+- 明确契约差异：原24 AUDIT recipient均非AUDIT_REVIEWER，公开构造器禁止；原16
+  verified_external非source_verified组合也被公开DTO禁止；原procedure eligible不属于
+  公开enum；128-byte完整page binding不适配。不得换输入/增阈值通过；这些不等于已证实产品缺陷。
+- 尚无本批确认的新SDK产品缺陷。不能把构造或入库拒绝当recall资格断言通过。
+
+**分支未并入Host，S3/program未完成。** 主共享venv仍0.6.3；原401/391+10/14攻击/阈值保持。
+
+## 0.6.4 历史已复审增量（证据保留）
+
 2026-09-05，独立分支 `feature/human-memory-typed-recall-runner`，受测代码 `4b1c6dcf`。
 **S3/program 未完成；不合并、不 push、不改主树。**
 
