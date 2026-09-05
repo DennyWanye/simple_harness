@@ -52,7 +52,7 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
             raise ValueError("scope_disclosure_limit")
         fields = {}
         for route in routes:
-            _, (effect,) = stack.read_primary_dependency_facts(route["run_id"], (route["effect_id"],))
+            producer_start, (effect,) = stack.read_primary_dependency_facts(route["run_id"], (route["effect_id"],))
             if effect is None or not effect.terminal or effect.result is None:
                 continue
             value = thaw_json(effect.result.value)
@@ -61,6 +61,8 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
                     or effect.raw_call_id != route["raw_call_id"]
                     or value.get("context_route_receipt") != route):
                 raise ValueError("scope_disclosure_producer_mismatch")
+            if producer_start.get("input", {}).get("context_metadata", {}).get("primary_effect_index_version") != 1:
+                continue  # old producer had no complete unscoped effect index
             raw = value.get("producer_dependencies")
             if raw is None:
                 continue  # preserved legacy producer, not a new fabricated proof

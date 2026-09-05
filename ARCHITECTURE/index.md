@@ -1,5 +1,19 @@
 # ARCHITECTURE 索引
 
+## 2026-09-05 Primary source effect index v47 — candidate, pending review
+
+8e896472 independent P1 confirmed: unscoped search could escape source checks when
+TaskScope reservations were absent. A Host append-only exact SDK effect identity
+index now records real handler entry under the captured foreground lease; Provider
+preflight reads actual SDK results and preserves search→create dependency prefixes.
+No scope grant/watermark, SDK change or old evidence restamp. Default schema is47;
+coordinator owns deferred S5c's explicit48 remap (historical47 AC remains historical).
+Fixed real late-forget counterexample is green; adjacent search/scope17, page-in1,
+startup/create32 and migration11 passed. Independent review remains required; no
+main/native or full privacy completion claim. Ordinary page-in lacking source proof
+rejects; generic page-in source projection and short source-only admission remain open.
+Details and raw-log hashes: [source migration contract](../plans/2026-09-05-primary-effect-sources/SOURCE-MIGRATION-CONTRACT.md).
+
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
 2026-09-05 installed067运行层v2保真/严格拒绝与new-message producer组合60绿；旧archive不改，

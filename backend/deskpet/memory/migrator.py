@@ -122,7 +122,9 @@ CONTEXT_ROUTE_SCHEMA_VERSION = 45
 # EffectGate sticky memo, Host pre-admission audit.
 EFFECT_CLOSURE_MIGRATION = "038_effect_closure_memory_v46.sql"
 EFFECT_CLOSURE_SCHEMA_VERSION = 46
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = EFFECT_CLOSURE_SCHEMA_VERSION
+PRIMARY_EFFECT_SOURCES_MIGRATION = "039_primary_effect_sources_v47.sql"
+PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION = 47
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -137,6 +139,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         FOREGROUND_EXECUTION_MIGRATION,
         CONTEXT_ROUTE_MIGRATION,
         EFFECT_CLOSURE_MIGRATION,
+        PRIMARY_EFFECT_SOURCES_MIGRATION,
     }
 )
 
@@ -170,6 +173,7 @@ MIGRATION_STEPS: dict[str, int] = {
     FOREGROUND_EXECUTION_MIGRATION: FOREGROUND_EXECUTION_SCHEMA_VERSION,
     CONTEXT_ROUTE_MIGRATION: CONTEXT_ROUTE_SCHEMA_VERSION,
     EFFECT_CLOSURE_MIGRATION: EFFECT_CLOSURE_SCHEMA_VERSION,
+    PRIMARY_EFFECT_SOURCES_MIGRATION: PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -186,6 +190,7 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         # existing database is repaired by `repair_context_route_registration`.
         CONTEXT_ROUTE_MIGRATION,
         EFFECT_CLOSURE_MIGRATION,
+        PRIMARY_EFFECT_SOURCES_MIGRATION,
     }
 )
 
@@ -908,6 +913,8 @@ async def run_migrations(
                             (version, migration_sha256, time.time()),
                         )
                     if version in _S4_HUMAN_MIGRATIONS:
+                        if version == PRIMARY_EFFECT_SOURCES_MIGRATION:
+                            await _register_recovery_tables(db, (("primary_effect_identities", "A"),))
                         migration_sha256 = hashlib.sha256(
                             sql.encode("utf-8")
                         ).hexdigest()
@@ -1177,7 +1184,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            EFFECT_CLOSURE_SCHEMA_VERSION
+            PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION
+            if PRIMARY_EFFECT_SOURCES_MIGRATION in durable_markers
+            else EFFECT_CLOSURE_SCHEMA_VERSION
             if EFFECT_CLOSURE_MIGRATION in durable_markers
             else FOREGROUND_EXECUTION_SCHEMA_VERSION
             if FOREGROUND_EXECUTION_MIGRATION in durable_markers

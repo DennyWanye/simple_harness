@@ -333,6 +333,11 @@ class ProductToolsAdapter(ToolRegistry):
         token = _current_call_id.set(call.call_id)
         context_token = _current_tool_context.set(context)
         try:
+            origin = _foreground_invocation_origin.get()
+            if origin is not None:
+                from deskpet.execution.primary_effect_index import record_effect
+
+                await record_effect(origin, context, call.name)
             delivery_adapter = None
             try:
                 from .desktop_runtime import _delivery_adapters

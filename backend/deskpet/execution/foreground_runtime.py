@@ -773,6 +773,7 @@ class ForegroundRuntimeExecutionAuthority:
                 "request_id": request_id,
                 "task_scope_id": candidate.task_scope_id,
                 "visibility_dependencies": thaw_json(context.visibility_dependencies),
+                "primary_effect_index_version": 1,
                 "scope_disclosure": thaw_json(context.scope_disclosure),
                 "context_authority_ref": context.authority_ref,
                 "context_authority_hash": context.authority_hash,

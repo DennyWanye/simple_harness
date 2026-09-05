@@ -205,21 +205,31 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
             if item["item_id"] != fragment["ref"]:
                 raise ValueError("primary_dependencies_item_mismatch")
             recall.append(item)
-    # The production tool ingress already reserves real search effect IDs.
-    # Reuse that durable Host index; never derive SDK IDs or query SDK tables.
-    cursor = await db.execute("SELECT source_event_id,source_sequence,tool_name FROM harness_evidence_reservations WHERE run_id=? AND tool_name IN ('task_scope_search','context_page_in') ORDER BY source_sequence LIMIT 257", (sdk_run_id,))
+    # Every actual primary handler records its exact SDK identity, including
+    # unscoped search/page-in. TaskScope reservations are not a complete index.
+    if metadata.get("primary_effect_index_version") != 1:
+        raise ValueError("primary_effect_index_contract_missing")
+    cutoff = None
+    if before_effect_id is not None:
+        cursor = await db.execute("SELECT sequence FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
+            (sdk_run_id, before_effect_id))
+        row = await cursor.fetchone()
+        if row is None:
+            raise ValueError("primary_effect_index_prefix_missing")
+        cutoff = row[0]
+    cursor = await db.execute("SELECT * FROM primary_effect_identities WHERE sdk_run_id=? "
+        "AND tool_name IN ('task_scope_search','context_page_in') AND (? IS NULL OR sequence<?) ORDER BY sequence LIMIT 257",
+        (sdk_run_id, cutoff, cutoff))
     searches = await cursor.fetchall()
     if len(searches) > 256:
         raise ValueError("scope_disclosure_limit")
-    if before_effect_id is not None:
-        cursor = await db.execute("SELECT source_sequence FROM harness_evidence_reservations WHERE run_id=? AND source_event_id=?", (sdk_run_id, f"effect:{before_effect_id}"))
-        cutoff = await cursor.fetchone()
-        if cutoff is not None:
-            searches = [row for row in searches if row["source_sequence"] < cutoff[0]]
     for row in searches:
-        if not row["source_event_id"].startswith("effect:"):
-            raise ValueError("scope_search_effect_identity_missing")
-        effect_id = row["source_event_id"][len("effect:"):]
+        from deskpet.task_scope.protocol import canonical_hash
+        identity = dict(host_run_id=run["host_run_id"], sdk_run_id=sdk_run_id,
+                        effect_id=row["effect_id"], tool_name=row["tool_name"])
+        if row["identity_json"] != canonical_json(identity) or row["identity_hash"] != canonical_hash(identity):
+            raise ValueError("primary_effect_index_identity_mismatch")
+        effect_id = row["effect_id"]
         _, (fact,) = stack.read_primary_dependency_facts(sdk_run_id, (effect_id,))
         if fact is None or not fact.terminal or fact.result is None or fact.tool_name != row["tool_name"] or fact.run_id.value != sdk_run_id:
             raise ValueError("scope_search_effect_unverified")

@@ -29,6 +29,25 @@ from deskpet.memory.schema import (
     inspect_startup_epoch,
 )
 
+@pytest.fixture(autouse=True)
+def frozen_v46_migration_lane(tmp_path, monkeypatch):
+    """Keep the original v45->v46 AC exact as newer default migrations arrive."""
+    directory = tmp_path / "frozen-v46-migrations"
+    directory.mkdir()
+    for source in DEFAULT_MIGRATIONS_DIR.glob("*.sql"):
+        if migrator.MIGRATION_STEPS.get(source.name, 0) <= 46:
+            shutil.copy2(source, directory / source.name)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", directory)
+        patch.setattr(migrator, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", 46)
+        patch.setattr(schema, "HUMAN_MEMORY_TARGET_SCHEMA_VERSION", 46)
+        try:
+            yield
+        finally:
+            # Per-case target probes must unwind before the frozen lane.
+            monkeypatch.undo()
+
+
 V46_TABLES = (
     "task_scope_closure_receipts",
     "harness_evidence_reservations",
@@ -41,9 +60,9 @@ V46_TABLES = (
 )
 
 
-def test_v46_is_the_registered_target() -> None:
+def test_v46_remains_the_registered_historical_step() -> None:
     assert EFFECT_CLOSURE_MIGRATION == "038_effect_closure_memory_v46.sql"
-    assert EFFECT_CLOSURE_SCHEMA_VERSION == 46 == HUMAN_MEMORY_TARGET_SCHEMA_VERSION
+    assert EFFECT_CLOSURE_SCHEMA_VERSION == 46
     assert migrator.MIGRATION_STEPS[EFFECT_CLOSURE_MIGRATION] == 46
     assert (DEFAULT_MIGRATIONS_DIR / EFFECT_CLOSURE_MIGRATION).is_file()
 
@@ -60,7 +79,7 @@ async def _v45_database(tmp_path: Path, monkeypatch) -> Path:
     legacy_dir = tmp_path / "migrations-v45"
     legacy_dir.mkdir()
     for source in sorted(DEFAULT_MIGRATIONS_DIR.glob("*.sql")):
-        if source.name.startswith("038_"):
+        if migrator.MIGRATION_STEPS.get(source.name, 0) > 45 or source.name.startswith(("038_", "039_")):
             continue
         shutil.copy2(source, legacy_dir / source.name)
     monkeypatch.setattr(migrator, "DEFAULT_MIGRATIONS_DIR", legacy_dir)
