@@ -7,7 +7,8 @@ only the verified primary ID/readiness across read invalidation, keeping the par
 MemoryPanel's same-connection write correlation alive. Content/detail/graph readers
 still retract; actual authority changes clear the reference and preserve unknown
 safety. React parent first-red/expanded-red evidence and focused47 tests pass, with
-typecheck/build/ESLint. Dirac pre-review found no P0/P1; fixed review pending.
+typecheck/build/ESLint. Dirac fixed-source c64d6efa review: scoped ACCEPT, no P0/P1;
+five evidence hashes and final parent9 result independently verified.
 Main owns native integration/ACK proof; no backend/pin or native process changes.
 No new native/SDK success claim; seven-node label overlap P2 remains separate.
 See [scoped handoff](../plans/2026-09-06-primary-forget-ack/RESULTS.md).

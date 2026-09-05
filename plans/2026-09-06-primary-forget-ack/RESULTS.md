@@ -71,8 +71,10 @@ New raw evidence stays ignored under `.local-test-evidence/2026-09-06/forget-ack
 
 ## Review / integration boundary
 
-Dirac pre-reviewed both product files and expanded parent tests: no P0/P1 found;
-fixed-byte review follows the candidate commit. Main owns cherry-pick/exact native
+Dirac fixed-byte review of `c64d6efaf5706c1be0c8e2b2b903f7633923f82d`: scoped
+source/React protocol integration ACCEPT, no leaf P0/P1. Both product files match
+the reviewed bytes; all five indexed artifact hashes and final parent9 result were
+independently checked. No suite/native/Provider rerun by the reviewer. Main owns cherry-pick/exact native
 build and final Forget ACK interaction. Do not infer confirmation from the missing
 memory/history, clear pending by hand, recreate the already-forgotten source, or
 claim HM/program PASS. The seven-node label overlap remains a separate readability
