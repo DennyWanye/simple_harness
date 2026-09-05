@@ -159,7 +159,10 @@ class SemanticCorrectionAuthority:
             context.disclosure_context, context.evidence_refs, context.budget,
             identity, (RecallReasonCode.USER_FACT_DEPENDENCY,))
         manager = await self._manager()
-        execution = await manager.execute_typed_recall(principal=principal, context=context, plan=plan, now=now)
+        from deskpet.operation_audit.memory_attempts import MemoryAttemptJournal
+        journal = MemoryAttemptJournal(self._path.with_name("operation-audit.db"), clock=self._clock)
+        execution = await journal.execute_typed_recall(manager, principal=principal, context=context,
+            plan=plan, now=now, caller="analysis_candidates")
         result = execution.result
         result.validate_decision(execution.decision)
         candidates = []

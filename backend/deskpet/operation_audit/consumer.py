@@ -6,7 +6,7 @@ import asyncio
 import re
 import uuid
 from collections.abc import Callable
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from deskpet.operation_audit.sources import TerminalSources
 from deskpet.operation_audit.store import (
@@ -15,6 +15,9 @@ from deskpet.operation_audit.store import (
     ReadClaim,
     canonical,
 )
+
+if TYPE_CHECKING:
+    from deskpet.operation_audit.preparation_sources import PreparationAuditConsumer
 
 
 class AuditCapabilityUnavailable(RuntimeError):
@@ -212,6 +215,7 @@ class TerminalAuditConsumer:
         )
         self.worker = uuid.uuid4().hex
         self.last_code: str | None = None
+        self.preparation_sources: PreparationAuditConsumer | None = None
         self._wake, self._stop = asyncio.Event(), asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -225,6 +229,8 @@ class TerminalAuditConsumer:
     async def tick(self, *, max_pages: int = 4) -> int:
         if type(max_pages) is not int or not 1 <= max_pages <= 16:
             raise ValueError("audit tick bound invalid")
+        if self.preparation_sources is not None:
+            await self.preparation_sources.discover(limit=32)
         for source in await self.sources.read():
             await self.store.admit(source)
         processed = 0
