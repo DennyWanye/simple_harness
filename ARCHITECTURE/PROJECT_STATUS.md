@@ -1,5 +1,11 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 短期选中来源已合成
+
+最后更新：2026-09-06。独审2d98e083合入7fafe03a，同时保留审计authority；实际factory每hit完整来源、裁减/遗忘不互相污染、显式长期零short与HUMAN审计WS组合42项通过（21.12秒、峰值238MiB）。
+仅已有内部短请求来源路径闭合；自动生产索引worker、多消息完整producer、新模型short协议及原program仍未完成。无新模型/native运行。
+[组合结果与边界](../plans/2026-09-06-selected-short-runtime/COMBINED.md)。
+
 ## 2026-09-06 Selected short runtime bounded leaf
 
 最后更新：2026-09-06。隔离`feat/selected-short-runtime`/base49249dbd：actual factory
