@@ -16,7 +16,7 @@ def load(path):
 def test_recipes_have_only_inputs_and_original_budget_limits():
     fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
     rows=load(ROOT/'runners/typed_recall_normal_inputs.py').recipes(fixture)
-    assert len(rows)==290 and len({r['cell_id'] for r in rows})==290
+    assert len(rows)==292 and len({r['cell_id'] for r in rows})==292
     def keys(value):
         if isinstance(value,dict):
             for key,value in value.items():
@@ -80,3 +80,98 @@ def test_evidence_invalidation_revokes_previously_admitted_cells():
     bridge.invalidate_admissions(summary,'public','evidence changed')
     assert summary['layers']['public']['passed_cells']==[]
     assert summary['cell_results']['eligibility/a']['status']=='FAIL'
+
+
+@pytest.mark.asyncio
+async def test_state_executor_reaches_real_head_suppression_and_partial_group(tmp_path):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    inputs={'payloads':{k:{**v,'qualifiers':[]} for k,v in fixture['conflict_write_oracle']['canonical_payloads'].items()},
+        'state_cells':['eligibility/current-head','eligibility/stale-head','eligibility/suppressed',
+            'eligibility/ordinary-resolved','eligibility/ordinary-contested','conflict-state/contested-dependent-partial']}
+    rows=await load(ROOT/'adapters/typed_recall_conflict_cases.py').run_state_cases(inputs,tmp_path)
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    assert len(rows)==6
+    for row in rows:
+        assert 'exception' not in row['observations'],row['observations'].get('exception')
+        judged=oracle.assess_state(fixture,row)
+        assert judged['status']=='BLOCKED' and judged['business_assertions'],judged
+
+
+@pytest.mark.asyncio
+async def test_registered_typed_authority_reaches_recall_and_rejects_reference_tamper(tmp_path):
+    import dataclasses
+    module=load(ROOT/'adapters/typed_recall_case_manager.py')
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    recipes=load(ROOT/'runners/typed_recall_normal_inputs.py').recipes(fixture)
+    selected=[r for r in recipes if r['cell_id'] in {
+        'eligibility/epistemic:semantic:verified_external:source_verified',
+        'eligibility/epistemic:semantic:observed_behavior:repeated_observation'}]
+    assert len(selected)==2
+    rows=await load(ROOT/'adapters/typed_recall_normal_cases.py').run_cases(selected,tmp_path)
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    for row in rows:
+        assert 'exception' not in row['observations'],row['observations'].get('exception')
+        judged=oracle.assess_normal(fixture,row)
+        assert judged['status']=='PASS',judged
+        bad=copy.deepcopy(row)
+        event=next(e for e in bad['observations']['calls'] if e['call']=='resolve_typed_observation')
+        event['receipt']['value_hash']='f'*64
+        assert oracle.assess_normal(fixture,bad)['status']=='FAIL'
+    case=await module.CaseManager(tmp_path/'resolver.db').open()
+    try:
+        await case.evidence('independent text','typed-source','verified_external','source_verified')
+        receipt=case.typed_receipts['typed-source-typed'];ref=case.typed_ref(receipt)
+        assert await case.authority.resolve_typed_observation(ref)==receipt
+        with pytest.raises(ValueError,match='binding'):
+            await case.authority.resolve_typed_observation(dataclasses.replace(ref,value_hash='f'*64))
+    finally:
+        await case.close()
+
+
+@pytest.mark.asyncio
+async def test_rejection_baseline_requires_business_and_real_terminal_delta(tmp_path):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    module=load(ROOT/'adapters/typed_recall_case_manager.py')
+    case=await module.CaseManager(tmp_path/'control.db').open()
+    try:
+        payload=next(v['provider_payload'] for v in fixture['approved_oracle']['semantic_source_vectors'] if v['id']=='incumbent')
+        await case.seed({'memory_type':'semantic','payload':payload},evidence_id='evidence-relation-1')
+        context,plan=case.request(query='3.11')
+        rows=await case.cases.replay_cases(case.manager,case.principal,context,plan,{'mutations':[],'unsupported':[]},case.now,case.snapshot)
+        baseline=rows[0]['observations'];state=baseline['after_control']
+        oracle.check_rejection_control(fixture,baseline,state)
+        bad=copy.deepcopy(baseline);bad['first']['result']['items']=[]
+        with pytest.raises(ValueError,match='no-fault control failed'):
+            oracle.check_rejection_control(fixture,bad,state)
+        bad=copy.deepcopy(baseline);bad['before_control']=copy.deepcopy(bad['after_control'])
+        with pytest.raises(ValueError,match='control delta'):
+            oracle.check_rejection_control(fixture,bad,state)
+        bad=copy.deepcopy(baseline)
+        for key in ('before_control','after_control'):
+            manifest=bad[key]['manifest']
+            for root in manifest['table_roots']:
+                if root['table_name'] in oracle.FINAL_TABLES:
+                    manifest['total_row_count']-=root['row_count'];root.update(row_count=0,first_leaf_hash=None,last_leaf_hash=None)
+            bad[key]['payload_hash']=oracle.hash_json(manifest)
+        with pytest.raises(ValueError):
+            oracle.check_rejection_control(fixture,bad,bad['after_control'])
+    finally:
+        await case.close()
+
+
+@pytest.mark.asyncio
+async def test_unknown_recipient_diagnostic_completes_input_without_granting_access(tmp_path):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    recipes=load(ROOT/'runners/typed_recall_normal_inputs.py').recipes(fixture)
+    rows=[r for r in recipes if r['cell_id'].startswith('eligibility/disclosure:UNKNOWN:') and r['purpose']!='AUDIT']
+    assert len(rows)==20
+    results=await load(ROOT/'adapters/typed_recall_normal_cases.py').run_cases(rows,tmp_path)
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    for row in results:
+        assert 'exception' not in row['observations'],row['observations'].get('exception')
+        judged=oracle.assess_normal(fixture,row)
+        assert judged['status']=='PASS',judged
+        context=row['observations']['recalls'][0]['context']
+        assert context['disclosure_context']['recipient']=='unknown'
+        assert 'disclosure_unknown_recipient' in context['disclosure_context']['reason_codes']

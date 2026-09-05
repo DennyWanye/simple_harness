@@ -79,7 +79,7 @@ def mutation_map():
     # Fixed before consumers execute. Reasons come from the public validation
     # contract/source inspection, never from a caught candidate exception.
     attacks = [
-        ("protocol_version", "request.harness_protocol", "recall-v5"),
+        ("protocol_version", "request.harness_protocol", 5),
         ("principal_id", "principal.actor_id", "principal-2"),
         ("run_id", "context.run_id", "run-2"),
         ("context_hash", "plan.context_hash", "e1b5609251224d45c0b3a0d5b5cb2b02506881bfebb37aaf40101767a63652ca"),
@@ -104,9 +104,9 @@ def mutation_map():
                "memory_call": True, "candidate_query_count": 0,
                "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"}
         if attack == "protocol_version":
-            row.update(gap="NO_PUBLIC_REQUEST_PROTOCOL_VERSION_INPUT", memory_call=False,
-                       reject_layer="Host strict request parser (unavailable)", exception_type=None,
-                       exact_reason=None, companion_bindings="Do not substitute Context schema_version or result parser version")
+            row.update(memory_call=True, reject_layer="MemoryManager.execute_typed_recall.protocol",
+                       exception_type="MemoryValidationError",exact_reason="typed_recall_protocol_unsupported",
+                       original_runner_label="recall-v5",companion_bindings="Keep context/plan and idempotency_key; pass exact int harness_protocol=5; not string/type rejection")
         elif attack == "principal_id":
             row.update(reject_layer="Memory.execute_typed_recall.ownership",
                        exception_type="MemoryOwnershipConflict", exact_reason="typed_recall_subject_not_owned",
@@ -117,6 +117,7 @@ def mutation_map():
                        companion_bindings="Keep legitimate context and its hash; replace only plan.context_hash intentionally")
         elif attack in {"plan_id", "plan_hash"}:
             row["companion_bindings"] = "Keep entire context and idempotency_key; change specified plan input only; SDK derives plan_hash"
+        row["public_witness_stage"] = "protocol" if attack=="protocol_version" else "ownership" if attack=="principal_id" else "narrowing" if attack=="context_hash" else "idempotency"
         rows.append(row)
     return rows
 
@@ -130,9 +131,7 @@ def judge_rejection(row, observed):
             raise ValueError("wrong rejection layer/reason: " + row["original_attack"])
     if observed.get("memory_called") != row["memory_call"]:
         raise ValueError("wrong public call boundary")
-    # The exception has no public per-invocation read counter. A manifest proves
-    # writes only; do not turn absence of writes into absence of candidate reads.
-    return "BLOCKED"
+    return "PASS" if check_rejection_witness(row,observed) else "BLOCKED"
 
 
 def check_attack_inputs(fixture, row, observed, baseline):
@@ -150,7 +149,10 @@ def check_attack_inputs(fixture, row, observed, baseline):
             or context["budget"] != original["budget"] or plan["plan_id"] != original["plan_id"]):
         raise ValueError("mutation baseline differs from frozen inputs")
     actor, field, value = context["subject"], row["original_attack"], row["mutation"]
-    if field == "principal_id":
+    if field == "protocol_version":
+        if type(observed.get("harness_protocol")) is not int or observed["harness_protocol"]!=5:
+            raise ValueError("protocol attack must be integer5, not bad type")
+    elif field == "principal_id":
         actor = value
     elif field == "context_hash":
         plan["context_hash"] = value
@@ -200,6 +202,39 @@ def check_fault(phase, *, control_business_valid, before, immediate, control_aft
         raise ValueError("fault phase must be fixed before execution")
 
 
+def check_rejection_control(fixture, baseline, before_manifest):
+    control=assess_cell(fixture,{'cell_id':'unsupported-replay/exact-replay','status':'OBSERVED',
+        'reason':'','observations':baseline})
+    if control['status']=='FAIL' or not control['business_assertions']:
+        raise ValueError('rejection no-fault control failed: '+control['reason'])
+    first,replay=baseline['first'],baseline['replay']
+    check_execution_wire(first,baseline['context'],baseline['plan'])
+    check_execution_wire(replay,baseline['context'],baseline['plan'])
+    item=first['result']['items'][0]
+    if (first['candidate_query_count']!=1 or not first['candidate_query_started'] or first['replayed']
+            or item['score']!=round(.30/61,12)
+            or item['evidence_manifest_hash']!=hash_json(['evidence-relation-1'])
+            or first['result']['confirmation_groups']):
+        raise ValueError('rejection no-fault candidate/evidence/rank differs')
+    protected_hash(before_manifest['manifest'],before_manifest['payload_hash'],FINAL_TABLES)
+    roots={r['table_name']:r for r in before_manifest['manifest']['table_roots']}
+    controls=[]
+    for label in ('before_control','after_control'):
+        state=baseline[label]
+        protected_hash(state['manifest'],state['payload_hash'],FINAL_TABLES)
+        controls.append({r['table_name']:r for r in state['manifest']['table_roots']})
+    for name in FINAL_TABLES:
+        delta=1 if name in {'typed_recall_decisions','typed_recall_decision_items','typed_recall_results',
+            'typed_recall_result_items','typed_recall_terminals'} else 0
+        if (controls[1][name]['row_count']-controls[0][name]['row_count']!=delta
+                or roots[name]!=controls[1][name]):
+            raise ValueError('rejection terminal control delta/binding differs '+name)
+    for name in ('typed_recall_decisions','typed_recall_decision_items','typed_recall_results',
+                 'typed_recall_result_items','typed_recall_terminals'):
+        if roots[name]['row_count']<1:
+            raise ValueError('rejection durable baseline missing '+name)
+
+
 def assess_cell(fixture, cell, baseline=None):
     """Evaluate independent business assertions, then retain remaining gates.
 
@@ -209,6 +244,8 @@ def assess_cell(fixture, cell, baseline=None):
     name, observed = cell["cell_id"], cell["observations"]
     if cell["status"] != "OBSERVED":
         return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
+    if "state_cell" in observed:
+        return assess_state(fixture,cell)
     if "return_recipe" in observed:
         return assess_return(fixture,cell)
     if "conflict_recipe" in observed:
@@ -259,8 +296,9 @@ def assess_cell(fixture, cell, baseline=None):
             checks.append("actual decision/result byte-identical replay and zero candidate query")
         elif name.startswith("unsupported-replay/request-hash:"):
             row = next(row for row in fixture["approved_oracle"]["mutation_mapping"] if row["cell_id"] == name)
-            judge_rejection(row, observed)
+            rejection_status=judge_rejection(row, observed)
             check_attack_inputs(fixture, row, observed, baseline)
+            check_rejection_control(fixture, baseline, observed["before_manifest"])
             for key in ("before_manifest", "after_manifest"):
                 access = observed[key]
                 observed_hash = protected_hash(access["manifest"], access["payload_hash"], sorted(set(MUTATION_TABLES + FINAL_TABLES)))
@@ -275,8 +313,10 @@ def assess_cell(fixture, cell, baseline=None):
                 raise ValueError("unknown/non-audit table changed during rejected replay")
             checks += ["frozen attack and companion inputs", "observed public exception class/message and Memory call",
                        "real manifest protected state unchanged"]
-            blockers.append("PUBLIC_EXCEPTION_HAS_NO_PER_INVOCATION_CANDIDATE_READ_WITNESS")
-            blockers.append("INTERNAL_REJECTION_LAYER_HAS_NO_PUBLIC_WITNESS")
+            if rejection_status=="BLOCKED":
+                blockers += ["PUBLIC_EXCEPTION_HAS_NO_PER_INVOCATION_CANDIDATE_READ_WITNESS","INTERNAL_REJECTION_LAYER_HAS_NO_PUBLIC_WITNESS"]
+            else:
+                checks.append("public frozen invocation-bound pre-candidate receipt with exact inputs/stage/reason/zero reads")
         elif name == "unsupported-replay/conflicting-replay":
             if observed.get("exception_type") != "MemoryIdempotencyConflict" or observed.get("exception_reason") != "IDEMPOTENCY_CONFLICT":
                 raise ValueError("conflicting replay failed to reject at idempotency")
@@ -300,6 +340,8 @@ def assess_cell(fixture, cell, baseline=None):
             checks.append("all original unsupported reasons in exact order; rejected invalid plan, zero query/payload")
         else:
             blockers.append("INDEPENDENT_CELL_ORACLE_NOT_IMPLEMENTED")
+        if not blockers and name.startswith("unsupported-replay/request-hash:"):
+            return {"status":"PASS","reason":"","business_assertions":checks}
         if not blockers:
             blockers.append("FULL_ORIGINAL_CELL_ADMISSION_PENDING")
         return {"status": "BLOCKED", "reason": ";".join(blockers), "business_assertions": checks}
@@ -615,6 +657,27 @@ def check_seed_authority(observed,recipe,full_source):
             or span['source_hash']!=source_hash or span['quote_hash']!=source_hash
             or span['exact_quote']!=text or span['start_byte']!=0 or span['end_byte']!=len(text.encode())):
         raise ValueError('admitted evidence/envelope/span authority chain differs')
+    if span.get('typed_observation') is not None:
+        typed=next(e for e in observed['calls'] if e['call']=='resolve_typed_observation')
+        receipt=typed['receipt'];ref=span['typed_observation']
+        schema={'type':'string','description':'Admitted public memory assertion text'}
+        expected_ref=dict(schema_id='observation/typed-recall-public-text',schema_version=1,
+            registered_schema_hash=hash_json(schema),observation_receipt_id=eid+'-typed',
+            observation_receipt_hash=sdk_domain_hash('simple-harness/typed-observation-authority-receipt/v2',receipt),
+            authority_issuer_id='host-typed-observation-authority',json_pointer='/public_text',value_hash=hash_json(text))
+        if (typed['schema']!=schema or ref!=expected_ref or typed['reference']!=ref
+                or typed['receipt_hash']!=ref['observation_receipt_hash']
+                or receipt!={**{k:ref[k] for k in ('schema_id','schema_version','registered_schema_hash','json_pointer','value_hash')},
+                    'receipt_id':eid+'-typed','evidence_id':eid,'envelope_hash':eh,'sanitized_hash':envelope['sanitized_hash'],
+                    'admission_receipt_id':admission['receipt_id'],'admission_receipt_hash':ah,'item_ordinal':1,
+                    'item_id':eid+'-item','item_json_pointer':'/public_text','accepted':True,'issuer_ref':ref['authority_issuer_id']}):
+            raise ValueError('typed authority source/schema/value/receipt binding differs')
+        external=recipe['seed'].get('epistemic')=='verified_external'
+        if (envelope['source_kind']!=('provider_record' if external else 'tool_result')
+                or span['actor_role']!=('external' if external else 'tool')
+                or span['provenance']!=('external_source' if external else 'trusted_tool')
+                or span['support_kind']!='typed_observation'):
+            raise ValueError('typed authority provenance differs')
     refs=[{'evidence_id':eid,'content_hash':eh,'ordinal':1}]
     if plan['evidence_refs']!=refs or any(r['context']['evidence_refs']!=refs or r['plan']['evidence_refs']!=refs for r in observed['recalls']):
         raise ValueError('mutation/recall evidence refs differ from admitted source')
@@ -654,3 +717,68 @@ def assess_return(fixture,cell):
         return dict(status='BLOCKED',reason='RETURN_CELL_COMPLETE_ATTACK_AND_READ_WITNESS_ADMISSION_PENDING',business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def assess_state(fixture,cell):
+    o=cell['observations'];checks=[];name=cell['cell_id']
+    try:
+        if o.get('exception'):
+            return dict(status='BLOCKED',reason='STATE_PUBLIC_PRECONDITION:'+o['exception']['reason'],business_assertions=[])
+        recall=o['recall'];value=recall['execution'];check_execution_wire(value,recall['context'],recall['plan'])
+        replay=o['replay']
+        if replay['result']!=value['result'] or replay['decision']!=value['decision'] or not replay['replayed'] or replay['candidate_query_count']!=0:
+            raise ValueError('state-path exact replay differs')
+        decision=value['decision'];items=value['result']['items'];groups=decision['confirmation_groups']
+        if name.endswith('/ordinary-contested'):
+            if items or len(groups)!=1 or [m['source_revision'] for m in groups[0]['members']]!=[7,8]:
+                raise ValueError('ordinary contested escaped atomic confirmation carrier')
+        elif name.endswith('/current-head') or name.endswith('/ordinary-resolved'):
+            revision=8 if name.endswith('/current-head') else 9
+            if len(items)!=1 or groups or items[0]['selected_item']['source_revision']!=revision:
+                raise ValueError('current/resolved exact head binding differs')
+            payload_name='challenger' if revision==8 else 'incumbent'
+            payload={**fixture['conflict_write_oracle']['canonical_payloads'][payload_name],'qualifiers':[]}
+            if items[0]['public_payload']!=payload or items[0]['selected_item']['source_content_hash']!=hash_json(semantic_source(**payload)):
+                raise ValueError('head payload/content differs from independent input')
+        else:
+            if items or groups or decision['filtered_candidate_count']!=0 or decision['outcome']!='no_recall' or decision['reason_codes']!=['recall_no_eligible_memory']:
+                raise ValueError('stale/suppressed/partial source leaked public content')
+            if 'suppressed' in name or 'partial' in name:
+                event=next(e for e in o['calls'] if e['call']=='suppress')
+                target='evidence-user-python-312' if 'partial' in name else o['sources'][0]['receipt']['operations'][0]['memory_id']
+                if event['request']['scope_ref']!=target or event['decision']['scope_ref']!=target or event['decision']['action']!='directive':
+                    raise ValueError('suppression actual target differs')
+        checks=['actual authorized state transition and original business disclosure assertion','independent current payload/hash or zero disclosure','durable exact replay']
+        return dict(status='BLOCKED',reason='STATE_COMPLETE_RECEIPT_AND_PROTECTED_TRANSITION_BINDING_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def check_rejection_witness(row,observed):
+    import uuid
+    witness=observed.get('rejection_receipt')
+    if witness is None:return False
+    fields={'schema_version','invocation_id','request_hash','context_hash','plan_hash','stage','reason',
+            'candidate_query_started','candidate_query_count'}
+    if set(witness)!=fields or witness['schema_version']!=1 or type(witness['schema_version']) is not int:
+        raise ValueError('rejection receipt fields/schema differ')
+    if observed.get('rejection_receipt_is_public_type') is not True or observed.get('rejection_receipt_is_frozen') is not True:
+        raise ValueError('rejection receipt is not the immutable public DTO')
+    if type(witness["invocation_id"]) is not str:
+        raise ValueError("rejection invocation id invalid")
+    identity=uuid.UUID(witness['invocation_id'])
+    if identity.version!=4 or str(identity)!=witness['invocation_id']:
+        raise ValueError('rejection invocation id invalid')
+    if witness['stage']!=row['public_witness_stage'] or witness['reason']!=row['exact_reason']:
+        raise ValueError('rejection receipt stage/reason differs')
+    if witness['candidate_query_started'] is not False or type(witness['candidate_query_count']) is not int or witness['candidate_query_count']!=0:
+        raise ValueError('rejection receipt does not witness zero candidate access')
+    context,plan=observed['context'],observed['plan']
+    expected_request=None if row['original_attack']=='protocol_version' else sdk_domain_hash(
+        'simple-harness-memory/typed-recall-request/v1',dict(harness_protocol='recall-v4',memory_protocol='typed-recall-v1',
+            principal_id=observed['principal_actor_id'],context=context,plan=plan))
+    if (witness['context_hash']!=sdk_domain_hash('simple-harness/recall-context/v2',context)
+            or witness['plan_hash']!=sdk_domain_hash('simple-harness/recall-plan/v2',plan)
+            or witness['request_hash']!=expected_request):
+        raise ValueError('rejection receipt does not bind full actual request inputs')
+    return True

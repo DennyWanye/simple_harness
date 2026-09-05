@@ -43,6 +43,7 @@ class CaseManager:
         self.principal = m.MemoryPrincipal('bridge-deployment', 'bridge-household', 'principal-1', 'bridge-session')
         self.disclosure = self.helpers._disclosure(self.principal.actor_id)
         self.events, self.sources, self.admitted, self.actions = [], [], {}, {}
+        self.typed_receipts = {}
         self.base_revision = 1
         self.audit_receipt = None
         self.clock_kwargs = {"clock":lambda:self.now} if "clock" in inspect.signature(m.MemoryManager.build_human_memory_v7).parameters else {}
@@ -56,7 +57,13 @@ class CaseManager:
             async def resolve_memory_action_authority(self, ref):
                 return owner.actions[ref.authority_id]
             async def resolve_typed_observation(self, ref):
-                raise ValueError('typed observation authority must be explicitly registered')
+                receipt = owner.typed_receipts[ref.observation_receipt_id]
+                expected = owner.typed_ref(receipt)
+                if ref != expected:
+                    raise ValueError('typed observation reference binding differs')
+                owner.events.append({'call':'resolve_typed_observation','reference':ref.to_json(),
+                    'receipt':receipt.to_json(),'receipt_hash':receipt.receipt_hash,'schema':owner.typed_schema()})
+                return receipt
         self.authority = Authority()
         audit, self.audit_ref = self.cases.audit_authority(self.principal, self.actual_now)
         kwargs = dict(evidence_authority=self.authority, memory_action_authority=self.authority,
@@ -70,20 +77,45 @@ class CaseManager:
         self.events.append({'call': 'build_human_memory_v7' if not self.backend_factory else 'source_backend_initialize'})
         return self
 
-    async def evidence(self, text, evidence_id, epistemic='explicit_user'):
+    @staticmethod
+    def typed_schema():
+        return {'type':'string','description':'Admitted public memory assertion text'}
+
+    @staticmethod
+    def typed_ref(receipt):
+        return h.ProposedTypedObservationRef(schema_id=receipt.schema_id,schema_version=receipt.schema_version,
+            registered_schema_hash=receipt.registered_schema_hash,observation_receipt_id=receipt.receipt_id,
+            observation_receipt_hash=receipt.receipt_hash,authority_issuer_id=receipt.issuer_ref,
+            json_pointer=receipt.json_pointer,value_hash=receipt.value_hash)
+
+    async def evidence(self, text, evidence_id, epistemic='explicit_user', verification='source_bound'):
         envelope, receipt, span = self.helpers._evidence(self.principal.actor_id)
         payload = {'item_id': evidence_id + '-item', 'public_text': text}
         source_hash = hashlib.sha256(text.encode()).hexdigest()
         envelope = dc.replace(envelope, evidence_id=evidence_id, source_ref=evidence_id + '/user',
             sanitized_payload=payload, source_hash=source_hash, sanitized_hash=H(payload))
+        typed = epistemic == 'verified_external' or (epistemic == 'observed_behavior' and verification in {'source_verified','repeated_observation'})
+        if typed:
+            envelope = dc.replace(envelope, source_kind=h.EvidenceSourceKind.PROVIDER_RECORD if epistemic=='verified_external' else h.EvidenceSourceKind.TOOL_RESULT)
         receipt = dc.replace(receipt, receipt_id=evidence_id + '-admission', evidence_id=evidence_id,
             envelope_hash=envelope.envelope_hash, sanitized_hash=envelope.sanitized_hash, source_hash=source_hash)
-        span = dc.replace(span, span_id=evidence_id+'-span', evidence_id=evidence_id,
+        span = dc.replace(span, span_id=evidence_id+'-span', evidence_id=evidence_id, source_kind=envelope.source_kind,
             envelope_hash=envelope.envelope_hash, sanitized_hash=envelope.sanitized_hash,
             admission_receipt_id=receipt.receipt_id, admission_receipt_hash=receipt.receipt_hash,
             item_id=payload['item_id'], end_byte=len(text.encode()), exact_quote=text,
             source_hash=source_hash, quote_hash=source_hash)
-        if epistemic == 'observed_behavior':
+        if typed:
+            typed_receipt = h.TypedObservationAuthorityReceipt(receipt_id=evidence_id+'-typed',
+                evidence_id=evidence_id,envelope_hash=envelope.envelope_hash,sanitized_hash=envelope.sanitized_hash,
+                admission_receipt_id=receipt.receipt_id,admission_receipt_hash=receipt.receipt_hash,
+                item_ordinal=1,item_id=payload['item_id'],item_json_pointer='/public_text',
+                schema_id='observation/typed-recall-public-text',schema_version=1,registered_schema_hash=H(self.typed_schema()),
+                json_pointer='/public_text',value_hash=H(text),accepted=True,issuer_ref='host-typed-observation-authority')
+            self.typed_receipts[typed_receipt.receipt_id] = typed_receipt
+            span = dc.replace(span,actor_role=h.EvidenceActorRole.EXTERNAL if epistemic=='verified_external' else h.EvidenceActorRole.TOOL,
+                provenance=h.EvidenceProvenance.EXTERNAL_SOURCE if epistemic=='verified_external' else h.EvidenceProvenance.TRUSTED_TOOL,
+                support_kind=h.EvidenceSupportKind.TYPED_OBSERVATION,typed_observation=self.typed_ref(typed_receipt))
+        elif epistemic == 'observed_behavior':
             span = dc.replace(span, actor_role=h.EvidenceActorRole.RUNTIME,
                 provenance=h.EvidenceProvenance.HOST_RUNTIME, support_kind=h.EvidenceSupportKind.RUNTIME_EVENT)
         elif epistemic == 'llm_inference':
@@ -120,10 +152,16 @@ class CaseManager:
         raise ValueError('short horizon requires public conversation registration, not cognitive mutation')
 
     async def seed(self, spec, *, operation_id='create-1', evidence_id='evidence-case-1', target=None,
-                   kind='create', base_revision=None, no_evidence=False):
+                   kind='create', base_revision=None, no_evidence=False, reuse_evidence=False):
         payload = self.payload(spec)
         text = 'User memory assertion: ' + canonical(spec['payload']).decode()
-        envelope, span = await self.evidence(text, evidence_id, spec.get('epistemic', 'explicit_user'))
+        if reuse_evidence:
+            envelope=self.admitted[evidence_id].envelope
+            previous=next(event['plan']['operations'][0]['evidence_spans'][0] for event in self.events
+                if event['call']=='apply_memory_mutation_plan' and event['plan']['operations'][0]['evidence_spans'][0]['evidence_id']==evidence_id)
+            span=h.EvidenceSpanRef.from_json(previous)
+        else:
+            envelope, span = await self.evidence(text, evidence_id, spec.get('epistemic', 'explicit_user'), spec.get('verification','source_bound'))
         if kind in {'revise', 'supersede', 'suppress'}:
             span = dc.replace(span, support_kind=h.EvidenceSupportKind.EXPLICIT_USER_CORRECTION)
         memory_type = spec.get('memory_type', 'semantic')
@@ -149,10 +187,11 @@ class CaseManager:
                 issued_at=self.actual_now-1, expires_at=self.actual_now+600, nonce=operation_id+'-nonce', issuer_ref='host-case-actions')
             self.actions[grant.authority_id] = grant
             plan = dc.replace(plan, operations=(dc.replace(op, action_authority_ref=h.MemoryActionAuthorityRef.from_authority(grant)),))
-        self.events.append({'call': 'apply_memory_mutation_plan', 'plan': plan.to_json()})
+        apply_event = {'call': 'apply_memory_mutation_plan', 'plan': plan.to_json()}
+        self.events.append(apply_event)
         applied = await self.manager.apply_memory_mutation_plan(principal=self.principal,
             scope=m.MemoryScope.personal(self.principal.actor_id), plan=plan)
-        self.events[-1].update(outcome=applied.outcome.value,result=applied.to_json(),result_hash=applied.result_hash)
+        apply_event.update(outcome=applied.outcome.value,result=applied.to_json(),result_hash=applied.result_hash)
         if applied.receipt_ref is None:
             raise ValueError('seed mutation returned ' + applied.outcome.value)
         receipt = await self.manager.get_memory_mutation_receipt_view(principal=self.principal, receipt_ref=applied.receipt_ref)
@@ -172,8 +211,11 @@ class CaseManager:
 
     def request(self, *, query, memory_types=('semantic',), recipient='user_self', purpose='personalization',
                 modes=('full_text',), budget=None, key='case-recall', fingerprint=()):
+        reasons = self.disclosure.reason_codes
+        if recipient.lower()=='unknown':
+            reasons = (*reasons, h.DisclosureReasonCode.UNKNOWN_RECIPIENT)
         disclosure = dc.replace(self.disclosure, recipient=h.DeliveryRecipient(recipient.lower()),
-                                purpose=h.DisclosurePurpose(purpose.lower()))
+                                purpose=h.DisclosurePurpose(purpose.lower()), reason_codes=reasons)
         budget = h.RecallBudget(**(budget or dict(max_items=8,max_bytes=16384,max_tokens=2048,deadline_ms=2000)))
         context = h.RecallContext(run_id=disclosure.run_id, subject=self.principal.actor_id, turn_id='case-turn',
             context_revision=1, expires_at=self.now+300, query=query, active_task_scope_id=None,

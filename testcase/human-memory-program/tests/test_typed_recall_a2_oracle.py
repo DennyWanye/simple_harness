@@ -88,7 +88,8 @@ def test_fourteen_attacks_are_preserved_and_fail_closed_without_read_witness():
     for row in mappings:
         assert {"public_path", "mutation", "companion_bindings", "reject_layer", "exact_reason",
                 "memory_call", "candidate_query_count", "precondition"} <= set(row)
-    assert mappings[0]["gap"] == "NO_PUBLIC_REQUEST_PROTOCOL_VERSION_INPUT"
+    assert type(mappings[0]["mutation"]) is int and mappings[0]["mutation"]==5
+    assert mappings[0]["exact_reason"]=="typed_recall_protocol_unsupported"
     row = next(row for row in mappings if row["original_attack"] == "plan_id")
     assert oracle.judge_rejection(row, {"exception_type": "MemoryIdempotencyConflict",
                "exception_reason": "IDEMPOTENCY_CONFLICT", "memory_called": True}) == "BLOCKED"
@@ -163,3 +164,43 @@ def test_successful_but_misbound_or_empty_page_fails(mutation):
     mutation(page)
     with pytest.raises(ValueError, match="successful page"):
         oracle.check_page(page, result, "c" * 64, ["a" * 64])
+
+
+def rejection_observation():
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    vector=next(v for v in fixture['approved_oracle']['public_hash_vectors'] if v['domain']=='simple-harness-memory/typed-recall-request/v1')
+    request=vector['payload']
+    row=next(r for r in oracle.mutation_map() if r['original_attack']=='plan_id')
+    observed=dict(context=request['context'],plan=request['plan'],principal_actor_id=request['principal_id'],
+        exception_type=row['exception_type'],exception_reason=row['exact_reason'],memory_called=True,
+        rejection_receipt_is_public_type=True,rejection_receipt_is_frozen=True,
+        rejection_receipt=dict(schema_version=1,invocation_id='71b79f0a-b86b-4972-a6a5-0c80c9d98ace',
+            request_hash=vector['expected_sha256'],
+            context_hash=next(v['expected_sha256'] for v in fixture['approved_oracle']['public_hash_vectors'] if v['domain']=='simple-harness/recall-context/v2'),
+            plan_hash=next(v['expected_sha256'] for v in fixture['approved_oracle']['public_hash_vectors'] if v['domain']=='simple-harness/recall-plan/v2'),
+            stage='idempotency',reason='IDEMPOTENCY_CONFLICT',candidate_query_started=False,candidate_query_count=0))
+    return row,observed
+
+
+@pytest.mark.parametrize('field,value',[('request_hash','f'*64),('context_hash','f'*64),('plan_hash','f'*64),
+    ('stage','protocol'),('reason','typed_recall_protocol_invalid'),('candidate_query_count',1),
+    ('candidate_query_count',False),('candidate_query_started',True),('invocation_id','not-a-uuid')])
+def test_rejection_witness_rejects_cross_call_or_wrong_scope(field,value):
+    row,observed=rejection_observation()
+    assert oracle.judge_rejection(row,observed)=='PASS'
+    observed['rejection_receipt'][field]=value
+    with pytest.raises(ValueError):oracle.judge_rejection(row,observed)
+
+
+def test_protocol_integer5_cannot_be_replaced_by_type_rejection():
+    row=oracle.mutation_map()[0]
+    assert row['original_runner_label']=='recall-v5' and type(row['mutation']) is int and row['mutation']==5
+    with pytest.raises(ValueError):
+        oracle.judge_rejection(row,dict(exception_type='MemoryValidationError',exception_reason='typed_recall_protocol_invalid',memory_called=True))
+
+
+def test_rejection_control_cannot_use_empty_baseline():
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    empty={'decision':{'outcome':'recall'},'result':{'items':[]}}
+    with pytest.raises(ValueError,match='no-fault control failed'):
+        oracle.check_rejection_control(fixture,{'first':empty,'replay':empty},{})

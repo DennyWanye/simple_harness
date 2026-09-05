@@ -3,6 +3,7 @@
 No private imports, SQL, instrumentation of SDK internals, or model loading.
 """
 import dataclasses
+import inspect
 import simple_harness as harness
 import simple_harness_memory as memory
 
@@ -36,23 +37,30 @@ async def replay_cases(manager, principal, context, plan, inputs, now, snapshot)
             purpose=harness.DisclosurePurpose.TASK_EXECUTION),
         budget=harness.RecallBudget(4, 4096, 1024, 2000))
     plan = dataclasses.replace(plan_for(context, plan), plan_id="plan-1", idempotency_key="a2-replay")
+    before_control = await snapshot()
     first = await manager.execute_typed_recall(principal=principal, context=context, plan=plan, now=now)
     replay = await manager.execute_typed_recall(principal=principal, context=context, plan=plan, now=now)
     cells.append({"cell_id": "unsupported-replay/exact-replay", "status": "OBSERVED", "reason": "",
         "observations": {"calls": ["execute_typed_recall", "execute_typed_recall"],
         "context": context.to_json(), "plan": plan.to_json(), "first": execution_wire(first),
-        "replay": execution_wire(replay)}})
+        "replay": execution_wire(replay), "before_control": before_control, "after_control": await snapshot()}})
     for attack in inputs["mutations"]:
         name = "unsupported-replay/request-hash:" + attack["original_attack"]
-        if attack["original_attack"] == "protocol_version":
+        if attack["original_attack"] == "protocol_version" and "harness_protocol" not in inspect.signature(manager.execute_typed_recall).parameters:
             cells.append({"cell_id": name, "status": "BLOCKED",
                 "reason": "NO_PUBLIC_REQUEST_PROTOCOL_VERSION_INPUT", "observations": {}})
             continue
         c, p, identity = context, plan, principal
         field, value = attack["original_attack"], attack["mutation"]
         observed = {"calls": [], "memory_called": False}
+        kwargs={}
         try:
-            if field == "principal_id":
+            if field == "protocol_version":
+                if type(value) is not int or value!=5:
+                    raise ValueError("protocol cell requires integer5")
+                kwargs["harness_protocol"]=value
+                observed["harness_protocol"]=value
+            elif field == "principal_id":
                 identity = dataclasses.replace(principal, actor_id=value)
             elif field == "context_hash":
                 p = dataclasses.replace(p, context_hash=value)
@@ -81,11 +89,11 @@ async def replay_cases(manager, principal, context, plan, inputs, now, snapshot)
             observed["before_manifest"] = await snapshot()
             observed["memory_called"] = True
             observed["calls"].append("execute_typed_recall")
-            execution = await manager.execute_typed_recall(principal=identity, context=c, plan=p, now=now)
+            execution = await manager.execute_typed_recall(principal=identity, context=c, plan=p, now=now, **kwargs)
             observed["execution"] = execution_wire(execution)
         except Exception as exc:
             observed.update(exception_type=type(exc).__name__, exception_reason=str(exc),
-                            exception_code=getattr(exc, "code", None))
+                            exception_code=getattr(exc, "code", None), **rejection_wire(exc))
         observed["after_manifest"] = await snapshot()
         cells.append({"cell_id": name, "status": "OBSERVED", "reason": "", "observations": observed})
     # Same-idempotency changed valid query: actual original conflict entrypoint.
@@ -152,3 +160,12 @@ def audit_authority(principal, now):
             return decision
 
     return Authority(), reference
+
+
+def rejection_wire(exc):
+    receipt=getattr(exc,'rejection_receipt',None)
+    if receipt is None:return {'rejection_receipt':None}
+    public_type=getattr(memory,'TypedRecallRejectionV1',None)
+    return {'rejection_receipt':receipt.to_json(),
+        'rejection_receipt_is_public_type':public_type is not None and type(receipt) is public_type,
+        'rejection_receipt_is_frozen':bool(getattr(getattr(type(receipt),'__dataclass_params__',None),'frozen',False))}

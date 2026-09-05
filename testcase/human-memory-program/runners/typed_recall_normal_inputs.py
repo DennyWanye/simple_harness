@@ -18,6 +18,8 @@ def recipes(fixture):
     for row in fixture['eligibility_cases']:
         if row['axis']=='validity' and row['id']!='valid-until-null-unbounded':
             add('eligibility/'+row['id'], 'validity', seed(valid_from=row['valid_from'],valid_until=row['valid_until']),now=row['now'])
+    for name in ('not-suppressed','ordinary-uncontested'):
+        add('eligibility/'+name,'basic',seed())
     for row in fixture['lifecycle_cases']:
         add('eligibility/'+row['id'], 'lifecycle', seed(row['memory_type'],state=row['state']))
     axis = fixture['exhaustive_axis_contract']['epistemic_verification']

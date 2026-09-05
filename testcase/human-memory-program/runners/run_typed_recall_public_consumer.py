@@ -631,7 +631,7 @@ def _validate_execution_layers(
             "errors": [f"invalid execution-layers fixture: {type(exc).__name__}"],
         }
     errors: list[str] = []
-    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2, 3, 4):
+    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2, 3, 4, 5):
         errors.append("execution-layers schema/revision unsupported")
     if layers.get("quality_gate") != "NOT_RUN/BLOCKED":
         errors.append("execution-layers semantic quality gate must remain NOT_RUN/BLOCKED")

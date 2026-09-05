@@ -61,3 +61,41 @@ original 128-byte bound. If the full binding cannot fit, BLOCKED, never raise th
 For expiry, create a real context expiring at the frozen use_at; advance only the trusted
 builder clock to that boundary. Preserve public exceptions and bindings; parent admits only
 fully mapped original requirements. Parser-only proof cannot silently substitute Memory proof.
+
+## Remaining state-path inputs (before execution)
+
+Current/stale-head controls legally append r1..r8. Incumbent r7 is 3.11 and r8 is 3.12;
+current-head queries3.12 and must bind r8; stale-head queries the distinct old-value token11 and must disclose none.
+The two payloads are the pre-existing incumbent/challenger fixture inputs, not learned output.
+Suppression uses the public principal-owned SuppressionRequest, exact memory/evidence target,
+then a fresh recall key. Partial confirmation suppresses only challenger evidence at headr8,
+and requires zero ordinary items, zero groups and zero public filtered count.
+Resolved ordinary eligibility requires actual authorized r9 resolution, never CREATE-as-resolved.
+
+Stale-head setup correction: full_text splits 3.11 into terms3 and11 and may legitimately match current3.12 via3. The query is not a frozen fixture field; isolate old r7 with the independently derived unique token11, preserving both payloads and the original stale-source exclusion assertion. Do not classify the earlier broad-query match as a product leak.
+
+## Typed authority and rejection control prerequisites (before next run)
+
+Typed setup registers a Host-owned public_text string schema (schema_id
+observation/typed-recall-public-text, version1, canonical schema hash), real admitted
+source and TypedObservationAuthorityReceipt. Resolver must match every proposed-ref
+field and the independently rehashed registered schema, source/value and receipt.
+verified_external uses PROVIDER_RECORD / EXTERNAL / EXTERNAL_SOURCE; verified
+observed_behavior uses TOOL_RESULT / TOOL / TRUSTED_TOOL. Neither successful recall
+nor candidate output supplies the authority value. Other epistemic combinations
+retain their own required primary evidence; no substitution of provenance to force fit.
+
+Review P1 correction: rejection admission additionally requires independently valid
+nonempty baseline business content, complete decision/result hashes, exact replay,
+and public manifest terminal/decision/result/item rows already present before each
+attack. An empty or failed control invalidates all dependent rejection admissions.
+The first0.6.5 run's14 attack PASS were withdrawn pending this stronger check; raw
+evidence stays unchanged. Review P2: principal2 gets its own valid disclosure and
+initial apply revision while the attacked target remains principal1's memory.
+
+UNKNOWN disclosure input completion: append public DisclosureReasonCode.UNKNOWN_RECIPIENT
+(disclosure_unknown_recipient) when recipient=UNKNOWN; preserve exact original recipient,
+purpose and privacy. This supplies a mandatory diagnostic, not authority. The original
+forbidden combination still requires REJECTED/DISCLOSURE_DENIED and zero candidate reads.
+AUDIT with non-audit recipient remains an explicit invalid-carrier contract mismatch;
+never change that recipient to AUDIT_REVIEWER to claim the original24 cells passed.

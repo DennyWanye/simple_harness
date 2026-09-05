@@ -20,8 +20,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "4c0032e8abe6e62cbb5ffe071d0adce7d9cd96dd8a21141c8550bf838f29dd3b"
-LAYERS_SHA = "45d77ad06642c87141b3f96d4450f92ad1bfe7081238573fed89c45d462c6814"
+FIXTURE_SHA = "862ff6585552854ab6c92006371a83fc5d3a09568a32bbc92348d44ce8c4f0e3"
+LAYERS_SHA = "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25"
 ORACLE_BLOCKERS = []
 
 
@@ -211,8 +211,17 @@ def assess_observed_cells(fixture, response):
     spec.loader.exec_module(oracle)
     baseline = next((row["observations"] for row in response["cells"]
                      if row["cell_id"] == "unsupported-replay/exact-replay" and row["status"] == "OBSERVED"), None)
-    return {row["cell_id"]: {"execution_status": row["status"], **oracle.assess_cell(fixture, row, baseline)}
-            for row in response["cells"]}
+    judged = {row["cell_id"]: {"execution_status": row["status"], **oracle.assess_cell(fixture, row, baseline)}
+              for row in response["cells"]}
+    invocations={}
+    for row in response["cells"]:
+        witness=row["observations"].get("rejection_receipt")
+        if isinstance(witness,dict) and isinstance(witness.get("invocation_id"),str):
+            invocations.setdefault(witness["invocation_id"],[]).append(row["cell_id"])
+    for names in invocations.values():
+        if len(names)>1:
+            for name in names:judged[name].update(status="FAIL",reason="reused rejection invocation witness")
+    return judged
 
 
 def assess_source_cells(response):
@@ -333,6 +342,8 @@ def _execute(args, layers, expected):
     inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
         "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}
 
+    inputs["conflict"]["state_cells"] = ["eligibility/current-head","eligibility/stale-head","eligibility/suppressed",
+        "eligibility/ordinary-resolved","eligibility/ordinary-contested","conflict-state/contested-dependent-partial"]
     return_rows = [fixture["source_binding_cases"][2],*fixture["protocol_negative_cases"],*fixture["result_page_cases"]]
     input_keys = {"id","request","wire_protocol_version","source_kind","source_ref","source_revision","chunk_ref","result_hash","coordinate","use_at","bounds"}
     inputs["returns"] = {"seed":{"memory_type":"semantic","payload":{key:inputs["claim"][key] for key in ("subject_entity","predicate","object_value","qualifiers")}},
