@@ -1,5 +1,14 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Primary cognitive panel connected locally
+
+默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
+同owner隐藏/重挂载保留未决动作，换owner清空。匹配forget ACK同步清历史/detail再补读。
+父视图组合24项、tsc及定向lint通过；backend已独立限定ACCEPT。尚未native真测，
+完整进程重启不保留UI内存动作ID；自然语言纠正/全闭环仍待完成。
+见[组合记录](../plans/2026-09-05-cognitive-controls/COMBINED.md)。
+
+
 ## 2026-09-05 Authenticated cognitive read/forget API candidate
 
 Primary HUMAN接口已接实际V7 public graph/suppress与专属动作S1，精确目标选择与原动作重放；
@@ -22,6 +31,14 @@ See [combined evidence and boundaries](../plans/2026-09-05-primary-effect-source
 
 
 > **最后更新**：2026-09-05
+
+## 2026-09-05 Cognitive controls frontend leaf prepared
+
+`feat/human-memory-cognitive-controls` 新增认知面板及请求 helper，13 项前端聚焦、tsc 与
+定向 eslint 通过。原 wire 保持不变，新增 ACK 后即时 onForgotten；parent-owned 请求实例
+保留同 owner 未决重试。backend 与共享入口交主接管，当前提交仅前端/文档，未合主、
+未做 native/Provider，不改变 loop2/program 完成度。
+见 [FRONTEND-CONTRACT](../plans/2026-09-05-cognitive-controls/FRONTEND-CONTRACT.md)。
 
 ## 2026-09-05 Cognitive action evidence callback prepared
 

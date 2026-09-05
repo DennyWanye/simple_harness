@@ -32,6 +32,7 @@ export interface PrimaryMessage {
 }
 export interface PrimarySnapshot {
   ready: boolean;
+  verifiedOwnerKey: string | null;
   loading: boolean;
   state: PrimaryState | null;
   messages: PrimaryMessage[];
@@ -41,7 +42,7 @@ export interface PrimarySnapshot {
   viewEpoch: number;
   draftEpoch: number;
 }
-const empty = (): PrimarySnapshot => ({ ready: false, loading: false, state: null, messages: [], nextCursor: null, error: "", notice: "正在恢复主对话身份…", viewEpoch: 0, draftEpoch: 0 });
+const empty = (): PrimarySnapshot => ({ ready: false, verifiedOwnerKey: null, loading: false, state: null, messages: [], nextCursor: null, error: "", notice: "正在恢复主对话身份…", viewEpoch: 0, draftEpoch: 0 });
 
 /** Bounded, replace-only read model. No persistence and no automatic mutation retry. */
 export class PrimaryController {
@@ -64,7 +65,8 @@ export class PrimaryController {
   getSnapshot = () => this.snapshot;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private update(patch: Partial<PrimarySnapshot>) {
-    this.snapshot = { ...this.snapshot, ...patch };
+    this.snapshot = { ...this.snapshot, ...patch,
+      verifiedOwnerKey: (patch.ready ?? this.snapshot.ready) ? this.owner || null : null };
     this.listeners.forEach((listener) => listener());
   }
   start = (port: PrimaryPort = this.port) => {

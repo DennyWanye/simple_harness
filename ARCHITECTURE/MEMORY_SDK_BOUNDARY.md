@@ -1,5 +1,14 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Primary cognitive panel connected locally
+
+默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
+同owner隐藏/重挂载保留未决动作，换owner清空。匹配forget ACK同步清历史/detail再补读。
+父视图组合24项、tsc及定向lint通过；backend已独立限定ACCEPT。尚未native真测，
+完整进程重启不保留UI内存动作ID；自然语言纠正/全闭环仍待完成。
+见[组合记录](../plans/2026-09-05-cognitive-controls/COMBINED.md)。
+
+
 ## 2026-09-05 Authenticated cognitive read/forget API candidate
 
 Primary HUMAN接口已接实际V7 public graph/suppress与专属动作S1，精确目标选择与原动作重放；

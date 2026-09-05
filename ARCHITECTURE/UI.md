@@ -1,6 +1,25 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-09-05（Primary 授权 portal 布局候选；native 视觉待主复验）
+## 2026-09-05 Primary cognitive panel connected locally
+
+默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
+同owner隐藏/重挂载保留未决动作，换owner清空。匹配forget ACK同步清历史/detail再补读。
+父视图组合24项、tsc及定向lint通过；backend已独立限定ACCEPT。尚未native真测，
+完整进程重启不保留UI内存动作ID；自然语言纠正/全闭环仍待完成。
+见[组合记录](../plans/2026-09-05-cognitive-controls/COMBINED.md)。
+
+
+> 最后更新：2026-09-05（认知面板与主对话接线，native待验收）
+
+## 2026-09-05 Cognitive controls frontend leaf
+
+新增独立 PrimaryMemoryPanel 与 CognitiveRequests，复用 bound HUMAN 通道；页面显示记忆
+内容，真实 memory_id/revision 仅用于请求，使用 primary_ref/action_id/status=applied 契约。父组件保留 requests
+实例可跨隐藏/重挂载保存未知动作；同 owner 显式重试原 payload/key，verified owner 更换
+清空。匹配 ACK 后 onForgotten 先同步通知主层撤下 history/detail，再补读记忆。
+13 项前端聚焦、tsc、定向 eslint 通过。backend/PrimaryChatView 组合与 native 验收由主负责，
+不是已接通的生产忘记闭环；图只用于 USER 显示，不进入 Agent。接口、命令和 ignored
+证据索引见 [前端契约](../plans/2026-09-05-cognitive-controls/FRONTEND-CONTRACT.md)。
 
 ## 2026-09-05 Primary 授权布局后继候选
 

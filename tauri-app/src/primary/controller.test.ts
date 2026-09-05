@@ -93,7 +93,9 @@ describe("primary durable controller", () => {
   });
   it("drops old content on disconnect and does not reuse global ready to rehydrate", async () => {
     const h = setup(); h.emit(bound); await tick();
+    expect(h.controller.getSnapshot().verifiedOwnerKey).toBe("owner:1");
     h.connect(false); expect(h.controller.getSnapshot().messages).toEqual([]);
+    expect(h.controller.getSnapshot().verifiedOwnerKey).toBeNull();
     h.connect(true); h.emit({ ...bound, type: "companion_identity_status" }); await tick();
     expect(h.wire).toHaveLength(3);
     h.emit(bound); await tick(); expect(h.wire).toHaveLength(6);

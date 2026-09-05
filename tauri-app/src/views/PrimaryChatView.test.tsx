@@ -10,6 +10,7 @@ function fixture() {
   const bound = { type: "companion_profile_bound", payload: { profile_id: "p", profile_generation: 1 } };
   const sent: Array<Record<string, unknown>> = [];
   let pending: Record<string, unknown> | null = null;
+  let memoryPending: Record<string, unknown> | null = null;
   let acceptReads = true;
   const emit = (message: unknown) => listeners.forEach((fn) => fn(message));
   const channel = {
@@ -19,16 +20,25 @@ function fixture() {
     send: (r: Record<string, unknown>) => {
       sent.push(r);
       if (r.operation === "queue.enqueue") { pending = r; return true; }
+      if (r.operation === "primary.memory.forget") { memoryPending = r; return true; }
       if (!acceptReads) return true;
       const state = { primary_ref: "primary", revision: "r", current_run: null, queued_count: 2, queued_count_truncated: true };
       const item = { message_ref: "message", role: "assistant", text: "持久化的真实回复", has_more: false, total_chars: 8 };
+      const memories = { primary_ref: "primary", items: [{ memory_id: "semantic-memory", revision: 1,
+        label: "回答保持简洁", status: "active", can_forget: true, content_hash: "a".repeat(64) }], next_cursor: null };
       queueMicrotask(() => emit({ type: "human_memory_response", request_id: r.request_id, payload: {
-        ok: true, operation: r.operation, result: r.operation === "primary.messages.page" ? { primary_ref: "primary", revision: "r", items: [item], next_cursor: null } : state,
+        ok: true, operation: r.operation, result: r.operation === "primary.memory.list" ? memories : r.operation === "primary.messages.page" ? { primary_ref: "primary", revision: "r", items: [item], next_cursor: null } : state,
       } }));
       return true;
     },
   } as unknown as ControlChannel;
-  return { channel, sent, emit, stopReads: () => { acceptReads = false; }, ack: () => {
+  return { channel, sent, emit, stopReads: () => { acceptReads = false; }, ackForget: () => {
+    const request = memoryPending!.request as Record<string, unknown>;
+    acceptReads = false;
+    emit({ type: "human_memory_response", request_id: memoryPending!.request_id, payload: { ok: true,
+      operation: "primary.memory.forget", result: { primary_ref: "primary", action_id: request.action_id,
+        memory_id: request.memory_id, status: "applied", directive_ref: "directive", evidence_ref: "action-evidence", decision_hash: "b".repeat(64) } } });
+  }, ack: () => {
     const request = pending!.request as Record<string, unknown>;
     emit({ type: "human_memory_response", request_id: pending!.request_id, payload: { ok: true, operation: "queue.enqueue", result: {
       delivery_key: request.delivery_key, turn_ref: "turn", receipt_ref: "receipt", scope_ref: null, enqueue_sequence: 1, content_sha256: "a".repeat(64),
@@ -55,5 +65,16 @@ describe("primary product view", () => {
     await screen.findByText("持久化的真实回复"); h.stopReads();
     act(() => h.emit({ type: "human_memory_changed" }));
     expect(screen.queryByText("持久化的真实回复")).toBeNull();
+  });
+  it("uses the bound cognitive panel and retracts displayed history before post-forget reads finish", async () => {
+    const h = fixture(); render(<PrimaryChatView channel={h.channel} />);
+    await screen.findByText("持久化的真实回复");
+    fireEvent.click(screen.getByRole("button", { name: "记忆" }));
+    await screen.findByText("回答保持简洁");
+    fireEvent.click(screen.getByRole("button", { name: "忘记这条记忆" }));
+    expect(h.sent.filter((r) => r.operation === "primary.memory.forget")).toHaveLength(1);
+    await act(async () => { h.ackForget(); await Promise.resolve(); });
+    expect(screen.queryByText("持久化的真实回复")).toBeNull();
+    expect(h.sent.some((r) => r.type === "memory_forget" || r.type === "memory_facts_list")).toBe(false);
   });
 });
