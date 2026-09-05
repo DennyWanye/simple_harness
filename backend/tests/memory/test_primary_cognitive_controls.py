@@ -13,6 +13,7 @@ from deskpet.memory.control_binding import HumanMemoryControlBinding
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.human_memory_api import handle_human_memory_command
 from deskpet.memory.human_memory_service import (
+    AppendPrimaryEventRequest,
     HumanMemoryHostServiceFactory,
     QueueTurnRequest,
 )
@@ -25,7 +26,7 @@ from tests.memory.test_primary_control_binding import _bind
 from tests.memory.test_primary_visibility import materialize
 
 
-async def setup(tmp_path):
+async def setup(tmp_path, *, queue_source=True):
     path = tmp_path / "state.db"
     startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
     private, _, _, control = _ingress(tmp_path / "control")
@@ -42,16 +43,25 @@ async def setup(tmp_path):
     )
     service = factory.bind(auth)
     primary = (await service.open_primary())["primary_ref"]
-    await service.enqueue_turn(
-        QueueTurnRequest(None, "preference", "Please keep replies concise")
-    )
+    if queue_source:
+        await service.enqueue_turn(
+            QueueTurnRequest(None, "preference", "Please keep replies concise")
+        )
+        with sqlite3.connect(path) as db:
+            source_id = db.execute(
+                "SELECT evidence_id FROM foreground_turns"
+            ).fetchone()[0]
+    else:
+        admitted = await service.append_primary_event(
+            AppendPrimaryEventRequest(
+                {"text": "Please keep replies concise"}, "independent-preference-source"
+            )
+        )
+        source_id = admitted["evidence_ref"]
     async with aiosqlite.connect(path) as db:
         db.row_factory = aiosqlite.Row
-        row = await (
-            await db.execute("SELECT evidence_id FROM foreground_turns")
-        ).fetchone()
         envelope, receipt = await read_evidence_pair(
-            db=db, subject=auth.subject, primary_ref=primary, evidence_id=row[0]
+            db=db, subject=auth.subject, primary_ref=primary, evidence_id=source_id
         )
     manager = await runtime.manager()
     await manager.ingest_committed_evidence(envelope, receipt)

@@ -7,6 +7,9 @@ before the next production pre-invoke guard. Positive sends2; late forget sends1
 and rejects the next stale request. Two controls passed2.18s with deterministic
 analysis/MockTransport; no native or paid Provider. This adds the previously missing
 typed-source proof to the existing history/reopen coverage. See [API evidence](../plans/2026-09-05-primary-cognitive-controls/API.md).
+A further2 typed-only controls pass with no remembered source in chat history;
+removing only the recall binding would allow the same request, proving the selected
+source barrier itself. Public fixture materialization, no real model in this pair.
 SDK069 migration and semantic-action builder hooks are prepared but those new
 branches still await their actual successor candidates; see [runtime preparation](../plans/2026-09-05-s6-primary-preparation/RUNTIME-SUCCESSOR.md).
 
