@@ -164,3 +164,19 @@ acceptance; they are not added to the source-overlay count as38 distinct tests.
 Main still owns runtime factory/context/default hookup, actual old-store upgrade,
 combined last-writer/outbound verification, and native acceptance. No paid provider
 or native session was started here; no SDK upgrade of user data was performed.
+
+## Combined candidate0610 verification
+
+2026-09-05: reviewed61c2f83b and installed069 handoffd0a388e3 integrated into
+main-owned candidate9a8f8564. Only architecture-history inserts conflicted; all
+source files merged without rewriting implementation. Both ingestion and selected
+reader files passed34 tests44.35s using the exact installedMemory0610 candidate
+and existing Harness0.7.2, no source overlay. The actual production startup/terminal
+indexing scheduler and selected-hit runtime wiring remain pending; this source
+integration alone does not make the short lane fully available.
+
+Command: dedicated candidate Python -m pytest
+backend/tests/memory/test_primary_short_ingestion.py
+backend/tests/memory/test_selected_short_sources.py -q.
+Ignored local log .local-test-evidence/2026-09-05/primary-candidate/selected-short-installed0610.log
+SHA256 3e6b59475bb575fcba6bf365f2103ce96336902a5250e4e1b5fcead2893febd7.

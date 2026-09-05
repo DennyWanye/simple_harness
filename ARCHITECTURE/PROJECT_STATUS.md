@@ -1,5 +1,15 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Selected short source modules combined on0610
+
+Last updated: 2026-09-05. Reviewed selected source reader and source-only conversation
+registration/indexing modules are now integrated into the main-owned candidate.
+Actual installedMemory0610 ingestion/selected-reader34 tests pass; no source overlay.
+Production indexing scheduler and final selected-hit wiring remain unfinished,
+so full short-horizon availability is not claimed. See
+[contract](../plans/2026-09-05-selected-short-sources/CONTRACT.md).
+
+
 ## 2026-09-05 Terminal audit and privacy combined source verification
 
 Last updated: 2026-09-05. Reviewed terminal consumer is integrated into the

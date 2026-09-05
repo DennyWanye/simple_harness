@@ -1,5 +1,15 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Selected short source modules combined on0610
+
+Last updated: 2026-09-05. Reviewed selected source reader and source-only conversation
+registration/indexing modules are now integrated into the main-owned candidate.
+Actual installedMemory0610 ingestion/selected-reader34 tests pass; no source overlay.
+Production indexing scheduler and final selected-hit wiring remain unfinished,
+so full short-horizon availability is not claimed. See
+[contract](../plans/2026-09-05-selected-short-sources/CONTRACT.md).
+
+
 ## 2026-09-05 Original native duplicate-forget regression passes on0610
 
 Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the
