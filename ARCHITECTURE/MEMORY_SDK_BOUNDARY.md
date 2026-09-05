@@ -1,6 +1,6 @@
 # Memory SDK 边界与 Host 接口契约
 
-> 最后更新：2026-09-01
+> 最后更新：2026-09-05
 > 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
 > Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`
 > 发布标记：Harness `v0.3.0` → `fbb156f`；Memory `v0.4.0` → `3d4247b`；主分支与 tags 已推送；
@@ -8,6 +8,22 @@
 
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
+
+## 2026-09-05 S5b 恢复修复与当前精确候选
+
+当前 Host 使用 Harness 0.7.1 / Memory 0.6.3 / Service 0.3.12；上方 0.4.0 发布与下方
+早期 S4 状态是历史验收记录。Memory source `2f3d73814fe6a884e0458d87567b918c5863033e`，
+wheel SHA-256 `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`。
+双次构建字节一致，版本/来源/hash 校验通过；未 push/tag/发布。
+
+Memory 按 principal 等待已领取但未物化的 analysis batch；恢复沿用固定结果、plan、base_revision
+与 evidence，不通过改写 revision 或追加 Provider 调用挽救旧结果。合法 no_mutation 的可选
+closure_reason 被原样持久与恢复，仍零认知写入；不可用响应继续 rejected。两项修复独立复审接受。
+公共 API 和 schema v7.1 保持原契约，旧 0.6.2 wheel 保留。
+
+当前精确 wheel 的 Host 集成 51 passed、Memory 恢复/API 16 passed；原始证据在
+`.local-test-evidence/2026-09-05/human-memory-resume/`。真实生产 `queue.enqueue`、
+新 wheel 的原生 UI 与整个 S5b 机器门仍待验收，不由这些自动化结果代替。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 

@@ -4,6 +4,15 @@
 
 ## 2026-09-05 Human Memory 接续：当前验收重建与恢复竞态
 
+- **Memory 0.6.3 已接入**：source `2f3d73814fe6a884e0458d87567b918c5863033e`，
+  wheel SHA-256 `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`，
+  两次构建字节一致，安装来源/版本/hash 校验通过。IR-02/IR-03 独立复审接受；
+  Host 关键集成 51 passed，安装版 SDK 恢复/API 16 passed。下方“正在处理”是本轮早期状态，
+  两个 finding 现已闭合；S5b 完整生产入口与机器门仍未交付。
+- **本机原生 UI 通道已跑通一轮**：当前 Tauri App + Memory 0.6.2 + gpt-5.5，
+  schema v46、身份就绪，真实回复与 Run 可追溯。此证据不替代新 wheel 的重测或
+  A14 `queue.enqueue` 前台任务链。S6 仍须解决空态模型设置丢失并接入唯一主对话。
+
 - Host 与三个 SDK 已同步远端；以 Memory SDK 原始 Human Memory plan 和
   `HANDOFF-2026-09-05.md` 为基准继续。旧机器 r3/r4 原始机器账本未同步到本机，
   当前 r5-local 从 NOT_RUN 重建，不把历史文字 PASS 导入为本次验收。

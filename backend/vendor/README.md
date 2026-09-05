@@ -2,6 +2,17 @@
 
 This directory contains exact wheel artifacts from trusted sources, verified via cryptographic hash before vendoring.
 
+## Current runtime candidates (2026-09-05)
+
+- Harness 0.7.1 remains frozen; `sdk_candidate.py` is the executable identity authority.
+- Memory 0.6.3: source `2f3d73814fe6a884e0458d87567b918c5863033e`, wheel SHA-256
+  `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`.
+  Two `uv build --no-sources --wheel` builds were byte-identical. This fixes analysis recovery
+  ordering and no-mutation reason handling; public API and schema v7.1 are unchanged.
+- Service 0.3.12 is unchanged. Earlier artifacts below are retained for history and rollback.
+- Current integration: 51 Host tests and 16 installed Memory recovery/API tests passed.
+  Full production acceptance is still pending; these are local candidate artifacts, not a release.
+
 ## Active Agent Runtime candidate: simple_harness_sdk-0.6.4-py3-none-any.whl
 
 **Source:** immutable release candidate from `simple-harness-sdk` commit `21f3c7a45ff71058db08538173054b3b1979a0a4`
