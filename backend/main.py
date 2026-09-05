@@ -5726,7 +5726,7 @@ async def lifespan(app: FastAPI):
             _realtime_voice_service = None
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
-    global _sdk_runtime_stack, _sdk_ingress
+    global _sdk_runtime_stack, _sdk_ingress, _memory_analysis_lane
     global _sdk_desktop_bridge
     _foreground_runtime = service_context.get(
         "human_memory_foreground_runtime_execution_authority"
@@ -5755,6 +5755,8 @@ async def lifespan(app: FastAPI):
         except Exception as exc:  # noqa: BLE001
             logger.warning("memory_analysis_lane_shutdown_failed", error=str(exc))
         finally:
+            _memory_analysis_lane = None
+            service_context.register("sdk_memory_ingestion_outbox", None)
             service_context.register(
                 "human_memory_foreground_scheduler_wake", None
             )
@@ -5847,6 +5849,16 @@ async def lifespan(app: FastAPI):
             _sdk_retained_presentations.clear()
             _sdk_unavailable_tool_authority_runs.clear()
             service_context.register("sdk_runtime_ready", None)
+    # The foreground, audit lane and Runtime borrowers have stopped above.
+    # v7 owns a separate lazy manager; stop indexing before closing that owner.
+    _owned_v7 = service_context.get("human_memory_v7_runtime")
+    if _owned_v7 is not None:
+        try:
+            await asyncio.wait_for(_owned_v7.close(), timeout=6.0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("human_memory_v7_shutdown_failed", error=type(exc).__name__)
+        finally:
+            service_context.register("human_memory_v7_runtime", None)
     # SessionDB is the sole owner of the borrowed MemoryManager and its
     # product outbox dispatcher.  Close it after every Runtime borrower, once,
     # with a hard bound so shutdown cannot hang on a provider/storage fault.

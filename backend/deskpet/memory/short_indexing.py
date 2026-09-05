@@ -39,6 +39,28 @@ class PrimaryShortIndexingService:
         if self._fault_hook is not None:
             self._fault_hook(point)
 
+    async def register_group(self, group):
+        """Replay a verified whole group; registration ACKs are not projection ACKs."""
+        admit_source = getattr(self.manager, "admit_evidence_source", None)
+        if not callable(admit_source):
+            raise ConversationRegistrationUnavailable("short_source_admission_unavailable")
+        for index, registration in enumerate(group.registrations):
+            # Preserve the actual USER lineage even if the Memory DB was
+            # recreated while the Host's delivered outbox remained intact.
+            if index == 0:
+                await self.manager.ingest_committed_evidence(
+                    registration.envelope, registration.admission_receipt,
+                    analysis_lineage=group.user_analysis_lineage)
+            else:
+                await admit_source(principal=self.principal,
+                    envelope=registration.envelope, receipt=registration.admission_receipt)
+            self._fault("short.after_ingest")
+            reference = registration_ref(registration)
+            acknowledged = await self.manager.register_conversation_evidence(reference)
+            if acknowledged != reference:
+                raise RuntimeError("short_registration_ack_mismatch")
+            self._fault("short.after_registration")
+
     async def reconcile(self) -> ShortIndexingResult:
         admit_source = getattr(self.manager, "admit_evidence_source", None)
         if not callable(admit_source):
@@ -52,19 +74,7 @@ class PrimaryShortIndexingService:
             except ConversationRegistrationUnavailable as exc:
                 blocked.append((run_id, exc.code))
         for group in groups:
-            for index, registration in enumerate(group.registrations):
-                # Preserve the actual USER lineage even if the Memory DB was
-                # recreated while the Host's delivered outbox remained intact.
-                if index == 0:
-                    await self.manager.ingest_committed_evidence(
-                        registration.envelope, registration.admission_receipt,
-                        analysis_lineage=group.user_analysis_lineage)
-                else:
-                    await admit_source(principal=self.principal,
-                        envelope=registration.envelope, receipt=registration.admission_receipt)
-                self._fault("short.after_ingest")
-                await self.manager.register_conversation_evidence(registration_ref(registration))
-                self._fault("short.after_registration")
+            await self.register_group(group)
         self._fault("short.before_projection")
         projection = await self.manager.rebuild_short_horizon_projection(principal=self.principal)
         self._fault("short.after_projection")

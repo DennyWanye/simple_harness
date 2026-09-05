@@ -88,6 +88,35 @@ class PrimaryConversationAuthority:
     def _connect(self):
         return aiosqlite.connect(f"file:{self.db_path}?mode=ro", uri=True)
 
+    async def page_turns(self, *, after: int, upper: int | None, limit: int = 16):
+        """All turn identities, including pending; cursor is never a success claim."""
+        if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 16:
+            raise ValueError("conversation_page_invalid")
+        if upper is not None and (type(upper) is not int or upper < after):
+            raise ValueError("conversation_page_invalid")
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            await self._bind_primary_tx(db)
+            if upper is None:
+                row = await (await db.execute(
+                    "SELECT COALESCE(MAX(enqueue_sequence),0) FROM foreground_turns "
+                    "WHERE subject=? AND primary_conversation_id=?",
+                    (self.subject, self.primary_ref),
+                )).fetchone()
+                upper = row[0]
+            rows = await (await db.execute(
+                "SELECT t.enqueue_sequence,r.host_run_id,f.terminal_state "
+                "FROM foreground_turns t LEFT JOIN foreground_runs r ON r.turn_id=t.turn_id "
+                "AND r.subject=t.subject AND r.primary_conversation_id=t.primary_conversation_id "
+                "LEFT JOIN foreground_terminal_receipts f ON f.host_run_id=r.host_run_id "
+                "WHERE t.subject=? AND t.primary_conversation_id=? "
+                "AND t.enqueue_sequence>? AND t.enqueue_sequence<=? "
+                "ORDER BY t.enqueue_sequence LIMIT ?",
+                (self.subject, self.primary_ref, after, upper, limit),
+            )).fetchall()
+            return upper, tuple(tuple(row) for row in rows)
+
     async def completed_run_ids(self):
         async with self._connect() as db:
             db.row_factory = aiosqlite.Row
