@@ -52,16 +52,47 @@ def _stable(kind, payload):
 
 
 class PrimaryConversationAuthority:
-    def __init__(self, db_path: str | Path, *, subject: str, primary_ref: str):
+    def __init__(self, db_path: str | Path, *, subject: str, primary_ref: str | None = None):
         identifier(subject, "subject")
-        identifier(primary_ref, "primary_ref")
-        self.db_path, self.subject, self.primary_ref = Path(db_path), subject, primary_ref
+        if primary_ref is not None:
+            identifier(primary_ref, "primary_ref")
+        self.db_path, self.subject = Path(db_path), subject
+        self._expected_primary = primary_ref
+        self._binding = None
+
+    @property
+    def primary_ref(self):
+        return self._binding[0] if self._binding is not None else self._expected_primary
+
+    async def _bind_primary_tx(self, db):
+        from deskpet.memory.history_source_authority import history_namespace_tx
+
+        namespace, primary = await history_namespace_tx(db, self.subject)
+        if self.primary_ref is not None and primary != self.primary_ref:
+            raise ConversationRegistrationUnavailable("conversation_primary_mismatch")
+        binding = (primary, namespace["store_epoch"])
+        if self._binding is not None and binding != self._binding:
+            raise ConversationRegistrationUnavailable("conversation_epoch_mismatch")
+        # No await or replacement after this one-time pin. Every read transaction
+        # still recomputes and compares the current authoritative initialization.
+        if self._binding is None:
+            self._binding = binding
+
+    async def bind_primary(self):
+        """Resolve actual initialization lazily; factory construction never writes it."""
+        async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            await self._bind_primary_tx(db)
 
     def _connect(self):
         return aiosqlite.connect(f"file:{self.db_path}?mode=ro", uri=True)
 
     async def completed_run_ids(self):
         async with self._connect() as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            await self._bind_primary_tx(db)
             cursor = await db.execute(
                 "SELECT r.host_run_id FROM foreground_runs r "
                 "JOIN foreground_turns t ON t.turn_id=r.turn_id "
@@ -75,6 +106,7 @@ class PrimaryConversationAuthority:
         async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN")
+            await self._bind_primary_tx(db)
             return await self._group_tx(db, host_run_id)
 
     async def resolve_conversation_registration(self, reference):
@@ -83,6 +115,7 @@ class PrimaryConversationAuthority:
         async with self._connect() as db:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN")
+            await self._bind_primary_tx(db)
             cursor = await db.execute(
                 "SELECT DISTINCT r.host_run_id FROM foreground_runs r "
                 "JOIN foreground_turns t ON t.turn_id=r.turn_id "

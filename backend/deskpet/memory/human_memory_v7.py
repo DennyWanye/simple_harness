@@ -101,6 +101,7 @@ class HumanMemoryV7Runtime:
         memory_action_authority: Any = None,
         history_source_authority: Any = None,
         audit_access_authority: Any = None,
+        conversation_evidence_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
     ) -> None:
@@ -118,6 +119,7 @@ class HumanMemoryV7Runtime:
         self._memory_action_authority = memory_action_authority
         self._history_source_authority = history_source_authority
         self.audit_access_authority = audit_access_authority
+        self._conversation_evidence_authority = conversation_evidence_authority
         # Test seam only: build the backend with an injected clock/fault injector
         # (the production path is always ``build_human_memory_v7``).
         self._backend_factory = backend_factory
@@ -144,6 +146,10 @@ class HumanMemoryV7Runtime:
     def analysis_authority(self) -> Any:
         return self._analysis_authority
 
+    @property
+    def conversation_evidence_authority(self) -> Any:
+        return self._conversation_evidence_authority
+
     def build_kwargs(self) -> dict[str, Any]:
         embedder = self._embedder_getter() if self._embedder_getter else None
         if getattr(embedder, "kind", None) in {"hash", "mock"}:
@@ -156,6 +162,8 @@ class HumanMemoryV7Runtime:
             "evidence_authority": self._evidence_authority,
             "analysis_delivery_authority": self._analysis_authority,
             "classification_policy": host_classification_policy(),
+            **({"conversation_evidence_authority": self._conversation_evidence_authority}
+               if self._conversation_evidence_authority is not None else {}),
         }
 
     async def manager(self) -> Any:
@@ -404,9 +412,29 @@ class HumanMemoryV7Runtime:
                 limit=8,
                 now=moment,
             )
+            from dataclasses import replace
+            from simple_harness_memory import HistoryShortHorizonBinding
+            from deskpet.memory.selected_short_sources import SelectedShortSourceReader
+
+            authority = self._conversation_evidence_authority
+            if authority is None:
+                raise RuntimeError("selected_short_authority_unavailable")
+            await authority.bind_primary()
+            selected = await SelectedShortSourceReader(
+                authority, manager=manager, principal=principal,
+            ).resolve(disclosure_context=disclosure, bindings=tuple(
+                HistoryShortHorizonBinding(short_horizon.audit_id, hit.chunk_ref, hit.content_hash)
+                for hit in short_horizon.hits
+            ))
+            short_horizon = replace(short_horizon, hits=tuple(
+                hit for hit, item in zip(short_horizon.hits, selected.items, strict=True)
+                if item.visible
+            ))
         except Exception:  # noqa: BLE001 - degraded lane must stay stable
             short_horizon = None
-        return RecallLanes(execution=execution, short_horizon=short_horizon)
+            selected = None
+        return RecallLanes(execution=execution, short_horizon=short_horizon,
+                           selected_short_sources=selected)
 
 
 @dataclass(frozen=True, slots=True)
@@ -417,6 +445,7 @@ class RecallLanes:
     short_horizon: Any | None
     short_history_dependencies: Mapping[str, Any] | None = None
     short_horizon_requested: bool = True
+    selected_short_sources: Any | None = None
 
     def __post_init__(self):
         if self.short_history_dependencies is not None:
@@ -507,6 +536,19 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
             }
         )
     for hit in getattr(short_horizon, "hits", ()) or ():
+        proof = getattr(lanes, "short_history_dependencies", None)
+        selected = getattr(lanes, "selected_short_sources", None)
+        if selected is not None:
+            from deskpet.memory.selected_short_sources import SelectedShortSources
+
+            item = next((item for item in selected.items if item.visible and (
+                item.binding.audit_id, item.binding.chunk_ref, item.binding.content_hash
+            ) == (short_horizon.audit_id, hit.chunk_ref, hit.content_hash)), None)
+            if item is None:
+                continue
+            # Bind each emitted fragment only to its own full group. A later
+            # projection/budget cut must not retain dependencies of a dropped hit.
+            proof = SelectedShortSources((item,)).visibility_dependencies
         privacy = getattr(
             hit.effective_privacy_class, "value", str(hit.effective_privacy_class)
         )
@@ -530,8 +572,8 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 "lane": "short_horizon",
                 "history_binding": {"audit_id": short_horizon.audit_id,
                     "chunk_ref": hit.chunk_ref, "content_hash": hit.content_hash},
-                **({"history_source_dependencies": thaw_json(lanes.short_history_dependencies)}
-                   if getattr(lanes, "short_history_dependencies", None) is not None else {}),
+                **({"history_source_dependencies": thaw_json(proof)}
+                   if proof is not None else {}),
             }
         )
     return tuple(fragments)
