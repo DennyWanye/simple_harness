@@ -1,5 +1,15 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Authenticated cognitive read/forget API candidate
+
+Primary HUMAN接口已接实际V7 public graph/suppress与专属动作S1，精确目标选择与原动作重放；
+真实连接在慢读后/Host admission后失效分别阻止后续写，SDK ACK丢失后同ID/time可确认。
+最终wire9项及并发收敛1项通过；实际API忘记后重启，旧page/detail与下一实际Adapter
+出站均不含已忘来源。初始相邻46通过。只证明SQLite/签名连接/确定性transport，
+frontend/native及自然语言纠正尚未完成，不能称用户闭环已完成。
+见[接口与证据边界](../plans/2026-09-05-primary-cognitive-controls/API.md)。
+
+
 ## 2026-09-05 Source/auth/action combination verified
 
 Fixed e31c6efd source index closes the independent unscoped-search/late-forget P1;

@@ -426,6 +426,7 @@ class HumanMemoryHostService:
         run_binding_reader: object | None = None,
         history_visibility_checker: object | None = None,
         decision_ingress_getter: object | None = None,
+        cognitive_runtime_getter: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -443,6 +444,7 @@ class HumanMemoryHostService:
         self._binding_append = binding_append
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
+        self._cognitive_runtime_getter = cognitive_runtime_getter
         from deskpet.memory.primary_read_model import PrimaryReadModel
 
         self._primary_read = PrimaryReadModel(
@@ -521,6 +523,20 @@ class HumanMemoryHostService:
             "receipt_ref": committed.receipt_id,
             "evidence_hash": committed.envelope_sha256,
         }
+
+    def _cognitive_controls(self):
+        from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveControls
+
+        return PrimaryCognitiveControls(
+            self._db_path, auth=self._auth,
+            runtime_getter=self._cognitive_runtime_getter,
+        )
+
+    async def list_primary_memories(self, **request):
+        return await self._cognitive_controls().list(**request)
+
+    async def forget_primary_memory(self, **request):
+        return await self._cognitive_controls().forget(**request)
 
     async def create_task_scope(
         self, request: CreateTaskScopeRequest
@@ -1924,6 +1940,7 @@ class HumanMemoryHostServiceFactory:
     run_binding_reader: object | None = None
     history_visibility_checker: object | None = None
     decision_ingress_getter: object | None = None
+    cognitive_runtime_getter: object | None = None
 
     def bind(
         self,
@@ -1947,6 +1964,7 @@ class HumanMemoryHostServiceFactory:
             run_binding_reader=self.run_binding_reader,
             history_visibility_checker=self.history_visibility_checker,
             decision_ingress_getter=self.decision_ingress_getter,
+            cognitive_runtime_getter=self.cognitive_runtime_getter,
         )
 
 

@@ -3275,6 +3275,7 @@ async def lifespan(app: FastAPI):
                 history_visibility_checker=_primary_history_visibility_checker,
                 run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
                 decision_ingress_getter=lambda: _sdk_ingress,
+                cognitive_runtime_getter=lambda: service_context.get("human_memory_v7_runtime"),
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None

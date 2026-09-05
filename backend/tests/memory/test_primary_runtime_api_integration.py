@@ -133,11 +133,8 @@ async def test_real_terminal_public_history_reopen_and_raw_event_binding(
 @pytest.mark.asyncio
 async def test_memory_only_forget_filters_real_history_and_next_outbound_after_reopen(tmp_path):
     """One real runtime/source chain reaches both public UI and physical transport."""
-    import time
-
     import aiosqlite
     import httpx
-    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
 
     from deskpet.execution.primary_dependencies import check_runtime_dependencies
     from deskpet.memory.primary_visibility import read_evidence_pair
@@ -199,6 +196,7 @@ async def test_memory_only_forget_filters_real_history_and_next_outbound_after_r
                 path, startup, settled_run_reader=stack.read_settled_primary_run,
                 suppression_resolver=policy, history_visibility_checker=checker,
                 run_binding_reader=lambda run_id: stack.read_closure_run_facts(run_id).binding_record,
+                cognitive_runtime_getter=lambda: visibility_runtime,
             ), auth=auth,
         )
 
@@ -233,10 +231,21 @@ async def test_memory_only_forget_filters_real_history_and_next_outbound_after_r
         principal = runtime.history_memory.principal()
         await manager.ingest_committed_evidence(envelope, receipt)
         memory_id = await materialize(manager, principal, envelope, receipt)
-        await manager.suppress(principal=principal, request=SuppressionRequest(
-            "forget-only-memory", auth.subject, SuppressionScopeKind.MEMORY,
-            memory_id, "user_forget", time.time(),
-        ))
+        memories = await command("primary.memory.list", {"primary_ref": primary})
+        assert memories["payload"]["ok"], memories
+        target, = memories["payload"]["result"]["items"]
+        assert target["memory_id"] == memory_id
+        forgotten = await command("primary.memory.forget", {
+            "primary_ref": primary, "memory_id": memory_id, "expected_revision": target["revision"],
+            "expected_content_hash": target["content_hash"],
+            "action_id": "explicit-api-forget",
+        })
+        assert forgotten["payload"]["ok"], forgotten
+        # The explicit action adds exactly one real Host evidence entry; every
+        # original archived envelope remains byte-for-byte intact.
+        after_action = archive()
+        assert len(after_action) == len(original) + 1
+        assert all(row in after_action for row in original)
         for reopened in (False, True):
             if reopened:
                 await runtime.close()
@@ -255,7 +264,7 @@ async def test_memory_only_forget_filters_real_history_and_next_outbound_after_r
                     "primary_ref": primary, "message_ref": ref, "offset": 0,
                 })
                 assert denied["payload"]["ok"] is False
-            assert archive() == original
+            assert archive() == after_action
         await service.enqueue_turn(QueueTurnRequest(None, "after-forget", "Continue without forgotten content"))
         assert await asyncio.wait_for(runtime._drive_once(), 15)
         assert len(sends) == 3

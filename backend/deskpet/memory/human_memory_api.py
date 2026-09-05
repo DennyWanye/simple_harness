@@ -102,6 +102,8 @@ async def handle_human_memory_command(
             "primary.state",
             "primary.messages.page",
             "primary.messages.detail",
+            "primary.memory.list",
+            "primary.memory.forget",
         }:
             from deskpet.memory.writer_fence import human_memory_request_boundary
 
@@ -126,6 +128,18 @@ async def _dispatch(  # type: ignore[no-untyped-def]
 ):
     if operation == "primary.open":
         return await service.open_primary()
+    if operation in {"primary.memory.list", "primary.memory.forget"}:
+        from deskpet.memory.primary_cognitive_controls import PrimaryCognitiveError
+
+        if operation == "primary.memory.list":
+            if "primary_ref" not in request or not set(request) <= {"primary_ref", "limit", "cursor"}:
+                raise PrimaryCognitiveError("primary_memory_request_invalid")
+            return await service.list_primary_memories(**request)
+        if set(request) != {
+            "primary_ref", "memory_id", "expected_revision", "expected_content_hash", "action_id"
+        }:
+            raise PrimaryCognitiveError("primary_memory_request_invalid")
+        return await service.forget_primary_memory(**request)
     if operation in {
         "primary.state",
         "primary.messages.page",
