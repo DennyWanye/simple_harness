@@ -3,6 +3,22 @@
 > 最后更新：2026-09-05
 
 
+## 2026-09-05 普通完整组短源登记（隔离受限 leaf）
+
+`feat/human-memory-primary-short-ingestion` base `7dcfce8b`，固定 `2fb1d190`：新 terminal observation
+同事务生成真实 assistant S1，沿用原 USER 并保留 terminal/USER EvidenceRefs；旧终态不补造。
+真实 foreground/SDK SQLite→USER outbox→22 registrations→11完整组中的早1组命中、最近10组排除；
+原子回滚、不重发、登记重启幂等、源遗忘拒绝及保守 roots 检查，专属13+相邻2共 **15 passed**。
+Dirac 对该范围独立只读 Scoped ACCEPT；这是执行者确定性消费者证据，无 native/真实模型验收。
+
+**禁止默认启用当前 indexing service**：Memory0.6.7 ingest assistant 必排分析 job，而 Host 没有对应
+analysis outbox，造成重试/dead-letter。须后继公开 source-only admission 解决；不调用私库或改冻结067。
+复杂 tool/artifact 组整组 blocked；all-indexed roots 非 selected-source 覆盖证明，任一祖先遗忘/超256
+可阻断整个lane。主树未合并，S3/S6/program 均未标完成。
+详见 [契约](../plans/2026-09-05-primary-short-ingestion/CONTRACT.md)、
+[验证](../plans/2026-09-05-primary-short-ingestion/JOURNAL.md) 与
+[后继 source-only 方案](../plans/2026-09-05-primary-short-ingestion/SOURCE-ONLY-ADMISSION.md)。
+
 ## 2026-09-05 短期来源的历史读取契约
 
 Primary shared history helper 增加 v2 的独立 short_horizon 三元组，旧 v1 原样兼容；所有来源仍在

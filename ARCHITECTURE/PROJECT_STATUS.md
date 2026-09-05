@@ -3,6 +3,14 @@
 > **最后更新**：2026-09-05
 
 
+## 2026-09-05 新消息短源登记隔离验证
+
+`feat/human-memory-primary-short-ingestion` / `2fb1d190` 的普通完整组 producer/registration leaf
+通过15项决定性与相邻测试，Dirac Scoped ACCEPT；原子新 assistant S1、真实11组/早1命中及重启/遗忘
+已验证。主树未合并；当前067 assistant admission会排无Host绑定分析job，**不得默认接通索引**。
+后继source-only public admission、selected-only来源及复杂组/原生产品验收仍未完成，不提升S3/S6/program完成度。
+见 [本片验证与限制](../plans/2026-09-05-primary-short-ingestion/JOURNAL.md)。
+
 ## 2026-09-05 短期来源的历史读取契约
 
 Primary shared history helper 增加 v2 的独立 short_horizon 三元组，旧 v1 原样兼容；所有来源仍在
