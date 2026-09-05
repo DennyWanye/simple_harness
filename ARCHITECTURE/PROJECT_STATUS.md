@@ -1,5 +1,13 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Native graph blocked by SDK credential false positive
+
+Last updated: 2026-09-05. Actual21c55cf9/native18120 with installedMemory0610
+created the requested preference, then public history rejected terminal tool names
+as credentials. Memory controls became unavailable before graph interaction.
+Native acceptance remains FAIL; successor SDK repair and rerun are pending.
+See [native evidence and boundaries](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0610-BLOCKER.md).
+
 ## 2026-09-05 Cytoscape graph source leaf ready for independent review
 
 Last updated: 2026-09-05. Isolated feat/human-memory-cytoscape-graph based on bf8f9f7d: backend24/frontend21 plus build/typecheck/focused ESLint pass; actual API-fixture browser selection/zoom/suppression replacement verified. Native verification stays coordinator-owned on043c candidate. No audit/pin changes, no full HM-AC6 or program PASS. Old cytoscape-ui tree preserved, inactive.

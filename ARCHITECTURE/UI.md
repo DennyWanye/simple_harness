@@ -1,5 +1,13 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-05 Native graph blocked by SDK credential false positive
+
+Last updated: 2026-09-05. Actual21c55cf9/native18120 with installedMemory0610
+created the requested preference, then public history rejected terminal tool names
+as credentials. Memory controls became unavailable before graph interaction.
+Native acceptance remains FAIL; successor SDK repair and rerun are pending.
+See [native evidence and boundaries](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0610-BLOCKER.md).
+
 ## 2026-09-05 Cytoscape primary graph display source candidate
 
 Last updated: 2026-09-05. PrimaryMemoryPanel adds a default-available graph tab over verified HUMAN primary.memory.graph. Real canonical nodes/relations only; local Cytoscape3.34.2 with keyboard/text selection, filter, zoom, pan and details. Pending/unknown forget, owner change and real completion hints invalidate old data. API-fixture browser renderer verification passes; coordinator native verification remains pending.

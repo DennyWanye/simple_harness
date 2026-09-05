@@ -1,5 +1,13 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Native graph blocked by SDK credential false positive
+
+Last updated: 2026-09-05. Actual21c55cf9/native18120 with installedMemory0610
+created the requested preference, then public history rejected terminal tool names
+as credentials. Memory controls became unavailable before graph interaction.
+Native acceptance remains FAIL; successor SDK repair and rerun are pending.
+See [native evidence and boundaries](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0610-BLOCKER.md).
+
 ## 2026-09-05 Public TwinGraph HUMAN projection and completion invalidation
 
 Last updated: 2026-09-05. Host reads manager.get_twin_graph_view using actual principal/primary and signed late API boundary. Node and edge output is bounded with closed endpoints; SDK collection remains a full scan. Main shares content-free completion invalidation between actual suppress and MemoryAnalysisLane APPLIED (including no_mutation). Server generation is checked after the final identity await; no SDK global epoch or Agent graph input is introduced.
