@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 6,
+  "fixture_revision": 7,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -37,9 +37,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.4",
-        "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
-        "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
+        "version": "0.6.5",
+        "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
+        "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
       }
     },
     "consumer_entrypoint_argument": "--consumer-entrypoint",
@@ -2862,15 +2862,16 @@
         "cell_id": "unsupported-replay/request-hash:protocol_version",
         "original_attack": "protocol_version",
         "public_path": "request.harness_protocol",
-        "mutation": "recall-v5",
-        "companion_bindings": "Do not substitute Context schema_version or result parser version",
-        "reject_layer": "Host strict request parser (unavailable)",
-        "exception_type": null,
-        "exact_reason": null,
-        "memory_call": false,
+        "mutation": 5,
+        "companion_bindings": "Keep context/plan and idempotency_key; pass exact int harness_protocol=5; not string/type rejection",
+        "reject_layer": "MemoryManager.execute_typed_recall.protocol",
+        "exception_type": "MemoryValidationError",
+        "exact_reason": "typed_recall_protocol_unsupported",
+        "memory_call": true,
         "candidate_query_count": 0,
         "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
-        "gap": "NO_PUBLIC_REQUEST_PROTOCOL_VERSION_INPUT"
+        "original_runner_label": "recall-v5",
+        "public_witness_stage": "protocol"
       },
       {
         "cell_id": "unsupported-replay/request-hash:principal_id",
@@ -2883,7 +2884,8 @@
         "exact_reason": "typed_recall_subject_not_owned",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "ownership"
       },
       {
         "cell_id": "unsupported-replay/request-hash:run_id",
@@ -2896,7 +2898,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:context_hash",
@@ -2909,7 +2912,8 @@
         "exact_reason": "RecallPlan context_hash differs",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "narrowing"
       },
       {
         "cell_id": "unsupported-replay/request-hash:context_revision",
@@ -2922,7 +2926,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:plan_id",
@@ -2935,7 +2940,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:plan_hash",
@@ -2950,7 +2956,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:disclosure_hash",
@@ -2963,7 +2970,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:recipient",
@@ -2976,7 +2984,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:purpose",
@@ -2989,7 +2998,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:budget.max_items",
@@ -3002,7 +3012,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:budget.max_bytes",
@@ -3015,7 +3026,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:budget.max_tokens",
@@ -3028,7 +3040,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       },
       {
         "cell_id": "unsupported-replay/request-hash:budget.deadline_ms",
@@ -3041,7 +3054,8 @@
         "exact_reason": "IDEMPOTENCY_CONFLICT",
         "memory_call": true,
         "candidate_query_count": 0,
-        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "public_witness_stage": "idempotency"
       }
     ],
     "state": {
@@ -3174,9 +3188,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.4",
-        "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
-        "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
+        "version": "0.6.5",
+        "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
+        "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
       }
     },
     "candidate_approval": "Harness0.7.2 explicit user steering; Memory0.6.3 independently reviewed executor-built candidate",
@@ -3463,7 +3477,208 @@
         "canonical_preimage": "{\"domain\":\"simple-harness/recall-context-use-receipt/v1\",\"payload\":{\"authority_epoch\":1,\"authorized_at\":1788170400.0,\"decision_hash\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"decision_id\":\"decision-1\",\"expires_at\":1788170700.0,\"item_bindings\":[{\"item_hash\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"item_id\":\"item-1\"}],\"policy_hash\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"provider_attempt_id\":\"attempt-1\",\"receipt_id\":\"receipt-1\",\"request_hash\":\"49f834c86095bb51f6c7cdfc5989fc33f5c1297b463daf4efd7851cc656ac379\",\"result_hash\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"result_id\":\"result-1\",\"run_id\":\"run-1\",\"schema_version\":1,\"snapshot_manifest_hash\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"subject\":\"principal-1\",\"turn_id\":\"turn-1\"}}",
         "expected_sha256": "4941b2effff255ba3889d7bedd3e32aa0c9acb2a8df3aceb90663ab988b2b0f4"
       }
-    ]
+    ],
+    "pre_witness_mutation_mapping": [
+      {
+        "cell_id": "unsupported-replay/request-hash:protocol_version",
+        "original_attack": "protocol_version",
+        "public_path": "request.harness_protocol",
+        "mutation": "recall-v5",
+        "companion_bindings": "Do not substitute Context schema_version or result parser version",
+        "reject_layer": "Host strict request parser (unavailable)",
+        "exception_type": null,
+        "exact_reason": null,
+        "memory_call": false,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now",
+        "gap": "NO_PUBLIC_REQUEST_PROTOCOL_VERSION_INPUT"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:principal_id",
+        "original_attack": "principal_id",
+        "public_path": "principal.actor_id",
+        "mutation": "principal-2",
+        "companion_bindings": "Keep context.subject and plan.subject principal-1; change trusted principal only",
+        "reject_layer": "Memory.execute_typed_recall.ownership",
+        "exception_type": "MemoryOwnershipConflict",
+        "exact_reason": "typed_recall_subject_not_owned",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:run_id",
+        "original_attack": "run_id",
+        "public_path": "context.run_id",
+        "mutation": "run-2",
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:context_hash",
+        "original_attack": "context_hash",
+        "public_path": "plan.context_hash",
+        "mutation": "e1b5609251224d45c0b3a0d5b5cb2b02506881bfebb37aaf40101767a63652ca",
+        "companion_bindings": "Keep legitimate context and its hash; replace only plan.context_hash intentionally",
+        "reject_layer": "RecallPlan.validate_narrowing",
+        "exception_type": "ValueError",
+        "exact_reason": "RecallPlan context_hash differs",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:context_revision",
+        "original_attack": "context_revision",
+        "public_path": "context.context_revision",
+        "mutation": 8,
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:plan_id",
+        "original_attack": "plan_id",
+        "public_path": "plan.plan_id",
+        "mutation": "plan-2",
+        "companion_bindings": "Keep entire context and idempotency_key; change specified plan input only; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:plan_hash",
+        "original_attack": "plan_hash",
+        "public_path": "plan.reason_codes",
+        "mutation": [
+          "recall_user_preference_dependency"
+        ],
+        "companion_bindings": "Keep entire context and idempotency_key; change specified plan input only; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:disclosure_hash",
+        "original_attack": "disclosure_hash",
+        "public_path": "context.disclosure_context.authority_ref",
+        "mutation": "disclosure-2",
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:recipient",
+        "original_attack": "recipient",
+        "public_path": "context.disclosure_context.recipient",
+        "mutation": "task_collaborator",
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:purpose",
+        "original_attack": "purpose",
+        "public_path": "context.disclosure_context.purpose",
+        "mutation": "task_resume",
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:budget.max_items",
+        "original_attack": "budget.max_items",
+        "public_path": "context.budget.max_items",
+        "mutation": 5,
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:budget.max_bytes",
+        "original_attack": "budget.max_bytes",
+        "public_path": "context.budget.max_bytes",
+        "mutation": 4095,
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:budget.max_tokens",
+        "original_attack": "budget.max_tokens",
+        "public_path": "context.budget.max_tokens",
+        "mutation": 1023,
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      },
+      {
+        "cell_id": "unsupported-replay/request-hash:budget.deadline_ms",
+        "original_attack": "budget.deadline_ms",
+        "public_path": "context.budget.deadline_ms",
+        "mutation": 1999,
+        "companion_bindings": "Keep idempotency_key; sync context/plan run, revision, disclosure, budget and derived context_hash; SDK derives plan_hash",
+        "reject_layer": "Memory.execute_typed_recall.idempotency",
+        "exception_type": "MemoryIdempotencyConflict",
+        "exact_reason": "IDEMPOTENCY_CONFLICT",
+        "memory_call": true,
+        "candidate_query_count": 0,
+        "precondition": "Same isolated database; baseline request already durably terminal; both context and plan valid at fixed recall now"
+      }
+    ],
+    "public_rejection_witness": {
+      "schema_version": 1,
+      "mapping_authority": "TYPED-RECALL-PROTOCOL-ADMISSION-MAPPING.md; user explicit int5/stages clarification before candidate execution",
+      "stages": [
+        "protocol",
+        "ownership",
+        "narrowing",
+        "idempotency"
+      ],
+      "semantics": "invocation-bound immutable pre-candidate observation; not durable authority",
+      "protocol_attack_input": 5,
+      "protocol_bad_type_not_accepted": true,
+      "requires_unique_invocation_ids": true
+    }
   },
   "candidate_pin_lineage": [
     {
@@ -3476,13 +3691,24 @@
         "source_commit": "2f3d73814fe6a884e0458d87567b918c5863033e",
         "wheel_sha256": "6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78"
       }
+    },
+    {
+      "fixture_sha256": "4c0032e8abe6e62cbb5ffe071d0adce7d9cd96dd8a21141c8550bf838f29dd3b",
+      "fixture_revision": 6,
+      "memory": {
+        "status": "PINNED",
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.4",
+        "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
+        "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
+      }
     }
   ],
   "candidate_pin_change": {
     "date": "2026-09-05",
-    "scope": "Clock-only public builder passthrough; no oracle/domain/ID/threshold change",
-    "authority": "User explicitly supplied independently reviewed 0.6.4 exact candidate and authorized isolated pin upgrade",
-    "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
-    "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
+    "scope": "Public pre-candidate exception witness and strict integer version admission; preserve accepted v4 hash",
+    "authority": "User supplied reviewed exact0.6.5 candidate and authorized upgrade; integer5 mapping frozen before execution",
+    "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
+    "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
   }
 }

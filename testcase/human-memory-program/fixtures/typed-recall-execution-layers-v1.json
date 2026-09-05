@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "fixture_id": "typed-recall-execution-layers-v1",
-  "fixture_revision": 4,
+  "fixture_revision": 5,
   "typed_recall_fixture": "typed-recall-v3.json",
-  "typed_recall_fixture_revision": 6,
-  "typed_recall_fixture_sha256": "4c0032e8abe6e62cbb5ffe071d0adce7d9cd96dd8a21141c8550bf838f29dd3b",
+  "typed_recall_fixture_revision": 7,
+  "typed_recall_fixture_sha256": "862ff6585552854ab6c92006371a83fc5d3a09568a32bbc92348d44ce8c4f0e3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "all_cells": {
     "count": 401,
@@ -51,9 +51,9 @@
     "candidate_memory_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-memory-sdk",
-      "version": "0.6.4",
-      "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
-      "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
+      "version": "0.6.5",
+      "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
+      "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
     },
     "candidate_harness_identity": {
       "status": "PINNED",
@@ -135,5 +135,8 @@
     }
   },
   "hash_correction_previous_fixture_sha256": "594189edb4c46ff1c52a778c1caeef9a94d324bfd67f778ce61a3ec1c5f63d8a",
-  "candidate_pin_previous_layers_sha256": "1a9861e34c4b3fd7d1a5d0273035714bbc66e12d68102be66cf54a1e67352064"
+  "candidate_pin_previous_layers_sha256": "1a9861e34c4b3fd7d1a5d0273035714bbc66e12d68102be66cf54a1e67352064",
+  "candidate_pin_layers_lineage": [
+    "45d77ad06642c87141b3f96d4450f92ad1bfe7081238573fed89c45d462c6814"
+  ]
 }
