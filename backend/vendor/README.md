@@ -4,7 +4,10 @@ This directory contains exact wheel artifacts from trusted sources, verified via
 
 ## Current runtime candidates (2026-09-05)
 
-- Harness 0.7.1 remains frozen; `sdk_candidate.py` is the executable identity authority.
+- Harness 0.7.2: approved S5b route-recovery exception, source `2b8428465cbd41032ba024a0b7199183161f5ecd`,
+  wheel SHA-256 `53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed`. The official reproducibility script
+  built wheel/sdist twice with identical bytes; 0.7.1 remains preserved. New checkpoint anchor
+  port is implemented by the existing production SQLite UoW and both Host test adapters.
 - Memory 0.6.3: source `2f3d73814fe6a884e0458d87567b918c5863033e`, wheel SHA-256
   `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`.
   Two `uv build --no-sources --wheel` builds were byte-identical. This fixes analysis recovery
