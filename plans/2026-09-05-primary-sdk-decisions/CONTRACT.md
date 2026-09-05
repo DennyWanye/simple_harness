@@ -120,8 +120,8 @@ the Primary guard. No real Provider or native UI was started.
 Affected backend suite: 66 passed; final focused production-decision suite: 18 passed.
 Frontend Primary/controller/view suite: initial 35, follow-up 36 passed; tsc -b --noEmit passed. These are
 isolated automated fixtures, not native E2E or a S6/program gate. Exact commands and
-ignored log digests are in RESULTS.md. Independent correctness review is pending at
-this initial candidate commit; main owns native verification.
+ignored log digests are in RESULTS.md. Independent read-only AI review accepted fixed 81eeb8b0 cumulative product code with
+no reproducible in-scope P0/P1/P2; main still owns native verification.
 
 ## Public-port and integration boundaries
 
@@ -132,8 +132,8 @@ ProductSdkRuntimeStack.list_open_authorization_decisions uses SDK-schema SQL int
 this slice reuses it with exact run/session and adds no SDK SQL or schema dependency.
 The 32-item response limit does not claim a bound on that pre-existing SQL scan.
 
-Carver owns the missing post-BOUND_WAITING human_memory_changed notification; it must
-be combined for prompt late-task UI hydration. This slice does not change his runtime,
+Carver delivered post-BOUND_WAITING human_memory_changed notification in 61436ccc;
+its runtime/test patch applies cleanly and must be combined for prompt late-task UI hydration. This slice does not change his runtime,
 SDKs, pins or license/default policy. The actual SDK-state projection shows waiting
 without changing Host RUNNING ledger semantics. Stop/cancel native evidence and missing
 stopped-history text remain separate. Main's subsequent source-visibility/resume work

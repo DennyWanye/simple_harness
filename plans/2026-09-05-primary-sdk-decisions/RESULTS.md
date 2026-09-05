@@ -60,3 +60,22 @@ typecheck and targeted eslint passed. Existing main legacy signal/permission con
 | typecheck-after-refresh-timeout.log | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | lint.log | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | legacy-controls.log | `baf26f288c0f3253629d61abe5c8fa0d1679f04fe13978ec05a347cc1d6d68b2` |
+
+## Final independent AI review and Stage1 handoff
+
+Independent ephemeral read-only reviewer, fixed product source `81eeb8b0d37005e0321a8ef06c4edf6a4964f92f`
+against `5da24d6f67331aeb190f5cb23defd2863674d670`: **Scoped ACCEPT**, no reproducible
+in-scope P0/P1/P2. It reviewed code/test proof rather than repeating suites. The reviewer
+explicitly verified the refresh/uncertain response correction and excluded native/full-gate claims.
+Dirac was occupied with main's other review; this independent process completed this review.
+Local `independent-review.md` SHA-256 `b26f968f841323ed3b116f49ddf8c59b72d5de8d289f0fd8078d4f7384eb22c4`. Raw reviewer process output is ignored.
+
+`npm run build` passed (existing chunk-size warning only). Local `frontend-build.log` SHA-256
+`756289f7848e2bd4d36ff9191f275daa57fd4ab1103c33848c13ef79bc9c1018`. No native App/Provider operation was performed.
+
+Stage1 integration: `794beaa8` then `81eeb8b0`; this final handoff commit changes documentation only.
+Add Carver `61436ccc0c9ffba1eb468412640a3ff6a9c41805`: after durable `record_reconciliation`,
+call `_notify_state_changed()` only for `BOUND_WAITING`. Its runtime/test patch passes
+`git apply --check` against this candidate. It has not been merged into this owner branch;
+no history branch is required for the Stage1 patch. Main owns a fresh native Run on its
+previous isolated data; no cancelled/unknown Run replay, privacy/forget or cutover claim.
