@@ -1,6 +1,8 @@
-# TC-HM-13 oracle 修订提案（A2 待批准）
+# TC-HM-13 oracle 修订提案（A2 已批准，有界实施）
 
-日期：2026-09-05。状态：**供 A2 审阅的具体方案，尚未批准、尚未实施**。
+日期：2026-09-05。状态：**§3–4 及两项 P2 已获用户明确批准；批准先于修改固化于 `38356e7f`。**
+批准记录见 `TYPED-RECALL-A2-APPROVAL-2026-09-05.md`。下文保留受审原文；当前 fixture rev4/layers rev2 实施范围以 `approved_oracle` 为准。
+执行前补充：提案 D 的 NUL preimage 与两个 SDK 已存在的 JSON domain envelope 不同；保留已批准公式，列 DOMAIN_PREIMAGE_DIFFERENCE，禁止按实际输出修 gold。Harness 候选依用户后续明确指令升级0.7.2/source2b842846/wheel53bded3f；Memory0.6.3不变。
 本文件不修改 fixture、acceptance、SDK 生产契约或任何验收结果。独立 S5b 工作继续。
 本次 runner 是执行/观察桥，**TC-HM-13 验收 PASS = 0**。桥回归与真实 API probe 分开计数。
 

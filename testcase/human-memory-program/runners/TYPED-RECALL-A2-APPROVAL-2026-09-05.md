@@ -27,3 +27,7 @@ plan-status: finalized
 4. 正确性独立review、受影响测试与提交态复验；按实际结果更新TC13和架构，不将deterministic gate或selfcheck宣称为真实质量门完成。
 
 这是已批准的API测试工具增量，沿用原验收集与独立评审；不新建整program机器账本，不触碰主执行者正在使用的active-run。journal记录范围兑现与遗留；原始证据仅在本分支ignored .local-test-evidence。批准不表示任何cell已通过。
+
+## 后续候选指令（执行前追加）
+
+用户明确指定本轮采用已批准、独立复审并提交的 Harness 0.7.2，source `2b8428465cbd41032ba024a0b7199183161f5ecd`，wheel `53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed`。Memory0.6.3身份不变。只运行确定性消费者，不加载 WeMM/MPS。

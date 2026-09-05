@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "fixture_id": "typed-recall-execution-layers-v1",
-  "fixture_revision": 1,
+  "fixture_revision": 2,
   "typed_recall_fixture": "typed-recall-v3.json",
-  "typed_recall_fixture_revision": 3,
-  "typed_recall_fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+  "typed_recall_fixture_revision": 4,
+  "typed_recall_fixture_sha256": "02419918d27237faf2af5e6d75f4180275c1e816cbad183c29ed871f508be649",
   "quality_gate": "NOT_RUN/BLOCKED",
   "all_cells": {
     "count": 401,
@@ -51,16 +51,16 @@
     "candidate_memory_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-memory-sdk",
-      "version": "0.6.0",
-      "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
-      "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"
+      "version": "0.6.3",
+      "source_commit": "2f3d73814fe6a884e0458d87567b918c5863033e",
+      "wheel_sha256": "6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78"
     },
     "candidate_harness_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-sdk",
-      "version": "0.7.0",
-      "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
-      "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"
+      "version": "0.7.2",
+      "source_commit": "2b8428465cbd41032ba024a0b7199183161f5ecd",
+      "wheel_sha256": "53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed"
     }
   },
   "source_exact_commit_integration": {
@@ -114,5 +114,24 @@
     "duplicate_cell_count": 0,
     "missing_cell_count": 0,
     "semantic_quality_gate": "NOT_RUN/BLOCKED"
+  },
+  "pre_migration": {
+    "fixture_revision": 1,
+    "sha256": "2f18d942be3ddd4d4c95c4eadd888b15f49c783a27bd0f0c086462ce32b4d1ca",
+    "typed_recall_fixture_sha256": "373080e1488906badf5b66e4d13720224e6528697345fbaeae51b4206d621c12",
+    "candidate_harness_identity": {
+      "status": "PINNED",
+      "distribution": "simple-harness-sdk",
+      "version": "0.7.0",
+      "source_commit": "fb491574db8bb4d19d8a7f9df0c72ae460bb08f4",
+      "wheel_sha256": "36522c4abce5ba598e084a9c45aca0fb32ded2b9e8d9bc3eb8c28694eb39b99f"
+    },
+    "candidate_memory_identity": {
+      "status": "PINNED",
+      "distribution": "simple-harness-memory-sdk",
+      "version": "0.6.0",
+      "source_commit": "d069e0e949edb44d85d2ebeac6e49b05f9fb51b1",
+      "wheel_sha256": "6f9a8c1a52cf8512232a12a9ea7fd7d98c6c5d59e837d2c5f777010bb30fe6b2"
+    }
   }
 }
