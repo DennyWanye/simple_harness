@@ -6,7 +6,7 @@ import type { GraphEdge, GraphNode } from "../primary/graphRequests";
 export type GraphSelection = { kind: "node" | "edge"; id: string } | null;
 const style: StylesheetJson = [
   { selector: "node", style: { label: "data(label)", "background-color": "#8baaff", color: "#f1f5f9",
-    width: 44, height: 44, "font-size": 12, "text-wrap": "wrap", "text-max-width": "130px",
+    width: 44, height: 44, "font-size": 12, "text-wrap": "wrap", "text-max-width": "130px", "text-overflow-wrap": "anywhere",
     "text-valign": "center", "text-halign": "right", "text-margin-x": 12, "border-width": 2, "border-color": "#cbd5e1" } },
   { selector: 'node[memory_type = "episode"]', style: { shape: "ellipse", "background-color": "#57bd9b" } },
   { selector: 'node[memory_type = "semantic"]', style: { shape: "round-rectangle" } },
@@ -40,7 +40,13 @@ export function MemoryGraphCanvas({ nodes, edges, selected, onSelect, claimIniti
   useEffect(() => {
     if (!container.current) return;
     const cy = cytoscape({ container: container.current, elements: graphElements(nodes, edges), style,
-      layout: { name: "breadthfirst", directed: true, animate: false, padding: 32, spacingFactor: 1.3 },
+      // Disconnected memories have no hierarchy: one breadth-first root row
+      // crowds labels and makes fit shrink every word. Include real label bounds.
+      layout: edges.length === 0
+        ? { name: "grid", cols: Math.max(1, Math.ceil(Math.sqrt(nodes.length))),
+            animate: false, padding: 32, avoidOverlap: true, nodeDimensionsIncludeLabels: true }
+        : { name: "breadthfirst", directed: true, animate: false, padding: 32,
+            spacingFactor: 1.3, nodeDimensionsIncludeLabels: true },
       // Ordinary wheel scroll belongs to the enclosing memory pane; buttons zoom.
       minZoom: 0.12, maxZoom: 3, userZoomingEnabled: false, boxSelectionEnabled: false, autounselectify: false });
     core.current = cy;
