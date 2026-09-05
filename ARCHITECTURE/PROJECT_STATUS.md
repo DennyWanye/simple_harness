@@ -2,6 +2,13 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Primary 生产目录修复
+
+真实原生普通回复/重启追问通过；新项目请求在 `607acc7d` 暴露三项 Context 控制被
+requires_project 默认值过滤，零 Scope/文件。仅三项 Host 注册补 safe，真实生产 composition
+红→绿与相邻验证 **34 passed**；修后原生复验仍待进行。原始失败与命令/哈希见
+[INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
+
 ## 2026-09-05 Primary 工具活动事件契约
 
 隔离组合树补齐真实 SDK 调用到 `tool_call` 的 `call_id`，使主对话可对应工具开始/返回。
@@ -13,7 +20,7 @@
 运行层、API 与新前端已组合；真实 SDK + SQLite + deterministic Provider 经公共历史 API
 验证新普通对话/旧 scoped 终态、重启标识一致与 raw event 错绑拒绝，聚焦 **51 passed**。
 原生候选 `87c42b43` 的真实 gpt-5.5 普通对话已回复，未创建 TaskScope；正常退出/重启
-看到历史恢复，账本确认前台/分析调用均未重发。第二轮历史使用因再次锁屏仍待原生验收。
+看到历史恢复，账本确认前台/分析调用均未重发。解锁后的第二轮追问也通过，实际出站请求包含原用户/助手历史。
 完整来源遗忘与新建项目授权仍在修复，未切换 main、未标 S6/program 完成。证据哈希见
 [INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
 

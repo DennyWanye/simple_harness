@@ -8309,6 +8309,7 @@ async def _build_product_sdk_runtime_stack(
             handler=context_route_handler,
             dispatch_kind="async",
             permission_category="context_route",
+            projectless_admission="safe",
             metadata={
                 "source": "product-context-route",
                 "version": "1",
@@ -8328,6 +8329,7 @@ async def _build_product_sdk_runtime_stack(
             handler=task_scope_search_handler,
             dispatch_kind="async",
             permission_category="task_scope_search",
+            projectless_admission="safe",
             metadata={
                 "source": "product-context-route",
                 "version": "1",
@@ -8356,6 +8358,7 @@ async def _build_product_sdk_runtime_stack(
             handler=task_scope_update_handler,
             dispatch_kind="async",
             permission_category="task_scope_update",
+            projectless_admission="safe",
             metadata={
                 "source": "product-task-scope-closure",
                 "version": "1",

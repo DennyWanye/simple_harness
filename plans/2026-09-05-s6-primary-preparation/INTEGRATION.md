@@ -22,7 +22,7 @@ Actual native candidate: Host `87c42b43ab14363f6e5dc90df041327c930e583f`, includ
 
 Through native coordinates/input, sent “请只回复：主对话链路正常。” and observed the real gpt-5.5 response “主对话链路正常。”, cleared draft, and idle queue. Host Run `72ae10bb-2921-5b1d-bb7d-0e5bf2e5fcce` completed; TaskScope count remained zero. Foreground Provider call took 2993 ms; the separate analysis call took 10333 ms and its batch/job reached applied before quitting. These are single-run timings, not a performance distribution or memory quality acceptance.
 
-After normal native quit, relaunched the identical binary/source with the same user data. Native AX showed both previous messages. A subsequent read-only ledger comparison confirmed unchanged identities and counts: one foreground invocation, one analysis invocation, one applied job. No completed invocation was resent. The next native capture/input was blocked by the Mac lock; the second-turn Provider history-use case remains **PENDING**, not passed.
+After normal native quit, relaunched the identical binary/source with the same user data. Native AX showed both previous messages. A subsequent read-only ledger comparison confirmed unchanged identities and counts: one foreground invocation, one analysis invocation, one applied job. No completed invocation was resent. After unlocking, the native follow-up “我上一条要求你回复的那句话是什么？只回复那句话。” returned “主对话链路正常。”. The actual second start Context contains system + prior USER + prior assistant + current USER; the physical Provider diagnostic agrees (4 messages). This one foreground call took 4868 ms; its analysis took 3244 ms and reached applied. Both foreground Runs remain unscoped. Ordinary reply, native reopen/no replay, and this history-use case passed for the original runtime candidate; full memory forgetting is still separate.
 
 Two preceding carrier failures are retained: `primary-ui-j475lsei` failed SDK installed-origin validation; `primary-ui-0p2sx1j1` had an incorrect frontend compiled port and was closed without a test message. Correct SDK installation origins and a rebuild with port 18120 preceded the successful run. No unrelated port-8100 process was stopped.
 
@@ -39,6 +39,26 @@ Raw evidence stays under the main checkout's ignored `.local-test-evidence/2026-
 ## Remaining boundaries
 
 - Full history suppression still lacks Memory-owned reverse lineage and a batch visibility snapshot; a separate SDK candidate is being implemented. Existing source-level filtering is not a complete memory-forget proof.
-- `create_new` needs a real per-task child root and active unscoped binding authority. Existing dynamic runtime proof covers resume_existing into a genuinely pre-bound scope, not new project creation.
+- CREATE_NEW child-root and active-run binding now pass deterministic production-path tests, but the first native run exposed missing control tools; the catalog correction still needs native retest.
 - Manual binding UI, attachments/slash/realtime, task/artifact/context inspection and original program quality gates remain incomplete.
 - The old provider-unknown root and gate failures remain historical evidence; this run does not replace them.
+
+## CREATE_NEW production catalog correction
+
+Candidate `607acc7d` combines CREATE_NEW binding, original invocation generation fence, first-tool startup ordering, and tool-call UI identity. Combined runtime/API/control/create-new/delivery tests: **75 passed in 37.22s**, raw `.local-test-evidence/2026-09-05/primary-integration/create-new-combined.log`, SHA-256 `d762b77505d7e1032af4a477b023a9cc1ece62a07ade1a81eb2b14fef6980a4e`.
+
+Actual native CREATE_NEW at this candidate **failed**: four foreground calls searched for capabilities, then the assistant asked for a project location. No TaskScope/file was created. Run `dbe46b69-9c7f-5b86-88c8-390a1652c95f`; SDK `product-sdk-39173e5e53ed189ff3fa023dc33b0a7e1759abae694b82f4474bae0497a64d85`. The actual frozen tool inventory lacked context_route, task_scope_search, and task_scope_update. Registration was present, but those three Host-added registrations inherited requires_project and were filtered from an unscoped primary Run. The fixture's explicitly safe registrations had concealed the production difference.
+
+Correction explicitly marks only these three existing Context controls safe to expose before a workspace is bound. Their actual mutation/binding authorization stays in their handlers; file tools retain requires_project. The existing real production composition test now passes its actual published catalog/inventory through the primary filter and asserts all three direct controls, with write_file retaining its project requirement. No default permission classification was broadened.
+
+Decisive red: all three controls missing (1 failed). After correction, production composition + context-route + actual CREATE_NEW tests: **34 passed in 12.31s** using this checkout's exact-wheel runtime environment. Raw `.local-test-evidence/2026-09-05/primary-catalog/red.log` SHA-256 `e0c4d0d473e22a2047a9635019a9f606eac0911d1ef8da0d801ee48421a6f723`; green SHA-256 `003efbf97ff9cd71f4e5e170a49c511af9c2e2d8e7a25f056a6f9ff351c57eef`. Earlier attempts using the main venv failed SDK installed-origin preflight and remain in origin-preflight-*.log; they are not the product red/green proof. Native corrected-candidate retest is pending.
+
+Additional native evidence, relative to main checkout's ignored human-memory-resume root:
+
+| Evidence | SHA-256 |
+| --- | --- |
+| primary-ui-h_39qzgm/05-restored.png | 7625f139fd5a6cbc7ebf6f170ba99fef16f78c59f51f29c415a010496de6c18a |
+| primary-ui-h_39qzgm/07-history-response.png | c7c892927c63c92115034219a9aef2f57f090240af62e52fc9e91b09e6421756 |
+| primary-ui-h_39qzgm/second-turn-start-context.json | fb31c013ae01bf96fece5939ef77d5c90e623159e3b5179b35463165ecb0ec7b |
+| primary-ui-yteyuzxm/catalog-failure.json | 014d086aed1c24e40f1a2c4d7f001121a770bab215d355045f8960152775abff |
+| primary-ui-yteyuzxm/03-project-result.png | 1555245a5fcc5b5ecc9965bfcf35c299378148762ecd6138f6c64f63ad319ff4 |

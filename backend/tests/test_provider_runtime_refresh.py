@@ -445,6 +445,21 @@ async def test_human_epoch_composition_registers_three_authorities(
             ProductTaskExecutionAuthority,
         )
         assert main.service_context.get("human_memory_v7_runtime") is not None
+        # Use the real production registrations, not a hand-made safe inventory.
+        # A primary Run needs these controls before it can bind its first scope.
+        from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL
+        from deskpet.sdk_adapters.tools import filter_sdk_catalog_for_workspace
+
+        catalog, inventory = filter_sdk_catalog_for_workspace(
+            main.service_context.get("sdk_runtime_catalog"),
+            main.service_context.get("sdk_runtime_tool_inventory"),
+            workspace_resolution_kind="projectless",
+            primary_route_capable=True,
+        )
+        controls = {"context_route", "task_scope_search", "task_scope_update"}
+        assert controls <= set(catalog["tool_names"]) & SDK_DIRECT_TOOL_KERNEL
+        assert all(item.projectless_admission == "safe" for item in inventory if item.name in controls)
+        assert next(item for item in inventory if item.name == "write_file").projectless_admission == "requires_project"
     finally:
         if stack is not None:
             await stack.close()
