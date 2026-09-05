@@ -2,6 +2,9 @@
 
 ## 2026-09-05 Memory0612 installed credential successor
 
+Independent artifact/exact-installed review ACCEPT, including captured actual Host
+history first/reopen. Native click acceptance remains separate and blocked by lock screen.
+
 Last updated: 2026-09-05. Exact0612 fixes public tool-name credential false positives;
 49PASS11.53s startup/composition/graph/display producers. Installed SDK bytes match wheels/source, no source overlay.
 Native graph recovery and full operation coverage are not yet claimed.
