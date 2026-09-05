@@ -1,4 +1,4 @@
-# Successor Memory public source-only admission — proposal, not implemented
+# Successor Memory public source-only admission — approved and implemented in0.6.8
 
 2026-09-05. Required integration repair authorized by main; candidate version remains main-assigned.
 Harness0.7.2/Memory0.6.7 frozen bytes stay untouched. This document does not authorize default use of the current indexing leaf.
@@ -100,5 +100,8 @@ The conservative all-indexed-roots limitation remains separately open; this seam
 7. Original USER/source/terminal-ancestor and MEMORY-only suppression controls, exact067-compatible short triple plus Host
    current ancestry check, reopen deny. The public query/disclosure/expiry/hash/threshold contracts remain unchanged.
 
-Current status: DESIGN ONLY. No SDK source/version/wheel edits, no default indexing activation. Source-only admission and
-selected-source visibility are separate successor obligations; neither is proven by the existing15 Host tests.
+Current status2026-09-05: source-only implemented in independently reviewed0.6.8 source5e8397b,
+frozenwheel98a9c788; Host55b9e402 independently ACCEPT with17 bounded tests and committed2 decisive
+checks. New assistant admissions no longer enqueue analysis; USER full admission retains actual
+lineage. Selected-source visibility remains a separate open obligation; main/native not modified.
+See JOURNAL.md for evidence layers, exact identity and review boundaries.

@@ -130,4 +130,11 @@ cleanup of067 assistant full-ingest jobs), main/native startup wiring owned by m
 All-indexed-roots is still a bounded failclosed guard, not proof of actual selected-only source
 coverage or full short-lane availability. No selected-source interface, no original401/threshold
 changes; S3/program/native product completion not claimed.
-JOURNAL_VERDICT: IN_PROGRESS — bounded tests green; independent review/freeze delivery pending.
+Dirac independently accepted Host55b9e40219e18a65b5d5367e2faf4c30c2a6c982 on2026-09-05;
+no new scopedP0/P1. Read17 and committed2 logs, no repeated test run; sampled installedwheelidentity
+98a9c788. Report: primary-api ignored host-short-55b9e402-review/REVIEW.md,
+SHA256809ff07e7833c2b70edfae8de910ebc71f19c6b7236837a55b1d2d81d644dcc2.
+SDK source5e8397b separately ACCEPT and frozen installed manifest verified; no native/main changes.
+The11 USER APPLIED results are actual no_mutation analyses, not a claim of11 cognitive writes.
+JOURNAL_VERDICT: COMPLETE — bounded source-only Host leaf/actual11group composition accepted;
+main/native wiring, complex-group support and selected-only authority remain separate open work.

@@ -365,3 +365,8 @@ fail closed。
 此前067assistant enqueue集成缺陷在此组合测试中解除；SDK独立审/最终冻结及main/native接线仍待完成。
 原067字节/环境不变，fresh7.2限定；all-indexed-roots不等于selected-only来源证明或S3/program完成。
 [交付事实](../plans/2026-09-05-primary-short-ingestion/JOURNAL.md)。
+
+2026-09-05：Host source-only接线55b9e402经Dirac两文件增量限定ACCEPT，无新增P0/P1；
+17限定测试及commit后2决定性检查已绿，11USER实际no_mutation分析/0assistant分析成立。
+SDK0.6.8 source5e8397b/wheel98a9c788已冻结；本叶子交付完成且未合main/native，
+fresh7.2、复杂group整组拒绝、allroots/selected-only公开来源缺口保留，不称S3/program完成。
