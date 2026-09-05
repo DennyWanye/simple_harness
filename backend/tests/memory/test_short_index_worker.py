@@ -228,3 +228,61 @@ async def test_analysis_failure_next_tick_and_periodic_projection(env, monkeypat
     assert (await short.step()).projection is not None
     await env.runtime.close()
     assert (await short.step()).confirmed == 11  # fresh manager clears old confirmations
+
+
+@pytest.mark.asyncio
+async def test_real_tool_group_and_unfinished_do_not_starve_plain_group(tmp_path):
+    from simple_harness import CallId
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
+    class ToolFirst(Provider):
+        async def invoke(self, request, *, cancel):
+            if not self.requests:
+                self.requests.append(request)
+                return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Find tools"),
+                    tool_calls=(ProviderToolCall(CallId("worker-search"), "tool_search", {}),),
+                    model="model", usage=ProviderUsage(10, 10, 20), opaque_continuation_ref="fixture-tool")
+            return await super().invoke(request, cancel=cancel)
+    state = tmp_path / "state.db"
+    service = HumanMemoryHostServiceFactory(state,
+        await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
+    await service.open_primary()
+    foreground, stack, _ = await build(tmp_path, state, ToolFirst())
+    try:
+        for i in range(2):
+            await service.enqueue_turn(QueueTurnRequest(None, f"mixed-worker-{i}", f"actual message {i}"))
+            assert await foreground._drive_once() and foreground.last_error is None
+        await service.enqueue_turn(QueueTurnRequest(None, "unfinished-worker", "not run yet"))
+    finally:
+        await foreground.close()
+        await stack.close()
+    runtime = compose_human_memory_runtime(state, tmp_path / "memory.db", adapter_factory=lambda *_: None)
+    worker = MemoryIngestionOutboxWorker(state, runtime.manager, owner_id="mixed-worker")
+    try:
+        assert await worker.run_once() == "delivered"
+        assert await worker.run_once() == "delivered"
+        result = await PrimaryShortIndexWorker(runtime).step()
+        assert result.scanned == 3 and result.confirmed == 1
+        assert [reason for _, reason in result.blocked] == [
+            "terminal_multiple_items_not_representable", "conversation_terminal_pending"]
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_cancel_after_real_projection_ack_reopens_without_false_confirmation(env):
+    await deliver_all(env)
+    def cancel(point):
+        if point == "short.after_projection":
+            raise asyncio.CancelledError()
+    short = PrimaryShortIndexWorker(env.runtime, fault_hook=cancel)
+    with pytest.raises(asyncio.CancelledError):
+        await short.step()
+    assert not short._confirmed
+    # The actual projection committed before cancellation; replay cannot assume
+    # it rolled back and must use identical registrations after reopening.
+    assert len((await recall(await env.runtime.manager(), "quartznebula")).hits) == 1
+    await env.runtime.close()
+    short._fault_hook = None
+    assert (await short.step()).confirmed == 11
+    assert len((await recall(await env.runtime.manager(), "quartznebula")).hits) == 1

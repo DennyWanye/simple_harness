@@ -163,6 +163,8 @@ async def test_actual_main_lane_activation_consumes_shared_notification_instance
         lane = main.service_context.get("sdk_memory_ingestion_outbox")
         assert isinstance(lane, MemoryAnalysisLane)
         assert lane._display_invalidation is changes
+        assert lane.short_indexer.runtime is menv.runtime
+        assert lane.short_indexer.authority is menv.runtime.conversation_evidence_authority
     finally:
         for name, value in slots.items():
             main.service_context.register(name, value)
