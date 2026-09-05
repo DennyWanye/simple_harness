@@ -24,7 +24,9 @@ main已惰性注入API三reader/resolver，**依赖Dirac API提交及terminal he
 
 CREATE_NEW候选62f44631曾发现generation origin P1，后继冻结原Host/SDK Run、owner/gen，
 首次选择与写锁内commit前重复核验；真实reclaim/终态后旧context回归及相关套件85 passed。
-首tool早于Host RUNNING的独立启动竞态仍待下一修复，不能以fixture等待放行新项目UI。
+origin c04912f9已获Dirac独立限定ACCEPT（9 passed）。首tool启动竞态后继用本次启动Event
+等待真实Host RUNNING持久化，再按原owner/gen/state授权；不放宽CLAIMED，5秒有界失败。
+无Provider等待的真实首tool正例/期间reclaim拒绝及相关套件87 passed；待独立复核及新项目native验收。
 
 CREATE_NEW后继已完成生产backend修复：配置CanonicalWorkspaceRoot取canonical_path后使用稳定task子目录；
 service先持久化真实binding proposal；active None Run以实际Run/context+owned目标scope取得原AUTO authority，

@@ -21,16 +21,8 @@ class CreateProvider(Provider):
     def __init__(self):
         super().__init__()
         self.route_result = None
-        self.start_queue = None
 
     async def invoke(self, request, *, cancel):
-        if not self.requests and self.start_queue is not None:
-            async with asyncio.timeout(5):
-                while True:
-                    current = await self.start_queue.current_snapshot(local_owner_auth().subject)
-                    if current is not None and current.state.value == "RUNNING":
-                        break
-                    await asyncio.sleep(0.001)
         n = len(self.requests)
         self.requests.append(request)
         values = [json.loads(m.content)["value"] for m in request.messages
@@ -85,7 +77,6 @@ async def test_active_primary_create_new_auto_real_binding_effect_terminal(tmp_p
     state, factory, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "fresh-project", "Create a new project and write its file"))
     provider = CreateProvider()
-    provider.start_queue = authority._foreground
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     try:
@@ -176,7 +167,6 @@ async def test_active_primary_create_auto_rechecks_lease_before_binding(tmp_path
     state, _, service, configured, authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "lease-lost", "Create a fresh project"))
     provider = CreateProvider()
-    provider.start_queue = authority._foreground
     runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     original = authority._store.append_binding
@@ -217,7 +207,6 @@ async def test_active_primary_auto_rejects_fabricated_proposal(tmp_path, monkeyp
             raise
     monkeypatch.setattr(authority, "append_binding", corrupt_proof)
     provider = CreateProvider()
-    provider.start_queue = authority._foreground
     runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     try:
@@ -278,7 +267,6 @@ async def test_create_new_cannot_borrow_reclaimed_generation(tmp_path, monkeypat
             return result
         monkeypatch.setattr(authority._store, "_load_auto_append_authority", load)
     provider = CreateProvider()
-    provider.start_queue = authority._foreground
     runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     try:
@@ -314,7 +302,6 @@ async def test_completed_invocation_cannot_fall_back_to_bootstrap(tmp_path, monk
         return await original(**kwargs)
     monkeypatch.setattr(authority, "append_binding", capture)
     provider = CreateProvider()
-    provider.start_queue = authority._foreground
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
     try:
@@ -333,5 +320,72 @@ async def test_completed_invocation_cannot_fall_back_to_bootstrap(tmp_path, monk
             assert db.execute("SELECT COUNT(*) FROM task_workspace_run_mode_snapshots").fetchone()[0] == 1
             assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
     finally:
+        await runtime.close()
+        await stack.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reclaim_after_start", [False, True])
+async def test_first_tool_waits_for_durable_host_started_without_provider_delay(tmp_path, monkeypatch, reclaim_after_start):
+    """Hold the Host start write while the real SDK driver already issues a tool."""
+    state, _, service, configured, authority = await fixture(tmp_path)
+    await service.enqueue_turn(QueueTurnRequest(None, "fast-start", "Create a project"))
+    provider = CreateProvider()  # deliberately no start_queue/provider wait
+    runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured)
+    entered = asyncio.Event()
+    release_start = asyncio.Event()
+    effect_tasks = []
+    original_admit = runtime._effect_gate.authorize
+    async def admit(sdk_run_id):
+        effect_tasks.append(asyncio.current_task())
+        entered.set()
+        return await original_admit(sdk_run_id)
+    monkeypatch.setattr(runtime._effect_gate, "authorize", admit)
+    original_started = runtime._store.record_sdk_started
+    async def started(**kwargs):
+        await release_start.wait()
+        result = await original_started(**kwargs)
+        if reclaim_after_start:
+            current = await authority._foreground.current_snapshot(local_owner_auth().subject)
+            await authority._foreground.close_current_lease(host_run_id=current.host_run_id,
+                owner_id=current.owner_id, generation=current.generation, idempotency_key="start-close")
+            new = await authority._foreground.reclaim_expired(host_run_id=current.host_run_id,
+                new_owner_id="new-start-worker", expected_generation=current.generation,
+                lease_seconds=60, idempotency_key="start-reclaim")
+            assert new.generation == current.generation + 1
+        return result
+    monkeypatch.setattr(runtime._store, "record_sdk_started", started)
+    driver = asyncio.create_task(runtime._drive_once())
+    try:
+        await asyncio.wait_for(entered.wait(), 5)
+        current = await authority._foreground.current_snapshot(local_owner_auth().subject)
+        assert current.state.value == "CLAIMED" and current.sdk_run_id is not None
+        done, _ = await asyncio.wait([effect_tasks[0]], timeout=0.5)
+        assert not done, "first tool was rejected/dispatched before durable Host RUNNING"
+        with sqlite3.connect(state) as db:
+            assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0
+        release_start.set()
+        if reclaim_after_start:
+            from deskpet.execution.foreground_queue import ForegroundQueueError
+            with pytest.raises(ForegroundQueueError, match="foreground_generation_stale"):
+                await asyncio.wait_for(driver, 20)
+            with pytest.raises(ForegroundQueueError, match="foreground_generation_stale"):
+                await asyncio.wait_for(asyncio.shield(effect_tasks[0]), 5)
+            with sqlite3.connect(state) as db:
+                assert db.execute("SELECT COUNT(*) FROM task_scopes").fetchone()[0] == 0
+                assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 0
+                assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts").fetchone()[0] == 0
+            assert not list(configured.glob("*/fresh.txt"))
+            return
+        assert await asyncio.wait_for(driver, 20)
+        with sqlite3.connect(state) as db:
+            assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts").fetchone()[0] == "COMPLETED"
+            assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions").fetchone()[0] == 1
+        assert len(provider.requests) == 7
+        assert len(list(configured.glob("*/fresh.txt"))) == 1
+    finally:
+        release_start.set()
+        await asyncio.gather(driver, return_exceptions=True)
         await runtime.close()
         await stack.close()

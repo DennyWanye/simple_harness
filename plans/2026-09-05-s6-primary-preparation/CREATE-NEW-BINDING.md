@@ -87,3 +87,32 @@ Host Run/SDK Run/owner/generation，在任何create/append handler await之前�
 - `.local-test-evidence/2026-09-05/s6-primary/runtime/origin-confirmed-red2.log` — SHA-256 `02f3eef7502433d1406eb8e05d1e4273484db8a99e73ef74977c15f691e85a37`
 - `.local-test-evidence/2026-09-05/s6-primary/runtime/origin-candidate.log` — SHA-256 `a21fcb9f19adae748d47c03cf33def14c89f4ccc44f6a22c17ca3c9812f13195`
 - `.local-test-evidence/2026-09-05/s6-primary/runtime/origin-green.log` — SHA-256 `e81b2d27164afebf5a4be38058083516595e644dd20bdf412712391907e3c911`
+
+## 首tool启动竞态纠正（parent c04912f9）
+
+origin P1已由Dirac在immutable c04912f9上独立限定ACCEPT：原探针+8条候选9 passed，
+报告在API worktree `.local-test-evidence/2026-09-05/create-new-c04912f9-review/REVIEW.md`。
+其RUNNING等待仅隔离origin变量；本后继已删除CreateProvider中全部该等待。
+
+原生产时序：持久SDK binding → ingress.start调度真实driver → start返回 → Host start observation/
+record_sdk_started；driver在后两项持久化前可能请求首tool，原TOOL状态校验拒绝CLAIMED。
+现在在现foreground registration中携带本次启动专用Event；effect gate捕获原binding后，
+等待Host正常start/已有SDK恢复观察路径完成。只有既有record_sdk_started返回后才打开Event，
+随后调用原store.authorize_effect按真实owner/gen/SDK binding/状态重新授权。没有允许任意
+CLAIMED执行tool、提前伪造RUNNING或绕过SDK_START admission；等待不成为授权凭据。
+等待最多5秒，启动未完成时稳定失败foreground_tool_start_barrier_timeout，不永久悬挂。
+事件仅进程内调度同步，不是新订阅/ledger；重启按原durable observation路径重建。
+
+决定性真SQLite/Harness回归不延迟Provider：阻住Host record_sdk_started，让首tool真实到达gate，
+确认CLAIMED期间handler未建任何TaskScope且effect仍等待；放行真实RUNNING后完成生产
+create_new/AUTO/task子目录/write_file/closure/terminal。相同窗口RUNNING写入后立刻真实reclaim，
+等待中的旧effect仍按原generation拒绝，零scope/binding/terminal/file。
+原c04912f9运行正例明确1 failed（foreground_effect_state_rejected，effect提前失败）；修复后
+同正例1 passed。最终沿上一节8文件命令：**87 passed in 32.21s，exit0**，包含CREATE_NEW 10条。
+无Provider/App/打包重复测试；新项目native/UI验收仍由主单独执行。Manual投影、完整history
+suppression边界保持未闭合，本backend候选等待Dirac下一独立复核，不能称S6整体完成。
+
+日志（本机ignored）：
+- `.local-test-evidence/2026-09-05/s6-primary/runtime/startup-confirmed-red.log` — SHA-256 `d51bd990c8a41bd4d0ff53123a4a1e889279b9d336bac22193cb4e68028a89c7`
+- `.local-test-evidence/2026-09-05/s6-primary/runtime/startup-first-green.log` — SHA-256 `eb64221c243142bd0f6593ad7ed0045bf856d3565861d914c0c49e599ffedd28`
+- `.local-test-evidence/2026-09-05/s6-primary/runtime/startup-candidate.log` — SHA-256 `376b333fd30e584e02912841ac4f0fa1a4293c588f1cea6a0c8656c60c1578a1`
