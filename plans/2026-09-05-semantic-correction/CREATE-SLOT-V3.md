@@ -23,8 +23,9 @@ with empty slot. Reopen/replay and original evidence guards stay unchanged.
 This fixes the payload representability defect. Frontend claimed success before
 memory analysis is a separate existing Stage3 status/settlement requirement; until
 it is implemented, an assistant assertion alone is never memory-success evidence.
-The native remember/correct/forget loop is currently FAIL at remember and must be
-rerun using a new real USER action after the source fix, without repeating old effects.
+The initial native remember attempt failed. A new real USER action after the v3
+fix subsequently passed CREATE and REVISE; duplicate-source forget then failed.
+See [current native result](NATIVE-DUPLICATE-FORGET.md); old effects were not replayed.
 
 ## Source verification
 
@@ -34,8 +35,9 @@ Provider replay controls passed2/0.80s. Reviewer-requested empty-key REVISE and
 empty-key correction-as-CREATE were added; those2 plus strengthened CREATE3 passed
 5/3.71s. Invented CREATE now asserts the actual persisted Host rejection reason,
 not merely absence of a recall result. No duplicate counting across these runs.
-Native retest remains pending. Production permissions and old action receipts are
-unchanged; no new live Provider calls were made for these automated checks.
+Native CREATE/REVISE retest subsequently passed, with the separate duplicate-source
+forget failure documented above. Production permissions and old action receipts are
+unchanged; no live Provider calls were made for these automated checks.
 
 Local evidence prefix `.local-test-evidence/2026-09-05/primary-candidate/`:
 

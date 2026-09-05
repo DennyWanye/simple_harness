@@ -1,5 +1,18 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Native correction passed; duplicate-source forget remains P1
+
+Last updated: 2026-09-05. Backend c2836c12 with exact Memory0.6.9 successfully
+created and revised the same memory in the actual native app. The panel forget
+produced a real directive, but an older duplicate USER from a rejected CREATE
+remained in the next actual Provider request and the model returned the old value.
+The memory loop is **FAIL**. Deterministic coverage is1PASS2FAIL for no duplicate,
+pre-forget admission and delayed admission. A fresh same-text USER/replayed-action
+control passes only in the no-duplicate case. Required source-order/cut/equivalence
+repair is underway; no main cutover or program completion claim.
+See [native evidence and exact boundaries](../plans/2026-09-05-semantic-correction/NATIVE-DUPLICATE-FORGET.md).
+Earlier entries below describe their own historical checkpoints.
+
 ## 2026-09-05 Native memory loop remains incomplete
 
 First069 real remembered-preference Run completed but the actual analysis CREATE
