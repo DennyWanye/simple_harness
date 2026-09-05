@@ -9,8 +9,8 @@ the original logical action while transport IDs change. Hiding/rebinding/expiry
 removes metadata immediately, and a new owner cannot replay the old capability.
 Actual ControlChannel cached bound replay is distinguished from a fresh bound
 frame; the full React parent chain regression and counterfactual red are recorded.
-Frontend25 focused tests and no-emit typecheck pass; browser/native and fixed-source
-independent acceptance remain pending. Graph, Agent input and ordinary memory
+Frontend25 focused tests and no-emit typecheck pass; source1097b272 has Dirac
+scoped ACCEPT. Browser/native remain pending. Graph, Agent input and ordinary memory
 forget semantics are unchanged. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
 
 ## 2026-09-05 Cytoscape primary graph display source candidate

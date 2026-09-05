@@ -8,7 +8,7 @@ durable logical page delivery, unknown-safe replay and final WS disclosure fence
 Default UI entry appears in PrimaryMemoryPanel; it never auto-grants or auto-pages.
 Backend40/frontend25 focused combination and no-emit typecheck pass. Actual
 ControlChannel cached-bound P1 has counterfactual red and restored-source green.
-Independent fixed-source review and main integration/native remain pending; this
+Fixed source1097b272 has Dirac scoped ACCEPT, no new P0/P1. Main integration/native remain pending; this
 does not close all-operation producer/coverage gaps. No source change to SDK pins
 or terminal-audit identity. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
 

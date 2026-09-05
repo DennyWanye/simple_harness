@@ -1,7 +1,11 @@
 # HUMAN metadata audit access — source verification
 
 Last updated: 2026-09-06. Isolated base54156f1e, branch
-`feat/human-memory-audit-access`. Fixed-source independent review pending.
+`feat/human-memory-audit-access`. Fixed source
+`1097b2727af67a5e857115dea0e84ba596627b87` has Dirac's independent scoped ACCEPT:
+no new P0/P1. Review verified the actual bound cache mechanism, final main sender
+scope, source restoration hash and all five raw evidence hashes below without
+rerunning tests. The limits below remain open; acceptance is not expanded by it.
 
 ## Result and limits
 

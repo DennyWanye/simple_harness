@@ -11,8 +11,8 @@ Unknown outcomes never re-read automatically or refund budget. Close/expiry/rebi
 and runtime close revoke serving capabilities; snapshots are not mixed or resumed
 through a new live read. Actual WS send remains under the signed lease with a
 five-second send timeout. SDK receipt/nonce/cursor remain server-side.
-Installed Memory0.6.12/Harness0.7.2 backend40 focused tests pass. Source review/main
-integration/native are pending; full operation coverage and usage/cost aggregation
+Installed Memory0.6.12/Harness0.7.2 backend40 focused tests pass. Source1097b272 has
+Dirac scoped ACCEPT. Main integration/native are pending; full operation coverage and usage/cost aggregation
 are not supplied by this leaf. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
 
 ## 2026-09-05 Terminal audit and privacy combined source verification

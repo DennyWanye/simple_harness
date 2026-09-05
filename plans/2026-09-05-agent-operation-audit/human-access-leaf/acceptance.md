@@ -1,7 +1,8 @@
 # HUMAN audit access acceptance scope
 
 Last updated: 2026-09-06. This table maps the unchanged [contract](CONTRACT.md)
-to [focused evidence](RESULTS.md). Independent fixed-source review is pending.
+to [focused evidence](RESULTS.md). Dirac fixed-source scoped ACCEPT for1097b272,
+no new P0/P1. Main integration/native and the explicit boundaries below remain.
 
 | ID | Current evidence | Remaining boundary |
 | --- | --- | --- |
@@ -12,7 +13,7 @@ to [focused evidence](RESULTS.md). Independent fixed-source review is pending.
 | HA5 | Concurrent same-action, close during actual SDK read, expiry/cache and real rebind before final sender pass. | Already-in-progress network-send interleavings are not exhaustively tested. |
 | HA6 | Actual SDK snapshot pagination, late-row exclusion, 32 accepted pages and Host denial of the next page pass. | This does not separately test bypassing Host to consume the SDK receipt a 33rd time; receipt is server-only. |
 | HA7 | Actual ControlChannel cache and parent chain, explicit open/read, unknown action replay, hiding/rebinding/expiry pass; old bound behavior fails the same oracle. | React/jsdom is not native/browser proof. |
-| HA8 | Runtime composition + API/final sender source + actual frontend parent wired; backend40/frontend25 and no-emit typecheck pass; ARCH updated. | Full Host WS TestClient, fixed-source independent acceptance, main integration and native pending. |
+| HA8 | Runtime composition + API/final sender source + actual frontend parent wired; backend40/frontend25 and no-emit typecheck pass; ARCH updated; Dirac scoped ACCEPT. | Full Host WS TestClient, main integration and native pending. |
 
 No rows claim all-operation coverage, complete producer inventory, physical-call
 counts, total usage/cost, native acceptance or program completion. Original full
