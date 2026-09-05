@@ -22,7 +22,13 @@ async def run_cases(recipes, workspace):
         try:
             await case.open()
             opened = True
-            await case.seed(recipe['seed'])
+            path=recipe.get('lifecycle_path',[recipe['seed']])
+            previous=None
+            for ordinal,spec in enumerate(path):
+                kwargs={} if ordinal==0 else dict(kind='supersede' if spec['state']=='superseded' else 'revise',
+                    target=helper.h.ExistingMemoryTarget(previous.memory_id,previous.revision))
+                previous=await case.seed(spec,operation_id=f'create-{ordinal+1}',
+                    evidence_id=f'evidence-case-{ordinal+1}',**kwargs)
             payload = recipe['seed']['payload']
             query = str(payload.get('object_value',payload.get('title',payload.get('name',payload.get('action')))))
             params = dict(query=query,memory_types=(recipe['seed']['memory_type'],),

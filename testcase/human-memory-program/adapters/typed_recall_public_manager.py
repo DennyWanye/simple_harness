@@ -151,6 +151,7 @@ async def run(request, workspace):
     extra_cells += await _helpers("typed_recall_conflict_cases.py").run_cases(request["inputs"]["conflict"], workspace)
     extra_cells += await _helpers("typed_recall_return_cases.py").run_cases(request["inputs"]["returns"], workspace)
     extra_cells += await _helpers("typed_recall_conflict_cases.py").run_state_cases(request["inputs"]["conflict"], workspace)
+    extra_cells += await _helpers("typed_recall_short_cases.py").run_cases(request["inputs"]["short"], workspace)
     cells = [{"cell_id": name, "status": "BLOCKED", "reason": "CELL_EXECUTOR_NOT_IMPLEMENTED",
               "observations": {}} for name in request["cell_ids"] if name != cell_id and name not in {row["cell_id"] for row in extra_cells}]
     cells.append({"cell_id": cell_id, "status": "OBSERVED", "reason": "", "observations": observations})

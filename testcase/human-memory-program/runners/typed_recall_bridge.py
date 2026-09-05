@@ -292,7 +292,7 @@ def _execute(args, layers, expected):
     shutil.copyfile(adapter_dir / public.name, public)
     shutil.copyfile(adapter_dir / "semantic_relation_public_manager.py", workspace / "semantic_relation_public_manager.py")
     shutil.copyfile(adapter_dir / "typed_recall_public_cases.py", workspace / "typed_recall_public_cases.py")
-    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py"):
+    for filename in ("typed_recall_case_manager.py", "typed_recall_normal_cases.py", "typed_recall_conflict_cases.py", "typed_recall_return_cases.py", "typed_recall_short_cases.py"):
         shutil.copyfile(adapter_dir / filename, workspace / filename)
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     execution_code = {str(path):file_sha(path) for path in [
@@ -338,6 +338,7 @@ def _execute(args, layers, expected):
     compiler = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(compiler)
     inputs["normal"] = compiler.recipes(fixture)
+    inputs["short"] = compiler.short_inputs(fixture)
     conflict = fixture["conflict_write_oracle"]
     inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
         "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}

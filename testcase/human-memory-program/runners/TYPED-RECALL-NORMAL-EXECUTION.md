@@ -99,3 +99,36 @@ purpose and privacy. This supplies a mandatory diagnostic, not authority. The or
 forbidden combination still requires REJECTED/DISCLOSURE_DENIED and zero candidate reads.
 AUDIT with non-audit recipient remains an explicit invalid-carrier contract mismatch;
 never change that recipient to AUDIT_REVIEWER to claim the original24 cells passed.
+
+## Legal lifecycle history setup (before execution)
+
+Non-initial lifecycle rows use actual authorized mutations, never CREATE in a forbidden
+terminal state. Episode active→amended/disputed/superseded; Semantic active→superseded;
+Procedure active→reinforced/revised/inapplicable/superseded; Prospective pending→triggered,
+pending→triggered→in_progress/completed, and pending→rescheduled/cancelled/expired.
+SUPERSEDE is used only for superseded; other transitions use REVISE with an actual action
+authority grant and exact preceding target revision. All steps retain the original payload;
+each gets its own admitted input evidence. Parent checks every receipt/apply/hash/evidence
+chain, revision order and target identity, then judges recall against the original final
+state. Procedure/prospective applicability/signal gates remain separate. Literal procedure
+state eligible is not silently renamed to eligible_for_activation; keep its contract gap.
+
+## Public short-horizon path inputs (before execution)
+
+Register11 actual singleton conversation groups so the oldest target is outside the
+public recent10 exclusion; the other10 contain only unrelated filler. Target text is
+original minimal projection input continue task A. Host binds real admission, item
+classification, metadata authorization and registration, no private backend or embedder.
+Source content projected by the public contract is `user: ` plus admitted target text;
+that factual projection is an independent business check, not a replacement of the old
+fixture payload/hash. Protocol mixed builds actual cognitive revision3 with the original
+incumbent input; short-only has no cognitive seed. Eligibility retains frozen occurred_at
+and clock; the public fixed5-day TTL is observed and its mismatch to the original arbitrary
+expires_at remains BLOCKED. Suppression uses the exact target evidence after a successful
+short baseline. Full original binding/time/hash gates remain BLOCKED until all are met.
+
+Short-only context retains the mandatory nonempty available/requested type capability
+(semantic), while its isolated DB contains no cognitive seed and its result must contain
+only short items with null memory_type/revision. This is carrier completion, not a
+synthetic type on a short result. Public register_principal_owner establishes the owner
+shape after conversation evidence ingestion; no private principal row manipulation.

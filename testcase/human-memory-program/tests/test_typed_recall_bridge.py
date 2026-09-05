@@ -234,7 +234,7 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
     def run_child(command, cwd, *, timeout):
         request = bridge.read_json(command[command.index("--request") + 1])
         response_path = Path(command[command.index("--response") + 1])
-        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported", "normal", "conflict", "returns"}
+        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported", "normal", "conflict", "returns", "short"}
         assert all(set(row) == {"original_attack", "public_path", "mutation"}
                    for row in request["inputs"]["mutations"])
         assert all(set(row) == {"id", "selectors", "modes"}

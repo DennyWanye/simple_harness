@@ -244,6 +244,8 @@ def assess_cell(fixture, cell, baseline=None):
     name, observed = cell["cell_id"], cell["observations"]
     if cell["status"] != "OBSERVED":
         return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
+    if "short_recipe" in observed:
+        return assess_short(fixture,cell)
     if "state_cell" in observed:
         return assess_state(fixture,cell)
     if "return_recipe" in observed:
@@ -423,7 +425,7 @@ def assess_normal(fixture, cell):
                 blockers.append('ORIGINAL_EPISODE_OCCURRED_INTERVAL_DIFFERS_FROM_PUBLIC_PROJECTION')
         if not observed['sources'] or len(observed['recalls']) != (2 if recipe['family']=='budget' else 1):
             raise ValueError('missing actual source or recall')
-        source=observed['sources'][0]
+        source=observed['sources'][-1]
         op=source['receipt']['operations'][0]
         projection=normal_projection(recipe['seed'])
         kind=recipe['seed']['memory_type']
@@ -431,7 +433,33 @@ def assess_normal(fixture, cell):
             {'memory_type':'episode',**projection,'thread_ref':None} if kind=='episode' else None)
         if source['input']!=recipe['seed'] or (full_source is not None and source['source_wire']!=full_source):
             raise ValueError('source DTO differs from independent inputs')
-        check_seed_authority(observed,recipe,full_source)
+        history=recipe.get('lifecycle_path',[recipe['seed']])
+        if len(observed['sources'])!=len(history):raise ValueError('lifecycle history length differs')
+        evidence_refs=[]
+        for ordinal,(step,entry) in enumerate(zip(history,observed['sources'],strict=True)):
+            if entry['input']!=step:raise ValueError('lifecycle history inputs differ')
+            check_seed_authority(observed,{**recipe,'seed':step},full_source,source_index=ordinal,check_recall_refs=False)
+            event=next(e for e in observed['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['plan_id']==entry['receipt']['plan_id'])
+            operation=event['plan']['operations'][0];actual=entry['receipt']['operations'][0]
+            if (operation['payload']!=entry['source_wire']
+                    or operation['epistemic_status']!=step.get('epistemic','explicit_user')
+                    or operation['verification_state']!=step.get('verification','source_bound')
+                    or operation['proposed_privacy_class']!=recipe.get('privacy','personal').lower()
+                    or operation['proposed_information_attributes']!=recipe.get('attributes',[])):
+                raise ValueError('intermediate lifecycle payload/frozen mutation arguments differ')
+            if ordinal:check_action_grant(observed,event['plan'])
+            expected_kind='create' if ordinal==0 else 'supersede' if step['state']=='superseded' else 'revise'
+            target=None if ordinal==0 else {'memory_id':observed['sources'][ordinal-1]['receipt']['operations'][0]['memory_id'],
+                'revision':ordinal,'target_kind':'existing_memory'}
+            if (operation['kind']!=expected_kind or actual['revision']!=ordinal+1
+                    or operation['lifecycle_state']!=step.get('state','pending' if kind=='prospective' else 'active')
+                    or (ordinal and (operation['target']!=target or actual['memory_id']!=target['memory_id']
+                                     or operation['action_authority_ref'] is None))):
+                raise ValueError('lifecycle actual kind/target/revision/authority differs')
+            evidence_refs.append({'evidence_id':entry['evidence_id'],
+                'content_hash':operation['evidence_spans'][0]['envelope_hash'],'ordinal':ordinal+1})
+        if any(r['context']['evidence_refs']!=evidence_refs or r['plan']['evidence_refs']!=evidence_refs for r in observed['recalls']):
+            raise ValueError('recall does not bind complete lifecycle evidence history')
         for index, recall in enumerate(observed['recalls']):
             value=recall['execution'];decision=value['decision'];result=value['result'];items=result['items']
             context,plan=recall['context'],recall['plan']
@@ -445,9 +473,9 @@ def assess_normal(fixture, cell):
                     or context['disclosure_context']['purpose']!=recipe.get('purpose','personalization').lower()
                     or context['subject']!='principal-1' or not context['evidence_refs']):
                 raise ValueError('actual recall arguments differ from frozen recipe')
-            mutation=next(event['plan'] for event in observed['calls'] if event['call']=='apply_memory_mutation_plan')
+            mutation=next(event['plan'] for event in reversed(observed['calls']) if event['call']=='apply_memory_mutation_plan')
             operation=mutation['operations'][0]
-            if (operation['payload']!=source['source_wire'] or operation['kind']!='create'
+            if (operation['payload']!=source['source_wire'] or operation['kind']!=('create' if len(history)==1 else 'supersede' if recipe['seed']['state']=='superseded' else 'revise')
                     or operation['epistemic_status']!=recipe['seed'].get('epistemic','explicit_user')
                     or operation['verification_state']!=recipe['seed'].get('verification','source_bound')
                     or operation['lifecycle_state']!=recipe['seed'].get('state','pending' if kind=='prospective' else 'active')
@@ -487,7 +515,7 @@ def assess_normal(fixture, cell):
                 selected_item=item['selected_item']
                 if (item['public_payload']!=projection or selected_item['public_payload_hash']!=hash_json(projection)
                         or selected_item['source_ref']!=op['memory_id'] or selected_item['source_revision']!=op['revision']
-                        or op['revision']!=1 or selected_item['source_kind']!='cognitive_memory'
+                        or op['revision']!=len(history) or selected_item['source_kind']!='cognitive_memory'
                         or selected_item['memory_type']!=kind or item['evidence_manifest_hash']!=hash_json([source['evidence_id']])
                         or full_source is None or selected_item['source_content_hash']!=hash_json(full_source)
                         or item['score']!=round(.30/61,12) or item['cross_scope'] or item['source_task_scope_ids']
@@ -619,9 +647,9 @@ def assess_conflict(fixture,cell):
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 
 
-def check_seed_authority(observed,recipe,full_source):
-    source=observed['sources'][0];view=source['receipt'];op=view['operations'][0]
-    event=next(e for e in observed['calls'] if e['call']=='apply_memory_mutation_plan')
+def check_seed_authority(observed,recipe,full_source,*,source_index=0,check_recall_refs=True):
+    source=observed['sources'][source_index];view=source['receipt'];op=view['operations'][0]
+    event=next(e for e in observed['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['plan_id']==view['plan_id'])
     plan=event['plan'];operation=plan['operations'][0];result=event['result']
     plan_hash=sdk_domain_hash('simple-harness/memory-mutation-plan/v5',plan)
     if (event['result_hash']!=sdk_domain_hash('simple-harness/memory-mutation-apply-result/v4',result)
@@ -679,7 +707,7 @@ def check_seed_authority(observed,recipe,full_source):
                 or span['support_kind']!='typed_observation'):
             raise ValueError('typed authority provenance differs')
     refs=[{'evidence_id':eid,'content_hash':eh,'ordinal':1}]
-    if plan['evidence_refs']!=refs or any(r['context']['evidence_refs']!=refs or r['plan']['evidence_refs']!=refs for r in observed['recalls']):
+    if plan['evidence_refs']!=refs or (check_recall_refs and any(r['context']['evidence_refs']!=refs or r['plan']['evidence_refs']!=refs for r in observed['recalls'])):
         raise ValueError('mutation/recall evidence refs differ from admitted source')
 
 
@@ -782,3 +810,74 @@ def check_rejection_witness(row,observed):
             or witness['request_hash']!=expected_request):
         raise ValueError('rejection receipt does not bind full actual request inputs')
     return True
+
+
+def assess_short(fixture,cell):
+    o=cell['observations'];name=cell['cell_id'];checks=[]
+    try:
+        if o.get('exception'):
+            return dict(status='BLOCKED',reason='SHORT_PUBLIC_PRECONDITION:'+o['exception']['reason'],
+                business_assertions=['actual public registration/projection/recall calls recorded'])
+        registrations=[e for e in o['calls'] if e['call']=='register_conversation_evidence']
+        if len(registrations)!=11:raise ValueError('short history does not leave target outside recent10')
+        value=o['recall']['execution'];context=o['recall']['context'];plan=o['recall']['plan']
+        check_execution_wire(value,context,plan)
+        replay=o['replay']
+        if replay['decision']!=value['decision'] or replay['result']!=value['result'] or not replay['replayed'] or replay['candidate_query_count']!=0:
+            raise ValueError('short exact replay differs')
+        if not context['short_horizon_allowed'] or not plan['include_short_horizon']:
+            raise ValueError('short selector not invoked')
+        text=next(r for r in fixture['minimal_projection_oracle'] if r['memory_type']=='short_horizon')['source_record']['content']
+        expected='user: '+text
+        items=value['result']['items'];short=[r for r in items if r['selected_item']['source_kind']=='short_horizon']
+        excluded=name in {'eligibility/short-future','eligibility/short-source-suppressed'}
+        if len(short)!=int(not excluded):raise ValueError('short independent inclusion/suppression assertion differs')
+        for item in short:
+            selected=item['selected_item']
+            if (item['public_payload']['content']!=expected or set(item['public_payload'])!={'content','occurred_at'}
+                    or selected['memory_type'] is not None or selected['source_revision'] is not None
+                    or selected['public_payload_hash']!=hash_json(item['public_payload'])):
+                raise ValueError('short source discriminant/minimal payload binding differs')
+        if name=='protocol/mixed-long-short':
+            cognitive=[r for r in items if r['selected_item']['source_kind']=='cognitive_memory']
+            source=next(v for v in fixture['approved_oracle']['semantic_source_vectors'] if v['id']=='incumbent')
+            if len(items)!=2 or len(cognitive)!=1 or cognitive[0]['selected_item']['source_revision']!=3 or cognitive[0]['public_payload']!=source['provider_payload']:
+                raise ValueError('mixed actual r3 cognitive and short result differs')
+        elif len(items)!=len(short):raise ValueError('short-only fabricated cognitive source')
+        if name=='eligibility/short-source-suppressed':
+            before=o['before'];check_execution_wire(before['execution'],before['context'],before['plan'])
+            if len(before['execution']['result']['items'])!=1 or o['suppression']['request']['scope_ref']!='conversation-evidence-1':
+                raise ValueError('suppression has no successful independent source control')
+        checks+=['11 genuine public registration groups and oldest target projection',
+            'actual short/mixed source discriminants and independent input content','exact durable replay and zero candidate reads']
+        return dict(status='BLOCKED',reason='SHORT_COMPLETE_REGISTRATION_CLASSIFICATION_TIME_AND_ORIGINAL_HASH_BINDINGS_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError,StopIteration) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
+
+
+def check_action_grant(observed,plan):
+    operation=plan['operations'][0];ref=operation['action_authority_ref']
+    event=next(e for e in observed['calls'] if e['call']=='resolve_memory_action_authority' and e['reference']==ref)
+    grant=event['grant']
+    operation_input={k:v for k,v in operation.items() if k not in {'action_authority_ref','operation_intent_hash'}}
+    operation_hash=sdk_domain_hash('simple-harness/memory-mutation-operation-intent/v4',operation_input)
+    plan_input={k:v for k,v in plan.items() if k!='plan_intent_hash'}
+    plan_input['operations']=[{**operation_input,'operation_intent_hash':operation_hash}]
+    plan_hash=sdk_domain_hash('simple-harness/memory-mutation-plan-intent/v5',plan_input)
+    intent=dict(schema_version=2,subject=plan['subject'],action=operation['kind'],
+        target_memory_id=operation['target']['memory_id'],target_revision=operation['target']['revision'],
+        evidence_refs=plan['evidence_refs'],evidence_span_hashes=sorted(sdk_domain_hash('simple-harness/evidence-span-ref/v2',span) for span in operation['evidence_spans']),
+        run_id=plan['run_id'],turn_id=plan['turn_id'],plan_id=plan['plan_id'],plan_intent_hash=plan_hash,
+        operation_id=operation['operation_id'],canonical_operation_index=1,operation_intent_hash=operation_hash)
+    intent_hash=sdk_domain_hash('simple-harness/memory-action-intent/v2',intent)
+    replay=sdk_domain_hash('simple-harness/memory-action-replay-identity/v2',dict(
+        authority_id=grant['authority_id'],intent_hash=intent_hash,nonce=grant['nonce'],issuer_ref=grant['issuer_ref']))
+    authority_hash=sdk_domain_hash('simple-harness/memory-action-authority/v2',grant)
+    expected_ref=dict(schema_version=2,authority_id=grant['authority_id'],authority_hash=authority_hash,
+        issuer_ref='host-case-actions',replay_identity=replay)
+    if (operation['operation_intent_hash']!=operation_hash or plan['plan_intent_hash']!=plan_hash
+            or grant['intent']!=intent or grant['intent_hash']!=intent_hash or grant['replay_identity']!=replay
+            or grant['schema_version']!=2 or grant['issuer_ref']!='host-case-actions'
+            or event['authority_hash']!=authority_hash or ref!=expected_ref
+            or not grant['issued_at']<=event['now']<grant['expires_at']):
+        raise ValueError('resolved memory action grant/intent/target/hash/time binding differs')

@@ -175,3 +175,54 @@ async def test_unknown_recipient_diagnostic_completes_input_without_granting_acc
         context=row['observations']['recalls'][0]['context']
         assert context['disclosure_context']['recipient']=='unknown'
         assert 'disclosure_unknown_recipient' in context['disclosure_context']['reason_codes']
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_history_uses_real_authorized_revisions_before_recall(tmp_path):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    compiler=load(ROOT/'runners/typed_recall_normal_inputs.py')
+    recipes=[r for r in compiler.recipes(fixture) if len(r.get('lifecycle_path',[]))>1]
+    assert len(recipes)==14
+    rows=await load(ROOT/'adapters/typed_recall_normal_cases.py').run_cases(recipes,tmp_path)
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    for row in rows:
+        assert 'exception' not in row['observations'],(row['cell_id'],row['observations'].get('exception'))
+        judged=oracle.assess_normal(fixture,row)
+        assert judged['status']!='FAIL', (row['cell_id'],judged)
+        assert judged['business_assertions'],(row['cell_id'],judged)
+        if row['cell_id'].startswith(('eligibility/episode-','eligibility/semantic-')):
+            assert judged['status']=='PASS',judged
+        changed=copy.deepcopy(row)
+        changed['observations']['sources'][-1]['receipt']['operations'][0]['revision']=1
+        assert oracle.assess_normal(fixture,changed)['status']=='FAIL'
+        for attack in ('initial_payload','empty_action_ref','wrong_resolved_target'):
+            changed=copy.deepcopy(row);o=changed['observations']
+            events=[e for e in o['calls'] if e['call']=='apply_memory_mutation_plan']
+            event=events[0] if attack=='initial_payload' else events[-1]
+            if attack=='initial_payload':
+                payload=event['plan']['operations'][0]['payload']
+                field='title' if 'title' in payload else 'object_value' if 'object_value' in payload else 'name' if 'name' in payload else 'action'
+                payload[field]='forged prior input'
+            elif attack=='empty_action_ref':event['plan']['operations'][0]['action_authority_ref']={}
+            else:
+                grant=next(e for e in o['calls'] if e['call']=='resolve_memory_action_authority')
+                grant['grant']['intent']['target_revision']=99
+            plan_hash=oracle.sdk_domain_hash('simple-harness/memory-mutation-plan/v5',event['plan'])
+            event['result']['plan_hash']=plan_hash
+            event['result_hash']=oracle.sdk_domain_hash('simple-harness/memory-mutation-apply-result/v4',event['result'])
+            source=next(e for e in o['sources'] if e['receipt']['plan_id']==event['plan']['plan_id'])
+            source['receipt']['plan_hash']=plan_hash
+            assert oracle.assess_normal(fixture,changed)['status']=='FAIL',attack
+
+
+@pytest.mark.asyncio
+async def test_short_real_registration_projection_and_mixed_public_dispatch(tmp_path):
+    fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+    inputs=load(ROOT/'runners/typed_recall_normal_inputs.py').short_inputs(fixture)
+    rows=await load(ROOT/'adapters/typed_recall_short_cases.py').run_cases(inputs,tmp_path)
+    assert len(rows)==6
+    oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+    for row in rows:
+        assert 'exception' not in row['observations'],(row['cell_id'],row['observations'].get('exception'))
+        judged=oracle.assess_short(fixture,row)
+        assert judged['status']=='BLOCKED' and judged['business_assertions'],(row['cell_id'],judged)

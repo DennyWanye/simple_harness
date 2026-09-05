@@ -44,6 +44,7 @@ class CaseManager:
         self.disclosure = self.helpers._disclosure(self.principal.actor_id)
         self.events, self.sources, self.admitted, self.actions = [], [], {}, {}
         self.typed_receipts = {}
+        self.conversations = {}
         self.base_revision = 1
         self.audit_receipt = None
         self.clock_kwargs = {"clock":lambda:self.now} if "clock" in inspect.signature(m.MemoryManager.build_human_memory_v7).parameters else {}
@@ -55,7 +56,18 @@ class CaseManager:
             async def resolve_admitted_evidence(self, span):
                 return owner.admitted[span.evidence_id]
             async def resolve_memory_action_authority(self, ref):
-                return owner.actions[ref.authority_id]
+                grant=owner.actions[ref.authority_id]
+                if ref!=h.MemoryActionAuthorityRef.from_authority(grant):
+                    raise ValueError('memory action authority reference differs')
+                owner.events.append({'call':'resolve_memory_action_authority','reference':ref.to_json(),
+                    'grant':grant.to_json(),'authority_hash':grant.authority_hash,'now':owner.actual_now})
+                return grant
+            async def resolve_conversation_registration(self, ref):
+                registration=owner.conversations[ref.registration_id]
+                if ref!=h.ConversationEvidenceRegistrationRef(registration.registration_id,registration.registration_hash,
+                        registration.envelope.evidence_id,registration.envelope.envelope_hash):
+                    raise ValueError('conversation registration binding differs')
+                return registration
             async def resolve_typed_observation(self, ref):
                 receipt = owner.typed_receipts[ref.observation_receipt_id]
                 expected = owner.typed_ref(receipt)
@@ -67,6 +79,7 @@ class CaseManager:
         self.authority = Authority()
         audit, self.audit_ref = self.cases.audit_authority(self.principal, self.actual_now)
         kwargs = dict(evidence_authority=self.authority, memory_action_authority=self.authority,
+            conversation_evidence_authority=self.authority,
             audit_access_authority=audit, classification_policy=m.InformationClassificationPolicy(
                 policy_id='typed-recall-case-policy', policy_version='1', authority_ref='host-case-policy',
                 required_privacy_class=self.privacy, required_information_attributes=self.attributes))
@@ -210,7 +223,7 @@ class CaseManager:
                 'access_event_hash': result.access_event_hash}
 
     def request(self, *, query, memory_types=('semantic',), recipient='user_self', purpose='personalization',
-                modes=('full_text',), budget=None, key='case-recall', fingerprint=()):
+                modes=('full_text',), budget=None, key='case-recall', fingerprint=(), short=False):
         reasons = self.disclosure.reason_codes
         if recipient.lower()=='unknown':
             reasons = (*reasons, h.DisclosureReasonCode.UNKNOWN_RECIPIENT)
@@ -219,8 +232,8 @@ class CaseManager:
         budget = h.RecallBudget(**(budget or dict(max_items=8,max_bytes=16384,max_tokens=2048,deadline_ms=2000)))
         context = h.RecallContext(run_id=disclosure.run_id, subject=self.principal.actor_id, turn_id='case-turn',
             context_revision=1, expires_at=self.now+300, query=query, active_task_scope_id=None,
-            available_memory_types=tuple(h.LongTermMemoryType(x) for x in memory_types), short_horizon_allowed=False,
-            allowed_selector_domains=(h.RecallSelectorDomain.MEMORY_TYPE,),
+            available_memory_types=tuple(h.LongTermMemoryType(x) for x in memory_types), short_horizon_allowed=short,
+            allowed_selector_domains=tuple(([h.RecallSelectorDomain.MEMORY_TYPE] if memory_types else [])+([h.RecallSelectorDomain.SHORT_HORIZON] if short else [])),
             allowed_retrieval_modes=tuple(h.RecallRetrievalMode(x) for x in modes), allowed_task_scope_ids=(),
             allowed_entity_constraints=(), earliest_occurred_at=None, latest_occurred_at=None,
             event_constraint_refs=(), environment_constraint_refs=(), task_phase_authority_refs=(),
@@ -228,7 +241,7 @@ class CaseManager:
             evidence_refs=tuple(h.EvidenceRef(eid, grant.envelope.envelope_hash, index) for index,(eid,grant) in enumerate(self.admitted.items(),1)), budget=budget)
         plan = h.RecallPlan(plan_id=key+'-plan', run_id=context.run_id, subject=context.subject,
             context_hash=context.context_hash, context_revision=context.context_revision, query=query,
-            requested_memory_types=context.available_memory_types, include_short_horizon=False,
+            requested_memory_types=context.available_memory_types, include_short_horizon=short,
             selector_domains=context.allowed_selector_domains, retrieval_modes=context.allowed_retrieval_modes,
             task_scope_ids=(),entity_constraints=(),earliest_occurred_at=None,latest_occurred_at=None,
             event_constraint_refs=(),environment_constraint_refs=(),task_phase_authority_refs=(),
