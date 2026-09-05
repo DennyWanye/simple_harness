@@ -8,7 +8,7 @@
 
 ### Terminal Run audit candidate（2026-09-05）
 
-隔离 Host candidate `eaccab33` 在真实 foreground terminal 提交后唤醒默认开启的审计 lane；
+隔离 Host candidate `eaccab33 + 3e911c14` 在真实 foreground terminal 提交后唤醒默认开启的审计 lane；
 独立 Host `operation-audit.db` 保存读取 started/settled、固定 SDK snapshot/cursor、页与
 按实际 operation/rule 去重的 finding/source 关联。无首个持久页的 unknown 可用新 generation
 恢复；已有 snapshot 禁止 live fallback。审计库初始化失败明确降级，不阻断 foreground。

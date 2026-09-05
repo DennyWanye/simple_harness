@@ -5,3 +5,7 @@ hash; explicit owner joins plus independent supporting facts are necessary. A so
 corruption fixture initially hit production append-only guards, so the isolated fixture
 now labels its deliberate guard bypass instead of pretending normal writes can corrupt
 terminal authority. No expensive Provider/native or repeated whole-suite gate was needed.
+
+Independent review found that validating only the newest persisted page lets corruption
+of an older page survive until an incorrect enumerated result. The final per-Run streaming
+check closes that gap without rescanning every page at every reader attempt.

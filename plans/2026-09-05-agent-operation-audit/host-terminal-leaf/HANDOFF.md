@@ -1,6 +1,7 @@
 # Host terminal audit consumer handoff
 
-2026-09-05. Product candidate eaccab33c8bf29b85cd585a16192e31ac198c66e;
+2026-09-05. Product implementation eaccab33c8bf29b85cd585a16192e31ac198c66e +
+correctness fix 3e911c14fb29cab4d3906eb3f65c45bbf30ae499;
 base ed5642bf27b4013672c31c7d0050a49d77863c96. Branch feat/host-operation-audit,
 worktree simple_harness-host-operation-audit. Parent PLAN remains incomplete.
 
@@ -43,8 +44,14 @@ commit in one fenced Host transaction. Expired worker cannot commit over a winne
 A crash before saved first page preserves unknown and superseded_by and opens under a new
 snapshot_generation. After a page is selected, resume uses only that snapshot/cursor.
 SDK missing/corrupt snapshot and inconsistent Host cursor/frontier become unavailable;
-never silently select live data. Host resume checks frontier page checksum/header and
-page count; it is not an integrity re-audit of every earlier page on every iteration.
+never silently select live data. Host resume checks frontier page checksum/header and page count. Before declaring
+`enumerated`, it additionally streams all saved pages of that Run in the final transaction:
+Host input checksum, preserved SDK page-hash field, continuous index, fixed snapshot/header,
+per-page/total DTO counts and cursor boundaries must agree. One page is held in memory;
+this is one final per-Run pass, not a full audit database scan on every iteration. Invalid
+older pages stay preserved with job unavailable/journal_page_invalid, never live repaired.
+This detects stored corruption against saved bindings; it does not claim defense against
+an owner coherently rewriting all Host/SDK authorities.
 
 Source rejection persists only fingerprint/owner hash/closed code/time. Identical bad input
 is excluded so later valid sources progress; repaired facts have a different fingerprint.
@@ -69,7 +76,8 @@ or installed successor acceptance in this leaf. No program/full-audit gate recei
 
 ## Verification
 
-See journal.md for exact commands, evidence hashes and scoped results. Tests run actual
+Dirac scoped fixed ACCEPT on3e911c14; original nonlast-page corruption P1 independently
+retested closed. See journal.md for exact commands, evidence hashes and scoped results. Tests run actual
 Host foreground service/Runtime + SQLite + deterministic provider + public SDK client.
 Main factory is executed from the exact checked-in function AST to avoid booting unrelated
 products; actual Runtime terminal behavior is real. This is composition proof, not app boot.

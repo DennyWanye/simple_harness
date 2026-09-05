@@ -1,7 +1,9 @@
 # Terminal audit leaf verification journal
 
 2026-09-05. This is a scoped intermediate leaf of the parent operation-audit PLAN.
-No global machine receipt or program/full-audit PASS. Product source eaccab33c8bf29b85cd585a16192e31ac198c66e.
+No global machine receipt or program/full-audit PASS. Initial product source eaccab33c8bf29b85cd585a16192e31ac198c66e; final correctness
+fix 3e911c14fb29cab4d3906eb3f65c45bbf30ae499. Earlier green tests did not catch the
+non-last-page corruption P1; the independent counterexample and closure are recorded below.
 
 ## Executed checks and identities
 
@@ -56,7 +58,7 @@ not source hash, page index or event count. Missing usage/price does not become 
 Source rejection fingerprint changes with selected authority facts; unchanged poison input
 cannot dominate each discovery batch. No source DB mutations and no business resend API.
 Dirac independently challenged contract (unsaved read recovery and poisoned discovery);
-fixes above applied. Fixed source correctness review requested; result pending below.
+fixes above applied. Fixed source correctness review completed; scoped ACCEPT and P1 closure below.
 No push/release requested. Parent required coverage remains incomplete; no change to AC.
 
 ## Evidence index
@@ -78,3 +80,51 @@ CLAIMED/sdk_run_id=NULL, three HostRuns and only the original two succeeded Prov
 invocations; this supersedes its earlier QUEUED inference (index/hash in HANDOFF.md).
 This is main-reported evidence, not an independent reproduction by this leaf. Existing Service source work
 is separate and unchanged by this Host leaf.
+
+## Independent P1 and narrow corrective verification
+
+Dirac reproduced a real terminal/public SDK snapshot: persist two pages, change only older
+page0 payload to `{}`, retain its original checksum, then drain. Initial eaccab33 incorrectly
+reported enumerated 7/7 with corrupt page retained and one unchanged Provider invocation.
+This was a product P1, not an environment limitation. The initial `/tmp` symlink path
+rejection was separate setup failure and not the product counterexample.
+
+Fix 3e911c14 adds one final streaming validation of all pages of the selected Run inside
+the completion transaction. No earlier page may be corrupt/missing/reordered or disagree
+with fixed header, snapshot, recorded hashes/counts; failure preserves evidence and settles
+the job unavailable, without replacement snapshot. This closes the completeness defect;
+it does not duplicate SDK hash domains or reread live business state.
+
+New decisive tests save three pages then corrupt nonlast page0 or1: initial implementation
+2 failed. After fix, those two plus actual positive factory, both before/after-commit reopen
+controls and duplicate-source accounting control: **6 passed, 2.91s**. Fixed HEAD retest of
+both corruption cases + actual positive factory: **3 passed, 1.80s**, fixed-3e911c14.log. Did not rerun22/full.
+Dirac fixed-probe recheck: scoped ACCEPT. Independent same original probe now yields
+unavailable/journal_page_invalid, bad_first_page_retained=true, snapshot_unchanged=true,
+open_count=1, Provider1. No other current P0/P1 found in reviewed leaf. Parent/full audit
+remains incomplete; no native/installed successor/pre-SDK producer coverage inferred.
+
+`nonlast-before-fix.log` SHA-256 `b799113aa4d3f711a895ba2973bcbddb44111c14daad0d859635b3f279d06009`.
+
+`nonlast-after-fix.log` SHA-256 `f8d42294697d4b007c6ffcae799c132d1c46e36540c046a800e973f6b95955ef`.
+
+`fixed-3e911c14.log` SHA-256 `77cc86e77762eff80061fec3a607ad60453c98b309413066ac0019b0d20f8369`.
+
+Independent raw copies remain ignored in `independent-review/`:
+
+`earlier-page-3e911c14-result.json` SHA-256 `80cc77b088e32fdc86d50c1163248de429efe384f1616380593c62a3c9574f77`.
+
+`earlier-page-result.json` SHA-256 `412d0d19446bc9a77240f67abee1017a8fc00a5530f9a7f49fb7d7ee66477d5c`.
+
+`review.md` SHA-256 `bbd6b708e9a3802d26d79eaae8119170cba661e90ddf5d994eb5d02efde1129d`.
+
+
+## Scoped delivery endpoint
+
+Implementation, source tests, actual factory composition, independent correction/review,
+idempotency check, focused regression and architecture/handoff are complete for this
+terminal consumer leaf. Fixed product identity3e911c14; final commit only updates docs.
+Worktree retained for main integration; no push, app launch, Provider or package changes.
+This is an intermediate leaf milestone, not an overall run verdict or machine gate receipt.
+Pre-SDK producer, Memory carrier/Service consumer, other operation coverage and installed
+successor/native acceptance remain explicitly outstanding in the parent plan.

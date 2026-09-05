@@ -3,7 +3,7 @@
 ## 2026-09-05 Host terminal audit isolated candidate
 
 Last updated: 2026-09-05. `feat/host-operation-audit` / `simple_harness-host-operation-audit`
-固定 source candidate eaccab33：实际 main factory/foreground terminal 接入 durable snapshot
+固定 source candidate eaccab33 + 3e911c14：实际 main factory/foreground terminal 接入 durable snapshot
 consumer，默认开启成熟 lane；坏来源、旧 SDK、损坏 cursor 诚实 unavailable。审计失败不授权
 业务重发，不以 projection 数量累加 Provider usage。此树待主集成，不能记为 main installed。
 22 新聚焦场景通过，16 相邻 Runtime 场景通过；固定 HEAD/独立 review 结论见
