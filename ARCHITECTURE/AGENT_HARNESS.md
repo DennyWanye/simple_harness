@@ -6,7 +6,14 @@
 
 ## 一句话说明
 
-### S5b SDK route 恢复 P1（2026-09-05，当前阻塞）
+### 当前 route 恢复链（2026-09-05）
+
+Harness 0.7.2 的 v0 checkpoint anchor 与 current checkpoint 分别核验；合法 route 后授权/重启继续同 Run。
+Host exact wheel 已接入，两个独立真实生产 root 已完成 effect/closure/outbox/analysis；
+详见 [当前验证与边界](PROJECT_STATUS.md#2026-09-05-harness-072-接入与当前验证)。
+S5b 仍在修复独立质量审查的 episode 时间 P2，未宣称 machine gate 通过。
+
+### S5b SDK route 恢复 P1（2026-09-05，旧候选复现）
 
 Host `26b50ee8` / Harness 0.7.1 / Memory 0.6.3 的真实 A14 Run，start snapshot 的 initial route
 为 host_initial/resume_existing；合法 context_route 后 checkpoint v4–v49 的 current 为 continue_active，

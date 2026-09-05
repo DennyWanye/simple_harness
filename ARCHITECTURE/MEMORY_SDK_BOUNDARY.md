@@ -9,7 +9,40 @@
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
 
-## 2026-09-05 S5b 恢复修复与当前精确候选
+## 2026-09-05 Harness 0.7.2 接入与当前验证
+
+Host `8d57441517836aaaa30ac16a33576f4d68a9d1ad` 已安装 Harness 0.7.2，source
+`2b8428465cbd41032ba024a0b7199183161f5ecd`，wheel SHA-256
+`53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed`；Memory 保持
+0.6.3 / `6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78`。
+版本、manifest 和安装身份核验通过；SDK 独立复核 151 个包文件与源码/安装字节一致，
+110 个已导入模块均来自 Host venv，安装版定向回归 17 passed。
+
+A14 两个独立真实 gpt-5.5 / queue.enqueue root 均完成 README 1.1.3→1.2.0、TaskScope
+语义收口、终态 outbox 与 Memory accepted plan，每个 root 物化 episode+semantic 两个 head。
+root 为 `2fa7d7b1-3430-5052-bc10-5cfb77beb32a`、`870babc5-3842-56d7-bae5-05d1477119c0`；
+前台调用分别 13/12 次，analysis 各 1 次，无重发。旧 0.7.1 失败证据保留。
+独立 AI 质量复核确认原句/spans/实际效果/绑定一致；发现 episode 误用 analysis 时间的 P2 正在修复，
+另一个补读 before 来源 P2 已用衍生纠正包闭合并独立接受，原封口 834 文件未改。
+不能把两条机械通过当成 S5b 完成，也不将物化计作 typed recall 命中（A15 仍 NOT_MEASURED）。
+
+当前 native UI 的隔离源 backend / gpt-5.5 root `a48a396c440054e299af4094b273f2db`
+已收到真实非空回复；只覆盖 chat 冷启动，S6 唯一主对话/queue UI 仍未交付。
+Host 全量在上述 HEAD 得到 6535 passed / 6 failed / 47 skipped / 6 deselected；
+一个新增失败为 exact candidate 测试的旧 hash 字面量，更新当前 hash 并保留旧 hash 负例后整文件 20 passed。
+其余五个失败属于历史七节点子集，其中 downgrade 原因变化仍在独立核验，不能直接豁免；
+另外两历史节点已通过。6 deselected 全来自默认 marker，命令的显式 deselect 未匹配；没有测试挂起。
+本次还完成 S2 聚焦 49 passed、S3/S4 聚焦 96 passed、S7 聚焦 16 passed；各日志明确测试层级。
+完整回归退出码与原失败保留，尚未得到 machine finalize PASS。
+
+本机证据根 `.local-test-evidence/2026-09-05/human-memory-resume/`：
+`tools/a14-20260905T093324-p0e5cu3m/`、`independent-review/a14-quality-093324/`、
+`tools/derived-correction-recollection-before-20260905T095723/`、
+`independent-review/a14-q2-correction/`、`reg-full-host/REPORT.md`、
+`host-final-candidate-pin-retest.log`、`tauri-app-harness072-resolved.log`。
+原始文件及 SHA 索引均 ignored；未 push/tag/发布。S3 另在隔离分支补公共执行桥，S5c/S6 未交付。
+
+## 2026-09-05 早期 S5b 恢复修复与候选记录
 
 当前 Host 使用 Harness 0.7.1 / Memory 0.6.3 / Service 0.3.12；上方 0.4.0 发布与下方
 早期 S4 状态是历史验收记录。Memory source `2f3d73814fe6a884e0458d87567b918c5863033e`，
