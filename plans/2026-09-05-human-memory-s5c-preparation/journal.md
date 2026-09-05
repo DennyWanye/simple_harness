@@ -40,3 +40,29 @@ T1本切Host内部接口已定稿；T2显式schema/store/只读authority自动�
 自我批评：首次fixture误用了EvidenceRef字段，扩展测试发现后已修；此后按公开DTO构造与verifier检验，避免只验证手写JSON。
 
 VERDICT: BLOCKED — 本切Host基础自动验证通过、可独立review；S5c整体未完成，独立review及T5/T6契约仍待后续。
+
+## 2026-09-05 T3 consumer 独立续接
+
+用户要求先只读 review Carver `29902ea4` 再推进本分支 store/consumer；跨写归属不变。审查报告与2个决定性复现置于本树 ignored `s6-29902ea4-review/`，原新增8项加复现共10 passed（复现断言缺陷存在，不是修复绿）。未修改 Carver 文件或其 WIP。
+
+本切代码与阻塞见 [T3-CONSUMER.md](T3-CONSUMER.md)。consumer/store 接续独立实现；phase=applied 回签与原 prepared 关联，不改 SQL、SDK、入口或 AC。新增18项 consumer/Host测试+3项安装 Memory实库，共21 passed；原66项相关回归通过。自身独立review NOT_RUN、真实provider/UI/gate NOT_RUN。未提交active-run或任何原始证据。
+
+命令（cwd 本隔离 worktree；共享 venv 不作安装变更）：
+
+```bash
+PYTHONPATH="$PWD/backend" /Users/denny/projects/simple_harness/backend/.venv/bin/python -m pytest \
+  backend/tests/memory/test_s5c_store.py \
+  backend/tests/memory/test_s5c_consumer.py \
+  backend/tests/memory/test_s5c_consumer_sdk.py \
+  backend/tests/memory/test_effect_closure_migration_v46.py \
+  backend/tests/memory/test_analysis_episode_time.py \
+  backend/tests/product_state/test_host_control_downgrade.py \
+  backend/tests/execution/test_recovery_fence.py -q
+```
+
+原始证据根 `.local-test-evidence/2026-09-05/s5c-t3-consumer/`：`red.log` 为缺模块；
+`first-implementation.log` 为36 passed；`sdk-first.log`/`sdk-second.log` 为fixture失败，
+`sdk-third.log` 为3 passed；`verification.log` 为86 passed/1 fixture failed，
+改为真实 coordinator.begin_close 后 `final.log` 为21 passed。没有删除/覆盖失败。
+`runtime-identity.json`、`sha256.json` 固定路径/版本/源码和证据 hash，`ruff.log` 为代码规则通过。
+S5c整体仍未完成；合法过期续接、来源 resolver 和 lifecycle owner 未交付，不能擅自激活半成品。

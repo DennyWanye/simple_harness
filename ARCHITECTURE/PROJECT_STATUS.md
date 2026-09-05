@@ -2,6 +2,14 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 S5c T3 独立 consumer 进度
+
+仅在 `feat/human-memory-s5c-preparation` 新增 registration 恢复投递，自己的 store 追加 exact result receipt。
+新增21项通过（3项为安装 SDK 实库），既有66项相关回归通过；故障和修正记录均保留。
+生产 source resolver、due/event/唯一 scheduler、T4/T5/T6 尚缺，独立 review 待主协调。
+没有 main/Carver runtime/terminal/ingestion、SDK/pin 或默认 schema 改动；不声称 S5c 完成。
+[本切接口与限制](../plans/2026-09-05-human-memory-s5c-preparation/T3-CONSUMER.md)。
+
 ## 2026-09-05 S5c T1/T2 独立 worktree 进度
 
 `feat/human-memory-s5c-preparation`，worktree `/Users/denny/projects/simple_harness-s5c-preparation`，

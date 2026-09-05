@@ -1,5 +1,14 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 S5c T3 独立 registration consumer（未接线）
+
+在自己的 store/consumer 模块实现原 prepared registration 的恢复投递与 exact Memory 回签持久化。
+仅调用现有公开 outbox/signal API；prepared/cursor 不改写，applied 行记录回签而非 occurrence processed。
+新增21项通过（含3项已安装 Memory SDK 实库重开/过期回放），既有66项相关回归通过。
+真实 source resolver、due/event、唯一 scheduler lifecycle 与 T4/T5/T6 接线仍未实现；自身独立 review 待主协调。
+默认 schema/SDK/pin/主 runtime 未变，不影响主 S3 冻结的0.6.5 candidate，不算 S5c 或 program 完成。
+接口、限制与证据：[T3 consumer](../plans/2026-09-05-human-memory-s5c-preparation/T3-CONSUMER.md)。
+
 ## 2026-09-05 S5c T1/T2 隔离 Host 基础（未接入生产）
 
 分支 `feat/human-memory-s5c-preparation` 已合入 main `c183fe70` 的 Q1/downgrade 修正，
