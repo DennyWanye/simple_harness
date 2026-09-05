@@ -233,6 +233,16 @@ pending API 扩展。Manual/route UI 未实现/未真测，不得把该前端包
 未起 App/Provider、未修改 backend/SDK、未写 gate，原 S5b FAIL 与全量限制继续保留。原始证据仅在
 该树 ignored `.local-test-evidence/2026-09-05/primary-ui/`。
 
+## 2026-09-05 S5c T1/T2 独立 worktree 进度
+
+`feat/human-memory-s5c-preparation`，worktree `/Users/denny/projects/simple_harness-s5c-preparation`，
+基于已提交 `c183fe70`（Q1 + downgrade 测试）。显式 v47/schema/store/只读 authority 接缝及
+决定性/相关回归 66 passed；Ruff E/F/I 通过。生产默认仍 v46，未改 main 入口、SDK 或 pin。
+独立 review 待主协调后才能决定合入。T3/T4生产scheduler/snapshot/ack未接线；T5 SDK priority
+和T6披露/旧checkpoint接口仍BLOCKED。不存在 S5c全绿、真实provider或program完成声明。
+详情：[本切接口](../plans/2026-09-05-human-memory-s5c-preparation/T1-T2-INTERFACE.md) /
+[验证记录](../plans/2026-09-05-human-memory-s5c-preparation/journal.md)。
+
 ## 2026-09-05 当前修复与受影响验证
 
 Host episode 时间修复提交 `4eb1eb7c` 后，effect/closure/analysis/FIFO 受影响集合 **150 passed**。

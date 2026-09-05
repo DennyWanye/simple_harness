@@ -30,6 +30,19 @@ and selected-source indexing remain incomplete; no main cutover or full program 
 See [combined evidence and boundaries](../plans/2026-09-05-primary-effect-sources/COMBINED.md).
 
 
+## 2026-09-05 S5c T1/T2 隔离 Host 基础（未接入生产）
+
+分支 `feat/human-memory-s5c-preparation` 已合入 main `c183fe70` 的 Q1/downgrade 修正，
+新增显式 v47 initializer、三张 Prospective 领域表与一张 action journal，复用原迁移事务和 recovery fence。
+registration/source/signal/cursor 同事务；只读 authority resolver 校验 exact ref 与 durable source；
+action request 不授予权限，claim 不表示呈现或处理。没有 action grant issuer、scheduler、ack 工具、
+priority 或 suppression 接线。默认 production schema 仍 v46，默认 initializer 拒绝 v47；
+`main.py`、SDK/pin 无本切改动。66 项决定性及相关回归通过，独立 review 尚待主协调。
+这只证明隔离基础服务，不改变 S5b gate 状态，不算 S5c/Program 完成。
+本切接口与 G6 版本化 schedule 阻塞见
+[T1/T2定稿](../plans/2026-09-05-human-memory-s5c-preparation/T1-T2-INTERFACE.md)；
+主线程 S3 冻结的 Memory 0.6.5 candidate 不纳入本分支 priority 实现。
+
 > 最后更新：2026-09-05
 
 ## 2026-09-05 Cognitive action evidence callback prepared
