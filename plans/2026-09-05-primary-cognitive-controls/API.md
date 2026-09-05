@@ -56,3 +56,12 @@ Raw evidence stays ignored under `.local-test-evidence/2026-09-05/primary-candid
 - `cognitive-controls-combined.log` SHA256 `1ea1e06100fec4de09ca938130fcece197d73170337ee6579102e5227e66a9df`
 - `cognitive-wire-combined.log` SHA256 `e646907bb9586d4e9f841118b2c0634afb4f4e673bdd8e53bd0e97755cbf2879`
 - `cognitive-concurrent.log` SHA256 `8afe2471606046b386cbefd7224d475f9d94ddb804d914ca3a5b3472c14d8f5c`
+
+## Independent review and final oracle
+
+Independent review accepted506d98f3 within the stated source-history outbound scope.
+This does not prove a real typed-recall selected binding reaching outbound and later
+being forgotten; that separate claim remains untested here. Final narrow correction
+adds the missing required primary_ref to the foreign-subject oracle, asserts the actual
+subject-mismatch code, bounds status text and checks the returned SDK effective_at.
+All7 cognitive API tests passed3.36s. Raw `cognitive-final-api.log` SHA256 `5aa8d79f16e8a16a9cfda086c2af4fdeb6393fcdb57ea75c3ce1ef2954074970`.

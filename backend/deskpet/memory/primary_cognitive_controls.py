@@ -81,7 +81,7 @@ class PrimaryCognitiveControls:
                     "revision": node.revision,
                     "content_hash": node.content_hash,
                     "memory_type": node.memory_type,
-                    "status": node.status,
+                    "status": str(node.status)[:64],
                     "label": node.label[:512],
                     "tooltip": node.tooltip[:4096],
                     "can_forget": node.can_forget,
@@ -157,6 +157,7 @@ class PrimaryCognitiveControls:
             or decision.scope_kind != request.scope_kind
             or decision.scope_ref != request.scope_ref
             or decision.reason_code != request.reason_code
+            or decision.effective_at != request.requested_at
             or decision.purpose is not None
             or decision.action.value != "directive"
         ):

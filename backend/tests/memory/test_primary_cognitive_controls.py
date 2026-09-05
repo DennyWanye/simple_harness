@@ -230,12 +230,13 @@ async def test_stale_target_foreign_subject_and_wire_authority_never_admit(tmp_p
                 "type": "human_memory_request",
                 "request_id": "foreign",
                 "operation": "primary.memory.list",
-                "request": {},
+                "request": {"primary_ref": s["primary"]},
             },
             factory=s["factory"],
             auth=replace(s["auth"], subject="other-person"),
         )
         assert not foreign["payload"]["ok"] and "concise" not in str(foreign)
+        assert foreign["payload"]["error"]["code"] == "primary_memory_subject_mismatch"
         assert s["action_rows"]() == []
     finally:
         await s["runtime"].close()
