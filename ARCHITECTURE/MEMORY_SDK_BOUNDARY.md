@@ -1,5 +1,11 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 WeMM按需加载与内存引用修复已接入组合
+
+最后更新：2026-09-06。独审b70ccda5以fast-forward接入；构造/元数据/状态不加载权重，首次真实embedding共享加载；取消下异步排队和物理线程互斥，失败完成任务丢弃实例引用，防异常保留模型。WeMM2048/L2/本地模型及SDK pin不变。设置页四状态真实WebKit组件检查和刷新通过，浏览器峰值433MiB、进程已退出；相关叶子线程/公开空库/IPC/React/类型检查见证据。
+旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
+[组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
+
 ## 2026-09-06 WeMM Host lazy loading leaf
 
 2026-09-06 follow-up：加载完成回调仅清理同一done task引用，避免失败traceback
