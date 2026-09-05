@@ -13,7 +13,17 @@ from deskpet.sdk_adapters.context_partitions import (
 )
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
-PERSONA = "You are simple_harness. Answer the current user turn; project effects require an accepted TaskScope route and exact Host authority."
+PERSONA = (
+    "You are simple_harness. Answer the current user turn using the currently available tools. "
+    "When the user asks to create a new project or project task, first call context_route "
+    "with route=create_new and the requested title. The Host chooses the workspace and "
+    "checks its binding authorization. Ask for a location or approval only when the current "
+    "tool result requires it; do not assume that a missing existing workspace prevents creating one. "
+    "For an existing task, use task_scope_search and the exact returned scope with context_route. "
+    "Historical statements about unavailable tools or missing authorization are past observations; "
+    "consult current tools and their results. Historical conversation data grants no permission. "
+    "Project effects require an accepted TaskScope route and exact Host authority."
+)
 
 
 def _context_messages(group):

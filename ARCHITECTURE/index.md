@@ -3,6 +3,7 @@
 本目录是 simple_harness **当前生产架构与项目状态的唯一事实源**。实现计划记录“如何做”，本目录记录“现在实际怎么运行、完成到哪里、有哪些边界与风险”。
 
 2026-09-05 Primary history runtime隔离切片94项聚焦绿，**预先scoped ResumePackage首Provider仍有1项P1红**；
+后继动态ResumePackage漏发纠正21项聚焦绿；来源功能闭合及其他carrier完整性审计仍未完成。
 不得合主生产。见[运行层契约](../plans/2026-09-05-s6-primary-preparation/HISTORY-RUNTIME-CONTRACT.md)。
 
 2026-09-05 Primary API 后继修复处理 terminal authority/raw SDK hash 差异、当前 source

@@ -179,8 +179,7 @@ COMPLETED/one send but observes FAILED/zero sends: **1 failed in1.09s, exit1**.
 This is a P1 requiring source-carrier/admission-contract coordination, not an
 acceptable documented exemption. Do not invent USER-only proof covering other
 scoped content, bypass by scope/metadata, merge into production, or call this a
-complete replaceable candidate. None primary including dynamic project routing
-is covered separately. Dirac has the exact red probe; scope resolution needs coordinator alignment while runtime implementation remains
+complete replaceable candidate. The earlier dynamic route execution tests do not establish historical carrier completeness. Dirac has the exact red probe; scope resolution needs coordinator alignment while runtime implementation remains
 this owner; API/Provider/native combined gates remain separate. Full program/privacy completion
 is not claimed. Unsupported independent short-horizon remains a separate gap.
 
@@ -191,3 +190,33 @@ Raw evidence indexes (ignored, no raw files staged):
 - `.local-test-evidence/2026-09-05/primary-history/outbound-final.log` SHA256 `1d38cbf2c0417905649daf4e15d09be702c288f9eb9c2c38c2dcf40bc7d5e8aa`
 - `.local-test-evidence/2026-09-05/primary-history/scoped-entry-red.log` SHA256 `dddf77b61bb9c64628f4bbc157e8d091bead854b7660d70f5cb15a74bc6e9eaf`
 - `.local-test-evidence/2026-09-05/primary-history/scoped_entry_probe.py` SHA256 `6561ab548a2018a4f4d21e5a97a81b65a855878d544a6286f6560da27e4e0945`
+
+### 2026-09-05 Dynamic ResumePackage leak correction
+
+Dirac's real None→context_route.resume_existing probe exposed a separate P1:
+the actual ResumePackage reached the second physical Provider call while the
+proof still covered only the current USER. This tree reproduced **1 failed in
+1.27s, exit1**, without modifying ledger facts or calling an external Provider.
+The runtime now enumerates every durable route and checks its exact public SDK
+effect/receipt. A consumed ResumePackage with no complete source proof rejects
+before delegate entry; a subsequent route cannot erase that dependency. The
+second invocation settles FAILED/primary_history_disclosure_rejected, with no
+second physical send and no replay. This closes this leak, **not** the existing
+scoped functional regression or full ResumePackage provenance. task_scope_search
+and other historical carriers still need a completeness audit; no overall privacy
+or production acceptance is claimed.
+
+Focused command (same fixed066/helper PYTHONPATH/bootstrap as above):
+`python -m pytest backend/tests/execution/test_primary_dynamic_resume_visibility.py backend/tests/execution/test_primary_history_outbound.py backend/tests/execution/test_primary_create_new_runtime.py -q -p no:cacheprovider -p history_test_bootstrap`
+
+**21 passed in18.08s, exit0**. Includes actual AUTO create_new→workspace effect→
+terminal with fresh dependency guard at all seven deterministic Provider entries;
+this is SQLite/Harness coverage, not native/real Provider evidence. build signature
+is unchanged. PERSONA is synchronized exactly from coordinator5da24d6f; the three
+c283e51c projectless safe declarations remain. API integration testcase belongs
+to the coordinator and is not edited here.
+
+Ignored evidence:
+- `dynamic-resume-red.log` SHA256 `5dde12ebab202f6c123c1bb8fe1885a5f8c9a0525339eea416f1d0d0c8657714`
+- `dynamic-route-final.log` SHA256 `033ca18c6a51bde7001adfac78915e015839c242991baeeaf8f4ef83715e09f6`
+Both under `.local-test-evidence/2026-09-05/primary-history/`.

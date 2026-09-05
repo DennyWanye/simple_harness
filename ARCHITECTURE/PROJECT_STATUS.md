@@ -7,7 +7,9 @@
 
 隔离history树（base284ea40b）接shared primary visibility policy、真实start/terminal依赖、
 actual typed recall四元组与每次physical Provider前fresh check；cold USER/terminal S1无需先ingest。
-None主对话及动态route/typedrecall链相关94 passed；已发送unknown分类未改。
+原切片94 passed不证明动态历史来源完整；后继动态ResumePackage漏发已先红后绿，聚焦21 passed。
+每条实际route交叉验证SDKeffect/receipt；无来源证明的ResumePackage在delegate前拒绝，
+FAILED且第二次物理发送为0。真实create_new在逐次guard下完成effect/terminal；已发送unknown分类未改。
 **仍有P1：既有预先scoped ResumePackage无完整proof，新guard会拒绝首Provider（真实probe1红）**。
 不得以94绿抵消该回归或用scope豁免。共享API ea315525和Memory0.6.6仅隔离组合依赖，
 没有生产切换/native隐私完成结论；独立short-horizon carrier仍不支持。原证据不删除。

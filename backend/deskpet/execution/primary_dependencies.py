@@ -75,7 +75,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id):
             raise ValueError("primary_dependencies_host_binding_missing")
         return None
     cursor = await db.execute(
-        "SELECT receipt_json FROM context_route_decisions WHERE sdk_run_id=? AND route='memory_standalone'",
+        "SELECT receipt_json FROM context_route_decisions WHERE sdk_run_id=? ORDER BY rowid",
         (sdk_run_id,))
     routes = [json.loads(row[0]) for row in await cursor.fetchall()]
     await cursor.close()
@@ -97,8 +97,18 @@ async def read_run_dependencies(*, db, stack, sdk_run_id):
                 or fact.raw_call_id != route.raw_call_id or fact.tool_name != "context_route"):
             raise ValueError("primary_dependencies_tool_unverified")
         value = thaw_json(fact.result.value)
-        if (not isinstance(value, Mapping) or value.get("context_route_receipt") != route.to_json()
-                or not isinstance(value.get("fragments"), (list, tuple))):
+        if not isinstance(value, Mapping) or value.get("context_route_receipt") != route.to_json():
+            raise ValueError("primary_dependencies_route_mismatch")
+        # A successful exact route authorizes task effects; it does not prove
+        # visibility of the historical ResumePackage returned with that route.
+        # Until its real sources are bound, deny BEFORE the next delegate call.
+        # Inspect every durable route, so a later continue_active cannot hide an
+        # earlier consumed package, even if public Context is subsequently pruned.
+        if raw["route"] == "resume_existing" or "resume_package" in value:
+            raise ValueError("primary_dependencies_resume_sources_missing")
+        if raw["route"] != "memory_standalone":
+            continue
+        if not isinstance(value.get("fragments"), (list, tuple)):
             raise ValueError("primary_dependencies_route_mismatch")
         fragments = value["fragments"]
         if tuple(dict.fromkeys(f["ref"] for f in fragments)) != tuple(route.recall_refs):
