@@ -32,6 +32,18 @@ Primary HUMAN接口已接实际V7 public graph/suppress与专属动作S1，精�
 frontend/native及自然语言纠正尚未完成，不能称用户闭环已完成。
 见[接口与证据边界](../plans/2026-09-05-primary-cognitive-controls/API.md)。
 
+## 2026-09-05 Explicit semantic correction isolated leaf
+
+From9ec0ec97, the isolated semantic-correction candidate adds actual public typed
+semantic candidates, Host independent full-sentence intent and exact public REVISE
+authority. **32 focused tests passed (19.13s)** on installed067; Chinese natural
+correction/quoted/negative, ambiguity, original evidence, replay and late-forget deny
+covered. v2 prompt/schema/policy/validator; no new schema or display graph input.
+Main/Runtime wiring belongs to coordinator; fixed-source review and native complete
+loop remain pending. Limited Chinese slot vocabulary and unsupported cases are explicit;
+this is not unrestricted natural-language or full program completion.
+See [contract](../plans/2026-09-05-semantic-correction/CONTRACT.md) and
+[results/boundaries](../plans/2026-09-05-semantic-correction/RESULTS.md).
 
 ## 2026-09-05 Source/auth/action combination verified
 
