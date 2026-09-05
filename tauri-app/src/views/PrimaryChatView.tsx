@@ -52,9 +52,9 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
     <div role="status" aria-live="polite" style={{ padding: "8px 16px" }}>{status}{snapshot.loading ? " · 正在读取" : ""}</div>
     {snapshot.notice && <p style={{ margin: "0 16px 8px", color: dark.textMuted }}>{snapshot.notice}</p>}
     {snapshot.error && <p role="alert" style={{ margin: "0 16px 8px", color: "#fca5a5" }}>{snapshot.error}</p>}
-    {memoryOpen && active && snapshot.state && <div style={{ maxHeight: "50%", overflowY: "auto", flexShrink: 1 }}>
-      <PrimaryMemoryPanel port={primaryPort} primaryRef={snapshot.state.primary_ref}
-        verifiedOwnerKey={snapshot.verifiedOwnerKey} ready={canSend}
+    {memoryOpen && active && snapshot.primaryRef && <div style={{ maxHeight: "50%", overflowY: "auto", flexShrink: 1 }}>
+      <PrimaryMemoryPanel port={primaryPort} primaryRef={snapshot.primaryRef}
+        verifiedOwnerKey={snapshot.verifiedOwnerKey} ready={snapshot.ready}
         requests={memoryRequests} onForgotten={controller.refreshLatest} onClose={() => setMemoryOpen(false)} />
     </div>}
     <div aria-label="主对话历史" style={{ overflowY: "auto", flex: 1, minHeight: 0, padding: "0 16px" }}>
