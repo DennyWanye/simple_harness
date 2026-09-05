@@ -13814,6 +13814,9 @@ async def control_channel(ws: WebSocket):
                 },
             }
         )
+    from deskpet.memory.control_binding import HumanMemoryControlBinding
+
+    human_memory_control_binding = HumanMemoryControlBinding()
     companion_challenge = None
     if _companion_control_ingress is not None:
         try:
@@ -13917,6 +13920,12 @@ async def control_channel(ws: WebSocket):
                         strict_raw,
                         challenge=companion_challenge,
                     )
+                    if msg_type == "companion_profile_bind":
+                        human_memory_control_binding.bound(
+                            _companion_control_ingress, companion_challenge
+                        )
+                    elif msg_type == "companion_profile_unbind":
+                        human_memory_control_binding.clear()
                     if msg_type in {
                         "companion_growth_evaluation_decision",
                         "companion_growth_activation_decision",
@@ -14984,16 +14993,26 @@ async def control_channel(ws: WebSocket):
                 from deskpet.memory.human_memory_api import (
                     handle_human_memory_command,
                 )
-                from deskpet.memory.human_memory_service import (
-                    AuthenticatedHostSnapshot,
-                )
+                try:
+                    _hm_auth = human_memory_control_binding.authenticate(
+                        _companion_control_ingress, companion_challenge
+                    )
+                except Exception as exc:
+                    await ws.send_json({
+                        "type": "human_memory_response",
+                        "request_id": str(raw.get("request_id") or ""),
+                        "payload": {"ok": False, "error": {
+                            "code": getattr(exc, "code", "human_memory_connection_unbound")
+                        }},
+                    })
+                    continue
 
                 _hm_response = await handle_human_memory_command(
                     raw,
                     factory=service_context.get(
                         "human_memory_host_service_factory"
                     ),
-                    auth=_local_owner_auth(),
+                    auth=_hm_auth,
                     binding_append=service_context.get(
                         "human_memory_binding_append_authority"
                     ),

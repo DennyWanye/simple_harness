@@ -23,6 +23,24 @@ REG 的 downgrade 新原因已独立确定为测试 fixture 版本错误：原 A
 只读诊断见 `tools/gate-candidate-continuation-20260905T100858/HANDOFF.md`。
 未删历史、未修改 gate 工具、未豁免稳定性；S5b 和 program 均未得到 machine finalize PASS。
 
+## 2026-09-05 S6隔离分支：control复用与无scope admission
+
+`feat/human-memory-s6-primary-preparation`（base `4eb1eb7c`）已实现P1：沿现
+`/ws/control` 的signed profile_bind验证本连接owner/epoch/active lease；HUMAN读写
+不再只凭全局ready或shared secret，保持原local subject、primary-ID fence及exact effect授权。
+没有新增账户、socket、Rust/TS scope或每次读签名。
+
+P2当前只完成service/API无scope admission：真实SQLite重开与delivery幂等通过，
+显式scope仍校验，没有创建假TaskScope。聚焦29 passed，新增transport request_id重试断言后
+admission窄重测5 passed。**standalone runtime未闭环、UI未接、App/真实Provider未跑**：
+生产context port仍拒绝无scope；terminal observer/queue要求TaskScope gate。
+该共享terminal事务与Dirac S5c T4/T5（occurrence settle/immediate outbox）有明确交叉，
+待主协调同一owner后继续，不占v47、不放宽closure，不将入队视为对话完成。
+本记录仅为隔离分支状态，未合main；不表示S6 Task1/2或program验收完成。
+
+实现/命令/原始证据hash与交叉点见
+[实施交接](../plans/2026-09-05-s6-primary-preparation/IMPLEMENTATION.md)。
+
 ## 2026-09-05 Harness 0.7.2 接入与当前验证
 
 Host `8d57441517836aaaa30ac16a33576f4d68a9d1ad` 已安装 Harness 0.7.2，source

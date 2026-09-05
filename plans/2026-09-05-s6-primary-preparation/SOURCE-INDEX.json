@@ -1,0 +1,182 @@
+{
+  "schema": "s6-primary-preparation-source-index-v1",
+  "status": "read-only-analysis-not-test-evidence",
+  "host_root": "/Users/denny/projects/simple_harness-s6-primary-preparation",
+  "host_branch": "feat/human-memory-s6-primary-preparation",
+  "host_base": "4eb1eb7c7fb27f4f40e4e62621e820acfef9693a",
+  "host_sources": [
+    {
+      "path": "AGENTS.md",
+      "sha256": "aa510b068135f3b4df58c08d6d14abd41a71716d519c217d9db777171e9d24a2"
+    },
+    {
+      "path": "ARCHITECTURE/index.md",
+      "sha256": "a31c5a14dc64e991f0badad7c21298f69baa0e843863efc71b027868d1ab9937"
+    },
+    {
+      "path": "ARCHITECTURE/PROJECT_STATUS.md",
+      "sha256": "a1634b8269766b015df35e1ed3e35574bc0025ba29e5a117af07c18afa0950c2"
+    },
+    {
+      "path": "backend/main.py",
+      "sha256": "67119a7c9c6ee146d647f91fd8368b7df883695f5a0ee171d27d5510dafab327"
+    },
+    {
+      "path": "backend/context.py",
+      "sha256": "8fa9b62252da3f2acde8b5533ab53350c6f1f4af735ab1b0c823996697b4235c"
+    },
+    {
+      "path": "backend/deskpet/memory/human_memory_api.py",
+      "sha256": "9e192e19d5720a149a24b09d470c9af49cf9c41c0a44c6d2043e6c8c15d746a2"
+    },
+    {
+      "path": "backend/deskpet/memory/human_memory_service.py",
+      "sha256": "7905ccd2a7c82aa68ad4e2686d993ec1eadac19d72aed501a81fe899333f5798"
+    },
+    {
+      "path": "backend/deskpet/memory/human_memory_program.py",
+      "sha256": "5883ee05d34b28a8069aa5fa179c884b354b565dda47b2e857779a8b1fbb48c8"
+    },
+    {
+      "path": "backend/deskpet/memory/primary_authority.py",
+      "sha256": "d4a0c53a7c4b364a92c7a1b4c52cd8b63f18f9f9942bf8e69f236b29dad81f5d"
+    },
+    {
+      "path": "backend/deskpet/companion/control_credentials.py",
+      "sha256": "fbfe9d209396b00eb1b0042e515ed03c1ed2e911254ce1c0876a8a0138ddef67"
+    },
+    {
+      "path": "backend/deskpet/companion/control_ingress.py",
+      "sha256": "4dc62b8e99348a5d97da4e50e5f1059e54af7898319927b5bacf7651c1142b4b"
+    },
+    {
+      "path": "backend/deskpet/companion/control_command_canonical.py",
+      "sha256": "f0b87239d7023a54796fc34024eec518b36617e725ccd2575dd59023ca5120b5"
+    },
+    {
+      "path": "backend/deskpet/execution/foreground_queue.py",
+      "sha256": "e9b7bff54d87f3c3d4474d15f8a1ce436a115611a732cac27e1209005f803fb3"
+    },
+    {
+      "path": "backend/deskpet/execution/foreground_runtime.py",
+      "sha256": "ec5968d7ad7c2e539ecb304ff4827d7f1fc922c1060b2eae4b339fcbf01b6a6d"
+    },
+    {
+      "path": "backend/deskpet/execution/foreground_runtime_ports.py",
+      "sha256": "f8445e4f46b9cf0ae37a802fcfa77f15128bc2a444f3639227e82343e2bee9f6"
+    },
+    {
+      "path": "backend/deskpet/execution/evidence_ingress.py",
+      "sha256": "c7096f2abdbd5ba1a6a9b0cd6f7801efdf095ad4d48b880a80d61cdc661a8a43"
+    },
+    {
+      "path": "backend/deskpet/execution/harness_public_read_service.py",
+      "sha256": "f7bc7dec8e0a79a7d3804e5937f4ce9792ef7592f40e3bbe5a266d24f6e31eec"
+    },
+    {
+      "path": "backend/deskpet/sdk_adapters/composition.py",
+      "sha256": "8d3fadf6be52a090f9918bf464a5e3f9005e3f6a52db2e4e920afa6c633e23fa"
+    },
+    {
+      "path": "backend/deskpet/sdk_adapters/context_route.py",
+      "sha256": "5f261298133da5fb2697172774e14b6bd7aef9ea4b84d2c490e8a197ab3c702a"
+    },
+    {
+      "path": "backend/deskpet/task_scope/search.py",
+      "sha256": "033066ae387f3a73acd4778037d8e923a6fb499ac41366e9c6c762832c9a181d"
+    },
+    {
+      "path": "backend/deskpet/task_scope/projections.py",
+      "sha256": "30b7fbbfbd2057501f13695dee7a2286d47b1d74790d09a68c6ad8c28068ac54"
+    },
+    {
+      "path": "tauri-app/src/App.tsx",
+      "sha256": "b4e08ac634f7c321a7cad567c2aed78ad31089303f9a2efcbca4c8253434ba3a"
+    },
+    {
+      "path": "tauri-app/src/components/SessionList.tsx",
+      "sha256": "979cdd66b145c8027b33ff056ed9a359fd6225a0ff030e21e11cf387a98c220f"
+    },
+    {
+      "path": "tauri-app/src/components/Sidebar.tsx",
+      "sha256": "9e2d5ae53959a1354a3eb782a83d67d5010c34f7b538c43a932773cbfdbba37d"
+    },
+    {
+      "path": "tauri-app/src/components/WorkbenchShell.tsx",
+      "sha256": "80f35fd94fcaeaf092f08d9b8c7ca2c5ef2656a91e25c10bfd4ce16cdf1ed5f4"
+    },
+    {
+      "path": "tauri-app/src/views/ChatView.tsx",
+      "sha256": "b400ccca0d526efbc6c35cc5037b5f9f7c7aa9c0502749c3b8b9f8c20aa75360"
+    },
+    {
+      "path": "tauri-app/src/code-panel/InputBar.tsx",
+      "sha256": "78e1d217dd1dc28bc27749155d83bb28a128d299f97e459a170d20bbc499dbbb"
+    },
+    {
+      "path": "tauri-app/src/code-panel/controlWs.ts",
+      "sha256": "71892b2d54dcc7f80156e67f1e226fdf80eae6045bedfc38104d323729594d87"
+    },
+    {
+      "path": "tauri-app/src/chat/sessionHydration.ts",
+      "sha256": "c9ec4ae86c0510e6eaea4413428bd87542735cda1fea76ba4f255c2597c3f7b0"
+    },
+    {
+      "path": "tauri-app/src/auth/windowControlCredential.ts",
+      "sha256": "1e24b41d37d98fe7eb2305ef48c7cfb578d236ba0191b464d412a23ea967f704"
+    },
+    {
+      "path": "tauri-app/src/stores/sessionsStore.ts",
+      "sha256": "fabb0fc6c864005f78d8d92faa3bdad9fddbcd47aa7354b185592c0162f5761a"
+    },
+    {
+      "path": "tauri-app/src-tauri/src/webview_permissions.rs",
+      "sha256": "31be5ebaaf32fb44e8b48c83b8a9e4886d5420c7f55547a76a4e89f1e50672dd"
+    },
+    {
+      "path": "tauri-app/src-tauri/src/lib.rs",
+      "sha256": "67040198036d7a9a38b3d6ffbbeec811b56e13c2f5bace37f9e5224e5b23049d"
+    },
+    {
+      "path": "testcase/index.md",
+      "sha256": "740056fb4c4ae8022a469046854a3d2870b61c723b4fe320bdbb609bc34f075e"
+    },
+    {
+      "path": "testcase/human-memory-program/TC-HM-02-task-resume.md",
+      "sha256": "c4b6371c2c712d1dacda9129f7636bd61fc8fe1af46d869db18a926db7ad927a"
+    },
+    {
+      "path": "testcase/human-memory-program/TC-HM-X01-contract-init-quality.md",
+      "sha256": "aaec15d4e2b1c61280d4bdcd995d9a34102c0f7d99a97ed6d7dc4fbc3a8010e8"
+    }
+  ],
+  "authority_root": "/Users/denny/projects/simple-harness-memory-sdk",
+  "authority_checkout_head_at_index": "2e78af9642b6dcea6f62452d7d967c7a7f1f158d",
+  "authority_sources": [
+    {
+      "path": "plans/2026-08-29-human-memory-digital-twin/plan.md",
+      "sha256": "6327e6c36af648f021bb8b4eebcd8b730c56f647b3badf33eeeb727022774d8b"
+    },
+    {
+      "path": "plans/2026-08-29-human-memory-digital-twin/acceptance.md",
+      "sha256": "d0d78dfbd7f6d3743f047f9e2d2bd11fdbf60a1770cc13d20a7e8b432a26b2b8"
+    },
+    {
+      "path": "plans/2026-08-29-human-memory-digital-twin/slices/S6-ui-and-program-verification.md",
+      "sha256": "fa537bd77b84aabc8f78cdddfa8081c1fcaa0cf70b69ca3ed1a5f086ea7dfa67"
+    },
+    {
+      "path": "plans/2026-08-29-human-memory-digital-twin/slices/V0-verification-and-spikes.md",
+      "sha256": "8d16d048abc14ad4a9437ad57333edfb252086bad6324755a165b832f7177070"
+    },
+    {
+      "path": "plans/2026-08-29-human-memory-digital-twin/verification/v0-closure.md",
+      "sha256": "1482f961d03922d2a909797bf6af61fdce923b31493832cb741499af8897c430"
+    }
+  ],
+  "notes": [
+    "Hashes describe bytes read in preparation, not a new V0 seal or candidate admission.",
+    "External source hashes are authoritative for this analysis even if that checkout has uncommitted edits.",
+    "Implementation must review source drift; no automatic incorporation of concurrent main or Dirac changes."
+  ]
+}

@@ -219,12 +219,13 @@ class OpenTaskScopeRequest:
 
 @dataclass(frozen=True, slots=True)
 class QueueTurnRequest:
-    scope_ref: str
+    scope_ref: str | None
     delivery_key: str
     text: str
 
     def __post_init__(self) -> None:
-        identifier(self.scope_ref, "scope_ref", 512)
+        if self.scope_ref is not None:
+            identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.delivery_key, "delivery_key", 512)
         identifier(self.text, "text", 16_384)
 
@@ -797,7 +798,8 @@ class HumanMemoryHostService:
         # authorization result after ingress has closed; the actual writer
         # transaction performs the same check again to close the race.
         await assert_human_memory_ingress_open(self._db_path)
-        await self._assert_owned_scope(request.scope_ref)
+        if request.scope_ref is not None:
+            await self._assert_owned_scope(request.scope_ref)
         primary = await self._program.initialize_subject(self._auth.subject)
         envelope, receipt = build_foreground_turn_evidence(
             subject=self._auth.subject,
