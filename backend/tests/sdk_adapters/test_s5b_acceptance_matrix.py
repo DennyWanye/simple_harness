@@ -1233,7 +1233,7 @@ def test_analysis_proposal_span_derivation_rejects_paraphrase() -> None:
     from tests.sdk_adapters import s5b_memory_harness as mh
 
     assert (ap.PROMPT_VERSION, ap.RESULT_SCHEMA_VERSION, ap.POLICY_VERSION, ap.VALIDATOR_VERSION) == (
-        "host-analysis-prompt/v1", "memory-analysis-proposal/v1", "host-analysis-policy/v1", "host-analysis-validator/v1",
+        "host-analysis-prompt/v2", "memory-analysis-proposal/v2", "host-analysis-policy/v2", "host-analysis-validator/v2",
     )
     assert ap.PROPOSAL_TOOL_NAME == "memory_analysis_proposal"
     schema = ap.PROPOSAL_TOOL_SCHEMA

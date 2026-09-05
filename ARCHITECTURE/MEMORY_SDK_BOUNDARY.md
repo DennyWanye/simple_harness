@@ -1,5 +1,18 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-05 Explicit semantic correction isolated leaf
+
+From9ec0ec97, the isolated semantic-correction candidate adds actual public typed
+semantic candidates, Host independent full-sentence intent and exact public REVISE
+authority. **32 focused tests passed (19.13s)** on installed067; Chinese natural
+correction/quoted/negative, ambiguity, original evidence, replay and late-forget deny
+covered. v2 prompt/schema/policy/validator; no new schema or display graph input.
+Main/Runtime wiring belongs to coordinator; fixed-source review and native complete
+loop remain pending. Limited Chinese slot vocabulary and unsupported cases are explicit;
+this is not unrestricted natural-language or full program completion.
+See [contract](../plans/2026-09-05-semantic-correction/CONTRACT.md) and
+[results/boundaries](../plans/2026-09-05-semantic-correction/RESULTS.md).
+
 ## 2026-09-05 Source/auth/action combination verified
 
 Fixed e31c6efd source index closes the independent unscoped-search/late-forget P1;
