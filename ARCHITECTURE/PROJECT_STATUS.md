@@ -1,5 +1,17 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Primary Cytoscape viewport repair
+
+Last updated: 2026-09-06. Three frontend files address the reproduced half-height
+scroll-pane clipping: responsive canvas, first/explicit reveal, wheel page scroll
+with button zoom. Layout-only reveal state survives owner-key graph remount; graph
+authority/invalidations are unchanged. Actual WebKit 1000x700/800x560 oracle:
+original 8 failures, candidate22 checks pass; focused frontend9 pass/1 optional
+API-fixture skip, typecheck/build/ESLint pass. Native exact-build verification is
+coordinator-owned and pending; not a renderer-engine diagnosis or full HM-AC6 PASS.
+Isolated `feat/cytoscape-native-canvas` from65a604f8, not yet integrated here.
+See [scoped result and evidence](../plans/2026-09-06-cytoscape-viewport/RESULTS.md).
+
 ## 2026-09-05 Native0612 startup ready; UI lock-screen blocker
 
 Last updated: 2026-09-05. Candidate65a604f8 with installed0612 starts successfully
