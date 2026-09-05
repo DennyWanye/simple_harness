@@ -46,11 +46,11 @@ A7的ack工具和状态转换、A8的实际Memory回签与唯一scheduler不是�
 
 用户补充的代码约束纳入本接口边界，不变更当前SDK或pin，也不混入主线程为S3冻结的Memory 0.6.5 source/candidate。当前运行测试安装的是Memory0.6.3；这不是建议降级主候选。
 
-- Memory jobs v1 payload严格为 `schema_version/evidence_id/envelope_hash/source_hash`，ordinary历史字节必须保持；**禁止添加analysis_schedule进现有JSON**。当前Host代码没有priority实现或能工作的placeholder调用。
-- 后续优先评审独立 `schedule_class`/schedule provenance列或独立版本化schema，而非只新增kwargs；升级/新状态必须让旧0.6.3稳定拒绝，open/integrity/recovery验证同步，不从版本字符串推断安全。
-- 同evidence/schedule replay幂等；不同schedule应在现有ingest early-return之前验证并稳定拒绝冲突，不能replay吞掉调度变化。
-- ordinary/immediate批次分离，eligible immediate免普通max-wait，但先reclaim既有batch，且不抢占同principal handed_off/result_committed fence；保留原fixed plan/base_revision/result、不得额外调用LLM掩盖幂等。
-- 此设计仍是待主协调的SDK contract差额，不声称仅Host改动可满足AC-5。T5 priority与T6 suppression/旧snapshot披露屏障继续BLOCKED。
+- 最小消费合同已定稿：[SDK-PRIORITY-CONSUMER-CONTRACT.md](SDK-PRIORITY-CONSUMER-CONTRACT.md)。公开输入仅typed `analysis_priority=ordinary|immediate`；不再要求schedule authority token、provenance账本或复制Host action journal。
+- priority只调度，不授予认知写/动作/隐私权限；原mutation/action ports保持不变。Host首次ingest选择由已有explicit intent的durable绑定派生，重试使用原选择。
+- ordinary v1 payload字节不变；jobs独立不可变priority列及明确schema升级为最小候选。replay比较在early-return前，冲突拒绝；旧0.6.3打开新状态稳定拒绝且不改DB。
+- 新batch按priority隔离，immediate免普通等待，先reclaim与同principal active fence不抢占；旧plan/base_revision/result不能重写，不能追加LLM调用。
+- 未实现SDK或Host priority调用，主S3冻结的0.6.5不混入此改动。T5仍BLOCKED等待该SDK合同，T6披露/旧snapshot仍独立BLOCKED。
 
 ## 可审阅状态
 

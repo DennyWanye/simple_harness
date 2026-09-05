@@ -29,6 +29,10 @@ PYTHONPATH="$PWD/backend" /Users/denny/projects/simple_harness/backend/.venv/bin
 `expanded-fixed.log`、`focused.log`、`verification.log`；安装版本与实际源码路径见`runtime-identity.json`，
 文件hash见`sha256.json`，提交后相同命令复验另存`postcommit.log`。测试安装身份为Harness0.7.2 / Memory0.6.3 / Service0.3.12，未由本线程安装/升级。
 
+## G6 最小化后续（仅文档）
+
+用户确认priority只是调度、不需重复授权框架；T1新增确切SDK消费合同。撤销旧analysis_schedule/action-ref方案，只需要typed analysis_priority和必要版本化列/不可变/replay/claim/open校验。Host store实现与66项结果不变；无SDK、pin、生产入口或业务代码变更。本次只核对文档链接和diff，不重复运行业务测试。
+
 ## 兑现与剩余
 
 T1本切Host内部接口已定稿；T2显式schema/store/只读authority自动验证。action正向resolver用显式fixture-only authorized行，**无生产授权发行证明**。T3/T4实际调度、snapshot/presentation/ack/terminal未实现；T5 priority与T6披露阻塞；真实S5B-S5/S6、独立审查、全增量gate未执行。ARCHITECTURE只记录此边界，未改 main 生产状态或称program complete。

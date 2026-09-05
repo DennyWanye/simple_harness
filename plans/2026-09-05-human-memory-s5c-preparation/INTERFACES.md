@@ -85,7 +85,7 @@ suppressed/FORGOTTEN → settle(suppressed)，**永不写 v45 投影且内容不
 
 Host `prepare_immediate_write(ctx, request)` 同事务保存 exact command+用户evidence来源，返回 `{action_id,state:"pending_terminal"}`。这不是已物化receipt。终态在原ingestion outbox中绑定immediate intent；同 evidence只允许一份analysis job，不能普通+immediate各调一次。Run失败的explicit intent以durable事实裁定是否可执行，不从内存标记偷跑。
 
-当前 `ingest_committed_evidence(...,analysis_lineage=...)` 无priority；`claim_analysis_batch(config,worker_id)`先reclaim再按oldest选pending，`MemoryJobWorkerConfig`无priority。建议最小 **待评审 SDK contract**：在ingest新增可选 `analysis_schedule: AnalysisSchedule`（class=`ordinary|immediate`、Host action ref/hash；default ordinary），与evidence/job同事务固定；重放不同schedule报冲突。claim优先选择eligible immediate，immediate免普通max_batch_wait，不混入普通batch；同Run多个显式操作保持原lineage和批次一致性。不能用任意metadata暗示priority或Host直写Memory jobs。
+当前 `ingest_committed_evidence(...,analysis_lineage=...)` 无priority。原准备稿的 `analysis_schedule`/action ref草案已撤销，改为 [最小消费合同](SDK-PRIORITY-CONSUMER-CONTRACT.md)：typed `analysis_priority=ordinary|immediate`随首次ingest固定，调度不授予权限，不新增authority token或第二套ledger。ordinary v1payload保持原字节；jobs独立不可变列/版本化schema及旧runtime稳定拒绝必须同步，不能仅新增kwargs。
 
 该扩展不需要新 LLM/extractor，也不允许抢占 handed_off/result_committed batch。保持0.6.3同principal fence：先收敛旧durable result固定plan/base_revision，再claim immediate；活跃任务未完成的等待不等于ordinary pending优先。已有持久result仅重放，不增provider calls；未知投递仍按not_sent/sent_unknown/sent_confirmed分类。
 
@@ -103,7 +103,7 @@ forget公开tool建议 `{memory_id,target_revision}` strict；自然语言目标
 
 ## 7. review 必须回答的具体问题
 
-1. G6的公开priority参数/可信来源验证/无双job事务能否以最小Memory版本增量满足？当前冻结候选不改。
+1. G6按最小消费合同实现typed priority/首次ingest固定/无双job事务，是否完成旧runtime稳定拒绝的新schema门？当前冻结候选不改。
 2. event trigger的真实Host source receipt是什么？若没有，标缺口，不以假发布事件声称真实端到端通过。
 3. Host同步suppression command与SDK mutation action resolver的分工是否满足AC-5？canonical action journal复用或新增一表，列明事务约束。
 4. suppression后的旧snapshot如何通过公开契约失效，同时保持未变化事实的replay hash不变？不能简单改revision。
