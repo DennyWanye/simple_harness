@@ -1,5 +1,40 @@
 # Primary SDK authorization candidate results
 
+## Native visible authorization on f9cbb7c8
+
+2026-09-05. Source f9cbb7c8b3a82a53a126b63c6e226826db23ba8a, unique native App
+SimpleHarness Primary Decisions Layout, binarySHA256
+`1c76713e8d86a81f8152490277d117055e078da326baffc0d175ab9aab244a5c`.
+Same isolated data, exact installed Harness0.7.2/Memory0.6.3/Service0.3.12. Main independently
+read the four frontend changes and browser counterfactual/results before the new native request.
+
+Native input: 请新建一个名为 primary-dialog-visible-0905 的项目，不创建或修改任何文件。建好项目后只告诉我项目名称。
+The visible modal appeared; actual mouse(353,403) expanded exact parameters and screenshot
+confirmed the entire modal plus allow button remained in the viewport. Actual mouse(670,545)
+clicked the visible allow-once button. No AX-only approval, protocol injection or repeated request.
+Host6f973190-48bf-54ca-a0da-b0fa5b43e598 and SDK
+product-sdk-f1c883a487b6d998ed2f925b594ba4367e691305e465713314870c2de50ceb60 completed.
+One real decision allowed, two physical foreground Provider calls succeeded, closure clean with0calls.
+Actual Scope db0a2338-2613-54a0-937b-b855ee4ce93c has the requested name, workspace contains
+zero files, previous README exact hash unchanged. UI final name and idle state visible.
+All seven accumulated Memory jobs applied, normal App exit0.
+
+This closes the reproduced native expanded-card/click path on this source; hidden/show, two
+successive decisions and narrow viewport remain browser-layout evidence. Earlier native failure
+and its cause uncertainty remain recorded. No claim of native067/forget/fullS6/program completion.
+
+Main ignored evidence root: .local-test-evidence/2026-09-05/human-memory-resume/primary-ui-qb9nzyda/
+
+| File | SHA-256 |
+| --- | --- |
+| 01-current-request.png | ade1243d42b117af460fb98f49888eb146a29226312298f06a97d1ef64bbb0e2 |
+| 02-expanded-visible.png | 358d28439c89300d6e60078c28dd54e0dc7cbbb051d2d9ab16c7c81568d2d78a |
+| 03-visible-allow.png | 7ed3d94226f6ea1b1692e10ff0f25d39257e22e03de7ca8f32ec8399162efb77 |
+| 04-project-completed.png | 3657c339b6186650e861542c793be8a85c23370bb69cc1a84edddf40b86ea9b0 |
+| native-layout-ledger.json | 0da0e7ece456e7d8fcfbbd5fbedfe8d534f0a6dc2a1e38c891141d18883d7a5e |
+
+Current worktree ignored layout-native-build.log SHA256 `6fe797659165a6b195e996c521a4b2315a61d85c2f355a9a8cf3e99b010f6791`; native debug build passed.
+
 ## Portal layout candidate after 1862e383
 
 Primary-only body portal plus explicit visible-chat gating; fixed-modal focus uses preventScroll.

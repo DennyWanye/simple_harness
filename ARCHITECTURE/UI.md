@@ -2,6 +2,14 @@
 
 > 最后更新：2026-09-05（Primary 授权 portal 布局候选；native 视觉待主复验）
 
+## 2026-09-05 原生授权卡可见点击已验证
+
+独立候选f9cbb7c8真实原生新项目请求：展开参数后卡片/按钮仍在视口，实际坐标mouse点击
+允许一次成功，Host/SDK完成，2次前台Provider成功、0次closure补交，新工作区无文件且
+旧README不变。7项累计记忆分析applied后正常退出0。此处关闭该候选的展开/可见点击路径；
+窄屏、隐藏页及连续挑战另有WebKit布局证据，不混作native067/遗忘/完整program通过。
+详见[实际结果及hash](../plans/2026-09-05-primary-sdk-decisions/RESULTS.md)。
+
 ## 2026-09-05 Primary 授权布局后继候选
 
 从 `1862e383` 小改：Primary PermissionPopup portal 至 body，避开运行区域的滚动与
