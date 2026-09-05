@@ -17,8 +17,9 @@ Do not resend CREATE for the existing preference during recovery.
 Read-only original-file copies and the exact native Python reproduce the production
 Host history policy calling public SDK check_history_visibility: terminal S1
 ab9d6aca-6b5b-52ce-a6d6-63c5d0ec6a4b fails evidence_credential_boundary_rejected.
-Independent hash comparison to public tracked source identifies skill_resource,
-skill-catalog and skill-catalog-v1 in terminal content. The existing credential regex
+Independent hash comparison to public tracked source identifies the matched strings
+skill_resource, skill-catalog and skill-catalog-v1; the latter two occur inside the
+full public identifiers product-skill-catalog and product-skill-catalog-v1. The existing credential regex
 accepts an optional delimiter after sk, incorrectly matching those public identifiers.
 Same-Run USER source and state/factory controls pass. This is not a graph query defect.
 System Python SQLite3.51 read-only opening has a separate failure; native Python
