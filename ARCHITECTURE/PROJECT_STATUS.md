@@ -4,6 +4,12 @@
 
 ## 2026-09-05 primary 前端独立候选（集成待续）
 
+跨 attempt 未决 delivery P1 已完成代码与聚焦自动化修复：原 ACK 未知后，重试的本地未发送或后端
+拒绝不再清原 key；首次明确未发出不锁死草稿。新增三例修前 2 failed/1 passed，controller/requests
+修后 25 passed，typecheck/受影响文件 lint 通过。原始证据：该树 ignored
+`.local-test-evidence/2026-09-05/primary-ui-retry/`；Dirac 固定源码独立 ACCEPT（29 项及原重试/owner
+切换探针通过）。原生发送复验仍待主组合，不计为 UI 验收通过。
+
 独立 worktree `/Users/denny/projects/simple_harness-primary-ui`，分支 `feat/human-memory-primary-ui`，
 base `c183fe70`：Workbench 单主对话入口、真实 bound 连接上的 durable 历史/ACK 草稿提交、精确
 run/generation 控制与回执分类、read invalidation/有界补读、真实 hidden execution mapping 的权限组件

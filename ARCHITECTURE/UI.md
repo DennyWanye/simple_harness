@@ -1,6 +1,6 @@
 # Simple Harness UI 当前架构
 
-> 最后更新：2026-09-05（primary 前端候选；真实项目 route 交互未验证）
+> 最后更新：2026-09-05（primary 跨重试未决身份修复；真实项目 route 交互未验证）
 
 ## 2026-09-05 单主对话前端候选（尚非完整 S6 cutover）
 
@@ -12,6 +12,13 @@ Workbench 默认入口为 `PrimaryChatView`，Sidebar 不再挂载 Session catal
 才读取 `primary.open/state/messages.page`；global identity_status 不作为本 socket 授权。晚挂载复用当前
 连接 bound cache；disconnect/unbind/rechallenge 清 cache。未知 enqueue 的 delivery_key 在同 owner
 rechallenge/重连时保留，只有重新 bound 确认 owner 改变才丢弃。无 `chat_v2` fallback 或伪造 Session ID。
+
+delivery 在内存中累计 ACK 未知状态：一次超时后，即使后续同 key 重试明确未发出或被拒绝，也不能
+推断最初未入库，仍保留原 key，直至匹配的有效 ACK 或 verified owner 变化。首次明确未发出仍允许
+修改草稿重新提交；该本地状态不写入 wire DTO。三个决定性用例修前 2 failed/1 passed，修后均通过，
+controller/requests 聚焦 25 passed、typecheck/受影响文件 lint 通过；原始证据在 ignored
+`.local-test-evidence/2026-09-05/primary-ui-retry/`。Dirac 独立固定源码复核 ACCEPT：原重试探针、
+29 项聚焦测试及 verified owner 切换负控制通过；未执行原生 UI/Provider 复验。
 
 输入框仅在 request_id/operation/delivery_key 关联的完整 enqueue receipt 后清草稿；拒绝、超时、断连
 保留草稿，无自动 mutation 重发。停止固定按钮渲染时的 Host run_ref/generation，并核验响应目标、
