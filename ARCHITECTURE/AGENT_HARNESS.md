@@ -1,5 +1,15 @@
 # simple_harness Agent Harness 架构
 
+## 2026-09-05 Terminal audit and privacy combined source verification
+
+Last updated: 2026-09-05. Reviewed terminal consumer is integrated into the
+main-owned candidate.55 combined audit/runtime/preparation/privacy tests pass with
+frozen Harness fd4a audit source and installed Memory0610. No audit exception
+triggers business resend. Actual native043c regression predates this integration;
+installed Harness successor audit and other producer coverage remain incomplete.
+See [handoff](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md).
+
+
 > 最后更新：2026-09-05
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。

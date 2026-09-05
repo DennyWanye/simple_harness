@@ -101,3 +101,26 @@ terminal discovery cannot prove its absence simply because no SDK Run was create
 Main/Dirac are implementing narrow typed pre-SDK rejection → real HostRun FAILED /
 turn SETTLED with an actual transition proof, without fabricated SDK terminal/closure/
 outbox or DDL. That repair and producer remain separate from this terminal leaf.
+
+## Combined Host integration
+
+2026-09-05: integrated into main-owned candidate bf8f9f7d after reviewed privacy
+043c722a and native regression record abc68e2b. Only PROJECT_STATUS required manual
+merge resolution; both historical entries were retained. The runtime preparation
+rejection path and production history-source composition remain present.
+
+Actual audit recovery + primary runtime + preparation-rejection + public runtime
+history combination:55PASS41.35s. Harness public audit code is the frozen fd4a source
+overlay; Memory is the installed0610 wheel. This is not installed successor audit
+acceptance. Candidate native was closed before integration; do not call terminal
+audit active in the native test of043c722a. Harness0.7.2 remains installed, so native
+audit success awaits the successor artifact. Capability-unavailable settled audit
+jobs require explicit later audit revision; they must not silently appear complete.
+
+Command: candidate Python -m pytest backend/tests/operation_audit
+backend/tests/execution/test_primary_foreground_runtime.py
+backend/tests/execution/test_preparation_rejection.py
+backend/tests/memory/test_primary_runtime_api_integration.py -q;
+PYTHONPATH=backend:<host-audit-tree>/.local-test-evidence/2026-09-05/host-operation-audit/sdk-fd4a/src.
+Ignored log .local-test-evidence/2026-09-05/primary-candidate/audit-privacy-combined-overlay.log
+SHA256 4eb005a7ebe18562e5e768deb54b8167236ffd0403aac9051b93ffd87346f239.

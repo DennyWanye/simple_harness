@@ -1,5 +1,15 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 Terminal audit and privacy combined source verification
+
+Last updated: 2026-09-05. Reviewed terminal consumer is integrated into the
+main-owned candidate.55 combined audit/runtime/preparation/privacy tests pass with
+frozen Harness fd4a audit source and installed Memory0610. No audit exception
+triggers business resend. Actual native043c regression predates this integration;
+installed Harness successor audit and other producer coverage remain incomplete.
+See [handoff](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md).
+
+
 ## 2026-09-05 Original native duplicate-forget regression passes on0610
 
 Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the
