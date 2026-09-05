@@ -1,5 +1,11 @@
 # S5c 接手准备：任务拆解与缺口
 
+Current schema succession: [SCHEMA-48.md](SCHEMA-48.md). Older47 notes are historical.
+
+
+2026-09-05 续接：T3 中独立 registration consumer 与回签恢复已实现并测试；原任务表完整完成条件不变，
+真实 source resolver/调度与接线尚未交付。当前事实见 [T3-CONSUMER.md](T3-CONSUMER.md)。
+
 2026-09-05；状态：**原准备稿保留；T1/T2独立Host基础已实现并自动验证，待独立review，生产未接线**。本轮用户已另授权隔离实现，当前定稿边界见 [T1-T2-INTERFACE.md](T1-T2-INTERFACE.md)。下文“本轮只准备/未实现”为首次准备交付历史，不代表新的整体完成声明。
 
 工作树 `/Users/denny/projects/simple_harness-s5c-preparation`，分支 `feat/human-memory-s5c-preparation`，基于 Host 已提交 main `738c8aabd041716d10ca86858eb2a9584e08ec47`。未带入 main 正在修改的 Q1 episode 时间文件。S5b 候选仍冻结到 Q1 修复后重验，由主执行者协调；实施前接收其最终已提交候选，不能用本准备基线替代。

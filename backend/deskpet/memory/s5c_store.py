@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 import aiosqlite
@@ -24,6 +26,7 @@ from simple_harness.runtime import (
     ProspectiveSignalAuthorityRef,
 )
 from simple_harness_memory import MemoryPrincipal
+from simple_harness_memory.core.lifecycle_results import ProspectiveSignalApplyResult
 from simple_harness_memory.core.occurrence import OccurrenceInboxEntryV1, OutboxEntryV1
 
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
@@ -49,6 +52,17 @@ def registration_signal_id(
     principal: MemoryPrincipal, outbox_id: str, kind: str
 ) -> str:
     return _hash(["host:prospective-signal/v1", _owner(principal), outbox_id, kind])
+
+
+@dataclass(frozen=True)
+class PreparedRegistration:
+    entry: OutboxEntryV1
+    authority: ProspectiveSignalAuthority
+    result: ProspectiveSignalApplyResult | None = None
+
+    @property
+    def reference(self) -> ProspectiveSignalAuthorityRef:
+        return ProspectiveSignalAuthorityRef.from_authority(self.authority)
 
 
 class S5cStore:
@@ -217,6 +231,186 @@ class S5cStore:
         if self.fault:
             self.fault("s5c.registration.after_commit")
         return ProspectiveSignalAuthorityRef.from_authority(authority)
+
+    def _decode_prepared(self, row) -> PreparedRegistration:
+        try:
+            source = json.loads(row["source_json"])
+            authority = ProspectiveSignalAuthority.from_json(
+                json.loads(row["authority_json"])
+            )
+            entry = OutboxEntryV1(
+                source["outbox_id"],
+                source["topic"],
+                source["idempotency_key"],
+                "pending",
+                source["payload_hash"],
+                0,
+                source["created_at"],
+                source["created_at"],
+                source["created_at"],
+                source["payload"],
+            )
+            expected, record_id, digest = self._registration(entry, authority)
+            if (
+                source != expected
+                or row["owner_key"] != self.owner
+                or row["phase"] != "prepared"
+                or row["outbox_id"] != entry.outbox_id
+                or row["record_id"] != record_id
+                or row["record_hash"] != digest
+                or row["source_hash"] != _hash(source)
+                or row["authority_id"] != authority.authority_id
+                or row["authority_hash"] != authority.authority_hash
+            ):
+                raise ValueError("prepared identity differs")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise S5cConflict("s5c_registration_corrupt") from exc
+        return PreparedRegistration(entry, authority)
+
+    def _result_record(self, prepared, result):
+        if type(result) is not ProspectiveSignalApplyResult:
+            raise TypeError("ProspectiveSignalApplyResult required")
+        i = prepared.authority.intent
+        if (
+            result.signal_id != i.signal_id
+            or result.memory_id != i.target_memory_id
+            or result.base_revision != i.target_revision
+            or result.committed_revision != i.target_revision
+            or result.lifecycle_state != i.transition_to
+            or result.outcome.value != "acknowledged"
+            or result.reason_code != "prospective_registration_acknowledged"
+            or not math.isfinite(result.decided_at)
+            or not max(i.observed_at, prepared.authority.issued_at)
+            <= result.decided_at
+            < prepared.authority.expires_at
+        ):
+            raise S5cConflict("s5c_registration_result_differs")
+        _, prepared_id, prepared_hash = self._registration(
+            prepared.entry, prepared.authority
+        )
+        # Phase-specific receipt envelope, linked to the immutable original;
+        # no new schema column and no rewriting the prepared source or cursor.
+        body = {
+            "schema_version": 1,
+            "prepared_record_id": prepared_id,
+            "prepared_record_hash": prepared_hash,
+            "result": result.to_json(),
+            "result_hash": result.result_hash,
+        }
+        return (
+            _hash(["s5c:registration-result", self.owner, prepared.entry.outbox_id]),
+            self.owner,
+            prepared.entry.outbox_id,
+            "applied",
+            canonical_json(body),
+            _hash(body),
+            prepared.authority.authority_id,
+            canonical_json(prepared.authority.to_json()),
+            prepared.authority.authority_hash,
+            _hash(
+                [
+                    "s5c:registration-result/v1",
+                    self.owner,
+                    body,
+                    prepared.reference.to_json(),
+                ]
+            ),
+        )
+
+    async def _read_registration_tx(self, db, row):
+        prepared = self._decode_prepared(row)
+        cursor = await db.execute(
+            "SELECT * FROM prospective_scheduler_registrations "
+            "WHERE owner_key=? AND outbox_id=? AND phase='applied'",
+            (self.owner, prepared.entry.outbox_id),
+        )
+        applied = await cursor.fetchone()
+        await cursor.close()
+        if applied is None:
+            return prepared
+        try:
+            result = ProspectiveSignalApplyResult.from_json(
+                json.loads(applied["source_json"])["result"]
+            )
+            if tuple(applied) != self._result_record(prepared, result):
+                raise ValueError("receipt differs")
+        except (KeyError, TypeError, ValueError) as exc:
+            raise S5cConflict("s5c_registration_result_corrupt") from exc
+        return PreparedRegistration(prepared.entry, prepared.authority, result)
+
+    async def registration(self, outbox_id: str) -> PreparedRegistration | None:
+        async with aiosqlite.connect(
+            f"{self.path.resolve().as_uri()}?mode=ro", uri=True
+        ) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            cursor = await db.execute(
+                "SELECT * FROM prospective_scheduler_registrations "
+                "WHERE owner_key=? AND outbox_id=? AND phase='prepared'",
+                (self.owner, outbox_id),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            return None if row is None else await self._read_registration_tx(db, row)
+
+    async def pending_registrations(
+        self, *, limit: int = 100
+    ) -> tuple[PreparedRegistration, ...]:
+        if type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("registration limit must be 1..1000")
+        async with aiosqlite.connect(
+            f"{self.path.resolve().as_uri()}?mode=ro", uri=True
+        ) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            cursor = await db.execute(
+                "SELECT p.* FROM prospective_scheduler_registrations p "
+                "JOIN prospective_outbox_cursor c "
+                "ON c.registration_record_id=p.record_id "
+                "WHERE p.owner_key=? AND p.phase='prepared' AND NOT EXISTS "
+                "(SELECT 1 FROM prospective_scheduler_registrations a "
+                "WHERE a.owner_key=p.owner_key "
+                "AND a.outbox_id=p.outbox_id AND a.phase='applied') "
+                "ORDER BY c.sequence LIMIT ?",
+                (self.owner, limit),
+            )
+            rows = await cursor.fetchall()
+            await cursor.close()
+            return tuple(self._decode_prepared(row) for row in rows)
+
+    async def commit_registration_result(
+        self, reference, result
+    ) -> ProspectiveSignalApplyResult:
+        if type(reference) is not ProspectiveSignalAuthorityRef:
+            raise TypeError("ProspectiveSignalAuthorityRef required")
+        async with self._transaction() as db:
+            cursor = await db.execute(
+                "SELECT * FROM prospective_scheduler_registrations "
+                "WHERE owner_key=? AND authority_id=? AND phase='prepared'",
+                (self.owner, reference.authority_id),
+            )
+            row = await cursor.fetchone()
+            await cursor.close()
+            if row is None:
+                raise S5cConflict("s5c_authority_not_found")
+            prepared = await self._read_registration_tx(db, row)
+            if prepared.reference != reference:
+                raise S5cConflict("s5c_registration_result_ref_differs")
+            values = self._result_record(prepared, result)
+            if prepared.result is not None:
+                if prepared.result != result:
+                    raise S5cConflict("s5c_registration_result_replay_differs")
+                return prepared.result
+            await db.execute(
+                "INSERT INTO prospective_scheduler_registrations "
+                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                values,
+            )
+            if self.fault:
+                self.fault("s5c.registration_result.before_commit")
+        if self.fault:
+            self.fault("s5c.registration_result.after_commit")
+        return result
 
     async def claim_occurrence(self, entry: OccurrenceInboxEntryV1) -> str:
         """Persist an inbox claim; does not present/ack/settle or authorize content."""

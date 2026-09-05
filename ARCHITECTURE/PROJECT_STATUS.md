@@ -1,5 +1,14 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-05 S5c schema48 isolated successor
+
+Primary source index now owns global47; deferred S5c is explicitly remapped47->48
+without changing tables/authority/thresholds. Actual source/store/public consumer43
+passed; a real old unpublished S5c47 database is rejected unchanged. No production
+activation or scheduler/presentation/ack/native completion. Historical47 statements
+below remain historical, superseded only by [A11-schema48/v1](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-48.md).
+
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
@@ -232,6 +241,14 @@ pending API 扩展。Manual/route UI 未实现/未真测，不得把该前端包
 模型使用全局 Provider 设置；附件/slash/Realtime、完整 Artifact/Context/TaskScope 保留项尚待接线。
 未起 App/Provider、未修改 backend/SDK、未写 gate，原 S5b FAIL 与全量限制继续保留。原始证据仅在
 该树 ignored `.local-test-evidence/2026-09-05/primary-ui/`。
+
+## 2026-09-05 S5c T3 独立 consumer 进度
+
+仅在 `feat/human-memory-s5c-preparation` 新增 registration 恢复投递，自己的 store 追加 exact result receipt。
+新增21项通过（3项为安装 SDK 实库），既有66项相关回归通过；故障和修正记录均保留。
+生产 source resolver、due/event/唯一 scheduler、T4/T5/T6 尚缺，独立 review 待主协调。
+没有 main/Carver runtime/terminal/ingestion、SDK/pin 或默认 schema 改动；不声称 S5c 完成。
+[本切接口与限制](../plans/2026-09-05-human-memory-s5c-preparation/T3-CONSUMER.md)。
 
 ## 2026-09-05 S5c T1/T2 独立 worktree 进度
 
