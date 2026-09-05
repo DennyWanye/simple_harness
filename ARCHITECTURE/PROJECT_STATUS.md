@@ -2,6 +2,12 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Primary 工具活动事件契约
+
+隔离组合树补齐真实 SDK 调用到 `tool_call` 的 `call_id`，使主对话可对应工具开始/返回。
+既有真实 SessionDB 用例精确复现缺字段，修后 delivery **14 passed**；原生工具交互仍待验证，
+不计 S6/program 完成。证据哈希与命令见 [UI](UI.md)。
+
 ## 2026-09-05 主对话隔离组合验证
 
 运行层、API 与新前端已组合；真实 SDK + SQLite + deterministic Provider 经公共历史 API

@@ -577,7 +577,7 @@ async def _present_tool_call(event: AgentEvent, context: RunPresentationContext,
     )
     public_arguments = project_public_tool_arguments(event.tool_call.name, event.tool_call.arguments)
     await _send_both(context, {'type': 'tool_use_event', 'payload': _task_payload(context, {'kind': 'request', 'tool_name': event.tool_call.name, 'params': public_arguments, 'turn': event.iteration})})
-    await _send_both(context, {'type': 'tool_call', 'payload': _task_payload(context, {'name': event.tool_call.name, 'arguments': public_arguments, 'turn': event.iteration})})
+    await _send_both(context, {'type': 'tool_call', 'payload': _task_payload(context, {'call_id': event.tool_call.id, 'name': event.tool_call.name, 'arguments': public_arguments, 'turn': event.iteration})})
     if context.session_db is not None:
         try:
             await context.session_db.append_message(session_id=context.session_id, role='assistant', content='', tool_calls=[{'id': event.tool_call.id, 'type': 'function', 'function': {'name': event.tool_call.name, 'arguments': json.dumps(event.tool_call.arguments, ensure_ascii=False)}}], **_message_scope_kwargs(context))
