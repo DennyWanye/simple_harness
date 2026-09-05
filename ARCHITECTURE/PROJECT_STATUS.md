@@ -2,6 +2,14 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 Combined decisions retain authenticated history context
+
+在067隔离候选中组合精确SDK授权，保留实际HUMAN request_id派生的USER_REVIEW披露上下文；
+修复新history state签名与旧decisions读法冲突（真实生产fixture先红）。20项授权验证及53项
+受影响API/history/foreground相邻通过；当前USER被public EVIDENCE抑制后，授权参数不披露、
+批准被拒、SDK决策仍open且无新Scope/Provider。真实主机模型/布局、MEMORY-only、Scope未route
+search来源均不由这些测试覆盖；完整候选仍不可切main。见[组合记录](../plans/2026-09-05-primary-sdk-decisions/COMBINED-HISTORY.md)。
+
 ## 2026-09-05 首批固定 history 候选组合
 
 Memory0.6.7 依赖候选与固定 history/helper7dcfce8b 已组合，未带入子代理未提交代码。
@@ -17,6 +25,22 @@ Memory0.6.7 依赖候选与固定 history/helper7dcfce8b 已组合，未带入�
 独立环境，身份/生产 composition **21 passed**，offline lock check 通过。未 sync 主环境或启动 App，
 完整历史/恢复/短登记/授权 UI 仍待合入；见
 [CANDIDATE-067](../plans/2026-09-05-s6-primary-preparation/CANDIDATE-067.md)。
+## 2026-09-05 Primary 精确 SDK 授权独立候选
+
+`feat/human-memory-primary-decisions`（base `5da24d6f`）接入 authenticated HUMAN
+`primary.decisions.list/respond`。主对话权限卡通过 App 已 bound 的 ControlChannel
+读取实际当前 Run 的 SDK decision；不使用 secondary controlWS 的旧权限补读/ACK。
+提交前重验当前 Host run/generation 与连接 scope，复用 SDK exact decision API；旧未认证
+permission_response 对 Primary binding 拒绝。UI 仅允许本次 allow/deny，区分 expired，
+超时不自动重发，重挂载/重连/通知补读，不把 Primary ID 当 Session ID。
+
+真实生产授权策略 + installed SDK + SQLite + signed HUMAN scope + 实际 scheduler wake
+的确定性 fixture 完成 challenge→批准→项目文件 effect→终态；受影响 backend 66 passed，
+最终新增聚焦 18 passed，前端 35 passed + typecheck。独立 review 在初始候选提交时待完成；
+未起 native/真实 Provider，不是 S6/program PASS。Carver 的 WAITING 通知须另行组合。
+SDK read_decision 是 public port，但旧 open-decision 列表仍是 Host 内部 SDK SQL；本片未扩
+私有 SQL，仅限制返回最多32，不能声称底层扫描有界。停止结果历史缺口维持独立未闭合。
+详见 [契约与测试边界](../plans/2026-09-05-primary-sdk-decisions/CONTRACT.md)。
 
 ## 2026-09-05 Primary 生产目录修复
 

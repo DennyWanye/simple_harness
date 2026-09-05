@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { MarkdownMessage } from "../components/MarkdownMessage";
@@ -25,7 +25,8 @@ const runLabels: Record<string, string> = {
 export function PrimaryChatView({ channel, onOpenSettings }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
-  useEffect(() => controller.start(channel ? boundPrimaryPort(channel) : disconnected), [controller, channel]);
+  const primaryPort = useMemo(() => channel ? boundPrimaryPort(channel) : disconnected, [channel]);
+  useEffect(() => controller.start(primaryPort), [controller, primaryPort]);
   useEffect(() => {
     const focus = () => { void controller.refreshLatest(); };
     window.addEventListener("focus", focus);
@@ -49,9 +50,9 @@ export function PrimaryChatView({ channel, onOpenSettings }: PrimaryChatViewProp
       {snapshot.messages.length === 0 && canSend && !snapshot.loading && <p>继续在这里交流，历史由主对话保存。</p>}
       {snapshot.messages.map((message) => <PrimaryMessageRow key={`${snapshot.viewEpoch}:${message.message_ref}`} message={message} controller={controller} />)}
     </div>
-    {run?.execution_session_ref && run.sdk_run_ref && <div style={{ padding: "0 16px", maxHeight: "35%", overflowY: "auto" }}>
+    {snapshot.ready && snapshot.state && run?.execution_session_ref && run.sdk_run_ref && <div style={{ padding: "0 16px", maxHeight: "35%", overflowY: "auto" }}>
       <PrimaryRunPanel key={`${snapshot.draftEpoch}:${run.run_ref}:${run.generation}:${run.execution_session_ref}:${run.sdk_run_ref}`}
-        run={run} onStop={() => void controller.control("stop", run)} />
+        run={run} port={primaryPort} primaryRef={snapshot.state.primary_ref} onStop={() => void controller.control("stop", run)} />
     </div>}
     {run && (!run.execution_session_ref || !run.sdk_run_ref) && <p style={{ margin: "4px 16px" }}>正在等待执行绑定；权限与工具详情将在绑定后恢复。</p>}
     <InputBar key={snapshot.draftEpoch} disabled={!canSend} placeholder="输入消息，Enter 发送…"

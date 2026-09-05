@@ -11,6 +11,10 @@
 真实 memory-only forget / 跨 Run 来源 / recall binding / signed WS late fence 已有 library/API
 证据。runtime 组合、独立复核、short exact carrier 与真实 UI/provider 仍独立待续，未改 gate。
 见 [Memory 当前边界](MEMORY_SDK_BOUNDARY.md) 与 [验证记录](../plans/2026-09-05-primary-history-api/VALIDATION.md)。
+2026-09-05 Primary 精确 SDK 授权新增独立候选：生产授权策略/installed SDK/真实文件 effect
+确定性 fixture 通过，HUMAN bound socket 接权限补读与响应。native 未验收，WAITING通知
+由运行层另行组合；底层旧列表非 SDK public port。见 [UI](UI.md) 与
+[候选契约](../plans/2026-09-05-primary-sdk-decisions/CONTRACT.md)。
 
 2026-09-05 Primary API 后继修复处理 terminal authority/raw SDK hash 差异、当前 source
 过滤及 commit 后唤醒失败的 durable ACK；依赖 Carver 统一 helper，真实组合测试待主运行。

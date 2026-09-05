@@ -36,6 +36,7 @@ interface Props {
   request: PermissionRequest["payload"] | null;
   onResolve: (decision: Decision) => void;
   onStopRun?: () => void;
+  allowSession?: boolean;
   resolving?: boolean;
   resolveError?: string | null;
 }
@@ -121,6 +122,7 @@ function permissionMeta(request: PermissionRequest["payload"]): CategoryMeta {
 export const PermissionPopup: React.FC<Props> = ({
   request,
   onResolve,
+  allowSession = true,
   onStopRun,
   resolving = false,
   resolveError = null,
@@ -322,7 +324,7 @@ export const PermissionPopup: React.FC<Props> = ({
           >
             拒绝<span style={{ opacity: 0.5, marginLeft: 6 }}>Esc</span>
           </button>
-          <button
+          {allowSession && <button
             type="button"
             disabled={resolving}
             className="bp-btn-secondary"
@@ -331,7 +333,7 @@ export const PermissionPopup: React.FC<Props> = ({
             title="本会话内同类操作不再询问"
           >
             本会话始终允许
-          </button>
+          </button>}
           <button
             ref={allowOnceRef}
             type="button"

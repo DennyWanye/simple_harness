@@ -915,6 +915,14 @@ class ProductSdkRuntimeStack:
             finally:
                 uow.release_runtime_lease(execution_lease, now=float(self._clock()))
 
+    def read_authorization_decision(self, *, run_id: str, decision_id: str):
+        """Exact lookup through the public ExecutionUnitOfWork port."""
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        record = self._uow.read_decision(decision_id)
+        return record if record is not None and record.run_id == run_id else None
+
     def list_open_authorization_decisions(
         self,
         *,

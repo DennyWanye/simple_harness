@@ -425,6 +425,7 @@ class HumanMemoryHostService:
         suppression_resolver: object | None = None,
         run_binding_reader: object | None = None,
         history_visibility_checker: object | None = None,
+        decision_ingress_getter: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -451,6 +452,11 @@ class HumanMemoryHostService:
             suppression_resolver=suppression_resolver,
             run_binding_reader=run_binding_reader,
             history_visibility_checker=history_visibility_checker,
+        )
+        from deskpet.memory.primary_decisions import PrimaryDecisions
+        self._primary_decisions = PrimaryDecisions(
+            self._db_path, subject=auth.subject, read_model=self._primary_read,
+            ingress_getter=decision_ingress_getter,
         )
         self._evidence_group_ref_cache: dict[
             tuple[str, str, str], tuple[dict[str, object], ...]
@@ -487,6 +493,19 @@ class HumanMemoryHostService:
 
     async def read_primary_message_detail(self, *, request_id: str, **request) -> Mapping[str, object]:
         return await self._primary_read.detail(disclosure_context=self._history_disclosure(request_id), **request)
+
+    async def list_primary_decisions(self, *, request_id: str, **request):
+        return await self._primary_decisions.list(
+            disclosure_context=self._history_disclosure(request_id), **request
+        )
+
+    async def respond_primary_decision(self, *, request_id: str, **request):
+        result = await self._primary_decisions.respond(
+            disclosure_context=self._history_disclosure(request_id), **request
+        )
+        if self._scheduler_wake is not None:
+            await self._wake_committed("after_control", result["decision_id"])
+        return result
 
     async def append_primary_event(
         self, request: AppendPrimaryEventRequest
@@ -1904,6 +1923,7 @@ class HumanMemoryHostServiceFactory:
     suppression_resolver: object | None = None
     run_binding_reader: object | None = None
     history_visibility_checker: object | None = None
+    decision_ingress_getter: object | None = None
 
     def bind(
         self,
@@ -1926,6 +1946,7 @@ class HumanMemoryHostServiceFactory:
             suppression_resolver=self.suppression_resolver,
             run_binding_reader=self.run_binding_reader,
             history_visibility_checker=self.history_visibility_checker,
+            decision_ingress_getter=self.decision_ingress_getter,
         )
 
 

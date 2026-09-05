@@ -2,6 +2,14 @@
 
 > 最后更新：2026-09-05
 
+## 2026-09-05 Combined decisions retain authenticated history context
+
+在067隔离候选中组合精确SDK授权，保留实际HUMAN request_id派生的USER_REVIEW披露上下文；
+修复新history state签名与旧decisions读法冲突（真实生产fixture先红）。20项授权验证及53项
+受影响API/history/foreground相邻通过；当前USER被public EVIDENCE抑制后，授权参数不披露、
+批准被拒、SDK决策仍open且无新Scope/Provider。真实主机模型/布局、MEMORY-only、Scope未route
+search来源均不由这些测试覆盖；完整候选仍不可切main。见[组合记录](../plans/2026-09-05-primary-sdk-decisions/COMBINED-HISTORY.md)。
+
 ## 2026-09-05 首批固定 history 候选组合
 
 Memory0.6.7 依赖候选与固定 history/helper7dcfce8b 已组合，未带入子代理未提交代码。
