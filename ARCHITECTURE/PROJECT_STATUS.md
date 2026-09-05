@@ -3,6 +3,13 @@
 > **最后更新**：2026-09-05
 
 
+## 2026-09-05 Waiting state invalidation
+
+Foreground在BOUND_WAITING reconciliation提交后调用现有空payload、有界非阻塞刷新。
+回归刻意等此前SDKbind通知完成，旧代码1红，修复后runtime/真实primary相邻32 passed16.31s。
+这是状态通知证据，真实授权卡/decision UI组合由另一所有者验证。原始日志位于
+`.local-test-evidence/2026-09-05/primary-history/waiting-notify-{red,green}.log`（ignored）。
+
 ## 2026-09-05 Scoped ordinary projection restoration candidate
 
 初始scoped、动态resume/search共用确定派生manifest，无新ledger。真实CREATE_NEW操作前

@@ -1087,6 +1087,8 @@ class ForegroundRuntimeExecutionAuthority:
                     f"{state_value or 'running'}"
                 ),
             )
+            if observed == "BOUND_WAITING":
+                self._notify_state_changed()
             return
         await self._store.record_reconciliation(
             host_run_id=host_run_id,
