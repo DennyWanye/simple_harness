@@ -58,49 +58,64 @@ suppressed or a sampled epoch was equal cannot. This note does not change old re
 
 ## Minimal proposed SDK operation (not an existing API)
 
-Proposed descriptive signature:
+2026-09-05 main-line unblock: narrow the initial design to one result-bound read/check;
+reuse existing public DTOs. Extra caller copies of source fields, decision bindings,
+check ids and authoritative lineage lists are not required SDK inputs.
 
 ```python
 async def check_history_source_visibility(
-    *, principal: MemoryPrincipal, request: HistorySourceVisibilityRequestV1,
-) -> HistorySourceVisibilityReceiptV1: ...
+    *,
+    principal: MemoryPrincipal,
+    result_id: str,
+    result_hash: str,
+    item_bindings: tuple[RecallItemBindingV1, ...],
+    disclosure_context: DisclosureContext,  # current new Run
+) -> HistorySourceVisibilityCheckV1: ...
 ```
 
-Input: schema_version; unique check_id; current run_id/turn_id; current DisclosureContext;
-Host history_dependency_manifest_hash; a bounded, nonempty unique list of historical bindings.
-Each binding contains original decision_id/hash, result_id/hash, item_id/result_item_hash and
-source_kind/ref/revision/content_hash/public_payload_hash. A historical use-receipt binding may be
-retained for Host causal provenance but grants no current authority. Check clock is SDK-owned.
-No caller-supplied authoritative evidence/entity lists, candidate scores, new query or selector.
+Inputs are strict/bounded/nonempty and item bindings unique. Current disclosure subject and
+recipient/purpose must be authorized for principal; its run_id identifies the new Run.
+Host keeps the message dependency manifest and provenance itself and checks every dependency;
+SDK checks one referenced durable result per call. A message spanning results needs every check
+to allow. The Host manifest must be bound to the actual generated message/context, not a model's
+claimed citations. If old history lacks verifiable result/item bindings, there is no source_ref-only
+fallback: that history remains unknown/denied until actual trusted provenance can be recovered.
 
 Trusted validation boundary:
 
-1. Strict DTO/type, ownership and current disclosure checks. Resolve original durable result/item,
-   verify exact hashes and source discriminant before inspecting a source. Tampered/missing/cross-
-   principal bindings deny; caller-provided source_ref alone is not authority. Enforce atomic
-   confirmation-group handling if supported; otherwise explicitly deny that carrier.
-2. Historical expiry does not erase the authenticity of its stored binding. It also does not grant
-   use permission: load the referenced canonical source and check its current state independently.
-   A superseded historical revision cannot silently become the new payload/revision.
-3. Inside one consistency transaction, resolve authoritative Memory/evidence/entity lineage,
-   current head/lifecycle/conflict/validity, type-specific authority, short source current existence,
-   invalidation/expiry and current privacy/attributes/disclosure. Check all relevant suppression
-   scopes for the intended ordinary purpose. Unknown/corrupt/incomplete lineage denies.
-4. No search, ranking, model call, source mutation, twin data, or new recall result. Existing typed-
-   recall/current-use receipt validation and its expiry/Run restrictions remain unchanged.
+1. Resolve the original durable result under principal ownership, verify result_hash and each
+   item_id/result_item_hash, validate the associated decision binding. SDK derives source_kind,
+   source_ref/revision/content_hash and original effective classification from that durable item.
+   Caller supplies no evidence/entity authority. Malformed input rejects before source access;
+   unavailable, tampered or unowned bindings fail closed without cross-owner payload disclosure.
+2. Historical result expiry does not erase authenticity of the stored source binding, but grants
+   no use permission. Independently load the canonical source and check current head/lifecycle/
+   conflict/validity/type authority. A revised historical payload cannot silently become a new
+   value. Check short existence, invalidation, source expiry and completeness of canonical lineage.
+3. In one consistency transaction, expand authoritative evidence/entity lineage and check current
+   subject/memory/evidence/entity suppression for the intended ordinary purpose, plus current
+   privacy/attributes/disclosure. Unknown/corrupt/incomplete lineage denies. Minimal first scope is
+   ordinary selected cognitive/short items; unsupported confirmation carriers deny explicitly.
+   Any future confirmation support must enforce complete atomic groups, never individual members.
+4. No query, candidate collection, ranking, model, twin, source mutation, new payload, result or
+   Provider authorization. No change to existing typed recall/current-use validation or its old
+   expiry/Run/turn constraints. The check only filters stored assistant/tool history; it cannot page
+   an expired result, mint a recalled fragment authority, or relabel an old use receipt.
 
-Output: request_hash + dependency_manifest_hash + current Run/turn/disclosure binding;
-ordered per-input ALLOW/DENY and bounded reason codes; current authority_epoch/policy_hash;
-SDK checked_at and earliest source/time expiry bound; immutable receipt_hash. No new source
-payload or unrelated entity/evidence data. Host projects a message only if every dependency allows.
-Repeated check_id must not replay an old ALLOW as a fresh check: either reject reuse or explicitly
-mark historical replay and require a unique id for each new validation.
+Minimal output: request_hash binding all inputs; ordered per-item ALLOW/DENY plus bounded reason;
+SDK checked_at; current authority_epoch/policy_hash; earliest known source expiry (nullable);
+check_hash binding that complete output. A new versioned domain must be specified with independent
+vectors if implementation proceeds; no existing recall/hash domain is changed by this note.
+Output is a fresh visibility check, not a durable use grant: every call checks current state, with
+no replay cache returning an old ALLOW. Host admits a message only if every dependency allows;
+all messages transitively derived from memory retain that classification, even in a later Run
+that makes no additional recall call. Known ordinary non-derived history remains readable.
 
-The receipt proves visibility at checked_at, not after arbitrary future mutations. Host must check
-immediately before outbound use and serialize local mutation and outbound enqueue, including all
-writers, for the claimed ordering. If it cannot guarantee that ordering, an additional final-use
-fence is required; a getter or finite receipt TTL alone cannot prove race freedom. This is an
-explicit design limit, not a claim of provider authorization from a read-only receipt.
+The result proves visibility at checked_at, not after arbitrary future mutations. Host must check
+immediately before outbound use and serialize every relevant writer with history projection and
+outbound enqueue for the claimed order. If another process/writer escapes that ordering, a stronger
+final-use fence is required. Sampling a getter or adding a finite TTL cannot prove race freedom.
+No claim of full cross-process/provider-use atomicity is made for this minimal read/check.
 
 ## Decisive test oracle before implementation
 
@@ -120,7 +135,7 @@ Use independent admitted input facts and trusted frozen clock; never derive gold
 - Old result/use receipt expired: old authorize_recall_context_use still rejects as before; new
   history check independently allows only if canonical source is currently visible. A new Run
   cannot reuse an old authorization receipt by relabeling Run/turn/attempt.
-- Repeat check id cannot turn an earlier ALLOW into current proof after suppression. Two orderings:
+- Repeating identical inputs must recheck, never turn an earlier ALLOW into current proof after suppression. Two orderings:
   suppression commits before check ->deny; check completes before suppression ->receipt remains
   historical and Host outbound ordering must prevent treating it as a check after suppression.
 - Host taint propagation: recalled fact -> assistant paraphrase -> later no-new-recall assistant/tool
