@@ -2,6 +2,10 @@
 
 ## 2026-09-05 Memory069 installed successor verified
 
+Actual startup additionally required updating the four Memory candidate identity
+constants; the first App attempt rejected the stale067 pin.32 startup/composition
+checks pass after that correction, with the original failure retained.
+
 Combined candidate now pins exact Memory0.6.9; same Harness0.7.2/Service0.3.12.
 Independent source/wheel/install comparisons and29 affected tests pass. Production
 factory upgrades a copy of actual native0.6.3 data and reopens with the same receipt

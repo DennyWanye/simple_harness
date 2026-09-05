@@ -2,6 +2,10 @@
 
 ## 2026-09-05 Memory069 candidate installation and existing data
 
+First native startup exposed a stale067 startup identity pin. Four constants now
+match exact069;32 existing candidate/composition tests pass. Failed startup remains
+recorded and does not count as native PASS. See the evidence link below.
+
 Exact0.6.9 installed in dedicated candidate environment:29 affected tests PASS and
 actual earlier native-data copy upgrade/reopen PASS, with original bytes unchanged.
 No other lock dependency changed. Main running checkout remains on its earlier

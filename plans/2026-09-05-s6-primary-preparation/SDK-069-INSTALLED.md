@@ -1,5 +1,18 @@
 # Memory 0.6.9 installed Host candidate
 
+## Native startup identity correction
+
+First real App startup on dc2e0ee5 (`primary-ui-kj5b08el`) failed closed with
+`Memory SDK candidate installed version mismatch`: the separate startup identity
+constants still pinned067. The earlier29 tests did not exercise this guard. App
+closed normally, no Provider calls; original failure log retained under the main
+Host evidence directory. Corrected only the four Memory identity constants to the
+verified069 version/filename/wheel digest/source; validation was not weakened.
+Existing `test_sdk_candidate.py` + `test_composition.py`:32PASS/2.09s, evidence
+`sdk069-startup-identity.log` SHA256 e2dbc047da5049574d1e117d1b2f75f7c97c2734b366799e92b2f7e7068d7fff.
+Only Python identity constants changed; native frontend/Rust bytes are unchanged.
+Next startup reuses the built bundle with the new recorded backend source HEAD.
+
 2026-09-05. Production source f92fac121d2d9ce195b5715d272023e5aec920e3;
 wheel SHA256 cf14902223063ba3586032553c3737d0ee0c13311df3e29bd4561629494d6719.
 Owner two offline builds match, four installed public stages pass. Main independently
