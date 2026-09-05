@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 5,
+  "fixture_revision": 6,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -37,9 +37,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.3",
-        "source_commit": "2f3d73814fe6a884e0458d87567b918c5863033e",
-        "wheel_sha256": "6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78"
+        "version": "0.6.4",
+        "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
+        "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
       }
     },
     "consumer_entrypoint_argument": "--consumer-entrypoint",
@@ -3174,9 +3174,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.3",
-        "source_commit": "2f3d73814fe6a884e0458d87567b918c5863033e",
-        "wheel_sha256": "6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78"
+        "version": "0.6.4",
+        "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
+        "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
       }
     },
     "candidate_approval": "Harness0.7.2 explicit user steering; Memory0.6.3 independently reviewed executor-built candidate",
@@ -3464,5 +3464,25 @@
         "expected_sha256": "4941b2effff255ba3889d7bedd3e32aa0c9acb2a8df3aceb90663ab988b2b0f4"
       }
     ]
+  },
+  "candidate_pin_lineage": [
+    {
+      "fixture_sha256": "6baeeafac59a405c9c177bf09f5c4071bcdd5b70aa639be8f3a77348549e586a",
+      "fixture_revision": 5,
+      "memory": {
+        "status": "PINNED",
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.3",
+        "source_commit": "2f3d73814fe6a884e0458d87567b918c5863033e",
+        "wheel_sha256": "6b20ae5bff6c3ecfe1108ccaff9bb41c4dc6a3b98bb754dac2c418673ab77c78"
+      }
+    }
+  ],
+  "candidate_pin_change": {
+    "date": "2026-09-05",
+    "scope": "Clock-only public builder passthrough; no oracle/domain/ID/threshold change",
+    "authority": "User explicitly supplied independently reviewed 0.6.4 exact candidate and authorized isolated pin upgrade",
+    "source_commit": "16dc707cb6216e9172623eecc5a3a300f128ffe3",
+    "wheel_sha256": "595e754d752c3f7ecdbc5d4613d9c302aea632f06362ec271a561d9606ace696"
   }
 }
