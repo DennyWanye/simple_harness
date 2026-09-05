@@ -1,5 +1,24 @@
 # TC-HM-13 normal/source execution increment
 
+## Lifecycle/short 已复审增量（2026-09-05）
+
+代码 `1e72f2ff`：fresh0.6.5两层 **178 PASS / 0 FAIL / 223 BLOCKED**，349 public +10 source
+OBSERVED，42 public尚无执行器。14个非初始lifecycle通过真实授权历史建立，4个完整Episode/
+Semantic cell通过，其余applicability/signal继续BLOCKED。6个新short/mixed路径实际完成
+11组公开注册、owner登记、projection、typed recall/replay及suppression/future控制，0 short
+正式PASS；原5日TTL与任意expires_at、旧payload/hash差异仍保留。
+
+独立复审 `typed-recall-lifecycle-short-review-r2.log` ACCEPT，76桥专项通过（不计产品cell）。
+初审发现中间payload与action grant绑定两项P2，曾暂不接纳4个新增PASS；修复后完整重跑，
+每步payload/receipt/target/evidence及v2 grant/intent、v4 operation-intent、v5 plan-intent
+独立核验，三个重算外围hash的篡改反例回归通过。旧r4原始结果保留，不倒填。
+
+当前索引 `.local-test-evidence/2026-09-05/typed-recall-clock065-r5/bridge-summary.json`，SHA256
+`255e40bb644ecbd32b4987eb892d67318348bd7bc6331fd40f148e2f6aabc2c0`。12个执行文件hash
+与提交Git blob逐字节相同。最小命令及exact候选沿用下方0.6.5段；artifact-dir取新路径。
+仅分支工具增量，未并入主树、S3/program未完成，源层10仍0正式PASS。Popper的两个typed
+fixture helper文件保持其独立未提交工作，本提交未改动/纳入。
+
 ## 0.6.5 已复审增量（2026-09-05）
 
 代码 `0a3cd209`，fixture rev7/layers rev5 pin `18324022`。本机 fresh clean venv 两层实际结果：

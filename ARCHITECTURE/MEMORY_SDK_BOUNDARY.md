@@ -12,10 +12,10 @@
 ## 2026-09-05 Typed recall 执行桥验证工具（仅独立分支）
 
 - `feature/human-memory-typed-recall-runner`：已批准§3–4修订，§3既有JSON-domain、§4 state NUL；独立向量先于执行。401 IDs/391+10/14攻击/阈值不变；fixture rev7/layers rev5。
-- 代码 `0a3cd209`：**74个桥回归通过**；Harness0.7.2 + Memory0.6.5 clean两层消费者 **174 PASS / 0 FAIL / 227 BLOCKED**，public343+source10真实OBSERVED，48 public未实现，0 source正式PASS。14攻击消费公开拒绝见证、typed authority和UNKNOWN合法setup已接通。
-- 独立复审接受基线依赖P1和跨principal setup P2修复；已撤回首次0.6.5的14攻击旧PASS，当前来自加强控制后重跑。提交后核验执行代码hash与Git blob逐字节一致，旧证据不回填。
-- 本机索引 `.local-test-evidence/2026-09-05/typed-recall-clock065-r3/bridge-summary.json`，SHA256 `5f2b4be4e06849b54ba8b101481725a747e91fbc12d3299cf9d27d53183b8dd0`。命令、身份、setup与oracle剩余项见 [本批记录](../testcase/human-memory-program/runners/TYPED-RECALL-NORMAL-BATCH-2026-09-05.md)。
-- **仅独立分支工具事实；未并入主树，合并暂缓，S3/program未完成。** 主共享venv仍Memory0.6.3；无provider/UI/MPS或SDK全量测试。128byte及不可构造的原AUDIT/epistemic组合保持明确BLOCKED；未将setup缺失报告成产品缺陷。
+- 代码 `1e72f2ff`：**76个桥回归通过**；Harness0.7.2 + Memory0.6.5 clean两层消费者 **178 PASS / 0 FAIL / 223 BLOCKED**，public349+source10真实OBSERVED，42 public未实现，0 source正式PASS。14攻击见证、typed/UNKNOWN setup及14合法lifecycle历史已接通；6个short/mixed公开路径仍为完整oracle待闭合的OBSERVED。
+- 独立复审接受拒绝基线P1/跨principal P2，以及lifecycle中间payload/action grant两项P2修复。旧 provisional PASS不倒填，当前来自加强控制后重跑；执行代码hash与提交Git blob逐字节一致。
+- 本机索引 `.local-test-evidence/2026-09-05/typed-recall-clock065-r5/bridge-summary.json`，SHA256 `255e40bb644ecbd32b4987eb892d67318348bd7bc6331fd40f148e2f6aabc2c0`。命令、身份、setup与oracle剩余项见 [本批记录](../testcase/human-memory-program/runners/TYPED-RECALL-NORMAL-BATCH-2026-09-05.md)。
+- **仅独立分支工具事实；未并入主树，合并暂缓，S3/program未完成。** 主共享venv仍Memory0.6.3；无provider/UI/MPS或SDK全量测试。128byte、原AUDIT/epistemic不可构造组合及short时间/hash差异保持BLOCKED；未将setup缺失报告成产品缺陷。
 
 ## 2026-09-01 Human Memory Program Host evidence、Canonical Archive、Task Home 与 Binding（S4 Task 1–4）
 
