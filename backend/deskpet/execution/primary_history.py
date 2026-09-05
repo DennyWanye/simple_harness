@@ -117,6 +117,13 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
         committed = await HumanMemoryProgramStore(db_path).append_evidence_tx(
             db, envelope, receipt, primary_conversation_id=run["primary_conversation_id"], committed_at=time.time(),
         )
+        # New observations only: per-message S1 shares this transaction. The
+        # existing-observation branch above deliberately never backfills it.
+        from deskpet.memory.primary_message_evidence import append_new_primary_message_evidence_tx
+        await append_new_primary_message_evidence_tx(
+            db, store=HumanMemoryProgramStore(db_path), host_run_id=host_run_id,
+            terminal_envelope=envelope, terminal_receipt=receipt,
+        )
         await db.commit()
         return committed.evidence_id, committed.envelope_sha256
 
