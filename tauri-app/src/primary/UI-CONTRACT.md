@@ -24,6 +24,8 @@ Runtime events use current_run.sdk_run_ref + execution_session_ref, never primar
 
 ## Handoff blocker and verification
 
+Unknown enqueue status belongs to the delivery across attempts. A later local send failure or explicit rejection cannot clear an earlier unknown delivery key; only its valid ACK or a verified owner change resolves it. A first definitely-unsent attempt still permits an edited draft. This uncertainty is local state, never an extra queue.enqueue wire field. Regression cases cover both retry failures and the first-unsent negative control.
+
 UNVERIFIED: actual TaskScope manual-binding/context-route project interaction. Legacy project_directory_request is live-only: if used, early mapping/remount/reconnect can lose the decision (conditional P1). Carver confirmed dynamic context_route.create_new does not emit that card. Manual append returns context_route_binding_authorization_required; the real path to wire is binding.manual.propose(scope_ref,root) → binding.manual.decide(challenge_ref,decision) → route.resume_existing. Main explicitly paused legacy pending API expansion. This Manual/route UI is not implemented or production-tested. No new pending API or recovery claim is made. This package is not first-project-task acceptance.
 
 Commands (from tauri-app):

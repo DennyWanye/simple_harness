@@ -56,7 +56,7 @@ export class PrimaryController {
   private refreshAgain = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private followups = 0;
-  private pendingDelivery: { text: string; delivery_key: string } | null = null;
+  private pendingDelivery: { text: string; delivery_key: string; uncertain: boolean } | null = null;
   private submitting = false;
   private controlling = false;
   private port: PrimaryPort;
@@ -202,12 +202,12 @@ export class PrimaryController {
     if (!this.client || !this.snapshot.ready || !this.snapshot.state) throw new Error("主对话尚未就绪；草稿已保留。");
     if (this.submitting) throw new Error("正在等待上一条入队确认。");
     if (this.pendingDelivery && this.pendingDelivery.text !== text) throw new Error("上一条发送结果未知，请先以原文重试确认；不会自动提交不同消息。");
-    const delivery = this.pendingDelivery ?? { text, delivery_key: crypto.randomUUID() };
+    const delivery = this.pendingDelivery ?? { text, delivery_key: crypto.randomUUID(), uncertain: false };
     this.pendingDelivery = delivery;
     this.submitting = true;
     const lease = this.lease;
     try {
-      const ack = await this.client.request("queue.enqueue", delivery);
+      const ack = await this.client.request("queue.enqueue", { text: delivery.text, delivery_key: delivery.delivery_key });
       if (lease !== this.lease) throw new PrimaryRequestError("连接或隐私状态已变化；入队结果需重新确认。", true);
       if (ack.delivery_key !== delivery.delivery_key || typeof ack.turn_ref !== "string" || !ack.turn_ref || typeof ack.receipt_ref !== "string" || !ack.receipt_ref ||
           !Number.isSafeInteger(ack.enqueue_sequence) || Number(ack.enqueue_sequence) < 1 ||
@@ -220,7 +220,12 @@ export class PrimaryController {
       this.update({ notice: "已入队，等待执行。" });
       void this.refresh();
     } catch (error) {
-      if (!(error instanceof PrimaryRequestError) || !error.uncertain) this.pendingDelivery = null;
+      if (this.pendingDelivery === delivery) {
+        // A later attempt's rejection cannot disprove an earlier durable commit.
+        // Keep uncertainty on the delivery, rather than replacing it per attempt.
+        delivery.uncertain ||= !(error instanceof PrimaryRequestError) || error.uncertain;
+        if (!delivery.uncertain) this.pendingDelivery = null;
+      }
       throw error;
     } finally { this.submitting = false; }
   };

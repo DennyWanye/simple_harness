@@ -13,12 +13,14 @@ function setup(running = false) {
   const wire: PrimaryWireRequest[] = [];
   const emit = (message: unknown) => listeners.forEach((listener) => listener(message));
   let autoRead = true;
+  let refuseEnqueue = false;
   const port: PrimaryPort = {
     state: () => connected ? "connected" : "disconnected",
     on_message: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; },
     on_state_change: (fn) => { onState = fn; return () => {}; },
     send_command: (request) => {
       wire.push(request);
+      if (refuseEnqueue && request.operation === "queue.enqueue") return false;
       if (autoRead && ["primary.open", "primary.state", "primary.messages.page"].includes(request.operation)) {
         const result = request.operation === "primary.messages.page" ? { primary_ref: state.primary_ref, revision: state.revision, items: [item], next_cursor: null } : readState;
         queueMicrotask(() => emit({ type: "human_memory_response", request_id: request.request_id, payload: { ok: true, operation: request.operation, result } }));
@@ -29,12 +31,56 @@ function setup(running = false) {
   const controller = new PrimaryController(port);
   const stop = controller.start();
   return { controller, stop, emit, wire, reads: (value: boolean) => { autoRead = value; },
+    refuseEnqueue: (value: boolean) => { refuseEnqueue = value; },
     connect: (value: boolean) => { connected = value; onState(value ? "connected" : "disconnected"); },
     reply: (request: PrimaryWireRequest, result: object) => emit({ type: "human_memory_response", request_id: request.request_id, payload: { ok: true, operation: request.operation, result } }),
   };
 }
 afterEach(() => vi.useRealTimers());
 describe("primary durable controller", () => {
+  it.each(["local_send_failure", "server_rejection"])("keeps an earlier unknown delivery after retry %s", async (failure) => {
+    vi.useFakeTimers(); const h = setup(); h.emit(bound); await vi.advanceTimersByTimeAsync(0);
+    const original = h.controller.submit("original draft", []);
+    const first = h.wire.at(-1)!;
+    const timeout = expect(original).rejects.toMatchObject({ uncertain: true });
+    await vi.advanceTimersByTimeAsync(15_000); await timeout;
+    h.emit({ type: "companion_control_rechallenge" });
+    h.emit(bound); await vi.advanceTimersByTimeAsync(0);
+
+    h.refuseEnqueue(failure === "local_send_failure");
+    const retry = h.controller.submit("original draft", []);
+    const second = h.wire.at(-1)!;
+    expect(second.request).toEqual(first.request);
+    if (failure === "server_rejection") h.emit({ type: "human_memory_response", request_id: second.request_id,
+      payload: { ok: false, operation: "queue.enqueue", error: { code: "human_memory_identity_unavailable" } } });
+    await expect(retry).rejects.toMatchObject({ uncertain: false });
+
+    h.refuseEnqueue(false);
+    const finalRetry = h.controller.submit("original draft", []);
+    const third = h.wire.at(-1)!;
+    // Simulate replay of the original durable receipt, whose first ACK was lost.
+    h.reply(third, { delivery_key: first.request.delivery_key, turn_ref: "original-turn", receipt_ref: "original-receipt",
+      enqueue_sequence: 1, scope_ref: null, content_sha256: "a".repeat(64) });
+    const finalResult = await finalRetry.then(() => "acknowledged", () => "rejected");
+    h.stop(); await tick();
+    expect(third.request).toEqual(first.request);
+    expect(finalResult).toBe("acknowledged");
+  });
+  it("allows a different draft after a first attempt was definitely not sent", async () => {
+    const h = setup(); h.emit(bound); await tick();
+    h.refuseEnqueue(true);
+    await expect(h.controller.submit("unsent draft", [])).rejects.toMatchObject({ uncertain: false });
+    const first = h.wire.at(-1)!;
+    h.refuseEnqueue(false);
+    const next = h.controller.submit("edited draft", []);
+    const sent = h.wire.at(-1)!;
+    h.reply(sent, { delivery_key: sent.request.delivery_key, turn_ref: "new-turn", receipt_ref: "new-receipt",
+      enqueue_sequence: 1, scope_ref: null, content_sha256: "a".repeat(64) });
+    await next; h.stop(); await tick();
+    expect(sent.request.text).toBe("edited draft");
+    expect(sent.request.delivery_key).not.toBe(first.request.delivery_key);
+    expect(Object.keys(sent.request).sort()).toEqual(["delivery_key", "text"]);
+  });
   it("ignores global ready; opens/reads only after this socket's bound ACK", async () => {
     const h = setup();
     h.emit({ ...bound, type: "companion_identity_status" }); await tick();
