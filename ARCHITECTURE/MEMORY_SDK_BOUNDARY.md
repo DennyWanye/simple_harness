@@ -1,6 +1,14 @@
 # Memory SDK 边界与 Host 接口契约
 
 > 最后更新：2026-09-05
+
+## 2026-09-05 主对话隔离组合验证
+
+运行层、API 与新前端已组合；真实 SDK + SQLite + deterministic Provider 经公共历史 API
+验证新普通对话/旧 scoped 终态、重启标识一致与 raw event 错绑拒绝，聚焦 **51 passed**。
+新原生 App 构建成功，真实 UI/provider 尚待执行；完整来源遗忘与新建项目授权仍在修复，
+因此未切换 main、未标 S6/program 完成。命令与本地证据哈希见
+[INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
 > 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
 > Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`
 > 发布标记：Harness `v0.3.0` → `fbb156f`；Memory `v0.4.0` → `3d4247b`；主分支与 tags 已推送；

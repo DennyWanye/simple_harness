@@ -2,6 +2,14 @@
 
 > **最后更新**：2026-09-05
 
+## 2026-09-05 主对话隔离组合验证
+
+运行层、API 与新前端已组合；真实 SDK + SQLite + deterministic Provider 经公共历史 API
+验证新普通对话/旧 scoped 终态、重启标识一致与 raw event 错绑拒绝，聚焦 **51 passed**。
+新原生 App 构建成功，真实 UI/provider 尚待执行；完整来源遗忘与新建项目授权仍在修复，
+因此未切换 main、未标 S6/program 完成。命令与本地证据哈希见
+[INTEGRATION](../plans/2026-09-05-s6-primary-preparation/INTEGRATION.md)。
+
 ## 2026-09-05 primary 前端独立候选（集成待续）
 
 独立 worktree `/Users/denny/projects/simple_harness-primary-ui`，分支 `feat/human-memory-primary-ui`，
