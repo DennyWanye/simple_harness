@@ -7,7 +7,8 @@
 `feat/human-memory-selected-short-sources`从54aa2f88提取固定55b9e402 registration/indexing
 依赖，新增selected-only来源reader与契约；19项聚焦source-overlay、定向ruff通过。
 缺proof整hit拒，未选root不进入union。main.py/runtime/context及默认调度未改，由主组合；
-原reconcile全扫描、最终writer边界和installed069验证仍独立保留，未合主/无native或付费
+exact069 cf149022 + Harness072独立installed同19项已通过，不与source重复相加。
+原reconcile全扫描、最终writer边界和主组合验证仍独立保留，未合主/无native或付费
 Provider，不改变program完成度。详见[契约](../plans/2026-09-05-selected-short-sources/CONTRACT.md)。
 
 ## 2026-09-05 Primary cognitive panel connected locally

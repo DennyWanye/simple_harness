@@ -130,3 +130,37 @@ Raw evidence prefix `.local-test-evidence/2026-09-05/selected-short-sources/`:
 | ruff.log | 82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18 |
 | source-identity-before.json | 451c4a781bf328752251d859853af6f6096ac22ddc8c2d81088fa2320a41bde4 |
 | source-identity-after.json | 3d5893be8d9d3814fba281c37312cb6873259decebb4d34d8701cb6b33188f08 |
+
+## Fixed069 installed follow-up
+
+Host product code remains `61c2f83b`. Consumed Memory source
+`f92fac121d2d9ce195b5715d272023e5aec920e3`, wheel
+`cf14902223063ba3586032553c3737d0ee0c13311df3e29bd4561629494d6719`, plus exact
+Harness0.7.2 wheel `53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed`.
+The wheel is from the SDK owner's approved offline build, not a Host rebuild.
+
+Created an independent venv under the ignored evidence prefix, leaving original
+Host/SDK environments unchanged. An initial offline dependency resolution was
+blocked by service SDK's historical direct URL. Reused existing dependency files
+via APFS copy-on-write clones, then explicitly installed the two exact SDK wheels
+with `uv pip install --offline --no-deps`. No dependency downloads or source overlay.
+This is an isolated installed environment, not a newly resolved dependency matrix.
+
+Used its Python `-I`, manually added only this tree's `backend` to sys.path, and ran
+the same selected leaf file through `pytest.main` with a fresh `pytest-installed`
+basetemp. **19 passed in10.85s**, exit0. Two assert-rewrite warnings arose because
+Harness was imported first for identity verification. Module `__file__` checks after
+the suite confirmed all168 loaded SDK modules inside the independent venv. Memory68
+and Harness151 package files matched source/wheel/installed bytes exactly. The
+19 installed cases replace neither the earlier failure logs nor main's integration
+acceptance; they are not added to the source-overlay count as38 distinct tests.
+
+| Installed evidence file | SHA-256 |
+| --- | --- |
+| installed-leaf.log | fc592983e45b0974786adf7d7d7456591431a1380d995fdfc0e9165e3e28be95 |
+| installed-identity.json | 39b721ce899376042dff08dbd5b8cee57721ffc965d6081a8858efe6b0c2e1df |
+| installed-module-origins.json | febda4d0e40fac041d39d5e81230f0377a23e98056b4a9074477c62fca2578fc |
+
+Main still owns runtime factory/context/default hookup, actual old-store upgrade,
+combined last-writer/outbound verification, and native acceptance. No paid provider
+or native session was started here; no SDK upgrade of user data was performed.

@@ -9,7 +9,9 @@ PrimaryConversationAuthority核实完整group/S1，再逐hit复用PrimaryHistory
 USER/terminal祖先。只返回accepted selected来源root+实际shortbinding依赖union，不用
 all-indexed roots、不伪typed、不读SDK私SQL。主仍负责registration默认hookup、RecallLanes
 接线与最后出站fresh fence；本观察不能替代最终授权，reconcile全扫描cost不变。
-新leaf19项source-overlay与定向ruff绿；069尚非本次installed候选，未运行native/真实Provider。
+新leaf19项source-overlay与定向ruff绿；后继exact069 cf149022 + Harness072 installed
+同19项通过，Memory68/Harness151包文件source-wheel-installed一致，168已加载SDK模块来自
+独立venv。旧source记录保留不重复计数；未运行native/真实Provider，主组合仍待验。
 接口/测试边界见[契约](../plans/2026-09-05-selected-short-sources/CONTRACT.md)。
 
 ## 2026-09-05 Primary cognitive panel connected locally
