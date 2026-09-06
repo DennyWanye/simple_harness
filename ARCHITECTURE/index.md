@@ -1,3 +1,5 @@
+最后更新：2026-09-07。Host80764c13/共同Memorya15c7be源组合1PASS0.82s并独审接受：真实签名当前输入与独立Procedure draft同批前均可见，公开遗忘后只draft拒绝，当前项不受误伤；Host审计请求/快照精确绑定。PG49417清空，原属性oracle红保留。Memory新0.6.19制品/installed/native另验。[结果](../plans/2026-09-07-current-input-procedure/RESULTS.md)。
+
 最后更新：2026-09-07。Procedure恢复/发现固定5ca45216已独审合入隔离候选源码：旧恢复13项限定通过；新发现链有效6项为首批有效4+实际遗忘负控2，旧时钟异常误绿已撤回。原signal lane、context page reader与current-input接线均保留，依赖聚合含v3 draft。共同Memory新制品/当前安装组合和native完整TC04仍待验，旧M618不能启动此候选。[新发现结果](../plans/2026-09-06-procedure-adoption/DISCOVERY-RESULTS.md)／[恢复结果](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。
 
 最后更新：2026-09-06。r19收尾指导产品a189的实际运行链2个唯一控制已独审接受并合入：真实原任务目标/未回读债务保留，完成Scope的两次拒绝与公开tool proposal/下一物理输入精确关联、无文件写入。原测试oracle两红保留、修后只复跑红1；最终PG47277清空。不是模型/native质量通过，旧root新activeScope续改仍独立实现。[控制与边界](../plans/2026-09-06-completed-scope-guidance/RESULTS.md)。
