@@ -102,6 +102,18 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
             late_denials.append(str(error.__cause__))
             raise
     provider._pre_invoke_guard=guard
+    from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink, NoRecallBlockedError
+    no_recall_denials=[]
+    async def reconcile(keys):
+        # Call the unchanged production predicate against the actual Manager.
+        return await HumanMemoryV7Runtime.pending_occurrences(current_runtime,keys)
+    class ObservedDecisionSink(ProductRuntimeDecisionSink):
+        async def record_no_recall(self,**kwargs):
+            try:return await super().record_no_recall(**kwargs)
+            except NoRecallBlockedError as error:
+                no_recall_denials.append((kwargs['run_id'].value,error.code,error.pending_count))
+                raise
+    def decision_sink(ledger):return ObservedDecisionSink(ledger=ledger,reconcile=reconcile)
     # The bounded installed launcher supplies the exact reviewed identity to
     # main's candidate builder; its real verifier checks bytes/version/origin.
     import main
@@ -112,7 +124,7 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
                 runtime,stack,queue=await build(tmp_path,state,provider,
                     visibility_memory=visibility,occurrence_coordinator=coordinator,
                     extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-                    candidate_identity=main.build_candidate_identity())
+                    candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink)
             controls.turn=turn
             await service.enqueue_turn(QueueTurnRequest(None,f'a7-real-{turn}',f'Actual user turn {turn}'))
             await runtime.after_enqueue(subject=principal.actor_id)
@@ -136,6 +148,12 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
                 rows=await (await db.execute('SELECT phase,COUNT(*) FROM prospective_occurrences GROUP BY phase')).fetchall()
                 counts=dict(rows)
                 exits=(await (await db.execute('SELECT COUNT(*) FROM occurrence_presented')).fetchone())[0]
+            actual=stack.read_run_terminal_evidence(guarded[-1][0])
+            assert actual.state==('failed' if turn<4 else 'completed')
+            assert len(no_recall_denials)==min(turn,3)
+            if turn<4:
+                assert no_recall_denials[-1]==(guarded[-1][0],
+                    'sdk_no_recall_blocked_pending_occurrence',1)
             assert counts['presented']==turn
             assert counts.get('overdue',0)==int(turn>=3)
             assert exits==int(turn==4)
@@ -160,7 +178,7 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
         runtime,stack,queue=await build(tmp_path,state,provider,visibility_memory=visibility,
             occurrence_coordinator=coordinator,
             extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-            candidate_identity=main.build_candidate_identity())
+            candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink)
         await runtime.after_enqueue(subject=principal.actor_id)
         await asyncio.wait_for(runtime.drain(),20)
         assert runtime.last_error is None and len(sends)==before

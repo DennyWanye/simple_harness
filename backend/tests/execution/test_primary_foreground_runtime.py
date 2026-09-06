@@ -88,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -167,7 +167,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
                             authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
                             tool_reconciliation=noop, reconciliation=noop, provider_reconciliation=noop,
                             react_checkpoint=uow, tool_catalog=DurableToolCatalogResolver(uow),
-                            runtime_decision_sink=ProductRuntimeDecisionSink(ledger=ledger),
+                            runtime_decision_sink=(decision_sink_factory(ledger) if decision_sink_factory else ProductRuntimeDecisionSink(ledger=ledger)),
                             agent_memory=memory,
                             context_provider=None if memory is None else ProductConversationContextProvider(sources),
                             context_staging=None if memory is None else ContextStagingRepository(database))

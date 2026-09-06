@@ -143,3 +143,12 @@ with exact cause `s5c_occurrence_current_read_changed`, FAILED/zero HTTP alone i
 insufficient. Positive now also closes/reopens public Memory and full SDK/Host
 runtime after ACK, drains the empty queue and requires original receipt/no sends.
 This adds post-ACK recovery to the previous pre-ACK third-Run rebuild assertion.
+
+Original A7 `SOURCES.md:50/61` is binding: pending always rejects no_recall;
+presentation is never processed/exit. The new fixture now calls the unchanged
+production `HumanMemoryV7Runtime.pending_occurrences` via the actual decision
+sink. Its three no-tool/unACKed Runs must produce the exact NoRecallBlockedError
+and actual FAILED terminal, retain presented/mandatory and unique overdue. The
+fourth Run ACK completes. This fulfills the original three-unACKed-Run oracle,
+not a claim of three successful conversations. No production sink exception is
+added. A separate explicit-route successful conversation remains a further lane.
