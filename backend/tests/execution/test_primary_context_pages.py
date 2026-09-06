@@ -82,6 +82,7 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
     original_write = write_module.write_file
     def write_and_read(arguments, *, execution_context):
         result = json.loads(original_write(arguments, execution_context=execution_context))
+        assert "error" not in result, result.get("error")
         # A real tool execution reads the file it actually wrote. The SDK,
         # Host observer and receipt producers handle its result normally.
         result["readback_text"] = (Path(execution_context.write_scope_root) / arguments["path"]).read_text()
@@ -121,7 +122,9 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
     monkeypatch.setattr(main, "_sdk_runtime_stack", stack)
     monkeypatch.setattr(main, "_primary_history_policy", lambda _:holder.runtime.history_policy)
     monkeypatch.setattr(main, "_sdk_price_snapshot", lambda *_: (1, 1, "price-v1"))
-    monkeypatch.setattr(main.service_context, "get", lambda *_args, **_kwargs: None)
+    get_service = main.service_context.get
+    monkeypatch.setattr(main.service_context, "get", lambda key, *a, **kw:
+        None if key == "sdk_typed_context_use_authority" else get_service(key, *a, **kw))
     resolver = main._ProductSdkProviderBindingResolver(registry, client)
     scripted = provider.invoke
 
@@ -136,7 +139,14 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
             holder.first_run = current.sdk_run_id
             if len(provider.requests) == 4:
                 provider.requests.append(request)
-                response = tool(request, "write_file", dict(path="fresh.txt", content=LARGE))
+                # Respect the real tool's 3000-character single-write cap.
+                # A real sequential batch creates then appends the full file.
+                response = ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Write bounded chunks."),
+                    tool_calls=tuple(ProviderToolCall(CallId(f"write-chunk-{i}"), "write_file",
+                        dict(path="fresh.txt", content=LARGE[offset:offset + 3000],
+                             mode="write" if offset == 0 else "append"))
+                        for i, offset in enumerate(range(0, len(LARGE), 3000))),
+                    model="model", usage=ProviderUsage(10, 10, 20))
             else:
                 response = await scripted(request, cancel=cancel)
         else:
