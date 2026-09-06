@@ -13,9 +13,13 @@
 - scoring审批与setup写权限分离。只允许原memory只读、task候选搜索，最后明确选择后才允许`resume_existing`；不授权新scope、文件或task mutation。实际原preview的visible_sources三元组在批准前按当前policy重读，目标来自真实Provider提议和真实公开candidate，不能由setup label/gold决定。错误但合法的候选照原脚本执行，语义正确性留原gold事后复核。
 - 每个scoring Run保留独立SDK trace/hash；review packet只聚合这些Run的真实调用/提议统计，setup排除。失败/缺trace保留未知与lower_bound，不伪造跨Run SDK receipt。
 
-## 当前已知待修、禁止抢跑
+## 原红与本次窄修（源码，不追认原测试）
 
-主首次authority控制确认：open decision尚未执行时公开effect可为None，不能用已执行effect ledger证明pending raw/internal映射。Carver正在修原approval的公开prepared映射。本接线scoring approval也受此边界影响，需消费同一固定helper再启动actualmain新控；不把该fixture准入红归因SDK业务缺陷，不临时推导ID。已消费a0dc37eb的binding exact_receipt四字段修正，真实marker/closure新控会覆盖该深路径。
+主首次authority控制确认：open decision尚未执行时公开effect可为None，不能用已执行effect ledger证明pending raw/internal映射。已消费Carver30faa938+244a9e9e：setup/scoring审批共用`verify_pending_call(stack,ingress,sdk_run_id,decision_id,request)`，绑定公开requested/waiting/proposal、真实Providerresponse、原decision完整args与最终复读；没有假EffectRecord，也不推导内部ID。公开RequestId按实际{value} wire解析。评分journal保留pending source/ref/hash和实际response关联，但不冒充SDK新持久receipt。原红仍保留，尚未本机执行新控。已消费a0dc37eb的binding exact_receipt四字段修正，真实marker/closure新控会覆盖该深路径。
+
+Dirac指出的False-policy歧义同时修正：真实非空候选若无disclosure fields或check_dependencies=False，稳定抛`c05_candidate_visibility_unverifiable`；调度记OBSERVATION_FAILED。只有实际successful candidates=[]才可当真零。无typed deny理由时不把False猜成suppression；负控由Carver244a9e9e提供，本分支不重复新增。
+
+本分支a26307c7完成scoring consumer改接。公共helper及False修复已获Dirac窄源码ACCEPT；整体仍NOT_RUN，不以source review替代actualmain组合。`embedding`元数据为MAIN_EMBEDDER_LOAD_NOT_OBSERVED，setup无外部LLM调用不等于main embedder未加载。
 
 ## 最小新控制（均NOT_RUN）
 
@@ -25,7 +29,7 @@
 
 `backend/tests/quality/test_corpus_c05_phase.py::test_actual_empty_preview_does_not_send_followup`
 
-原两scope真实准备非空，评分发真实无匹配search，要求真实空结果、仅一scoring Run、零f1/f2及零resume。不是用空库满足no-match。缺effect/result/disclosure的权威负控由Carver既有新控提供，不复制同套。
+原两scope真实准备非空，评分发真实无匹配search，要求真实空结果、仅一scoring Run、零f1/f2及零resume。不是用空库满足no-match。缺effect/result/disclosure/False-policy的权威负控由Carver既有新控提供，不复制同套。
 
 原C07独立分支两次载体FAIL保持：缺tracked assets和借用installed target来源不匹配。主已在完整candidate解决载体并另报61f474e5实际phase通过；这些原失败不覆写，不用本C05源码追认。
 
