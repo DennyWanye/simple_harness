@@ -50,7 +50,24 @@
 ### WIP具体main接线（无main写入）
 
 - `ProspectiveOccurrenceCoordinator(store, read_current, clock)`；reader签名`(*,principal,sdk_run_id,requested_keys)->CurrentOccurrenceRead(owner,sdk_run_id,disclosure_identity_hash,visible,exits,unverifiable_keys)`。visible/exits均真实public DTO，exit必须明确public当前状态。原ACK重放仍认证Run，只回receipt；不把缺席变成exit。
-- `ProductRunContextAuthority(...,occurrence_coordinator=coordinator)`；新组的exactentry/count/index/disclosure承诺用现snapshot `source_revisions`整数字段保存，保持SDK Mapping[str,int]契约；原public wire不改。snapshot关联canonical presented原body可重建组，重放不取新可见集合改写。
+- `ProductRunContextAuthority(...,occurrence_coordinator=coordinator)`；新组exactentry/count/index/disclosure放版本化Host snapshot关联payload；SDK source_revisions只含真实revision。原snapshot关联canonical presented原body用于交叉验证，重放不取新可见集合改写。
 - `ProspectiveRequestGuard(sdk_run_id,coordinator,read_provider_context_use=stack.read_provider_context_use)`组成现`primary_guard`的额外await，位于实际delegate前。用public实际handed_off view绑定Run/request/fingerprint/snapshot，核原组protectedmessage后current-read；异常为Host专用ProviderRequestRejectedError子类，不改unknown/重发语义。没有handed_off证明不可凭Hostlatest查一个snapshot冒用。
 - `prospective_ack_registration(coordinator=...)`返回现ProductToolRegistration；加入main projected_registrations，现direct kernel/catalog同步包含此tool，五种Context route均NON_PROJECT_EFFECT默认OPTIONAL，不授予项目effect。
 - 原Hostterminal TX：`settle_acknowledged_tx(db,principal,sdk_run_id,terminal_identity=<read_primary_terminal_identity_tx返回>,actual_sdk_terminal=<本Run实际public terminal>)`。必须先有本TX可读的foreground terminal receipt/observation，verify_sdk_terminal继续严格比较raw namespace。后继Run不可调用代结算。
+
+
+## 7e8预审P1及存储纠正（后继源码，未测试）
+
+- Host专用Provider拒绝用keyword-only `public_message`；新增真正调用guard的missing-handoff拒绝控。不是仅构造异常。
+- 外部current-read在snapshot writer TX前进行，record_tx仅核Host捕获组/head/receipt。physical guard仍再次fresh-read。没有用SQLite写锁等待Memory/SDK I/O。
+- 不把opaque证明编码为revision。复用既有snapshot行的JSON存储列（历史名称`source_revisions_json`），新记录明确Host版本化envelope精确三键 `{host_snapshot_schema_version:2, source_revisions:<真实revision字典>, host_occurrence_group:<完整组>}`；这是一份Host snapshot关联payload，不是SDK source_revisions格式。SDK RunContextSnapshot只收到内层真实revision。旧行无版本wrapper按原格式/原receipt核验，不改旧hash。
+- 新Host receipt hash覆盖原snapshot字段+真实revision+Host版本/group；读时重算完整receipt、组exactkeys、唯一顺序index、key去重、完整publicentry字节、canonical presentation关联。JSON重复键拒绝。无DDL、无第二ledger。
+- main hunk仅coordinator/currentreader、projected_registrations、primary_guard组合、contextauthority构造和terminalhookfactory；queue仅record_sdk_terminal observer同TX，runtime只预先capture hook后透传。未碰closure_adapter/reserve_post_turn_attempt。
+- 当前Host SELF披露是已实现lane，currentreader复用resolve_current_disclosure验证实际Run+旧/当前绑定；public read_occurrence_inbox返回owned事实。公开确证退出与未知分开，最大16x200页，tracked/requested缺席都unverifiable。不会把此实现称为任意受众通用许可。
+- 源码准备阶段，a7-r1默认共享锁BUSY75，未启动child；首批4unit均NOT_RUN。真正runtime/五路/物理transport与撤权控制尚待实现和测试，不能称生产闭合。
+
+### 当前剩余真实闭环点（不提升为完成）
+
+A7 production适用范围通过Host foreground Run+SDK binding事实判定，覆盖该Run五种Context route；没有primary turn的child/workflow保留原authority链，不能因新增primary reader让全部子Agent失败。非本owner的已绑定Run拒绝。此判断不是工具调用授权，ACK仍必须有本Runpresentation。
+
+除待测main接线外，派生assistant的后继history仍须继承本Run实际mandatory occurrence组；当前read_run_dependencies仅原recall来源，不可将新组静默视为recall=[]完整来源。保留snapshot完整publicentry/事件hash及实际SDKsnapshot/request绑定后，可用现public inbox当前exactkey验证其可见性（缺席unknown），不造typed recall或SDK新字段。该history/API接缝尚未实现，未经闭合不得把本叶合成完整隐私产品。

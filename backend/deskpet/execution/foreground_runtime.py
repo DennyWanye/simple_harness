@@ -346,6 +346,7 @@ class ForegroundRuntimeExecutionAuthority:
         conversation_entrypoint: Callable[..., Awaitable[object]] | None = None,
         state_changed: Callable[[], Awaitable[None]] | None = None,
         terminal_audit_wake: Callable[[], None] | None = None,
+        terminal_commit_hook_factory=None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -391,6 +392,7 @@ class ForegroundRuntimeExecutionAuthority:
         self._last_error: Exception | None = None
         self._state_changed = state_changed
         self._terminal_audit_wake = terminal_audit_wake
+        self._terminal_commit_hook_factory = terminal_commit_hook_factory
         self._notification_task: asyncio.Task[None] | None = None
         self._notification_pending = False
 
@@ -1301,6 +1303,8 @@ class ForegroundRuntimeExecutionAuthority:
             if settlement.status == "lease_lost":
                 raise ForegroundRuntimeError("foreground_runtime_lease_lost_during_closure")
         run_binding, endpoint_identity = self._terminal_binding(sdk_run_id)
+        terminal_hook = (None if self._terminal_commit_hook_factory is None else
+                         self._terminal_commit_hook_factory(sdk_run_id))
         await self._store.record_sdk_terminal(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
@@ -1310,6 +1314,7 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_event_id=terminal.sdk_event_id,
             sdk_event_hash=terminal.sdk_event_hash,
             idempotency_key=f"runtime-terminal:{host_run_id}",
+            terminal_observer_tx=terminal_hook,
             run_binding=run_binding,
             endpoint_identity=endpoint_identity,
             outbox_dead_letter_reason=(

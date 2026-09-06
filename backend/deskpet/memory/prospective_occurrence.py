@@ -17,6 +17,16 @@ DOMAIN = 'host:prospective-occurrence/v1'
 _KEY = re.compile(r'[0-9a-f]{64}\Z')
 
 
+def _load_json(raw):
+    def unique(pairs):
+        result={}
+        for key,value in pairs:
+            if key in result:raise S5cConflict('s5c_occurrence_json_duplicate_key')
+            result[key]=value
+        return result
+    return json.loads(raw,object_pairs_hook=unique)
+
+
 def _required(value, label):
     if type(value) is not str or not value.strip() or '\x00' in value:
         raise S5cConflict('s5c_occurrence_'+label+'_invalid')
@@ -94,14 +104,60 @@ class PreparedPresentation:
     disclosure_identity_hash: str
 
 
-def presentation_revisions(prepared):
-    result={'occurrence_disclosure':int(prepared.disclosure_identity_hash,16),'occurrence_count':len(prepared.items)}
-    for index,item in enumerate(prepared.items):
-        key=item.entry.occurrence_key
-        result['occurrence_entry:'+key]=int(_hash(json.loads(item.entry_json)),16)
-        result['occurrence_index:'+key]=index
-        result['occurrence_count:'+key]=item.count
-    return result
+def presentation_payload(prepared):
+    return dict(schema_version=1,owner=prepared.owner,sdk_run_id=prepared.sdk_run_id,
+        disclosure_identity_hash=prepared.disclosure_identity_hash,items=[dict(index=index,
+            entry=json.loads(item.entry_json),head_hash=item.head_hash,count=item.count,overdue=item.overdue)
+            for index,item in enumerate(prepared.items)])
+
+
+def presentation_from_payload(payload):
+    if type(payload) is not dict or set(payload)!={'schema_version','owner','sdk_run_id','disclosure_identity_hash','items'} or payload['schema_version']!=1:
+        raise S5cConflict('s5c_occurrence_group_shape_invalid')
+    if type(payload['items']) is not list or len(payload['items'])>8:
+        raise S5cConflict('s5c_occurrence_group_bound')
+    _key(payload['owner']);_key(payload['disclosure_identity_hash']);_required(payload['sdk_run_id'],'run')
+    items=[];keys=set()
+    for index,item in enumerate(payload['items']):
+        if type(item) is not dict or set(item)!={'index','entry','head_hash','count','overdue'}:
+            raise S5cConflict('s5c_occurrence_group_item_shape_invalid')
+        if type(item['index']) is not int or item['index']!=index or type(item['count']) is not int or item['count']<1 or type(item['overdue']) is not bool or item['overdue']!=(item['count']>=3):
+            raise S5cConflict('s5c_occurrence_group_index_invalid')
+        entry=OccurrenceInboxEntryV1(**item['entry']);_live(entry);_key(item['head_hash'])
+        if entry.occurrence_key in keys or entry.to_json()!=item['entry']:
+            raise S5cConflict('s5c_occurrence_group_entry_invalid')
+        keys.add(entry.occurrence_key)
+        items.append(PresentationItem(canonical_json(item['entry']),item['head_hash'],item['count'],item['overdue']))
+    return PreparedPresentation(payload['owner'],payload['sdk_run_id'],tuple(items),payload['disclosure_identity_hash'])
+
+
+def snapshot_receipt_body(row, source_revisions, group=None):
+    body={key:row[key] for key in ('expected_request_fingerprint','payload_hash','prior_context_revision',
+        'provider_turn_ordinal','sdk_run_id','snapshot_id','snapshot_revision')}
+    body['source_revisions']=source_revisions
+    if group is not None:
+        body['host_snapshot_schema_version']=2
+        body['host_occurrence_group']=group
+    return body
+
+
+def decode_snapshot(row):
+    stored=_load_json(row['source_revisions_json'])
+    if type(stored) is not dict:raise S5cConflict('s5c_snapshot_storage_invalid')
+    if 'host_snapshot_schema_version' in stored:
+        if set(stored)!={'host_snapshot_schema_version','source_revisions','host_occurrence_group'} or stored['host_snapshot_schema_version']!=2:
+            raise S5cConflict('s5c_snapshot_storage_shape_invalid')
+        revisions=stored['source_revisions'];group=stored['host_occurrence_group']
+        prepared=presentation_from_payload(group)
+        if prepared.sdk_run_id!=row['sdk_run_id']:
+            raise S5cConflict('s5c_snapshot_group_run_differs')
+    else:
+        revisions=stored;group=None;prepared=None
+    if type(revisions) is not dict or any(type(k) is not str or type(v) is not int or v<0 for k,v in revisions.items()):
+        raise S5cConflict('s5c_snapshot_revisions_invalid')
+    if _hash(snapshot_receipt_body(row,revisions,group))!=row['receipt_hash']:
+        raise S5cConflict('s5c_snapshot_receipt_corrupt')
+    return revisions,prepared
 
 
 async def _rows(db, owner, key):
@@ -110,7 +166,7 @@ async def _rows(db, owner, key):
         rows=await query.fetchall()
     parsed=[]
     for row in rows:
-        body=json.loads(row['inbox_json'])
+        body=_load_json(row['inbox_json'])
         if body.get('domain') != DOMAIN:
             # Frozen claim format; it never proves presentation or ACK.
             if (row['phase']!='claimed' or row['sdk_run_id'] is not None or row['snapshot_id'] is not None
@@ -133,11 +189,12 @@ async def _rows(db, owner, key):
     records={row['record_id']:(row,body) for row,body,_ in parsed}
     for row,body,_ in parsed:
         if row['phase']=='presented':
-            async with db.execute('SELECT sdk_run_id,receipt_hash FROM run_context_snapshot_receipts WHERE snapshot_id=?',
+            async with db.execute('SELECT * FROM run_context_snapshot_receipts WHERE snapshot_id=?',
                                   (row['snapshot_id'],)) as query:
                 snapshot=await query.fetchone()
-            if snapshot is None or tuple(snapshot)!=(row['sdk_run_id'],body['proof']['snapshot_receipt_hash']):
+            if snapshot is None or (snapshot['sdk_run_id'],snapshot['receipt_hash'])!=(row['sdk_run_id'],body['proof']['snapshot_receipt_hash']):
                 raise S5cConflict('s5c_occurrence_snapshot_differs')
+            decode_snapshot(snapshot)
         if row['phase']=='acknowledged':
             origin=records.get(body['proof']['presented_id'])
             if (origin is None or origin[0]['phase']!='presented'
@@ -235,11 +292,12 @@ async def _presentation(db, rows, run):
                    if row['phase']=='presented' and row['sdk_run_id']==run),None)
     if selected is None: raise S5cConflict('s5c_occurrence_not_presented_in_run')
     row,body,_=selected
-    async with db.execute('SELECT sdk_run_id,receipt_hash FROM run_context_snapshot_receipts WHERE snapshot_id=?',
+    async with db.execute('SELECT * FROM run_context_snapshot_receipts WHERE snapshot_id=?',
                           (row['snapshot_id'],)) as query:
         snapshot=await query.fetchone()
-    if snapshot is None or tuple(snapshot)!=(run,body['proof']['snapshot_receipt_hash']):
+    if snapshot is None or (snapshot['sdk_run_id'],snapshot['receipt_hash'])!=(run,body['proof']['snapshot_receipt_hash']):
         raise S5cConflict('s5c_occurrence_snapshot_differs')
+    decode_snapshot(snapshot)
     return selected
 
 
@@ -315,6 +373,10 @@ class ProspectiveOccurrenceCoordinator:
             raise TypeError('current occurrence reader and clock required')
         self.store,self.read_current,self.clock=store,read_current,clock
 
+    async def applies_to_run(self, sdk_run_id):
+        resolver=getattr(self.read_current,'applies_to_run',None)
+        return True if resolver is None else await resolver(sdk_run_id)
+
     async def _current(self, sdk_run_id, requested_keys=()):
         current=await self.read_current(principal=self.store.principal,sdk_run_id=sdk_run_id,
                                        requested_keys=requested_keys)
@@ -325,33 +387,20 @@ class ProspectiveOccurrenceCoordinator:
 
     async def restore_snapshot(self, *, sdk_run_id, provider_turn_ordinal, prior_context_revision, snapshot_id=None):
         async with self.store._transaction() as db:
-            async with db.execute('SELECT source_revisions_json FROM run_context_snapshot_receipts '
+            async with db.execute('SELECT * FROM run_context_snapshot_receipts '
                 'WHERE sdk_run_id=? AND provider_turn_ordinal=? AND prior_context_revision=? '
                 'AND (? IS NULL OR snapshot_id=?) ORDER BY snapshot_revision DESC LIMIT 1',
                 (sdk_run_id,provider_turn_ordinal,prior_context_revision,snapshot_id,snapshot_id)) as query:
                 row=await query.fetchone()
-            if row is None: return None
-            revisions=json.loads(row[0])
-            if 'occurrence_count' not in revisions:
-                raise S5cConflict('s5c_occurrence_snapshot_proof_missing')
-            keys=[key.split(':',1)[1] for key in revisions if key.startswith('occurrence_entry:')]
-            keys.sort(key=lambda key:revisions['occurrence_index:'+key])
-            if len(keys)!=revisions['occurrence_count'] or len(keys)>8:
-                raise S5cConflict('s5c_occurrence_snapshot_group_corrupt')
-            items=[]
-            for key in keys:
-                rows=await _rows(db,self.store.owner,key)
+            if row is None:return None
+            _,prepared=decode_snapshot(row)
+            if prepared is None:raise S5cConflict('s5c_occurrence_snapshot_proof_missing')
+            if prepared.owner!=self.store.owner:raise S5cConflict('s5c_occurrence_owner_differs')
+            for item in prepared.items:
+                rows=await _rows(db,self.store.owner,item.entry.occurrence_key)
                 _,body,entry=await _presentation(db,rows,sdk_run_id)
-                if int(_hash(entry.to_json()),16)!=revisions['occurrence_entry:'+key]:
+                if canonical_json(entry.to_json())!=item.entry_json or item.count!=body['proof']['presented_count']:
                     raise S5cConflict('s5c_occurrence_snapshot_entry_corrupt')
-                count=revisions['occurrence_count:'+key]
-                if count!=body['proof']['presented_count']:
-                    raise S5cConflict('s5c_occurrence_snapshot_count_corrupt')
-                items.append(PresentationItem(canonical_json(entry.to_json()),_head(rows),count,count>=3))
-            prepared=PreparedPresentation(self.store.owner,sdk_run_id,tuple(items),
-                format(revisions['occurrence_disclosure'],'064x'))
-            if any(revisions.get(key)!=value for key,value in presentation_revisions(prepared).items()):
-                raise S5cConflict('s5c_occurrence_snapshot_group_corrupt')
             return prepared
 
     async def prepare(self, sdk_run_id):
@@ -386,7 +435,10 @@ class ProspectiveOccurrenceCoordinator:
         return current
 
     async def record_tx(self, db, *, prepared, snapshot_id, snapshot_receipt_hash):
-        await self.recheck(prepared)
+        # External current read belongs before the writer TX; only captured
+        # Host facts/head checks run here. Physical send rechecks independently.
+        if type(prepared) is not PreparedPresentation or prepared.owner!=self.store.owner:
+            raise S5cConflict('s5c_occurrence_owner_differs')
         await record_presentations_tx(db,prepared=prepared,snapshot_id=snapshot_id,
             snapshot_receipt_hash=snapshot_receipt_hash)
 

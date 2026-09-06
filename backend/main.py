@@ -3211,6 +3211,16 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
 
     _terminal_audit = await _activate_terminal_operation_audit()
 
+    def _occurrence_terminal_hook(sdk_run_id):
+        from deskpet.memory.prospective_terminal_hook import prepare_occurrence_terminal_hook
+        coordinator=service_context.get("prospective_occurrence_coordinator")
+        if coordinator is None:
+            return None
+        # Public SDK read occurs before the Host terminal writer transaction.
+        actual=_sdk_runtime_stack.read_run_terminal_evidence(sdk_run_id)
+        return prepare_occurrence_terminal_hook(principal=coordinator.store.principal,
+            sdk_run_id=sdk_run_id,actual_sdk_terminal=actual)
+
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
@@ -3250,6 +3260,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         conversation_entrypoint=_foreground_conversation_entrypoint,
         state_changed=_primary_state_changed,
         terminal_audit_wake=_terminal_audit.wake if _terminal_audit is not None else None,
+        terminal_commit_hook_factory=_occurrence_terminal_hook,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -7779,6 +7790,11 @@ class _ProductSdkProviderBindingResolver:
             await check_runtime_dependencies(db_path=_state_db_path, stack=_sdk_runtime_stack,
                 sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy,
                 typed_use_authority=service_context.get("sdk_typed_context_use_authority"))
+            coordinator=service_context.get("prospective_occurrence_coordinator")
+            if coordinator is not None and await coordinator.applies_to_run(binding.run_id):
+                from deskpet.sdk_adapters.prospective_request_guard import ProspectiveRequestGuard
+                await ProspectiveRequestGuard(sdk_run_id=binding.run_id,coordinator=coordinator,
+                    read_provider_context_use=_sdk_runtime_stack.read_provider_context_use)(request)
 
         if request_guard is ...:
             request_guard = primary_guard
@@ -8360,6 +8376,21 @@ async def _build_product_sdk_runtime_stack(
         clock=clock,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    _occurrence_coordinator = None
+    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
+        from deskpet.memory.s5c_terminal_schema import initialize_s5c_terminal_state_db
+        from deskpet.memory.s5c_store import S5cStore
+        from deskpet.memory.prospective_occurrence import ProspectiveOccurrenceCoordinator
+        from deskpet.memory.prospective_current_reader import PublicOccurrenceCurrentReader
+        from deskpet.sdk_adapters.prospective_ack import prospective_ack_registration
+        await initialize_s5c_terminal_state_db(_state_db_path)
+        _occurrence_store=S5cStore(_state_db_path,_human_memory_v7.principal())
+        _occurrence_coordinator=ProspectiveOccurrenceCoordinator(store=_occurrence_store,
+            read_current=PublicOccurrenceCurrentReader(store=_occurrence_store,
+                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")),clock=clock)
+        projected_registrations=(*projected_registrations,
+            prospective_ack_registration(coordinator=_occurrence_coordinator))
+    service_context.register("prospective_occurrence_coordinator",_occurrence_coordinator)
     _typed_use_authority = None
     if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
         from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
@@ -8927,6 +8958,7 @@ async def _build_product_sdk_runtime_stack(
             ledger=context_route_ledger,
             reconcile=_occurrence_reconcile,
             typed_use_authority=_typed_use_authority,
+            occurrence_coordinator=_occurrence_coordinator,
         ),
     )
     service_context.register(
@@ -8987,6 +9019,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
     ledger,
     reconcile,
     typed_use_authority=None,
+    occurrence_coordinator=None,
 ):
     """Production ``ProductRunContextAuthority`` with the real semantic-closure reader (F-2)."""
 
@@ -9006,6 +9039,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         ledger=ledger,
         reconcile=reconcile,
         typed_use_authority=typed_use_authority,
+        occurrence_coordinator=occurrence_coordinator,
         closure_reader=closure_reader,
         # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
         binding_store=WorkspaceBindingAuthorityStore(db_path),

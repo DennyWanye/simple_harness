@@ -461,7 +461,7 @@ class ContextRouteLedgerStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             cursor = await db.execute(
-                "SELECT snapshot_id,snapshot_revision,receipt_hash FROM run_context_snapshot_receipts "
+                "SELECT * FROM run_context_snapshot_receipts "
                 "WHERE sdk_run_id=? AND provider_turn_ordinal=? AND payload_hash=? "
                 "ORDER BY snapshot_revision DESC LIMIT 1",
                 (run, provider_turn_ordinal, payload_hash),
@@ -470,10 +470,14 @@ class ContextRouteLedgerStore:
             await cursor.close()
             if existing is not None:
                 if occurrence_coordinator is not None:
+                    from deskpet.memory.prospective_occurrence import decode_snapshot, presentation_payload
+                    _,original=decode_snapshot(existing)
+                    if original is None or presentation_payload(original)!=presentation_payload(occurrence_presentation):
+                        raise ContextRouteLedgerError("s5c_snapshot_replay_group_differs")
                     await occurrence_coordinator.record_tx(db,prepared=occurrence_presentation,
-                        snapshot_id=str(existing[0]),snapshot_receipt_hash=str(existing[2]))
+                        snapshot_id=str(existing['snapshot_id']),snapshot_receipt_hash=str(existing['receipt_hash']))
                 await db.commit()
-                return str(existing[0]), int(existing[1])
+                return str(existing['snapshot_id']), int(existing['snapshot_revision'])
             cursor = await db.execute(
                 "SELECT COALESCE(MAX(snapshot_revision),0) FROM "
                 "run_context_snapshot_receipts WHERE sdk_run_id=?",
@@ -483,18 +487,23 @@ class ContextRouteLedgerStore:
             await cursor.close()
             revision = head + 1
             snapshot_id = f"ctx-snap:{run}:{revision}:{payload_hash[:16]}"
-            receipt_hash = canonical_sha256(
-                {
-                    "expected_request_fingerprint": expected_request_fingerprint,
-                    "payload_hash": payload_hash,
-                    "prior_context_revision": prior_context_revision,
-                    "provider_turn_ordinal": provider_turn_ordinal,
-                    "sdk_run_id": run,
-                    "snapshot_id": snapshot_id,
-                    "snapshot_revision": revision,
-                    "source_revisions": dict(source_revisions),
-                }
-            )
+            receipt_body = {
+                "expected_request_fingerprint":expected_request_fingerprint,
+                "payload_hash":payload_hash,"prior_context_revision":prior_context_revision,
+                "provider_turn_ordinal":provider_turn_ordinal,"sdk_run_id":run,
+                "snapshot_id":snapshot_id,"snapshot_revision":revision,
+                "source_revisions":dict(source_revisions),
+            }
+            stored_revisions = dict(source_revisions)
+            if occurrence_coordinator is not None:
+                from deskpet.memory.prospective_occurrence import presentation_payload
+                group = presentation_payload(occurrence_presentation)
+                receipt_body.update(host_snapshot_schema_version=2,host_occurrence_group=group)
+                # Versioned Host storage envelope; only the true inner revisions
+                # travel in the SDK RunContextSnapshot.source_revisions mapping.
+                stored_revisions = dict(host_snapshot_schema_version=2,
+                    source_revisions=dict(source_revisions),host_occurrence_group=group)
+            receipt_hash = canonical_sha256(receipt_body)
             await db.execute(
                 "INSERT INTO run_context_snapshot_receipts("
                 "snapshot_id,sdk_run_id,provider_turn_ordinal,prior_context_revision,"
@@ -507,7 +516,7 @@ class ContextRouteLedgerStore:
                     provider_turn_ordinal,
                     prior_context_revision,
                     revision,
-                    canonical_json(dict(source_revisions)),
+                    canonical_json(stored_revisions),
                     payload_hash,
                     expected_request_fingerprint,
                     receipt_hash,
@@ -1142,12 +1151,15 @@ class ProductRunContextAuthority:
                 window_tokens = _resolve_window_tokens(metadata)
         inbox_message = None
         presentation = None
-        if self._occurrences is not None:
-            presentation = await self._occurrences.restore_snapshot(sdk_run_id=request.run_id.value,
+        occurrences = self._occurrences
+        if occurrences is not None and not await occurrences.applies_to_run(request.run_id.value):
+            occurrences = None
+        if occurrences is not None:
+            presentation = await occurrences.restore_snapshot(sdk_run_id=request.run_id.value,
                 provider_turn_ordinal=request.provider_turn_ordinal,
                 prior_context_revision=request.prior_context_revision)
             if presentation is None:
-                presentation = await self._occurrences.prepare(request.run_id.value)
+                presentation = await occurrences.prepare(request.run_id.value)
             if presentation.items:
                 inbox_message = _pending_occurrence_message(tuple(item.entry for item in presentation.items),
                     overdue_keys=frozenset(item.entry.occurrence_key for item in presentation.items if item.overdue))
@@ -1174,9 +1186,8 @@ class ProductRunContextAuthority:
             "context": int(request.prior_context_revision),
             **assembly_facts,
         }
-        if presentation is not None:
-            from deskpet.memory.prospective_occurrence import presentation_revisions
-            source_revisions.update(presentation_revisions(presentation))
+        if occurrences is not None:
+            await occurrences.recheck(presentation)
         snapshot_id, snapshot_revision = await self._ledger.record_snapshot_receipt(
             sdk_run_id=request.run_id.value,
             provider_turn_ordinal=request.provider_turn_ordinal,
@@ -1184,7 +1195,7 @@ class ProductRunContextAuthority:
             payload_hash=expected,
             expected_request_fingerprint=expected,
             source_revisions=source_revisions,
-            occurrence_coordinator=self._occurrences,
+            occurrence_coordinator=occurrences,
             occurrence_presentation=presentation,
         )
         typed_fields = {}

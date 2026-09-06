@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 from deskpet.memory.s5c_store import S5cStore, S5cConflict
 from deskpet.memory.prospective_occurrence import (
-    ProspectiveOccurrenceCoordinator, CurrentOccurrenceRead, presentation_revisions, settle_acknowledged_tx, settle_exited_tx,
+    ProspectiveOccurrenceCoordinator, CurrentOccurrenceRead, settle_acknowledged_tx, settle_exited_tx,
 )
 from deskpet.memory.prospective_scheduler import ProspectiveScheduler
 from deskpet.memory.prospective_signal_store import ProspectiveSignalStore
@@ -46,7 +46,7 @@ async def snapshot(w,c,run,ordinal=1):
     ledger=ContextRouteLedgerStore(w.path,clock=lambda:w.clock[0])
     identity=await ledger.record_snapshot_receipt(sdk_run_id=run,provider_turn_ordinal=ordinal,
         prior_context_revision=1,payload_hash='a'*64,expected_request_fingerprint='a'*64,
-        source_revisions={'context':1,**presentation_revisions(prepared)},occurrence_coordinator=c,occurrence_presentation=prepared)
+        source_revisions={'context':1},occurrence_coordinator=c,occurrence_presentation=prepared)
     return prepared,identity
 
 
@@ -119,4 +119,59 @@ async def test_ack_fault_reopen_exact_receipt(tmp_path,point):
             await c.ack(sdk_run_id='run-2',occurrence_key=key)
         with pytest.raises(S5cConflict):await c.ack(sdk_run_id='run-1',occurrence_key='0'*64)
         assert await facts(c)==before
+    finally:await w.manager.close()
+
+
+@pytest.mark.asyncio
+async def test_actual_guard_missing_handoff_keeps_rejected_classification():
+    from simple_harness import RequestId
+    from simple_harness.providers import ProviderRequest
+    from simple_harness.contracts.messages import Message, MessageRole
+    from simple_harness.providers.errors import ProviderRequestRejectedError
+    from deskpet.sdk_adapters.prospective_request_guard import ProspectiveRequestGuard, ProspectiveRequestRejected
+    guard=ProspectiveRequestGuard(sdk_run_id='actual-request-run',
+        coordinator=SimpleNamespace(store=SimpleNamespace(principal=P)),
+        read_provider_context_use=lambda run,request:None)
+    request=ProviderRequest(RequestId('physical-attempt'),(Message(role=MessageRole.USER,content='hello'),))
+    with pytest.raises(ProspectiveRequestRejected) as denied:
+        await guard(request)
+    assert isinstance(denied.value,ProviderRequestRejectedError)
+
+
+@pytest.mark.asyncio
+async def test_snapshot_rollback_and_full_group_codec(tmp_path):
+    from deskpet.memory.prospective_occurrence import presentation_payload, presentation_from_payload, decode_snapshot
+    from copy import deepcopy
+    w=await setup(tmp_path);c=coordinator(w)
+    try:
+        prepared=await c.prepare('run-1')
+        payload=presentation_payload(prepared)
+        assert presentation_from_payload(payload)==prepared
+        malformed=[]
+        extra=deepcopy(payload);extra['unexpected']=1;malformed.append(extra)
+        extra=deepcopy(payload);extra['items'][0]['extra']=1;malformed.append(extra)
+        duplicate=deepcopy(payload);duplicate['items'].append(deepcopy(duplicate['items'][0]));malformed.append(duplicate)
+        wrongindex=deepcopy(payload);wrongindex['items'][0]['index']=1;malformed.append(wrongindex)
+        for changed in malformed:
+            with pytest.raises(S5cConflict):presentation_from_payload(changed)
+        class FailingIngress:
+            async def ingest_ledger_fact_tx(self,*args,**kwargs):
+                raise ConnectionError('snapshot before commit')
+        ledger=ContextRouteLedgerStore(w.path,clock=lambda:w.clock[0],evidence_ingress=FailingIngress())
+        with pytest.raises(ConnectionError,match='snapshot before commit'):
+            await ledger.record_snapshot_receipt(sdk_run_id='run-1',provider_turn_ordinal=1,
+                prior_context_revision=1,payload_hash='a'*64,expected_request_fingerprint='a'*64,
+                source_revisions={'context':1},occurrence_coordinator=c,occurrence_presentation=prepared)
+        assert await facts(c)==({},0)
+        async with c.store._transaction() as db:
+            assert (await (await db.execute('SELECT COUNT(*) FROM run_context_snapshot_receipts')).fetchone())[0]==0
+        _,identity=await snapshot(w,c,'run-1')
+        restored=await c.restore_snapshot(sdk_run_id='run-1',provider_turn_ordinal=1,prior_context_revision=1,snapshot_id=identity[0])
+        assert restored==prepared
+        async with c.store._transaction() as db:
+            row=dict(await (await db.execute('SELECT * FROM run_context_snapshot_receipts WHERE snapshot_id=?',(identity[0],))).fetchone())
+        revisions,group=decode_snapshot(row)
+        assert revisions=={'context':1} and group==prepared
+        corrupted=dict(row,receipt_hash='0'*64)
+        with pytest.raises(S5cConflict,match='receipt_corrupt'):decode_snapshot(corrupted)
     finally:await w.manager.close()

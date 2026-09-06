@@ -1913,6 +1913,7 @@ class ForegroundQueueStore:
         run_binding: Mapping[str, object] | None = None,
         endpoint_identity: str | None = None,
         outbox_dead_letter_reason: str | None = None,
+        terminal_observer_tx=None,
     ) -> TerminalReceipt:
         """Host terminal commit: three watermarks, run/turn transitions and — S5b Task 4 —
         the ``memory_ingestion_outbox`` row (+ evidence links) in the **same transaction**.
@@ -1961,6 +1962,8 @@ class ForegroundQueueStore:
                         or existing["sdk_event_hash"] != sdk_event_hash
                     ):
                         raise ForegroundQueueError("foreground_terminal_immutable")
+                    if terminal_observer_tx is not None:
+                        await terminal_observer_tx(db,host_run_id=host_run_id,sdk_run_id=sdk_run_id)
                     await db.commit()
                     return self._terminal_receipt(existing)
                 head = await self._validate_lease_tx(db, host_run_id, owner_id, generation, now)
@@ -2147,6 +2150,8 @@ class ForegroundQueueStore:
                         dead_letter_reason=None if run_binding is not None else outbox_dead_letter_reason,
                     )
                     self._fault("terminal.after_outbox")
+                if terminal_observer_tx is not None:
+                    await terminal_observer_tx(db,host_run_id=host_run_id,sdk_run_id=sdk_run_id)
                 self._fault("terminal.before_commit")
                 row = await self._fetchone(db, "SELECT * FROM foreground_terminal_receipts WHERE host_run_id=?", (host_run_id,))
                 await db.commit()

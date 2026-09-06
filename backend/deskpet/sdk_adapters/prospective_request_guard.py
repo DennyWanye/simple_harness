@@ -5,7 +5,7 @@ There is a check-to-send interval, not a cross-database atomic revocation fence.
 import json
 from simple_harness.providers.errors import ProviderRequestRejectedError
 from simple_harness.execution.provider_invocations import provider_request_fingerprint
-from deskpet.memory.prospective_occurrence import presentation_revisions
+from deskpet.memory.prospective_occurrence import decode_snapshot, presentation_payload
 from deskpet.sdk_adapters.context_authority import _pending_occurrence_message
 
 
@@ -36,10 +36,10 @@ class ProspectiveRequestGuard:
                         or snapshot['expected_request_fingerprint']!=view.request_fingerprint):
                     raise ValueError('s5c_occurrence_actual_snapshot_missing')
                 ordinal,prior=snapshot['provider_turn_ordinal'],snapshot['prior_context_revision']
-                revisions=json.loads(snapshot['source_revisions_json'])
+                _,stored_group=decode_snapshot(snapshot)
             group=await self.coordinator.restore_snapshot(sdk_run_id=self.run,provider_turn_ordinal=ordinal,
                 prior_context_revision=prior,snapshot_id=view.context_snapshot_id)
-            if group is None or any(revisions.get(k)!=v for k,v in presentation_revisions(group).items()):
+            if group is None or stored_group is None or presentation_payload(group)!=presentation_payload(stored_group):
                 raise ValueError('s5c_occurrence_actual_group_differs')
             messages=[message for message in request.messages if message.metadata.get('source')=='prospective_inbox']
             expected=[]
@@ -49,5 +49,5 @@ class ProspectiveRequestGuard:
             if messages!=expected:
                 raise ValueError('s5c_occurrence_actual_message_differs')
             await self.coordinator.recheck(group)
-        except (ValueError,TypeError,KeyError,AttributeError) as error:
-            raise ProspectiveRequestRejected('s5c_occurrence_preflight_rejected') from error
+        except Exception as error:
+            raise ProspectiveRequestRejected(public_message='s5c_occurrence_preflight_rejected') from error
