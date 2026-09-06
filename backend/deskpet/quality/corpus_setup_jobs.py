@@ -30,6 +30,9 @@ class FixtureSetupExecutor(FixtureAnalysisDelivery):
         self.executions=0
         self.setup_hash=batch.setup_hash
 
+    def payload_for_spec(self, spec):
+        return payload(spec,self.batch.scenario_time)
+
     async def analyze_memory(self,request):
         source,receipt=await self.evidence.read_admitted(self.source_pair[0].evidence_id)
         if ((source,receipt)!=self.source_pair or source.subject!=self.principal.actor_id
@@ -53,7 +56,7 @@ class FixtureSetupExecutor(FixtureAnalysisDelivery):
             state={'semantic':h.SemanticLifecycleState.ACTIVE,'episode':h.EpisodeLifecycleState.ACTIVE,
                 'prospective':h.ProspectiveLifecycleState.PENDING}[kind]
             operations.append(h.MemoryMutationOperation(operation_id=label,kind=h.MemoryMutationKind.CREATE,
-                memory_type=h.LongTermMemoryType(kind),payload=payload(spec,self.batch.scenario_time),
+                memory_type=h.LongTermMemoryType(kind),payload=self.payload_for_spec(spec),
                 target=None,depends_on_operation_ids=(),lifecycle_state=state,
                 epistemic_status=h.EpistemicStatus.EXPLICIT_USER,conflict_status=h.ConflictStatus.UNCONTESTED,
                 verification_state=h.VerificationState.SOURCE_BOUND,valid_time_interval=h.ValidTimeInterval(None,None),

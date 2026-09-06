@@ -13,7 +13,8 @@ from deskpet.memory.human_memory_service import build_foreground_turn_evidence
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.memory_ingestion_outbox import build_worker_config
-from deskpet.quality.corpus_c01 import SetupBatch,payload
+from deskpet.quality.corpus_c01 import SetupBatch
+from deskpet.quality.corpus_c03_dates import c03_payload,date_semantics
 from deskpet.quality.corpus_c03 import compile_c03_setup
 from deskpet.quality.corpus_setup_jobs import FixtureSetupExecutor
 from deskpet.quality.corpus_fixture_delivery import CONFIG_HASH
@@ -37,6 +38,9 @@ class C03FixtureExecutor(FixtureSetupExecutor):
         self.executions=0
         self.setup_hash=batch.setup_hash
         self.executed_plan=None
+
+    def payload_for_spec(self,spec):
+        return c03_payload(self.batch,spec)
 
     async def analyze_memory(self,request):
         envelope=await super().analyze_memory(request)
@@ -70,7 +74,7 @@ async def prepare_c03_setup(*, path, manager, principal, authority_ref, batch, d
     graph=await manager.get_twin_graph_view(principal=principal)
     labels={}
     for spec in batch.specs:
-        digest=canonical_hash(payload(spec,batch.scenario_time).to_json())
+        digest=canonical_hash(c03_payload(batch,spec).to_json())
         matches=[node for node in graph.nodes if node.memory_type==spec[1]
             and node.revision==1 and node.content_hash==digest]
         if len(matches)!=1:
@@ -79,4 +83,5 @@ async def prepare_c03_setup(*, path, manager, principal, authority_ref, batch, d
     if len(labels)!=len(graph.nodes):
         raise ValueError('corpus_c03_unexpected_nodes')
     return dict(case_id=batch.case_id,setup_hash=batch.setup_hash,source_pair=(envelope,receipt),
-        labels=labels,plan=executor.executed_plan,outcome=outcome,fixture_executions=executor.executions)
+        labels=labels,plan=executor.executed_plan,outcome=outcome,fixture_executions=executor.executions,
+        date_semantics={spec[0]:date_semantics(batch,spec) for spec in batch.specs if spec[1]=='episode'})

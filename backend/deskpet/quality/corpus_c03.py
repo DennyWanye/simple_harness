@@ -105,10 +105,19 @@ SPECS = {
   ('S','semantic','organization:本人导师介绍的装裱店','取件约定','验背板',('导师其他联系人无关',))),
 }
 
+
+SPECS.update({
+ 'C03-02': (
+  ('E','episode','organization:晨风社青禾社','春季试刊漏目录','晨风社旧名青禾社，春季试刊曾漏目录',()),
+  ('S','semantic','organization:晨风社青禾社','交稿约定','更名后交稿附目录',('晨风社旧名青禾社；别名有明确证据',))),
+ 'C03-17': (
+  ('E1','episode','organization:蓝桥社','六月排练灯坏','蓝桥社六月排练灯坏',()),
+  ('E2','episode','organization:蓝桥社','八月排练音箱故障','蓝桥社八月排练音箱故障',()),
+  ('S','semantic','organization:蓝桥社','排练约定','八月后先试音',())),
+})
+
 # Original cases retained, not transformed into an easier state or deleted.
 REQUIRES_SPECIAL_MAPPING = {
- 'C03-02': '春季试刊明确季节，需统一季节区间规则；保留晨风社/青禾社同一机构来源',
- 'C03-17': '六月/八月两个episode必须保留不同显式月份区间，不用同clock-24h替代',
  'C03-20': 'D为无用户证据的模型推测；需真实ASSISTANT source与candidate/llm_inference/unverified',
 }
 
@@ -128,5 +137,5 @@ def compile_c03_setup(case_id, setup_text, *, scenario_clock):
     clock=datetime.fromisoformat(scenario_clock)
     if clock.tzinfo is None:
         raise ValueError('corpus_clock_offset_required')
-    return SetupBatch(case_id,text,digest,clock.timestamp(),SPECS[case_id],
-        ('undated_past_episode=clock-24h',))
+    default=('coarse_date=group_year/day15/noon/Asia_Shanghai;synthetic_day=true',) if case_id in ('C03-02','C03-17') else ('undated_past_episode=clock-24h',)
+    return SetupBatch(case_id,text,digest,clock.timestamp(),SPECS[case_id],default)
