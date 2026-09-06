@@ -1,3 +1,5 @@
+最后更新：2026-09-06。A7隔离叶修复实际service slot、分页截断failclosed、严格codec及真实factory暴露的schema顺序/ACK工具schema兼容问题。新风险分批验收：cap和重算receipt codec通过，真实factory首次构造+同52库重建保持namespace与ACK实际catalog通过；原失败保留。完整presentation/ACK/Provider历史继承仍未验完，未合主/未称native完成。[限定结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
 # Memory SDK 边界与 Host 接口契约
 
 
