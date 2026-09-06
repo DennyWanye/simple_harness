@@ -527,6 +527,9 @@ class HumanMemoryHostService:
     async def list_primary_bindings(self, **request):
         return await self._primary_workspace_bindings().pending(**request)
 
+    async def read_primary_binding(self, **request):
+        return await self._primary_workspace_bindings().status(**request)
+
     async def respond_primary_binding(self, **request):
         return await self._primary_workspace_bindings().respond(**request)
 

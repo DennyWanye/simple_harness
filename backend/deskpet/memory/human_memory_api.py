@@ -117,6 +117,7 @@ async def handle_human_memory_command(
             "primary.memory.graph",
             "primary.memory.forget",
             "primary.bindings.pending",
+            "primary.bindings.status",
             "primary.bindings.decide",
         }:
             from deskpet.memory.writer_fence import human_memory_request_boundary
@@ -155,7 +156,7 @@ async def send_human_memory_response(
 
     payload = response.get("payload", {})
     operation = payload.get("operation")
-    binding_operations = {"primary.bindings.pending", "primary.bindings.decide"}
+    binding_operations = {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}
     if not payload.get("ok") or operation not in HUMAN_AUDIT_OPERATIONS | binding_operations:
         await send(response)
         return
@@ -241,14 +242,18 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         return await service.read_primary_message_detail(
             request_id=request_id, **request
         )
-    if operation in {"primary.bindings.pending", "primary.bindings.decide"}:
+    if operation in {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}:
         from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
         from deskpet.memory.primary_read_model import PrimaryReadError
-        fields = {"primary_ref"} if operation == "primary.bindings.pending" else IDENTITY_FIELDS | {"decision"}
-        if set(request) != fields:
+        fields = ({"primary_ref", "cursor"} if operation == "primary.bindings.pending" else
+                  {"primary_ref", "challenge_ref"} if operation == "primary.bindings.status" else IDENTITY_FIELDS | {"decision"})
+        required = {"primary_ref"} if operation == "primary.bindings.pending" else fields
+        if not required <= set(request) <= fields:
             raise PrimaryReadError("primary_binding_request_invalid")
         if operation == "primary.bindings.pending":
             return await service.list_primary_bindings(**request)
+        if operation == "primary.bindings.status":
+            return await service.read_primary_binding(**request)
         return await service.respond_primary_binding(**request)
     if operation in {"primary.decisions.list", "primary.decisions.respond"}:
         from deskpet.memory.primary_read_model import PrimaryReadError

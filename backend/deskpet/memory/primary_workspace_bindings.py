@@ -34,29 +34,54 @@ class PrimaryWorkspaceBindings:
         self.path, self.subject = Path(path), subject
         self.authority, self.decide = authority, decide
 
-    def _snapshot(self, primary_ref, context, *, challenge_ref=None):
+    def _snapshot(self, primary_ref, context, *, challenge_ref=None, cursor=None):
         identifier(primary_ref, "primary_ref", 512)
+        if challenge_ref is not None:
+            identifier(challenge_ref, "challenge_ref", 512)
+        if cursor is not None:
+            identifier(cursor, "cursor", 1024)
         with sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True) as db:
             db.row_factory = sqlite3.Row
             db.execute("BEGIN")
             primary = db.execute("SELECT subject FROM human_memory_primary_conversations "
                 "WHERE primary_conversation_id=? AND writable=1", (primary_ref,)).fetchone()
             require(primary is not None and primary[0] == self.subject, "primary_binding_owner_mismatch")
-            # Limit bounds disclosure, not total historical scan work. Never
-            # silently omit further pending decisions behind a success result.
+            params = [self.subject, primary_ref]
+            select = ""
+            if challenge_ref:
+                select = "AND c.challenge_id=? "
+                params.append(challenge_ref)
+            else:
+                # Resolved/expired history cannot consume the pending page.
+                # A committed allow still needs recovery until binding ACK.
+                select = ("AND ((d.receipt_id IS NULL AND json_extract(c.challenge_json,'$.expires_at_millis')>?) "
+                          "OR (d.decision='allow' AND ack.receipt_id IS NULL)) ")
+                params.append(context["now_millis"])
+                if cursor is not None:
+                    position = db.execute("SELECT i.recorded_at FROM context_route_tool_invocations i "
+                        "JOIN foreground_run_sdk_bindings b ON b.sdk_run_id=i.sdk_run_id "
+                        "JOIN foreground_run_heads h ON h.host_run_id=b.host_run_id "
+                        "WHERE i.invocation_id=? AND h.subject=? AND h.primary_conversation_id=?",
+                        (cursor, self.subject, primary_ref)).fetchone()
+                    require(position is not None, "primary_binding_cursor_invalid")
+                    select += "AND (i.recorded_at,i.invocation_id)<(?,?) "
+                    params.extend([position[0], cursor])
+            # This limits page output, not the underlying historical join scan.
             rows = db.execute("SELECT i.*,h.host_run_id,h.generation,b.binding_json,b.binding_hash "
                 "FROM context_route_tool_invocations i "
                 "JOIN foreground_run_sdk_bindings b ON b.sdk_run_id=i.sdk_run_id "
                 "JOIN foreground_run_heads h ON h.host_run_id=b.host_run_id AND h.sdk_run_id=b.sdk_run_id "
+                "JOIN task_workspace_manual_challenges c ON c.challenge_id=json_extract(i.detail_json,'$.binding_challenge.challenge_ref') "
+                "LEFT JOIN task_workspace_manual_decisions d ON d.challenge_id=c.challenge_id "
+                "LEFT JOIN task_workspace_binding_grants g ON g.proposal_id=c.proposal_id "
+                "LEFT JOIN task_workspace_binding_revisions ack ON ack.grant_id=g.grant_id "
                 "WHERE h.subject=? AND h.primary_conversation_id=? AND i.verdict='rejected' "
                 "AND json_extract(i.detail_json,'$.code')='context_route_binding_authorization_required' "
-                + ("AND json_extract(i.detail_json,'$.binding_challenge.challenge_ref')=? " if challenge_ref else "")
-                + "ORDER BY i.recorded_at DESC,i.invocation_id DESC LIMIT 33",
-                (self.subject, primary_ref, challenge_ref) if challenge_ref else (self.subject, primary_ref)).fetchall()
-            require(len(rows) <= 32, "primary_binding_display_limit_exceeded")
-            items = [self._item(db, row, primary_ref, context) for row in rows]
+                + select + "ORDER BY i.recorded_at DESC,i.invocation_id DESC LIMIT 33", params).fetchall()
+            items = [self._item(db, row, primary_ref, context) for row in rows[:32]]
             require(len({v["challenge_ref"] for v in items}) == len(items))
-            return {"primary_ref": primary_ref, "items": items, "truncated": False}
+            return {"primary_ref": primary_ref, "items": items, "truncated": False,
+                    "next_cursor": rows[31]["invocation_id"] if len(rows) > 32 else None}
 
     def _item(self, db, row, primary_ref, context):
         detail = json.loads(row["detail_json"])
@@ -152,6 +177,7 @@ class PrimaryWorkspaceBindings:
         if bound is None:
             return ("allow_recorded" if current_revision == proposal.base_binding_set_revision else "binding_changed"), None
         ack = WorkspaceBindingSetReceipt.from_json(json.loads(bound["receipt_json"]))
+        ack.verify_grant(grant)
         require(ack.receipt_hash == bound["receipt_hash"] and ack.task_scope_id == proposal.task_scope_id and
             ack.grant_id == grant.grant_id and ack.grant_hash == grant.grant_hash and ack.appended_root == proposal.root)
         # A real binding ACK stays historical fact even after challenge expiry.
@@ -162,12 +188,20 @@ class PrimaryWorkspaceBindings:
         require(callable(reader), "primary_binding_reader_unavailable")
         return await reader(subject=self.subject)
 
-    async def pending(self, *, primary_ref):
+    async def pending(self, *, primary_ref, cursor=None):
         async with human_memory_request_boundary():
             context = await self._context()
             async with human_memory_request_boundary():
-                result = self._snapshot(primary_ref, context)
+                result = self._snapshot(primary_ref, context, cursor=cursor)
         return result
+
+    async def status(self, *, primary_ref, challenge_ref):
+        async with human_memory_request_boundary():
+            context = await self._context()
+            async with human_memory_request_boundary():
+                result = self._snapshot(primary_ref, context, challenge_ref=challenge_ref)
+                require(len(result["items"]) == 1, "primary_binding_target_stale")
+                return result
 
     async def respond(self, *, decision, **target):
         require(set(target) == IDENTITY_FIELDS and type(target["generation"]) is int and target["generation"] > 0)
