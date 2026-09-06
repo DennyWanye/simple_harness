@@ -20,6 +20,8 @@ from deskpet.quality.corpus_c05 import TaskSetupBatch, compile_c05_setup, operat
 from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.memory.primary_visibility import read_evidence_pair
 
+MARKER_CONTENT = 'Synthetic C05 fixture preparation; not historical task content.\n'
+
 
 @dataclass(frozen=True)
 class PreparedScopeArchive:
@@ -37,6 +39,7 @@ class PreparedScopeArchive:
     case_id: str
     setup_hash: str
     phase: str = 'create'
+    marker_effect_id: str | None = None
 
 
 class TaskSetupProvider:
@@ -55,17 +58,21 @@ class TaskSetupProvider:
         self.route_receipt = None
         self._route_called = self._closure_called = False
         self._counter = 0
+        self._marker_stage = 0
+        self.marker_result = None
 
     async def invoke(self, request, *, cancel):
         if self._active is None:
             raise RuntimeError('c05_provider_not_armed')
         self.requests.append(request)
         self._counter += 1
-        if self._counter > 4:
+        if self._counter > 9:
             raise RuntimeError('c05_unexpected_tool_cycle')
+        last_tool = None
         for message in request.messages:
             if message.role is MessageRole.TOOL and isinstance(message.content, str):
                 body = json.loads(message.content)
+                last_tool = body
                 value = body.get('value', {})
                 if isinstance(value, dict) and 'context_route_receipt' in value:
                     self.route_receipt = value['context_route_receipt']
@@ -80,6 +87,31 @@ class TaskSetupProvider:
             return self._tool(request, 'context_route', args)
         if self.route_receipt is None:
             raise RuntimeError('c05_actual_route_not_accepted')
+        if spec.next_step is not None or spec.status != 'active':
+            # CREATE itself is clean: only an actual material effect produces
+            # the existing closure instruction. This explicit synthetic marker
+            # has no setup/gold content and is never an invented dirty event.
+            stage = self._marker_stage
+            if stage < 4:
+                if stage and (last_tool is None or last_tool.get('outcome') != 'succeeded'):
+                    raise RuntimeError('c05_marker_tool_not_succeeded')
+                value = {} if last_tool is None else last_tool.get('value', {})
+                if stage == 0:
+                    name, args = 'tool_search', {'query': 'write_file'}
+                elif stage == 1:
+                    name, args = 'tool_describe', {'capability_id': value['matches'][0]['capability_id']}
+                elif stage == 2:
+                    name, args = 'tool_activate', {k: value[k] for k in ('capability_id', 'schema_hash', 'describe_nonce')}
+                else:
+                    marker_key = hashlib.sha256(request.request_id.value.encode()).hexdigest()[:24]
+                    name, args = 'write_file', {'path': '.c05-fixture-' + marker_key + '.txt',
+                                              'content': MARKER_CONTENT}
+                self._marker_stage += 1
+                return self._tool(request, name, args)
+            if self.marker_result is None:
+                if last_tool is None or last_tool.get('outcome') != 'succeeded':
+                    raise RuntimeError('c05_marker_write_not_succeeded')
+                self.marker_result = last_tool['value']
         instructions = []
         for message in request.messages:
             if message.role is MessageRole.SYSTEM and isinstance(message.content, str):
@@ -113,6 +145,8 @@ class TaskSetupProvider:
             return self._tool(request, 'task_scope_update', args)
         if instructions:
             raise RuntimeError('c05_closure_not_settled')
+        if (spec.next_step is not None or spec.status != 'active') and not self._closure_called:
+            raise RuntimeError('c05_material_closure_instruction_missing')
         return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, 'Fixture setup complete.'),
             model=self.target.model, usage=ProviderUsage(0, 0, 0))
 
@@ -189,6 +223,23 @@ agree. This function does not import history into a scoring conversation.
         if (envelope.envelope_hash != row['evidence_hash']
                 or json.loads(row['turn_json'])['payload']['text'] != actual_text):
             raise RuntimeError('c05_setup_original_source_differs')
+    marker_effect_id = None
+    if spec.next_step is not None or spec.status != 'active':
+        from pathlib import Path
+        async with aiosqlite.connect(path) as db:
+            async with db.execute("SELECT effect_id FROM primary_effect_identities WHERE sdk_run_id=? AND tool_name='write_file'",
+                                  (run_id,)) as cursor:
+                marker_ids = [r[0] for r in await cursor.fetchall()]
+        if len(marker_ids) != 1:
+            raise RuntimeError('c05_actual_marker_effect_not_unique')
+        _, (marker,) = stack.read_primary_dependency_facts(run_id, tuple(marker_ids))
+        if (marker is None or not marker.terminal or marker.result is None
+                or thaw_json(marker.arguments).get('content') != MARKER_CONTENT
+                or thaw_json(marker.result.value) != provider.marker_result):
+            raise RuntimeError('c05_actual_marker_effect_differs')
+        if Path(provider.marker_result['path']).read_text() != MARKER_CONTENT:
+            raise RuntimeError('c05_actual_marker_file_differs')
+        marker_effect_id = marker_ids[0]
     search = TaskScopeSearchStore(path)
     await search.rebuild_scope(scope_id)
     opened = await search.open_exact(subject=subject, allowed_scope_ids=(scope_id,), task_scope_id=scope_id)
@@ -202,8 +253,14 @@ agree. This function does not import history into a scoring conversation.
         expected['resume'] = spec.next_step
     if any(fields.get(k) != v for k, v in expected.items()):
         raise RuntimeError('c05_required_disclosure_unavailable')
+    for field in expected:
+        if revision_of is not None and field != 'resume':
+            continue  # unchanged title/goal retain their original creation source
+        proof = disclosed['disclosure_manifest']['fragments'][field]['dependencies']['evidence']
+        if not any(item['evidence_id'] == row['evidence_id'] and item['envelope_hash'] == row['evidence_hash'] for item in proof):
+            raise RuntimeError('c05_original_user_dependency_missing')
     if disclosed['disclosure']['structure'].get('status') != spec.status:
         raise RuntimeError('c05_actual_status_differs')
     return PreparedScopeArchive(label, subject, str(queued['turn_ref']), run_id, scope_id,
         route, terminal, opened.source_id, opened.source_hash, disclosed,
-        tuple(batch.requirements) + ('scoring_history_isolation',), batch.case_id, batch.setup_hash, phase)
+        tuple(batch.requirements) + ('scoring_history_isolation',), batch.case_id, batch.setup_hash, phase, marker_effect_id)

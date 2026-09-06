@@ -72,6 +72,14 @@ async def test_actual_setup_routes_terminal_and_source_bound_readback(tmp_path, 
             assert archive.disclosure['disclosure']['fields']['title'] == spec.title
             assert archive.terminal.state == 'completed'
             assert 'scoring_history_isolation' in archive.remaining_requirements
+            if spec.next_step is not None or spec.status != 'active':
+                from pathlib import Path
+                from deskpet.quality.corpus_c05_prepare import MARKER_CONTENT
+                marker = Path(provider.marker_result['path']).resolve(strict=True)
+                assert marker.is_relative_to(configured.resolve())
+                assert marker.parent != configured.resolve()
+                assert marker.read_text() == MARKER_CONTENT
+                assert provider.marker_result['bytes_written'] == len(MARKER_CONTENT.encode())
         assert len({a.task_scope_id for a in archives}) == len(batch.scopes)
         if case_id == 'C05-20':
             import aiosqlite
@@ -102,7 +110,7 @@ async def test_actual_setup_routes_terminal_and_source_bound_readback(tmp_path, 
                     primary_ref=primary_ref, archives=archives[1:], stack=stack, delegate=delegate)
         # These are real source archives; the test does not claim scoring is ready.
         bad = replace(batch, setup_text=batch.setup_text + 'extra')
-        with pytest.raises(ValueError, match='c05_exact_batch_required'):
+        with pytest.raises(ValueError, match='c05_exact_setup_required'):
             provider.arm(bad, batch.scopes[0].label)
     finally:
         await stack.close()
@@ -211,18 +219,29 @@ async def test_actual_scoring_pages_survive_setup_prefix_and_late_suppression(tm
         assert [g['turn_id'] for g in page] == [t['turn_ref'] for t in turns[1:]]
         earlier = await reader.read(**common, before_sequence=turns[1]['enqueue_sequence'], limit=2)
         assert [g['turn_id'] for g in earlier] == [turns[0]['turn_ref']]
-        # Public suppression of the second scoring USER also hides the third
-        # turn that actually inherited it; the first scoring turn is still read.
+        # Public suppression removes the second USER and its dependants, not
+        # the independently authored third USER. Pin its original S1 exactly.
         async with aiosqlite.connect(state) as db:
             async with db.execute('SELECT evidence_id FROM foreground_turns WHERE turn_id=?',
                                   (turns[1]['turn_ref'],)) as cursor:
                 evidence_id = (await cursor.fetchone())[0]
+            async with db.execute('SELECT evidence_id,evidence_hash FROM foreground_turns WHERE turn_id=?',
+                                  (turns[2]['turn_ref'],)) as cursor:
+                third_user_id, third_user_hash = await cursor.fetchone()
         manager = await runtime.history_memory.manager()
         await manager.backend.suppress(SuppressionRequest('c05-late-scoring-forget', subject,
             SuppressionScopeKind.EVIDENCE, evidence_id, 'user_forget', 20.0),
             principal=runtime.history_memory.principal())
         visible = await reader.read(**common, before_sequence=turns[-1]['enqueue_sequence'] + 1, limit=2)
-        assert [g['turn_id'] for g in visible] == [turns[0]['turn_ref']]
+        assert [g['turn_id'] for g in visible] == [turns[0]['turn_ref'], turns[2]['turn_ref']]
+        assert visible[0] == earlier[0]
+        assert visible[1]['source_ref'] == third_user_id
+        assert visible[1]['source_hash'] == third_user_hash
+        assert visible[1]['messages'] == [{'role': 'user', 'content': 'Scoring-only message 2'}]
+        assert visible[1]['source_ref'] != page[-1]['source_ref']
+        assert 'Actual response 2' not in str(visible)
+        assert 'Actual response 3' not in str(visible)
+        assert 'Scoring-only message 1' not in str(visible)
         # Filtering never destroys the original TaskScope SDK terminal archive.
         for archive in archives:
             assert stack.read_run_terminal_evidence(archive.sdk_run_id) == archive.terminal
