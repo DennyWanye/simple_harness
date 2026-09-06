@@ -3306,7 +3306,7 @@ async def _initialize_product_memory() -> None:
     memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
     if callable(memory_snapshot):
         _sdk_observability.register_snapshot_source("memory", memory_snapshot)
-    _sdk_observability.export()
+    await _sdk_observability.export_async()
     service_context.register("embedder", memory_embedder)
     _session_db.bind_memory_manager(_memory_backend)
 
@@ -8917,7 +8917,6 @@ async def _build_product_sdk_runtime_stack(
         runtime_snapshot = getattr(runtime, "diagnostics_snapshot", None)
         if callable(runtime_snapshot):
             _sdk_observability.register_snapshot_source("harness", runtime_snapshot)
-        _sdk_observability.export()
         return ProductionRuntimeBuild(
             runtime=runtime,
             transaction_owner=production_ports["ports"].react_checkpoint,
@@ -11103,6 +11102,7 @@ async def _activate_product_sdk_runtime(
 
     # Start SDK Runtime
     await stack.start()
+    await _sdk_observability.export_async()
 
     # Create ingress facade
     ingress = SdkRuntimeIngress(stack)
@@ -12761,7 +12761,6 @@ async def _execute_sdk_run(
         )
 
     finally:
-        _sdk_observability.export()
         _sdk_observability.reset_ingress(observability_token)
         if terminal_binding_state is not None and _sdk_provider_binding_resolver is not None:
             try:
@@ -12791,6 +12790,7 @@ async def _execute_sdk_run(
             root_run_id=root_run_id,
             remaining_adapters=len(_delivery_adapters),
         )
+        await _sdk_observability.export_async()
 
 
 async def _watch_retained_sdk_run(
