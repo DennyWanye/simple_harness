@@ -247,3 +247,38 @@ async def test_actual_scoring_pages_survive_setup_prefix_and_late_suppression(tm
             assert stack.read_run_terminal_evidence(archive.sdk_run_id) == archive.terminal
     finally:
         await stack.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case_id', ['C05-07', 'C05-08', 'C05-10', 'C05-11'])
+async def test_runtime_case_public_admission_archive_and_real_pages(tmp_path, case_id, installed_candidate_identity):
+    """New source controls, NOT_RUN; no old four-case setup repetition."""
+    from deskpet.quality.corpus_c05_runtime import TaskRuntimeLane, prepare_task_case
+    state, _, service, configured, authority = await fixture(tmp_path)
+    provider = TaskSetupProvider(target=Provider.target)
+    runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured,
+        candidate_identity=installed_candidate_identity)
+    subject = local_owner_auth().subject
+    lane = TaskRuntimeLane(subject=subject, service=service, provider=provider,
+        drive=runtime._drive_once, stack=stack, path=state, policy=runtime.history_policy,
+        disclosure_context=current_disclosure(run_id='fixture-reader', subject=subject,
+                                              request_id='fixture-reader'))
+    try:
+        batch = compile_c05_setup(case_id, SETUPS[case_id][0])
+        prepared = await prepare_task_case(batch, lanes={'self': lane})
+        assert len(prepared.archives) == len(batch.scopes)
+        assert all(a.terminal.state == 'completed' for a in prepared.archives)
+        if case_id == 'C05-07':
+            queued = await prepared.enqueue_scoring(text='Synthetic admission control.', delivery_key='c05-active-admission')
+            assert queued['scope_ref'] == next(a.task_scope_id for a in prepared.archives if a.label == 'C')
+        elif case_id == 'C05-08':
+            a = next(a for a in prepared.archives if a.label == 'A')
+            assert a.disclosure['disclosure']['structure']['status'] == 'complete'
+            assert stack.read_run_terminal_evidence(a.sdk_run_id) == a.terminal
+        else:
+            # prepare_task_case already read and checked actual B,A pages;
+            # keep these exact source identities, not expected-label receipts.
+            assert len({a.source_hash for a in prepared.archives}) == 2
+    finally:
+        await stack.close()
