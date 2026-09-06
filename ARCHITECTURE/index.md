@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C07独立准备叶（业务ade43237/测试修41296300）在原H079/M619载体分批6个唯一控制通过：20原setup编译边界、3种真实非空seed/job/public冷回读、06/14真实最近组→下一确定性请求。首批同因字段5红保留；PG77451正常退出无残留。只证明helper/Context准备，不是20条实际评分READY；正式06/14评分Provider相位、标量actualmain组合及模型质量仍未验，不改S3完成度。Dirac限定终审已接受并接入隔离主候选。[结果与边界](../plans/2026-09-07-corpus-c07-prepare/RESULTS.md)。
+
 最后更新：2026-09-07。H0710/M619/S0313实际main安装组合1PASS6.38s，PG76882自然退出清空。新候选eaa72b51显式复验C01-20仅1请求HTTP400、无模型响应或工具、EXECUTION_FAILED；原因旧日志不可恢复，后继有界诊断已接入，不猜原因。PG76962自然退出9.136s且清空。240历史3个不同case/0通过，缺响应不算零extra的质量成功；原生仍待，防熄屏持续。[安装态](../plans/2026-09-07-corpus-c01-scoring/INSTALLED-0710619.md)／[真实复验](../plans/2026-09-07-corpus-c01-scoring/REAL-R4.md)。
 
 最后更新：2026-09-07。Host HTTP拒绝诊断叶0be92572/60e6ea88：r4原400未保存body/private_cause，原因不可回溯。借原client.post在SDK拒绝前记录白名单有界脱敏字段/bytes/hash，不改状态分类、nullable或重试；新增本地HTTP组合1PASS0.01s，PG77306正常清空。仅已注入secret脱敏，非未知凭据检测；尚无真实服务拒绝原因，缺response不能把extra0当观测零。原FAIL保留。[事实与结果](../plans/2026-09-07-corpus-c01-scoring/HTTP-REJECTION.md)。
