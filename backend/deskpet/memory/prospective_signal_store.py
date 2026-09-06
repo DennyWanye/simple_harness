@@ -158,7 +158,7 @@ class ProspectiveSignalStore:
                     epoch=claim.epoch,lease=rows[-1]['lease_until'])
             return TimerClaim(claim.signal_id,claim.owner,claim.epoch,claim.authority,True)
 
-
+    async def assert_claim(self,claim,*,now):
         async with self._tx() as db:
             self._check_claim(await self._rows(db,claim.signal_id),claim,now)
 
