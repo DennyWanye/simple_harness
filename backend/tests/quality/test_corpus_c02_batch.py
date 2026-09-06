@@ -58,6 +58,12 @@ async def test_c02_public_setup_preserves_distractors_and_epistemic_status(tmp_p
         classification_policy=classification_policy(),supported_filter_policies=FILTERS,
         evidence_authority=HostEvidenceAuthority(f.path),clock=lambda:batch.scenario_time)
     try:
+        if case_id=='C02-19':
+            from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
+            await manager.register_principal_owner(principal,m.MemoryScope.personal(subject))
+            async def actual_manager():return manager
+            worker=MemoryIngestionOutboxWorker(f.path,actual_manager,owner_id='corpus-inference-ingestion')
+            assert await worker.run_once()=='delivered'
         actual=await apply_setup(manager=manager,principal=principal,batch=batch,envelope=envelope,receipt=receipt,**inference)
         assert set(actual['labels'])=={s[0] for s in batch.specs}
         assert len({x.memory_id for x in actual['labels'].values()})==len(batch.specs)
