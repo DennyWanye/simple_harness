@@ -1,5 +1,12 @@
 <!-- 最后更新：2026-09-06 -->
 
+C03独立公共prepare普通17条首批17PASS/6.51s：真实SDK job物化、公开ID/type/hash/
+quote来源回读、无foreground history；不是quality/模型PASS。02/17日期与20推断
+仍未跑，分母20保留；PG20474清空，无旧绿重跑。
+[限定结果](../plans/2026-09-06-corpus-public-seed/C03-PREPARE.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 Corpus source/runtime 限定叶三项新控制已分批通过：C01 CREATE真实SDK job物化；
 graph backoff重开IDLE拒当成功（Dirac P1闭合）；source实际USER ingestion、原S1
 中断导入/重试、scoring新请求无setup/旧assistant历史及自身exact终态group。

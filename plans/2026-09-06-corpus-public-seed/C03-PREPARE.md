@@ -1,3 +1,13 @@
+# Latest result: ordinary 17 public setups passed
+
+2026-09-06 fixed source d4482df0, c03-normal-r1:17 passed,8 deselected in6.51s.
+Only seventeen ordinary C03 cases ran; no C03-02/17 dates, C03-20 inference or
+other controls in this batch. H078/M618 installed, deterministic local compiler,
+actual SDK job materialization/public readback/source quote binding/no history.
+PG20474exit0remaining[], peak163232KiB, elapsed7.03s. Slot released to main/Singer.
+These17 are setup controls, not actual quality/Provider cases. Do not repeat.
+Remaining date/inference/new-negative controls are NOT_RUN; denominator20 retained.
+
 # C03 public preparation successor — source fixed for review, NOT_RUN
 
 2026-09-06. Parent source runtime006a67dc, same worktree feat/corpus-c03-source.
@@ -52,3 +62,7 @@ Main approved this convention; original text/hash are unchanged.
 
 C04 is separate: actual event/ingestion clocks and public reschedule/cancel chains
 are not provided by this CREATE-only leaf. No final-state shortcut.
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-normal-r1/command.log` SHA256 `518b11acd869812855d87d9ad12fa2fcdae10721fde9b9f64abd86261df189d9`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-normal-r1/resource.json` SHA256 `3f2d696ecd05da2cbd508ee230eb763c2c156d8b2bd52de1f078a80523ba60cf`
