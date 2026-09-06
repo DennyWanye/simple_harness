@@ -1,5 +1,9 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。generation 生产源码161702be未改，追加冷加载跨两次有界超时恢复控1PASS：并发step串行、共享load仅一次、失败不确认cache/推进维护时间、完成加载后立即恢复。PG83348无残留、锁释放；不代表实际WeMM/native验收。[补充证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
+
+最后更新：2026-09-06。02bf 后继后台 worker 已接公共 generation：同锁/既有 timeout 内 projection→generation，成功才确认 cache，失败/超时/取消可重试，SDK 按 lineage/manifest 幂等复用。实际 installed H077/M617 + 小测试 embedder 四控分批绿（含公共 query、维护/重开/lost-ACK 不重复 embedding）；PG82943 无残留、锁释放。尚待独审/主组合/实际 WeMM/native。[边界与结果](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
+
 最后更新：2026-09-06。隔离 Host 短期 terminal 来源补齐叶：r8 最终一致性副本在实际 M617 公共 rebuild 复现 history_source_lineage_missing；Host 同事务核验 terminal 后经公共 source-only admission 补齐祖先，13 组投影 0→3 chunks，重开保持，旧 registration/suppression/revision/jobs 不变。新增三控分批通过，PG82219 清空、锁释放；未改 SDK/原库，generation/真实 shortquery/native 尚未验证；Dirac限定ACCEPT并已合候选。[原因与证据](../plans/2026-09-06-short-terminal-source/RESULTS.md)。
 
 2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
