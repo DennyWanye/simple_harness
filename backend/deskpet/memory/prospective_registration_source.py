@@ -19,6 +19,7 @@ from simple_harness.runtime import (
 from deskpet.memory.s5c_store import S5cConflict, S5cStore, registration_signal_id
 from deskpet.task_scope.protocol import canonical_hash
 from deskpet.operation_audit.prospective_sources import ProspectiveSourceJournal
+from deskpet.memory.prospective_completion import RegistrationDependency, SettledNotRequired
 
 
 class PublicRegistrationAuthoritySource:
@@ -32,21 +33,31 @@ class PublicRegistrationAuthoritySource:
         self.operation_audit = (operation_audit if operation_audit is not None
                                 else ProspectiveSourceJournal(store.path.parent / "operation-audit.db"))
 
-    async def prepare_registration(self, *, principal, entry):
-        from simple_harness_memory import MemoryPrincipal, ProspectiveOutboxSourceView
+    async def prepare_registration(self, *, principal, entry, advance_cursor=True):
+        from simple_harness_memory import (
+            MemoryPrincipal, ProspectiveOutboxSourceViewV2, MutationTargetSource,
+            ProspectiveSignalTargetSource, RegistrationRequiredView,
+            ProspectiveInvalidationNotRequiredReceipt,
+        )
 
         if type(principal) is not MemoryPrincipal or principal != self.store.principal:
             raise S5cConflict("s5c_source_principal_differs")
         cursor = await self.store.cursor()
+        terminal = await self.store.terminal(entry.outbox_id)
+        if terminal is not None:
+            self.store._terminal_record(entry, terminal, terminal.target_source_hash)
+            return SettledNotRequired(terminal, terminal.target_source_hash)
         existing = await self.store.registration(entry.outbox_id)
         if existing is not None:
             # Revalidate immutable entry bytes; never renew an expired grant.
-            await self.store.commit_registration(entry, existing.authority, expected_cursor=cursor)
+            await self.store.commit_registration(entry, existing.authority, expected_cursor=cursor,
+                                                advance_cursor=advance_cursor)
             return existing.authority
         source = await self.operation_audit.read_prospective_outbox_source(self.memory,
             principal=principal, outbox_id=entry.outbox_id, payload_hash=entry.payload_hash,
+            operation="read_prospective_outbox_source_v2",
         )
-        if (type(source) is not ProspectiveOutboxSourceView
+        if (type(source) is not ProspectiveOutboxSourceViewV2
                 or source.subject != principal.actor_id
                 or source.outbox_id != entry.outbox_id
                 or source.outbox_payload_hash != entry.payload_hash
@@ -68,9 +79,28 @@ class PublicRegistrationAuthoritySource:
             registration_ref = "host:prospective-registration:" + canonical_hash(
                 [self.store.owner, entry.outbox_id, entry.payload_hash])
         elif source.command == "invalidation":
+            if not advance_cursor:
+                raise S5cConflict("s5c_dependency_must_be_registration")
             kind = "registration_invalidated"
             original = await self.store.accepted_registration(
                 memory_id=source.target_memory_id, revision=source.target_revision)
+            if original is None:
+                settlement = await self.operation_audit.settle_prospective_invalidation(self.memory,
+                    principal=principal, outbox_id=entry.outbox_id, payload_hash=entry.payload_hash,
+                    expected_source_hash=source.source_hash)
+                if type(settlement) is ProspectiveInvalidationNotRequiredReceipt:
+                    self.store._terminal_record(entry, settlement, source.source_hash)
+                    return SettledNotRequired(settlement, source.source_hash)
+                if type(settlement) is not RegistrationRequiredView or (
+                        settlement.deployment_id, settlement.household_id, settlement.subject,
+                        settlement.outbox_id, settlement.outbox_payload_hash, settlement.outbox_created_at,
+                        settlement.memory_id, settlement.target_revision, settlement.registration_revision,
+                        settlement.trigger_hash, settlement.target_source_hash) != (
+                        principal.deployment_id, principal.household_id, principal.actor_id,
+                        entry.outbox_id, entry.payload_hash, entry.created_at, source.target_memory_id,
+                        source.target_revision, source.registration_revision, source.trigger_hash, source.source_hash):
+                    raise S5cConflict("s5c_dependency_source_differs")
+                return RegistrationDependency(settlement)
             if (original is None or original.authority.intent.trigger_hash != source.trigger_hash
                     or original.authority.intent.registration_revision != source.registration_revision
                     or (original.authority.intent.scope.kind.value, original.authority.intent.scope.owner_id)
@@ -85,7 +115,13 @@ class PublicRegistrationAuthoritySource:
             raise S5cConflict("s5c_registration_observation_time_invalid")
         # The exact SDK target receipt and outbox commitment serve separate
         # roles. Invalidation still refers to the historical target revision.
-        receipt = source.target_mutation_receipt_ref
+        target = source.target_source
+        if type(target) is MutationTargetSource:
+            receipt_id, receipt_hash = target.mutation_receipt_ref.receipt_id, target.mutation_receipt_ref.receipt_hash
+        elif type(target) is ProspectiveSignalTargetSource:
+            receipt_id, receipt_hash = target.apply_result.result_id, target.apply_result.result_hash
+        else:
+            raise S5cConflict("s5c_public_target_source_type_unknown")
         intent = ProspectiveSignalIntent(
             signal_id=registration_signal_id(principal, entry.outbox_id, kind),
             subject=principal.actor_id,
@@ -93,13 +129,13 @@ class PublicRegistrationAuthoritySource:
             target_memory_id=source.target_memory_id, target_revision=source.target_revision,
             signal_kind=kind, trigger=source.trigger, scheduler_registration_ref=registration_ref,
             registration_revision=source.registration_revision,
-            signal_receipt_id=receipt.receipt_id, signal_receipt_hash=receipt.receipt_hash,
+            signal_receipt_id=receipt_id, signal_receipt_hash=receipt_hash,
             observed_at=entry.created_at, transition_from=source.target_lifecycle_state,
             transition_to=source.target_lifecycle_state, outbox_id=entry.outbox_id,
-            outbox_payload_hash=entry.payload_hash, run_id=source.target_run_id,
-            operation_id=source.target_operation_id,
+            outbox_payload_hash=entry.payload_hash, run_id=target.run_id,
+            operation_id=target.operation_id,
         )
-        identity = canonical_hash(["host:prospective-target-grant/v1", self.store.owner,
+        identity = canonical_hash(["host:prospective-target-grant/v2", self.store.owner,
                                    entry.outbox_id, source.source_hash])
         authority = issue_prospective_signal_authority(intent,
             authority_id="host:prospective-authority:" + identity,
@@ -108,7 +144,8 @@ class PublicRegistrationAuthoritySource:
         try:
             # Persist the first observation before returning. The consumer's
             # subsequent commit is the existing exact idempotent path.
-            await self.store.commit_registration(entry, authority, expected_cursor=cursor)
+            await self.store.commit_registration(entry, authority, expected_cursor=cursor,
+                                                advance_cursor=advance_cursor)
         except S5cConflict as exc:
             if str(exc) != "s5c_registration_replay_differs":
                 raise

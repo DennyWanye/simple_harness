@@ -118,6 +118,111 @@ class S5cStore:
             row = await self._cursor_row(db)
         return None if row is None else (row["after_time"], row["after_id"])
 
+    def _terminal_record(self, entry, receipt, expected_source_hash):
+        from simple_harness_memory import ProspectiveInvalidationNotRequiredReceipt
+        if type(entry) is not OutboxEntryV1 or type(receipt) is not ProspectiveInvalidationNotRequiredReceipt:
+            raise TypeError("typed invalidation entry and terminal receipt required")
+        checked = ProspectiveInvalidationNotRequiredReceipt.from_json(receipt.to_json())
+        payload = dict(entry.payload) if entry.payload is not None else {}
+        if (checked.receipt_hash != receipt.receipt_hash
+                or (receipt.deployment_id, receipt.household_id, receipt.subject) != (
+                    self.principal.deployment_id, self.principal.household_id, self.principal.actor_id)
+                or receipt.target_source_hash != expected_source_hash
+                or (receipt.outbox_id, receipt.outbox_payload_hash, receipt.outbox_created_at) != (
+                    entry.outbox_id, entry.payload_hash, entry.created_at)
+                or entry.topic != "memory.prospective.invalidation.requested"
+                or entry.idempotency_key != entry.outbox_id
+                or set(payload) != {"schema_version", "command", "memory_id", "prospective_revision",
+                                     "registration_revision", "trigger", "trigger_hash"}
+                or payload.get("schema_version") != 1 or payload.get("command") != "invalidation"
+                or payload.get("memory_id") != receipt.memory_id
+                or payload.get("prospective_revision") != receipt.target_revision
+                or payload.get("registration_revision") != receipt.registration_revision
+                or payload.get("trigger_hash") != receipt.trigger_hash or _hash(payload) != entry.payload_hash):
+            raise S5cConflict("s5c_terminal_source_differs")
+        source = dict(outbox_id=entry.outbox_id, topic=entry.topic, payload=payload,
+                      payload_hash=entry.payload_hash, created_at=entry.created_at,
+                      idempotency_key=entry.idempotency_key)
+        return (
+            _hash(["s5c:invalidation-terminal", self.owner, entry.outbox_id]), self.owner,
+            entry.outbox_id, "not_required", canonical_json(source), _hash(source),
+            canonical_json(receipt.to_json()), receipt.receipt_hash,
+            _hash(["s5c:invalidation-not-required/v1", self.owner, source, receipt.to_json(), receipt.receipt_hash]),
+        )
+
+    def _decode_terminal(self, row):
+        from simple_harness_memory import ProspectiveInvalidationNotRequiredReceipt
+        try:
+            source = json.loads(row["source_json"])
+            receipt = ProspectiveInvalidationNotRequiredReceipt.from_json(json.loads(row["receipt_json"]))
+            entry = OutboxEntryV1(source["outbox_id"], source["topic"], source["idempotency_key"],
+                "pending", source["payload_hash"], 0, source["created_at"], source["created_at"],
+                source["created_at"], source["payload"])
+            if tuple(row) != self._terminal_record(entry, receipt, receipt.target_source_hash):
+                raise ValueError("terminal identity")
+            return entry, receipt
+        except (ValueError, TypeError, KeyError) as error:
+            raise S5cConflict("s5c_terminal_corrupt") from error
+
+    async def terminal(self, outbox_id):
+        if self.cursor_table != "prospective_outbox_cursor_v52":
+            return None
+        async with aiosqlite.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            async with db.execute("SELECT * FROM prospective_invalidation_terminals "
+                    "WHERE owner_key=? AND outbox_id=?", (self.owner, outbox_id)) as query:
+                row = await query.fetchone()
+            if row is None:
+                return None
+            entry, receipt = self._decode_terminal(row)
+            async with db.execute("SELECT * FROM prospective_outbox_cursor_v52 WHERE terminal_record_id=?",
+                                  (row["record_id"],)) as query:
+                cursor = await query.fetchone()
+            if (cursor is None or cursor["owner_key"] != self.owner
+                    or cursor["registration_record_id"] is not None
+                    or (cursor["after_time"], cursor["after_id"]) != (entry.created_at, entry.outbox_id)
+                    or cursor["cursor_hash"] != _hash(["s5c:cursor/not-required/v1", self.owner,
+                        cursor["sequence"], [entry.created_at, entry.outbox_id], row["record_id"], cursor["prior_hash"]])):
+                raise S5cConflict("s5c_terminal_cursor_corrupt")
+            return receipt
+
+    async def commit_not_required(self, entry, receipt, *, expected_source_hash, expected_cursor):
+        if self.cursor_table != "prospective_outbox_cursor_v52":
+            raise S5cConflict("s5c_terminal_schema_required")
+        record = self._terminal_record(entry, receipt, expected_source_hash)
+        async with self._transaction() as db:
+            async with db.execute("SELECT * FROM prospective_invalidation_terminals "
+                    "WHERE owner_key=? AND outbox_id=?", (self.owner, entry.outbox_id)) as query:
+                existing = await query.fetchone()
+            if existing is not None:
+                if tuple(existing) != record:
+                    raise S5cConflict("s5c_terminal_replay_differs")
+                # The first terminal and its cursor are committed atomically.
+                # Reopening through terminal() verifies their exact join.
+                if await self.terminal(entry.outbox_id) is None:
+                    raise S5cConflict("s5c_terminal_cursor_corrupt")
+                return receipt
+            async with db.execute("SELECT 1 FROM prospective_scheduler_registrations "
+                    "WHERE owner_key=? AND outbox_id=?", (self.owner, entry.outbox_id)) as query:
+                if await query.fetchone() is not None:
+                    raise S5cConflict("s5c_terminal_has_registration")
+            row = await self._cursor_row(db)
+            current = None if row is None else (row["after_time"], row["after_id"])
+            after = (entry.created_at, entry.outbox_id)
+            if current != expected_cursor or (current is not None and after <= current):
+                raise S5cConflict("s5c_cursor_conflict")
+            await db.execute("INSERT INTO prospective_invalidation_terminals VALUES (?,?,?,?,?,?,?,?,?)", record)
+            sequence, prior = (1, "0"*64) if row is None else (row["sequence"]+1, row["cursor_hash"])
+            digest = _hash(["s5c:cursor/not-required/v1", self.owner, sequence, list(after), record[0], prior])
+            await db.execute("INSERT INTO prospective_outbox_cursor_v52 VALUES (?,?,?,?,?,?,?,?)",
+                (self.owner, sequence, *after, None, prior, digest, record[0]))
+            if self.fault:
+                self.fault("s5c.terminal.before_commit")
+        if self.fault:
+            self.fault("s5c.terminal.after_commit")
+        return receipt
+
     def _registration(self, entry, authority):
         if (
             type(entry) is not OutboxEntryV1
@@ -182,12 +287,15 @@ class S5cStore:
         authority: ProspectiveSignalAuthority,
         *,
         expected_cursor: tuple[float, str] | None,
+        advance_cursor: bool = True,
     ) -> ProspectiveSignalAuthorityRef:
         """One ordered outbox entry + fixed prepared signal + cursor, one transaction.
 
         The future consumer supplies contiguous entries from the principal's
         public read_outbox page. This store never reads/writes Memory's SQLite.
         """
+        if type(advance_cursor) is not bool:
+            raise TypeError("advance_cursor must be bool")
         source, record_id, digest = self._registration(entry, authority)
         async with self._transaction() as db:
             cursor = await db.execute(
@@ -200,28 +308,38 @@ class S5cStore:
             if existing is not None:
                 if existing["record_hash"] != digest:
                     raise S5cConflict("s5c_registration_replay_differs")
-                return ProspectiveSignalAuthorityRef.from_authority(authority)
+                async with db.execute(
+                    f"SELECT 1 FROM {self.cursor_table} WHERE registration_record_id=?", (record_id,)
+                ) as committed:
+                    already_advanced = await committed.fetchone() is not None
+                if not advance_cursor or already_advanced:
+                    return ProspectiveSignalAuthorityRef.from_authority(authority)
             row = await self._cursor_row(db)
             current = None if row is None else (row["after_time"], row["after_id"])
             after = (entry.created_at, entry.outbox_id)
-            if current != expected_cursor or (current is not None and after <= current):
+            if advance_cursor and (current != expected_cursor or (current is not None and after <= current)):
                 raise S5cConflict("s5c_cursor_conflict")
-            await db.execute(
-                "INSERT INTO prospective_scheduler_registrations "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (
-                    record_id,
-                    self.owner,
-                    entry.outbox_id,
-                    "prepared",
-                    canonical_json(source),
-                    _hash(source),
-                    authority.authority_id,
-                    canonical_json(authority.to_json()),
-                    authority.authority_hash,
-                    digest,
-                ),
-            )
+            if existing is None:
+                await db.execute(
+                    "INSERT INTO prospective_scheduler_registrations "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        record_id,
+                        self.owner,
+                        entry.outbox_id,
+                        "prepared",
+                        canonical_json(source),
+                        _hash(source),
+                        authority.authority_id,
+                        canonical_json(authority.to_json()),
+                        authority.authority_hash,
+                        digest,
+                    ),
+                )
+            if not advance_cursor:
+                if self.fault:
+                    self.fault("s5c.registration.before_commit")
+                return ProspectiveSignalAuthorityRef.from_authority(authority)
             seq, prior = (
                 (1, "0" * 64)
                 if row is None
@@ -400,13 +518,13 @@ class S5cStore:
             await db.execute("BEGIN")
             cursor = await db.execute(
                 "SELECT p.* FROM prospective_scheduler_registrations p "
-                f"JOIN {self.cursor_table} c "
+                f"LEFT JOIN {self.cursor_table} c "
                 "ON c.registration_record_id=p.record_id "
                 "WHERE p.owner_key=? AND p.phase='prepared' AND NOT EXISTS "
                 "(SELECT 1 FROM prospective_scheduler_registrations a "
                 "WHERE a.owner_key=p.owner_key "
                 "AND a.outbox_id=p.outbox_id AND a.phase='applied') "
-                "ORDER BY c.sequence LIMIT ?",
+                "ORDER BY CASE WHEN c.sequence IS NULL THEN 0 ELSE 1 END,c.sequence,p.outbox_id LIMIT ?",
                 (self.owner, limit),
             )
             rows = await cursor.fetchall()

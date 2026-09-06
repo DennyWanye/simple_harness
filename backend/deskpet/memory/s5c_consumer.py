@@ -20,6 +20,7 @@ from simple_harness_memory.core.occurrence import OutboxEntryV1, OutboxPageV1
 
 from deskpet.memory.s5c_store import S5cConflict, S5cStore
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open
+from deskpet.memory.prospective_completion import RegistrationDependency, SettledNotRequired
 
 
 class RegistrationMemoryPort(Protocol):
@@ -43,8 +44,8 @@ class RegistrationMemoryPort(Protocol):
 
 class RegistrationAuthoritySource(Protocol):
     async def prepare_registration(
-        self, *, principal: MemoryPrincipal, entry: OutboxEntryV1
-    ) -> ProspectiveSignalAuthority:
+        self, *, principal: MemoryPrincipal, entry: OutboxEntryV1, advance_cursor: bool = True
+    ) -> ProspectiveSignalAuthority | RegistrationDependency | SettledNotRequired:
         """Resolve exact scope/lifecycle/Run/operation and return a fixed grant.
 
         Missing lineage must raise. A repeated source must not mint a new
@@ -77,6 +78,27 @@ class ProspectiveRegistrationConsumer:
             reference=prepared.reference,
         )
         await self.store.commit_registration_result(prepared.reference, result)
+
+    async def _prepare(self, entry):
+        resolution = await self.source.prepare_registration(principal=self.store.principal, entry=entry)
+        if type(resolution) is RegistrationDependency:
+            # Resolve one exact SDK-provided registration dependency, without
+            # advancing the global outbox cursor past the current invalidation.
+            dependency = resolution.required.registration_entry
+            authority = await self.source.prepare_registration(
+                principal=self.store.principal, entry=dependency, advance_cursor=False)
+            if type(authority) is not ProspectiveSignalAuthority:
+                raise S5cConflict("s5c_dependency_authority_invalid")
+            await self.store.commit_registration(dependency, authority,
+                expected_cursor=await self.store.cursor(), advance_cursor=False)
+            prepared = await self.store.registration(dependency.outbox_id)
+            if prepared is None:
+                raise S5cConflict("s5c_dependency_not_persisted")
+            await self._deliver(prepared)
+            resolution = await self.source.prepare_registration(principal=self.store.principal, entry=entry)
+            if type(resolution) is RegistrationDependency:
+                raise S5cConflict("s5c_dependency_not_settled")
+        return resolution
 
     async def run_once(self, *, page_size: int = 100, max_pages: int = 4) -> None:
         if type(page_size) is not int or not 1 <= page_size <= 1000:
@@ -114,11 +136,17 @@ class ProspectiveRegistrationConsumer:
                         raise S5cConflict("s5c_registration_topic_unknown")
                     existing = await self.store.registration(entry.outbox_id)
                     if existing is None:
-                        authority = await self.source.prepare_registration(
-                            principal=self.store.principal, entry=entry
-                        )
+                        authority = await self._prepare(entry)
                     else:
                         authority = existing.authority
+                    if type(authority) is SettledNotRequired:
+                        await self.store.commit_not_required(entry, authority.receipt,
+                            expected_source_hash=authority.source_hash, expected_cursor=cursor)
+                        cursor = await self.store.cursor()
+                        self._scan_after = (entry.created_at, entry.outbox_id)
+                        continue
+                    if type(authority) is not ProspectiveSignalAuthority:
+                        raise S5cConflict("s5c_registration_resolution_invalid")
                     # Also checks immutable source on duplicate concurrent read.
                     await self.store.commit_registration(
                         entry, authority, expected_cursor=cursor

@@ -16,7 +16,19 @@ from deskpet.operation_audit.store import digest
 log = logging.getLogger(__name__)
 CALLER = "prospective_source_read"
 OPERATIONS = {"read_prospective_outbox_source": CALLER,
-              "read_prospective_outbox_source_v2": CALLER + "_v2"}
+              "read_prospective_outbox_source_v2": CALLER + "_v2",
+              "settle_prospective_invalidation": "prospective_invalidation_settlement"}
+SETTLE = "settle_prospective_invalidation"
+
+
+def _wire_contract(operation):
+    if operation == "read_prospective_outbox_source":
+        return "ProspectiveSourceReadObservationV1", "memory.prospective.source", "v1"
+    if operation == "read_prospective_outbox_source_v2":
+        return "ProspectiveSourceReadObservationV2", "memory.prospective.source", "v2"
+    if operation == SETTLE:
+        return "ProspectiveInvalidationSettlementObservationV1", "memory.prospective.invalidation.settlement", "v1"
+    raise ValueError("prospective_audit_operation_invalid")
 
 
 def _sdk_hash(domain, payload):
@@ -31,11 +43,16 @@ def _bounded(value):
         return False
 
 
-def _binding(principal, outbox_id, payload_hash):
+def _binding(principal, outbox_id, payload_hash, *, operation="read_prospective_outbox_source",
+             expected_source_hash=None):
     from simple_harness_memory import MemoryPrincipal
 
-    request = (_sdk_hash("memory.prospective.source.request.v1", [outbox_id, payload_hash])
-               if _bounded(outbox_id) and _bounded(payload_hash) else None)
+    _, domain, version = _wire_contract(operation)
+    request_fields = [outbox_id, payload_hash]
+    if operation == SETTLE:
+        request_fields.append(expected_source_hash)
+    request = (_sdk_hash(f"{domain}.request.{version}", request_fields)
+               if all(_bounded(f) for f in request_fields) else None)
     fields = ([principal.deployment_id, principal.household_id, principal.actor_id, principal.session_id]
               if type(principal) is MemoryPrincipal else [])
     owner = (_sdk_hash("memory.prospective.source.claimed-owner.v1", fields)
@@ -50,21 +67,36 @@ def _captured(value, *, binding, operation, result=None, error=None):
     if value is None:
         return "absent", None, None
     try:
-        if type(value) is not m.ProspectiveSourceReadObservationV1:
+        class_name, domain, version = _wire_contract(operation)
+        observation_type = getattr(m, class_name)
+        if type(value) is not observation_type:
             raise ValueError("observation_type")
         wire = value.to_json()
-        checked = m.ProspectiveSourceReadObservationV1(**wire)
+        checked = observation_type(**wire)
         if (checked.operation != operation or value.observation_hash != checked.observation_hash
-                or value.observation_hash != _sdk_hash("memory.prospective.source.observation.v1", wire)
+                or value.observation_hash != _sdk_hash(f"{domain}.observation.{version}", wire)
                 or (checked.request_hash, checked.claimed_owner_ref_hash) != binding):
             raise ValueError("observation_binding")
         if error is None:
-            if (type(result) is not m.ProspectiveOutboxSourceView
-                    or checked.outcome != "observed" or checked.source_hash != result.source_hash):
+            if operation == SETTLE:
+                if type(result) is m.ProspectiveInvalidationNotRequiredReceipt:
+                    expected_hash, reason = result.receipt_hash, "not_required_persisted"
+                elif type(result) is m.RegistrationRequiredView:
+                    expected_hash, reason = result.source_hash, "registration_required"
+                else:
+                    raise ValueError("settlement_result_type")
+            else:
+                result_type = (m.ProspectiveOutboxSourceView if version == "v1"
+                               else m.ProspectiveOutboxSourceViewV2)
+                if type(result) is not result_type:
+                    raise ValueError("source_result_type")
+                expected_hash, reason = result.source_hash, "source_verified"
+            if (checked.outcome != "observed" or checked.source_hash != expected_hash
+                    or checked.reason != reason):
                 raise ValueError("observation_result")
         else:
             if isinstance(error, asyncio.CancelledError):
-                expected = ("cancelled", "source_read_cancelled")
+                expected = ("cancelled", "settlement_cancelled" if operation == SETTLE else "source_read_cancelled")
             elif isinstance(error, m.MemoryOwnershipConflict):
                 expected = ("rejected", "ownership_rejected")
             elif isinstance(error, MemoryCorruptionError):
@@ -74,7 +106,7 @@ def _captured(value, *, binding, operation, result=None, error=None):
             elif isinstance(error, (m.MemoryValidationError, TypeError, ValueError)):
                 expected = ("rejected", "input_or_binding_rejected")
             else:
-                expected = ("failed", "source_read_failed")
+                expected = ("failed", "settlement_failed" if operation == SETTLE else "source_read_failed")
             if (checked.outcome, checked.reason) != expected:
                 raise ValueError("observation_error")
         return "captured_bound", wire, checked.observation_hash
@@ -132,9 +164,22 @@ class ProspectiveSourceJournal(MemoryAttemptJournal):
 
     async def read_prospective_outbox_source(self, manager, *, principal, outbox_id, payload_hash,
                                            operation="read_prospective_outbox_source"):
+        if operation not in {"read_prospective_outbox_source", "read_prospective_outbox_source_v2"}:
+            raise ValueError("prospective_audit_operation_invalid")
+        return await self._invoke(manager, principal=principal, outbox_id=outbox_id,
+                                  payload_hash=payload_hash, operation=operation)
+
+    async def settle_prospective_invalidation(self, manager, *, principal, outbox_id,
+                                              payload_hash, expected_source_hash):
+        return await self._invoke(manager, principal=principal, outbox_id=outbox_id,
+            payload_hash=payload_hash, expected_source_hash=expected_source_hash, operation=SETTLE)
+
+    async def _invoke(self, manager, *, principal, outbox_id, payload_hash, operation,
+                      expected_source_hash=None):
         if operation not in OPERATIONS:
             raise ValueError("prospective_audit_operation_invalid")
-        binding = _binding(principal, outbox_id, payload_hash)
+        binding = _binding(principal, outbox_id, payload_hash, operation=operation,
+                           expected_source_hash=expected_source_hash)
         from simple_harness_memory import MemoryPrincipal
 
         owner = (owner_ref(principal) if type(principal) is MemoryPrincipal
@@ -157,8 +202,9 @@ class ProspectiveSourceJournal(MemoryAttemptJournal):
             self._diagnose("prospective_audit_start_unavailable")
             identity = None
         try:
+            extra = {"expected_source_hash": expected_source_hash} if operation == SETTLE else {}
             result = await getattr(manager, operation)(
-                principal=principal, outbox_id=outbox_id, payload_hash=payload_hash)
+                principal=principal, outbox_id=outbox_id, payload_hash=payload_hash, **extra)
         except BaseException as error:
             status, wire, commitment = _captured(
                 getattr(error, "operation_observation", None), binding=binding, operation=operation, error=error)
