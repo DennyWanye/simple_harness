@@ -65,7 +65,9 @@ async def seed_at(host, memory_path, compiled):
         actual = await prepare_c07_seed(path=host.path, manager=manager, principal=principal,
             authority_ref=local_owner_auth().authority_ref, batch=compiled, delivery_authority=delivery)
         assert actual['application'].receipt.validation_status is h.AnalysisValidationStatus.ACCEPTED
-        assert actual['request'].ordered_evidence_refs == actual['plan'].ordered_evidence_refs
+        source = actual['source_pair'][0]
+        expected_refs = (h.EvidenceRef(source.evidence_id, source.envelope_hash, 1),)
+        assert actual['request'].ordered_evidence_refs == actual['plan'].evidence_refs == expected_refs
         assert actual['fixture_executions'] == 1
         assert (await actual['runner'].run_once()).value == 'idle'
         return actual
