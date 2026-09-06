@@ -1,7 +1,7 @@
 # 原 Procedure applicability 三格公开 executor
 
 2026-09-06，base65f42522，own feat/typed-recall-applicability-executor。
-旧runner untracked applicability WIP不读入、不覆盖。源码待独审，尚未测试。
+旧runner untracked applicability WIP不读入、不覆盖。固定ecaeb50f经Dirac源码限定ACCEPT，实际结果见RESULTS.md。
 
 原typed-recall-v3 eligibility_cases:678–700完整行保留：bound app-v2；current app-v2/app-v3/null；
 expected ELIGIBLE/INELIGIBLE/INELIGIBLE及APPLICABILITY_STALE/APPLICABILITY_REQUIRED不改。

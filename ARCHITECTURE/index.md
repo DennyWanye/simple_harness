@@ -1,5 +1,14 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 Procedure applicability原三格公开executor
+
+最后更新2026-09-06。固定ecaeb50f获Dirac源码限定ACCEPT；installed H073/M0613新增方法1PASS0.68s（原3+4篡改），正式3PASS/0FAIL/0BLOCKED。
+Run67db4f2a02d544db83a20da646f8e16e；原app-v2/app-v3/null映射真实public context，原语义reason保留，实际读取后no_recall不能由前置拒绝替代。
+其余398未选、整体NOT_RUN/BLOCKED、exit3。synthetic SDK合同非Host工具/提醒；32非法与projection原义务未闭合。
+旧绿未重跑；最大135440KiB、进程无残留、槽释放。
+[命令与9raw hash](../plans/2026-09-06-typed-recall-applicability-executor/RESULTS.md)。
+
+
 ## 2026-09-06 Prospective trigger executor公开runner叶子
 
 最后更新2026-09-06。固定7e6337b5获Dirac源码限定ACCEPT后，installed H073/M0613新集成方法1PASS0.63s（原3格+3篡改），正式原3格2PASS/0FAIL/1BLOCKED。
