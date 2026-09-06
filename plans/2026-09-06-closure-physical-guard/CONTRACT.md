@@ -24,6 +24,8 @@ S5 Task6 / S5b AC1：COMPLETED SDK Run 仍有 material dirty、真实最终答�
 
 必要控制只围绕本次：真实 production resolver+合法来源正向到达真实adapter transport；完整请求篡改/异Run/缺carrier/同scope无来源均零send；慢visibility期间权限或scope/owner换代、晚遗忘零send；成功重放零新send，UNKNOWN保持禁止重发；prepare/observer取消不吞，不存在输入carrier而attempt已reserve的半提交。现有analysis14/providercold1不重跑。
 
-Dirac契约挑战已纳入。初版实现新增authority/guard及完整请求carrier；members保留S1实际run_id并单列真实Host入场对应SDKRun，包含全体allowed refs。scope pending只允许已知固定reason代码且复核原来源Run；任意旧reason文本及没有完整来源的非空resume/修改goal仍pending，不能标closure功能全完成。初次prepare可生成既有确定性scope projection，physical只读既有projection；不会新建authority账本。原scope观察的全范围扫描成本仍存在，不能把32事件/64输出refs称全局成本有界。
+Dirac契约挑战已纳入。初版实现新增authority/guard及完整请求carrier；members保留S1实际run_id并单列真实Host入场对应SDKRun，包含全体allowed refs。scope pending只允许已知固定reason代码且复核原来源Run；任意旧reason文本及没有完整来源的非空resume/修改goal仍pending，不能标closure功能全完成。初次prepare可生成既有确定性scope projection；physical复用既有projection，不重建内容，但既有 `open_exact(materialized_only=True)` 仍写真实access receipt，先前“physical只读”措辞不准确。不会新建authority账本。原scope观察的全范围扫描成本仍存在，不能把32事件/64输出refs称全局成本有界。
 
-新增8个场景源已写，尚未运行：真实scope生产→闭合physical正向、request篡改、缺carrier、晚遗忘、UNKNOWN不重发、取消reservation原子回滚、同scope无来源事件、慢checker期间scope变更。旧成功/UNKNOWN优先分支另在相应用例中验证。Singer短索引repro优先共享锁，无模型/native/build/install。
+新增8场景已分批通过；另真实两Run CREATE_NEW→RESUME_EXISTING 暴露独立读事务自锁，窄修后单独通过，共9唯一场景，见 [RESULTS](RESULTS.md)。这不是完整closure/长旅程/native验收。
+
+读写边界：prepare在原invoker读取TX退出后、reservation写TX开始前执行；physical在handed_off提交后执行。原 `reader(BEGIN)` 内 `read_run_dependencies→verify_scope_disclosure→open_exact→access receipt writer` 在DELETE journal下可自锁。`4a86ecb0` 保留首个Host snapshot事务，关闭后用无显式事务的自有只读连接执行公共依赖/当前policy读取；material event/S1核验与最后Host snapshot仍各自使用事务，完整carrier/最终owner、lease、原token、scopehead相等要求不变。访问审计未删、未吞locked、未增timeout。真实route `resume_existing` 与scope state的非空 `resume` 字段是不同义务：前者本片有真实正控，后者来源不完整仍pending。

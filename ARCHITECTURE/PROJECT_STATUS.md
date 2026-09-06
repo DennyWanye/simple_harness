@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：隔离closure物理guard叶（base666b475b、生产5375fc85+4a86ecb0）默认接专用factory，已通过9唯一场景的分批必要控制并获Dirac限定ACCEPT。真实resume依赖读TX→access receipt写自锁独立原红转绿，访问审计未删；不是完整Closure可用，非空resume/缺来源字段仍显式pending。H077/M616限定安装载体与Host本树源码，尚未合主/未native；SDK和原库未改，所有测试进程已清空，旧绿不重复。[结果、命令和保留失败](../plans/2026-09-06-closure-physical-guard/RESULTS.md)。
+
 2026-09-06：隔离 `feat/provider-cold-terminal-cleanup` 自2c8c57c6，Provider后置清理修复及真实resolver冷恢复单控 1PASS/4.32s，H077/M616限定载体。产品f0f72650、测试79508593；已合主候选，Dirac限定终审ACCEPT；native复验未完成。PG81519 exit0/remaining[]；原r8业务证据与resource125独立保留，不标完整native/program通过。[结果与原红](../plans/2026-09-06-provider-cold-cleanup/RESULTS.md)。
 
 2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
