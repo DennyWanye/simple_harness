@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C06后继同构setup新增06/08/09/11/12/15/16七条，仅SPECS映射与独立控制selector；复用32eb已审builder/authority，首3条selector保持固定。20原setup/hash未改，10条具备准备源码，全部新控NOT_RUN，非跨Task/模型质量结论；其余10条约束仍明确保留。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
 最后更新：2026-09-07。C06跨scope语料准备首组02/03/04新增专属public Host S1→Memory分析job→Semantic/Procedure回读源码；20原setup/hash全保留。全部新控NOT_RUN，未接共享scoring/session，未证明跨Task typed召回/非SELF出站/质量。无测试、模型或SDK制品变更。[源码契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
 
 最后更新：2026-09-07。C08正式dispatcher e81a9af7+helper f45da5f9新增1PASS8.00s：01跳scalar，真实旧组/抑制/生产重开CONFIRMED后独立评分Provider，next physical无旧内容/统计1；只本共享入口01组合，不重复旧5绿、不计模型质量。PG85743自然清空。[结果](../plans/2026-09-07-corpus-complete-dispatch/C08-RESULTS.md)。
