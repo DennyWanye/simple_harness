@@ -20,3 +20,16 @@ r1 PG87793 exit1/1.549s/peak155088KiB/minDisk4199MiB；r2 PG88125 exit0/5.804s/p
 | `.local-test-evidence/2026-09-07/corpus-c06-prepare/r1/resource.json` | `a224763170f9f63dd45cf935eba96ec295c620f148c2983cea785813699c379e` |
 | `.local-test-evidence/2026-09-07/corpus-c06-prepare/r2/command.log` | `762454c6fca64707793948571ba24c903bf1b237aff6d2cbcc4080b116f618be` |
 | `.local-test-evidence/2026-09-07/corpus-c06-prepare/r2/resource.json` | `5424c0b9c35998974609bfd99638b86b22b37013ab7e91d9f95fb3c0a3bfef48` |
+
+## 六条带条件与限制的后继来源
+
+主源码 `ab812385`（agent3d469a05），r3 只选新增 `test_public_c06_conditional_descriptions_preserve_limits`，首次 **6 PASS / 3.20s**；旧11控制未重跑。新增05/07/10/13/14/20，仍走同一个真实公共 job/source/foreign owner/reopen 控制，核 Procedure applicability 和内部步骤顺序。
+
+原“只描述不做”“确认对应再执行”“核授权”“候选不删除”“后续确认发送”等限制保留；20两个条件分支同时保存，没有根据当前输入选枝。描述不是执行许可。至此16/20具备受验证的来源准备，01/17/18/19还缺完整源，实际跨任务/非SELF/物理评分均未由此证明。
+
+PG88468 exit0/3.928s，peak164736KiB，minDisk4130MiB，remaining=[]、stop=null、cleanup=null，非内存/磁盘门阻止。当前 installed target 与前批相同。
+
+| 本机证据 | SHA-256 |
+|---|---|
+| `.local-test-evidence/2026-09-07/corpus-c06-prepare/r3/command.log` | `1ff2535d107b146c4374a98750d26efc4e2fa84c9ea2033615efdb0a54923468` |
+| `.local-test-evidence/2026-09-07/corpus-c06-prepare/r3/resource.json` | `8700127edbe503be93c48318651555f31864a6d05286be744d7e8216e0eaf25b` |
