@@ -3,7 +3,8 @@ import asyncio
 import json
 import pytest
 
-from deskpet.quality.corpus_trace import collect_bound_observations
+from deskpet.quality.corpus_trace import collect_bound_observations, read_public_trace
+from deskpet.quality.corpus_scoring import review_packet
 from deskpet.quality.corpus_scoring_session import write_result
 from tests.execution.test_primary_foreground_runtime import (
     Provider, build, dispatch_startup_epoch, HumanMemoryHostServiceFactory,
@@ -64,6 +65,27 @@ async def test_actual_provider_attempt_survives_missing_transcript(tmp_path, mon
         assert result["observation_errors"]["transcript"] == "ValueError"
         assert result["trace"]["operation_audit"] is not None
         assert len(adapter.requests) == 1
+        if phase == "failed":
+            # Same actual failed SDK run, only the public projection reader now
+            # faults. No extra run or Provider invocation for this counter check.
+            class UnreadableProviders:
+                def __getattr__(self, name):
+                    return getattr(stack._uow, name)
+                def list_provider_projection_receipts(self, **kwargs):
+                    raise RuntimeError("injected_public_projection_read_failure")
+            partial = read_public_trace(UnreadableProviders(), run_id)
+            assert partial["provider_observation_complete"] is False
+            packet_dir = tmp_path / "partial-review"
+            packet_dir.mkdir()
+            # Temporary control data, never an edit to the original corpus.
+            write_result(packet_dir / "case.json", {"case_id": "control-only"})
+            write_result(packet_dir / "oracle.json", {"labels": {"required_types": ["semantic"]},
+                "oracle_source_text": "control oracle, not a corpus case"})
+            write_result(packet_dir / "execution.json", {"execution_status": "EXECUTION_FAILED", "trace": partial})
+            packet = review_packet(packet_dir, 1)
+            assert packet["observed_handed_off_invocations"] is None
+            assert packet["observed_handed_off_lower_bound"] == 0
+            assert packet["original_metric_components"]["extra_proposed_types"] is None
     finally:
         release.set()
         if drive is not None:

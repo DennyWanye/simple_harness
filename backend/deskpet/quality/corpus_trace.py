@@ -25,7 +25,7 @@ def digest(value):
         separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
-def _read_providers(uow, run_id):
+def _read_providers(uow, run_id, retained):
     from simple_harness.execution.audit import audit_hash
     from simple_harness.contracts import thaw_json
 
@@ -54,6 +54,7 @@ def _read_providers(uow, run_id):
                         "claimed_at", "handed_off_at", "settled_at", "version",
                         "handoff_attempt", "rehandoff_count",
                     )}
+                retained[:] = providers.values()
         if len(receipts) < 256:
             break
     else:
@@ -75,7 +76,7 @@ def read_public_trace(uow, run_id):
     except Exception as exc:
         result["observation_errors"]["terminal"] = type(exc).__name__
     try:
-        result["providers"] = _read_providers(uow, run_id)
+        _read_providers(uow, run_id, result["providers"])
     except Exception as exc:
         result["observation_errors"]["providers"] = type(exc).__name__
     try:
@@ -83,6 +84,8 @@ def read_public_trace(uow, run_id):
         result["operation_audit"] = wire(audit)
         if audit.run_id != run_id or audit.truncated:
             raise ValueError("corpus_operation_trace_incomplete")
+        if audit.coverage_gaps:
+            raise ValueError("corpus_operation_audit_coverage_gap")
         expected = {op.provider_invocation_id for op in audit.operations
             if op.kind == "provider" and op.record_type == "head"}
         observed = {audit_reference("provider", item["invocation_id"]) for item in result["providers"]}
@@ -91,6 +94,8 @@ def read_public_trace(uow, run_id):
     except Exception as exc:
         result["observation_errors"]["operation_audit"] = type(exc).__name__
     result["trace_status"] = "PARTIAL" if result["observation_errors"] else "COMPLETE"
+    result["provider_observation_complete"] = not any(
+        key in result["observation_errors"] for key in ("providers", "operation_audit"))
     return {**result, "trace_hash": digest(result)}
 
 

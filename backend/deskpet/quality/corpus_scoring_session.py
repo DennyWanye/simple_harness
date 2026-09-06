@@ -44,12 +44,13 @@ class RedactedStream:
         self.stream.flush()
 
 
-def configure_process(directory, host_root):
+def configure_process(directory, host_root, *, initialize_only=False):
     # No generic .env loading; only the two authorized fields are consumed.
     # The key is neither copied into config/userdata nor written to keychain.
     from dotenv import dotenv_values
     import tomlkit
-    values = dotenv_values(Path("/Users/denny/projects/simple_harness/.env"), interpolate=False)
+    values = {"APIKEY": "corpus-offline-not-a-key", "BASEURL": "http://127.0.0.1:9/v1"} \
+        if initialize_only else dotenv_values(Path("/Users/denny/projects/simple_harness/.env"), interpolate=False)
     key, base_url = values.get("APIKEY"), values.get("BASEURL")
     if not key or not base_url:
         raise ValueError("corpus_process_credentials_missing")
@@ -135,7 +136,11 @@ async def collect_turn(main, service, subject, queued, text, *, directory):
     return {**row, **observations}
 
 
-async def run(directory, host_root, key, base_url):
+class _InitializationComplete(Exception):
+    """Leave the preparation block through the same resource cleanup path."""
+
+
+async def run(directory, host_root, key, base_url, *, initialize_only=False):
     # Explicit input files only. Parent's original oracle/case archive never
     # becomes a constructor argument, system instruction, tool schema or seed.
     authored = json.loads((directory / "input.json").read_text())
@@ -234,6 +239,9 @@ async def run(directory, host_root, key, base_url):
         service = factory.bind(auth)
         if (await service.queue_snapshot())["turns"]:
             raise ValueError("corpus_scoring_history_not_empty")
+        if initialize_only:
+            outcome["execution_status"] = "INITIALIZED_NOT_EXECUTED"
+            raise _InitializationComplete()
         worker = MemoryIngestionOutboxWorker(main._state_db_path, cognitive.manager,
             owner_id="corpus-scoring-user-ingestion")
         outcome["execution_status"] = "DISPATCH_STARTED"
@@ -267,6 +275,8 @@ async def run(directory, host_root, key, base_url):
                             text, directory=directory))
                 except Exception as trace_error:
                     outcome["trace_error_type"] = type(trace_error).__name__
+    except _InitializationComplete:
+        pass
     except Exception as exc:
         outcome["error_type"] = type(exc).__name__
     finally:
@@ -304,20 +314,24 @@ async def run(directory, host_root, key, base_url):
             outcome["cleanup_errors"].append("search_gateway:" + type(exc).__name__)
         outcome["result_hash"] = digest(outcome)
         write_result(directory / "execution.json", outcome)
-    return 0 if outcome["execution_status"] == "COMPLETED" and not outcome["cleanup_errors"] else 1
+    return 0 if outcome["execution_status"] in {"COMPLETED", "INITIALIZED_NOT_EXECUTED"} \
+        and not outcome["cleanup_errors"] else 1
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--host-root", type=Path, required=True)
+    parser.add_argument("--initialize-only", action="store_true")
     args = parser.parse_args()
     directory = args.directory.resolve(strict=True)
     if ".local-test-evidence" not in directory.parts:
         raise ValueError("corpus_evidence_directory_required")
     try:
-        key, base_url = configure_process(directory, args.host_root.resolve(strict=True))
-        return asyncio.run(run(directory, args.host_root, key, base_url))
+        key, base_url = configure_process(directory, args.host_root.resolve(strict=True),
+            initialize_only=args.initialize_only)
+        return asyncio.run(run(directory, args.host_root, key, base_url,
+            initialize_only=args.initialize_only))
     except Exception as exc:
         if not (directory / "execution.json").exists():
             write_result(directory / "execution.json", dict(execution_status="SETUP_NOT_READY",

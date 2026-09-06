@@ -45,3 +45,7 @@ wholeFAILED 的精确失败来源/归因仍是原需求未完成项，**没有�
 初版 `aa7675bd` 静态审查拒绝：trace取得后若transcript失败，整个返回值丢失；无terminal亦无法导出已有attempt。后继改为身份先持久、public trace先独立保存，再分开读取transcript/route/effects/queue；各项失败有独立状态，不擦除前项。public terminal允许明确NONTERMINAL，保留真实attempt/audit，绝不因此算COMPLETED；任一观测缺口保持OBSERVATION_FAILED/未知计分。
 
 新增仅两参数控制：真实SDK已handoff而未终态，以及真实SDK失败终态，各注入后续transcript故障，要求前面的实际Provider trace已先写盘且不丢失。使用本地adapter故障，不调用网络Provider；不是main factory初始化证明。两项当前NOT_RUN；main初始化/退出仍须单独必要控制，不付费探初始化。
+
+Dirac追加计数问题同批修正：Provider/audit读取失败不能把默认空列表计成确定0。完整总数仅在公开Provider/audit观测完整时给出，否则为null，并单独保留已见handoff下界及unknown样例数；同一真实失败Run上注入reader拒绝验证，不新增Provider请求。已核验的投影会保留，后续页故障不擦除已见下界。
+
+无网络main初始化控制使用 `--initialize-only` 同一实际组装/清理路径；不读主.env，用不可用本地endpoint和明确无效测试key，网络connect/http send额外断言0。原C01-10经冻结compiler准备后，故意替换**测试产物内**oracle副本并禁止worker读取，原MD不改；必须实际APPLIED、生产authority重新初始化、空前台历史及关闭无错误。此模式从未enqueue评分Turn，不是质量执行。复用已安装M619，临时vendor链接结束恢复，不改site-packages/原wheel，不重扫制品全成员。
