@@ -1,3 +1,5 @@
+2026-09-06：固定3d83ac81的C03两来源收尾在当前H079/M618安装组合新增1PASS/2.25s，PG28861清空；189加载SDK模块来自target，原H078其余绿不重跑。不计质量语料，C02/自动prepare/跨进程proof另验。[组合证据](../plans/2026-09-06-corpus-public-seed/H079-COMPOSITION.md)。
+
 2026-09-06 C03与推断准备收尾已审叶bfd56d99合入候选：C03全部20条setup分批通过，C01–C03共60条准备验证；240真实质量仍0。C03-20两来源实际SDK job的合法无修改收尾、非法分析虽APPLIED但拒绝确认、取消后的原application恢复共3个新控制分批通过。仅H078/M618独立叶证据，C02接线、prepare自动收尾、跨进程proof及当前H079组合仍另验；不是全部评分运行就绪。[C03准备](../plans/2026-09-06-corpus-public-seed/C03-PREPARE.md)／[收尾结果](../plans/2026-09-06-corpus-public-seed/INFERENCE-DRAIN-RESULTS.md)。
 
 最后更新：2026-09-06。r16 mandatory-context 后继独立源：Host 将 no_recall 决策移至 SDK 真实响应 checkpoint 之后，反馈纳入新 snapshot/hash；repair-bearing 每次拟终态（包括已route）仍核真实ACK/pending，最多两次且继承原预算。Host 新3控首批PASS6.63s，SDK新11控分批PASS；含真实首零tool→ACK、route无ACK有限FAILED、续接前publicforget零新增发送，公开操作审计核repair identity。最后PG21416exit0/remaining[]，无模型/native/构建。Dirac固定源/14unique限定ACCEPT；H079待主统一制品与原生，H078/M618/原r16失败记录未改；非完整program完成。[精确结果](../plans/2026-09-06-prospective-mandatory-repair/RESULTS.md)。
