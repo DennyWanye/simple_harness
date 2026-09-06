@@ -46,6 +46,14 @@ STOPPED；keeper失败/取消与最终读失败均join清理。新10独立控制
 冻结H075制品独审ACCEPT、旧074614环境/用户库不变；主H075/M616组合和native另验，
 不标401/program完成。[固定结果与全部失败保留](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
 
+2026-09-06：Timer新增late-invalidation/lease接管/observation篡改三控分批通过（先1PASS2FAIL，修复仅2红后2PASS）；产品修复2ce1dff1规范SQLite REAL lease签名字节，旧绿未重跑。schema52未合，presentation/ack/native未验。[风险控制结果](../plans/2026-09-06-prospective-scheduler-time/RESULTS.md)。
+
+## 2026-09-06 Timer必要installed H076/M616组合
+
+Host d3f9720a真实pending/rescheduled两路径2PASS1.71s：到期Memory提交丢ACK、过期重开same-ref重放、inbox唯一。原失败保留，旧控制不重跑；尚缺独立竞争控制与presentation/ack/native，未称完整scheduler。进程退出槽释放。[局部结果](../plans/2026-09-06-prospective-scheduler-time/RESULTS.md)。
+
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
+
 ## 2026-09-06 S5c 注册来源局部通过
 
 最后更新：2026-09-06。提醒来源及幂等恢复新增7项在已安装 H075/M616 下通过，S5c 完整 scheduler/occurrence/ack 尚未完成；用户主树及默认 schema49 未切换。[范围与剩余项](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。

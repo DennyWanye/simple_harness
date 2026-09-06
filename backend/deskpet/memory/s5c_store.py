@@ -506,6 +506,53 @@ class S5cStore:
             prepared = await self._read_registration_tx(db, rows[0])
             return prepared if prepared.result is not None else None
 
+    async def page_accepted_registrations(self, *, after: int = 0,
+                                          upper: int | None = None, limit: int = 100):
+        """Bounded Host cursor window; cursor is scan progress, not delivery ACK."""
+        if type(after) is not int or after < 0 or type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("s5c_registration_page_invalid")
+        if upper is not None and (type(upper) is not int or upper < after):
+            raise ValueError("s5c_registration_page_upper_invalid")
+        async with aiosqlite.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            if upper is None:
+                row = await (await db.execute("SELECT COALESCE(MAX(sequence),0) FROM prospective_outbox_cursor WHERE owner_key=?", (self.owner,))).fetchone()
+                upper = row[0]
+            rows = await (await db.execute(
+                "SELECT c.sequence,p.* FROM prospective_outbox_cursor c "
+                "JOIN prospective_scheduler_registrations p ON p.record_id=c.registration_record_id "
+                "WHERE c.owner_key=? AND c.sequence>? AND c.sequence<=? "
+                "ORDER BY c.sequence LIMIT ?", (self.owner, after, upper, limit))).fetchall()
+            accepted = []
+            for row in rows:
+                prepared = await self._read_registration_tx(db, row)
+                if prepared.result is not None and prepared.entry.payload['command'] == 'registration':
+                    accepted.append(prepared)
+            return tuple(accepted), (rows[-1]['sequence'] if rows else upper), upper
+
+    async def accepted_invalidation(self, *, memory_id: str, revision: int,
+                                    registration_revision: int, registration_ref: str):
+        """Read exact ACKed invalidation; pending commands are not ACK facts."""
+        async with aiosqlite.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            rows = await (await db.execute(
+                "SELECT * FROM prospective_scheduler_registrations WHERE owner_key=? AND phase='prepared' "
+                "AND json_extract(source_json,'$.payload.command')='invalidation' "
+                "AND json_extract(source_json,'$.payload.memory_id')=? "
+                "AND json_extract(source_json,'$.payload.prospective_revision')=? "
+                "AND json_extract(source_json,'$.payload.registration_revision')=?",
+                (self.owner, memory_id, revision, registration_revision))).fetchall()
+            found = None
+            for row in rows:
+                prepared = await self._read_registration_tx(db, row)
+                if prepared.authority.intent.scheduler_registration_ref == registration_ref and prepared.result is not None:
+                    if found is not None:
+                        raise S5cConflict('s5c_invalidation_ambiguous')
+                    found = prepared
+            return found
+
     async def pending_registrations(
         self, *, limit: int = 100
     ) -> tuple[PreparedRegistration, ...]:
