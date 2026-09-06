@@ -1,5 +1,18 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。[当前 H075/M616 组合](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)已完成必要功能与安装身份检查；后文叶子状态保留当时证据，不能代替原 program 剩余项。
+
+## 2026-09-06 Host typed-use 生产接线独立叶
+
+最后更新：2026-09-06。独立typed-use叶现闭合H075 short及no-recall必要恢复范围。
+原short伪revision保持拒绝、actualNone经H075公开page/grant→真实physicalguard正常外发；
+独立Host来源遗忘仍拒绝。新4场景分别证明sink前/后进程丢失恢复、response_reserved恢复
+同receipt不重发、真实pending拒绝同时保留Provider成功事实。发现并修复本叶启动时序P1：
+使用SDK原terminal verifier返回的实际publicview，避免查询尚未发布的Hoststack；原校验不减。
+两新批分别2PASS后1FAIL、修复后只重试余下2PASS，进程全部清空；未重跑旧long/clock/short。
+冻结H075制品独审ACCEPT、旧074614环境/用户库不变；主H075/M616组合和native另验，
+不标401/program完成。[固定结果与全部失败保留](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
+
 最后更新：2026-09-06。[S5c 提醒注册公开来源及7项局部验证](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)；完整 scheduler 仍在进行，未切换默认运行路径。
 
 ## 2026-09-06 M0615 installed tool groups

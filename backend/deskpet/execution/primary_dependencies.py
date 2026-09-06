@@ -63,7 +63,7 @@ def current_disclosure(*, run_id, subject, request_id):
         (DisclosureReasonCode.MINIMUM_NECESSARY,))
 
 
-async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None):
+async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None, consumed_occurrences=frozenset()):
     """Retain ALL consumed recall routes, even after public Context pruning.
 
     Host SQL supplies only Host identities; start/effects come from the SDK's
@@ -198,24 +198,8 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
                 short.extend(sources.get("short_horizon", ()))
                 short.append(binding)
                 continue
-            if fragment.get("lane") not in {"long_term_typed", "short_horizon_typed"}:
-                raise ValueError("primary_dependencies_carrier_unsupported")
-            binding = fragment.get("history_binding")
-            item = dependencies(recall=[binding])["recall"][0]
-            if item["item_id"] != fragment["ref"]:
-                raise ValueError("primary_dependencies_item_mismatch")
-            if fragment.get("lane") == "short_horizon_typed":
-                from deskpet.task_scope.protocol import canonical_hash
-                payload = fragment.get("payload")
-                if (not isinstance(payload, Mapping) or not isinstance(payload.get("content"), str)
-                        or canonical_hash(dict(payload)) != fragment.get("payload_hash")):
-                    raise ValueError("primary_dependencies_short_bytes_mismatch")
-                sources = parse_dependencies(fragment.get("history_source_dependencies"))
-                if not sources["evidence"] or item not in sources["recall"] or sources.get("short_horizon"):
-                    raise ValueError("primary_dependencies_short_sources_missing")
-                evidence.extend(sources["evidence"])
-                recall.extend(sources["recall"])
-            recall.append(item)
+            append_typed_fragment_dependencies(fragment, evidence=evidence, recall=recall,
+                consumed=(route.effect_id, fragment.get("ref")) in consumed_occurrences)
     # Every actual primary handler records its exact SDK identity, including
     # unscoped search/page-in. TaskScope reservations are not a complete index.
     if metadata.get("primary_effect_index_version") != 1:
@@ -271,13 +255,45 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
     return run, dependencies(evidence, recall, short, schema_version=2 if short else proof["schema_version"])
 
 
-async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, policy_factory):
+def append_typed_fragment_dependencies(fragment, *, evidence, recall, consumed):
+    """Append this occurrence's dependencies without deleting any base proof.
+
+    In particular, an identical 4-tuple already present in history survives a
+    consumed current occurrence. Host short group/indirect roots always survive.
+    """
+    if fragment.get("lane") not in {"long_term_typed", "short_horizon_typed"}:
+        raise ValueError("primary_dependencies_carrier_unsupported")
+    item = dependencies(recall=[fragment.get("history_binding")])["recall"][0]
+    if item["item_id"] != fragment["ref"]:
+        raise ValueError("primary_dependencies_item_mismatch")
+    if fragment.get("lane") == "short_horizon_typed":
+        from deskpet.task_scope.protocol import canonical_hash
+        payload = fragment.get("payload")
+        if (not isinstance(payload, Mapping) or not isinstance(payload.get("content"), str)
+                or canonical_hash(dict(payload)) != fragment.get("payload_hash")):
+            raise ValueError("primary_dependencies_short_bytes_mismatch")
+        sources = parse_dependencies(fragment.get("history_source_dependencies"))
+        if not sources["evidence"] or item not in sources["recall"] or sources.get("short_horizon"):
+            raise ValueError("primary_dependencies_short_sources_missing")
+        evidence.extend(sources["evidence"])
+        recall.extend(value for value in sources["recall"] if not consumed or value != item)
+    if not consumed:
+        recall.append(item)
+
+
+async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, policy_factory, typed_use_authority=None):
     """Guard strictly before delegate invocation; typed definite failure only here."""
     from deskpet.memory.trusted_disclosure import resolve_current_disclosure
     try:
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
-            found = await read_run_dependencies(db=db, stack=stack, sdk_run_id=sdk_run_id)
+            consumed = frozenset()
+            if typed_use_authority is not None:
+                consumed = await typed_use_authority.consumed_occurrences(
+                    db=db, run_id=sdk_run_id, request=request,
+                )
+            found = await read_run_dependencies(db=db, stack=stack, sdk_run_id=sdk_run_id,
+                                                 consumed_occurrences=consumed)
             if found is None:
                 return  # trusted Host lookup: this is not a foreground primary Run
             run, proof = found

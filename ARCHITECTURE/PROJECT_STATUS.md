@@ -1,5 +1,18 @@
 # simple_harness — 全局项目状态与架构完成度
 
+最后更新：2026-09-06。H075/M616/S0313、typed-use恢复及提醒来源已汇入隔离候选，必要功能/安装身份分批通过；原用户主树不变。S5c scheduler/occurrence/ack、401/240及native仍未完成。[当前组合与限制](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)。
+
+## 2026-09-06 Host typed-use 生产接线独立叶
+
+最后更新：2026-09-06。独立typed-use叶现闭合H075 short及no-recall必要恢复范围。
+原short伪revision保持拒绝、actualNone经H075公开page/grant→真实physicalguard正常外发；
+独立Host来源遗忘仍拒绝。新4场景分别证明sink前/后进程丢失恢复、response_reserved恢复
+同receipt不重发、真实pending拒绝同时保留Provider成功事实。发现并修复本叶启动时序P1：
+使用SDK原terminal verifier返回的实际publicview，避免查询尚未发布的Hoststack；原校验不减。
+两新批分别2PASS后1FAIL、修复后只重试余下2PASS，进程全部清空；未重跑旧long/clock/short。
+冻结H075制品独审ACCEPT、旧074614环境/用户库不变；主H075/M616组合和native另验，
+不标401/program完成。[固定结果与全部失败保留](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
+
 ## 2026-09-06 S5c 注册来源局部通过
 
 最后更新：2026-09-06。提醒来源及幂等恢复新增7项在已安装 H075/M616 下通过，S5c 完整 scheduler/occurrence/ack 尚未完成；用户主树及默认 schema49 未切换。[范围与剩余项](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。

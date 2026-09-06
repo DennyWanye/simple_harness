@@ -1,5 +1,18 @@
 # Memory SDK 边界与 Host 接口契约
 
+最后更新：2026-09-06。当前隔离候选已组合 H075/M616/S0313，SDK 官方执行库schema9、Host默认49。实际 short使用与空assistant工具组交叉通过；主vendor安装来源检查随后定向通过。未重跑完整旧集合，完整scheduler和质量/native仍待完成。[组合状态](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)。
+
+## 2026-09-06 Host typed-use 生产接线独立叶
+
+最后更新：2026-09-06。独立typed-use叶现闭合H075 short及no-recall必要恢复范围。
+原short伪revision保持拒绝、actualNone经H075公开page/grant→真实physicalguard正常外发；
+独立Host来源遗忘仍拒绝。新4场景分别证明sink前/后进程丢失恢复、response_reserved恢复
+同receipt不重发、真实pending拒绝同时保留Provider成功事实。发现并修复本叶启动时序P1：
+使用SDK原terminal verifier返回的实际publicview，避免查询尚未发布的Hoststack；原校验不减。
+两新批分别2PASS后1FAIL、修复后只重试余下2PASS，进程全部清空；未重跑旧long/clock/short。
+冻结H075制品独审ACCEPT、旧074614环境/用户库不变；主H075/M616组合和native另验，
+不标401/program完成。[固定结果与全部失败保留](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
+
 ## 2026-09-06 提醒注册公开来源
 
 最后更新：2026-09-06。新增 Host 来源解析经 Memory 公开接口绑定真实历史目标及 outbox，授权与 cursor 原子保存，失效复用真实 ACK。安装 H075/M616 下新增7项已有通过结果（首批5绿，两项 fixture 修正后定向2绿），进程清空。唯一 scheduler、signal 派生来源、完整审计接收仍待接线，默认49未改变。[生产边界与证据](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。
