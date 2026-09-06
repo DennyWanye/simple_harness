@@ -73,11 +73,11 @@ async def world(tmp_path, monkeypatch, mode):
         async def change_after_read(**kwargs):
             allowed = await check(**kwargs)
             if w.calls and not getattr(w, "changed", False):
-                w.changed = True
                 from deskpet.task_scope.store import CanonicalTaskScopeStore
                 await CanonicalTaskScopeStore(state).append_host_event(
                     task_scope_id=w.prepared[0]["identity"]["scope"], event_kind="host.turn",
                     source_event_id="actual-late-host-turn", payload={"status":"observed"})
+                w.changed = True  # only a committed change satisfies this oracle
             return allowed
         monkeypatch.setattr(runtime.history_policy, "check_dependencies", change_after_read)
 
@@ -208,6 +208,10 @@ async def test_actual_scope_to_physical_closure(tmp_path, monkeypatch, mode):
             assert attempts[0]["unknown_class"] == "not_sent"
             assert w.outcomes[-1].reason_code == "closure_request_disclosure_rejected"
             assert w.outcomes[-1].provider_calls == 0
+            if mode == "slow_scope_change":
+                assert getattr(w, "changed", False)
+                with sqlite3.connect(w.state) as db:
+                    assert db.execute("SELECT COUNT(*) FROM task_scope_events WHERE source_event_id='actual-late-host-turn'").fetchone()[0] == 1
         with sqlite3.connect(w.state) as db:
             assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts").fetchone()[0] == "COMPLETED"
     finally:
