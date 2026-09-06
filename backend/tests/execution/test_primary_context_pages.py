@@ -168,7 +168,14 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
                 values = [json.loads(m.content)["value"] for m in request.messages
                     if m.role.value == "tool" and isinstance(m.content, str)
                     and isinstance(json.loads(m.content).get("value"), dict)]
-                page = values[-1]
+                if n == 4:
+                    failed = json.loads(next(m.content for m in reversed(request.messages)
+                        if m.role.value == "tool"))
+                    assert failed["outcome"] == "failed" and failed["value"] is None
+                    assert failed["error_code"] == "primary_page_hash_mismatch"
+                    page = {"error": failed["error_code"]}
+                else:
+                    page = values[-1]
                 holder.responses.append(page)
                 if mode == "forget_after_page":
                     assert page["kind"] == "primary_tool_history_page_v1"

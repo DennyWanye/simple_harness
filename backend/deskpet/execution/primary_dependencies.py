@@ -264,6 +264,23 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         if fact is None or not fact.terminal or fact.result is None or fact.tool_name != row["tool_name"] or fact.run_id.value != sdk_run_id:
             raise ValueError("scope_search_effect_unverified")
         value = thaw_json(fact.result.value)
+        if (row["tool_name"] == "context_page_in" and fact.state.value == "failed"
+                and fact.result.outcome.value == "failed" and value is None
+                and fact.result.error_code == "primary_page_hash_mismatch"
+                and fact.result.public_message == "Requested primary page is unavailable."):
+            # The SDK failure carrier has no value. Independently reconstruct
+            # this deterministic rejection; never interpret arbitrary failed
+            # effects or a claimed error code as a successful content read.
+            from deskpet.execution.primary_context_pages import admitted_page, PrimaryContextPageUnavailable
+            try:
+                await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                    start=start, arguments=thaw_json(fact.arguments))
+            except PrimaryContextPageUnavailable as exc:
+                if str(exc) != "primary_page_hash_mismatch":
+                    raise
+            else:
+                raise ValueError("primary_page_rejection_mismatch")
+            continue
         if isinstance(value, str):
             value = json.loads(value)
         if not isinstance(value, Mapping):

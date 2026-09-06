@@ -109,7 +109,8 @@ def build_context_page_in_handler(
             try:
                 return json.dumps(await store.primary_reader(args), ensure_ascii=False)
             except PrimaryContextPageUnavailable as exc:
-                return _error(str(exc))
+                return json.dumps({"ok": False, "error_code": str(exc),
+                    "public_message": "Requested primary page is unavailable."})
         reference_id = str(args.get("reference_id", "") or "").strip()
         source_hash = str(args.get("source_hash", "") or "").strip()
         ref = store.get(reference_id)
