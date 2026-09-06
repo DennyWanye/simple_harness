@@ -1,3 +1,5 @@
+最后更新：2026-09-06。Dirac已限定ACCEPT Procedure恢复叶（Host a7a9ca66及ea63ddc6/c76da29c，Memory978ae99）：13唯一source-overlay控制，旧12未重跑；P1单控与固定源码/raw/WIP恢复已独核，资源组清空。制品/installed/native/完整TC-HM04与新草稿发现、失败归因WIP均不在接受范围。[独审边界与证据](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。
+
 最后更新：2026-09-06。Dirac恢复P1已由a7a9ca66修订：已有prepared遭同Scope先消费后，exact public duplicate拒绝也持久rejected，原ref/获胜结果不改。仅新交错1PASS7.24s，PG34197清空/槽释放，草稿WIP逐字节还原且未混测；原12不重跑。待此修订终审，非整项TC-HM04/native完成。[结果与SHA](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。
 
 最后更新：2026-09-06。Procedure恢复源码Host ea63ddc6/c76da29c、Memory978ae99：新增12唯一控制分批通过（SDK3，Host9），原四夹具失败保留且只重试四红；明确54增量attempt journal、过期重开/lostACK、同epoch旧revision、同Scope拒绝、真实drift物理0、高risk及timer兼容。全部资源组清空，临时vendor恢复；待新叶独审和统一制品，未合主/非native。首次草稿发现、失败归因、TC-HM04仍未完成。[结果与边界](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。

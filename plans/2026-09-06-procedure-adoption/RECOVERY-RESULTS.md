@@ -1,5 +1,7 @@
 # Procedure 恢复新控结果
 
+最终独审补充（2026-09-06）：Dirac已限定ACCEPT固定Host a7a9ca66，结合此前ea63ddc6/c76da29c与Memory978ae99的12项，本恢复叶13个唯一source-overlay控制限定接受，旧12未重跑。新1PASS、5份raw SHA、2固定源hash和13tracked WIP恢复已独立只读核对。不是新制品/installed/native/TC-HM04全通过；UNBOUND发现和失败归因WIP不在结论内。下文“待终审”为此前记录。
+
 ## 2026-09-06 Dirac 恢复重复Scope P1修订
 
 Dirac核过原12项及6份证据，指出已有prepared的恢复分支漏接SDK公开`MemoryValidationError(procedure_observation_source_already_counted)`；此前整片没有最终ACCEPT。源码 `a7a9ca66` 共用初次/恢复的exact拒绝收口，保留A原prepared/ref和B真实result，不签替代authority、不伪consume。只有该错误持久rejected，其他异常继续传播。
