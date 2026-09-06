@@ -64,4 +64,3 @@ PYTHONPATH=/Users/denny/projects/simple_harness-primary-candidate/.local-test-ev
 ## 单列限制
 
 init-r2暴露既有 `backend/observability/sdk.py:144` 的 `MemoryManager.diagnostics_snapshot` coroutine未await警告。保留原日志，不扩改异步diagnostics、不因此重跑绿。它不使本次初始化控制失败；也不据此宣称SDK审计完整。真实评分若Provider/audit公共证据缺失，仍按现runner的不完整观测规则阻止完整计分。当前3个唯一无网络控制不是实际模型或240质量证明。
-

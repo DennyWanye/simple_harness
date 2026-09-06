@@ -8475,7 +8475,11 @@ async def _build_product_sdk_runtime_stack(
                 "continue_active (exact current task), resume_existing (exact "
                 "task_scope_id from a confirmed task_scope_search candidate; "
                 "returns the bounded ResumePackage), or create_new (new "
-                "multi-step task; requires title). Search hits never "
+                "multi-step task; requires title). To continue editing files of a "
+                "completed task, use create_new with reuse_workspace_of and its "
+                "exact expected_source_hash: a new active Scope receives an explicit "
+                "binding to the original single root under current policy. Without "
+                "reuse_workspace_of, create_new uses a separate new directory. Search hits never "
                 "authorize; only this tool commits a route."
             ),
             input_schema=CONTEXT_ROUTE_SCHEMA,
@@ -8495,8 +8499,12 @@ async def _build_product_sdk_runtime_stack(
                 "Permission-first search over the caller's own archived task "
                 "scopes. Returns read-only candidates (title, goal, snippet, "
                 "rank); candidates grant no authority and never change the "
-                "active task. Confirm one and pass its exact task_scope_id to "
-                "context_route(route=resume_existing)."
+                "active task. For an active task, pass its exact task_scope_id to "
+                "context_route(route=resume_existing). For completed candidates, "
+                "use create_new with reuse_workspace_of "
+                "and expected_source_hash as the first task route in a new Run "
+                "to request a new active Scope bound to the original workspace; "
+                "do not resume the completed task first when you intend to edit."
             ),
             input_schema=TASK_SCOPE_SEARCH_SCHEMA,
             handler=task_scope_search_handler,

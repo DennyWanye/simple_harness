@@ -127,6 +127,31 @@ class S5cStore:
             row = await self._cursor_row(db)
         return None if row is None else (row["after_time"], row["after_id"])
 
+    async def _scan_high_water_tx(self, db):
+        async with db.execute(
+            f"SELECT after_time,after_id FROM {self.cursor_table} WHERE owner_key=? "
+            "ORDER BY after_time DESC,after_id DESC LIMIT 1", (self.owner,)
+        ) as query:
+            row = await query.fetchone()
+        return None if row is None else (row[0], row[1])
+
+    async def scan_high_water(self) -> tuple[float, str] | None:
+        """Indexed maximum source key; distinct from the latest consumption CAS."""
+        async with aiosqlite.connect(
+            f"{self.path.resolve().as_uri()}?mode=ro", uri=True
+        ) as db:
+            return await self._scan_high_water_tx(db)
+
+    async def _check_cursor_tx(self, db, current, expected, after, revisit):
+        if type(revisit) is not bool:
+            raise TypeError("revisit_same_timestamp must be bool")
+        if current != expected:
+            raise S5cConflict("s5c_cursor_conflict")
+        high = await self._scan_high_water_tx(db)
+        if high is not None and after <= high:
+            if not revisit or after[0] != high[0]:
+                raise S5cConflict("s5c_cursor_conflict")
+
     def _terminal_record(self, entry, receipt, expected_source_hash):
         from simple_harness_memory import ProspectiveInvalidationNotRequiredReceipt
         if type(entry) is not OutboxEntryV1 or type(receipt) is not ProspectiveInvalidationNotRequiredReceipt:
@@ -196,7 +221,8 @@ class S5cStore:
                 raise S5cConflict("s5c_terminal_cursor_corrupt")
             return receipt
 
-    async def commit_not_required(self, entry, receipt, *, expected_source_hash, expected_cursor):
+    async def commit_not_required(self, entry, receipt, *, expected_source_hash, expected_cursor,
+                                  revisit_same_timestamp=False):
         if self.cursor_table != "prospective_outbox_cursor_v52":
             raise S5cConflict("s5c_terminal_schema_required")
         record = self._terminal_record(entry, receipt, expected_source_hash)
@@ -219,8 +245,7 @@ class S5cStore:
             row = await self._cursor_row(db)
             current = None if row is None else (row["after_time"], row["after_id"])
             after = (entry.created_at, entry.outbox_id)
-            if current != expected_cursor or (current is not None and after <= current):
-                raise S5cConflict("s5c_cursor_conflict")
+            await self._check_cursor_tx(db, current, expected_cursor, after, revisit_same_timestamp)
             await db.execute("INSERT INTO prospective_invalidation_terminals VALUES (?,?,?,?,?,?,?,?,?)", record)
             sequence, prior = (1, "0"*64) if row is None else (row["sequence"]+1, row["cursor_hash"])
             digest = _hash(["s5c:cursor/not-required/v1", self.owner, sequence, list(after), record[0], prior])
@@ -297,6 +322,7 @@ class S5cStore:
         *,
         expected_cursor: tuple[float, str] | None,
         advance_cursor: bool = True,
+        revisit_same_timestamp: bool = False,
     ) -> ProspectiveSignalAuthorityRef:
         """One ordered outbox entry + fixed prepared signal + cursor, one transaction.
 
@@ -326,8 +352,8 @@ class S5cStore:
             row = await self._cursor_row(db)
             current = None if row is None else (row["after_time"], row["after_id"])
             after = (entry.created_at, entry.outbox_id)
-            if advance_cursor and (current != expected_cursor or (current is not None and after <= current)):
-                raise S5cConflict("s5c_cursor_conflict")
+            if advance_cursor:
+                await self._check_cursor_tx(db, current, expected_cursor, after, revisit_same_timestamp)
             if existing is None:
                 await db.execute(
                     "INSERT INTO prospective_scheduler_registrations "

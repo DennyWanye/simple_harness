@@ -36,7 +36,7 @@ export function primaryRunChannel(port: PrimaryPort, run: DecisionTarget, events
       }
       if (sequence === readSequence) {
         emit({ type: "permissions_pending_list_response", payload: { pending: result.pending } });
-        emit({ type: "primary_decision_status", payload: { state: result.sdk_state, error: "" } });
+        emit({ type: "primary_decision_status", payload: { state: result.sdk_state, pending_count: result.pending.length, error: "" } });
       }
     } catch {
       if (sequence === readSequence) emit({ type: "primary_decision_status", payload: { error: "授权状态读取未确认，请刷新状态重试。" } });
@@ -52,12 +52,18 @@ export function primaryRunChannel(port: PrimaryPort, run: DecisionTarget, events
     if (message.type === "human_memory_changed") { void read(); return; }
     // Live permission frames and legacy ACKs are not Primary read authority.
     if (["permission_request", "permission_response_applied", "permissions_pending_list_response"].includes(String(message.type))) return;
-    if (belongsToPrimaryRun(payload, run)) emit(raw);
+    if (belongsToPrimaryRun(payload, run)) {
+      emit(raw);
+      if (["tool_result", "chat_v2_final", "chat_v2_error"].includes(String(message.type))) void read();
+    }
   };
   const handleEvent = (raw: unknown) => {
     const message = record(raw);
     if (["permission_request", "permission_response_applied", "permissions_pending_list_response"].includes(String(message.type))) return;
-    if (belongsToPrimaryRun(message.payload, run)) emit(raw);
+    if (belongsToPrimaryRun(message.payload, run)) {
+      emit(raw);
+      if (["tool_result", "chat_v2_final", "chat_v2_error"].includes(String(message.type))) void read();
+    }
   };
   const onFocus = () => void read();
   const start = () => {
@@ -71,6 +77,7 @@ export function primaryRunChannel(port: PrimaryPort, run: DecisionTarget, events
         ++readSequence;
         requests.invalidate();
         emit({ type: "permissions_pending_list_response", payload: { pending: [] } });
+        emit({ type: "primary_decision_status", payload: { error: "连接中断，授权状态尚未确认。" } });
       }
     });
     window.addEventListener("focus", onFocus);

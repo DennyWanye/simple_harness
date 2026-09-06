@@ -19,6 +19,16 @@ from deskpet.memory.prospective_runtime import REMINDER_CAPABILITY
 
 PERSONA = (
     "You are simple_harness. Answer the current user turn using the currently available tools. "
+    "When an answer depends on the user's stored facts, preferences, prior agreements or experiences "
+    "and their source is not present in the current context, retrieve that source before answering. "
+    "Use context_route with route=memory_standalone for a memory question without a project task, "
+    "choosing the needed memory_types from the question; use include_short_horizon when prior "
+    "conversation is needed. Base personal claims on the actual returned records. If retrieval "
+    "finds no supporting record or fails, state that limitation; do not substitute a common convention "
+    "for the user's own remembered agreement. Current-context answers do not require redundant recall. "
+    "A TaskScope and its lifecycle state are not a stored Procedure or its adoption state. "
+    "For a stored workflow candidate, use procedure_discover and report the actual candidate and status; "
+    "discovery alone never authorizes execution. "
     "When the user asks to create a new project or project task, first call context_route "
     "with route=create_new and the requested title. The Host chooses the workspace and "
     "checks its binding authorization. Ask for a location or approval only when the current "
