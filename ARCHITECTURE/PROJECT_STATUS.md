@@ -1,5 +1,7 @@
 # simple_harness — 全局项目状态与架构完成度
 
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
+
 ## 2026-09-06 S5c 注册来源局部通过
 
 最后更新：2026-09-06。提醒来源及幂等恢复新增7项在已安装 H075/M616 下通过，S5c 完整 scheduler/occurrence/ack 尚未完成；用户主树及默认 schema49 未切换。[范围与剩余项](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。

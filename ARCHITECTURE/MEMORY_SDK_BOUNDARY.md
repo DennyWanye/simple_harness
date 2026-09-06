@@ -1,5 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
+
 ## 2026-09-06 提醒注册公开来源
 
 最后更新：2026-09-06。新增 Host 来源解析经 Memory 公开接口绑定真实历史目标及 outbox，授权与 cursor 原子保存，失效复用真实 ACK。安装 H075/M616 下新增7项已有通过结果（首批5绿，两项 fixture 修正后定向2绿），进程清空。唯一 scheduler、signal 派生来源、完整审计接收仍待接线，默认49未改变。[生产边界与证据](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。

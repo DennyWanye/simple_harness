@@ -30,7 +30,7 @@ from simple_harness_memory.core.lifecycle_results import ProspectiveSignalApplyR
 from simple_harness_memory.core.occurrence import OccurrenceInboxEntryV1, OutboxEntryV1
 
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
-from deskpet.memory.s5c_schema import validate_s5c_state_db
+from deskpet.memory.s5c_timer_schema import validate_s5c_domain_state_db
 
 
 class S5cConflict(ValueError):
@@ -77,7 +77,7 @@ class S5cStore:
         self.principal = principal
         self.owner = _owner(principal)
         self.fault = fault_inject
-        validate_s5c_state_db(self.path)
+        validate_s5c_domain_state_db(self.path)
 
     @asynccontextmanager
     async def _transaction(self):
