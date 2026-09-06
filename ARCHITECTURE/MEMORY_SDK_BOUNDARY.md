@@ -1,5 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
+最后更新：2026-09-06。Host默认Memory builder已接7.3公开升级链；实际installed M616旧库→M617升级/重开保留属主与升级回执，新控1项及空库/未知库2邻居分批通过。原生userdata未升级，完整consumer/native仍未通过。[升级边界与证据](../plans/2026-09-06-prospective-source-audit/HOST-617-UPGRADE.md)。
+
 最后更新：2026-09-06。Host明确接入M617 V2/settle观察，H076/M617实际installed组合4新+4受影响检查共8PASS/2.91s，无源码overlay/模型/native；终局真正消费、跨库恢复及完整scheduler仍单独验收。PG71205清空。[边界与证据](../plans/2026-09-06-prospective-source-audit/SUCCESSOR-617.md)。
 
 最后更新：2026-09-06。原生r7包含已审租约修复，冷重建仍在Host读取实际SDK终态时因事件歧义拒绝，STOP_REQUESTED未闭合；没有放宽/篡改终态。遗忘后重启列表仍为空。原生现场采集后正常退出PG69808清空。完整native仍FAIL/未完成。[r7证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
