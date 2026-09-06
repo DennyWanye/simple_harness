@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：`simple_harness-corpus-clock` / `feat/short-projection-source-lineage`（base2c8c57c6）修复短期窗口外缺 terminal 来源：r8 copy-v3 installed M617 公共原红已定位，13 组补 13 source admissions 后 3 chunks/重开一致，三项新回归分批绿，全部资源组清空。独审/主合并/真实 generation-query-native 未完成；Procedure 分支保留暂停，未改 SDK 或原 userdata。[范围及证据](../plans/2026-09-06-short-terminal-source/RESULTS.md)。
+
 2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
 
 

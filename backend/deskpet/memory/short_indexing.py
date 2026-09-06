@@ -51,6 +51,14 @@ class PrimaryShortIndexingService:
                 await self.manager.ingest_committed_evidence(
                     registration.envelope, registration.admission_receipt,
                     analysis_lineage=group.user_analysis_lineage)
+                # Message envelopes reference the real completed terminal. Keep
+                # that ancestor in S1 as source-only evidence before indexing;
+                # otherwise suppression traversal fails beyond the recent window.
+                # It is not an extra message, registration or analysis job.
+                terminal, terminal_receipt = group.terminal_source
+                await admit_source(principal=self.principal,
+                    envelope=terminal, receipt=terminal_receipt)
+                self._fault("short.after_terminal_source")
             else:
                 await admit_source(principal=self.principal,
                     envelope=registration.envelope, receipt=registration.admission_receipt)
