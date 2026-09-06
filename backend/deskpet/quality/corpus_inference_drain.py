@@ -30,7 +30,7 @@ def _fixture_result(request, identity):
 
 @dataclass(frozen=True)
 class AppliedFixtureJob:
-    """Observed successful SDK finalize, not a new durable authority ledger."""
+    """Public claim/application proof; a decoded candidate is not yet APPLIED."""
     source_id: str
     job_ids: tuple[str, ...]
     request: object
@@ -173,8 +173,9 @@ class _ObservedRepository:
     Captures recovery claims as well: audit_pending can skip the executor.
     Only a successful underlying finalize yields an AppliedFixtureJob.
     """
-    def __init__(self, repository, executor):
+    def __init__(self, repository, executor, checkpoint=None):
         self.repository, self.executor = repository, executor
+        self.checkpoint = checkpoint
         self.applied = []
         self.rejected = []
 
@@ -196,16 +197,22 @@ class _ObservedRepository:
 
     async def finalize_analysis_application(self, claim, application):
         source_id = self.executor.verify_claim(claim)
+        candidate = AppliedFixtureJob(source_id, claim.job_ids, claim.request, application, claim)
+        if self.checkpoint is not None and await self.executor.application_is_accepted(claim, application):
+            # Save the original candidate before the durable finalize boundary.
+            # A process can lose the ACK after commit; on restart the SDK, not
+            # this file, decides whether finalization has actually completed.
+            self.checkpoint.save_candidate(candidate)
         finalized = await self.repository.finalize_analysis_application(claim, application)
         if finalized:
             if await self.executor.application_is_accepted(claim, application):
-                self.applied.append(AppliedFixtureJob(source_id, claim.job_ids, claim.request, application, claim))
+                self.applied.append(candidate)
             else:
                 self.rejected.append(application)
         return finalized
 
 
-async def drain_inference_setup(*, authority, prior_applied=(), **kwargs):
+async def drain_inference_setup(*, authority, prior_applied=(), proof_path=None, **kwargs):
     """Two bounded real runner calls; IDLE/backoff never fills missing proof.
 
     Retained original public claims/applications may be revalidated by SDK's
@@ -214,9 +221,20 @@ async def drain_inference_setup(*, authority, prior_applied=(), **kwargs):
     """
     executor = CommittedInferenceExecutor(**kwargs)
     await executor.verify_committed_seed()
+    checkpoint = None
+    if proof_path is not None:
+        from deskpet.quality.corpus_inference_checkpoint import FixtureRecoveryFile
+        if prior_applied:
+            raise ValueError('inference_fixture_two_recovery_inputs')
+        binding = dict(case_id=executor.case_id, subject=executor.principal.actor_id,
+            host_run_id=executor.host_run_id, plan_hash=executor.plan.plan_hash,
+            sources=[dict(evidence_id=r.envelope.evidence_id, envelope_hash=r.envelope.envelope_hash,
+                receipt_hash=r.admission_receipt.receipt_hash) for r in executor.group.registrations])
+        checkpoint = FixtureRecoveryFile(proof_path, binding=binding)
+        prior_applied = checkpoint.load()
     await executor.bind_public_jobs()
     authority.bind(executor)
-    repository = _ObservedRepository(kwargs['manager'].backend, executor)
+    repository = _ObservedRepository(kwargs['manager'].backend, executor, checkpoint)
     restored = set()
     for previous in prior_applied:
         if type(previous) is not AppliedFixtureJob:
@@ -231,7 +249,12 @@ async def drain_inference_setup(*, authority, prior_applied=(), **kwargs):
         if not await executor.application_is_accepted(claim, previous.application):
             raise ValueError('inference_fixture_prior_application_not_accepted')
         if not await repository.finalize_analysis_application(claim, previous.application):
-            raise ValueError('inference_fixture_prior_finalize_unconfirmed')
+            if checkpoint is None:
+                raise ValueError('inference_fixture_prior_finalize_unconfirmed')
+            # Candidate saved before finalize may have an expired lease. Let
+            # the actual SDK claim/recovery protocol recover it below; do not
+            # count this candidate as applied or invent a replacement claim.
+            continue
         restored.add(source_id)
     config = build_worker_config(provider_id=FALLBACK.provider_id,
         model_id=FALLBACK.model_id, model_config_hash=FALLBACK.model_config_hash)

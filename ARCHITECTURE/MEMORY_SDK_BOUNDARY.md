@@ -1,3 +1,5 @@
+最后更新：2026-09-06。C02-19/C03-20完整fixture prepare与跨进程恢复叶e0e7d68c（产品182a5aa6）已独审合入候选：public seed后实际drain，finalize前保存原候选、重开经SDK确认；2新控制PASS7.30s、PG34647清空，旧绿未重跑。限定H078/M618源运行证据，当前H079完整prepare组合待验，240质量仍0。[准备与恢复](../plans/2026-09-06-corpus-public-seed/INFERENCE-PREPARE-RECOVERY.md)。
+
 最后更新：2026-09-06。固定ff35fb82/H079/M618正确18120新构建，r22真实新松柏提醒ACK后独立“提醒”正文可见；r23冷启动保留同一历史回执/提醒，后续普通问题只答44无新增提醒，两项限定通过。PG42213/45599正常退出且清空。前置r20 carrier异常原因未定、r21编译端口错误已纠正；原r18FAIL保留，完整旅程/240质量仍未完成。[原生与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R20-R23.md)。
 
 2026-09-06：提醒独立正文notice叶26c19b5e已独审合候选，产品1355c5b7，新7backend/2UI分批通过。新ACK投影独立reminder，不改模型原答或旧ACK，合法改期撤旧notice，保留原r18FAIL；真实原生正文/新构建仍待验。[源码与控制](../plans/2026-09-06-prospective-ack-notice/RESULTS.md)。
