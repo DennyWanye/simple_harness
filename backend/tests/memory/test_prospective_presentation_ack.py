@@ -178,7 +178,7 @@ async def test_snapshot_rollback_and_full_group_codec(tmp_path):
             stored=json.loads(row['source_revisions_json'])
             stored['host_snapshot_schema_version']=version
             changed=dict(row,source_revisions_json=json.dumps(stored))
-            with pytest.raises(S5cConflict,match='snapshot'):
+            with pytest.raises(S5cConflict,match='^s5c_snapshot_storage_shape_invalid$'):
                 decode_snapshot(changed)
         corrupted=dict(row,receipt_hash='0'*64)
         with pytest.raises(S5cConflict,match='receipt_corrupt'):decode_snapshot(corrupted)

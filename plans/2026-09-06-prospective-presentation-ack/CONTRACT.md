@@ -84,3 +84,14 @@ A7 production适用范围通过Host foreground Run+SDK binding事实判定，覆
 - New/changed controls are initially NOT_RUN; prior A7 tests remain unverified.
   The cap control isolates public page transport with synthetic pages; it does
   not claim 3201 real SDK mutations or native/Provider coverage.
+
+First narrow batch `a7-r2` against ab40886c: **2 PASS / 1 FAIL / 4 deselected**,
+2.63s pytest; PG88056 exit1, 398144KiB peak, remaining[]. Cap transport and codec
+passed. Real factory initialization stopped at existing candidate verification:
+Host fixed base pins M616 while isolated public test target is M617. This is not
+factory wiring acceptance; verification remains intact. Raw:
+`.local-test-evidence/2026-09-06/prospective-timer/a7-r2/{command.log,resource.json,identity.json}`.
+Dirac accepted the two P1 source deltas and exact-int direction (limited source
+review, not whole A7). Outer codec assertion is further narrowed to exact
+`storage_shape_invalid`, so an unrelated receipt mismatch cannot satisfy it;
+that stricter assertion is NOT_RUN. Slot released to Hegel, no immediate retry.
