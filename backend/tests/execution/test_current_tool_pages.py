@@ -31,7 +31,7 @@ LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 from deskpet.execution.current_tool_pages import CurrentToolProjector, MARKER, PREFIX as CURRENT_PREFIX
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["allow", "forget_after_page"])
-async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode):
+async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
     from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
@@ -56,7 +56,8 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     provider = CreateProvider()
     pages = ContextPageInStore()
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
-        binding_authority=authority, configured_root=configured, page_in_store=pages)
+        binding_authority=authority, configured_root=configured, page_in_store=pages,
+        provider_context_window=provider_context_window)
     holder = SimpleNamespace(runtime=runtime, stack=stack, queue=queue, phase=0, step=0,
         sent=[], responses=[], next_response=None, source=None, second_run=None, first_run=None)
     actual_page_reader = PrimaryContextPageReader(state, stack_getter=lambda:holder.stack,
@@ -160,6 +161,7 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
             response = await scripted(request, cancel=cancel)
         holder.next_response = response
         binding = SdkRunBindingV1.from_record(holder.stack.read_closure_run_facts(current.sdk_run_id).binding_record)
+        assert binding.context_window == provider_context_window
         return await resolver.build_authority(binding).provider.invoke(request, cancel=cancel)
 
     provider.invoke = invoke
@@ -185,7 +187,8 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
         await runtime.close()
         await stack.close()
         holder.runtime, holder.stack, holder.queue = await build(tmp_path, state, provider, dynamic=True,
-            binding_authority=authority, configured_root=configured, page_in_store=pages)
+            binding_authority=authority, configured_root=configured, page_in_store=pages,
+        provider_context_window=provider_context_window)
         async with aiosqlite.connect(state) as db:
             db.row_factory = aiosqlite.Row
             _, after = await read_run_dependencies(db=db, stack=holder.stack, sdk_run_id=holder.first_run)

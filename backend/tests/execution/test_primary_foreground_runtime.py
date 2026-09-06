@@ -59,16 +59,17 @@ class Provider:
 
 
 class ProviderPort:
-    def __init__(self, binding):
+    def __init__(self, binding, context_window=32768):
         self.binding = binding
+        self.context_window = context_window
     async def freeze(self, *, claimed, sdk_run_id, **_):
         return FrozenProviderAuthority(claimed.host_run_id, sdk_run_id, claimed.owner_id, claimed.generation,
-                                       "provider-fixture", "a" * 64, "fixture", "fixture-1", 1, 1, "model", {}, 32768)
+                                       "provider-fixture", "a" * 64, "fixture", "fixture-1", 1, 1, "model", {}, self.context_window)
     async def bind(self, *, frozen, context, tools, execution_session_id, request_id, sdk_run_id):
         record = SdkRunBindingV1.build(run_id=sdk_run_id, session_id=execution_session_id, request_id=request_id,
                                      snapshot_id=context.snapshot_id, provider_id="fixture", provider_incarnation_id="fixture-1",
                                      provider_config_revision=1, binding_epoch=1, model_id="model", model_params={},
-                                     context_window=32768, catalog_generation=tools.catalog["generation"],
+                                     context_window=self.context_window, catalog_generation=tools.catalog["generation"],
                                      catalog_fingerprint=tools.catalog["content_fingerprint"],
                                      budget_fingerprint=self.binding.budget_fingerprint)
         return BoundProviderAuthority(frozen.host_run_id, sdk_run_id, frozen.owner_id, frozen.generation,
@@ -88,7 +89,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -253,7 +254,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
-        provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack,
+        provider=ProviderPort(binding, provider_context_window), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack,
             occurrence_coordinator=occurrence_coordinator),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,

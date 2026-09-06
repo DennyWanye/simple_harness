@@ -17,7 +17,8 @@ from tests.execution.test_current_tool_pages import (
 
 
 @pytest.mark.asyncio
-async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path, monkeypatch):
+@pytest.mark.parametrize("context_window", [4096, 8192, 32768])
+async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path, monkeypatch, context_window):
     module = importlib.import_module("deskpet.tools.os_tools.write_file")
     original_write = module.write_file
     sizes, wire_sizes = [], []
@@ -49,10 +50,10 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
         return original_transport(record)
 
     monkeypatch.setattr(httpx, "MockTransport", transport)
-    await run_pages(tmp_path, monkeypatch, mode="allow")
+    await run_pages(tmp_path, monkeypatch, mode="allow", provider_context_window=context_window)
     assert len(sizes) == 2 and all(size > 1024 * 1024 for size in sizes)
     assert len(wire_sizes) == 8 and max(wire_sizes) < 256 * 1024
     (tmp_path / "megabyte-metrics.json").write_text(json.dumps({
         "file_bytes": sizes, "physical_request_bytes": wire_sizes,
-        "provider_context_window": 32768, "native": False,
+        "provider_context_window": context_window, "native": False,
     }, indent=2))
