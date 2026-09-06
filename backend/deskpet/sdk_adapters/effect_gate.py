@@ -120,6 +120,26 @@ EFFECT_GATE_PUBLIC_MESSAGE = (
 )
 PROJECT_EFFECT_ACTIVE_SCOPE_STATUSES: frozenset[str] = frozenset({"active", "open"})
 EFFECT_GATE_STICKY_REASON = "effect_gate_route_receipt_rejected"
+
+
+def effect_gate_public_message(code: str) -> str:
+    """Explain lifecycle failures without suggesting an ineffective reroute."""
+    if code == "effect_gate_task_scope_not_active":
+        return (
+            "Project effect rejected: the TaskScope is not active/open. "
+            "Context routing selects a task but does not change its lifecycle. "
+            "Do not repeat this effect or reroute the same completed task. "
+            "A completed TaskScope remains read-only; further work requires a "
+            "new active task with explicit workspace binding authorization. "
+            "If that continuation is unavailable, report the unfinished work."
+        )
+    if code == EFFECT_GATE_STICKY_REASON:
+        return (
+            "This route receipt was rejected. Do not retry the effect with it. "
+            "Follow the original rejection reason; a fresh route cannot reopen "
+            "a completed TaskScope or repair its lifecycle."
+        )
+    return EFFECT_GATE_PUBLIC_MESSAGE
 # Steps that name a route receipt and therefore stick to it (step 1 has no
 # trustworthy receipt id yet; step 0 never rejects).
 _NON_STICKY_CODES: frozenset[str] = frozenset(
@@ -275,7 +295,7 @@ class EffectGate:
         reject_call_id = self._reject_call_id(context, call_id)
 
         def reject(code: str) -> ToolResult:
-            return ToolResult.rejected(reject_call_id, code, EFFECT_GATE_PUBLIC_MESSAGE)
+            return ToolResult.rejected(reject_call_id, code, effect_gate_public_message(code))
 
         # 1. envelope present + exact identity echo (effect_id echo is mandatory)
         envelope = context.task_execution_envelope
@@ -450,7 +470,7 @@ class EffectGate:
                     code = "effect_gate_task_scope_not_active"
             if code is not None:
                 raise EffectGateRejected(
-                    ToolResult.rejected(reject_call_id, code, EFFECT_GATE_PUBLIC_MESSAGE)
+                    ToolResult.rejected(reject_call_id, code, effect_gate_public_message(code))
                 )
 
         return check

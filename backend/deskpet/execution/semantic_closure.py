@@ -82,7 +82,11 @@ _MAX_INSTRUCTION_REFS = 64
 _MAX_ANSWER_BYTES = 8192
 
 CLOSURE_SYSTEM_INSTRUCTION = (
-    "你是桌面工作台的主模型。这一轮你已经替用户完成了工作并写好了最终回答，但任务档案还没有收口。"
+    "你是桌面工作台的主模型。这一轮已经产生了执行结果和最终回答，但任务档案还没有收口。"
+    "单个工具成功、文件创建或本轮回答结束，不等于整个任务目标完成。"
+    "按用户的完整目标逐项核对；包括要求的读取、检查和验证，尚未执行的必须如实保留为未完成。"
+    "不得把目标缩写为已完成的子步骤来调用task.complete。仅全部目标义务已完成时才标记任务完成；"
+    "否则记录实际进度、未完成项和下一步，保留合适的非完成状态。"
     "现在只允许调用 task_scope_update 一次：如果客观事件表明任务状态/进度/下一步发生了实质变化，"
     "提交 outcome=mutate 并逐项引用 allowed_evidence_refs 里的 evidence_refs；"
     "如果没有实质变化，提交 outcome=no_mutation 并给 closure_reason。"
@@ -90,6 +94,8 @@ CLOSURE_SYSTEM_INSTRUCTION = (
 )
 CLOSURE_SNAPSHOT_INSTRUCTION = (
     "本任务档案有尚未收口的客观事件（见 material_events / pending_receipts）。"
+    "回合收口不等于整个任务完成；单个工具成功不能代替用户要求的读取、检查和验证。"
+    "仅全部目标义务已完成时才task.complete，不得缩小目标；否则记录实际进度、未完成项与下一步。"
     "在给出最终回答之前，调用一次 task_scope_update：实质变化 → outcome=mutate 并引用 "
     "allowed_evidence_refs 中的 evidence_refs；无实质变化 → outcome=no_mutation 并给 closure_reason。"
     "base_revision 必须等于 current_revision。"

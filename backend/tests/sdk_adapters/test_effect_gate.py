@@ -10,6 +10,7 @@ BindingRootResolver 与 ProductEffectExecutor 前置门。
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,6 +23,7 @@ from simple_harness.tools.executor import EffectExecution
 from deskpet.memory.human_memory_service import MutateTaskScopeRequest
 from deskpet.sdk_adapters.effect_gate import (
     EFFECT_GATE_PUBLIC_MESSAGE,
+    effect_gate_public_message,
     PROJECT_EFFECT_ACTIVE_SCOPE_STATUSES,
 )
 from deskpet.sdk_adapters.task_execution import (
@@ -71,7 +73,7 @@ def _code(result) -> str | None:
     if result is None:
         return None
     assert result.outcome.value == "rejected"
-    assert result.public_message == EFFECT_GATE_PUBLIC_MESSAGE
+    assert result.public_message == effect_gate_public_message(result.error_code)
     return result.error_code
 
 
@@ -223,6 +225,33 @@ async def test_gate_task_scope_not_active(tmp_path) -> None:
         _code(await env.gate.verify(_context(envelope), "write_file"))
         == "effect_gate_route_receipt_rejected"
     )
+
+
+@pytest.mark.asyncio
+async def test_completed_scope_fresh_route_reports_lifecycle_without_writing(tmp_path) -> None:
+    env = await h.build_env(tmp_path)
+    scope, root = await h.make_bound_scope(env, "finished", "finished-root")
+    await env.service.mutate_task_scope(
+        MutateTaskScopeRequest(scope, "status", "complete", "finished-scope")
+    )
+    h.freeze_run(env, task_scope_id=scope, workspace_root=root)
+    provider = h.ScriptedProvider([
+        h.tool_call("context_route", {"route": "resume_existing", "task_scope_id": scope}, raw_id="route-finished"),
+        h.tool_call("write_file", {"path": "must-not-exist.txt", "content": "no"}, raw_id="write-finished"),
+        h.answer("The completed task cannot accept this write."),
+    ])
+    outcome = await h.run_capture(env, provider)
+    assert outcome["exception"] is None
+    route = json.loads(h.tool_messages(env, "context_route")[0])
+    value = route.get("value", route)
+    assert value["resume_package"]["status"] == "complete"
+    assert await env.scope_store.read_head_status(scope) == "complete"
+    assert env.effects.write_file_calls == [] and not (root / "must-not-exist.txt").exists()
+    refusal = json.loads(h.tool_messages(env, "write_file")[0])
+    assert refusal["error_code"] == "effect_gate_task_scope_not_active"
+    assert "does not change its lifecycle" in refusal["public_message"]
+    # The actual next provider request sees the refusal, not a successful write.
+    assert "does not change its lifecycle" in str(provider.calls[-1].messages)
 
 
 # --- executor front ----------------------------------------------------------

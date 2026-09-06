@@ -92,6 +92,12 @@ TASK_SCOPE_UPDATE_DESCRIPTION = (
     "allowed_evidence_refs; base_revision must equal the current TaskScope "
     "revision. Rejected with a stable code when nothing needs closing or the "
     "Run is not routed to a task."
+    " Turn closure is not whole-task completion. A successful tool or file creation "
+    "does not satisfy an unperformed readback/check requested by the user. "
+    "Use task.complete only when all original goal obligations are fulfilled; "
+    "otherwise preserve unfinished obligations and record progress/next steps. "
+    "Do not narrow the goal to a completed substep. A completed TaskScope cannot "
+    "be reopened by context_route or task.resume."
 )
 
 TASK_SCOPE_UPDATE_SCHEMA: dict[str, Any] = {
