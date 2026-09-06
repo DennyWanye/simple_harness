@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
+
 2026-09-06：当前组合的M616锁文件hash已修正并定向验证，Host恢复/提醒来源限定独审已归档在组合记录。
 
 最后更新：2026-09-06。[当前 H075/M616 组合](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)已完成必要功能与安装身份检查；后文叶子状态保留当时证据，不能代替原 program 剩余项。
