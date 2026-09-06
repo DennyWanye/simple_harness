@@ -61,3 +61,14 @@ async def check_primary_input_visibility(*, db_path, manager, principal, disclos
     if observed.history_visibility is None:
         raise CurrentInputSourceError("sdk_batch_snapshot_missing")
     return observed.history_visibility
+
+
+async def claim_stamp(db_path, host_run_id, sdk_run_id):
+    async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+        db.row_factory = aiosqlite.Row
+        row = await (await db.execute("SELECT * FROM foreground_run_heads WHERE host_run_id=?", (host_run_id,))).fetchone()
+    if (row is None or row["sdk_run_id"] != sdk_run_id
+            or row["current_state"] not in {"RUNNING", "PAUSE_REQUESTED", "PAUSED", "STOP_REQUESTED", "CANCEL_REQUESTED"}):
+        raise CurrentInputSourceError("physical_claim_unavailable")
+    return tuple(row[key] for key in ("host_run_id", "subject", "turn_id", "primary_conversation_id",
+        "owner_id", "generation", "current_state", "sdk_run_id"))

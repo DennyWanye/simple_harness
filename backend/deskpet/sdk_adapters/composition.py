@@ -730,6 +730,24 @@ class ProductSdkRuntimeStack:
                     break
         return ClosureRunFacts(binding_record=binding, last_assistant_message=last_answer)
 
+    def verify_current_input_provider_request(self, run_id, request):
+        """Compare physical request with the public durable SDK reservation."""
+        from simple_harness import RequestId, thaw_json
+        from simple_harness.execution.provider_invocations import (
+            provider_invocation_id, provider_request_fingerprint, provider_request_from_json,
+        )
+        self.require_ready()
+        if self._uow is None:
+            raise ValueError("current_input_provider_store_unavailable")
+        record = self._uow.read_provider_invocation(provider_invocation_id(RunId(run_id), request.request_id))
+        if (record is None or record.run_id.value != run_id or record.request_id != request.request_id
+                or record.request_json is None):
+            raise ValueError("current_input_provider_request_unbound")
+        actual = provider_request_from_json(record.request_id, thaw_json(record.request_json))
+        if not (record.request_fingerprint == provider_request_fingerprint(actual)
+                == provider_request_fingerprint(request)):
+            raise ValueError("current_input_provider_request_mismatch")
+
     def read_provider_context_use(self, run_id: str, request_id: str):
         """Actual Harness handoff witness via the public RunClient."""
         from simple_harness import RequestId
