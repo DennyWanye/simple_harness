@@ -1,17 +1,19 @@
 """C05 runner-only schedule contract; never a Provider or setup-authority input.
 
-The four supported schedules are copied from the frozen 05-task script tables,
+The supported schedules are copied from the frozen 05-task script tables,
 not their gold. Runtime event/phase wiring consumes Carver's public fact reader.
 """
 from dataclasses import dataclass
 
 
-SUPPORTED_CASES = frozenset({'C05-04', 'C05-09', 'C05-14', 'C05-20'})
+SUPPORTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-14', 'C05-20'})
 _PREVIEW = 'candidate_preview_then_turn_terminal'
 _UNMET = 'record_unmet_and_stop_no_rescue'
 # Exact authored scripts. No target ID, expected answer, or selected label.
 _SCRIPTS = {
     'C05-04': ((_PREVIEW, '选社区物品登记那个。'),),
+    'C05-07': ((_PREVIEW, '对，选家庭藏书那项。'),),
+    'C05-08': ((_PREVIEW, '选已经结束那次，只看最终结论，别重新做。'),),
     'C05-09': ((_PREVIEW, '选等待字体授权的家谱任务，先告诉我卡点。'),),
     'C05-14': ((_PREVIEW, '选需要核对座位的那项。'),),
     'C05-20': ((_PREVIEW, '我原想选排版，先别切换。'),
@@ -86,7 +88,7 @@ def _confirmed_setup_trace(observations, transport, *, binding, turn_ref):
 
 async def prepare_setup_phase(*, main, batch, service, runtime, transport, history_reader,
         workspace_root, directory, collect_turn, record, ingestion_worker):
-    """Prepare the four source-complete cases through the unchanged main stack.
+    """Prepare supported sources through the unchanged main stack.
 
     Carver owns the exact transport, approval, source archive and history reader.
     This orchestrator consumes those ports; it does not replace their authority.
@@ -180,6 +182,9 @@ async def prepare_setup_phase(*, main, batch, service, runtime, transport, histo
                         phase['observation_error_type'] = type(error).__name__
                 raise
         await history_reader.freeze(archives=archives, stack=main._sdk_runtime_stack, primary_ref=primary)
+        from deskpet.quality.corpus_c05_state_phase import STATE_CASES, state_contract
+        if batch.case_id in STATE_CASES:
+            phase['state_contract'] = state_contract(batch, archives)
         if main._sdk_provider_binding_resolver.active_provider_ids():
             raise ValueError('c05_setup_provider_still_active')
         phase.update(status='CONFIRMED', setup_archive_count=len(archives),
@@ -214,6 +219,8 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
     from deskpet.quality.corpus_trace import wire, digest
     from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
     from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+    from deskpet.quality.corpus_c05_state_phase import bound_preview_unchanged, observe_unchanged_scopes
+    state = setup_phase.get('state_contract')
     ledger = ContextRouteLedgerStore(main._state_db_path)
     runs, events, preview_runs = [], [], []
     result = dict(execution_status='DISPATCH_STARTED', scoring_runs=runs,
@@ -228,12 +235,15 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
             try:
                 unbound = await _unbound_preview_turn(stack=main._sdk_runtime_stack,
                     ledger=ledger, sdk_run_id=sdk)
+                retained_initial = (state is not None and state['initial_scope_ref'] is not None
+                    and ordinal == 1 and await bound_preview_unchanged(stack=main._sdk_runtime_stack,
+                        ledger=ledger, sdk_run_id=sdk, contract=state))
                 visible = ()
                 if followup.after_event == _PREVIEW:
                     visible = await read_candidate_events(path=main._state_db_path, subject=subject,
                         sdk_run_id=sdk, stack=main._sdk_runtime_stack,
                         policy=main._primary_history_policy(subject))
-                satisfied = unbound and (bool(visible) if followup.after_event == _PREVIEW else True)
+                satisfied = (unbound or retained_initial) and (bool(visible) if followup.after_event == _PREVIEW else True)
             except Exception as error:
                 result.update(execution_status='OBSERVATION_FAILED', error_type=type(error).__name__)
                 record(directory / f'followup-{followup.followup_id}.json',
@@ -241,6 +251,7 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
                 return result
             event = dict(followup_id=followup.followup_id, after_event=followup.after_event,
                 prerequisite_sdk_run_id=sdk, candidate_events=visible, no_formal_scope_authority=unbound,
+                initial_scope_retained=retained_initial,
                 status='SATISFIED' if satisfied else 'UNMET', on_unmet=followup.on_unmet)
             events.append(event)
             record(directory / f'followup-{followup.followup_id}.json', event)
@@ -263,7 +274,8 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
         try:
             executed = await execute_scoring_turn(service=service, runtime=runtime,
                 scoring_path=main._state_db_path, subject=subject, text=current_text,
-                delivery_key=delivery_key, ingestion_worker=worker, approval_driver=approval)
+                delivery_key=delivery_key, ingestion_worker=worker, approval_driver=approval,
+                initial_scope_ref=state['initial_scope_ref'] if state is not None and ordinal == 0 else None)
             observed = await collect_turn(main, service, subject, executed.queue_receipt,
                 current_text, directory=turn_dir)
             entry.update(queue_receipt=wire(executed.queue_receipt),
@@ -277,6 +289,13 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
             if (observed['observation_errors'] or observed['trace']['trace_status'] != 'COMPLETE'
                     or terminal is None or terminal.state != 'completed'):
                 raise ValueError('c05_scoring_terminal_unverified')
+            if state is not None:
+                if ordinal == 0 and state['initial_scope_ref'] is not None:
+                    if not await bound_preview_unchanged(stack=main._sdk_runtime_stack,
+                            ledger=ledger, sdk_run_id=sdk, contract=state):
+                        raise ValueError('c05_initial_scope_changed_before_selection')
+                entry['scope_state_observations'] = await observe_unchanged_scopes(main=main,
+                    service=service, subject=subject, sdk_run_id=sdk, contract=state)
             result.update(sdk_run_id=sdk, host_run_id=observed['host_run_id'], trace=observed['trace'])
             record(turn_dir / 'execution.json', entry)
         except Exception as error:

@@ -1,3 +1,5 @@
+最后更新：2026-09-07。独立feat/corpus-c05-remaining基c5b55387已写07/08正式状态来源组与3新组合控制，NOT_RUN、未合主；其余14格明确来源/调度/公开契约缺口。复用原4格整链与empty证据，无新测试、模型、资源进程、版本变动，不计质量PASS。[逐格事实与待跑控制](../plans/2026-09-07-corpus-c05-remaining/CONTRACT.md)。
+
 最后更新：2026-09-07。C08正式dispatcher e81a9af7+helper f45da5f9新增1PASS8.00s：01跳scalar，真实旧组/抑制/生产重开CONFIRMED后独立评分Provider，next physical无旧内容/统计1；只本共享入口01组合，不重复旧5绿、不计模型质量。PG85743自然清空。[结果](../plans/2026-09-07-corpus-complete-dispatch/C08-RESULTS.md)。
 
 最后更新：2026-09-07。C08仅01/06/11/18 retained已接正式shared dispatcher源码，01跳过scalar preseed，旧组/同库抑制及原authority重开确认后才切独立评分Provider；1新实际dispatcher控制已准备NOT_RUN，其他C08仍block，不重复原5helper绿、不计质量PASS。[契约与唯一nodeid](../plans/2026-09-07-corpus-complete-dispatch/C08-DISPATCH.md)。
