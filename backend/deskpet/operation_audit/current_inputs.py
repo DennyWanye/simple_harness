@@ -26,7 +26,8 @@ def request_hash(principal, disclosure_context, binding, bindings):
         return None
     values = (binding.evidence,) if bindings is None else bindings
     if type(values) is not tuple or not 1 <= len(values) <= 256 or any(type(v) not in (
-        m.HistoryEvidenceBinding, m.HistoryRecallBinding, m.HistoryShortHorizonBinding) for v in values):
+        m.HistoryEvidenceBinding, m.HistoryRecallBinding, m.HistoryShortHorizonBinding,
+        m.HistoryProcedureDraftBinding) for v in values):
         return None
     return _sdk_hash("memory.current-input.request.v1", {"principal": asdict(principal),
         "disclosure": disclosure_context.to_json(), "binding_hash": binding.binding_hash,
