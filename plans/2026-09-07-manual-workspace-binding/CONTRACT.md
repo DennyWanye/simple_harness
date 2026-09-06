@@ -10,8 +10,10 @@ context_route.create_new 的真实 append 已产生 task_workspace_manual_challe
 
 ## 最小接口
 
+Dirac三项校准已落实到源码：proposal/challenge.run_id 是 Manual 派生域，不与 foreground/SDK Run 比等；Run关联来自真实journal/foreground binding，另外核 proposal.idempotency_key 为原 context-route:{sdkRun}:{effect}及S1。状态追加 allow_recorded（允许决定已提交、binding待完成），只允许原同决定的恢复，已bound不因原challenge过期变成未授权。human_memory_request_boundary覆盖exact回读和service.decide全部await，慢policy读取后嵌套复核当前连接；列表发送也走同连接最终边界。原 S1/challenge/journal并非同写TX，仅在同readTX核关联，orphan窗口不掩盖。
+
 - `primary.bindings.pending({primary_ref})`：认证 subject 的当前 writable primary 下，有真实 context_route rejection 关联的原 Manual challenges；UI 最大32条，超限显式 unavailable，不装作完整。同 Host read TX 关联 original invocation/effect、foreground Run→SDK binding、challenge→proposal→原 S1，并重算各自规范 hash、核 subject/scope/root identity；不查 SDK 私库。无可靠 journal 关联的 orphan challenge 不自动获得可操作 UI 身份，不能猜属于某个 Run。
-- 返回每项 `primary_ref/run_ref/sdk_run_ref/generation/effect_ref/challenge_ref/challenge_hash/scope_ref/proposal_hash`、原真实 root 的显示路径及 identity、expires_at_millis、pending/expired/denied/bound 状态。路径仅供用户识别授权目标，不作为客户端提交的 authority。原始模型正文不回传。当前政策非 Manual、root 已变化、payload损坏或 binding revision 过时不可批准；真实 ACK 以原 store 判定，不将决定已记录等同 binding 已完成。
+- 返回每项 `primary_ref/run_ref/sdk_run_ref/generation/effect_ref/challenge_ref/challenge_hash/scope_ref/proposal_hash`、原真实 root 的显示路径及 identity、expires_at_millis、pending/expired/denied/allow_recorded/bound 状态。路径仅供用户识别授权目标，不作为客户端提交的 authority。原始模型正文不回传。当前政策非 Manual、root 已变化、payload损坏或 binding revision 过时不可批准；真实 ACK 以原 store 判定，不将决定已记录等同 binding 已完成。
 - `primary.bindings.decide({上述身份字段,decision:allow|deny})`：服务端重读同原 challenge/journal，exact 匹配用户正在操作的身份后，调用现有 `service.decide_manual_binding`。不接受客户端 path、grant、nonce替换或model bool。原 port 再核当前 policy、root、时限及 durable binding；任何跨读取 await 后先重核身份再委托。用户只需本次卡片一次明确决定，不要求其再从模型回复复制 ref。
 
 主对话直接挂新独立卡片（不限定 current Run 仍active，否则工具拒绝后Run结束会丢入口）；按已验证 primary/owner identity查询，显示原目录与新Scope。收到状态变化、重新连接、focus/显式刷新时重新读取；旧连接响应不得覆盖新身份卡片。允许/拒绝按钮仅操作当前 exact pending 项。超时显示结果未确认并重读原状态，不自动另发 allow。真实 bound ACK 后显示新 Scope 引用及“继续新任务”的明确下一输入指导；不伪造模型 context_route，不恢复旧 complete Scope。新 Run 或仍未绑定 task 的原 Run 须真实 resume_existing(newScope) 才能获得对应 task route。拒绝/过期维持不可写。
@@ -26,7 +28,7 @@ context_route.create_new 的真实 append 已产生 task_workspace_manual_challe
 
 1. 真实 Manual context_route 原root append拒绝→真实 pending公开读取同原challenge/root/newScope→用户 exact allow→原 binding ACK→真实新Scope route及file effect，不改旧Scope。
 2. foreign subject/primary、错challenge hash/Run/effect混绑、expired/root替换拒绝，零新grant/文件；deny原决定持久且不可被allow覆盖。
-3. response丢失后reopen/list识别实际已记录决定与bound状态，同决定幂等，不重发不同challenge；同源读取证明不能靠模型伪造。
+3. 允许决定已落盘而append中断，list必须返回allow_recorded；只重试同原决定完成binding，不生成第二decision。已有bound在时钟越过challenge期限后仍可exact读取/重放；同源读取证明不能靠模型伪造。完整进程reopen仍需独立实际控制，不由一次重新bind service冒充。
 4. UI使用实际wire DTO控制：卡片从pending读取产生、一次显式点击提交原identity；断线/重连、旧响应、超时未知不显示成功，不自动allow。真实native由主后续candidate验证，模拟transport不代替原生。
 
 工具搜索说明单独提交 `ea58f019`：生产 projection纠正 OR词频说明、legacy toolset忽略事实和 tool_search→describe→activate 名称/流程。没有修改SDK排名或冻结manifest；不宣称修复r24模型循环。该小hunk也未测试。
