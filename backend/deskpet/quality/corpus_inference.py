@@ -7,12 +7,16 @@ import hashlib
 import simple_harness as h
 from deskpet.memory.conversation_registration import PrimaryConversationAuthority
 
-async def inference_source(*, path, subject, batch, host_run_id, quote):
+async def inference_source(*, path, subject, batch, host_run_id, quote, original_envelope, original_receipt):
     if batch.case_id!='C02-19' or quote!='偏好云端':
         raise ValueError('corpus_inference_setup_not_registered')
     authority=PrimaryConversationAuthority(path,subject=subject)
     group=await authority.registrations_for_run(host_run_id)
-    if group.registrations[0].envelope.sanitized_payload.get('text')!=batch.setup_text:
+    original_receipt.verify(original_envelope)
+    original=group.registrations[0]
+    if (original.envelope.to_json()!=original_envelope.to_json()
+            or original.admission_receipt.to_json()!=original_receipt.to_json()
+            or original.envelope.sanitized_payload.get('text')!=batch.setup_text):
         raise ValueError('corpus_inference_original_input_differs')
     def source_text(registration):
         item=registration.recall_item_authority

@@ -128,7 +128,8 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
             raise ValueError('corpus_inference_actual_source_required')
         from deskpet.quality.corpus_inference import inference_source
         extra,extra_receipt,span,terminal=await inference_source(path=inference_path,
-            subject=principal.actor_id,batch=batch,host_run_id=inference_host_run_id,quote='偏好云端')
+            subject=principal.actor_id,batch=batch,host_run_id=inference_host_run_id,quote='偏好云端',
+            original_envelope=envelope,original_receipt=receipt)
         # Public full admission is required by cognitive mutation; source-only
         # admission does not satisfy this prerequisite and is not mixed in.
         await manager.ingest_committed_evidence(extra,extra_receipt)
