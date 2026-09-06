@@ -29,3 +29,5 @@ Carver `TaskSetupHttpProvider(model=...).start()/registration()/close()`：真�
 后继只拆scheduler给runner，不把整表送Provider、不读gold。事件有效性来自真实public effect/result/披露hash与实际terminal；不要求候选含gold A，错误但合法候选仍按固定脚本继续。缺前提record_unmet_and_stop_no_rescue；不救场给ID、不临时改权限。20在最终明确选择前无resume/新增执行授权。最终多个Run完整trace才能交原gold后审；首轮可执行不等于整个case完成。
 
 当前仅main构造接缝WIP固定供协作；transport/approval/phase/followup消费者尚待合入，不开放C05批处理，也不把缺口改名为永久BLOCKED结束任务。源码持续推进，暂不宣称C05正式phase ready。
+
+2026-09-07后续source：`corpus_c05_session.validate_schedule`已固定4个原script表的精确字段/顺序/文本，拒绝任意改写的followup或非none fixture action，不读取gold，不把整表传setup Provider。它只是runner输入预检，尚未接dispatch/event循环；C05批处理仍未开放。Carver新增read_candidate_events由实际Host effect索引＋SDK公开result＋当前披露读取，消费者将直接复用，不自行按A/B重建候选。
