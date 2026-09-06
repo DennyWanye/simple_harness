@@ -81,8 +81,12 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     for case_id in case_ids:
         matches = [i for i, row in enumerate(catalog) if row["case_id"] == case_id]
         from deskpet.quality.corpus_c05_session import SUPPORTED_CASES, validate_schedule
+        c09_supported = False
+        if case_id.startswith('C09-'):
+            from deskpet.quality.corpus_c09 import CHANGES
+            c09_supported = case_id in set(CHANGES)
         if len(matches) != 1 or not (case_id.startswith(("C01-", "C07-"))
-                or case_id in SUPPORTED_CASES or case_id in C08_RETAINED_CASES):
+                or case_id in SUPPORTED_CASES or case_id in C08_RETAINED_CASES or c09_supported):
             raise ValueError("corpus_batch_requires_exact_supported_id")
         i = matches[0]
         directory = output / case_id
@@ -111,6 +115,7 @@ def review_packet(directory, exit_code):
     no_match_batch = case["case_id"].startswith("C07-")
     task_batch = case["case_id"].startswith("C05-")
     suppressed_batch = case["case_id"].startswith("C08-")
+    superseded_batch = case["case_id"].startswith("C09-")
     trace = result.get("trace")
     # C05 has several scoring Runs. Preserve their separate SDK trace hashes;
     # aggregate only these statistics, never fabricate a multi-Run SDK receipt.
@@ -160,6 +165,7 @@ def review_packet(directory, exit_code):
         quality_thresholds_status="NOT_EVALUATED_PARTIAL_C07_BATCH" if no_match_batch
             else "NOT_EVALUATED_PARTIAL_C05_BATCH" if task_batch
             else "NOT_EVALUATED_PARTIAL_C08_BATCH" if suppressed_batch
+            else "NOT_EVALUATED_PARTIAL_C09_BATCH" if superseded_batch
             else "NOT_EVALUATED_PARTIAL_C01_BATCH")
     if task_batch:
         packet["provider_statistics_scope"] = "all_scoring_runs_setup_excluded"
