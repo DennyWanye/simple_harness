@@ -1,5 +1,13 @@
 <!-- 最后更新：2026-09-06 -->
 
+Graph fixture public analysis drain 已通过1个新控：真实strict-atomic seed
+receipt验证后本地no_mutation，SDK runner完成，重开IDLE/0再次分析，2nodes1edge
+保持；不称native/质量模型结果。必须构造时绑定fixture authority，关闭后由
+native正常生产authority重开；无删job/禁worker。独审待反馈。
+[接线与结果](../plans/2026-09-06-corpus-public-seed/GRAPH-DRAIN.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 C01-06 history遗忘因果oracle已补：同binding/disclosure在MEMORY-only suppression
 前visible、后不可见，定向1PASS，PG8072清空；不新增unique语料计数。
 [结果](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
