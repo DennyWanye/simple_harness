@@ -2175,6 +2175,7 @@ class ForegroundQueueStore:
         generation: int,
         attempt: Mapping[str, object],
         members: Sequence[tuple[str, str, str]] = (),
+        input_observer_tx=None,
     ) -> str:
         """Insert one ``reserved`` post-turn attempt row under the current lease (one transaction).
 
@@ -2201,8 +2202,10 @@ class ForegroundQueueStore:
                     db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=generation,
                     attempt=attempt, members=members, now=now,
                 )
+                if input_observer_tx is not None:
+                    await input_observer_tx(attempt, db)
                 await db.commit()
-            except Exception:
+            except BaseException:
                 await db.rollback()
                 raise
         return attempt_id
