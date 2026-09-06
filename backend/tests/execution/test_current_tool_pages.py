@@ -176,7 +176,7 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
         if mode == "forget_after_page":
             assert len(holder.sent) == 7
             terminal = stack.read_run_terminal_evidence(holder.first_run)
-            assert terminal.state == "FAILED"
+            assert terminal.state == "failed"
             return
         assert len(holder.sent) == 8
         async with aiosqlite.connect(state) as db:
