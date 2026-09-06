@@ -69,7 +69,7 @@ async def test_composed_restart_refuses_invalid_extension_without_repair(tmp_pat
             db.execute("DROP TRIGGER hm_recovery_fence_prospective_outbox_cursor_v52_insert")
         else:
             corrupt_immutable_row(db, "human_memory_program_bootstrap",
-                "UPDATE human_memory_program_bootstrap SET origin='unknown'")
+                "DELETE FROM human_memory_program_bootstrap WHERE singleton=1")
     before = path.read_bytes()
     with pytest.raises(schema.HumanMemoryProgramEpochError):
         await schema.dispatch_startup_epoch(path, approved_fresh_lane=False)
