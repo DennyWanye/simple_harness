@@ -4,7 +4,7 @@
 
 - r1：1PASS/1FAIL，5.06s。真实closure输入保留完整创建/回读目标，未执行readback且Scope非complete通过，此后不重跑。另一项resume/status/inactive/sticky/下一真实HTTP/无文件已到达，末端错误地要求Host成功产物表记录拒绝而FAIL。
 - r2：仅上述失败项，1FAIL/2.28s。错误地转为要求SDK effect head，仍FAIL。SDK准入前拒绝明确 `effect=None`；两次是oracle错误，不是产品缺审计，也没有删除失败记录。
-- r3：修正oracle后仅该项，1PASS/1deselected，2.15s。公开tool proposal精确关联真实Run、turn5/6、call ordinal0、write_file和原始call公开复合hash；要求provider/request引用。下一物理请求分别携带真实inactive/sticky拒绝，无SDK effect head、无文件、原Scope仍complete。Dirac已接受2691源码delta；结果最终审另记。
+- r3：修正oracle后仅该项，1PASS/1deselected，2.15s。公开tool proposal精确关联真实Run、turn5/6、call ordinal0、write_file和原始call公开复合hash；要求provider/request引用。下一物理请求分别携带真实inactive/sticky拒绝，无SDK effect head、无文件、原Scope仍complete。Dirac已对2691/fbd17e9c源码、r3原log/resource及r1另一绿核验，最终限定ACCEPT。
 
 资源：r1 PG46231 exit1/5.965s/peak377344KiB；r2 PG46372 exit1/2.999s/peak199424KiB；r3 PG47277 exit0/2.791s/peak198192KiB/minDisk3600MiB。均remaining=[]、cleanup_error=null，已交槽Singer。
 
