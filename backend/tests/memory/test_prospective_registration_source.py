@@ -143,9 +143,11 @@ async def test_actual_invalidation_requires_and_reuses_old_registration(tmp_path
             outbox_id=invalidation.outbox_id, payload_hash=invalidation.payload_hash)
         assert facts.target_run_id == plan.run_id != revised.run_id
         if not accepted:
+            from deskpet.memory.prospective_completion import RegistrationDependency
             cursor = await store.cursor()
-            with pytest.raises(S5cConflict, match="s5c_invalidation_registration_missing"):
-                await source.prepare_registration(principal=P, entry=invalidation)
+            dependency = await source.prepare_registration(principal=P, entry=invalidation)
+            assert type(dependency) is RegistrationDependency
+            assert dependency.required.registration_entry == original_entry
             assert await store.registration(invalidation.outbox_id) is None
             assert await store.cursor() == cursor
         else:
@@ -164,7 +166,7 @@ async def test_concurrent_public_source_calls_keep_first_observation(tmp_path, m
     try:
         store = S5cStore(path, P)
         entry = await registration_entry(memory)
-        read = memory.read_prospective_outbox_source
+        read = memory.read_prospective_outbox_source_v2
         both = asyncio.Event()
         called = 0
         async def barrier(**kwargs):
@@ -175,7 +177,7 @@ async def test_concurrent_public_source_calls_keep_first_observation(tmp_path, m
                 both.set()
             await asyncio.wait_for(both.wait(), 3)
             return result
-        monkeypatch.setattr(memory, "read_prospective_outbox_source", barrier)
+        monkeypatch.setattr(memory, "read_prospective_outbox_source_v2", barrier)
         tick = [20.0]
         def clock():
             tick[0] += .1

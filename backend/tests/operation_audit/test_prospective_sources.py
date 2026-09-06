@@ -81,21 +81,21 @@ def exact(row, observation, state):
 async def test_real_default_registration_records_source_not_grant_and_reopens(world, tmp_path, monkeypatch):
     manager, entry, path, text = world
     source = PublicRegistrationAuthoritySource(store=S5cStore(path, P), memory=manager, clock=lambda: 20.0)
-    original = manager.read_prospective_outbox_source
+    original = manager.read_prospective_outbox_source_v2
     observed = []
     async def capture(**kwargs):
-        rows = (await source.operation_audit.page(principal=P))["items"]
+        rows = (await source.operation_audit.page(principal=P, operation="read_prospective_outbox_source_v2"))["items"]
         assert rows[-1]["state"] == "started" and rows[-1]["settled_at"] is None
         result = await original(**kwargs)
         observed.append(result)
         return result
-    monkeypatch.setattr(manager, "read_prospective_outbox_source", capture)
+    monkeypatch.setattr(manager, "read_prospective_outbox_source_v2", capture)
     grant = await source.prepare_registration(principal=P, entry=entry)
-    assert grant.intent.signal_receipt_hash == observed[0].target_mutation_receipt_ref.receipt_hash
+    assert grant.intent.signal_receipt_hash == observed[0].target_source.mutation_receipt_ref.receipt_hash
     assert await source.prepare_registration(principal=P, entry=entry) == grant
     assert len(observed) == 1  # Existing grant replay performs no new source read.
     reopened = ProspectiveSourceJournal(source.operation_audit.path)
-    page = await reopened.page(principal=P)
+    page = await reopened.page(principal=P, operation="read_prospective_outbox_source_v2")
     exact(page["items"][0], observed[0].operation_observation, "returned")
     assert page["items"][0]["result_hash"] == observed[0].source_hash
     assert page["all_operations_recorded"] is False and page["cost"] is None
@@ -228,8 +228,15 @@ async def test_tampered_or_absent_observation_not_promoted(world, tmp_path, monk
 @pytest.mark.asyncio
 async def test_unavailable_page_safe_code_and_missing_v2_never_falls_back(world, tmp_path, monkeypatch):
     journal = ProspectiveSourceJournal(tmp_path / "operation-audit.db")
+    class V1Only:
+        calls = 0
+        async def read_prospective_outbox_source(self, **kwargs):
+            self.calls += 1
+            return await world[0].read_prospective_outbox_source(**kwargs)
+    manager = V1Only()
     with pytest.raises(AttributeError):
-        await call(journal, world, operation="read_prospective_outbox_source_v2")
+        await call(journal, (manager, *world[1:]), operation="read_prospective_outbox_source_v2")
+    assert manager.calls == 0
     rows = (await journal.page(principal=P, operation="read_prospective_outbox_source_v2"))["items"]
     assert rows[0]["state"] == "raised" and rows[0]["observation_status"] == "absent"
     with sqlite3.connect(journal.path) as db:
