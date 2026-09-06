@@ -188,3 +188,39 @@ async def test_unknown_or_foreign_sdk_query_never_restarts_or_forges_terminal(tm
         assert rows(s, "SELECT COUNT(*) FROM foreground_terminal_receipts") == [(0,)]
     finally:
         await close(s)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["work_error", "work_cancel", "success_then_read_error"])
+async def test_keeper_cleanup_survives_snapshot_failure(tmp_path, monkeypatch, outcome):
+    s = await setup(tmp_path, monkeypatch, wake=False)
+    runtime = s["runtime"]
+    await runtime._stop_lease_keeper()
+    snapshot = await s["queue"].current_snapshot(s["auth"].subject)
+    original = s["queue"].current_snapshot
+    reads = 0
+    async def unavailable(_subject):
+        nonlocal reads
+        reads += 1
+        raise RuntimeError("controlled cleanup read failure")
+    async def work(*_):
+        monkeypatch.setattr(s["queue"], "current_snapshot", unavailable)
+        if outcome == "work_error":
+            raise ValueError("controlled work failure")
+        if outcome == "work_cancel":
+            raise asyncio.CancelledError()
+    monkeypatch.setattr(runtime, "_drive_claimed", work)
+    try:
+        expected = {"work_error": ValueError, "work_cancel": asyncio.CancelledError,
+                    "success_then_read_error": RuntimeError}[outcome]
+        with pytest.raises(expected):
+            await runtime._drive_with_lease(snapshot)
+        assert reads == (1 if outcome == "success_then_read_error" else 0)
+        assert runtime._lease_task is None
+        monkeypatch.setattr(s["queue"], "current_snapshot", original)
+        count = rows(s, "SELECT COUNT(*) FROM foreground_lease_receipts WHERE action='heartbeat'")
+        await asyncio.sleep(TTL / 2)
+        assert rows(s, "SELECT COUNT(*) FROM foreground_lease_receipts WHERE action='heartbeat'") == count
+    finally:
+        monkeypatch.setattr(s["queue"], "current_snapshot", original)
+        await close(s)

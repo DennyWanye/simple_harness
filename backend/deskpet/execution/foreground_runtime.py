@@ -715,9 +715,17 @@ class ForegroundRuntimeExecutionAuthority:
             if not work.done():
                 work.cancel()
             await asyncio.gather(work, return_exceptions=True)
-            current = await self._store.current_snapshot(self._subject)
-            if not succeeded or current is None or (current.host_run_id, current.generation) != identity:
+            if not succeeded:
+                # Error/cancellation cleanup must not depend on another DB read.
                 await self._stop_lease_keeper()
+            else:
+                try:
+                    current = await self._store.current_snapshot(self._subject)
+                except BaseException:
+                    await self._stop_lease_keeper()
+                    raise
+                if current is None or (current.host_run_id, current.generation) != identity:
+                    await self._stop_lease_keeper()
 
     async def _maintain_lease(self, snapshot: ForegroundRunSnapshot) -> None:
         incarnation, ordinal = uuid.uuid4().hex, 0

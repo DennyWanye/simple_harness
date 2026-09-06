@@ -31,3 +31,9 @@ Host改动仅foreground_runtime.py：
 过期同owner回收Stop保留FAILED；晚到旧heartbeat与外owner回收；query不可用/foreignidentity
 拒绝零重启零伪terminal。所有case退出join keeper/driver。
 冻结H075/M616及环境不改；仅借用原target消费，不宣称新独立install/pin证据。
+
+
+Dirac 9d48465f预审新增清理缺口：工作异常之后的finally又读DB可能抛错，跳过keeper清理。
+后继修正失败/取消直接stop+join；成功后最终读失败也先join再传播。补3个局部控制，
+因此原7业务控加新3清理控，共10 unique待首次执行。旧native失败不改。
+过期控制复用同一Runtime/SDK stack，仅证明同实例恢复，不宣称重建进程恢复已验。
