@@ -263,6 +263,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         await main._memory_analysis_lane.close()
         outcome["stage"] = "main_foreground_factory"
         await main._activate_human_memory_host_ports(epoch)
+        # Original main startup barrier: bind the real companion adapter before
+        # accepting any foreground Run. This does not start background workers.
+        await main._activate_companion_runtime_adapter_and_open_ingress()
         runtime = main.service_context.get("human_memory_foreground_runtime_execution_authority")
         cognitive = main.service_context.get("human_memory_v7_runtime")
         if runtime is None or cognitive is None:

@@ -24,10 +24,14 @@ async def execute_scoring_turn(*, service, runtime, scoring_path, subject,
     queued = await service.enqueue_turn(QueueTurnRequest(None,delivery_key,text))
     await runtime.after_enqueue(subject=subject)
     await runtime.drain()
+    if runtime.last_error is not None:
+        raise RuntimeError('corpus_runtime_driver_failed') from runtime.last_error
     if approval_driver is not None:
         while await approval_driver(service=service, queued=queued):
             await runtime.after_control(subject=subject)
             await runtime.drain()
+            if runtime.last_error is not None:
+                raise RuntimeError('corpus_runtime_driver_failed') from runtime.last_error
     if runtime.last_error is not None:
         raise RuntimeError('corpus_runtime_driver_failed') from runtime.last_error
     # Complete-group authority requires the original USER ingestion ACK. An
