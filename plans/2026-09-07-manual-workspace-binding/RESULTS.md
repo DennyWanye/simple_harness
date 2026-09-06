@@ -2,7 +2,7 @@
 
 2026-09-07。固定源 `ef0ed7bf4ad1b22dc82bb892ae8eb774c94fdcb8`；H079/M619/S0313 来自主组合既有 `memory619-artifact/installed`。限定源/真实Host运行fixture/模拟HTTP与UI transport；不是原生或模型质量通过。
 
-当前汇总：**7 backend＋4 UI，11个唯一控制分批通过**。首批6＋4保留，仅原rebind红在48169ae8修正后单项复验1PASS；以下r1失败记录仍是原事实。源码限定终审已送Dirac，未合主/未新native。
+当前汇总：**7 backend＋4 UI，11个唯一控制分批通过**。首批6＋4保留，仅原rebind红在48169ae8修正后单项复验1PASS；以下r1失败记录仍是原事实。Dirac已核固定产品ef0ed7bf、夹具修48169ae8及r1/r2，给出限定终审 **ACCEPT**；未合主/未新native。
 
 - Backend：**6 PASS、1 FAIL，33.73s**。exact（含重新hash错base拒绝）、mixed identity、allow后append故障、expired、独立进程cold exact读取、34 resolved历史＋33 pending分页通过。
 - UI：**4 PASS，1.35s**。包含真实PrimaryChatView/controller条件卸载、不同owner/primary隔离、原namespace仅exact status恢复及零自动重复decide。
@@ -46,3 +46,6 @@ PG **68756**，exit1、36.042s、peak442896KiB、minDisk5470MiB，`remaining=[]/
 | loaded-origins.json | 52d6642b6c6c01bbec2fd5319e3ad0f813edf27920e20c6399fc67aa64f57178 |
 
 修后NOT_RUN是481提交时状态，现在由r2限定结果取代。原无journal orphan、历史SQL扫描成本、View进程退出后原已bound引用自动发现、真实主组合/native仍是边界；S3/program不标完成。
+
+
+Dirac终审为只读源与已有结果复核，没有另行执行测试。结论仅覆盖本叶真实Host/公共权限链和UI模拟transport：未见新P0/P1。后续由主一次组合构建/native验证，不为本叶单独重复build或11项绿。
