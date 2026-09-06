@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06 原生r11（Host464b86ee/H077/M617）：既有startup hook实际完成WeMM预加载，但新进程唯一首query的encode1.44s仍超1s预算；UI明确查询失败，未重试，不以r10暖成功替代首查。PG93935正常退出且组清空；仅清可再生Rust链接对象恢复磁盘4.15GiB，native二进制哈希/模型/证据/用户库不变。继续同实例编码预热。[本次失败与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R11.md)。
+
 2026-09-06：旧 short generation 复用不会加载当前进程编码器；Host WeMM 新公开 warmup 仅委托已有 shared shield load，原 startup hook 可调用，不重建实例或向量。两项新公共控制2PASS（取消／并发／零预热encode／失败显式重试）；未运行真实模型或验证main/native首次查询，SDK及预算未改。[结果](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
 
 
