@@ -40,7 +40,7 @@ No additional tests run. Subsequent necessary controls must use main's complete 
 `{kind: task_candidates_visible, sdk_run_id, effect_id, call_id, actual_result_hash, visible_count, visible_sources}`.
 Every event is exact Host-indexed/public SDK terminal search output, with complete candidate shape,
 source/hash verification and current disclosure policy plus a post-read same-context check.
-No indexed search, unfinished search, explicit error, empty or currently hidden candidates returns no event;
+No indexed search, unfinished search, real SDK failed/rejected with error_code or a successful empty candidate list returns no event;
 malformed/mismatched source, stale disclosure or >256 indexed searches raises (unverifiable), not empty success.
 The hash covers actual public result value, not a ToolTerminalReceipt or host journal hash.
 This schedules the original scripted followup only; it grants no selection/resume permission.
@@ -96,3 +96,15 @@ not a selection grant. The consumer must re-read for freshness and compare an ac
 request's arguments; hidden candidates are not returned here. Existing actual_result_hash still
 covers the whole unchanged public SDK result, and visible_count counts these returned members.
 Source-only, no additional test run.
+
+Pending protocol correction after main's first real waiting control: EffectRecord does not exist before
+REQUIRE_USER resolves. Use `verify_pending_call` from corpus_c05_approval (see
+[C05-AUTHORITY-CONTROLS](C05-AUTHORITY-CONTROLS.md)) for both setup/scoring approvers;
+the previous pending read_primary_dependency_facts mapping is superseded. This does not change settled
+candidate-event reading, which still requires actual indexed effects/results. No SDK bump or private SQL.
+
+Visibility classification correction: the existing boolean policy collapses read failures and denial
+into False. A nonempty candidate with False or missing disclosed fields now raises
+`c05_candidate_visibility_unverifiable`; no typed suppression reason exists here to classify it as a
+confirmed hidden/empty result. Only actual successful candidates=[] is true zero; the consumer must
+report this new error as OBSERVATION_FAILED, not FOLLOWUP_UNMET. Hegel owns the new negative control.

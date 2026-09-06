@@ -285,10 +285,15 @@ async def read_candidate_events(*, path, subject, sdk_run_id, stack, policy):
                                      source_hash=package['source_hash'], scope_disclosure=package):
                     raise ValueError('c05_candidate_source_differs')
                 proof = await verify_scope_disclosure(db_path=path, package=package, subject=subject, stack=stack)
-                if (package['disclosure']['fields'] and await policy.check_dependencies(db=db,
-                        primary_ref=row['primary_conversation_id'], dependencies=proof, disclosure_context=disclosure)):
-                    visible.append({key: candidate[key] for key in
-                                    ('task_scope_id', 'source_id', 'source_hash')})
+                if not package['disclosure']['fields']:
+                    raise ValueError('c05_candidate_visibility_unverifiable')
+                if not await policy.check_dependencies(db=db,
+                        primary_ref=row['primary_conversation_id'], dependencies=proof, disclosure_context=disclosure):
+                    # The boolean policy also returns False for failed reads;
+                    # no typed suppression denial exists at this seam.
+                    raise ValueError('c05_candidate_visibility_unverifiable')
+                visible.append({key: candidate[key] for key in
+                                ('task_scope_id', 'source_id', 'source_hash')})
             if await resolve_current_disclosure(db_path=path, subject=subject,
                     run_id=sdk_run_id, request_id=row['effect_id']) != disclosure:
                 raise ValueError('c05_candidate_disclosure_changed')
