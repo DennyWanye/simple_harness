@@ -35,7 +35,10 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
         current_input_authority=HostCurrentInputAuthority(env.path, principal=visibility.principal()))
     # Build-time real trusted port; this is not a replacement SDK backend.
     monkeypatch.setattr(main, "_state_db_path", env.path)
-    monkeypatch.setitem(main.service_context, "human_memory_v7_runtime", visibility)
+    from context import ServiceContext
+    services = ServiceContext()
+    services.register("human_memory_v7_runtime", visibility)
+    monkeypatch.setattr(main, "service_context", services)
 
     def physical(request):
         sends.append(json.loads(request.content))
@@ -100,7 +103,7 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
             error = rejected[0]
             while error is not None:
                 causes.append(str(error))
-                error = getattr(error, "private_cause", None) or error.__cause__
+                error = error.__cause__ or error.__context__
             expected = {"request_bytes": "current_input_provider_request_mismatch",
                         "policy": "binding_stale", "claim": "claim_changed_during_check"}[change]
             assert expected in " ".join(causes), causes
