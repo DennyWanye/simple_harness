@@ -122,7 +122,12 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
                          mode="write" if offset == 0 else "append"))
                     for i, offset in enumerate(range(0, len(LARGE), 3000))),
                 model="model", usage=ProviderUsage(10, 10, 20))
-        elif n == 5 and holder.phase == 0:
+        elif n == 5 and holder.phase == 0 and mode == "forget_after_page":
+            # Settle the actual write scope through its public Tool first.
+            # Otherwise the unrelated semantic-closure obligation correctly
+            # keeps Host terminal pending after a privacy refusal.
+            response = await scripted(request, cancel=cancel)
+        elif (n == 5 or (n == 6 and mode == "forget_after_page")) and holder.phase == 0:
             actual = stack.read_primary_run_messages(holder.first_run,
                 current_text="Create a project and write its file")
             holder.raw_tool = next(m["content"] for m in actual
@@ -144,7 +149,7 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
                     source_hash=holder.source["source_hash"])),),
                 model="model", usage=ProviderUsage(10, 10, 20))
         else:
-            if n == 5:
+            if n == 5 or (n == 6 and mode == "forget_after_page"):
                 page = json.loads(next(m.content for m in reversed(request.messages) if m.role.value == "tool"))["value"]
                 assert page["kind"] == "primary_current_tool_page_v1"
                 assert page["content"] == holder.raw_tool.encode()[holder.tail_offset:].decode()
@@ -169,7 +174,7 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
         await run()
         assert holder.responses and "EXACT_PAGE_TAIL" in holder.responses[0]["content"]
         if mode == "forget_after_page":
-            assert len(holder.sent) == 6
+            assert len(holder.sent) == 7
             terminal = stack.read_run_terminal_evidence(holder.first_run)
             assert terminal.state == "FAILED"
             return
