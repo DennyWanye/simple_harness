@@ -58,7 +58,7 @@ async def write_again(w, monkeypatch, scope):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("producer", ["tool", "fallback", "fallback_forget", "fallback_commit_fault"])
+@pytest.mark.parametrize("producer", ["tool", "tool_then_resume", "fallback", "fallback_forget", "fallback_commit_fault"])
 async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeypatch, producer):
     def reply(observation, ordinal):
         if producer.startswith("fallback") and ordinal == 1:
@@ -77,10 +77,32 @@ async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeyp
                     raise RuntimeError("injected_after_closure_result_source")
                 return result
             monkeypatch.setattr(HumanMemoryProgramStore, "append_evidence_tx", fault_after_append)
-        if producer == "tool":
+        if producer.startswith("tool"):
             old = w.provider.invoke
             async def first(request, *, cancel):
                 n = len(w.provider.requests)
+                if producer == "tool_then_resume" and n == 6:
+                    # Freeze the actual field immediately after its SDK mutation,
+                    # before the same Run consumes a later scope route. That
+                    # future route must not rewrite this producer's input proof.
+                    from deskpet.task_scope.disclosure import render_scope_disclosure
+                    from deskpet.task_scope.search import TaskScopeSearchStore
+                    from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+                    current = await w.queue.current_snapshot(w.runtime.subject)
+                    scope_id = w.provider.route_result["context_route_receipt"]["task_scope_id"]
+                    opened = await TaskScopeSearchStore(w.state).open_exact(subject=w.runtime.subject,
+                        allowed_scope_ids=(scope_id,), task_scope_id=scope_id)
+                    disclosure = await resolve_current_disclosure(db_path=w.state, subject=w.runtime.subject,
+                        run_id=current.sdk_run_id, request_id=request.request_id.value)
+                    w.before_later_route = await render_scope_disclosure(db_path=w.state,
+                        package=opened.resume_package, subject=w.runtime.subject, stack=w.stack,
+                        policy=w.runtime.history_policy, disclosure_context=disclosure)
+                    assert w.before_later_route["disclosure"]["fields"]["resume"] == RESUME
+                    w.provider.requests.append(request)
+                    return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Reopen this task."),
+                        tool_calls=(ProviderToolCall(CallId("resume-after-mutation"), "context_route",
+                            {"route":"resume_existing", "task_scope_id":scope_id}),),
+                        model="model", usage=ProviderUsage(10, 10, 20))
                 if n != 5:
                     return await old(request, cancel=cancel)
                 w.provider.requests.append(request)
@@ -100,6 +122,17 @@ async def test_nonempty_resume_actual_producer_to_next_closure(tmp_path, monkeyp
             assert len(w.sent) == 1  # real send is retained, never called not_sent
             return
         await run(w)
+        if producer == "tool_then_resume":
+            from deskpet.task_scope.disclosure import verify_scope_disclosure
+            # Rebuild against completed real public effects; frozen proof must
+            # remain identical and must not recurse through the later route.
+            await verify_scope_disclosure(db_path=w.state, package=w.before_later_route,
+                subject=w.runtime.subject, stack=w.stack)
+            with sqlite3.connect(w.state) as db:
+                indexed = db.execute("SELECT tool_name,sequence FROM primary_effect_identities "
+                    "WHERE tool_name IN ('task_scope_update','context_route') ORDER BY sequence").fetchall()
+            assert [r[0] for r in indexed] == ["context_route", "task_scope_update", "context_route"]
+            assert indexed[1][1] < indexed[2][1]
         with sqlite3.connect(w.state) as db:
             scope, state_json = db.execute("SELECT s.task_scope_id,r.state_json FROM task_scopes s JOIN task_scope_heads h USING(task_scope_id) JOIN task_scope_canonical_revisions r ON r.task_scope_id=h.task_scope_id AND r.revision=h.current_revision").fetchone()
             assert json.loads(state_json)["resume"] == RESUME
