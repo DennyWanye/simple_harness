@@ -177,3 +177,59 @@ async def test_real_empty_search_differs_from_missing_effect_and_terminal_result
     finally:
         await runtime.close()
         await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_nonempty_actual_candidate_policy_false_is_unverifiable(tmp_path, installed_candidate_identity):
+    from deskpet.quality.corpus_c05_prepare import prepare_scope_archive
+    from deskpet.execution.primary_dependencies import current_disclosure
+    batch = compile_c05_setup('C05-20', SETUPS['C05-20'][0])
+    title = next(spec.title for spec in batch.scopes if spec.label == 'A')
+    class SetupThenSearch(TaskSetupProvider):
+        searching = False
+        searched = False
+        async def invoke(self, request, *, cancel):
+            if not self.searching:
+                return await super().invoke(request, cancel=cancel)
+            if not self.searched:
+                self.searched = True
+                return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, 'search'),
+                    tool_calls=(ProviderToolCall(CallId('actual-visible-search'), 'task_scope_search',
+                        {'query': title}),), model='model', usage=ProviderUsage(0, 0, 0))
+            return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, 'Preview received.'),
+                model='model', usage=ProviderUsage(0, 0, 0))
+    state, _, service, configured, authority = await fixture(tmp_path)
+    provider = SetupThenSearch(target=Provider.target)
+    runtime, stack, _ = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured, candidate_identity=installed_candidate_identity)
+    subject = local_owner_auth().subject
+    try:
+        archive = await prepare_scope_archive(batch=batch, label='A', subject=subject, service=service,
+            provider=provider, drive=runtime._drive_once, stack=stack, path=state, policy=runtime.history_policy,
+            disclosure_context=current_disclosure(run_id='fixture-reader', subject=subject, request_id='fixture-reader'))
+        provider.searching = True
+        queued = await service.enqueue_turn(QueueTurnRequest(None, 'c05-visibility-control', 'Read the existing task preview.'))
+        await asyncio.wait_for(runtime._drive_once(), 10)
+        async with aiosqlite.connect(state) as db:
+            async with db.execute('SELECT b.sdk_run_id FROM foreground_run_sdk_bindings b JOIN foreground_runs r '
+                                  'ON r.host_run_id=b.host_run_id WHERE r.turn_id=?', (queued['turn_ref'],)) as cursor:
+                sdk = (await cursor.fetchone())[0]
+        common = dict(path=state, subject=subject, sdk_run_id=sdk, stack=stack)
+        actual = await read_candidate_events(policy=runtime.history_policy, **common)
+        assert len(actual) == 1 and actual[0]['visible_count'] == 1
+        assert actual[0]['visible_sources'][0]['task_scope_id'] == archive.task_scope_id
+        class BooleanFalsePolicy:
+            calls = 0
+            async def check_dependencies(self, **kwargs):
+                self.calls += 1
+                assert kwargs['dependencies']['evidence']
+                # No typed denial reason: indistinguishable from the production
+                # policy's caught reader exception, so it cannot mean true zero.
+                return False
+        denied = BooleanFalsePolicy()
+        with pytest.raises(ValueError, match='c05_candidate_visibility_unverifiable'):
+            await read_candidate_events(policy=denied, **common)
+        assert denied.calls == 1  # exact policy boundary reached, not earlier corruption
+    finally:
+        await runtime.close()
+        await stack.close()
