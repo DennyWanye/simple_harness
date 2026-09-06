@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。WeMM公开 warmup 接通原 startup hook，共享原实例／加载任务；成功日志不再调用不存在的 is_mock。固定源码270320d3，两项新控制2PASS／0.25s，PG93645清空、共享锁释放。保持1s预算，真实冷启动初次query及独审待主，不以r10暖态PASS关闭冷FAIL。[边界与证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
+
 最后更新：2026-09-06。短期显式 typed 请求补齐 FTS＋VECTOR，long-only 仍 FTS；原 1s／2048 预算与来源门不变。固定源码 f8b2d41c，实际 H077/M617 公共链路新增反例 1PASS／4.74s，证明大 FTS 组超预算时小 vector-only 偏好可进入 Host fragments。PG89042 清空、锁释放；待独审／主合并／native 短期叶。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
 
 最后更新：2026-09-06。generation 生产源码161702be未改，追加冷加载跨两次有界超时恢复控1PASS：并发step串行、共享load仅一次、失败不确认cache/推进维护时间、完成加载后立即恢复。PG83348无残留、锁释放；不代表实际WeMM/native验收。[补充证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。

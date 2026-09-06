@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：旧 short generation 复用不会加载当前进程编码器；Host WeMM 新公开 warmup 仅委托已有 shared shield load，原 startup hook 可调用，不重建实例或向量。两项新公共控制2PASS（取消／并发／零预热encode／失败显式重试）；未运行真实模型或验证main/native首次查询，SDK及预算未改。[结果](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
+
 2026-09-06：Host 显式短期 RecallContext／Plan 请求 FTS＋VECTOR，使 SDK 已检索的小 vector-only 组可参与统一预算选择；long-only 仍 FTS，预算及公开来源／privacy 检查不改。实际 installed H077/M617 新控 1PASS，旧 FTS-only 同源计划空结果反例与 Host fragments 来源核验均通过；未改 SDK／installed，真实 WeMM/native 由主后继验收。[范围与证据](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
 
 2026-09-06：后台generation补充共享冷加载跨两次timeout恢复控通过，默认5s及WeMM不改；小公共embedder只证明worker串行、pending/维护时间及恢复语义。PG83348已清空，真实WeMM/native由主验证。[证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
