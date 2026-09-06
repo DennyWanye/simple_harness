@@ -1,3 +1,5 @@
+最后更新：2026-09-06。r19收尾指导产品a189的实际运行链2个唯一控制已独审接受并合入：真实原任务目标/未回读债务保留，完成Scope的两次拒绝与公开tool proposal/下一物理输入精确关联、无文件写入。原测试oracle两红保留、修后只复跑红1；最终PG47277清空。不是模型/native质量通过，旧root新activeScope续改仍独立实现。[控制与边界](../plans/2026-09-06-completed-scope-guidance/RESULTS.md)。
+
 最后更新：2026-09-06。已审非SELF本轮输入消费者c0fbe30a接入隔离候选源码，保留既有提醒signal authority；组合需Memory后继的新current-input公开API，当前旧M618 pin不能作为此源码可启动证明。在共同Memory源码1df01d1审查/新制品及安装组合完成前暂停该候选原生启动，用户主checkout未变。旧9项源验不重跑。[来源与边界](../plans/2026-09-06-nonself-input/RESULTS.md)。
 
 最后更新：2026-09-06。合入prepare叶后的Host9cace208，当前H079/M618/S0313新增C02完整prepare跨进程lostACK组合1PASS4.48s，174/84/116成员精确、188加载SDK来自target；PG46613清空。旧H078套件不重跑，C03新组合/240质量不外推。[组合结果](../plans/2026-09-06-corpus-public-seed/H079-PREPARE.md)。
