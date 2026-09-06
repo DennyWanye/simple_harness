@@ -10,7 +10,7 @@ Updated 2026-09-06. Product 9b4c8ace; existing H077/M616 installed targets plus 
 |r4|1 PASS, 4.20s|Actual source, first/next/tail pages, wrong-hash rejection, next physical send and full-stack reopen dependency read.|
 |r5|2 PASS, 6.08s|Only original forget failures: forget before excerpt gives zero new sends; forget after page blocks next send.|
 
-**4 unique PASS**, without adding retries. Dirac allowed scoped source verification; final results review pending. PG1442 and PG1574 exited 0 with remaining=[] and cleanup_error=null. Shared slot released.
+**4 unique PASS**, without adding retries. Dirac gave scoped source/results ACCEPT at history536daece; main has merged that history leaf independently. PG1442 and PG1574 exited 0 with remaining=[] and cleanup_error=null. Shared slot released.
 
 Reproduction: existing typed-use-primary/venv074614/bin/python invokes main candidate scripts/run_resource_bounded.py --evidence-dir <new-dir> -- <same-python> -I -B .local-test-evidence/2026-09-06/primary-context-pages/run_tests.py <new-basetemp> -k <target>. The ignored launcher explicitly loads existing H077/M616 installed targets and this Host source; it is not a new full environment identity gate.
 
