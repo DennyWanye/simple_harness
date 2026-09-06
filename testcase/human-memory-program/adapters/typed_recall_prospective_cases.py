@@ -22,7 +22,7 @@ def supported(recipe):
         and seed.get('state','pending') in {'pending','triggered'})
 
 
-async def register(case, target, trigger, *, state='pending'):
+async def register(case, target, trigger, *, state='pending', identity=None):
     await case.manager.register_principal_owner(case.principal,m.MemoryScope.personal(case.principal.actor_id))
     page=await case.manager.read_outbox(principal=case.principal,limit=100)
     case.events.append({'call':'read_prospective_outbox','entries':[dc.asdict(e) for e in page.entries],
@@ -35,7 +35,7 @@ async def register(case, target, trigger, *, state='pending'):
         raise ValueError('exact public prospective registration command unavailable')
     row=entries[0]
     return await signal(case,target,trigger,kind='registration_accepted',state=state,
-        next_state=state,outbox=row)
+        next_state=state,outbox=row,identity=identity)
 
 
 async def signal(case,target,trigger,*,kind,state,next_state,outbox=None,
