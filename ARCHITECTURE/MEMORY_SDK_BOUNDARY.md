@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06 原生r9（Host fa7580b0/H077/M617）：生产Provider清理错误本次未再观察到；short祖先补齐和后台generation修复已经独审合入，实际WeMM生成active索引。真实查询首次超时，模型同Run重试后SDK审计used/FTS1/vector3，但UI最终仍答无片段，短期端到端未通过，返回链路待定位。现场保存后正常退出，资源exit0/remaining[]/cleanup_error=null。此前r8各场景证据与失败历史保留。[最新原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
+
 2026-09-06：后台generation补充共享冷加载跨两次timeout恢复控通过，默认5s及WeMM不改；小公共embedder只证明worker串行、pending/维护时间及恢复语义。PG83348已清空，真实WeMM/native由主验证。[证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
 
 2026-09-06：正常 MemoryAnalysisLane 的 short worker 在 projection 后调用 SDK 公共 generation；cache 只在生成成功后确认，维护失败保留 pending，原 SDK 幂等负责同 lineage/manifest 复用。四个小 embedder 公共接线控分批通过；未改 SDK 或 WeMM，真实 native 仍待主验证。[接线事实](../plans/2026-09-06-short-terminal-source/GENERATION.md)。

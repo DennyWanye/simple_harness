@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06 原生r9（Host fa7580b0/H077/M617）：生产Provider清理错误本次未再观察到；short祖先补齐和后台generation修复已经独审合入，实际WeMM生成active索引。真实查询首次超时，模型同Run重试后SDK审计used/FTS1/vector3，但UI最终仍答无片段，短期端到端未通过，返回链路待定位。现场保存后正常退出，资源exit0/remaining[]/cleanup_error=null。此前r8各场景证据与失败历史保留。[最新原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
+
 2026-09-06：generation叶161702be追加必要冷加载恢复控1PASS/5.60s；两个step串行超时后同一load继续、未确认pending或推进_last_projection，加载完成立即恢复。仅测试/文档增量，旧四绿及WeMM suite未重跑；PG83348无残留、锁释放。[范围](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
 
 2026-09-06：自有 clock 树 `feat/short-index-generation` 从02bf补正常后台 generation。四项新控分批通过，公共查询命中与维护/重开/lost-ACK 幂等已验证；timeout/cancel 不被确认 cache 掩盖。PG82943 清空、锁释放；本叶待独审/主合并/实际 WeMM-native，不重跑旧绿。[范围](../plans/2026-09-06-short-terminal-source/GENERATION.md)。

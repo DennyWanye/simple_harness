@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+2026-09-06 原生r9（Host fa7580b0/H077/M617）：生产Provider清理错误本次未再观察到；short祖先补齐和后台generation修复已经独审合入，实际WeMM生成active索引。真实查询首次超时，模型同Run重试后SDK审计used/FTS1/vector3，但UI最终仍答无片段，短期端到端未通过，返回链路待定位。现场保存后正常退出，资源exit0/remaining[]/cleanup_error=null。此前r8各场景证据与失败历史保留。[最新原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
+
 最后更新：2026-09-06。generation 生产源码161702be未改，追加冷加载跨两次有界超时恢复控1PASS：并发step串行、共享load仅一次、失败不确认cache/推进维护时间、完成加载后立即恢复。PG83348无残留、锁释放；不代表实际WeMM/native验收。[补充证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
 
 最后更新：2026-09-06。02bf 后继后台 worker 已接公共 generation：同锁/既有 timeout 内 projection→generation，成功才确认 cache，失败/超时/取消可重试，SDK 按 lineage/manifest 幂等复用。实际 installed H077/M617 + 小测试 embedder 四控分批绿（含公共 query、维护/重开/lost-ACK 不重复 embedding）；PG82943 无残留、锁释放。尚待独审/主组合/实际 WeMM/native。[边界与结果](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
