@@ -1,6 +1,6 @@
 # Procedure prompt v5.1 — focused controls
 
-2026-09-07. Fixed product/tests342e2722, basee1b98baf. Dirac source review found no definite P0/P1; final evidence review pending.
+2026-09-07. Fixed product/tests342e2722, basee1b98baf. Dirac final limited ACCEPT for342e2722+8f14a156: source and all three raw hashes verified. This accepts focused protocol/compiler/recovery behavior, not real model classification or native repair.
 
 **6PASS/0.87s**, one batch: five new controls and one affected v5 default assertion. No old suites, model calls, native or builds. PG66123exit0, remaining[],cleanupnull; resource1.511s,peak161616KiB,minimumdisk1656MiB. Shared slot released to main/Singer immediately.
 
