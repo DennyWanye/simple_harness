@@ -1,3 +1,5 @@
+2026-09-06：非SELF本轮输入来源事实片固定4405a2ac，实际signed-control/S1/atomic schema3、原声明重放、晚入场拒绝及真正重新签名连接保留原lease共7个唯一控制分批通过；旧来源顺序仍按原config。新增SDK用途消费/physical接线尚未实现，不称非SELF执行或240可用；未改冻结SDK制品。[契约与分批结果](../plans/2026-09-06-nonself-input/RESULTS.md)。
+
 <!-- Updated 2026-09-06 -->
 
 Updated 2026-09-06: revoked-source/non-success semantic fallback preserves pending debt and genuine FAILED terminal, without constructing a source-bearing model observation. Original main fallback already settled the unclosed-scope flow; earlier current-r3 lacked that component and is not main deadlock evidence. Two new actual-stack controls passed7.75s, including Host terminal.before_commit crash, cold same-receipt reuse/no retransmission, pending replay status and independent next input without withdrawn USER text. Productc6af1ac4; H077/M616 plus Host source/MockTransport, not native. PG4841 empty/lock released; no schema/hash/SDK changes. [Results and baseline calibration](../plans/2026-09-06-revoked-scope-terminal/RESULTS.md).
