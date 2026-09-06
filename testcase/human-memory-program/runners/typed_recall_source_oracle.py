@@ -87,6 +87,8 @@ def check_start(s, control, attempt_count):
     if len(requests)!=1 or len(attempts)!=attempt_count:
         raise ValueError('request/attempt cardinality differs')
     request=requests[0]; wire=json.loads(request['request_json'])
+    if set(wire)!={'schema_version','principal_id','context','plan'} or type(wire['schema_version']) is not int or wire['schema_version']!=1:
+        raise ValueError('durable request exact schema/keys differ')
     if wire['context']!=control['context'] or wire['plan']!=control['plan']:
         raise ValueError('durable request not actual control input')
     if request['principal_id']!=wire['principal_id'] or request['idempotency_key']!=wire['plan']['idempotency_key']:
@@ -176,7 +178,7 @@ def check_fault_state(o, seam, final_tables):
         check_terminal(after,o['control'],1)
 
 
-def check_corruption_state(o, name):
+def check_corruption_state(o, name, check_seed_authority):
     before=o['full_state']['before'];damaged=o['full_state']['damaged'];rejected=o['full_state']['rejected']
     for s in (before,damaged,rejected):verify_snapshot(s)
     unchanged(before,damaged,{'cognitive_conflict_members'})
@@ -184,6 +186,11 @@ def check_corruption_state(o, name):
     if before['integrity']!=['ok'] or before['foreign_keys']:
         raise ValueError('corruption control is not healthy')
     fixture=json.loads((Path(__file__).parent.parent/'fixtures/typed-recall-v3.json').read_text())
+    specification=next(r for r in fixture['conflict_write_oracle']['recall_cases'] if r['id']==name.rsplit('/',1)[1])
+    if specification['expect']!='CONFLICT_GROUP_CORRUPT' or specification['reopen_outcome']!='FAIL_CLOSED':
+        raise ValueError('frozen corruption semantic contract differs')
+    if any(specification[k]!=0 for k in ('public_group_count','public_candidate_count','forbidden_canary_hits')):
+        raise ValueError('frozen zero-disclosure contract differs')
     claims=fixture['conflict_write_oracle']['canonical_payloads']
     groups=rows(before,'cognitive_conflict_groups');members=rows(before,'cognitive_conflict_members')
     if len(groups)!=1 or len(members)!=2:raise ValueError('full conflict group/member cardinality differs')
@@ -202,6 +209,30 @@ def check_corruption_state(o, name):
         if json.loads(revisions[0]['content_json'])!=source or m['content_hash']!=digest(source):
             raise ValueError('original incumbent/challenger content differs')
         spans=sorted([r for r in rows(before,'cognitive_evidence_spans') if r['memory_id']==m['memory_id'] and r['revision']==m['revision']],key=lambda r:r['ordinal'])
+        expected_ids=fixture['conflict_write_oracle']['create_case'][('incumbent' if ordinal==1 else 'challenger')+'_evidence_ids']
+        if [r['evidence_id'] for r in spans]!=expected_ids:
+            raise ValueError('original distinct member evidence IDs differ')
+        if len(o['sources'])!=8:raise ValueError('original revision1..8 mutation history missing')
+        source_index=5+ordinal
+        record=o['sources'][source_index]
+        if record['receipt']['operations'][0]['revision']!=m['revision'] or record['evidence_id']!=expected_ids[0]:
+            raise ValueError('original mutation revision/evidence differs')
+        check_seed_authority(o,{'seed':{'memory_type':'semantic','payload':{**claim,'qualifiers':[]}}},source,
+                             source_index=source_index,check_recall_refs=False)
+        event=next(e for e in o['calls'] if e['call']=='apply_memory_mutation_plan' and e['plan']['plan_id']==record['receipt']['plan_id'])
+        wire_spans=event['plan']['operations'][0]['evidence_spans']
+        if len(wire_spans)!=len(spans):raise ValueError('original mutation span membership differs')
+        aliases={'evidence_item_ordinal':'item_ordinal','evidence_item_id':'item_id',
+                 'evidence_item_json_pointer':'item_json_pointer','byte_start':'start_byte','byte_end':'end_byte'}
+        for stored,span in zip(spans,wire_spans,strict=True):
+            for key,value in stored.items():
+                if key in {'memory_id','revision','ordinal'}:continue
+                expected=None if key.startswith('observation_') else span[aliases.get(key,key)]
+                if value!=expected:raise ValueError('durable member span differs from admitted mutation input: '+key)
+            admitted=next(e for e in o['calls'] if e['call']=='ingest_committed_evidence' and e['evidence_id']==stored['evidence_id'])
+            durable=[e for e in rows(before,'evidence_envelopes') if e['evidence_id']==stored['evidence_id']]
+            if len(durable)!=1 or durable[0]['envelope_hash']!=admitted['envelope_hash'] or json.loads(durable[0]['sanitized_payload'])!=admitted['envelope']['sanitized_payload']:
+                raise ValueError('member evidence not actual durable admitted envelope')
         manifest=[{k:v for k,v in r.items() if k not in {'memory_id','revision'}} for r in spans]
         if not spans or m['evidence_set_hash']!=digest(manifest):raise ValueError('member complete evidence-set hash differs')
         payload={k:v for k,v in m.items() if k!='member_hash'}

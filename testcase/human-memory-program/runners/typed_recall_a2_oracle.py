@@ -586,7 +586,7 @@ def assess_source(cell):
             expected_count=1 if 'one-member' in cell['cell_id'] else 3 if 'three-members' in cell['cell_id'] else 2
             if len(o['after_members'])!=expected_count or 'recalled' in o or not o.get('exception'):
                 raise ValueError('actual corrupted member state did not reject reopen')
-            state.check_corruption_state(o,cell['cell_id'])
+            state.check_corruption_state(o,cell['cell_id'],check_seed_authority)
             return dict(status='PASS',reason='',
                 business_assertions=['real revision7/8 no-fault confirmation control','actual member corruption followed by reopen rejection'])
         check_two_source_control(o['control'],o['sources'])
@@ -619,7 +619,7 @@ def assess_source(cell):
         state.check_fault_state(o,seam,FINAL_TABLES)
         checks.append('complete source schema/PK/request/attempt/terminal and unchanged nonfinal roots')
         return dict(status='PASS',reason='',business_assertions=checks)
-    except (ValueError,KeyError,TypeError,IndexError) as exc:
+    except (ValueError,KeyError,TypeError,IndexError,StopIteration) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 
 

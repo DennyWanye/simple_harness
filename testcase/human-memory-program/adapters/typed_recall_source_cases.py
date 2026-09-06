@@ -70,6 +70,8 @@ async def fault_cases(request,workspace,factory,helpers,oracle,backends,now):
             evidence_id='source-control-312',operation_id='create-2')
         sources=seed.sources
         admitted=seed.admitted.copy()
+        source_history=seed.sources
+        source_calls=seed.events
     finally:await seed.close()
     async def reopen(path):
         case=helpers.CaseManager(path,backend_factory=factory,now=now)
@@ -152,6 +154,8 @@ async def corruption_cases(request,workspace,factory,helpers,oracle):
             if member['source_content_hash']!=oracle.hash_json(oracle.semantic_source(**{**payload,'object_value':object_value})):
                 raise ValueError('source corruption no-fault source hash differs')
         admitted=seed.admitted.copy()
+        source_history=seed.sources
+        source_calls=seed.events
     finally:await seed.close()
     rows=[]
     for name in request['cell_ids']:
@@ -173,7 +177,8 @@ async def corruption_cases(request,workspace,factory,helpers,oracle):
             for _,sql in triggers:db.execute(sql)
             after=list(db.execute('SELECT * FROM cognitive_conflict_members ORDER BY ordinal'))
             db.commit()
-        observed=dict(corruption=True,control=control,before_members=before,after_members=after,calls=['source_corrupt_members','initialize_reopen'])
+        observed=dict(corruption=True,control=control,before_members=before,after_members=after,
+            sources=source_history,calls=source_calls,source_calls=['source_corrupt_members','initialize_reopen'])
         observed['full_state']={'before':full_before,'damaged':state.capture(path)}
         observed.update(phase='initialize_reopen',recall_calls=0)
         case=helpers.CaseManager(path,backend_factory=factory);case.admitted.update(admitted)

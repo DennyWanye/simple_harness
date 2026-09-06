@@ -47,9 +47,17 @@ member hash、有序group hash、public confirmation identity。改后逐值核�
 - three-member：schema probe的CHECK破坏，外层同上，cause必须是
   MemoryCorruptionError/human-memory v7 integrity check failed。
 
-这里不把外层legacy标签伪称SDK返回CONFLICT_GROUP_CORRUPT。原AC的FAIL_CLOSED由真实损坏、
-内层corruption cause、确切trace function与零recall/零写共同证明；若原AC要求新的统一错误枚举，
-需单独报告SDK错误分类缺口，不修改冻结gold。只凭异常类型或异常存在绝不PASS。
+主2026-09-06明确决定：CONFLICT_GROUP_CORRUPT是原冻结语义类别，允许验证器将它映射到
+M0613真实cause+exact拒绝层；不是修改SDK错误码。验证器实际读取原recall_cases对应项，
+assert expect==CONFLICT_GROUP_CORRUPT、reopen_outcome==FAIL_CLOSED及三个零披露预期。
+随后验证上述真实outer/cause/frames、限定member变更、其他表不变、零recall及拒绝后零写，
+任何一项缺失仍FAIL。不能只凭异常存在PASS。
+
+Dirac P1补齐：保留实际8次mutation source/history、实际ingest envelope/admission inputs。
+r7/r8必须匹配原create_case不同evidence IDs；每条durable span逐字段映射原mutation EvidenceSpan，
+复用独立check_seed_authority/check_admitted_span绑定真实envelope/receipt/hash/引文和durable envelope。
+再计算完整evidence-set/member/group hash，避免错误来源自洽重hash通过。
+P2补齐：request_json必须exact schema1及四字段schema_version/principal_id/context/plan，无额外键。
 
 ## 待slot验证
 

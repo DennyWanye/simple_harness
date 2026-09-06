@@ -62,3 +62,53 @@ async def test_source_ten_complete_state_and_rejection_counterexamples(tmp_path)
                 row[key]=999 if key=='current_revision' else 'f'*64
                 snap['tables'][table]['root_hash']=state.digest(snap['tables'][table]['rows'])
             assert oracle.assess_source(cell)['status']=='FAIL',(original['cell_id'],attack)
+
+    for mutation in ('schema2','extra_key'):
+        cell=copy.deepcopy(fault)
+        for snap in cell['observations']['full_state'].values():
+            table=snap['tables']['typed_recall_requests']
+            for row in table['rows']:
+                wire=json.loads(row['request_json'])
+                if mutation=='schema2':wire['schema_version']=2
+                else:wire['unknown']=True
+                row['request_json']=state.canonical(wire)
+            table['root_hash']=state.digest(table['rows'])
+        assert oracle.assess_source(cell)['status']=='FAIL',mutation
+    original=next(c for c in cells if 'one-member' in c['cell_id'])
+    for mutation in ('swap','reuse'):
+        cell=copy.deepcopy(original);o=cell['observations']
+        for snap in o['full_state'].values():
+            table=snap['tables']['cognitive_evidence_spans']
+            originals=copy.deepcopy(table['rows'])
+            for row in table['rows']:
+                if row['revision'] not in (7,8):continue
+                revision=8 if mutation=='swap' and row['revision']==7 else 7
+                donor=next(r for r in originals if r['memory_id']==row['memory_id'] and r['revision']==revision)
+                identity={k:row[k] for k in ('memory_id','revision','ordinal')}
+                row.update(donor);row.update(identity)
+            table['root_hash']=state.digest(table['rows'])
+            members=snap['tables']['cognitive_conflict_members']
+            for member in members['rows']:
+                spans=sorted([r for r in table['rows'] if r['memory_id']==member['memory_id'] and r['revision']==member['revision']],key=lambda r:r['ordinal'])
+                member['evidence_set_hash']=state.digest([{k:v for k,v in r.items() if k not in {'memory_id','revision'}} for r in spans])
+                member['member_hash']=state.digest({k:v for k,v in member.items() if k!='member_hash'})
+            members['root_hash']=state.digest(members['rows'])
+        # Keep the original damaged group's pre-corruption commitment, now for the wrong-source pair.
+        before=o['full_state']['before'];group=before['tables']['cognitive_conflict_groups']['rows'][0]
+        hashes=[r['member_hash'] for r in sorted(before['tables']['cognitive_conflict_members']['rows'],key=lambda r:r['ordinal'])]
+        group_hash=state.digest({**{k:v for k,v in group.items() if k!='group_hash'},'member_hashes':hashes})
+        for snap in o['full_state'].values():
+            table=snap['tables']['cognitive_conflict_groups'];table['rows'][0]['group_hash']=group_hash;table['root_hash']=state.digest(table['rows'])
+        execution=o['control']['execution']
+        old_hash=execution['decision']['confirmation_groups'][0]['conflict_group_hash']
+        def replace_group(value):
+            if isinstance(value,dict):return {k:replace_group(v) for k,v in value.items()}
+            if isinstance(value,list):return [replace_group(v) for v in value]
+            return group_hash if value==old_hash else value
+        execution=replace_group(execution);o['control']['execution']=execution
+        execution['decision_hash']=state.digest({'domain':'simple-harness/recall-decision/v4','payload':execution['decision']})
+        execution['result']['decision_hash']=execution['decision_hash']
+        execution['result_hash']=state.digest({'domain':'simple-harness/typed-recall-result/v1','payload':execution['result']})
+        execution['hashes'].update(decision=execution['decision_hash'],result=execution['result_hash'])
+        verdict=oracle.assess_source(cell)
+        assert verdict['status']=='FAIL' and verdict['reason']=='original distinct member evidence IDs differ',verdict
