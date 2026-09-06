@@ -1,3 +1,47 @@
+# Runtime/source leaf — limited verified result
+
+2026-09-06. This latest section supersedes historical NOT_RUN status below.
+Three distinct new controls passed in separate targeted batches, not a combined
+rerun and not 240 quality execution:
+
+- runtime-first-r1: actual C01 CREATE setup job materialized through public SDK
+  runner and exact constructor-bound fixture authority; no foreground source.
+- runtime-first-r3: actual transient delivery failure → retry_scheduled → reopen
+  first IDLE rejected as unconfirmed; graph unchanged. Dirac limited P1 closure.
+- runtime-source-r6: 1 PASS/1.71s. Actual local-owner Host/SDK source Run,
+  actual MemoryIngestionOutboxWorker delivery before original full group,
+  same-DB rejection, interrupted original-pair import and exact replay/readback,
+  scoring source has no history origin or completed source Run; real scoring
+  request excludes source USER/assistant, own outbox delivered before exact
+  queued-turn COMPLETED group. Two deterministic transport invocations, no
+  external Provider/model. This is one ordinary request isolation proof, not
+  actual typed recall/short registration cross-DB privacy or all240 completion.
+
+r4/r5 source reds preserve DTO field mistakes: EvidenceRef uses content_hash
+(the admitted parent envelope hash in this context), not envelope_hash or
+ evidence_hash. No SDK change or relaxed comparison. r6 used original own
+corpus_c01 registry; main C02 green was not rerun. C03 independent WIP, C04/main
+registry are excluded from this source delivery.
+
+PG19566 exit0 remaining[], peak179408KiB, resource2.354s, slot released and main/
+Singer notified. Exact installed H078/M618; no source overlay/new env/native.
+Only actual APPLIED confirms setup-job execution; idle never certifies prior
+settlement. Setup executor scope is C01 CREATE, not C01-06 revision/C02 inference.
+Source import is strict fresh ordinary-v1 and rejects A7/derived dependencies.
+Authored recent-history replay/full corpus runtime still remain.
+
+Source is fixed for independent Dirac review; source-green alone is not full
+production/native or corpus-quality acceptance. All raw remains local ignored.
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r4/command.log` SHA256 `6f92048d7817cc819c9f96d8062771d9c8efe904fc1cf60f19220beed6ed9e14`
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r4/resource.json` SHA256 `343c1cf5a745341c7f2573e8a42eb59b5b8ac9e0b9ae2cb9d3f4ff3a147cbc2e`
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r5/command.log` SHA256 `eae21c569d96aa2950e2e27af9b917eb950d29bc530d85c7802080723b6f1547`
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r5/resource.json` SHA256 `2e6e4a17de551053b83366533356246949b8d89b5dc95218a5118e333adc4955`
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r6/command.log` SHA256 `d0deb4e52e1bd4074ae74959d4a2ebfad828b825df07c466351f28c4ce29b9f8`
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r6/resource.json` SHA256 `620a4e48c2748d28ecc443e50939fcf00e80ce3a3aaec01658ee9b2144a7065d`
+
+## Historical preparation and failures
+
 # Source/scoring separation — WIP, NOT_RUN
 
 2026-09-06. This is preparation for runtime evaluation, not a quality run.

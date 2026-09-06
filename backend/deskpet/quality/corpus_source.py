@@ -75,7 +75,7 @@ async def import_setup_conversation_sources(*, source_path, scoring_path, subjec
     for envelope, _ in identities.values():
         for ref in envelope.evidence_refs:
             parent = identities.get(ref.evidence_id)
-            if parent is None or parent[0].envelope_hash != ref.envelope_hash:
+            if parent is None or parent[0].envelope_hash != ref.content_hash:
                 raise ValueError('corpus_source_group_not_closed')
     store = HumanMemoryProgramStore(scoring)
     authority = HostEvidenceAuthority(scoring)
