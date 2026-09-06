@@ -932,7 +932,7 @@ async def initialize_state_db(
     db_path.parent.mkdir(parents=True, exist_ok=True)
     bootstrap_version = (
         await read_user_version(db_path)
-        if db_path.exists() and _has_bootstrap_marker(db_path)
+        if db_path.exists()
         else None
     )
     if (
