@@ -3279,6 +3279,32 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
     )
 
 
+async def _initialize_product_memory() -> None:
+    """Own the real product Memory manager before any Runtime borrower starts."""
+    global _memory_backend
+    if _memory_backend is not None:
+        return
+    from paths import resolve_model_dir
+    from simple_harness_memory import MemoryManager
+    from deskpet.memory.wemm_embedder import WeMMEmbedder
+
+    memory_resource = resolve_model_dir("wemm-embedding-2b").resolve()
+    if not memory_resource.is_dir():
+        raise RuntimeError("memory_embedding_resource_unavailable")
+    memory_embedder = WeMMEmbedder(memory_resource, revision="product-bundled")
+    memory_build_kwargs = {"embedder": memory_embedder, "resource_path": memory_resource}
+    if "observability_sink" in inspect.signature(MemoryManager.build_production).parameters:
+        memory_build_kwargs.update(observability_sink=_sdk_observability.sink,
+            correlation=_sdk_observability.correlation)
+    _memory_backend = await MemoryManager.build_production(_memory_db_path, **memory_build_kwargs)
+    memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
+    if callable(memory_snapshot):
+        _sdk_observability.register_snapshot_source("memory", memory_snapshot)
+    _sdk_observability.export()
+    service_context.register("embedder", memory_embedder)
+    _session_db.bind_memory_manager(_memory_backend)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Preload models on startup (best-effort — failures logged but don't block)."""
@@ -3335,44 +3361,7 @@ async def lifespan(app: FastAPI):
             else None
         ),
     )
-    if _memory_backend is None:
-        from paths import resolve_model_dir
-        from simple_harness_memory import MemoryManager
-
-        from deskpet.memory.wemm_embedder import WeMMEmbedder
-
-        # 2026-09-01: user-selected vector model — tencent/WeMM-Embedding-2B
-        # replaces BGE-M3 across the memory composition.
-        memory_resource = resolve_model_dir("wemm-embedding-2b").resolve()
-        if not memory_resource.is_dir():
-            raise RuntimeError("memory_embedding_resource_unavailable")
-        memory_embedder = WeMMEmbedder(
-            memory_resource,
-            revision="product-bundled",
-        )
-        memory_build_kwargs = {
-            "embedder": memory_embedder,
-            "resource_path": memory_resource,
-        }
-        if "observability_sink" in inspect.signature(
-            MemoryManager.build_production
-        ).parameters:
-            memory_build_kwargs.update(
-                observability_sink=_sdk_observability.sink,
-                correlation=_sdk_observability.correlation,
-            )
-        _memory_backend = await MemoryManager.build_production(
-            _memory_db_path, **memory_build_kwargs
-        )
-        memory_snapshot = getattr(_memory_backend, "diagnostics_snapshot", None)
-        if callable(memory_snapshot):
-            _sdk_observability.register_snapshot_source("memory", memory_snapshot)
-        _sdk_observability.export()
-        # Settings must report the embedder that the production Memory SDK
-        # actually owns.  Leaving this slot at the legacy ``None`` placeholder
-        # makes the UI claim BGE is stopped while recall is already using it.
-        service_context.register("embedder", memory_embedder)
-        _session_db.bind_memory_manager(_memory_backend)
+    await _initialize_product_memory()
     try:
         # SessionDB owns the migration/backup recovery path. Registry identity
         # is loaded only after v23 exists, then legacy bindings are reconciled
@@ -11051,6 +11040,7 @@ def _provider_chain_or_none(provider_registry):
 
 
 async def _activate_product_sdk_runtime(
+    *, clock=time.time,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
     global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
@@ -11108,7 +11098,7 @@ async def _activate_product_sdk_runtime(
     # `product_sdk_runtime_skipped` left the Host running with no SDK runtime
     # at all (every chat turn then fails later, far from the cause).
     try:
-        stack = await _build_product_sdk_runtime_stack(state.generation)
+        stack = await _build_product_sdk_runtime_stack(state.generation, clock=clock)
     except Exception as exc:
         logger.exception("product_sdk_runtime_build_failed", reason=str(exc))
         raise RuntimeError(f"product_sdk_runtime_build_failed: {exc}") from exc

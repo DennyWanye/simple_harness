@@ -1,3 +1,4 @@
+最后更新：2026-09-07。C01评分叶99d17c11：真实main Memory初始化/关闭与gold隔离、真实未终态attempt保存红2修后通过，连同先前FAILED参数共3唯一无网络控制；PG65098/65129清空，旧失败保留。原coroutine diagnostics警告单列，不扩改。首C01-10已合候选，实际评分另验，当前模型评分0，不是质量PASS。[控制与准确运行命令](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。
 最后更新：2026-09-07。新构建原生r25固定d86e4805/H079/M619冷恢复与两次实际授权可用；首查询错把taskactive当流程状态，澄清后实际Procedure发现返回0且模型如实答无。正向草稿/完整Procedure仍未验收，240质量不计。PG62018正常退出清空，退出后仅清可再生构建缓存，防熄屏继续。[结果](../plans/2026-09-06-typed-use-primary/NATIVE-R25.md)。
 
 最后更新：2026-09-07。主d86e4805（产品0e146792）与H079/M619/S0313安装组合仅Auto原root新Scope写入/alreadyBound拒绝2PASS4.05s；205已加载SDK模块属指定target，无重复全成员核验。PG61943 exit0/remaining[]已交native槽。原7unique不重复累计，Manual UI与原生仍待，原失败保留。[组合事实](../plans/2026-09-06-completed-scope-continuation/COMBINATION-619.md)。

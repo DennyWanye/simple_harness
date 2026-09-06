@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C01生产评分接线99d17c11/结果d111ce21已独审合入候选，新增实际main初始化/失败及未终态trace3控分批通过；当前真实模型评分仍0，需首次运行及逐条gold终态复核。[结果](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。
+
 最后更新：2026-09-07。新构建原生r25固定d86e4805/H079/M619冷恢复与两次实际授权可用；首查询错把taskactive当流程状态，澄清后实际Procedure发现返回0且模型如实答无。正向草稿/完整Procedure仍未验收，240质量不计。PG62018正常退出清空，退出后仅清可再生构建缓存，防熄屏继续。[结果](../plans/2026-09-06-typed-use-primary/NATIVE-R25.md)。
 
 最后更新：2026-09-07。原目录新active Scope续改独审叶636d6c38合候选；新Run原root复用和同Run双绑定拒绝共7唯一控制分批通过，仅H079/M618确定性运行，Manual UI/当前组合/native另验。[结果](../plans/2026-09-06-completed-scope-continuation/RESULTS.md)。
