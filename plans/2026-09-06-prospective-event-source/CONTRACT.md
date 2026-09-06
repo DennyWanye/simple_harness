@@ -125,3 +125,41 @@ These are concrete production inputs, not model-provided claims or caller clocks
 Until their owner is identified, adding a nominal confirmation DTO would invent an
 authority protocol. The source remains NOT_IMPLEMENTED / NOT_RUN; A7 results are
 unchanged. This clarification follows Dirac's fixed-source boundary review.
+
+## Executable protocol leaf (2026-09-06)
+
+`prospective_event_codec.py` defines a separate PreparedEvent and strict version-1
+host_event_observation. `prospective_event_source.py` consumes an explicitly
+configured ConfirmedEventReader; no publisher/reader is installed by default.
+The sole ProspectiveScheduler dispatches time_due and event_occurred by both Python
+DTO type and SDK signal kind. The existing journal stores the event observation
+inside its already committed body; no DDL or timer body/hash changes.
+
+Reader signature: `read_confirmed_event(*, principal, registration) -> EventRead`.
+States are confirmed, not_observed and unverifiable, with an explicit reason.
+Unverifiable does not advance scan progress. None is not accepted as a result;
+missing reader returns no prepared grants and records source-unavailable status.
+A confirmed body binds actual SDK run/effect/rawcall/tool, arguments/result hashes,
+source authority/condition, destination/configuration, artifact and confirmation.
+The adapter must verify those through existing public SDK reads and Host ownership;
+codec self-consistency alone is not authenticity and never proves publication.
+
+The supported causal-cut shape is `host_effect_admission/v1`: namespace, exact
+registration authority hash, cut/admission sequences and original record hashes.
+`primary_effect_identities.sequence` is the candidate real immutable index (written
+by execution/primary_effect_index.py before handler entry). Its row has Host Run,
+SDK Run, effect/tool and identity hash, but no direct subject/scope fields. A real
+adapter must bind those through Host Run/binding and public SDK facts. A cut must
+be captured inside S5cStore.commit_registration_result's ACK writer transaction,
+not reconstructed at scan time. That production capture is NOT implemented here:
+publisher namespace/scope coverage and its exact destination reader are not yet
+identified. Existing ACKs without a cut remain unverifiable. This accepts only
+effects admitted after ACK; earlier-started/later-confirmed effects are excluded.
+No publisher argument changes, SDK ToolTerminalReceipt or invented sequence.
+
+Prepared event identity is per exact registration/trigger: competing confirmations
+cannot create multiple signals. The first durable body wins; differing concurrent
+prepare recovers that first body. Handoff/replay uses the existing immutable claim
+CAS, and replay of possibly consumed calls precedes current registration checks.
+Without an event source, a fresh durable event stays pending with an explicit
+source-unavailable error; it is not falsely invalidated. Recurrence is unchanged.

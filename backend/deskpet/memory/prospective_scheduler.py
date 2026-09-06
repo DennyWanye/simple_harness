@@ -1,8 +1,8 @@
-"""Single bounded time-trigger scheduler; Memory owns occurrence identity.
+"""Single bounded one-shot time/event scheduler; Memory owns occurrence identity.
 
 Composition supplies the public-source adapter and schema51 signal journal.
-No timer is represented as a Memory outbox command. Event triggers and recurring
-schedules are deliberately outside this one-shot time-trigger executor.
+No occurrence is represented as a Memory outbox command. Event source composition
+is optional and never substitutes a test authority. Recurrence remains excluded.
 """
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from simple_harness.runtime import ProspectiveSignalAuthority, ProspectiveSignalAuthorityRef
+from deskpet.memory.prospective_event_codec import PreparedEvent
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open
 
 
@@ -67,12 +68,14 @@ class TimerJournal(Protocol):
 
 class ProspectiveScheduler:
     def __init__(self, *, store: TimerJournal, source: TimerSource, memory,
-                 clock: Callable[[], float] = time.time, lease_seconds: float = 30.0):
+                 clock: Callable[[], float] = time.time, lease_seconds: float = 30.0, event_source=None):
         if not callable(clock) or not math.isfinite(lease_seconds) or lease_seconds <= 0:
             raise ValueError('prospective_timer_clock_or_lease_invalid')
         self.store, self.source, self.memory = store, source, memory
         self.clock, self.lease_seconds = clock, lease_seconds
         self._tick_lock = asyncio.Lock()
+        self.event_source = event_source
+        self._event_first = False
 
     def _now(self) -> float:
         value = float(self.clock())
@@ -99,7 +102,12 @@ class ProspectiveScheduler:
                         break
                     handled += 1
                     if not claim.handed_off:
-                        if not await self.source.registration_is_live(claim.authority):
+                        kind = claim.authority.intent.signal_kind.value
+                        source = self.source if kind == 'time_due' else self.event_source if kind == 'event_occurred' else None
+                        if source is None:
+                            # No proof of invalidation: leave the durable claim pending.
+                            raise ValueError('prospective_signal_source_unavailable')
+                        if not await source.registration_is_live(claim.authority):
                             await self.store.invalidate(claim, now=self._now())
                             continue
                     await assert_human_memory_ingress_open(self.store.path)
@@ -117,13 +125,20 @@ class ProspectiveScheduler:
                     delivered += 1
 
             await drain()
-            if handled < limit:
-                prepared_timers = await self.source.prepare_due(now=self._now(), limit=limit-handled)
-                if len(prepared_timers) > limit-handled:
+            sources = [(self.source, PreparedTimer, 'time_due')]
+            if self.event_source is not None:
+                event = (self.event_source, PreparedEvent, 'event_occurred')
+                sources = [event, *sources] if self._event_first else [*sources, event]
+                self._event_first = not self._event_first
+            for source, expected_type, expected_kind in sources:
+                if handled >= limit:
+                    break
+                prepared_signals = await source.prepare_due(now=self._now(), limit=limit-handled)
+                if len(prepared_signals) > limit-handled:
                     raise ValueError('prospective_timer_source_page_exceeds_limit')
-                for prepared in prepared_timers:
-                    if prepared.authority.intent.signal_kind.value != 'time_due':
-                        raise ValueError('prospective_timer_requires_time_due')
+                for prepared in prepared_signals:
+                    if type(prepared) is not expected_type or prepared.authority.intent.signal_kind.value != expected_kind:
+                        raise ValueError('prospective_signal_source_domain_differs')
                     await self.store.prepare(prepared)
                 await drain()
             return delivered

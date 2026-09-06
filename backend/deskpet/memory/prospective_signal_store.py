@@ -15,6 +15,7 @@ from simple_harness.runtime import ProspectiveSignalAuthority, ProspectiveSignal
 from simple_harness_memory import MemoryPrincipal
 
 from deskpet.memory.prospective_scheduler import PreparedTimer, TimerClaim
+from deskpet.memory.prospective_event_codec import PreparedEvent, check_event_observation
 from deskpet.memory.s5c_timer_schema import validate_s5c_timer_runtime_state_db
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
@@ -71,22 +72,27 @@ class ProspectiveSignalStore:
             (self.owner,signal_id,n,phase,owner,epoch,lease,canonical_json(body),canonical_hash(body),prior,digest))
 
     async def prepare(self, prepared):
-        if type(prepared) is not PreparedTimer:
-            raise TypeError('PreparedTimer required')
+        if type(prepared) not in (PreparedTimer, PreparedEvent):
+            raise TypeError('PreparedTimer or PreparedEvent required')
         authority=prepared.authority
         if type(authority) is not ProspectiveSignalAuthority:
             raise TypeError('ProspectiveSignalAuthority required')
         i=authority.intent
-        if (i.subject!=self.principal.actor_id or i.signal_kind.value!='time_due'
-                or i.trigger.to_json()['trigger_kind']!='time' or i.observed_at<i.trigger.trigger_at
-                or i.outbox_id is not None or i.outbox_payload_hash is not None
-                or i.transition_from.value not in {'pending','rescheduled'} or i.transition_to.value!='triggered'):
-            raise TimerConflict('prospective_timer_authority_invalid')
-        expected=canonical_hash(['host:prospective-time/v1',self.owner,i.scheduler_registration_ref,
-            i.registration_revision,i.target_memory_id,i.target_revision,i.trigger_hash])
-        if i.signal_id!=expected:
-            raise TimerConflict('prospective_timer_signal_identity_differs')
-        observation=self._check_observation(authority,prepared.observation)
+        if i.subject != self.principal.actor_id:
+            raise TimerConflict('prospective_signal_subject_differs')
+        if type(prepared) is PreparedEvent:
+            observation=check_event_observation(authority,prepared.observation,self.owner)
+        else:
+            if (i.subject!=self.principal.actor_id or i.signal_kind.value!='time_due'
+                    or i.trigger.to_json()['trigger_kind']!='time' or i.observed_at<i.trigger.trigger_at
+                    or i.outbox_id is not None or i.outbox_payload_hash is not None
+                    or i.transition_from.value not in {'pending','rescheduled'} or i.transition_to.value!='triggered'):
+                raise TimerConflict('prospective_timer_authority_invalid')
+            expected=canonical_hash(['host:prospective-time/v1',self.owner,i.scheduler_registration_ref,
+                i.registration_revision,i.target_memory_id,i.target_revision,i.trigger_hash])
+            if i.signal_id!=expected:
+                raise TimerConflict('prospective_timer_signal_identity_differs')
+            observation=self._check_observation(authority,prepared.observation)
         body={'authority':authority.to_json(),'authority_hash':authority.authority_hash,
               'observation':observation,'observation_hash':canonical_hash(observation)}
         async with self._tx() as db:
@@ -116,7 +122,10 @@ class ProspectiveSignalStore:
         a=ProspectiveSignalAuthority.from_json(body['authority'])
         if a.authority_hash!=body['authority_hash']:
             raise TimerConflict('prospective_timer_authority_hash_differs')
-        self._check_observation(a,body['observation'])
+        if a.intent.signal_kind.value == 'event_occurred':
+            check_event_observation(a,body['observation'],self.owner)
+        else:
+            self._check_observation(a,body['observation'])
         if body['observation_hash']!=canonical_hash(body['observation']):
             raise TimerConflict('prospective_timer_observation_hash_differs')
         return a
@@ -149,7 +158,10 @@ class ProspectiveSignalStore:
         """Return the actual first grant; never renew it from a later clock."""
         async with self._tx() as db:
             rows=await self._rows(db,signal_id)
-            return PreparedTimer(self._authority(rows),json.loads(rows[0]['body_json'])['observation']) if rows else None
+            if not rows:return None
+            authority=self._authority(rows)
+            kind=PreparedEvent if authority.intent.signal_kind.value=='event_occurred' else PreparedTimer
+            return kind(authority,json.loads(rows[0]['body_json'])['observation'])
 
     async def handoff(self,claim,*,now):
         async with self._tx() as db:
