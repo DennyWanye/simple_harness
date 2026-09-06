@@ -26,7 +26,9 @@ url = urlparse(origin['url'])
 assert url.scheme == 'file' and url.netloc in ('', 'localhost')
 wheel = Path(unquote(url.path))
 wheel_hash = hashlib.sha256(wheel.read_bytes()).hexdigest()
-assert origin['archive_info']['hashes']['sha256'] == wheel_hash
+archive = origin['archive_info']
+assert (archive.get('hashes', {}).get('sha256') == wheel_hash
+        or archive.get('hash') == 'sha256=' + wheel_hash)
 foreground.build_candidate_identity = lambda: SdkCandidateIdentity('0.7.5', wheel_hash, wheel)
 
 async def main():
