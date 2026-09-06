@@ -1,5 +1,7 @@
 最后更新：2026-09-07。C01-06/11正式session分派独立源码叶（base61f474e5）：06接真实job→同ID公开REVISE→关闭fixture→main重开，11沿已合可信Context时钟解除旧block。本叶NOT_RUN/待主完整候选验证，不沿用helper绿冒称正式评分通过；C08 partial/C05未接门保持。[契约](../plans/2026-09-07-corpus-complete-dispatch/CONTRACT.md)。
 
+最后更新：2026-09-07。主H0710/M619完整来源组合新增3唯一控制分批通过：C01同ID修订/公开选新版、可信日期冻结与跨日；C07 actualmain真实recent fixture终态后独立scoring Run/统计，评分HTTP受控。r1两绿+C07错误oracle红，r2只红1PASS7.28s，PG80368/80594皆清空；无WeMM实际加载，非真实模型质量。06/11正式评分适配仍待接，服务model_not_found独立阻塞。[结果](../plans/2026-09-07-corpus-c01-scoring/MAIN-PHASE-CLOCK.md)。
+
 最后更新：2026-09-07。C08标量准备叶7022e8e0/287176d0在H0710/M619/S0313首批13PASS5.55s，PG79749自然清空。12事实真实APPLIED+ACCEPTED/抑制前非空→公开EVIDENCE suppression→冷重开隐藏且S1保留；其中01/02/04/09显式partial、另8case派生源未支持，不称12完整setup或模型质量。正式评分接线仍待。[结果与未完边界](../plans/2026-09-07-corpus-c08-prepare/RESULTS.md)。
 
 最后更新：2026-09-07。计分叶ebd81721修缺response时exact预测指标误零，改为null并保留lower_bound；失败denominator/credit不变，旧r4不覆写。仅affected真实SDK failed单Run控制1PASS0.91s，PG78605自然清空；非模型质量。[指标与结果](../plans/2026-09-07-corpus-c01-scoring/MISSING-RESPONSE-METRICS.md)。
@@ -42,6 +44,14 @@
 最后更新：2026-09-07。已完成项目续改独立叶：新Run公开search取得旧complete Scope/source，create_new经真实权限将新active Scope绑定原root，再实际工具写原文件；旧Scope不重开。同Run已绑定时在创建前及route同TX拒绝，下一物理请求给明确新Run指导。H079/M618确定性栈7个唯一控制分批PASS，最终源1a8e1dd6/Dirac限定ACCEPT；本次Auto/Manual两绿+alreadyBound双层hash修正单绿，PG57258 exit0/remaining[]已交槽，原业务/fixture/oracle失败全保留。仅AUTO配置root及公开Manual service路径；Manual UI、主组合和原生仍待，非program完成。已独审合入隔离主候选，用户主checkout未切换。[契约与结果](../plans/2026-09-06-completed-scope-continuation/RESULTS.md)。
 
 最后更新：2026-09-07。原生r24固定b2da14da/H079/M619，待定流程记录可见；第二轮界面等待授权但停止后补出成功context_route及4次tool_search，Procedure发现/使用和文件核验未完成。PG50771正常退出且清空，非内存/预算阻塞。全测试阶段防熄屏保持。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R24.md)。
+
+<!-- 最后更新：2026-09-07 -->
+
+C05 固定 f78004ef 在 H079/M619 installed 的原5红定向复验5PASS/12.15s，3绿未重跑。
+04/09/14真实material marker→closure→来源绑定字段、20归档/prefix、真实评分分页与late suppression精确USER-only通过。
+仅确定性fixture/public runtime，不计模型质量或C05全部20准备；最终physical outbound race及其他case接线仍待完成。
+PG80017 exit0/remaining=[]，原两批红保留、WIP隔离，已释放资源。
+[来源、命令及历史结果](../plans/2026-09-06-corpus-public-seed/C05-RESULTS.md)。
 
 <!-- 最后更新：2026-09-07 -->
 

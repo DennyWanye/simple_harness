@@ -1,3 +1,13 @@
+<!-- 最后更新：2026-09-07 -->
+
+C05 固定 f78004ef 在 H079/M619 installed 的原5红定向复验5PASS/12.15s，3绿未重跑。
+04/09/14真实material marker→closure→来源绑定字段、20归档/prefix、真实评分分页与late suppression精确USER-only通过。
+仅确定性fixture/public runtime，不计模型质量或C05全部20准备；最终physical outbound race及其他case接线仍待完成。
+PG80017 exit0/remaining=[]，原两批红保留、WIP隔离，已释放资源。
+[来源、命令及历史结果](../plans/2026-09-06-corpus-public-seed/C05-RESULTS.md)。
+
+最后更新：2026-09-07。主H0710/M619完整来源组合新增3唯一控制分批通过：C01同ID修订/公开选新版、可信日期冻结与跨日；C07 actualmain真实recent fixture终态后独立scoring Run/统计，评分HTTP受控。r1两绿+C07错误oracle红，r2只红1PASS7.28s，PG80368/80594皆清空；无WeMM实际加载，非真实模型质量。06/11正式评分适配仍待接，服务model_not_found独立阻塞。[结果](../plans/2026-09-07-corpus-c01-scoring/MAIN-PHASE-CLOCK.md)。
+
 最后更新：2026-09-07。C08标量准备叶7022e8e0/287176d0在H0710/M619/S0313首批13PASS5.55s，PG79749自然清空。12事实真实APPLIED+ACCEPTED/抑制前非空→公开EVIDENCE suppression→冷重开隐藏且S1保留；其中01/02/04/09显式partial、另8case派生源未支持，不称12完整setup或模型质量。正式评分接线仍待。[结果与未完边界](../plans/2026-09-07-corpus-c08-prepare/RESULTS.md)。
 
 最后更新：2026-09-07。计分叶ebd81721修缺response时exact预测指标误零，改为null并保留lower_bound；失败denominator/credit不变，旧r4不覆写。仅affected真实SDK failed单Run控制1PASS0.91s，PG78605自然清空；非模型质量。[指标与结果](../plans/2026-09-07-corpus-c01-scoring/MISSING-RESPONSE-METRICS.md)。
