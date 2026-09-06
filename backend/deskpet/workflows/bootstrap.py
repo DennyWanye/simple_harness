@@ -97,6 +97,7 @@ async def build_workflow_service(
         research_snapshot_loader=research_blobs.get,
         runtime_adapters=runtime_adapters,
         execution_ports=execution_ports,
+        owns_execution_uow=True,
         runtime_activation_required=True,
         runtime_activation_hooks=(_activate_foundations,),
     )

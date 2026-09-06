@@ -349,7 +349,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         workflow = main.service_context.get("workflow_service")
         if workflow is not None:
             try:
-                await workflow.execution_uow.close()
+                await workflow.close()
             except Exception as exc:
                 outcome["cleanup_errors"].append("workflow:" + type(exc).__name__)
         from deskpet.retrieval.runtime import shutdown_default_gateway

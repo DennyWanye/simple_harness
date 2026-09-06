@@ -1,3 +1,5 @@
+最后更新：2026-09-07。评分自然退出叶ab36b6a5：WorkflowRunner独立UoW owner原未释放，补public runner/service close与main/carrier统一收尾；bootstrap明确服务拥有共享端口UoW，runner不关借用端口。唯一独立child实际main执行自然SystemExit控制1PASS17.01s，PG69388清空，无pytest全局lane清理代替。原C01-10语义FAIL及deadline保留，下一新case质量另验。[定位与结果](../plans/2026-09-07-corpus-c01-scoring/PROCESS-EXIT.md)。
+
 最后更新：2026-09-07。首真实C01-10固定30b07393/H079/M619：1物理请求、0工具，排序正确但未取得已存A，原gold FAIL（主审+独审）；240已尝试1/通过0。业务COMPLETED后worker线程退场挂起，180s外部deadline退出125并清空PG67059，非内存/磁盘门。修复退出与通用记忆来源指导继续，均未称通过。全阶段防熄屏保持。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R1.md)。
 
 最后更新：2026-09-07。C01生产评分接线99d17c11/结果d111ce21已独审合入候选，新增实际main初始化/失败及未终态trace3控分批通过；当前真实模型评分仍0，需首次运行及逐条gold终态复核。[结果](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。

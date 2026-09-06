@@ -8,8 +8,31 @@ import json
 import logging
 import time
 import uuid
+from functools import wraps
 from dataclasses import asdict, dataclass, is_dataclass, replace
 from typing import Any, Mapping
+
+
+def _owned_call(method):
+    """Keep this runner's owner alive until admitted calls have unwound."""
+    @wraps(method)
+    async def call(self, *args, **kwargs):
+        task = asyncio.current_task()
+        depth = self._active_calls.get(task, 0)
+        if self._closing and not depth:
+            raise RuntimeError("workflow_runner_closed")
+        self._active_calls[task] = depth + 1
+        self._idle.clear()
+        try:
+            return await method(self, *args, **kwargs)
+        finally:
+            if depth:
+                self._active_calls[task] = depth
+            else:
+                del self._active_calls[task]
+            if not self._active_calls:
+                self._idle.set()
+    return call
 
 from deskpet.execution.contracts import (
     DeliveryPolicy,
@@ -242,10 +265,17 @@ class WorkflowRunner:
         self.trace_store = trace_store or TraceStore(store.path)
         self.execution_ports: WorkflowExecutionPorts | None = None
         self._owner_uow = SqliteExecutionUnitOfWork(store.path)
+        self._active_calls = {}
+        self._idle = asyncio.Event()
+        self._idle.set()
+        self._closing = False
+        self._close_lock = asyncio.Lock()
         if execution_ports is not None:
             self.configure_execution_ports(execution_ports)
 
     def configure_execution_ports(self, ports: WorkflowExecutionPorts) -> None:
+        if self._closing:
+            raise RuntimeError("workflow_runner_closed")
         if self.execution_ports is not None and self.execution_ports is not ports:
             raise ValueError("workflow runner already has another execution port bundle")
         configure = getattr(self.saver, "configure_execution_adapter", None)
@@ -258,6 +288,21 @@ class WorkflowRunner:
         configure_store(ports.checkpoint)
         self.execution_ports = ports
 
+    async def close(self) -> None:
+        """Drain admitted work and release only our independent owner UoW.
+
+        execution_ports belongs to the composition owner and is borrowed here.
+        Cancellation while waiting never closes storage under running work;
+        another close may finish the same shutdown later.
+        """
+        if asyncio.current_task() in self._active_calls:
+            raise RuntimeError("workflow_runner_close_inside_active_call")
+        self._closing = True
+        async with self._close_lock:
+            await self._idle.wait()
+            await self._owner_uow.close()
+
+    @_owned_call
     async def start(
         self,
         *,
@@ -301,6 +346,7 @@ class WorkflowRunner:
         )
         return created_run_id
 
+    @_owned_call
     async def run(
         self,
         run_id: str,
@@ -311,6 +357,7 @@ class WorkflowRunner:
             raise RuntimeError("legacy workflow run rejects an execution-owned run")
         return await self._execute(run_id, state=state, responses=None, context=context)
 
+    @_owned_call
     async def run_precreated(
         self,
         run_id: str,
@@ -330,6 +377,7 @@ class WorkflowRunner:
             active_lease=active_lease,
         )
 
+    @_owned_call
     async def resume(
         self,
         run_id: str,
@@ -355,6 +403,7 @@ class WorkflowRunner:
                 )
         return await self._execute(run_id, state=None, responses=dict(responses), context=context)
 
+    @_owned_call
     async def resume_precreated(
         self,
         run_id: str,
@@ -387,6 +436,7 @@ class WorkflowRunner:
             active_lease=active_lease,
         )
 
+    @_owned_call
     async def claim_execution_recovery(self, run_id: str, recovery_lease: RecoveryLease) -> ActiveLease:
         if self.execution_ports is None:
             raise RuntimeError("execution recovery requires configured execution ports")
@@ -396,6 +446,7 @@ class WorkflowRunner:
             raise StaleRunFence(f"execution handoff names another run: {run_id}")
         return ActiveLease(handoff, self._leases.heartbeat_interval, self._leases.ttl_seconds)
 
+    @_owned_call
     async def request_cancel_precreated(
         self, run_id: str, reason: str = "user"
     ) -> dict[str, Any]:
@@ -462,6 +513,7 @@ class WorkflowRunner:
         )
         return await self._require_run(run_id)
 
+    @_owned_call
     async def request_cancel(self, run_id: str, reason: str = "user") -> dict[str, Any]:
         # Cancellation must be able to invalidate a fence while a local graph
         # call owns the execution lock. The store transaction is the arbiter.
@@ -473,9 +525,11 @@ class WorkflowRunner:
             await self.store.request_cancel(run_id, reason)
         return await self._converge_cancel(run_id)
 
+    @_owned_call
     async def cancel(self, run_id: str, reason: str = "user") -> dict[str, Any]:
         return await self.request_cancel(run_id, reason)
 
+    @_owned_call
     async def recover_expired(self) -> list[RecoveryRecord]:
         """Scan all nonterminal runs and make only deterministic recovery moves."""
 
@@ -573,12 +627,15 @@ class WorkflowRunner:
                 )
         return records
 
+    @_owned_call
     async def get_state_history(self, run_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
         return await self._replay.history(run_id, limit=limit)
 
+    @_owned_call
     async def history(self, run_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
         return await self.get_state_history(run_id, limit=limit)
 
+    @_owned_call
     async def fork_checkpoint(
         self,
         *,

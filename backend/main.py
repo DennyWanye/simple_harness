@@ -5913,18 +5913,11 @@ async def lifespan(app: FastAPI):
         finally:
             service_context.register("capability_platform", None)
     _workflow_service = service_context.get("workflow_service")
-    _workflow_launcher = getattr(_workflow_service, "launcher", None)
-    if _workflow_launcher is not None:
+    if _workflow_service is not None:
         try:
-            await _workflow_launcher.shutdown()
+            await asyncio.wait_for(_workflow_service.close(), timeout=5.0)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("workflow_launcher_shutdown_failed", error=str(exc))
-    _execution_uow = getattr(_workflow_service, "execution_uow", None)
-    if _execution_uow is not None:
-        try:
-            await asyncio.wait_for(_execution_uow.close(), timeout=5.0)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("execution_uow_shutdown_failed", error=str(exc))
+            logger.warning("workflow_owner_shutdown_failed", error=str(exc))
     # P5-S1: stop the watchdog cleanly so its task doesn't dangle past
     # shutdown and produce "Task was destroyed but it is pending!" noise.
     _wd = service_context.get("watchdog")
