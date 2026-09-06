@@ -3,7 +3,7 @@
 No input/followup/gold fields are accepted. Labels remain setup-side mappings;
 actual TaskScope IDs must come from the real context_route result.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 
 SETUPS = {'C05-01': ('本人A：资料归档，2025-11纸质扫描，下一步核备份；B：同名2025-06照片，下一步地点标签；均有合格披露来源。',
@@ -114,3 +114,35 @@ def compile_c05_setup(case_id: str, setup_text: str) -> TaskSetupBatch:
     if hashlib.sha256(setup_text.encode()).hexdigest() != digest:
         raise ValueError('c05_setup_hash_differs')
     return TaskSetupBatch(case_id, setup_text, digest, SPECS[case_id], REQUIREMENTS[case_id])
+
+
+def operational_spec(batch: TaskSetupBatch, label: str, *, phase='create') -> ScopeSeed:
+    """One neutral fixture title for every missing title; never an answer label.
+
+    Authored SPECS remain unchanged. Actual producer inputs explicitly identify
+    this synthetic value, so it cannot be mistaken for original historical text.
+    """
+    if batch != compile_c05_setup(batch.case_id, batch.setup_text):
+        raise ValueError('c05_exact_batch_required')
+    matches = [s for s in batch.scopes if s.label == label]
+    if len(matches) != 1:
+        raise ValueError('c05_setup_label_invalid')
+    spec = matches[0]
+    if spec.title is None:
+        spec = replace(spec, title='合成任务')
+    if phase == 'before_selection' and batch.case_id == 'C05-18' and label == 'A':
+        spec = replace(spec, next_step='待确认图片')
+    elif phase != 'create':
+        raise ValueError('c05_setup_phase_invalid')
+    return spec
+
+
+def operational_text(batch: TaskSetupBatch, label: str, *, phase='create') -> str:
+    spec = operational_spec(batch, label, phase=phase)
+    original = next(s for s in batch.scopes if s.label == label)
+    text = batch.setup_text
+    if original.title is None:
+        text += '\n[统一合成fixture元数据，非原历史事实] 未提供的任务标题统一取“合成任务”。'
+    if phase == 'before_selection':
+        text += '\n[执行原setup预先声明的阶段] 现在将原任务下一步从“校对”修订为“待确认图片”。'
+    return text
