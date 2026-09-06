@@ -62,3 +62,9 @@ version change, unknown epochs still rejected. This new fix is NOT_RUN.
 Main-owner startup dispatch still requires explicit exact52 compatibility review:
 its default inspect maximum remains old target. This leaf does not silently
 widen the schema dispatcher or claim whole app restart acceptance.
+
+`a7-r8` did not execute pytest: launcher invocation omitted the Python executable,
+runner returned125/FileNotFoundError with group_id=null/remaining[], peak0. This is
+an agent command error, not product evidence. No retry while main native takes
+priority. The correct command retains `<python> -I -B run_a7.py`; ab5aca99 remains
+NOT_RUN against the two actual-runtime failures.
