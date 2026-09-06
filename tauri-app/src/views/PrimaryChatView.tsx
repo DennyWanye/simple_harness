@@ -10,6 +10,7 @@ import { boundPrimaryPort } from "../primary/boundPort";
 import { PrimaryController, type PrimaryMessage, type PrimaryPort } from "../primary/controller";
 import { PrimaryRunPanel } from "../primary/PrimaryRunPanel";
 import { PrimaryWorkspaceBindings } from "../primary/PrimaryWorkspaceBindings";
+import { PrimaryBindingRecovery } from "../primary/bindingRecovery";
 import { PrimaryMemoryPanel } from "../components/PrimaryMemoryPanel";
 import { CognitiveRequests } from "../primary/cognitiveRequests";
 
@@ -28,6 +29,7 @@ const runLabels: Record<string, string> = {
 };
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
+  const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
   const [memoryRequests] = useState(() => new CognitiveRequests());
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [decisionRefresh, setDecisionRefresh] = useState(0);
@@ -70,7 +72,7 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       {snapshot.messages.map((message) => <PrimaryMessageRow key={`${snapshot.viewEpoch}:${message.message_ref}`} message={message} controller={controller} />)}
     </div>
     {active && snapshot.primaryRef && <PrimaryWorkspaceBindings port={primaryPort} primaryRef={snapshot.primaryRef}
-      ownerKey={snapshot.verifiedOwnerKey} ready={snapshot.ready} refreshVersion={decisionRefresh + bindingRefresh} />}
+      ownerKey={snapshot.verifiedOwnerKey} ready={snapshot.ready} recovery={bindingRecovery} refreshVersion={decisionRefresh + bindingRefresh} />}
     {snapshot.ready && snapshot.state && run?.execution_session_ref && run.sdk_run_ref && <div style={{ padding: "0 16px", maxHeight: "35%", overflowY: "auto" }}>
       <PrimaryRunPanel key={`${snapshot.draftEpoch}:${run.run_ref}:${run.generation}:${run.execution_session_ref}:${run.sdk_run_ref}`}
         run={run} port={primaryPort} primaryRef={snapshot.state.primary_ref} visible={active} refreshVersion={decisionRefresh} onToolResult={refreshBindings} onStop={() => void controller.control("stop", run)} />

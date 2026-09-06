@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import type { PrimaryPort } from "./controller";
 import { PrimaryRequests, record } from "./requests";
 
-const identityKeys = ["primary_ref", "run_ref", "sdk_run_ref", "generation", "effect_ref",
-  "challenge_ref", "challenge_hash", "scope_ref", "proposal_hash"] as const;
-type Binding = Record<(typeof identityKeys)[number], string | number> & {
+import { bindingIdentityKeys as identityKeys, type BindingIdentity, type PrimaryBindingRecovery } from "./bindingRecovery";
+
+type Binding = BindingIdentity & {
   challenge_ref: string; scope_ref: string; root_path: string; state: string;
   can_decide: boolean; expires_at_millis: number; binding_receipt_ref: string | null;
 };
-function identity(item: Binding) { return Object.fromEntries(identityKeys.map(key => [key, item[key]])); }
+function identity(item: Binding) { return Object.fromEntries(identityKeys.map(key => [key, item[key]])) as BindingIdentity; }
 function readItems(value: Record<string, unknown>, primaryRef: string): Binding[] {
   if (value.primary_ref !== primaryRef || value.truncated !== false || !Array.isArray(value.items) || value.items.length > 32 ||
       !(value.next_cursor === null || (typeof value.next_cursor === "string" && value.next_cursor.length > 0))) throw Error("目录授权读取未确认");
@@ -26,8 +26,8 @@ const labels: Record<string, string> = { pending: "等待本次目录授权", ex
   root_changed: "目录身份已变化，不能批准", binding_changed: "绑定版本已变化，不能批准",
   policy_changed: "当前权限策略不允许批准此手动绑定" };
 
-export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, refreshVersion = 0 }: {
-  port: PrimaryPort; primaryRef: string; ownerKey: string | null; ready: boolean; refreshVersion?: number;
+export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, recovery, refreshVersion = 0 }: {
+  port: PrimaryPort; primaryRef: string; ownerKey: string | null; ready: boolean; recovery: PrimaryBindingRecovery; refreshVersion?: number;
 }) {
   const [items, setItems] = useState<Binding[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -38,10 +38,12 @@ export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, re
   const [actions, setActions] = useState<{ refresh: () => void; page: (cursor?: string) => void; decide: (item: Binding, decision: string) => void } | null>(null);
   useEffect(() => {
     setItems([]); setNextCursor(null); setPaged(false); setError(""); setDecisionError(""); setBusy(null); setActions(null);
-    if (!ready || !ownerKey) return;
+    const owner = ownerKey;
+    if (!ready || !owner) return;
     const requests = new PrimaryRequests(port);
     let live = true, epoch = 0, readVersion = 0, submitting = false, reading = false, readAgain = false;
-    let pageCursor: string | undefined, lastDecision: Binding | undefined;
+    let pageCursor: string | undefined;
+    let lastDecision = recovery.read(owner, primaryRef);
     const refresh = async () => {
       if (!live || port.state() !== "connected") return;
       if (reading || submitting) { readAgain = true; return; }
@@ -82,7 +84,8 @@ export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, re
     const decide = async (item: Binding, decision: string) => {
       if (submitting || !item.can_decide || port.state() !== "connected") return;
       const connection = epoch;
-      lastDecision = item;
+      recovery.remember(owner, identity(item));
+      lastDecision = recovery.read(owner, primaryRef);
       submitting = true; setBusy(item.challenge_ref); ++readVersion;
       try {
         const result = await requests.request("primary.bindings.decide", { ...identity(item), decision });
@@ -108,7 +111,7 @@ export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, re
     setActions({ refresh: focus, page: cursor => { pageCursor = cursor; focus(); },
       decide: (item, decision) => { void decide(item, decision); } });
     return () => { live = false; ++epoch; ++readVersion; requests.dispose(); off(); messages(); window.removeEventListener("focus", focus); };
-  }, [port, primaryRef, ownerKey, ready]);
+  }, [port, primaryRef, ownerKey, ready, recovery]);
   useEffect(() => { actions?.refresh(); }, [refreshVersion, actions]);
   if (!ready || !ownerKey) return null;
   return <section aria-label="项目目录授权">

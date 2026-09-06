@@ -41,3 +41,10 @@ Dirac三项校准已落实到源码：proposal/challenge.run_id 是 Manual 派�
 ## ad188 审查后本次源码修正（2026-09-07）
 
 两P2在本叶处理，不留“只支持32同时pending”的限制。新增status与分页消费，原ACK/DENY公共验证复用；保留三处初始challenge校准。当前7个backend控制（原4加rebind/cold-process/paging）和4个UI控制均 **NOT_RUN**；exact正向附带独立错base反例，分页包含原DENY拒绝例外与冲突。未运行pytest/tsc/build/native，不占共享资源；没有以旧7项root续改绿替代本叶证据。当前实现仍有无journal的orphan来源不可操作、后台SQL扫描成本未量化、真实native入口未验边界。
+
+
+## 06fe 父卸载 P1 修正（source-only）
+
+Dirac确认旧 `lastDecision` 在卡片effect局部；真实 PrimaryController断线会置primaryRef=null，父View卸载卡片。后端pending已排除bound，故旧孤立port重连控不足，不能称真实UI可恢复。本次新增 `PrimaryBindingRecovery`，由稳定PrimaryChatView持有：只保存每个精确 `(verifiedOwnerKey,primary_ref)` 最近一次用户点击的完整identity，不保存root路径、nonce、grant、决定结果或正文；连接变化/卡片不可见/卡片卸载不销毁该引用。新签名连接重新确认owner与primary后，卡片仅用该namespace引用读 `primary.bindings.status`，还需全部identity匹配；没有自动decide，也不将缓存引用视为授权。其他owner或primary不读取/显示此引用。
+
+替换原孤立port lost-ACK重连测试为 `views/PrimaryBindingRecovery.test.tsx` 真View/controller/boundPort/条件卸载控制：服务端bound但ACK丢失→断线卡片确实卸载→旧响应不显示→不同owner、不同primary各自重挂零status→回原owner/primary，pending=[]后必须exact status才显示原newScope/继续指引，始终仅原1次decide。当前仍7 backend+4 UI **NOT_RUN**，无测试/build/安装。此状态仅在当前View生命周期内保留；整个应用进程退出后的UI自动发现旧bound引用不在本控保证，已有独立进程backend控制仅证明给定exact原引用可查，不外推原生冷启动交互闭环。

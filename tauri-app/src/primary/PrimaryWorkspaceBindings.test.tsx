@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { PrimaryWorkspaceBindings } from "./PrimaryWorkspaceBindings";
+import { PrimaryBindingRecovery } from "./bindingRecovery";
 import type { PrimaryPort } from "./controller";
 import type { PrimaryWireRequest } from "./requests";
 
@@ -23,14 +24,14 @@ function fixture() {
     messages.forEach(f => f({ type: "human_memory_response", request_id: wire.request_id,
       payload: { ok: true, operation: wire.operation, result } }));
   };
-  return { port, send, response, disconnect() { state = "disconnected"; states.forEach(f => f(state)); },
+  return { port, send, response, recovery: new PrimaryBindingRecovery(), disconnect() { state = "disconnected"; states.forEach(f => f(state)); },
     reconnect() { state = "connected"; states.forEach(f => f(state)); } };
 }
 
 describe("Manual binding UI uses durable Host source", () => {
   it("shows the actual root, submits one exact decision, and requires a bound ACK", async () => {
     const h = fixture();
-    render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready />);
+    render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready recovery={h.recovery} />);
     await waitFor(() => expect(h.send).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("button", { name: "允许本次绑定" })).toBeNull();
     await act(async () => h.response(0, { primary_ref: "p", items: [item], truncated: false, next_cursor: null }));
@@ -49,7 +50,7 @@ describe("Manual binding UI uses durable Host source", () => {
 
   it("reconnect reads pending again; allow_recorded requires an explicit same-decision retry", async () => {
     const h = fixture();
-    render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready />);
+    render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready recovery={h.recovery} />);
     await waitFor(() => expect(h.send).toHaveBeenCalledTimes(1));
     await act(async () => h.disconnect());
     await act(async () => h.response(0, { primary_ref: "p", items: [item], truncated: false, next_cursor: null }));
@@ -67,7 +68,7 @@ describe("Manual binding UI uses durable Host source", () => {
 
 it("pages by the original cursor rather than treating 32 items as a lifetime limit", async () => {
   const h = fixture();
-  render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready />);
+  render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready recovery={h.recovery} />);
   await waitFor(() => expect(h.send).toHaveBeenCalledTimes(1));
   await act(async () => h.response(0, { primary_ref: "p", items: [item], truncated: false, next_cursor: "original-invocation" }));
   fireEvent.click(screen.getByRole("button", { name: "读取下一页目录授权" }));
@@ -77,24 +78,4 @@ it("pages by the original cursor rather than treating 32 items as a lifetime lim
   expect(screen.queryByText("新任务：new-scope")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "返回最新目录授权" }));
   expect(h.send.mock.calls[2][0].request).toEqual({ primary_ref: "p" });
-});
-
-it("ignores a decision reply after rebind and requires exact status even when pending is empty", async () => {
-  const h = fixture();
-  render(<PrimaryWorkspaceBindings port={h.port} primaryRef="p" ownerKey="owner" ready />);
-  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(1));
-  await act(async () => h.response(0, { primary_ref: "p", items: [item], truncated: false, next_cursor: null }));
-  fireEvent.click(screen.getByRole("button", { name: "允许本次绑定" }));
-  await act(async () => h.disconnect());
-  await act(async () => h.response(1, { ...item, state: "bound", binding_receipt_ref: "late-ack" }));
-  expect(screen.queryByText("新任务已绑定此目录")).toBeNull();
-  await act(async () => h.reconnect());
-  await waitFor(() => expect(h.send).toHaveBeenCalledTimes(3));
-  await act(async () => h.response(2, { primary_ref: "p", items: [], truncated: false, next_cursor: null }));
-  expect(screen.queryByText("新任务已绑定此目录")).toBeNull();
-  expect(h.send.mock.calls[3][0].operation).toBe("primary.bindings.status");
-  expect(h.send.mock.calls[3][0].request).toEqual({ primary_ref: "p", challenge_ref: "challenge" });
-  await act(async () => h.response(3, { primary_ref: "p", items: [{ ...item, state: "bound", can_decide: false, binding_receipt_ref: "durable-ack" }], truncated: false, next_cursor: null }));
-  expect(screen.getByText("新任务已绑定此目录")).toBeTruthy();
-  expect(h.send.mock.calls.filter(([v]) => v.operation === "primary.bindings.decide")).toHaveLength(1);
 });
