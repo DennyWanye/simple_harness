@@ -75,8 +75,8 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     save(output / "original-documents.json", json.loads(artifacts["audit/source-documents.json"]))
     for case_id in case_ids:
         matches = [i for i, row in enumerate(catalog) if row["case_id"] == case_id]
-        if len(matches) != 1 or not case_id.startswith("C01-"):
-            raise ValueError("corpus_first_batch_requires_exact_c01_id")
+        if len(matches) != 1 or not case_id.startswith(("C01-", "C07-")):
+            raise ValueError("corpus_batch_requires_exact_supported_id")
         i = matches[0]
         directory = output / case_id
         directory.mkdir()
@@ -95,6 +95,8 @@ def review_packet(directory, exit_code):
     result = load(result_path) if result_path.exists() else {
         "execution_status": "WORKER_FAILED_WITHOUT_RECEIPT", "trace": None}
     oracle = load(directory / "oracle.json")
+    case = load(directory / "case.json")
+    no_match_batch = case["case_id"].startswith("C07-")
     trace = result.get("trace")
     observations = type_observations(trace) if trace else None
     types = sorted({t for o in (observations or []) for t in (o["proposed_strings"] or [])})
@@ -106,7 +108,7 @@ def review_packet(directory, exit_code):
         for p in trace["providers"]) if trace is not None else 0
     observation_complete = trace is not None and trace.get("provider_observation_complete") is True
     handed_off = handed_off_lower_bound if observation_complete else None
-    packet = dict(case=load(directory / "case.json"), original_oracle=oracle,
+    packet = dict(case=case, original_oracle=oracle,
         execution=result, worker_exit_code=exit_code, model_type_proposals=observations,
         observed_handed_off_invocations=handed_off,
         observed_handed_off_lower_bound=handed_off_lower_bound,
@@ -126,9 +128,12 @@ def review_packet(directory, exit_code):
         oracle_verdict="SETUP_BLOCKED" if blocked else
             "OBSERVATION_FAILED" if observation_failed else
             "PENDING_POST_TERMINAL_REVIEW" if completed else "EXECUTION_FAILED",
-        review_requirements=["核原gold每项语义和禁止行为", "核实际A的ID/revision/ref进入工具结果及后续物理输入",
+        review_requirements=["核原gold每项语义和禁止行为",
+            "核干扰库非空及零查询/零披露/后台gate，06和14另核实际最近历史" if no_match_batch
+            else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
-        quality_thresholds_status="NOT_EVALUATED_PARTIAL_C01_BATCH")
+        quality_thresholds_status="NOT_EVALUATED_PARTIAL_C07_BATCH" if no_match_batch
+            else "NOT_EVALUATED_PARTIAL_C01_BATCH")
     packet["packet_hash"] = digest(packet)
     save(directory / "review-packet.json", packet)
     return packet

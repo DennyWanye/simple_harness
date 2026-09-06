@@ -145,11 +145,25 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     # becomes a constructor argument, system instruction, tool schema or seed.
     authored = json.loads((directory / "input.json").read_text())
     setup = json.loads((directory / "setup.json").read_text())
-    if authored["recent_messages"] or authored["unresolved_source_text"] is not None:
-        raise ValueError("corpus_first_batch_scalar_input_required")
+    case_id = setup["case_id"]
     if setup["scenario_clock"] != authored["scenario_clock"]:
         raise ValueError("corpus_input_setup_clock_mismatch")
-    case_id = setup["case_id"]
+    if type(case_id) is str and case_id.startswith("C07-"):
+        from deskpet.quality.corpus_c07 import compile_c07_setup
+        from deskpet.quality.corpus_c07_prepare import validate_c07_recent_input
+        c07 = compile_c07_setup(case_id, setup["setup_source_text"],
+            scenario_clock=setup["scenario_clock"]["instant"])
+        validate_c07_recent_input(c07, authored["recent_messages"])
+        if c07.recent_messages:
+            # The same-store public group adapter exists, but this production
+            # session does not yet own a deterministic setup-Provider phase.
+            # Never collapse authored roles into the current user string.
+            write_result(directory / "execution.json", dict(execution_status="SETUP_NOT_READY",
+                stage="authored_recent_history", trace=None, cleanup_errors=[],
+                blocking_code="c07_scoring_same_store_recent_producer_unwired"))
+            return 2
+    if authored["recent_messages"] or authored["unresolved_source_text"] is not None:
+        raise ValueError("corpus_first_batch_scalar_input_required")
     if case_id in {"C01-06", "C01-11"}:
         raise ValueError("corpus_case_runtime_adapter_not_ready")
     text = authored["current_user_message"]
@@ -167,6 +181,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     from deskpet.sdk_adapters.context_route import local_owner_auth
     from deskpet.quality.corpus_c01 import compile_setup
     from deskpet.quality.corpus_setup_jobs import SetupFixtureDeliveryAuthority, prepare_runtime_seed
+    if case_id.startswith("C07-"):
+        from deskpet.quality.corpus_c07 import compile_c07_setup as compile_setup
+        from deskpet.quality.corpus_c07_prepare import prepare_c07_seed as prepare_runtime_seed
     from deskpet.memory.human_memory_v7 import local_memory_principal, host_classification_policy, HOST_SUPPORTED_FILTER_POLICIES
     from deskpet.memory.evidence_authority import HostEvidenceAuthority
     from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
@@ -237,6 +254,8 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
             display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
         main.service_context.register("human_memory_host_service_factory", factory)
+        if case_id.startswith("C07-"):
+            await factory.bind(auth).open_primary()
         batch = compile_setup(case_id, setup["setup_source_text"],
             scenario_clock=authored["scenario_clock"]["instant"])
         delivery = SetupFixtureDeliveryAuthority()
@@ -252,6 +271,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 batch=batch, delivery_authority=delivery)
             outcome["setup_receipt"] = wire({name: seed[name] for name in
                 ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions")})
+            if case_id.startswith("C07-"):
+                outcome["setup_receipt"].update(wire({name: seed[name] for name in
+                    ("manifest_hash", "fixture_defaults", "application", "request")}))
         finally:
             await fixture_manager.close()
         # Reopen with actual production authorities. Never replace the production
