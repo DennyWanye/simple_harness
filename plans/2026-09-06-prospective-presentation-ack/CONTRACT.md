@@ -152,3 +152,11 @@ and actual FAILED terminal, retain presented/mandatory and unique overdue. The
 fourth Run ACK completes. This fulfills the original three-unACKed-Run oracle,
 not a claim of three successful conversations. No production sink exception is
 added. A separate explicit-route successful conversation remains a further lane.
+
+ab5aca99 shared-subject successor correction received Dirac limited source ACCEPT.
+It supersedes the earlier typed-only missing-namespace refusal statement: a fully
+validated52 database may initialize a new subject namespace via the unchanged
+existing subject transaction. Existing subjects retain their namespace; this is
+not permission to fabricate a Run/binding. Main startup dispatcher compatibility
+is separate and still pending. Actual two runtime controls remain NOT_RUN after
+this fix; a7-r8 had no child due to launcher command error.
