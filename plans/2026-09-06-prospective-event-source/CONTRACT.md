@@ -163,3 +163,10 @@ prepare recovers that first body. Handoff/replay uses the existing immutable cla
 CAS, and replay of possibly consumed calls precedes current registration checks.
 Without an event source, a fresh durable event stays pending with an explicit
 source-unavailable error; it is not falsely invalidated. Recurrence is unchanged.
+
+## User deferral
+
+2026-09-06: actual publication source/target and event end-to-end are explicitly
+deferred by the user. Stop publisher/ACK-cut production wiring. Protocol source
+72ca77e6 is retained; four unique protocol controls passed in two batches. This
+is not evidence of production publication or an implemented ACK cut. See RESULTS.
