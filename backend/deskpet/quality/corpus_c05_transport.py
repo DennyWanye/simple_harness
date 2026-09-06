@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 import json
 
-from simple_harness import RequestId, thaw_json
+from simple_harness import CallId, RequestId, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderTarget
 from deskpet.quality.corpus_c05 import operational_text
@@ -30,6 +30,20 @@ def _text(content):
                                         and isinstance(b.get('text'), str) for b in content):
         return ''.join(b['text'] for b in content)
     raise ValueError('c05_unsupported_wire_content')
+
+
+def _message(row):
+    role = MessageRole(row['role'])
+    raw_id = row.get('tool_call_id')
+    if role is MessageRole.TOOL:
+        if not isinstance(raw_id, str) or not raw_id.strip():
+            raise ValueError('c05_tool_wire_call_id_missing')
+        call_id = CallId(raw_id)
+    else:
+        if raw_id is not None:
+            raise ValueError('c05_non_tool_wire_call_id')
+        call_id = None
+    return Message(role, _text(row.get('content')), name=row.get('name'), call_id=call_id)
 
 
 class TaskSetupHttpProvider:
@@ -117,7 +131,7 @@ class TaskSetupHttpProvider:
                     if payload.get('model') != self.model or self._expected_text is None or self.queued is None:
                         raise ValueError('c05_fixture_not_armed')
                     rows = payload['messages']
-                    messages = tuple(Message(MessageRole(r['role']), _text(r.get('content'))) for r in rows)
+                    messages = tuple(_message(r) for r in rows)
                     users = [m.content for m in messages if m.role is MessageRole.USER]
                     if not users or users[-1] != self._expected_text:
                         raise ValueError('c05_fixture_current_source_differs')

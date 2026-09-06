@@ -282,3 +282,18 @@ async def test_runtime_case_public_admission_archive_and_real_pages(tmp_path, ca
             assert len({a.source_hash for a in prepared.archives}) == 2
     finally:
         await stack.close()
+
+
+def test_setup_http_tool_message_preserves_actual_wire_call_identity():
+    from deskpet.quality.corpus_c05_transport import _message
+    from simple_harness import CallId
+    value = _message(dict(role='tool', content='{"actual":"result"}',
+                          name='context_route', tool_call_id='actual-call-17'))
+    assert value.call_id == CallId('actual-call-17')
+    assert value.name == 'context_route'
+    assert value.content == '{"actual":"result"}'
+    for raw in (None, '', 17):
+        with pytest.raises(ValueError):
+            _message(dict(role='tool', content='{}', tool_call_id=raw))
+    with pytest.raises(ValueError):
+        _message(dict(role='user', content='hi', tool_call_id='actual-call-17'))
