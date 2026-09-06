@@ -33,7 +33,10 @@ async def test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_pa
             authority_ref=AUTH.authority_ref, batch=batch, delivery_authority=authority)
         assert actual['outcome'].value == 'applied' and actual['fixture_executions'] == 1
         assert set(actual['labels']) == {'S', 'P'}
-        assert [op.memory_type.value for op in actual['plan'].operations] == ['semantic', 'procedure']
+        operations = {op.operation_id: op for op in actual['plan'].operations}
+        assert len(actual['plan'].operations) == len(operations) == 2
+        assert {key: op.memory_type.value for key, op in operations.items()} == {
+            'S': 'semantic', 'P': 'procedure'}
         assert all(op.lifecycle_state.value == 'active' for op in actual['plan'].operations)
         pair = actual['source_pair']
         assert pair[0].subject == principal.actor_id
@@ -45,7 +48,7 @@ async def test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_pa
             node = actual['labels'][op.operation_id]
             assert node.source_refs[0].evidence_ref_hash == sha256(pair[0].evidence_id.encode()).hexdigest()
             assert node.revision == 1
-        assert actual['plan'].operations[1].payload.steps == SPECS[case_id][6]
+        assert operations['P'].payload.steps == SPECS[case_id][6]
         page = result(await host.send('primary.messages.page', {'primary_ref': host.primary}, key='no-setup-history'))
         assert page['items'] == []  # No fake foreground source Run to copy into scoring.
         # Same setup bytes on another genuinely admitted Host S1 must not bind
