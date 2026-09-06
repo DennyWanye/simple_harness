@@ -1,3 +1,21 @@
+<!-- Updated 2026-09-06 -->
+
+## H077 public expiry terminal and cold Host recovery — isolated leaf
+
+From762af1ab, Host reads exact public SDK terminal metadata instead of SDK-private
+terminal SQL. Only a bound failed Run with the exact missing-proof error invokes
+explicit public eligibility/recovery; ambiguity and other errors remain rejected.
+Actual old075 authorization expiry+Stop -> full close -> new077 Host/SDK stack ->
+lease reclaim -> real FAILED receipt -> second new-stack exact read passed, with
+zero additional Provider sends/context reprepare. Two separate error-dispatch
+negatives passed:3 unique new controls total. Missing process-local old tool
+registration is skipped only during cleanup after durable verified terminal;
+no old grant is reconstructed. Existing-record cleanup errors still propagate.
+Pre-recovery Host read and SDK transaction are not cross-store atomic; original
+Host final lease/generation fence remains. No original userdata/native/main merge
+claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-terminal-public-host/CONTRACT.md),
+[results](../plans/2026-09-06-expiry-terminal-public-host/RESULTS.md).
+
 # Memory SDK 边界与 Host 接口契约
 
 最后更新：2026-09-06。Host默认Memory builder已接7.3公开升级链；实际installed M616旧库→M617升级/重开保留属主与升级回执，新控1项及空库/未知库2邻居分批通过。原生userdata未升级，完整consumer/native仍未通过。[升级边界与证据](../plans/2026-09-06-prospective-source-audit/HOST-617-UPGRADE.md)。

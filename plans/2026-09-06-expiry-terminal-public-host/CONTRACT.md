@@ -21,3 +21,18 @@ Runtime stack over the same test stores using installed077 -> official lease
 reclaim -> exact SDK recovery and real Host FAILED receipt, no new Provider calls
 or new Run. Unknown/foreign/multiple-event shapes must fail closed. Explicitly no
 native or original r6 userdata mutation. Original lease10/analysis14 are not rerun.
+
+
+## Cold cleanup and two-store fence boundary
+
+Actual first cold test reached SDK proof and Host durable terminal then failed
+clearing an absent old Run from the new process's tool registry. Only after real
+terminal verification and durable Host commit, `mark_terminal_if_registered` checks
+the exact registry lookup: absent is no-op; existing registration uses unchanged
+cleanup outside the KeyError catch. No old authority is recreated.
+
+The Host precheck and SDK write are not a cross-database atomic lease fence. SDK
+may append its independently verified historical proof if Host ownership changes
+between them; the existing Host final write still rejects stale owner/generation.
+The two negative tests are error-dispatch controls, not full production foreign or
+stale binding tests. Original userdata/native remain separate acceptance work.
