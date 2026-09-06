@@ -13,7 +13,10 @@ import tests.execution.test_primary_foreground_runtime as runtime_fixture
 @pytest.mark.asyncio
 async def test_source_run_import_interruption_replay_and_scoring_request_isolation(tmp_path,monkeypatch):
     import simple_harness_memory as m
-    monkeypatch.setattr(runtime_fixture,'local_owner_auth',lambda:AUTH)
+    from deskpet.sdk_adapters.context_route import local_owner_auth
+    import tests.memory.test_primary_read_api as read_fixture
+    auth=local_owner_auth()
+    monkeypatch.setattr(read_fixture,'AUTH',auth)
     source=await setup(tmp_path/'source')
     scoring=await setup(tmp_path/'scoring')
     source_text='独立setup源：只在源Run出现的CORPUS_SOURCE_ONLY_673。'
@@ -21,15 +24,15 @@ async def test_source_run_import_interruption_replay_and_scoring_request_isolati
     source_provider=runtime_fixture.Provider()
     runtime,stack,_=await runtime_fixture.build(tmp_path/'source',source.path,source_provider)
     try:
-        await runtime.after_enqueue(subject=AUTH.subject)
+        await runtime.after_enqueue(subject=auth.subject)
         await runtime.drain()
         assert runtime.last_error is None and len(source_provider.requests)==1
-        ids=await PrimaryConversationAuthority(source.path,subject=AUTH.subject).completed_run_ids()
+        ids=await PrimaryConversationAuthority(source.path,subject=auth.subject).completed_run_ids()
         assert len(ids)==1
     finally:
         await runtime.close()
         await stack.close()
-    args=dict(source_path=source.path,scoring_path=scoring.path,subject=AUTH.subject,host_run_id=ids[0])
+    args=dict(source_path=source.path,scoring_path=scoring.path,subject=auth.subject,host_run_id=ids[0])
     with pytest.raises(ValueError,match='corpus_source_scoring_store_must_differ'):
         await import_setup_conversation_sources(**dict(args,scoring_path=source.path))
     append=HumanMemoryProgramStore.append_evidence
@@ -52,17 +55,17 @@ async def test_source_run_import_interruption_replay_and_scoring_request_isolati
         assert await reader.read_admitted(registration.envelope.evidence_id)==(
             registration.envelope,registration.admission_receipt)
     user=group.registrations[0]
-    principal=m.MemoryPrincipal('host','household',AUTH.subject,'corpus-fixture')
+    principal=m.MemoryPrincipal('host','household',auth.subject,'corpus-fixture')
     assert await HostHistorySourceAuthority(scoring.path).resolve_history_source(
         principal=principal,envelope=user.envelope,receipt=user.admission_receipt) is None
-    assert await PrimaryConversationAuthority(scoring.path,subject=AUTH.subject).completed_run_ids()==()
+    assert await PrimaryConversationAuthority(scoring.path,subject=auth.subject).completed_run_ids()==()
     assert result(await scoring.send('primary.messages.page',{'primary_ref':scoring.primary},key='imported'))['items']==[]
     query='评分独立问题：请简单打个招呼。'
     scoring_provider=runtime_fixture.Provider()
     runtime,stack,_=await runtime_fixture.build(tmp_path/'scoring',scoring.path,scoring_provider)
     try:
-        executed=await execute_scoring_turn(service=scoring.factory.bind(AUTH),runtime=runtime,
-            scoring_path=scoring.path,subject=AUTH.subject,text=query,delivery_key='score-query')
+        executed=await execute_scoring_turn(service=scoring.factory.bind(auth),runtime=runtime,
+            scoring_path=scoring.path,subject=auth.subject,text=query,delivery_key='score-query')
         assert executed.completed_group.terminal_source[0].sanitized_payload['terminal_state']=='COMPLETED'
         assert runtime.last_error is None and len(scoring_provider.requests)==1
         outgoing=repr(scoring_provider.requests[0].messages)

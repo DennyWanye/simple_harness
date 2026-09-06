@@ -63,3 +63,22 @@ authored recent-history replay remains a separate required seam.
 
 Static AST parsing of the new modules/tests succeeded. No resource batch/model
 was started after main native priority; all new execution controls remain NOT_RUN.
+
+
+## 2026-09-06 first execution
+
+runtime-first-r1: 1 passed, 2 failed in 1.71s. Real C01 setup analysis job
+materialization/control passed (not a corpus quality pass). Source runtime
+failed before Provider: test AUTH actor-1 conflicted with real local principal;
+fixture now uses actual local_owner_auth rather than changing production guard.
+Graph negative injected generic RuntimeError, which correctly settled dead_letter
+instead of target backoff; changed to public AnalysisDeliveryAuthorityTransientError.
+Original reds preserved. runtime-first-r2 attempted only these two failed controls;
+default lock BUSY75, no child. Corrections not yet revalidated.
+
+PG18401 exit1, remaining[], peak183968KiB,2.360s resource elapsed. No remaining
+owned process. Existing green setup job not scheduled for repeat.
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-first-r1/command.log` SHA256 `a80f01b726834de1c2dbe7a44c36c85b5a3e36984c4706937c4e4e38c8ff8895`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-first-r1/resource.json` SHA256 `6f187af0ebc64c370e159238df824ab0d7a1a70798adad6cfde72aab050e5413`

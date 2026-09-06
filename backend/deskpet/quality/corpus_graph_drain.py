@@ -98,8 +98,10 @@ async def drain_graph_seed_analysis(*, delivery_authority, **kwargs):
     runner=DurableMemoryJobRunner(kwargs['manager'].backend,executor,delivery_authority,config,
         'corpus-graph-fixture-drain',kwargs['clock'])
     outcome=await runner.run_once()
-    if outcome not in (WorkerRunOutcome.APPLIED,WorkerRunOutcome.IDLE):
+    if outcome is WorkerRunOutcome.IDLE:
+        raise ValueError('graph_fixture_settlement_unconfirmed')
+    if outcome is not WorkerRunOutcome.APPLIED:
         raise ValueError('graph_fixture_drain_failed:'+outcome.value)
-    if await runner.run_once() != WorkerRunOutcome.IDLE:
-        raise ValueError('graph_fixture_backlog_remains')
+    # APPLIED is the SDK result of this invocation; IDLE alone never proves
+    # settlement (backoff/active lease/dead letter can also be unclaimable).
     return outcome, executor.executions

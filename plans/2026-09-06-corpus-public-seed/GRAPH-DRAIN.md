@@ -1,3 +1,15 @@
+# P1 correction pending revalidation
+
+2026-09-06: c11 first-IDLE success was challenged by Dirac: unclaimable jobs
+(backoff/active lease/dead_letter) also yield IDLE. Current source rejects first
+IDLE with graph_fixture_settlement_unconfirmed; only actual APPLIED confirms this
+invocation. Historical r4/r5 positives below are not P1 closure. New negative
+first produced actual dead_letter because fixture injected generic RuntimeError;
+it now uses public transient delivery error for the intended backoff path.
+Corrected negative revalidation BUSY75/no child. Main's separate bootstrap had
+actual APPLIED and is not based on first-IDLE success. Do not use this helper to
+certify an already-settled job on reopen without separate SDK proof.
+
 # Graph synthetic seed analysis drain
 
 2026-09-06. Fixture bootstrap only; not a quality-model/native result.
@@ -34,8 +46,9 @@ already committed data, not an LLM deciding that the source carries no memory.
 
 Close bootstrap manager, then start native with normal production authority.
 Use fresh isolated Memory DB: helper intentionally does not drain arbitrary
-jobs, and an interrupted/failed drain is not completion. Retry by fresh bootstrap
-construction with the same source/plan/receipt; committed job is not recreated.
+jobs, and an interrupted/failed drain is not completion. A fresh bootstrap on reopen can report unconfirmed if no job is claimable;
+do not infer settlement from this. Reusing the same source does not authorize
+creating a new analysis job or retrying a dead-letter job.
 The raw source and fixture delivery remain present. Do not enqueue the setup as
 an actual foreground turn when preparing native data; publicappendS1 is enough.
 

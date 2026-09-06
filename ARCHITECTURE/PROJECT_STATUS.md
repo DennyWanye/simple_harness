@@ -1,5 +1,12 @@
 <!-- 最后更新：2026-09-06 -->
 
+Corpus runtime fixture setup job 已由 installed H078/M618 实际runner物化，
+首批该1控PASS；source评分隔离/graph backoff两新控仍原红，修后复验BUSY未跑。
+不称runtime集成完成、native或240质量PASS，240执行仍0。
+[首批事实](../plans/2026-09-06-corpus-public-seed/SOURCE-RUNTIME-WIP.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 Graph fixture public analysis drain 已通过1个新控：真实strict-atomic seed
 receipt验证后本地no_mutation，SDK runner完成，重开IDLE/0再次分析，2nodes1edge
 保持；不称native/质量模型结果。必须构造时绑定fixture authority，关闭后由
