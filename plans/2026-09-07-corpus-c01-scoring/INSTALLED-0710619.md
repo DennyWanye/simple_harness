@@ -13,7 +13,9 @@ SDK有限nullable pair与Hostnull-as-absent适用性：required键存在规则�
 
 Host pyproject/uv.lock/pin/manifest身份同批更新0.7.10。`uv lock --offline --check`首次因旧agent-reach固定URL的元数据不在缓存而失败；随后普通`uv lock --check --no-progress`成功（416包/2.41s）。仅检查，没有更新其它锁定版本；SDKwheel构建/安装全程offline。
 
-当前安装组合控制待跑：仅实际main初始化/注册schema和该installed SDK的本地wire/null正向及数字负向；不重复四源控，不调用模型。通过后在该新候选显式复验C01-20，旧C01-10/13/20失败保留。原生UI已在e1e714d2一次完整构建，可用于后续实际后端组合，不为SDK修改重建UI。
+实际安装组合控制已通过：Host `eaa72b51` 的 `backend/tests/quality/test_nullable_installed_main.py::test_installed_nullable_actual_main_catalog_and_wire`，1 PASS / 6.38s；wrapper 另确认生产候选身份及模块来自新target。覆盖实际main初始化、Memory/factory/工具注册、该installed SDK的本地wire/null正向与数字负向；没有调用真实Provider。PG76882自然exit0 / 7.470s，峰434080KiB，minDisk3783MiB，remaining[]、cleanupnull、stopnull。原coroutine警告保留，不扩大测试范围。
+
+随后同一候选显式复验C01-20，真实请求HTTP400失败，详见[REAL-R4.md](REAL-R4.md)。安装控制通过不能替代模型质量。原C01-10/13/20失败保留，UI已在e1e714d2完成一次构建，不为SDK后端变化重建。
 
 | 本机原始证据 | SHA-256 |
 |---|---|
@@ -21,3 +23,5 @@ Host pyproject/uv.lock/pin/manifest身份同批更新0.7.10。`uv lock --offline
 | `.local-test-evidence/2026-09-07/harness0710-artifact/identity.json` | `6f56f2a75154497c550856c8b351cdb8942a7f6d4046f8f5e07a26288c046cc9` |
 | `.local-test-evidence/2026-09-07/harness0710-artifact/r1/resource.json` | `04ce1f88966a64245e8db5f043b86504695e493a332c390857d5f74cef39a74a` |
 | `.local-test-evidence/2026-09-07/harness0710-artifact/r1/command.log` | `5d5c03d7ad7a0224a9978940cb3d806438930dc97f7d2ab5653745043197bda8` |
+| `.local-test-evidence/2026-09-07/harness0710-artifact/main-nullable-r1/command.log` | `a7d0435f5f933dcc27eb36e9e9641b96754e89ab55d5083a3962aa5f57b846cf` |
+| `.local-test-evidence/2026-09-07/harness0710-artifact/main-nullable-r1/resource.json` | `6c0008962e56914a2a972b4b7c7a8aa86781c32341845493e6107d965e1af8fb` |
