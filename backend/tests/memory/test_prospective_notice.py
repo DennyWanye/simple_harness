@@ -186,6 +186,7 @@ async def test_late_forget_removes_notice_from_page_and_exact_detail(tmp_path, m
         assert notices(await env.read()) == []
         detail = await env.read("primary.messages.detail", {"primary_ref": env.primary, "message_ref": item["message_ref"]})
         assert not detail["payload"]["ok"]
+        assert detail["payload"]["error"]["code"] == "primary_message_unavailable"
         assert len(env.sends) == 2
 
 
@@ -231,4 +232,5 @@ async def test_legal_public_reschedule_retires_notice_without_breaking_history(t
         assert any(m["role"] == "user" and m["text"] == "29+18" for m in page["payload"]["result"]["items"])
         detail = await env.read("primary.messages.detail", {"primary_ref": env.primary, "message_ref": item["message_ref"]})
         assert not detail["payload"]["ok"]
+        assert detail["payload"]["error"]["code"] == "primary_message_unavailable"
         assert await commitments() == before and len(env.sends) == 2
