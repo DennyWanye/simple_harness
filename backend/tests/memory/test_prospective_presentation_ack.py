@@ -177,7 +177,15 @@ async def test_snapshot_rollback_and_full_group_codec(tmp_path):
         for version in (True, 2.0):
             stored=json.loads(row['source_revisions_json'])
             stored['host_snapshot_schema_version']=version
-            changed=dict(row,source_revisions_json=json.dumps(stored))
+            # Recompute the receipt the pre-fix reader would accept (its body
+            # normalizes the version to int 2). No stale-hash early rejection.
+            from deskpet.memory.s5c_store import _hash
+            receipt_body={key:row[key] for key in ('expected_request_fingerprint',
+                'payload_hash','prior_context_revision','provider_turn_ordinal',
+                'sdk_run_id','snapshot_id','snapshot_revision')}
+            receipt_body.update(source_revisions=stored['source_revisions'],
+                host_snapshot_schema_version=2,host_occurrence_group=stored['host_occurrence_group'])
+            changed=dict(row,source_revisions_json=json.dumps(stored),receipt_hash=_hash(receipt_body))
             with pytest.raises(S5cConflict,match='^s5c_snapshot_storage_shape_invalid$'):
                 decode_snapshot(changed)
         corrupted=dict(row,receipt_hash='0'*64)
