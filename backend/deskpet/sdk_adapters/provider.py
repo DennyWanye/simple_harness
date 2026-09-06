@@ -88,8 +88,11 @@ class _DiagnosticPostClient:
                 )
             except Exception:
                 # Diagnostics must never replace the original Provider error.
-                logger.warning("product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
-                               _diagnostic_request_ref.get(), response.status_code)
+                try:
+                    logger.warning("product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
+                                   _diagnostic_request_ref.get(), response.status_code)
+                except Exception:
+                    pass
         return response
 
 
