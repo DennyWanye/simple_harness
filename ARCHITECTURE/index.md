@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06 H079/M618候选：新SDK单次离线制品已固定，main factory/真实零tool恢复至ACK/身份3项安装组合PASS4.37s，174/84/116包成员与202加载模块精确核对；PG21846正常退出并清空。源14绿不重跑，原生r17仍待验、r16失败保留。[安装结果与边界](../plans/2026-09-06-typed-use-primary/COMBINED-079618.md)。
+
+
 2026-09-06：source/runtime叶006a67dc已独审合入候选。真实C01 CREATE job、graph backoff拒假成功、source/scoring对话隔离三项新增控制分批通过；仅普通v1链，不含C02推断接线、A7/typed/short跨库或240质量。[结果与边界](../plans/2026-09-06-corpus-public-seed/SOURCE-RUNTIME-WIP.md)。
 
 
