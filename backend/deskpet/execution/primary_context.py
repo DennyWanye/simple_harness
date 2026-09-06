@@ -115,7 +115,13 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             return project_history_group(group, run_id=sdk_run_id)
         caps = PARTITION_CAPS[budget_window(provider.context_window)]["recent_causal_groups"]
         current = {"role": "user", "content": _turn_text(candidate)}
-        protected = [{"role": "system", "content": PERSONA}, current]
+        input_context = await resolve_current_disclosure(db_path=self._history_path,
+            turn_id=candidate.turn_id, run_id=sdk_run_id, subject=self._subject, request_id=request_id)
+        persona = PERSONA
+        if ":input-v1:" in input_context.authority_ref:
+            from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
+            persona += "\n" + COMMON_POLICY_TEXT
+        protected = [{"role": "system", "content": persona}, current]
         protected_tokens = text_tokens(canonical_json(protected)) + int(tools.catalog.get("schema_token_count", 0))
         budget = effective_input_budget(provider.context_window)
         if protected_tokens > budget:

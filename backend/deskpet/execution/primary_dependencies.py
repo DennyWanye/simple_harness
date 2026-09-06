@@ -372,6 +372,11 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
             policy = policy_factory(run["subject"])
             disclosure = await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
                 subject=run["subject"], request_id=request.request_id.value)
+            original_input_claim = None
+            if ":input-v1:" in disclosure.authority_ref:
+                from deskpet.memory.current_input_visibility import claim_stamp
+                original_input_claim = await claim_stamp(db_path, run["host_run_id"], sdk_run_id)
+                stack.verify_current_input_provider_request(sdk_run_id, request)
             allowed = await policy.check_dependencies(db=db, primary_ref=run["primary_conversation_id"],
                 dependencies=proof, disclosure_context=disclosure)
             if not allowed:
@@ -382,5 +387,9 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
             subject=run["subject"], request_id=request.request_id.value)
         if current != disclosure:
             raise ValueError("primary_disclosure_changed_during_check")
+        if original_input_claim is not None:
+            if await claim_stamp(db_path, run["host_run_id"], sdk_run_id) != original_input_claim:
+                raise ValueError("primary_input_claim_changed_during_check")
+            stack.verify_current_input_provider_request(sdk_run_id, request)
     except Exception as exc:
         raise PrimaryHistoryDisclosureRejected(private_cause=exc) from None

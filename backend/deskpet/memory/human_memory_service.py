@@ -252,6 +252,7 @@ class QueueTurnRequest:
     delivery_key: str
     text: str
     disclosure_binding_ref: str | None = None
+    input_declaration: dict | None = None
 
     def __post_init__(self) -> None:
         if self.scope_ref is not None:
@@ -986,6 +987,8 @@ class HumanMemoryHostService:
             task_scope_id=request.scope_ref,
             admitted_evidence_pair=(envelope, receipt),
             disclosure_binding_ref=request.disclosure_binding_ref,
+            input_declaration=request.input_declaration,
+            input_auth=self._auth,
         )
         if self._scheduler_wake is not None:
             await self._wake_committed("after_enqueue", queued.turn_id)
