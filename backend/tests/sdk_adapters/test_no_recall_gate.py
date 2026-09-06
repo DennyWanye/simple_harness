@@ -709,6 +709,46 @@ async def test_fresh_install_registers_owner_and_reconciles_empty(
 
 
 @pytest.mark.asyncio
+async def test_interrupted_fresh_memory_initialization_recovers_empty_file(tmp_path: Path) -> None:
+    memory_db = tmp_path / "interrupted.db"
+    memory_db.touch(mode=0o600)
+    runtime = HumanMemoryV7Runtime(memory_db)
+    try:
+        assert await runtime.pending_occurrences(()) == ()
+        assert runtime.registration_receipt is not None
+        assert runtime.schema_upgrade_receipt is None
+        assert not memory_db.with_name(memory_db.name + ".pre-schema-7.2.backup").exists()
+    finally:
+        await runtime.close()
+    reopened = HumanMemoryV7Runtime(memory_db)
+    try:
+        assert await reopened.pending_occurrences(()) == ()
+        assert reopened.registration_receipt == runtime.registration_receipt
+    finally:
+        await reopened.close()
+
+
+@pytest.mark.asyncio
+async def test_unknown_memory_schema_remains_rejected_without_changes(tmp_path: Path) -> None:
+    from simple_harness_memory.core.errors import MemoryLegacySchemaUnsupported
+
+    memory_db = tmp_path / "unknown.db"
+    with sqlite3.connect(memory_db) as db:
+        db.execute("CREATE TABLE unrelated (value TEXT)")
+        db.execute("INSERT INTO unrelated VALUES ('keep')")
+    before = memory_db.read_bytes()
+    runtime = HumanMemoryV7Runtime(memory_db)
+    try:
+        with pytest.raises(MemoryLegacySchemaUnsupported):
+            await runtime.manager()
+        assert runtime.registration_receipt is None
+        assert memory_db.read_bytes() == before
+        assert not memory_db.with_name(memory_db.name + ".pre-schema-7.2.backup").exists()
+    finally:
+        await runtime.close()
+
+
+@pytest.mark.asyncio
 async def test_ownership_conflicts_always_fail_closed(tmp_path: Path) -> None:
     """S5b Task 4：属主已在构建时登记，任何 ``MemoryOwnershipConflict``（含首页
     ``short_horizon_principal_rejected``）都不再被吞掉，一律 fail-closed 向上抛。"""

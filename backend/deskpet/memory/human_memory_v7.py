@@ -191,12 +191,22 @@ class HumanMemoryV7Runtime:
 
                     upgrade = getattr(migrations, "migrate_human_memory_v7_to_v7_2", None)
                     if upgrade is not None:
-                        self.schema_upgrade_receipt = await upgrade(
-                            self._db_path,
-                            backup_path=self._db_path.with_name(
-                                f"{self._db_path.name}.pre-schema-7.2.backup"
-                            ),
-                        )
+                        from simple_harness_memory.core.errors import MemoryLegacySchemaUnsupported
+
+                        try:
+                            self.schema_upgrade_receipt = await upgrade(
+                                self._db_path,
+                                backup_path=self._db_path.with_name(
+                                    f"{self._db_path.name}.pre-schema-7.2.backup"
+                                ),
+                            )
+                        except MemoryLegacySchemaUnsupported:
+                            # An interrupted first initialization can leave an
+                            # empty file. The migration only recognizes old
+                            # initialized stores; the public builder below owns
+                            # fresh-store admission and still rejects unknown
+                            # schemas. Never remove/probe/rewrite the SDK DB here.
+                            pass
                 kwargs = self.build_kwargs()
                 if self._memory_action_authority is not None:
                     kwargs["memory_action_authority"] = self._memory_action_authority
