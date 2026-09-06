@@ -1,6 +1,6 @@
 # 非空 resume 的实际来源闭环
 
-2026-09-06，`feat/closure-resume-source` / Host base `ff2f2009`。native持槽期间只编辑，尚未测试。不碰main ACK/prepare、SDK、schema、旧hash或原库。
+2026-09-06，`feat/closure-resume-source` / Host base `ff2f2009`。当前产品固定 `0a52085e`，5个不同场景分批通过；Dirac已对固定源码与本批结果给出限定ACCEPT，不代表全契约完成。详见 [RESULTS.md](RESULTS.md)。不碰main ACK/prepare、SDK、schema、旧hash或原库。
 
 实际入口：主模型公开 `task_scope_update` 支持 `resume.update` / `goal.revise`，`TaskScopeUpdateService.apply_closure` 产生真实mutation decision与closure receipt，`CanonicalTaskScopeStore._reduce` 将原operation.value写入state.resume/goal。当前普通 `render_scope_disclosure` 仅证明CREATE_NEW title/goal；closure guard因此拒绝非空resume。该路径可达，不能仅删拒绝条件。
 
@@ -10,6 +10,6 @@
 
 field reader只披露最新已证明operation；若latest被遗忘/篡改/缺proof，不回退旧同名值。refs仅scope相同不足，须精确S1+subject以及current Memory gate。派生字段作为原依赖union进入scope manifest，旧USER/history/独立short仍受原门控制；慢读取后的当前head/token最终比较保留，access审计不删。未知/missing legacy来源继续省略普通字段、closure pending。
 
-必要新反例（未运行）：实际tool resume.update→下一Run读取非空resume→closure真实出站；fallback mutation→原子response carrier→同样闭合；来源遗忘/plan或effect混接拒读；latest不可见不回退；旧无carrier fallback不可冒证；receipt/事务故障无半提交；旧冻结projection不因新增字段变化。只测新改变，不重跑closure9、analysis14、cold等旧绿。
+已执行：实际tool resume.update→下一Run读取非空resume→closure物理MockTransport出站；fallback mutation→原子response carrier→同样闭合；同Run mutation之后再resume不改写已冻结producer前缀；实际来源遗忘拒读；事务故障无半提交。尚缺独立plan/effect混接、旧无carrier fallback、多个字段版本latest不可见不回退、旧manifest新增字段不扩张的专门控制；不把源码规则冒充这些测试已通过。只测新改变，不重跑closure9、analysis14、cold等旧绿。
 
 Compaction定位：`main._build_product_agent_loop` 只有定义，无当前调用；`build_agent`只由该旧工厂调用，context_compressor仅从service_context读取、未发现生产实例注册。当前primary为SDK ReAct生产链，未发现同类后台模型compaction出站入口。本叶不复活旧compactor，不称已完成原全部compaction目标；如后续实际入口出现另核其真实snapshot/reservation契约。
