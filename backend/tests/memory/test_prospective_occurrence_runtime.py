@@ -29,6 +29,16 @@ from tests.memory import test_prospective_consumer_m617 as seed
 @pytest.mark.asyncio
 @pytest.mark.parametrize("late_forget", [False, True])
 async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch, late_forget):
+    await _run_occurrence_case(tmp_path,monkeypatch,late_forget=late_forget)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("point", ['terminal.before_commit','terminal.after_commit'])
+async def test_real_ack_terminal_commit_recovery(tmp_path,monkeypatch,point):
+    await _run_occurrence_case(tmp_path,monkeypatch,terminal_fault=point)
+
+
+async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal_fault=None):
     state=tmp_path/'state.db'
     startup=await dispatch_startup_epoch(state,approved_fresh_lane=True)
     service=HumanMemoryHostServiceFactory(state,startup).bind(local_owner_auth())
@@ -119,17 +129,53 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
     # main's candidate builder; its real verifier checks bytes/version/origin.
     import main
     runtime=stack=None
+    fault_fired=[]
+    def fault(point):
+        if controls.turn==4 and point==terminal_fault and not fault_fired:
+            fault_fired.append(point)
+            raise ConnectionError('a7 actual terminal commit interruption')
     try:
         for turn in range(1,2 if late_forget else 5):
             if runtime is None:
                 runtime,stack,queue=await build(tmp_path,state,provider,
                     visibility_memory=visibility,occurrence_coordinator=coordinator,
                     extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-                    candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,context_use_memory=current_runtime)
+                    candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,context_use_memory=current_runtime,
+                    fault=fault if terminal_fault else None)
             controls.turn=turn
             await service.enqueue_turn(QueueTurnRequest(None,f'a7-real-{turn}',f'Actual user turn {turn}'))
             await runtime.after_enqueue(subject=principal.actor_id)
             await asyncio.wait_for(runtime.drain(),20)
+            if terminal_fault and turn==4:
+                assert fault_fired==[terminal_fault]
+                assert isinstance(runtime.last_error,ConnectionError)
+                assert str(runtime.last_error)=='a7 actual terminal commit interruption'
+                before_recovery=len(sends)
+                raw_terminal=stack.read_run_terminal_evidence(guarded[-1][0])
+                assert raw_terminal.state=='completed'
+                async with store._transaction() as db:
+                    phases=dict(await (await db.execute(
+                        'SELECT phase,COUNT(*) FROM prospective_occurrences GROUP BY phase')).fetchall())
+                    ack_before=await (await db.execute(
+                        "SELECT record_id,record_hash,sdk_run_id FROM prospective_occurrences WHERE phase='acknowledged'")).fetchone()
+                assert phases['acknowledged']==1
+                assert phases.get('settled',0)==int(terminal_fault.endswith('after_commit'))
+                await runtime.close();await stack.close();runtime=stack=None
+                runtime,stack,queue=await build(tmp_path,state,provider,visibility_memory=visibility,
+                    occurrence_coordinator=coordinator,
+                    extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
+                    candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,
+                    context_use_memory=current_runtime)
+                await runtime.after_enqueue(subject=principal.actor_id)
+                await asyncio.wait_for(runtime.drain(),20)
+                assert len(sends)==before_recovery
+                recovered=stack.read_run_terminal_evidence(guarded[-1][0])
+                assert (recovered.run_id,recovered.event_id,recovered.event_hash)==(
+                    raw_terminal.run_id,raw_terminal.event_id,raw_terminal.event_hash)
+                async with store._transaction() as db:
+                    ack_after=await (await db.execute(
+                        "SELECT record_id,record_hash,sdk_run_id FROM prospective_occurrences WHERE phase='acknowledged'")).fetchone()
+                assert tuple(ack_after)==tuple(ack_before)
             if late_forget:
                 assert len(guarded)==1 and sends==[]
                 actual=stack.read_run_terminal_evidence(guarded[0][0])
@@ -179,7 +225,8 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
         runtime,stack,queue=await build(tmp_path,state,provider,visibility_memory=visibility,
             occurrence_coordinator=coordinator,
             extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-            candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,context_use_memory=current_runtime)
+            candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,context_use_memory=current_runtime,
+                    fault=fault if terminal_fault else None)
         await runtime.after_enqueue(subject=principal.actor_id)
         await asyncio.wait_for(runtime.drain(),20)
         assert runtime.last_error is None and len(sends)==before

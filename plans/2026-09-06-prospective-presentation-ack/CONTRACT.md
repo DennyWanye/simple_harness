@@ -160,3 +160,9 @@ existing subject transaction. Existing subjects retain their namespace; this is
 not permission to fabricate a Run/binding. Main startup dispatcher compatibility
 is separate and still pending. Actual two runtime controls remain NOT_RUN after
 this fix; a7-r8 had no child due to launcher command error.
+
+Next new controls only: actual ACK Run `terminal.before_commit` / `terminal.after_commit`
+interruptions use original queue fault hooks. Require actual SDK completed event
+unchanged, ACK receipt unchanged, before commit no settled / after commit settled,
+full runtime rebuild and same Run terminal completion with no extra HTTP send.
+New two parameters NOT_RUN; existing actual two green parameters need no repetition.
