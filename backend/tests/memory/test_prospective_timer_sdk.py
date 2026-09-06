@@ -1,4 +1,8 @@
 """New timer path against actual SQLite SDK; no model or private SDK writes."""
+from dataclasses import replace
+from simple_harness.runtime import (MemoryActionAuthorityRef, MemoryMutationKind, ExistingMemoryTarget,
+    ProspectiveMemoryPayload, ProspectiveTimeTrigger, ProspectiveLifecycleState, issue_memory_action_authority)
+from simple_harness_memory import MemoryScope
 import pytest
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
@@ -15,13 +19,37 @@ from tests.memory.test_s5c_store import P
 
 
 @pytest.mark.asyncio
-async def test_real_due_lost_ack_expired_reopen_single_inbox(tmp_path):
+@pytest.mark.parametrize('rescheduled',[False,True])
+async def test_real_due_lost_ack_expired_reopen_single_inbox(tmp_path,rescheduled):
     clock=[20.0]
-    path,memory,_=await fixture(tmp_path,clock)
+    class Action:
+        authority=None
+        async def resolve_memory_action_authority(self,ref):
+            assert ref==MemoryActionAuthorityRef.from_authority(self.authority)
+            return self.authority
+    action=Action()
+    path,memory,_,plan=await fixture(tmp_path,clock,action_authority=action,return_plan=True)
     await initialize_s5c_timer_state_db(path)
     registrations=S5cStore(path,P)
     await ProspectiveRegistrationConsumer(registrations,memory,
         PublicRegistrationAuthoritySource(store=registrations,memory=memory,clock=lambda:clock[0])).run_once()
+    if rescheduled:
+        original=next(e for e in (await memory.read_outbox(principal=P)).entries if e.topic=='memory.prospective.registration.requested')
+        clock[0]=21
+        operation=replace(plan.operations[0],operation_id='reschedule-operation',kind=MemoryMutationKind.REVISE,
+            target=ExistingMemoryTarget(original.payload['memory_id'],1),
+            payload=ProspectiveMemoryPayload('send report later',ProspectiveTimeTrigger(30.0,'UTC')),
+            lifecycle_state=ProspectiveLifecycleState.RESCHEDULED)
+        revised=replace(plan,plan_id='reschedule-plan',run_id='reschedule-run',turn_id='reschedule-turn',
+            idempotency_key='reschedule-plan',base_revision=2,
+            disclosure_context=replace(plan.disclosure_context,run_id='reschedule-run'),operations=(operation,))
+        action.authority=issue_memory_action_authority(revised.action_intent(operation.operation_id),
+            authority_id='test-reschedule-authority',issued_at=21,expires_at=60,nonce='reschedule',issuer_ref='host:test-action')
+        revised=replace(revised,operations=(replace(operation,action_authority_ref=MemoryActionAuthorityRef.from_authority(action.authority)),))
+        result=await memory.apply_memory_mutation_plan(principal=P,scope=MemoryScope.personal(P.actor_id),plan=revised)
+        assert result.receipt_ref is not None
+        await ProspectiveRegistrationConsumer(registrations,memory,
+            PublicRegistrationAuthoritySource(store=registrations,memory=memory,clock=lambda:clock[0])).run_once()
     await memory.close()
     signals=ProspectiveSignalStore(path,P)
     registration_authority=HostProspectiveSignalAuthority(path,P)
@@ -48,7 +76,11 @@ async def test_real_due_lost_ack_expired_reopen_single_inbox(tmp_path):
         source=PublicTimeAuthoritySource(registrations=registrations,signals=signals,lifetime_seconds=10)
         assert await source.prepare_due(now=29,limit=10)==()
         clock[0]=30
-        prepared=(await source.prepare_due(now=30,limit=10))[0]
+        values=await source.prepare_due(now=30,limit=10)
+        assert len(values)==1
+        prepared=values[0]
+        assert prepared.authority.intent.transition_from.value==('rescheduled' if rescheduled else 'pending')
+        assert prepared.authority.intent.target_revision==(2 if rescheduled else 1)
         scheduler=ProspectiveScheduler(store=signals,source=source,memory=LostAck(),clock=lambda:clock[0],lease_seconds=2)
         with pytest.raises(TimeoutError,match='committed then lost ACK'):
             await scheduler.tick(claim_owner='first')

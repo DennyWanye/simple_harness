@@ -78,7 +78,7 @@ class ProspectiveSignalStore:
         if (i.subject!=self.principal.actor_id or i.signal_kind.value!='time_due'
                 or i.trigger.to_json()['trigger_kind']!='time' or i.observed_at<i.trigger.trigger_at
                 or i.outbox_id is not None or i.outbox_payload_hash is not None
-                or i.transition_from.value!='pending' or i.transition_to.value!='triggered'):
+                or i.transition_from.value not in {'pending','rescheduled'} or i.transition_to.value!='triggered'):
             raise TimerConflict('prospective_timer_authority_invalid')
         expected=canonical_hash(['host:prospective-time/v1',self.owner,i.scheduler_registration_ref,
             i.registration_revision,i.target_memory_id,i.target_revision,i.trigger_hash])
