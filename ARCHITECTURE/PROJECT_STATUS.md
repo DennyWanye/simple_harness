@@ -1,5 +1,8 @@
 # simple_harness — 全局项目状态与架构完成度
 
+2026-09-06主复核：Prospective后六格dfec8bbb源/9raw hash一致，合入c202be39；实际共享执行器组合9项通过7.17秒，峰111MiB且无残留。前13/后6分别保持正式Run证据，非一次401/Host提醒验收。[组合边界](../plans/2026-09-06-typed-recall-prospective-lifecycle/COMBINED.md)。
+
+
 2026-09-06主组合复核：固定ea57e720公开Prospective 13格叶纳入29479573；13个raw hash一致，四oracle指纹均保留。受影响组合18项通过6.31秒，峰112MiB/组已清空；synthetic SDK信号不代表实际Host提醒，余6个lifecycle仍继续。[复核与证据](../plans/2026-09-06-typed-recall-prospective-public/COMBINED.md)。
 
 
