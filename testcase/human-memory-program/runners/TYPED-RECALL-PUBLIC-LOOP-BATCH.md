@@ -117,3 +117,22 @@ Minimal repeat (fresh artifact directory, exit3 expected):
 ```sh
 /Users/denny/projects/simple_harness/backend/.venv/bin/python testcase/human-memory-program/runners/run_typed_recall_public_consumer.py --consumer-python /Users/denny/projects/simple_harness-typed-recall-runner/.local-test-evidence/2026-09-05/typed-recall-clock065-r5/workspace/venv/bin/python --artifact-dir .local-test-evidence/2026-09-05/typed-recall-context-reproduce --harness-wheel /Users/denny/projects/simple_harness/backend/vendor/simple_harness_sdk-0.7.2-py3-none-any.whl --harness-wheel-sha256 53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed --harness-source-commit 2b8428465cbd41032ba024a0b7199183161f5ecd --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-recall-observability/.local-test-evidence/2026-09-05/rejection-candidate/build1/simple_harness_memory_sdk-0.6.5-py3-none-any.whl --memory-wheel-sha256 0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df --memory-source-commit 30743bb17ed8301d01028357de6e4c5adcdde26b --cell current-use/authority:suppression --cell current-use/context:duplicate-same-provider-attempt --cell current-use/context:new-provider-attempt --cell current-use/context:receipt-first --cell current-use/context:suppression-first --cell current-use/context:wrong-snapshot
 ```
+
+## Procedure applicability batch — oracle before implementation
+
+Original three eligibility/procedure-applicability-{match,mismatch,absent} remain unchanged.
+Their literal labels app-v2/app-v3 are not valid public SHA256 fingerprints. For actual partial
+execution, bind a configured Host applicability snapshot tool=git/environment=fixture-macos/
+tool_version=2/input_schema_hash=H(C({type:object,properties:{},additionalProperties:false}));
+version3 supplies the mismatch. Public fingerprint is independently E(procedure-applicability/v2,
+context); this diagnostic mapping is explicit and does not silently replace original literal gold.
+All three retain ORACLE_GAP until original literal/projection/domain admission is settled.
+
+Seed the original procedure release-check with authorized USER assertion at active revision1.
+Record one non-attributable APPLICABILITY_SNAPSHOT via actual public authority/ref plus admitted
+TOOL evidence and registered task origin. This binds applicability at revision2 without claiming
+terminal success or auto-activation. Recall matching fingerprint must return the original name,
+steps and public applicability git@2 at current revision2; mismatch and absent return no items.
+Require independent admitted typed evidence, observation grant/ref/applicability/result hashes,
+no terminal outcome, actual registration/task/source binding and durable exact recall replay.
+No privateSQL or copied SDK test fixtures. No numerical or lifecycle thresholds are changed.

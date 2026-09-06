@@ -167,6 +167,11 @@ async def run(request, workspace):
     context_use=_helpers('typed_recall_context_use_cases.py')
     cells += await context_use.run_cases({'cells':sorted(selected.intersection(context_use.CELLS)),
         'payloads':inputs['conflict']['payloads']},workspace)
+    applicability=_helpers('typed_recall_applicability_cases.py')
+    if selected.intersection(applicability.CELLS):
+        procedure=next(r['seed']['payload'] for r in inputs['normal'] if r['seed']['memory_type']=='procedure')
+        cells += await applicability.run_cases({'cells':sorted(selected.intersection(applicability.CELLS)),
+            'payload':procedure},workspace)
     done={row['cell_id'] for row in cells}
     cells += [{'cell_id':name,'status':'BLOCKED',
         'reason':'CELL_EXECUTOR_NOT_IMPLEMENTED' if name in selected else 'CELL_NOT_SELECTED_THIS_BATCH',

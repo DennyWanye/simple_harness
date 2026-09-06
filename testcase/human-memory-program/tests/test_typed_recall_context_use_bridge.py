@@ -46,4 +46,26 @@ class PublicLoopTests(unittest.IsolatedAsyncioTestCase):
             assert oracle.assess_cell(fixture,failed)['status']=='FAIL'
 
 
+    async def test_public_applicability_and_authority_counterexamples(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixture=json.loads((ROOT/'fixtures/typed-recall-v3.json').read_text())
+            adapter=load(ROOT/'adapters/typed_recall_applicability_cases.py');oracle=load(ROOT/'runners/typed_recall_a2_oracle.py')
+            raw=next(r['source_record'] for r in fixture['minimal_projection_oracle'] if r['memory_type']=='procedure')
+            rows=await adapter.run_cases(dict(cells=sorted(adapter.CELLS),payload={k:raw[k] for k in ('name','applicability','steps','effective_risk')}),Path(directory))
+            for row in rows:
+                verdict=oracle.assess_cell(fixture,row)
+                assert verdict['status']=='BLOCKED' and len(verdict['business_assertions'])==3,verdict
+            original=next(row for row in rows if row['cell_id'].endswith('-match'))
+            for attack in ('grant','revision','fingerprint','value','type_receipt'):
+                row=copy.deepcopy(original);o=row['observations']
+                if attack=='grant':o['observation']['grant']['intent']['attributable']=True
+                elif attack=='revision':o['observation']['result']['committed_revision']=1
+                elif attack=='fingerprint':o['recall']['context']['procedure_applicability_fingerprints']=[]
+                elif attack=='value':o['recall']['execution']['result']['items'][0]['public_payload']['name']='unbound'
+                else:
+                    event=next(e for e in o['calls'] if e['call']=='resolve_typed_observation')
+                    event['receipt']['value_hash']='f'*64
+                assert oracle.assess_cell(fixture,row)['status']=='FAIL',attack
+
+
 if __name__=="__main__":unittest.main()

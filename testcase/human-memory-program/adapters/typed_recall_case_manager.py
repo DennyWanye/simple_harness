@@ -45,6 +45,7 @@ class CaseManager:
         self.disclosure = self.helpers._disclosure(self.principal.actor_id)
         self.events, self.sources, self.admitted, self.actions = [], [], {}, {}
         self.typed_receipts = {}
+        self.procedure_grants = {}
         self.conversations = {}
         self.base_revision = 1
         self.audit_receipt = None
@@ -69,6 +70,12 @@ class CaseManager:
                         registration.envelope.evidence_id,registration.envelope.envelope_hash):
                     raise ValueError('conversation registration binding differs')
                 return registration
+            async def resolve_procedure_observation_authority(self, ref):
+                grant=owner.procedure_grants[ref.authority_id]
+                if ref!=h.ProcedureObservationAuthorityRef.from_authority(grant):
+                    raise ValueError('procedure authority reference differs')
+                owner.events.append({'call':'resolve_procedure_observation_authority','reference':ref.to_json(),'grant':grant.to_json()})
+                return grant
             async def resolve_typed_observation(self, ref):
                 receipt = owner.typed_receipts[ref.observation_receipt_id]
                 expected = owner.typed_ref(receipt)
@@ -80,7 +87,7 @@ class CaseManager:
         self.authority = Authority()
         audit, self.audit_ref = self.cases.audit_authority(self.principal, self.actual_now)
         kwargs = dict(evidence_authority=self.authority, memory_action_authority=self.authority,
-            conversation_evidence_authority=self.authority,
+            conversation_evidence_authority=self.authority, procedure_observation_authority=self.authority,
             audit_access_authority=audit, classification_policy=m.InformationClassificationPolicy(
                 policy_id='typed-recall-case-policy', policy_version='1', authority_ref='host-case-policy',
                 required_privacy_class=self.privacy, required_information_attributes=self.attributes))

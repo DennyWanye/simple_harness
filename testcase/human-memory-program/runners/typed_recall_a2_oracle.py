@@ -244,6 +244,8 @@ def assess_cell(fixture, cell, baseline=None):
     name, observed = cell["cell_id"], cell["observations"]
     if cell["status"] != "OBSERVED":
         return {"status": cell["status"], "reason": cell["reason"], "business_assertions": []}
+    if "applicability_cell" in observed:
+        return assess_applicability(fixture,cell)
     if "context_use_cell" in observed:
         return assess_context_use(fixture,cell)
     if "short_recipe" in observed:
@@ -1026,3 +1028,62 @@ def check_context_use_bundle(bundle):
                 or not request['requested_at']<=receipt['authorized_at']<receipt['expires_at']
                 or receipt['expires_at']>result['authority_expires_at']):
             raise ValueError('current-use receipt request/hash/time binding differs')
+
+
+def assess_applicability(fixture,cell):
+    o=cell['observations'];checks=[]
+    try:
+        if o.get('exception'):raise ValueError('public applicability '+o['phase']+':'+o['exception']['reason'])
+        raw=next(r['source_record'] for r in fixture['minimal_projection_oracle'] if r['memory_type']=='procedure')
+        payload={k:raw[k] for k in ('name','applicability','steps','effective_risk')}
+        source={'memory_type':'procedure','name':raw['name'],'applicability':['git@2'],'steps':raw['steps'],'proposed_risk_level':'low'}
+        check_seed_authority(o,{'seed':{'memory_type':'procedure','payload':payload}},source,check_recall_refs=False)
+        seed=o['sources'][0]['receipt']['operations'][0];event=o['observation'];grant=event['grant'];intent=grant['intent']
+        schema={'type':'object','properties':{},'additionalProperties':False}
+        app={'tool_id':'git','environment':'fixture-macos','tool_version':'2','input_schema_hash':hash_json(schema),'fingerprint_version':2}
+        fingerprint=sdk_domain_hash('simple-harness/procedure-applicability/v2',app)
+        if (intent['applicability']!=app or intent['applicability_fingerprint']!=fingerprint
+                or intent['target_memory_id']!=seed['memory_id'] or intent['target_revision']!=1
+                or intent['kind']!='applicability_snapshot' or intent['transition_from']!='active' or intent['transition_to']!='active'
+                or intent['terminal_receipt_id'] is not None or intent['terminal_receipt_hash'] is not None
+                or intent['outcome'] is not None or intent['attributable'] or intent['risk_level']!='low' or intent['hazard']!='none'):
+            raise ValueError('applicability snapshot target/input/transition differs')
+        check_admitted_span(o,{'seed':{'payload':app,'epistemic':'observed_behavior'}},intent['evidence_span'],
+            'applicability-evidence','Fixture applicability snapshot: ')
+        intent_hash=sdk_domain_hash('simple-harness/procedure-observation-intent/v1',intent)
+        replay=sdk_domain_hash('simple-harness/procedure-observation-replay-identity/v1',dict(
+            authority_id=grant['authority_id'],intent_hash=intent_hash,nonce=grant['nonce'],issuer_ref=grant['issuer_ref']))
+        grant_hash=sdk_domain_hash('simple-harness/procedure-observation-authority/v1',grant)
+        ref=event['reference'];resolved=next(e for e in o['calls'] if e['call']=='resolve_procedure_observation_authority')
+        if (grant['intent_hash']!=intent_hash or grant['replay_identity']!=replay or event['authority_hash']!=grant_hash
+                or ref!={'schema_version':1,'authority_id':grant['authority_id'],'authority_hash':grant_hash,
+                    'issuer_ref':grant['issuer_ref'],'replay_identity':replay} or resolved['reference']!=ref or resolved['grant']!=grant
+                or not grant['issued_at']<=o['recall']['now']<grant['expires_at']):
+            raise ValueError('procedure authority/ref/time binding differs')
+        result=event['result'];registration=o['registration']['registration'];metadata=registration['metadata']
+        if (event['result_hash']!=sdk_domain_hash('simple-harness-memory/procedure-observation-result/v1',result)
+                or result['memory_id']!=seed['memory_id'] or result['base_revision']!=1 or result['committed_revision']!=2
+                or result['lifecycle_state']!='active' or result['independent_successes']!=0
+                or result['reason_code']!='procedure_applicability_bound'
+                or intent['task_scope_id']!=metadata['task_scope_id'] or intent['run_id']!=metadata['run_id']
+                or intent['evidence_span']['evidence_id']!=metadata['evidence_id']):
+            raise ValueError('actual applicability result/task origin differs')
+        recall=o['recall'];value=recall['execution'];check_execution_wire(value,recall['context'],recall['plan'])
+        suffix=cell['cell_id'].rsplit('-',1)[1]
+        expected=[] if suffix=='absent' else [fingerprint if suffix=='match' else sdk_domain_hash('simple-harness/procedure-applicability/v2',{**app,'tool_version':'3'})]
+        if recall['context']['procedure_applicability_fingerprints']!=expected:
+            raise ValueError('recall did not execute the independently fixed applicability input')
+        items=value['result']['items']
+        if len(items)!=int(suffix=='match') or value['result']['confirmation_groups'] or value['decision']['confirmation_groups']:
+            raise ValueError('applicability inclusion/exclusion differs')
+        if items and (items[0]['selected_item']['source_ref']!=seed['memory_id'] or items[0]['selected_item']['source_revision']!=2
+                or items[0]['public_payload']!={'name':raw['name'],'applicability':['git@2'],'steps':raw['steps'],'effective_risk':'low'}):
+            raise ValueError('bound procedure public projection/head differs')
+        replay=o['replay']
+        if replay['result']!=value['result'] or replay['decision']!=value['decision'] or not replay['replayed'] or replay['candidate_query_count']!=0:
+            raise ValueError('bound procedure recall exact replay differs')
+        checks=['admitted typed TOOL snapshot and public observation authority bind revision2 without success claims',
+            'actual matching/mismatching/absent public fingerprints gate recall','independent public projection/current head and exact replay']
+        return dict(status='BLOCKED',reason='PROCEDURE_ORIGINAL_LITERAL_FINGERPRINT_AND_FULL_REGISTRATION_ORACLE_PENDING',business_assertions=checks)
+    except (ValueError,KeyError,TypeError,IndexError,StopIteration) as exc:
+        return dict(status='FAIL',reason=str(exc),business_assertions=checks)
