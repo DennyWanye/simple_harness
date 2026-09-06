@@ -62,6 +62,9 @@ def verify_added_bound_events(db, added, sdk_run_id, stack):
     assert json.loads(invocations[-1]["detail_json"])["code"] == "context_route_workspace_reuse_requires_new_run"
     terminal = db.execute("SELECT * FROM foreground_terminal_receipts WHERE sdk_run_id=?", (sdk_run_id,)).fetchone()
     assert terminal is not None and terminal["terminal_state"] == "COMPLETED"
+    sdk_terminal = stack.read_run_terminal_evidence(sdk_run_id)
+    assert sdk_terminal is not None and sdk_terminal.run_id == sdk_run_id
+    assert sdk_terminal.state == "completed" and sdk_terminal.event_id == terminal["sdk_event_id"]
     expected = {
         "route:" + route["decision_id"]: ("harness.route_decision", {
             "decision_id": route["decision_id"], "route": route["route"], "origin": route["origin"],
@@ -70,7 +73,7 @@ def verify_added_bound_events(db, added, sdk_run_id, stack):
         }),
         f"{sdk_run_id}:terminal:completed": ("harness.run_terminal", {
             "generation": terminal["generation"], "terminal_state": terminal["terminal_state"],
-            "sdk_terminal_event_hash": terminal["sdk_event_hash"],
+            "sdk_terminal_event_hash": sdk_terminal.event_hash,
         }),
     }
     from simple_harness import thaw_json
@@ -93,6 +96,10 @@ def verify_added_bound_events(db, added, sdk_run_id, stack):
         assert payload["run_id"] == sdk_run_id and "execution:" + payload["event_id"] == row[5]
         assert payload["public_payload"] == public
         assert canonical_hash(payload) == row[6]
+        if kind == "harness.run_terminal":
+            # Host receipt binds the admitted ExecutionEvidence envelope; its
+            # nested SDK event hash is independently read from the public proof.
+            assert terminal["sdk_event_hash"] == row[6]
     db.row_factory = None
 
 
