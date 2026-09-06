@@ -1,5 +1,10 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Host可信披露绑定待源码复核
+
+最后更新：2026-09-06。复用 `simple_harness-corpus-clock`，分支 `feat/host-trusted-disclosure`，基线 `cbf99364`。可信配置→queue→turn/run解析器已写为生产源码候选，schema48及8个契约测试函数待验证；没有运行测试或占用资源槽，未合入主组合。非SELF门、当前输入permit、完整外发及240质量仍未完成。
+[固定源码交接](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
+
 ## 2026-09-06 Host业务clock局部验收完成
 
 最后更新：2026-09-06。`feat/corpus-runtime-clock` / base `b34b32c3`，自有稀疏树 `simple_harness-corpus-clock`，尚未合入主组合。可信clock贯通composition、runtime和公开SDK；默认真实时间，进程内lease独立monotonic。安装候选6项必要契约通过，0.579秒、峰值92256KiB、PGID33180无残留。仅完成本片clock边界；有效seed时间筛选、受众用途公共setup、240质量、Provider/native均不在本次通过范围。

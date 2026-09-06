@@ -54,8 +54,8 @@ def parse_dependencies(value):
 
 
 def current_disclosure(*, run_id, subject, request_id):
-    # Host-selected local-owner task execution, as in the production typed
-    # RecallPlan. The actual request identity is bound to this fresh observation.
+    # Compatibility constructor for persisted pre-v48 unbound turns. Production
+    # consumers must resolve their durable binding through trusted_disclosure.
     return DisclosureContext(run_id, subject, DeliveryRecipient.USER_SELF, subject,
         IntendedAudience.USER_SELF, DisclosurePurpose.TASK_EXECUTION,
         DisclosureSource.AUTHENTICATED_HOST, DisclosureTrust.TRUSTED_AUTHORITY,
@@ -273,6 +273,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
 
 async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, policy_factory):
     """Guard strictly before delegate invocation; typed definite failure only here."""
+    from deskpet.memory.trusted_disclosure import resolve_current_disclosure
     try:
         async with aiosqlite.connect(db_path) as db:
             db.row_factory = aiosqlite.Row
@@ -282,7 +283,7 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
             run, proof = found
             policy = policy_factory(run["subject"])
             allowed = await policy.check_dependencies(db=db, primary_ref=run["primary_conversation_id"],
-                dependencies=proof, disclosure_context=current_disclosure(run_id=sdk_run_id,
+                dependencies=proof, disclosure_context=await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
                     subject=run["subject"], request_id=request.request_id.value))
             if not allowed:
                 raise ValueError("primary_dependencies_not_visible")
