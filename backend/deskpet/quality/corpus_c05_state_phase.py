@@ -7,6 +7,49 @@ from deskpet.quality.corpus_trace import wire
 
 
 STATE_CASES = frozenset({'C05-07', 'C05-08'})
+_C07_HOST = '可信Host当前任务：课程备课，当前scope取实际绑定快照。'
+_C07_USER = '暂时看旧的藏书编目任务，先搜给我确认。'
+
+
+def compile_c05_initial_input(batch, authored):
+    """Resolve the one explicit authored Host/USER split, never arbitrary prose.
+
+The original compiler intentionally leaves C07 unresolved. Its Host half is
+an obligation for real admission/snapshot binding, not text to elevate to SYSTEM.
+Recent messages are never discarded: no C05 supported here declares any.
+"""
+    from deskpet.quality.corpus_trace import digest
+    if authored['recent_messages'] != []:
+        raise ValueError('c05_recent_source_not_implemented')
+    if batch.case_id != 'C05-07':
+        if authored['unresolved_source_text'] is not None or not isinstance(authored['current_user_message'], str):
+            raise ValueError('c05_scalar_input_required')
+        return dict(current_user_message=authored['current_user_message'], host_scope_declaration=None)
+    original = _C07_HOST + '用户：' + _C07_USER
+    if authored['current_user_message'] is not None or authored['unresolved_source_text'] != original:
+        raise ValueError('c05_exact_host_user_input_required')
+    if [(s.label, s.title, s.status) for s in batch.scopes if s.label == 'C'] != [('C', '课程备课', 'active')]:
+        raise ValueError('c05_current_scope_setup_differs')
+    return dict(current_user_message=_C07_USER, host_scope_declaration=dict(
+        source_text_hash=digest(original), expected_title='课程备课', expected_status='active'))
+
+
+def bind_c05_initial_input(compiled, phase):
+    """Record the real setup source which must back the first physical snapshot."""
+    declaration = compiled['host_scope_declaration']
+    if declaration is None:
+        return None
+    state = phase.get('state_contract')
+    if state is None or state['case_id'] != 'C05-07' or phase['status'] != 'CONFIRMED':
+        raise ValueError('c05_host_input_source_unavailable')
+    matches = [a for a in state['archives'] if a['task_scope_id'] == state['initial_scope_ref']]
+    if (len(matches) != 1 or matches[0]['fields'].get('title') != declaration['expected_title']
+            or matches[0]['status'] != declaration['expected_status']):
+        raise ValueError('c05_host_input_source_differs')
+    source = matches[0]
+    return dict(**declaration, task_scope_id=source['task_scope_id'], source_id=source['source_id'],
+        source_hash=source['source_hash'], canonical_revision=source['canonical_revision'],
+        source_kind='actual_context_route_setup_then_owned_initial_admission')
 
 
 def state_contract(batch, archives):

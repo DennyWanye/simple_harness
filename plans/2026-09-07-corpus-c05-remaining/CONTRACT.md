@@ -47,3 +47,13 @@
 - `test_actual_main_active_preview_cannot_switch_before_confirmation`：真实公开 search 后在首轮请求其它 scope；原审批端保留真实 pending 并 `CorpusApprovalBlocked`，不生成用户 deny/allow；0 后续 scoring HTTP/0 f1，Host latest task association 仍原 host_initial C。
 
 受控 HTTP 按实际公开候选身份行动，只检验执行链，**不是 gold 语义选择/自然模型质量**。编译可生成 oracle 文件供父计分，但运行区禁止读取；post-execution review 保持原独立边界。新源码未运行，原失败不覆写；模型服务阻塞独立存在。
+
+## 主首红与输入入口修复（NOT_RUN）
+
+主 `0f3` 首跑07在 main 初始化之前被 `corpus_first_batch_scalar_input_required` 拒绝，1FAIL0.72s，PG87968已空；08与提前选择负控未运行。原日志保留于主 `.local-test-evidence/2026-09-07/corpus-c05-state/r1/tmp/test_actual_main_state_source_0/c05-phase-child.log`。这是正式入口没有消费 compiler 显式 unresolved 结构，非实际 scope/current disclosure 路径的产品红。
+
+已只读核对原编译产物：07 `current_user_message=null`、`recent_messages=[]`；完整原文 `可信Host当前任务：课程备课，当前scope取实际绑定快照。用户：暂时看旧的藏书编目任务，先搜给我确认。` 在 `unresolved_source_text`。compiler 特意不猜分角色；08无此混合字段。
+
+本修只为07增加精确原文 contract，非通用冒号/正则角色拆分：USER部分为原固定子句，单独 S1+queue；Host部分不进USER/SYSTEM，而是要求真实 setup C active/title来源，生成 runner 观察 `authored-input-binding.json`，随后原owned admission→SDK initial receipt→首个 physical snapshot 二次兑现。输入原件不改，source_text_hash用 `corpus_trace.digest(original_string)`（JSON canonical string UTF-8 SHA256），不声称原始文件 hash。其它 unresolved、一切非空C05 recent仍明确拒绝，绝不放行后丢弃。
+
+现3个节点只修07 child的独立期望USER边界并核物理快照/原Host混合句不出站；不增新测试组。交主仅复原红与两项未跑；本树未起测试。18独立WIP已暂存，未混入该入口修复。
