@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C08仅01/06/11/18 retained已接正式shared dispatcher源码，01跳过scalar preseed，旧组/同库抑制及原authority重开确认后才切独立评分Provider；1新实际dispatcher控制已准备NOT_RUN，其他C08仍block，不重复原5helper绿、不计质量PASS。[契约与唯一nodeid](../plans/2026-09-07-corpus-complete-dispatch/C08-DISPATCH.md)。
+
 最后更新：2026-09-07。C05限定04/09/14/20 actualmain setup→独立评分Provider→原固定followup接线及5新控制源码已准备，NOT_RUN；两factory同ignored root、真实setup prefix与current disclosure保留，多个评分Run统计不含fixture。已共用Carver公开pending audit/response关联helper；非空候选False-policy按不可核验拒绝，仍待主统一验证；C08 partial/其它C05未开放，不称20 ready或模型质量。[源码契约与待跑nodeids](../plans/2026-09-07-corpus-complete-dispatch/C05-PHASE.md)。
 
 最后更新：2026-09-07。C01-06/11正式session分派独立源码叶（base61f474e5）：06接真实job→同ID公开REVISE→关闭fixture→main重开，11沿已合可信Context时钟解除旧block。本叶NOT_RUN/待主完整候选验证，不沿用helper绿冒称正式评分通过；C08 partial/C05未接门保持。[契约](../plans/2026-09-07-corpus-complete-dispatch/CONTRACT.md)。

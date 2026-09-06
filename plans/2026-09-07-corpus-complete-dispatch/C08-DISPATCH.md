@@ -1,0 +1,19 @@
+# C08 retained 正式 dispatcher 接线
+
+2026-09-07，source-only，NOT_RUN。只接C08-01/06/11/18；其余C08不开放，包括尚不完整的scalar/派生载体。复用主已固定ca2fd31d和Singer8c238e21，原5retained控制不重跑，不将helper原绿代替新session组合。
+
+`corpus_scoring.prepare_batch`限定四ID；worker再次按精确setup/hash/scenario clock编译。01也完全跳过原scalar preseed，A与retained摘要必须来自本次真实旧USER、同store原job与完整来源。初始current和oracle不交给phasehelper，helper结果不注入评分Context。
+
+registry先唯一RetainedSummaryProvider，经原main一次初始化/foreground/companion barrier；analysis lane关闭。初始化模式只记retained phase NOT_RUN，不建假来源。正常执行才调用`execute_retained_phase`，取得CONFIRMED和setup_complete。helper负责真实旧组及公开trace、关闭loopback/ownedcognitive、同DB临时fixture seed和suppression、关闭fixture及原production authority重开；本session不复制该流程或重建manager契约。
+
+helper成功后复用原`admit_scoring_provider`，仍检查resolver无active旧binding，再单独真实Run发送原current USER。新Run的provider_id必须corpus-real-provider、SDKRun不能等于设置Run、fixture physical attempts必须1；评分统计仅此新Run，设置Run在setup-retained独立留证。外层finally关闭provider与所有原owners，helper拒绝/部分失败不会继续评分。main embedder是否加载明确未观测，不从setup无外部LLM调用推断。
+
+review packet标NOT_EVALUATED_PARTIAL_C08_BATCH，不产生语义PASS；原gold只在dispatch退出后读取。无scalar替换、无回填expected、无新SDK/版本/venv/环境修改。
+
+唯一新控制：
+
+`backend/tests/quality/test_corpus_c08_phase.py::test_actual_dispatcher_retained_phase_then_separate_scoring_request`
+
+新fresh child通过正式prepare_batch+共享run消费C08-01原setup，使用主完整candidate/实际H0710 M619 target，不覆盖生产origin guard。setup唯一loopback真实HTTP，scoring单次受控HTTP；在实际next request断言非system只含原current、旧USER/assistant/地址/完整setup均未泄漏，helper已CONFIRMED且production manager重开。再核独立Run/invocation与仅1评分物理调用、原input bytes不变及ownedcleanup。禁止读oracle/case/raw-source-archive和真实.env、禁止实际加载模型。固定response不是原题语义质量证据。
+
+控制先以真实code/status/stage/error报告失败，再访问phase，避免以KeyError遮盖前置生产异常。全部新增控制由主统一执行；本分支只静态语法/差异检查，无资源进程。

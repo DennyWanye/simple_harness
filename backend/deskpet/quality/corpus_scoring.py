@@ -14,6 +14,10 @@ import sys
 
 from deskpet.quality.corpus_trace import digest, wire
 
+# Deliberate bounded carrier set, not the complete C08 category. The worker
+# compiles and validates each exact setup before creating its runtime.
+C08_RETAINED_CASES = frozenset({'C08-01', 'C08-06', 'C08-11', 'C08-18'})
+
 
 def save(path, value):
     with Path(path).open("x", encoding="utf-8") as handle:
@@ -77,7 +81,8 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     for case_id in case_ids:
         matches = [i for i, row in enumerate(catalog) if row["case_id"] == case_id]
         from deskpet.quality.corpus_c05_session import SUPPORTED_CASES, validate_schedule
-        if len(matches) != 1 or not (case_id.startswith(("C01-", "C07-")) or case_id in SUPPORTED_CASES):
+        if len(matches) != 1 or not (case_id.startswith(("C01-", "C07-"))
+                or case_id in SUPPORTED_CASES or case_id in C08_RETAINED_CASES):
             raise ValueError("corpus_batch_requires_exact_supported_id")
         i = matches[0]
         directory = output / case_id
@@ -105,6 +110,7 @@ def review_packet(directory, exit_code):
     case = load(directory / "case.json")
     no_match_batch = case["case_id"].startswith("C07-")
     task_batch = case["case_id"].startswith("C05-")
+    suppressed_batch = case["case_id"].startswith("C08-")
     trace = result.get("trace")
     # C05 has several scoring Runs. Preserve their separate SDK trace hashes;
     # aggregate only these statistics, never fabricate a multi-Run SDK receipt.
@@ -148,10 +154,12 @@ def review_packet(directory, exit_code):
         review_requirements=["核原gold每项语义和禁止行为",
             "核干扰库非空及零查询/零披露/后台gate，06和14另核实际最近历史" if no_match_batch
             else "核实际候选披露/首轮无正式授权、原固定followup及最终exact resume；错候选不救场" if task_batch
+            else "核原USER及真实派生摘要同源、抑制前非空与当前拒绝、评分物理请求无旧内容" if suppressed_batch
             else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
         quality_thresholds_status="NOT_EVALUATED_PARTIAL_C07_BATCH" if no_match_batch
             else "NOT_EVALUATED_PARTIAL_C05_BATCH" if task_batch
+            else "NOT_EVALUATED_PARTIAL_C08_BATCH" if suppressed_batch
             else "NOT_EVALUATED_PARTIAL_C01_BATCH")
     if task_batch:
         packet["provider_statistics_scope"] = "all_scoring_runs_setup_excluded"
