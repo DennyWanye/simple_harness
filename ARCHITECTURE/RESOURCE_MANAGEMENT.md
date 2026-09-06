@@ -8,3 +8,7 @@
 本模块描述开发测试进程生命周期，不代表WeMM实际权重释放或原生应用泄漏修复。
 
 2026-09-06：最终145baed3独审限定ACCEPT并已FF组合；同组退出时序、spawn signal归属、probe异常升级清理三个缺口均以真实反例关闭。后续所有本任务测试调用此入口的默认共享锁。
+
+## 2026-09-06 磁盘压力处理
+
+只读检查显示本机磁盘可用929MiB，已影响新worktree创建。确认无cargo/rustc/tauri构建进程，取得默认跨树资源锁后，仅删除本项目saved checkout的 `tauri-app/src-tauri/target/debug/incremental` 可再生缓存；实际可用空间增加1136MiB至2064MiB。旧测试证据、SDK wheels、源代码、用户应用和原生bundle均保留。此操作只证明磁盘回收，不证明RAM或模型权重释放；后续继续串行有界测试，避免重复创建venv/全量worktree与模型实例。
