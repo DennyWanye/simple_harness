@@ -1,5 +1,10 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 Context与source oracle已组合复验
+
+最后更新：2026-09-06。独审后的两个执行器合并固定9bad3a43，两个代码指纹入口均保留；12项必要组合检查通过、进程组32908已退出。原source正式10PASS与Context正式4PASS/2BLOCKED按各自固定源及Run保留，不拼成新401全量；Harness凭据消费/continuation仍需实现，原SDK pin与阈值未改。详见[组合结果](../plans/2026-09-06-context-use-full/COMBINED.md)。
+
+
 最后更新：2026-09-06（context-use 测试工具叶子）
 
 ## 2026-09-06 原 current-use 六格双 item 执行
