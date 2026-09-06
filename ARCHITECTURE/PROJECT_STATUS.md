@@ -3,7 +3,7 @@
 C02-19/C03-20完整fixture prepare新入口默认先公开seed再实际drain，constructor绑定authority；
 跨进程候选JSON在SDK finalize前保存，重开必须SDK验证，不把文件当成功ledger。
 固定182a5aa6两新控2PASS/7.30s：SDK提交后lostACK/提交前进程退出，第二解释器
-首job不重执行、第三零executor、错application重hash拒绝。PG34647清空，待Dirac最终限定审；
+首job不重执行、第三零executor、错application重hash拒绝。PG34647清空，产品182a5aa6/报告01435a07已获Dirac最终限定ACCEPT；
 H078/M618 installed、确定性source，非H079/native/240质量，旧20/旧3绿未重跑。
 [接线与实测](../plans/2026-09-06-corpus-public-seed/INFERENCE-PREPARE-RECOVERY.md)。
 

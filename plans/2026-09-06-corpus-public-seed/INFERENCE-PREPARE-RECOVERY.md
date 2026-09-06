@@ -1,6 +1,6 @@
 # C02/C03 prepare 与跨进程恢复后继
 
-2026-09-06，固定182a5aa6新2控已实际通过，待Dirac最终限定审。保留已审叶 bfd56d99；同树后继分支
+2026-09-06，固定182a5aa6新2控已实际通过；Dirac对产品182a5aa6/报告01435a07最终限定ACCEPT。保留已审叶 bfd56d99；同树后继分支
 `feat/corpus-inference-prepare-recovery`。6999ec81合入主固定a6b915c7以消费已审C02入口，
 原untracked参考副本移入ignored `corpus-public-seed/preserved-c02-references/`，未作为新代码提交。
 主r18之后的native占槽期间仅源码，不运行子进程/模型/测试。
@@ -74,3 +74,6 @@ primary-m0615 Python，ignored `corpus-public-seed/run_batch.py`，目标仅
 本叶支持受审两个actualinference setup的完整prepare与本地跨进程checkpoint恢复；
 不宣称通用并发worker/评分两轮执行/其余220 setup/240质量。完整评分manager使用此新入口，
 低层seed-only helper仍不自动保证drain。
+
+Dirac最终只读核两raw SHA、跨进程原receipt与成员/lineage绑定，无新增确定P0/P1；
+仅C02-19/C03-20独占fixture prepare与恢复，可按此范围合入，不外推H079组合/240。
