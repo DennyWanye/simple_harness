@@ -39,10 +39,12 @@ async def test_actual_main_recent_phase_then_separate_scoring_run(tmp_path, monk
     monkeypatch.setattr(Path, 'read_text', isolated_read)
 
     from deskpet.memory.wemm_embedder import WeMMEmbedder
-    loads = []
+    blocked_loads = []
     def forbid_model(self):
-        loads.append(True)
-        raise AssertionError('no local model allowed for C07 phase control')
+        # Committed-turn ingestion may attempt optional embedding and degrade.
+        # Block actual model loading; an attempted load is not a loaded model.
+        blocked_loads.append(self)
+        raise RuntimeError('c07_control_optional_embedding_unavailable')
     monkeypatch.setattr(WeMMEmbedder, '_load_sync', forbid_model)
     local, scoring = [], []
     start = RecentMessagesProvider.start
@@ -80,7 +82,8 @@ async def test_actual_main_recent_phase_then_separate_scoring_run(tmp_path, monk
     result = json.loads(read_text(directory / 'execution.json'))
     assert code == 0, result
     assert result['execution_status'] == 'COMPLETED' and result['cleanup_errors'] == []
-    assert not loads and len(scoring) == 1
+    assert all(embedder._model is None for embedder in blocked_loads)
+    assert len(scoring) == 1
     assert len(local) == 1 and local[0]._server is None and not local[0]._tasks
     assert (directory / 'input.json').read_bytes() == original_input
     phase = result['setup_phase']
