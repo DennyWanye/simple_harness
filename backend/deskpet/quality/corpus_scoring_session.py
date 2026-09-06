@@ -158,8 +158,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     scenario_time = datetime.fromisoformat(authored["scenario_clock"]["instant"]).timestamp()
     clock = lambda: scenario_time
 
-    import main
     from deskpet.memory.schema import dispatch_startup_epoch
+    # Fresh epoch must be established before main's module-level legacy openers.
+    state_path = directory / "runtime" / "userdata" / "data" / "state.db"
+    epoch = await dispatch_startup_epoch(state_path, approved_fresh_lane=True)
+    import main
     from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory
     from deskpet.sdk_adapters.context_route import local_owner_auth
     from deskpet.quality.corpus_c01 import compile_setup
@@ -179,9 +182,19 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     service = None
     try:
         outcome["stage"] = "host_schema_session"
-        epoch = await dispatch_startup_epoch(main._state_db_path, approved_fresh_lane=True)
+        if main._state_db_path.resolve() != state_path.resolve():
+            raise ValueError("corpus_main_state_path_differs")
+        from deskpet.memory.schema import StartupCompositionMode
+        if epoch.composition_mode is not StartupCompositionMode.HUMAN:
+            raise ValueError("corpus_requires_actual_human_epoch")
+        # Same owning initializer used by actual main lifespan, no fake manager.
+        await main._initialize_product_memory()
+        embedder = main.service_context.get("embedder")
         await main._session_db.initialize()
         outcome["stage"] = "process_provider_registry"
+        from llm.resolution import ProviderRoutingReadiness
+        readiness = ProviderRoutingReadiness()
+        main.service_context.register("provider_routing_readiness", readiness)
         main._provider_registry = LLMProviderRegistry(main._CONFIG_PATH)
         if main._provider_registry.list_providers():
             raise ValueError("corpus_requires_empty_isolated_provider_registry")
@@ -192,10 +205,12 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             (str(entry["incarnation_id"]), int(entry["config_revision"]))
             for entry in main._provider_registry.list_providers()},
             registry_digest=main._provider_registry.snapshot_digest())
+        readiness.mark_ready()
         outcome["stage"] = "workflow_capability_growth"
         workflow = await build_workflow_service(main._paths.user_data_dir(), activate=False,
             session_delivery_state_reader=main._session_db.get_session_delivery_state)
         main.service_context.register("workflow_service", workflow)
+        main._workflow_service = workflow
         from deskpet.retrieval.runtime import build_search_gateway, set_default_gateway
         gateway = build_search_gateway(main.config)
         set_default_gateway(gateway)
@@ -205,6 +220,23 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
 
         outcome["stage"] = "public_setup"
         auth = local_owner_auth()
+        # Same complete Host factory as main lifespan; context_route resolves
+        # this registry entry later, rather than the local facade variable.
+        async def suppression(candidate, purpose):
+            actual = main.service_context.get("human_memory_v7_runtime")
+            manager = await actual.manager()
+            return await manager.backend.resolve_suppression(candidate, purpose,
+                principal=actual.principal())
+        from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
+        factory = HumanMemoryHostServiceFactory(main._state_db_path, epoch,
+            settled_run_reader=lambda run_id, **kwargs: main._sdk_runtime_stack.read_settled_primary_run(run_id, **kwargs),
+            suppression_resolver=suppression,
+            history_visibility_checker=main._primary_history_visibility_checker,
+            run_binding_reader=lambda run_id: main._sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
+            decision_ingress_getter=lambda: main._sdk_ingress,
+            cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
+            display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
+        main.service_context.register("human_memory_host_service_factory", factory)
         batch = compile_setup(case_id, setup["setup_source_text"],
             scenario_clock=authored["scenario_clock"]["instant"])
         delivery = SetupFixtureDeliveryAuthority()
@@ -233,13 +265,13 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         await main._activate_human_memory_host_ports(epoch)
         runtime = main.service_context.get("human_memory_foreground_runtime_execution_authority")
         cognitive = main.service_context.get("human_memory_v7_runtime")
-        factory = HumanMemoryHostServiceFactory(main._state_db_path, epoch,
-            settled_run_reader=main._sdk_runtime_stack.read_settled_primary_run,
-            cognitive_runtime_getter=lambda: cognitive)
+        if runtime is None or cognitive is None:
+            raise ValueError("corpus_actual_foreground_authority_missing")
         service = factory.bind(auth)
         if (await service.queue_snapshot())["turns"]:
             raise ValueError("corpus_scoring_history_not_empty")
         if initialize_only:
+            outcome["embedder_status"] = embedder.status_snapshot()
             outcome["execution_status"] = "INITIALIZED_NOT_EXECUTED"
             raise _InitializationComplete()
         worker = MemoryIngestionOutboxWorker(main._state_db_path, cognitive.manager,
@@ -291,6 +323,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             (main._sdk_runtime_stack, "close", {}),
             (main.service_context.get("human_memory_v7_runtime"), "close", {}),
             (main._session_db, "close", {}),
+            # SessionDB is the sole owning closer of the product Memory manager.
+            (main.service_context.get("capability_center"), "shutdown", {}),
+            (main.service_context.get("capability_platform"), "shutdown", {}),
         )
         if main._sdk_ingress is not None:
             main._sdk_ingress.close()

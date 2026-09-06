@@ -53,6 +53,8 @@ async def test_actual_main_initialize_close_and_original_input_isolation(tmp_pat
     assert result["cleanup_errors"] == []
     assert result["setup_receipt"]["outcome"] == "applied"
     assert result["trace"] is None
+    assert result["embedder_status"]["state"] == "cold"
+    assert result["embedder_status"]["warmup_state"] == "not_started"
     assert not network
     assert (directory / "input.json").read_bytes() == original_input
     assert set(result["setup_receipt"]["labels"]) == {"A"}

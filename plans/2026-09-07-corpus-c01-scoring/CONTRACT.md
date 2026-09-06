@@ -49,3 +49,12 @@ wholeFAILED 的精确失败来源/归因仍是原需求未完成项，**没有�
 Dirac追加计数问题同批修正：Provider/audit读取失败不能把默认空列表计成确定0。完整总数仅在公开Provider/audit观测完整时给出，否则为null，并单独保留已见handoff下界及unknown样例数；同一真实失败Run上注入reader拒绝验证，不新增Provider请求。已核验的投影会保留，后续页故障不擦除已见下界。
 
 无网络main初始化控制使用 `--initialize-only` 同一实际组装/清理路径；不读主.env，用不可用本地endpoint和明确无效测试key，网络connect/http send额外断言0。原C01-10经冻结compiler准备后，故意替换**测试产物内**oracle副本并禁止worker读取，原MD不改；必须实际APPLIED、生产authority重新初始化、空前台历史及关闭无错误。此模式从未enqueue评分Turn，不是质量执行。复用已安装M619，临时vendor链接结束恢复，不改site-packages/原wheel，不重扫制品全成员。
+
+## 首跑实际结果与两红修复（后继未跑）
+
+- `trace-r1`：1PASS/1FAIL，PG61549、2.180秒、峰177760KiB、remaining=[]。FAILED参数（包括不完整观测unknown计数）通过，不重跑。NONTERMINAL失败不是未等admission：已等到真实本地adapter进入invoke；SDK提交handoff在前，但projection receipt在settlement才产生。后继改用既有公开 `list_incomplete_provider_invocations`，逐项按run精确公共回读，并与audit核对；不SQL、不猜ID、不sleep。
+- `init-r1`：FAIL，PG61656、4.770秒、峰426112KiB、remaining=[]。实际factory报 `SDK Runtime requires the Memory SDK manager`；fixture已真实APPLIED，但缺原main拥有的旧Memory manager，不能判初始化成功。原日志完整保留。
+
+一次对照main原启动/关闭链后，后继将原lifespan的Memory创建块提取为 `_initialize_product_memory`，原lifespan与runner共用同一入口及全部原参数；SessionDB唯一拥有并关闭该manager，不重复close。预开库之前先public fresh epoch；真实provider readiness、完整Host factory（context_route延迟从registry取）、capability/growth/context/foreground与SDK slots均注册。停止借用方后关闭Session、capability center/platform及Workflow UoW。WeMM只构造同一惰性实例，控制要求实际状态cold/not_started，不warmup/encode。
+
+后继仅准备重跑NONTERMINAL和main初始化红2；本段源码修复本身不是绿，首C01真实评分仍0。raw索引为本树 `.local-test-evidence/2026-09-07/corpus-c01-controls/{trace-r1,init-r1}/`；临时vendor链接已还原。

@@ -25,6 +25,14 @@ def digest(value):
         separators=(",", ":"), allow_nan=False).encode()).hexdigest()
 
 
+def _provider_wire(invocation):
+    return {key: wire(getattr(invocation, key)) for key in (
+        "invocation_id", "request_id", "state", "request_fingerprint",
+        "request_json", "response_json", "usage_json", "error_code",
+        "claimed_at", "handed_off_at", "settled_at", "version",
+        "handoff_attempt", "rehandoff_count")}
+
+
 def _read_providers(uow, run_id, retained):
     from simple_harness.execution.audit import audit_hash
     from simple_harness.contracts import thaw_json
@@ -47,18 +55,25 @@ def _read_providers(uow, run_id, retained):
             if receipt.invocation_version == invocation.version:
                 # Explicit allowlist excludes credential resolvers, HTTP headers,
                 # exception strings and model-hidden reasoning continuations.
-                providers[receipt.invocation_id] = {
-                    key: wire(getattr(invocation, key)) for key in (
-                        "invocation_id", "request_id", "state", "request_fingerprint",
-                        "request_json", "response_json", "usage_json", "error_code",
-                        "claimed_at", "handed_off_at", "settled_at", "version",
-                        "handoff_attempt", "rehandoff_count",
-                    )}
+                providers[receipt.invocation_id] = _provider_wire(invocation)
                 retained[:] = providers.values()
         if len(receipts) < 256:
             break
     else:
         raise ValueError("corpus_provider_projection_limit")
+    # Projection receipts are settlement-oriented. The existing public reader
+    # supplies genuine claimed/handed_off/unknown attempts before terminal.
+    incomplete = uow.list_incomplete_provider_invocations()
+    if len(incomplete) > 256:
+        raise ValueError("corpus_incomplete_provider_limit")
+    for invocation in incomplete:
+        if invocation.run_id.value != run_id:
+            continue
+        current = uow.read_provider_invocation(invocation.invocation_id)
+        if current != invocation:
+            raise ValueError("corpus_incomplete_provider_changed_during_observation")
+        providers[invocation.invocation_id] = _provider_wire(invocation)
+        retained[:] = providers.values()
     return list(providers.values())
 
 
