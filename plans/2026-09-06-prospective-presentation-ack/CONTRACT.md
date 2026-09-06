@@ -134,3 +134,12 @@ No SDK schema relaxation. Factory retry remains required.
   terminal rollback/recovery semantics. Five Context route exposure and derived
   history-source inheritance remain explicit open verification/product boundaries.
 - Main native PG89400 owns the slot; this preparation starts no test process.
+
+3b6ef8de pre-review fixture tightening (still NOT_RUN): real runtime control uses
+`after_enqueue + drain`, never manually invokes a competing `_drive_once`.
+Late-forget first passes the same real physical guard with the same SDK handoff,
+then public suppression changes only current Memory; the second check must reject
+with exact cause `s5c_occurrence_current_read_changed`, FAILED/zero HTTP alone is
+insufficient. Positive now also closes/reopens public Memory and full SDK/Host
+runtime after ACK, drains the empty queue and requires original receipt/no sends.
+This adds post-ACK recovery to the previous pre-ACK third-Run rebuild assertion.

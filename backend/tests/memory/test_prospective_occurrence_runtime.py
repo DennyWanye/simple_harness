@@ -53,7 +53,7 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
 
     import httpx
     from deskpet.sdk_adapters.provider import ProductProviderAdapter
-    from deskpet.sdk_adapters.prospective_request_guard import ProspectiveRequestGuard
+    from deskpet.sdk_adapters.prospective_request_guard import ProspectiveRequestGuard, ProspectiveRequestRejected
     from tests.sdk_adapters.test_product_host_ports import Registry
     sends=[]
     controls=SimpleNamespace(turn=0,ack_sent=False)
@@ -78,18 +78,29 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
     provider=ProductProviderAdapter(Registry('fixture-secret'),provider_id='relay',client=client,
         price_resolver=lambda *_:(1,1,'fixture-prices'))
     guarded=[]
+    late_denials=[]
+    pre_forget_passed=[]
     async def guard(request):
         current=await queue.current_snapshot(principal.actor_id)
         guarded.append((current.sdk_run_id,request.request_id.value))
         assert 'prospective_ack' in {tool.name for tool in request.tools}
+        actual_guard=ProspectiveRequestGuard(sdk_run_id=current.sdk_run_id,coordinator=coordinator,
+            read_provider_context_use=stack.read_provider_context_use)
         if late_forget:
+            # Prove the same actual SDK handoff/group reaches the current-source
+            # gate before changing only public Memory suppression.
+            await actual_guard(request)
+            pre_forget_passed.append(request.request_id.value)
             import simple_harness_memory as memory
             entry=(await w.manager.read_occurrence_inbox(principal=principal)).entries[0]
             await w.manager.suppress(principal=principal,request=memory.SuppressionRequest(
                 'a7-late-forget',principal.actor_id,memory.SuppressionScopeKind.MEMORY,
                 entry.memory_id,'user_forget',w.clock[0]))
-        await ProspectiveRequestGuard(sdk_run_id=current.sdk_run_id,coordinator=coordinator,
-            read_provider_context_use=stack.read_provider_context_use)(request)
+        try:
+            await actual_guard(request)
+        except ProspectiveRequestRejected as error:
+            late_denials.append(str(error.__cause__))
+            raise
     provider._pre_invoke_guard=guard
     # The bounded installed launcher supplies the exact reviewed identity to
     # main's candidate builder; its real verifier checks bytes/version/origin.
@@ -104,12 +115,17 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
                     candidate_identity=main.build_candidate_identity())
             controls.turn=turn
             await service.enqueue_turn(QueueTurnRequest(None,f'a7-real-{turn}',f'Actual user turn {turn}'))
-            assert await asyncio.wait_for(runtime._drive_once(),20)
+            await runtime.after_enqueue(subject=principal.actor_id)
+            await asyncio.wait_for(runtime.drain(),20)
             if late_forget:
                 assert len(guarded)==1 and sends==[]
                 actual=stack.read_run_terminal_evidence(guarded[0][0])
                 assert actual.state=='failed'
-                assert not await runtime._drive_once()
+                assert pre_forget_passed==[guarded[0][1]]
+                assert late_denials==['s5c_occurrence_current_read_changed']
+                assert runtime.last_error is None
+                await runtime.after_enqueue(subject=principal.actor_id)
+                await asyncio.wait_for(runtime.drain(),20)
                 assert len(guarded)==1 and sends==[]
                 async with store._transaction() as db:
                     assert (await (await db.execute('SELECT COUNT(*) FROM occurrence_presented')).fetchone())[0]==0
@@ -136,6 +152,22 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
         receipt=await coordinator.ack(sdk_run_id=ack['sdk_run_id'],
             occurrence_key=json.loads(ack['inbox_json'])['entry']['occurrence_key'])
         assert receipt['state']=='acknowledged' and len(sends)==before
+        await runtime.close();await stack.close();runtime=stack=None
+        await w.manager.close();await w.open()
+        coordinator=ProspectiveOccurrenceCoordinator(store=S5cStore(state,principal),
+            read_current=PublicOccurrenceCurrentReader(store=S5cStore(state,principal),
+                runtime_getter=lambda:current_runtime),clock=lambda:w.clock[0])
+        runtime,stack,queue=await build(tmp_path,state,provider,visibility_memory=visibility,
+            occurrence_coordinator=coordinator,
+            extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
+            candidate_identity=main.build_candidate_identity())
+        await runtime.after_enqueue(subject=principal.actor_id)
+        await asyncio.wait_for(runtime.drain(),20)
+        assert runtime.last_error is None and len(sends)==before
+        assert await coordinator.ack(sdk_run_id=ack['sdk_run_id'],
+            occurrence_key=receipt['occurrence_key'])==receipt
+        assert len(sends)==before
+
     finally:
         if runtime is not None:await runtime.close()
         if stack is not None:await stack.close()
