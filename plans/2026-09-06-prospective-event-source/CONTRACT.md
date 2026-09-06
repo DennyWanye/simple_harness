@@ -77,3 +77,28 @@ A8 keeps only the first one-shot occurrence; recurrence remains backlog.
 The first missing production piece is the publisher confirmation producer, not
 an SDK EVENT_OCCURRED DTO or a `ready=False` scheduler wrapper. No host.test event,
 LLM inference, user-data mutation, external publish or models were run here.
+
+## Independent source challenge (Dirac, 2026-09-06)
+
+The targeted inventory found no overlooked concrete project-release confirmation
+producer. This is a source-gap conclusion, not implementation acceptance.
+
+- Event registration must bind stable project identity, publisher/destination
+  identity and the exact configuration revision. Rename/rebind/destination changes
+  cannot silently move an existing reminder to a new publication domain.
+- First-event ordering must be explicit. Proposed minimal semantics: the first
+  confirmed publication causally after the accepted registration. Bind an actual
+  registration cut and publication confirmation ordering; do not compare arbitrary
+  caller timestamps or reuse historical success for a newly registered reminder.
+  Replay of an already consumed event for that SAME registration remains allowed.
+  A publisher lacking a provable registration/confirmation ordering cannot claim
+  this condition matched.
+- Event observations use their own versioned commitment domain; old time
+  observations and hashes are unchanged. Unknown publication reconciles the same
+  operation and does not trigger another publish.
+
+The concrete publication target/protocol must be selected by the main product
+workstream within the original plan. This leaf does not assume authorization to
+build a general publishing platform or treat local catalog publication as an
+external project release. No additional SDK version is needed for the existing
+EVENT_OCCURRED DTO itself.
