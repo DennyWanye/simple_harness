@@ -1,5 +1,12 @@
 <!-- 最后更新：2026-09-06 -->
 
+C03粗日期02/17与精度/跨年/拒绝新控8PASS，未重跑17普通case；只新增2个setup，
+累计19个C03 setup分批绿，不称quality。公开Episode含原precision/synthetic标记，
+非真实发生日。20actualinference源码准备、未跑且多来源analysis未drain。
+[事实与限制](../plans/2026-09-06-corpus-public-seed/C03-PREPARE.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 C03独立公共prepare普通17条首批17PASS/6.51s：真实SDK job物化、公开ID/type/hash/
 quote来源回读、无foreground history；不是quality/模型PASS。02/17日期与20推断
 仍未跑，分母20保留；PG20474清空，无旧绿重跑。

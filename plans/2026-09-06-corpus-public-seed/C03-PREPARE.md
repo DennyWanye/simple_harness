@@ -66,3 +66,30 @@ are not provided by this CREATE-only leaf. No final-state shortcut.
 - `.local-test-evidence/2026-09-06/corpus-public-seed/c03-normal-r1/command.log` SHA256 `518b11acd869812855d87d9ad12fa2fcdae10721fde9b9f64abd86261df189d9`
 
 - `.local-test-evidence/2026-09-06/corpus-public-seed/c03-normal-r1/resource.json` SHA256 `3f2d696ecd05da2cbd508ee230eb763c2c156d8b2bd52de1f078a80523ba60cf`
+
+
+Date/new controls c03-dates-r1:8 passed,17 deselected in1.10s. Includes only two
+new setup cases02/17 plus six precision/order/rejection controls; not8 new corpus
+cases. PG20615exit0remaining[], peak163760KiB, lock released. Nineteen C03 setup
+cases now passed in separate batches; no quality-model run.
+
+C03-20 source now prepared in corpus_c03_inference (NOT_RUN): exact registered
+case setup and exact actual USER originalpair, complete actual source Run group,
+exact deterministic Assistant fixture output (not arbitrary matching quote),
+MODEL_INFERENCE span uses the real item authority but cognitive item ordinal1
+versus group ordinal2. No expansion of C02 case whitelist. Source group imported
+as exact S1 only into scoring DB; no Run/history/origin copied. Public atomic
+E/S/D creates D candidate/llm_inference/unverified and retains all records.
+
+Important different seam:20 uses public direct atomic mutation over two actual
+cognitive source envelopes from different Run identities. Its analysis jobs are
+explicitly NOT_DRAINED_MULTI_SOURCE, unlike the19 single-source job preparations.
+No fake no-op/drain or runtime-readiness claim. Original authenticated USER
+analysis lineage is retained; future quality runtime must close this pending
+multi-source preparation before enabling normal background analysis. Test has
+actual deterministic Host/SDK source, wrong same-text/different-pair rejection,
+public candidate readback and reopen. It is NOT_RUN at this source checkpoint.
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-dates-r1/command.log` SHA256 `695d1a584defc91c430e832f3c8ead54572b8c758addfd8f7bb5891884d807de`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-dates-r1/resource.json` SHA256 `b660fe60a42531bc8464c8f7c46971159393ee4fab9737c23f384cd03fc125a5`
