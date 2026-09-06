@@ -1,3 +1,12 @@
+<!-- 最后更新：2026-09-06 -->
+
+C02-19/C03-20完整fixture prepare新入口默认先公开seed再实际drain，constructor绑定authority；
+跨进程候选JSON在SDK finalize前保存，重开必须SDK验证，不把文件当成功ledger。
+固定182a5aa6两新控2PASS/7.30s：SDK提交后lostACK/提交前进程退出，第二解释器
+首job不重执行、第三零executor、错application重hash拒绝。PG34647清空，待Dirac最终限定审；
+H078/M618 installed、确定性source，非H079/native/240质量，旧20/旧3绿未重跑。
+[接线与实测](../plans/2026-09-06-corpus-public-seed/INFERENCE-PREPARE-RECOVERY.md)。
+
 2026-09-06：时间提醒生产lane独立源（base7844cf67，产品ec99fa60/7c627fbc）默认注入已有prospective signal authority，并由MemoryAnalysisLane统一拥有独立登记/timer轻量任务及关闭join，避免慢analysis阻止到期；无新schema/SDK制品。4新增控制首批PASS7.15s：真实main activation/publicManager登记到期、重开唯一、已提交丢ACK跨expiry exactreplay、suppression/显式restart、父重复cancel清理（该项受控生命周期fixture）。PG16947正常退出remaining[]/cleanupnull、锁释放；H078M618既有installed+Hostsource，尚未合主/native，r14遗漏提醒FAIL保留待原userdata恢复；F01事件发布/OS通知未增加。[结果与命令](../plans/2026-09-06-prospective-runtime/RESULTS.md)。
 
 2026-09-06 C02-19原setup关联补强：完整原始S1/receipt与实际group USER精确比较，新增真实同文异Run负控1PASS；已有正向/19绿未重跑，PG19055清空。仅setup来源，runtime隔离/240质量不计完成。[结果](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
