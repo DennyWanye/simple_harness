@@ -1,5 +1,13 @@
 <!-- 最后更新：2026-09-06 -->
 
+C01公共seed后继：18个新case完整记录atomic创建/actualID与内容hash回读通过，
+C01-06真实REVISE同ID1→2/持久fixtureauthority/reopen/过期已消费replay及
+MEMORY-only suppression→graph/history不可见通过。旧C01-10/graph未重跑。
+20个C01都有实现路径；不称240质量/模型或runtime已完成，运行前seed/history与
+额外analysis隔离仍待接。无SDK改动。[批次与限制](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 公共seed隔离叶：真实Host S1→Memory public ingestion/mutation/receipt链实现
 C01-10单记录幂等/重开；独立fixture以同atomic plan建claim+Procedure+applies_to，
 公开graph回读2nodes1edge且relation不作node。3unique控制分批绿，原入口红保留。
