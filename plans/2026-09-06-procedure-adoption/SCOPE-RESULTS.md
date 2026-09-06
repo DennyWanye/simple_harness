@@ -54,3 +54,24 @@ Hegel已固定独立SDK e500556、Host c0fbe30a并报告限定ACCEPT；不互相
 | Host/host-r5/resource.json | `09a4419c2b232ca04ef0099c40c275e6df2e53408df3cb591d083769911050c6` |
 | Host/host-r6/command.log | `1e725cac59b380c4fa3b76fcb9e83143c19e5aea7f7331385d168d034ed337f0` |
 | Host/host-r6/resource.json | `e0ea5b511eb92341b9d4a0a11918881bc27b139eb94559ea7a0165419b8d4052` |
+
+## 来源边界四项后续结果（2026-09-06）
+四个唯一新控已经分别通过，不合并为同一源码全量测试。r1载体缺basetemp父目录四setup错误；r2 SDK主体fixture提前source-only注册被拒，两项Host通过。r2 fixture异常曾留下连接线程，约65秒向本批SDK child18495发SIGINT后退出，不能称该SDK批正常成功。r3用真实初始mutation先建立owner并保证异常close：一通过、一错误消息断言失败；r4只重跑后者通过0.29秒。产品拒绝未放宽，普通mutation仍要求full ingestion。
+- boundaries-r1：PG18442 exit1，0.867s，remaining=[]，cleanup=None。
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r1/command.log` SHA256 `e0d7c01c9ea891ac1091ac1d4dd121b1edd51ac7d5947658dcfeebdd5b335757`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r1/resource.json` SHA256 `81c6e3688d9cfae407d697377fbe1be192d97637eea9873943d316826b31f1f8`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r1/source-state.json` SHA256 `aed0bb0e70ba2bb95c1d05ed3ccfb766a48970da17502a5ee7828b61e95aa438`
+- boundaries-r2：PG18487 exit1，66.89s，remaining=[]，cleanup=None。
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r2/command.log` SHA256 `d9e04720f02bb988fddceb3f40827f9521592aeb4907633576936d83dbdf0216`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r2/resource.json` SHA256 `033745f0c3dc783c80bcb87a423f8d53cad384f0298401ce6a231b1b3f668328`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r2/source-state.json` SHA256 `aed0bb0e70ba2bb95c1d05ed3ccfb766a48970da17502a5ee7828b61e95aa438`
+- boundaries-r3：PG19273 exit1，0.861s，remaining=[]，cleanup=None。
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r3/command.log` SHA256 `91bac627a5f3e9bb9055218f97dd08c0fff4cb48d3f9e8a64d5acb45a2bdc6c3`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r3/resource.json` SHA256 `dd860f60621cb4aa84ed46d47eaccb0e8b6c07ac2f4ff384819fe6926611b585`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r3/source-state.json` SHA256 `377061c1a313a98eca737f05d359567553140d77d911b6768d53f312db92a5d9`
+- boundaries-r4：PG19716 exit0，0.663s，remaining=[]，cleanup=None。
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r4/command.log` SHA256 `52277947e96ab119604e108eb04d6532830234545f473d42d01ab753182e1f8b`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r4/resource.json` SHA256 `66eabfd8819b115a27ef9a0e0578b45d62323f0dd43a9fbfafe2cbc0e36e8309`
+  - `.local-test-evidence/2026-09-06/procedure-scope/boundaries-r4/source-state.json` SHA256 `b240171b44ce37bdce8be185fe705fad4be51906d71f90632a3224616e0f807a`
+
+source-state保留实际WIP成员hash；不能把同期尚未执行的恢复路径算作通过。新恢复范围见[RECOVERY.md](RECOVERY.md)。

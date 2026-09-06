@@ -1,3 +1,5 @@
+最后更新：2026-09-06。Procedure来源边界四个唯一新控分批通过，原fixture/载体失败保留；Host5e513eda/SDKdb7ca22三Scope正向已由主转Dirac限定接受。新增过期恢复/旧revision/drift源码尚未验证，未build、未合主、TC-HM04未完成。[后继契约](../plans/2026-09-06-procedure-adoption/RECOVERY.md)。
+
 <!-- Updated 2026-09-06 -->
 
 2026-09-06：Procedure Scope后继源码候选（基线1491309f）已接显式使用、真实route/workspace回读、逐步effect、完整消息组观察及三个SDK public调用审计；新增SDK六项、Host schema/timer/audit三项及实际三Scope一项通过；新四项边界控未跑，未独审接受/合主。显式53组合含原timer/cursor兼容。未消费authority过期恢复、并发旧revision、失败归因与草稿发现链仍未闭合，TC-HM04不能记完成；旧M618/native保持不变。[候选范围](../plans/2026-09-06-procedure-adoption/SCOPE-SOURCE.md)、[源码／原红／结果](../plans/2026-09-06-procedure-adoption/SCOPE-RESULTS.md)。

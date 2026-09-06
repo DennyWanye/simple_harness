@@ -61,13 +61,12 @@ class ProcedureRuntime:
         try:
             current = await self.operation_audit.invoke(await runtime.manager(), "read_procedure_use_target",
                 principal=runtime.principal(), scope=MemoryScope.personal(runtime.principal().actor_id),
-                memory_id=use["memory_id"], revision=use["target_revision"])
+                memory_id=use["memory_id"], revision=use["target_revision"], allow_observation_rebase=True)
         except (MemoryWriterConflict, SuppressionDenied) as error:
             # Expected current-visibility/revision changes are a public deny;
             # corruption and cancellation still propagate as actual failures.
             raise ProcedureUseRejected("procedure_use_target_unavailable") from error
-        if current.source_hash != use["target_source_hash"]:
-            raise ProcedureUseRejected("procedure_use_target_changed")
+        _same_use_definition(use, current)
         await self.store.reserve(authority=self.authorities.resolve(context.run_id),
             registry=self.registry, call=call, context=context)
 
@@ -98,89 +97,141 @@ class ProcedureRuntime:
         return tuple(sorted(values))
 
     async def observe_group(self, group, manager):
-        """Called after registration of the actual whole conversation group.
-
-        The group is re-read from the Host authority, not accepted as a caller's
-        self-reported observation. Independent registration/Scope checks remain
-        inside the SDK as well.
-        """
+        """One bounded recovery per worker visit; original refs always get first replay."""
         runtime = self.runtime_getter()
         actual = await runtime.conversation_evidence_authority.registrations_for_run(group.host_run_id)
         if actual != group:
             raise ProcedureUseRejected("procedure_terminal_group_changed")
-        run_id = group.terminal_source[0].run_id
-        use = await self.store.use_for_run(run_id)
+        use = await self.store.use_for_run(group.terminal_source[0].run_id)
         if use is None:
             return
         async with self._observation_lock:
-            if await self.store.journal(use["use_id"], "applied") is not None:
+            if (await self.store.journal(use["use_id"], "applied") is not None
+                    or await self.store.journal(use["use_id"], "rejected") is not None):
                 return
-            prepared = await self.store.journal(use["use_id"], "prepared")
+            prepared = await self.store.prepared(use["use_id"])
+            verified = await self._step_sources(use, group)
+            if not verified:
+                return
             if prepared is None:
-                reservations = await self.store.reservations(use["use_id"])
-                if len(reservations) != len(use["steps"]):
-                    # A completed Run with fewer actual calls is not a completed
-                    # Procedure, regardless of the assistant's final text.
+                from simple_harness_memory.core.errors import MemoryValidationError
+                try:
+                    prepared = await self._prepare(use, group, verified, manager)
+                except MemoryValidationError as error:
+                    if str(error) != "procedure_observation_source_already_counted":
+                        raise
+                    # This is an actual public prepare rejection; no authority
+                    # was issued and no SDK consumption/receipt is invented.
+                    await self.store.journal(use["use_id"], "rejected", {
+                        "reason": str(error), "host_run_id": group.host_run_id,
+                        "source_registration_hashes": [item.registration_hash for item, _ in verified]})
                     return
-                by_call = {}
-                for registration in group.registrations:
-                    link = registration.metadata.tool_causal_link
-                    if link is not None:
-                        if link.tool_call_id in by_call:
-                            raise ProcedureUseRejected("procedure_duplicate_tool_source")
-                        by_call[link.tool_call_id] = registration
-                verified = []
-                for reservation in reservations:
-                    registration = by_call.get(reservation["call_id"])
-                    if registration is None or registration.metadata.task_scope_id != use["task_scope_id"]:
-                        raise ProcedureUseRejected("procedure_scope_terminal_missing")
-                    source = registration.envelope.sanitized_payload["source"]["tool_terminal_attestation"]["payload"]["source"]
-                    if (source["tool_name"] != reservation["call"]["tool"]
-                            or source["sdk_run_id"] != use["sdk_run_id"]
-                            or source["internal_call_id"] != reservation["call_id"]):
-                        raise ProcedureUseRejected("procedure_actual_terminal_identity_differs")
-                    verified.append((registration, source))
-                if any(source["state"] != "succeeded" for _, source in verified):
-                    return  # A tool error is not proof that the Procedure caused it.
-                registration, source = verified[-1]
-                span = _terminal_span(registration, source["effect_id"])
-                preparation = await self.operation_audit.invoke(manager, "prepare_procedure_observation",
-                    principal=runtime.principal(), scope=MemoryScope.personal(runtime.principal().actor_id),
-                    observation_id=use["use_id"], target_memory_id=use["memory_id"],
-                    target_revision=use["target_revision"], kind=h.ProcedureObservationKind.TERMINAL_OUTCOME,
-                    applicability=h.ProcedureApplicabilityContext.from_json(use["applicability"]),
-                    hazard=h.ProcedureHazard(use["hazard"]), task_scope_id=use["task_scope_id"], evidence_span=span,
-                    terminal_receipt_id=registration.metadata.tool_causal_link.terminal_receipt_id,
-                    terminal_receipt_hash=registration.metadata.tool_causal_link.terminal_receipt_hash,
-                    outcome=h.ProcedureObservationOutcome.SUCCESS, attributable=True,
-                    observed_at=registration.metadata.occurred_at, run_id=run_id,
-                    operation_id="procedure-observe:" + canonical_hash(use["use_id"]),
-                )
-                intent = preparation.intent
-                now = self.store.clock()
-                authority = h.issue_procedure_observation_authority(intent,
-                    authority_id=use["use_id"], issued_at=now, expires_at=now + 300,
-                    nonce=canonical_hash([use["use_id"], intent.intent_hash]), issuer_ref="host-procedure-use/v1")
-                prepared = await self.store.journal(use["use_id"], "prepared", {
-                    "authority": authority.to_json(), "host_run_id": group.host_run_id,
-                    "source_registration_hashes": [
-                        item.registration_hash for item, _ in verified]})
-            authority = h.ProcedureObservationAuthority.from_json(prepared["authority"])
-            reference = h.ProcedureObservationAuthorityRef.from_authority(authority)
-            result = await self.operation_audit.invoke(manager, "record_procedure_observation", principal=runtime.principal(),
-                scope=MemoryScope.personal(runtime.principal().actor_id), reference=reference)
+            reference = h.ProcedureObservationAuthorityRef.from_authority(
+                h.ProcedureObservationAuthority.from_json(prepared["authority"]))
+            from simple_harness_memory.core.errors import MemoryValidationError, MemoryWriterConflict
+            try:
+                result = await self._consume(manager, reference)
+            except (MemoryValidationError, MemoryWriterConflict) as error:
+                if str(error) not in {"procedure_observation_authority_expired",
+                    "procedure_observation_authority_rejected", "procedure_observation_revision_stale",
+                    "procedure_observation_expected_transition_differs"}:
+                    raise
+                # The SDK resolves the exact old ref again and checks durable
+                # non-consumption + genuine expiry/staleness in its transaction.
+                # A generic authority rejection alone never authorizes renewal.
+                try:
+                    prepared = await self._prepare(use, group, verified, manager, previous=reference)
+                except MemoryWriterConflict as recovery_error:
+                    if str(recovery_error) != "procedure_observation_previous_already_consumed":
+                        raise
+                    result = await self._consume(manager, reference)
+                else:
+                    reference = h.ProcedureObservationAuthorityRef.from_authority(
+                        h.ProcedureObservationAuthority.from_json(prepared["authority"]))
+                    result = await self._consume(manager, reference)
             await self.store.journal(use["use_id"], "applied", {"result": result.to_json(),
                 "result_hash": result.result_hash, "reference": reference.to_json()})
+
+    async def _consume(self, manager, reference):
+        runtime = self.runtime_getter()
+        return await self.operation_audit.invoke(manager, "record_procedure_observation",
+            principal=runtime.principal(), scope=MemoryScope.personal(runtime.principal().actor_id), reference=reference)
+
+    async def _step_sources(self, use, group):
+        reservations = await self.store.reservations(use["use_id"])
+        if len(reservations) != len(use["steps"]):
+            return ()
+        by_call = {}
+        for registration in group.registrations:
+            link = registration.metadata.tool_causal_link
+            if link is not None:
+                if link.tool_call_id in by_call:
+                    raise ProcedureUseRejected("procedure_duplicate_tool_source")
+                by_call[link.tool_call_id] = registration
+        verified = []
+        for reservation in reservations:
+            registration = by_call.get(reservation["call_id"])
+            if registration is None or registration.metadata.task_scope_id != use["task_scope_id"]:
+                raise ProcedureUseRejected("procedure_scope_terminal_missing")
+            source = registration.envelope.sanitized_payload["source"]["tool_terminal_attestation"]["payload"]["source"]
+            if (source["tool_name"] != reservation["call"]["tool"] or source["sdk_run_id"] != use["sdk_run_id"]
+                    or source["internal_call_id"] != reservation["call_id"]):
+                raise ProcedureUseRejected("procedure_actual_terminal_identity_differs")
+            verified.append((registration, source))
+        return tuple(verified) if all(source["state"] == "succeeded" for _, source in verified) else ()
+
+    async def _prepare(self, use, group, verified, manager, *, previous=None):
+        runtime = self.runtime_getter()
+        current = await self.operation_audit.invoke(manager, "read_procedure_use_target", principal=runtime.principal(),
+            scope=MemoryScope.personal(runtime.principal().actor_id), memory_id=use["memory_id"],
+            revision=use["target_revision"], allow_observation_rebase=True)
+        _same_use_definition(use, current)
+        registration, source = verified[-1]
+        preparation = await self.operation_audit.invoke(manager, "prepare_procedure_observation",
+            principal=runtime.principal(), scope=MemoryScope.personal(runtime.principal().actor_id),
+            observation_id=use["use_id"], target_memory_id=use["memory_id"], target_revision=use["target_revision"],
+            kind=h.ProcedureObservationKind.TERMINAL_OUTCOME,
+            applicability=h.ProcedureApplicabilityContext.from_json(use["applicability"]),
+            hazard=h.ProcedureHazard(use["hazard"]), task_scope_id=use["task_scope_id"],
+            evidence_span=_terminal_span(registration, source["effect_id"]),
+            terminal_receipt_id=registration.metadata.tool_causal_link.terminal_receipt_id,
+            terminal_receipt_hash=registration.metadata.tool_causal_link.terminal_receipt_hash,
+            outcome=h.ProcedureObservationOutcome.SUCCESS, attributable=True,
+            observed_at=registration.metadata.occurred_at, run_id=use["sdk_run_id"],
+            operation_id="procedure-observe:" + canonical_hash(use["use_id"]),
+            allow_observation_rebase=True, previous_reference=previous)
+        now = self.store.clock()
+        identity = use["use_id"] if previous is None else "procedure-recovery:" + canonical_hash(previous.to_json())
+        authority = h.issue_procedure_observation_authority(preparation.intent,
+            authority_id=identity, issued_at=now, expires_at=now + 300,
+            nonce=canonical_hash([identity, preparation.intent.intent_hash]), issuer_ref="host-procedure-use/v1")
+        body = {"authority": authority.to_json(), "host_run_id": group.host_run_id,
+            "source_registration_hashes": [item.registration_hash for item, _ in verified],
+            "source_revision": use["target_revision"], "preparation": preparation.to_json()}
+        if previous is None:
+            return await self.store.journal(use["use_id"], "prepared", body)
+        body["previous_reference"] = previous.to_json()
+        return await self.store.append_attempt(use["use_id"], previous, body)
 
     async def verify_observation_source(self, use, prepared, authority):
         """Resolver rechecks real persistent sources independently of the grant."""
         intent = authority.intent
         if (intent.run_id != use["sdk_run_id"] or intent.task_scope_id != use["task_scope_id"]
-                or intent.target_memory_id != use["memory_id"] or intent.target_revision != use["target_revision"]
+                or intent.target_memory_id != use["memory_id"] or intent.target_revision < use["target_revision"]
                 or intent.applicability.to_json() != use["applicability"]
                 or intent.hazard.value != use["hazard"] or not intent.attributable
                 or intent.outcome is not h.ProcedureObservationOutcome.SUCCESS):
             raise ProcedureUseRejected("procedure_observation_use_binding_differs")
+        if "preparation" in prepared:
+            from simple_harness_memory.core.procedure_operation_observation import ProcedureOperationObservationV1
+            value = prepared["preparation"]
+            observation = ProcedureOperationObservationV1(**value["operation_observation"])
+            if (prepared.get("source_revision") != use["target_revision"]
+                    or value["intent"] != intent.to_json() or observation.source_hash != intent.intent_hash
+                    or observation.operation != "prepare_procedure_observation"):
+                raise ProcedureUseRejected("procedure_actual_preparation_differs")
+        elif intent.target_revision != use["target_revision"]:
+            raise ProcedureUseRejected("procedure_legacy_source_revision_differs")
         group = await self.runtime_getter().conversation_evidence_authority.registrations_for_run(prepared["host_run_id"])
         reservations = await self.store.reservations(use["use_id"])
         if len(reservations) != len(use["steps"]):
@@ -252,3 +303,14 @@ def _terminal_span(registration, effect_id):
         normalization_version=h.EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
         actor_role=h.EvidenceActorRole.TOOL, provenance=h.EvidenceProvenance.TRUSTED_TOOL,
         support_kind=h.EvidenceSupportKind.CONTEXT_ONLY, typed_observation=None)
+
+
+def _same_use_definition(use, current):
+    from simple_harness_memory.core.lifecycle_results import UNBOUND_PROCEDURE_APPLICABILITY
+    old = use["target"]
+    if (current.revision < use["target_revision"]
+            or any(getattr(current, key) != old[key] for key in ("memory_id", "risk_level", "qualification_epoch"))
+            or list(current.step_hashes) != old["step_hashes"]
+            or current.applicability_fingerprint not in (UNBOUND_PROCEDURE_APPLICABILITY, use["applicability_fingerprint"])
+            or current.bound_hazard not in (None, use["hazard"])):
+        raise ProcedureUseRejected("procedure_use_target_changed")

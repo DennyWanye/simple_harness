@@ -39,9 +39,9 @@ class ProspectiveSignalStore:
             try:
                 # Never create implicit schema or mutate a schema50 installation.
                 version=await (await db.execute('PRAGMA user_version')).fetchone()
-                if version[0] not in (51, 52, 53):
+                if version[0] not in (51, 52, 53, 54):
                     raise TimerConflict('prospective_timer_schema_required')
-                if version[0] == 53:
+                if version[0] in (53, 54):
                     # Explicit successor composition, not acceptance of any
                     # future integer. Include Procedure DDL/registry/fences.
                     validate_s5c_timer_runtime_state_db(self.path)

@@ -90,7 +90,7 @@ class S5cStore:
         validate_s5c_domain_state_db(self.path)
         with sqlite3.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
             self.cursor_table = (
-                "prospective_outbox_cursor_v52" if db.execute("PRAGMA user_version").fetchone() in ((52,), (53,))
+                "prospective_outbox_cursor_v52" if db.execute("PRAGMA user_version").fetchone() in ((52,), (53,), (54,))
                 else "prospective_outbox_cursor"
             )
 

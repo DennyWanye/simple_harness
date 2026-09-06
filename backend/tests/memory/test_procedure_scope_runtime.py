@@ -32,7 +32,7 @@ from tests.sdk_adapters.s5b_effect_gate_harness import bind_scope_root
 STEPS = ("先写入一份记录", "再写入一份备份")
 
 
-async def create_draft(runtime, state):
+async def create_draft(runtime, state, *, risk_level="low"):
     text = "我这次先写入一份记录，再写入一份备份。"
     envelope, receipt = build_foreground_turn_evidence(subject=runtime.principal().actor_id,
         authority_ref="host:procedure-test-owner", delivery_key="procedure-source", text=text)
@@ -42,7 +42,7 @@ async def create_draft(runtime, state):
     # This fixture exercises observation after public DRAFT creation, not the
     # language classifier. Source text does not assert adoption or success.
     operation = compile_operation({"operation_id": "procedure-create", "memory_type": "procedure",
-        "procedure": {"name": "记录及备份", "steps": list(STEPS), "risk_level": "low"}},
+        "procedure": {"name": "记录及备份", "steps": list(STEPS), "risk_level": risk_level}},
         span, item=item, now=time.time())
     operation = replace(operation, lifecycle_state=h.ProcedureLifecycleState.DRAFT)
     manager = await runtime.manager()

@@ -201,14 +201,86 @@ class ProcedureUseStore:
                 await db.rollback()
                 raise
 
+    async def _prepared_tx(self, db, use_id):
+        async with db.execute("SELECT * FROM procedure_observation_journal WHERE use_id=? AND phase='prepared'", (use_id,)) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        value = _checked(row)
+        authority = ProcedureObservationAuthority.from_json(value["authority"])
+        if authority.authority_id != use_id:
+            raise ProcedureUseRejected("procedure_initial_authority_identity_differs")
+        async with db.execute("PRAGMA user_version") as cursor:
+            version = (await cursor.fetchone())[0]
+        if version == 53:
+            return value  # Legacy prepared bytes remain an immutable first attempt.
+        if version != 54:
+            raise ProcedureUseRejected("procedure_recovery_schema_required")
+        async with db.execute("SELECT * FROM procedure_observation_attempts WHERE use_id=? ORDER BY attempt_ordinal LIMIT 129", (use_id,)) as cursor:
+            attempts = await cursor.fetchall()
+        if len(attempts) > 127:
+            raise ProcedureUseRejected("procedure_recovery_attempt_limit")
+        for ordinal, row in enumerate(attempts, 2):
+            previous = ProcedureObservationAuthorityRef.from_authority(authority)
+            value = _checked(row)
+            authority = ProcedureObservationAuthority.from_json(value["authority"])
+            if (row["attempt_ordinal"] != ordinal or row["authority_id"] != authority.authority_id
+                    or row["previous_authority_id"] != previous.authority_id
+                    or row["previous_ref_hash"] != previous.ref_hash
+                    or value.get("previous_reference") != previous.to_json()):
+                raise ProcedureUseRejected("procedure_recovery_attempt_chain_differs")
+        return value
+
+    async def prepared(self, use_id):
+        async with self.connection() as db:
+            await db.execute("BEGIN")
+            return await self._prepared_tx(db, use_id)
+
+    async def append_attempt(self, use_id, previous_reference, body):
+        async with self.connection() as db:
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                await assert_human_memory_ingress_open_tx(db)
+                async with db.execute("PRAGMA user_version") as cursor:
+                    if (await cursor.fetchone())[0] != 54:
+                        raise ProcedureUseRejected("procedure_recovery_schema_required")
+                current = await self._prepared_tx(db, use_id)
+                if current is None:
+                    raise ProcedureUseRejected("procedure_initial_authority_missing")
+                current_ref = ProcedureObservationAuthorityRef.from_authority(
+                    ProcedureObservationAuthority.from_json(current["authority"]))
+                if current_ref != previous_reference:
+                    await db.commit()
+                    return current  # The first durable concurrent recovery wins.
+                async with db.execute("SELECT count(*) FROM procedure_observation_attempts WHERE use_id=?", (use_id,)) as cursor:
+                    ordinal = (await cursor.fetchone())[0] + 2
+                if ordinal > 128:
+                    raise ProcedureUseRejected("procedure_recovery_attempt_limit")
+                authority = ProcedureObservationAuthority.from_json(body["authority"])
+                if body.get("previous_reference") != previous_reference.to_json():
+                    raise ProcedureUseRejected("procedure_recovery_previous_reference_differs")
+                await db.execute("INSERT INTO procedure_observation_attempts VALUES (?,?,?,?,?,?,?)", (
+                    authority.authority_id, use_id, ordinal, previous_reference.authority_id,
+                    previous_reference.ref_hash, canonical_json(body), canonical_hash(body)))
+                await db.commit()
+                return body
+            except BaseException:
+                await db.rollback()
+                raise
+
     async def resolve_procedure_observation_authority(self, reference):
         if type(reference) is not ProcedureObservationAuthorityRef:
             raise TypeError("ProcedureObservationAuthorityRef required")
         async with self.connection() as db:
-            # authority_id is the exact use id, not an opaque scan over bodies.
-            async with db.execute("SELECT * FROM procedure_observation_journal WHERE use_id=? AND phase='prepared'",
-                                  (reference.authority_id,)) as cursor:
+            await db.execute("BEGIN")
+            async with db.execute("SELECT * FROM procedure_observation_journal WHERE use_id=? AND phase='prepared'", (reference.authority_id,)) as cursor:
                 row = await cursor.fetchone()
+            if row is None:
+                async with db.execute("PRAGMA user_version") as cursor:
+                    if (await cursor.fetchone())[0] != 54:
+                        raise ProcedureUseRejected("procedure_observation_source_missing")
+                async with db.execute("SELECT * FROM procedure_observation_attempts WHERE authority_id=?", (reference.authority_id,)) as cursor:
+                    row = await cursor.fetchone()
             if row is None:
                 raise ProcedureUseRejected("procedure_observation_source_missing")
             value = _checked(row)
@@ -217,8 +289,9 @@ class ProcedureUseStore:
                     or ProcedureObservationAuthorityRef.from_authority(authority) != reference):
                 raise ProcedureUseRejected("procedure_observation_reference_differs")
             use = await self._use(db, authority.intent.run_id)
-            if use is None or not callable(self.source_verifier):
+            if use is None or use["use_id"] != row["use_id"] or not callable(self.source_verifier):
                 raise ProcedureUseRejected("procedure_observation_actual_source_verifier_required")
+            await self._prepared_tx(db, use["use_id"])  # Validate the whole persisted attempt chain.
         await self.source_verifier(use, value, authority)
         return authority
 

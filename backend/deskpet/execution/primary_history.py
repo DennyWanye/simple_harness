@@ -129,7 +129,7 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             payload.update(message_source_contract="primary-message-v2",
                            tool_causal_sources=list(tool_causal_sources))
             cursor = await db.execute("PRAGMA user_version")
-            if (await cursor.fetchone())[0] == 53:
+            if (await cursor.fetchone())[0] in (53, 54):
                 from deskpet.memory.primary_message_v3 import CONTRACT, read_scope_sources_tx
                 scopes = await read_scope_sources_tx(db, subject=subject, sdk_run_id=sdk_run_id, facts=tool_causal_sources)
                 payload.update(message_source_contract=CONTRACT, tool_scope_sources=scopes)
