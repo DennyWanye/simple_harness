@@ -60,12 +60,13 @@ async def test_real_input_allowed_ordinary_history_denied_and_observed(env, kind
         assert view.final_audience_disclosure_authorized is False
         assert view.operation_observation.outcome == "input_usable"
         assert view.operation_observation.persistence_status == "host_persistence_unverified"
+        ordinary = await sdk.check_history_visibility(principal=principal, disclosure_context=context, bindings=(binding.evidence,))
+        assert not ordinary.items[0].visible  # unchanged ordinary recipient gate
+        await sdk.close()  # public close drains the asynchronous observability sink
         records = [v for v in sink.events() if v.operation == "check_current_input_visibility"]
         assert len(records) == 1
         assert records[0].attributes["fingerprint"] == view.operation_observation.observation_hash
         assert binding.evidence.envelope.sanitized_payload["text"] not in str(records[0].to_dict())
-        ordinary = await sdk.check_history_visibility(principal=principal, disclosure_context=context, bindings=(binding.evidence,))
-        assert not ordinary.items[0].visible  # unchanged ordinary recipient gate
     finally:
         await sdk.close()
 
@@ -130,6 +131,7 @@ async def test_actual_manager_cancel_and_source_read_error_have_safe_observation
         observation = caught.value.operation_observation
         assert observation.outcome == outcome
         assert "private-diagnostic" not in str(observation.to_json())
+        await sdk.close()  # drain real async sink before inspecting delivery
         records = [v for v in sink.events() if v.operation == "check_current_input_visibility"]
         assert len(records) == 1
         assert records[0].attributes["fingerprint"] == observation.observation_hash
