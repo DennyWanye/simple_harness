@@ -38,3 +38,14 @@ C01+C02共40条setup准备分批验证，并非40条真实质量执行。C02-19�
 - `.local-test-evidence/2026-09-06/corpus-c02/c19-r8/command.log`：`121f09133dc10d469c6f497f0929004c71a9c8e144c538d6a6e215c501ecaec4`
 - `.local-test-evidence/2026-09-06/corpus-c02/c19-r8/resource.json`：`b14557c672aaddbfd3bda9a34aef0156a7b61c60778d6aaf8096e1763e78f34c`
 - `.local-test-evidence/2026-09-06/corpus-c02/c19-r8/identity.json`：`47813293b8174943d599609e11475fd2b9584f6961b91159f660c97dfffe63e5`
+
+
+## 同文异Run来源绑定补强
+
+独审指出同subject同setup文字仍不足以证明“原setup”的关联。后继ecd8a3be让调用方传入原始envelope/receipt，helper先校验回执，再与实际完成group的USER两个完整DTO精确比较；任何其他Run即使同文字也拒绝。新增控制实际完成两次Host/SDK Run、公开投递两条USER outbox，确认同文不同evidenceID后拒绝交叉来源且graph仍空。只跑此新负控，未重跑r8正控或其余19条。
+
+same-text-r1 BUSY75、无child；持锁批完成并确认清理后same-text-r2为1PASS，PG19055 exit0/1.717秒/峰162976KiB、remaining=[]、cleanup_error=null。独审最终限定结论另记。
+
+- `.local-test-evidence/2026-09-06/corpus-c02/same-text-r2/command.log`：`587a87d4e426e42299b36d5e56e0bea6c7370c27cf566ea989ce442487ce6550`
+- `.local-test-evidence/2026-09-06/corpus-c02/same-text-r2/resource.json`：`c0e725c10de61ed1fd83e0c46f4f9a25224027c43fe88a289cd1f92b1c99bafe`
+- `.local-test-evidence/2026-09-06/corpus-c02/same-text-r2/identity.json`：`47813293b8174943d599609e11475fd2b9584f6961b91159f660c97dfffe63e5`

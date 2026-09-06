@@ -1,5 +1,8 @@
 2026-09-06：时间提醒生产lane独立源（base7844cf67，产品ec99fa60/7c627fbc）默认注入已有prospective signal authority，并由MemoryAnalysisLane统一拥有独立登记/timer轻量任务及关闭join，避免慢analysis阻止到期；无新schema/SDK制品。4新增控制首批PASS7.15s：真实main activation/publicManager登记到期、重开唯一、已提交丢ACK跨expiry exactreplay、suppression/显式restart、父重复cancel清理（该项受控生命周期fixture）。PG16947正常退出remaining[]/cleanupnull、锁释放；H078M618既有installed+Hostsource，尚未合主/native，r14遗漏提醒FAIL保留待原userdata恢复；F01事件发布/OS通知未增加。[结果与命令](../plans/2026-09-06-prospective-runtime/RESULTS.md)。
 
+2026-09-06 C02-19原setup关联补强：完整原始S1/receipt与实际group USER精确比较，新增真实同文异Run负控1PASS；已有正向/19绿未重跑，PG19055清空。仅setup来源，runtime隔离/240质量不计完成。[结果](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
+
+
 2026-09-06 C02全部20条setup已分批通过（18首批、C20及C19失败修复后各1）；C19用真实完成Host/SDK assistant来源保留llm_inference/unverified，C20不补造颜色或通用预算。C01+C02共40条准备验证，240真实质量仍0，运行来源隔离继续。所有测试组已清空。[准备结果与失败历史](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
 
 
