@@ -1,6 +1,6 @@
 # Procedure Scope 实际接线候选
 
-2026-09-06。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，`feat/procedure-scope-observation`，基线 `1491309f`。本批源码和必要控已写，尚未运行、独审接受或合入主候选。没有改v3/v4分类协议，v5默认由主合并；M618 wheel和旧证据不变。
+2026-09-06。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，`feat/procedure-scope-observation`，基线 `1491309f`。本批业务固定356cbdc3／SDK f82c2b8；SDK六项、Host schema/timer/audit三项及实际三Scope一项通过，四项后继边界控未跑。尚未独审接受或合入主候选。[结果与原红](SCOPE-RESULTS.md)。没有改v3/v4分类协议，v5默认由主合并；M618 wheel和旧证据不变。
 
 ## 实际路径
 
@@ -29,9 +29,9 @@ Host生产运行需要同次整合的SDK successor：`prepare_procedure_observat
 ## 必要控及仍未闭合项
 
 - SDK：精确读取／异主体／stale／typed正文篡改；prepare三Scope共享决策无提前消费；真实消费与重放的观察、错误及取消。只测后继六项，不跑旧SDK suite。
-- Host：真实52非空cursor→53故障回滚／重开／新cursor续写；真实已prepared timer在53消费；真实primary route→两次物理file effect→完整source group→三Scope公开资格；操作audit绑定与operation替换反控。测试文件位于 `backend/tests/memory/test_procedure_{schema,scope_runtime,operation_audit}.py`，目前未执行。
+- Host：真实52非空cursor→53故障回滚／重开／新cursor续写；真实已prepared timer在53消费；真实primary route→两次物理file effect→完整source group→三Scope公开资格；操作audit绑定与operation替换反控。测试文件位于 `backend/tests/memory/test_procedure_{schema,scope_runtime,operation_audit}.py`；实际执行结果和四项新增未跑控见SCOPE-RESULTS。
 - 执行前schema／workspace漂移、同Scope再次执行、新旧revision交错及前置门拒绝的物理0控制还需补齐；不将未跑的测试记作绿。
 - 当前prepared authority超时且尚未被SDK消费时仍缺可持久续签恢复；不能改旧ref或凭本地ACK猜已消费。并发Scope绑定旧revision后被另一个观察推进head时，当前保守拒绝stale；未实现跨revision重基。两点尚未闭合，整叶不能以三Scope正控替代完整恢复验收。
 - 当前只对全部成功的已绑定步骤归因；工具错误并不自动证明Procedure缺陷。自动失败修订和首次UNBOUND草稿的产品发现链仍需后继真实来源接线，不以recall命中当全部TC-HM04完成。
 
-资源：本轮未启动测试、模型、native、build或安装；未持共享锁。后续只通过145默认共享OS锁，raw写新ignored目录，先必要新/红控，固定绿不复跑。
+资源：仅必要新/红控使用145默认锁，末批PG11070已退出且remaining=[]。共享槽留主native，继续代码/独审准备。不运行模型、native、build或安装；原vendor临时链接已恢复。F01明确延期。

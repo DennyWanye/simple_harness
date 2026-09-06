@@ -1,6 +1,6 @@
 <!-- Updated 2026-09-06 -->
 
-2026-09-06：Procedure Scope后继源码候选（基线1491309f）已接显式使用、真实route/workspace回读、逐步effect、完整消息组观察及三个SDK public调用审计；尚未测试/独审接受/合主。显式53组合含原timer/cursor兼容。未消费authority过期恢复、并发旧revision、失败归因与草稿发现链仍未闭合，TC-HM04不能记完成；旧M618/native保持不变。[候选范围](../plans/2026-09-06-procedure-adoption/SCOPE-SOURCE.md)。
+2026-09-06：Procedure Scope后继源码候选（基线1491309f）已接显式使用、真实route/workspace回读、逐步effect、完整消息组观察及三个SDK public调用审计；新增SDK六项、Host schema/timer/audit三项及实际三Scope一项通过；新四项边界控未跑，未独审接受/合主。显式53组合含原timer/cursor兼容。未消费authority过期恢复、并发旧revision、失败归因与草稿发现链仍未闭合，TC-HM04不能记完成；旧M618/native保持不变。[候选范围](../plans/2026-09-06-procedure-adoption/SCOPE-SOURCE.md)、[源码／原红／结果](../plans/2026-09-06-procedure-adoption/SCOPE-RESULTS.md)。
 
 2026-09-06：Procedure提案按新v4区分明确采用/步骤叙述/不确定，Host核真实USER来源与有序引文；明确采用ACTIVE，其余合法分类DRAFT且观察成功数0，ACTIVE不授予执行权限。v3完整协议保留，普通失败跨配置重试P1由M618固定完整输入/cohort恢复；原Host反例零新Provider并应用旧v3语义已实际通过。源码/独立安装验收不代表Scope观察、适用性或真实分类质量；H078/M618组合另验。[来源与范围](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
 
