@@ -18,7 +18,7 @@ Fixed108e5428/productc6af1ac4, r2: **2 PASS / 7.75s**, consisting only of the or
 
 PG4841 exited0, elapsed8.82s, peak389680KiB, minDisk4726MiB, remaining=[] and cleanup_error=null. Default shared lock released. No old page/analysis/SDK identity suite was repeated. Original r1 failure remains.
 
-The production change is only the non-success observation ordering and accurate pending replay status. Main already composes the real fallback; this is not a new terminal authority or semantic completion path. Pending receipt and Host terminal still commit in separate existing transactions; the crash control proves idempotent reuse, not atomicity across them. H077/M616 installed-target/Host-source/HTTP MockTransport evidence only; main H078/M618 composition and native remain separate. Dirac final source/results review requested.
+The production change is only the non-success observation ordering and accurate pending replay status. Main already composes the real fallback; this is not a new terminal authority or semantic completion path. Pending receipt and Host terminal still commit in separate existing transactions; the crash control proves idempotent reuse, not atomicity across them. H077/M616 installed-target/Host-source/HTTP MockTransport evidence only; main H078/M618 composition and native remain separate. Dirac gave final scoped source/results ACCEPT for 53940598. Main is integrating this fixed leaf; the evidence boundaries above remain unchanged.
 
 Raw baseline evidence (ignored, local):
 - `.local-test-evidence/2026-09-06/revoked-scope-terminal/r1/command.log` SHA256 `93338db4b3b9b78917de89312ee0aa980aba13f77c132f1a398c7c72560eda4b`
