@@ -6,8 +6,9 @@ from deskpet.quality.corpus_trace import digest
 
 
 class C05SetupApproval:
-    def __init__(self, *, ingress, transport, ledger, binding_store, expected_configured_root, persist):
+    def __init__(self, *, ingress, stack, transport, ledger, binding_store, expected_configured_root, persist):
         self.ingress, self.transport = ingress, transport
+        self.stack = stack
         self.ledger, self.binding_store = ledger, binding_store
         self.expected_root = Path(expected_configured_root).resolve(strict=True)
         self.persist = persist
@@ -76,7 +77,17 @@ class C05SetupApproval:
                     or record.version != item['version']):
                 raise CorpusApprovalBlocked('c05_setup_exact_identity_differs')
             request = thaw_json(record.request)
-            planned = self.transport.planned_calls.get(request.get('call_id'))
+            effect_id = request.get('effect_id')
+            if not isinstance(effect_id, str) or not effect_id:
+                raise CorpusApprovalBlocked('c05_setup_effect_identity_missing')
+            _, (effect,) = self.stack.read_primary_dependency_facts(sdk, (effect_id,))
+            if (effect is None or effect.run_id.value != sdk or effect.effect_id.value != effect_id
+                    or effect.call_id.value != request.get('call_id')
+                    or effect.tool_name != request.get('tool_name')
+                    or thaw_json(effect.arguments) != request.get('arguments')
+                    or not effect.raw_call_id):
+                raise CorpusApprovalBlocked('c05_setup_public_effect_differs')
+            planned = self.transport.planned_calls.get(effect.raw_call_id)
             if (request.get('nonce') != item['nonce'] or planned is None
                     or planned['turn_ref'] != queued['turn_ref']
                     or planned['name'] != request.get('tool_name')
@@ -86,7 +97,8 @@ class C05SetupApproval:
             await self._scope(sdk, planned['name'], planned['arguments'])
             verified.append((item, dict(sdk_run_ref=sdk, turn_ref=queued['turn_ref'],
                 decision_id=identifier, version=record.version, request_hash=digest(request),
-                actual_fixture_wire_hash=planned['wire_request_hash'], tool_name=planned['name'])))
+                actual_fixture_wire_hash=planned['wire_request_hash'], tool_name=planned['name'],
+                effect_id=effect_id, internal_call_id=effect.call_id.value, raw_call_id=effect.raw_call_id)))
         # Check the whole batch before the first response; no unknown allallow.
         for item, fact in verified:
             self.ordinal += 1
