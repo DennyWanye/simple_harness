@@ -3250,6 +3250,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
             _sdk_ingress,
             _sdk_runtime_stack,
             run_fault_memo=_ensure_run_fault_memo(),
+            occurrence_coordinator=service_context.get("prospective_occurrence_coordinator"),
         ),
         audit_sink=_AuditSink(),
         effect_gate=_ensure_foreground_effect_gate(),
@@ -8395,12 +8396,15 @@ async def _build_product_sdk_runtime_stack(
         from deskpet.memory.s5c_store import S5cStore
         from deskpet.memory.prospective_occurrence import ProspectiveOccurrenceCoordinator
         from deskpet.memory.prospective_current_reader import PublicOccurrenceCurrentReader
+        from deskpet.memory.prospective_source_dependencies import ProspectiveSourceDependencies
         from deskpet.sdk_adapters.prospective_ack import prospective_ack_registration
         await initialize_s5c_terminal_state_db(_state_db_path)
         _occurrence_store=S5cStore(_state_db_path,_human_memory_v7.principal())
         _occurrence_coordinator=ProspectiveOccurrenceCoordinator(store=_occurrence_store,
             read_current=PublicOccurrenceCurrentReader(store=_occurrence_store,
-                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")),clock=clock)
+                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")),clock=clock,
+            source_dependencies=ProspectiveSourceDependencies(store=_occurrence_store,
+                runtime_getter=lambda:service_context.get("human_memory_v7_runtime")))
         projected_registrations=(*projected_registrations,
             prospective_ack_registration(coordinator=_occurrence_coordinator))
     service_context.register("prospective_occurrence_coordinator",_occurrence_coordinator)

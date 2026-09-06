@@ -81,7 +81,7 @@ async def terminal_observation_tx(db, *, host_run_id, sdk_run_id, subject):
 
 async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subject,
                                       owner_id, generation, terminal, sdk_evidence, messages, error_code=None,
-                                      visibility_dependencies=None, tool_causal_sources=None):
+                                      visibility_dependencies=None, tool_causal_sources=None, occurrence_sources=None):
     from deskpet.execution.foreground_queue import ForegroundQueueStore
     queue = ForegroundQueueStore(db_path)
     async with aiosqlite.connect(db_path) as db:
@@ -122,6 +122,8 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             "visibility_dependencies": visibility_dependencies,
             "message_source_contract": "primary-message-v1",
         }
+        if occurrence_sources is not None:
+            payload['prospective_source_dependencies'] = occurrence_sources
         from deskpet.memory.primary_message_v2 import representable
         if terminal.value == "COMPLETED" and representable(messages, tool_causal_sources):
             payload.update(message_source_contract="primary-message-v2",

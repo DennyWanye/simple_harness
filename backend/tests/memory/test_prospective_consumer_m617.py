@@ -48,7 +48,8 @@ class World:
         self.manager = await m.build_human_memory_v7(self.root/'memory.db', clock=lambda:self.clock[0],
             evidence_authority=HostEvidenceAuthority(self.path), memory_action_authority=self,
             prospective_signal_authority=self,
-            supported_filter_policies=frozenset({HOST_PUBLIC_TURN_FILTER_POLICY}),
+            supported_filter_policies=getattr(self,'filter_policies',frozenset({HOST_PUBLIC_TURN_FILTER_POLICY})),
+            **getattr(self,'history_options',{}),
             classification_policy=InformationClassificationPolicy(policy_id='s5c-test-classification',
                 policy_version='1',authority_ref='host:classification/v1',required_privacy_class='personal',
                 required_information_attributes=()))

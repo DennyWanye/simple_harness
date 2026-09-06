@@ -1517,12 +1517,14 @@ class SqliteSdkTerminalObserver:
         *,
         run_fault_memo: object | None = None,
         fault_inject: Callable[[str], None] | None = None,
+        occurrence_coordinator: object | None = None,
     ) -> None:
         self._db_path = db_path
         self._ingress = ingress
         self._runtime_stack = runtime_stack
         self._run_fault_memo = run_fault_memo
         self._fault_inject = fault_inject
+        self._occurrence_coordinator = occurrence_coordinator
 
     def _terminal_error_code(self, sdk_run_id: str, sdk_evidence: object) -> str | None:
         """Stable ``error_code`` of a FAILED terminal: Host memo first, else SDK public code.
@@ -1622,6 +1624,27 @@ class SqliteSdkTerminalObserver:
                         # an empty complete proof to make generated history visible.
                         proof = None
             from deskpet.execution.primary_history import record_terminal_observation
+            occurrence_sources = None
+            coordinator = self._occurrence_coordinator
+            if coordinator is not None and coordinator.source_dependencies is not None:
+                try:
+                    occurrence_sources = await coordinator.source_dependencies.for_run(coordinator, sdk_run_id)
+                    if proof is not None:
+                        from simple_harness import thaw_json
+                        proof = thaw_json(proof)
+                        bindings = {item['evidence_id']: item['envelope_hash'] for item in proof['evidence']}
+                        for snapshot in occurrence_sources:
+                            for item in snapshot['evidence']:
+                                previous = bindings.setdefault(item['evidence_id'], item['envelope_hash'])
+                                if previous != item['envelope_hash']:
+                                    raise ValueError('s5c_occurrence_source_hash_conflict')
+                        proof['evidence'] = [dict(evidence_id=key, envelope_hash=value)
+                                             for key, value in sorted(bindings.items())]
+                except (ValueError, TypeError, KeyError):
+                    # Archive the actual terminal even if source closure is no
+                    # longer available. A7 physical preflight already rejects a
+                    # missing source, and ordinary history requires this proof.
+                    proof, occurrence_sources = None, None
             tool_sources = None
             read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
             if terminal is RunState.COMPLETED and any(message.get("role") == "tool" for message in messages):
@@ -1639,6 +1662,7 @@ class SqliteSdkTerminalObserver:
                 self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
                 owner_id=owner_id, generation=generation, terminal=terminal,
                 sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
+                occurrence_sources=occurrence_sources,
                 tool_causal_sources=tool_sources,
                 error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
             )

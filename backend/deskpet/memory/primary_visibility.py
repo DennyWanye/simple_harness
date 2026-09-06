@@ -281,6 +281,9 @@ class PrimaryHistoryPolicy:
                     evidence_proof, recall_proof = _dependencies(
                         payload.get("visibility_dependencies")
                     )
+                    from deskpet.memory.prospective_source_dependencies import verify_terminal_sources_tx
+                    await verify_terminal_sources_tx(db, sdk_run_id=envelope.run_id,
+                        manifest=payload.get('prospective_source_dependencies'), evidence=evidence_proof)
                     from deskpet.execution.terminal_identity import (
                         read_primary_terminal_identity_tx,
                     )

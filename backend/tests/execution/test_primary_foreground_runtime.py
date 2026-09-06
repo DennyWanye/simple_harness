@@ -251,13 +251,15 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
-        provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
+        provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack,
+            occurrence_coordinator=occurrence_coordinator),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
         terminal_commit_hook_factory=occurrence_terminal_hook if occurrence_coordinator else None,
     )
     runtime.history_policy = history_policy
     runtime.history_memory = visibility_memory
+    runtime.typed_use_authority = typed_use_authority
     original_close = runtime.close
     async def close(**kwargs):
         await original_close(**kwargs)

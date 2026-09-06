@@ -368,10 +368,11 @@ class ProspectiveOccurrenceCoordinator:
     perform current disclosure checks, returning only public visible entries.
     Missing capability is an error, never implicit permission to read content.
     """
-    def __init__(self, *, store, read_current, clock):
+    def __init__(self, *, store, read_current, clock, source_dependencies=None):
         if not callable(read_current) or not callable(clock):
             raise TypeError('current occurrence reader and clock required')
         self.store,self.read_current,self.clock=store,read_current,clock
+        self.source_dependencies=source_dependencies
 
     async def applies_to_run(self, sdk_run_id):
         resolver=getattr(self.read_current,'applies_to_run',None)

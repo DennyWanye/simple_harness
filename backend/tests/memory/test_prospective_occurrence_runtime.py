@@ -38,7 +38,12 @@ async def test_real_ack_terminal_commit_recovery(tmp_path,monkeypatch,point):
     await _run_occurrence_case(tmp_path,monkeypatch,terminal_fault=point)
 
 
-async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal_fault=None):
+@pytest.mark.asyncio
+async def test_real_ack_history_inheritance_withdrawal(tmp_path,monkeypatch):
+    await _run_occurrence_case(tmp_path,monkeypatch,inheritance=True)
+
+
+async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal_fault=None,inheritance=False):
     state=tmp_path/'state.db'
     startup=await dispatch_startup_epoch(state,approved_fresh_lane=True)
     service=HumanMemoryHostServiceFactory(state,startup).bind(local_owner_auth())
@@ -49,6 +54,10 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
     # Run/disclosure reader and ACK ToolContext are not substituted.
     monkeypatch.setattr(seed,'P',principal)
     w=seed.World(tmp_path)
+    from deskpet.memory.human_memory_v7 import HOST_SUPPORTED_FILTER_POLICIES
+    from deskpet.memory.history_source_authority import HostHistorySourceAuthority
+    w.filter_policies=HOST_SUPPORTED_FILTER_POLICIES
+    w.history_options=dict(history_source_authority=HostHistorySourceAuthority(state))
     await w.setup();await w.mutate('a7-real-create');await w.consumer().run_once()
     w.clock[0]=30.
     signals=ProspectiveSignalStore(state,principal)
@@ -58,9 +67,15 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
         memory=w,clock=lambda:w.clock[0]).tick(claim_owner='real-a7')==1
     async def manager():return w.manager
     current_runtime=SimpleNamespace(principal=lambda:principal,manager=manager,semantic_clock=time.time)
+    if inheritance:
+        await visibility.close()
+        async def no_close():pass
+        visibility=SimpleNamespace(principal=lambda:principal,manager=manager,close=no_close)
+    from deskpet.memory.prospective_source_dependencies import ProspectiveSourceDependencies
+    source_dependencies=ProspectiveSourceDependencies(store=store,runtime_getter=lambda:current_runtime)
     coordinator=ProspectiveOccurrenceCoordinator(store=store,
         read_current=PublicOccurrenceCurrentReader(store=store,runtime_getter=lambda:current_runtime),
-        clock=lambda:w.clock[0])
+        clock=lambda:w.clock[0],source_dependencies=source_dependencies)
 
     import httpx
     from deskpet.sdk_adapters.provider import ProductProviderAdapter
@@ -72,7 +87,8 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
         body=json.loads(request.content);sends.append(body)
         groups=[json.loads(m['content']) for m in body['messages']
                 if isinstance(m.get('content'),str) and 'pending_prospective_occurrences' in m['content']]
-        message={'role':'assistant','content':'Reminder noted'}
+        message={'role':'assistant','content':('A7_DERIVED_REPORT_CANARY: send the report'
+            if inheritance and controls.turn<=5 else 'Reminder noted')}
         if controls.turn<=3:
             assert len(groups)==1 and groups[0]['count']==1
             assert groups[0]['entries'][0]['overdue']==(controls.turn==3)
@@ -93,6 +109,11 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
     pre_forget_passed=[]
     async def guard(request):
         current=await queue.current_snapshot(principal.actor_id)
+        if inheritance:
+            from deskpet.execution.primary_dependencies import check_runtime_dependencies
+            await check_runtime_dependencies(db_path=state,stack=stack,sdk_run_id=current.sdk_run_id,
+                request=request,policy_factory=lambda _:runtime.history_policy,
+                typed_use_authority=runtime.typed_use_authority)
         guarded.append((current.sdk_run_id,request.request_id.value))
         assert 'prospective_ack' in {tool.name for tool in request.tools}
         actual_guard=ProspectiveRequestGuard(sdk_run_id=current.sdk_run_id,coordinator=coordinator,
@@ -221,7 +242,7 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
         await w.manager.close();await w.open()
         coordinator=ProspectiveOccurrenceCoordinator(store=S5cStore(state,principal),
             read_current=PublicOccurrenceCurrentReader(store=S5cStore(state,principal),
-                runtime_getter=lambda:current_runtime),clock=lambda:w.clock[0])
+                runtime_getter=lambda:current_runtime),clock=lambda:w.clock[0],source_dependencies=source_dependencies)
         runtime,stack,queue=await build(tmp_path,state,provider,visibility_memory=visibility,
             occurrence_coordinator=coordinator,
             extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
@@ -233,6 +254,38 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
         assert await coordinator.ack(sdk_run_id=ack['sdk_run_id'],
             occurrence_key=receipt['occurrence_key'])==receipt
         assert len(sends)==before
+
+        if inheritance:
+            from deskpet.execution.primary_history import PrimaryHistoryStore
+            from deskpet.execution.primary_dependencies import current_disclosure
+            import simple_harness_memory as memory
+            canary='A7_DERIVED_REPORT_CANARY'
+            controls.turn=5
+            await service.enqueue_turn(QueueTurnRequest(None,'a7-derived-5','Continue the previous discussion.'))
+            await runtime.after_enqueue(subject=principal.actor_id)
+            await asyncio.wait_for(runtime.drain(),20)
+            assert runtime.last_error is None
+            assert len(sends)==before+1
+            assert canary in json.dumps(sends[-1]['messages'])
+            history=PrimaryHistoryStore(state,settled_run_reader=stack.read_settled_primary_run,policy=runtime.history_policy)
+            async def read_history():
+                return await history.read(subject=principal.actor_id,primary_ref=primary,before_sequence=100,
+                    disclosure_context=current_disclosure(run_id='a7-history',subject=principal.actor_id,request_id='a7-history'))
+            visible=await read_history()
+            assert sum(canary in json.dumps(group) for group in visible)>=2
+            memory_id=(await w.manager.read_occurrence_inbox(principal=principal)).entries[0].memory_id
+            await w.manager.suppress(principal=principal,request=memory.SuppressionRequest(
+                'a7-derived-forget',principal.actor_id,memory.SuppressionScopeKind.MEMORY,
+                memory_id,'user_forget',w.clock[0]))
+            assert canary not in json.dumps(await read_history())
+            await w.manager.close();await w.open()
+            controls.turn=6
+            await service.enqueue_turn(QueueTurnRequest(None,'a7-derived-6','A fresh unrelated request.'))
+            await runtime.after_enqueue(subject=principal.actor_id)
+            await asyncio.wait_for(runtime.drain(),20)
+            assert runtime.last_error is None and len(sends)==before+2
+            assert canary not in json.dumps(sends[-1]['messages'])
+            assert 'A fresh unrelated request.' in json.dumps(sends[-1]['messages'])
 
     finally:
         if runtime is not None:await runtime.close()

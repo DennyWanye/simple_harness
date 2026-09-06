@@ -49,5 +49,10 @@ class ProspectiveRequestGuard:
             if messages!=expected:
                 raise ValueError('s5c_occurrence_actual_message_differs')
             await self.coordinator.recheck(group)
+            if group.items:
+                sources=self.coordinator.source_dependencies
+                if sources is None:
+                    raise ValueError('s5c_occurrence_source_checker_missing')
+                await sources.for_group(group,check_current=True)
         except Exception as error:
             raise ProspectiveRequestRejected(public_message='s5c_occurrence_preflight_rejected') from error
