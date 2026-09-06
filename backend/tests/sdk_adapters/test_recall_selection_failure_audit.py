@@ -2,6 +2,7 @@
 import asyncio
 import json
 import sqlite3
+import threading
 
 import pytest
 
@@ -190,3 +191,75 @@ async def test_postcommit_audit_failure_does_not_prove_route_absent(state_db, mo
     assert len(_decision_rows(state_db)) == 1
     with sqlite3.connect(state_db) as db:
         assert db.execute("SELECT verdict FROM context_route_tool_invocations").fetchone()[0] == "rejected"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", ["connect", "pragma"])
+async def test_second_cancel_during_real_connection_initialization_closes_worker(state_db, monkeypatch, window):
+    import aiosqlite
+    tool = _service(state_db)
+    entered = asyncio.Event()
+    initializing = asyncio.Event()
+    closed = asyncio.Event()
+    release = threading.Event()
+    connections = []
+    loop = asyncio.get_running_loop()
+    real_connect = aiosqlite.connect
+
+    def tracked_connect(*args, **kwargs):
+        db = real_connect(*args, **kwargs)
+        connections.append(db)
+        original_close, original_execute = db.close, db.execute
+        async def close():
+            await original_close()
+            closed.set()
+        db.close = close
+        if window == "connect":
+            # Gate the real connection on its own worker, after SQLite opens.
+            original_connector = db._connector
+            def connector():
+                connection = original_connector()
+                loop.call_soon_threadsafe(initializing.set)
+                if not release.wait(3):
+                    connection.close()
+                    raise RuntimeError("test connect gate timed out")
+                return connection
+            db._connector = connector
+        else:
+            async def execute(sql, parameters=None):
+                cursor = await original_execute(sql, parameters)
+                if sql == "PRAGMA foreign_keys=ON":
+                    await cursor.close()
+                    initializing.set()
+                    await asyncio.Event().wait()
+                return cursor
+            db.execute = execute
+        return db
+
+    async def wait(**kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    tool._recall_executor = wait
+    monkeypatch.setattr(aiosqlite, "connect", tracked_connect)
+    task = asyncio.create_task(tool.handle_context_route(PROPOSAL))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        task.cancel()
+        await asyncio.wait_for(initializing.wait(), 2)
+        task.cancel()
+        await asyncio.sleep(0)
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 2)
+        assert len(connections) == 1 and closed.is_set()
+        assert not connections[0]._thread.is_alive()
+        with sqlite3.connect(state_db) as db:
+            assert db.execute("SELECT count(*) FROM context_route_tool_invocations").fetchone()[0] == 0
+            assert db.execute("SELECT count(*) FROM context_route_decisions").fetchone()[0] == 0
+    finally:
+        release.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        for db in connections:
+            await db.close()
