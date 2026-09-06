@@ -1,3 +1,5 @@
+最后更新：2026-09-06。首次Procedure草稿发现/未归因真实失败前缀源码SDKf03dab0、Host242f1688，6唯一新控分批通过；一项夹具时钟异常误绿已主动撤回，ade0d79a两负控核实际suppression decision/公开不可见/精确出站拒绝后通过，原13未重跑。closure新lane已保留并实际0HTTP/not_sent，PG48221清空/锁释放。待Dirac结果终审及统一nonSELF组合制品；wholeFAILED Run/缺陷归因/TC-HM04/native未完成。[证据及撤回记录](../plans/2026-09-06-procedure-adoption/DISCOVERY-RESULTS.md)。
+
 最后更新：2026-09-06。Dirac已限定ACCEPT Procedure恢复叶（Host a7a9ca66及ea63ddc6/c76da29c，Memory978ae99）：13唯一source-overlay控制，旧12未重跑；P1单控与固定源码/raw/WIP恢复已独核，资源组清空。制品/installed/native/完整TC-HM04与新草稿发现、失败归因WIP均不在接受范围。[独审边界与证据](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。
 
 最后更新：2026-09-06。Dirac恢复P1已由a7a9ca66修订：已有prepared遭同Scope先消费后，exact public duplicate拒绝也持久rejected，原ref/获胜结果不改。仅新交错1PASS7.24s，PG34197清空/槽释放，草稿WIP逐字节还原且未混测；原12不重跑。待此修订终审，非整项TC-HM04/native完成。[结果与SHA](../plans/2026-09-06-procedure-adoption/RECOVERY-RESULTS.md)。
