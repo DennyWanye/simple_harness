@@ -14,6 +14,6 @@ SDK无DDL。read_procedure_use_target新增显式allow_observation_rebase=False�
 
 ## 新控制范围
 
-已写未运行：SDK真实observation链/真实REVISE拒绝、旧ref续期/已消费拒绝、prepare后forget（三项）；Host54回滚/旧registry与完整fence、真实已prepared timer两项；实际Scope过期重开/已消费lostACK两项、两个旧revision Scope、同Scope重复、工具/目录漂移两项、高risk三Scope（七项）。不以源码或测试数量称native/TC-HM04完成。
+本叶分批通过，原失败保留（见[结果](RECOVERY-RESULTS.md)）：SDK真实observation链/真实REVISE拒绝、旧ref续期/已消费拒绝、prepare后forget（三项）；Host54回滚/旧registry与完整fence、真实已prepared timer两项；实际Scope过期重开/已消费lostACK两项、两个旧revision Scope、同Scope重复、工具/目录漂移两项、高risk三Scope（七项）。不以源码或测试数量称native/TC-HM04完成。
 
 仍缺首次UNBOUND草稿的产品发现、自动失败归因及实际模型/native全链。F01延期。版本由主与Hegel统一整合，不各自产包。

@@ -1,5 +1,7 @@
 # Procedure Scope 新控结果与独审入口
 
+当前补充（2026-09-06）：来源边界四项及恢复十二项新控现已分批通过；5e513eda/db7ca22原三Scope独审已限定接受，新恢复叶待独审。见[恢复结果](RECOVERY-RESULTS.md)。
+
 2026-09-06。业务固定 Host `356cbdc3`（`5971cd9d`→`9059416b`→`f301c8ed`→`356cbdc3`），Memory `f82c2b8`（`5f3c06d`→`9b26234`→`e84e334`→`f82c2b8`）。这是源码组合证据，不是后继 installed、真实模型或 native。
 
 ## 实际结果
