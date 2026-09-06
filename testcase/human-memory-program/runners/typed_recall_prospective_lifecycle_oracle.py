@@ -24,6 +24,8 @@ def check(fixture,o,a):
                 or op['epistemic_status']!='explicit_user' or op['verification_state']!='source_bound'
                 or actual['revision']!=base+1):raise ValueError('lifecycle exact mutation state/revision differs')
         if index:
+            if actual['memory_id']!=sources[0]['receipt']['operations'][0]['memory_id']:
+                raise ValueError('lifecycle returned revision changed target memory identity')
             a['check_action_grant'](o,event['plan'])
             if op['target']!={'target_kind':'existing_memory','memory_id':sources[0]['receipt']['operations'][0]['memory_id'],'revision':base}:
                 raise ValueError('lifecycle mutation did not use actual signal revision')
@@ -98,6 +100,8 @@ def check(fixture,o,a):
         boundary=control['calls'].index(ev)
         verify_series([*sources,entry],control['calls'][boundary:],'pending','candidate-control-registration',[control['ack']])
         target=sources[0]['receipt']['operations'][0]
+        if entry['receipt']['operations'][0]['memory_id']!=target['memory_id']:
+            raise ValueError('candidate control returned revision changed target memory identity')
         if (ev['plan']['operations'][0]['target']!={'target_kind':'existing_memory','memory_id':target['memory_id'],'revision':1}
                 or entry['input']!={**recipe['seed'],'state':'pending'}):raise ValueError('candidate control changed identity')
         positive=control['recall'];a['check_execution_wire'](positive['execution'],positive['context'],positive['plan'])
@@ -105,5 +109,32 @@ def check(fixture,o,a):
         if not replay['replayed'] or replay['candidate_query_count']!=0 or replay['result']!=positive['execution']['result']:raise ValueError('candidate control replay differs')
         if (ev['plan']['operations'][0]['lifecycle_state']!='pending'
                 or entry['receipt']['operations'][0]['revision']!=2):raise ValueError('candidate control actual pending revision differs')
+        pv=positive['execution'];pd=pv['decision'];pr=pv['result'];pc=positive['context'];pp=positive['plan']
+        pref=refs+[{'evidence_id':s['evidence_id'],'content_hash':s['envelope_hash'],'ordinal':len(refs)+i+1}
+            for i,s in enumerate(ev['plan']['operations'][0]['evidence_spans'])]
+        if (pc['evidence_refs']!=pref or pp['evidence_refs']!=pref
+                or pc['query']!=recipe['seed']['payload']['action'] or pp['query']!=pc['query']
+                or pc['available_memory_types']!=['prospective'] or pp['requested_memory_types']!=['prospective']
+                or pc['allowed_retrieval_modes']!=['full_text'] or pp['retrieval_modes']!=['full_text']
+                or pc['subject']!='principal-1' or pc['run_id']!=ev['plan']['run_id']
+                or pc['budget']!=recall['context']['budget'] or pp['budget']!=pc['budget']
+                or pc['disclosure_context']!=recall['context']['disclosure_context']
+                or positive['now']!=recall['now'] or pd['decided_at']!=positive['now']
+                or pr['evaluated_at']!=positive['now'] or pd['outcome']!='recall'
+                or pd['reason_codes']!=['recall_user_fact_dependency'] or pd['filtered_candidate_count']!=1
+                or pd['candidate_count_stage']!='after_all_eligibility_gates'
+                or pv['candidate_query_count']!=1 or not pv['candidate_query_started']
+                or pd['confirmation_groups'] or pr['confirmation_groups']
+                or replay['decision']!=pd or replay['candidate_query_started']):
+            raise ValueError('candidate positive control request/access/clock differs')
         if len(positive['execution']['result']['items'])!=1 or positive['execution']['result']['items'][0]['selected_item']['source_ref']!=target['memory_id']:
             raise ValueError('candidate independent positive control missing')
+
+        item=pr['items'][0];selected=item['selected_item'];pending=entry['receipt']['operations'][0]
+        if (selected['source_revision']!=pending['revision'] or selected['source_kind']!='cognitive_memory'
+                or selected['memory_type']!='prospective' or selected['source_content_hash']!=a['hash_json'](full)
+                or item['public_payload']!=projection or selected['public_payload_hash']!=a['hash_json'](projection)
+                or item['evidence_manifest_hash']!=a['hash_json'](sorted(entry['evidence_ids']))
+                or item['effective_privacy_class']!='personal' or item['information_attributes']
+                or item['score']!=round(.30/61,12) or item['cross_scope'] or item['source_task_scope_ids']):
+            raise ValueError('candidate positive control pending revision/source binding differs')

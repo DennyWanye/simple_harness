@@ -50,3 +50,32 @@ class ProspectiveLifecycleTests(unittest.IsolatedAsyncioTestCase):
         forged=copy.deepcopy(candidate)
         forged['observations']['candidate_control']['source']['input']['state']='candidate'
         self.assertEqual(oracle.assess_normal(fixture,forged)['status'],'FAIL')
+
+        def rehash(recall):
+            value=recall['execution'];decision=value['decision'];result=value['result']
+            decision['selected_items']=[i['selected_item'] for i in result['items']]
+            value['decision_hash']=oracle.sdk_domain_hash('simple-harness/recall-decision/v4',decision)
+            result['decision_hash']=value['decision_hash']
+            value['result_hash']=oracle.sdk_domain_hash('simple-harness/typed-recall-result/v1',result)
+            value['result_item_hashes']=[oracle.sdk_domain_hash('simple-harness/typed-recall-result-item/v1',i) for i in result['items']]
+            value['hashes'].update(decision=value['decision_hash'],result=value['result_hash'])
+            recall['replay']={**copy.deepcopy(value),'replayed':True,'candidate_query_count':0,'candidate_query_started':False}
+            oracle.check_execution_wire(value,recall['context'],recall['plan'])
+            oracle.check_execution_wire(recall['replay'],recall['context'],recall['plan'])
+        forged=copy.deepcopy(progress)
+        # The public receipt-view hash is opaque (not a hash of its projection).
+        # Corrupt the returned projected ID, preserve that opaque commitment,
+        # and recompute all downstream selected/decision/result/replay hashes.
+        fo=forged['observations'];fo['sources'][-1]['receipt']['operations'][0]['memory_id']='foreign-memory'
+        fo['recalls'][0]['execution']['result']['items'][0]['selected_item']['source_ref']='foreign-memory'
+        rehash(fo['recalls'][0])
+        verdict=oracle.assess_normal(fixture,forged)
+        self.assertEqual(verdict['status'],'FAIL',verdict)
+        self.assertEqual(verdict['reason'],'lifecycle returned revision changed target memory identity')
+        forged=copy.deepcopy(candidate)
+        positive=forged['observations']['candidate_control']['recall']
+        positive['execution']['result']['items'][0]['selected_item']['source_revision']=1
+        rehash(positive)
+        verdict=oracle.assess_normal(fixture,forged)
+        self.assertEqual(verdict['status'],'FAIL',verdict)
+        self.assertEqual(verdict['reason'],'candidate positive control pending revision/source binding differs')
