@@ -22,7 +22,8 @@ export interface PrimaryState {
 }
 export interface PrimaryMessage {
   message_ref: string;
-  role: "user" | "assistant" | "tool" | "artifact";
+  role: "user" | "assistant" | "tool" | "artifact" | "reminder";
+  notice_id?: string;
   has_more: boolean;
   total_chars: number;
   delivery_key?: string;
@@ -278,9 +279,11 @@ function parseMessages(page: Record<string, unknown>): PrimaryMessage[] {
   return page.items.map((value) => {
     const m = record(value);
     if (typeof m.message_ref !== "string" || !m.message_ref || ids.has(m.message_ref) ||
-        !["user", "assistant", "tool", "artifact"].includes(String(m.role)) || typeof m.text !== "string" || Array.from(m.text).length > 1024 || typeof m.has_more !== "boolean" || !Number.isSafeInteger(m.total_chars)) {
+        !["user", "assistant", "tool", "artifact", "reminder"].includes(String(m.role)) || typeof m.text !== "string" || Array.from(m.text).length > 1024 || typeof m.has_more !== "boolean" || !Number.isSafeInteger(m.total_chars)) {
       throw new Error("主对话消息格式无效");
     }
+    if ((m.role === "reminder" && (typeof m.notice_id !== "string" || !/^[0-9a-f]{64}$/.test(m.notice_id))) ||
+        (m.role !== "reminder" && m.notice_id !== undefined)) throw new Error("提醒来源格式无效");
     ids.add(m.message_ref);
     return m as unknown as PrimaryMessage;
   });

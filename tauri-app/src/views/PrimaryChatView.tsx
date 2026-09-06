@@ -86,7 +86,7 @@ function PrimaryMessageRow({ message, controller }: { message: PrimaryMessage; c
     finally { setBusy(false); }
   };
   return <article style={{ padding: "12px 16px", marginBottom: 12, borderRadius: 12, background: dark.card, overflowWrap: "anywhere", fontFamily: tokens.font.ui }}>
-    <div style={{ color: dark.textMuted, fontSize: 12 }}>{({ user: "你", assistant: "助手", tool: "工具", artifact: "产物" })[message.role]}</div>
+    <div style={{ color: dark.textMuted, fontSize: 12 }}>{({ user: "你", assistant: "助手", tool: "工具", artifact: "产物", reminder: "提醒" })[message.role]}</div>
     <MarkdownMessage>{message.text}</MarkdownMessage>
     {message.has_more && <button disabled={busy} onClick={() => void load(0)}>读取完整消息（{message.total_chars} 字符）</button>}
     {detail && <div aria-label="消息详情"><MarkdownMessage>{detail.text}</MarkdownMessage>
