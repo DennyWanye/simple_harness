@@ -61,3 +61,9 @@ Minimum next controls (NOT_RUN): actual-main 04/09/14/20 setup/phase consumer, e
 approval denial, configuration switch during candidate policy, C18 real second revision and interleaved
 history, actual 07/08/10/11/12 source readbacks. Existing f780 five and prefix three are not repeated.
 17/19 named-first-root and source metadata remain explicitly unclosed; no claims of 20 READY.
+
+Static followup: Hegel found the initial HTTP TOOL conversion omitted actual wire tool_call_id.
+It now constructs public CallId from that exact field and preserves name; missing/invalid IDs reject,
+never synthesized. Added one unrun codec control. Installed H0710 kernel's actual tool_authorization
+producer records `request.call_id` from prepared.call.call_id (and exact arguments/tool_name/nonce);
+C05SetupApproval uses that real field, not a tool_call_id alias. This was code reading, not runtime proof.
