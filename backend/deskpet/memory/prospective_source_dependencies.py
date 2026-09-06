@@ -116,6 +116,13 @@ class ProspectiveSourceDependencies:
                 if not await policy.check_dependencies(db=db, primary_ref=row['primary_conversation_id'],
                         dependencies=dict(schema_version=1, evidence=bindings, recall=[]), disclosure_context=context):
                     raise S5cConflict('s5c_occurrence_source_not_visible')
+                # The slow Memory check evaluates the supplied original context.
+                # Revalidate its Host binding after that await; a replacement
+                # configuration must not authorize the already-built request.
+                checked = await resolve_current_disclosure(db_path=self.store.path, subject=row['subject'],
+                    run_id=group.sdk_run_id, request_id='host:prospective-source:'+group.sdk_run_id)
+                if checked.to_json() != context.to_json():
+                    raise S5cConflict('s5c_occurrence_source_disclosure_changed')
         return bindings
 
     async def for_run(self, coordinator, sdk_run_id):
