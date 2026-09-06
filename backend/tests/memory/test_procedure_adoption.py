@@ -203,6 +203,10 @@ async def test_public_materialization_and_response_only_reopen_keep_persisted_pr
         assert await menv.worker.run_once() == "delivered"
         assert await mh.run_job(menv) == ("retry_scheduled" if recover else "applied")
         assert len(adapter.calls) == 1
+        if recover:
+            [(saved_request_json, saved_request_hash, saved_state)] = await mh.memory_rows(
+                menv, "SELECT request_json,request_hash,state FROM analysis_batches")
+            assert saved_state == "failed"  # Ordinary Exception, not expiry reclaim.
     finally:
         await mh.close(menv)
     env.clock.now += 60
@@ -218,6 +222,15 @@ async def test_public_materialization_and_response_only_reopen_keep_persisted_pr
         assert await mh.memory_rows(menv, "SELECT COUNT(*) FROM procedure_observation_authority_consumptions") == [(0,)]
         [(request_json,)] = await mh.memory_rows(menv, "SELECT request_json FROM analysis_batches WHERE state='applied'")
         request = MemoryAnalysisRequest.from_json(json.loads(request_json))
+        if recover:
+            attempt_fields = {"job_id", "attempt", "idempotency_key"}
+            saved_input = json.loads(saved_request_json)
+            assert {key: value for key, value in request.to_json().items() if key not in attempt_fields} == {
+                key: value for key, value in saved_input.items() if key not in attempt_fields}
+            assert request.request_hash != saved_request_hash
+            assert await mh.memory_rows(menv,
+                "SELECT request_json,request_hash FROM analysis_batches WHERE state='failed'") == [
+                    (saved_request_json, saved_request_hash)]
         assert request.prompt_version == f"host-analysis-prompt/v{version}"
         durable, _ = await menv.executor._durable_envelope(request.request_hash)
         before = durable.to_json()
