@@ -20,6 +20,7 @@ class ProcedureToolSnapshot:
     execution_identity: str
     effect_class: str
     dangerous: bool
+    requires_confirmation: bool
 
     def to_json(self):
         return {name: getattr(self, name) for name in self.__dataclass_fields__}
@@ -50,7 +51,11 @@ def current_snapshot(authority, registry, *, tool_names: Sequence[str], route):
             raise ProcedureUseRejected("procedure_tool_unavailable")
         snapshots.append(ProcedureToolSnapshot(
             name, spec.spec_version, spec.schema_hash, spec.execution_identity,
-            str(spec.effect_class), bool(spec.dangerous or spec.manifest_dangerous),
+            # Capability.dangerous also defaults true for all staged/control
+            # dispatch. It is an execution-confirmation condition, not proof
+            # of publish/delete/payment hazard. Preserve it in the fingerprint
+            # and leave physical authorization unchanged.
+            str(spec.effect_class), bool(spec.manifest_dangerous), bool(spec.dangerous),
         ))
     from deskpet.memory.procedure_route import ProcedureRouteSnapshot
     if type(route) is not ProcedureRouteSnapshot:
