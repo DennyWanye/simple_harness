@@ -134,7 +134,7 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
             elif stage == 4:
                 name, args = "tool_activate", {k: results[-1]["value"][k] for k in ("capability_id", "schema_hash", "describe_nonce")}
             elif stage == 5:
-                name, args = "write_file", {"path": "document.txt", "content": "new scope edited original document"}
+                name, args = "write_file", {"path": "document.txt", "content": "new scope edited original document", "overwrite": True}
             elif stage == 6:
                 assert (root / "document.txt").read_text() == "new scope edited original document"
                 observed["write_result"] = results[-1]
@@ -167,10 +167,17 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
     provider = ProductProviderAdapter(Registry("fixture-key"), provider_id="relay", client=client,
         price_resolver=lambda *_: (1, 1, "fixture-prices"), pre_invoke_guard=guard)
     try:
+        from deskpet.tools.os_tools.registration import register_os_tools
+        class ToolSchemas:
+            def __init__(self): self.schemas = {}
+            def register(self, *, name, schema, **_): self.schemas[name] = schema["parameters"]
+        captured = ToolSchemas()
+        register_os_tools(captured)
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
         from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
         runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True, binding_authority=authority, configured_root=configured,
-            context_route_ledger_factory=lambda path: ContextRouteLedgerStore(path, evidence_ingress=ExecutionEvidenceIngress(path)))
+            context_route_ledger_factory=lambda path: ContextRouteLedgerStore(path, evidence_ingress=ExecutionEvidenceIngress(path)),
+            write_file_schema=captured.schemas["write_file"])
         await service.enqueue_turn(QueueTurnRequest(None, "continue-original", "Continue editing the accepted project's original document in a new task"))
         await runtime.after_enqueue(subject=runtime.subject)
         await asyncio.wait_for(runtime.drain(), 25)

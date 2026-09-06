@@ -89,7 +89,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, context_route_ledger_factory=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, context_route_ledger_factory=None, write_file_schema=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -114,7 +114,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         from tests.sdk_adapters.s5b_effect_gate_harness import WRITE_FILE_SCHEMA
         specs.extend(dict(name=name, description=name, input_schema=schema) for name, schema in (
             ("context_route", CONTEXT_ROUTE_SCHEMA), ("task_scope_search", TASK_SCOPE_SEARCH_SCHEMA), ("task_scope_update", TASK_SCOPE_UPDATE_SCHEMA),
-            ("write_file", WRITE_FILE_SCHEMA)))
+            ("write_file", WRITE_FILE_SCHEMA if write_file_schema is None else write_file_schema)))
         for spec in specs:
             if spec["name"].startswith("tool_"):
                 spec["input_schema"] = {"type": "object", "properties": {key: {"type": "string"} for key in ("query", "capability_id", "schema_hash", "describe_nonce")}}
