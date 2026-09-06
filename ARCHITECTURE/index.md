@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。隔离 Host 短期 terminal 来源补齐叶：r8 最终一致性副本在实际 M617 公共 rebuild 复现 history_source_lineage_missing；Host 同事务核验 terminal 后经公共 source-only admission 补齐祖先，13 组投影 0→3 chunks，重开保持，旧 registration/suppression/revision/jobs 不变。新增三控分批通过，PG82219 清空、锁释放；未改 SDK/原库，generation/真实 shortquery/native 尚未验证；Dirac限定ACCEPT并已合候选。[原因与证据](../plans/2026-09-06-short-terminal-source/RESULTS.md)。
+
 2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
 
 

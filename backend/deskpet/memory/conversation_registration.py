@@ -34,6 +34,8 @@ class ConversationGroup:
     host_run_id: str
     registrations: tuple[h.ConversationEvidenceRegistration, ...]
     user_analysis_lineage: object
+    # Actual Host S1 ancestor of the message envelopes; not a conversation item.
+    terminal_source: tuple[h.SanitizedEvidenceEnvelope, h.SanitizedEvidenceReceipt]
 
     @property
     def references(self):
@@ -242,7 +244,7 @@ class PrimaryConversationAuthority:
                       for i, (env, _, pointer) in enumerate(sources)],
         }})
         return ConversationGroup(host_run_id, tuple(self._registration(run, source, i + 1, manifest, len(sources))
-            for i, source in enumerate(sources)), user_lineage)
+            for i, source in enumerate(sources)), user_lineage, (terminal, terminal_receipt))
 
     def _registration(self, run, source, ordinal, manifest, group_count=2):
         envelope, receipt, pointer = source
