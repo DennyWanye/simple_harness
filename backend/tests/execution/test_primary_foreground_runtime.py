@@ -89,7 +89,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None, procedure_runtime=None, context_route_ledger_factory=None, write_file_schema=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None, procedure_runtime=None, context_route_ledger_factory=None, write_file_schema=None, context_clock=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -258,7 +258,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             sdk_run_id=run_id,actual_sdk_terminal=stack.read_run_terminal_evidence(run_id))
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
-        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
+        context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack,
+            **({"clock": context_clock} if context_clock is not None else {})),
         provider=ProviderPort(binding, provider_context_window), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack,
             occurrence_coordinator=occurrence_coordinator),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,

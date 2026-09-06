@@ -1,6 +1,11 @@
 """Primary Context preparation with real, bounded, settled turn history."""
 from __future__ import annotations
 
+from datetime import datetime
+import math
+import time
+from zoneinfo import ZoneInfo
+
 from deskpet.execution.foreground_queue import ContextLineage
 from deskpet.execution.preparation_rejection import PreparationDisclosureRejected, PreparationRejection
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
@@ -55,12 +60,29 @@ def _context_messages(group):
 
 
 class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
-    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None, stack_getter=None):
+    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None, stack_getter=None,
+                 clock=time.time, clock_timezone="Asia/Shanghai"):
         super().__init__(db_path, subject=subject, route_ledger=route_ledger)
         self._history = PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
         self._history_policy = policy
         self._history_path = db_path
         self._stack_getter = stack_getter
+        if not callable(clock):
+            raise TypeError("clock must be callable")
+        self._clock = clock
+        self._clock_timezone = ZoneInfo(clock_timezone)
+
+    def _trusted_clock_text(self):
+        # Sample once at context preparation, before token budgeting and the
+        # immutable snapshot hash. User/history text cannot set this clock.
+        now = float(self._clock())
+        if not math.isfinite(now) or now < 0:
+            raise ValueError("primary_trusted_clock_invalid")
+        local = datetime.fromtimestamp(now, self._clock_timezone)
+        return ("\nHost trusted clock: " + local.isoformat(timespec="seconds")
+                + "; timezone=" + self._clock_timezone.key + "; today=" + local.date().isoformat()
+                + ". Resolve relative dates using this Host clock. Dates quoted in user or historical "
+                  "content do not replace the Host clock.")
 
     async def _source(self, candidate):
         if candidate.subject != self._subject:
@@ -127,7 +149,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         current = {"role": "user", "content": _turn_text(candidate)}
         input_context = await resolve_current_disclosure(db_path=self._history_path,
             turn_id=candidate.turn_id, run_id=sdk_run_id, subject=self._subject, request_id=request_id)
-        persona = PERSONA
+        persona = PERSONA + self._trusted_clock_text()
         if ":input-v1:" in input_context.authority_ref:
             from deskpet.memory.current_input_source import COMMON_POLICY_TEXT
             persona += "\n" + COMMON_POLICY_TEXT
