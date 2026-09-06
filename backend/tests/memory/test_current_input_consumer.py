@@ -39,7 +39,7 @@ async def setup(env, kind="current_user"):
 
 async def manager(env, authority=None, sink=None, *, register=True):
     result = await m.build_human_memory_v7(env.path.with_name("memory.db"),
-        current_input_authority=authority or HostCurrentInputAuthority(env.path),
+        current_input_authority=authority or HostCurrentInputAuthority(env.path, principal=env.memory_principal),
         history_source_authority=HostHistorySourceAuthority(env.path),
         supported_filter_policies=frozenset({"host-public-turn/v1"}))
     if register:
@@ -99,7 +99,7 @@ async def test_current_input_suppression_reopen_and_foreign_run(env):
 @pytest.mark.asyncio
 async def test_item_authority_tamper_is_rejected_and_observed(env):
     principal, context, binding = await setup(env)
-    actual = HostCurrentInputAuthority(env.path)
+    actual = HostCurrentInputAuthority(env.path, principal=env.memory_principal)
     class Tampered:
         async def resolve_current_input(self, **kwargs):
             proof = await actual.resolve_current_input(**kwargs)

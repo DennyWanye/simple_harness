@@ -8,8 +8,10 @@ from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 
 
 class HostCurrentInputAuthority:
-    def __init__(self, path):
+    def __init__(self, path, *, principal=None):
+        from deskpet.memory.human_memory_v7 import local_memory_principal
         self.path = Path(path)
+        self.principal = local_memory_principal() if principal is None else principal
 
     async def resolve_current_input(self, *, principal, disclosure_context, binding):
         from simple_harness_memory import CurrentInputAuthorityV1, CurrentInputBindingV1
@@ -21,7 +23,8 @@ class HostCurrentInputAuthority:
         from deskpet.execution.foreground_runtime import _execution_session_id
         from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 
-        if type(binding) is not CurrentInputBindingV1 or principal.actor_id != disclosure_context.subject:
+        if (type(binding) is not CurrentInputBindingV1 or principal != self.principal
+                or principal.actor_id != disclosure_context.subject):
             return None
         # A declaration on an arbitrary old turn is not current input authority.
         async with aiosqlite.connect(f"file:{self.path}?mode=ro", uri=True) as db:
@@ -85,4 +88,4 @@ class HostCurrentInputAuthority:
             issuer_ref="host:current-input-authority/v1")
         return CurrentInputAuthorityV1(binding.binding_hash, current,
             AdmittedEvidenceAuthority(envelope, receipt, item), origin, kind,
-            fact["fact_hash"], fact["turn_hash"])
+            fact["fact_hash"], fact["turn_hash"], self.principal)
