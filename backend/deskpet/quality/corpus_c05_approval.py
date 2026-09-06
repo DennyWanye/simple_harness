@@ -31,7 +31,13 @@ class C05SetupApproval:
         route = await self.ledger.read_route_receipt(sdk, latest['receipt_id'])
         if route is None:
             raise CorpusApprovalBlocked('c05_setup_route_missing')
-        receipt = await self.binding_store.verify_route_receipt(route)
+        if (route.task_scope_id is None or route.binding_set_revision is None
+                or route.binding_set_receipt_id is None or route.binding_set_receipt_hash is None):
+            raise CorpusApprovalBlocked('c05_setup_route_binding_missing')
+        receipt = await self.binding_store.exact_receipt(task_scope_id=route.task_scope_id,
+            binding_set_revision=route.binding_set_revision,
+            binding_set_receipt_id=route.binding_set_receipt_id,
+            binding_set_receipt_hash=route.binding_set_receipt_hash)
         if len(receipt.root_identity_hashes) != 1:
             raise CorpusApprovalBlocked('c05_setup_root_ambiguous')
         root = await self.binding_store.verify_effect_authority(task_scope_id=route.task_scope_id,

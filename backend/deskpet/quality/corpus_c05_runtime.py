@@ -254,12 +254,13 @@ async def read_candidate_events(*, path, subject, sdk_run_id, stack, policy):
             _, (effect,) = stack.read_primary_dependency_facts(sdk_run_id, (row['effect_id'],))
             if effect is None:
                 raise ValueError('c05_indexed_effect_missing')
+            if (effect.effect_id.value != row['effect_id'] or effect.tool_name != 'task_scope_search'
+                    or effect.run_id.value != sdk_run_id):
+                raise RuntimeError('c05_candidate_effect_differs')
             if not effect.terminal:
                 continue  # pending, never evidence of completed evaluation
             if effect.result is None:
                 raise ValueError('c05_terminal_effect_result_missing')
-            if effect.tool_name != 'task_scope_search' or effect.run_id.value != sdk_run_id:
-                raise RuntimeError('c05_candidate_effect_differs')
             if effect.result.call_id != effect.call_id:
                 raise ValueError('c05_candidate_result_call_differs')
             outcome = effect.result.outcome.value
