@@ -361,7 +361,8 @@ class _Ingress:
         ).value
         self.starts.append(kwargs)
         self.records[run_id] = type(
-            "Record", (), {"state": type("State", (), {"value": "completed"})(), "version": 1}
+            "Record", (), {"state": type("State", (), {"value": "completed"})(), "version": 1,
+                           "run_id": run_id, "execution_session_id": kwargs["session_id"], "request_id": kwargs["request_id"]}
         )()
         return IngressStartReceipt(run_id, 1, kwargs["session_id"], kwargs["request_id"])
 
@@ -441,7 +442,8 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
         sdk_run_id=sdk_run_id,
     )
     ingress.records[sdk_run_id] = type(
-        "Record", (), {"state": type("State", (), {"value": "waiting"})(), "version": 4}
+        "Record", (), {"state": type("State", (), {"value": "waiting"})(), "version": 4,
+                       "run_id": sdk_run_id, "execution_session_id": session_id, "request_id": request_id}
     )()
 
     reconciled = False
@@ -458,9 +460,10 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
         notifications.append(reconciled)
     class WaitingTerminal:
         async def observe(self, **kwargs):  # type: ignore[no-untyped-def]
-            # Force the earlier SDKbind invalidation to finish before WAITING;
-            # it cannot accidentally satisfy the post-reconciliation assertion.
-            await asyncio.shield(runtime._notification_task)
+            # Recovery may have no preceding invalidation. If one exists,
+            # finish it before checking the actual WAITING notification.
+            if runtime._notification_task is not None:
+                await asyncio.shield(runtime._notification_task)
             return None
 
     runtime = ForegroundRuntimeExecutionAuthority(
@@ -481,7 +484,7 @@ async def test_restart_with_durable_binding_queries_sdk_and_never_starts_again()
     assert ingress.starts == []
     assert store.start_observations == ["QUERY_FOUND"]
     await asyncio.shield(runtime._notification_task)
-    assert notifications[0] is False and notifications[-1] is True
+    assert notifications and notifications[-1] is True
     await runtime.close()
 
 
