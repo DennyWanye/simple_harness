@@ -5,7 +5,10 @@ import pytest
 import simple_harness as h
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from simple_harness.contracts.messages import Message, MessageRole
-from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
+from simple_harness_memory import SuppressionRequest, SuppressionScopeKind, HistoryProcedureDraftBinding, ProcedureDraftCandidate
+from deskpet.execution.foreground_queue import ForegroundQueueStore
+from deskpet.execution.primary_dependencies import check_runtime_dependencies, PrimaryHistoryDisclosureRejected
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 from deskpet.memory.human_memory_service import QueueTurnRequest, CreateTaskScopeRequest
 from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
 from deskpet.memory.short_indexing import PrimaryShortIndexingService
@@ -51,11 +54,23 @@ class DiscoveryProvider(UseProvider):
 async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks_source(tmp_path,monkeypatch,forget_before_followup):
     provider=DiscoveryProvider()
     forget_decisions=[]
+    source_rejections=[]
     async with session(tmp_path,provider,with_discovery=True) as ctx:
         scope=await ctx.service.create_task_scope(CreateTaskScopeRequest('discover-scope','写记录','write','discover-create'))
         await bind_scope_root(ctx.state,scope['scope_ref'],ctx.root,tag='discover-root')
         provider.configure(scope['scope_ref'],'',0,1)
         if forget_before_followup:
+            invoke=provider.invoke
+            async def guarded_invoke(request, *, cancel):
+                current=await ForegroundQueueStore(ctx.state).current_snapshot(local_owner_auth().subject)
+                try:
+                    await check_runtime_dependencies(db_path=ctx.state,stack=ctx.stack,
+                        sdk_run_id=current.sdk_run_id,request=request,policy_factory=lambda _:ctx.runtime.history_policy)
+                except PrimaryHistoryDisclosureRejected as error:
+                    source_rejections.append(error.error_code)
+                    raise
+                return await invoke(request,cancel=cancel)
+            monkeypatch.setattr(provider,'invoke',guarded_invoke)
             discover=ctx.memory.procedure_runtime.discover
             async def then_forget(arguments,context):
                 result=await discover(arguments,context)
@@ -65,6 +80,13 @@ async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks
                 decision=await manager.suppress(principal=ctx.memory.principal(),request=SuppressionRequest('forget-before-send',
                     ctx.memory.principal().actor_id,SuppressionScopeKind.MEMORY,candidate['memory_id'],'user_forget',ctx.memory.semantic_clock()))
                 assert decision.scope_ref==candidate['memory_id'] and decision.request_id=='forget-before-send'
+                disclosure=await resolve_current_disclosure(db_path=ctx.state,subject=ctx.memory.principal().actor_id,
+                    run_id=context.run_id.value,request_id=context.request_id.value)
+                selected=ProcedureDraftCandidate.from_json(candidate)
+                visible=await manager.check_history_visibility(principal=ctx.memory.principal(),
+                    disclosure_context=disclosure,bindings=(HistoryProcedureDraftBinding(
+                        selected.memory_id,selected.revision,selected.source_hash),))
+                assert visible.items[0].visible is False
                 forget_decisions.append(decision)
                 return result
             monkeypatch.setattr(ctx.memory.procedure_runtime,'discover',then_forget)
@@ -73,6 +95,7 @@ async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks
         await asyncio.wait_for(ctx.runtime.drain(),30)
         if forget_before_followup:
             assert len(forget_decisions)==1
+            assert source_rejections==['primary_history_disclosure_rejected']
             assert len(provider.requests)==2 and provider.selected is None
             assert not (ctx.root/'record-1.txt').exists()
             return
@@ -86,7 +109,6 @@ async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks
         group=await authority.registrations_for_run(groups[0])
         proof=group.terminal_source[0].sanitized_payload['visibility_dependencies']
         assert proof['schema_version']==3
-        from simple_harness_memory import ProcedureDraftCandidate
         selected=ProcedureDraftCandidate.from_json(provider.selected)
         assert list(proof['procedure_drafts'])==[{
             'memory_id':selected.memory_id,'revision':selected.revision,'candidate_hash':selected.source_hash}]

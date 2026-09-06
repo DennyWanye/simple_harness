@@ -7,7 +7,7 @@ import pytest
 import simple_harness as h
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
-from simple_harness_memory import MemoryManager, SuppressionRequest, SuppressionScopeKind
+from simple_harness_memory import MemoryManager, SuppressionRequest, SuppressionScopeKind, HistoryProcedureDraftBinding
 
 from deskpet.execution.closure_request_guard import ClosurePhysicalRequestGuard
 from deskpet.execution.primary_dependencies import dependencies
@@ -73,6 +73,10 @@ async def test_actual_draft_only_forget_before_closure_blocks_http_without_incid
             'closure-draft-only-forget', memory.principal().actor_id,
             SuppressionScopeKind.MEMORY, target[0], 'user_forget', memory.semantic_clock()))
         assert decision.scope_ref == target[0] and decision.request_id == 'closure-draft-only-forget'
+        actual_visibility = await manager.check_history_visibility(principal=memory.principal(),
+            disclosure_context=h.DisclosureContext.from_json(prepared['disclosure']),
+            bindings=(HistoryProcedureDraftBinding(**proof['procedure_drafts'][0]),))
+        assert actual_visibility.items[0].visible is False
         ordinary = dependencies(proof['evidence'], proof['recall'], proof.get('short_horizon', ()))
         async with aiosqlite.connect(world.state) as db:
             db.row_factory = aiosqlite.Row
