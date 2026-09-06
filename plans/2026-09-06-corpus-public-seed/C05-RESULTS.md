@@ -15,3 +15,16 @@ Raw: `.local-test-evidence/2026-09-07/c05-source-r1/`.
 Successor fixture-only change supplies candidate_identity from actual installed distribution version and local wheel origin/hash. It retains the production identity verifier, changes no SDK pin/shared helper and performs no repeated all-member artifact certification. This correction is NOT_RUN. After Hegel explicitly releases the slot, retry only the existing four parametrized producer controls (04/09/14/20) and scoring-pagination/suppression control; do not rerun the three greens.
 
 No C05 quality/model result, no full20 setup acceptance. Revision phase/source hooks remain unvalidated.
+
+## r2: five original fixture failures only
+
+Fixed `265f2fde`, same H079/M619 installed target. Identity admitted; **5 FAIL / 3 deselected**, 7.39s. PG78710 exit1/remaining=[]/cleanup_error=null, elapsed7.877s, peak192512KiB, minimum disk4721MiB. Shared slot handed to Hegel. WIP `corpus_c05_runtime.py` was moved outside import paths to ignored `c05-runtime-wip/`; none of that code ran.
+
+- C05-20 reached the final invalid-setup assertion after actual create/readback/prefix checks; the expected error was `c05_exact_batch_required`, but the exact compiler rejects earlier with `c05_exact_setup_required`.
+- C05-04/09/14 failed required disclosure. Read-only inspection of retained Host DBs confirms revision1, `operations=[]`, `resume=null`, zero mutation decisions. Actual terminal transcript has only create_new then fixture final: no `task_scope_update`. The fixture incorrectly waited for a closure instruction that a clean CREATE alone does not produce. Missing next-step/status remains a real prepare failure, not a policy exemption.
+- Scoring test completed setup+three actual scoring Runs and both pages; late suppression count oracle failed. Production reader explicitly preserves an independently visible original USER after hiding its derived terminal. The third scoring turn is `d6e60c2c-34a4-53a9-b9b2-f0fbc6d6ddcd`, original USER evidence `46f74cfd-b9b8-56f5-8ac1-889531330e03`, hash `2ad7c05f602e976be8110bf3babb16119cfa5dfc384d7a02ed6b433ea58ff1fc`; its original full terminal group is `a394af84-d6f8-5865-8811-7345f85268f4`. The successor must assert exact USER-only role/ref/hash and absence of affected assistant/source, not relax a group-count assertion. Stored identities are observed; the precise filtered DTO was not printed in r2 and needs the public readback diagnosis before attributing that extra group conclusively.
+
+Raw `.local-test-evidence/2026-09-07/c05-source-r2/command.log`: `4678600298a576be526d73c4ada01d2786ff05db8aa6199c75a78db8bf98f7e4`.
+`resource.json`: `6511b8543d2d475e31b866873a21efb477f9c9cf5db6b8d9fbbaf713c5c42d07`.
+
+No additional test batch or model call. Source repair and actual missing producer seam under review; do not claim all five fixed yet.
