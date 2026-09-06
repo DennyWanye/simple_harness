@@ -1,0 +1,11 @@
+{
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.14-py3-none-any.whl": "f60e7696af830704399f1e964fbd312ea1fea6e41ee7b9123a8a3dfe303368eb"
+  },
+  "build_manifest_sha256": "36cdd8fa8b33ee288051e8a814a5b9cd50d0c4018e6c100eeb85ab5ed17a9b56",
+  "ci_artifact_id": null,
+  "ci_run_id": null,
+  "commit": "27dceffe05247415ba9b48a55e865a0faba37629",
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.6.14"
+}
