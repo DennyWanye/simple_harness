@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05审批/缺证据3唯一控制分批通过：r1真empty与missing通过、pending无Effect红；公开audit+response身份proof修复后仅原红与False新控2PASS2.75s。无typed原因False不冒真零，PG83853/84899清空；marker/closure及多轮actualmain另首测，非模型质量。[结果](../plans/2026-09-06-corpus-public-seed/C05-AUTHORITY-RESULTS.md)。
+
 最后更新：2026-09-07。C08-01/06/11/18保留旧USER+assistant摘要实际main及wrongassistant共5新控首批5PASS38.78s：原job APPLIED/IDLE，公开suppression后两history隐藏，重开生产authority后下一physical请求无旧内容。PG84053五child自然清空，非真实模型/原生/rolling-summary；正式dispatcher待接。本批也确认d60异步诊断两SDK来源实际写出且无未await警告。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。
 
 最后更新：2026-09-07。Host诊断异步消费修复d60a94f4：真实installed Memory SQLite快照/timeout-cancel两个新控及三个受影响同步控制首批5PASS1.04s，PG83640清空。main改显式await，尚待下一新组合观测；SDK诊断版本硬编码原0.6.0另待，不冒称完整审计或改制品。[结果](../plans/2026-09-07-sdk-async-snapshot/RESULTS.md)。
