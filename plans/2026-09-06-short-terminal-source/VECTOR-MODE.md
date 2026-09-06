@@ -1,6 +1,6 @@
 # 短期请求完整检索通道：源码候选
 
-2026-09-06。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，分支 `feat/short-vector-mode`，基线 `e04627c41d4e59ee832983a074ce0672ef8249d0`。本批尚未运行测试，供主代理转 Dirac 独审；不代表 native 修复已验收。
+2026-09-06。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，分支 `feat/short-vector-mode`，基线 `e04627c41d4e59ee832983a074ce0672ef8249d0`。源码固定 `f8b2d41c51be73fd7bc9b1957cfc5f580d0b64d3`，新增公共链路控制 1 PASS；供主代理转 Dirac 独审，不代表 native 修复已验收。
 
 ## 最小生产修改
 
@@ -18,4 +18,20 @@
 4. 同一公共 context／实际源／预算下，另建 full-text-only 公共 Plan 作原行为反例，要求空 items、truncated、budget_exhausted；不复制前一请求的 observation 身份。
 5. 另一个 long-only 请求核验 context／plan 均仍为 FULL_TEXT。
 
-测试只证明公共 SDK 至 Host fragments，本次不代替实际 WeMM、Provider 接收或 native UI。独审后通过共享 145 资源入口串行执行这一新测试；与 Carver／Hegel 协调槽，不重跑旧绿、不更换锁。原生短期叶由主后续复测。
+测试只证明公共 SDK 至 Host fragments，本次不代替实际 WeMM、Provider 接收或 native UI。主通知 Hegel 释放槽并指定本控制优先后，通过共享 145 资源入口串行执行；Carver 继续源码准备，不重跑旧绿、不更换锁。原生短期叶由主后续复测。
+
+## 必要控制结果与原始证据
+
+固定源码未改，实际 installed H077/M617 与自有 Host 源码运行唯一新增测试：**1 PASS／4.74s**。两组真实公开输入的成本断言、FTS-only 空结果反例、FTS＋VECTOR 小组完整命中及来源依赖、原预算、long-only 模式断言全部执行通过。没有运行旧绿色控制或真实模型。
+
+资源入口总耗时5.534s、峰174064KiB、PG89042 exit0、remaining=[]、cleanup_error=null；额外 `ps` 检查同 PG 无成员。共享锁已释放。首次 r1 因预先创建 evidence 目录被入口 `exist_ok=False` 拒绝，未启动测试 child；改用未创建的 r2 执行，未修改资源入口。
+
+证据根目录（Memory 自有树，全部 ignored）：`/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/short-vector/`。
+
+| 文件 | SHA-256 |
+|---|---|
+| run_control.py | b772c50428d646f40921bb151571f3832940d876efa53629615af1ec0e73fe3b |
+| r2/command.log | 07e03b714d10ca8c27a57414c1fdc1537a460fcedf9804a16f9cc9bf20bfc684 |
+| r2/resource.json | cc0f7025ed7831a42e7342a1885230345fa5c2f5695d168b3714145a0b02d543 |
+
+命令使用 `primary-m0614/venv/bin/python` 执行 `/Users/denny/projects/simple_harness-test-resource-cleanup/scripts/run_resource_bounded.py --evidence-dir <上述根>/r2 --rss-mib 512 --seconds 90 -- <同Python> -I -B <上述根>/run_control.py <上述根>/r2`。carrier 精确加载 `primary-077617/installed` 与本 Host backend；未改 installed、SDK、原 userdata 或预算。

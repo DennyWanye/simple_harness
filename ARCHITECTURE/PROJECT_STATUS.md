@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：自有 `simple_harness-corpus-clock`／`feat/short-vector-mode`，base e04627c4，源码 f8b2d41c 完成最小短期检索通道补齐。新增公共 typed→Host fragments 控制 1PASS／4.74s，PG89042 无残留、共享锁释放；只此新增控制，未重跑旧绿。待独审／主合并／native，未称整体召回质量完成。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
+
 2026-09-06：generation叶161702be追加必要冷加载恢复控1PASS/5.60s；两个step串行超时后同一load继续、未确认pending或推进_last_projection，加载完成立即恢复。仅测试/文档增量，旧四绿及WeMM suite未重跑；PG83348无残留、锁释放。[范围](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
 
 2026-09-06：自有 clock 树 `feat/short-index-generation` 从02bf补正常后台 generation。四项新控分批通过，公共查询命中与维护/重开/lost-ACK 幂等已验证；timeout/cancel 不被确认 cache 掩盖。PG82943 清空、锁释放；本叶待独审/主合并/实际 WeMM-native，不重跑旧绿。[范围](../plans/2026-09-06-short-terminal-source/GENERATION.md)。

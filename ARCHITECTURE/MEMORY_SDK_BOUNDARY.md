@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：Host 显式短期 RecallContext／Plan 请求 FTS＋VECTOR，使 SDK 已检索的小 vector-only 组可参与统一预算选择；long-only 仍 FTS，预算及公开来源／privacy 检查不改。实际 installed H077/M617 新控 1PASS，旧 FTS-only 同源计划空结果反例与 Host fragments 来源核验均通过；未改 SDK／installed，真实 WeMM/native 由主后继验收。[范围与证据](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
+
 2026-09-06：后台generation补充共享冷加载跨两次timeout恢复控通过，默认5s及WeMM不改；小公共embedder只证明worker串行、pending/维护时间及恢复语义。PG83348已清空，真实WeMM/native由主验证。[证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
 
 2026-09-06：正常 MemoryAnalysisLane 的 short worker 在 projection 后调用 SDK 公共 generation；cache 只在生成成功后确认，维护失败保留 pending，原 SDK 幂等负责同 lineage/manifest 复用。四个小 embedder 公共接线控分批通过；未改 SDK 或 WeMM，真实 native 仍待主验证。[接线事实](../plans/2026-09-06-short-terminal-source/GENERATION.md)。

@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。短期显式 typed 请求补齐 FTS＋VECTOR，long-only 仍 FTS；原 1s／2048 预算与来源门不变。固定源码 f8b2d41c，实际 H077/M617 公共链路新增反例 1PASS／4.74s，证明大 FTS 组超预算时小 vector-only 偏好可进入 Host fragments。PG89042 清空、锁释放；待独审／主合并／native 短期叶。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
+
 最后更新：2026-09-06。generation 生产源码161702be未改，追加冷加载跨两次有界超时恢复控1PASS：并发step串行、共享load仅一次、失败不确认cache/推进维护时间、完成加载后立即恢复。PG83348无残留、锁释放；不代表实际WeMM/native验收。[补充证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
 
 最后更新：2026-09-06。02bf 后继后台 worker 已接公共 generation：同锁/既有 timeout 内 projection→generation，成功才确认 cache，失败/超时/取消可重试，SDK 按 lineage/manifest 幂等复用。实际 installed H077/M617 + 小测试 embedder 四控分批绿（含公共 query、维护/重开/lost-ACK 不重复 embedding）；PG82943 无残留、锁释放。尚待独审/主组合/实际 WeMM/native。[边界与结果](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
