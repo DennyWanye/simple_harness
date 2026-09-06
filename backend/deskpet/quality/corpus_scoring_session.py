@@ -1,12 +1,14 @@
 """One isolated, in-process main-factory scoring session; never opens oracle files.
 
-This module starts no HTTP server, Tauri, model loader, or fixture Provider.
+No application server or Tauri is started. C07 authored-recent setup alone owns
+its bounded loopback fixture Provider; scoring uses a separate real binding.
 Run only as a child of corpus_scoring under the shared resource owner.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
+from contextlib import AsyncExitStack
 from datetime import datetime
 import json
 import os
@@ -157,8 +159,6 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         validate_c07_recent_input(c07, authored["recent_messages"])
     if (authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None:
         raise ValueError("corpus_first_batch_scalar_input_required")
-    if case_id in {"C01-06", "C01-11"}:
-        raise ValueError("corpus_case_runtime_adapter_not_ready")
     text = authored["current_user_message"]
     if type(text) is not str or not text:
         raise ValueError("corpus_original_user_message_required")
@@ -177,6 +177,8 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     if case_id.startswith("C07-"):
         from deskpet.quality.corpus_c07 import compile_c07_setup as compile_setup
         from deskpet.quality.corpus_c07_prepare import prepare_c07_seed as prepare_runtime_seed
+    elif case_id == "C01-06":
+        from deskpet.quality.corpus_c01_revision_prepare import compile_c01_revision_setup as compile_setup
     from deskpet.memory.human_memory_v7 import local_memory_principal, host_classification_policy, HOST_SUPPORTED_FILTER_POLICIES
     from deskpet.memory.evidence_authority import HostEvidenceAuthority
     from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
@@ -186,7 +188,8 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     import simple_harness_memory as memory
 
     outcome = dict(execution_status="SETUP_NOT_READY", trace=None,
-        scenario_clock=authored["scenario_clock"], provider_clock_projection="NOT_IMPLEMENTED_NON_TIME_BATCH",
+        scenario_clock=authored["scenario_clock"],
+        provider_clock_projection="CONFIGURED_MAIN_PRIMARY_SEMANTIC_CLOCK_NOT_OBSERVED",
         embedding="NO_LOCAL_MODEL_LOADED", initialization="main_product_factory",
         cleanup_errors=[])
     service = None
@@ -254,28 +257,41 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
             display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
         main.service_context.register("human_memory_host_service_factory", factory)
-        if case_id.startswith("C07-"):
+        if case_id.startswith("C07-") or case_id == "C01-06":
             await factory.bind(auth).open_primary()
         batch = compile_setup(case_id, setup["setup_source_text"],
             scenario_clock=authored["scenario_clock"]["instant"])
-        delivery = SetupFixtureDeliveryAuthority()
-        fixture_manager = await memory.build_human_memory_v7(
-            main._paths.user_data_dir() / "data" / "human_memory_v7.db",
-            classification_policy=host_classification_policy(),
-            supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES,
-            evidence_authority=HostEvidenceAuthority(main._state_db_path),
-            analysis_delivery_authority=delivery, clock=clock)
-        try:
-            seed = await prepare_runtime_seed(path=main._state_db_path, manager=fixture_manager,
-                principal=local_memory_principal(), authority_ref=auth.authority_ref,
-                batch=batch, delivery_authority=delivery)
+        # Fixture authorities are owned only by this setup scope. Close them
+        # before main reopens the same database with production authorities.
+        async with AsyncExitStack() as fixture_owners:
+            memory_path = main._paths.user_data_dir() / "data" / "human_memory_v7.db"
+            if case_id == "C01-06":
+                from deskpet.quality.corpus_c01_revision_prepare import open_c01_revision_fixture
+                _, seed = await fixture_owners.enter_async_context(open_c01_revision_fixture(
+                    path=main._state_db_path, memory_path=memory_path,
+                    principal=local_memory_principal(), authority_ref=auth.authority_ref,
+                    batch=batch, classification_policy=host_classification_policy(),
+                    supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
+            else:
+                delivery = SetupFixtureDeliveryAuthority()
+                fixture_manager = await memory.build_human_memory_v7(
+                    memory_path, classification_policy=host_classification_policy(),
+                    supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES,
+                    evidence_authority=HostEvidenceAuthority(main._state_db_path),
+                    analysis_delivery_authority=delivery, clock=clock)
+                fixture_owners.push_async_callback(fixture_manager.close)
+                seed = await prepare_runtime_seed(path=main._state_db_path, manager=fixture_manager,
+                    principal=local_memory_principal(), authority_ref=auth.authority_ref,
+                    batch=batch, delivery_authority=delivery)
             outcome["setup_receipt"] = wire({name: seed[name] for name in
                 ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions")})
             if case_id.startswith("C07-"):
                 outcome["setup_receipt"].update(wire({name: seed[name] for name in
                     ("manifest_hash", "fixture_defaults", "application", "request")}))
-        finally:
-            await fixture_manager.close()
+            elif case_id == "C01-06":
+                outcome["setup_receipt"].update(wire({name: seed[name] for name in
+                    ("ingestion_receipt", "application", "request", "initial_plan", "plan",
+                     "old_receipt", "new_receipt", "old_receipt_ref", "new_receipt_ref")}))
         # Reopen with actual production authorities. Never replace the production
         # analysis authority with the local setup executor during scoring.
         outcome["stage"] = "main_product_runtime_factory"
