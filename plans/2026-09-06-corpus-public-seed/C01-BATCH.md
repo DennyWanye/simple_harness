@@ -41,3 +41,14 @@ seed ingestion pending分析任务的真实消费闭合，没有两轮评分。�
 - `.local-test-evidence/2026-09-06/corpus-public-seed/revision-r2/resource.json` SHA256 `9017ba2eaf5a555c5fa5fd966fd2c5a47f2aa067ea6df7c99b95d1c18734adfa`
 - `.local-test-evidence/2026-09-06/corpus-public-seed/revision-r3/command.log` SHA256 `fedceb118a93f8e9bed4f5b262246c28f6bfdace0d13713f5045fa2fb6554486`
 - `.local-test-evidence/2026-09-06/corpus-public-seed/revision-r3/resource.json` SHA256 `6b88c65d83e5ecc9e7778198f578f4eec5cad92f3b041c0abaf70a1db370abbb`
+
+## Dirac P2 causal oracle followup
+
+65340d13 source+18/1 results received limited ACCEPT. Its original history check
+showed post-forget denial only. New revision-r4 adds the same binding/disclosure
+visible BEFORE suppression and invisible AFTER; no other policy/context change.
+1PASS/.79s, PG8072exit0/resource1.520s/peak162560KiB/remaining[].
+This strengthens the existing test, not an additional unique corpus case.
+Old C01 matrix/graph controls were not rerun.
+- `.local-test-evidence/2026-09-06/corpus-public-seed/revision-r4/command.log` SHA256 `ac0988b070cfb8585ee6cce3a7e8654f43da14bf7e316bc0b9277c6ad43db855`
+- `.local-test-evidence/2026-09-06/corpus-public-seed/revision-r4/resource.json` SHA256 `4e54116af0fb6cec4f11863ab34bccd70ac1e768888c72b6d09a9fef3dda3706`

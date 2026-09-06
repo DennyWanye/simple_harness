@@ -1,5 +1,11 @@
 <!-- 最后更新：2026-09-06 -->
 
+C01-06 history遗忘因果oracle已补：同binding/disclosure在MEMORY-only suppression
+前visible、后不可见，定向1PASS，PG8072清空；不新增unique语料计数。
+[结果](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 C01公共seed后继：18个新case完整记录atomic创建/actualID与内容hash回读通过，
 C01-06真实REVISE同ID1→2/持久fixtureauthority/reopen/过期已消费replay及
 MEMORY-only suppression→graph/history不可见通过。旧C01-10/graph未重跑。

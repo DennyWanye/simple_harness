@@ -51,11 +51,15 @@ async def test_c01_06_public_revision_authority_reopen_and_memory_suppression(tm
         assert (await manager.get_memory_mutation_receipt_view(principal=principal,receipt_ref=actual['result'].receipt_ref))==actual['new_receipt']
         replay=await manager.apply_memory_mutation_plan(principal=principal,scope=m.MemoryScope.personal(principal.actor_id),plan=plan)
         assert replay==actual['result']  # consumed replay, not renewed expired authority
+        binding=m.HistoryEvidenceBinding(envelope,receipt)
+        before=await manager.check_history_visibility(principal=principal,disclosure_context=envelope.disclosure_context,
+            bindings=(binding,))
+        assert len(before.items)==1 and before.items[0].visible
         eid=actual['labels']['A'].memory_id
         await manager.suppress(principal=principal,request=m.SuppressionRequest('fixture-forget',principal.actor_id,
             m.SuppressionScopeKind.MEMORY,eid,'user_forget',clock[0]))
         assert (await manager.get_twin_graph_view(principal=principal)).nodes==()
         visibility=await manager.check_history_visibility(principal=principal,disclosure_context=envelope.disclosure_context,
-            bindings=(m.HistoryEvidenceBinding(envelope,receipt),))
+            bindings=(binding,))
         assert len(visibility.items)==1 and not visibility.items[0].visible
     finally:await manager.close()
