@@ -72,6 +72,7 @@ class TaskRevisionPhase:
             original_source_hash=original.source_hash)
         transport = TaskSetupHttpProvider(model=main.config.llm.local.model, phase='revision')
         observations = None
+        observation_started = False
         approval = C05SetupApproval(ingress=main._sdk_ingress, transport=transport, stack=stack,
             ledger=ContextRouteLedgerStore(main._state_db_path),
             binding_store=WorkspaceBindingAuthorityStore(main._state_db_path,
@@ -103,6 +104,7 @@ class TaskRevisionPhase:
                 service=service, provider=transport, drive=drive, stack=stack, path=main._state_db_path,
                 policy=main._primary_history_policy(subject), disclosure_context_resolver=disclosure,
                 revision_of=original)
+            observation_started = True
             observations = await self.collect_turn(main, service, subject, transport.queued,
                 operational_text(self.batch, 'A', phase='before_selection'), directory=phase_dir)
             binding = SdkRunBindingV1.from_record(stack.read_closure_run_facts(archive.sdk_run_id).binding_record)
@@ -130,7 +132,7 @@ class TaskRevisionPhase:
             return phase
         except BaseException as error:
             phase['error_type'] = type(error).__name__
-            if observations is None and transport.queued is not None and not isinstance(error, asyncio.CancelledError):
+            if not observation_started and transport.queued is not None and not isinstance(error, asyncio.CancelledError):
                 try:
                     await self.collect_turn(main, service, subject, transport.queued,
                         operational_text(self.batch, 'A', phase='before_selection'), directory=phase_dir)
