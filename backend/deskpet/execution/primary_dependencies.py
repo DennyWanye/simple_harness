@@ -198,12 +198,23 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None)
                 short.extend(sources.get("short_horizon", ()))
                 short.append(binding)
                 continue
-            if fragment.get("lane") != "long_term_typed":
+            if fragment.get("lane") not in {"long_term_typed", "short_horizon_typed"}:
                 raise ValueError("primary_dependencies_carrier_unsupported")
             binding = fragment.get("history_binding")
             item = dependencies(recall=[binding])["recall"][0]
             if item["item_id"] != fragment["ref"]:
                 raise ValueError("primary_dependencies_item_mismatch")
+            if fragment.get("lane") == "short_horizon_typed":
+                from deskpet.task_scope.protocol import canonical_hash
+                payload = fragment.get("payload")
+                if (not isinstance(payload, Mapping) or not isinstance(payload.get("content"), str)
+                        or canonical_hash(dict(payload)) != fragment.get("payload_hash")):
+                    raise ValueError("primary_dependencies_short_bytes_mismatch")
+                sources = parse_dependencies(fragment.get("history_source_dependencies"))
+                if not sources["evidence"] or item not in sources["recall"] or sources.get("short_horizon"):
+                    raise ValueError("primary_dependencies_short_sources_missing")
+                evidence.extend(sources["evidence"])
+                recall.extend(sources["recall"])
             recall.append(item)
     # Every actual primary handler records its exact SDK identity, including
     # unscoped search/page-in. TaskScope reservations are not a complete index.

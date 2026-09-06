@@ -6,8 +6,8 @@
 Host adjudication over the model's route proposal:
 
 - ``direct_standalone`` — standalone receipt, no TaskScope, no Memory query.
-- ``memory_standalone`` — stable failure until the Task 5 recall lane lands
-  (never a Noop/fake receipt).
+- ``memory_standalone`` — explicit long-term and/or short-horizon selection,
+  with one typed RecallPlan budget and current source checks.
 - ``continue_active``   — exact current active scope (latest durable
   ROUTED_TASK decision) revalidated against the live binding head.
 - ``resume_existing``   — requires an exact ``task_scope_id`` (search hits
@@ -34,7 +34,7 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
-from deskpet.memory.recall_selection import REQUESTABLE_MEMORY_TYPES, parse_memory_types
+from deskpet.memory.recall_selection import REQUESTABLE_MEMORY_TYPES, parse_recall_selection
 
 ROUTES = (
     "direct_standalone",
@@ -54,9 +54,13 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
         "route": {"type": "string", "enum": list(ROUTES)},
         "query": {"type": "string", "maxLength": _MAX_TEXT},
         "memory_types": {
-            "type": "array", "minItems": 1, "maxItems": 4,
+            "type": "array", "minItems": 0, "maxItems": 4,
             "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
-            "description": "Required for memory_standalone. Select only the needed long-term types: semantic (facts/preferences), episode (past events), procedure (applicable steps), prospective (future intentions/reminders). Selection grants no permission to disclose or execute.",
+            "description": "Required for memory_standalone. Select only the needed long-term types: semantic (facts/preferences), episode (past events), procedure (applicable steps), prospective (future intentions/reminders). An empty list is valid only with include_short_horizon=true. Selection grants no permission to disclose or execute.",
+        },
+        "include_short_horizon": {
+            "type": "boolean",
+            "description": "For memory_standalone, request relevant prior conversation groups outside the current recent context. Defaults to false. Short and long-term results share one Host budget and current source checks.",
         },
         "task_scope_id": {"type": "string", "maxLength": 128},
         "title": {"type": "string", "maxLength": 256},
@@ -179,6 +183,7 @@ class ContextRouteToolService:
         extras: Mapping[str, Any] | None = None,
         recall_refs: tuple[str, ...] = (),
         recall_types: tuple[str, ...] = (),
+        recall_short_horizon: bool | None = None,
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -221,7 +226,8 @@ class ContextRouteToolService:
                 **({"recall_selection": {
                     "origin": "model_proposal",
                     "requested_memory_types": list(recall_types),
-                }} if recall_types else {}),
+                    "include_short_horizon": bool(recall_short_horizon),
+                }} if recall_types or recall_short_horizon is not None else {}),
             },
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
@@ -331,7 +337,9 @@ class ContextRouteToolService:
                 "context_route_recall_query_required",
             )
         try:
-            memory_types = parse_memory_types(proposal.get("memory_types"))
+            memory_types, include_short_horizon = parse_recall_selection(
+                proposal.get("memory_types"), proposal.get("include_short_horizon", False),
+            )
         except ValueError as exc:
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, str(exc),
@@ -341,6 +349,7 @@ class ContextRouteToolService:
         execution = await self._recall_executor(
             query=query, run_id=run_id, turn_ordinal=turn_ordinal,
             memory_types=memory_types,
+            include_short_horizon=include_short_horizon,
         )
         fragments = project_recall_fragments(execution)
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
@@ -353,6 +362,7 @@ class ContextRouteToolService:
             proposal=proposal,
             recall_refs=refs,
             recall_types=memory_types,
+            recall_short_horizon=include_short_horizon,
             extras={
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),

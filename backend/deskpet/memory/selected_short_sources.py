@@ -23,7 +23,7 @@ from deskpet.memory.primary_visibility import (
 )
 
 if TYPE_CHECKING:
-    from simple_harness_memory import HistoryShortHorizonBinding
+    from simple_harness_memory import HistoryRecallBinding, HistoryShortHorizonBinding
 
 MAX_SELECTED = 256
 MAX_GROUP_REFS = 256
@@ -41,9 +41,27 @@ def _short_ref(binding):
     }
 
 
+def _recall_ref(binding):
+    return {name: getattr(binding, name) for name in
+            ("result_id", "result_hash", "item_id", "item_hash")}
+
+
+def _binding_dependencies(bindings, evidence=()):
+    from simple_harness_memory import HistoryRecallBinding, HistoryShortHorizonBinding
+    bindings = tuple(bindings)
+    return dependencies(
+        evidence,
+        recall=(_recall_ref(binding) for binding in bindings
+                if type(binding) is HistoryRecallBinding),
+        short_horizon=(_short_ref(binding) for binding in bindings
+                       if type(binding) is HistoryShortHorizonBinding),
+        schema_version=2,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class SelectedShortSourceItem:
-    binding: HistoryShortHorizonBinding
+    binding: HistoryShortHorizonBinding | HistoryRecallBinding
     visible: bool
     reason: str
     evidence: tuple[tuple[str, str], ...] = ()
@@ -59,15 +77,14 @@ class SelectedShortSources:
 
     @property
     def visibility_dependencies(self):
-        return dependencies(
+        return _binding_dependencies(
+            self.accepted_bindings,
             (
                 {"evidence_id": eid, "envelope_hash": digest}
                 for item in self.items
                 if item.visible
                 for eid, digest in item.evidence
             ),
-            short_horizon=(_short_ref(binding) for binding in self.accepted_bindings),
-            schema_version=2,
         )
 
 
@@ -78,6 +95,12 @@ class SelectedShortSourceReader:
         self.authority, self.manager, self.principal = authority, manager, principal
 
     async def resolve(self, *, disclosure_context, bindings) -> SelectedShortSources:
+        return await self._resolve(disclosure_context=disclosure_context, bindings=bindings, typed=False)
+
+    async def resolve_typed(self, *, disclosure_context, bindings) -> SelectedShortSources:
+        return await self._resolve(disclosure_context=disclosure_context, bindings=bindings, typed=True)
+
+    async def _resolve(self, *, disclosure_context, bindings, typed) -> SelectedShortSources:
         import simple_harness_memory as m
 
         if (
@@ -89,12 +112,14 @@ class SelectedShortSourceReader:
             type(bindings) is not tuple
             or len(bindings) > MAX_SELECTED
             or any(
-                type(binding) is not m.HistoryShortHorizonBinding
+                type(binding) is not (m.HistoryRecallBinding if typed else m.HistoryShortHorizonBinding)
                 for binding in bindings
             )
         ):
             raise ValueError("selected_short_bindings_invalid")
-        resolver = getattr(self.manager, "resolve_short_horizon_sources", None)
+        resolver = getattr(self.manager, (
+            "resolve_typed_short_horizon_sources" if typed else "resolve_short_horizon_sources"
+        ), None)
         checker = getattr(self.manager, "check_history_visibility", None)
         snapshot_type = getattr(m, "ShortHorizonSourceSnapshot", None)
         if not callable(resolver) or not callable(checker) or snapshot_type is None:
@@ -147,13 +172,12 @@ class SelectedShortSourceReader:
                 continue
             try:
                 evidence = await self._verify_group(observed.source_refs)
-                proof = dependencies(
+                proof = _binding_dependencies(
+                    (binding,),
                     (
                         {"evidence_id": eid, "envelope_hash": digest}
                         for eid, digest in evidence
                     ),
-                    short_horizon=(_short_ref(binding),),
-                    schema_version=2,
                 )
                 # Reuse Host's actual recursive S1/terminal/USER proof and public
                 # visibility reader after slow registration reads. Per-hit limits

@@ -283,6 +283,7 @@ class HumanMemoryV7Runtime:
         turn_ordinal: int,
         now: float | None = None,
         memory_types: tuple[str, ...] | None = None,
+        include_short_horizon: bool | None = None,
     ) -> Any:
         """Execute a Host-authored typed RecallPlan; degraded lanes stay stable."""
 
@@ -306,13 +307,16 @@ class HumanMemoryV7Runtime:
         )
 
         from deskpet.memory.recall_selection import (
-            HOST_DEFAULT_MEMORY_TYPES, REQUESTABLE_MEMORY_TYPES, parse_memory_types,
+            HOST_DEFAULT_MEMORY_TYPES, REQUESTABLE_MEMORY_TYPES, parse_recall_selection,
         )
 
-        explicit_selection = memory_types is not None
-        requested_names = (
-            parse_memory_types(memory_types) if explicit_selection else HOST_DEFAULT_MEMORY_TYPES
-        )
+        explicit_selection = memory_types is not None or include_short_horizon is not None
+        if explicit_selection:
+            requested_names, typed_short = parse_recall_selection(
+                memory_types, False if include_short_horizon is None else include_short_horizon,
+            )
+        else:
+            requested_names, typed_short = HOST_DEFAULT_MEMORY_TYPES, False
         manager = await self.manager()
         principal = self.principal()
         moment = time.time() if now is None else float(now)
@@ -352,8 +356,8 @@ class HumanMemoryV7Runtime:
             query,
             None,
             available_types,
-            False,
-            (RecallSelectorDomain.MEMORY_TYPE,),
+            typed_short,
+            (RecallSelectorDomain.MEMORY_TYPE, *((RecallSelectorDomain.SHORT_HORIZON,) if typed_short else ())),
             (RecallRetrievalMode.FULL_TEXT,),
             (),
             (),
@@ -381,7 +385,8 @@ class HumanMemoryV7Runtime:
             context.query,
             requested_types,
             context.short_horizon_allowed,
-            context.allowed_selector_domains,
+            (*((RecallSelectorDomain.MEMORY_TYPE,) if requested_types else ()),
+             *((RecallSelectorDomain.SHORT_HORIZON,) if typed_short else ())),
             context.allowed_retrieval_modes,
             (),
             context.allowed_entity_constraints,
@@ -401,9 +406,35 @@ class HumanMemoryV7Runtime:
             caller="foreground_recall",
         )
         if explicit_selection:
-            # The model requested long-term types only. Do not silently add a
-            # second, unrequested source lane or imply it was model-selected.
-            return RecallLanes(execution=execution, short_horizon=None, short_horizon_requested=False)
+            # A single public typed result owns ranking, budget and durable
+            # selection. Never call the separate standalone short query here.
+            selected = None
+            if typed_short:
+                from simple_harness_memory import HistoryRecallBinding
+                from deskpet.memory.selected_short_sources import SelectedShortSourceReader, SelectedShortSources
+                bindings = tuple(
+                    HistoryRecallBinding(execution.result.result_id, execution.result.result_hash,
+                                         item.selected_item.item_id, item.result_item_hash)
+                    for item in execution.result.items
+                    if item.selected_item.source_kind.value == "short_horizon"
+                )
+                if not bindings:
+                    selected = SelectedShortSources(())
+                else:
+                    try:
+                        authority = self._conversation_evidence_authority
+                        if authority is None:
+                            raise RuntimeError("selected_short_authority_unavailable")
+                        await authority.bind_primary()
+                        selected = await SelectedShortSourceReader(
+                            authority, manager=manager, principal=principal,
+                        ).resolve_typed(disclosure_context=disclosure, bindings=bindings)
+                    except Exception:  # cancellation must still propagate
+                        selected = None
+            return RecallLanes(
+                execution=execution, short_horizon=None, short_horizon_requested=False,
+                typed_short_horizon_requested=typed_short, selected_typed_short_sources=selected,
+            )
         try:
             short_horizon = await manager.recall_short_horizon(
                 principal=principal,
@@ -446,6 +477,8 @@ class RecallLanes:
     short_history_dependencies: Mapping[str, Any] | None = None
     short_horizon_requested: bool = True
     selected_short_sources: Any | None = None
+    typed_short_horizon_requested: bool = False
+    selected_typed_short_sources: Any | None = None
 
     def __post_init__(self):
         if self.short_history_dependencies is not None:
@@ -460,6 +493,11 @@ class RecallLanes:
             getattr(code, "value", str(code))
             for code in self.execution.degradation_codes
         )
+        if self.typed_short_horizon_requested:
+            if self.selected_typed_short_sources is None:
+                codes = (*codes, "short_horizon_sources_unavailable")
+            elif any(not item.visible for item in self.selected_typed_short_sources.items):
+                codes = (*codes, "short_horizon_sources_rejected")
         if self.short_horizon_requested and self.short_horizon is None:
             codes = (*codes, "short_horizon_unavailable")
         elif self.short_horizon is not None and self.short_horizon.degradation_code is not None:
@@ -501,6 +539,22 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
     fragments: list[dict[str, Any]] = []
     seen: set[str] = set()
     for item in execution.result.items:
+        source_kind = getattr(item.selected_item, "source_kind", "cognitive_memory")
+        typed_short = getattr(source_kind, "value", source_kind) == "short_horizon"
+        source_proof = None
+        if typed_short:
+            selected = getattr(lanes, "selected_typed_short_sources", None)
+            if selected is None:
+                continue
+            matched = next((observed for observed in selected.items if observed.visible and (
+                observed.binding.result_id, observed.binding.result_hash,
+                observed.binding.item_id, observed.binding.item_hash,
+            ) == (execution.result.result_id, execution.result.result_hash,
+                  item.selected_item.item_id, item.result_item_hash)), None)
+            if matched is None:
+                continue
+            from deskpet.memory.selected_short_sources import SelectedShortSources
+            source_proof = SelectedShortSources((matched,)).visibility_dependencies
         privacy = getattr(
             item.effective_privacy_class, "value", str(item.effective_privacy_class)
         )
@@ -514,7 +568,7 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
         fragments.append(
             {
                 "ref": item.selected_item.item_id,
-                "memory_type": getattr(
+                "memory_type": "short_horizon" if typed_short else getattr(
                     item.selected_item.memory_type,
                     "value",
                     str(item.selected_item.memory_type),
@@ -526,13 +580,15 @@ def project_recall_fragments(lanes: Any) -> tuple[dict[str, Any], ...]:
                 "source_task_scope_ids": list(item.source_task_scope_ids),
                 "bytes": bytes_len,
                 "tokens": tokens,
-                "lane": "long_term_typed",
+                "lane": "short_horizon_typed" if typed_short else "long_term_typed",
                 "history_binding": {
                     "result_id": execution.result.result_id,
                     "result_hash": execution.result.result_hash,
                     "item_id": item.selected_item.item_id,
                     "item_hash": item.result_item_hash,
                 },
+                **({"history_source_dependencies": thaw_json(source_proof)}
+                   if source_proof is not None else {}),
             }
         )
     for hit in getattr(short_horizon, "hits", ()) or ():

@@ -42,7 +42,8 @@ async def test_route_passes_only_explicit_types_to_installed_memory(state_db, tm
         assert row[0] == canonical_sha256(proposal)
         assert json.loads(row[1]) == {
             'route': 'memory_standalone', 'task_scope_id': None,
-            'recall_selection': {'origin': 'model_proposal', 'requested_memory_types': selected},
+            'recall_selection': {'origin': 'model_proposal', 'requested_memory_types': selected,
+                                 'include_short_horizon': False},
         }
     finally:
         await runtime.close()
@@ -90,5 +91,8 @@ async def test_changed_selection_cannot_reuse_same_plan_result(tmp_path):
         assert first.execution.result.result_hash == replay.execution.result.result_hash
         with pytest.raises(MemoryIdempotencyConflict, match='IDEMPOTENCY_CONFLICT'):
             await runtime.typed_recall(query='x', run_id='same-run', turn_ordinal=1, now=20, memory_types=('episode',))
+        with pytest.raises(MemoryIdempotencyConflict, match='IDEMPOTENCY_CONFLICT'):
+            await runtime.typed_recall(query='x', run_id='same-run', turn_ordinal=1, now=20,
+                                      memory_types=('semantic',), include_short_horizon=True)
     finally:
         await runtime.close()

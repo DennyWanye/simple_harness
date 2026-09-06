@@ -229,7 +229,7 @@ async def test_bound_request_disclosure_is_derived_from_auth_not_wire(tmp_path):
         error(await f.send("primary.state", key=bad), "human_memory_invalid_request")
 
 
-async def materialize(manager, principal, envelope, receipt):
+async def materialize(manager, principal, envelope, receipt, *, semantic_value="concise"):
     from deskpet.memory.analysis_proposal import admitted_item, derive_span
 
     item = admitted_item(envelope, receipt)
@@ -239,7 +239,7 @@ async def materialize(manager, principal, envelope, receipt):
         kind=h.MemoryMutationKind.CREATE,
         memory_type=h.LongTermMemoryType.SEMANTIC,
         payload=h.SemanticMemoryPayload(
-            "user:self", "response_style", "concise", ("default",)
+            "user:self", "response_style", semantic_value, ("default",)
         ),
         target=None,
         depends_on_operation_ids=(),
