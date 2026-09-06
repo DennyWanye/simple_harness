@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06主组合复核：固定ea57e720公开Prospective 13格叶纳入29479573；13个raw hash一致，四oracle指纹均保留。受影响组合18项通过6.31秒，峰112MiB/组已清空；synthetic SDK信号不代表实际Host提醒，余6个lifecycle仍继续。[复核与证据](../plans/2026-09-06-typed-recall-prospective-public/COMBINED.md)。
+
+
 2026-09-06主复核：Procedure公开适用性固定ad189/3de9已纳入1c690bdb；9份原始证据hash一致，受合并影响的15项组合检查通过、进程已清理。原四格独立PASS，不代表Host观察晋升或全401；[组合范围与证据](../plans/2026-09-06-typed-recall-procedure-public/COMBINED.md)。
 
 ## 2026-09-06 Context与source oracle已组合复验
