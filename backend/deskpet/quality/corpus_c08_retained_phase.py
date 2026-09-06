@@ -15,6 +15,7 @@ from deskpet.memory.human_memory_v7 import host_classification_policy, HOST_SUPP
 from deskpet.quality.corpus_c08_retained import (
     FIXTURE_PROVIDER_ID, RetainedSummaryProvider, validate_retained_setup,
     execute_c08_retained_group, prepare_c08_retained_seed,
+    retained_phase_kind,
 )
 from deskpet.quality.corpus_setup_jobs import SetupFixtureDeliveryAuthority
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
@@ -40,7 +41,7 @@ async def execute_retained_phase(*, main, service, runtime, batch, worker, direc
         raise ValueError('c08_retained_phase_subject_or_clock_differs')
     phase_dir = directory / 'setup-retained'
     phase_dir.mkdir(exist_ok=False)
-    phase = dict(kind='deterministic_retained_summary', provider_id=FIXTURE_PROVIDER_ID,
+    phase = dict(kind=retained_phase_kind(batch), provider_id=FIXTURE_PROVIDER_ID,
         case_id=batch.case_id, setup_hash=batch.setup_hash, manifest_hash=batch.manifest_hash,
         status='NOT_CONFIRMED', stage='old_group', cleanup_errors=[])
     observation_started = False

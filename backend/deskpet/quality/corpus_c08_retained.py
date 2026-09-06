@@ -21,6 +21,7 @@ from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.memory_ingestion_outbox import build_worker_config
 from deskpet.memory.short_indexing import PrimaryShortIndexingService
 from deskpet.quality.corpus_c08 import SETUPS
+from deskpet.quality.corpus_c08_documents import DOCUMENTS
 from deskpet.quality.corpus_c04_prepare import _ApplicationWitness
 from deskpet.quality.corpus_fixture_delivery import FixtureAnalysisDelivery
 from deskpet.quality.corpus_runtime import execute_scoring_turn
@@ -55,7 +56,7 @@ class RetainedSetup:
 
 
 def compile_c08_retained_setup(case_id, setup_text, *, scenario_clock):
-    if type(case_id) is not str or case_id not in RETAINED:
+    if type(case_id) is not str or (case_id not in RETAINED and case_id not in DOCUMENTS):
         raise ValueError('c08_retained_case_not_supported')
     text, digest = SETUPS[case_id]
     if type(setup_text) is not str or setup_text != text or sha256(setup_text.encode()).hexdigest() != digest:
@@ -63,11 +64,21 @@ def compile_c08_retained_setup(case_id, setup_text, *, scenario_clock):
     instant = datetime.fromisoformat(scenario_clock)
     if instant.tzinfo is None or not math.isfinite(instant.timestamp()) or instant.timestamp() < 0:
         raise ValueError('c08_retained_trusted_clock_required')
-    predicate, value, user, assistant = RETAINED[case_id]
+    document = DOCUMENTS.get(case_id)
+    if document is None:
+        predicate, value, user, assistant = RETAINED[case_id]
+    else:
+        predicate, value, user, assistant = (
+            document.predicate, document.value, document.user, document.assistant)
     messages = (('user', user), ('assistant', assistant))
-    manifest = canonical_hash(dict(domain='host:corpus-c08-retained/v1', case_id=case_id,
+    identity = dict(domain='host:corpus-c08-retained/v1', case_id=case_id,
         setup_hash=digest, scenario_time=instant.timestamp(), predicate=predicate, value=value,
-        messages=messages, realization='authored-setup-only-old-group'))
+        messages=messages, realization='authored-setup-only-old-group')
+    # Existing four source identities remain byte-for-byte unchanged. New
+    # document identities additionally bind their exact carrier kind.
+    if document is not None:
+        identity['carrier_kind'] = document.kind
+    manifest = canonical_hash(identity)
     return RetainedSetup(case_id, text, digest, instant.timestamp(), predicate, value, messages, manifest)
 
 
@@ -76,6 +87,17 @@ def validate_retained_setup(batch):
             batch.case_id, batch.setup_text, scenario_clock=datetime.fromtimestamp(
                 batch.scenario_time, timezone.utc).isoformat()):
         raise ValueError('c08_retained_exact_manifest_required')
+
+
+def retained_carrier_kind(batch):
+    validate_retained_setup(batch)
+    document = DOCUMENTS.get(batch.case_id)
+    return document.kind if document is not None else 'retained-assistant-summary'
+
+
+def retained_phase_kind(batch):
+    return ('deterministic_retained_document' if retained_carrier_kind(batch)
+        != 'retained-assistant-summary' else 'deterministic_retained_summary')
 
 
 class RetainedSummaryProvider:
@@ -185,7 +207,7 @@ class RetainedSummaryProvider:
                 or (providers[0].get('response_json') or {}).get('provider_request_id')
                    != 'c08-retained-response-' + self.accepted_request_hash):
             raise ValueError('c08_retained_phase_actual_trace_incomplete')
-        return dict(kind='deterministic_retained_summary', provider_id=FIXTURE_PROVIDER_ID,
+        return dict(kind=retained_phase_kind(self.batch), provider_id=FIXTURE_PROVIDER_ID,
             host_run_id=observations['host_run_id'], sdk_run_id=observations['sdk_run_id'],
             provider_invocation_id=providers[0]['invocation_id'], request_sha256=self.accepted_request_hash,
             fixture_http_requests=self.attempts, real_model_calls=0, trace_hash=trace['trace_hash'])
@@ -379,5 +401,5 @@ async def prepare_c08_retained_seed(*, path, manager, principal, batch, executed
         request=witness.request, plan=plan, mutation_receipt=view, mutation_receipt_ref=receipt.receipt_ref,
         suppression_request=request, suppression_decision=decision,
         visibility_before=before, visibility_after=after, graph_before=graph_before, graph_after=graph_after,
-        fixture_defaults=('authored-setup-only-old-group', 'retained-assistant-summary',),
+        fixture_defaults=('authored-setup-only-old-group', retained_carrier_kind(batch)),
         short_generation_exercised=False)
