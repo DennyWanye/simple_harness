@@ -204,6 +204,7 @@ async def test_cancel_during_owned_start_write_joins_and_never_calls_memory(worl
     assert row["observation_status"] == "not_invoked" and row["observation_json"] is None
     with sqlite3.connect(journal.path, timeout=0) as db:
         db.execute("BEGIN IMMEDIATE")  # Owned writer closed before cancellation returned.
+        assert db.execute("SELECT count(*) FROM memory_call_findings").fetchone()[0] == 0
 
 
 @pytest.mark.asyncio
@@ -231,6 +232,8 @@ async def test_unavailable_page_safe_code_and_missing_v2_never_falls_back(world,
         await call(journal, world, operation="read_prospective_outbox_source_v2")
     rows = (await journal.page(principal=P, operation="read_prospective_outbox_source_v2"))["items"]
     assert rows[0]["state"] == "raised" and rows[0]["observation_status"] == "absent"
+    with sqlite3.connect(journal.path) as db:
+        assert db.execute("SELECT count(*) FROM memory_call_findings").fetchone()[0] == 0
     assert (await journal.page(principal=P))["items"] == []
     def fail():
         raise OSError("private-db-path")
