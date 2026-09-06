@@ -50,10 +50,15 @@ async def test_actual_megabyte_result_pages_without_resending_full_body(tmp_path
         return original_transport(record)
 
     monkeypatch.setattr(httpx, "MockTransport", transport)
-    await run_pages(tmp_path, monkeypatch, mode="allow", provider_context_window=context_window)
+    # Small input calls isolate large tool-result pressure. The earlier
+    # oversized assistant-arguments/small-window failures remain separate.
+    chunks = ("seed", "append", "EXACT_PAGE_TAIL") if context_window < 32768 else None
+    await run_pages(tmp_path, monkeypatch, mode="allow", provider_context_window=context_window,
+                    write_chunks=chunks)
     assert len(sizes) == 2 and all(size > 1024 * 1024 for size in sizes)
     assert len(wire_sizes) == 8 and max(wire_sizes) < 256 * 1024
     (tmp_path / "megabyte-metrics.json").write_text(json.dumps({
         "file_bytes": sizes, "physical_request_bytes": wire_sizes,
         "provider_context_window": context_window, "native": False,
+        "input_variant": "small_calls" if chunks is not None else "large_calls",
     }, indent=2))

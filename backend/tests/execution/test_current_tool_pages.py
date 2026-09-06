@@ -31,7 +31,7 @@ LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 from deskpet.execution.current_tool_pages import CurrentToolProjector, MARKER, PREFIX as CURRENT_PREFIX
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["allow", "forget_after_page"])
-async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768):
+async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768, write_chunks=None):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
     from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
@@ -119,9 +119,10 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
             provider.requests.append(request)
             response = ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Write bounded chunks."),
                 tool_calls=tuple(ProviderToolCall(CallId(f"write-chunk-{i}"), "write_file",
-                    dict(path="fresh.txt", content=LARGE[offset:offset + 3000],
-                         mode="write" if offset == 0 else "append"))
-                    for i, offset in enumerate(range(0, len(LARGE), 3000))),
+                    dict(path="fresh.txt", content=chunk,
+                         mode="write" if i == 0 else "append"))
+                    for i, chunk in enumerate(write_chunks if write_chunks is not None else
+                        tuple(LARGE[offset:offset + 3000] for offset in range(0, len(LARGE), 3000)))),
                 model="model", usage=ProviderUsage(10, 10, 20))
         elif n == 5 and holder.phase == 0 and mode == "forget_after_page":
             # Settle the actual write scope through its public Tool first.
