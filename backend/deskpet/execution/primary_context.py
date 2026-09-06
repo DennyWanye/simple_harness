@@ -45,9 +45,10 @@ def _context_messages(group):
 
 
 class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
-    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None, stack_getter=None):
+    def __init__(self, db_path, *, subject, route_ledger=None, settled_run_reader=None, policy=None, stack_getter=None, history_reader=None):
         super().__init__(db_path, subject=subject, route_ledger=route_ledger)
-        self._history = PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
+        self._history = (PrimaryHistoryStore(db_path, settled_run_reader=settled_run_reader, policy=policy)
+                         if history_reader is None else history_reader)
         self._history_policy = policy
         self._history_path = db_path
         self._stack_getter = stack_getter

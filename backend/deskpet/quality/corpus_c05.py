@@ -51,8 +51,14 @@ SETUPS = {'C05-01': ('本人A：资料归档，2025-11纸质扫描，下一步�
 class ScopeSeed:
     label: str
     owner: str
-    title: str
+    title: str | None
     goal: str | None = None
+    next_step: str | None = None
+    status: str = 'active'
+    date_text: str | None = None
+    project: str | None = None
+    root_label: str | None = None
+    alias: str | None = None
 
 @dataclass(frozen=True)
 class TaskSetupBatch:
@@ -60,17 +66,45 @@ class TaskSetupBatch:
     setup_text: str
     setup_hash: str
     scopes: tuple[ScopeSeed, ...]
+    requirements: tuple[str, ...]
 
-# Initial narrow cases require no invented next-step/status/date. create_new's
-# ordinary absent-goal default is a structural product default, not new fact.
+# Only authored values. Missing titles/dates are not guessed from evaluation
+# input. Labels never become actual IDs or a hint to the scoring model.
 SPECS = {
-    'C05-06': (ScopeSeed('A', 'self', '网站整理的内容校对任务'),
-               ScopeSeed('B', 'self', '图片压缩任务')),
-    'C05-12': (ScopeSeed('A', 'self', '照片编目'),
-               ScopeSeed('B', 'other', '照片编目'),
-               ScopeSeed('C', 'self', '其他摄影任务')),
-    'C05-20': (ScopeSeed('A', 'self', '彩页排版'),
-               ScopeSeed('B', 'self', '封面校对')),
+ 'C05-01': (ScopeSeed('A','self','资料归档',next_step='核备份',date_text='2025-11',project='纸质扫描'), ScopeSeed('B','self','资料归档',next_step='地点标签',date_text='2025-06',project='照片')),
+ 'C05-02': (ScopeSeed('A','self','旧录音整理',next_step='校对访谈名',date_text='2024春季'), ScopeSeed('B','self','音频转码',date_text='2026')),
+ 'C05-03': (ScopeSeed('A','self','秋季小展',next_step='核标签',alias='展览准备'), ScopeSeed('B','self','冬季展览')),
+ 'C05-04': (ScopeSeed('A','self','社区物品登记',goal='减少借还漏记',next_step='核对编号'), ScopeSeed('B','self','图书归档')),
+ 'C05-05': (ScopeSeed('A','self','读书节2024',next_step='归还展板',date_text='2024'), ScopeSeed('B','self','读书节2025',next_step='整理票据',date_text='2025')),
+ 'C05-06': (ScopeSeed('A','self','内容校对任务',project='网站整理'), ScopeSeed('B','self','图片压缩任务',project='网站整理')),
+ 'C05-07': (ScopeSeed('C','self','课程备课'), ScopeSeed('A','self','家庭藏书编目',next_step='查重复号')),
+ 'C05-08': (ScopeSeed('A','self','活动复盘',next_step='结账已完成',status='complete'), ScopeSeed('B','self','新活动')),
+ 'C05-09': (ScopeSeed('A','self','家谱排版',next_step='等待字体授权',status='paused'), ScopeSeed('B','self','相册裁剪',next_step='等照片',status='paused')),
+ 'C05-10': (ScopeSeed('B','self','旧书清点'), ScopeSeed('A','self','旧书修补',next_step='订书脊')),
+ 'C05-11': (ScopeSeed('B','self','海报打印'), ScopeSeed('A','self','海报校稿')),
+ 'C05-12': (ScopeSeed('A','self','照片编目'), ScopeSeed('B','other','照片编目'), ScopeSeed('C','self','其他摄影任务')),
+ 'C05-13': (ScopeSeed('A','self','捐书',next_step='清点'), ScopeSeed('B','self','旧书换购')),
+ 'C05-14': (ScopeSeed('A','self','工作坊筹备',next_step='核座位'), ScopeSeed('B','self','其他工作坊')),
+ 'C05-15': (ScopeSeed('A','self','相册校对',date_text='2026年8月'),),
+ 'C05-16': (ScopeSeed('A','self',None,project='纸质'), ScopeSeed('B','self',None,project='数码')),
+ 'C05-17': (ScopeSeed('A','self',None,next_step='验页码',root_label='展板-甲'), ScopeSeed('B','self',None,root_label='展板-乙')),
+ 'C05-18': (ScopeSeed('A','self',None,next_step='校对'),),
+ 'C05-19': (ScopeSeed('A','self',None,goal='处理笔记',root_label='workspace一'), ScopeSeed('B','self',None,goal='处理扫描',root_label='workspace二')),
+ 'C05-20': (ScopeSeed('A','self','彩页排版'), ScopeSeed('B','self','封面校对')),
+}
+REQUIREMENTS = {
+ 'C05-01': ('date_and_medium_disclosure',), 'C05-02': ('date_disclosure','recent_directory_excludes_A'),
+ 'C05-03': ('historical_title_alias',), 'C05-04': (), 'C05-05': ('date_disclosure',),
+ 'C05-06': ('shared_project_disclosure',), 'C05-07': ('scoring_active_C',),
+ 'C05-08': ('completed_read_only_open',), 'C05-09': (),
+ 'C05-10': ('public_pagination_B_then_A',), 'C05-11': ('public_order_B_then_A',),
+ 'C05-12': ('separate_owned_principal_B','permission_first_excludes_B'),
+ 'C05-13': ('separate_address_source_suppressed',), 'C05-14': (),
+ 'C05-15': ('date_disclosure','unproven_note_hidden'),
+ 'C05-16': ('synthetic_shared_title_and_month','predeclared_second_search_fields'),
+ 'C05-17': ('synthetic_title','exact_named_roots_no_parent'),
+ 'C05-18': ('synthetic_title','before_selection_revision待确认图片'),
+ 'C05-19': ('synthetic_title','independent_workspaces','scoring_unbound'), 'C05-20': ('scoring_unbound',),
 }
 
 def compile_c05_setup(case_id: str, setup_text: str) -> TaskSetupBatch:
@@ -79,9 +113,4 @@ def compile_c05_setup(case_id: str, setup_text: str) -> TaskSetupBatch:
         raise ValueError('c05_exact_setup_required')
     if hashlib.sha256(setup_text.encode()).hexdigest() != digest:
         raise ValueError('c05_setup_hash_differs')
-    if case_id not in SPECS:
-        raise ValueError('c05_lifecycle_or_disclosure_setup_not_implemented')
-    scopes = SPECS[case_id]
-    if any(scope.title not in setup_text for scope in scopes):
-        raise ValueError('c05_title_not_in_source')
-    return TaskSetupBatch(case_id, setup_text, digest, scopes)
+    return TaskSetupBatch(case_id, setup_text, digest, SPECS[case_id], REQUIREMENTS[case_id])
