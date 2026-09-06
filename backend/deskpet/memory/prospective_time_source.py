@@ -45,6 +45,8 @@ class PublicTimeAuthoritySource:
     async def prepare_due(self, *, now, limit):
         if type(now) not in (int,float) or not math.isfinite(now) or now<0:
             raise ValueError('prospective_time_clock_invalid')
+        # Match the SDK timestamp wire before committing observation hashes.
+        now=float(now)
         page, after, upper=await self.registrations.page_accepted_registrations(
             after=self._after,upper=self._upper,limit=limit)
         prepared=[]
