@@ -18,7 +18,8 @@ instead of repeating seed/Run, c03-inference-public-status used public Manager o
 a copy of that closed DB and confirmed D llm_inference/inferred/unverified.
 It created no source/seed/Provider operation; original evidence DB unchanged.
 PG21422/21562 exit0 remaining[], final slot released to main/Singer. No new test
-batch is pending. This source is now sent for final limited independent review.
+batch is pending. Dirac gave final setup-only ACCEPT for fixed d07f702e:20 setups/6 controls,
+including the separate public-state readback. No tests were repeated for review.
 
 Raw artifacts below remain ignored. Source date precision/synthetic markers are
 in public payload, but this does not prove a future model will never output a

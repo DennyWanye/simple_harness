@@ -3,7 +3,7 @@
 C03全部20setup已分批通过（17普通+02/17日期+20actualinference），另6边界控，
 非26语料/非quality。20使用真实Host/SDK source与publicatomic candidate推断，
 原pair错误拒绝/公开readback/reopen通过；多来源analysis明确未drain，不能称评分
-runtime就绪。PG21422/21562清空，旧绿未重跑，最终独审待反馈。
+runtime就绪。PG21422/21562清空，旧绿未重跑，d07f702e已获Dirac最终setup限定ACCEPT。
 [限定结果](../plans/2026-09-06-corpus-public-seed/C03-PREPARE.md)。
 
 <!-- 最后更新：2026-09-06 -->
