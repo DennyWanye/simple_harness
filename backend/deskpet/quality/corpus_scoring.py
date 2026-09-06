@@ -16,7 +16,8 @@ from deskpet.quality.corpus_trace import digest, wire
 
 # Deliberate bounded carrier set, not the complete C08 category. The worker
 # compiles and validates each exact setup before creating its runtime.
-C08_RETAINED_CASES = frozenset({'C08-01', 'C08-06', 'C08-11', 'C08-18'})
+C08_RETAINED_CASES = frozenset({'C08-01', 'C08-02', 'C08-04', 'C08-06', 'C08-09',
+    'C08-11', 'C08-13', 'C08-15', 'C08-16', 'C08-18', 'C08-19'})
 
 
 def save(path, value):
