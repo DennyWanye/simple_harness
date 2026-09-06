@@ -35,6 +35,7 @@ from deskpet.execution.foreground_queue import (
     EffectBoundary,
     ForegroundQueueError,
     ForegroundQueueStore,
+    ForegroundRunSnapshot,
     PreparationCandidate,
     RunState,
 )
@@ -384,6 +385,8 @@ class ForegroundRuntimeExecutionAuthority:
         self._driver_started = False
         self._driver_lock = asyncio.Lock()
         self._control_wake = asyncio.Event()
+        self._lease_task: asyncio.Task[None] | None = None
+        self._lease_identity: tuple[str, int] | None = None
         self._closed = False
         self._last_error: Exception | None = None
         self._state_changed = state_changed
@@ -478,7 +481,7 @@ class ForegroundRuntimeExecutionAuthority:
         #  · 从未起过驱动 → 没有租约可清，照旧提前返回；
         #  · 驱动已正常退出并在退出时置空引用（见 _run_driver）→ **必须**继续
         #    走下面的租约清理，否则驱动跑完后租约永不关闭。
-        if task is None and not self._driver_started:
+        if task is None and not self._driver_started and self._lease_task is None:
             return
         if task is not None:
             try:
@@ -486,6 +489,7 @@ class ForegroundRuntimeExecutionAuthority:
             except TimeoutError:
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+        await self._stop_lease_keeper()
         snapshot = await self._store.current_snapshot(self._subject)
         if snapshot is None or snapshot.owner_id != self._owner_id:
             return
@@ -635,25 +639,40 @@ class ForegroundRuntimeExecutionAuthority:
             snapshot = await self._store.current_snapshot(self._subject)
             if snapshot is None:
                 raise ForegroundRuntimeError("foreground_runtime_claim_disappeared")
-        elif snapshot.owner_id != self._owner_id:
-            delay = snapshot.lease_expires_at - time.time()
-            if delay > 0:
-                await asyncio.sleep(min(delay, 1.0))
-                return True
-            await self._store.reclaim_expired(
-                host_run_id=snapshot.host_run_id,
-                new_owner_id=self._owner_id,
-                expected_generation=snapshot.generation,
-                lease_seconds=self._lease_seconds,
-                idempotency_key=(
-                    f"runtime-reclaim:{snapshot.host_run_id}:g{snapshot.generation + 1}"
-                ),
-            )
-            snapshot = await self._store.current_snapshot(self._subject)
-            if snapshot is None:
-                raise ForegroundRuntimeError("foreground_runtime_reclaim_disappeared")
+        else:
+            # The store's clock/fence is authoritative, including a still-live
+            # Runtime waking after its own lease expired. Never infer freshness
+            # from owner equality or compare a fixture clock to wall time.
+            reclaim = snapshot.owner_id != self._owner_id
+            if not reclaim:
+                try:
+                    await self._store.read_claimed_execution(
+                        host_run_id=snapshot.host_run_id, owner_id=self._owner_id,
+                        generation=snapshot.generation,
+                    )
+                except ForegroundQueueError as exc:
+                    if exc.code != "foreground_lease_expired":
+                        raise
+                    reclaim = True
+            if reclaim:
+                try:
+                    await self._store.reclaim_expired(
+                        host_run_id=snapshot.host_run_id,
+                        new_owner_id=self._owner_id,
+                        expected_generation=snapshot.generation,
+                        lease_seconds=self._lease_seconds,
+                        idempotency_key=f"runtime-reclaim:{snapshot.host_run_id}:g{snapshot.generation + 1}",
+                    )
+                except ForegroundQueueError as exc:
+                    if exc.code != "foreground_lease_not_expired":
+                        raise
+                    await asyncio.sleep(min(1.0, self._lease_seconds / 3))
+                    return True
+                snapshot = await self._store.current_snapshot(self._subject)
+                if snapshot is None:
+                    raise ForegroundRuntimeError("foreground_runtime_reclaim_disappeared")
 
-        await self._drive_claimed(snapshot.host_run_id, snapshot.sdk_run_id)
+        await self._drive_with_lease(snapshot)
         current = await self._store.current_snapshot(self._subject)
         return current is None or current.state.value in {
             "COMPLETED",
@@ -661,6 +680,93 @@ class ForegroundRuntimeExecutionAuthority:
             "STOPPED",
             "CANCELLED",
         }
+
+    async def _stop_lease_keeper(self) -> None:
+        task, self._lease_task = self._lease_task, None
+        self._lease_identity = None
+        if task is not None:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def _drive_with_lease(self, snapshot: ForegroundRunSnapshot) -> None:
+        """Maintain ownership while the driver is idle at permission WAITING.
+
+        The keeper is Runtime-owned and joined on terminal/close/lease loss.
+        Its random incarnation is only an idempotency namespace, never authority.
+        """
+        identity = (snapshot.host_run_id, snapshot.generation)
+        if self._lease_identity != identity or self._lease_task is None or self._lease_task.done():
+            await self._stop_lease_keeper()
+            self._lease_identity = identity
+            self._lease_task = asyncio.create_task(self._maintain_lease(snapshot), name="foreground-lease-keeper")
+            # Retrieve idle failures too; the next driver still observes them.
+            self._lease_task.add_done_callback(lambda task: None if task.cancelled() else task.exception())
+        keeper = self._lease_task
+        work = asyncio.create_task(self._drive_claimed(snapshot.host_run_id, snapshot.sdk_run_id))
+        succeeded = False
+        try:
+            done, _ = await asyncio.wait((work, keeper), return_when=asyncio.FIRST_COMPLETED)
+            if keeper in done:
+                await keeper  # stop this owner's work immediately on lost lease
+            await work
+            succeeded = True
+        finally:
+            if not work.done():
+                work.cancel()
+            await asyncio.gather(work, return_exceptions=True)
+            if not succeeded:
+                # Error/cancellation cleanup must not depend on another DB read.
+                await self._stop_lease_keeper()
+            else:
+                try:
+                    current = await self._store.current_snapshot(self._subject)
+                except BaseException:
+                    await self._stop_lease_keeper()
+                    raise
+                if current is None or (current.host_run_id, current.generation) != identity:
+                    await self._stop_lease_keeper()
+
+    async def _maintain_lease(self, snapshot: ForegroundRunSnapshot) -> None:
+        incarnation, ordinal = uuid.uuid4().hex, 0
+        interval = self._lease_seconds / 3
+        renew_at = asyncio.get_running_loop().time() + interval
+        try:
+            while True:
+                await asyncio.sleep(min(1.0, interval))
+                current = await self._store.current_snapshot(self._subject)
+                if current is None:
+                    return  # the authenticated Host terminal has committed
+                if (current.host_run_id, current.owner_id, current.generation) != (
+                    snapshot.host_run_id, self._owner_id, snapshot.generation
+                ):
+                    raise ForegroundQueueError("foreground_generation_stale")
+                if asyncio.get_running_loop().time() >= renew_at:
+                    ordinal += 1
+                    await self._store.heartbeat(
+                        host_run_id=snapshot.host_run_id, owner_id=self._owner_id,
+                        generation=snapshot.generation, lease_seconds=self._lease_seconds,
+                        idempotency_key=f"runtime-heartbeat:{snapshot.host_run_id}:g{snapshot.generation}:{incarnation}:{ordinal}",
+                    )
+                    renew_at = asyncio.get_running_loop().time() + interval
+                # Durable controls can be committed by another connection.
+                # Waiting alone must not busy-reprepare the original history.
+                if not self._closed and current.sdk_run_id is not None and (self._driver is None or self._driver.done()):
+                    record = self._ingress.query(current.sdk_run_id)
+                    state = str(getattr(getattr(record, "state", None), "value", ""))
+                    if state in {"completed", "failed", "cancelled"} or (
+                        current.desired_control is not None and await self._store.pending_signals(current.host_run_id)
+                    ):
+                        await self.after_enqueue(subject=self._subject)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self._last_error = exc
+            self._notify_state_changed()
+            self._record_audit("foreground.runtime.lease_keeper_failed",
+                host_run_id=snapshot.host_run_id, generation=snapshot.generation,
+                error_code=str(getattr(exc, "code", type(exc).__name__)))
+            raise
 
     async def _drive_claimed(
         self, host_run_id: str, previously_bound_sdk_run_id: str | None
@@ -682,6 +788,40 @@ class ForegroundRuntimeExecutionAuthority:
         ).value
         if previously_bound_sdk_run_id not in (None, sdk_run_id):
             raise ForegroundRuntimeError("foreground_runtime_sdk_binding_drift")
+
+        # Recovery consumes the actual durable Run, not a newly prepared copy
+        # of its original context. In particular, forgetting old sources must
+        # not prevent STOP or the recording of an already-failed SDK terminal.
+        record = None if previously_bound_sdk_run_id is None else self._ingress.query(sdk_run_id)
+        if record is not None:
+            if (getattr(record, "run_id", None), getattr(record, "execution_session_id", None),
+                getattr(record, "request_id", None)) != (sdk_run_id, execution_session_id, request_id):
+                raise ForegroundRuntimeError("foreground_runtime_sdk_binding_drift")
+            await self._store.bind_sdk_run(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                generation=claimed.generation, idempotency_key=f"runtime-sdk-bind:{host_run_id}",
+            )
+            await self._store.record_start_observation(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                generation=claimed.generation, outcome="QUERY_FOUND",
+                result_ref=f"sdk-run:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+                result_hash=canonical_hash({"run_id": sdk_run_id,
+                    "state": str(getattr(getattr(record, "state", None), "value", "")),
+                    "version": int(getattr(record, "version", 0))}),
+                idempotency_key=f"runtime-recovery-query:{host_run_id}:g{claimed.generation}:v{getattr(record, 'version', 0)}",
+            )
+            if snapshot.state is RunState.CLAIMED:
+                await self._store.record_sdk_started(
+                    host_run_id=host_run_id, sdk_run_id=sdk_run_id, owner_id=self._owner_id,
+                    generation=claimed.generation,
+                    sdk_event_id=f"sdk-query:{sdk_run_id}:v{getattr(record, 'version', 0)}",
+                    idempotency_key=f"runtime-recovered-running:{host_run_id}:g{claimed.generation}",
+                )
+            if self._effect_gate is not None:
+                self._effect_gate.register(store=self._store, host_run_id=host_run_id,
+                    sdk_run_id=sdk_run_id, owner_id=self._owner_id, generation=claimed.generation)
+            await self._finish_bound(claimed, sdk_run_id)
+            return
 
         def _check_identity(authority: object) -> None:
             self._assert_authority_identity(
@@ -1091,11 +1231,14 @@ class ForegroundRuntimeExecutionAuthority:
             route_receipt_id=None if route is None else route.receipt_id,
             route_receipt_hash=None if route is None else route.receipt_hash,
         )
-        await self._deliver_controls(
-            host_run_id=host_run_id,
-            sdk_run_id=sdk_run_id,
-            generation=claimed.generation,
-        )
+        await self._finish_bound(claimed, sdk_run_id)
+
+    async def _finish_bound(self, claimed: ClaimedExecution, sdk_run_id: str) -> None:
+        host_run_id = claimed.host_run_id
+        record = self._ingress.query(sdk_run_id)
+        state = str(getattr(getattr(record, "state", None), "value", ""))
+        if resolve_host_terminal(state, None) is None:
+            await self._deliver_controls(host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=claimed.generation)
         terminal = await self._observe_with_heartbeats(
             host_run_id=host_run_id,
             sdk_run_id=sdk_run_id,
@@ -1309,27 +1452,11 @@ class ForegroundRuntimeExecutionAuthority:
     async def _observe_with_heartbeats(
         self, *, host_run_id: str, sdk_run_id: str, generation: int
     ) -> AuthenticatedTerminalObservation | None:
-        stop = asyncio.Event()
-
-        async def heartbeat() -> None:
-            ordinal = 0
-            interval = max(0.1, self._lease_seconds / 3)
-            while not stop.is_set():
-                try:
-                    await asyncio.wait_for(stop.wait(), timeout=interval)
-                except TimeoutError:
-                    ordinal += 1
-                    await self._store.heartbeat(
-                        host_run_id=host_run_id,
-                        owner_id=self._owner_id,
-                        generation=generation,
-                        lease_seconds=self._lease_seconds,
-                        idempotency_key=(
-                            f"runtime-heartbeat:{host_run_id}:g{generation}:{ordinal}"
-                        ),
-                    )
-
-        heartbeat_task = asyncio.create_task(heartbeat())
+        record = self._ingress.query(sdk_run_id)
+        state = str(getattr(getattr(record, "state", None), "value", ""))
+        if resolve_host_terminal(state, None) is not None:
+            return await self._terminal.observe(host_run_id=host_run_id, sdk_run_id=sdk_run_id,
+                subject=self._subject, owner_id=self._owner_id, generation=generation)
         pump_task = asyncio.create_task(
             self._pump_controls(
                 host_run_id=host_run_id,
@@ -1346,10 +1473,9 @@ class ForegroundRuntimeExecutionAuthority:
                 generation=generation,
             )
         finally:
-            stop.set()
             pump_task.cancel()
             results = await asyncio.gather(
-                heartbeat_task, pump_task, return_exceptions=True
+                pump_task, return_exceptions=True
             )
             for result in results:
                 if isinstance(result, Exception) and not isinstance(

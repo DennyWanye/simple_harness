@@ -12,6 +12,15 @@
 主已报告合入 bd5 并在 a1fe 接工厂，r6由主独立验证；跨库最终检查非原子撤权事务，
 closure/compaction 与 program 剩余项未由本叶完成。
 [结果与原失败索引](../plans/2026-09-06-analysis-physical-guard/RESULTS.md)。
+## 2026-09-06 前台授权等待租约与Stop收敛独立修复
+
+最后更新：2026-09-06。base8b7c05cb上的独立Host叶，产品9d48465f/e3345565：
+Runtime持有keeper跨WAITING续租，同owner过期走原store reclaim(gen+1)，准确恢复原SDKRun，
+不重prepare旧history或重start，不扩大默认300秒TTL/权限。真实SDKterminal决定FAILED或
+STOPPED；keeper失败/取消与最终读失败均join清理。新10独立控制分批通过，另1受影响mock
+邻居单列；Dirac产品/业务测试限定ACCEPT，进程全部退出、共享锁释放。
+范围仅同Runtime实例恢复；已合隔离primary候选，重建stack/native尚待主验证，graphblank另列，
+不标完整program完成。[结果、原失败与命令](../plans/2026-09-06-foreground-permission-lease/RESULTS.md)。
 
 
 最后更新：2026-09-06。H075/M616原生r5已实际完成中文Provider响应、WeMM编码、对话写入和审计UI；结束本轮后清空PG54846。后台analysis误用foreground guard已定位，正在修复；短期当前4组处于SDK最近10组排除窗口，尚无窗口外召回证据。完整native/program未闭合。[本轮证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
