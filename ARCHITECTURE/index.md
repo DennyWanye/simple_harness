@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。短期显式 typed 请求补齐 FTS＋VECTOR，long-only 仍 FTS；原 1s／2048 预算与来源门不变。固定源码 f8b2d41c，实际 H077/M617 公共链路新增反例 1PASS／4.74s，证明大 FTS 组超预算时小 vector-only 偏好可进入 Host fragments。PG89042 清空、锁释放；Dirac限定ACCEPT、已合隔离primary候选；待native 短期叶。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
+
 2026-09-06 原生r9（Host fa7580b0/H077/M617）：生产Provider清理错误本次未再观察到；short祖先补齐和后台generation修复已经独审合入，实际WeMM生成active索引。真实查询首次超时，模型同Run重试后SDK审计used/FTS1/vector3，但UI最终仍答无片段，短期端到端未通过，返回链路待定位。现场保存后正常退出，资源exit0/remaining[]/cleanup_error=null。此前r8各场景证据与失败历史保留。[最新原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
 
 最后更新：2026-09-06。generation 生产源码161702be未改，追加冷加载跨两次有界超时恢复控1PASS：并发step串行、共享load仅一次、失败不确认cache/推进维护时间、完成加载后立即恢复。PG83348无残留、锁释放；不代表实际WeMM/native验收。[补充证据](../plans/2026-09-06-short-terminal-source/GENERATION.md)。

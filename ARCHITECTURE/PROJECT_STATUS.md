@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：自有 `simple_harness-corpus-clock`／`feat/short-vector-mode`，base e04627c4，源码 f8b2d41c 完成最小短期检索通道补齐。新增公共 typed→Host fragments 控制 1PASS／4.74s，PG89042 无残留、共享锁释放；只此新增控制，未重跑旧绿。Dirac限定ACCEPT、已合隔离primary候选；待native，未称整体召回质量完成。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
+
 2026-09-06：隔离closure物理guard叶（base666b475b、生产5375fc85+4a86ecb0）默认接专用factory，已通过9唯一场景的分批必要控制并获Dirac限定ACCEPT。真实resume依赖读TX→access receipt写自锁独立原红转绿，访问审计未删；不是完整Closure可用，非空resume/缺来源字段仍显式pending。H077/M616限定安装载体与Host本树源码，已合隔离primary候选/未native；SDK和原库未改，所有测试进程已清空，旧绿不重复。[结果、命令和保留失败](../plans/2026-09-06-closure-physical-guard/RESULTS.md)。
 
 2026-09-06 原生r9（Host fa7580b0/H077/M617）：生产Provider清理错误本次未再观察到；short祖先补齐和后台generation修复已经独审合入，实际WeMM生成active索引。真实查询首次超时，模型同Run重试后SDK审计used/FTS1/vector3，但UI最终仍答无片段，短期端到端未通过，返回链路待定位。现场保存后正常退出，资源exit0/remaining[]/cleanup_error=null。此前r8各场景证据与失败历史保留。[最新原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
