@@ -135,3 +135,40 @@ async def test_actual_manager_cancel_and_source_read_error_have_safe_observation
         assert records[0].attributes["fingerprint"] == observation.observation_hash
     finally:
         await sdk.close()
+
+
+@pytest.mark.asyncio
+async def test_current_input_requires_full_registered_owner(env):
+    principal, context, binding = await setup(env)
+    sdk = await manager(env, register=False)
+    try:
+        with pytest.raises(m.MemoryOwnershipConflict):
+            await sdk.check_current_input_visibility(principal=principal, disclosure_context=context, binding=binding)
+        await sdk.register_principal_owner(principal, m.MemoryScope.personal(principal.actor_id))
+        for changed in (replace(principal, deployment_id="foreign-deployment"),
+                        replace(principal, household_id="foreign-household")):
+            with pytest.raises(m.MemoryOwnershipConflict) as caught:
+                await sdk.check_current_input_visibility(principal=changed, disclosure_context=context, binding=binding)
+            assert caught.value.operation_observation.outcome == "rejected"
+        assert (await sdk.check_current_input_visibility(principal=principal, disclosure_context=context, binding=binding)).invocation_input_allowed
+    finally:
+        await sdk.close()
+
+
+@pytest.mark.asyncio
+async def test_claim_changes_during_real_origin_read_reject_input(env, monkeypatch):
+    principal, context, binding = await setup(env)
+    sdk = await manager(env)
+    actual = HostHistorySourceAuthority.resolve_history_source
+    async def changed(authority, **kwargs):
+        origin = await actual(authority, **kwargs)
+        await ForegroundQueueStore(env.path).request_control(host_run_id=env.claim.host_run_id,
+            subject=principal.actor_id, generation=env.claim.generation,
+            control_kind="stop", reason="actual-stop-during-read", idempotency_key="late-stop")
+        return origin
+    monkeypatch.setattr(HostHistorySourceAuthority, "resolve_history_source", changed)
+    try:
+        view = await sdk.check_current_input_visibility(principal=principal, disclosure_context=context, binding=binding)
+        assert not view.invocation_input_allowed and view.reason == "current_input_authority_unverifiable"
+    finally:
+        await sdk.close()
