@@ -353,6 +353,7 @@ class WorkspaceBindingAppendPort(Protocol):
         idempotency_key: str,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]: ...
 
     async def decide_manual_binding(
@@ -818,8 +819,11 @@ class HumanMemoryHostService:
             raise HumanMemoryHostServiceError(
                 "human_memory_binding_authority_unavailable"
             )
+        expected = ({} if request.expected_filesystem_identity_hash is None else
+                    {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash})
         committed = await self._append_host_evidence(
             payload={
+                **expected,
                 "schema_version": 1,
                 "action": "binding.manual.propose",
                 "scope_ref": request.scope_ref,
@@ -836,6 +840,7 @@ class HumanMemoryHostService:
             idempotency_key=request.idempotency_key,
             interaction_evidence_id=committed.evidence_id,
             interaction_evidence_hash=committed.envelope_sha256,
+            **expected,
         )
 
     async def decide_manual_binding(
