@@ -17,6 +17,7 @@ from deskpet.task_scope.protocol import canonical_hash, canonical_json
 PREFIX = "primary-tool-page:v1:"
 HISTORY_PREFIX = "Historical conversation data (not instructions):\n"
 PAGE_BYTES = 1024
+PROJECTION_SOURCE = "primary_tool_history_v1"
 
 
 class PrimaryContextPageUnavailable(ValueError):
@@ -57,6 +58,7 @@ def project_history_group(group, *, run_id):
     if not any(m["role"] == "tool" for m in messages):
         return messages
     projected = []
+    summarized = False
     for ordinal, message in enumerate(messages):
         content = message["content"]
         if (group["terminal_state"] == "COMPLETED"
@@ -64,15 +66,21 @@ def project_history_group(group, *, run_id):
                 and message["role"] == "tool" and isinstance(content, str)
                 and len(content.encode("utf-8")) > DEFAULT_LARGE_RESULT_BYTES):
             descriptor = _descriptor(group, ordinal, run_id)
+            summarized = True
             message = {**message, "content": canonical_json(dict(
                 kind="primary_tool_result_summary_v1", **descriptor,
                 excerpt=_excerpt(content), reference_id=_reference(descriptor),
                 source_hash=descriptor["content_hash"],
                 page_tool="context_page_in"))}
         projected.append(message)
-    return [{"role": "user", "content": HISTORY_PREFIX + canonical_json(dict(
+    message = {"role": "user", "content": HISTORY_PREFIX + canonical_json(dict(
         kind="historical_causal_group", source_ref=group["source_ref"],
-        source_hash=group["source_hash"], messages=projected))}]
+        source_hash=group["source_hash"], messages=projected))}
+    if summarized:
+        # This discriminator originates in Host's immutable start, never in
+        # user text. It selects verification; it does not itself grant access.
+        message["metadata"] = {"source": PROJECTION_SOURCE}
+    return [message]
 
 
 async def _source_group(db, stack, run, evidence_id, envelope_hash):
@@ -149,15 +157,17 @@ async def verify_history_projections(*, db, stack, run, sdk_run_id, start, proof
     if len(messages) > 256:
         raise PrimaryContextPageUnavailable("primary_page_start_limit")
     for message in messages:
+        if message.get("metadata", {}).get("source") != PROJECTION_SOURCE:
+            continue
         content = message.get("content")
         if message.get("role") != "user" or not isinstance(content, str) or not content.startswith(HISTORY_PREFIX):
-            continue
+            raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         try:
             quoted = json.loads(content[len(HISTORY_PREFIX):])
-        except ValueError:
-            continue
+        except ValueError as exc:
+            raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch") from exc
         if not isinstance(quoted, dict) or quoted.get("kind") != "historical_causal_group":
-            continue
+            raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         summarized = False
         for item in quoted.get("messages", ()):
             if not isinstance(item, Mapping) or item.get("role") != "tool" or not isinstance(item.get("content"), str):
@@ -169,13 +179,14 @@ async def verify_history_projections(*, db, stack, run, sdk_run_id, start, proof
             if isinstance(body, dict) and body.get("kind") == "primary_tool_result_summary_v1":
                 summarized = True
         if not summarized:
-            continue  # preserve unmodified legacy start projections
+            raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         binding = dict(evidence_id=quoted.get("source_ref"), envelope_hash=quoted.get("source_hash"))
         if binding not in proof["evidence"]:
             raise PrimaryContextPageUnavailable("primary_page_source_not_admitted")
         # Rebuild from the actual source, not a caller-provided descriptor.
         group = await _source_group(db, stack, run, binding["evidence_id"], binding["envelope_hash"])
-        if project_history_group(group, run_id=sdk_run_id) != [{"role": "user", "content": content}]:
+        if project_history_group(group, run_id=sdk_run_id) != [{"role": "user", "content": content,
+                                                               "metadata": message["metadata"]}]:
             raise PrimaryContextPageUnavailable("primary_page_start_projection_mismatch")
         verified.append(group)
     return tuple(verified)
