@@ -3231,6 +3231,11 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         return prepare_occurrence_terminal_hook(principal=coordinator.store.principal,
             sdk_run_id=sdk_run_id,actual_sdk_terminal=actual)
 
+    # The Context's trusted date and Memory's public as_of use the same owned
+    # business clock. Physical workers/leases retain their existing clocks.
+    _context_memory_runtime = service_context.get("human_memory_v7_runtime")
+    if _context_memory_runtime is None:
+        raise RuntimeError("human_memory_v7_runtime_unavailable")
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
@@ -3240,6 +3245,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         context=PrimaryForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
+            clock=_context_memory_runtime.semantic_clock,
             policy=_primary_history_policy("deskpet-local-owner-v1"),
             stack_getter=lambda: _sdk_runtime_stack,
             route_ledger=_foreground_route_ledger(),
