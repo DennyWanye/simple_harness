@@ -257,6 +257,7 @@ def check_corruption_state(o, name, check_seed_authority):
         exception={'type':'MemoryLegacySchemaUnsupported','reason':'LEGACY_SCHEMA_UNSUPPORTED'}
         function='probe_existing_root'
         if not any('cognitive_conflict_members' in message for message in damaged['integrity']):raise ValueError('three-member CHECK failure missing')
+        if not damaged['foreign_keys'] or any(row[0]!='cognitive_conflict_members' for row in damaged['foreign_keys']):raise ValueError('three-member FK failure missing')
     if sorted(rows(damaged,'cognitive_conflict_members'),key=lambda m:m['ordinal'])!=expected:
         raise ValueError('actual corruption differs from prescribed one change')
     if o.get('phase')!='initialize_reopen' or o.get('exception')!=exception or 'recalled' in o or o.get('recall_calls')!=0:
@@ -265,6 +266,6 @@ def check_corruption_state(o, name, check_seed_authority):
     if not any(frame['function']==function for frame in frames):
         raise ValueError('rejection did not originate at expected SDK layer')
     if function=='probe_existing_root':
-        cause='human-memory v7 foreign key check failed' if 'cross-memory' in name else 'human-memory v7 integrity check failed'
+        cause='human-memory v7 foreign key check failed'
         if o.get('exception_cause')!={'type':'MemoryCorruptionError','reason':cause}:
             raise ValueError('schema probe rejected for unrelated cause')

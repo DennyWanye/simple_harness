@@ -44,8 +44,8 @@ member hash、有序group hash、public confirmation identity。改后逐值核�
   conflict member cardinality differs。
 - cross-memory：schema probe的FK破坏，外层MemoryLegacySchemaUnsupported/LEGACY_SCHEMA_UNSUPPORTED，
   必须保留cause MemoryCorruptionError/human-memory v7 foreign key check failed。
-- three-member：schema probe的CHECK破坏，外层同上，cause必须是
-  MemoryCorruptionError/human-memory v7 integrity check failed。
+- three-member：实际损坏同时有CHECK与FK破坏，外层同上；实测probe cause为
+  MemoryCorruptionError/human-memory v7 foreign key check failed，必须精确绑定。
 
 主2026-09-06明确决定：CONFLICT_GROUP_CORRUPT是原冻结语义类别，允许验证器将它映射到
 M0613真实cause+exact拒绝层；不是修改SDK错误码。验证器实际读取原recall_cases对应项，

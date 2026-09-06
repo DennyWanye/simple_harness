@@ -17,3 +17,5 @@
 尚未执行正负例；fixed源码复交Dirac，只读不占Singer/native槽。
 
 Dirac后继只读发现expected semantic source遗漏semantic_kind=claim；已补冻结字段，保留全内容/hash比较。仍NOT_RUN。
+
+首轮e024测试1FAIL及正式9PASS/1FAIL：three-member实际probe cause为foreign key check failed，旧oracle猜成integrity cause。保留两份红证据（tests-r1及本树typed-recall-0613-formal/s00），修正exact cause并同时要求实际CHECK/FK损坏；非SDK修改。
