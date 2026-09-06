@@ -12,9 +12,9 @@ def domain(name,value):
     return sha({'domain':name,'payload':value})
 
 
-def check(o,recipe):
+def check(o,recipe,*,registration_state='pending',ack_identity='fixture-registration_accepted'):
     seed=recipe['seed'];state=seed.get('state','pending')
-    if (seed['memory_type']!='prospective' or state not in {'pending','triggered'}
+    if (seed['memory_type']!='prospective' or state not in {registration_state,'triggered'}
             or recipe['family'] not in {'lifecycle','epistemic'}
             or o['prospective_binding']['scope']!='synthetic-sdk-contract-only'):
         raise ValueError('prospective proof scope differs')
@@ -44,7 +44,7 @@ def check(o,recipe):
     if not len(inputs)==len(grants)==len(applies)==len(kinds):raise ValueError('signal actual call cardinality differs')
     results=[]
     for kind,entry,grant,applied in zip(kinds,inputs,grants,applies,strict=True):
-        identity='fixture-'+kind;ack=kind=='registration_accepted'
+        ack=kind=='registration_accepted';identity=ack_identity if ack else 'fixture-'+kind
         expected_record=dict(schema='synthetic-prospective-signal/v1',signal_id=identity,
             subject=mutation['subject'],run_id=mutation['run_id'],memory_id=target['memory_id'],
             revision=target['revision'],kind=kind,trigger=trigger,
@@ -59,7 +59,7 @@ def check(o,recipe):
             target_revision=target['revision'],signal_kind=kind,trigger=trigger,trigger_hash=th,
             scheduler_registration_ref='synthetic-scheduler-registration',registration_revision=target['revision'],
             signal_receipt_id=identity+'-receipt',signal_receipt_hash=sha(expected_record),observed_at=now,
-            transition_from='pending',transition_to='pending' if ack else 'triggered',
+            transition_from=registration_state,transition_to=registration_state if ack else 'triggered',
             outbox_id=expected_record['outbox_id'],outbox_payload_hash=expected_record['outbox_payload_hash'],
             run_id=mutation['run_id'],operation_id=identity+'-operation')
         expected_intent['occurrence_key']=domain('simple-harness/prospective-signal-occurrence/v1',

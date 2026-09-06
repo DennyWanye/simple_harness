@@ -439,6 +439,11 @@ def assess_normal(fixture, cell):
             # Seed/DTO refusal is a real observation, never a recall PASS.
             return dict(status='BLOCKED',reason='PUBLIC_CASE_PRECONDITION_REJECTED:'+observed['exception']['type']+':'+observed['exception']['reason'],
                 business_assertions=['actual public operation and exact rejection recorded'])
+        if 'lifecycle_trace' in observed:
+            leaf_spec=importlib.util.spec_from_file_location('prospective_lifecycle_oracle',Path(__file__).with_name('typed_recall_prospective_lifecycle_oracle.py'))
+            leaf=importlib.util.module_from_spec(leaf_spec);leaf_spec.loader.exec_module(leaf)
+            leaf.check(fixture,observed,globals())
+            return dict(status='PASS',reason='',business_assertions=['actual public lifecycle mutation/signal/registration chain','original negative and positive recall identities and independent source hashes'])
         procedure_revision=None;procedure_ref=None
         if 'procedure_binding' in observed:
             proof_spec=importlib.util.spec_from_file_location('procedure_oracle',Path(__file__).with_name('typed_recall_procedure_oracle.py'))
