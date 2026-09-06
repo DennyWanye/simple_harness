@@ -53,6 +53,19 @@ def test_memory_candidate_exact_wheel_passes_verify() -> None:
     assert verify_memory_candidate() is None
 
 
+def test_memory_lock_matches_candidate_identity() -> None:
+    import tomllib
+    from deskpet.sdk_adapters.sdk_candidate import SDK_MEMORY_VERSION, SDK_MEMORY_WHEEL_SHA256
+
+    wheel = sdk_memory_wheel_path()
+    backend = wheel.parent.parent
+    locked = tomllib.loads((backend / "uv.lock").read_text())
+    package, = (p for p in locked["package"] if p["name"] == "simple-harness-memory-sdk")
+    assert package["version"] == SDK_MEMORY_VERSION
+    assert package["source"] == {"path": str(wheel.relative_to(backend))}
+    assert package["wheels"] == [{"filename": wheel.name, "hash": "sha256:" + SDK_MEMORY_WHEEL_SHA256}]
+
+
 def test_service_candidate_exact_local_successor_passes_verify() -> None:
     assert sdk_service_wheel_path().name == SDK_SERVICE_WHEEL_FILENAME
     assert sdk_service_candidate_manifest_path().is_file()

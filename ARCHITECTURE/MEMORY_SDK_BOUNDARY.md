@@ -1,5 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
+2026-09-06 合并复核更正：M616 uv.lock wheel hash 已从误留的M615值修正，新增锁文件一致性检查1项通过；Host恢复与提醒来源均已获得限定独审，详见下方组合记录。
+
 最后更新：2026-09-06。当前隔离候选已组合 H075/M616/S0313，SDK 官方执行库schema9、Host默认49。实际 short使用与空assistant工具组交叉通过；主vendor安装来源检查随后定向通过。未重跑完整旧集合，完整scheduler和质量/native仍待完成。[组合状态](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)。
 
 ## 2026-09-06 Host typed-use 生产接线独立叶
