@@ -54,8 +54,13 @@ def check(fixture, observed):
                 or item['cross_scope'] is not True or item['evidence_manifest_hash']!=a.hash_json(['secret-evidence'])
                 or value['context']['active_task_scope_id'] is not None):
             raise ValueError('actual classification/scope/source binding differs')
+    fresh=observed['fresh']
+    if (fresh['context']['evidence_refs']!=recall['context']['evidence_refs']
+            or fresh['plan']['evidence_refs']!=recall['plan']['evidence_refs']
+            or fresh['execution']['replayed'] is not False):
+        raise ValueError('fresh actual source refs/replay status differs')
     replay=observed['replay']['execution'];first=recall['execution']
-    if replay['result']!=first['result'] or replay['decision']!=first['decision'] or not replay['replayed'] or replay['candidate_query_count']!=0:
+    if replay['result']!=first['result'] or replay['decision']!=first['decision'] or not replay['replayed'] or replay['candidate_query_count']!=0 or replay['candidate_query_started']:
         raise ValueError('reopen exact replay differs')
     if observed['actual_public_payload']!=actual or observed['actual_public_payload_hash']!=a.hash_json(actual):
         raise ValueError('separate actual payload report differs')
