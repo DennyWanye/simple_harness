@@ -2,7 +2,7 @@
 import aiosqlite
 import json
 from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
-from deskpet.quality.corpus_c05 import compile_c05_setup
+from deskpet.quality.corpus_c05 import SETUPS, compile_c05_setup, operational_text
 
 
 class SetupPrefixHistoryReader:
@@ -40,8 +40,9 @@ class SetupPrefixHistoryReader:
                     continue
                 archive = indexed[row['turn_id']]
                 original = json.loads(row['turn_json'])['payload']['text']
-                batch = compile_c05_setup(archive.case_id, original)
-                if batch.setup_hash != archive.setup_hash:
+                batch = compile_c05_setup(archive.case_id, SETUPS[archive.case_id][0])
+                if (batch.setup_hash != archive.setup_hash
+                        or original != operational_text(batch, archive.label, phase=archive.phase)):
                     raise ValueError('c05_setup_original_hash_differs')
                 identity = await read_primary_terminal_identity_tx(db, subject=subject,
                     primary_ref=primary_ref, host_run_id=row['host_run_id'], sdk_run_id=row['sdk_run_id'])

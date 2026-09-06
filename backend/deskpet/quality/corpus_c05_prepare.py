@@ -16,7 +16,7 @@ from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
 from deskpet.task_scope.search import TaskScopeSearchStore
 from deskpet.task_scope.disclosure import render_scope_disclosure
-from deskpet.quality.corpus_c05 import TaskSetupBatch, compile_c05_setup
+from deskpet.quality.corpus_c05 import TaskSetupBatch, compile_c05_setup, operational_spec, operational_text
 from deskpet.execution.terminal_identity import read_primary_terminal_identity_tx
 from deskpet.memory.primary_visibility import read_evidence_pair
 
@@ -36,6 +36,7 @@ class PreparedScopeArchive:
     remaining_requirements: tuple[str, ...]
     case_id: str
     setup_hash: str
+    phase: str = 'create'
 
 
 class TaskSetupProvider:
@@ -45,13 +46,12 @@ class TaskSetupProvider:
         self.requests = []
         self._active = None
 
-    def arm(self, batch, label):
+    def arm(self, batch, label, *, revision_of=None):
         if batch != compile_c05_setup(batch.case_id, batch.setup_text):
             raise ValueError('c05_exact_batch_required')
-        matches = [s for s in batch.scopes if s.label == label]
-        if len(matches) != 1 or matches[0].title is None:
-            raise ValueError('c05_source_title_missing')
-        self._active = matches[0]
+        phase = 'create' if revision_of is None else 'before_selection'
+        self._active = operational_spec(batch, label, phase=phase)
+        self._revision_of = revision_of
         self.route_receipt = None
         self._route_called = self._closure_called = False
         self._counter = 0
@@ -75,6 +75,8 @@ class TaskSetupProvider:
             args = {'route': 'create_new', 'title': spec.title}
             if spec.goal is not None:
                 args['goal'] = spec.goal
+            if self._revision_of is not None:
+                args = dict(route='resume_existing', task_scope_id=self._revision_of.task_scope_id)
             return self._tool(request, 'context_route', args)
         if self.route_receipt is None:
             raise RuntimeError('c05_actual_route_not_accepted')
@@ -122,7 +124,7 @@ class TaskSetupProvider:
 
 async def prepare_scope_archive(*, batch: TaskSetupBatch, label: str, subject: str,
         service, provider: TaskSetupProvider, drive, stack, path, policy,
-        disclosure_context, owner_subjects=None) -> PreparedScopeArchive:
+        disclosure_context, owner_subjects=None, revision_of=None) -> PreparedScopeArchive:
     """Real queue/tool/terminal source, then production exact disclosure.
 
 drive runs the caller's real runtime once. It cannot authorize a fabricated
@@ -133,16 +135,23 @@ agree. This function does not import history into a scoring conversation.
         raise ValueError('c05_exact_batch_required')
     if policy is None or disclosure_context.subject != subject:
         raise ValueError('c05_actual_disclosure_policy_required')
-    spec = next(s for s in batch.scopes if s.label == label)
+    phase = 'create' if revision_of is None else 'before_selection'
+    spec = operational_spec(batch, label, phase=phase)
+    actual_text = operational_text(batch, label, phase=phase)
+    if revision_of is not None and (revision_of.case_id != batch.case_id or revision_of.label != label
+            or revision_of.subject != subject or revision_of.setup_hash != batch.setup_hash
+            or revision_of.phase != 'create'):
+        raise ValueError('c05_revision_origin_differs')
     owners = {'self': subject} if owner_subjects is None else owner_subjects
     if owners.get(spec.owner) != subject or (spec.owner != 'self' and owners.get('self') == subject):
         raise ValueError('c05_actual_owner_context_required')
-    provider.arm(batch, label)
-    key = hashlib.sha256((batch.setup_hash + ':' + label + ':' + subject).encode()).hexdigest()
-    queued = await service.enqueue_turn(QueueTurnRequest(None, 'c05-setup:' + key, batch.setup_text))
+    provider.arm(batch, label, revision_of=revision_of)
+    key = hashlib.sha256((batch.setup_hash + ':' + label + ':' + subject + ':' + phase).encode()).hexdigest()
+    queued = await service.enqueue_turn(QueueTurnRequest(None, 'c05-setup:' + key, actual_text))
     await drive()
     route = provider.route_receipt
-    if not isinstance(route, dict) or route.get('route') != 'create_new':
+    expected_route = 'create_new' if revision_of is None else 'resume_existing'
+    if not isinstance(route, dict) or route.get('route') != expected_route:
         raise RuntimeError('c05_route_receipt_missing')
     run_id, scope_id = route['run_id'], route['task_scope_id']
     start, effects = stack.read_primary_dependency_facts(run_id, (route['effect_id'],))
@@ -150,12 +159,13 @@ agree. This function does not import history into a scoring conversation.
     if (effect is None or not effect.terminal or effect.result is None
             or effect.tool_name != 'context_route' or effect.raw_call_id != route['raw_call_id']
             or thaw_json(effect.result.value).get('context_route_receipt') != route
-            or thaw_json(effect.arguments).get('title') != spec.title):
+            or (revision_of is None and thaw_json(effect.arguments).get('title') != spec.title)
+            or (revision_of is not None and scope_id != revision_of.task_scope_id)):
         raise RuntimeError('c05_actual_effect_differs')
     saved = await ContextRouteLedgerStore(path).latest_route_decision_for_run(run_id)
-    if saved is None or saved['task_scope_id'] != scope_id or saved['route'] != 'create_new':
+    if saved is None or saved['task_scope_id'] != scope_id or saved['route'] != expected_route:
         raise RuntimeError('c05_host_route_differs')
-    terminal, messages = stack.read_settled_primary_run(run_id, current_text=batch.setup_text)
+    terminal, messages = stack.read_settled_primary_run(run_id, current_text=actual_text)
     if terminal.state != 'completed':
         raise RuntimeError('c05_actual_terminal_not_completed')
     async with aiosqlite.connect(path) as db:
@@ -177,7 +187,7 @@ agree. This function does not import history into a scoring conversation.
         envelope, _ = await read_evidence_pair(db=db, subject=subject,
             primary_ref=row['primary_conversation_id'], evidence_id=row['evidence_id'])
         if (envelope.envelope_hash != row['evidence_hash']
-                or json.loads(row['turn_json'])['payload']['text'] != batch.setup_text):
+                or json.loads(row['turn_json'])['payload']['text'] != actual_text):
             raise RuntimeError('c05_setup_original_source_differs')
     search = TaskScopeSearchStore(path)
     await search.rebuild_scope(scope_id)
@@ -196,4 +206,4 @@ agree. This function does not import history into a scoring conversation.
         raise RuntimeError('c05_actual_status_differs')
     return PreparedScopeArchive(label, subject, str(queued['turn_ref']), run_id, scope_id,
         route, terminal, opened.source_id, opened.source_hash, disclosed,
-        tuple(batch.requirements) + ('scoring_history_isolation',), batch.case_id, batch.setup_hash)
+        tuple(batch.requirements) + ('scoring_history_isolation',), batch.case_id, batch.setup_hash, phase)

@@ -84,10 +84,14 @@ async def test_actual_setup_routes_terminal_and_source_bound_readback(tmp_path, 
 
 
 def test_missing_authored_title_is_not_filled_from_case_selection():
-    provider = TaskSetupProvider(target=Provider.target)
-    batch = compile_c05_setup('C05-18', SETUPS['C05-18'][0])
-    with pytest.raises(ValueError, match='c05_source_title_missing'):
-        provider.arm(batch, 'A')
+    from deskpet.quality.corpus_c05 import operational_spec, operational_text
+    for key in ('C05-16', 'C05-17', 'C05-18', 'C05-19'):
+        batch = compile_c05_setup(key, SETUPS[key][0])
+        for spec in batch.scopes:
+            assert spec.title is None
+            assert operational_spec(batch, spec.label).title == '合成任务'
+            assert operational_text(batch, spec.label).startswith(batch.setup_text)
+            assert '非原历史事实' in operational_text(batch, spec.label)
 
 
 def test_history_reader_injection_keeps_default_production_reader(tmp_path):
