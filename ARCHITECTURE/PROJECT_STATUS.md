@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+Updated 2026-09-06: isolated primary history tool pages passed 4 unique controls across batches, preserving original failures: real terminal S1/public SDK transcript, Run-admitted summary, exact public first/next/tail pages, actual MockTransport, forget blocking subsequent sends, and full-stack dependency reopen. Existing H077/M616 installed targets; not native/external Provider. Current Run page:causal continues in this leaf; full S5/program remains incomplete. [Results](../plans/2026-09-06-primary-context-compaction/RESULTS.md).
+
+
 2026-09-06：自有clock树 `feat/wemm-startup-prime`／base082f68c0，源码68f525e2，三项priming新增控制3PASS／0.27s；PG95734无残留、共享锁释放，峰122208KiB、磁盘最低4217MiB。已独审合入primary候选，待真实首次native查询，原r11冷FAIL保留；Procedure WIP未混入，旧绿不重跑。[证据](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 2026-09-06：`feat/closure-resume-source` / baseff2f2009独立叶，固定0a52085e非空resume真实producer与当前来源过滤完成本批限定验证；r1一绿四红、r2仅四红转绿，合计5unique，Dirac限定ACCEPT。实际tool/fallback→后继Run→物理MockTransport闭合、前缀稳定、来源遗忘和原子故障已验；H077/M616限定载体，已合primary候选，主组合/native待验，legacy/篡改/goal/恢复剩余控制与完整compaction继续保留。两新policy仅常量hunk，合主保留Singer typed modes；PG95551退出无残留，未重跑旧绿。[结果/命令](../plans/2026-09-06-closure-resume-source/RESULTS.md)。

@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+Updated 2026-09-06: isolated primary history tool pages passed 4 unique controls across batches, preserving original failures: real terminal S1/public SDK transcript, Run-admitted summary, exact public first/next/tail pages, actual MockTransport, forget blocking subsequent sends, and full-stack dependency reopen. Existing H077/M616 installed targets; not native/external Provider. Current Run page:causal continues in this leaf; full S5/program remains incomplete. [Results](../plans/2026-09-06-primary-context-compaction/RESULTS.md).
+
+
 2026-09-06：WeMM startup warmup后继含一次无用户数据priming，同一实例／共享任务／encode队列，向量丢弃，无Memory查询或业务写入；新增warmup_state/is_primed及load/prime耗时区分。三项新控制3PASS，取消复用／成功幂等／失败显式重试有证据；SDK、1s预算、来源门未改，真实冷首次query待主验证。[详情](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 
