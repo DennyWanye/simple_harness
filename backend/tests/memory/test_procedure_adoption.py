@@ -6,6 +6,7 @@ separately from unit mutations; SQL below only reads resulting test evidence.
 """
 from copy import deepcopy
 from dataclasses import replace
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -137,7 +138,7 @@ def test_high_risk_adoption_is_memory_state_and_model_semantics_remain_explicit_
     case = compilation()
     case.proposal["operations"][0]["procedure"]["risk_level"] = "irreversible"
     op = compile_case(case).plan.operations[0]
-    assert op.lifecycle_state.value == "active" and op.payload.risk_level.value == "irreversible"
+    assert op.lifecycle_state.value == "active" and op.payload.proposed_risk_level.value == "irreversible"
     assert all(span.typed_observation is None for span in op.evidence_spans)
     # Deliberately wrong semantic classification: exact quoting alone CANNOT
     # detect this error. Keep that limitation reviewable, never invent NLP gates.
@@ -215,7 +216,7 @@ async def test_public_materialization_and_response_only_reopen_keep_persisted_pr
         assert state == ("active" if version == 3 else "draft")
         assert await mh.memory_rows(menv, "SELECT success_evidence_count,failure_evidence_count FROM procedure_records") == [(0, 0)]
         assert await mh.memory_rows(menv, "SELECT COUNT(*) FROM procedure_observation_authority_consumptions") == [(0,)]
-        [(request_json,)] = await mh.memory_rows(menv, "SELECT request_json FROM analysis_batches")
+        [(request_json,)] = await mh.memory_rows(menv, "SELECT request_json FROM analysis_batches WHERE state='applied'")
         request = MemoryAnalysisRequest.from_json(json.loads(request_json))
         assert request.prompt_version == f"host-analysis-prompt/v{version}"
         durable, _ = await menv.executor._durable_envelope(request.request_hash)
@@ -235,5 +236,42 @@ async def test_public_materialization_and_response_only_reopen_keep_persisted_pr
         assert len(adapter.calls) == 1
         assert mh.rows(env.db_path, "SELECT COUNT(*) FROM host_pre_admission_audit WHERE reason_code=?",
             "analysis_protocol_unsupported") == [(2,)]
+    finally:
+        await mh.close(menv)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("version", [3, 4])
+async def test_cancelled_response_only_claim_reopens_original_version(tmp_path, version):
+    # Cancellation is a distinct SDK recovery path from an executor Exception;
+    # do not replace or weaken the failed-version-cutover counterexample above.
+    env = await mh.bound_turn_run(tmp_path, "procedure-cancelled-source", text=REPORTED)
+    await mh.finish_clean_run(env)
+    raw = operation(mh.item_id(env), REPORTED, intent="reported_steps")
+    if version == 3:
+        raw["procedure"].pop("intent_kind")
+        raw["procedure"].pop("adoption_quote")
+    adapter = ch.FakeAdapter([mh.proposal_call([raw])])
+    def cancel(point):
+        if point == "analysis-before-derive":
+            raise asyncio.CancelledError()
+    menv = public_env(env, adapter, version=version, fault=cancel)
+    try:
+        assert await menv.worker.run_once() == "delivered"
+        with pytest.raises(asyncio.CancelledError):
+            await mh.run_job(menv)
+        [(saved, saved_hash, state)] = await mh.memory_rows(menv,
+            "SELECT request_json,request_hash,state FROM analysis_batches")
+        assert state == "handed_off" and len(adapter.calls) == 1
+    finally:
+        await mh.close(menv)
+    env.clock.now += 60
+    menv = public_env(env, adapter)  # actual latest worker config, no v3 override
+    try:
+        assert await mh.run_job(menv) == "applied"
+        assert await mh.memory_rows(menv, "SELECT request_json,request_hash FROM analysis_batches") == [(saved, saved_hash)]
+        assert await mh.memory_rows(menv, "SELECT lifecycle_state FROM cognitive_memory_revisions") == [
+            ("active" if version == 3 else "draft",)]
+        assert len(adapter.calls) == 1 and menv.executor.provider_calls == 0
     finally:
         await mh.close(menv)
