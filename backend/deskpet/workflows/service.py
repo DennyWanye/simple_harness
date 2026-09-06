@@ -329,6 +329,7 @@ class WorkflowService:
         action_matrix: VersionedActionMatrix | None = None,
         runtime_adapters: WorkflowRuntimeAdapterRegistry | None = None,
         execution_ports: WorkflowExecutionPorts | None = None,
+        owns_execution_uow: bool = False,
         runtime_activation_required: bool = False,
         runtime_activation_hooks: Sequence[Callable[[], Awaitable[None]]] = (),
     ) -> None:
@@ -354,6 +355,9 @@ class WorkflowService:
         self.runtime_adapters = runtime_adapters or WorkflowRuntimeAdapterRegistry()
         self.execution_ports = execution_ports
         self._owner_uow = execution_ports.unit_of_work if execution_ports else SqliteExecutionUnitOfWork(self.run_store.path)
+        self._owns_execution_uow = execution_ports is None or owns_execution_uow
+        self._close_lock = asyncio.Lock()
+        self._closed = False
         if execution_ports is not None and runner is not None:
             configure_execution = getattr(runner, "configure_execution_ports", None)
             if not callable(configure_execution):
@@ -381,6 +385,26 @@ class WorkflowService:
     @property
     def execution_uow(self) -> ExecutionUnitOfWork:
         return self._owner_uow
+
+    async def close(self) -> None:
+        """Composition shutdown, after external admission/borrowers stop.
+
+        Join launcher work first; runner drains its other admitted calls before
+        releasing its independent UoW. Never close a supplied borrowed UoW.
+        If cancellation/error interrupts draining, keep storage available for
+        the remaining work and allow the owner to retry shutdown.
+        """
+        async with self._close_lock:
+            if self._closed:
+                return
+            launcher = getattr(self, "launcher", None)
+            if launcher is not None:
+                await launcher.shutdown()
+            if self.runner is not None:
+                await self.runner.close()
+            if self._owns_execution_uow:
+                await self._owner_uow.close()
+            self._closed = True
 
     def bind_execution_delivery_wakeup(
         self,
