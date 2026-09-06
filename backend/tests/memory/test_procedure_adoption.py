@@ -16,6 +16,7 @@ from simple_harness.runtime import AnalysisBudget, EvidenceRef, EvidenceSourceKi
 from simple_harness_memory import MemoryManager, MemoryPrincipal
 
 from deskpet.memory import analysis_proposal as v3, analysis_proposal_v4 as v4
+from deskpet.memory import analysis_proposal_v5 as v5
 from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor, HostAnalysisExecutorError
 from deskpet.memory.analysis_protocol import protocol_for_request
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
@@ -177,9 +178,9 @@ def public_env(env, adapter, *, fault=None, version=4):
         principal=MemoryPrincipal("deskpet-local", "deskpet-local-household", mh.SUBJECT, "primary-conversation"))
     config = build_worker_config(provider_id=mh.BINDING["provider_id"], model_id=mh.BINDING["model_id"],
         model_config_hash=mh.expected_model_config_hash(), deadline_ms=5000)
-    if version == 3:
-        config = replace(config, prompt_version=v3.PROMPT_VERSION,
-            result_schema_version=v3.RESULT_SCHEMA_VERSION, policy_version=v3.POLICY_VERSION)
+    protocol = {3: v3, 4: v4, 5: v5}[version]
+    config = replace(config, prompt_version=protocol.PROMPT_VERSION,
+        result_schema_version=protocol.RESULT_SCHEMA_VERSION, policy_version=protocol.POLICY_VERSION)
     return mh.MemoryEnv(executor=executor, runtime=runtime, config=config, adapter=adapter,
         clock=env.clock, worker_id="procedure-worker", runner=None,
         worker=MemoryIngestionOutboxWorker(env.db_path, runtime.manager, owner_id="procedure-outbox", clock=env.clock))
@@ -187,7 +188,7 @@ def public_env(env, adapter, *, fault=None, version=4):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("version,recover", [(4, False), (4, True), (3, True)])
-async def test_public_materialization_and_response_only_reopen_keep_persisted_protocol(tmp_path, monkeypatch, version, recover):
+async def test_public_materialization_and_response_only_reopen_keep_persisted_protocol(tmp_path, monkeypatch, version, recover, recovery_version=4):
     env = await mh.bound_turn_run(tmp_path, "procedure-source-run", text=REPORTED)
     await mh.finish_clean_run(env)
     raw = operation(mh.item_id(env), REPORTED, intent="reported_steps")
@@ -210,7 +211,7 @@ async def test_public_materialization_and_response_only_reopen_keep_persisted_pr
     finally:
         await mh.close(menv)
     env.clock.now += 60
-    menv = public_env(env, adapter)  # new default v4 must not rewrite a saved v3 batch
+    menv = public_env(env, adapter, version=recovery_version)
     try:
         if recover:
             assert await mh.run_job(menv) == "applied"

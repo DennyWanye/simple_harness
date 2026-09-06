@@ -152,6 +152,13 @@ def compile_proposal(proposal, *, request, items, base_revision, plan_id, now, c
     versions = (request.prompt_version, request.result_schema_version, request.policy_version)
     if versions != (PROMPT_VERSION, RESULT_SCHEMA_VERSION, POLICY_VERSION):
         raise legacy.AnalysisProposalRejected("analysis_protocol_unsupported")
+    return _compile_validated_proposal(proposal, request=request, items=items,
+        base_revision=base_revision, plan_id=plan_id, now=now, candidates=candidates)
+
+
+def _compile_validated_proposal(proposal, *, request, items, base_revision, plan_id,
+                                now, candidates=(), operation_validator=None):
+    """Share source checks without rewriting a persisted request's identity."""
     if isinstance(proposal, Mapping) and (
         set(proposal) - {"outcome", "operations", "closure_reason"}
         or type(proposal.get("outcome")) is not str
@@ -166,6 +173,8 @@ def compile_proposal(proposal, *, request, items, base_revision, plan_id, now, c
             "no_mutation")
 
     def compile_operation(raw, span, *, item, now, candidates):
+        if operation_validator is not None:
+            operation_validator(raw)
         if raw.get("memory_type") == "procedure":
             return _compile_procedure(raw, span, item=item, request=request, items=items, now=now, candidates=candidates)
         return legacy.compile_operation(raw, span, item=item, now=now, candidates=candidates)
