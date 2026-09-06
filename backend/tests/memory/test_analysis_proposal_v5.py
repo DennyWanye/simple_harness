@@ -31,7 +31,7 @@ def test_wire_schema_excludes_other_bodies_and_keeps_old_protocols():
     case = compilation()
     for protocol in (v3, v4, v5):
         assert analysis_protocol.protocol_for_request(_request(case, protocol)) is protocol
-    assert analysis_protocol.PROMPT_VERSION == v5.PROMPT_VERSION
+    assert analysis_protocol.PROMPT_VERSION == "host-analysis-prompt/v5.1"
     assert "anyOf" not in v4.PROPOSAL_TOOL_SCHEMA["properties"]["operations"]["items"]
     assert "intent_kind" not in v3.PROPOSAL_TOOL_SCHEMA["properties"]["operations"]["items"]["properties"]["procedure"]["properties"]
 

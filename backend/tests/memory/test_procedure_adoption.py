@@ -17,6 +17,7 @@ from simple_harness_memory import MemoryManager, MemoryPrincipal
 
 from deskpet.memory import analysis_proposal as v3, analysis_proposal_v4 as v4
 from deskpet.memory import analysis_proposal_v5 as v5
+from deskpet.memory import analysis_proposal_v5_1 as v5_1
 from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor, HostAnalysisExecutorError
 from deskpet.memory.analysis_protocol import protocol_for_request
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
@@ -178,7 +179,7 @@ def public_env(env, adapter, *, fault=None, version=4):
         principal=MemoryPrincipal("deskpet-local", "deskpet-local-household", mh.SUBJECT, "primary-conversation"))
     config = build_worker_config(provider_id=mh.BINDING["provider_id"], model_id=mh.BINDING["model_id"],
         model_config_hash=mh.expected_model_config_hash(), deadline_ms=5000)
-    protocol = {3: v3, 4: v4, 5: v5}[version]
+    protocol = {3: v3, 4: v4, 5: v5, "5.1": v5_1}[version]
     config = replace(config, prompt_version=protocol.PROMPT_VERSION,
         result_schema_version=protocol.RESULT_SCHEMA_VERSION, policy_version=protocol.POLICY_VERSION)
     return mh.MemoryEnv(executor=executor, runtime=runtime, config=config, adapter=adapter,
@@ -241,8 +242,12 @@ async def test_public_materialization_and_response_only_reopen_keep_persisted_pr
             assert (await menv.executor.analyze_memory(request)).to_json() == before
         assert len(adapter.calls) == 1 and menv.executor.provider_calls == 0
         tools = adapter.calls[0].tools
-        properties = thaw_json(tools[0].parameters)["properties"]["operations"]["items"]["properties"]["procedure"]["properties"]
-        assert ("intent_kind" in properties) is (version == 4)
+        item_schema = thaw_json(tools[0].parameters)["properties"]["operations"]["items"]
+        if version == 5:
+            item_schema = next(branch for branch in item_schema["anyOf"]
+                if branch["properties"]["memory_type"]["enum"] == ["procedure"])
+        properties = item_schema["properties"]["procedure"]["properties"]
+        assert ("intent_kind" in properties) is (version in (4, 5))
         for bad in (replace(request, policy_version="host-analysis-policy/unknown"),
                     replace(request, policy_version=v3.POLICY_VERSION if version == 4 else v4.POLICY_VERSION)):
             with pytest.raises(HostAnalysisExecutorError, match="analysis_protocol_unsupported"):
