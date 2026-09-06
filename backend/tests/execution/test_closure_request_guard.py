@@ -39,7 +39,7 @@ async def world(tmp_path, monkeypatch, mode):
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=binding_authority, configured_root=configured)
     w = SimpleNamespace(state=state, runtime=runtime, stack=stack, queue=queue, sent=[],
-        provider=provider, prepared=[], outcomes=[], fallbacks=[], calls=[], mode=mode)
+        provider=provider, service=service, prepared=[], outcomes=[], fallbacks=[], calls=[], mode=mode)
 
     async def physical(request):
         w.sent.append(json.loads(request.content))
@@ -214,6 +214,67 @@ async def test_actual_scope_to_physical_closure(tmp_path, monkeypatch, mode):
                     assert db.execute("SELECT COUNT(*) FROM task_scope_events WHERE source_event_id='actual-late-host-turn'").fetchone()[0] == 1
         with sqlite3.connect(w.state) as db:
             assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts").fetchone()[0] == "COMPLETED"
+    finally:
+        await w.runtime.close()
+        await w.stack.close()
+        await w.client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_resumed_scope_closure_does_not_hold_read_transaction_across_access_receipt(tmp_path, monkeypatch):
+    """Two real SDK Runs: CREATE_NEW then actual RESUME_EXISTING and write.
+
+    The second Run's public source graph includes its retained scope package;
+    validating it executes the existing access-receipt writer. DELETE journal
+    intentionally retains SQLite's read/write exclusion instead of hiding it.
+    """
+    from simple_harness import CallId, thaw_json
+    from simple_harness.providers import ProviderToolCall
+    w = await world(tmp_path, monkeypatch, "allow")
+    try:
+        await w.runtime.after_enqueue(subject=w.runtime.subject)
+        await asyncio.wait_for(w.runtime.drain(), 20)
+        assert w.runtime.last_error is None and w.outcomes[-1].status == "no_mutation"
+        with sqlite3.connect(w.state) as db:
+            scope = db.execute("SELECT task_scope_id FROM task_scopes").fetchone()[0]
+            assert db.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        second_requests = []
+        async def resumed(request, *, cancel):
+            n = len(second_requests)
+            second_requests.append(request)
+            values = [json.loads(m.content)["value"] for m in request.messages
+                      if m.role.value == "tool" and isinstance(m.content, str)
+                      and isinstance(json.loads(m.content).get("value"), dict)]
+            if n == 0:
+                name, args = "context_route", {"route": "resume_existing", "task_scope_id": scope}
+            elif n == 1:
+                assert "resume_package" in values[-1]
+                name, args = "tool_search", {"query": "write_file"}
+            elif n == 2:
+                name, args = "tool_describe", {"capability_id": values[-1]["matches"][0]["capability_id"]}
+            elif n == 3:
+                name, args = "tool_activate", {k: values[-1][k] for k in ("capability_id", "schema_hash", "describe_nonce")}
+            elif n == 4:
+                name, args = "write_file", {"path": "resumed.txt", "content": "second actual task effect"}
+            else:
+                return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Resumed and written."),
+                                        model="model", usage=ProviderUsage(10, 10, 20))
+            return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, name),
+                tool_calls=(ProviderToolCall(CallId(f"resume-{n}"), name, args),),
+                model="model", usage=ProviderUsage(10, 10, 20))
+        monkeypatch.setattr(w.provider, "invoke", resumed)
+        await w.service.enqueue_turn(QueueTurnRequest(None, "closure-resume", "Resume the project and write another file"))
+        await w.runtime.after_enqueue(subject=w.runtime.subject)
+        await asyncio.wait_for(w.runtime.drain(), 20)
+        assert w.runtime.last_error is None
+        assert len(second_requests) == 6
+        assert len(w.sent) == 2 and [r["status"] for r in attempt_rows(w)] == ["succeeded", "succeeded"]
+        assert [o.status for o in w.outcomes] == ["no_mutation", "no_mutation"]
+        with sqlite3.connect(w.state) as db:
+            run_id, effect_id = db.execute("SELECT sdk_run_id,json_extract(receipt_json,'$.effect_id') FROM context_route_decisions WHERE route='resume_existing'").fetchone()
+            assert db.execute("SELECT COUNT(*) FROM foreground_terminal_receipts WHERE terminal_state='COMPLETED'").fetchone()[0] == 2
+        _, (effect,) = w.stack.read_primary_dependency_facts(run_id, (effect_id,))
+        assert effect.terminal and thaw_json(effect.result.value)["resume_package"]["disclosure_manifest"]
     finally:
         await w.runtime.close()
         await w.stack.close()
