@@ -23,7 +23,7 @@ Exact initial-scoped/effect approval for the **scoring** phase is a separate con
 
 - 07: `scoring_scope_ref` is actual C ID; `enqueue_scoring` uses it and checks actual admission receipt. C is not inferred from last-created scope.
 - 08: completed scope is opened through public read-only archive; state and prior SDK terminal identity remain exact.
-- 10/11: source chronology prepares A then B; actual public FTS page/cursor order must be B,A. No cursor fabrication, result reordering or rank-threshold change.
+- 10/11: query includes every original setup title as a complete unicode61 token; actual public FTS page/cursor order must be B,A. No cursor fabrication, result reordering or rank-threshold change.
 - 12: lanes must share one Host DB and have distinct actual subjects. B's owner must successfully open it; self exact-open must reject with permission_denied and actual search must include A/exclude B. A string owner label is not authority. Actual-main foreign-principal composition remains unverified.
 - 18: initial and preselection revision are separate actual Runs. Per-Run closure idempotency keys avoid reusing the initial scope mutation plan. `before_selection()` is a predeclared between-user-turn fixture action, never a response to gold/model choice. It requires actual revision/source change and re-disclosed new resume. `add_completed_phase` validates that actual mutation archive and uses exact-turn filtering, preserving earlier scoring turns across pages. Cross-process phase restart proof is not implemented here.
 - 16–19 neutral missing titles stay explicitly synthetic. 16's shared month/detail disclosure, and 17/19's initial named root are not waived. Do not append a second root after create: actual BindingRootResolver rejects multiple roots. Only read-back checking exists until the initial-root selection seam is agreed. Unsupported source obligations reject scoring admission; denominator unchanged.
@@ -75,3 +75,17 @@ against this queued setup's actual HTTP plan. No inferred ID transformation or n
 Missing indexed effect or terminal result now raises; real nonterminal is pending, SDK rejected/failed
 with stable error code yields no candidate, unknown/partial/malformed success fails unverifiable.
 An arbitrary error key is not accepted as proof of a terminal failure. New source remains NOT_RUN.
+
+Main first current-H0710 batch: 07/08/TOOL codec passed, 10/11 failed before second-page access
+(3PASS/2FAIL, 9.44s, PG83131 exit1/remaining=[]). Existing raw remains in main
+.local-test-evidence/2026-09-07/corpus-c05-runtime-source/r1/command.log.
+Read-only existing Host DB diagnosis: unicode61 plus exact quoted query produced zero matches for
+旧书/海报. Complete original titles (both, not selected target) match both actual documents.
+C10 actual BM25: B=-1.7151424287856072e-06, A=-1.67007299270073e-06.
+C11 equal BM25=-1.6923076923076922e-06 and equal scope-local source_sequence=3;
+the unchanged opaque task_scope_id ascending tie-break orders B,A in these original fixtures.
+No IDs or content were selected/changed to manufacture that order. Creation order alone does not
+establish ranking; corrected prior claim. Helper now issues both complete original setup titles and
+still requires real B,A pages; different authority/IDs that change the order remain an explicit failure.
+This diagnosis used mode=ro on existing Host SQLite only, not public consumer acceptance or new tests.
+Only original 10/11 red selectors need main rerun; 07/08/TOOL and old green cases are retained.

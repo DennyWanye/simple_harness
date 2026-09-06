@@ -151,9 +151,12 @@ class PreparedTaskCase:
 
     async def inspect_search_order(self):
         """Read real pages, never sort candidates into the expected answer."""
-        query = {'C05-10': '旧书', 'C05-11': '海报'}.get(self.batch.case_id)
-        if query is None:
+        if self.batch.case_id not in ('C05-10', 'C05-11'):
+
             raise ValueError('c05_order_not_declared')
+        # unicode61 indexes each complete Chinese title as a token. Use all
+        # original setup titles symmetrically, never gold or a target-only query.
+        query = ' '.join(spec.title for spec in self.batch.scopes)
         labels = {a.task_scope_id: a.label for a in self.archives}
         first = await self.reader.page(query, limit=1)
         if first['next_cursor'] is None:
@@ -176,13 +179,9 @@ async def prepare_task_case(batch, *, lanes):
     if len({Path(lane.path).resolve() for lane in lanes.values()}) != 1:
         raise ValueError('c05_owner_lanes_require_same_host_store')
     archives = []
-    # Public FTS ranks source_sequence descending for ties. Append A then B
-    # for the authored B-first cases; validate the actual output after prepare.
-    # This is setup chronology, not fabricated cursor/ranking or gold sorting.
-    specs = list(batch.scopes)
-    if batch.case_id in ('C05-10', 'C05-11'):
-        specs.sort(key=lambda s: s.label)
-    for spec in specs:
+    # Preserve authored source order. source_sequence is scope-local, not a
+    # cross-scope append clock. Actual public rank/cursor is checked below.
+    for spec in batch.scopes:
         lane = lanes[spec.owner]
         archives.append(await prepare_scope_archive(batch=batch, label=spec.label,
             subject=lane.subject, service=lane.service, provider=lane.provider,
