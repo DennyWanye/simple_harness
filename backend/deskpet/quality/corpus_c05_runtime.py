@@ -287,12 +287,14 @@ async def read_candidate_events(*, path, subject, sdk_run_id, stack, policy):
                 proof = await verify_scope_disclosure(db_path=path, package=package, subject=subject, stack=stack)
                 if (package['disclosure']['fields'] and await policy.check_dependencies(db=db,
                         primary_ref=row['primary_conversation_id'], dependencies=proof, disclosure_context=disclosure)):
-                    visible.append(candidate['task_scope_id'])
+                    visible.append({key: candidate[key] for key in
+                                    ('task_scope_id', 'source_id', 'source_hash')})
             if await resolve_current_disclosure(db_path=path, subject=subject,
                     run_id=sdk_run_id, request_id=row['effect_id']) != disclosure:
                 raise ValueError('c05_candidate_disclosure_changed')
             if visible:
                 events.append(dict(kind='task_candidates_visible', sdk_run_id=sdk_run_id,
                     effect_id=row['effect_id'], call_id=effect.raw_call_id,
-                    actual_result_hash=canonical_hash(value), visible_count=len(visible)))
+                    actual_result_hash=canonical_hash(value), visible_count=len(visible),
+                    visible_sources=tuple(visible)))
         return tuple(events)
