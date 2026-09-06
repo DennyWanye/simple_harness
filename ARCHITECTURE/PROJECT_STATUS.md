@@ -1,3 +1,5 @@
+最后更新：2026-09-06。r19 completed Scope指导新增2个唯一实际链控制分批PASS：真实resume仍complete、写入准入拒绝通过下一物理请求及公开proposal精确关联、零effect/文件；实际closure输入保留未做readback目标并持久非complete。原两次oracle误要求拒绝effect的失败保留，产品a189未变；最终PG47277清空已交槽。仅H079/M618确定性栈，新active Scope显式原root续改和原生旅程仍未完成。[结果](../plans/2026-09-06-completed-scope-guidance/RESULTS.md)。
+
 2026-09-06 原生r19独立长旅程仅前5轮：真实任务/docx创建但漏readback；原任务被模型收尾为complete，后续resume路由成功但编辑被生命周期门拒绝，第4轮FAIL并原生停止；随后43正常。完整两组旅程未完成，PG29074正常退出清空，非内存阻塞。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R19.md)。
 
 2026-09-06：固定3d83ac81的C03两来源收尾在当前H079/M618安装组合新增1PASS/2.25s，PG28861清空；189加载SDK模块来自target，原H078其余绿不重跑。不计质量语料，C02/自动prepare/跨进程proof另验。[组合证据](../plans/2026-09-06-corpus-public-seed/H079-COMPOSITION.md)。
