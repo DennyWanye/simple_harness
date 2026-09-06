@@ -1,5 +1,9 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 Timer必要installed H076/M616组合
+
+Host d3f9720a真实pending/rescheduled两路径2PASS1.71s：到期Memory提交丢ACK、过期重开same-ref重放、inbox唯一。原失败保留，旧控制不重跑；尚缺独立竞争控制与presentation/ack/native，未称完整scheduler。进程退出槽释放。[局部结果](../plans/2026-09-06-prospective-scheduler-time/RESULTS.md)。
+
 最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
 
 最后更新：2026-09-06。[S5c 提醒注册公开来源及7项局部验证](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)；完整 scheduler 仍在进行，未切换默认运行路径。
