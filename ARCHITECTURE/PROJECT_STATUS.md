@@ -1,3 +1,5 @@
+最后更新：2026-09-07。Manual workspace UI限定叶：真实Host challenge→exact用户决定→原binding ACK/后续route，以及真实View父卸载恢复，在H079/M619下7backend＋4UI分批通过。仅rebind夹具非法shared→exclusive自等待时序修正后1PASS3.44s，原6＋4未重跑；产品ef0ed7bf，test48169ae8。PG69778 exit0/remaining[]已交主。独立叶未合主/未native；orphan、历史扫描成本及App进程冷启动自动发现仍保留，不标program完成。[结果](../plans/2026-09-07-manual-workspace-binding/RESULTS.md)。
+
 最后更新：2026-09-07。Manual workspace真实UI叶首批ef0ed7bf/H079M619：6 backend＋4 UI通过，1个rebind夹具在shared lease内等待exclusive自重入而失败；原红保留、只修时序待单项复验。已测包括真实父controller卸载后exact status恢复、owner/primary隔离、34历史/33pending分页、独立进程给定原ref回读；非原生或完整Manual完成。PG68756 exit1/remaining[]已交槽，产品未因红更改。[首批与边界](../plans/2026-09-07-manual-workspace-binding/RESULTS.md)。
 
 最后更新：2026-09-07。主d86e4805（产品0e146792）与H079/M619/S0313安装组合仅Auto原root新Scope写入/alreadyBound拒绝2PASS4.05s；205已加载SDK模块属指定target，无重复全成员核验。PG61943 exit0/remaining[]已交native槽。原7unique不重复累计，Manual UI与原生仍待，原失败保留。[组合事实](../plans/2026-09-06-completed-scope-continuation/COMBINATION-619.md)。

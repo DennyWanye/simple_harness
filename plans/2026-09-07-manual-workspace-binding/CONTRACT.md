@@ -53,3 +53,8 @@ Dirac确认旧 `lastDecision` 在卡片effect局部；真实 PrimaryController�
 ## 首批实际结果与唯一红控时序修正
 
 首批ef0ed7bf/H079M619已运行：6 backend PASS、1 rebind FAIL；4 UI PASS。此前各阶段NOT_RUN是当时状态，当前结果以[RESULTS.md](RESULTS.md)为准。原rebind夹具在请求持有shared revocation lease的同一调用内等待完整签名_bind；ProfileBindingCoordinator.bind必须取得同barrier exclusive，静态路径构成自等待，默认5秒异常投影为通用拒绝，不是已观测到旧连接获准。此红保留。修正只改变这条负控的调度：慢read后真实IdentityReadyGate.unbind使旧身份失效，保持expected human_memory_connection_stale和零decision；旧请求退出shared后再经真实签名_bind恢复。该顺序区分“先暴露unready”与“完成durable rebind”，不声称独占写能穿过有效shared lease。产品、超时与既有绿均不改，修后该1项尚未执行。
+
+
+## 当前验证（2026-09-07）
+
+见[RESULTS.md](RESULTS.md)：ef0ed7bf首批6backend＋4UI通过，48169ae8仅原rebind红单项1PASS；7backend＋4UI唯一控制分批闭合，产品仍ef0ed7bf。以上NOT_RUN记录保留其当时边界；当前仍未新native、未整合主候选，原orphan与App冷启动自动发现不外推。PG69778已清空交主。

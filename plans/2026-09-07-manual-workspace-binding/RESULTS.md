@@ -1,6 +1,8 @@
-# Manual workspace UI 首批
+# Manual workspace UI 分批结果
 
 2026-09-07。固定源 `ef0ed7bf4ad1b22dc82bb892ae8eb774c94fdcb8`；H079/M619/S0313 来自主组合既有 `memory619-artifact/installed`。限定源/真实Host运行fixture/模拟HTTP与UI transport；不是原生或模型质量通过。
+
+当前汇总：**7 backend＋4 UI，11个唯一控制分批通过**。首批6＋4保留，仅原rebind红在48169ae8修正后单项复验1PASS；以下r1失败记录仍是原事实。源码限定终审已送Dirac，未合主/未新native。
 
 - Backend：**6 PASS、1 FAIL，33.73s**。exact（含重新hash错base拒绝）、mixed identity、allow后append故障、expired、独立进程cold exact读取、34 resolved历史＋33 pending分页通过。
 - UI：**4 PASS，1.35s**。包含真实PrimaryChatView/controller条件卸载、不同owner/primary隔离、原namespace仅exact status恢复及零自动重复decide。
@@ -27,3 +29,20 @@
 | loaded-origins.json | a5a45312ca52dfeec663eb536612ad91435ac354256f6f724e789a4afb79f6a1 |
 
 PG **68756**，exit1、36.042s、peak442896KiB、minDisk5470MiB，`remaining=[]/cleanup=null/stop_reason=null`；资源已立即交Carver。caffeinate56392未触碰。原无journal orphan、SQL全历史扫描成本、App进程退出后的UI自动恢复与当前候选原生仍明确待验。
+
+
+## r2：只复验原 rebind 红
+
+固定 `48169ae8f3be289f5f4e91375038eea010b936cc`，产品仍ef0ed7bf；同H079/M619/S0313 target。唯一选择：`tests/execution/test_primary_workspace_binding_ui.py::test_actual_route_manual_public_ui_source[rebind]`，**1 PASS /3.44s**。慢read后真实gate失效使pending/decide以原stale拒绝，零decision；共享边界释放后实际签名重绑、原Manual授权/文件路径继续通过。不宣称完整rebind在shared lease内提交。
+
+沿用默认共享runner/2GiB/180s，ignored载体 `run_rebind_r2.py`，PG **69778** exit0、4.059s、peak186560KiB、minDisk4427MiB，`remaining=[]/cleanup=null/stop_reason=null`。已立即向主释放槽，10绿未重跑，无模型/native/构建/新env。
+
+同ignored父目录 `r2/` 索引：
+
+| 文件 | SHA-256 |
+|---|---|
+| command.log | 17b503cda9b730e097a8a42687173c7eb6c151e7464fe0c4ff842c2def27901b |
+| resource.json | d48327b6e3a07dda5d04b204d07d397c62539e63d632c71c2a095b780fff70fe |
+| loaded-origins.json | 52d6642b6c6c01bbec2fd5319e3ad0f813edf27920e20c6399fc67aa64f57178 |
+
+修后NOT_RUN是481提交时状态，现在由r2限定结果取代。原无journal orphan、历史SQL扫描成本、View进程退出后原已bound引用自动发现、真实主组合/native仍是边界；S3/program不标完成。
