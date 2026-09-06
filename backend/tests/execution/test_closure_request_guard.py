@@ -31,10 +31,10 @@ class OmitClosureProvider(CreateProvider):
         return await super().invoke(request, cancel=cancel)
 
 
-async def world(tmp_path, monkeypatch, mode, *, closure_reply=None):
+async def world(tmp_path, monkeypatch, mode, *, closure_reply=None, user_text="Create a new project and write its file"):
     import main
     state, _, service, configured, binding_authority = await fixture(tmp_path)
-    await service.enqueue_turn(QueueTurnRequest(None, "closure-guard", "Create a new project and write its file"))
+    await service.enqueue_turn(QueueTurnRequest(None, "closure-guard", user_text))
     provider = OmitClosureProvider()
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
         binding_authority=binding_authority, configured_root=configured)
