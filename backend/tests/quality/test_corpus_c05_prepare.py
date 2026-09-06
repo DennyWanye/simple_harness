@@ -102,3 +102,100 @@ def test_history_reader_injection_keeps_default_production_reader(tmp_path):
     reader = Reader()
     injected = PrimaryForegroundContextPort(path, subject='owner', history_reader=reader)
     assert injected._history is reader  # explicit None semantics, not truthiness
+
+
+@pytest.mark.asyncio
+async def test_actual_scoring_pages_survive_setup_prefix_and_late_suppression(tmp_path, monkeypatch):
+    """NOT_RUN: real history/policy; deterministic setup and scoring Providers.
+
+    The constructor override only supplies the approved optional reader. It
+    does not replace a bound runtime authority or forge any stored message.
+    """
+    import aiosqlite
+    from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
+    from deskpet.execution.primary_context import PrimaryForegroundContextPort
+    from deskpet.execution.primary_history import PrimaryHistoryStore
+    from deskpet.memory.human_memory_service import QueueTurnRequest
+    from deskpet.quality.corpus_c05_history import SetupPrefixHistoryReader
+    from tests.execution import test_primary_foreground_runtime as runtime_fixture
+
+    archives, readers = [], []
+    scoring = False
+
+    class PhaseProvider:
+        target = Provider.target
+        def __init__(self):
+            self.setup = TaskSetupProvider(target=self.target)
+            self.scoring = Provider()
+        async def invoke(self, request, *, cancel):
+            target = self.scoring if scoring else self.setup
+            return await target.invoke(request, cancel=cancel)
+
+    class PhaseHistory:
+        def __init__(self, path, kwargs):
+            self.path, self.kwargs = path, kwargs
+            self.delegate = PrimaryHistoryStore(path, policy=kwargs['policy'],
+                settled_run_reader=kwargs['stack_getter']().read_settled_primary_run)
+            self.scoring_reader = None
+        async def read(self, **kwargs):
+            if not scoring:
+                return await self.delegate.read(**kwargs)
+            if self.scoring_reader is None:
+                self.scoring_reader = await SetupPrefixHistoryReader.from_archives(
+                    path=self.path, subject=kwargs['subject'], primary_ref=kwargs['primary_ref'],
+                    archives=archives, stack=self.kwargs['stack_getter'](), delegate=self.delegate)
+            return await self.scoring_reader.read(**kwargs)
+
+    def context(path, **kwargs):
+        reader = PhaseHistory(path, kwargs)
+        readers.append(reader)
+        return PrimaryForegroundContextPort(path, history_reader=reader, **kwargs)
+
+    monkeypatch.setattr(runtime_fixture, 'PrimaryForegroundContextPort', context)
+    state, factory, service, configured, authority = await fixture(tmp_path)
+    provider = PhaseProvider()
+    runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured)
+    subject = local_owner_auth().subject
+    batch = compile_c05_setup('C05-20', SETUPS['C05-20'][0])
+    disclosure = current_disclosure(run_id='fixture-reader', subject=subject, request_id='fixture-reader')
+    try:
+        for spec in batch.scopes:
+            archives.append(await prepare_scope_archive(batch=batch, label=spec.label,
+                subject=subject, service=service, provider=provider.setup, drive=runtime._drive_once,
+                stack=stack, path=state, policy=runtime.history_policy, disclosure_context=disclosure))
+        scoring = True
+        turns = []
+        for index in range(3):
+            turns.append(await service.enqueue_turn(QueueTurnRequest(None, f'score-{index}',
+                f'Scoring-only message {index}')))
+            await runtime._drive_once()
+        assert len(provider.scoring.requests) == 3
+        for request in provider.scoring.requests:
+            assert batch.setup_text not in str(request.messages)
+            assert 'Fixture setup complete.' not in str(request.messages)
+        assert 'Scoring-only message 0' in str(provider.scoring.requests[1].messages)
+        reader = readers[0].scoring_reader
+        common = dict(subject=subject, primary_ref=reader.primary_ref,
+                      completed_only=True, disclosure_context=disclosure)
+        page = await reader.read(**common, before_sequence=turns[-1]['enqueue_sequence'] + 1, limit=2)
+        assert [g['turn_id'] for g in page] == [t['turn_ref'] for t in turns[1:]]
+        earlier = await reader.read(**common, before_sequence=turns[1]['enqueue_sequence'], limit=2)
+        assert [g['turn_id'] for g in earlier] == [turns[0]['turn_ref']]
+        # Public suppression of the second scoring USER also hides the third
+        # turn that actually inherited it; the first scoring turn is still read.
+        async with aiosqlite.connect(state) as db:
+            async with db.execute('SELECT evidence_id FROM foreground_turns WHERE turn_id=?',
+                                  (turns[1]['turn_ref'],)) as cursor:
+                evidence_id = (await cursor.fetchone())[0]
+        manager = await runtime.history_memory.manager()
+        await manager.backend.suppress(SuppressionRequest('c05-late-scoring-forget', subject,
+            SuppressionScopeKind.EVIDENCE, evidence_id, 'user_forget', 20.0),
+            principal=runtime.history_memory.principal())
+        visible = await reader.read(**common, before_sequence=turns[-1]['enqueue_sequence'] + 1, limit=2)
+        assert [g['turn_id'] for g in visible] == [turns[0]['turn_ref']]
+        # Filtering never destroys the original TaskScope SDK terminal archive.
+        for archive in archives:
+            assert stack.read_run_terminal_evidence(archive.sdk_run_id) == archive.terminal
+    finally:
+        await stack.close()

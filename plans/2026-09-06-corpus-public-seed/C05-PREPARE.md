@@ -34,3 +34,9 @@ No ready flag, denominator change, fake TaskScope/receipt, or raw SDK SQL workar
 `backend/tests/quality/test_corpus_c05_prepare.py`: exact20 mapping/source rejection; actual runtime04/09/14/20 producer/readback;20 includes real archive terminal/prefix/foreign reader checks; absent title refusal; default production reader versus explicit optional injection. These are deterministic fixture controls, not240 quality. Actual later scoring-turn page fill/current suppression controls remain to be added before integration can be called complete.
 
 Shared files: only `execution/primary_context.py` constructor hunk. Hegel owns C07/common scoring dispatch; no competing edit to `corpus_scoring.py` or `corpus_scoring_session.py`. No test/model/native process started for this source candidate.
+
+## Source challenge / next control
+
+Dirac read-only review of `49509dc0`: no definite P0/P1 found; permits the declared new source controls, **not**20prepared/history integration/quality acceptance. No tests executed in review. Prefix tests alone cannot prove later scoring pagination or late suppression.
+
+A further NOT_RUN control now constructs the production context with the optional reader at initial composition, performs real deterministic setup Runs followed by three actual scoring Runs, checks two history pages and original setup exclusion, then uses public Memory suppression to require page refill past hidden inherited turns. No bound runtime authority is replaced; source archives remain readable. The final physical outbound guard race still needs its own affected control before the scoring integration is complete. No resource process has been started.
