@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+Updated 2026-09-06: revoked-source/non-success semantic fallback preserves pending debt and genuine FAILED terminal, without constructing a source-bearing model observation. Original main fallback already settled the unclosed-scope flow; earlier current-r3 lacked that component and is not main deadlock evidence. Two new actual-stack controls passed7.75s, including Host terminal.before_commit crash, cold same-receipt reuse/no retransmission, pending replay status and independent next input without withdrawn USER text. Productc6af1ac4; H077/M616 plus Host source/MockTransport, not native. PG4841 empty/lock released; no schema/hash/SDK changes. [Results and baseline calibration](../plans/2026-09-06-revoked-scope-terminal/RESULTS.md).
+
+
 Updated 2026-09-06: current primary large generic tool pages now use public settled effect/actual parent request authority, exact page read and final current-source guard. Two new actual-stack controls passed in separate retries (4.06s/3.81s), including reused raw ID, pending exclusion, tail/reopen and post-page forget with a pre-closed real write scope. Original unclosed-scope/withdrawal terminal-pending failure remains. Product0c1b4b38, H077/M616 plus Host source/MockTransport; main H078/M618/native and typed-consumed cross-SDK use are separate. [Results and limits](../plans/2026-09-06-primary-context-compaction/CURRENT-RESULTS.md).
 
 
