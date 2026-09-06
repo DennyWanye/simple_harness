@@ -31,7 +31,7 @@ LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 from deskpet.execution.current_tool_pages import CurrentToolProjector, MARKER, PREFIX as CURRENT_PREFIX
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["allow", "forget_after_page"])
-async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768, write_chunks=None):
+async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768, write_chunks=None, expected_budget_stop=False):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
     from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
@@ -42,6 +42,16 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     def context_authority(**kwargs):
         return actual_authority(**kwargs, current_tool_projector=CurrentToolProjector(state, lambda: holder.stack))
     monkeypatch.setattr(runtime_fixture, "ProductRunContextAuthority", context_authority)
+    if expected_budget_stop:
+        from deskpet.execution.semantic_closure import ClosureFallback
+        actual_runtime = runtime_fixture.ForegroundRuntimeExecutionAuthority
+        class Unused:
+            def __getattr__(self, name):
+                raise AssertionError("Failed-budget fallback attempted model/mutation: " + name)
+        def with_fallback(**kwargs):
+            return actual_runtime(**kwargs, closure_fallback=ClosureFallback(state,
+                invoker=Unused(), service=Unused(), run_facts_reader=Unused()))
+        monkeypatch.setattr(runtime_fixture, "ForegroundRuntimeExecutionAuthority", with_fallback)
 
     write_module = importlib.import_module("deskpet.tools.os_tools.write_file")
     original_write = write_module.write_file
@@ -175,6 +185,23 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "large-source", "Create a project and write its file"))
         await run()
+        if expected_budget_stop:
+            assert stack.read_run_terminal_evidence(holder.first_run).state == "failed"
+            assert await queue.current_snapshot(runtime.subject) is None
+            async with aiosqlite.connect(state) as db:
+                rows = await (await db.execute("SELECT outcome,reason_code FROM task_scope_closure_receipts WHERE sdk_run_id=?",
+                    (holder.first_run,))).fetchall()
+                assert rows == [("pending", "closure_run_not_completed")]
+            before = len(holder.sent)
+            await runtime.close()
+            await stack.close()
+            holder.runtime, holder.stack, holder.queue = await build(tmp_path, state, provider, dynamic=True,
+                binding_authority=authority, configured_root=configured, page_in_store=pages,
+                provider_context_window=provider_context_window)
+            assert holder.stack.read_run_terminal_evidence(holder.first_run).state == "failed"
+            assert not await holder.runtime._drive_once()
+            assert len(holder.sent) == before
+            return
         assert holder.responses and "EXACT_PAGE_TAIL" in holder.responses[0]["content"]
         if mode == "forget_after_page":
             assert len(holder.sent) == 7
