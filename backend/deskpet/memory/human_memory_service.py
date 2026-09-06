@@ -535,6 +535,9 @@ class HumanMemoryHostService:
     async def list_primary_memories(self, **request):
         return await self._cognitive_controls().list(**request)
 
+    async def read_primary_memory_graph(self, **request):
+        return await self._cognitive_controls().graph(**request)
+
     async def forget_primary_memory(self, **request):
         return await self._cognitive_controls().forget(**request)
 
