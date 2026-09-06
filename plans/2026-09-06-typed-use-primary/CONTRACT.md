@@ -143,3 +143,22 @@ H074's source_revision required-positive conflict is superseded by reviewed H075
 actual shortNone only, nonshort positive. SameV2 hash domain/keys; schema9 early
 binary boundary and explicit7/8->9 migration. Prior plans/results describe historical
 H074 inputs; current tested artifact is075 and the old env remains untouched.
+
+
+## Final no-recall recovery oracle (new tests474d958d, NOT_RUN)
+
+Installed H075, no SDK changes. Three real disposable child processes exit after
+actual provider success: before Hostsink commit, after Hostsink commit, and after
+response_reserved durable checkpoint at the original synchronous Host verifier.
+Restart same DBs and advance injected semantic clock120s to expire SDK lease;
+no persisted facts/timestamps are edited. Require same actual provider attempt/grant,
+exact Hostsink receipt (or one new idempotent commit if absent), one total physical
+MockTransport request and final Host COMPLETED. This is process-loss recovery,
+not artificially writing response_reserved or signing a fake no-recall receipt.
+
+Fourth control creates actual prospective pending through public Memory admission,
+mutation/receiptview/outbox/signal/inbox APIs and Host test-owned authority DTOs.
+No private Memory SQL/seeder. Real Host terminal sink uses the same reconcile port
+as main: refusal leaves no no-recall fact and no successful Host terminal while
+keeping the already-successful physical Provider invocation public fact unchanged.
+Only these new checks run; old long/clock/short/installed checks are not repeated.
