@@ -365,7 +365,7 @@ def build_worker_config(
     from simple_harness.runtime import AnalysisBudget
     from simple_harness_memory.core.jobs import MemoryJobWorkerConfig
 
-    from deskpet.memory.analysis_proposal import (
+    from deskpet.memory.analysis_protocol import (
         POLICY_VERSION,
         PROMPT_VERSION,
         RESULT_SCHEMA_VERSION,

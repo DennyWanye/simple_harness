@@ -507,6 +507,7 @@ def compile_proposal(
     plan_id: str,
     now: float,
     candidates=(),
+    _operation_compiler=None,
 ) -> CompiledProposal:
     """Model proposal + Host identity → ``MemoryMutationPlan`` (or a ``no_mutation`` result)."""
 
@@ -557,9 +558,14 @@ def compile_proposal(
             continue
         try:
             span = derive_span(item, str(raw.get("exact_quote") or ""), span_id=f"span-{plan_id[-12:]}-{ordinal}")
-            operations.append(compile_operation(raw, span, item=item, now=now, candidates=candidates))
+            compiler = compile_operation if _operation_compiler is None else _operation_compiler
+            operations.append(compiler(raw, span, item=item, now=now, candidates=candidates))
         except AnalysisProposalRejected as exc:
             rejected.append(RejectedOperation(operation_id, exc.code, exc.detail))
+        except (TypeError, ValueError) as exc:
+            if _operation_compiler is None:
+                raise  # Preserve v3 error/recovery behavior exactly.
+            rejected.append(RejectedOperation(operation_id, PAYLOAD_INVALID, {"reason": type(exc).__name__}))
     if not operations:
         return CompiledProposal(None, no_mutation_result(ALL_OPERATIONS_REJECTED), tuple(rejected), "no_mutation")
     plan = MemoryMutationPlan(

@@ -55,13 +55,12 @@ import aiosqlite
 from deskpet.execution.foreground_queue import ForegroundQueueStore
 from deskpet.memory.analysis_lineage import binding_model_config_hash
 from deskpet.memory.analysis_proposal import (
-    ANALYSIS_SYSTEM_INSTRUCTION,
     AdmittedItem,
-    compile_proposal,
+    AnalysisProposalRejected,
     prompt_items,
     proposal_from_response,
-    proposal_tool_spec,
 )
+from deskpet.memory.analysis_protocol import protocol_for_request
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.writer_fence import assert_human_memory_ingress_open_tx
 from deskpet.sdk_adapters.post_turn_invoker import (
@@ -282,6 +281,11 @@ class HostMemoryAnalysisExecutor:
         if not isinstance(request, MemoryAnalysisRequest):
             raise TypeError("request must use MemoryAnalysisRequest")
         self.calls += 1
+        try:
+            protocol = protocol_for_request(request)
+        except AnalysisProposalRejected as exc:
+            await self._audit(None, exc.code, request.request_hash)
+            raise HostAnalysisExecutorError(exc.code) from exc
         durable, _ = await self._durable_envelope(request.request_hash)
         if durable is not None:
             durable.verify_request(request)
@@ -335,10 +339,10 @@ class HostMemoryAnalysisExecutor:
             return ProviderRequest(
                 RequestId(f"post-turn-analysis-{request.request_hash[:24]}-{row.attempt_ordinal}"),
                 (
-                    Message(role=MessageRole.SYSTEM, content=ANALYSIS_SYSTEM_INSTRUCTION),
+                    Message(role=MessageRole.SYSTEM, content=protocol.ANALYSIS_SYSTEM_INSTRUCTION),
                     Message(role=MessageRole.USER, content="[analysis evidence]\n" + json.dumps(body, ensure_ascii=False, indent=1)),
                 ),
-                tools=(proposal_tool_spec(),),
+                tools=(protocol.proposal_tool_spec(),),
                 max_output_tokens=int(request.budget.max_output_tokens),
             )
 
@@ -504,7 +508,7 @@ class HostMemoryAnalysisExecutor:
         candidate_snapshot = None
         if self._semantic_correction is not None:
             candidate_snapshot = await self._semantic_correction.snapshot_for_attempt(request, attempt_id, response)
-        compiled = compile_proposal(
+        compiled = protocol_for_request(request).compile_proposal(
             proposal_from_response(response),
             request=request,
             items=items,
