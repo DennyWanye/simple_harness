@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06：source/runtime叶006a67dc已独审合入候选。真实C01 CREATE job、graph backoff拒假成功、source/scoring对话隔离三项新增控制分批通过；仅普通v1链，不含C02推断接线、A7/typed/short跨库或240质量。[结果与边界](../plans/2026-09-06-corpus-public-seed/SOURCE-RUNTIME-WIP.md)。
+
+
 2026-09-06 C02-19原setup关联补强：完整原始S1/receipt与实际group USER精确比较，新增真实同文异Run负控1PASS；已有正向/19绿未重跑，PG19055清空。仅setup来源，runtime隔离/240质量不计完成。[结果](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
 
 
