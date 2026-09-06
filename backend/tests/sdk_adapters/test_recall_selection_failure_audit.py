@@ -126,3 +126,67 @@ async def test_audit_failure_cannot_swallow_cancellation(state_db, monkeypatch, 
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_real_writer_lock_does_not_delay_cancel_audit_cleanup(state_db, monkeypatch, caplog):
+    tool = _service(state_db)
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+    statements = []
+    original_connect = tool._ledger._connect
+
+    async def tracked_connect():
+        db = await original_connect()
+        await db.set_trace_callback(statements.append)
+        original_close = db.close
+        async def close():
+            await original_close()
+            closed.set()
+        db.close = close
+        return db
+
+    async def wait(**kwargs):
+        entered.set()
+        await asyncio.Event().wait()
+
+    tool._recall_executor = wait
+    monkeypatch.setattr(tool._ledger, "_connect", tracked_connect)
+    blocker = sqlite3.connect(state_db)
+    blocker.execute("BEGIN IMMEDIATE")
+    task = asyncio.create_task(tool.handle_context_route(PROPOSAL))
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 2)
+        assert closed.is_set(), "cancel returned before its ledger connection closed"
+        assert statements.index("PRAGMA busy_timeout=0") < statements.index("BEGIN IMMEDIATE")
+        assert "context_route_cancel_audit_unavailable" in caplog.text
+        assert "PRIVATE_" not in caplog.text
+        assert blocker.execute("SELECT count(*) FROM context_route_tool_invocations").fetchone()[0] == 0
+        assert blocker.execute("SELECT count(*) FROM context_route_decisions").fetchone()[0] == 0
+    finally:
+        blocker.rollback()
+        blocker.close()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_postcommit_audit_failure_does_not_prove_route_absent(state_db, monkeypatch):
+    from tests.sdk_adapters.test_context_route_tool import _decision_rows
+    tool = _service(state_db)
+    original = tool._ledger.record_tool_invocation
+    async def fail_accepted(**kwargs):
+        if kwargs["verdict"] == "accepted":
+            raise RuntimeError("audit writer failed after route decision")
+        return await original(**kwargs)
+    monkeypatch.setattr(tool._ledger, "record_tool_invocation", fail_accepted)
+    result = await tool.handle_context_route({"route": "direct_standalone"})
+    assert result["ok"] is False
+    # Existing two-transaction boundary: a tool failure can follow a durable
+    # route decision. This test prevents claiming atomicity from precommit cases.
+    assert len(_decision_rows(state_db)) == 1
+    with sqlite3.connect(state_db) as db:
+        assert db.execute("SELECT verdict FROM context_route_tool_invocations").fetchone()[0] == "rejected"

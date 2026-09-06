@@ -712,6 +712,7 @@ class ContextRouteLedgerStore:
         verdict: str,
         decision_id: str | None,
         detail: Mapping[str, Any],
+        wait_for_lock: bool = True,
     ) -> None:
         """Record route tool lineage; idempotent per (run, effect_id)."""
 
@@ -731,6 +732,10 @@ class ContextRouteLedgerStore:
         )
         db = await self._connect()
         try:
+            if not wait_for_lock:
+                # Cancellation audit must not queue behind the normal 5s
+                # SQLite writer wait before rollback/close can complete.
+                await db.execute("PRAGMA busy_timeout=0")
             await db.execute("BEGIN IMMEDIATE")
             cursor = await db.execute(
                 "SELECT invocation_hash FROM context_route_tool_invocations "

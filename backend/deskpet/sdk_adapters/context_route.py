@@ -162,6 +162,7 @@ class ContextRouteToolService:
         verdict: str,
         decision_id: str | None,
         detail: Mapping[str, Any],
+        wait_for_lock: bool = True,
     ) -> None:
         if proposal.get("route") == "memory_standalone":
             # Keep only the bounded enum/boolean projection. Raw query, invalid
@@ -185,6 +186,7 @@ class ContextRouteToolService:
             verdict=verdict,
             decision_id=decision_id,
             detail=detail,
+            wait_for_lock=wait_for_lock,
         )
 
     async def _commit_receipt(
@@ -377,12 +379,16 @@ class ContextRouteToolService:
             )
         except asyncio.CancelledError:
             # This boundary precedes route commit; cancellation is not a
-            # successful route or a normal tool return. Bound the audit write
-            # and always propagate cancellation, including if storage fails.
+            # successful route or a normal tool return. Do not wait for a DB
+            # writer lock. The deadline requests cancellation; wait_for still
+            # awaits owned rollback/close, so it is not a wall-clock hard cap.
+            # Always propagate cancellation, including if storage fails.
             try:
-                await asyncio.wait_for(self._reject(
-                    run_id, raw_call_id, effect_id, proposal,
-                    "context_route_recall_cancelled",
+                await asyncio.wait_for(self._record(
+                    run_id=run_id, raw_call_id=raw_call_id, effect_id=effect_id,
+                    proposal=proposal, verdict="rejected", decision_id=None,
+                    detail={"code": "context_route_recall_cancelled"},
+                    wait_for_lock=False,
                 ), timeout=_AUDIT_CANCEL_SECONDS)
             except (Exception, asyncio.CancelledError):
                 _LOG.warning("context_route_cancel_audit_unavailable run_id=%s effect_id=%s",
