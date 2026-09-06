@@ -100,7 +100,8 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             raise ValueError("primary_effect_index_prefix_missing")
         identity = dict(host_run_id=run["host_run_id"], sdk_run_id=sdk_run_id,
             effect_id=before_effect_id, tool_name=target["tool_name"])
-        if target["identity_json"] != canonical_json(identity) or target["identity_hash"] != canonical_hash(identity):
+        if (target["host_run_id"] != run["host_run_id"] or target["identity_json"] != canonical_json(identity)
+                or target["identity_hash"] != canonical_hash(identity)):
             raise ValueError("primary_effect_index_identity_mismatch")
         _, (target_fact,) = stack.read_primary_dependency_facts(sdk_run_id, (before_effect_id,))
         if (target_fact is None or target_fact.run_id.value != sdk_run_id
@@ -124,7 +125,8 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
                     raise ValueError("primary_effect_index_route_missing")
                 identity = dict(host_run_id=run["host_run_id"], sdk_run_id=sdk_run_id,
                     effect_id=raw["effect_id"], tool_name="context_route")
-                if indexed["identity_json"] != canonical_json(identity) or indexed["identity_hash"] != canonical_hash(identity):
+                if (indexed["host_run_id"] != run["host_run_id"] or indexed["tool_name"] != "context_route"
+                        or indexed["identity_json"] != canonical_json(identity) or indexed["identity_hash"] != canonical_hash(identity)):
                     raise ValueError("primary_effect_index_identity_mismatch")
                 if indexed["sequence"] >= cutoff:
                     continue
