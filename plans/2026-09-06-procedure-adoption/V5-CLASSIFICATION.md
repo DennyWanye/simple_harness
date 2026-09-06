@@ -1,6 +1,6 @@
 # Procedure v5 schema与真实分类
 
-更新：2026-09-06。固定源码85a19260；H078/M618现有installed target，未构建新SDK。
+更新：2026-09-06。固定源码85a19260，源码及三条真实结果获Dirac限定ACCEPT；H078/M618现有installed target，未构建新SDK。
 
 ## 真实问题与修改
 

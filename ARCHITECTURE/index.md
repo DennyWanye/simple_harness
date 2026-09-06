@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+2026-09-06：实际生产fallback已证明撤回来源后可FAILED收尾并继续新输入，原fixture缺fallback不外推main死锁。后继53940598修复非成功路径多余来源正文构造及pending重放状态，两项实际控制通过并独审合入；未伪称任务语义完成。[结果](../plans/2026-09-06-revoked-scope-terminal/RESULTS.md)。
+
 2026-09-06：真实v4提案混入多种正文被编译拒绝，后继v5按memory_type分支schema并保持旧协议恢复。固定85a19260新3控通过；真实gpt5.5三意图分别产出ACTIVE/DRAFT/DRAFT，无编译拒绝。仅模型分类+编译，非Host持久链/原生/240质量；PG4986正常退出并清空。[实际失败、修复和三条结果](../plans/2026-09-06-procedure-adoption/V5-CLASSIFICATION.md)。
 
 
