@@ -4,6 +4,7 @@
 
 
 2026-09-06：固定1491309f的H078/M618组合5PASS/4.82s，覆盖实际main factory、A7直接路由ACK终态、Procedure旧v3响应跨配置恢复及Memory身份/锁。173/84/116包成员与vendor一致、201模块全部来自新小target；PG2168正常退出并清空。原生/质量及随后历史分页代码不在此批范围。[当前组合结果](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
+Updated 2026-09-06: current primary large generic tool pages now use public settled effect/actual parent request authority, exact page read and final current-source guard. Two new actual-stack controls passed in separate retries (4.06s/3.81s), including reused raw ID, pending exclusion, tail/reopen and post-page forget with a pre-closed real write scope. Original unclosed-scope/withdrawal terminal-pending failure remains. Product0c1b4b38, H077/M616 plus Host source/MockTransport; main H078/M618/native and typed-consumed cross-SDK use are separate. [Results and limits](../plans/2026-09-06-primary-context-compaction/CURRENT-RESULTS.md).
 
 
 Updated 2026-09-06: isolated primary history tool pages passed 4 unique controls across batches, preserving original failures: real terminal S1/public SDK transcript, Run-admitted summary, exact public first/next/tail pages, actual MockTransport, forget blocking subsequent sends, and full-stack dependency reopen. Existing H077/M616 installed targets; not native/external Provider. Current Run page:causal continues in this leaf; full S5/program remains incomplete. [Results](../plans/2026-09-06-primary-context-compaction/RESULTS.md).

@@ -288,6 +288,15 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         if "error" in value:
             continue  # errors contain no candidate content
         if row["tool_name"] == "context_page_in":
+            if value.get("kind") == "primary_current_tool_page_v1":
+                from deskpet.execution.current_tool_pages import admitted_current_page
+                expected = await admitted_current_page(db=db, stack=stack, run=run,
+                    sdk_run_id=sdk_run_id, page_effect=fact, arguments=thaw_json(fact.arguments))
+                if value != expected:
+                    raise ValueError("primary_current_page_effect_result_mismatch")
+                # Original start and every earlier output source are already
+                # included by this ordered reader; never assert a fake S1.
+                continue
             if value.get("kind") == "primary_tool_history_page_v1":
                 from deskpet.execution.primary_context_pages import admitted_page
                 expected = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
@@ -358,6 +367,8 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
             if found is None:
                 return  # trusted Host lookup: this is not a foreground primary Run
             run, proof = found
+            from deskpet.execution.current_tool_pages import verify_request
+            verify_request(stack, sdk_run_id, request.messages)
             policy = policy_factory(run["subject"])
             disclosure = await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
                 subject=run["subject"], request_id=request.request_id.value)
