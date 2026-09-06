@@ -33,6 +33,9 @@ class FixtureSetupExecutor(FixtureAnalysisDelivery):
     def payload_for_spec(self, spec):
         return payload(spec,self.batch.scenario_time)
 
+    def valid_time_for_spec(self, spec):
+        return h.ValidTimeInterval(None, None)
+
     async def analyze_memory(self,request):
         source,receipt=await self.evidence.read_admitted(self.source_pair[0].evidence_id)
         if ((source,receipt)!=self.source_pair or source.subject!=self.principal.actor_id
@@ -59,7 +62,7 @@ class FixtureSetupExecutor(FixtureAnalysisDelivery):
                 memory_type=h.LongTermMemoryType(kind),payload=self.payload_for_spec(spec),
                 target=None,depends_on_operation_ids=(),lifecycle_state=state,
                 epistemic_status=h.EpistemicStatus.EXPLICIT_USER,conflict_status=h.ConflictStatus.UNCONTESTED,
-                verification_state=h.VerificationState.SOURCE_BOUND,valid_time_interval=h.ValidTimeInterval(None,None),
+                verification_state=h.VerificationState.SOURCE_BOUND,valid_time_interval=self.valid_time_for_spec(spec),
                 proposed_privacy_class=h.PrivacyClass.PERSONAL,proposed_information_attributes=(),
                 evidence_spans=(derive_span(item,item.text,span_id='setup-'+label),),reason_code='explicit_user_assertion'))
         head=current_analysis_apply_head()
