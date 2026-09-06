@@ -40,7 +40,7 @@ No additional tests run. Subsequent necessary controls must use main's complete 
 `{kind: task_candidates_visible, sdk_run_id, effect_id, call_id, actual_result_hash, visible_count, visible_sources}`.
 Every event is exact Host-indexed/public SDK terminal search output, with complete candidate shape,
 source/hash verification and current disclosure policy plus a post-read same-context check.
-No indexed search, unfinished search, explicit error, empty or currently hidden candidates returns no event;
+No indexed search, unfinished search, real SDK failed/rejected with error_code or a successful empty candidate list returns no event;
 malformed/mismatched source, stale disclosure or >256 indexed searches raises (unverifiable), not empty success.
 The hash covers actual public result value, not a ToolTerminalReceipt or host journal hash.
 This schedules the original scripted followup only; it grants no selection/resume permission.
@@ -82,3 +82,29 @@ not a selection grant. The consumer must re-read for freshness and compare an ac
 request's arguments; hidden candidates are not returned here. Existing actual_result_hash still
 covers the whole unchanged public SDK result, and visible_count counts these returned members.
 Source-only, no additional test run.
+
+Main first current-H0710 batch: 07/08/TOOL codec passed, 10/11 failed before second-page access
+(3PASS/2FAIL, 9.44s, PG83131 exit1/remaining=[]). Existing raw remains in main
+.local-test-evidence/2026-09-07/corpus-c05-runtime-source/r1/command.log.
+Read-only existing Host DB diagnosis: unicode61 plus exact quoted query produced zero matches for
+旧书/海报. Complete original titles (both, not selected target) match both actual documents.
+C10 actual BM25: B=-1.7151424287856072e-06, A=-1.67007299270073e-06.
+C11 equal BM25=-1.6923076923076922e-06 and equal scope-local source_sequence=3;
+the unchanged opaque task_scope_id ascending tie-break orders B,A in these original fixtures.
+No IDs or content were selected/changed to manufacture that order. Creation order alone does not
+establish ranking; corrected prior claim. Helper now issues both complete original setup titles and
+still requires real B,A pages; different authority/IDs that change the order remain an explicit failure.
+This diagnosis used mode=ro on existing Host SQLite only, not public consumer acceptance or new tests.
+Only original 10/11 red selectors need main rerun; 07/08/TOOL and old green cases are retained.
+
+Pending protocol correction after main's first real waiting control: EffectRecord does not exist before
+REQUIRE_USER resolves. Use `verify_pending_call` from corpus_c05_approval (see
+[C05-AUTHORITY-CONTROLS](C05-AUTHORITY-CONTROLS.md)) for both setup/scoring approvers;
+the previous pending read_primary_dependency_facts mapping is superseded. This does not change settled
+candidate-event reading, which still requires actual indexed effects/results. No SDK bump or private SQL.
+
+Visibility classification correction: the existing boolean policy collapses read failures and denial
+into False. A nonempty candidate with False or missing disclosed fields now raises
+`c05_candidate_visibility_unverifiable`; no typed suppression reason exists here to classify it as a
+confirmed hidden/empty result. Only actual successful candidates=[] is true zero; the consumer must
+report this new error as OBSERVATION_FAILED, not FOLLOWUP_UNMET. Hegel owns the new negative control.

@@ -33,3 +33,34 @@ marker approval path; the first selector proves the initial create pending bound
 
 The existing candidate effect ID/Run/tool checks were moved before the nonterminal branch, as Dirac
 suggested. No added test matrix for that mechanical order change. Syntax-only checks are not test PASS.
+
+## Pending first-run failure and public predecessor proof
+
+Main r1: 1PASS/1FAIL1.89s, PG83853 exit1/remaining=[]; actual empty/missing reader control
+passed and must not be repeated. Original log remains main
+`.local-test-evidence/2026-09-07/corpus-c05-authority/r1/command.log`.
+The pending decision genuinely exists but REQUIRE_USER is raised before SDK prepare_effect.
+The failed expectation that every pending already has an EffectRecord is withdrawn.
+
+Successor `verify_pending_call(*, stack, ingress, sdk_run_id, decision_id, request)` returns
+`PendingCallProof`, never an invented EffectRecord. It reads the existing Host public trace facade,
+which reads SDK public provider records and operation audit. Unique requested/waiting boundary facts
+must agree on Run snapshot, opaque effect/internal-call references, name, raw-call domain hash and
+actual turn/call ordinals. Their immutable sequence order is checked. The matching proposal must bind
+the exact successful public provider invocation/response hash/request; the actual decoded response's
+call ordinal supplies full raw ID/name/arguments. SDK public audit_reference/audit_hash functions verify
+the opaque domains; no internal ID derivation or database writes.
+
+H0710's boundary DTO has request_hash=None despite that field being in its canonical producer payload.
+Dirac selected direct equality between two real public sources: the OPEN decision's full arguments and
+the actual Provider response's full arguments. Audit proves the unique requested/waiting call association.
+The missing audit request hash is explicitly **not_exported**, not a validated intent hash. We do not
+reconstruct a private producer payload, fill missing DTO fields or write candidate evidence. The original
+decision request's own hash is logged as its fingerprint only.
+Finally the actual decision must still equal its original open version/request/nonce before returning;
+existing respond_primary_decision remains the authority for any later race.
+
+The original pending selector now explicitly asserts actual read_effect is None, then checks the public
+predecessor proof has different raw/internal IDs before exercising the same foreign-turn/wrong-args
+negatives and exact allow. Only this red selector needs re-execution on main's fixed current target.
+The actual-main consumer must also use this one helper; no settled-effect fallback or tool-name-only grant.
