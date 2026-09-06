@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C06跨scope语料准备首组02/03/04新增专属public Host S1→Memory分析job→Semantic/Procedure回读源码；20原setup/hash全保留。全部新控NOT_RUN，未接共享scoring/session，未证明跨Task typed召回/非SELF出站/质量。无测试、模型或SDK制品变更。[源码契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
 最后更新：2026-09-07。C08历史纪要15/检查列表16两个新控制首次2PASS16.01s：实际main旧USER与派生assistant→真实job→公开抑制→生产重开→下一受控HTTP无旧内容。PG87213自然清空；文档文本来源，非文件/模型质量，正式dispatcher接入另待，旧绿未重跑。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-DOCUMENTS-RESULTS.md)。
 
 最后更新：2026-09-07。C05正式04/09/14/20多轮+真实empty及来源parser共6控制通过74.03s：同root真实setup/审批/marker/closure/terminal、过滤prefix、独立评分/followup/exact resume；context_route控制/physical来源误分类修复已在真实main闭合。原scope红/FK夹具红保留，PG85016/85509/85863均清空。固定HTTP非模型质量，剩余16case仍待。[结果](../plans/2026-09-07-corpus-complete-dispatch/C05-RESULTS.md)。
