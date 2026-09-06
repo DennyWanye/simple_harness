@@ -18,6 +18,12 @@ class ReadOnlyMemoryApproval:
         self.ordinal += 1
         self.persist(f"approval-{self.ordinal:03d}", value)
 
+    async def allow_request(self, *, request, sdk_run_id, queued, service):
+        """Default remains the original memory-only benchmark permission."""
+        args = request.get("arguments")
+        return (request.get("tool_name") == "context_route" and isinstance(args, dict)
+            and args.get("route") == "memory_standalone")
+
     async def __call__(self, *, service, queued):
         state = await service.read_primary_state(request_id="corpus-approval-state")
         current = state.get("current_run")
@@ -53,9 +59,8 @@ class ReadOnlyMemoryApproval:
                 or request.get("nonce") != item["nonce"]):
                 raise CorpusApprovalBlocked("corpus_approval_exact_identity_mismatch")
             # Never authorize from the display-only truncated arguments_preview.
-            args = request.get("arguments")
-            allowed = (request.get("tool_name") == "context_route" and isinstance(args, dict)
-                and args.get("route") == "memory_standalone")
+            allowed = await self.allow_request(request=request, sdk_run_id=sdk,
+                queued=queued, service=service)
             fact = dict(**target, sdk_run_ref=sdk, decision_id=decision_id,
                 version=record.version, request_hash=digest(request),
                 tool_name=request.get("tool_name"))

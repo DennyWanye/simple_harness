@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05限定04/09/14/20 actualmain setup→独立评分Provider→原固定followup接线及5新控制源码已准备，NOT_RUN；两factory同ignored root、真实setup prefix与current disclosure保留，多个评分Run统计不含fixture。pending审批公开prepared映射仍待Carver窄修后主统一验证；C08 partial/其它C05未开放，不称20 ready或模型质量。[源码契约与待跑nodeids](../plans/2026-09-07-corpus-complete-dispatch/C05-PHASE.md)。
+
 最后更新：2026-09-07。C08-01/06/11/18保留旧USER+assistant摘要实际main及wrongassistant共5新控首批5PASS38.78s：原job APPLIED/IDLE，公开suppression后两history隐藏，重开生产authority后下一physical请求无旧内容。PG84053五child自然清空，非真实模型/原生/rolling-summary；正式dispatcher待接。本批也确认d60异步诊断两SDK来源实际写出且无未await警告。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。
 
 最后更新：2026-09-07。Host诊断异步消费修复d60a94f4：真实installed Memory SQLite快照/timeout-cancel两个新控及三个受影响同步控制首批5PASS1.04s，PG83640清空。main改显式await，尚待下一新组合观测；SDK诊断版本硬编码原0.6.0另待，不冒称完整审计或改制品。[结果](../plans/2026-09-07-sdk-async-snapshot/RESULTS.md)。

@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05限定04/09/14/20 actualmain setup→独立评分Provider→原固定followup接线及5新控制源码已准备，NOT_RUN；两factory同ignored root、真实setup prefix与current disclosure保留，多个评分Run统计不含fixture。pending审批公开prepared映射仍待Carver窄修后主统一验证；C08 partial/其它C05未开放，不称20 ready或模型质量。[源码契约与待跑nodeids](../plans/2026-09-07-corpus-complete-dispatch/C05-PHASE.md)。
+
 最后更新：2026-09-07。C08-01/06/11/18保留旧USER+assistant摘要实际main及wrongassistant共5新控首批5PASS38.78s：原job APPLIED/IDLE，公开suppression后两history隐藏，重开生产authority后下一physical请求无旧内容。PG84053五child自然清空，非真实模型/原生/rolling-summary；正式dispatcher待接。本批也确认d60异步诊断两SDK来源实际写出且无未await警告。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。
 
 最后更新：2026-09-07。C05新增07/08/10/11及TOOL调用ID共5唯一控制分批通过（r1 3绿2红，完整标题查询修复后仅2红复测2PASS4.76s）；固定身份真实分页，不保证所有并列ID顺序。PG83131/83471清空，无真实模型/原生结论，正式main多轮接线仍待。[结果](../plans/2026-09-06-corpus-public-seed/C05-RUNTIME-RESULTS.md)。
