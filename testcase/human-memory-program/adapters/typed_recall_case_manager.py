@@ -46,6 +46,7 @@ class CaseManager:
         self.events, self.sources, self.admitted, self.actions = [], [], {}, {}
         self.typed_receipts = {}
         self.procedure_authorities = {}
+        self.prospective_authorities = {}
         self.conversations = {}
         self.base_revision = 1
         self.audit_receipt = None
@@ -63,6 +64,13 @@ class CaseManager:
                     raise ValueError('memory action authority reference differs')
                 owner.events.append({'call':'resolve_memory_action_authority','reference':ref.to_json(),
                     'grant':grant.to_json(),'authority_hash':grant.authority_hash,'now':owner.actual_now})
+                return grant
+            async def resolve_prospective_signal_authority(self, ref):
+                grant=owner.prospective_authorities[ref.authority_id]
+                if ref!=h.ProspectiveSignalAuthorityRef.from_authority(grant):
+                    raise ValueError("prospective signal reference differs")
+                owner.events.append({"call":"resolve_prospective_signal_authority",
+                    "reference":ref.to_json(),"authority":grant.to_json(),"authority_hash":grant.authority_hash})
                 return grant
             async def resolve_procedure_observation_authority(self, ref):
                 grant = owner.procedure_authorities[ref.authority_id]
@@ -91,6 +99,7 @@ class CaseManager:
         kwargs = dict(evidence_authority=self.authority, memory_action_authority=self.authority,
             conversation_evidence_authority=self.authority,
             procedure_observation_authority=self.authority,
+            prospective_signal_authority=self.authority,
             audit_access_authority=audit, classification_policy=m.InformationClassificationPolicy(
                 policy_id='typed-recall-case-policy', policy_version='1', authority_ref='host-case-policy',
                 required_privacy_class=self.privacy, required_information_attributes=self.attributes))
@@ -157,8 +166,14 @@ class CaseManager:
             return h.ProcedureMemoryPayload(raw['name'], tuple(applicability), tuple(raw['steps']), h.ProcedureRiskLevel(raw['effective_risk']))
         if kind == 'prospective':
             trigger = raw['trigger']
-            event = trigger.get('event', 'release_succeeded')
-            return h.ProspectiveMemoryPayload(raw['action'], h.ProspectiveEventTrigger('host-event-release', event, H(event)))
+            if trigger.get('kind')=='time':
+                typed=h.ProspectiveTimeTrigger(seconds(trigger['trigger_at']),trigger['timezone'])
+            elif trigger.get('kind')=='event' and set(trigger)=={'kind','event'}:
+                event=trigger['event']
+                typed=h.ProspectiveEventTrigger('host-event-release',event,H(event))
+            else:
+                raise ValueError('prospective fixture requires exact original typed trigger')
+            return h.ProspectiveMemoryPayload(raw['action'],typed)
         raise ValueError('short horizon requires public conversation registration, not cognitive mutation')
 
     async def seed(self, spec, *, operation_id='create-1', evidence_id='evidence-case-1', target=None,

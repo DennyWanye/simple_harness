@@ -23,12 +23,17 @@ async def run_cases(recipes, workspace):
             await case.open()
             opened = True
             path=recipe.get('lifecycle_path',[recipe['seed']])
+            prospective=load('typed_recall_prospective_cases')
+            if prospective.supported(recipe) and recipe['seed'].get('state')=='triggered':
+                path=[{**recipe['seed'],'state':'pending'}]
             previous=None
             for ordinal,spec in enumerate(path):
                 kwargs={} if ordinal==0 else dict(kind='supersede' if spec['state']=='superseded' else 'revise',
                     target=helper.h.ExistingMemoryTarget(previous.memory_id,previous.revision))
                 previous=await case.seed(spec,operation_id=f'create-{ordinal+1}',
                     evidence_id=f'evidence-case-{ordinal+1}',**kwargs)
+            if prospective.supported(recipe):
+                observed['prospective_binding']=await prospective.bind(case,recipe,previous)
             procedure = load('typed_recall_procedure_cases')
             if procedure.supported(recipe):
                 observed['procedure_binding'] = await procedure.bind(case, recipe, previous)

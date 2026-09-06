@@ -20,6 +20,17 @@ new-continuation不冒执行，S3/program整体未完成。
 [范围、实际证据和复现](../plans/2026-09-06-context-use-full/RESULTS.md)。
 
 
+## 2026-09-06 Prospective公开scheduler fixture叶子
+
+最后更新2026-09-06。4aee0cdb源码、dd988b19精确expiry test delta均Dirac限定ACCEPT。
+实际installed H073/M0613必要3方法PASS，受影响1方法窄复验PASS；原13格正式13PASS/0FAIL/0BLOCKED，
+Run ae075cb1eaed43a3b8f8221160d2c874，无dependency，其余388未选/整体NOT_RUN/BLOCKED/exit3。
+真实public outbox ACK+synthetic signal绑定原trigger/source/run/clock/expiry与实际revision，重开exact零读取。
+这是SDK合同synthetic scheduler，不声称Host真实提醒/外部event；原19另6lifecycle及projection未覆盖。
+不合旧182/source10/Procedure4为完整401；无SDK/Host生产变更。三PGID均退出无残留，槽释放，最大135296KiB。
+[命令、边界、raw与hash](../plans/2026-09-06-typed-recall-prospective-public/RESULTS.md)。
+
+
 ## 2026-09-06 Procedure公开适用性runner叶子
 
 最后更新：2026-09-06。固定ad189f52已Dirac限定源码ACCEPT；实际installed H073/M0613
