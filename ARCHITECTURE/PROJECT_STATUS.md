@@ -1,4 +1,4 @@
-2026-09-06：非SELF本轮输入来源事实片固定4405a2ac，实际signed-control/S1/atomic schema3、原声明重放、晚入场拒绝及真正重新签名连接保留原lease共7个唯一控制分批通过；旧来源顺序仍按原config。新增SDK用途消费/physical接线尚未实现，不称非SELF执行或240可用；未改冻结SDK制品。[契约与分批结果](../plans/2026-09-06-nonself-input/RESULTS.md)。
+2026-09-06：非SELF本轮单项输入已接真实SDK用途批读、Host既有sidecar审计和actual physical最终request/token/claim复核。Host生产430f0e4c、测试c2fd8fcd，Memory源码a8c8c38（基M618）；本轮9新unique分批5+2+2通过，前8消费及7来源绿复用。实际正常1次MockTransport发送、篡改/晚配置/晚claim均0send；unknown recall/short负控不当作已物化记忆证据。源overlay未合主/未制品，240双项/最终正文/完整审计及native另验；PG11195清空并把槽留主native。[契约、原红与结果](../plans/2026-09-06-nonself-input/RESULTS.md)。
 
 <!-- Updated 2026-09-06 -->
 
