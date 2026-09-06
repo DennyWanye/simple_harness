@@ -136,7 +136,7 @@ class TaskSetupProvider:
                     reason_code='corpus_authored_setup', evidence_refs=refs))
             args = dict(outcome='mutate' if operations else 'no_mutation',
                 base_revision=instruction['current_revision'], evidence_refs=refs,
-                idempotency_key='c05-fixture-closure')
+                idempotency_key='c05-fixture-closure:' + self.route_receipt['run_id'])
             if operations:
                 args['operations'] = operations
             else:
@@ -158,7 +158,8 @@ class TaskSetupProvider:
 
 async def prepare_scope_archive(*, batch: TaskSetupBatch, label: str, subject: str,
         service, provider: TaskSetupProvider, drive, stack, path, policy,
-        disclosure_context, owner_subjects=None, revision_of=None) -> PreparedScopeArchive:
+        disclosure_context=None, disclosure_context_resolver=None,
+        owner_subjects=None, revision_of=None) -> PreparedScopeArchive:
     """Real queue/tool/terminal source, then production exact disclosure.
 
 drive runs the caller's real runtime once. It cannot authorize a fabricated
@@ -167,7 +168,7 @@ agree. This function does not import history into a scoring conversation.
 """
     if batch != compile_c05_setup(batch.case_id, batch.setup_text):
         raise ValueError('c05_exact_batch_required')
-    if policy is None or disclosure_context.subject != subject:
+    if policy is None or ((disclosure_context is None) == (disclosure_context_resolver is None)):
         raise ValueError('c05_actual_disclosure_policy_required')
     phase = 'create' if revision_of is None else 'before_selection'
     spec = operational_spec(batch, label, phase=phase)
@@ -182,12 +183,19 @@ agree. This function does not import history into a scoring conversation.
     provider.arm(batch, label, revision_of=revision_of)
     key = hashlib.sha256((batch.setup_hash + ':' + label + ':' + subject + ':' + phase).encode()).hexdigest()
     queued = await service.enqueue_turn(QueueTurnRequest(None, 'c05-setup:' + key, actual_text))
+    bind_queued = getattr(provider, 'bind_queued', None)
+    if bind_queued is not None:
+        bind_queued(queued)
     await drive()
     route = provider.route_receipt
     expected_route = 'create_new' if revision_of is None else 'resume_existing'
     if not isinstance(route, dict) or route.get('route') != expected_route:
         raise RuntimeError('c05_route_receipt_missing')
     run_id, scope_id = route['run_id'], route['task_scope_id']
+    if disclosure_context_resolver is not None:
+        disclosure_context = await disclosure_context_resolver(run_id=run_id, turn_id=queued['turn_ref'])
+    if disclosure_context is None or disclosure_context.subject != subject:
+        raise ValueError('c05_actual_disclosure_policy_required')
     start, effects = stack.read_primary_dependency_facts(run_id, (route['effect_id'],))
     effect = effects[0]
     if (effect is None or not effect.terminal or effect.result is None
