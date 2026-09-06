@@ -1,3 +1,29 @@
+# C03 latest limited results — 20 setup cases, quality0
+
+2026-09-06. Normal17 passed in c03-normal-r1; dates02/17 plus six new boundary
+controls passed in c03-dates-r1; actual inference20 passed in c03-inference-r1
+(1PASS/1.53s). Thus20 setups+6 controls, not26 corpus cases or a full run.
+No old green cases rerun. No main registry/C02/C04 changes.
+
+C03-20 actually uses one deterministic Host/SDK completed source Run and its
+full-ingestion ACK. Wrong same-text original pair is a second actual enqueue/S1,
+NOT a second completed Run. Original source/receipt exactness rejects it. Public
+atomic E/S/D receipt and reopen readback passed; D stays candidate/inferred and
+unverified. Its multi-source analysis jobs are explicitly not drained. Therefore
+this is setup-only acceptance, not readiness for normal background analysis or
+quality model invocation. Source/scoring history not copied.
+
+Public verification_state assertion was added after the first test completed;
+instead of repeating seed/Run, c03-inference-public-status used public Manager on
+a copy of that closed DB and confirmed D llm_inference/inferred/unverified.
+It created no source/seed/Provider operation; original evidence DB unchanged.
+PG21422/21562 exit0 remaining[], final slot released to main/Singer. No new test
+batch is pending. This source is now sent for final limited independent review.
+
+Raw artifacts below remain ignored. Source date precision/synthetic markers are
+in public payload, but this does not prove a future model will never output a
+synthetic day. Shared registry integration and typed/short privacy remain separate.
+
 # Latest result: ordinary 17 public setups passed
 
 2026-09-06 fixed source d4482df0, c03-normal-r1:17 passed,8 deselected in6.51s.
@@ -93,3 +119,11 @@ public candidate readback and reopen. It is NOT_RUN at this source checkpoint.
 - `.local-test-evidence/2026-09-06/corpus-public-seed/c03-dates-r1/command.log` SHA256 `695d1a584defc91c430e832f3c8ead54572b8c758addfd8f7bb5891884d807de`
 
 - `.local-test-evidence/2026-09-06/corpus-public-seed/c03-dates-r1/resource.json` SHA256 `b660fe60a42531bc8464c8f7c46971159393ee4fab9737c23f384cd03fc125a5`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-inference-r1/command.log` SHA256 `70211483dfd2e5cd2e64a895b775c66fdb5dd664a051c6e4c97344ef1f5334eb`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-inference-r1/resource.json` SHA256 `045f8d90a0348a12cad2b39da282925f1057ef5458c54d49705abe259695a563`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-inference-public-status/command.log` SHA256 `a62df47a589bf849eca91caa0843785f821306124e39380e8c4d227df33e4f11`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/c03-inference-public-status/resource.json` SHA256 `e8e02e04f4b434ac245f0dd0f9320ffa3a3af50c61783556e685b328b7d9438a`

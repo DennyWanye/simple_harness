@@ -1,5 +1,13 @@
 <!-- 最后更新：2026-09-06 -->
 
+C03全部20setup已分批通过（17普通+02/17日期+20actualinference），另6边界控，
+非26语料/非quality。20使用真实Host/SDK source与publicatomic candidate推断，
+原pair错误拒绝/公开readback/reopen通过；多来源analysis明确未drain，不能称评分
+runtime就绪。PG21422/21562清空，旧绿未重跑，最终独审待反馈。
+[限定结果](../plans/2026-09-06-corpus-public-seed/C03-PREPARE.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
 C03粗日期02/17与精度/跨年/拒绝新控8PASS，未重跑17普通case；只新增2个setup，
 累计19个C03 setup分批绿，不称quality。公开Episode含原precision/synthetic标记，
 非真实发生日。20actualinference源码准备、未跑且多来源analysis未drain。

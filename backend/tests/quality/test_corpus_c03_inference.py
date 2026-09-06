@@ -65,6 +65,7 @@ async def test_c03_20_actual_original_source_and_candidate_public_mutation(tmp_p
         graph=await manager.get_twin_graph_view(principal=principal)
         by_id={node.memory_id:node for node in graph.nodes}
         assert by_id[actual['labels']['D'].memory_id].status=='inferred'
+        assert by_id[actual['labels']['D'].memory_id].verification_state=='unverified'
         assert graph.edges==()
         assert await PrimaryConversationAuthority(scoring,subject=auth.subject).completed_run_ids()==()
         # Same authored text in a different actual USER pair cannot borrow Run1.
