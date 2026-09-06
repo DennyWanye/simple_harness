@@ -17,7 +17,7 @@
 - backend-r2：只原红 **1 PASS / 6 deselected，2.35s**。真实REVISE改期/正文后currenthead hash变更，原occurrence/action固定；page仍有普通USER、无旧notice，旧detail精确 `primary_message_unavailable`，ACK/terminal commitments未改。六绿未重跑。后端合计七个唯一新场景。
 - ui-r1：**2 PASS / 9既有例未选中，44ms测试体/902ms总duration**。真实组件消费typed wire，显示独立“提醒”与正文且模型47保留；display invalidation立即撤下；缺notice_id不显示。这是jsdom组件控制，非原生/全量typecheck。
 
-重开控制限定新Host service对象及Memory manager handle，SDK stack未冷重建；不得称整个native冷启动送达PASS。真机r18旧失败不因本批绿色改写。Dirac源码挑战P1已修；最后固定源与分批结果终审待回。
+重开控制限定新Host service对象及Memory manager handle，SDK stack未冷重建；不得称整个native冷启动送达PASS。真机r18旧失败不因本批绿色改写。Dirac源码挑战P1已修；最终限定ACCEPT已收到：产品1355c5b7、测试a308fc60/91d4d56b、原docs c4982a3a及六份command/resource SHA只读复核，无新增确定P0/P1。可供主合入后验证新native正文，主合并仍待；不重跑旧绿。
 
 ## 资源和载体
 
