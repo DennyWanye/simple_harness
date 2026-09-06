@@ -61,6 +61,8 @@ class ProspectiveSignalStore:
         return rows
 
     async def _append(self, db, signal_id, rows, phase, body, *, owner=None, epoch=0, lease=None):
+        # SQLite REAL round-trips as float, including integer caller clocks.
+        lease=None if lease is None else float(lease)
         n=len(rows)+1;prior=rows[-1]['record_hash'] if rows else '0'*64
         digest=canonical_hash([self.owner,signal_id,n,phase,owner,epoch,lease,body,prior])
         await db.execute('INSERT INTO prospective_timer_events '
