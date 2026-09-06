@@ -53,27 +53,38 @@ async def run(row, workspace):
     from pathlib import Path
     spec = importlib.util.spec_from_file_location('rich_case_manager',Path(__file__).with_name('typed_recall_case_manager.py'))
     helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
-    if row['memory_type'] != 'episode':
-        raise ValueError('rich source leaf currently covers original episode only')
+    kind=row['memory_type']
+    if kind not in {'episode','procedure','prospective'}:
+        raise ValueError('rich source leaf does not yet cover this kind')
     rich = copy.deepcopy(row['source_record'])
     class RichCase(helper.CaseManager):
         async def evidence(self, text, evidence_id, epistemic='explicit_user', verification='source_bound'):
+            if evidence_id!='secret-evidence':
+                return await super().evidence(text,evidence_id,epistemic,verification)
             text = 'User memory assertion: ' + helper.canonical(rich).decode()
             envelope, span = await super().evidence(text,evidence_id,epistemic,verification)
             await register(self,envelope,evidence_id)
             return envelope,span
-    case = RichCase(workspace/'rich-episode.sqlite',privacy='sensitive')
+    case = RichCase(workspace/('rich-'+kind+'.sqlite'),privacy='sensitive')
     await case.open()
     try:
-        seed = {'memory_type':'episode','state':'active',
+        seed = {'memory_type':kind,'state':'pending' if kind=='prospective' else 'active',
             'payload':{k:copy.deepcopy(rich[k]) for k in row['allowed_payload_fields']}}
         target = await case.seed(seed,evidence_id='secret-evidence')
-        params = dict(query=rich['title'],memory_types=('episode',))
+        recipe={'family':'lifecycle','seed':seed}
+        proofs={}
+        params = dict(query=rich.get('title',rich.get('name',rich.get('action'))),memory_types=(kind,))
+        if kind=='procedure':
+            proof=await helper.load('typed_recall_procedure_cases').bind(case,recipe,target)
+            proofs['procedure_binding']=proof
+            params['fingerprint']=(proof['fingerprint'],)
+        if kind=='prospective':
+            proofs['prospective_binding']=await helper.load('typed_recall_prospective_cases').bind(case,recipe,target)
         recall = await case.recall(**params)
         await case.close(); await case.open()
         replay = await case.recall(**params)
         fresh = await case.recall(**params,key='fresh-after-reopen')
-        return {'original':copy.deepcopy(row),'sources':case.sources,'calls':case.events,
+        return {**proofs,'original':copy.deepcopy(row),'sources':case.sources,'calls':case.events,
             'label_mapping':{'original_source_ref':rich['source_ref'],'actual_memory_id':target.memory_id,
                 'actual_revision':target.revision,'evidence_id':'secret-evidence','source_task_scope_id':'rich-source-task'},
             'recalls':[recall],'replay':replay,'fresh':fresh,
