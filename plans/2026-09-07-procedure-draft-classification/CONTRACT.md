@@ -1,7 +1,7 @@
 # Candidate Procedure classification — Host prompt v5.1
 
-2026-09-07; base e1b98baffb840319a20377787b7abda66f01989d. Source work only;
-tests and model controls NOT_RUN. C05 is preserved separately at0e9a4d4a.
+2026-09-07; base e1b98baffb840319a20377787b7abda66f01989d. Focused controls6PASS; see [results](RESULTS.md).
+Actual model controls remain NOT_RUN. C05 is preserved separately at0e9a4d4a.
 
 ## Observed problem
 
@@ -30,7 +30,7 @@ v4 `_compile_validated_proposal` with the original request and v5 discriminator.
 No request/hash rewriting, SDK change, wire/schema mutation or old job rewrite.
 Old exact tuple selects its original prompt, tool description and compiler.
 
-## Necessary verification, not yet executed
+## Necessary verification (focused controls executed; model calls pending)
 
 - New/old exact request dispatch and differing request hashes, identical schema,
   actual new tool description; old v5 text retained.
@@ -45,6 +45,6 @@ Old exact tuple selects its original prompt, tool description and compiler.
   reusable flow positive and one-off/assistant-plan negative. These—not static
   text assertions or scripted classifications—establish classification behavior.
 
-No test/model resource slot requested in this source phase. No gold or full Case
+The one authorized focused batch completed and released its slot. No model slot taken. No gold or full Case
 is sent to the model; actual positive/negative inputs will be reviewed before
 the separately scheduled calls. Until then this is not native/quality closure.
