@@ -21,7 +21,13 @@
 
 ## 当前推进顺序
 
-当前H079/M619候选已开始真实语料评分，C01-10原FAIL保留。先修生产来源指导与评分进程owned资源退场；v5.1候选流程分类用两次真实正反例验证；Manual工作目录授权新增UI接线在独审后做首批控制，再组合原生验收与后续未运行的C01案例。原生提醒r22/r23限定结果已通过，不重复旧绿。后续仍完成其余语料、两组原生长旅程、完整审计与矩阵。资源密集工作共享锁串行；全阶段caffeinate保持，测试结束后再解除。
+当前主隔离候选 H0710/M619/S0313。独立真实POST已确认服务拒绝 model_not_found / unknown provider for model gpt-5.5；模型目录仍列该模型不能证明路由可用。模型取舍问题已提出，未获选择前不偷偷换模型或反复POST，不处理TokenSeller生产。原240仍3个不同case尝试、0质量通过，其余237未执行。
+
+继续不依赖真实服务的准备与接线：C01-06原同ID修订经actualmain真实typed route进入下一受控HTTP请求已通过；C07实际main recent/setup与独立评分Run隔离已通过；C05新增07/08/10/11及TOOL身份共5唯一控制分批通过，正式04/09/14/20多轮phase仍在组合；C08已有标量组件及四类retained摘要源码，新增actualmain首测进行中，不重跑13旧绿。C05新authority实际empty与缺证据区别已通过，但open decision读取pending effect返回None，审批接缝尚待修，不称整链成功。
+
+Host diagnostics未等待coroutine已修，两个新异步控制+三个受影响同步控制5PASS；当前新main组合尚在验证，Memory SDK自身诊断版本字段硬编码另待。以上专项控制不能折算原401矩阵或240质量通过率。后续仍有其余语料准备/质量、Procedure durable与原生正向使用、Manual及两组原生长旅程、完整审计和性能。F01仍是唯一用户明确延期项。
+
+资源密集工作仅主完整candidate/current installed target共享锁串行，子代理目前只写源码/审查。新失败共因优先停批修复，只复原红与尚未执行项。全阶段caffeinate保持，整个测试结束后才解除。
 
 ## 详细证据入口
 
