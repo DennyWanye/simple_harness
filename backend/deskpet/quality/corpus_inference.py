@@ -30,7 +30,9 @@ async def inference_source(*, path, subject, batch, host_run_id, quote):
     span=h.EvidenceSpanRef(span_id='setup-B-inference',evidence_id=envelope.evidence_id,
         envelope_hash=envelope.envelope_hash,sanitized_hash=envelope.sanitized_hash,
         admission_receipt_id=receipt.receipt_id,admission_receipt_hash=receipt.receipt_hash,
-        source_kind=envelope.source_kind,item_ordinal=item.item_ordinal,item_id=item.item_id,item_json_pointer=item.item_json_pointer,
+        # Full cognitive ingestion admits one sanitized-payload item per envelope.
+        # The recall registration ordinal is the separate conversation-group order.
+        source_kind=envelope.source_kind,item_ordinal=1,item_id=item.item_id,item_json_pointer=item.item_json_pointer,
         start_byte=start,end_byte=start+len(quote.encode()),exact_quote=quote,
         quote_hash=hashlib.sha256(quote.encode()).hexdigest(),source_hash=envelope.source_hash,
         normalization_version=item.normalization_version,
