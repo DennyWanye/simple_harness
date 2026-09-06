@@ -24,7 +24,7 @@
 
 ## 首C01-10：主合代码后执行
 
-仅一例、一个独立root、无case重试/探针/judge请求。主合上述源码后在primary执行；不从动态主root混入自有树控制证据。下面资源目录与评分目录分开，二者均使用新的r1名称，已有则不得覆盖。
+**执行前必须再合222346d3/ac76e16a的精确审批与实际ingress打开补丁，见[新增组合结果](APPROVAL-RESULTS.md)。** 仅一例、一个独立root、无case重试/探针/judge请求。主合上述源码后在primary执行；不从动态主root混入自有树控制证据。下面资源目录与评分目录分开，二者均使用新的r1名称，已有则不得覆盖。
 
 ```sh
 cd /Users/denny/projects/simple_harness-primary-candidate
