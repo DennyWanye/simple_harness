@@ -1,5 +1,13 @@
 # C07-06/14 正式评分相位接线
 
+## phase-r1 原红与固定资产核对
+
+2026-09-07：4dd75040/H079M619首跑1 FAIL/1.82s，PG79220 exit1、remaining[]、cleanup_error=null。candidate identity通过；workflow_capability_growth初始化失败，recent/评分请求未执行。原ignored phase-r1证据保留。
+
+静态对照主完整树的test_corpus_scoring_initialization/scoring_exit_child及本HEAD initializer：根config.toml、完整backend（含SDK authority和模板）已在；paths.first_party_capability_pack_roots固定指向本仓capability-packs。main._initialize_capability_runtime调用inventory_first_party_skill_packs，skills.py:403对根resolve(strict=True)，缺根必抛FileNotFoundError，与原阶段/日志一致。growth/cutover使用本次隔离userdata，workflow/retrieval实现位于完整backend，配置capabilities.sources为空，不依赖主已安装状态。
+
+仅从本HEAD展开capability-packs（46 tracked文件/99336字节）、resources（4文件/721609字节，含诊断资源；Windows资产不执行）及本plan目录。完整backend/这两资产目录逐文件存在性与一级pack manifest声明文件已静态核齐；首次清单需纠正git中文路径quote解析，采用NUL分隔后核实，无实际模板缺失。未复制主source/运行状态，不改产品/夹具/SDK/pin。下一批只复验原一个phase红，主成功载体不作为本树通过证据。
+
 2026-09-07。继承9810236f已接受的6个唯一helper控制；本增量源码待独审，**只新增1项actualmain组合控制，NOT_RUN**。原H079/M619保持，不换主新H0710，不重测6绿。不改Carver C05 history_reader，不改主review_packet修复。
 
 ## 实际链与身份
