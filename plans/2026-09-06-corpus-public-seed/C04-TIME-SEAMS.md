@@ -1,7 +1,7 @@
 # C04 clock/lifecycle prerequisites and source implementation
 
 2026-09-06 main coordination. All 20 original cases remain in the denominator;
-no C04 implementation/execution/PASS is claimed. No input/gold is used as setup
+C04 public setup20 now passed across first19 and one product-fix rerun; see [results](C04-CURSOR-RESULTS.md). No model quality PASS is claimed. No input/gold is used as setup
 authority. The following overrides ordinary undated fixture defaults.
 
 - C04-15 scenario clock is 2026-09-30T18:00+08:00; other C04 cases use September 6.

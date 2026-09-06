@@ -1,4 +1,11 @@
-<!-- 最后更新：2026-09-06 -->
+<!-- 最后更新：2026-09-07 -->
+
+C04 原20公开setup分批19+1通过；实际same-timestamp晚append暴露Host游标漏注册，
+d3a580be复用原journal修复当前timestamp边界、分离scan高水位与消费CAS，无DDL/旧receipt改写。
+新增5控分批通过（测试helper d25fe2f6），原绿未重跑；晚到更早timestamp仍不保证。
+实际C04-12注册/失效/改期ACK链通过；terminal故障控是实际SDKreceipt+显式scripted Host高位cursor。
+H078/M618 installed，非H079/native/Provider/240质量；Dirac最终证据审查待反馈。
+[结果与边界](../plans/2026-09-06-corpus-public-seed/C04-CURSOR-RESULTS.md)。
 
 C02-19/C03-20完整fixture prepare新入口默认先公开seed再实际drain，constructor绑定authority；
 跨进程候选JSON在SDK finalize前保存，重开必须SDK验证，不把文件当成功ledger。
