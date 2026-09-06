@@ -557,6 +557,7 @@ class ContextRouteLedgerStore:
         origin: str,
         idempotency_key: str,
         request_fingerprint: str | None = None,
+        require_unbound_run: bool = False,
     ) -> None:
         """Durably record one route / no-recall decision (idempotent)."""
 
@@ -589,6 +590,17 @@ class ContextRouteLedgerStore:
                         "sdk_context_route_decision_immutable"
                     )
                 return
+            if require_unbound_run:
+                if self._evidence_ingress is None:
+                    raise ContextRouteLedgerError("context_route_evidence_authority_missing")
+                bound = await self._evidence_ingress.resolve_run_scope_tx(db, receipt.run_id)
+                cursor = await db.execute(
+                    "SELECT 1 FROM context_route_decisions WHERE sdk_run_id=? AND task_scope_id IS NOT NULL LIMIT 1",
+                    (receipt.run_id,))
+                prior_task = await cursor.fetchone()
+                await cursor.close()
+                if bound is not None or prior_task is not None:
+                    raise ContextRouteLedgerError("context_route_workspace_reuse_requires_new_run")
             await db.execute(
                 "INSERT INTO context_route_decisions("
                 "decision_id,sdk_run_id,provider_turn_ordinal,route,origin,"
@@ -720,11 +732,13 @@ class ContextRouteLedgerStore:
         finally:
             await db.close()
 
-    async def latest_route_decision_for_run(self, sdk_run_id: str) -> Mapping[str, Any] | None:
+    async def latest_route_decision_for_run(self, sdk_run_id: str, *, task_only: bool = False) -> Mapping[str, Any] | None:
         """Most recent durable route decision of one Run (S5b Task 3 handler gate).
 
         ``task_scope_id`` is ``None`` for standalone routes → ``task_scope_update``
-        is rejected with ``task_scope_update_scope_unbound``.
+        is rejected with ``task_scope_update_scope_unbound``. ``task_only``
+        retains the latest actual task association even after a standalone route;
+        it is used to reject unsupported same-Run workspace Scope replacement.
         """
 
         db = await self._connect()
@@ -732,7 +746,8 @@ class ContextRouteLedgerStore:
             cursor = await db.execute(
                 "SELECT route,origin,task_scope_id,receipt_id,provider_turn_ordinal,recorded_at "
                 "FROM context_route_decisions WHERE sdk_run_id=? "
-                "ORDER BY provider_turn_ordinal DESC, recorded_at DESC, decision_id DESC LIMIT 1",
+                + ("AND task_scope_id IS NOT NULL " if task_only else "")
+                + "ORDER BY provider_turn_ordinal DESC, recorded_at DESC, decision_id DESC LIMIT 1",
                 (str(sdk_run_id),),
             )
             row = await cursor.fetchone()

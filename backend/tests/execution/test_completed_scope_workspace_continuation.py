@@ -73,22 +73,35 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
         results = tool_results(body); n = len(sends) - 1
         call = None
         if n == 0:
-            name, args = "context_route", {"route": "resume_existing", "task_scope_id": old}
-        elif n == 1:
+            name, args = (("context_route", {"route": "resume_existing", "task_scope_id": old})
+                          if invalid == "already_bound" else ("task_scope_search", {"query": "Archived work"}))
+        elif n == 1 and invalid == "already_bound":
             original = results[-1]["value"]["resume_package"]
             assert original["status"] == "complete"
-            observed["old_package"] = original
             name, args = "context_route", {"route": "create_new", "title": "Further edits", "goal": "Update the original document",
-                "reuse_workspace_of": old, "expected_source_hash": original["source_hash"]}
+                "reuse_workspace_of": original["task_scope_id"], "expected_source_hash": original["source_hash"]}
+        elif n == 1:
+            hits = results[-1]["value"]["candidates"]
+            assert len(hits) == 1
+            candidate = hits[0]
+            assert candidate["scope_disclosure"]["status"] == "complete"
+            observed["old_package"] = candidate["scope_disclosure"]
+            continuation = candidate["continuation"]
+            assert continuation["requires_first_task_route_in_new_run"] is True
+            name, args = "context_route", {"route": continuation["route"], "title": "Further edits", "goal": "Update the original document",
+                "reuse_workspace_of": continuation["reuse_workspace_of"], "expected_source_hash": continuation["expected_source_hash"]}
             if invalid == "stale_hash": args["expected_source_hash"] = "0" * 64
             if invalid == "foreign_scope": args["reuse_workspace_of"] = "foreign-unowned-scope"
         elif n == 2:
             outcome = results[-1]
             if invalid:
                 expected = {"stale_hash": "task_scope_source_stale", "foreign_scope": "human_memory_permission_denied",
-                            "multi_root": "context_route_workspace_source_requires_single_root"}
+                            "multi_root": "context_route_workspace_source_requires_single_root",
+                            "already_bound": "context_route_workspace_reuse_requires_new_run"}
                 assert outcome["outcome"] == "failed" and outcome["error_code"] == expected[invalid], outcome
-                observed["expected_code"] = expected[invalid]
+                if invalid == "already_bound":
+                    assert "next Run" in outcome["public_message"]
+                    assert "task_scope_search" in outcome["public_message"]
                 observed["rejection"] = outcome
                 assert (root / "document.txt").read_text() == "original accepted bytes"
                 name = None
@@ -154,7 +167,18 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
         await runtime.after_enqueue(subject=runtime.subject)
         await asyncio.wait_for(runtime.drain(), 25)
         assert runtime.last_error is None
-        assert archive_facts(state, old) == prior
+        after = archive_facts(state, old)
+        assert after[0] == prior[0] and after[2] == prior[2]  # canonical + binding immutable
+        assert after[1][:len(prior[1])] == prior[1]  # no old event rewritten
+        if invalid == "already_bound":
+            with sqlite3.connect(state) as db:
+                sdk_run_id = db.execute("SELECT sdk_run_id FROM foreground_run_sdk_bindings").fetchone()[0]
+                added = after[1][len(prior[1]):]
+                assert [row[3] for row in added] == ["harness.tool_invocation", "harness.run_terminal"]
+                assert all(row[4] == "harness" and json.loads(row[7])["run_id"] == sdk_run_id for row in added)
+                assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE task_scope_id IS NOT NULL").fetchone()[0] == 1
+        else:
+            assert after[1] == prior[1]
         assert await CanonicalTaskScopeStore(state).read_head_status(old) == "complete"
         with sqlite3.connect(state) as db:
             if invalid:
@@ -209,3 +233,8 @@ async def test_expected_inode_change_before_proposal_cannot_bind(tmp_path):
         assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions WHERE task_scope_id=?", (new,)).fetchone()[0] == 0
     assert not (root / "document.txt").exists()
     assert (configured / "retained-original" / "document.txt").read_text() == "original accepted bytes"
+
+
+@pytest.mark.asyncio
+async def test_already_bound_run_rejects_before_new_scope_and_explains_next_run(tmp_path):
+    await actual_world(tmp_path, invalid="already_bound")

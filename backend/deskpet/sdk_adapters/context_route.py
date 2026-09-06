@@ -240,6 +240,8 @@ class ContextRouteToolService:
             provider_turn_ordinal=turn_ordinal,
             origin="context_tool",
             idempotency_key=effect_id,
+            **({"require_unbound_run": True} if route is TaskScopeRoute.CREATE_NEW
+               and "reuse_workspace_of" in proposal else {}),
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
@@ -566,6 +568,15 @@ class ContextRouteToolService:
 
         continuation = None
         if "reuse_workspace_of" in proposal:
+            bound = await self._ledger.latest_route_decision_for_run(run_id, task_only=True)
+            envelope = self._tool_context_getter().task_execution_envelope
+            if bound is not None or envelope.task_scope_id is not None:
+                return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                    "context_route_workspace_reuse_requires_new_run",
+                    message="This Run is already bound to a task. End this turn without switching scopes. "
+                            "In the next Run, use task_scope_search to obtain the completed task's current source_hash, "
+                            "then create_new with reuse_workspace_of before binding any other task. "
+                            "The completed task is not reopened and its files have not been edited.")
             from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
             continuation = await resolve_workspace_continuation(
                 service=service, binding_store=self._binding_store_factory(),
@@ -669,14 +680,19 @@ class ContextRouteToolService:
                 expected_source_hash=item["source_hash"]))
             package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
             candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
-                "source_hash": package["source_hash"], "scope_disclosure": package})
+                "source_hash": package["source_hash"], "scope_disclosure": package,
+                "continuation": ({"route": "create_new", "reuse_workspace_of": scope_id,
+                    "expected_source_hash": package["source_hash"],
+                    "requires_first_task_route_in_new_run": True}
+                    if package.get("status") in {"complete", "completed"} else None)})
         return {
             "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
             "receipt_hash": result.get("receipt_hash"),
-            "note": "Candidates are permission-first hits only; they grant no "
-            "authority. Confirm one and pass its exact task_scope_id to "
-            "context_route(route=resume_existing).",
+            "note": "Candidates grant no authority. resume_existing reads history/status and does not reopen a completed task. "
+            "To edit a completed task's files, use its continuation proposal with a new title/goal and explicit original-workspace "
+            "binding. It must be the first task route in a new Run; do not resume the old task first. "
+            "Active tasks may use resume_existing with their exact task_scope_id.",
         }
 
 

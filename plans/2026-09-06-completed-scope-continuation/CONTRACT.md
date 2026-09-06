@@ -26,3 +26,11 @@ Host先由公开owned `open_task_scope`核精确source，正常ScopeDisclosureRe
 限制：单root，非完整24轮模型质量/native；现已完成Scope的history/status只读，不将其read_file effect放行。实际原文件续改的权限来自新Scope新grant。
 
 实现前校准：现产品 `_result` 对handler失败只保留code/message，manual challenge结构不会给模型；本叶不把它伪称已实现native绑定弹窗。MANUAL正控通过真实公开authority返回值交真实service.decide的人类控制侧调用，模型看到的仍是拒绝，之后公开resume新Scope。默认AUTO实际Run/config/grant路径是本次生产闭环；MANUAL原生交互发现/呈现尚不在本叶完成声明。
+
+## 首批真实约束校准（2026-09-07）
+
+原r1为1PASS/5FAIL，inode pin拒绝绿保留。正向先resume旧Scope再create新Scope，两个route曾落地而后续effect被原Run单Scope证据绑定拒绝；这是真实不支持的同Run换Scope，不抹红。三个负控已到真实拒绝，后面错误要求resume新产生的合法Host事件也不得追加，oracle错误另记。
+
+已授权可交付路径固定为新Run **公开task_scope_search返回complete/source/continuation提案→create_new显式原root为本Run首个Scope→真实文件effect**。测试从实际HTTP中的公开搜索返回值取Scope/hash，不在Provider fixture偷注expected pin。搜索候选/工具说明不再强制先resume已complete Scope。
+
+已绑定旧Scope的Run，在创建前核实际Tool envelope及本Run所有task route（standalone不能隐藏），明确返回下一Run先search的指导；不造新Scope/新grant/第二acceptedroute。在发布新route的同BEGIN IMMEDIATE内再次通过原evidence ingress公有resolve_run_scope_tx及已持久task route核未绑定，防止读后状态变化。原单Scope账本不改、不回填原r1失败。新增原双Scope路径负控要求实际下一物理请求见明确拒绝，旧canonical/binding不变、旧事件前缀不变，合法新增tool/terminal事件逐一核类型及本Run归属。

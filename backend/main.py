@@ -8501,8 +8501,12 @@ async def _build_product_sdk_runtime_stack(
                 "Permission-first search over the caller's own archived task "
                 "scopes. Returns read-only candidates (title, goal, snippet, "
                 "rank); candidates grant no authority and never change the "
-                "active task. Confirm one and pass its exact task_scope_id to "
-                "context_route(route=resume_existing)."
+                "active task. For an active task, pass its exact task_scope_id to "
+                "context_route(route=resume_existing). Completed candidates provide "
+                "a continuation proposal: use create_new with reuse_workspace_of "
+                "and expected_source_hash as the first task route in a new Run "
+                "to request a new active Scope bound to the original workspace; "
+                "do not resume the completed task first when you intend to edit."
             ),
             input_schema=TASK_SCOPE_SEARCH_SCHEMA,
             handler=task_scope_search_handler,
