@@ -65,3 +65,41 @@ being forgotten; that separate claim remains untested here. Final narrow correct
 adds the missing required primary_ref to the foreign-subject oracle, asserts the actual
 subject-mismatch code, bounds status text and checks the returned SDK effective_at.
 All7 cognitive API tests passed3.36s. Raw `cognitive-final-api.log` SHA256 `5aa8d79f16e8a16a9cfda086c2af4fdeb6393fcdb57ea75c3ce1ef2954074970`.
+
+## Actual typed selection -> API forget -> final outbound guard
+
+After the scoped506 review, replaced the late-forget branch of the existing real
+USER -> deterministic analysis -> public typed recall -> actual Context route
+integration with the new primary.memory.list/forget API. The actual selected
+memory ID is taken from the real audited result; the current public view supplies
+revision/hash. On the second pre-invoke boundary API forget commits, then actual
+check_runtime_dependencies rejects the stale binding before physical transport.
+
+Two controls passed2.18s: `test_new_recall_four_tuple_checked_before_next_physical_provider[None]`
+and `[late_forget]` in `backend/tests/execution/test_primary_history_outbound.py`.
+Positive performs2 actual MockTransport sends and contains the selected version;
+negative selects once and attempts two guards but performs only1 physical send.
+No paid Provider or native UI. API signed-connection authority is covered separately
+by the7 cognitive cases; this cross-stack fixture calls the facade with Host auth.
+Raw `cognitive-typed-outbound.log` SHA256 `48d7720e36fa73d4466ba56d46a9bf3512f01f395e9e35759d2821e14d0b4299`.
+This supplies the previously missing typed-source barrier evidence within the
+automated runtime lane, not full native remember/use/correct/forget acceptance.
+
+## Decisive typed-only control excludes incidental history denial
+
+The earlier typed pair still carried the source in its preceding chat history.
+An additional pair now admits the real memory source as a standalone Host S1 event,
+materializes it through the public SDK fixture, and starts exactly one foreground
+query. No source text/ancestor is in the Run's history evidence; actual public typed
+recall and Context route select the memory. The first physical request has no
+remembered value; only the positive second physical request contains it.
+
+On signed API forget before the second guard, the full proof rejects; the same
+proof with its recall binding removed is independently asserted visible. Thus
+the failure cannot be credited to incidental historical-source suppression.
+Positive2 sends / negative1 send; two tests passed1.79s. This case uses public
+materialization rather than real analysis; the earlier case retains actual
+deterministic analysis coverage. Neither is native or paid Provider evidence.
+
+Command: `PYTHONPATH=backend .local-test-evidence/2026-09-05/primary-candidate/venv/bin/python -m pytest backend/tests/memory/test_cognitive_typed_barrier.py -q -p no:cacheprovider`.
+Raw `cognitive-typed-decisive.log` SHA256 `d5d8d274eefe767fb2fa12f43ec421ee5539c255afdc409a6a3ff4154b343c4e`. Ruff imports/format only afterward.

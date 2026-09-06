@@ -10,14 +10,18 @@ SessionDB and the Inspector may retain.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from simple_harness import freeze_json, thaw_json
+
+_LOG = logging.getLogger(__name__)
 
 
 class SnapshotContractConflict(RuntimeError):
@@ -403,13 +407,40 @@ class ContextRouteLedgerStore:
     async def _connect(self):
         import aiosqlite
 
-        db = await aiosqlite.connect(self._db_path)
-        # Row supports positional access (ledger reads) and named access
-        # (evidence ingress `_tx` helpers sharing this transaction).
-        db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys=ON")
-        await db.execute("PRAGMA busy_timeout=5000")
-        return db
+        db = aiosqlite.connect(self._db_path)
+        connecting = asyncio.ensure_future(db)
+        try:
+            # Keep ownership even when cancellation arrives while SQLite is
+            # opening on its worker thread; finish opening before closing it.
+            await asyncio.shield(connecting)
+            # Positional and named access are both used by ledger consumers.
+            db.row_factory = aiosqlite.Row
+            await db.execute("PRAGMA foreign_keys=ON")
+            await db.execute("PRAGMA busy_timeout=5000")
+            return db
+        except BaseException:
+            async def close_owned():
+                try:
+                    await connecting
+                except BaseException:
+                    pass
+                await db.close()
+
+            cleanup = asyncio.create_task(close_owned())
+            # Further cancel requests must not detach the connection cleanup.
+            # This is an ownership guarantee, not a wall-clock timeout claim.
+            while not cleanup.done():
+                try:
+                    await asyncio.shield(cleanup)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            try:
+                cleanup.result()
+            except BaseException:
+                _LOG.warning("context_route_connection_cleanup_unavailable")
+            raise
 
     async def record_snapshot_receipt(
         self,
@@ -712,6 +743,7 @@ class ContextRouteLedgerStore:
         verdict: str,
         decision_id: str | None,
         detail: Mapping[str, Any],
+        wait_for_lock: bool = True,
     ) -> None:
         """Record route tool lineage; idempotent per (run, effect_id)."""
 
@@ -731,6 +763,10 @@ class ContextRouteLedgerStore:
         )
         db = await self._connect()
         try:
+            if not wait_for_lock:
+                # Cancellation audit must not queue behind the normal 5s
+                # SQLite writer wait before rollback/close can complete.
+                await db.execute("PRAGMA busy_timeout=0")
             await db.execute("BEGIN IMMEDIATE")
             cursor = await db.execute(
                 "SELECT invocation_hash FROM context_route_tool_invocations "

@@ -76,7 +76,8 @@ class _FakeService:
     async def search_task_scopes(self, request):
         return {
             "candidates": [
-                {"scope_ref": "scope-a", "title": "Task A", "rank": -1.0}
+                {"scope_ref": "scope-a", "title": "Task A", "rank": -1.0,
+                 "source_hash": "e" * 64}
             ],
             "next_cursor": None,
             "receipt_hash": "c" * 64,
@@ -95,6 +96,18 @@ class _FakeBindingAppend:
         return {"status": "committed", "binding_set_revision": 1}
 
 
+class _FakeDisclosureReader:
+    """Protocol fixture only; real source/privacy checks have runtime tests."""
+
+    def __init__(self):
+        self.calls = []
+
+    async def __call__(self, run_id, package, effect_id):
+        self.calls.append((run_id, package, effect_id))
+        return {**package, "source_id": "authorized-source", "source_hash": "f" * 64,
+                "read_views": {"RESUME": {"content": "Authorized projection"}}}
+
+
 @pytest_asyncio.fixture()
 async def state_db(tmp_path: Path) -> Path:
     path = tmp_path / "state.db"
@@ -109,6 +122,7 @@ def _service(
     binding_store=None,
     binding_append=None,
     context=None,
+    disclosure_reader=None,
 ) -> ContextRouteToolService:
     service = _FakeService()
     service.binding_append = binding_append
@@ -119,6 +133,7 @@ def _service(
         binding_append_getter=lambda: binding_append,
         ledger=ContextRouteLedgerStore(state_db),
         tool_context_getter=lambda: context or _tool_context(),
+        scope_disclosure_reader=disclosure_reader,
     )
 
 
@@ -185,7 +200,8 @@ async def test_resume_exact_open_returns_receipt_and_resume_package(
     binding_store.receipts["scope-a"] = SimpleNamespace(
         binding_set_revision=2, receipt_id="bind-a", receipt_hash="b" * 64
     )
-    tool = _service(state_db, binding_store=binding_store)
+    reader = _FakeDisclosureReader()
+    tool = _service(state_db, binding_store=binding_store, disclosure_reader=reader)
     result = await tool.handle_context_route(
         {"route": "resume_existing", "task_scope_id": "scope-a"}
     )
@@ -193,7 +209,8 @@ async def test_resume_exact_open_returns_receipt_and_resume_package(
     assert receipt.task_scope_id == "scope-a"
     assert receipt.binding_set_revision == 2
     assert receipt.binding_set_receipt_id == "bind-a"
-    assert result["resume_package"]["read_views"]["RESUME"]["content"]
+    assert result["resume_package"]["read_views"]["RESUME"]["content"] == "Authorized projection"
+    assert reader.calls[0][::2] == (RUN, "effect-1")
     assert _decision_rows(state_db) == [
         ("resume_existing", "context_tool", "effect-1")
     ]
@@ -230,7 +247,8 @@ async def test_continue_active_uses_latest_task_decision_and_live_head(
     binding_store.receipts["scope-a"] = SimpleNamespace(
         binding_set_revision=2, receipt_id="bind-a", receipt_hash="b" * 64
     )
-    tool = _service(state_db, binding_store=binding_store)
+    tool = _service(state_db, binding_store=binding_store,
+                    disclosure_reader=_FakeDisclosureReader())
     resumed = await tool.handle_context_route(
         {"route": "resume_existing", "task_scope_id": "scope-a"}
     )
@@ -317,10 +335,33 @@ async def test_composition_unavailable_is_stable_failure(state_db: Path) -> None
 async def test_task_scope_search_returns_candidates_without_authority(
     state_db: Path,
 ) -> None:
-    tool = _service(state_db)
+    reader = _FakeDisclosureReader()
+    tool = _service(state_db, disclosure_reader=reader)
     result = await tool.handle_task_scope_search({"query": "以前的 A"})
-    assert result["candidates"][0]["scope_ref"] == "scope-a"
+    candidate = result["candidates"][0]
+    assert candidate["task_scope_id"] == "scope-a"
+    assert candidate["source_hash"] == "f" * 64
+    assert candidate["scope_disclosure"]["read_views"]["RESUME"]["content"] == "Authorized projection"
+    assert reader.calls[0][::2] == (RUN, "effect-1")
     assert "context_route_receipt" not in result
+    assert _decision_rows(state_db) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["resume", "search"])
+async def test_scope_disclosure_reader_missing_rejects(state_db, operation):
+    binding_store = _FakeBindingStore()
+    binding_store.receipts["scope-a"] = SimpleNamespace(
+        binding_set_revision=2, receipt_id="bind-a", receipt_hash="b" * 64
+    )
+    tool = _service(state_db, binding_store=binding_store)
+    if operation == "resume":
+        result = await tool.handle_context_route(
+            {"route": "resume_existing", "task_scope_id": "scope-a"})
+    else:
+        result = await tool.handle_task_scope_search({"query": "Task A"})
+    assert result["error"]["code"] == "scope_disclosure_reader_missing"
+    assert "resume_package" not in result and "candidates" not in result
     assert _decision_rows(state_db) == []
 
 

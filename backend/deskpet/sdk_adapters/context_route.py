@@ -6,8 +6,8 @@
 Host adjudication over the model's route proposal:
 
 - ``direct_standalone`` — standalone receipt, no TaskScope, no Memory query.
-- ``memory_standalone`` — stable failure until the Task 5 recall lane lands
-  (never a Noop/fake receipt).
+- ``memory_standalone`` — explicit long-term and/or short-horizon selection,
+  with one typed RecallPlan budget and current source checks.
 - ``continue_active``   — exact current active scope (latest durable
   ROUTED_TASK decision) revalidated against the live binding head.
 - ``resume_existing``   — requires an exact ``task_scope_id`` (search hits
@@ -22,6 +22,8 @@ every non-commit outcome is a stable ``{"ok": false, "error": {...}}`` failure
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from pathlib import Path
 from collections.abc import Mapping
@@ -34,6 +36,7 @@ from deskpet.sdk_adapters.context_authority import (
     ContextRouteLedgerStore,
     canonical_sha256,
 )
+from deskpet.memory.recall_selection import REQUESTABLE_MEMORY_TYPES, parse_recall_selection
 
 ROUTES = (
     "direct_standalone",
@@ -46,12 +49,23 @@ ROUTES = (
 # The SDK bounds tool arguments but not tool results; the Host bounds its own
 # inputs again so an oversized model payload can never reach the S4 stores.
 _MAX_TEXT = 2048
+_AUDIT_CANCEL_SECONDS = 2.0
+_LOG = logging.getLogger(__name__)
 
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "route": {"type": "string", "enum": list(ROUTES)},
         "query": {"type": "string", "maxLength": _MAX_TEXT},
+        "memory_types": {
+            "type": "array", "minItems": 0, "maxItems": 4,
+            "items": {"type": "string", "enum": list(REQUESTABLE_MEMORY_TYPES)},
+            "description": "Required for memory_standalone. Select only the needed long-term types: semantic (facts/preferences), episode (past events), procedure (applicable steps), prospective (future intentions/reminders). An empty list is valid only with include_short_horizon=true. Selection grants no permission to disclose or execute.",
+        },
+        "include_short_horizon": {
+            "type": "boolean",
+            "description": "For memory_standalone, request relevant prior conversation groups outside the current recent context. Defaults to false. Short and long-term results share one Host budget and current source checks.",
+        },
         "task_scope_id": {"type": "string", "maxLength": 128},
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
@@ -148,7 +162,22 @@ class ContextRouteToolService:
         verdict: str,
         decision_id: str | None,
         detail: Mapping[str, Any],
+        wait_for_lock: bool = True,
     ) -> None:
+        if proposal.get("route") == "memory_standalone":
+            # Keep only the bounded enum/boolean projection. Raw query, invalid
+            # model values and provider exception text are not audit metadata.
+            try:
+                selected, short = parse_recall_selection(
+                    proposal.get("memory_types"), proposal.get("include_short_horizon", False),
+                )
+                selection = {"origin": "model_proposal",
+                             "requested_memory_types": list(selected),
+                             "include_short_horizon": short}
+            except ValueError as exc:
+                selection = {"origin": "model_proposal", "selection_status": "invalid",
+                             "selection_error": str(exc)}
+            detail = {**detail, "recall_selection": selection}
         await self._ledger.record_tool_invocation(
             sdk_run_id=run_id,
             raw_call_id=raw_call_id,
@@ -157,6 +186,7 @@ class ContextRouteToolService:
             verdict=verdict,
             decision_id=decision_id,
             detail=detail,
+            wait_for_lock=wait_for_lock,
         )
 
     async def _commit_receipt(
@@ -172,6 +202,8 @@ class ContextRouteToolService:
         binding: Mapping[str, Any] | None = None,
         extras: Mapping[str, Any] | None = None,
         recall_refs: tuple[str, ...] = (),
+        recall_types: tuple[str, ...] = (),
+        recall_short_horizon: bool | None = None,
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -209,7 +241,14 @@ class ContextRouteToolService:
             proposal=proposal,
             verdict="accepted",
             decision_id=f"route-decision:{run_id}:{effect_id}",
-            detail={"route": route.value, "task_scope_id": task_scope_id},
+            detail={
+                "route": route.value, "task_scope_id": task_scope_id,
+                **({"recall_selection": {
+                    "origin": "model_proposal",
+                    "requested_memory_types": list(recall_types),
+                    "include_short_horizon": bool(recall_short_horizon),
+                }} if recall_types or recall_short_horizon is not None else {}),
+            },
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
@@ -269,8 +308,13 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, turn_ordinal, proposal
             )
         except _CompositionUnavailable as exc:
-            return _error(exc.code)
+            return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code)
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
+            if route_value == "memory_standalone":
+                # Exception messages/codes can contain provider or source text.
+                code = ("context_route_recall_timeout" if isinstance(exc, TimeoutError)
+                        else "context_route_adjudication_failed")
+                return await self._reject(run_id, raw_call_id, effect_id, proposal, code)
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
@@ -317,11 +361,39 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_recall_query_required",
             )
+        try:
+            memory_types, include_short_horizon = parse_recall_selection(
+                proposal.get("memory_types"), proposal.get("include_short_horizon", False),
+            )
+        except ValueError as exc:
+            return await self._reject(
+                run_id, raw_call_id, effect_id, proposal, str(exc),
+            )
         from deskpet.memory.human_memory_v7 import project_recall_fragments
 
-        execution = await self._recall_executor(
-            query=query, run_id=run_id, turn_ordinal=turn_ordinal
-        )
+        try:
+            execution = await self._recall_executor(
+                query=query, run_id=run_id, turn_ordinal=turn_ordinal,
+                memory_types=memory_types,
+                include_short_horizon=include_short_horizon,
+            )
+        except asyncio.CancelledError:
+            # This boundary precedes route commit; cancellation is not a
+            # successful route or a normal tool return. Do not wait for a DB
+            # writer lock. The deadline requests cancellation; wait_for still
+            # awaits owned rollback/close, so it is not a wall-clock hard cap.
+            # Always propagate cancellation, including if storage fails.
+            try:
+                await asyncio.wait_for(self._record(
+                    run_id=run_id, raw_call_id=raw_call_id, effect_id=effect_id,
+                    proposal=proposal, verdict="rejected", decision_id=None,
+                    detail={"code": "context_route_recall_cancelled"},
+                    wait_for_lock=False,
+                ), timeout=_AUDIT_CANCEL_SECONDS)
+            except (Exception, asyncio.CancelledError):
+                _LOG.warning("context_route_cancel_audit_unavailable run_id=%s effect_id=%s",
+                             run_id, effect_id)
+            raise
         fragments = project_recall_fragments(execution)
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
         return await self._commit_receipt(
@@ -332,6 +404,8 @@ class ContextRouteToolService:
             route=TaskScopeRoute.MEMORY_STANDALONE,
             proposal=proposal,
             recall_refs=refs,
+            recall_types=memory_types,
+            recall_short_horizon=include_short_horizon,
             extras={
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),

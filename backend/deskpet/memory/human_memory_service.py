@@ -251,12 +251,15 @@ class QueueTurnRequest:
     scope_ref: str | None
     delivery_key: str
     text: str
+    disclosure_binding_ref: str | None = None
 
     def __post_init__(self) -> None:
         if self.scope_ref is not None:
             identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.delivery_key, "delivery_key", 512)
         identifier(self.text, "text", 16_384)
+        if self.disclosure_binding_ref is not None:
+            identifier(self.disclosure_binding_ref, "disclosure_binding_ref", 512)
 
 
 @dataclass(frozen=True, slots=True)
@@ -427,6 +430,7 @@ class HumanMemoryHostService:
         history_visibility_checker: object | None = None,
         decision_ingress_getter: object | None = None,
         cognitive_runtime_getter: object | None = None,
+        display_invalidation: object | None = None,
     ) -> None:
         if startup.composition_mode is not StartupCompositionMode.HUMAN:
             raise HumanMemoryHostServiceError(
@@ -445,6 +449,7 @@ class HumanMemoryHostService:
         self._recovery = recovery
         self._scheduler_wake = scheduler_wake
         self._cognitive_runtime_getter = cognitive_runtime_getter
+        self._display_invalidation = display_invalidation
         from deskpet.memory.primary_read_model import PrimaryReadModel
 
         self._primary_read = PrimaryReadModel(
@@ -530,13 +535,49 @@ class HumanMemoryHostService:
         return PrimaryCognitiveControls(
             self._db_path, auth=self._auth,
             runtime_getter=self._cognitive_runtime_getter,
+            display_invalidation=self._display_invalidation,
         )
 
     async def list_primary_memories(self, **request):
         return await self._cognitive_controls().list(**request)
 
+    async def read_primary_memory_graph(self, **request):
+        return await self._cognitive_controls().graph(**request)
+
     async def forget_primary_memory(self, **request):
         return await self._cognitive_controls().forget(**request)
+
+    def _human_audit_runtime(self):
+        from deskpet.memory.writer_fence import require_human_audit_request
+        from deskpet.sdk_adapters.context_route import local_owner_auth
+
+        require_human_audit_request()
+        if self._auth != local_owner_auth():
+            raise HumanMemoryHostServiceError("primary_audit_subject_mismatch")
+        runtime = self._cognitive_runtime_getter() if self._cognitive_runtime_getter else None
+        access = getattr(runtime, "audit_access_authority", None)
+        if access is None:
+            raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
+        return runtime, access
+
+    async def primary_audit(self, operation, **request):
+        from deskpet.memory.writer_fence import require_human_audit_request
+
+        runtime, access = self._human_audit_runtime()
+        if operation == "primary.audit.close":
+            return await access.close(auth=self._auth, **request)
+        # Lazy SDK initialization can be slow; it must not retain a stale lease.
+        lease = require_human_audit_request()
+        manager = await runtime.manager()
+        if require_human_audit_request() != lease:
+            raise HumanMemoryHostServiceError("primary_audit_connection_changed")
+        method = access.open if operation == "primary.audit.open" else access.page
+        return await method(manager=manager, principal=runtime.principal(), auth=self._auth, **request)
+
+    def check_primary_audit_response(self, operation, payload):
+        _, access = self._human_audit_runtime()
+        access.final_check(auth=self._auth, primary_ref=payload["primary_ref"],
+                           audit_ref=payload["audit_ref"], allow_closed=operation == "primary.audit.close")
 
     async def create_task_scope(
         self, request: CreateTaskScopeRequest
@@ -931,15 +972,16 @@ class HumanMemoryHostService:
             text=request.text,
         )
         payload = dict(envelope.sanitized_payload)
-        committed = await self._program.append_evidence(envelope, receipt)
         queued = await self._foreground.enqueue_turn(
             subject=self._auth.subject,
             primary_conversation_id=primary.primary_conversation_id,
-            evidence_id=committed.evidence_id,
-            evidence_hash=committed.envelope_sha256,
+            evidence_id=envelope.evidence_id,
+            evidence_hash=envelope.envelope_hash,
             idempotency_key=request.delivery_key,
             turn_payload=payload,
             task_scope_id=request.scope_ref,
+            admitted_evidence_pair=(envelope, receipt),
+            disclosure_binding_ref=request.disclosure_binding_ref,
         )
         if self._scheduler_wake is not None:
             await self._wake_committed("after_enqueue", queued.turn_id)
@@ -951,6 +993,15 @@ class HumanMemoryHostService:
             "content_sha256": queued.turn_hash,
             "delivery_key": request.delivery_key,
         }
+
+    async def configure_disclosure(self, *, request_id, expected_ref, selection):
+        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+        return await TrustedDisclosureStore(self._db_path).configure(
+            auth=self._auth, request_id=request_id, expected_ref=expected_ref, selection=selection)
+
+    async def current_disclosure_configuration(self):
+        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+        return await TrustedDisclosureStore(self._db_path).current(auth=self._auth)
 
     async def search_task_scopes(
         self, request: SearchTaskScopesRequest
@@ -1629,6 +1680,15 @@ class HumanMemoryHostService:
                 "ORDER BY t.enqueue_sequence,t.turn_id",
                 (self._auth.subject,),
             ).fetchall()
+        import aiosqlite
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        rejections = {}
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            for row in rows:
+                rejection = await read_admission_rejection_tx(db, turn_id=row["turn_id"], subject=self._auth.subject)
+                if rejection is not None:
+                    rejections[row["turn_id"]] = rejection
         turns = []
         for row in rows:
             stored = json.loads(str(row["turn_json"]))
@@ -1637,7 +1697,8 @@ class HumanMemoryHostService:
                 {
                     "turn_ref": str(row["turn_id"]),
                     "enqueue_sequence": int(row["enqueue_sequence"]),
-                    "state": str(row["current_state"]),
+                    "state": "REJECTED" if row["turn_id"] in rejections else str(row["current_state"]),
+                    **({"rejection_reason": rejections[row["turn_id"]]["reason"]} if row["turn_id"] in rejections else {}),
                     "delivery_key": payload.get("delivery_key"),
                 }
             )
@@ -1941,6 +2002,7 @@ class HumanMemoryHostServiceFactory:
     history_visibility_checker: object | None = None
     decision_ingress_getter: object | None = None
     cognitive_runtime_getter: object | None = None
+    display_invalidation: object | None = None
 
     def bind(
         self,
@@ -1965,6 +2027,7 @@ class HumanMemoryHostServiceFactory:
             history_visibility_checker=self.history_visibility_checker,
             decision_ingress_getter=self.decision_ingress_getter,
             cognitive_runtime_getter=self.cognitive_runtime_getter,
+            display_invalidation=self.display_invalidation,
         )
 
 

@@ -3021,6 +3021,29 @@ async def _authorization_auto_mode() -> bool:
     return (await store.get_policy_state()).mode == "auto"
 
 
+async def _activate_terminal_operation_audit():
+    """Default-on audit of actual foreground terminals; no Provider work here."""
+    import sqlite3
+
+    from deskpet.operation_audit.composition import compose_terminal_audit
+
+    consumer = service_context.get("terminal_operation_audit")
+    if consumer is None:
+        try:
+            consumer = await compose_terminal_audit(
+                _state_db_path,
+                stack_getter=lambda: _sdk_runtime_stack,
+                subject="deskpet-local-owner-v1",
+            )
+        except (OSError, sqlite3.Error):
+            service_context.register("terminal_operation_audit_status", "storage_unavailable")
+            logger.warning("terminal_operation_audit_storage_unavailable")
+            return None
+        service_context.register("terminal_operation_audit", consumer)
+        service_context.register("terminal_operation_audit_status", "started")
+    return consumer
+
+
 async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ignore[no-untyped-def]
     """Publish fresh-HUMAN authorities only after their dependencies are ready."""
 
@@ -3186,6 +3209,8 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
     async def _primary_state_changed() -> None:
         await _broadcast_control({"type": "human_memory_changed", "payload": {}})
 
+    _terminal_audit = await _activate_terminal_operation_audit()
+
     runtime = ForegroundRuntimeExecutionAuthority(
         store=foreground,
         subject="deskpet-local-owner-v1",
@@ -3224,6 +3249,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         endpoint_identity_resolver=_provider_endpoint_identity_for_binding,
         conversation_entrypoint=_foreground_conversation_entrypoint,
         state_changed=_primary_state_changed,
+        terminal_audit_wake=_terminal_audit.wake if _terminal_audit is not None else None,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -3263,8 +3289,13 @@ async def lifespan(app: FastAPI):
         if runtime is None:
             raise RuntimeError("human_memory_v7_runtime_unavailable")
         manager = await runtime.manager()
-        return await manager.backend.resolve_suppression(candidate, purpose)
+        return await manager.backend.resolve_suppression(
+            candidate, purpose, principal=runtime.principal(),
+        )
 
+    from deskpet.memory.display_invalidation import MemoryDisplayInvalidation
+
+    memory_display_invalidation = MemoryDisplayInvalidation(_broadcast_control)
     service_context.register(
         "human_memory_host_service_factory",
         (
@@ -3276,6 +3307,7 @@ async def lifespan(app: FastAPI):
                 run_binding_reader=lambda run_id: _sdk_runtime_stack.read_closure_run_facts(run_id).binding_record,
                 decision_ingress_getter=lambda: _sdk_ingress,
                 cognitive_runtime_getter=lambda: service_context.get("human_memory_v7_runtime"),
+                display_invalidation=memory_display_invalidation,
             )
             if startup_epoch.composition_mode is StartupCompositionMode.HUMAN
             else None
@@ -5694,7 +5726,7 @@ async def lifespan(app: FastAPI):
             _realtime_voice_service = None
     from deskpet.retrieval.runtime import shutdown_default_gateway
     await shutdown_default_gateway()
-    global _sdk_runtime_stack, _sdk_ingress
+    global _sdk_runtime_stack, _sdk_ingress, _memory_analysis_lane
     global _sdk_desktop_bridge
     _foreground_runtime = service_context.get(
         "human_memory_foreground_runtime_execution_authority"
@@ -5708,6 +5740,14 @@ async def lifespan(app: FastAPI):
                 "human_memory_foreground_runtime_shutdown_failed",
                 error=str(exc),
             )
+    _terminal_audit = service_context.get("terminal_operation_audit")
+    if _terminal_audit is not None:
+        try:
+            await _terminal_audit.close(timeout=5.0)
+        except Exception:
+            logger.warning("terminal_operation_audit_shutdown_incomplete")
+        finally:
+            service_context.register("terminal_operation_audit", None)
     if _memory_analysis_lane is not None:
         try:
             await _memory_analysis_lane.close(timeout_seconds=5.0)
@@ -5715,6 +5755,8 @@ async def lifespan(app: FastAPI):
         except Exception as exc:  # noqa: BLE001
             logger.warning("memory_analysis_lane_shutdown_failed", error=str(exc))
         finally:
+            _memory_analysis_lane = None
+            service_context.register("sdk_memory_ingestion_outbox", None)
             service_context.register(
                 "human_memory_foreground_scheduler_wake", None
             )
@@ -5807,6 +5849,16 @@ async def lifespan(app: FastAPI):
             _sdk_retained_presentations.clear()
             _sdk_unavailable_tool_authority_runs.clear()
             service_context.register("sdk_runtime_ready", None)
+    # The foreground, audit lane and Runtime borrowers have stopped above.
+    # v7 owns a separate lazy manager; stop indexing before closing that owner.
+    _owned_v7 = service_context.get("human_memory_v7_runtime")
+    if _owned_v7 is not None:
+        try:
+            await asyncio.wait_for(_owned_v7.close(), timeout=6.0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("human_memory_v7_shutdown_failed", error=type(exc).__name__)
+        finally:
+            service_context.register("human_memory_v7_runtime", None)
     # SessionDB is the sole owner of the borrowed MemoryManager and its
     # product outbox dispatcher.  Close it after every Runtime borrower, once,
     # with a hard bound so shutdown cannot hang on a provider/storage fault.
@@ -8275,9 +8327,7 @@ async def _build_product_sdk_runtime_stack(
 
         return WorkspaceBindingAuthorityStore(_state_db_path)
 
-    from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
-    from deskpet.memory.evidence_authority import HostEvidenceAuthority
-    from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime
+    from deskpet.memory.runtime_composition import compose_human_memory_runtime
 
     # S5b Task 4: the v7 store is built with the Host state.db evidence resolver and
     # the Host analysis executor as its delivery authority (identity-bound), so the
@@ -8291,11 +8341,11 @@ async def _build_product_sdk_runtime_stack(
         binding = SdkRunBindingV1.from_record(record)
         return resolver.build_authority(binding).provider
 
-    _human_memory_v7 = HumanMemoryV7Runtime(
+    _human_memory_v7 = compose_human_memory_runtime(
+        _state_db_path,
         Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
         embedder_getter=lambda: service_context.get("embedder"),
-        evidence_authority=HostEvidenceAuthority(_state_db_path),
-        analysis_authority=HostMemoryAnalysisExecutor(_state_db_path, adapter_factory=_analysis_adapter),
+        adapter_factory=_analysis_adapter,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
 
@@ -9023,6 +9073,9 @@ def _activate_memory_analysis_lane() -> None:
             executor=executor,
             config=build_worker_config(provider_id=provider_id, model_id=model_id, model_config_hash=config_hash),
             worker_id=f"deskpet-memory-analysis:{os.getpid()}",
+            display_invalidation=getattr(
+                service_context.get("human_memory_host_service_factory"), "display_invalidation", None
+            ),
         )
         _memory_analysis_lane.start()
         logger.info("memory_analysis_lane_started")
@@ -14996,6 +15049,7 @@ async def control_channel(ws: WebSocket):
             elif msg_type == "human_memory_request":
                 from deskpet.memory.human_memory_api import (
                     handle_human_memory_command,
+                    send_human_memory_response,
                 )
                 try:
                     _hm_auth = human_memory_control_binding.authenticate(
@@ -15030,8 +15084,15 @@ async def control_channel(ws: WebSocket):
                             "human_memory_foreground_scheduler_wake"
                         ),
                     )
-                if _hm_response is not None:
-                    await ws.send_json(_hm_response)
+                    if _hm_response is not None:
+                        await send_human_memory_response(
+                            _hm_response,
+                            factory=service_context.get(
+                                "human_memory_host_service_factory"
+                            ),
+                            auth=_hm_auth,
+                            send=ws.send_json,
+                        )
 
             elif msg_type in {
                 "project_preview_register", "project_register", "session_create",

@@ -33,6 +33,8 @@ export interface PrimaryMessage {
 export interface PrimarySnapshot {
   ready: boolean;
   verifiedOwnerKey: string | null;
+  /** Opaque primary identity for this verified connection, not cached read content. */
+  primaryRef: string | null;
   loading: boolean;
   state: PrimaryState | null;
   messages: PrimaryMessage[];
@@ -42,7 +44,7 @@ export interface PrimarySnapshot {
   viewEpoch: number;
   draftEpoch: number;
 }
-const empty = (): PrimarySnapshot => ({ ready: false, verifiedOwnerKey: null, loading: false, state: null, messages: [], nextCursor: null, error: "", notice: "正在恢复主对话身份…", viewEpoch: 0, draftEpoch: 0 });
+const empty = (): PrimarySnapshot => ({ ready: false, verifiedOwnerKey: null, primaryRef: null, loading: false, state: null, messages: [], nextCursor: null, error: "", notice: "正在恢复主对话身份…", viewEpoch: 0, draftEpoch: 0 });
 
 /** Bounded, replace-only read model. No persistence and no automatic mutation retry. */
 export class PrimaryController {
@@ -95,7 +97,8 @@ export class PrimaryController {
     this.refreshAgain = false;
     this.followups = 0;
     if (forgetOwner) { this.owner = ""; this.pendingDelivery = null; }
-    this.update({ ready: false, loading: false, state: null, messages: [], nextCursor: null, error: "", notice, viewEpoch: this.snapshot.viewEpoch + 1, draftEpoch: this.snapshot.draftEpoch + (forgetOwner ? 1 : 0) });
+    this.update({ ready: readsOnly && this.snapshot.ready, primaryRef: readsOnly ? this.snapshot.primaryRef : null,
+      loading: false, state: null, messages: [], nextCursor: null, error: "", notice, viewEpoch: this.snapshot.viewEpoch + 1, draftEpoch: this.snapshot.draftEpoch + (forgetOwner ? 1 : 0) });
   }
   refreshLatest = () => {
     this.followups = 0;
@@ -184,7 +187,7 @@ export class PrimaryController {
       if (page.primary_ref !== state.primary_ref) throw new Error("主对话历史归属不匹配");
       if (page.revision !== state.revision) throw new Error("历史读取期间状态已变化，请刷新。");
       const messages = parseMessages(page);
-      this.update({ state, messages, nextCursor: typeof page.next_cursor === "string" ? page.next_cursor : null, notice: "", error: "", viewEpoch: this.snapshot.viewEpoch + 1 });
+      this.update({ state, primaryRef: state.primary_ref, messages, nextCursor: typeof page.next_cursor === "string" ? page.next_cursor : null, notice: "", error: "", viewEpoch: this.snapshot.viewEpoch + 1 });
       if (state.current_run || state.queued_count) {
         if (this.followups < 12) { ++this.followups; this.scheduleRefresh(); }
         else this.update({ notice: "自动补读已暂停；运行可能仍在继续，可手动刷新状态。" });

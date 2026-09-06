@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import aiosqlite
 from deskpet.memory.writer_fence import human_memory_connection
@@ -33,6 +34,13 @@ from deskpet.task_scope.protocol import (
     identifier,
     reject_private_payload,
 )
+
+if TYPE_CHECKING:
+    from deskpet.memory.human_memory_program import (
+        SanitizedEvidenceEnvelopeLike,
+        SanitizedEvidenceReceiptLike,
+    )
+
 
 TERMINAL_STATES = frozenset({"COMPLETED", "FAILED", "STOPPED", "CANCELLED"})
 FOREGROUND_SCHEDULER_KIND = "foreground_scheduler"
@@ -365,6 +373,10 @@ class ForegroundQueueStore:
         idempotency_key: str,
         turn_payload: Mapping[str, object],
         task_scope_id: str | None = None,
+        disclosure_binding_ref: str | None = None,
+        admitted_evidence_pair: tuple[
+            SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike
+        ] | None = None,
     ) -> EnqueueReceipt:
         subject = identifier(subject, "subject", 512)
         primary_conversation_id = identifier(primary_conversation_id, "primary_conversation_id", 512)
@@ -373,10 +385,21 @@ class ForegroundQueueStore:
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
         if task_scope_id is not None:
             task_scope_id = identifier(task_scope_id, "task_scope_id", 512)
+        if disclosure_binding_ref is not None:
+            disclosure_binding_ref = identifier(disclosure_binding_ref, "disclosure_binding_ref", 512)
         if not isinstance(turn_payload, Mapping):
             raise ForegroundQueueError("foreground_turn_payload_invalid")
         payload = dict(turn_payload)
         reject_private_payload(payload, "foreground_turn")
+        if admitted_evidence_pair is not None:
+            envelope, receipt = admitted_evidence_pair
+            if (
+                envelope.subject != subject
+                or envelope.evidence_id != evidence_id
+                or envelope.envelope_hash != evidence_hash
+                or dict(envelope.sanitized_payload) != payload
+            ):
+                raise ForegroundQueueError("foreground_evidence_pair_mismatch")
         request = {
             "schema_version": 1,
             "subject": subject,
@@ -400,11 +423,65 @@ class ForegroundQueueStore:
                     "SELECT * FROM foreground_turns WHERE subject=? AND idempotency_key=?",
                     (subject, idempotency_key),
                 )
-                if existing is not None:
-                    if existing["turn_hash"] != turn_hash:
+                from deskpet.memory.trusted_disclosure import current_record_tx, enqueue_binding_tx
+
+                existing_request = None if existing is None else json.loads(str(existing["turn_json"]))
+                if existing_request is not None and "disclosure_binding" in existing_request:
+                    current = await current_record_tx(db, subject)
+                    selected_ref = disclosure_binding_ref or (None if current is None else current["binding_ref"])
+                    if selected_ref != existing_request["disclosure_binding"]["binding_ref"]:
                         raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                elif existing_request is not None and disclosure_binding_ref is not None:
+                    raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                token = await enqueue_binding_tx(db, subject=subject, requested_ref=disclosure_binding_ref,
+                    legacy=existing_request is not None and "disclosure_binding" not in existing_request)
+                if token is not None:
+                    request["disclosure_binding"] = token
+                turn_hash = canonical_hash(request)
+                if existing is not None:
+                    # Replay the actual persisted format, never upgrade an old
+                    # split-admission row into a new atomic-origin assertion.
+                    existing_request = json.loads(str(existing["turn_json"]))
+                    if existing_request.get("schema_version") == 2:
+                        request["schema_version"] = 2
+                        request["source_admission"] = "atomic-evidence-and-turn/v1"
+                        turn_hash = canonical_hash(request)
+                    if (
+                        existing["turn_hash"] != turn_hash
+                        or canonical_hash(existing_request) != turn_hash
+                    ):
+                        raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                    if admitted_evidence_pair is not None:
+                        from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+                        # Even a replay must validate the complete supplied pair;
+                        # an existing turn cannot launder a forged S1 receipt.
+                        await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
+                            db, envelope, receipt,
+                            primary_conversation_id=primary_conversation_id,
+                            committed_at=now,
+                        )
                     await db.commit()
                     return self._enqueue_receipt(existing)
+                if admitted_evidence_pair is not None:
+                    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+
+                    # Only a real insertion in THIS transaction can establish
+                    # atomic source order. Already admitted evidence stays legacy.
+                    prior_source = await self._fetchone(
+                        db, "SELECT evidence_id FROM human_memory_evidence WHERE evidence_id=?",
+                        (evidence_id,),
+                    )
+                    await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
+                        db, envelope, receipt,
+                        primary_conversation_id=primary_conversation_id,
+                        committed_at=now,
+                    )
+                    self._fault("enqueue.after_evidence_insert")
+                    if prior_source is None:
+                        request["schema_version"] = 2
+                        request["source_admission"] = "atomic-evidence-and-turn/v1"
+                        turn_hash = canonical_hash(request)
                 await self._verify_evidence_tx(
                     db,
                     subject=subject,
@@ -1815,6 +1892,13 @@ class ForegroundQueueStore:
                 raise
         return snapshot
 
+    async def settle_preparation_rejection(self, *, rejection, owner_id, generation):
+        from deskpet.execution.preparation_rejection import settle_preparation_rejection
+
+        return await settle_preparation_rejection(
+            self, rejection=rejection, owner_id=owner_id, generation=generation,
+        )
+
     async def record_sdk_terminal(
         self,
         *,
@@ -2414,6 +2498,17 @@ class ForegroundQueueStore:
         )
         if turn is None:
             return None
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        while turn is not None:
+            rejected = await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=subject)
+            if rejected is None:
+                break
+            turn = await self._fetchone(db,
+                "SELECT t.* FROM foreground_turns t JOIN foreground_turn_heads h ON h.turn_id=t.turn_id "
+                "WHERE t.subject=? AND h.current_state='QUEUED' AND t.enqueue_sequence>? "
+                "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1", (subject, turn["enqueue_sequence"]))
+        if turn is None:
+            return None
         binding_revision = 0
         binding_receipt_id: str | None = None
         binding_receipt_hash: str | None = None
@@ -2795,6 +2890,7 @@ class ForegroundQueueStore:
         causal_evidence_ref: str | None,
         causal_evidence_hash: str | None,
         recorded_at: float,
+        preparation_rejection: Mapping[str, object] | None = None,
     ) -> tuple[str, str]:
         transition_id = _uuid(f"foreground-run-transition:{host_run_id}:{idempotency_key}")
         payload = {
@@ -2812,6 +2908,8 @@ class ForegroundQueueStore:
             "causal_evidence_hash": causal_evidence_hash,
             "recorded_at": recorded_at,
         }
+        if preparation_rejection is not None:
+            payload["preparation_rejection"] = dict(preparation_rejection)
         transition_hash = canonical_hash(payload)
         await db.execute(
             "INSERT INTO foreground_run_transitions(transition_id,host_run_id,subject,from_state,to_state,generation,owner_id,sdk_event_id,idempotency_key,causal_evidence_ref,causal_evidence_hash,transition_hash,transition_json,recorded_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",

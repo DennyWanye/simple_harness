@@ -9,6 +9,306 @@ activation or scheduler/presentation/ack/native completion. Historical47 stateme
 below remain historical, superseded only by [A11-schema48/v1](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-48.md).
 
 
+## 2026-09-06 工具组与可信披露组合接入
+
+最后更新：2026-09-06。工具v2非空组源码及证据、可信披露f3675064的两个P1修复均已由主审和独立代理审查。当前合入同一隔离Host候选1268e884，必要交叉检查21项通过14.55秒，测试组已清空（[证据](../plans/2026-09-06-host-trusted-disclosure/COMBINED.md)）；下列开发记录中的未合并/待独审状态为此前阶段。空assistant仍有M0614真实失败，SDK后继修复中；非SELF、真实Provider/native及240质量尚未完成。
+
+## 2026-09-06 工具多消息v2生产接线，仍有SDK空文本阻塞
+
+最后更新2026-09-06。新实际工具组的terminal/逐消息来源原子提交，Host实际结算attestation、完整6item公开注册/short非空/重开/遗忘通过；写中断无半组、两个来源篡改与五个旧v1邻居通过。新空assistant真实完整组被M0614 short non_blank校验拒绝，保持原红并继续修SDK，不丢消息/填placeholder。故本片未完成；源码独审待续，无真实Provider/native/用户主树切换。[各批范围与未完成项](../plans/2026-09-06-tool-causality/PRODUCER.md)。
+
+
+## 2026-09-06 工具多消息公开因果读取局部验证
+
+最后更新：2026-09-06。新增内部reader通过实际Host effect index和SDK公开投影/bounded审计/结果读取绑定每个工具与父Provider消息，正确区分跨轮重复raw call ID；真实dynamic Host+SDK一个集成测试（含5个篡改及1个截断控制）后继通过，重复读取不新增audit查看缓存，峰165MiB，进程清空。仅来源投影，未接入terminal producer/短期整组索引，不签工具terminal receipt；原始失败保留、独审待续。[实现边界与证据](../plans/2026-09-06-tool-causality/RESULTS.md)。
+
+## 2026-09-06 Dirac披露并发两P1局部修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure/base955a19cd，整片未合主、待主/Dirac复核。真实双控制连接先复现FIFO陈旧A阻塞B与慢checker换代后仍物理send两红；新增schema49 Host入场拒绝记录（无Run/Memory伪receipt）让A拒绝后B继续，出站checker后新连接复核原token。历史source不改。最终新增及必要邻居94项通过/41.51秒/峰222944KiB；PGID40284及全部本轮组已清空，测试槽释放。非SELF/完整外发原子撤权与240质量仍未完成，未跑真实模型/native。
+[两P1修复、接口、schema、原红和指纹](../plans/2026-09-06-host-trusted-disclosure/Dirac两P1修复.md)。
+
+## 2026-09-06 披露绑定与历史来源跨层回归已修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure保留eefc8762并在6df952fc合入主30f6b2d4/M614。主指出新turn绑定字段不被旧history source精确形状接受；真实11个foreground/outbox后的short来源登记先红，后继精确token/持久配置校验修复。历史来源仅查绑定时配置，当前使用另核head；换head不改来源receipt。修复后29项通过（10.95秒、峰192368KiB），进程组无残留。源码待主/Dirac终审，未合入主组合；非SELF门、输入permit及完整外发并发撤权仍待后继。
+[跨层证据、消费者扫描、失败历史与源码指纹](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
+## 2026-09-06 Host可信披露绑定源码候选
+
+最后更新：2026-09-06。`feat/host-trusted-disclosure` / base `cbf99364`新增authenticated control配置、schema48持久policy及queue幂等绑定；Context/scope/出站依赖检查按turn/run回读。原SELF组合保留；非SELF配置目前在生产enqueue拒绝，不作为SDK许可。源码及8个契约测试函数已写，未测试、未合并；当前输入许可与完整外发并发撤权仍未接通。
+[接口、schema、13源指纹及待验收范围](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
+
+## 2026-09-06 Memory 0.6.14隔离Host组合
+
+最后更新：2026-09-06。固定ec046e84接入受众绑定候选，独立6.3MiB环境H073/M0614/S0313全部SDK成员与vendor一致；必要组合32项及2个subtests通过，峰399MiB/22.247秒，进程清空。旧M0613环境保留。SELF与不同最终受众默认拒绝；协作者语义配对不构成外部原始历史授权。该结果不代表实际Provider/native或401/240完成。用户主树未切换，原计划继续。
+[安装身份、失败保留、命令和证据](../plans/2026-09-06-disclosure-audience/COMBINED.md)。
+
+
+2026-09-06主复核：clock固定e32a2542纳入cbf99364，7个源码/证据hash一致；受影响实际memory job/semantic correction/history组合11项通过、进程已清理。原6项clock独立保留；[组合复核及限制](../plans/2026-09-06-corpus-clock/主代理复核.md)。以下待整合表述保留为当时历史。
+
+## 2026-09-06 Host业务clock局部透传
+
+最后更新：2026-09-06。独立 `feat/corpus-runtime-clock` / base `b34b32c3`：composition可信clock经HumanMemoryV7Runtime传至公开SDK builder和默认typed recall；默认仍为time.time，进程内analysis lease采用monotonic。真实公开SDK空库6项契约通过，包括独立history.checked_at、原C04两个时点、重开及内部now隔离；峰值90MiB，进程组已清空。未运行有效seed时间筛选、Provider/native或240质量评估，受众用途接线未完成，待主复核整合。
+[接口、命令及原始证据指纹](../plans/2026-09-06-corpus-clock/验收结果.md)。
+
+## 2026-09-06 记忆提议失败审计与连接取消清理
+
+最后更新：2026-09-06。后继c39b2569默认在Host调用账本记录成功/拒绝的安全记忆类型与short选择；召回执行器取消在提交路由前记录取消原因并传播CancelledError。非法输入及异常原文不进入该审计投影。取消写入不等待SQLite写锁，连接建立/PRAGMA初始化失败或取消由内部等待并关闭自有连接；2秒仅为取消请求deadline，不冒称物理硬限额。实际后继32项必要检查通过（含12项故障/取消检查），峰约97MiB、进程已清理；源码独审限定ACCEPT。原36项批次独立保留。仍不覆盖强杀、写盘失败的完整持久性、route决策/审计两事务原子性、Service全部操作或真实模型/native。
+[实现、真实故障边界与本机证据](../plans/2026-09-06-model-recall-selection/FAILURE-AUDIT.md)。
+
+## 2026-09-06 模型短期召回及测试资源管理已组合
+
+最后更新：2026-09-06。独审cb743007、145baed3依次fast-forward接入组合：H073/M0613/S0313再次核对169/75/121 installed成员与本树vendor一致；实际候选/短期worker22PASS/9.90秒，峰值265MiB、进程已退出。新模型长短期请求单typed预算、完整来源和最终出站再检查；资源入口默认串行锁/RSS/时间限制及父退出后组清理，三个实际故障点均原红→修复绿并独审通过。
+叶子53项及补充混合/认知测试各自证据保留，未冒称整体重跑。资源采样非硬限额/全系统监控；用户原main未切换，仍无真实模型/native新组合或401/240全量，原程序继续执行。
+[组合身份、命令和待办](../plans/2026-09-06-model-short-recall/COMBINED.md)。
+
+
+## 2026-09-06 模型短期统一召回已通过安装候选测试
+
+最后更新：2026-09-06。隔离feat/model-short-recall/base a0764047，H073/M0613/S0313逐文件匹配本树wheel。显式模型长期/短期选择共用一次typed计划和预算；真正选中的short绑定公开四元组及当前完整Host因果来源，缺证据或晚遗忘阻止物理出站。成功选择进入既有调用记录，默认工具启用。
+首批53PASS/31.31秒/峰值261MiB；另两项认知出站邻居通过，新增非空长短期混合从fixture两次红修复至1PASS。原始失败及范围见下链；非真实模型/native或全量重跑，全部进程退出。独审待固定提交；完整失败attempt观测、工具多消息、401/240和原程序仍未完成，未切换用户main。
+[契约、批次结果与本机证据索引](../plans/2026-09-06-model-short-recall/RESULTS.md)。
+
+
+## 2026-09-06 WeMM按需加载与内存引用修复已接入组合
+
+最后更新：2026-09-06。独审b70ccda5以fast-forward接入；构造/元数据/状态不加载权重，首次真实embedding共享加载；取消下异步排队和物理线程互斥，失败完成任务丢弃实例引用，防异常保留模型。WeMM2048/L2/本地模型及SDK pin不变。设置页四状态真实WebKit组件检查和刷新通过，浏览器峰值433MiB、进程已退出；相关叶子线程/公开空库/IPC/React/类型检查见证据。
+旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
+[组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
+
+## 2026-09-06 WeMM Host lazy loading leaf
+
+2026-09-06 follow-up：加载完成回调仅清理同一done task引用，避免失败traceback
+长期持有维度拒绝模型；不改waiter异常、不清traceback、不自动重试。fake weakref
+原红→绿，含必要邻居5PASS0.20s；pending/新task不会被旧回调清掉。ready措辞收紧
+为已加载，非完整搜索质量保证。物理线程/权重分配器释放仍不作推断。
+
+最后更新：2026-09-06。WeMM构造、dim/lineage和P4 status仅访问元数据；首次embed
+才import/加载本地模型，加载维度必须2048，保留L2及原fingerprint。共享shield load
+task与owned异步encode队列保持实际线程互斥，取消排队请求不提交executor线程。
+cold/loading/ready/failed不触发加载，卡片显示真实名称与按需状态。线程取消不等于
+物理终止或释放权重；没有新增warmup/close/unload。SDK0612 public空库builder以
+fake模型证明0构造，旧库ensure缺向量仍可启动加载，未改冻结SDK/catchup契约。
+backend唯一13例、React2例、tsc0；没有真实权重/native。独立worktree尚未合main。
+[固定叶子验证与边界](../plans/2026-09-06-wemm-lazy/RESULTS.md)。
+
+
+## 2026-09-06 短期索引及 Service0313 已组合验证
+
+最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。
+Service工具审计新增发送attempt/UNKNOWN/真实ACK/后继响应，仍非持久sink或完整Run绑定；全操作落盘、增量projection、多消息producer、模型short协议及原program未闭合。未切换用户main/runtime，无新模型/native。
+[命令、身份、结果与边界](../plans/2026-09-06-short-index-worker/COMBINED.md)。
+
+## 2026-09-06 Short index worker 隔离叶子
+
+最后更新：2026-09-06。`feat/short-index-worker`/basefe006f59，源426db3bb获Dirac限定ACCEPT。
+默认复用唯一MemoryAnalysisLane：outbox→whole-group short step→analysis；固定upper的
+turn keyset环绕，晚delivered旧组重查、坏组不阻合法后组；仅实际registration+projection ACK
+进入有限内存缓存，manager reopen清空。主退出在borrowers停止后关闭v7 owner。
+分批8PASS/6.20s、3PASS/4.81s、相邻6PASS/9.30s；非相加质量分。无模型/native或SDK制品改动。
+SDK0612 projection仍全subject扫描，Host16不等于总成本/P99界；多消息tool来源、新模型short协议
+仍未交付，S3/S6/program仍未完成。[契约和实际证据](../plans/2026-09-06-short-index-worker/RESULTS.md)。
+
+## 2026-09-06 短期选中来源已合成
+
+最后更新：2026-09-06。独审2d98e083合入7fafe03a，同时保留审计authority；实际factory每hit完整来源、裁减/遗忘不互相污染、显式长期零short与HUMAN审计WS组合42项通过（21.12秒、峰值238MiB）。
+仅已有内部短请求来源路径闭合；自动生产索引worker、多消息完整producer、新模型short协议及原program仍未完成。无新模型/native运行。
+[组合结果与边界](../plans/2026-09-06-selected-short-runtime/COMBINED.md)。
+
+## 2026-09-06 Selected short runtime 隔离叶子
+
+最后更新：2026-09-06。`feat/selected-short-runtime` 从49249dbd接入实际factory共享
+conversation authority；默认已有short请求逐actual triple携带完整group来源，每次group
+读取同只读事务验证primary/epoch。显式长期选择不附带short；不使用all-indexed roots。
+真实11组/两hit裁减后遗忘/reopen分批18PASS/7.04s、3PASS/8.03s；相邻24PASS/19.99s
+独立列示（含1必要重验，不累计作质量分）。最后门为实际PrimaryHistoryPolicy直接fresh复查，
+不是新physical outbound/native。借用组合venv，无独立安装身份。源2d98e083获Dirac限定ACCEPT，未合主树。
+生产索引worker/增量登记、多消息tool完整producer、新模型short协议仍未完成；不改S3/program完成度。
+见[契约及实际结果](../plans/2026-09-06-selected-short-runtime/RESULTS.md)。
+
+## 2026-09-06 审计查看入口组合验证
+
+最后更新：2026-09-06。独审1097b272合入c53caff2：记忆面板显式打开用途绑定的HUMAN元数据审计，分页/持久ACK重放、关闭与身份失效拒绝；保留原图谱viewport及遗忘ACK修复。组合独审限定ACCEPT。
+后端54项通过，新增真实/ws/control审计往返2项通过，前端44通过/1个可选API-fixture未配置跳过，TypeScript通过。单进程有界执行；没有真实Provider、native或全操作覆盖。初始snapshot成本及原生验收仍待续。
+[组合证据、命令与范围](../plans/2026-09-05-agent-operation-audit/human-access-leaf/COMBINED.md)。
+
+## 2026-09-06 模型召回类型选择局部完成
+
+最后更新：2026-09-06。memory_standalone工具显式类型经Host校验传入已安装Memory0612公共计划，保留Host身份/权限/预算；显式长期选择不偷偷附带短期查询。成功类型枚举写既有Host审计记录，原proposal仅hash，非公共SDK完整参数回读。
+独立叶子最终77项通过（50.57秒、峰值191MiB），包括实际选中来源/最终出站/任务披露链；没有真实Provider或native。固定49249dbd已独审限定ACCEPT并fast-forward主组合，完整类型质量、短期与调度、审计UI及原program仍未完成。
+[契约、命令、历史红与证据边界](../plans/2026-09-06-model-recall-selection/RESULTS.md)。
+
+## 2026-09-05 Memory0612 installed credential successor
+
+Independent artifact/exact-installed review ACCEPT, including captured actual Host
+history first/reopen. Native click acceptance remains separate and blocked by lock screen.
+
+Last updated: 2026-09-05. Exact0612 fixes public tool-name credential false positives;
+64PASS8.76s startup/composition/Memory audit/preparation rejection. Installed SDK bytes match wheels/source, no source overlay.
+Native graph recovery and full operation coverage are not yet claimed.
+See [installed identity and checks](../plans/2026-09-05-s6-primary-preparation/SDK-0612-INSTALLED.md).
+
+## 2026-09-05 Host Memory attempt and pre-SDK rejection audit leaf
+
+Coordinator combined06348031 with installed0611: audit/preparation/graph producer
+combination49PASS16.43s, no source overlay. Independent leaf ACCEPT retained;
+production sealed issuer and full operation coverage remain unfinished.
+
+Last updated: 2026-09-05. Isolated feat/host-memory-operation-audit from7cf2a39c
+wires durable Host started/settled around actual foreground typed recall and semantic
+correction candidate recall. The default audit composition additionally discovers
+verified Host preparation rejections with no SDKRun. Original errors/cancellation
+and business results are preserved; recovery never repeats a business effect.
+Installed Memory0611 exact-wheel/Host combination32 tests pass, including public
+sealed snapshot pages and concurrent reader recovery. Trusted receipt-supplied OA1
+reader is implemented, but Host production grant issuance/authorized external
+readthrough and all other inventory boundaries remain unfinished. No usage/cost
+aggregation or all-operation/native completion claim. Fixed source3ba25c42 has Dirac independent scoped ACCEPT, no remaining P0/P1.
+This acceptance applies only to the leaf above.
+See [scope and handoff](../plans/2026-09-05-agent-operation-audit/host-memory-leaf/HANDOFF.md).
+
+## 2026-09-05 Memory0611 installed audit and retry successor
+
+Last updated: 2026-09-05. Main-owned candidate pins exact0611, combining reviewed
+privacy, bounded SDK audit and current-attempt reclaim repair. Installed55 startup/
+composition/graph/runtime checks pass; no source overlay. Main running environment
+and isolated native graph0610 remain unchanged. Full Host operation coverage and
+Harness successor are still pending. See
+[installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0611-INSTALLED.md).
+
+
+## 2026-09-05 Public TwinGraph HUMAN projection and completion invalidation
+
+Last updated: 2026-09-05. Host reads manager.get_twin_graph_view using actual principal/primary and signed late API boundary. Node and edge output is bounded with closed endpoints; SDK collection remains a full scan. Main shares content-free completion invalidation between actual suppress and MemoryAnalysisLane APPLIED (including no_mutation). Server generation is checked after the final identity await; no SDK global epoch or Agent graph input is introduced.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
+## 2026-09-05 Selected short source modules combined on0610
+
+Last updated: 2026-09-05. Reviewed selected source reader and source-only conversation
+registration/indexing modules are now integrated into the main-owned candidate.
+Actual installedMemory0610 ingestion/selected-reader34 tests pass; no source overlay.
+Production indexing scheduler and final selected-hit wiring remain unfinished,
+so full short-horizon availability is not claimed. See
+[contract](../plans/2026-09-05-selected-short-sources/CONTRACT.md).
+
+
+## 2026-09-05 Original native duplicate-forget regression passes on0610
+
+Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the
+original native data. The exact prior failing drink query now visibly answers
+“不知道”; canonical physical Provider request contains neither original nor revised
+drink text. One foreground call, separate analysis call; app closes normally.
+Original failure/action preserved. This is scoped native regression evidence,
+not a new complete memory loop or full program PASS.
+See [native evidence](../plans/2026-09-05-semantic-correction/NATIVE-0610-REOPEN.md).
+
+
+## 2026-09-05 Memory0610 installed privacy and queue successor
+
+Last updated: 2026-09-05. Candidate production composition now binds actual Host
+source/cut authority to Memory0610 shared disclosure enforcement. An old late-enqueued
+USER denied before SDK start becomes an immutable Host preparation rejection:
+Run FAILED, turn SETTLED, no fabricated SDK terminal, and subsequent work progresses.
+Cross-source rejection reuse is rejected from actual S1 binding; first-action cuts
+and legacy unknown boundaries remain distinct. Installed86 tests pass and independent
+source/artifact scoped reviews accept. Main and historical native failure remain
+unchanged; native successor and full program verification are still outstanding.
+See [installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0610-INSTALLED.md)
+and [queue contract](../plans/2026-09-05-semantic-correction/PREPARATION-REJECTION.md).
+
+
+## 2026-09-05 Original source and first forget-cut public facts prepared
+
+Last updated: 2026-09-05. Host now captures a v2 forget action's original queue
+frontier atomically with its S1, and exposes read-only source/cut facts through
+public SDK carriers. Exact retries preserve the first cut; old v1 actions remain
+unchanged and explicitly lack a verified cut. Source-overlay fact/API13 pass,
+with independent scoped ACCEPT. SDK enforcement/builder/native integration remain
+pending; this is not a duplicate-forget PASS.
+See [contract and evidence](../plans/2026-09-05-semantic-correction/HOST-SOURCE-CUT.md).
+
+## 2026-09-05 USER source and queue admission now atomic
+
+Last updated: 2026-09-05. The service now persists new USER S1 and its queue row in
+one fenced transaction. Only first insertion marks a v2 atomic origin; existing
+S1/turns retain legacy format and exact replay. Source/queue/runtime-history checks
+pass with independent scoped ACCEPT. This closes the source-before-queue crash
+window, while duplicate-source suppression and native retest remain incomplete.
+See [implementation and validation](../plans/2026-09-05-semantic-correction/ATOMIC-SOURCE-ADMISSION.md).
+
+## 2026-09-05 Native correction passed; duplicate-source forget remains P1
+
+Last updated: 2026-09-05. Backend c2836c12 with exact Memory0.6.9 successfully
+created and revised the same memory in the actual native app. The panel forget
+produced a real directive, but an older duplicate USER from a rejected CREATE
+remained in the next actual Provider request and the model returned the old value.
+The memory loop is **FAIL**. Deterministic coverage is1PASS2FAIL for no duplicate,
+pre-forget admission and delayed admission. A fresh same-text USER/replayed-action
+control passes only in the no-duplicate case. Required source-order/cut/equivalence
+repair is underway; no main cutover or program completion claim.
+See [native evidence and exact boundaries](../plans/2026-09-05-semantic-correction/NATIVE-DUPLICATE-FORGET.md).
+Earlier entries below describe their own historical checkpoints.
+
+## 2026-09-05 Native CREATE slot failure and v3 source fix
+
+Real069 native startup/history/current Run worked, but remember failed: the model
+invented a CREATE target key, Host rejected it, and no preference was materialized.
+V3 now explicitly represents CREATE with an empty candidate slot while retaining
+all REVISE/intent/target guards. Source tests and independent review pass; native
+retest remains required. Assistant "remembered" text does not establish Memory
+write success. See [failure and evidence](../plans/2026-09-05-semantic-correction/CREATE-SLOT-V3.md).
+
+## 2026-09-05 Memory069 installed successor verified
+
+Actual startup additionally required updating the four Memory candidate identity
+constants; the first App attempt rejected the stale067 pin.32 startup/composition
+checks pass after that correction, with the original failure retained.
+
+Combined candidate now pins exact Memory0.6.9; same Harness0.7.2/Service0.3.12.
+Independent source/wheel/install comparisons and29 affected tests pass. Production
+factory upgrades a copy of actual native0.6.3 data and reopens with the same receipt
+and unmodified backup; original data unchanged. No native069 claim yet.
+See [installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-069-INSTALLED.md).
+
+## 2026-09-05 Shared semantic correction production composition
+
+Primary startup now uses one production factory binding the same semantic action
+authority to Host analysis and the public Memory builder. The real-store test
+harness uses that factory:29 distinct semantic/API/barrier cases pass across an
+initial26PASS3test-importFAIL and affected3PASS rerun. Reviewed semantic sources
+are integrated; installed067 verification does not cover069 migration or native
+model behavior. See [results](../plans/2026-09-05-semantic-correction/RESULTS.md).
+User-requested cross-SDK operation recording/audit is now an explicit additional
+[implementation scope](../plans/2026-09-05-agent-operation-audit/PLAN.md); current
+rotating diagnostics must not be described as complete automatic auditing.
+
+## 2026-09-05 Typed selection forget barrier exercised
+
+Actual public typed selection/Context route now uses the cognitive forget API
+before the next production pre-invoke guard. Positive sends2; late forget sends1
+and rejects the next stale request. Two controls passed2.18s with deterministic
+analysis/MockTransport; no native or paid Provider. This adds the previously missing
+typed-source proof to the existing history/reopen coverage. See [API evidence](../plans/2026-09-05-primary-cognitive-controls/API.md).
+A further2 typed-only controls pass with no remembered source in chat history;
+removing only the recall binding would allow the same request, proving the selected
+source barrier itself. Public fixture materialization, no real model in this pair.
+SDK069 migration and semantic-action builder hooks are prepared but those new
+branches still await their actual successor candidates; see [runtime preparation](../plans/2026-09-05-s6-primary-preparation/RUNTIME-SUCCESSOR.md).
+
+
+> 本次 leaf 更新：2026-09-05
+
+## Selected short-source reader isolated candidate
+
+新增 SelectedShortSourceReader，消费公开069 selected-source snapshot，经原有
+PrimaryConversationAuthority核实完整group/S1，再逐hit复用PrimaryHistoryPolicy递归
+USER/terminal祖先。只返回accepted selected来源root+实际shortbinding依赖union，不用
+all-indexed roots、不伪typed、不读SDK私SQL。主仍负责registration默认hookup、RecallLanes
+接线与最后出站fresh fence；本观察不能替代最终授权，reconcile全扫描cost不变。
+新leaf19项source-overlay与定向ruff绿；后继exact069 cf149022 + Harness072 installed
+同19项通过，Memory68/Harness151包文件source-wheel-installed一致，168已加载SDK模块来自
+独立venv。旧source记录保留不重复计数；未运行native/真实Provider，主组合仍待验。
+接口/测试边界见[契约](../plans/2026-09-05-selected-short-sources/CONTRACT.md)。
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
@@ -27,6 +327,23 @@ Primary HUMAN接口已接实际V7 public graph/suppress与专属动作S1，精�
 frontend/native及自然语言纠正尚未完成，不能称用户闭环已完成。
 见[接口与证据边界](../plans/2026-09-05-primary-cognitive-controls/API.md)。
 
+## 2026-09-05 Explicit semantic correction isolated leaf
+
+Follow-up: fixed800ff419 independently scoped ACCEPT (no blocking P0/P1). The v2
+prompt now names new drink preferences `user:self + drink_preference`; no alias or
+authority expansion. Five Chinese public-SDK cases passed (5.01s). Native model
+compliance and coordinator builder integration remain pending; details in results.
+
+From9ec0ec97, the isolated semantic-correction candidate adds actual public typed
+semantic candidates, Host independent full-sentence intent and exact public REVISE
+authority. **32 focused tests passed (19.13s)** on installed067; Chinese natural
+correction/quoted/negative, ambiguity, original evidence, replay and late-forget deny
+covered. v2 prompt/schema/policy/validator; no new schema or display graph input.
+Main/Runtime wiring belongs to coordinator; fixed-source review and native complete
+loop remain pending. Limited Chinese slot vocabulary and unsupported cases are explicit;
+this is not unrestricted natural-language or full program completion.
+See [contract](../plans/2026-09-05-semantic-correction/CONTRACT.md) and
+[results/boundaries](../plans/2026-09-05-semantic-correction/RESULTS.md).
 
 ## 2026-09-05 Source/auth/action combination verified
 

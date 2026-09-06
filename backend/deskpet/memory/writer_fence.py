@@ -39,6 +39,17 @@ def _request_scope():
     return scope if scope is not None and scope.task is asyncio.current_task() else None
 
 
+def require_authenticated_host_snapshot(expected):
+    """New policy writes require a live signed control scope, not an auth DTO."""
+    scope = _request_scope()
+    if scope is None or not hasattr(scope.fence, "authenticated_host_snapshot"):
+        raise HumanMemoryIngressFenced()
+    scope.fence.verify()
+    if scope.fence.authenticated_host_snapshot() != expected:
+        raise HumanMemoryIngressFenced()
+    return scope.fence.audit_lease_ref()
+
+
 @asynccontextmanager
 async def human_memory_request_boundary():
     """A short existing revocation lease, rechecked at the actual DB boundary."""
@@ -117,3 +128,14 @@ __all__ = [
     "assert_human_memory_ingress_open",
     "assert_human_memory_ingress_open_tx",
 ]
+
+
+def require_human_audit_request() -> str:
+    """Audit grants require a real current signed HUMAN serving lease, never fallback."""
+    from deskpet.memory.control_binding import _ConnectionRequestFence
+    from deskpet.memory.human_memory_service import HumanMemoryHostServiceError
+
+    scope = _request_scope()
+    if scope is None or not isinstance(scope.fence, _ConnectionRequestFence):
+        raise HumanMemoryHostServiceError("primary_audit_verified_request_required")
+    return scope.fence.audit_lease_ref()

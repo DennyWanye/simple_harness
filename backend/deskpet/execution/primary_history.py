@@ -80,7 +80,8 @@ async def terminal_observation_tx(db, *, host_run_id, sdk_run_id, subject):
 
 
 async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subject,
-                                      owner_id, generation, terminal, sdk_evidence, messages, error_code=None, visibility_dependencies=None):
+                                      owner_id, generation, terminal, sdk_evidence, messages, error_code=None,
+                                      visibility_dependencies=None, tool_causal_sources=None):
     from deskpet.execution.foreground_queue import ForegroundQueueStore
     queue = ForegroundQueueStore(db_path)
     async with aiosqlite.connect(db_path) as db:
@@ -101,7 +102,7 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
                 raise RuntimeError("primary_runtime_terminal_conflict")
             marker = payload.get("message_source_contract")
             if marker is not None:
-                if marker != "primary-message-v1":
+                if marker not in {"primary-message-v1", "primary-message-v2"}:
                     raise RuntimeError("primary_message_contract_unknown")
                 from deskpet.memory.primary_message_evidence import verify_new_primary_message_evidence_tx
                 prior_envelope, prior_receipt = evidence_pair(subject, sdk_run_id, payload, float(row["occurred_at"]))
@@ -121,6 +122,10 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
             "visibility_dependencies": visibility_dependencies,
             "message_source_contract": "primary-message-v1",
         }
+        from deskpet.memory.primary_message_v2 import representable
+        if terminal.value == "COMPLETED" and representable(messages, tool_causal_sources):
+            payload.update(message_source_contract="primary-message-v2",
+                           tool_causal_sources=list(tool_causal_sources))
         reject_private_payload(payload)
         envelope, receipt = evidence_pair(subject, sdk_run_id, payload, float(sdk_evidence.occurred_at))
         committed = await HumanMemoryProgramStore(db_path).append_evidence_tx(

@@ -20,34 +20,34 @@ from urllib.parse import unquote, urlparse
 
 from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
 
-SDK_VERSION = "0.7.2"
-SDK_WHEEL_FILENAME = "simple_harness_sdk-0.7.2-py3-none-any.whl"
-SDK_WHEEL_SHA256 = "53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed"
-SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.7.2.candidate-manifest.json"
-SDK_CANDIDATE_MANIFEST_SHA256 = "f467fdc84d1a754ab1b02fb510249bc8d37b735cebd9c92c8b59cb2326eb11aa"
-SDK_SOURCE_COMMIT = "2b8428465cbd41032ba024a0b7199183161f5ecd"
+SDK_VERSION = "0.7.3"
+SDK_WHEEL_FILENAME = "simple_harness_sdk-0.7.3-py3-none-any.whl"
+SDK_WHEEL_SHA256 = "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7"
+SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.7.3.candidate-manifest.json"
+SDK_CANDIDATE_MANIFEST_SHA256 = "000670d7f47944980bcc7f2b3a15254574f57029eb239933c1ea1ef17a5e2a3e"
+SDK_SOURCE_COMMIT = "0282fa982995b24bc893fdf6bed69d2caacd6587"
 SDK_CI_RUN_ID = None
 SDK_CI_ARTIFACT_ID = None
 
-SDK_MEMORY_VERSION = "0.6.7"
-SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.6.7-py3-none-any.whl"
-SDK_MEMORY_WHEEL_SHA256 = "7dd224c29923ab1346a78bb8529d9426559bb1e3a38b8c0964f57cc8687e9c3d"
-SDK_MEMORY_SOURCE_COMMIT = "fa6badd086d089e3e1752df45993ce0ccba98377"
+SDK_MEMORY_VERSION = "0.6.14"
+SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.6.14-py3-none-any.whl"
+SDK_MEMORY_WHEEL_SHA256 = "f60e7696af830704399f1e964fbd312ea1fea6e41ee7b9123a8a3dfe303368eb"
+SDK_MEMORY_SOURCE_COMMIT = "27dceffe05247415ba9b48a55e865a0faba37629"
 SDK_MEMORY_CI_RUN_ID = None
 SDK_MEMORY_CI_ARTIFACT_ID = None
 
-SDK_SERVICE_VERSION = "0.3.12"
-SDK_SERVICE_WHEEL_FILENAME = "simple_harness_service_sdk-0.3.12-py3-none-any.whl"
-SDK_SERVICE_WHEEL_SHA256 = "710ae66ba1cc0f0f838f816f3b98108100af560bfb210ed6834246d6d802f8c6"
-SDK_SERVICE_SOURCE_COMMIT = "47f372adc641d8d3516599dd21cb94cf5955d6a7"
+SDK_SERVICE_VERSION = "0.3.13"
+SDK_SERVICE_WHEEL_FILENAME = "simple_harness_service_sdk-0.3.13-py3-none-any.whl"
+SDK_SERVICE_WHEEL_SHA256 = "26205f89854e27bd7ed8cbd6f7ac1f6b621603f973a081823bc6b707ae0784a8"
+SDK_SERVICE_SOURCE_COMMIT = "74a622572602bf3b6973f5d8a55c09bf62ff08ba"
 SDK_SERVICE_AUTHORITY_ROOT_SHA256 = (
     "b9675a5c64136bb9ba7064cc78b3cc39662f7f374629bcd4731a833bbff2873d"
 )
 SDK_SERVICE_CANDIDATE_MANIFEST_FILENAME = (
-    "simple_harness_service_sdk-0.3.12.candidate-manifest.json"
+    "simple_harness_service_sdk-0.3.13.candidate-manifest.json"
 )
 SDK_SERVICE_CANDIDATE_MANIFEST_SHA256 = (
-    "9bfb8731a4e8aba2958fcd0999b888a1c25a0f223c2c6ee309500a02ecd213cd"
+    "eac1aa553aebe97df145eb257bbd06b930e5b57b25ada3c38fa632b84b87d319"
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]

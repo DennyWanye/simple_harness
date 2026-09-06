@@ -25,7 +25,8 @@ class PrimaryCognitiveError(ValueError):
 
 
 class PrimaryCognitiveControls:
-    def __init__(self, path, *, auth, runtime_getter):
+    def __init__(self, path, *, auth, runtime_getter, display_invalidation=None):
+        self._display_invalidation = display_invalidation
         self._path = Path(path)
         self._auth = auth
         self._runtime_getter = runtime_getter
@@ -91,6 +92,53 @@ class PrimaryCognitiveControls:
             "next_cursor": nodes[limit - 1].memory_id if len(nodes) > limit else None,
         }
 
+    async def graph(self, *, primary_ref, node_limit=80, edge_limit=160):
+        """Bounded USER display of a public snapshot, never an Agent projection."""
+        if (
+            type(node_limit) is not int or not 1 <= node_limit <= 200
+            or type(edge_limit) is not int or not 1 <= edge_limit <= 400
+        ):
+            raise PrimaryCognitiveError("primary_memory_request_invalid")
+        manager, principal = await self._memory()
+        await self._authorize_primary(primary_ref)
+        view = await self._view(manager, principal)
+        visible = sorted((n for n in view.nodes if not n.redacted), key=lambda n: n.node_id)
+        chosen = visible[:node_limit]
+        node_ids = {node.node_id for node in chosen}
+        edges = sorted(
+            (edge for edge in view.edges
+             if edge.source_node_id in node_ids and edge.target_node_id in node_ids),
+            key=lambda edge: edge.edge_id,
+        )
+        return {
+            "primary_ref": primary_ref,
+            "view_ref": view.view_id,
+            "generated_at": view.generated_at,
+            "source_payload_hash": view.payload_hash,
+            "nodes": [
+                {
+                    "node_id": node.node_id, "memory_id": node.memory_id,
+                    "revision": node.revision, "memory_type": node.memory_type,
+                    "status": node.status, "lifecycle_state": node.lifecycle_state,
+                    "epistemic_status": node.epistemic_status,
+                    "conflict_status": node.conflict_status,
+                    "verification_state": node.verification_state,
+                    "confidence": node.confidence,
+                    "confidence_basis": list(node.confidence_basis[:16]),
+                    "label": node.label[:512], "tooltip": node.tooltip[:2048],
+                    "content_hash": node.content_hash, "source_node_hash": node.node_hash,
+                    "source_refs": [source.to_json() for source in node.source_refs[:8]],
+                    "source_refs_truncated": len(node.source_refs) > 8,
+                    "can_correct": node.can_correct, "can_forget": node.can_forget,
+                } for node in chosen
+            ],
+            "edges": [edge.to_json() for edge in edges[:edge_limit]],
+            "truncated": {
+                "nodes": len(visible) > len(chosen),
+                "edges": len(view.edges) > min(len(edges), edge_limit),
+            },
+        }
+
     async def forget(
         self,
         *,
@@ -150,7 +198,13 @@ class PrimaryCognitiveControls:
         # action survives and can be retried by a fresh authenticated request.
         async with human_memory_request_boundary():
             await assert_human_memory_ingress_open(self._path)
-            decision = await manager.suppress(principal=principal, request=request)
+            try:
+                decision = await manager.suppress(principal=principal, request=request)
+            finally:
+                # Also invalidate on unknown ACK: a SDK commit may have happened.
+                # This is only a refresh hint, never a success acknowledgement.
+                if self._display_invalidation is not None:
+                    await self._display_invalidation.changed()
         if (
             decision.request_id != request.request_id
             or decision.subject != request.subject

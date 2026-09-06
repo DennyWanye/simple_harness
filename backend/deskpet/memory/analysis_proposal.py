@@ -16,7 +16,7 @@ the independent post-turn analysis call).  The Host then derives every
   AUTHENTICATED_USER, support EXPLICIT_USER_ASSERTION;
 * no hit / several hits / a paraphrase → that operation is rejected with
   ``analysis_quote_not_found`` (never repaired, never fuzzy-matched);
-* Host policy ``host-analysis-policy/v1``: rejected operations are dropped from
+* Host policy ``host-analysis-policy/v3``: rejected operations are dropped from
   the plan and audited; a plan whose operations were all rejected degrades to
   ``no_mutation`` (``analysis_all_operations_rejected``).
 
@@ -38,10 +38,10 @@ from typing import Any
 
 from simple_harness.contracts import canonical_json
 
-PROMPT_VERSION = "host-analysis-prompt/v1"
-RESULT_SCHEMA_VERSION = "memory-analysis-proposal/v1"
-POLICY_VERSION = "host-analysis-policy/v1"
-VALIDATOR_VERSION = "host-analysis-validator/v1"
+PROMPT_VERSION = "host-analysis-prompt/v3"
+RESULT_SCHEMA_VERSION = "memory-analysis-proposal/v3"
+POLICY_VERSION = "host-analysis-policy/v3"
+VALIDATOR_VERSION = "host-analysis-validator/v3"
 
 PROPOSAL_TOOL_NAME = "memory_analysis_proposal"
 TEXT_POINTER = "/text"
@@ -71,6 +71,8 @@ PROPOSAL_TOOL_SCHEMA: dict[str, Any] = {
                 "required": ["operation_id", "memory_type", "evidence_item_id", "exact_quote", "reason_code"],
                 "properties": {
                     "operation_id": _STRING,
+                    "action": {"type": "string", "enum": ["create", "revise_semantic"]},
+                    "candidate_key": {"type": "string", "maxLength": 1024, "description": "CREATE: empty string (no target). REVISE: copy one exact issued semantic_candidates candidate_key; never invent a key."},
                     "memory_type": {"type": "string", "enum": list(MEMORY_TYPES)},
                     "semantic": {
                         "type": "object",
@@ -147,13 +149,22 @@ PROPOSAL_TOOL_DESCRIPTION = (
 )
 
 ANALYSIS_SYSTEM_INSTRUCTION = (
-    "你是桌面工作台的主模型，正在做 post-turn 记忆分析（prompt host-analysis-prompt/v1）。"
+    "你是桌面工作台的主模型，正在做 post-turn 记忆分析（prompt host-analysis-prompt/v3）。"
     "证据项是用户在本轮任务里说的话；只根据给定证据项提出长期记忆变更，每条 operation 必须引用"
     " evidence_item_id 并给出 exact_quote（必须是该证据 text 的逐字子串，不得改写、不得拼接）。"
     "稳定事实/偏好（含项目里的文件、版本号、名称、决定）用 semantic；用户本轮要求做的事及其结果用 episode"
     "（title/actions/results）；可复用的操作步骤用 procedure；未来意图/提醒用 prospective（给出首次到期的"
     " ISO 时间和 IANA 时区）。用户对自己项目提出的具体修改要求（改了哪个文件、改成什么版本/名字）值得记为"
     " episode 或 semantic，以便下一轮回忆；只有证据没有任何具体内容（寒暄、闲聊、纯提问）时才 no_mutation。"
+    "产品词表约定：CREATE 用户自己的饮品偏好或默认饮品偏好时，使用 subject_entity=user:self、"
+    "predicate=drink_preference；object_value 只取证据实际支持的饮品，不预设饮品名称。"
+    "不要为这个已支持的 slot 另造 preferred_beverage 等同义 predicate。其他 semantic CREATE 的"
+    " subject_entity/predicate 仍按证据表达，不受此饮品词表限制。此命名约定不授予修改已有记忆的权限，"
+    "也不重命名旧候选；REVISE 必须保留实际候选的原 subject_entity/predicate。"
+    "CREATE 新记忆时 action=create，candidate_key 必须是空字符串；不要为新记忆编造 candidate_key。"
+    "明确纠正已有 semantic 时，action=revise_semantic 并选择 semantic_candidates 中的 candidate_key；"
+    "保持原 subject_entity/predicate，不编造目标。候选有歧义时 no_mutation，说明原因；不可用 create 绕过纠正。"
+    "新 object_value 必须逐字出现在当前 USER 引文中。无对应候选时不能覆盖旧记忆。"
     "只调用 memory_analysis_proposal 一次，不要输出其他内容。"
 )
 
@@ -309,8 +320,8 @@ def _strings(value: object, *, default: tuple[str, ...] = ()) -> tuple[str, ...]
     return out or default
 
 
-def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedItem, now: float) -> Any:
-    """Map one proposal operation to a ``MemoryMutationOperation`` (CREATE) by memory type."""
+def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedItem, now: float, candidates=()) -> Any:
+    """Compile CREATE or an exact source-bound semantic REVISE."""
 
     from simple_harness.runtime import (
         ConflictStatus,
@@ -390,19 +401,61 @@ def compile_operation(proposal: Mapping[str, Any], span: Any, *, item: AdmittedI
             lifecycle = ProspectiveLifecycleState.PENDING
             attributes = (InformationAttribute.GOAL,)
             long_term = LongTermMemoryType.PROSPECTIVE
+        privacy = PrivacyClass.PERSONAL
+        kind, target = MemoryMutationKind.CREATE, None
+        action = proposal.get("action", "create")
+        if action not in {"create", "revise_semantic"}:
+            raise AnalysisProposalRejected("analysis_action_invalid")
+        if action == "revise_semantic":
+            from simple_harness import ExistingMemoryTarget, EvidenceSupportKind
+            from dataclasses import replace
+            if memory_type != "semantic" or item.envelope.source_kind.value != "user_message":
+                raise AnalysisProposalRejected("analysis_correction_requires_user_semantic")
+            selected = [c for c in candidates if c["candidate_key"] == proposal.get("candidate_key")]
+            if len(selected) != 1:
+                raise AnalysisProposalRejected("analysis_correction_candidate_unknown")
+            candidate = selected[0]
+            old = candidate["payload"]
+            approval = candidate.get('correction_intent')
+            if approval is None or approval['evidence_id'] != item.evidence_id or approval['envelope_hash'] != item.envelope.envelope_hash or approval['exact_quote'] != span.exact_quote or approval['new_value'] != payload.object_value:
+                raise AnalysisProposalRejected('analysis_explicit_correction_intent_missing')
+            if sum(c.get('correction_intent') is not None and c['correction_intent']['evidence_id'] == approval['evidence_id'] and c['correction_intent']['exact_quote'] == approval['exact_quote'] for c in candidates) != 1:
+                raise AnalysisProposalRejected('analysis_correction_candidate_ambiguous')
+            same_slot = [c for c in candidates if (c["payload"]["subject_entity"], c["payload"]["predicate"]) == (old["subject_entity"], old["predicate"])]
+            if len(same_slot) != 1:
+                raise AnalysisProposalRejected("analysis_correction_candidate_ambiguous")
+            if (payload.subject_entity, payload.predicate) != (old["subject_entity"], old["predicate"]):
+                raise AnalysisProposalRejected("analysis_correction_slot_mismatch")
+            if payload.object_value not in span.exact_quote or payload.object_value == old["object_value"]:
+                raise AnalysisProposalRejected("analysis_correction_new_value_not_supported")
+            if tuple(payload.qualifiers) != tuple(old.get('qualifiers', ())):
+                raise AnalysisProposalRejected('analysis_correction_qualifiers_mismatch')
+            privacy = PrivacyClass(candidate['privacy_class'])
+            attributes = tuple(InformationAttribute(a) for a in candidate['information_attributes'])
+            kind = MemoryMutationKind.REVISE
+            target = ExistingMemoryTarget(candidate["memory_id"], candidate["revision"])
+            span = replace(span, support_kind=EvidenceSupportKind.EXPLICIT_USER_CORRECTION)
+        elif proposal.get("candidate_key") not in (None, ""):
+            raise AnalysisProposalRejected("analysis_create_cannot_select_target")
+        elif memory_type == 'semantic' and any(
+            c.get('correction_intent') is not None
+            and c['correction_intent']['evidence_id'] == item.evidence_id
+            for c in candidates
+        ):
+            raise AnalysisProposalRejected('analysis_correction_cannot_fallback_create')
         return MemoryMutationOperation(
             operation_id=str(proposal["operation_id"]),
-            kind=MemoryMutationKind.CREATE,
+            kind=kind,
             memory_type=long_term,
             payload=payload,
-            target=None,
+            target=target,
             depends_on_operation_ids=(),
             lifecycle_state=lifecycle,
             epistemic_status=EpistemicStatus.EXPLICIT_USER,
             conflict_status=ConflictStatus.UNCONTESTED,
             verification_state=VerificationState.SOURCE_BOUND,
             valid_time_interval=ValidTimeInterval(None, None),
-            proposed_privacy_class=PrivacyClass.PERSONAL,
+            proposed_privacy_class=privacy,
             proposed_information_attributes=attributes,
             evidence_spans=(span,),
             reason_code=str(proposal.get("reason_code") or "explicit_user_statement"),
@@ -453,6 +506,7 @@ def compile_proposal(
     base_revision: int,
     plan_id: str,
     now: float,
+    candidates=(),
 ) -> CompiledProposal:
     """Model proposal + Host identity → ``MemoryMutationPlan`` (or a ``no_mutation`` result)."""
 
@@ -503,7 +557,7 @@ def compile_proposal(
             continue
         try:
             span = derive_span(item, str(raw.get("exact_quote") or ""), span_id=f"span-{plan_id[-12:]}-{ordinal}")
-            operations.append(compile_operation(raw, span, item=item, now=now))
+            operations.append(compile_operation(raw, span, item=item, now=now, candidates=candidates))
         except AnalysisProposalRejected as exc:
             rejected.append(RejectedOperation(operation_id, exc.code, exc.detail))
     if not operations:

@@ -175,6 +175,30 @@ class PrimaryHistoryPolicy:
         except (PrimaryVisibilityError, ValueError, TypeError, KeyError):
             return False
 
+    async def current_user_denial(self, *, db, primary_ref, evidence_id, evidence_hash, disclosure_context):
+        """Return only a validated current-source denial, never a generic false."""
+        from simple_harness_memory import HistoryEvidenceBinding
+        from deskpet.execution.preparation_rejection import REASONS
+
+        capture = {}
+        visible, _ = await self._check(
+            db=db, primary_ref=primary_ref, evidence_ids=(evidence_id,),
+            disclosure_context=disclosure_context, expected_hashes={evidence_id: evidence_hash},
+            snapshot_capture=capture,
+        )
+        if visible.get(evidence_id) is not False or "snapshot" not in capture:
+            return None
+        snapshot = capture["snapshot"]
+        for binding in capture["bindings"]:
+            if type(binding) is HistoryEvidenceBinding and binding.envelope.evidence_id == evidence_id:
+                if binding.envelope.source_kind.value != "user_message":
+                    return None
+                key = _binding_hash(binding)
+                item = next((i for i in snapshot.items if i.binding_hash == key), None)
+                if item is not None and not item.visible and item.reason in REASONS:
+                    return key, snapshot, item.reason
+        return None
+
     async def _check(
         self,
         *,
@@ -184,6 +208,7 @@ class PrimaryHistoryPolicy:
         disclosure_context,
         expected_hashes=None,
         recall=(),
+        snapshot_capture=None,
     ):
         """All dependency decisions belong to this call's single SDK snapshot."""
         try:
@@ -356,6 +381,8 @@ class PrimaryHistoryPolicy:
                 raise ValueError("history visibility response mismatch")
         except Exception as exc:
             raise PrimaryVisibilityError("primary_read_policy_unavailable") from exc
+        if snapshot_capture is not None:
+            snapshot_capture.update(snapshot=snapshot, bindings=ordered)
         decisions = {item.binding_hash: item.visible for item in snapshot.items}
         return (
             {

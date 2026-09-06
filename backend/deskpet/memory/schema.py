@@ -40,6 +40,10 @@ from deskpet.memory.migrator import (
     EFFECT_CLOSURE_SCHEMA_VERSION,
     PRIMARY_EFFECT_SOURCES_MIGRATION,
     PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION,
+    ADMISSION_REJECTIONS_MIGRATION,
+    ADMISSION_REJECTIONS_SCHEMA_VERSION,
+    TRUSTED_DISCLOSURE_MIGRATION,
+    TRUSTED_DISCLOSURE_SCHEMA_VERSION,
     FOREGROUND_EXECUTION_MIGRATION,
     FOREGROUND_EXECUTION_SCHEMA_VERSION,
     FOREGROUND_QUEUE_MIGRATION,
@@ -317,6 +321,8 @@ def _validate_s4_migration_chain(
         (CONTEXT_ROUTE_MIGRATION, CONTEXT_ROUTE_SCHEMA_VERSION),
         (EFFECT_CLOSURE_MIGRATION, EFFECT_CLOSURE_SCHEMA_VERSION),
         (PRIMARY_EFFECT_SOURCES_MIGRATION, PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION),
+        (TRUSTED_DISCLOSURE_MIGRATION, TRUSTED_DISCLOSURE_SCHEMA_VERSION),
+        (ADMISSION_REJECTIONS_MIGRATION, ADMISSION_REJECTIONS_SCHEMA_VERSION),
     )
     required = [item for item in expected_steps if item[1] <= expected_user_version]
     if not required:
@@ -349,6 +355,50 @@ def _validate_s4_migration_chain(
             )
     if expected_user_version >= PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION:
         _validate_primary_effect_index(db_path)
+    if expected_user_version >= TRUSTED_DISCLOSURE_SCHEMA_VERSION:
+        _validate_trusted_disclosure_schema(db_path)
+    if expected_user_version >= ADMISSION_REJECTIONS_SCHEMA_VERSION:
+        _validate_admission_rejections_schema(db_path)
+
+
+def _validate_trusted_disclosure_schema(db_path: Path) -> None:
+    """Require actual persisted policy tables/triggers, not only migration receipts."""
+    try:
+        with sqlite3.connect(":memory:") as expected, sqlite3.connect(
+            f"file:{db_path.resolve()}?mode=ro", uri=True
+        ) as actual:
+            expected.executescript((DEFAULT_MIGRATIONS_DIR / TRUSTED_DISCLOSURE_MIGRATION).read_text())
+            for kind, name, sql in expected.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL"
+            ):
+                if actual.execute("SELECT type,sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (kind, sql):
+                    raise ValueError("disclosure schema differs")
+            for name, taxonomy in (("human_memory_disclosure_configs", "A"), ("human_memory_disclosure_heads", "B")):
+                if actual.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name=?",
+                                  (name,)).fetchone() != (taxonomy,):
+                    raise ValueError("disclosure recovery registration differs")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HumanMemoryProgramEpochError("human_memory_disclosure_schema_invalid") from exc
+
+
+def _validate_admission_rejections_schema(db_path: Path) -> None:
+    """Require actual persisted policy tables/triggers, not only migration receipts."""
+    try:
+        with sqlite3.connect(":memory:") as expected, sqlite3.connect(
+            f"file:{db_path.resolve()}?mode=ro", uri=True
+        ) as actual:
+            expected.executescript((DEFAULT_MIGRATIONS_DIR / ADMISSION_REJECTIONS_MIGRATION).read_text())
+            for kind, name, sql in expected.execute(
+                "SELECT type,name,sql FROM sqlite_master WHERE sql IS NOT NULL"
+            ):
+                if actual.execute("SELECT type,sql FROM sqlite_master WHERE name=?", (name,)).fetchone() != (kind, sql):
+                    raise ValueError("disclosure schema differs")
+            for name, taxonomy in (("foreground_admission_rejections", "A"),):
+                if actual.execute("SELECT taxonomy FROM human_memory_recovery_table_registry WHERE table_name=?",
+                                  (name,)).fetchone() != (taxonomy,):
+                    raise ValueError("disclosure recovery registration differs")
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HumanMemoryProgramEpochError("foreground_admission_rejections_schema_invalid") from exc
 
 
 def _validate_primary_effect_index(db_path: Path) -> None:

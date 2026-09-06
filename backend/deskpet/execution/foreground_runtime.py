@@ -344,6 +344,7 @@ class ForegroundRuntimeExecutionAuthority:
         endpoint_identity_resolver: Callable[[Mapping[str, object]], str | None] | None = None,
         conversation_entrypoint: Callable[..., Awaitable[object]] | None = None,
         state_changed: Callable[[], Awaitable[None]] | None = None,
+        terminal_audit_wake: Callable[[], None] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -386,6 +387,7 @@ class ForegroundRuntimeExecutionAuthority:
         self._closed = False
         self._last_error: Exception | None = None
         self._state_changed = state_changed
+        self._terminal_audit_wake = terminal_audit_wake
         self._notification_task: asyncio.Task[None] | None = None
         self._notification_pending = False
 
@@ -603,7 +605,16 @@ class ForegroundRuntimeExecutionAuthority:
                 return False
             if candidate.subject != self._subject:
                 raise ForegroundRuntimeError("foreground_runtime_candidate_subject_drift")
-            lineage = await self._context.draft_lineage(candidate)
+            from deskpet.memory.trusted_disclosure import TrustedDisclosureError
+            try:
+                lineage = await self._context.draft_lineage(candidate)
+            except TrustedDisclosureError as exc:
+                if exc.code not in {"host_disclosure_binding_stale", "host_disclosure_legacy_policy_changed"}:
+                    raise
+                from deskpet.execution.admission_rejection import reject_stale_candidate
+                await reject_stale_candidate(self._store, candidate)
+                self._notify_state_changed()
+                return True
             draft = await self._store.prepare_candidate(
                 subject=self._subject,
                 expected_candidate_hash=candidate.candidate_hash,
@@ -694,19 +705,40 @@ class ForegroundRuntimeExecutionAuthority:
             sdk_run_id=sdk_run_id,
         )
         _check_identity(tools)
-        context = await self._context.prepare(
-            claimed=claimed,
-            expected_context=ContextLineage(
-                snapshot.context_snapshot_id,
-                snapshot.context_snapshot_revision,
-                snapshot.context_snapshot_hash,
-            ),
-            execution_session_id=execution_session_id,
-            request_id=request_id,
-            sdk_run_id=sdk_run_id,
-            provider=provider,
-            tools=tools,
-        )
+        from deskpet.execution.preparation_rejection import PreparationDisclosureRejected
+
+        try:
+            context = await self._context.prepare(
+                claimed=claimed,
+                expected_context=ContextLineage(
+                    snapshot.context_snapshot_id,
+                    snapshot.context_snapshot_revision,
+                    snapshot.context_snapshot_hash,
+                ),
+                execution_session_id=execution_session_id,
+                request_id=request_id,
+                sdk_run_id=sdk_run_id,
+                provider=provider,
+                tools=tools,
+            )
+        except PreparationDisclosureRejected as exc:
+            rejection = exc.rejection
+            candidate = claimed.candidate
+            if (
+                rejection.host_run_id != host_run_id
+                or rejection.subject != candidate.subject
+                or rejection.turn_id != candidate.turn_id
+                or rejection.turn_hash != candidate.turn_hash
+                or rejection.candidate_hash != candidate.candidate_hash
+                or rejection.evidence_id != candidate.evidence_id
+                or rejection.evidence_hash != candidate.evidence_hash
+            ):
+                raise ForegroundRuntimeError("foreground_preparation_rejection_identity_mismatch") from exc
+            await self._store.settle_preparation_rejection(
+                rejection=exc.rejection, owner_id=claimed.owner_id, generation=claimed.generation,
+            )
+            self._notify_state_changed()
+            return
         _check_identity(context)
         bound_provider = await self._provider.bind(
             frozen=provider,
@@ -1143,6 +1175,13 @@ class ForegroundRuntimeExecutionAuthority:
                 else None
             ),
         )
+        if self._terminal_audit_wake is not None:
+            try:
+                self._terminal_audit_wake()
+            except Exception:
+                # Wake is only an optimization. Durable terminal discovery recovers
+                # missed notifications without changing the business result.
+                pass
         self._notify_state_changed()
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
         self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
@@ -1452,10 +1491,24 @@ class SqliteSdkTerminalObserver:
                         # an empty complete proof to make generated history visible.
                         proof = None
             from deskpet.execution.primary_history import record_terminal_observation
+            tool_sources = None
+            read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
+            if terminal is RunState.COMPLETED and any(message.get("role") == "tool" for message in messages):
+                from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+                if callable(read_tool_sources):
+                    try:
+                        tool_sources = await read_tool_sources(db_path=self._db_path,
+                            host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
+                            current_text=text, messages=messages)
+                    except PrimaryToolCausalityUnavailable:
+                        # Archive the complete original terminal. A missing or
+                        # incomplete tool source never permits partial indexing.
+                        tool_sources = None
             primary_event_id, primary_event_hash = await record_terminal_observation(
                 self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
                 owner_id=owner_id, generation=generation, terminal=terminal,
                 sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
+                tool_causal_sources=tool_sources,
                 error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
             )
             if effective_scope is None:

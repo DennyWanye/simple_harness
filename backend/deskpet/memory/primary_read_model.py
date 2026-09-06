@@ -153,6 +153,7 @@ class PrimaryReadModel:
         for table in (
             "foreground_turns",
             "foreground_turn_transitions",
+            "foreground_admission_rejections",
             "foreground_run_transitions",
             "foreground_control_intents",
         ):
@@ -212,7 +213,7 @@ class PrimaryReadModel:
                     "INDEXED BY idx_foreground_turn_heads_pending CROSS "
                     "JOIN foreground_turns t ON t.turn_id=h.turn_id AND "
                     "t.subject=h.subject WHERE h.subject=? AND "
-                    "h.current_state='QUEUED' AND "
+                    "h.current_state='QUEUED' AND NOT EXISTS (SELECT 1 FROM foreground_admission_rejections x WHERE x.turn_id=t.turn_id) AND "
                     "t.primary_conversation_id=? ORDER BY h.turn_id "
                     "LIMIT 101"
                 ),
@@ -370,6 +371,8 @@ class PrimaryReadModel:
             )
         ]
         if turn["turn_state"] != "SETTLED":
+            from deskpet.execution.admission_rejection import read_admission_rejection_tx
+            await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=self.subject)
             return messages
         rows = await _rows(
             db,
@@ -385,6 +388,15 @@ class PrimaryReadModel:
             (turn["host_run_id"], turn["turn_id"], self.subject, primary),
         )
         if len(rows) != 1:
+            from deskpet.execution.preparation_rejection import read_preparation_rejection_tx
+
+            rejection = await read_preparation_rejection_tx(
+                db, host_run_id=turn["host_run_id"], subject=self.subject, primary_ref=primary,
+            )
+            if rejection is not None:
+                # Only original USER evidence exists for this verified Host
+                # rejection; there is no generated SDK conversation to invent.
+                return messages
             raise PrimaryReadError("primary_terminal_missing")
         run = rows[0]
         binding, terminal = (

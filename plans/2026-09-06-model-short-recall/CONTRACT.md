@@ -1,0 +1,15 @@
+# 模型短期召回：统一请求与来源契约
+
+2026-09-06，base a0764047；隔离feat/model-short-recall。执行原Human Memory Task 5的short-only/mixed结果要求，继续用户已授权工作，不使用plan-test系列。实现及有界安装测试见 RESULTS.md；独审待固定代码，原程序未完成。
+
+模型context_route(memory_standalone)始终显式给memory_types，新增可选boolean include_short_horizon（省略=false）。memory_types=[]只在true时允许；错误boolean、空选择和非法类型在Memory初始化前拒绝。Host仍独立决定身份、受众、用途、预算、近期上下文排除与当前来源许可。
+
+显式请求只执行一次公共execute_typed_recall：requested_memory_types与include_short_horizon进入同一RecallPlan，长短期共用8项/16384字节/2048保守token预算及既有1秒SDK预算。不再给该模型请求附加legacy recall_short_horizon。旧内部无显式选择调用保留历史路径，不能把其默认三类型算模型预测。
+
+仅对typed result真正选中的short item，构造HistoryRecallBinding四元组，通过后继Memory新公开resolve_typed_short_horizon_sources取得当前完整registration来源；既有legacy审计三元组接口不变，不能伪造audit_id互换。Host复验exact主对话/epoch、每条S1 admission及完整有序因果组。每项只携带自身证据与recall绑定，源缺失/不完整/被拒的项不进入fragment；取消传播。
+
+SDK result保持不可变；新的short_horizon_typed Host fragment保留typed public payload、public payload hash和result/item绑定，并携带Host完整group证据。实际下一次Provider preflight通过既有递归历史策略重验这些依赖；遗忘、缺证据、错绑定必须在物理出站前拒绝。不要因首次查询合格就跳过第二次fresh检查。
+
+成功Host调用记录requested_memory_types和include_short_horizon，绑定原proposal hash/Run/effect。失败attempt的完整类型观测仍待后续质量runner接线，不能冒称全操作审计已完。
+
+必要验证：仅短期/混合请求单调用及预算，真实11组索引selected来源，显式长期零short，非法参数零Memory入口，reopen/late-forget，缺port/不完整/取消，真实SDK工具账本到受控HTTP transport的成功与最终拒绝；没有真实模型或native，raw放.local-test-evidence。后继SDK固定wheel安装后再执行，不用source overlay冒充installed证据。

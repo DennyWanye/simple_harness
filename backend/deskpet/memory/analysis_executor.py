@@ -43,7 +43,7 @@ import json
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -117,15 +117,16 @@ def evidence_set_key(request: Any) -> str:
 
 
 class AnalysisLeaseFence:
-    """Memory job lease as the fence: reserve for a terminal Run; revalidate against the deadline."""
+    """Process-local elapsed lease; its clock is independent of scenario dates."""
 
-    def __init__(self, store: ForegroundQueueStore, *, clock: Callable[[], float], lease_seconds: float) -> None:
+    def __init__(self, store: ForegroundQueueStore, *, clock: Callable[[], float] = time.monotonic, lease_seconds: float) -> None:
         self._store = store
         self._clock = clock
         self._lease_seconds = float(lease_seconds)
         self.host_run_id = ""
         self.sdk_run_id = ""
         self._reserved_at: float | None = None
+        self.reservation_observer = None
 
     def bind(self, *, host_run_id: str, sdk_run_id: str) -> None:
         self.host_run_id = host_run_id
@@ -133,6 +134,8 @@ class AnalysisLeaseFence:
         self._reserved_at = None
 
     async def reserve_attempt(self, row: Mapping[str, Any], members: Sequence[tuple[str, str, str]]) -> None:
+        if self.reservation_observer is not None:
+            await self.reservation_observer(row)
         await self._store.reserve_analysis_attempt(
             host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, attempt=row, members=members
         )
@@ -158,8 +161,10 @@ class HostMemoryAnalysisExecutor:
         fault_inject: Callable[[str], None] | None = None,
         reconciliation_observer: Callable[[Any], Any] | None = None,
         lease_margin_seconds: float = 30.0,
+        semantic_correction_authority: Any = None,
     ) -> None:
         self._db_path = Path(db_path)
+        self._semantic_correction = semantic_correction_authority
         self._adapter_factory = adapter_factory
         self._clock = clock
         self._fault_inject = fault_inject
@@ -299,7 +304,7 @@ class HostMemoryAnalysisExecutor:
                 raise HostAnalysisExecutorError("analysis_evidence_hash_mismatch", evidence_id=ref.evidence_id)
             items.append(item)
         deadline_seconds = float(request.budget.deadline_ms) / 1000.0
-        fence = AnalysisLeaseFence(self._store, clock=self._clock, lease_seconds=deadline_seconds + self._lease_margin)
+        fence = AnalysisLeaseFence(self._store, lease_seconds=deadline_seconds + self._lease_margin)
         fence.bind(host_run_id=outbox.host_run_id, sdk_run_id=outbox.sdk_run_id)
         invoker = RunBoundInvoker(
             self._db_path,
@@ -310,6 +315,12 @@ class HostMemoryAnalysisExecutor:
             reconciliation_observer=self._reconciliation_observer,
         )
         rendered = prompt_items(items)
+        candidate_snapshot = None
+        if self._semantic_correction is not None:
+            candidate_snapshot = await self._semantic_correction.prepare(request, items)
+            await self._semantic_correction.check(request, candidate_snapshot)
+            invoker.adapter_factory = lambda record: self._semantic_correction.guard_adapter(
+                self._adapter_factory(record), request, candidate_snapshot)
 
         def build_request(row: Any) -> Any:
             from simple_harness import RequestId
@@ -317,9 +328,10 @@ class HostMemoryAnalysisExecutor:
             from simple_harness.providers import ProviderRequest
 
             body = {
-                "now_iso": datetime.fromtimestamp(float(self._clock())).astimezone().isoformat(timespec="seconds"),
+                "now_iso": datetime.fromtimestamp(float(self._clock()) if candidate_snapshot is None else candidate_snapshot["prepared_at"]).astimezone().isoformat(timespec="seconds"),
                 "subject": request.subject,
                 "evidence_items": rendered,
+                "semantic_candidates": [] if candidate_snapshot is None else self._semantic_correction.prompt(candidate_snapshot),
             }
             return ProviderRequest(
                 RequestId(f"post-turn-analysis-{request.request_hash[:24]}-{row.attempt_ordinal}"),
@@ -331,6 +343,10 @@ class HostMemoryAnalysisExecutor:
                 max_output_tokens=int(request.budget.max_output_tokens),
             )
 
+        if candidate_snapshot is not None:
+            from types import SimpleNamespace
+            fence.reservation_observer = lambda row: self._semantic_correction.bind_attempt(
+                request, row, candidate_snapshot, build_request(SimpleNamespace(**row)))
         started = time.monotonic()
         outcome = await invoker.invoke(
             purpose="analysis",
@@ -486,6 +502,9 @@ class HostMemoryAnalysisExecutor:
         self._fault_point("analysis-before-derive")
         base_revision = current_analysis_apply_head() or 1
         items = [await self._evidence.read_analysis_item(ref.evidence_id) for ref in request.ordered_evidence_refs]
+        candidate_snapshot = None
+        if self._semantic_correction is not None:
+            candidate_snapshot = await self._semantic_correction.snapshot_for_attempt(request, attempt_id, response)
         compiled = compile_proposal(
             proposal_from_response(response),
             request=request,
@@ -493,7 +512,11 @@ class HostMemoryAnalysisExecutor:
             base_revision=int(base_revision),
             plan_id=_host_plan_id(request.request_hash, attempt_id),
             now=float(self._clock()),
+            candidates=() if candidate_snapshot is None else candidate_snapshot['candidates'],
         )
+        if compiled.plan is not None and any(op.kind.value == 'revise' for op in compiled.plan.operations):
+            authorized = await self._semantic_correction.authorize_plan(request, candidate_snapshot, compiled.plan)
+            compiled = replace(compiled, plan=authorized, structured_result=json.loads(canonical_json(authorized.to_json())))
         for rejected in compiled.rejected:
             await self._audit(outbox.sdk_run_id, rejected.code, canonical_hash(rejected.to_json()))
         usage = getattr(response, "usage", None)

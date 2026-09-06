@@ -1,4 +1,6 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { PrimaryMemoryGraph } from "./PrimaryMemoryGraph";
+import { PrimaryAuditPanel } from "./PrimaryAuditPanel";
 import { CognitiveRequests } from "../primary/cognitiveRequests";
 import type { PrimaryPort } from "../primary/controller";
 import { buttonStyle, dark } from "../theme/components";
@@ -17,6 +19,14 @@ export interface PrimaryMemoryPanelProps {
 }
 
 export function PrimaryMemoryPanel({ port, primaryRef, verifiedOwnerKey, ready, requests, onForgotten, onClose }: PrimaryMemoryPanelProps) {
+  const [tab, setTab] = useState<"list" | "graph" | "audit">("list");
+  // Layout-only state survives the owner-keyed graph remount; no data is retained.
+  const viewportShown = useRef(false);
+  const claimInitialReveal = useCallback(() => {
+    const first = !viewportShown.current;
+    viewportShown.current = true;
+    return first;
+  }, []);
   const [local] = useState(() => new CognitiveRequests());
   const client = requests ?? local;
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
@@ -28,6 +38,14 @@ export function PrimaryMemoryPanel({ port, primaryRef, verifiedOwnerKey, ready, 
       <button style={buttonStyle("secondary", "sm")} disabled={!state.ready || state.loading} onClick={() => void client.refresh()}>刷新</button>
       {onClose && <button style={buttonStyle("secondary", "sm")} onClick={onClose}>关闭</button>}
     </header>
+    <nav aria-label="记忆视图" style={{ display: "flex", gap: 8 }}>
+      <button aria-pressed={tab === "list"} onClick={() => setTab("list")}>记忆列表</button>
+      <button aria-pressed={tab === "graph"} onClick={() => { if (tab !== "graph") viewportShown.current = false; setTab("graph"); }}>关系图</button>
+      <button aria-pressed={tab === "audit"} onClick={() => setTab("audit")}>操作记录</button>
+    </nav>
+    {tab === "graph" && <PrimaryMemoryGraph key={`${primaryRef}:${verifiedOwnerKey ?? "unbound"}`} port={port} primaryRef={primaryRef} verifiedOwnerKey={verifiedOwnerKey} ready={ready} cognitive={client} claimInitialReveal={claimInitialReveal} />}
+    {tab === "audit" && <PrimaryAuditPanel port={port} primaryRef={primaryRef} verifiedOwnerKey={verifiedOwnerKey} ready={ready} />}
+    {tab === "list" && <>
     <p>这里展示当前认知记忆。忘记会禁止该记忆继续使用，原始历史档案保留；不会自动撤销。</p>
     {!state.ready && <p role="status">等待当前连接身份确认</p>}
     {state.notice && <p role="status">{state.notice}</p>}
@@ -45,6 +63,7 @@ export function PrimaryMemoryPanel({ port, primaryRef, verifiedOwnerKey, ready, 
         <p>有一项忘记操作尚未确认。</p>
         <button disabled={state.writing} onClick={() => void client.retry(action.action_id)}>重试同一忘记操作</button>
       </div>)}
+    </>}
     </>}
   </section>;
 }

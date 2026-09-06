@@ -1,5 +1,88 @@
 # Simple Harness UI 当前架构
 
+## 2026-09-06 WeMM按需加载与内存引用修复已接入组合
+
+最后更新：2026-09-06。独审b70ccda5以fast-forward接入；构造/元数据/状态不加载权重，首次真实embedding共享加载；取消下异步排队和物理线程互斥，失败完成任务丢弃实例引用，防异常保留模型。WeMM2048/L2/本地模型及SDK pin不变。设置页四状态真实WebKit组件检查和刷新通过，浏览器峰值433MiB、进程已退出；相关叶子线程/公开空库/IPC/React/类型检查见证据。
+旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
+[组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
+
+## 2026-09-06 无边图谱标签布局已修复
+
+最后更新：2026-09-06。Cytoscape无边节点用网格，布局包含标签尺寸并允许中文换行，保留有边有向布局及全部身份/遗忘/viewport行为。真实WebKit两个尺寸各7节点：标签重叠17/13→0/0，最终有效渲染字号估计9.53/11.05px，真实选择/缩放通过。
+前端18PASS/1个旧API-fixture未配置SKIP，TypeScript通过；所有浏览器/测试进程结束。合成fixture不代表真实API/native或密集边标签完成，原生复验仍待续。
+[原红、实际测量、边界与证据](../plans/2026-09-06-graph-label-layout/RESULTS.md)。
+
+## 2026-09-06 审计查看入口组合验证
+
+最后更新：2026-09-06。独审1097b272合入c53caff2：记忆面板显式打开用途绑定的HUMAN元数据审计，分页/持久ACK重放、关闭与身份失效拒绝；保留原图谱viewport及遗忘ACK修复。组合独审限定ACCEPT。
+后端54项通过，新增真实/ws/control审计往返2项通过，前端44通过/1个可选API-fixture未配置跳过，TypeScript通过。单进程有界执行；没有真实Provider、native或全操作覆盖。初始snapshot成本及原生验收仍待续。
+[组合证据、命令与范围](../plans/2026-09-05-agent-operation-audit/human-access-leaf/COMBINED.md)。
+
+## 2026-09-06 HUMAN metadata audit source entry
+
+Last updated: 2026-09-06. PrimaryMemoryPanel adds an explicit operation-record tab;
+PrimaryAuditPanel uses the existing bound PrimaryPort for primary.audit.open/page/
+close. Grants require a user click; pages require explicit reads. Unknown ACK keeps
+the original logical action while transport IDs change. Hiding/rebinding/expiry
+removes metadata immediately, and a new owner cannot replay the old capability.
+Actual ControlChannel cached bound replay is distinguished from a fresh bound
+frame; the full React parent chain regression and counterfactual red are recorded.
+Frontend25 focused tests and no-emit typecheck pass; browser/native and fixed-source
+independent acceptance remain pending. Graph, Agent input and ordinary memory
+forget semantics are unchanged. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
+## 2026-09-06 原生遗忘确认通过；重启验收因内存中断
+
+最后更新：2026-09-06。native b32a96d9 / H0.7.2 M0.6.12 S0.3.12实际点击遗忘，UI显示成功确认，图谱由6条更新为5条且恢复可用。
+正常退出后重启验证被系统内存告警中断，未记通过。清理两个约6GB的测试模型后端与子进程后内存回落；本地启动器补进程组清理与单实例/资源准入。
+仅该遗忘确认闭环完成，关系展示/标签可读性和重启持久化仍有剩余。[证据与边界](../plans/2026-09-06-primary-forget-ack/NATIVE.md)。
+
+## 2026-09-06 Forget ACK survives primary content invalidation
+
+Last updated: 2026-09-06. Isolated `feat/primary-forget-ack` fromcf4d8e0a retains
+only the verified primary ID/readiness across read invalidation, keeping the parent
+MemoryPanel's same-connection write correlation alive. Content/detail/graph readers
+still retract; actual authority changes clear the reference and preserve unknown
+safety. React parent first-red/expanded-red evidence and focused47 tests pass, with
+typecheck/build/ESLint. Dirac pre-review found no P0/P1; fixed review pending.
+Main owns native integration/ACK proof; no backend/pin or native process changes.
+No new native/SDK success claim; seven-node label overlap P2 remains separate.
+See [scoped handoff](../plans/2026-09-06-primary-forget-ack/RESULTS.md).
+
+## 2026-09-06 Native viewport verified; forget ACK recovery remains FAIL
+
+Last updated: 2026-09-06. Actual9b57c5c8 rebuilt native app shows real nodes and
+passes coordinate selection, zoom/filter/fit/wheel/details. Forget removes content
+but parent invalidation cancels ACK listening and exact retry stays unknown.
+Full forget/reopen and dense label readability remain unfinished.
+See [native scope and retained evidence](../plans/2026-09-06-cytoscape-viewport/NATIVE.md).
+
+## 2026-09-06 Primary Cytoscape viewport repair
+
+Last updated: 2026-09-06. Three frontend files address the reproduced half-height
+scroll-pane clipping: responsive canvas, first/explicit reveal, wheel page scroll
+with button zoom. Layout-only reveal state survives owner-key graph remount; graph
+authority/invalidations are unchanged. Actual WebKit 1000x700/800x560 oracle:
+original 8 failures, candidate22 checks pass; focused frontend9 pass/1 optional
+API-fixture skip, typecheck/build/ESLint pass. Native exact-build verification is
+coordinator-owned and pending; not a renderer-engine diagnosis or full HM-AC6 PASS.
+Reviewed `feat/cytoscape-native-canvas` from65a604f8 is integrated here.
+See [scoped result and evidence](../plans/2026-09-06-cytoscape-viewport/RESULTS.md).
+
+## 2026-09-05 Native graph blocked by SDK credential false positive
+
+Last updated: 2026-09-05. Actual21c55cf9/native18120 with installedMemory0610
+created the requested preference, then public history rejected terminal tool names
+as credentials. Memory controls became unavailable before graph interaction.
+Native acceptance remains FAIL; successor SDK repair and rerun are pending.
+See [native evidence and boundaries](../plans/2026-09-05-s6-cytoscape-display/NATIVE-0610-BLOCKER.md).
+
+
+## 2026-09-05 Cytoscape primary graph display source candidate
+
+Last updated: 2026-09-05. PrimaryMemoryPanel adds a default-available graph tab over verified HUMAN primary.memory.graph. Real canonical nodes/relations only; local Cytoscape3.34.2 with keyboard/text selection, filter, zoom, pan and details. Pending/unknown forget, owner change and real completion hints invalidate old data. API-fixture browser renderer verification passes; coordinator native verification remains pending.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，

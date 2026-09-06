@@ -1,10 +1,77 @@
 # simple_harness Agent Harness 架构
 
+## 2026-09-06 短期索引及 Service0313 已组合验证
+
+最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。
+Service工具审计新增发送attempt/UNKNOWN/真实ACK/后继响应，仍非持久sink或完整Run绑定；全操作落盘、增量projection、多消息producer、模型short协议及原program未闭合。未切换用户main/runtime，无新模型/native。
+[命令、身份、结果与边界](../plans/2026-09-06-short-index-worker/COMBINED.md)。
+
+## 2026-09-06 审计查看入口组合验证
+
+最后更新：2026-09-06。独审1097b272合入c53caff2：记忆面板显式打开用途绑定的HUMAN元数据审计，分页/持久ACK重放、关闭与身份失效拒绝；保留原图谱viewport及遗忘ACK修复。组合独审限定ACCEPT。
+后端54项通过，新增真实/ws/control审计往返2项通过，前端44通过/1个可选API-fixture未配置跳过，TypeScript通过。单进程有界执行；没有真实Provider、native或全操作覆盖。初始snapshot成本及原生验收仍待续。
+[组合证据、命令与范围](../plans/2026-09-05-agent-operation-audit/human-access-leaf/COMBINED.md)。
+
+## 2026-09-06 Signed HUMAN Memory audit source leaf
+
+Last updated: 2026-09-06. Production composition supplies a Host audit authority to
+the public Memory builder. Only a real current HUMAN connection task can issue a
+local-subject grant, use its public SDK reader, or disclose a cached logical page.
+Host S1 fixes the source action and first committed timestamp; operation-audit.db
+records requested before SDK read and saves the exact bounded metadata ACK.
+Unknown outcomes never re-read automatically or refund budget. Close/expiry/rebind
+and runtime close revoke serving capabilities; snapshots are not mixed or resumed
+through a new live read. Actual WS send remains under the signed lease with a
+five-second send timeout. SDK receipt/nonce/cursor remain server-side.
+Installed Memory0.6.12/Harness0.7.2 backend40 focused tests pass. Source review/main
+integration/native are pending; full operation coverage and usage/cost aggregation
+are not supplied by this leaf. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
+## 2026-09-06 SDK073审计组合验证通过
+
+最后更新：2026-09-06。组合源码78647bb0集成独审通过的终态身份叶子；主组合专用venv安装H073/M0612/S0312，348个SDK文件与本树vendor逐字节一致。
+审计目录及candidate/composition组合100PASS/31.62s，单进程峰值258MiB，无本地模型、真实Provider或native。v1历史保留；全操作覆盖及受控审计UI仍待完成。
+[实际结果及边界](../plans/2026-09-06-terminal-audit-identity/COMBINED.md)。
+
+## 2026-09-06 Installed H073 exact terminal identity leaf
+
+Last updated: 2026-09-06. Isolated Host candidate consumes exact H073 (wheel1a9ed5c9…)
+through public RunTerminalAuditEvidenceV1.matches and existing Host raw-SDK normalization.
+Every persisted page binds actual Run/event/full payload/state; legacy scoped evidence
+uses its original envelope and terminal gate. RULE terminal-run-v2 preserves all v1 jobs.
+Selective installed group21PASS2FAIL then necessary repairs2PASS; failures were a guarded
+fixture mutation and obsolete global error-count expectation, retained verbatim. Non-null
+committed-turn public head/receipt + same-cursor reopen, namespace negatives and late-source
+rejection passed. Peak owned RSS147MiB; no model/native/full suite. Independent fixed-source
+review pending; no main production switch or whole-operation completion claim.
+See [contract and measured results](../plans/2026-09-06-terminal-audit-identity/RESULTS.md).
+
+## 2026-09-05 Terminal audit and privacy combined source verification
+
+Last updated: 2026-09-05. Reviewed terminal consumer is integrated into the
+main-owned candidate.55 combined audit/runtime/preparation/privacy tests pass with
+frozen Harness fd4a audit source and installed Memory0610. No audit exception
+triggers business resend. Actual native043c regression predates this integration;
+installed Harness successor audit and other producer coverage remain incomplete.
+See [handoff](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md).
+
+
 > 最后更新：2026-09-05
 > 范围：多 conversation Sessions 与单一当前选择、请求生命周期、模型驱动 Profile 选择、运行状态、能力执行、
 > 失败重规划、服务装配与子任务。
 
 ## 一句话说明
+
+### Terminal Run audit candidate（2026-09-05）
+
+隔离 Host candidate `eaccab33 + 3e911c14` 在真实 foreground terminal 提交后唤醒默认开启的审计 lane；
+独立 Host `operation-audit.db` 保存读取 started/settled、固定 SDK snapshot/cursor、页与
+按实际 operation/rule 去重的 finding/source 关联。无首个持久页的 unknown 可用新 generation
+恢复；已有 snapshot 禁止 live fallback。审计库初始化失败明确降级，不阻断 foreground。
+当前仅 terminal foreground 来源，不做 calls/usage/cost 总计，DTO 条数不代表物理调用。
+旧 Harness0.7.2 明确 capability unavailable；新能力验证使用固定 fd4a Harness source overlay。
+Memory carrier、其他生产者、完整历史 coverage 与 installed successor/native 验收均未完成。
+[接口与验证边界](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md)。
 
 ### S5b episode 首次观察时间（2026-09-05）
 

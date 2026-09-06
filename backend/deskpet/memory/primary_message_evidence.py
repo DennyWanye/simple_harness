@@ -102,6 +102,15 @@ async def _prepare_message_tx(
     messages = payload["messages"]
     if payload["terminal_state"] != "COMPLETED":
         return PrimaryMessageProduction((), "conversation_group_not_complete")
+    if payload.get("message_source_contract") == "primary-message-v2":
+        from deskpet.memory.primary_message_v2 import pairs
+        try:
+            dependencies, _ = _dependencies(payload.get("visibility_dependencies"))
+        except ValueError:
+            return PrimaryMessageProduction((), "conversation_terminal_proof_missing")
+        if dependencies.get(user.evidence_id) != user.envelope_hash:
+            return PrimaryMessageProduction((), "conversation_input_dependency_unproved")
+        return row, user, pairs(original, admission, user, host_run_id=host_run_id), None
     if not isinstance(messages, list) or len(messages) != 2:
         return PrimaryMessageProduction((), "terminal_multiple_items_not_representable")
     if (messages[0] != {"role": "user", "content": user.sanitized_payload.get("text")}
@@ -127,9 +136,11 @@ async def append_new_primary_message_evidence_tx(
     if isinstance(prepared, PrimaryMessageProduction):
         return prepared
     row, user, message, receipt = prepared
-    await store.append_evidence_tx(db, message, receipt, primary_conversation_id=row["primary_conversation_id"],
-        committed_at=float(row["committed_at"]))
-    return PrimaryMessageProduction((user.evidence_id, message.evidence_id))
+    sources = message if receipt is None else ((message, receipt),)
+    for envelope, admission in sources:
+        await store.append_evidence_tx(db, envelope, admission, primary_conversation_id=row["primary_conversation_id"],
+            committed_at=float(row["committed_at"]))
+    return PrimaryMessageProduction((user.evidence_id, *(source.evidence_id for source, _ in sources)))
 
 
 async def verify_new_primary_message_evidence_tx(
@@ -145,6 +156,11 @@ async def verify_new_primary_message_evidence_tx(
     if isinstance(prepared, PrimaryMessageProduction):
         return prepared
     row, user, _, _ = prepared
+    if terminal_envelope.sanitized_payload.get("message_source_contract") == "primary-message-v2":
+        from deskpet.memory.primary_message_v2 import verify
+        found = await verify(db, primary_ref=row["primary_conversation_id"], host_run_id=host_run_id,
+                             terminal=terminal_envelope, terminal_receipt=terminal_receipt, user=user)
+        return PrimaryMessageProduction((user.evidence_id, *(source.evidence_id for source, _ in found)))
     found = await verify_primary_message_evidence_tx(db, primary_ref=row["primary_conversation_id"],
         host_run_id=host_run_id, terminal_envelope=terminal_envelope, terminal_receipt=terminal_receipt, user=user)
     if found is None:

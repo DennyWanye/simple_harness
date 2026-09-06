@@ -9,6 +9,408 @@ activation or scheduler/presentation/ack/native completion. Historical47 stateme
 below remain historical, superseded only by [A11-schema48/v1](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-48.md).
 
 
+## 2026-09-06 工具组与可信披露组合接入
+
+最后更新：2026-09-06。工具v2非空组源码及证据、可信披露f3675064的两个P1修复均已由主审和独立代理审查。当前合入同一隔离Host候选1268e884，必要交叉检查21项通过14.55秒，测试组已清空（[证据](../plans/2026-09-06-host-trusted-disclosure/COMBINED.md)）；下列开发记录中的未合并/待独审状态为此前阶段。空assistant仍有M0614真实失败，SDK后继修复中；非SELF、真实Provider/native及240质量尚未完成。
+
+## 2026-09-06 工具多消息v2生产接线，仍有SDK空文本阻塞
+
+最后更新2026-09-06。新实际工具组的terminal/逐消息来源原子提交，Host实际结算attestation、完整6item公开注册/short非空/重开/遗忘通过；写中断无半组、两个来源篡改与五个旧v1邻居通过。新空assistant真实完整组被M0614 short non_blank校验拒绝，保持原红并继续修SDK，不丢消息/填placeholder。故本片未完成；源码独审待续，无真实Provider/native/用户主树切换。[各批范围与未完成项](../plans/2026-09-06-tool-causality/PRODUCER.md)。
+
+
+## 2026-09-06 工具多消息公开因果读取局部验证
+
+最后更新：2026-09-06。新增内部reader通过实际Host effect index和SDK公开投影/bounded审计/结果读取绑定每个工具与父Provider消息，正确区分跨轮重复raw call ID；真实dynamic Host+SDK一个集成测试（含5个篡改及1个截断控制）后继通过，重复读取不新增audit查看缓存，峰165MiB，进程清空。仅来源投影，未接入terminal producer/短期整组索引，不签工具terminal receipt；原始失败保留、独审待续。[实现边界与证据](../plans/2026-09-06-tool-causality/RESULTS.md)。
+
+## 2026-09-06 Dirac披露并发两P1局部修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure/base955a19cd，整片未合主、待主/Dirac复核。真实双控制连接先复现FIFO陈旧A阻塞B与慢checker换代后仍物理send两红；新增schema49 Host入场拒绝记录（无Run/Memory伪receipt）让A拒绝后B继续，出站checker后新连接复核原token。历史source不改。最终新增及必要邻居94项通过/41.51秒/峰222944KiB；PGID40284及全部本轮组已清空，测试槽释放。非SELF/完整外发原子撤权与240质量仍未完成，未跑真实模型/native。
+[两P1修复、接口、schema、原红和指纹](../plans/2026-09-06-host-trusted-disclosure/Dirac两P1修复.md)。
+
+## 2026-09-06 可信披露绑定局部验收与来源回归修复
+
+最后更新：2026-09-06。自有simple_harness-corpus-clock / feat/host-trusted-disclosure，组合点6df952fc（含主30f6b2d4/M614）。可信配置/queue持久绑定及当前解析器局部验收完成；source authority确定回归先红后修，最新29项通过，PGID37740已清理并释放测试槽。前序28邻居结果独立保留，不重复算为最终代码全量通过。仍待主/Dirac终审和主组合整合；240质量、完整非SELF/输入许可/外发未完成。
+[实际结果、原红及复现命令](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
+## 2026-09-06 Host可信披露绑定待源码复核
+
+最后更新：2026-09-06。复用 `simple_harness-corpus-clock`，分支 `feat/host-trusted-disclosure`，基线 `cbf99364`。可信配置→queue→turn/run解析器已写为生产源码候选，schema48及8个契约测试函数待验证；没有运行测试或占用资源槽，未合入主组合。非SELF门、当前输入permit、完整外发及240质量仍未完成。
+[固定源码交接](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
+
+## 2026-09-06 Memory 0.6.14隔离Host组合
+
+最后更新：2026-09-06。固定ec046e84接入受众绑定候选，独立6.3MiB环境H073/M0614/S0313全部SDK成员与vendor一致；必要组合32项及2个subtests通过，峰399MiB/22.247秒，进程清空。旧M0613环境保留。SELF与不同最终受众默认拒绝；协作者语义配对不构成外部原始历史授权。该结果不代表实际Provider/native或401/240完成。用户主树未切换，原计划继续。
+[安装身份、失败保留、命令和证据](../plans/2026-09-06-disclosure-audience/COMBINED.md)。
+
+
+2026-09-06主复核：clock固定e32a2542纳入cbf99364，7个源码/证据hash一致；受影响实际memory job/semantic correction/history组合11项通过、进程已清理。原6项clock独立保留；[组合复核及限制](../plans/2026-09-06-corpus-clock/主代理复核.md)。以下待整合表述保留为当时历史。
+
+## 2026-09-06 Host业务clock局部验收完成
+
+最后更新：2026-09-06。`feat/corpus-runtime-clock` / base `b34b32c3`，自有稀疏树 `simple_harness-corpus-clock`，尚未合入主组合。可信clock贯通composition、runtime和公开SDK；默认真实时间，进程内lease独立monotonic。安装候选6项必要契约通过，0.579秒、峰值92256KiB、PGID33180无残留。仅完成本片clock边界；有效seed时间筛选、受众用途公共setup、240质量、Provider/native均不在本次通过范围。
+[固定接口、测试与指纹](../plans/2026-09-06-corpus-clock/验收结果.md)。
+
+## 2026-09-06 记忆提议失败审计与连接取消清理
+
+最后更新：2026-09-06。后继c39b2569默认在Host调用账本记录成功/拒绝的安全记忆类型与short选择；召回执行器取消在提交路由前记录取消原因并传播CancelledError。非法输入及异常原文不进入该审计投影。取消写入不等待SQLite写锁，连接建立/PRAGMA初始化失败或取消由内部等待并关闭自有连接；2秒仅为取消请求deadline，不冒称物理硬限额。实际后继32项必要检查通过（含12项故障/取消检查），峰约97MiB、进程已清理；源码独审限定ACCEPT。原36项批次独立保留。仍不覆盖强杀、写盘失败的完整持久性、route决策/审计两事务原子性、Service全部操作或真实模型/native。
+[实现、真实故障边界与本机证据](../plans/2026-09-06-model-recall-selection/FAILURE-AUDIT.md)。
+
+## 2026-09-06 新组合原生构建通过，启动因内存前置未执行
+
+最后更新：2026-09-06。18ec7194新前端嵌入独立app构建通过，18.737秒/峰1.06GiB/进程清理。native carrier改同一资源组，两个实际进程/流检查通过；首次启动在Popen前因5579MiB<7GiB预算被拒，应用和模型未启动，无UI/重启证据，不冒称原生验收完成。
+[准确构建/身份/启动限制及本机证据](../plans/2026-09-06-model-short-recall/NATIVE.md)。
+
+## 2026-09-06 模型短期召回及测试资源管理已组合
+
+最后更新：2026-09-06。独审cb743007、145baed3依次fast-forward接入组合：H073/M0613/S0313再次核对169/75/121 installed成员与本树vendor一致；实际候选/短期worker22PASS/9.90秒，峰值265MiB、进程已退出。新模型长短期请求单typed预算、完整来源和最终出站再检查；资源入口默认串行锁/RSS/时间限制及父退出后组清理，三个实际故障点均原红→修复绿并独审通过。
+叶子53项及补充混合/认知测试各自证据保留，未冒称整体重跑。资源采样非硬限额/全系统监控；用户原main未切换，仍无真实模型/native新组合或401/240全量，原程序继续执行。
+[组合身份、命令和待办](../plans/2026-09-06-model-short-recall/COMBINED.md)。
+
+## 2026-09-06 磁盘空间资源管理
+
+最后更新2026-09-06。磁盘439MiB后清理下载缓存实测释放3415MiB；测试入口新增默认1GiB准入和256MiB运行停止。三个实际子进程反例原红→修复后含邻居13项绿，进程清空，d739dcf7已获独立只读ACCEPT并合入默认共享入口。采样不保证硬配额或满盘receipt，原始证据保留。[范围和证据](../plans/2026-09-06-test-resource-cleanup/DISK.md)。
+
+## 2026-09-06 测试资源入口
+
+最后更新：2026-09-06。`scripts/run_resource_bounded.py`默认跨工作树串行锁、2GiB/180秒采样上限；父命令结束后仍清理其进程组，支持信号清理，资源异常不计PASS。实际6项进程测试及追加1项信号检查通过；随后ps probe异常留下TERM拒绝进程的真实反例先红，再修复KILL/reap，必要3项绿。独审再现父退出快照及spawn信号两个P1：旧源两红→后继两项及必要邻居5绿，先poll后快照、信号仅标记避免丢归属；固定复核待续。全部进程退出。仅自身进程组，不触及用户应用；采样上限非OS硬限制，主动脱离进程组与SIGKILL不保证回收。
+[资源管理边界、命令和本机证据](../plans/2026-09-06-test-resource-cleanup/RESULTS.md)。
+
+
+## 2026-09-06 模型短期统一召回已通过安装候选测试
+
+最后更新：2026-09-06。隔离feat/model-short-recall/base a0764047，H073/M0613/S0313逐文件匹配本树wheel。显式模型长期/短期选择共用一次typed计划和预算；真正选中的short绑定公开四元组及当前完整Host因果来源，缺证据或晚遗忘阻止物理出站。成功选择进入既有调用记录，默认工具启用。
+首批53PASS/31.31秒/峰值261MiB；另两项认知出站邻居通过，新增非空长短期混合从fixture两次红修复至1PASS。原始失败及范围见下链；非真实模型/native或全量重跑，全部进程退出。独审待固定提交；完整失败attempt观测、工具多消息、401/240和原程序仍未完成，未切换用户main。
+[契约、批次结果与本机证据索引](../plans/2026-09-06-model-short-recall/RESULTS.md)。
+
+
+## 2026-09-06 WeMM按需加载与内存引用修复已接入组合
+
+最后更新：2026-09-06。独审b70ccda5以fast-forward接入；构造/元数据/状态不加载权重，首次真实embedding共享加载；取消下异步排队和物理线程互斥，失败完成任务丢弃实例引用，防异常保留模型。WeMM2048/L2/本地模型及SDK pin不变。设置页四状态真实WebKit组件检查和刷新通过，浏览器峰值433MiB、进程已退出；相关叶子线程/公开空库/IPC/React/类型检查见证据。
+旧库补向量仍可能启动加载；未实测真实权重/GPU内存释放、自动卸载或新组合native，不作整体program完成声明。用户主checkout未切换。
+[组合验证及后续内存管理](../plans/2026-09-06-wemm-lazy/COMBINED.md)。
+
+## 2026-09-06 WeMM lazy Host isolated leaf
+
+2026-09-06 follow-up：加载完成回调仅清理同一done task引用，避免失败traceback
+长期持有维度拒绝模型；不改waiter异常、不清traceback、不自动重试。fake weakref
+原红→绿，含必要邻居5PASS0.20s；pending/新task不会被旧回调清掉。ready措辞收紧
+为已加载，非完整搜索质量保证。物理线程/权重分配器释放仍不作推断。
+
+最后更新：2026-09-06。构造/metadata/状态不import或加载WeMM；首次真实embed共享
+加载，实际worker持异步encode队列锁+线程互斥。取消不终止物理线程、不自动卸载，
+排队取消不占executor线程。dim2048/L2/原lineage保留，加载及输出维度验证。
+WeMM状态cold/loading/ready/failed及真实模型名称接现P4卡片；未改main启动或SDK。
+installed Memory0612空库public build_production确认0模型构造；旧库ensure回填仍可能加载。
+独立树simple_harness-wemm-lazy/base134bc4b8，backend最终唯一13例、React2例通过，
+应用tsc0；原构造红保留。fake模型/真线程，无权重、native或build，独审待固定源核查。
+[契约、实际命令、结果及边界](../plans/2026-09-06-wemm-lazy/RESULTS.md)。
+
+
+## 2026-09-06 短期索引及 Service0313 已组合验证
+
+最后更新：2026-09-06。唯一MemoryAnalysisLane默认增加完整两消息组short登记/公开projection，保留低序号迟到重扫、ACK后确认、关闭清理和实际分析；工具多消息仍拒绝。主组合安装H073/M0612/S0313，受影响六模块62PASS/25.45秒、峰值290MiB，全部子进程已退出。三个wheel及installed成员逐字节一致。
+Service工具审计新增发送attempt/UNKNOWN/真实ACK/后继响应，仍非持久sink或完整Run绑定；全操作落盘、增量projection、多消息producer、模型short协议及原program未闭合。未切换用户main/runtime，无新模型/native。
+[命令、身份、结果与边界](../plans/2026-09-06-short-index-worker/COMBINED.md)。
+
+## 2026-09-06 Short worker bounded leaf
+
+最后更新：2026-09-06。隔离feat/short-index-worker源426db3bb限定ACCEPT：生产唯一lane
+默认登记完整两消息组、固定upper分页环绕、低seq晚delivery补入、ACK确认及reopen重放。
+新控制8PASS/6.20s、追加3PASS/4.81s、实际analysis/装配等最后6PASS/9.30s分别列示。
+全部测试进程退出；峰值355.4MiB，测试槽已交Carver。未执行主树合并、模型/native或SDK重构建。
+全subject projection成本/增量SDK口、多消息producer、新模型short协议仍是后继项；
+不标S3/S6/program完成。[交付及边界](../plans/2026-09-06-short-index-worker/RESULTS.md)。
+
+## 2026-09-06 无边图谱标签布局已修复
+
+最后更新：2026-09-06。Cytoscape无边节点用网格，布局包含标签尺寸并允许中文换行，保留有边有向布局及全部身份/遗忘/viewport行为。真实WebKit两个尺寸各7节点：标签重叠17/13→0/0，最终有效渲染字号估计9.53/11.05px，真实选择/缩放通过。
+前端18PASS/1个旧API-fixture未配置SKIP，TypeScript通过；所有浏览器/测试进程结束。合成fixture不代表真实API/native或密集边标签完成，原生复验仍待续。
+[原红、实际测量、边界与证据](../plans/2026-09-06-graph-label-layout/RESULTS.md)。
+
+## 2026-09-06 短期选中来源已合成
+
+最后更新：2026-09-06。独审2d98e083合入7fafe03a，同时保留审计authority；实际factory每hit完整来源、裁减/遗忘不互相污染、显式长期零short与HUMAN审计WS组合42项通过（21.12秒、峰值238MiB）。
+仅已有内部短请求来源路径闭合；自动生产索引worker、多消息完整producer、新模型short协议及原program仍未完成。无新模型/native运行。
+[组合结果与边界](../plans/2026-09-06-selected-short-runtime/COMBINED.md)。
+
+## 2026-09-06 Selected short runtime bounded leaf
+
+最后更新：2026-09-06。隔离`feat/selected-short-runtime`/base49249dbd：actual factory
+共享真实authority，现有short请求按每hit完整来源投影；保留显式长期零short和最终fresh fence。
+分批18PASS/7.04s、3PASS/8.03s，相邻24PASS/19.99s（含1必要重验，不累计作质量分）。
+最后门为实际PrimaryHistoryPolicy直接fresh复查，非新physical outbound/native。
+峰值202.4MiB；所有pytest退出，测试槽已释放。
+固定源2d98e083获Dirac限定ACCEPT，未合主组合，无模型/native/独立install验收。
+自动生产索引、多消息tool来源、新模型short协议仍待实现；S3/S6/program仍未完成。
+[交付范围、红绿及命令](../plans/2026-09-06-selected-short-runtime/RESULTS.md)。
+
+## 2026-09-06 审计查看入口组合验证
+
+最后更新：2026-09-06。独审1097b272合入c53caff2：记忆面板显式打开用途绑定的HUMAN元数据审计，分页/持久ACK重放、关闭与身份失效拒绝；保留原图谱viewport及遗忘ACK修复。组合独审限定ACCEPT。
+后端54项通过，新增真实/ws/control审计往返2项通过，前端44通过/1个可选API-fixture未配置跳过，TypeScript通过。单进程有界执行；没有真实Provider、native或全操作覆盖。初始snapshot成本及原生验收仍待续。
+[组合证据、命令与范围](../plans/2026-09-05-agent-operation-audit/human-access-leaf/COMBINED.md)。
+
+## 2026-09-06 HUMAN Memory audit access source candidate
+
+Last updated: 2026-09-06. Isolated `feat/human-memory-audit-access` from54156f1e
+adds explicit signed HUMAN metadata grant/open-page-close, Host S1 action source,
+durable logical page delivery, unknown-safe replay and final WS disclosure fence.
+Default UI entry appears in PrimaryMemoryPanel; it never auto-grants or auto-pages.
+Backend40/frontend25 focused combination and no-emit typecheck pass. Actual
+ControlChannel cached-bound P1 has counterfactual red and restored-source green.
+Independent fixed-source review and main integration/native remain pending; this
+does not close all-operation producer/coverage gaps. No source change to SDK pins
+or terminal-audit identity. See [results](../plans/2026-09-05-agent-operation-audit/human-access-leaf/RESULTS.md).
+
+## 2026-09-06 模型召回类型选择局部完成
+
+最后更新：2026-09-06。memory_standalone工具显式类型经Host校验传入已安装Memory0612公共计划，保留Host身份/权限/预算；显式长期选择不偷偷附带短期查询。成功类型枚举写既有Host审计记录，原proposal仅hash，非公共SDK完整参数回读。
+独立叶子最终77项通过（50.57秒、峰值191MiB），包括实际选中来源/最终出站/任务披露链；没有真实Provider或native。固定49249dbd已独审限定ACCEPT并fast-forward主组合，完整类型质量、短期与调度、审计UI及原program仍未完成。
+[契约、命令、历史红与证据边界](../plans/2026-09-06-model-recall-selection/RESULTS.md)。
+
+## 2026-09-06 SDK073审计组合验证通过
+
+最后更新：2026-09-06。组合源码78647bb0集成独审通过的终态身份叶子；主组合专用venv安装H073/M0612/S0312，348个SDK文件与本树vendor逐字节一致。
+审计目录及candidate/composition组合100PASS/31.62s，单进程峰值258MiB，无本地模型、真实Provider或native。v1历史保留；全操作覆盖及受控审计UI仍待完成。
+[实际结果及边界](../plans/2026-09-06-terminal-audit-identity/COMBINED.md)。
+
+## 2026-09-06 Installed H073 exact terminal identity leaf
+
+Last updated: 2026-09-06. Isolated Host candidate consumes exact H073 (wheel1a9ed5c9…)
+through public RunTerminalAuditEvidenceV1.matches and existing Host raw-SDK normalization.
+Every persisted page binds actual Run/event/full payload/state; legacy scoped evidence
+uses its original envelope and terminal gate. RULE terminal-run-v2 preserves all v1 jobs.
+Selective installed group21PASS2FAIL then necessary repairs2PASS; failures were a guarded
+fixture mutation and obsolete global error-count expectation, retained verbatim. Non-null
+committed-turn public head/receipt + same-cursor reopen, namespace negatives and late-source
+rejection passed. Peak owned RSS147MiB; no model/native/full suite. Independent fixed-source
+review pending; no main production switch or whole-operation completion claim.
+See [contract and measured results](../plans/2026-09-06-terminal-audit-identity/RESULTS.md).
+
+## 2026-09-06 原生遗忘确认通过；重启验收因内存中断
+
+最后更新：2026-09-06。native b32a96d9 / H0.7.2 M0.6.12 S0.3.12实际点击遗忘，UI显示成功确认，图谱由6条更新为5条且恢复可用。
+正常退出后重启验证被系统内存告警中断，未记通过。清理两个约6GB的测试模型后端与子进程后内存回落；本地启动器补进程组清理与单实例/资源准入。
+仅该遗忘确认闭环完成，关系展示/标签可读性和重启持久化仍有剩余。[证据与边界](../plans/2026-09-06-primary-forget-ack/NATIVE.md)。
+
+## 2026-09-06 Forget ACK survives primary content invalidation
+
+Last updated: 2026-09-06. Isolated `feat/primary-forget-ack` fromcf4d8e0a retains
+only the verified primary ID/readiness across read invalidation, keeping the parent
+MemoryPanel's same-connection write correlation alive. Content/detail/graph readers
+still retract; actual authority changes clear the reference and preserve unknown
+safety. React parent first-red/expanded-red evidence and focused47 tests pass, with
+typecheck/build/ESLint. Dirac pre-review found no P0/P1; fixed review pending.
+Main owns native integration/ACK proof; no backend/pin or native process changes.
+No new native/SDK success claim; seven-node label overlap P2 remains separate.
+See [scoped handoff](../plans/2026-09-06-primary-forget-ack/RESULTS.md).
+
+
+## 2026-09-06 Native viewport verified; forget ACK recovery remains FAIL
+
+Last updated: 2026-09-06. Actual9b57c5c8 rebuilt native app shows real nodes and
+passes coordinate selection, zoom/filter/fit/wheel/details. Forget removes content
+but parent invalidation cancels ACK listening and exact retry stays unknown.
+Full forget/reopen and dense label readability remain unfinished.
+See [native scope and retained evidence](../plans/2026-09-06-cytoscape-viewport/NATIVE.md).
+
+## 2026-09-06 Primary Cytoscape viewport repair
+
+Last updated: 2026-09-06. Three frontend files address the reproduced half-height
+scroll-pane clipping: responsive canvas, first/explicit reveal, wheel page scroll
+with button zoom. Layout-only reveal state survives owner-key graph remount; graph
+authority/invalidations are unchanged. Actual WebKit 1000x700/800x560 oracle:
+original 8 failures, candidate22 checks pass; focused frontend9 pass/1 optional
+API-fixture skip, typecheck/build/ESLint pass. Native exact-build verification is
+coordinator-owned and pending; not a renderer-engine diagnosis or full HM-AC6 PASS.
+Reviewed `feat/cytoscape-native-canvas` from65a604f8 is integrated here.
+See [scoped result and evidence](../plans/2026-09-06-cytoscape-viewport/RESULTS.md).
+
+## 2026-09-05 Memory0612 installed credential successor
+
+Last updated: 2026-09-05. Exact0612 fixes public tool-name credential false positives;
+64PASS8.76s startup/composition/Memory audit/preparation rejection. Installed SDK bytes match wheels/source, no source overlay.
+Native graph recovery and full operation coverage are not yet claimed.
+See [installed identity and checks](../plans/2026-09-05-s6-primary-preparation/SDK-0612-INSTALLED.md).
+
+## 2026-09-05 Host Memory attempt and pre-SDK rejection audit leaf
+
+Coordinator combined06348031 with installed0611: audit/preparation/graph producer
+combination49PASS16.43s, no source overlay. Independent leaf ACCEPT retained;
+production sealed issuer and full operation coverage remain unfinished.
+
+Last updated: 2026-09-05. Isolated feat/host-memory-operation-audit from7cf2a39c
+wires durable Host started/settled around actual foreground typed recall and semantic
+correction candidate recall. The default audit composition additionally discovers
+verified Host preparation rejections with no SDKRun. Original errors/cancellation
+and business results are preserved; recovery never repeats a business effect.
+Installed Memory0611 exact-wheel/Host combination32 tests pass, including public
+sealed snapshot pages and concurrent reader recovery. Trusted receipt-supplied OA1
+reader is implemented, but Host production grant issuance/authorized external
+readthrough and all other inventory boundaries remain unfinished. No usage/cost
+aggregation or all-operation/native completion claim. Fixed source3ba25c42 has Dirac independent scoped ACCEPT, no remaining P0/P1.
+This acceptance applies only to the leaf above.
+See [scope and handoff](../plans/2026-09-05-agent-operation-audit/host-memory-leaf/HANDOFF.md).
+
+## 2026-09-05 Memory0611 installed audit and retry successor
+
+Last updated: 2026-09-05. Main-owned candidate pins exact0611, combining reviewed
+privacy, bounded SDK audit and current-attempt reclaim repair. Installed55 startup/
+composition/graph/runtime checks pass; no source overlay. Main running environment
+and isolated native graph0610 remain unchanged. Full Host operation coverage and
+Harness successor are still pending. See
+[installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0611-INSTALLED.md).
+
+
+## 2026-09-05 Cytoscape graph source leaf ready for independent review
+
+Last updated: 2026-09-05. Isolated feat/human-memory-cytoscape-graph based on bf8f9f7d: backend24/frontend21 plus build/typecheck/focused ESLint pass; actual API-fixture browser selection/zoom/suppression replacement verified. Native verification stays coordinator-owned on043c candidate. No audit/pin changes, no full HM-AC6 or program PASS. Old cytoscape-ui tree preserved, inactive.
+See [scoped results](../plans/2026-09-05-s6-cytoscape-display/RESULTS.md) and [contract](../plans/2026-09-05-s6-cytoscape-display/CONTRACT.md).
+
+## 2026-09-05 Selected short source modules combined on0610
+
+Last updated: 2026-09-05. Reviewed selected source reader and source-only conversation
+registration/indexing modules are now integrated into the main-owned candidate.
+Actual installedMemory0610 ingestion/selected-reader34 tests pass; no source overlay.
+Production indexing scheduler and final selected-hit wiring remain unfinished,
+so full short-horizon availability is not claimed. See
+[contract](../plans/2026-09-05-selected-short-sources/CONTRACT.md).
+
+
+## 2026-09-05 Terminal audit and privacy combined source verification
+
+Last updated: 2026-09-05. Reviewed terminal consumer is integrated into the
+main-owned candidate.55 combined audit/runtime/preparation/privacy tests pass with
+frozen Harness fd4a audit source and installed Memory0610. No audit exception
+triggers business resend. Actual native043c regression predates this integration;
+installed Harness successor audit and other producer coverage remain incomplete.
+See [handoff](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/HANDOFF.md).
+
+
+## 2026-09-05 Original native duplicate-forget regression passes on0610
+
+Last updated: 2026-09-05. Actual043c722a backend with installed0610 reopened the
+original native data. The exact prior failing drink query now visibly answers
+“不知道”; canonical physical Provider request contains neither original nor revised
+drink text. One foreground call, separate analysis call; app closes normally.
+Original failure/action preserved. This is scoped native regression evidence,
+not a new complete memory loop or full program PASS.
+See [native evidence](../plans/2026-09-05-semantic-correction/NATIVE-0610-REOPEN.md).
+
+
+## 2026-09-05 Memory0610 installed privacy and queue successor
+
+Last updated: 2026-09-05. Candidate production composition now binds actual Host
+source/cut authority to Memory0610 shared disclosure enforcement. An old late-enqueued
+USER denied before SDK start becomes an immutable Host preparation rejection:
+Run FAILED, turn SETTLED, no fabricated SDK terminal, and subsequent work progresses.
+Cross-source rejection reuse is rejected from actual S1 binding; first-action cuts
+and legacy unknown boundaries remain distinct. Installed86 tests pass and independent
+source/artifact scoped reviews accept. Main and historical native failure remain
+unchanged; native successor and full program verification are still outstanding.
+See [installed evidence](../plans/2026-09-05-s6-primary-preparation/SDK-0610-INSTALLED.md)
+and [queue contract](../plans/2026-09-05-semantic-correction/PREPARATION-REJECTION.md).
+
+
+## 2026-09-05 Original source and first forget-cut public facts prepared
+
+Last updated: 2026-09-05. Host now captures a v2 forget action's original queue
+frontier atomically with its S1, and exposes read-only source/cut facts through
+public SDK carriers. Exact retries preserve the first cut; old v1 actions remain
+unchanged and explicitly lack a verified cut. Source-overlay fact/API13 pass,
+with independent scoped ACCEPT. SDK enforcement/builder/native integration remain
+pending; this is not a duplicate-forget PASS.
+See [contract and evidence](../plans/2026-09-05-semantic-correction/HOST-SOURCE-CUT.md).
+
+## 2026-09-05 Host terminal audit isolated candidate
+
+Last updated: 2026-09-05. `feat/host-operation-audit` / `simple_harness-host-operation-audit`
+固定 source candidate eaccab33 + 3e911c14：实际 main factory/foreground terminal 接入 durable snapshot
+consumer，默认开启成熟 lane；坏来源、旧 SDK、损坏 cursor 诚实 unavailable。审计失败不授权
+业务重发，不以 projection 数量累加 Provider usage。此树待主集成，不能记为 main installed。
+22 新聚焦场景通过，16 相邻 Runtime 场景通过；固定 HEAD/独立 review 结论见
+[journal](../plans/2026-09-05-agent-operation-audit/host-terminal-leaf/journal.md)。
+这是 terminal audit 纵向片，Memory/Service consumer、完整操作 coverage 与生产后继 wheel
+验收未完成；原 Human Memory/program gates 无变化。
+
+## 2026-09-05 USER source and queue admission now atomic
+
+Last updated: 2026-09-05. The service now persists new USER S1 and its queue row in
+one fenced transaction. Only first insertion marks a v2 atomic origin; existing
+S1/turns retain legacy format and exact replay. Source/queue/runtime-history checks
+pass with independent scoped ACCEPT. This closes the source-before-queue crash
+window, while duplicate-source suppression and native retest remain incomplete.
+See [implementation and validation](../plans/2026-09-05-semantic-correction/ATOMIC-SOURCE-ADMISSION.md).
+
+## 2026-09-05 Native correction passed; duplicate-source forget remains P1
+
+Last updated: 2026-09-05. Backend c2836c12 with exact Memory0.6.9 successfully
+created and revised the same memory in the actual native app. The panel forget
+produced a real directive, but an older duplicate USER from a rejected CREATE
+remained in the next actual Provider request and the model returned the old value.
+The memory loop is **FAIL**. Deterministic coverage is1PASS2FAIL for no duplicate,
+pre-forget admission and delayed admission. A fresh same-text USER/replayed-action
+control passes only in the no-duplicate case. Required source-order/cut/equivalence
+repair is underway; no main cutover or program completion claim.
+See [native evidence and exact boundaries](../plans/2026-09-05-semantic-correction/NATIVE-DUPLICATE-FORGET.md).
+Earlier entries below describe their own historical checkpoints.
+
+## 2026-09-05 Native memory loop remains incomplete
+
+First069 real remembered-preference Run completed but the actual analysis CREATE
+was rejected for an invented candidate key; memory panel confirmed no new memory.
+Versioned v3 CREATE representation now passes source/real-store controls and
+independent review, pending native rerun. Stage3 truthful memory-pending/failure
+presentation is still outstanding. [Evidence](../plans/2026-09-05-semantic-correction/CREATE-SLOT-V3.md).
+
+## 2026-09-05 Memory069 candidate installation and existing data
+
+First native startup exposed a stale067 startup identity pin. Four constants now
+match exact069;32 existing candidate/composition tests pass. Failed startup remains
+recorded and does not count as native PASS. See the evidence link below.
+
+Exact0.6.9 installed in dedicated candidate environment:29 affected tests PASS and
+actual earlier native-data copy upgrade/reopen PASS, with original bytes unchanged.
+No other lock dependency changed. Main running checkout remains on its earlier
+composition. [Evidence and remaining gates](../plans/2026-09-05-s6-primary-preparation/SDK-069-INSTALLED.md).
+
+## 2026-09-05 Semantic correction connected in the combined candidate
+
+Main startup and deterministic real-store tests share one authority composition;
+29 distinct affected cases pass after repairing one test import. The current
+candidate adds actual correction wiring, while real UI/provider memory-loop and
+SDK069 existing-data migration verification remain pending. Main running checkout
+has not switched. See [results](../plans/2026-09-05-semantic-correction/RESULTS.md).
+The user's new Host/Harness/Memory/Service operation-audit requirement is recorded
+in [its scope and oracles](../plans/2026-09-05-agent-operation-audit/PLAN.md).
+Existing diagnostic streams are available; complete recording and batch auditing
+are not yet claimed.
+
+## 2026-09-05 Typed selection forget barrier exercised
+
+Actual public typed selection/Context route now uses the cognitive forget API
+before the next production pre-invoke guard. Positive sends2; late forget sends1
+and rejects the next stale request. Two controls passed2.18s with deterministic
+analysis/MockTransport; no native or paid Provider. This adds the previously missing
+typed-source proof to the existing history/reopen coverage. See [API evidence](../plans/2026-09-05-primary-cognitive-controls/API.md).
+A further2 typed-only controls pass with no remembered source in chat history;
+removing only the recall binding would allow the same request, proving the selected
+source barrier itself. Public fixture materialization, no real model in this pair.
+SDK069 migration and semantic-action builder hooks are prepared but those new
+branches still await their actual successor candidates; see [runtime preparation](../plans/2026-09-05-s6-primary-preparation/RUNTIME-SUCCESSOR.md).
+
+
+> 本次 leaf 更新：2026-09-05
+
+## Selected short-source reader isolated candidate
+
+`feat/human-memory-selected-short-sources`从54aa2f88提取固定55b9e402 registration/indexing
+依赖，新增selected-only来源reader与契约；19项聚焦source-overlay、定向ruff通过。
+缺proof整hit拒，未选root不进入union。main.py/runtime/context及默认调度未改，由主组合；
+exact069 cf149022 + Harness072独立installed同19项已通过，不与source重复相加。
+原reconcile全扫描、最终writer边界和主组合验证仍独立保留，未合主/无native或付费
+Provider，不改变program完成度。详见[契约](../plans/2026-09-05-selected-short-sources/CONTRACT.md)。
+
 ## 2026-09-05 Primary cognitive panel connected locally
 
 默认主对话入口已接认知记忆面板及真实HUMAN API；current signed owner限制读写，
@@ -27,6 +429,23 @@ Primary HUMAN接口已接实际V7 public graph/suppress与专属动作S1，精�
 frontend/native及自然语言纠正尚未完成，不能称用户闭环已完成。
 见[接口与证据边界](../plans/2026-09-05-primary-cognitive-controls/API.md)。
 
+## 2026-09-05 Explicit semantic correction isolated leaf
+
+Follow-up: fixed800ff419 independently scoped ACCEPT (no blocking P0/P1). The v2
+prompt now names new drink preferences `user:self + drink_preference`; no alias or
+authority expansion. Five Chinese public-SDK cases passed (5.01s). Native model
+compliance and coordinator builder integration remain pending; details in results.
+
+From9ec0ec97, the isolated semantic-correction candidate adds actual public typed
+semantic candidates, Host independent full-sentence intent and exact public REVISE
+authority. **32 focused tests passed (19.13s)** on installed067; Chinese natural
+correction/quoted/negative, ambiguity, original evidence, replay and late-forget deny
+covered. v2 prompt/schema/policy/validator; no new schema or display graph input.
+Main/Runtime wiring belongs to coordinator; fixed-source review and native complete
+loop remain pending. Limited Chinese slot vocabulary and unsupported cases are explicit;
+this is not unrestricted natural-language or full program completion.
+See [contract](../plans/2026-09-05-semantic-correction/CONTRACT.md) and
+[results/boundaries](../plans/2026-09-05-semantic-correction/RESULTS.md).
 
 ## 2026-09-05 Source/auth/action combination verified
 

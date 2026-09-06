@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from deskpet.execution.foreground_queue import ContextLineage
+from deskpet.execution.preparation_rejection import PreparationDisclosureRejected, PreparationRejection
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
 from deskpet.execution.foreground_runtime_ports import TaskScopeForegroundContextPort, _turn_text
 from deskpet.execution.primary_history import PrimaryHistoryStore
-from deskpet.execution.primary_dependencies import dependencies, current_disclosure
+from deskpet.execution.primary_dependencies import dependencies
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 import aiosqlite
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
 from deskpet.sdk_adapters.context_partitions import (
@@ -58,7 +60,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                 primary_ref=candidate.primary_conversation_id, evidence_id=candidate.evidence_id)
             if envelope.envelope_hash != candidate.evidence_hash:
                 raise RuntimeError("primary_current_user_hash_mismatch")
-        disclosure = current_disclosure(run_id=envelope.run_id, subject=self._subject, request_id=candidate.turn_id)
+        disclosure = await resolve_current_disclosure(db_path=self._history_path, turn_id=candidate.turn_id,
+            run_id=envelope.run_id, subject=self._subject, request_id=candidate.turn_id)
         groups = await self._history.read(subject=self._subject, primary_ref=candidate.primary_conversation_id,
                                           before_sequence=candidate.enqueue_sequence, completed_only=True, disclosure_context=disclosure)
         source_hash = canonical_hash({"turn": candidate.turn_id, "history": groups})
@@ -71,6 +74,26 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             return await super().draft_lineage(candidate)
         lineage, _ = await self._source(candidate)
         return lineage
+
+    async def _reject_current_user_if_proven(self, *, db, claimed, disclosure_context):
+        if self._history_policy is None:
+            return
+        candidate = claimed.candidate
+        denied = await self._history_policy.current_user_denial(
+            db=db, primary_ref=candidate.primary_conversation_id,
+            evidence_id=candidate.evidence_id, evidence_hash=candidate.evidence_hash,
+            disclosure_context=disclosure_context,
+        )
+        if denied is not None:
+            binding_hash, snapshot, reason = denied
+            raise PreparationDisclosureRejected(PreparationRejection(
+                host_run_id=claimed.host_run_id, subject=candidate.subject,
+                turn_id=candidate.turn_id, turn_hash=candidate.turn_hash,
+                evidence_id=candidate.evidence_id, evidence_hash=candidate.evidence_hash,
+                candidate_hash=candidate.candidate_hash, binding_hash=binding_hash,
+                snapshot_hash=snapshot.snapshot_hash, snapshot_json=canonical_json(snapshot.to_json()),
+                reason=reason,
+            ))
 
     async def prepare(self, *, claimed, expected_context, execution_session_id,
                       request_id, sdk_run_id, provider, tools):
@@ -107,8 +130,15 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         async with aiosqlite.connect(self._history_path) as db:
             db.row_factory = aiosqlite.Row
             if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,
-                    dependencies=proof, disclosure_context=current_disclosure(run_id=sdk_run_id,
+                    dependencies=proof, disclosure_context=await resolve_current_disclosure(
+                        db_path=self._history_path, turn_id=candidate.turn_id, run_id=sdk_run_id,
                         subject=self._subject, request_id=request_id)):
+                await self._reject_current_user_if_proven(
+                    db=db, claimed=claimed, disclosure_context=await resolve_current_disclosure(
+                        db_path=self._history_path, turn_id=candidate.turn_id,
+                        run_id=sdk_run_id, subject=self._subject, request_id=request_id,
+                    ),
+                )
                 raise RuntimeError("primary_context_dependencies_not_visible")
         messages = [protected[0], *(m for g in complete for m in _context_messages(g)), current]
         binding = {"provider_id": provider.provider_id, "model_id": provider.model_id,
@@ -145,7 +175,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             raise RuntimeError("foreground_context_lineage_changed_after_claim")
         if self._stack_getter is None:
             raise RuntimeError("scope_disclosure_reader_missing")
-        disclosure = current_disclosure(run_id=sdk_run_id, subject=self._subject, request_id=request_id)
+        disclosure = await resolve_current_disclosure(db_path=self._history_path, turn_id=candidate.turn_id,
+            run_id=sdk_run_id, subject=self._subject, request_id=request_id)
         package = await render_scope_disclosure(db_path=self._history_path, package=opened.resume_package,
             subject=self._subject, stack=self._stack_getter(), policy=self._history_policy,
             disclosure_context=disclosure)
@@ -156,6 +187,12 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             db.row_factory = aiosqlite.Row
             if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,
                     dependencies=proof, disclosure_context=disclosure):
+                await self._reject_current_user_if_proven(
+                    db=db, claimed=claimed, disclosure_context=await resolve_current_disclosure(
+                        db_path=self._history_path, turn_id=candidate.turn_id,
+                        run_id=sdk_run_id, subject=self._subject, request_id=request_id,
+                    ),
+                )
                 raise RuntimeError("primary_context_dependencies_not_visible")
         context = await super().prepare(claimed=claimed, expected_context=expected_context,
             execution_session_id=execution_session_id, request_id=request_id,
