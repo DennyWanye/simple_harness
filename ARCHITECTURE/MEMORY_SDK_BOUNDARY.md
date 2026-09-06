@@ -1,3 +1,12 @@
+<!-- 最后更新：2026-09-07 -->
+
+C04 原20公开setup分批19+1通过；实际same-timestamp晚append暴露Host游标漏注册，
+d3a580be复用原journal修复当前timestamp边界、分离scan高水位与消费CAS，无DDL/旧receipt改写。
+新增5控分批通过（测试helper d25fe2f6），原绿未重跑；晚到更早timestamp仍不保证。
+实际C04-12注册/失效/改期ACK链通过；terminal故障控是实际SDKreceipt+显式scripted Host高位cursor。
+H078/M618 installed，非H079/native/Provider/240质量；Dirac对d3a580be/d25fe2f6/6b1f886a最终限定ACCEPT；非完整consumer not_required遍历。
+[结果与边界](../plans/2026-09-06-corpus-public-seed/C04-CURSOR-RESULTS.md)。
+
 最后更新：2026-09-07。共同Memory0.6.19 clean源e27003c已离线只构建一次，H079/M619/S0313安装新组合1PASS0.86s、174/92/116成员和184加载模块精确来自target；版本3控通过。Host vendor/pin/lock/生产identity固定新wheel，初次origin校验失败后通过真实vendor安装纠正，不手改metadata/不重build；PG50135清空。旧M618不改，当前候选可供M619原生验证，完整native/240质量待验。[制品与实际结果](../plans/2026-09-07-current-input-procedure/INSTALLED-079619.md)。
 
 最后更新：2026-09-07。Host80764c13/共同Memorya15c7be源组合1PASS0.82s并独审接受：真实签名当前输入与独立Procedure draft同批前均可见，公开遗忘后只draft拒绝，当前项不受误伤；Host审计请求/快照精确绑定。PG49417清空，原属性oracle红保留。Memory新0.6.19制品/installed/native另验。[结果](../plans/2026-09-07-current-input-procedure/RESULTS.md)。
