@@ -10,7 +10,7 @@ from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.human_memory_v7 import (
     local_memory_principal, host_classification_policy, HOST_SUPPORTED_FILTER_POLICIES,
 )
-from deskpet.quality.corpus_c08 import SETUPS, FACTS, compile_c08_setup, validate_c08_setup
+from deskpet.quality.corpus_c08 import SETUPS, FACTS, UNPREPARED_CARRIERS, compile_c08_setup, validate_c08_setup
 from deskpet.quality.corpus_c08_prepare import prepare_c08_seed
 from deskpet.quality.corpus_setup_jobs import SetupFixtureDeliveryAuthority
 from deskpet.sdk_adapters.context_route import local_owner_auth
@@ -63,6 +63,8 @@ async def test_real_nonempty_seed_then_suppression_survives_reopen(tmp_path, mon
             authority_ref=local_owner_auth().authority_ref, batch=batch, delivery_authority=delivery)
         assert result['application'].receipt.validation_status is h.AnalysisValidationStatus.ACCEPTED
         assert result['fixture_executions'] == 1
+        assert result['setup_complete'] is (case_id not in UNPREPARED_CARRIERS)
+        assert result['unprepared_carriers'] == UNPREPARED_CARRIERS.get(case_id, ())
         assert len(result['graph_before'].nodes) == 1
         assert result['graph_before'].nodes[0] == result['labels']['A']
         assert result['labels']['A'].memory_type == FACTS[case_id][0]

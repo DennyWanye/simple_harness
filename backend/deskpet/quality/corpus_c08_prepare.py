@@ -10,7 +10,7 @@ from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.human_memory_service import build_foreground_turn_evidence
 from deskpet.memory.memory_ingestion_outbox import build_worker_config
 from deskpet.quality.corpus_c04_prepare import TemporalFixtureExecutor, _ApplicationWitness
-from deskpet.quality.corpus_c08 import validate_c08_setup, suppressed_payload
+from deskpet.quality.corpus_c08 import validate_c08_setup, suppressed_payload, UNPREPARED_CARRIERS
 from deskpet.quality.corpus_fixture_delivery import CONFIG_HASH
 from deskpet.task_scope.protocol import canonical_hash
 
@@ -71,6 +71,8 @@ async def prepare_c08_seed(*, path, manager, principal, authority_ref, batch, de
     if await evidence.read_admitted(source.evidence_id) != (source, proof):
         raise ValueError('c08_source_deleted_or_rewritten')
     return dict(source_pair=(source, proof), labels={'A': before}, setup_hash=batch.setup_hash,
+        setup_complete=batch.case_id not in UNPREPARED_CARRIERS,
+        unprepared_carriers=UNPREPARED_CARRIERS.get(batch.case_id, ()),
         outcome=outcome, fixture_executions=executor.executions, application=witness.application,
         request=witness.request, plan=executor.executed_plan, suppression_request=request,
         suppression_decision=decision, graph_before=graph, graph_after=after,
