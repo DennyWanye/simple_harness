@@ -26,9 +26,9 @@ url = urlparse(origin['url'])
 assert url.scheme == 'file' and url.netloc in ('', 'localhost')
 wheel = Path(unquote(url.path))
 wheel_hash = hashlib.sha256(wheel.read_bytes()).hexdigest()
-archive = origin['archive_info']
-assert (archive.get('hashes', {}).get('sha256') == wheel_hash
-        or archive.get('hash') == 'sha256=' + wheel_hash)
+manifest = json.loads(wheel.with_name('simple_harness_sdk-0.7.5.candidate-manifest.json').read_text())
+assert manifest['version'] == '0.7.5'
+assert manifest['artifacts'][wheel.name] == wheel_hash
 foreground.build_candidate_identity = lambda: SdkCandidateIdentity('0.7.5', wheel_hash, wheel)
 
 async def main():
