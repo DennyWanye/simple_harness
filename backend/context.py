@@ -107,6 +107,8 @@ _VALID_SERVICES = frozenset({
     "provider_invocation_coordinator",
     "provider_workload_router",
     "provider_workload_audit",
+    "terminal_operation_audit",
+    "terminal_operation_audit_status",
     "harness_public_read_service",
     "session_terminal_projection_gate",
     # Slice B: the sole immutable publication for the closed-ingress SDK stack.
@@ -274,6 +276,8 @@ class ServiceContext:
     provider_invocation_coordinator: Any | None = None
     provider_workload_router: Any | None = None
     provider_workload_audit: Any | None = None
+    terminal_operation_audit: Any | None = None
+    terminal_operation_audit_status: str | None = None
     harness_public_read_service: Any | None = None
     session_terminal_projection_gate: Any | None = None
     sdk_runtime_ready: Any | None = None
