@@ -56,3 +56,5 @@ PG3663 exit0、remaining=[]、cleanup_error=null，峰410960KiB、最低磁盘47
 | current-r1/command.log | dbf8aa747a2544f8deb54f83995a9df7837645561d6640299550a36b50397109 |
 | current-r1/resource.json | 3004bb2a3f76b20dd16cb79bcc645e36a73963cfb478b893fdaab86a13724786 |
 | current-r1/identity.json | 33e109a279b1796641bb433548a6ff03b5a7872ac150c16888753eff5ed899e5 |
+
+后续源码校准：current-r3精简fixture未注入main已有BoundClosureFallback。该红例证明该fixture的Host终态pending，不能外推默认产品也阻塞。现正在验证生产fallback的原未closed Scope撤回链及必要冷恢复；原记录保留，不用预关闭后的绿控替代。
