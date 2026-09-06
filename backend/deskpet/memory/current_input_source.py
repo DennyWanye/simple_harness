@@ -29,6 +29,7 @@ def declaration(value, text):
     if (type(value) is not dict or set(value) != {
         "schema_version", "kind", "item_json_pointer", "text_sha256",
     } or type(value["schema_version"]) is not int or value["schema_version"] != 1
+            or type(value["kind"]) is not str
             or value["kind"] not in {"current_user", "public_material"}
             or value["item_json_pointer"] != "/text"):
         raise CurrentInputSourceError("declaration_invalid")

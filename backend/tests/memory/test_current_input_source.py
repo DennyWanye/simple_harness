@@ -118,3 +118,43 @@ async def test_input_source_atomic_failure_leaves_no_half_fact(env):
     with sqlite3.connect(env.path) as db:
         assert db.execute("SELECT count(*) FROM foreground_turns").fetchone()[0] == 0
         assert db.execute("SELECT count(*) FROM human_memory_evidence").fetchone()[0] == 0
+
+
+@pytest.mark.asyncio
+async def test_resigned_reconnect_preserves_original_input_lease(tmp_path):
+    from deskpet.memory.control_binding import HumanMemoryControlBinding
+    from deskpet.memory.human_memory_service import HumanMemoryHostServiceFactory
+    from deskpet.memory.schema import dispatch_startup_epoch
+    from deskpet.memory.writer_fence import require_authenticated_host_snapshot
+    from tests.companion.test_window_control_credentials import _ingress
+    from tests.memory.test_primary_control_binding import _bind
+
+    private, _, _, ingress = _ingress(tmp_path)
+    binding = HumanMemoryControlBinding()
+    challenge = await _bind(private, ingress, binding)
+    path = tmp_path / "state.db"
+    startup = await dispatch_startup_epoch(path, approved_fresh_lane=True)
+    first = SimpleNamespace(path=path, auth=binding.authenticate(ingress, challenge), binding=binding,
+        ingress=ingress, challenge=challenge, factory=HumanMemoryHostServiceFactory(path, startup))
+    config = await configured(first)
+    turn = ok(await admit(first, config))
+    fact = await read_current_input_source(db_path=path, subject=first.auth.subject, turn_id=turn["turn_ref"])
+    replacement = HumanMemoryControlBinding()
+    next_challenge = await _bind(private, ingress, replacement)
+    second = SimpleNamespace(path=path, auth=replacement.authenticate(ingress, next_challenge), binding=replacement,
+        ingress=ingress, challenge=next_challenge, factory=HumanMemoryHostServiceFactory(path,
+            await dispatch_startup_epoch(path, approved_fresh_lane=False)))
+    with replacement.request_scope(ingress, next_challenge):
+        assert require_authenticated_host_snapshot(second.auth) != fact["input_use"]["control"]["lease_ref"]
+    assert ok(await admit(second, config)) == turn
+    assert await read_current_input_source(db_path=path, subject=second.auth.subject, turn_id=turn["turn_ref"]) == fact
+    with pytest.raises(Exception, match="connection_stale"):
+        binding.authenticate(ingress, challenge)
+
+
+@pytest.mark.asyncio
+async def test_nonstring_declaration_kind_is_stable_denial(env):
+    config = await configured(env)
+    error(await command(env, "queue.enqueue", {"delivery_key": "bad-kind", "text": "工作资料",
+        "disclosure_binding_ref": config["binding_ref"], "input_declaration": {**declared("工作资料"), "kind": []}}),
+        "host_current_input_declaration_invalid")
