@@ -67,11 +67,11 @@ async def main(root, target, mode, point):
         if mode == 'seed' and point == 'after_sink':
             observe(run_id,request.request_id,'crash'); os._exit(73)
     original_verify = ProductTypedContextUseAuthority.verify_terminal
-    def verify(authority,run_id,request_id,checkpoint):
+    def verify(authority,run_id,request_id,checkpoint,*,verified_use):
         if mode == 'seed' and point == 'response_reserved':
             assert checkpoint['phase'] == 'response_reserved'
             observe(run_id,request_id,'crash'); os._exit(73)
-        return original_verify(authority,run_id,request_id,checkpoint)
+        return original_verify(authority,run_id,request_id,checkpoint,verified_use=verified_use)
     patch.setattr(ProductTypedContextUseAuthority,'record_terminal',record)
     patch.setattr(ProductTypedContextUseAuthority,'verify_terminal',verify)
     runtime,stack,queue,authority = await wired_runtime(root,state,memory,provider,patch,restore_recoverable=True)

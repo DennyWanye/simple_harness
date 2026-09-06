@@ -863,7 +863,7 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
             run_id, request_id, checkpoint=checkpoint, execution_lease=execution_lease,
         )
         if self._typed_terminal is not None:
-            self._typed_terminal.verify_terminal(run_id, request_id, checkpoint)
+            self._typed_terminal.verify_terminal(run_id, request_id, checkpoint, verified_use=view)
         return view
 
 

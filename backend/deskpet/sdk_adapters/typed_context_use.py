@@ -306,11 +306,18 @@ class ProductTypedContextUseAuthority:
                 provider_turn_ordinal=attempt.provider_turn_ordinal,
                 request_fingerprint=provider_request_fingerprint(request))
 
-    def verify_terminal(self, run_id, request_id, checkpoint):
+    def verify_terminal(self, run_id, request_id, checkpoint, *, verified_use):
         if checkpoint["route_state"] != "unrouted":
             return  # The SDK's actual context_route/barrier remains authoritative.
-        view = self._stack().read_provider_context_use(run_id.value, request_id.value)
-        if view is None or view.requests:
+        # The coordinator has just run the SDK's original durable terminal
+        # verifier. Reuse its public result; Runtime.start recovery precedes the
+        # Host global ready-stack publication, so querying that stack races boot.
+        from simple_harness import ProviderContextUseViewV1
+        view = verified_use
+        if (type(view) is not ProviderContextUseViewV1
+                or view.run_id != run_id.value or view.provider_request_id != request_id.value
+                or view.authority_scope_ref != self.authority_scope_ref or view.subject != self.subject
+                or view.invocation_state != "succeeded" or view.requests or view.receipts):
             raise ValueError("typed_use_terminal_route_missing")
         # Read the existing Host sink fact; no await/new decision in this SDK
         # synchronous terminal check and no private SDK storage access.
