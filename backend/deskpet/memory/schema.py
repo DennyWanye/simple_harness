@@ -513,6 +513,41 @@ def _validate_execution_marker(
         raise HumanMemoryProgramEpochError("foreground_execution_marker_invalid")
 
 
+def _validate_composed_extension(path: Path, version: int) -> None:
+    """Reopen only published, fully validated scheduler extensions of v49.
+
+    This does not install extensions: the owning composition retains that
+    responsibility, including resuming between its transactional migrations.
+    """
+    from deskpet.memory.s5c_schema import validate_s5c_state_db
+    from deskpet.memory.s5c_timer_schema import validate_s5c_timer_state_db
+    from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
+
+    validators = {
+        50: validate_s5c_state_db,
+        51: validate_s5c_timer_state_db,
+        52: validate_s5c_terminal_state_db,
+    }
+    validator = validators.get(version)
+    if validator is None:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_program_future_database_unsupported"
+        )
+    try:
+        with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            bootstrap = db.execute(
+                "SELECT format_epoch,origin FROM human_memory_program_bootstrap "
+                "WHERE singleton=1"
+            ).fetchone()
+    except sqlite3.Error as exc:
+        raise HumanMemoryProgramEpochError(
+            "human_memory_bootstrap_marker_invalid"
+        ) from exc
+    if bootstrap != ("human-memory-v1", "fresh-empty-database"):
+        raise HumanMemoryProgramEpochError("human_memory_bootstrap_marker_invalid")
+    validator(path)
+
+
 def inspect_startup_epoch(
     db_path: str | Path,
     *,
@@ -616,6 +651,8 @@ def inspect_startup_epoch(
                     path, expected_user_version=version
                 )
             _validate_recovery_marker(path, expected_user_version=version)
+            if version > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+                _validate_composed_extension(path, version)
         except (HumanMemoryProgramEpochError, OSError):
             return StartupEpochDecision(
                 StartupEpoch.INVALID,
@@ -683,9 +720,8 @@ async def initialize_human_memory_program_state_db(
     async with _human_memory_program_lock(path):
         current = await read_user_version(path)
         if current > HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
-            raise HumanMemoryProgramEpochError(
-                "human_memory_program_future_database_unsupported"
-            )
+            _validate_composed_extension(path, current)
+            return
         bootstrap = _has_bootstrap_marker(path)
         if current >= CONTEXT_ROUTE_SCHEMA_VERSION:
             # S5b Task 6: 037 registration backfill for databases that applied
@@ -851,7 +887,8 @@ async def dispatch_startup_epoch(
     async with _startup_epoch_lock(path):
         await _repair_chain_registration_before_inspect(path)
         decision = inspect_startup_epoch(
-            path, approved_fresh_lane=approved_fresh_lane
+            path, approved_fresh_lane=approved_fresh_lane,
+            maximum_human_schema_version=52,
         )
         if decision.epoch in {StartupEpoch.FRESH, StartupEpoch.HUMAN_RESUME}:
             await initialize_human_memory_program_state_db(
@@ -903,10 +940,10 @@ async def initialize_state_db(
         and bootstrap_version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
     ):
         decision = inspect_startup_epoch(
-            db_path, approved_fresh_lane=False
+            db_path, approved_fresh_lane=False, maximum_human_schema_version=52,
         )
         if decision.epoch is StartupEpoch.HUMAN_RESUME:
-            if decision.user_version == HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
+            if decision.user_version >= HUMAN_MEMORY_TARGET_SCHEMA_VERSION:
                 return
             raise HumanMemoryProgramEpochError(
                 "human_memory_program_requires_human_initializer"
