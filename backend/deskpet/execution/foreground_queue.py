@@ -374,6 +374,8 @@ class ForegroundQueueStore:
         turn_payload: Mapping[str, object],
         task_scope_id: str | None = None,
         disclosure_binding_ref: str | None = None,
+        input_declaration: dict | None = None,
+        input_auth: object | None = None,
         admitted_evidence_pair: tuple[
             SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike
         ] | None = None,
@@ -433,8 +435,34 @@ class ForegroundQueueStore:
                         raise ForegroundQueueError("foreground_turn_idempotency_conflict")
                 elif existing_request is not None and disclosure_binding_ref is not None:
                     raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                input_use = None
+                if input_declaration is not None:
+                    from deskpet.memory.current_input_source import build_input_use, validate_input_use
+                    from deskpet.memory.writer_fence import require_authenticated_host_snapshot
+                    require_authenticated_host_snapshot(input_auth)
+                    current = await current_record_tx(db, subject)
+                    if (current is None or disclosure_binding_ref != current["binding_ref"]
+                            or admitted_evidence_pair is None or task_scope_id is not None):
+                        raise ForegroundQueueError("foreground_input_configuration_unavailable")
+                    input_use = build_input_use(auth=input_auth, envelope=envelope, receipt=receipt,
+                        primary_ref=primary_conversation_id, delivery_key=idempotency_key,
+                        config=current, declared=input_declaration)
+                    if existing_request is not None:
+                        original = existing_request.get("input_use")
+                        if original is None:
+                            raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                        validate_input_use(original, envelope=envelope, receipt=receipt,
+                            primary_ref=primary_conversation_id, delivery_key=idempotency_key, config=current)
+                        # A verified reconnect preserves the original admission lease.
+                        comparable = dict(input_use)
+                        comparable["control"] = dict(input_use["control"], lease_ref=original["control"]["lease_ref"])
+                        if comparable != original:
+                            raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                        input_use = original
+                    request["input_use"] = input_use
                 token = await enqueue_binding_tx(db, subject=subject, requested_ref=disclosure_binding_ref,
-                    legacy=existing_request is not None and "disclosure_binding" not in existing_request)
+                    legacy=existing_request is not None and "disclosure_binding" not in existing_request,
+                    input_use=input_use)
                 if token is not None:
                     request["disclosure_binding"] = token
                 turn_hash = canonical_hash(request)
@@ -442,8 +470,8 @@ class ForegroundQueueStore:
                     # Replay the actual persisted format, never upgrade an old
                     # split-admission row into a new atomic-origin assertion.
                     existing_request = json.loads(str(existing["turn_json"]))
-                    if existing_request.get("schema_version") == 2:
-                        request["schema_version"] = 2
+                    if existing_request.get("schema_version") in (2, 3):
+                        request["schema_version"] = existing_request["schema_version"]
                         request["source_admission"] = "atomic-evidence-and-turn/v1"
                         turn_hash = canonical_hash(request)
                     if (
@@ -472,6 +500,8 @@ class ForegroundQueueStore:
                         db, "SELECT evidence_id FROM human_memory_evidence WHERE evidence_id=?",
                         (evidence_id,),
                     )
+                    if input_use is not None and prior_source is not None:
+                        raise ForegroundQueueError("foreground_input_source_not_new")
                     await HumanMemoryProgramStore(self._db_path).append_evidence_tx(
                         db, envelope, receipt,
                         primary_conversation_id=primary_conversation_id,
@@ -479,7 +509,7 @@ class ForegroundQueueStore:
                     )
                     self._fault("enqueue.after_evidence_insert")
                     if prior_source is None:
-                        request["schema_version"] = 2
+                        request["schema_version"] = 3 if input_use is not None else 2
                         request["source_admission"] = "atomic-evidence-and-turn/v1"
                         turn_hash = canonical_hash(request)
                 await self._verify_evidence_tx(

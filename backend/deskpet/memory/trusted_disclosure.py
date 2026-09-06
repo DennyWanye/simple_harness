@@ -97,12 +97,16 @@ async def bound_record_tx(db, *, subject, token):
     return raw
 
 
-def assert_executable(raw):
+def assert_executable(raw, *, input_use=None):
     # Enabling more recipients requires the real SDK gate, source permit and
     # outbound wiring. A stored UI preference cannot enable those capabilities.
     if (raw["recipient"] != "user_self" or raw["recipient_id"] != raw["subject"]
             or raw["intended_audience"] != "user_self" or raw["purpose"] != "task_execution"):
-        _reject("runtime_semantics_unavailable")
+        if (input_use is None or input_use["disclosure_binding"] != binding_token(raw)
+                or input_use["selection"] != {key: raw[key] for key in (
+                    "recipient", "recipient_id", "intended_audience", "purpose")}
+                or raw["purpose"] != "task_execution"):
+            _reject("runtime_semantics_unavailable")
 
 
 async def _insert_tx(db, *, subject, principal_id, authority_ref, origin,
@@ -124,7 +128,7 @@ async def _insert_tx(db, *, subject, principal_id, authority_ref, origin,
     return _decode(await _one(db, "SELECT * FROM human_memory_disclosure_configs WHERE binding_ref=?", (ref,)), subject)
 
 
-async def enqueue_binding_tx(db, *, subject, requested_ref, legacy=False):
+async def enqueue_binding_tx(db, *, subject, requested_ref, legacy=False, input_use=None):
     """Within the same fenced enqueue transaction; no evidence payload mutation."""
     current = await current_record_tx(db, subject)
     if legacy and requested_ref is None:
@@ -144,7 +148,7 @@ async def enqueue_binding_tx(db, *, subject, requested_ref, legacy=False):
                 selection={"recipient": "user_self", "recipient_id": subject,
                            "intended_audience": "user_self", "purpose": "task_execution"}, previous=None)
         raw = current
-    assert_executable(raw)
+    assert_executable(raw, input_use=input_use)
     return binding_token(raw)
 
 
@@ -237,7 +241,11 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
         await bound_record_tx(db, subject=subject, token=token)
         if current is None or token != binding_token(current):
             _reject("binding_stale")
-        assert_executable(current)
+        input_use = None
+        if "input_use" in turn:
+            from deskpet.memory.current_input_source import read_input_use_tx
+            _, _, input_use = await read_input_use_tx(db, turn=row, config=current)
+        assert_executable(current, input_use=input_use)
         return DisclosureContext(run_id, subject, DeliveryRecipient(current["recipient"]),
             current["recipient_id"], IntendedAudience(current["intended_audience"]),
             DisclosurePurpose(current["purpose"]), DisclosureSource.AUTHENTICATED_HOST,

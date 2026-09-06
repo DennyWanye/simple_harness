@@ -96,8 +96,8 @@ class HostHistorySourceAuthority:
                 "idempotency_key": payload["delivery_key"], "payload": payload,
             }
             proof_kind = "legacy_before_only"
-            if body.get("schema_version") == 2:
-                expected.update(schema_version=2, source_admission="atomic-evidence-and-turn/v1")
+            if type(body.get("schema_version")) is int and body["schema_version"] in (2, 3):
+                expected.update(schema_version=body["schema_version"], source_admission="atomic-evidence-and-turn/v1")
                 proof_kind = "atomic"
             if "disclosure_binding" in body:
                 from deskpet.memory.trusted_disclosure import bound_record_tx
@@ -106,10 +106,15 @@ class HostHistorySourceAuthority:
                 # Its head may since have changed; visibility checks that head
                 # separately and must not rewrite historical source ordering.
                 try:
-                    await bound_record_tx(db, subject=principal.actor_id, token=body["disclosure_binding"])
+                    original_config = await bound_record_tx(db, subject=principal.actor_id, token=body["disclosure_binding"])
                 except (ValueError, TypeError, KeyError, RuntimeError) as exc:
                     raise HostHistorySourceError("host_history_turn_binding_mismatch") from exc
                 expected["disclosure_binding"] = body["disclosure_binding"]
+                if body.get("schema_version") == 3:
+                    from deskpet.memory.current_input_source import read_input_use_tx
+                    # Origin is immutable: use its ORIGINAL config, not the current head.
+                    await read_input_use_tx(db, turn=row, config=original_config)
+                    expected["input_use"] = body["input_use"]
             if (
                 body != expected or canonical_hash(expected) != row["turn_hash"]
                 or row["evidence_hash"] != actual.envelope_hash

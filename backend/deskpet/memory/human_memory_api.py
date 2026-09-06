@@ -355,7 +355,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
             raise HumanMemoryHostServiceError("host_disclosure_configuration_fields_invalid")
         return await service.current_disclosure_configuration()
     if operation == "queue.enqueue":
-        if not set(request) <= {"scope_ref", "delivery_key", "text", "disclosure_binding_ref"}:
+        if not set(request) <= {"scope_ref", "delivery_key", "text", "disclosure_binding_ref", "input_declaration"}:
             raise HumanMemoryHostServiceError("human_memory_queue_fields_invalid")
         return await service.enqueue_turn(
             QueueTurnRequest(
@@ -363,6 +363,7 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 str(request.get("delivery_key") or request_id),
                 str(request.get("text") or ""),
                 request.get("disclosure_binding_ref"),
+                request.get("input_declaration"),
             )
         )
     if operation == "queue.control":
