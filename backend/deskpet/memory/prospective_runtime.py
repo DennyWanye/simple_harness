@@ -56,7 +56,7 @@ class ProspectiveRuntimeLane:
         self._manager = None
         self.last_registration_error = self.last_timer_error = None
         self.completed_ticks = 0
-        self.last_delivered_count = 0
+        self.last_applied_count = 0
 
     async def _components(self):
         manager = await self.runtime.manager()
@@ -78,7 +78,7 @@ class ProspectiveRuntimeLane:
     async def tick(self):
         await self._components()
         self.last_registration_error = self.last_timer_error = None
-        self.last_delivered_count = 0
+        self.last_applied_count = 0
         try:
             await self._registration.run_once(page_size=self.batch_size, max_pages=1)
         except asyncio.CancelledError:
@@ -87,16 +87,16 @@ class ProspectiveRuntimeLane:
             self.last_registration_error = exc
             log.warning("prospective_runtime_registration_failed type=%s", type(exc).__name__)
         try:
-            self.last_delivered_count = await self._timer.tick(claim_owner=self.owner, limit=self.batch_size)
+            self.last_applied_count = await self._timer.tick(claim_owner=self.owner, limit=self.batch_size)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             self.last_timer_error = exc
             log.warning("prospective_runtime_timer_failed type=%s", type(exc).__name__)
         self.completed_ticks += 1
-        if self.last_delivered_count:
-            log.info("prospective_runtime_time_applied count=%s", self.last_delivered_count)
-        return self.last_delivered_count
+        if self.last_applied_count:
+            log.info("prospective_runtime_time_applied count=%s", self.last_applied_count)
+        return self.last_applied_count
 
     def wake(self):
         self._wake.set()
@@ -126,19 +126,24 @@ class ProspectiveRuntimeLane:
         self._closing = True
         self._wake.set()
         task = self._task
-        if task is not None:
-            task.cancel()
-            # Own the child's cleanup even if our caller is also cancelled.
-            join = asyncio.gather(task, return_exceptions=True)
-            cancellation = None
-            while not join.done():
-                try:
-                    await asyncio.shield(join)
-                except asyncio.CancelledError as exc:
-                    cancellation = exc
-            join.result()
+        cancellation = None
+        try:
+            if task is not None:
+                task.cancel()
+                # Own the child's cleanup even if our caller is also cancelled.
+                join = asyncio.gather(task, return_exceptions=True)
+                while not join.done():
+                    try:
+                        await asyncio.shield(join)
+                    except asyncio.CancelledError as exc:
+                        cancellation = exc
+                join.result()
+        finally:
             self._task = None
-            if cancellation is not None:
-                raise cancellation
-        self._registration = self._timer = self._manager = None
+            self._registration = self._timer = self._manager = None
+            self._closing = False
+        # Explicit subsequent start (same runtime) is supported, just like the
+        # owning MemoryAnalysisLane. Nothing starts itself after close.
+        if cancellation is not None:
+            raise cancellation
         # Shared Memory manager is owned and closed by application composition.

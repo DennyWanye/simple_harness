@@ -123,8 +123,6 @@ async def test_timer_lost_ack_recovers_actual_reference_without_registration_sca
     monkeypatch.setattr(w.manager, 'apply_prospective_signal', lost)
     try:
         lane.start()
-        async def registered():
-            return bool(await S5cStore(w.path, P).page_accepted_registrations(after=0, upper=None, limit=1))
         # The real registration count is checked from its actual returned page.
         async def acked():
             rows, _, _ = await S5cStore(w.path, P).page_accepted_registrations(after=0, upper=None, limit=1)
@@ -154,7 +152,7 @@ async def test_timer_lost_ack_recovers_actual_reference_without_registration_sca
         try:
             reopened.prospective_lane.start()
             async def recovered():
-                return len(references) >= 2 and reopened.prospective_lane.last_delivered_count == 1
+                return len(references) >= 2 and reopened.prospective_lane.last_applied_count == 1
             await until(recovered)
             assert references == [references[0], references[0]]
             assert reopened.prospective_lane.last_registration_error is not None
@@ -181,8 +179,6 @@ async def test_shutdown_joins_cancelled_worker_and_suppression_prevents_time_mat
         await w.manager.suppress(principal=P, request=m.SuppressionRequest(
             'forget-reminder', P.actor_id, m.SuppressionScopeKind.MEMORY, memory_id, 'user_forget', 25.0))
         w.clock[0] = 30.0
-        async def scanned():
-            return lane.completed_ticks >= 3
         initial = lane.completed_ticks
         async def after_due():
             return lane.completed_ticks >= initial + 2
@@ -192,7 +188,48 @@ async def test_shutdown_joins_cancelled_worker_and_suppression_prevents_time_mat
         await lane.close()
         assert task.done() and lane._task is None
         lane.start()
-        assert lane._task is None  # no resurrection after composition shutdown
+        restarted = lane._task
+        assert restarted is not None and restarted is not task
+        lane.start()
+        assert lane._task is restarted
+        await lane.close()
+        assert restarted.done()
     finally:
         await lane.close()
         await w.runtime.close()
+
+
+@pytest.mark.asyncio
+async def test_parent_repeated_cancel_waits_for_owned_timer_and_index_cleanup():
+    from types import SimpleNamespace
+    from deskpet.memory.memory_ingestion_outbox import MemoryAnalysisLane
+    timer_started, timer_release = asyncio.Event(), asyncio.Event()
+    index_started, index_release = asyncio.Event(), asyncio.Event()
+    class Child:
+        async def close(self):
+            timer_started.set()
+            await timer_release.wait()
+    class Index:
+        async def close(self):
+            index_started.set()
+            await index_release.wait()
+    lane = MemoryAnalysisLane(worker=None, runtime=SimpleNamespace(prospective_lane=Child()),
+        executor=None, config=None, worker_id='cleanup-owner')
+    lane.short_indexer = Index()
+    lane._task = asyncio.create_task(asyncio.sleep(0))
+    worker = lane._task
+    closing = asyncio.create_task(lane.close())
+    await timer_started.wait()
+    closing.cancel()
+    await asyncio.sleep(0)
+    assert not closing.done()
+    timer_release.set()
+    await index_started.wait()
+    closing.cancel()
+    await asyncio.sleep(0)
+    assert not closing.done()
+    index_release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await closing
+    assert worker.done() and lane._task is None
+    assert not [t for t in asyncio.all_tasks() if t.get_name() == 'memory-analysis-lane-cleanup' and not t.done()]

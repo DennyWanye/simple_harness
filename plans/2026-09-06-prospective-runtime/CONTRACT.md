@@ -23,3 +23,7 @@ compose_human_memory_runtime默认挂一个lazy ProspectiveRuntimeLane；唯一M
 3. public apply提交后Host ACK失败→停止/新lane恢复，原reference相同、inbox单项；source suppress/未到期不触发。保留未交付不能说成功的文案约束。
 
 只运行新增/实际失败所需控制，共享默认锁，主释放前不测试。源码/独审不当成r14 native转绿；后续原生由主统一验证。
+
+## 源码挑战后的生命周期限定
+
+同runtime显式stop/start可恢复：父/child关闭时禁止新start，join完清引用，再次显式start重新绑定同共享Manager并从durable状态恢复；不会close后自发复活。父close将整段child/analysis/short cleanup作为自己owned task shield+join，重复caller cancel只在cleanup完成后传播，新增一个生命周期控制，不拿timer单项冒充父完整清理。count字段用last_applied_count，表示SDK apply+Host ACK次数，绝不称用户已送达。

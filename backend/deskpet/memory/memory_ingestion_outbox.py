@@ -511,24 +511,38 @@ class MemoryAnalysisLane:
         self._stop.set()
         self._wake.set()
         task = self._task
-        try:
+        async def cleanup():
             try:
                 if self.prospective_lane is not None:
                     await self.prospective_lane.close()
             finally:
-                # Closing the clock child cannot skip joining analysis ownership.
                 if task is not None:
                     try:
-                        await asyncio.wait_for(task, timeout=timeout_seconds)
+                        await asyncio.wait_for(asyncio.gather(task, return_exceptions=True), timeout=timeout_seconds)
                     except TimeoutError:
                         task.cancel()
                         await asyncio.gather(task, return_exceptions=True)
                 if self.short_indexer is not None:
                     await self.short_indexer.close()
                 self._runner = None
+
+        owned = asyncio.create_task(cleanup(), name="memory-analysis-lane-cleanup")
+        cancelled = None
+        try:
+            while not owned.done():
+                try:
+                    await asyncio.shield(owned)
+                except asyncio.CancelledError as exc:
+                    cancelled = exc
+                except Exception:
+                    break
+            owned.result()
         finally:
             self._task = None
             self._closing = False
+        if cancelled is not None:
+            raise cancelled
+
 
 
 __all__ = [
