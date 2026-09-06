@@ -35,7 +35,15 @@ async def execute(directory, host, case_id, mode):
     schedule_bytes = (directory / 'scheduler.json').read_bytes()
     authored = json.loads(authored_bytes)
     schedule = json.loads(schedule_bytes)['scripted_followup']
-    texts = [authored['current_user_message'], *(row['user_message'] for row in schedule)]
+    initial_text = authored['current_user_message']
+    if case_id == 'C05-07':
+        assert initial_text is None and authored['recent_messages'] == []
+        assert authored['unresolved_source_text'] == (
+            '可信Host当前任务：课程备课，当前scope取实际绑定快照。用户：暂时看旧的藏书编目任务，先搜给我确认。')
+        # Independent authored USER boundary. No runtime helper generates the
+        # control's expected text or pretends the Host declaration is a role.
+        initial_text = '暂时看旧的藏书编目任务，先搜给我确认。'
+    texts = [initial_text, *(row['user_message'] for row in schedule)]
     read_text = Path.read_text
     local, requests, selections, actual_candidates, blocked_models = [], [], [], [], []
     stages = {}
@@ -84,6 +92,11 @@ async def execute(directory, host, case_id, mode):
                 if case_id == 'C05-07':
                     assert len(snapshots) == 1 and snapshots[0]['task_scope_id'] == initial_scope
                     assert snapshots[0]['disclosure']['fields']['title'] == '课程备课'
+                    binding = json.loads(read_text(directory / 'authored-input-binding.json'))
+                    assert binding['task_scope_id'] == initial_scope
+                    assert binding['source_kind'] == 'actual_context_route_setup_then_owned_initial_admission'
+                    assert authored['unresolved_source_text'] not in json.dumps(messages, ensure_ascii=False)
+                    assert '可信Host当前任务：' not in json.dumps(messages, ensure_ascii=False)
                 else:
                     assert initial_scope is None and snapshots == []
         requests.append(dict(ordinal=ordinal, body=body))

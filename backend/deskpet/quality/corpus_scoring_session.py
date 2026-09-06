@@ -150,6 +150,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     case_id = setup["case_id"]
     c07 = c05 = c08_retained = None
     c05_schedule = None
+    c05_input = None
     if setup["scenario_clock"] != authored["scenario_clock"]:
         raise ValueError("corpus_input_setup_clock_mismatch")
     if type(case_id) is str and case_id.startswith("C07-"):
@@ -163,15 +164,17 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         from deskpet.quality.corpus_c05_session import validate_schedule
         c05 = compile_c05_setup(case_id, setup["setup_source_text"])
         c05_schedule = validate_schedule(case_id, json.loads((directory / "scheduler.json").read_text()))
+        from deskpet.quality.corpus_c05_state_phase import compile_c05_initial_input
+        c05_input = compile_c05_initial_input(c05, authored)
     if type(case_id) is str and case_id.startswith("C08-"):
         # Only source-complete retained carriers enter this phase. Other C08
         # scalar/partial carriers are not made ready by an empty placeholder.
         from deskpet.quality.corpus_c08_retained import compile_c08_retained_setup
         c08_retained = compile_c08_retained_setup(case_id, setup["setup_source_text"],
             scenario_clock=setup["scenario_clock"]["instant"])
-    if (authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None:
+    if c05_input is None and ((authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None):
         raise ValueError("corpus_first_batch_scalar_input_required")
-    text = authored["current_user_message"]
+    text = authored["current_user_message"] if c05_input is None else c05_input['current_user_message']
     if type(text) is not str or not text:
         raise ValueError("corpus_original_user_message_required")
     scenario_time = datetime.fromisoformat(authored["scenario_clock"]["instant"]).timestamp()
@@ -374,6 +377,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 service=service, runtime=runtime, transport=task_provider, history_reader=task_history,
                 workspace_root=task_workspace, directory=directory, collect_turn=collect_turn,
                 record=write_result, ingestion_worker=worker)
+            from deskpet.quality.corpus_c05_state_phase import bind_c05_initial_input
+            input_binding = bind_c05_initial_input(c05_input, outcome['setup_phase'])
+            if input_binding is not None:
+                outcome['setup_phase']['authored_input_binding'] = input_binding
+                write_result(directory / 'authored-input-binding.json', input_binding)
             outcome["task_phase_status"] = "CONFIRMED"
             await task_provider.close()
             await admit_scoring_provider(registry=main._provider_registry,
