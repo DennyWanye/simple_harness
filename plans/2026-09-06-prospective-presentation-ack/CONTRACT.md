@@ -198,3 +198,9 @@ shared `initialize_human_memory_program_state_db`. Main's accepted exact extensi
 validation is present unchanged; this supersedes the earlier experimental local52
 branch/missing-namespace statements above. Legitimate new subject namespace creation
 retains its original writer transaction; an invalid/future schema is not admitted.
+
+
+After every slow source-policy read, e858d98f resolves the original Run with the
+SAME request_id again and requires exact context equality. Binding-stale is not
+converted into a new context. This closes the additional source-check await window;
+the general post-check-to-send interval remains explicitly non-atomic.

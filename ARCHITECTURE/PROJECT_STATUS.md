@@ -3348,3 +3348,6 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 
 
 2026-09-06：A7新增五条真实Context route→ACK→terminal分批修fixture接线后5PASS；另三轮合法route完成但无ACK仍pending、唯一overdue、第四Run同ACK终态1PASS。异主体ACK真实披露拒绝且零写。namespace复用主已审schema52公共initializer。PG99406/99816清空，槽释放；新来源链/整片独审待结、主native另验，不标完整S5c完成。见[A7结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
+
+2026-09-06：Dirac指出A7新增slow source checker后漏Host披露绑定复验，真实G1→公开configure G2后仍physicalsend1红已保留。e858d98f同Run/request_id末次exact复验修复，同一新竞争控1PASS/1.80s、G2真实提交后旧G1拒绝、0send/0重发。PG1540清空；稳定历史/五路由未重跑。固定差异独审待回，整片不能沿用前ACCEPT。见[A7 P1结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。

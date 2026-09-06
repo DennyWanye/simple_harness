@@ -214,3 +214,35 @@ source are not covered by these tests; no reminder action is inferred from ACK.
 - `a7-r20/command.log` SHA256 `3ba43022ad4058bc6e5e1731b789b049f1a98ebd5973b9c3c963213ee9a50b22`
 - `a7-r20/resource.json` SHA256 `1044fcbd31aef5a4c66c98c132c0486d7787f9e8517810c229d8ac62de3a2e13`
 - `a7-r20/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+## Dirac disclosure-generation P1 — actual red / targeted green
+
+Dirac rejected the new e9d6bb9e/37ff source closure: source policy could await a
+slow public Memory check against G1 while an authenticated Host configure committed
+G2, then return without revalidating the original Run binding. Previous inbox
+recheck ran before this new await. This was a missing existing fence, not a request
+for a cross-database lock or replacement authorization.
+
+- Test source f312d95c / r21: 1FAIL7deselect1.83s, PG1381exit1/remaining[],
+  peak404000KiB. Actual Memory source snapshot is visible under G1, the verified
+  control API commits G2, then the suspended checker returns its real result.
+  Old guard physically sends once, failing the zero-send oracle. Original Host DB
+  also retains generations1 and2 (read-only verification, no SDK SQL).
+- Fix e858d98f / r22: only the same new race, 1PASS7deselect1.80s,
+  PG1540exit0/remaining[], peak404304KiB/minDisk4895MiB. Re-resolve the SAME Run
+  and request_id after the await; stale rejects and a successful read must match
+  the original context exactly. G2 is not substituted into G1's request.
+  The test asserts actual generation2, one real source check, binding_stale, SDK
+  failed, zero HTTP sends and zero retry sends. Owned coordination task is released
+  and joined in finally. Existing stable G1/history/five routes were not rerun.
+
+Independent fixed-delta review requested; prior whole-source status remains blocked
+until that response. No native/model, shared slot released. Same installed H076/M617
+launcher, exact test node `test_real_occurrence_source_checker_disclosure_generation_race`.
+
+- `a7-r21/command.log` SHA256 `ca0b81fcd64efed5092beed7cdfa75e8804c10d77acc5dc1667c669711a09089`
+- `a7-r21/resource.json` SHA256 `9f6f89e398a84b138aba12f0c6d9f9d1c2412961eae16385048a1cd41624bb61`
+- `a7-r21/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r22/command.log` SHA256 `45aa9d6dd818a106e70ffd5db002bc65e619e9860b9e7f5be5e5d12f13ad9de6`
+- `a7-r22/resource.json` SHA256 `ef4bb8a6c0a63a4ab7f78fb6bcd063f60ce92b98812375bba598b289ccc6f07f`
+- `a7-r22/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
