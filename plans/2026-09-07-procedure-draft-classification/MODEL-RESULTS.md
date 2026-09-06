@@ -45,4 +45,4 @@ Both requests include only protocol instructions, current time/subject, the resp
 - `.local-test-evidence/2026-09-07/procedure-draft/model-r2/results.json` SHA256 `4e17a44329bcc12bbccb9c8925e61b3a302b913e1c321a81646f3f56154352e5`
 - `.local-test-evidence/2026-09-07/procedure-draft/model-r2/resource.json` SHA256 `fa150c96e0ceb79f5862d41ded6e823d51f2ea65d318aef8252456c835d86520`
 
-Independent evidence review pending. No further model call requested.
+Dirac read-only scoped ACCEPT for20f58862: original positive/negative responses and compiled/public strict-atomic receipt bindings verified. Limited to ProviderAdapter+compiler+public mutation, not durable analysis job/native/240. No rerun or further model call.
