@@ -18,3 +18,5 @@
 |---|---|
 | `.local-test-evidence/2026-09-07/sdk-async-snapshot/r1/command.log` | `8d26c0477bed61b3952fd9db2817ba1881f6c795ee48b29c691e6d470626beae` |
 | `.local-test-evidence/2026-09-07/sdk-async-snapshot/r1/resource.json` | `7dc9535a13aead02cae1a05bcbcc5411a0b05719539beb24aa44e03d95d121d1` |
+
+后继实际main观察：C08五个新独立child首次批均写出memory+harness健康snapshot且无never-awaited警告，来源与原始哈希见[实际组合](../2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。这是附带验证新增接线，没有重跑旧main控制。

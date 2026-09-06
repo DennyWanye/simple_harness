@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C08-01/06/11/18保留旧USER+assistant摘要实际main及wrongassistant共5新控首批5PASS38.78s：原job APPLIED/IDLE，公开suppression后两history隐藏，重开生产authority后下一physical请求无旧内容。PG84053五child自然清空，非真实模型/原生/rolling-summary；正式dispatcher待接。本批也确认d60异步诊断两SDK来源实际写出且无未await警告。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。
+
 最后更新：2026-09-07。Host诊断异步消费修复d60a94f4：真实installed Memory SQLite快照/timeout-cancel两个新控及三个受影响同步控制首批5PASS1.04s，PG83640清空。main改显式await，尚待下一新组合观测；SDK诊断版本硬编码原0.6.0另待，不冒称完整审计或改制品。[结果](../plans/2026-09-07-sdk-async-snapshot/RESULTS.md)。
 
 最后更新：2026-09-07。C05新增07/08/10/11及TOOL调用ID共5唯一控制分批通过（r1 3绿2红，完整标题查询修复后仅2红复测2PASS4.76s）；固定身份真实分页，不保证所有并列ID顺序。PG83131/83471清空，无真实模型/原生结论，正式main多轮接线仍待。[结果](../plans/2026-09-06-corpus-public-seed/C05-RUNTIME-RESULTS.md)。
