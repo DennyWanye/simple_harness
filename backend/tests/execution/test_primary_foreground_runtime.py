@@ -166,6 +166,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
             tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
                 if spec['name'] not in {r.name for r in extra_registrations}))
+            tools.bind_run_authorities(registry)
             for registration in extra_registrations:
                 tools.register(_sdk_tool(registration))
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))

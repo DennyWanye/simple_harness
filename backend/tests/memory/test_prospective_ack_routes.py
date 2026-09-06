@@ -111,6 +111,24 @@ async def test_real_context_route_preserves_ack_through_terminal(tmp_path,monkey
             request=request,policy_factory=lambda _:runtime.history_policy,typed_use_authority=runtime.typed_use_authority)
         await ProspectiveRequestGuard(sdk_run_id=current.sdk_run_id,coordinator=coordinator,
             read_provider_context_use=stack.read_provider_context_use)(request)
+        if route=='direct_standalone' and len(sends)==1:
+            from dataclasses import replace
+            from deskpet.memory.trusted_disclosure import TrustedDisclosureError
+            foreign=replace(principal,actor_id='foreign-owner')
+            foreign_store=S5cStore(state,foreign)
+            foreign_runtime=SimpleNamespace(principal=lambda:foreign,manager=manager)
+            foreign_coordinator=ProspectiveOccurrenceCoordinator(store=foreign_store,clock=lambda:w.clock[0],
+                read_current=PublicOccurrenceCurrentReader(store=foreign_store,runtime_getter=lambda:foreign_runtime))
+            entry=(await w.manager.read_occurrence_inbox(principal=principal)).entries[0]
+            tool=prospective_ack_registration(coordinator=foreign_coordinator,
+                context_getter=lambda:SimpleNamespace(run_id=SimpleNamespace(value=current.sdk_run_id)))
+            async with store._transaction() as db:
+                before=(await (await db.execute('SELECT COUNT(*) FROM prospective_occurrences')).fetchone())[0]
+            with pytest.raises(TrustedDisclosureError,match='host_disclosure_turn_subject_mismatch'):
+                await tool.handler({'occurrence_key':entry.occurrence_key},None)
+            async with store._transaction() as db:
+                after=(await (await db.execute('SELECT COUNT(*) FROM prospective_occurrences')).fetchone())[0]
+            assert before==after
     provider._pre_invoke_guard=guard
     try:
         runtime,stack,queue=await build(tmp_path,state,provider,dynamic=True,binding_authority=binding_authority,
