@@ -14,7 +14,7 @@ def digest(value):
 
 def supported(recipe):
     seed = recipe['seed']
-    return (recipe['family'] in {'lifecycle', 'epistemic'} and seed['memory_type'] == 'procedure'
+    return (recipe['family'] in {'lifecycle', 'epistemic', 'procedure_applicability'} and seed['memory_type'] == 'procedure'
         and seed.get('epistemic', 'explicit_user') == 'explicit_user'
         and seed.get('state', 'active') in {'active', 'eligible'})
 
@@ -90,3 +90,20 @@ async def bind(case, recipe, target):
     return {'input_schema': schema, 'applicability': applicability.to_json(),
         'fingerprint': applicability.fingerprint, 'result': result.to_json(),
         'reference': reference.to_json()}
+
+
+def current_fingerprints(recipe, proof):
+    """Frozen app-v2/app-v3 labels map to explicit tool-version contexts."""
+    row = recipe['applicability_contract']
+    if row['bound_fingerprint'] != 'app-v2':
+        raise ValueError('unsupported original bound applicability label')
+    label = row['current_fingerprint']
+    if label is None:
+        return ()
+    if label == 'app-v2':
+        return (proof['fingerprint'],)
+    if label != 'app-v3':
+        raise ValueError('unsupported original current applicability label')
+    app = proof['applicability']
+    return (h.ProcedureApplicabilityContext(app['tool_id'], app['environment'],
+        '3', app['input_schema_hash']).fingerprint,)

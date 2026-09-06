@@ -52,7 +52,8 @@ async def run_cases(recipes, workspace):
                 recipient=recipe.get('recipient','user_self'),purpose=recipe.get('purpose','personalization'),
                 modes=recipe.get('modes',('full_text',)))
             if 'procedure_binding' in observed:
-                params['fingerprint'] = (observed['procedure_binding']['fingerprint'],)
+                params['fingerprint'] = (procedure.current_fingerprints(recipe, observed['procedure_binding'])
+                    if recipe['family']=='procedure_applicability' else (observed['procedure_binding']['fingerprint'],))
             if recipe['family']=='budget':
                 limits = dict(max_items=8,max_bytes=16384,max_tokens=2048,deadline_ms=2000)
                 for ordinal, limit in enumerate(recipe['limits']):

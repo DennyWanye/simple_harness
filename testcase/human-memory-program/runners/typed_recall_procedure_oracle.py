@@ -21,7 +21,7 @@ def check(observed, recipe, check_admitted_span):
     seed = recipe['seed']
     if (seed['memory_type'] != 'procedure' or seed.get('epistemic', 'explicit_user') != 'explicit_user'
             or seed.get('state', 'active') not in {'active', 'eligible'}
-            or recipe['family'] not in {'lifecycle', 'epistemic'}):
+            or recipe['family'] not in {'lifecycle', 'epistemic', 'procedure_applicability'}):
         raise ValueError('procedure proof outside supported input scope')
     raw = seed['payload']['applicability']
     schema = {'type': 'object', 'properties': {}, 'additionalProperties': False}
@@ -100,6 +100,18 @@ def check(observed, recipe, check_admitted_span):
             or result['reason_code'] != 'procedure_applicability_bound'
             or result['decided_at'] != intent['observed_at']):
         raise ValueError('procedure actual commit/replay result differs')
-    if any(r['context']['procedure_applicability_fingerprints'] != [fingerprint] for r in observed['recalls']):
+    current = [fingerprint]
+    if recipe['family'] == 'procedure_applicability':
+        row = recipe['applicability_contract']
+        if row['bound_fingerprint'] != 'app-v2' or raw != {'tool':'git','version':'2'}:
+            raise ValueError('original applicability label/input mapping differs')
+        label = row['current_fingerprint']
+        if label is None:
+            current = []
+        elif label == 'app-v3':
+            current = [domain('simple-harness/procedure-applicability/v2', {**app,'tool_version':'3'})]
+        elif label != 'app-v2':
+            raise ValueError('original current applicability label differs')
+    if any(r['context']['procedure_applicability_fingerprints'] != current for r in observed['recalls']):
         raise ValueError('procedure current recall fingerprint differs')
     return result['committed_revision'], {'evidence_id':eid, 'content_hash':eh}

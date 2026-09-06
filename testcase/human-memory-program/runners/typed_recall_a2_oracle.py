@@ -378,7 +378,7 @@ def check_execution_wire(value, context, plan):
 
 def normal_expected(fixture, recipe, *, applicability=False, trigger_signal=False):
     name, spec = recipe['cell_id'],recipe['seed']
-    if recipe['family'] in {'validity','lifecycle'}:
+    if recipe['family'] in {'validity','lifecycle','procedure_applicability'}:
         row = next(r for r in fixture['eligibility_cases']+fixture['lifecycle_cases'] if name=='eligibility/'+r['id'])
         return row['expected']=='ELIGIBLE'
     if recipe['family']=='epistemic':

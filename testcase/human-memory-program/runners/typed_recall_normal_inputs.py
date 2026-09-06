@@ -21,6 +21,9 @@ def recipes(fixture):
     for name in ('not-suppressed','ordinary-uncontested'):
         add('eligibility/'+name,'basic',seed())
     for row in fixture['eligibility_cases']:
+        if row['axis']=='procedure_applicability':
+            add('eligibility/'+row['id'],'procedure_applicability',seed('procedure',state='active'),
+                applicability_contract=copy.deepcopy(row))
         if row['axis']=='prospective_trigger':
             add('eligibility/'+row['id'],'prospective_trigger',seed('prospective',state='pending'),
                 trigger_contract=copy.deepcopy(row))
