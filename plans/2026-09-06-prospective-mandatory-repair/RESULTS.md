@@ -89,8 +89,9 @@ E=$W/.local-test-evidence/2026-09-06/mandatory-context-repair
 
 ## Remaining exact boundaries
 
-Dirac final fixed-source review and H079 packaging/installed consumer are pending
-at this documentation commit. Source schema8 decoder is strict; H078's existing
+Dirac final fixed-source/results review is limited ACCEPT for SDK28160d6 and
+Hostfe2560c8 (14 unique new controls). H079 packaging/installed consumer remain
+main-owned pending gates. Source schema8 decoder is strict; H078's existing
 decoder rejects unknown schema8 before executing its checkpoint (source
 inspection, not an old-binary smoke). Existing schema6/7 hashes/rows and frozen
 H078 wheels are unchanged. No table/schema upgrade or silent old-Run repair.
