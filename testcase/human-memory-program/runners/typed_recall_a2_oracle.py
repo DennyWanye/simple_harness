@@ -573,6 +573,11 @@ def assess_source(cell):
     o=cell['observations'];checks=[]
     if cell['status']!='OBSERVED':return dict(status=cell['status'],reason=cell['reason'],business_assertions=[])
     try:
+        import importlib.util
+        from pathlib import Path
+        path=Path(__file__).with_name('typed_recall_source_oracle.py')
+        spec=importlib.util.spec_from_file_location('source_state_oracle',path)
+        state=importlib.util.module_from_spec(spec);spec.loader.exec_module(state)
         if o.get('corruption'):
             control=o['control'];check_execution_wire(control['execution'],control['context'],control['plan'])
             members=control['execution']['decision']['confirmation_groups'][0]['members']
@@ -581,7 +586,8 @@ def assess_source(cell):
             expected_count=1 if 'one-member' in cell['cell_id'] else 3 if 'three-members' in cell['cell_id'] else 2
             if len(o['after_members'])!=expected_count or 'recalled' in o or not o.get('exception'):
                 raise ValueError('actual corrupted member state did not reject reopen')
-            return dict(status='BLOCKED',reason='CORRUPTION_EXACT_REJECTION_LAYER_AND_FULL_MEMBER_HASH_ORACLE_PENDING',
+            state.check_corruption_state(o,cell['cell_id'])
+            return dict(status='PASS',reason='',
                 business_assertions=['real revision7/8 no-fault confirmation control','actual member corruption followed by reopen rejection'])
         check_two_source_control(o['control'],o['sources'])
         checks.append('independent two-source no-fault business control before injection')
@@ -610,8 +616,9 @@ def assess_source(cell):
                 control_after=o['control_after'],replay_exact=exact and recovered['replayed'],replay_query_count=recovered['candidate_query_count'])
             if not exact:raise ValueError('recovery business result differs from valid control')
         checks += ['exact injected seam/ordinal or restart','fixed pre-commit old / post-ACK exact committed state','reopened real recovery and hash-identical business result']
-        # Still require full schema/PK association and non-final protected roots.
-        return dict(status='BLOCKED',reason='SOURCE_FULL_STATE_PK_AND_NONFINAL_ROOT_BINDINGS_PENDING',business_assertions=checks)
+        state.check_fault_state(o,seam,FINAL_TABLES)
+        checks.append('complete source schema/PK/request/attempt/terminal and unchanged nonfinal roots')
+        return dict(status='PASS',reason='',business_assertions=checks)
     except (ValueError,KeyError,TypeError,IndexError) as exc:
         return dict(status='FAIL',reason=str(exc),business_assertions=checks)
 

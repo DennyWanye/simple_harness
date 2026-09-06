@@ -303,7 +303,7 @@ def _execute(args, layers, expected):
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     execution_code = {str(path):file_sha(path) for path in [
         *[adapter_dir / name for name in validation_code],
-        runner_dir / "typed_recall_a2_oracle.py",runner_dir / "typed_recall_normal_inputs.py"]}
+        runner_dir / "typed_recall_a2_oracle.py",runner_dir / "typed_recall_normal_inputs.py",runner_dir / "typed_recall_source_oracle.py"]}
     if args.source_adapter:
         execution_code[str(Path(args.source_adapter).resolve())]=file_sha(args.source_adapter)
     python = args.consumer_python

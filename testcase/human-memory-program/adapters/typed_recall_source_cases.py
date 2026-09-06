@@ -4,6 +4,7 @@ import json
 import shutil
 import sqlite3
 import zipfile
+import traceback
 from pathlib import Path
 
 
@@ -52,6 +53,7 @@ async def execute_source(request,workspace):
 
 
 async def fault_cases(request,workspace,factory,helpers,oracle,backends,now):
+    state=load(Path(__file__).parent.parent/'runners/typed_recall_source_oracle.py')
     def snapshot(path):
         with sqlite3.connect(path) as db:
             return {table:sorted([list(row) for row in db.execute('SELECT * FROM '+table)],key=helpers.canonical)
@@ -80,6 +82,7 @@ async def fault_cases(request,workspace,factory,helpers,oracle,backends,now):
     try:control=await control_case.recall(**params)
     finally:await control_case.close()
     control_after=snapshot(control_path)
+    full_control=state.capture(control_path)
     control_valid=False;control_error=None
     try:control_valid=oracle.check_two_source_control(control,sources)
     except (ValueError,KeyError,TypeError) as exc:control_error=str(exc)
@@ -102,6 +105,7 @@ async def fault_cases(request,workspace,factory,helpers,oracle,backends,now):
             cells.append(dict(cell_id=name,status='OBSERVED',reason='',observations=observed));continue
         path=workspace/(seam+'.sqlite');copy_db(seed.path,path)
         observed['before']=snapshot(path)
+        observed['full_state']={'before':state.capture(path),'control_after':full_control}
         case=await reopen(path);hits=[]
         if seam!='restart-open-rebuild':
             point,ordinal,phase=mapping[seam];observed.update(fault_point=point,fault_ordinal=ordinal,phase=phase)
@@ -116,18 +120,21 @@ async def fault_cases(request,workspace,factory,helpers,oracle,backends,now):
         finally:
             observed['hits']=hits
             observed['immediate']=snapshot(path)
+            observed['full_state']['immediate']=state.capture(path)
             await case.close()
         case=await reopen(path)
         try:
             observed['calls'].append('reopen:execute_typed_recall')
             observed['recovery']=await case.recall(**params)
             observed['recovery_after']=snapshot(path)
+            observed['full_state']['recovery_after']=state.capture(path)
         finally:await case.close()
         cells.append(dict(cell_id=name,status='OBSERVED',reason='',observations=observed))
     return cells
 
 
 async def corruption_cases(request,workspace,factory,helpers,oracle):
+    state=load(Path(__file__).parent.parent/'runners/typed_recall_source_oracle.py')
     conflicts=load(Path(__file__).with_name('typed_recall_conflict_cases.py'))
     import simple_harness as h
     payload={key:request['inputs']['claim'][key] for key in ('subject_entity','predicate','object_value','qualifiers')}
@@ -151,6 +158,7 @@ async def corruption_cases(request,workspace,factory,helpers,oracle):
         if not name.startswith('conflict-state/'):continue
         path=workspace/(name.rsplit('/',1)[1]+'.sqlite')
         with sqlite3.connect(seed.path) as a,sqlite3.connect(path) as b:a.backup(b)
+        full_before=state.capture(path)
         with sqlite3.connect(path) as db:
             db.execute('PRAGMA foreign_keys=OFF');db.execute('PRAGMA ignore_check_constraints=ON')
             triggers=list(db.execute("SELECT name,sql FROM sqlite_master WHERE type='trigger' AND tbl_name='cognitive_conflict_members'"))
@@ -166,11 +174,21 @@ async def corruption_cases(request,workspace,factory,helpers,oracle):
             after=list(db.execute('SELECT * FROM cognitive_conflict_members ORDER BY ordinal'))
             db.commit()
         observed=dict(corruption=True,control=control,before_members=before,after_members=after,calls=['source_corrupt_members','initialize_reopen'])
+        observed['full_state']={'before':full_before,'damaged':state.capture(path)}
+        observed.update(phase='initialize_reopen',recall_calls=0)
         case=helpers.CaseManager(path,backend_factory=factory);case.admitted.update(admitted)
         try:
             await case.open()
+            observed.update(phase='recall',recall_calls=1)
             observed['recalled']=await case.recall(query='preferred_python')
-            await case.close()
-        except Exception as exc:observed['exception']=dict(type=type(exc).__name__,reason=str(exc))
+        except Exception as exc:
+            observed['exception']=dict(type=type(exc).__name__,reason=str(exc))
+            observed['exception_frames']=[{'file':Path(f.filename).name,'function':f.name} for f in traceback.extract_tb(exc.__traceback__)]
+            if exc.__cause__ is not None:
+                observed['exception_cause']=dict(type=type(exc.__cause__).__name__,reason=str(exc.__cause__))
+        finally:
+            if getattr(case,'manager',None) is not None:
+                await case.close()
+            observed['full_state']['rejected']=state.capture(path)
         rows.append(dict(cell_id=name,status='OBSERVED',reason='',observations=observed))
     return rows
