@@ -66,9 +66,22 @@ async def test_real_route_control_ledger_has_no_physical_scope_and_mismatch_reje
     path, _, _ = await _bound_run(tmp_path)
     ingress = ExecutionEvidenceIngress(path)
     ledger = ContextRouteLedgerStore(path, evidence_ingress=ingress)
+    from simple_harness.execution.context_authority import ContextRouteReceipt, TaskScopeRoute
+    # This parser fixture has no workspace grant. A genuine no-authority
+    # standalone decision exercises the same control producer without inventing
+    # a TaskScope binding receipt. Actual-main covers the real CREATE route.
+    route = ContextRouteReceipt(receipt_id='parser-control-route', run_id=RUN,
+        raw_call_id='actual-route-call', effect_id='actual-route-effect',
+        route=TaskScopeRoute.DIRECT_STANDALONE, task_scope_id=None, binding_set_revision=None)
+    await ledger.record_route_decision(receipt=route, provider_turn_ordinal=1,
+        origin='context_tool', idempotency_key='parser-control-route')
+    async with aiosqlite.connect(path) as read_db:
+        async with read_db.execute('SELECT decision_id FROM context_route_decisions '
+                'WHERE sdk_run_id=? AND effect_id=?', (RUN, 'actual-route-effect')) as cursor:
+            decision_id = (await cursor.fetchone())[0]
     await ledger.record_tool_invocation(sdk_run_id=RUN, raw_call_id='actual-route-call',
-        effect_id='actual-route-effect', proposal={'route': 'continue_active'},
-        verdict='accepted', decision_id='actual-route-decision', detail={'route': 'continue_active'})
+        effect_id='actual-route-effect', proposal={'route': 'direct_standalone'},
+        verdict='accepted', decision_id=decision_id, detail={'route': 'direct_standalone'})
     await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT,
         fact=_tool_fact(RUN, 'actual-physical-effect'))
     control = dict(item_ordinal=3, sdk_run_id=RUN, effect_id='actual-route-effect',

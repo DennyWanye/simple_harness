@@ -32,3 +32,11 @@ ingestion, then verifies control=None and physical Scope retained. Wrong raw cal
 changed ledger read reject. The read-wrapper negative does not alter business SQL or triggers and is not
 claimed as actual on-disk corruption. Main's original C05-04 actual-main red is the physical integration
 oracle; main schedules its retry and the as-yet-unrun cases. No old green tests rerun here.
+
+Main r2 new parser control failed at its foreign-key precondition (0.32s, PG85509 exit1/remaining=[]),
+not product parsing; the five phase cases were not entered. The fixture now calls the existing
+record_route_decision producer first and reads its actually persisted decision_id before invocation.
+Because the parser fixture has no workspace grant, its synthetic route is legitimate no-authority
+DIRECT_STANDALONE, not an invented CONTINUE_ACTIVE binding. It remains a producer/parser control;
+actual-main's original CREATE/marker/closure run is the scoped execution oracle. FK remains enabled,
+no business SQL writes or SDK state manipulation were added. Only fixture/docs changed, NOT_RUN.
