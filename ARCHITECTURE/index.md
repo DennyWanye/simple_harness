@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。独立Host提醒来源观察接收叶`0e983edc`通过新增14项/5.17s及Dirac限定审查；复用既有sidecar，默认登记实际Manager读取接入，原SDK观察不提升为授权/持久receipt。未合主，v2/scheduler/全操作coverage/native不在此验收内。[结果与接线边界](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
+
 2026-09-06：当前组合的M616锁文件hash已修正并定向验证，Host恢复/提醒来源限定独审已归档在组合记录。
 
 最后更新：2026-09-06。[当前 H075/M616 组合](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)已完成必要功能与安装身份检查；后文叶子状态保留当时证据，不能代替原 program 剩余项。

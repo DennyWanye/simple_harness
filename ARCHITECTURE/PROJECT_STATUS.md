@@ -1,5 +1,7 @@
 # simple_harness — 全局项目状态与架构完成度
 
+最后更新：2026-09-06。`feat/prospective-source-observation`从c98b6a27独立完成M616 source-read Host持久接收限定叶，14PASS/5.17s、Dirac源码及结果ACCEPT；PG49962退出/子进程清空，共享锁已释放。原typed分支保留，当前未合主；未改SDK/主composition，不把本叶算完整scheduler、401或全操作审计完成。[交付、限制和命令](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
+
 2026-09-06 合并锁文件P1已修正并通过新增1项一致性检查；没有重跑此前业务绿色集合，原 program 剩余状态不变。
 
 最后更新：2026-09-06。H075/M616/S0313、typed-use恢复及提醒来源已汇入隔离候选，必要功能/安装身份分批通过；原用户主树不变。S5c scheduler/occurrence/ack、401/240及native仍未完成。[当前组合与限制](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)。

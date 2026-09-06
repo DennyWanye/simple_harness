@@ -1,5 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
+最后更新：2026-09-06。独立Host source-read账本`0e983edc`已用真实M616 Manager完成14项必要验证/Dirac限定ACCEPT。默认registration实际读外层保存payload-free观察，复用memory_call_attempts/findings，无新schema/权限；原host_persistence_unverified保留，Host settlement独立。未调用/能力缺失不归因SDKfinding，写失败不重读、取消join清理后传播。未合主，v2 union、scheduler与全操作coverage仍独立待办。[接口及证据](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
+
 2026-09-06 合并复核更正：M616 uv.lock wheel hash 已从误留的M615值修正，新增锁文件一致性检查1项通过；Host恢复与提醒来源均已获得限定独审，详见下方组合记录。
 
 最后更新：2026-09-06。当前隔离候选已组合 H075/M616/S0313，SDK 官方执行库schema9、Host默认49。实际 short使用与空assistant工具组交叉通过；主vendor安装来源检查随后定向通过。未重跑完整旧集合，完整scheduler和质量/native仍待完成。[组合状态](../plans/2026-09-06-typed-use-primary/COMBINED-075616.md)。
