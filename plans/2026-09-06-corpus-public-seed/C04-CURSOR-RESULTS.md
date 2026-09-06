@@ -1,7 +1,7 @@
 # C04 setup and same-timestamp cursor recovery
 
 Last updated: 2026-09-07. Product d3a580be; test helper fix d25fe2f6.
-Fixed source reviewed by Dirac with no definite P1 before execution; final evidence review pending.
+Dirac final limited ACCEPT: product d3a580be, fixture d25fe2f6, results6b1f886a. Reviewed both execution logs/resource receipts and four hashes; no more old suites requested. This does not cover arbitrary older backfill or complete consumer not_required traversal.
 
 C04 original20 setup: b380f999 first batch19PASS/1FAIL (8.31s); only C04-12 rerun after product fix and passed. Not one same-source full20 run. No threshold/input/gold changes. All setup authority is synthetic fixture/public SDK, not model quality. 240 quality executions remain0.
 
