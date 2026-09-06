@@ -62,8 +62,12 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
         remaining, cleanup_error = [], None
         started = time.monotonic()
         previous = {}
+        received_signal = None
         def interrupted(signum, _frame):
-            raise InterruptedError(signum)
+            # Raising here can interrupt Popen after spawn but before assignment,
+            # leaving cleanup without the child's process-group identity.
+            nonlocal received_signal
+            received_signal = signum
         for sig in (signal.SIGINT, signal.SIGTERM):
             previous[sig] = signal.signal(sig, interrupted)
         try:
@@ -72,9 +76,14 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
                                            start_new_session=True)
                 print(f"Owned test process group: {process.pid}", flush=True)
                 while True:
+                    if received_signal is not None:
+                        reason = f"signal_{received_signal}"
+                        break
+                    # Observe completion first, then take a fresh group snapshot.
+                    # A pre-exit snapshot can miss a child forked just before exit.
+                    parent_code = process.poll()
                     live = members(process.pid)
                     peak = max(peak, sum(row["rss_kib"] for row in live))
-                    parent_code = process.poll()
                     if peak > rss_mib * 1024:
                         reason = "rss_limit"
                         break
@@ -86,12 +95,12 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
                         reason = "deadline"
                         break
                     time.sleep(.2)
-        except InterruptedError as exc:
-            reason = f"signal_{exc.args[0]}"
         except Exception as exc:
             # Exception text/command arguments may contain private data.
             reason = "runner_error:" + type(exc).__name__
         finally:
+            if received_signal is not None:
+                reason = reason or f"signal_{received_signal}"
             # Do not let a second terminal signal interrupt owned cleanup.
             for sig in previous:
                 signal.signal(sig, signal.SIG_IGN)

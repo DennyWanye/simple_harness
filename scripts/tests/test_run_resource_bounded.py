@@ -131,6 +131,73 @@ class ResourceRunnerTests(unittest.TestCase):
             except ProcessLookupError:
                 pass
 
+    def test_child_forked_between_snapshot_and_parent_exit_is_not_green(self):
+        spec = importlib.util.spec_from_file_location("resource_race", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        go = self.base / "go"
+        ready = self.base / "parent-ready"
+        child_ready = self.base / "child-ready"
+        child = "import time,signal;from pathlib import Path;signal.signal(signal.SIGTERM,signal.SIG_IGN);Path("+repr(str(child_ready))+").touch();time.sleep(60)"
+        parent = ("import time,subprocess,sys;from pathlib import Path;Path("+repr(str(ready))+").touch();\n"
+            "while not Path("+repr(str(go))+").exists():time.sleep(.01)\n"
+            "subprocess.Popen([sys.executable,'-c',"+repr(child)+"]);\n"
+            "while not Path("+repr(str(child_ready))+").exists():time.sleep(.01)")
+        original = module.members
+        first = True
+        def delayed_snapshot(group):
+            nonlocal first
+            if not first:
+                return original(group)
+            first = False
+            until = time.monotonic()+5
+            while not ready.exists() and time.monotonic() < until:
+                time.sleep(.01)
+            snapshot = original(group)
+            go.touch()
+            while time.monotonic() < until:
+                if child_ready.exists() and not any(r["pid"] == group for r in original(group)):
+                    break
+                time.sleep(.01)
+            return snapshot
+        with patch.object(module, "members", delayed_snapshot):
+            result = module.run([sys.executable, "-c", parent], evidence=self.evidence,
+                lock_path=self.lock, rss_mib=128, seconds=10)
+        receipt = json.loads((self.evidence / "resource.json").read_text())
+        self.assertEqual(result, 125)
+        self.assertEqual(receipt["stop_reason"], "orphaned_group_after_parent_exit")
+        self.assertEqual(receipt["remaining_group_members"], [])
+
+    def test_sigterm_between_spawn_and_assignment_keeps_cleanup_ownership(self):
+        spec = importlib.util.spec_from_file_location("resource_signal_race", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        ready = self.base / "ready"
+        child = "import time;from pathlib import Path;Path("+repr(str(ready))+").touch();time.sleep(60)"
+        real_popen = subprocess.Popen
+        spawned = []
+        def signal_before_return(*args, **kwargs):
+            process = real_popen(*args, **kwargs)
+            if not spawned:
+                spawned.append(process)
+                until = time.monotonic()+5
+                while not ready.exists() and time.monotonic() < until:
+                    time.sleep(.01)
+                os.kill(os.getpid(), signal.SIGTERM)
+            return process
+        try:
+            with patch.object(module.subprocess, "Popen", signal_before_return):
+                result = module.run([sys.executable, "-c", child], evidence=self.evidence,
+                    lock_path=self.lock, rss_mib=128, seconds=10)
+            receipt = json.loads((self.evidence / "resource.json").read_text())
+            self.assertEqual(result, 125)
+            self.assertEqual(receipt["group_id"], spawned[0].pid)
+            self.assertIsNotNone(spawned[0].poll())
+        finally:
+            if spawned and spawned[0].poll() is None:
+                os.killpg(spawned[0].pid, signal.SIGKILL)
+                spawned[0].wait(timeout=5)
+
 
 if __name__ == "__main__":
     unittest.main()

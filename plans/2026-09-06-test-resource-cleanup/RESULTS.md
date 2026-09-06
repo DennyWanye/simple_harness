@@ -47,3 +47,18 @@ python scripts/run_resource_bounded.py   --evidence-dir .local-test-evidence/202
 | probe-red/resource.json | ad9fccb4924eeed957eac0821dc9056fa14038a7fb98238f522a58d2fd68fd91 |
 | probe-fixed/command.log | 80151bc0bf8dda1a0a02d6364fe8895a9e45a4ae552b62f5477895efbf33813e |
 | probe-fixed/resource.json | 1bb7d681346d706663a253a88fa0e6bff2569d233e1d240eb7b23fa224f6172c |
+
+## 独审两项P1的确定性竞态反例
+
+独审指出：父退出前的旧快照可能漏掉最后一刻fork的孤儿，finally虽清理却返回0；以及signal handler抛异常可能落在Popen启动后、赋值前，清理失去process归属。两项均在旧固定f7b1bdc3以真实子进程及受控调度重现为FAIL：第一项receipt错误返回0，第二项group_id=null且测试owner自行清理未归属子进程。不是概率重试或纯mock结果。
+
+修复先poll完成状态再读取新快照；handler只记录signal，不在spawn/归属赋值之间抛异常，拿到process后监测并清理，finally补记到达的signal。没有preexec_fn或继承阻塞信号mask。
+
+修复两反例＋probe异常、运行中SIGTERM、正常成功三个必要邻居：5 PASS/2.969秒。父返回0但组有孤儿现在返回125并完整清理；赋值窗口signal现在带真实group_id、父-15并清理。外层PID27112 exit0，采样峰值50416KiB，剩余组为空。最终唯一10项场景按变更风险分批验证，不宣称一次十项全量运行。独审两P1等待固定后继复核。
+
+| 竞态证据相对文件 | SHA256 |
+|---|---|
+| races-red/command.log | 49e3db3dc5842eb14cc3de9901416dbbb83880ba388a15b7c0871fde7dcc738d |
+| races-red/resource.json | cc409edb3e6d2af60de6995fee3add5140adc1ae32b0c25978158c0f2a33bc16 |
+| races-fixed/command.log | 7a97e8d38e58d4cff11bcc2f81d50849ca4990aa06592b5339344d85e8b78a9d |
+| races-fixed/resource.json | 903d9bd3581282817dcdc523c142d467740c9bdfd72f6924d65292af54b8bb81 |
