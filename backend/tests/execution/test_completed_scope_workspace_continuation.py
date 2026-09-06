@@ -103,7 +103,7 @@ def verify_added_bound_events(db, added, sdk_run_id, stack):
     db.row_factory = None
 
 
-async def actual_world(tmp_path, *, mode="auto", invalid=None):
+async def actual_world(tmp_path, *, mode="auto", invalid=None, manual_decider=None):
     state, factory, service, configured, authority, old, root = await archive(tmp_path, mode)
     prior = archive_facts(state, old)
     if invalid == "multi_root":
@@ -167,8 +167,11 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
                     assert db.execute("SELECT COUNT(*) FROM task_workspace_binding_revisions WHERE task_scope_id=?", (observed["new_scope"],)).fetchone()[0] == 0
                 # Actual authenticated public UI/control-channel operation;
                 # the deterministic model cannot return a bool to authorize it.
-                decided = await factory.bind(local_owner_auth(), binding_append=authority).decide_manual_binding(
-                    DecideManualBindingRequest(challenge["challenge_ref"], "allow", "actual-binding-allow"))
+                if manual_decider is None:
+                    decided = await factory.bind(local_owner_auth(), binding_append=authority).decide_manual_binding(
+                        DecideManualBindingRequest(challenge["challenge_ref"], "allow", "actual-binding-allow"))
+                else:
+                    decided = await manual_decider(factory=factory, authority=authority, state=state, root=root)
                 assert decided["status"] == "bound"
                 observed["manual"] = decided
                 name, args = "context_route", {"route": "resume_existing", "task_scope_id": observed["new_scope"]}

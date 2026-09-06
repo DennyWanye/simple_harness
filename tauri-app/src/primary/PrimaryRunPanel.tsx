@@ -10,7 +10,7 @@ import type { PrimaryRun, PrimaryPort } from "./controller";
 import { primaryRunChannel } from "./runChannel";
 import { record } from "./requests";
 
-export function PrimaryRunPanel({ run, primaryRef, port, onStop, visible = true, refreshVersion = 0 }: { run: PrimaryRun; primaryRef: string; port: PrimaryPort; onStop: () => void; visible?: boolean; refreshVersion?: number }) {
+export function PrimaryRunPanel({ run, primaryRef, port, onStop, onToolResult, visible = true, refreshVersion = 0 }: { run: PrimaryRun; primaryRef: string; port: PrimaryPort; onStop: () => void; onToolResult?: () => void; visible?: boolean; refreshVersion?: number }) {
   const { execution_session_ref, sdk_run_ref, run_ref, generation } = run;
   const channel = useMemo(() => primaryRunChannel(port, { execution_session_ref, sdk_run_ref, run_ref, generation, primary_ref: primaryRef }, controlWS), [port,execution_session_ref, sdk_run_ref, run_ref, generation, primaryRef]);
   useEffect(() => { channel.start(); return () => channel.dispose(); }, [channel]);
@@ -38,6 +38,7 @@ export function PrimaryRunPanel({ run, primaryRef, port, onStop, visible = true,
       setDirectoryError(String(p.error ?? "项目位置未能应用"));
     }
     if (msg.type === "tool_call" || msg.type === "tool_result") {
+      if (msg.type === "tool_result") onToolResult?.();
       const id = String(p.call_id ?? "");
       const name = msg.type === "tool_call" ? p.name : p.tool;
       if (!id || typeof name !== "string") return;
@@ -46,7 +47,7 @@ export function PrimaryRunPanel({ run, primaryRef, port, onStop, visible = true,
         status: msg.type === "tool_call" ? "执行中" : p.ok === false ? "失败" : "已返回",
       }].slice(-20));
     }
-  }), [channel, directory?.decision_id]);
+  }), [channel, directory?.decision_id, onToolResult]);
   return <>
     {decisionStatus && <p role="status">{decisionStatus}</p>}
     {tools.length > 0 && <details><summary>本次工具活动</summary><ul>{tools.map((tool) => <li key={tool.id}>{tool.name} · {tool.status}</li>)}</ul></details>}

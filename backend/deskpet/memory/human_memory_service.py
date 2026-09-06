@@ -519,6 +519,20 @@ class HumanMemoryHostService:
             disclosure_context=self._history_disclosure(request_id), **request
         )
 
+    def _primary_workspace_bindings(self):
+        from deskpet.memory.primary_workspace_bindings import PrimaryWorkspaceBindings
+        return PrimaryWorkspaceBindings(self._db_path, subject=self._auth.subject,
+            authority=self._binding_append, decide=self.decide_manual_binding)
+
+    async def list_primary_bindings(self, **request):
+        return await self._primary_workspace_bindings().pending(**request)
+
+    async def read_primary_binding(self, **request):
+        return await self._primary_workspace_bindings().status(**request)
+
+    async def respond_primary_binding(self, **request):
+        return await self._primary_workspace_bindings().respond(**request)
+
     async def respond_primary_decision(self, *, request_id: str, **request):
         result = await self._primary_decisions.respond(
             disclosure_context=self._history_disclosure(request_id), **request

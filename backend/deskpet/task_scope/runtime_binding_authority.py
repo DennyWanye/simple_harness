@@ -221,6 +221,13 @@ class WorkspaceBindingRuntimeAuthority:
         )
         return self._challenge_result(challenge)
 
+    async def manual_binding_read_context(self, *, subject: str) -> Mapping[str, object]:
+        """Current display facts only; issuing a decision still uses the original port."""
+        self._assert_subject(subject)
+        state = await self._policy.get_policy_state()
+        return {"mode": str(getattr(state, "mode", "")),
+                "now_millis": int(self._clock_millis())}
+
     async def decide_manual_binding(
         self,
         *,

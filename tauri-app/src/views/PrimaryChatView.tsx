@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ControlChannel } from "../ws/ControlChannel";
 import { InputBar } from "../code-panel/InputBar";
 import { MarkdownMessage } from "../components/MarkdownMessage";
@@ -9,6 +9,8 @@ import { tokens } from "../theme/tokens";
 import { boundPrimaryPort } from "../primary/boundPort";
 import { PrimaryController, type PrimaryMessage, type PrimaryPort } from "../primary/controller";
 import { PrimaryRunPanel } from "../primary/PrimaryRunPanel";
+import { PrimaryWorkspaceBindings } from "../primary/PrimaryWorkspaceBindings";
+import { PrimaryBindingRecovery } from "../primary/bindingRecovery";
 import { PrimaryMemoryPanel } from "../components/PrimaryMemoryPanel";
 import { CognitiveRequests } from "../primary/cognitiveRequests";
 
@@ -27,9 +29,12 @@ const runLabels: Record<string, string> = {
 };
 export function PrimaryChatView({ channel, onOpenSettings, active = true }: PrimaryChatViewProps) {
   const [controller] = useState(() => new PrimaryController(disconnected));
+  const [bindingRecovery] = useState(() => new PrimaryBindingRecovery());
   const [memoryRequests] = useState(() => new CognitiveRequests());
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [decisionRefresh, setDecisionRefresh] = useState(0);
+  const [bindingRefresh, setBindingRefresh] = useState(0);
+  const refreshBindings = useCallback(() => setBindingRefresh(value => value + 1), []);
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot);
   const primaryPort = useMemo(() => channel ? boundPrimaryPort(channel) : disconnected, [channel]);
   useEffect(() => controller.start(primaryPort), [controller, primaryPort]);
@@ -66,9 +71,11 @@ export function PrimaryChatView({ channel, onOpenSettings, active = true }: Prim
       {snapshot.messages.length === 0 && canSend && !snapshot.loading && <p>继续在这里交流，历史由主对话保存。</p>}
       {snapshot.messages.map((message) => <PrimaryMessageRow key={`${snapshot.viewEpoch}:${message.message_ref}`} message={message} controller={controller} />)}
     </div>
+    {active && snapshot.primaryRef && <PrimaryWorkspaceBindings port={primaryPort} primaryRef={snapshot.primaryRef}
+      ownerKey={snapshot.verifiedOwnerKey} ready={snapshot.ready} recovery={bindingRecovery} refreshVersion={decisionRefresh + bindingRefresh} />}
     {snapshot.ready && snapshot.state && run?.execution_session_ref && run.sdk_run_ref && <div style={{ padding: "0 16px", maxHeight: "35%", overflowY: "auto" }}>
       <PrimaryRunPanel key={`${snapshot.draftEpoch}:${run.run_ref}:${run.generation}:${run.execution_session_ref}:${run.sdk_run_ref}`}
-        run={run} port={primaryPort} primaryRef={snapshot.state.primary_ref} visible={active} refreshVersion={decisionRefresh} onStop={() => void controller.control("stop", run)} />
+        run={run} port={primaryPort} primaryRef={snapshot.state.primary_ref} visible={active} refreshVersion={decisionRefresh} onToolResult={refreshBindings} onStop={() => void controller.control("stop", run)} />
     </div>}
     {run && (!run.execution_session_ref || !run.sdk_run_ref) && <p style={{ margin: "4px 16px" }}>正在等待执行绑定；权限与工具详情将在绑定后恢复。</p>}
     <InputBar key={snapshot.draftEpoch} disabled={!canSend} placeholder="输入消息，Enter 发送…"

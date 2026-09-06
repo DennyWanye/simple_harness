@@ -116,6 +116,9 @@ async def handle_human_memory_command(
             "primary.memory.list",
             "primary.memory.graph",
             "primary.memory.forget",
+            "primary.bindings.pending",
+            "primary.bindings.status",
+            "primary.bindings.decide",
         }:
             from deskpet.memory.writer_fence import human_memory_request_boundary
 
@@ -153,7 +156,8 @@ async def send_human_memory_response(
 
     payload = response.get("payload", {})
     operation = payload.get("operation")
-    if not payload.get("ok") or operation not in HUMAN_AUDIT_OPERATIONS:
+    binding_operations = {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}
+    if not payload.get("ok") or operation not in HUMAN_AUDIT_OPERATIONS | binding_operations:
         await send(response)
         return
     checked = False
@@ -161,7 +165,8 @@ async def send_human_memory_response(
         async with human_memory_request_boundary():
             if factory is None:
                 raise HumanMemoryHostServiceError("primary_audit_capability_unavailable")
-            factory.bind(auth).check_primary_audit_response(operation, payload["result"])
+            if operation in HUMAN_AUDIT_OPERATIONS:
+                factory.bind(auth).check_primary_audit_response(operation, payload["result"])
             checked = True
             # Bound the time a slow socket may retain the shared revocation
             # lease. Timeout is an uncertain delivery, never a new read.
@@ -237,6 +242,19 @@ async def _dispatch(  # type: ignore[no-untyped-def]
         return await service.read_primary_message_detail(
             request_id=request_id, **request
         )
+    if operation in {"primary.bindings.pending", "primary.bindings.status", "primary.bindings.decide"}:
+        from deskpet.memory.primary_workspace_bindings import IDENTITY_FIELDS
+        from deskpet.memory.primary_read_model import PrimaryReadError
+        fields = ({"primary_ref", "cursor"} if operation == "primary.bindings.pending" else
+                  {"primary_ref", "challenge_ref"} if operation == "primary.bindings.status" else IDENTITY_FIELDS | {"decision"})
+        required = {"primary_ref"} if operation == "primary.bindings.pending" else fields
+        if not required <= set(request) <= fields:
+            raise PrimaryReadError("primary_binding_request_invalid")
+        if operation == "primary.bindings.pending":
+            return await service.list_primary_bindings(**request)
+        if operation == "primary.bindings.status":
+            return await service.read_primary_binding(**request)
+        return await service.respond_primary_binding(**request)
     if operation in {"primary.decisions.list", "primary.decisions.respond"}:
         from deskpet.memory.primary_read_model import PrimaryReadError
         fields = {"primary_ref", "expected_run_ref", "expected_generation"}

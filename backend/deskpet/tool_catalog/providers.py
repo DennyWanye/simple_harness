@@ -519,6 +519,34 @@ def build_explicit_product_tool_catalog(
             return await result if inspect.isawaitable(result) else result
 
         schema = schemas[name]
+        # The frozen manifest describes the older bridge. Project the current
+        # public discovery instructions without rewriting its archived bytes.
+        if name == "tool_search":
+            schema = {**schema, "description": (
+                "Search deferred capabilities authorized for this request. "
+                "Returns ranked descriptors, not executable schemas. Copy a returned "
+                "capability_id into tool_describe, then use its exact activation "
+                "fields with tool_activate before calling the target tool."
+            ), "parameters": {**schema["parameters"], "properties": {
+                **schema["parameters"]["properties"],
+                "query": {**schema["parameters"]["properties"]["query"], "description": (
+                    "Space-separated keywords. Any token can match capability metadata "
+                    "or schema text; results are ranked by token occurrences."
+                )},
+                "toolset": {**schema["parameters"]["properties"]["toolset"], "description": (
+                    "Legacy compatibility field; the current SDK catalog ignores this filter."
+                )},
+            }}}
+        elif name == "tool_describe":
+            schema = {**schema, "description": schema["description"].replace(
+                "capability_search", "tool_search"), "parameters": {
+                **schema["parameters"], "properties": {
+                    **schema["parameters"]["properties"], "capability_id": {
+                        **schema["parameters"]["properties"]["capability_id"],
+                        "description": "Copy the complete capability_id returned by tool_search.",
+                    },
+                },
+            }}
         migration = migration_by_name.get(name)
         registrations.append(
             ProductToolRegistration(
