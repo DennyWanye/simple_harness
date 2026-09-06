@@ -130,7 +130,8 @@ async def _producer(db, *, stack, decision, plan, receipt, subject, primary_ref)
         proof = dependencies([*proof["evidence"],
             dict(evidence_id=result.evidence_id, envelope_hash=result.envelope_hash),
             dict(evidence_id=source.evidence_id, envelope_hash=source.envelope_hash)],
-            proof["recall"], proof.get("short_horizon", ()))
+            proof["recall"], proof.get("short_horizon", ()),
+            procedure_drafts=proof.get("procedure_drafts", ()))
         return dict(producer_attempt_id=row["attempt_id"], producer_receipt_hash=result.envelope_hash), proof
     if derive_plan_id(plan["idempotency_key"], plan["task_scope_id"]) != plan["plan_id"]:
         return None
@@ -200,7 +201,8 @@ async def mutation_fields(*, db, stack, scope_id, state, revision, subject, poli
             if envelope.envelope_hash != ref["content_hash"]:
                 raise ValueError("scope_field_evidence_differs")
         proof = dependencies([*proof["evidence"], *(dict(evidence_id=r["evidence_id"], envelope_hash=r["content_hash"]) for r in refs)],
-            proof["recall"], proof.get("short_horizon", ()))
+            proof["recall"], proof.get("short_horizon", ()),
+            procedure_drafts=proof.get("procedure_drafts", ()))
         if policy is not None and not await policy.check_dependencies(db=db, primary_ref=primary, dependencies=proof, disclosure_context=disclosure_context):
             continue  # never fall back to the older value
         full = str(state[field])

@@ -89,7 +89,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None, procedure_runtime=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -171,6 +171,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             tools.bind_run_authorities(registry)
             for registration in extra_registrations:
                 tools.register(_sdk_tool(registration))
+        if procedure_runtime is not None:
+            procedure_runtime.bind_tools(registry, tools)
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
         if typed_use_authority is not None:
@@ -200,7 +202,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             gate = EffectGate(binding_store=bindings, route_ledger=ledger, scope_store=CanonicalTaskScopeStore(state_path),
                               authority_resolver=registry.resolve, exposure_resolver=registry.resolve_exposure)
             result = replace(result, tools=ProductEffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop,
-                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate),
+                              effect_gate=gate, evidence_ingress=ExecutionEvidenceIngress(state_path), foreground_admission=foreground_gate,
+                              procedure_runtime=procedure_runtime),
                               task_execution_authority=ProductTaskExecutionAuthority(root_resolver=BindingRootResolver(bindings)))
         from deskpet.execution.semantic_closure import closure_instruction_for_run
         return replace(result, run_context_authority=ProductRunContextAuthority(

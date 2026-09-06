@@ -89,9 +89,10 @@ def _dependencies(proof):
     if not isinstance(proof, Mapping):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
     version = proof.get("schema_version")
-    if type(version) is not int or version not in (1, 2):
+    if type(version) is not int or version not in (1, 2, 3):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
     lanes = ("evidence", "recall") if version == 1 else ("evidence", "recall", "short_horizon")
+    if version == 3: lanes += ("procedure_drafts",)
     _fields(proof, ("schema_version", *lanes))
     if not all(isinstance(proof[k], (list, tuple)) for k in lanes):
         raise PrimaryVisibilityError("primary_visibility_dependencies_invalid")
@@ -111,7 +112,7 @@ def _dependencies(proof):
     for item in proof["recall"]:
         _fields(item, ("result_id", "result_hash", "item_id", "item_hash"))
         recalls.append(HistoryRecallBinding(**dict(item)))
-    if version == 2:
+    if version >= 2:
         try:
             from simple_harness_memory import HistoryShortHorizonBinding
         except ImportError as exc:
@@ -119,6 +120,11 @@ def _dependencies(proof):
         for item in proof["short_horizon"]:
             _fields(item, ("audit_id", "chunk_ref", "content_hash"))
             recalls.append(HistoryShortHorizonBinding(**dict(item)))
+    if version == 3:
+        from simple_harness_memory import HistoryProcedureDraftBinding
+        for item in proof["procedure_drafts"]:
+            _fields(item, ("memory_id","revision","candidate_hash"))
+            recalls.append(HistoryProcedureDraftBinding(**dict(item)))
     return evidence, recalls
 
 

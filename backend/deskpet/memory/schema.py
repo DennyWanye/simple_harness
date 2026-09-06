@@ -522,11 +522,15 @@ def _validate_composed_extension(path: Path, version: int) -> None:
     from deskpet.memory.s5c_schema import validate_s5c_state_db
     from deskpet.memory.s5c_timer_schema import validate_s5c_timer_state_db
     from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
+    from deskpet.memory.procedure_schema import validate_procedure_state_db
+    from deskpet.memory.procedure_recovery_schema import validate_procedure_recovery_state_db
 
     validators = {
         50: validate_s5c_state_db,
         51: validate_s5c_timer_state_db,
         52: validate_s5c_terminal_state_db,
+        53: validate_procedure_state_db,
+        54: validate_procedure_recovery_state_db,
     }
     validator = validators.get(version)
     if validator is None:
@@ -888,7 +892,7 @@ async def dispatch_startup_epoch(
         await _repair_chain_registration_before_inspect(path)
         decision = inspect_startup_epoch(
             path, approved_fresh_lane=approved_fresh_lane,
-            maximum_human_schema_version=52,
+            maximum_human_schema_version=54,
         )
         if decision.epoch in {StartupEpoch.FRESH, StartupEpoch.HUMAN_RESUME}:
             await initialize_human_memory_program_state_db(
@@ -940,7 +944,7 @@ async def initialize_state_db(
         and bootstrap_version >= HUMAN_MEMORY_PROGRAM_SCHEMA_VERSION
     ):
         decision = inspect_startup_epoch(
-            db_path, approved_fresh_lane=False, maximum_human_schema_version=52,
+            db_path, approved_fresh_lane=False, maximum_human_schema_version=54,
         )
         if decision.epoch is StartupEpoch.HUMAN_RESUME:
             if decision.user_version >= HUMAN_MEMORY_TARGET_SCHEMA_VERSION:

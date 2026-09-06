@@ -193,7 +193,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             disclosure_context=disclosure)
         proof = package["disclosure_manifest"]["dependencies"]
         proof = dependencies([{"evidence_id": candidate.evidence_id, "envelope_hash": candidate.evidence_hash},
-                              *proof["evidence"]], proof["recall"], proof.get("short_horizon", ()), schema_version=proof["schema_version"])
+                              *proof["evidence"]], proof["recall"], proof.get("short_horizon", ()),
+                              procedure_drafts=proof.get("procedure_drafts", ()), schema_version=proof["schema_version"])
         async with aiosqlite.connect(self._history_path) as db:
             db.row_factory = aiosqlite.Row
             if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,

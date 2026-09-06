@@ -42,10 +42,15 @@ def representable(messages, facts):
 
 
 def pairs(terminal, terminal_receipt, user, *, host_run_id):
+    return _pairs(terminal, terminal_receipt, user, host_run_id=host_run_id, contract=CONTRACT, schema_version=2)
+
+
+def _pairs(terminal, terminal_receipt, user, *, host_run_id, contract, schema_version):
+    """Shared encoding; v2 public entry retains its exact original bytes."""
     terminal_receipt.verify(terminal)
     payload = terminal.to_json()["sanitized_payload"]
     messages, facts = payload["messages"], payload["tool_causal_sources"]
-    if (payload["message_source_contract"] != CONTRACT or payload["terminal_state"] != "COMPLETED"
+    if (payload["message_source_contract"] != contract or payload["terminal_state"] != "COMPLETED"
             or not representable(messages, facts)
             or messages[0]["content"] != user.sanitized_payload.get("text")
             or user.subject != terminal.subject
@@ -67,17 +72,17 @@ def pairs(terminal, terminal_receipt, user, *, host_run_id):
             digest = canonical_hash({"domain": "host-tool-terminal/v1", "payload": attestation})
             source["tool_terminal_attestation"] = dict(payload=attestation,
                 receipt_id="host-tool-terminal:" + digest, receipt_hash=digest)
-        body = dict(schema_version=2, kind="primary_message", host_run_id=host_run_id,
+        body = dict(schema_version=schema_version, kind="primary_message", host_run_id=host_run_id,
                     sdk_run_id=terminal.run_id, transcript_ordinal=ordinal, source=source)
-        evidence_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"primary-message-v2:{terminal.run_id}:{ordinal}"))
+        evidence_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{contract}:{terminal.run_id}:{ordinal}"))
         envelope = h.SanitizedEvidenceEnvelope(evidence_id=evidence_id, run_id=terminal.run_id,
             subject=terminal.subject,
             source_kind=h.EvidenceSourceKind.TOOL_RESULT if ordinal in tools else h.EvidenceSourceKind.ASSISTANT_MESSAGE,
-            source_ref=f"primary-message-v2:{terminal.run_id}:{ordinal}", source_hash=canonical_hash(source),
+            source_ref=f"{contract}:{terminal.run_id}:{ordinal}", source_hash=canonical_hash(source),
             sanitized_payload=body, sanitized_hash=canonical_hash(body),
             filter_policy_version=terminal.filter_policy_version, removed_spans=(),
             disclosure_context=terminal.disclosure_context, evidence_refs=refs)
-        receipt = h.SanitizedEvidenceReceipt(receipt_id=f"primary-message-v2-receipt:{evidence_id}",
+        receipt = h.SanitizedEvidenceReceipt(receipt_id=f"{contract}-receipt:{evidence_id}",
             run_id=envelope.run_id, subject=envelope.subject, evidence_id=evidence_id,
             envelope_hash=envelope.envelope_hash, source_hash=envelope.source_hash,
             sanitized_hash=envelope.sanitized_hash, filter_policy_version=envelope.filter_policy_version,

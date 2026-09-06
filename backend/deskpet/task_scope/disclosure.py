@@ -112,6 +112,7 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
         "dependencies": dependencies([v for row in fields.values() for v in row["dependencies"]["evidence"]],
                                      [v for row in fields.values() for v in row["dependencies"]["recall"]],
                                      [v for row in fields.values() for v in row["dependencies"].get("short_horizon", ())],
+                                     procedure_drafts=[v for row in fields.values() for v in row["dependencies"].get("procedure_drafts", ())],
                                      schema_version=max((row["dependencies"]["schema_version"] for row in fields.values()), default=1))}
     manifest = {**body, "manifest_hash": canonical_hash(body)}
     return {**structural, "schema_version": 1, "disclosure": retained, "disclosure_manifest": manifest}

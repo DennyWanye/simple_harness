@@ -16,25 +16,32 @@ class PrimaryHistoryDisclosureRejected(ProviderRequestRejectedError):
     default_message = "Current history dependencies cannot be verified for this request."
 
 
-def dependencies(evidence=(), recall=(), short_horizon=(), *, schema_version=None):
+def dependencies(evidence=(), recall=(), short_horizon=(), *, schema_version=None, procedure_drafts=()):
     """Canonical bounded proof; v1 remains readable without rewriting archives."""
     short_horizon = tuple(short_horizon)
-    version = (2 if short_horizon else 1) if schema_version is None else schema_version
-    if type(version) is not int or version not in {1, 2} or (version == 1 and short_horizon):
+    procedure_drafts = tuple(procedure_drafts)
+    version = (3 if procedure_drafts else 2 if short_horizon else 1) if schema_version is None else schema_version
+    if type(version) is not int or version not in {1, 2, 3} or (version == 1 and short_horizon) or (version != 3 and procedure_drafts):
         raise ValueError("primary_dependencies_invalid")
     rows = {"evidence": {}, "recall": {}}
     fields_by_kind = [("evidence", evidence, ("evidence_id", "envelope_hash")),
                       ("recall", recall, ("result_id", "result_hash", "item_id", "item_hash"))]
-    if version == 2:
+    if version >= 2:
         rows["short_horizon"] = {}
         fields_by_kind.append(("short_horizon", short_horizon, ("audit_id", "chunk_ref", "content_hash")))
+    if version == 3:
+        rows["procedure_drafts"] = {}
+        fields_by_kind.append(("procedure_drafts", procedure_drafts, ("memory_id", "revision", "candidate_hash")))
     for kind, values, fields in fields_by_kind:
         for value in values:
             if not isinstance(value, Mapping) or set(value) != set(fields):
                 raise ValueError("primary_dependencies_invalid")
             value = dict(value)
             for key in fields:
-                (digest if key.endswith("hash") else identifier)(value[key], key)
+                if key == "revision":
+                    if type(value[key]) is not int or value[key] < 1: raise ValueError("primary_dependencies_invalid")
+                else:
+                    (digest if key.endswith("hash") else identifier)(value[key], key)
             rows[kind][canonical_json(value)] = value
     if sum(map(len, rows.values())) > 256:
         raise ValueError("primary_dependencies_limit")
@@ -45,12 +52,12 @@ def parse_dependencies(value):
     if not isinstance(value, Mapping):
         raise ValueError("primary_dependencies_missing")
     version = value.get("schema_version")
-    if type(version) is not int or version not in {1, 2}:
+    if type(version) is not int or version not in {1, 2, 3}:
         raise ValueError("primary_dependencies_missing")
-    fields = {"schema_version", "evidence", "recall"} | ({"short_horizon"} if version == 2 else set())
+    fields = {"schema_version", "evidence", "recall"} | ({"short_horizon"} if version >= 2 else set()) | ({"procedure_drafts"} if version == 3 else set())
     if set(value) != fields or not all(isinstance(value[k], (tuple, list)) for k in fields - {"schema_version"}):
         raise ValueError("primary_dependencies_missing")
-    return dependencies(value["evidence"], value["recall"], value.get("short_horizon", ()), schema_version=version)
+    return dependencies(value["evidence"], value["recall"], value.get("short_horizon", ()), schema_version=version, procedure_drafts=value.get("procedure_drafts", ()))
 
 
 def current_disclosure(*, run_id, subject, request_id):
@@ -149,6 +156,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
     recall = list(proof["recall"])
     evidence = list(proof["evidence"])
     short = list(proof.get("short_horizon", ()))
+    drafts = list(proof.get("procedure_drafts", ()))
     from deskpet.task_scope.disclosure import verify_scope_disclosure
     cursor = await db.execute("PRAGMA database_list")
     host_path = next(row[2] for row in await cursor.fetchall() if row[1] == "main")
@@ -165,6 +173,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         evidence.extend(scope_proof["evidence"])
         recall.extend(scope_proof["recall"])
         short.extend(scope_proof.get("short_horizon", ()))
+        drafts.extend(scope_proof.get("procedure_drafts", ()))
     from simple_harness.execution.context_authority import ContextRouteReceipt
     from simple_harness.runtime.task_scope_protocol import TaskScopeRoute
     from simple_harness import thaw_json
@@ -214,6 +223,7 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             evidence.extend(scope_proof["evidence"])
             recall.extend(scope_proof["recall"])
             short.extend(scope_proof.get("short_horizon", ()))
+            drafts.extend(scope_proof.get("procedure_drafts", ()))
         if raw["route"] != "memory_standalone":
             continue
         if not isinstance(value.get("fragments"), (list, tuple)):
@@ -238,16 +248,18 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
                 evidence.extend(sources["evidence"])
                 recall.extend(sources["recall"])
                 short.extend(sources.get("short_horizon", ()))
+                drafts.extend(sources.get("procedure_drafts", ()))
                 short.append(binding)
                 continue
             append_typed_fragment_dependencies(fragment, evidence=evidence, recall=recall,
+                procedure_drafts=drafts,
                 consumed=(route.effect_id, fragment.get("ref")) in consumed_occurrences)
     # Every actual primary handler records its exact SDK identity, including
     # unscoped search/page-in. TaskScope reservations are not a complete index.
     if metadata.get("primary_effect_index_version") != 1:
         raise ValueError("primary_effect_index_contract_missing")
     cursor = await db.execute("SELECT * FROM primary_effect_identities WHERE sdk_run_id=? "
-        "AND tool_name IN ('task_scope_search','context_page_in') AND (? IS NULL OR sequence<?) ORDER BY sequence LIMIT 257",
+        "AND tool_name IN ('task_scope_search','context_page_in','procedure_discover') AND (? IS NULL OR sequence<?) ORDER BY sequence LIMIT 257",
         (sdk_run_id, cutoff, cutoff))
     searches = await cursor.fetchall()
     await cursor.close()
@@ -287,6 +299,23 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             raise ValueError("scope_search_result_unverified")
         if "error" in value:
             continue  # errors contain no candidate content
+        if row["tool_name"] == "procedure_discover":
+            from simple_harness_memory import ProcedureDraftCandidate
+            if (set(value) != {"kind","execution_authorized","candidates","next_after","omitted_oversize"}
+                    or value["kind"] != "procedure_draft_preview" or value["execution_authorized"] is not False
+                    or type(value["omitted_oversize"]) is not int or not 0 <= value["omitted_oversize"] <= 128
+                    or not isinstance(value["candidates"], (list,tuple)) or len(value["candidates"])>8):
+                raise ValueError("procedure_draft_result_unverified")
+            for item in value["candidates"]:
+                if not isinstance(item, Mapping) or set(item) != {"candidate", "history_binding"}:
+                    raise ValueError("procedure_draft_result_unverified")
+                candidate = ProcedureDraftCandidate.from_json(dict(item["candidate"]))
+                expected = {"memory_id":candidate.memory_id,"revision":candidate.revision,"candidate_hash":candidate.source_hash}
+                if item["history_binding"] != expected: raise ValueError("procedure_draft_result_unverified")
+                drafts.append(expected)
+            if value["next_after"] is not None:
+                identifier(value["next_after"], "next_after", 1024)
+            continue
         if row["tool_name"] == "context_page_in":
             if value.get("kind") == "primary_current_tool_page_v1":
                 from deskpet.execution.current_tool_pages import admitted_current_page
@@ -322,10 +351,11 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             evidence.extend(scope_proof["evidence"])
             recall.extend(scope_proof["recall"])
             short.extend(scope_proof.get("short_horizon", ()))
-    return run, dependencies(evidence, recall, short, schema_version=2 if short else proof["schema_version"])
+            drafts.extend(scope_proof.get("procedure_drafts", ()))
+    return run, dependencies(evidence, recall, short, schema_version=3 if drafts else 2 if short else proof["schema_version"], procedure_drafts=drafts)
 
 
-def append_typed_fragment_dependencies(fragment, *, evidence, recall, consumed):
+def append_typed_fragment_dependencies(fragment, *, evidence, recall, consumed, procedure_drafts=None):
     """Append this occurrence's dependencies without deleting any base proof.
 
     In particular, an identical 4-tuple already present in history survives a
@@ -347,6 +377,10 @@ def append_typed_fragment_dependencies(fragment, *, evidence, recall, consumed):
             raise ValueError("primary_dependencies_short_sources_missing")
         evidence.extend(sources["evidence"])
         recall.extend(value for value in sources["recall"] if not consumed or value != item)
+        if sources.get("procedure_drafts"):
+            if procedure_drafts is None:
+                raise ValueError("primary_dependencies_draft_sink_missing")
+            procedure_drafts.extend(sources["procedure_drafts"])
     if not consumed:
         recall.append(item)
 
