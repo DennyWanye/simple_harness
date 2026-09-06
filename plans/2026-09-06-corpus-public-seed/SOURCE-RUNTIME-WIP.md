@@ -30,8 +30,9 @@ settlement. Setup executor scope is C01 CREATE, not C01-06 revision/C02 inferenc
 Source import is strict fresh ordinary-v1 and rejects A7/derived dependencies.
 Authored recent-history replay/full corpus runtime still remain.
 
-Source is fixed for independent Dirac review; source-green alone is not full
-production/native or corpus-quality acceptance. All raw remains local ignored.
+Dirac independently accepted fixed source 006a67dc and r6 evidence within the
+limits above (2026-09-06); this is not full production/native or corpus-quality
+acceptance. No additional test was run for this review. All raw remains local ignored.
 
 - `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r4/command.log` SHA256 `6f92048d7817cc819c9f96d8062771d9c8efe904fc1cf60f19220beed6ed9e14`
 - `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-source-r4/resource.json` SHA256 `343c1cf5a745341c7f2573e8a42eb59b5b8ac9e0b9ae2cb9d3f4ff3a147cbc2e`

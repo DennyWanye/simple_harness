@@ -4,7 +4,7 @@ Corpus source/runtime 限定叶三项新控制已分批通过：C01 CREATE真实
 graph backoff重开IDLE拒当成功（Dirac P1闭合）；source实际USER ingestion、原S1
 中断导入/重试、scoring新请求无setup/旧assistant历史及自身exact终态group。
 最后source1PASS/1.71s，PG19566清空；C03/C04不混入，不称typed/short跨库隐私
-全链或240质量，质量执行仍0。源码独审待最终反馈。
+全链或240质量，质量执行仍0。006a67dc已获Dirac最终限定ACCEPT；C03在独立后继分支且未纳交付。
 [最新限定结果](../plans/2026-09-06-corpus-public-seed/SOURCE-RUNTIME-WIP.md)。
 
 <!-- 最后更新：2026-09-06 -->
