@@ -33,7 +33,7 @@ class PublicRegistrationAuthoritySource:
         self.operation_audit = (operation_audit if operation_audit is not None
                                 else ProspectiveSourceJournal(store.path.parent / "operation-audit.db"))
 
-    async def prepare_registration(self, *, principal, entry, advance_cursor=True):
+    async def prepare_registration(self, *, principal, entry, advance_cursor=True, revisit_same_timestamp=False):
         from simple_harness_memory import (
             MemoryPrincipal, ProspectiveOutboxSourceViewV2, MutationTargetSource,
             ProspectiveSignalTargetSource, RegistrationRequiredView,
@@ -51,7 +51,8 @@ class PublicRegistrationAuthoritySource:
         if existing is not None:
             # Revalidate immutable entry bytes; never renew an expired grant.
             await self.store.commit_registration(entry, existing.authority, expected_cursor=cursor,
-                                                advance_cursor=advance_cursor)
+                                                advance_cursor=advance_cursor,
+                                                revisit_same_timestamp=revisit_same_timestamp)
             return existing.authority
         source = await self.operation_audit.read_prospective_outbox_source(self.memory,
             principal=principal, outbox_id=entry.outbox_id, payload_hash=entry.payload_hash,
@@ -145,7 +146,8 @@ class PublicRegistrationAuthoritySource:
             # Persist the first observation before returning. The consumer's
             # subsequent commit is the existing exact idempotent path.
             await self.store.commit_registration(entry, authority, expected_cursor=cursor,
-                                                advance_cursor=advance_cursor)
+                                                advance_cursor=advance_cursor,
+                                                revisit_same_timestamp=revisit_same_timestamp)
         except S5cConflict as exc:
             if str(exc) != "s5c_registration_replay_differs":
                 raise

@@ -44,7 +44,8 @@ class RegistrationMemoryPort(Protocol):
 
 class RegistrationAuthoritySource(Protocol):
     async def prepare_registration(
-        self, *, principal: MemoryPrincipal, entry: OutboxEntryV1, advance_cursor: bool = True
+        self, *, principal: MemoryPrincipal, entry: OutboxEntryV1, advance_cursor: bool = True,
+        revisit_same_timestamp: bool = False
     ) -> ProspectiveSignalAuthority | RegistrationDependency | SettledNotRequired:
         """Resolve exact scope/lifecycle/Run/operation and return a fixed grant.
 
@@ -63,9 +64,11 @@ class ProspectiveRegistrationConsumer:
         authority_source: RegistrationAuthoritySource,
     ):
         self.store, self.memory, self.source = store, memory, authority_source
-        # Only a scan optimization across irrelevant topics. Restart resumes
-        # from the durable relevant cursor and may re-read unrelated entries.
+        # A finite scan resumes across calls until EOF. A new pass revisits
+        # the inclusive current timestamp bucket, not the entire history.
         self._scan_after: tuple[float, str] | None = None
+        self._scan_active = False
+        self._revisit = False
 
     async def _deliver(self, prepared):
         if prepared.result is not None:
@@ -80,7 +83,8 @@ class ProspectiveRegistrationConsumer:
         await self.store.commit_registration_result(prepared.reference, result)
 
     async def _prepare(self, entry):
-        resolution = await self.source.prepare_registration(principal=self.store.principal, entry=entry)
+        resolution = await self.source.prepare_registration(principal=self.store.principal, entry=entry,
+            **({"revisit_same_timestamp": True} if self._revisit else {}))
         if type(resolution) is RegistrationDependency:
             # Resolve one exact SDK-provided registration dependency, without
             # advancing the global outbox cursor past the current invalidation.
@@ -95,7 +99,8 @@ class ProspectiveRegistrationConsumer:
             if prepared is None:
                 raise S5cConflict("s5c_dependency_not_persisted")
             await self._deliver(prepared)
-            resolution = await self.source.prepare_registration(principal=self.store.principal, entry=entry)
+            resolution = await self.source.prepare_registration(principal=self.store.principal, entry=entry,
+            **({"revisit_same_timestamp": True} if self._revisit else {}))
             if type(resolution) is RegistrationDependency:
                 raise S5cConflict("s5c_dependency_not_settled")
         return resolution
@@ -115,10 +120,11 @@ class ProspectiveRegistrationConsumer:
         if len(pending) == page_size:
             return
         cursor = await self.store.cursor()
-        if cursor is not None and (
-            self._scan_after is None or cursor > self._scan_after
-        ):
-            self._scan_after = cursor
+        if not self._scan_active:
+            high = await self.store.scan_high_water()
+            self._scan_after = None if high is None else (high[0], "")
+            self._revisit = high is not None
+            self._scan_active = True
         for _ in range(max_pages):
             page = await self.memory.read_outbox(
                 principal=self.store.principal,
@@ -141,7 +147,8 @@ class ProspectiveRegistrationConsumer:
                         authority = existing.authority
                     if type(authority) is SettledNotRequired:
                         await self.store.commit_not_required(entry, authority.receipt,
-                            expected_source_hash=authority.source_hash, expected_cursor=cursor)
+                            expected_source_hash=authority.source_hash, expected_cursor=cursor,
+                            revisit_same_timestamp=self._revisit)
                         cursor = await self.store.cursor()
                         self._scan_after = (entry.created_at, entry.outbox_id)
                         continue
@@ -149,7 +156,8 @@ class ProspectiveRegistrationConsumer:
                         raise S5cConflict("s5c_registration_resolution_invalid")
                     # Also checks immutable source on duplicate concurrent read.
                     await self.store.commit_registration(
-                        entry, authority, expected_cursor=cursor
+                        entry, authority, expected_cursor=cursor,
+                        revisit_same_timestamp=self._revisit
                     )
                     cursor = await self.store.cursor()
                     prepared = await self.store.registration(entry.outbox_id)
@@ -157,6 +165,7 @@ class ProspectiveRegistrationConsumer:
                     await self._deliver(prepared)
                 self._scan_after = (entry.created_at, entry.outbox_id)
             if page.next_after is None:
+                self._scan_active = False
                 return
 
     @staticmethod
