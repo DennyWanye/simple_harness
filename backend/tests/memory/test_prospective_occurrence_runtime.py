@@ -24,6 +24,7 @@ from deskpet.sdk_adapters.prospective_ack import prospective_ack_registration
 from deskpet.sdk_adapters.context_route import local_owner_auth
 from tests.execution.test_primary_foreground_runtime import build, Provider, assert_exact_sdk_terminal_identity
 from tests.memory import test_prospective_consumer_m617 as seed
+from tests.memory.test_trusted_disclosure import env
 
 
 @pytest.mark.asyncio
@@ -48,7 +49,12 @@ async def test_real_occurrence_source_withdrawal_and_foreign_authority(tmp_path,
     await _run_occurrence_case(tmp_path,monkeypatch,late_forget='source')
 
 
-async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal_fault=None,inheritance=False):
+@pytest.mark.asyncio
+async def test_real_occurrence_source_checker_disclosure_generation_race(tmp_path,monkeypatch,env):
+    await _run_occurrence_case(tmp_path,monkeypatch,late_forget='disclosure',race_env=env)
+
+
+async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal_fault=None,inheritance=False,race_env=None):
     state=tmp_path/'state.db'
     startup=await dispatch_startup_epoch(state,approved_fresh_lane=True)
     service=HumanMemoryHostServiceFactory(state,startup).bind(local_owner_auth())
@@ -112,6 +118,18 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
     guarded=[]
     late_denials=[]
     pre_forget_passed=[]
+    entered=asyncio.Event();release=asyncio.Event();configuration_task=None;source_checked=[]
+    if race_env is not None:
+        from tests.memory.test_trusted_disclosure import command,ok,selection
+        async def change_configuration():
+            try:
+                await asyncio.wait_for(entered.wait(),10)
+                first=ok(await command(race_env,'disclosure.current',{}))['configuration']
+                second=ok(await command(race_env,'disclosure.configure',selection(first['binding_ref']),key='a7-G2'))
+                assert second['policy_generation']==first['policy_generation']+1
+                return second
+            finally:release.set()
+        configuration_task=asyncio.create_task(change_configuration())
     async def guard(request):
         current=await queue.current_snapshot(principal.actor_id)
         if inheritance:
@@ -123,6 +141,22 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
         assert 'prospective_ack' in {tool.name for tool in request.tools}
         actual_guard=ProspectiveRequestGuard(sdk_run_id=current.sdk_run_id,coordinator=coordinator,
             read_provider_context_use=stack.read_provider_context_use)
+        if late_forget=='disclosure':
+            original=w.manager.check_history_visibility
+            async def slow_checker(**kwargs):
+                result=await original(**kwargs)
+                assert result.items and all(item.visible for item in result.items)
+                source_checked.append(kwargs['disclosure_context'])
+                entered.set()
+                await asyncio.wait_for(release.wait(),10)
+                return result
+            with monkeypatch.context() as patch:
+                patch.setattr(w.manager,'check_history_visibility',slow_checker)
+                try:await actual_guard(request)
+                except ProspectiveRequestRejected as error:
+                    late_denials.append(str(error.__cause__))
+                    raise
+            return
         if late_forget:
             # Prove the same actual SDK handoff/group reaches the current-source
             # gate before changing only public Memory suppression.
@@ -241,9 +275,14 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
                 assert len(guarded)==1 and sends==[]
                 actual=stack.read_run_terminal_evidence(guarded[0][0])
                 assert actual.state=='failed'
-                assert pre_forget_passed==[guarded[0][1]]
-                assert late_denials==[('s5c_occurrence_source_not_visible' if late_forget=='source'
-                                      else 's5c_occurrence_current_read_changed')]
+                if late_forget=='disclosure':
+                    changed=await configuration_task
+                    assert len(source_checked)==1 and changed['policy_generation']==2
+                    assert late_denials==['host_disclosure_binding_stale']
+                else:
+                    assert pre_forget_passed==[guarded[0][1]]
+                    assert late_denials==[('s5c_occurrence_source_not_visible' if late_forget=='source'
+                                          else 's5c_occurrence_current_read_changed')]
                 assert runtime.last_error is None
                 await runtime.after_enqueue(subject=principal.actor_id)
                 await asyncio.wait_for(runtime.drain(),20)
@@ -329,6 +368,10 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
             assert 'A fresh unrelated request.' in json.dumps(sends[-1]['messages'])
 
     finally:
+        release.set()
+        if configuration_task is not None:
+            if not configuration_task.done():configuration_task.cancel()
+            await asyncio.gather(configuration_task,return_exceptions=True)
         if runtime is not None:await runtime.close()
         if stack is not None:await stack.close()
         await visibility.close();await w.manager.close();await client.aclose()
