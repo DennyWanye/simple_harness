@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import sqlite3
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -78,6 +79,11 @@ class S5cStore:
         self.owner = _owner(principal)
         self.fault = fault_inject
         validate_s5c_domain_state_db(self.path)
+        with sqlite3.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            self.cursor_table = (
+                "prospective_outbox_cursor_v52" if db.execute("PRAGMA user_version").fetchone() == (52,)
+                else "prospective_outbox_cursor"
+            )
 
     @asynccontextmanager
     async def _transaction(self):
@@ -96,7 +102,7 @@ class S5cStore:
 
     async def _cursor_row(self, db):
         cursor = await db.execute(
-            "SELECT * FROM prospective_outbox_cursor WHERE owner_key=? "
+            f"SELECT * FROM {self.cursor_table} WHERE owner_key=? "
             "ORDER BY sequence DESC LIMIT 1",
             (self.owner,),
         )
@@ -223,7 +229,9 @@ class S5cStore:
             )
             cursor_hash = _hash([self.owner, seq, list(after), record_id, prior])
             await db.execute(
-                "INSERT INTO prospective_outbox_cursor VALUES (?,?,?,?,?,?,?)",
+                f"INSERT INTO {self.cursor_table} "
+                "(owner_key,sequence,after_time,after_id,registration_record_id,prior_hash,cursor_hash) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (self.owner, seq, *after, record_id, prior, cursor_hash),
             )
             if self.fault:
@@ -392,7 +400,7 @@ class S5cStore:
             await db.execute("BEGIN")
             cursor = await db.execute(
                 "SELECT p.* FROM prospective_scheduler_registrations p "
-                "JOIN prospective_outbox_cursor c "
+                f"JOIN {self.cursor_table} c "
                 "ON c.registration_record_id=p.record_id "
                 "WHERE p.owner_key=? AND p.phase='prepared' AND NOT EXISTS "
                 "(SELECT 1 FROM prospective_scheduler_registrations a "
