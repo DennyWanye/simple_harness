@@ -49,6 +49,7 @@ async def test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_pa
             assert node.source_refs[0].evidence_ref_hash == sha256(pair[0].evidence_id.encode()).hexdigest()
             assert node.revision == 1
         assert operations['P'].payload.steps == SPECS[case_id][6]
+        assert operations['P'].payload.applicability == SPECS[case_id][5]
         page = result(await host.send('primary.messages.page', {'primary_ref': host.primary}, key='no-setup-history'))
         assert page['items'] == []  # No fake foreground source Run to copy into scoring.
         # Same setup bytes on another genuinely admitted Host S1 must not bind
@@ -95,3 +96,31 @@ async def test_public_c06_next_scalar_procedure_sources(tmp_path, case_id):
     # Reuse the real public chain and all original source/owner/reopen oracles.
     # A separate selector keeps the first fixed three controls out of this batch.
     await test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_path, case_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case_id', (
+    'C06-05', 'C06-07', 'C06-10', 'C06-13', 'C06-14', 'C06-20',
+))
+async def test_public_c06_conditional_descriptions_preserve_limits(tmp_path, case_id):
+    # Same real mixed job/source/readback oracle, without executing the procedure.
+    await test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_path, case_id)
+    # Independent authored limits: these are descriptions, never an admission
+    # receipt for sending, deleting, material use or execution.
+    conditions, steps = SPECS[case_id][5:7]
+    if case_id == 'C06-05':
+        assert '只描述不做' in conditions
+        assert steps == ('核原件副本', '再核可读性')
+    elif case_id == 'C06-07':
+        assert '确认对应再执行' in conditions
+        assert steps == ('清单预览', '确认对应', '再执行')
+    elif case_id == 'C06-10':
+        assert steps == ('先列来源', '再核授权', '最后核离线副本')
+    elif case_id == 'C06-13':
+        assert '重复项只列候选不删除' in conditions
+        assert steps[-1] == '重复项只列候选不删除'
+    elif case_id == 'C06-14':
+        assert '需用户后续确认发送' in conditions
+        assert steps == ('检查出处', '检查私密字段', '检查版本号')
+    else:
+        assert steps == ('若材料有日期先按日期分组，无日期先按主题',)

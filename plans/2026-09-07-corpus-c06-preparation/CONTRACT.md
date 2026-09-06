@@ -91,3 +91,32 @@ Main-only new selector:
 (seven parameters, all NOT_RUN). It reuses the original public chain assertions;
 original 02/03/04 are now explicitly enumerated, so their selector does not
 silently expand. No new environment, SDK, session hook or framework.
+
+## Conditional-description successor (after main r2)
+
+Main reported r2 at abf1b43c: original positional-order red plus unrun and new
+seven controls total **11 PASS 4.97s** (main command.log authoritative),
+PG88125 exit0/remaining[]. Original r1 FAIL remains. These are 10/20 source
+controls, not actual Task/quality runs. No execution was performed in this tree.
+
+New source maps 05/07/10/13/14/20 with the unchanged builder/authority. Public
+Procedure `applicability` preserves description-only, confirmation-before-action,
+candidates-only/no deletion and later sending confirmation. Checking material
+use authorization is a procedure step, **not evidence that permission exists**.
+C20 retains both authored branches in one conditional step; neither branch is
+selected from current input/gold, and their text order is not sequential execution
+of both branches. All procedures remain low-risk description fixture records;
+this helper executes no actions and creates no external authority/approval.
+C14 personal disclosure classification is unchanged despite the word public.
+
+Source mapping is now 16/20. Remaining 01 needs actual old Task provenance;
+17 needs the original additional Episode; 18 needs real finance applicability;
+19 needs actual device-offline/plugin capability facts. No partial two-node seed
+is provided for those cases, avoiding omission of their extra sources.
+
+New main-only selector (six parameters, **NOT_RUN**):
+`backend/tests/quality/test_corpus_c06_preparation.py::test_public_c06_conditional_descriptions_preserve_limits`.
+It reuses the public source/job/owner/reopen oracle and checks actual serialized
+Procedure applicability as well as steps. Original 10 selectors are unchanged;
+no old green reruns requested. New code changes only mapping/tests/docs, no SDK,
+shared session, production authority or preparation implementation.
