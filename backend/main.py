@@ -8357,6 +8357,7 @@ async def _build_product_sdk_runtime_stack(
         from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
         from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
         _typed_ledger = _ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
+        _typed_ledger.verify_schema()
         _typed_sink = ProductRuntimeDecisionSink(ledger=_typed_ledger, reconcile=_human_memory_v7.pending_occurrences)
         _typed_use_authority = await ProductTypedContextUseAuthority.create(
             state_path=_state_db_path, memory_runtime=_human_memory_v7,

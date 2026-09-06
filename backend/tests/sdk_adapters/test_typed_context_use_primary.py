@@ -264,7 +264,8 @@ async def test_empty_attestation_keeps_real_host_no_recall_sink(tmp_path, monkey
 
 
 @pytest.mark.asyncio
-async def test_real_short_grant_does_not_waive_host_group_sources(tmp_path, monkeypatch):
+@pytest.mark.parametrize("forget_source", [False, True])
+async def test_real_short_grant_does_not_waive_host_group_sources(tmp_path, monkeypatch, forget_source):
     from deskpet.memory.short_indexing import PrimaryShortIndexingService
     from tests.memory.test_primary_short_ingestion import real_turns
     from tests.memory.test_selected_short_sources import suppress
@@ -280,6 +281,10 @@ async def test_real_short_grant_does_not_waive_host_group_sources(tmp_path, monk
     sends, receipts, checked = [], [], []
     def transport(request):
         sends.append(json.loads(request.content))
+        if len(sends) > 1:
+            return httpx.Response(200, json={"id": "short-answer", "model": "model-a", "choices": [{
+                "message": {"role": "assistant", "content": "Earlier discussion recalled."},
+                "finish_reason": "stop"}], "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}})
         return httpx.Response(200, json={"id": "short-request", "model": "model-a", "choices": [{
             "message": {"role": "assistant", "content": None, "tool_calls": [{"id": "short-call", "type": "function",
                 "function": {"name": "context_route", "arguments": json.dumps({"route": "memory_standalone",
@@ -289,12 +294,20 @@ async def test_real_short_grant_does_not_waive_host_group_sources(tmp_path, monk
     provider = ProductProviderAdapter(Registry("fixture-secret"), provider_id="relay", client=client,
                                      price_resolver=lambda *_: (1, 1, "price-v1"))
     runtime, stack, queue, authority = await wired_runtime(tmp_path, state, memory, provider, monkeypatch)
+    carriers = []
+    original_carrier = authority.build_carrier
+    async def capture_carrier(*args, **kwargs):
+        carrier = await original_carrier(*args, **kwargs)
+        carriers.append(carrier)
+        return carrier
+    monkeypatch.setattr(authority, "build_carrier", capture_carrier)
     original = authority.authorize_recall_context_use
     async def authorize(request):
         receipt = await original(request)
         receipts.append(receipt)
-        source = indexed.groups[0].registrations[1].envelope.evidence_refs[1].evidence_id
-        await suppress(manager, memory.conversation_evidence_authority, source)
+        if forget_source:
+            source = indexed.groups[0].registrations[1].envelope.evidence_refs[1].evidence_id
+            await suppress(manager, memory.conversation_evidence_authority, source)
         return receipt
     monkeypatch.setattr(authority, "authorize_recall_context_use", authorize)
     async def guard(request):
@@ -307,9 +320,21 @@ async def test_real_short_grant_does_not_waive_host_group_sources(tmp_path, monk
         await service.enqueue_turn(QueueTurnRequest(None, "short-current", "Find the earlier quartznebula discussion."))
         assert await asyncio.wait_for(runtime._drive_once(), 20)
         assert len(receipts) == 1 and len(receipts[0].item_bindings) == 1, authority.test_failures
-        assert len(checked) == 2 and len(sends) == 1
+        assert len(checked) == 2 and len(sends) == (1 if forget_source else 2)
         with sqlite3.connect(state) as db:
-            assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts ORDER BY rowid DESC LIMIT 1").fetchone() == ("FAILED",)
+            assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts ORDER BY rowid DESC LIMIT 1").fetchone() == (("FAILED",) if forget_source else ("COMPLETED",))
+        assert carriers
+        for carrier in carriers:
+            for raw in carrier["fragments"]:
+                actual = h.ContextFragmentV2.from_json(raw)
+                assert actual.fragment_type is h.ContextFragmentType.SHORT_HORIZON
+                assert actual.source_revision is None
+        if not forget_source:
+            await runtime.close()
+            await stack.close()
+            runtime, stack, queue, authority = await wired_runtime(tmp_path, state, memory, provider, monkeypatch)
+            assert not await runtime._drive_once()
+            assert len(sends) == 2
     finally:
         await runtime.close()
         await stack.close()
