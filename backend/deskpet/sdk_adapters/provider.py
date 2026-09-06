@@ -806,9 +806,10 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
     a tombstone).
     """
 
-    def __init__(self, *args: Any, evidence_ingress: Any | None = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, evidence_ingress: Any | None = None, typed_terminal=None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._evidence_ingress = evidence_ingress
+        self._typed_terminal = typed_terminal
 
     async def invoke(
         self,
@@ -818,6 +819,7 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
         cancel,
         execution_lease,
         workflow_lease=None,
+        context_use=None,
     ):
         binding = None
         ingress = getattr(self, "_evidence_ingress", None)
@@ -837,6 +839,7 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 cancel=cancel,
                 execution_lease=execution_lease,
                 workflow_lease=workflow_lease,
+                context_use=context_use,
             )
         except ProviderInvocationUnknownError:
             if cancel.is_cancelled:
@@ -845,6 +848,8 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 # is authoritative and must reach Runtime._cancel_run.
                 raise asyncio.CancelledError() from None
             raise
+        if context_use is not None and self._typed_terminal is not None and not response.tool_calls:
+            await self._typed_terminal.record_terminal(run_id, request, context_use)
         if binding is not None:
             await ingress.commit_fact(
                 task_scope_id=binding.task_scope_id,
@@ -852,6 +857,14 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 fact=provider_invocation_fact(run_id.value, request, response),
             )
         return response
+
+    def verify_context_use_terminal(self, run_id, request_id, *, checkpoint, execution_lease):
+        view = super().verify_context_use_terminal(
+            run_id, request_id, checkpoint=checkpoint, execution_lease=execution_lease,
+        )
+        if self._typed_terminal is not None:
+            self._typed_terminal.verify_terminal(run_id, request_id, checkpoint)
+        return view
 
 
 def provider_invocation_fact(run_id: str, request: ProviderRequest, response: ProviderResponse | None, *, error_code: str | None = None):

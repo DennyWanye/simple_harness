@@ -292,6 +292,7 @@ class HumanMemoryV7Runtime:
         now: float | None = None,
         memory_types: tuple[str, ...] | None = None,
         include_short_horizon: bool | None = None,
+        admitted_context: Any | None = None,
     ) -> Any:
         """Execute a Host-authored typed RecallPlan; degraded lanes stay stable."""
 
@@ -351,6 +352,11 @@ class HumanMemoryV7Runtime:
             ).hexdigest(),
             1,
         )
+        if admitted_context is not None:
+            if admitted_context.run_id != run_id or admitted_context.subject != subject:
+                raise ValueError("typed_recall_admitted_context_mismatch")
+            disclosure = admitted_context.disclosure
+            evidence_ref = admitted_context.evidence_ref
         available_types = tuple(LongTermMemoryType(name) for name in (
             REQUESTABLE_MEMORY_TYPES if explicit_selection else HOST_DEFAULT_MEMORY_TYPES
         ))
@@ -358,7 +364,7 @@ class HumanMemoryV7Runtime:
         context = RecallContext(
             run_id,
             subject,
-            f"turn-{turn_ordinal}",
+            f"turn-{turn_ordinal}" if admitted_context is None else admitted_context.turn_id,
             turn_ordinal,
             moment + 60.0,
             query,

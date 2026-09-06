@@ -120,6 +120,7 @@ _VALID_SERVICES = frozenset({
     "sdk_runtime_tool_inventory",
     "sdk_prepared_authorization_policy",
     "sdk_run_context_authority",
+    "sdk_typed_context_use_authority",
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     # S5b: EffectGate (Task 1), closure instruction reader (Task 3 review F-2) and
@@ -282,6 +283,7 @@ class ServiceContext:
     sdk_runtime_tool_inventory: Any | None = None
     sdk_prepared_authorization_policy: Any | None = None
     sdk_run_context_authority: Any | None = None
+    sdk_typed_context_use_authority: Any | None = None
     sdk_runtime_decision_sink: Any | None = None
     sdk_task_execution_authority: Any | None = None
     sdk_effect_gate: Any | None = None

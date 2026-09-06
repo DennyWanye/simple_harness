@@ -359,6 +359,17 @@ class ProductSdkRuntimeStack:
             workflow_registrations: tuple[object, ...] = ()
             try:
                 verify_sdk_candidate(self._candidate_identity)
+                # Official schema8 migration before any execution handle opens.
+                # The retained same-directory backup is never overwritten.
+                from simple_harness import migrate_execution_v7_to_v8
+                execution_path = self._paths.execution_database
+                if execution_path.exists():
+                    self.schema_upgrade_receipt = migrate_execution_v7_to_v8(
+                        execution_path,
+                        backup_path=execution_path.with_name(execution_path.name + ".pre-schema-8.backup"),
+                    )
+                else:
+                    self.schema_upgrade_receipt = None
                 dependencies = await self._load_dependencies()
                 owned_resources = dependencies.owned_resources
                 if dependencies.runtime_factory is not None:
@@ -718,6 +729,11 @@ class ProductSdkRuntimeStack:
                     last_answer = content
                     break
         return ClosureRunFacts(binding_record=binding, last_assistant_message=last_answer)
+
+    def read_provider_context_use(self, run_id: str, request_id: str):
+        """Actual Harness handoff witness via the public RunClient."""
+        from simple_harness import RequestId
+        return self.require_ready().client.read_provider_context_use(RunId(run_id), RequestId(request_id))
 
     def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
         """Public start and effect facts, never SDK-private history SQL."""

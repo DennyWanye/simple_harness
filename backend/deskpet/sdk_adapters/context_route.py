@@ -119,6 +119,7 @@ class ContextRouteToolService:
         recall_executor: Any = None,
         scope_disclosure_reader: Any = None,
         producer_dependencies_reader: Any = None,
+        typed_use_authority: Any = None,
     ) -> None:
         self._service_factory_getter = service_factory_getter
         self._binding_store_factory = binding_store_factory
@@ -129,6 +130,7 @@ class ContextRouteToolService:
         self._recall_executor = recall_executor
         self._scope_disclosure_reader = scope_disclosure_reader
         self._producer_dependencies_reader = producer_dependencies_reader
+        self._typed_use_authority = typed_use_authority
 
     # -- shared -----------------------------------------------------------
 
@@ -204,6 +206,7 @@ class ContextRouteToolService:
         recall_refs: tuple[str, ...] = (),
         recall_types: tuple[str, ...] = (),
         recall_short_horizon: bool | None = None,
+        typed_carrier: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         receipt = ContextRouteReceipt(
             receipt_id=str(
@@ -234,6 +237,9 @@ class ContextRouteToolService:
             origin="context_tool",
             idempotency_key=effect_id,
         )
+        result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
+        if extras:
+            result.update(dict(extras))
         await self._record(
             run_id=run_id,
             raw_call_id=raw_call_id,
@@ -243,6 +249,8 @@ class ContextRouteToolService:
             decision_id=f"route-decision:{run_id}:{effect_id}",
             detail={
                 "route": route.value, "task_scope_id": task_scope_id,
+                **({"typed_carrier": dict(typed_carrier),
+                    "public_result_hash": canonical_sha256(result)} if typed_carrier is not None else {}),
                 **({"recall_selection": {
                     "origin": "model_proposal",
                     "requested_memory_types": list(recall_types),
@@ -250,9 +258,6 @@ class ContextRouteToolService:
                 }} if recall_types or recall_short_horizon is not None else {}),
             },
         )
-        result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
-        if extras:
-            result.update(dict(extras))
         return result
 
     async def _binding_head(self, task_scope_id: str) -> dict[str, Any]:
@@ -371,11 +376,15 @@ class ContextRouteToolService:
             )
         from deskpet.memory.human_memory_v7 import project_recall_fragments
 
+        admitted = None
+        if self._typed_use_authority is not None:
+            admitted = await self._typed_use_authority.admitted_tool_context(self._tool_context_getter())
         try:
             execution = await self._recall_executor(
                 query=query, run_id=run_id, turn_ordinal=turn_ordinal,
                 memory_types=memory_types,
                 include_short_horizon=include_short_horizon,
+                **({"admitted_context": admitted} if admitted is not None else {}),
             )
         except asyncio.CancelledError:
             # This boundary precedes route commit; cancellation is not a
@@ -395,6 +404,11 @@ class ContextRouteToolService:
                              run_id, effect_id)
             raise
         fragments = project_recall_fragments(execution)
+        carrier = None
+        if self._typed_use_authority is not None:
+            carrier = await self._typed_use_authority.build_carrier(
+                execution=execution, projected=fragments, admitted=admitted, effect_id=effect_id,
+            )
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
         return await self._commit_receipt(
             run_id=run_id,
@@ -406,6 +420,7 @@ class ContextRouteToolService:
             recall_refs=refs,
             recall_types=memory_types,
             recall_short_horizon=include_short_horizon,
+            typed_carrier=carrier,
             extras={
                 "fragments": list(fragments),
                 "degradation_codes": list(execution.degradation_codes),

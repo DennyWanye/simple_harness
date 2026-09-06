@@ -776,6 +776,8 @@ class ContextRouteLedgerStore:
             existing = await cursor.fetchone()
             await cursor.close()
             if existing is not None:
+                if "typed_carrier" in detail and str(existing[0]) != invocation_hash:
+                    raise ContextRouteLedgerError("sdk_context_route_typed_carrier_immutable")
                 await db.commit()
                 return
             await db.execute(
@@ -1050,7 +1052,9 @@ class ProductRunContextAuthority:
         reconcile: Any = None,
         closure_reader: Any = None,
         binding_store: Any = None,
+        typed_use_authority: Any = None,
     ) -> None:
+        self._typed_use_authority = typed_use_authority
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
         self._ledger = ledger
@@ -1157,6 +1161,11 @@ class ProductRunContextAuthority:
             expected_request_fingerprint=expected,
             source_revisions=source_revisions,
         )
+        typed_fields = {}
+        if self._typed_use_authority is not None:
+            intents = await self._typed_use_authority.snapshot_intents(request=request, messages=messages)
+            typed_fields = dict(schema_version=2, recall_subject=self._typed_use_authority.subject,
+                                recall_intents=intents)
         snapshot = RunContextSnapshot(
             snapshot_id,
             request.run_id.value,
@@ -1170,6 +1179,7 @@ class ProductRunContextAuthority:
             max_output_tokens,
             {},
             expected,
+            **typed_fields,
         )
         if snapshot.payload_hash != expected:
             raise SnapshotContractConflict(

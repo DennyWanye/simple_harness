@@ -24,7 +24,7 @@ retain aacf identities. This leaf does not modify SDK code/fixtures/401 threshol
 
 New `sdk_adapters/typed_context_use.py`; narrow edits in context_authority,
 context_route, provider, composition, primary_dependencies, human_memory_v7 typed
-projection, candidate/pin, and main provider/context factory+primary_guard hunks.
+projection, candidate/pin, the single ServiceContext slot declaration in backend/context.py, and main provider/context factory+primary_guard hunks.
 Tests are leaf-owned. Main owns new conversation producer/registration/observer and
 composition.read_primary_tool_causal_sources; Singer owns final-token freshness
 repair in primary_dependencies. Preserve both at combination; no WIP source cherry-pick.
@@ -112,3 +112,28 @@ RECORD compare exactly.96 currently imported SDK modules belong to this env.
 Generic dependencies are borrowed by .pth from existing Host backend/.venv; no full
 solver claim. Setup41042 and identity41077 exit0, no remaining owned processes.
 No other environment was changed. Candidate identity/business tests are still pending.
+
+## Concrete integration details (source WIP, not tested)
+
+Singer fixed dependency f3675064 was merged as1b0167b0 from the original aacf base;
+both documentation histories and the fresh final-token check remain. Scope is the
+canonical hash of the recomputed Host init-receipt namespace. First composition
+uses existing HumanMemoryProgramStore.initialize_subject (idempotent), then verifies
+its receipt/marker, without a second epoch/ledger. Accepted context_route invocation
+detail holds the private page-backed carrier plus actual public-result hash; the
+Provider tool content retains the original projection. Whole-message hash uses
+H074 provider_request_json canonical JSON, after final message trimming.
+
+The Host coordinator awaits the original no-recall sink before returning a terminal
+response to ReAct (and hence before response_reserved checkpoint persistence).
+A cached successful response still traverses the callback; response_reserved recovery
+requires the exact already-persisted Host sink in the synchronous terminal verifier.
+Nonempty memory routes never manufacture no-recall. A pending inbox still rejects.
+This sequence needs decisive crash/reopen and actual route tests; it is not yet PASS.
+
+Typed short limitation confirmed with Dirac: its SDK item grant does not attest
+the Host's complete group or indirect historical source graph. Keep all those
+Host evidence roots and indirect recall dependencies current; exempt only the
+exact tool occurrence's own typed4tuple. A long-typed grant-first positive cannot
+stand in for short-typed receipt-first availability. Sink failure after a real send
+retains that send fact and must not be labelled pre-delegate definitely-not-sent.

@@ -7777,7 +7777,8 @@ class _ProductSdkProviderBindingResolver:
         async def primary_guard(request):
             from deskpet.execution.primary_dependencies import check_runtime_dependencies
             await check_runtime_dependencies(db_path=_state_db_path, stack=_sdk_runtime_stack,
-                sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy)
+                sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy,
+                typed_use_authority=service_context.get("sdk_typed_context_use_authority"))
 
         provider = ProductProviderAdapter(
             self._provider_registry,
@@ -8348,6 +8349,17 @@ async def _build_product_sdk_runtime_stack(
         adapter_factory=_analysis_adapter,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    _typed_use_authority = None
+    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
+        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
+        from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
+        _typed_ledger = _ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
+        _typed_sink = ProductRuntimeDecisionSink(ledger=_typed_ledger, reconcile=_human_memory_v7.pending_occurrences)
+        _typed_use_authority = await ProductTypedContextUseAuthority.create(
+            state_path=_state_db_path, memory_runtime=_human_memory_v7,
+            stack_getter=lambda: _sdk_runtime_stack, ledger=_typed_ledger, terminal_sink=_typed_sink,
+        )
+    service_context.register("sdk_typed_context_use_authority", _typed_use_authority)
 
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
     scope_disclosure = ScopeDisclosureReader(_state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
@@ -8364,6 +8376,7 @@ async def _build_product_sdk_runtime_stack(
         ),
         tool_context_getter=active_product_tool_context,
         recall_executor=_human_memory_v7.typed_recall,
+        typed_use_authority=_typed_use_authority,
         scope_disclosure_reader=scope_disclosure.read,
         producer_dependencies_reader=scope_disclosure.producer_dependencies,
     )
@@ -8677,6 +8690,8 @@ async def _build_product_sdk_runtime_stack(
             uow=uow,
             resolver=provider_binding_resolver,
             evidence_ingress=_ensure_evidence_ingress(),
+            context_use_authority=_typed_use_authority,
+            typed_terminal=_typed_use_authority,
         )
         if projection_pump is None:
             from deskpet.sdk_adapters.provider_projection_pump import (
@@ -8896,6 +8911,7 @@ async def _build_product_sdk_runtime_stack(
             exposure_resolver=tool_authorities.resolve_exposure,
             ledger=context_route_ledger,
             reconcile=_occurrence_reconcile,
+            typed_use_authority=_typed_use_authority,
         ),
     )
     service_context.register(
@@ -8930,6 +8946,7 @@ SDK_COMPOSITION_SLOTS: tuple[str, ...] = (
     "sdk_provider_binding_resolver",
     "sdk_tool_authority_registry",
     "sdk_run_context_authority",
+    "sdk_typed_context_use_authority",
     "sdk_runtime_decision_sink",
     "sdk_task_execution_authority",
     "sdk_effect_gate",
@@ -8954,6 +8971,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
     exposure_resolver,
     ledger,
     reconcile,
+    typed_use_authority=None,
 ):
     """Production ``ProductRunContextAuthority`` with the real semantic-closure reader (F-2)."""
 
@@ -8972,6 +8990,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         exposure_resolver=exposure_resolver,
         ledger=ledger,
         reconcile=reconcile,
+        typed_use_authority=typed_use_authority,
         closure_reader=closure_reader,
         # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
         binding_store=WorkspaceBindingAuthorityStore(db_path),
