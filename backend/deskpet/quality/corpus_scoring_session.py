@@ -146,6 +146,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     authored = json.loads((directory / "input.json").read_text())
     setup = json.loads((directory / "setup.json").read_text())
     case_id = setup["case_id"]
+    c07 = None
     if setup["scenario_clock"] != authored["scenario_clock"]:
         raise ValueError("corpus_input_setup_clock_mismatch")
     if type(case_id) is str and case_id.startswith("C07-"):
@@ -154,15 +155,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         c07 = compile_c07_setup(case_id, setup["setup_source_text"],
             scenario_clock=setup["scenario_clock"]["instant"])
         validate_c07_recent_input(c07, authored["recent_messages"])
-        if c07.recent_messages:
-            # The same-store public group adapter exists, but this production
-            # session does not yet own a deterministic setup-Provider phase.
-            # Never collapse authored roles into the current user string.
-            write_result(directory / "execution.json", dict(execution_status="SETUP_NOT_READY",
-                stage="authored_recent_history", trace=None, cleanup_errors=[],
-                blocking_code="c07_scoring_same_store_recent_producer_unwired"))
-            return 2
-    if authored["recent_messages"] or authored["unresolved_source_text"] is not None:
+    if (authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None:
         raise ValueError("corpus_first_batch_scalar_input_required")
     if case_id in {"C01-06", "C01-11"}:
         raise ValueError("corpus_case_runtime_adapter_not_ready")
@@ -197,6 +190,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         embedding="NO_LOCAL_MODEL_LOADED", initialization="main_product_factory",
         cleanup_errors=[])
     service = None
+    recent_provider = None
     try:
         outcome["stage"] = "host_schema_session"
         if main._state_db_path.resolve() != state_path.resolve():
@@ -215,8 +209,14 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         main._provider_registry = LLMProviderRegistry(main._CONFIG_PATH)
         if main._provider_registry.list_providers():
             raise ValueError("corpus_requires_empty_isolated_provider_registry")
-        await main._provider_registry.add_ephemeral_provider(dict(id="corpus-real-provider",
-            base_url=base_url, api_key=key, models=[main.config.llm.local.model]))
+        if c07 is not None and c07.recent_messages and not initialize_only:
+            from deskpet.quality.corpus_c07_phase import RecentMessagesProvider
+            recent_provider = await RecentMessagesProvider(c07.recent_messages,
+                model=main.config.llm.local.model).start()
+            await main._provider_registry.add_ephemeral_provider(recent_provider.registration())
+        else:
+            await main._provider_registry.add_ephemeral_provider(dict(id="corpus-real-provider",
+                base_url=base_url, api_key=key, models=[main.config.llm.local.model]))
         main.service_context.register("provider_registry", main._provider_registry)
         await main._session_db.reconcile_provider_bindings({entry["id"]:
             (str(entry["incarnation_id"]), int(entry["config_revision"]))
@@ -296,11 +296,25 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         if (await service.queue_snapshot())["turns"]:
             raise ValueError("corpus_scoring_history_not_empty")
         if initialize_only:
+            if c07 is not None and c07.recent_messages:
+                outcome["recent_phase_status"] = "NOT_RUN_INITIALIZE_ONLY"
             outcome["embedder_status"] = embedder.status_snapshot()
             outcome["execution_status"] = "INITIALIZED_NOT_EXECUTED"
             raise _InitializationComplete()
         worker = MemoryIngestionOutboxWorker(main._state_db_path, cognitive.manager,
             owner_id="corpus-scoring-user-ingestion")
+        if recent_provider is not None:
+            from deskpet.quality.corpus_c07_phase import execute_recent_phase, admit_scoring_provider
+            outcome["stage"] = "authored_recent_phase"
+            outcome["setup_phase"] = await execute_recent_phase(main=main, service=service,
+                runtime=runtime, batch=c07, recent_messages=authored["recent_messages"], worker=worker,
+                directory=directory, provider=recent_provider, collect_turn=collect_turn, record=write_result)
+            # Stop the local response authority before admitting the actual
+            # scoring Provider. Frozen old binding/terminal/audit remain intact.
+            await recent_provider.close()
+            await admit_scoring_provider(registry=main._provider_registry,
+                resolver=main._sdk_provider_binding_resolver, session_db=main._session_db,
+                base_url=base_url, key=key, model=main.config.llm.local.model)
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
         from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
@@ -317,6 +331,15 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             outcome["actual_completed_group_available"] = True
             outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt,
                 text, directory=directory))
+            if recent_provider is not None:
+                from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+                binding = SdkRunBindingV1.from_record(main._sdk_runtime_stack.read_closure_run_facts(
+                    outcome["sdk_run_id"]).binding_record)
+                if (binding.provider_id != "corpus-real-provider"
+                        or outcome["sdk_run_id"] == outcome["setup_phase"]["sdk_run_id"]
+                        or recent_provider.attempts != 1):
+                    raise ValueError("c07_scoring_phase_identity_differs")
+                outcome["provider_statistics_scope"] = "scoring_run_only_setup_excluded"
             outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
                 or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
         except Exception as exc:
@@ -328,7 +351,8 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             outcome["error_type"] = type(exc).__name__
             # Enqueue was durable even if runtime failed before returning the
             # complete group. Re-read its exact single-case transport receipt.
-            turns = (await service.queue_snapshot())["turns"]
+            turns = [turn for turn in (await service.queue_snapshot())["turns"]
+                if turn["delivery_key"] == "scoring-turn-1"]
             if len(turns) == 1 and turns[0]["delivery_key"] == "scoring-turn-1":
                 outcome["queue_snapshot"] = turns
                 try:
@@ -361,6 +385,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         )
         if main._sdk_ingress is not None:
             main._sdk_ingress.close()
+        if recent_provider is not None:
+            try:
+                await recent_provider.close()
+            except Exception as exc:
+                outcome["cleanup_errors"].append("recent_provider:" + type(exc).__name__)
         for owner, method, kwargs in owners:
             if owner is None:
                 continue
