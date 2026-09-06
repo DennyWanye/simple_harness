@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：隔离 Provider cold cleanup 窄修（产品 f0f72650、测试79508593），仅空 binding/authority 注册跳过终态后清理。真实 production resolver/port 的受影响冷恢复单控 1PASS/4.32s（H077/M616），核实 FAILED 持久终态、零 Provider、effect gate 释放、已有 binding 内部 KeyError 传播。旧测试使用 no-op ProviderPort，未覆盖这个生产回调，不能由其旧绿推断修复已验证。本叶已合候选、Dirac限定终审ACCEPT，native复验未完成；H077制品及原库未修改。PG81519清空。[分批结果](../plans/2026-09-06-provider-cold-cleanup/RESULTS.md)。
+
 2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
 
 

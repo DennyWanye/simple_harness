@@ -7842,6 +7842,13 @@ class _ProductSdkProviderBindingResolver:
         self.registry.mark_waiting(run_id)
 
     def mark_terminal(self, run_id: str, state: str) -> None:
+        if str(state).lower() not in {"completed", "failed", "cancelled", "stopped"}:
+            raise ValueError("terminal_state must be completed, failed, cancelled, or stopped")
+        # Cold terminal recovery never binds a Provider in this process. Only
+        # an entirely absent registration may skip process-local cleanup;
+        # inconsistent caches and errors for existing bindings still surface.
+        if self.registry.resolve(run_id) is None and str(run_id) not in self._authorities:
+            return
         self.registry.mark_terminal(run_id, state)
         self._authorities.pop(str(run_id), None)
 

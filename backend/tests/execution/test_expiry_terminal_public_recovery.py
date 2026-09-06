@@ -23,6 +23,10 @@ def artifact():
 
 @pytest.mark.asyncio
 async def test_real_old_host_expiry_stop_cold_new_stack_public_recovery(tmp_path, monkeypatch, artifact):
+    import main
+    from deskpet.execution.foreground_runtime_ports import ProductForegroundProviderPort
+    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+
     root = tmp_path / 'old-host'
     await asyncio.to_thread(subprocess.run, [sys.executable, '-I',
         str(Path(__file__).with_name('legacy_host_expiry_producer.py')),
@@ -44,6 +48,10 @@ async def test_real_old_host_expiry_stop_cold_new_stack_public_recovery(tmp_path
     provider = NoNewProvider()
     runtime, stack, queue = await foreground.build(root, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
+    # Exercise the production terminal callback, not the fixture's no-op port.
+    # No Provider authority is rebuilt for this already-terminal old Run.
+    resolver = main._ProductSdkProviderBindingResolver(object(), object())
+    runtime._provider = ProductForegroundProviderPort(object(), resolver)
     try:
         with pytest.raises(RunAuditUnavailable, match='terminal_event_unavailable'):
             stack.read_run_terminal_evidence(original['sdk_run_id'])
@@ -65,14 +73,35 @@ async def test_real_old_host_expiry_stop_cold_new_stack_public_recovery(tmp_path
             assert db.execute('SELECT COUNT(*) FROM foreground_runs').fetchone()[0] == 1
             terminal = db.execute('SELECT terminal_state,generation FROM foreground_terminal_receipts').fetchall()
         assert terminal == [('FAILED', original['generation'] + 1)]
+        assert resolver.registry.resolve(original['sdk_run_id']) is None
+        assert await runtime._effect_gate.authorize(original['sdk_run_id']) is None
         await foreground.assert_exact_sdk_terminal_identity(state, stack, original['primary_ref'])
         before = stack.read_run_terminal_evidence(original['sdk_run_id'])
+        # Absent registration is the sole exception: invalid states and a
+        # same-key internal failure for an existing binding must still escape.
+        with pytest.raises(ValueError, match='terminal_state'):
+            runtime._provider.mark_terminal(original['sdk_run_id'], 'running')
+        binding = SdkRunBindingV1.from_record(
+            stack.read_closure_run_facts(original['sdk_run_id']).binding_record)
+        resolver.registry.register(binding)
+        def fail_existing(*_):
+            raise KeyError(original['sdk_run_id'])
+        with monkeypatch.context() as scoped:
+            scoped.setattr(resolver.registry, 'mark_terminal', fail_existing)
+            with pytest.raises(KeyError) as failure:
+                runtime._provider.mark_terminal(original['sdk_run_id'], 'failed')
+            assert failure.value.args == (original['sdk_run_id'],)
+        assert resolver.registry.resolve(original['sdk_run_id']) == binding
+        runtime._provider.mark_terminal(original['sdk_run_id'], 'failed')
+        assert resolver.registry.resolve(original['sdk_run_id']) is None
     finally:
         await runtime.close(); await stack.close()
     # A second genuinely new Host+SDK stack returns the same public terminal and
     # has no foreground work to replay; this is not merely stopping a keeper.
     runtime2, stack2, queue2 = await foreground.build(root, state, provider, dynamic=True,
         binding_authority=authority, configured_root=configured)
+    runtime2._provider = ProductForegroundProviderPort(
+        object(), main._ProductSdkProviderBindingResolver(object(), object()))
     try:
         assert stack2.read_run_terminal_evidence(original['sdk_run_id']) == before
         assert not await runtime2._drive_once()

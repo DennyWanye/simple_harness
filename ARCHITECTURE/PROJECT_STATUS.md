@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：隔离 `feat/provider-cold-terminal-cleanup` 自2c8c57c6，Provider后置清理修复及真实resolver冷恢复单控 1PASS/4.32s，H077/M616限定载体。产品f0f72650、测试79508593；已合主候选，Dirac限定终审ACCEPT；native复验未完成。PG81519 exit0/remaining[]；原r8业务证据与resource125独立保留，不标完整native/program通过。[结果与原红](../plans/2026-09-06-provider-cold-cleanup/RESULTS.md)。
+
 2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
 
 

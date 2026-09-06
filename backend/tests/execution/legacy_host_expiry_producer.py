@@ -1,10 +1,12 @@
 """Old installed H075 + real Host authorization/queue, no model or terminal forgery."""
 import asyncio
+import hashlib
 from importlib import metadata
 import json
 from pathlib import Path
 import sys
 import time
+from urllib.parse import unquote, urlparse
 
 host_root = Path(sys.argv[1])
 old_sdk = Path(sys.argv[2])
@@ -13,7 +15,21 @@ import simple_harness
 assert simple_harness.__version__ == metadata.version('simple-harness-sdk') == '0.7.5'
 assert Path(simple_harness.__file__).resolve().is_relative_to(old_sdk.resolve())
 from tests.execution import test_primary_decisions as decisions
+from tests.execution import test_primary_foreground_runtime as foreground
+from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
 from deskpet.execution.foreground_queue import ControlKind
+
+# The legacy producer consumes its own frozen installed wheel, independently of
+# the current Host pin. Keep the production candidate verifier enabled.
+origin = json.loads(metadata.distribution('simple-harness-sdk').read_text('direct_url.json'))
+url = urlparse(origin['url'])
+assert url.scheme == 'file' and url.netloc in ('', 'localhost')
+wheel = Path(unquote(url.path))
+wheel_hash = hashlib.sha256(wheel.read_bytes()).hexdigest()
+manifest = json.loads(wheel.with_name('simple_harness_sdk-0.7.5.candidate-manifest.json').read_text())
+assert manifest['version'] == '0.7.5'
+assert manifest['artifacts'][wheel.name] == wheel_hash
+foreground.build_candidate_identity = lambda: SdkCandidateIdentity('0.7.5', wheel_hash, wheel)
 
 async def main():
     root = Path(sys.argv[3]); root.mkdir()
