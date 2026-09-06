@@ -1,3 +1,5 @@
+最后更新：2026-09-06。r16 mandatory-context 后继独立源：Host 将 no_recall 决策移至 SDK 真实响应 checkpoint 之后，反馈纳入新 snapshot/hash；repair-bearing 每次拟终态（包括已route）仍核真实ACK/pending，最多两次且继承原预算。Host 新3控首批PASS6.63s，SDK新11控分批PASS；含真实首零tool→ACK、route无ACK有限FAILED、续接前publicforget零新增发送，公开操作审计核repair identity。最后PG21416exit0/remaining[]，无模型/native/构建。H079待主统一制品与原生，H078/M618/原r16失败记录未改；非完整program完成。[精确结果](../plans/2026-09-06-prospective-mandatory-repair/RESULTS.md)。
+
 2026-09-06：时间提醒生产lane独立源（base7844cf67，产品ec99fa60/7c627fbc）默认注入已有prospective signal authority，并由MemoryAnalysisLane统一拥有独立登记/timer轻量任务及关闭join，避免慢analysis阻止到期；无新schema/SDK制品。4新增控制首批PASS7.15s：真实main activation/publicManager登记到期、重开唯一、已提交丢ACK跨expiry exactreplay、suppression/显式restart、父重复cancel清理（该项受控生命周期fixture）。PG16947正常退出remaining[]/cleanupnull、锁释放；H078M618既有installed+Hostsource，尚未合主/native，r14遗漏提醒FAIL保留待原userdata恢复；F01事件发布/OS通知未增加。[结果与命令](../plans/2026-09-06-prospective-runtime/RESULTS.md)。
 
 <!-- 最后更新：2026-09-06 -->
