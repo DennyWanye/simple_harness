@@ -11043,6 +11043,7 @@ def _provider_chain_or_none(provider_registry):
 
 
 async def _activate_product_sdk_runtime(
+    *, clock=time.time,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
     global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
@@ -11100,7 +11101,7 @@ async def _activate_product_sdk_runtime(
     # `product_sdk_runtime_skipped` left the Host running with no SDK runtime
     # at all (every chat turn then fails later, far from the cause).
     try:
-        stack = await _build_product_sdk_runtime_stack(state.generation)
+        stack = await _build_product_sdk_runtime_stack(state.generation, clock=clock)
     except Exception as exc:
         logger.exception("product_sdk_runtime_build_failed", reason=str(exc))
         raise RuntimeError(f"product_sdk_runtime_build_failed: {exc}") from exc

@@ -832,6 +832,19 @@ class ProductSdkRuntimeStack:
             raise RuntimeError("primary_history_sdk_terminal_missing")
         return terminal, self.read_primary_run_messages(run_id, current_text=current_text)
 
+    def read_corpus_scoring_trace(self, run_id: str):
+        """Read exact public SDK records, including unsuccessful Provider attempts.
+
+        Evaluation-only read surface. It neither authorizes a request nor derives
+        model type choices from Host defaults. The caller owns stack lifetime.
+        """
+        from deskpet.quality.corpus_trace import read_public_trace
+
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        return read_public_trace(self._uow, run_id)
+
     def read_primary_run_messages(self, run_id: str, *, current_text: str) -> tuple[dict, ...]:
         """Public transcript of this turn, excluding seeded history/system data.
 
