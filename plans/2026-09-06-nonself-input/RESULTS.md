@@ -1,6 +1,6 @@
 # 非SELF本轮输入：来源、SDK消费和物理交接结果
 
-最后更新：2026-09-06。Host产品0cf37197，严格kind窄修4405a2ac；契约3d73e606。Dirac已完成来源片源码审查，无确定P0/P1；最终新增实测待复核。
+最后更新：2026-09-06。Host产品0cf37197，严格kind窄修4405a2ac；契约3d73e606。来源片已限定ACCEPT；最新Host c2fd8fcd + Memory a8c8c38的9新增源/实际组件结果也获Dirac最终限定ACCEPT，无新增P0/P1。
 
 - r1：5FAIL/1.27s，全在fixture误用intended_audience=external_party被真实枚举拒绝，未达来源逻辑。原红保留，58247111只改fixture为external。
 - r2：5PASS/1.94s。真实签名控制→S1/turn同TX→exact事实回读、政策换代后input拒绝/origin不变、原文本/声明重放冲突、无声明/无live认证/错hash/pointer拒绝、旧S1不升级、after_evidence_insert故障原子回滚。
@@ -41,4 +41,4 @@ r1 PG6812 exit1/remaining[]；r2 PG6904 exit0/remaining[]、elapsed2.63s/peak186
 
 new-r1 selectors为 `tests/memory/test_current_input_consumer.py::test_ingested_placeholder_cannot_claim_current_input_namespace`、`tests/memory/test_current_input_consumer.py::test_input_batch_exact_exception_does_not_spread_to_old_sources_or_unowned_refs`、`tests/memory/test_current_input_audit.py`。physical-r2为`tests/memory/test_current_input_physical.py`；r3追加`-k 'policy or claim'`。已绿不需例行重跑。
 
-已实现SDK实际用途观察、调用审计持久接收和实际physical最终claim/request检查；待Dirac最终限定审、Singer小源码组合与主后继版本/installed/native验证。本片仍仅一个完整当前USER或显式public材料item，240独立USER+材料双项未接；并非最终受众正文授权、全操作审计或program完成。没有修改冻结fixture/数值阈值/旧来源hash/pins/轮子/主工作树。
+已实现SDK实际用途观察、调用审计持久接收和实际physical最终claim/request检查；Dirac最终限定审已ACCEPT；待Singer小源码组合与主后继版本/installed/native验证。本片仍仅一个完整当前USER或显式public材料item，240独立USER+材料双项未接；并非最终受众正文授权、全操作审计或program完成。没有修改冻结fixture/数值阈值/旧来源hash/pins/轮子/主工作树。
