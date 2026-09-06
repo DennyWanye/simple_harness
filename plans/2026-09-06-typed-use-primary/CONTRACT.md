@@ -145,7 +145,7 @@ binary boundary and explicit7/8->9 migration. Prior plans/results describe histo
 H074 inputs; current tested artifact is075 and the old env remains untouched.
 
 
-## Final no-recall recovery oracle (new tests474d958d, NOT_RUN)
+## Final no-recall recovery oracle (implemented; results in RESULTS.md)
 
 Installed H075, no SDK changes. Three real disposable child processes exit after
 actual provider success: before Hostsink commit, after Hostsink commit, and after
@@ -162,3 +162,10 @@ No private Memory SQL/seeder. Real Host terminal sink uses the same reconcile po
 as main: refusal leaves no no-recall fact and no successful Host terminal while
 keeping the already-successful physical Provider invocation public fact unchanged.
 Only these new checks run; old long/clock/short/installed checks are not repeated.
+
+
+Recovery refinement756d13d1: original SDK terminal verifier returns the authoritative
+public ProviderContextUseViewV1. Coordinator forwards it directly to Host sink
+verification, which requires exact Run/request/scope/subject/succeeded/empty binding.
+Do not query a ready-stack that is not yet published during Runtime.start recovery.
+The original SDK checkpoint/grant/lease/snapshot checks still run first.

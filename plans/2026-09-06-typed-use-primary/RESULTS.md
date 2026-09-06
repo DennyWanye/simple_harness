@@ -89,3 +89,57 @@ No additional green long/clock/migration reruns are planned.
 - `short-h075-r1/resource.json` SHA256 `f0f860de33b631ce101b6e1a270fd58fe9443108f8f56bc88542c28433c2e35d`
 - `installed075-short/command.log` SHA256 `4d86a241c2ad7484098bce1969c7a7a1498d0f7050a3c20f5055e5b12f95f636`
 - `installed075-short/resource.json` SHA256 `43cb4cda666b245493f46633776b70ce615022908fc3dc3adc7c1a8d47c11660`
+
+
+## Final no-recall controls — 2026-09-06
+
+New tests474d958d/0a0e4a0a, source correction756d13d1. Installed075 target and
+existing M614/S0313 only; no M615/M616 transitional environment or old-green rerun.
+
+| New control | Actual result | Evidence batch |
+|---|---|---|
+| Process loss after Provider succeeded, before Hostsink | Reopen creates one sink fact, same actual Run/request/attempt/grant, one total physical send, Host+SDK COMPLETED | terminal-r2 PASS |
+| Process loss after Hostsink commit | Reopen reuses exact prior sink hash, same identities, one total physical send, COMPLETED | terminal-r2 PASS |
+| Process loss after durable response_reserved | Original SDK verifier succeeds; Host validates its returned public view and exact original sink; one total physical send, COMPLETED | terminal-r3 PASS |
+| Real pending occurrence with model no-recall answer | Public Memory admission/mutation/outbox/registration/due/inbox yields matched pending; Host sink refuses, Host FAILED, actual Provider stays succeeded, pending remains | terminal-r3 PASS |
+
+These are four distinct scenarios across two batches, not a new full-suite count.
+terminal-r2:2PASS then1FAIL7.92s; resource8.616s/PG48301/peak306624KiB/exit1/children[].
+terminal-r3:2PASS (see indexed log), resource4.530s/PG48561/peak305696KiB/exit0/children[].
+Child os._exit73 is deliberate process loss after durable facts, not exception
+rollback. Injected trusted clock+120s expires SDK leases without editing persisted
+values; it is not a real120-second wait or native evidence. These use actual empty
+typed attestation, not a nonempty Memory-use receipt.
+
+Actual discovered Host defect: response_reserved recovery invokes terminal guard
+inside Runtime.start before main publishes _sdk_runtime_stack (main11013 vs11104 in
+this base). Host formerly queried that unpublished stack. ProviderCoordinator now
+first calls its unchanged SDK durable verifier, passes that exact public view as a
+required argument, and Host checks type/Run/request/scope/subject/succeeded/empty
+requests+receipts before the existing sink/hash check. No speculative grants,
+ready-state bypass, fake receipt, new SDK API or H075 byte change.
+
+Other retained failures were test prerequisites: terminal-r1 omitted main's existing
+historical tool-authority restoration before Runtime.start (main8585-8686). The
+fixture now restores exact public durable run_binding/tool_authority/catalog using
+the existing Host restore_run; no current-catalog fallback. pending-r1 omitted the
+public classification policy; fixture corrected. No production recovery rewrite.
+
+Re-run ONLY a new/changed/failed control through default shared bounded wrapper,
+using unchanged venv074614 Python -I -B and
+SDK artifact-075/run_terminal_tests.py with -k selection and a new basetemp. The
+wrapper imports installed H075 target and explicit Host backend, no PYTHONPATH,
+model/native/fullsuite. Existing raw failures and original H074 artifacts remain.
+
+This closes the tested typed-use source, exact-occurrence and no-recall sink recovery
+scope. Main H075/M616 combination, reminder production sources and native remain
+coordinator-owned; this report does not mark original401/program complete.
+
+- `terminal-r1/command.log` SHA256 `167b078d3688c58244ab5a3d9333cc51676f36f0cb482385c545c6b7a62c4ac4`
+- `terminal-r1/resource.json` SHA256 `60b8ce68bd0cad39c5df895716d19a1ca5da7e98ce0e8a6291abcf7f8527797a`
+- `pending-r1/command.log` SHA256 `c1c91568d8c877411fd95d4a61a001ddee581d4e5c47a025d4f50dc4e99c95bb`
+- `pending-r1/resource.json` SHA256 `ce06aff45ca0aadd6fcfa2b1daba94312366222b7c0cc5a21d9b9a6db969d87b`
+- `terminal-r2/command.log` SHA256 `4d29f7c088f454ea28094bbc116b3ef45fa60df3320566fa4a7ff0544ea2bc64`
+- `terminal-r2/resource.json` SHA256 `3c9043614195e342409d484602279ffbf617e64715003e56ef2b848eec56068e`
+- `terminal-r3/command.log` SHA256 `df8b5011449c0fbb627736ad2698f6b5b4eac8891b028f21b462832564aa407c`
+- `terminal-r3/resource.json` SHA256 `bf572999dc208dbf96e580e927147b34484980567ae82f3a7ea51c6bb33cd100`
