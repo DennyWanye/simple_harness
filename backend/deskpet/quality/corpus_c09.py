@@ -53,7 +53,7 @@ CHANGES = {
     'C09-04': (('project_owner', '小梁', '小顾', ('同项目',)),),
     'C09-05': (('log_timezone', 'UTC', 'Asia/Shanghai', ()),),
     'C09-06': (('export_endpoint', '/v1/export', '/v2/exports', ()),),
-    'C09-07': (('purchase_limit', '500', '300', ('元',)),),
+    'C09-07': (('purchase_limit', '500', '300', ()),),
     'C09-08': (('meeting_time', '周三14:00', '周四15:00', ()),),
     'C09-09': (('preferred_name', '主任', '小陈', ()),),
     'C09-10': (('output_format', '表格', '短列表', ()),),
