@@ -47,6 +47,7 @@ async def run_control(directory, host, control, key):
     from llm.provider_registry import LLMProviderRegistry
     from llm.resolution import ProviderRoutingReadiness
     from simple_harness_memory.core.jobs import DurableMemoryJobRunner
+    from deskpet.quality.corpus_c08_derived import fixture_options, verify_reminder_reopen
 
     batch = compile_c08_retained_setup(control['case_id'], control['setup'], scenario_clock=control['scenario_clock'])
     clock = lambda:batch.scenario_time
@@ -192,7 +193,8 @@ async def run_control(directory, host, control, key):
                 fixture = await memory.build_human_memory_v7(cognitive.db_path,
                     classification_policy=host_classification_policy(), supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES,
                     evidence_authority=HostEvidenceAuthority(state), analysis_delivery_authority=delivery,
-                    conversation_evidence_authority=authority, history_source_authority=HostHistorySourceAuthority(state), clock=clock)
+                    conversation_evidence_authority=authority, history_source_authority=HostHistorySourceAuthority(state), clock=clock,
+                    **await fixture_options(path=state, principal=cognitive.principal(), batch=batch))
                 job_outcomes = []
                 run_job = DurableMemoryJobRunner.run_once
                 async def observe_job(runner):
@@ -222,6 +224,10 @@ async def run_control(directory, host, control, key):
                     disclosure_context=seed['plan'].disclosure_context,
                     bindings=tuple(memory.HistoryEvidenceBinding(r.envelope, r.admission_receipt) for r in group.registrations))
                 assert [item.reason for item in visibility.items] == ['history_suppressed'] * 2
+                reminder = await verify_reminder_reopen(path=state, manager=reopened,
+                    principal=cognitive.principal(), seed=seed)
+                if reminder is not None:
+                    write_result(directory/'reminder-reopen.json', reminder)
                 result.update(production_manager_reopened=True, original_source_retained=True,
                     job_outcomes_before_current=job_outcomes)
                 await admit_scoring_provider(registry=main._provider_registry,

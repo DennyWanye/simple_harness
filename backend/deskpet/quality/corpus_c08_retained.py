@@ -22,6 +22,9 @@ from deskpet.memory.memory_ingestion_outbox import build_worker_config
 from deskpet.memory.short_indexing import PrimaryShortIndexingService
 from deskpet.quality.corpus_c08 import SETUPS
 from deskpet.quality.corpus_c08_documents import DOCUMENTS
+from deskpet.quality.corpus_c08_derived import (
+    CARRIERS, extra_manifest, expand_operations, verify_extra_views, register_reminder,
+)
 from deskpet.quality.corpus_c04_prepare import _ApplicationWitness
 from deskpet.quality.corpus_fixture_delivery import FixtureAnalysisDelivery
 from deskpet.quality.corpus_runtime import execute_scoring_turn
@@ -56,7 +59,7 @@ class RetainedSetup:
 
 
 def compile_c08_retained_setup(case_id, setup_text, *, scenario_clock):
-    if type(case_id) is not str or (case_id not in RETAINED and case_id not in DOCUMENTS):
+    if type(case_id) is not str or (case_id not in RETAINED and case_id not in DOCUMENTS and case_id not in CARRIERS):
         raise ValueError('c08_retained_case_not_supported')
     text, digest = SETUPS[case_id]
     if type(setup_text) is not str or setup_text != text or sha256(setup_text.encode()).hexdigest() != digest:
@@ -64,7 +67,7 @@ def compile_c08_retained_setup(case_id, setup_text, *, scenario_clock):
     instant = datetime.fromisoformat(scenario_clock)
     if instant.tzinfo is None or not math.isfinite(instant.timestamp()) or instant.timestamp() < 0:
         raise ValueError('c08_retained_trusted_clock_required')
-    document = DOCUMENTS.get(case_id)
+    document = DOCUMENTS.get(case_id) or CARRIERS.get(case_id)
     if document is None:
         predicate, value, user, assistant = RETAINED[case_id]
     else:
@@ -78,6 +81,9 @@ def compile_c08_retained_setup(case_id, setup_text, *, scenario_clock):
     # document identities additionally bind their exact carrier kind.
     if document is not None:
         identity['carrier_kind'] = document.kind
+    if case_id in CARRIERS:
+        identity['derived_carrier'] = extra_manifest(RetainedSetup(
+            case_id, text, digest, instant.timestamp(), predicate, value, messages, ''))
     manifest = canonical_hash(identity)
     return RetainedSetup(case_id, text, digest, instant.timestamp(), predicate, value, messages, manifest)
 
@@ -91,11 +97,14 @@ def validate_retained_setup(batch):
 
 def retained_carrier_kind(batch):
     validate_retained_setup(batch)
-    document = DOCUMENTS.get(batch.case_id)
+    document = DOCUMENTS.get(batch.case_id) or CARRIERS.get(batch.case_id)
     return document.kind if document is not None else 'retained-assistant-summary'
 
 
 def retained_phase_kind(batch):
+    if batch.case_id in CARRIERS:
+        validate_retained_setup(batch)
+        return 'deterministic_retained_derived_carrier'
     return ('deterministic_retained_document' if retained_carrier_kind(batch)
         != 'retained-assistant-summary' else 'deterministic_retained_summary')
 
@@ -309,7 +318,7 @@ class RetainedAnalysisExecutor(FixtureAnalysisDelivery):
             raise ValueError('c08_retained_actual_analysis_claim_required')
         plan = h.MemoryMutationPlan(self._identity(request), request.run_id,
             stable_id('analysis-batch-turn', request.job_id), request.subject, head,
-            h.MemoryMutationPlanOutcome.MUTATE, (operation,), request.disclosure_context,
+            h.MemoryMutationPlanOutcome.MUTATE, expand_operations(self.batch, operation), request.disclosure_context,
             request.ordered_evidence_refs, request.idempotency_key)
         self.executions += 1
         response = h.MemoryAnalysisResult(request.job_id, request.run_id, request.request_hash,
@@ -355,11 +364,17 @@ async def prepare_c08_retained_seed(*, path, manager, principal, batch, executed
     graph_before = await manager.get_twin_graph_view(principal=principal)
     expected_hash = canonical_hash(plan.operations[0].payload.to_json())
     user = group.registrations[0]
-    if (len(view.operations) != 1 or view.plan_hash != plan.plan_hash
+    if batch.case_id in CARRIERS:
+        labels = verify_extra_views(batch, plan, view, graph_before, user.envelope.evidence_id)
+    elif (len(view.operations) != 1 or view.plan_hash != plan.plan_hash
             or view.operations[0].evidence_ids != (user.envelope.evidence_id,)
             or [(node.memory_id, node.revision, node.content_hash) for node in graph_before.nodes]
                != [(view.operations[0].memory_id, 1, expected_hash)]):
         raise ValueError('c08_retained_nonempty_user_derived_memory_required')
+    else:
+        labels = {'A': view.operations[0]}
+    reminder = await register_reminder(path=path, manager=manager, principal=principal, batch=batch,
+        labels=labels, mutation_receipt_ref=receipt.receipt_ref)
     # Includes the real terminal ancestor and assistant source admission; full
     # group metadata comes from Host receipts, never from the fixed text itself.
     await PrimaryShortIndexingService(authority, manager=manager, principal=principal).register_group(group)
@@ -394,8 +409,8 @@ async def prepare_c08_retained_seed(*, path, manager, principal, batch, executed
             raise ValueError('c08_retained_public_registration_replay_differs')
     if await runner.run_once() is not WorkerRunOutcome.IDLE:
         raise ValueError('c08_retained_analysis_not_settled')
-    return dict(case_id=batch.case_id, setup_hash=batch.setup_hash, manifest_hash=batch.manifest_hash,
-        setup_complete=True, unprepared_carriers=(), labels={'A':view.operations[0]},
+    result = dict(case_id=batch.case_id, setup_hash=batch.setup_hash, manifest_hash=batch.manifest_hash,
+        setup_complete=True, unprepared_carriers=(), labels=labels,
         source_pair=(user.envelope, user.admission_receipt), completed_group=group,
         outcome=outcome, fixture_executions=executor.executions, application=witness.application,
         request=witness.request, plan=plan, mutation_receipt=view, mutation_receipt_ref=receipt.receipt_ref,
@@ -403,3 +418,8 @@ async def prepare_c08_retained_seed(*, path, manager, principal, batch, executed
         visibility_before=before, visibility_after=after, graph_before=graph_before, graph_after=graph_after,
         fixture_defaults=('authored-setup-only-old-group', retained_carrier_kind(batch)),
         short_generation_exercised=False)
+    if batch.case_id in CARRIERS:
+        result['derived_carrier'] = extra_manifest(batch)
+        result['reminder_carrier'] = reminder
+        result['entity_relation_edge_exercised'] = False
+    return result
