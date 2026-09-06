@@ -1,7 +1,7 @@
 # Prospective public registration/signal successor
 
 2026-09-06，base3de9879f，复用原source-oracle树/feat/typed-recall-prospective-public。
-本次源码准备未测，无新checkout/venv/模型/native，H073/M0613冻结不改。
+初次固定为源码准备；现已完成限定验证，见[RESULTS.md](RESULTS.md)。无新checkout/venv/模型/native，H073/M0613冻结不改。
 
 ## 原输入与可证范围
 
