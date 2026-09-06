@@ -13,9 +13,23 @@ CLOCK='2026-09-06T10:00:00+08:00'
 @pytest.mark.parametrize('case_id',list(SPECS))
 async def test_c02_public_setup_preserves_distractors_and_epistemic_status(tmp_path,case_id,monkeypatch):
     batch=compile_setup(case_id,SETUPS[case_id][0],scenario_clock=CLOCK)
-    f=await setup(tmp_path/'host')
-    result(await f.send('queue.enqueue',{'text':batch.setup_text},key='setup-only'))
-    envelope,receipt=(await pairs(f))[0]
+    subject=AUTH.subject
+    if case_id=='C02-19':
+        from types import SimpleNamespace
+        from tests.execution.test_primary_create_new_runtime import fixture
+        from deskpet.sdk_adapters.context_route import local_owner_auth
+        from deskpet.memory.human_memory_service import QueueTurnRequest,build_foreground_turn_evidence
+        state,_,service,_,_=await fixture(tmp_path/'host')
+        auth=local_owner_auth();subject=auth.subject
+        await service.enqueue_turn(QueueTurnRequest(None,'setup-only',batch.setup_text))
+        expected,_=build_foreground_turn_evidence(subject=subject,authority_ref=auth.authority_ref,
+            delivery_key='setup-only',text=batch.setup_text)
+        envelope,receipt=await HostEvidenceAuthority(state).read_admitted(expected.evidence_id)
+        f=SimpleNamespace(path=state)
+    else:
+        f=await setup(tmp_path/'host')
+        result(await f.send('queue.enqueue',{'text':batch.setup_text},key='setup-only'))
+        envelope,receipt=(await pairs(f))[0]
     inference={}
     if case_id=='C02-19':
         import simple_harness as h
@@ -28,19 +42,18 @@ async def test_c02_public_setup_preserves_distractors_and_epistemic_status(tmp_p
                 self.requests.append(request)
                 return ProviderResponse(request.request_id,Message(MessageRole.ASSISTANT,
                     '我推测你偏好云端；尚未得到确认。'),model='model',usage=ProviderUsage(10,10,20))
-        monkeypatch.setattr(runtime_fixture,'local_owner_auth',lambda:AUTH)
         provider=InferenceProvider()
         runtime,stack,_=await runtime_fixture.build(tmp_path/'host',f.path,provider)
         try:
             assert await runtime._drive_once() and runtime.last_error is None
             assert len(provider.requests)==1
-            runs=await PrimaryConversationAuthority(f.path,subject=AUTH.subject).completed_run_ids()
+            runs=await PrimaryConversationAuthority(f.path,subject=subject).completed_run_ids()
             assert len(runs)==1
             inference=dict(inference_path=f.path,inference_host_run_id=runs[0])
         finally:
             await runtime.close()
             await stack.close()
-    principal=m.MemoryPrincipal('host','household',AUTH.subject,'corpus-fixture')
+    principal=m.MemoryPrincipal('host','household',subject,'corpus-fixture')
     manager=await m.build_human_memory_v7(tmp_path/'memory.db',
         classification_policy=classification_policy(),supported_filter_policies=FILTERS,
         evidence_authority=HostEvidenceAuthority(f.path),clock=lambda:batch.scenario_time)
