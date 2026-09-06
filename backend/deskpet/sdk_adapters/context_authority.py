@@ -348,6 +348,10 @@ class ContextRouteLedgerError(RuntimeError):
         super().__init__(message or self.code)
 
 
+class ContextRouteWorkspaceAlreadyBound(ContextRouteLedgerError):
+    code = "context_route_workspace_reuse_requires_new_run"
+
+
 class ContextRouteLedgerStore:
     """Append-only v45 context/route ledger on the Host human-memory state.db."""
 
@@ -600,7 +604,7 @@ class ContextRouteLedgerStore:
                 prior_task = await cursor.fetchone()
                 await cursor.close()
                 if bound is not None or prior_task is not None:
-                    raise ContextRouteLedgerError("context_route_workspace_reuse_requires_new_run")
+                    raise ContextRouteWorkspaceAlreadyBound()
             await db.execute(
                 "INSERT INTO context_route_decisions("
                 "decision_id,sdk_run_id,provider_turn_ordinal,route,origin,"

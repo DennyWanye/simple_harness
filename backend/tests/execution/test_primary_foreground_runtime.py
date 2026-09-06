@@ -89,7 +89,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, context_route_ledger_factory=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -162,7 +162,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store, typed_use_authority)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store, typed_use_authority, context_route_ledger_factory)
         if extra_registrations:
             from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
             tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
@@ -642,7 +642,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None, typed_use_authority=None):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None, typed_use_authority=None, context_route_ledger_factory=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -650,7 +650,8 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
     from deskpet.sdk_adapters.tool_authority import SdkRuntimeCapabilityBridgeAdapter
     from deskpet.task_scope.workspace_bindings import WorkspaceBindingAuthorityStore
     from deskpet.tools.os_tools.write_file import write_file
-    ledger = ContextRouteLedgerStore(state_path)
+    ledger = (ContextRouteLedgerStore(state_path) if context_route_ledger_factory is None
+              else context_route_ledger_factory(state_path))
     def execution_context():
         context = active_product_tool_context()
         return project_tool_execution_context(authorities.resolve(context.run_id).execution_context(

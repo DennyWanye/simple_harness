@@ -152,7 +152,14 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
         return httpx.Response(200, json={"id": f"continue-response-{n}", "model": "model-a",
             "choices": [{"message": message, "finish_reason": "tool_calls" if call else "stop"}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20}})
-    client = httpx.AsyncClient(transport=httpx.MockTransport(physical))
+    async def observed_physical(request):
+        try:
+            return await physical(request)
+        except Exception:
+            import traceback
+            observed["callback_error"] = traceback.format_exc()
+            raise
+    client = httpx.AsyncClient(transport=httpx.MockTransport(observed_physical))
     async def guard(request):
         current = await queue.current_snapshot(local_owner_auth().subject)
         await check_runtime_dependencies(db_path=state, stack=stack, sdk_run_id=current.sdk_run_id,
@@ -160,11 +167,15 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
     provider = ProductProviderAdapter(Registry("fixture-key"), provider_id="relay", client=client,
         price_resolver=lambda *_: (1, 1, "fixture-prices"), pre_invoke_guard=guard)
     try:
-        runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True, binding_authority=authority, configured_root=configured)
+        from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
+        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+        runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True, binding_authority=authority, configured_root=configured,
+            context_route_ledger_factory=lambda path: ContextRouteLedgerStore(path, evidence_ingress=ExecutionEvidenceIngress(path)))
         await service.enqueue_turn(QueueTurnRequest(None, "continue-original", "Continue editing the accepted project's original document in a new task"))
         await runtime.after_enqueue(subject=runtime.subject)
         await asyncio.wait_for(runtime.drain(), 25)
         assert runtime.last_error is None
+        assert "callback_error" not in observed, observed.get("callback_error")
         after = archive_facts(state, old)
         assert after[0] == prior[0] and after[2] == prior[2]  # canonical + binding immutable
         assert after[1][:len(prior[1])] == prior[1]  # no old event rewritten
