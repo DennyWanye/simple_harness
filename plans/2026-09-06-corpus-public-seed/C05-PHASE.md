@@ -37,7 +37,7 @@ No additional tests run. Subsequent necessary controls must use main's complete 
 ## Fixed dispatcher observations and pending controls
 
 `read_candidate_events(*, path, subject, sdk_run_id, stack, policy)` returns a tuple of
-`{kind: task_candidates_visible, sdk_run_id, effect_id, call_id, actual_result_hash, visible_count}`.
+`{kind: task_candidates_visible, sdk_run_id, effect_id, call_id, actual_result_hash, visible_count, visible_sources}`.
 Every event is exact Host-indexed/public SDK terminal search output, with complete candidate shape,
 source/hash verification and current disclosure policy plus a post-read same-context check.
 No indexed search, unfinished search, explicit error, empty or currently hidden candidates returns no event;
@@ -75,3 +75,10 @@ against this queued setup's actual HTTP plan. No inferred ID transformation or n
 Missing indexed effect or terminal result now raises; real nonterminal is pending, SDK rejected/failed
 with stable error code yields no candidate, unknown/partial/malformed success fails unverifiable.
 An arbitrary error key is not accepted as proof of a terminal failure. New source remains NOT_RUN.
+
+Consumer delta: visible_sources contains only the exact (task_scope_id, source_id, source_hash)
+triples whose existing verification and current policy check succeeded in that event read. It is
+not a selection grant. The consumer must re-read for freshness and compare an actual final-choice
+request's arguments; hidden candidates are not returned here. Existing actual_result_hash still
+covers the whole unchanged public SDK result, and visible_count counts these returned members.
+Source-only, no additional test run.
