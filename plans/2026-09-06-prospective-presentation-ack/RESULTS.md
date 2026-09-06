@@ -51,3 +51,14 @@ Shared slot released to Hegel. No old green rerun.
 - `a7-r6/command.log` SHA256 `ee19aee83c4ee941c00cbb692640a340cb3f12698aec30997efb04495c2fb58e`
 - `a7-r6/resource.json` SHA256 `6bfc79eb1945caa68fa50a255fc94df3f17a827495b21458e2af1240c58d06a2`
 - `a7-r6/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+`a7-r7` only two runtime retries: 2 FAIL/7 deselected in2.17s. PG93590
+exit1/remaining[], peak404592KiB, cleanupnull. Both now get through catalog/SDK
+startup and fail actual `service.enqueue_turn -> initialize_subject`: older
+program initializer rejects schema52. Successor validation belongs at the shared
+subject initializer, not only typed authority; that exact52 validator branch is
+moved there, restoring typed authority to the shared call. No DDL/default schema
+version change, unknown epochs still rejected. This new fix is NOT_RUN.
+Main-owner startup dispatch still requires explicit exact52 compatibility review:
+its default inspect maximum remains old target. This leaf does not silently
+widen the schema dispatcher or claim whole app restart acceptance.

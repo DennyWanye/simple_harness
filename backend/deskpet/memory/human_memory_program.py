@@ -540,7 +540,15 @@ class HumanMemoryProgramStore:
 
     async def initialize_subject(self, subject: str) -> PrimaryConversationReceipt:
         subject = _bounded_identifier(subject, "subject", maximum=512)
-        await initialize_human_memory_program_state_db(self._db_path)
+        from deskpet.memory.schema import read_user_version
+        if await read_user_version(self._db_path) == 52:
+            # The S5c successor owns its exact DDL/recovery registry. Reuse its
+            # validator before this existing subject transaction; do not send
+            # a validated successor through the older fresh-only initializer.
+            from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
+            validate_s5c_terminal_state_db(self._db_path)
+        else:
+            await initialize_human_memory_program_state_db(self._db_path)
         async with human_memory_connection(self._db_path) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("PRAGMA foreign_keys=ON")
