@@ -1,5 +1,7 @@
 <!-- 最后更新：2026-09-07 -->
 
+2026-09-07 主0abdf048/H079/M619/S0313独立installed组合仅C04-12新增1PASS/1.03s，PG57440清空；与原H078/M618叶证据分开，非质量执行。
+
 C04 原20公开setup分批19+1通过；实际same-timestamp晚append暴露Host游标漏注册，
 d3a580be复用原journal修复当前timestamp边界、分离scan高水位与消费CAS，无DDL/旧receipt改写。
 新增5控分批通过（测试helper d25fe2f6），原绿未重跑；晚到更早timestamp仍不保证。

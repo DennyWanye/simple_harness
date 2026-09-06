@@ -33,3 +33,17 @@ All paths below are ignored beneath this worktree; no raw added to Git.
 - `.local-test-evidence/2026-09-07/c04-cursor/fix-r1/resource.json` SHA256 `64bed45e9f5f1297515ba20409010193efd2cb6476e61bfafa21a73b18086704`
 - `.local-test-evidence/2026-09-07/c04-cursor/fix-r2/command.log` SHA256 `6e15604428c2efc9e2f5689f4892acc27be3ff21bf44715637d907fb4e0a9e90`
 - `.local-test-evidence/2026-09-07/c04-cursor/fix-r2/resource.json` SHA256 `49d5b5e1848540103e9a1d2b7a20617b110ac5dd80c41661aeb455d8baf31c60`
+
+## Current main combination (separate from original leaf evidence)
+
+2026-09-07: fixed main `0abdf04802a1a3c640341dc2e26ae9e34af2439b`, tracked backend clean before and full worktree clean after. Only C04-12 selected: **1PASS/1.03s**. PG57440exit0, resource1.972s,peak194944KiB,remaining[],cleanupnull. Slot released immediately; no extra tests.
+
+Python: primary-candidate/.local-test-evidence/2026-09-06/primary-m0615/venv/bin/python, isolated -I -B. Host origin is main/backend; no own backend import. SDK origin is main/.local-test-evidence/2026-09-07/memory619-artifact/installed; metadata exact H0.7.9/M0.6.19/S0.3.13 and each package __file__ asserted under that target. This is a production cursor/new public-boundary combination check, not 240 quality/native; previous H078/M618 evidence remains separate. No repeated installed distribution-wide hash scan.
+
+- Host consumed member `/Users/denny/projects/simple_harness-primary-candidate/backend/deskpet/memory/s5c_consumer.py` SHA256 `5b373deb8336cf9e3502dabab762c57672b4c2583292b20f179219dd38b79e44`
+- Host consumed member `/Users/denny/projects/simple_harness-primary-candidate/backend/deskpet/memory/s5c_store.py` SHA256 `5dcb5858d4737d3a14c989dfa44128cce13d0d90dad4d714598e99cdace431c0`
+- Host consumed member `/Users/denny/projects/simple_harness-primary-candidate/backend/deskpet/memory/prospective_registration_source.py` SHA256 `3b693b415d11a2e27ad59efe62cd837ec12587b6c2711aa2c2bf8bf50d7e0f79`
+- Host consumed member `/Users/denny/projects/simple_harness-primary-candidate/backend/tests/quality/test_corpus_c04_prepare.py` SHA256 `783c7c032c0157297ae36cc18d895466bf1492aa1fb09e864094d310a23dcf70`
+- Local `.local-test-evidence/2026-09-07/c04-cursor/run_primary_combo.py` SHA256 `efb7146dbd2fc93e6822a8cac8028dd4f6ceaebad2cef3adfa3eca5c18c1e52e`
+- Local `.local-test-evidence/2026-09-07/c04-cursor/primary-combo-r1/command.log` SHA256 `19f88952892a1a328add66870d713153a61b64848ae34e06cca858f8cda37282`
+- Local `.local-test-evidence/2026-09-07/c04-cursor/primary-combo-r1/resource.json` SHA256 `0fea555b5a64bffe5908baa12eb4f51dae5d992051f6d06c4efd2f3dba8b95e5`
