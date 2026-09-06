@@ -3,6 +3,18 @@
 ## 2026-09-06 M0615 installed tool groups
 
 Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).
+## 2026-09-06 S5c schema50 successor
+
+Updated 2026-09-06: Primary49 to isolated50; 43 tests passed, real old S5c47/48 rejected without DB byte changes. Default remains49; scheduler/presentation/ACK not wired. Fixedf8e59f31 passed independent scoped review and is merged in the primary candidate. Default remains49; not active scheduler. [Mapping and evidence](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-50.md).
+
+## 2026-09-05 S5c schema48 isolated successor
+
+Primary source index now owns global47; deferred S5c is explicitly remapped47->48
+without changing tables/authority/thresholds. Actual source/store/public consumer43
+passed; a real old unpublished S5c47 database is rejected unchanged. No production
+activation or scheduler/presentation/ack/native completion. Historical47 statements
+below remain historical, superseded only by [A11-schema48/v1](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-48.md).
+
 
 ## 2026-09-06 工具组与可信披露组合接入
 
@@ -350,6 +362,28 @@ by real mouse click; this combined tree has not run native. Cognitive UI/SDK sup
 and selected-source indexing remain incomplete; no main cutover or full program PASS.
 See [combined evidence and boundaries](../plans/2026-09-05-primary-effect-sources/COMBINED.md).
 
+
+## 2026-09-05 S5c T3 独立 registration consumer（未接线）
+
+在自己的 store/consumer 模块实现原 prepared registration 的恢复投递与 exact Memory 回签持久化。
+仅调用现有公开 outbox/signal API；prepared/cursor 不改写，applied 行记录回签而非 occurrence processed。
+新增21项通过（含3项已安装 Memory SDK 实库重开/过期回放），既有66项相关回归通过。
+真实 source resolver、due/event、唯一 scheduler lifecycle 与 T4/T5/T6 接线仍未实现；自身独立 review 待主协调。
+默认 schema/SDK/pin/主 runtime 未变，不影响主 S3 冻结的0.6.5 candidate，不算 S5c 或 program 完成。
+接口、限制与证据：[T3 consumer](../plans/2026-09-05-human-memory-s5c-preparation/T3-CONSUMER.md)。
+
+## 2026-09-05 S5c T1/T2 隔离 Host 基础（未接入生产）
+
+分支 `feat/human-memory-s5c-preparation` 已合入 main `c183fe70` 的 Q1/downgrade 修正，
+新增显式 v47 initializer、三张 Prospective 领域表与一张 action journal，复用原迁移事务和 recovery fence。
+registration/source/signal/cursor 同事务；只读 authority resolver 校验 exact ref 与 durable source；
+action request 不授予权限，claim 不表示呈现或处理。没有 action grant issuer、scheduler、ack 工具、
+priority 或 suppression 接线。默认 production schema 仍 v46，默认 initializer 拒绝 v47；
+`main.py`、SDK/pin 无本切改动。66 项决定性及相关回归通过，独立 review 尚待主协调。
+这只证明隔离基础服务，不改变 S5b gate 状态，不算 S5c/Program 完成。
+本切接口与 G6 版本化 schedule 阻塞见
+[T1/T2定稿](../plans/2026-09-05-human-memory-s5c-preparation/T1-T2-INTERFACE.md)；
+主线程 S3 冻结的 Memory 0.6.5 candidate 不纳入本分支 priority 实现。
 
 > 最后更新：2026-09-05
 

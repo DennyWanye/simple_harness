@@ -3,6 +3,18 @@
 ## 2026-09-06 M0615 installed tool groups
 
 Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).
+## 2026-09-06 S5c schema50 successor
+
+Updated 2026-09-06: Primary49 to isolated50; 43 tests passed, real old S5c47/48 rejected without DB byte changes. Default remains49; scheduler/presentation/ACK not wired. Fixedf8e59f31 passed independent scoped review and is merged in the primary candidate. Default remains49; not active scheduler. [Mapping and evidence](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-50.md).
+
+## 2026-09-05 S5c schema48 isolated successor
+
+Primary source index now owns global47; deferred S5c is explicitly remapped47->48
+without changing tables/authority/thresholds. Actual source/store/public consumer43
+passed; a real old unpublished S5c47 database is rejected unchanged. No production
+activation or scheduler/presentation/ack/native completion. Historical47 statements
+below remain historical, superseded only by [A11-schema48/v1](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-48.md).
+
 
 ## 2026-09-06 工具组与可信披露组合接入
 
@@ -655,6 +667,24 @@ pending API 扩展。Manual/route UI 未实现/未真测，不得把该前端包
 模型使用全局 Provider 设置；附件/slash/Realtime、完整 Artifact/Context/TaskScope 保留项尚待接线。
 未起 App/Provider、未修改 backend/SDK、未写 gate，原 S5b FAIL 与全量限制继续保留。原始证据仅在
 该树 ignored `.local-test-evidence/2026-09-05/primary-ui/`。
+
+## 2026-09-05 S5c T3 独立 consumer 进度
+
+仅在 `feat/human-memory-s5c-preparation` 新增 registration 恢复投递，自己的 store 追加 exact result receipt。
+新增21项通过（3项为安装 SDK 实库），既有66项相关回归通过；故障和修正记录均保留。
+生产 source resolver、due/event/唯一 scheduler、T4/T5/T6 尚缺，独立 review 待主协调。
+没有 main/Carver runtime/terminal/ingestion、SDK/pin 或默认 schema 改动；不声称 S5c 完成。
+[本切接口与限制](../plans/2026-09-05-human-memory-s5c-preparation/T3-CONSUMER.md)。
+
+## 2026-09-05 S5c T1/T2 独立 worktree 进度
+
+`feat/human-memory-s5c-preparation`，worktree `/Users/denny/projects/simple_harness-s5c-preparation`，
+基于已提交 `c183fe70`（Q1 + downgrade 测试）。显式 v47/schema/store/只读 authority 接缝及
+决定性/相关回归 66 passed；Ruff E/F/I 通过。生产默认仍 v46，未改 main 入口、SDK 或 pin。
+独立 review 待主协调后才能决定合入。T3/T4生产scheduler/snapshot/ack未接线；T5 SDK priority
+和T6披露/旧checkpoint接口仍BLOCKED。不存在 S5c全绿、真实provider或program完成声明。
+详情：[本切接口](../plans/2026-09-05-human-memory-s5c-preparation/T1-T2-INTERFACE.md) /
+[验证记录](../plans/2026-09-05-human-memory-s5c-preparation/journal.md)。
 
 ## 2026-09-05 当前修复与受影响验证
 
