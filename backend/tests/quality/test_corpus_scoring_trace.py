@@ -66,6 +66,28 @@ async def test_actual_provider_attempt_survives_missing_transcript(tmp_path, mon
         assert result["trace"]["operation_audit"] is not None
         assert len(adapter.requests) == 1
         if phase == "failed":
+            # A fully observed real failed attempt still has no model response.
+            # This was the actual r4 seam: exact proposal counts must be unknown
+            # while failed-case denominator/zero credit remain unchanged.
+            assert before["provider_observation_complete"] is True
+            assert before["providers"][0]["response_json"] is None
+            failed_dir = tmp_path / "observed-failure-review"
+            failed_dir.mkdir()
+            write_result(failed_dir / "case.json", {"case_id": "control-only"})
+            write_result(failed_dir / "oracle.json", {"labels": {"required_types": ["semantic"]}})
+            write_result(failed_dir / "execution.json", {"execution_status": "EXECUTION_FAILED", "trace": before})
+            failed = review_packet(failed_dir, 1)
+            assert failed["oracle_verdict"] == "EXECUTION_FAILED"
+            assert failed["observed_handed_off_invocations"] == 1
+            assert failed["predicted_types"] is None
+            assert failed["observed_predicted_types_lower_bound"] == []
+            metrics = failed["original_metric_components"]
+            assert metrics["prediction_observation_complete"] is False
+            assert metrics["required_type_denominator"] == 1 and metrics["required_credit"] == 0
+            assert metrics["extra_proposed_types"] is None
+            assert metrics["predicted_type_count"] is None
+            assert metrics["proposed_required_matches"] is None
+            assert metrics["extra_proposed_types_lower_bound"] == 0
             # Same actual failed SDK run, only the public projection reader now
             # faults. No extra run or Provider invocation for this counter check.
             class UnreadableProviders:

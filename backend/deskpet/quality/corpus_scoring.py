@@ -108,20 +108,23 @@ def review_packet(directory, exit_code):
         for p in trace["providers"]) if trace is not None else 0
     observation_complete = trace is not None and trace.get("provider_observation_complete") is True
     handed_off = handed_off_lower_bound if observation_complete else None
+    prediction_complete = (observation_complete and trace.get("trace_status") == "COMPLETE"
+        and observations is not None
+        and all(o["proposed_strings"] is not None for o in observations)
+        and all(p["response_json"] is not None for p in trace["providers"]))
     packet = dict(case=case, original_oracle=oracle,
         execution=result, worker_exit_code=exit_code, model_type_proposals=observations,
         observed_handed_off_invocations=handed_off,
         observed_handed_off_lower_bound=handed_off_lower_bound,
-        predicted_types=types if observations is not None else None,
+        predicted_types=types if prediction_complete else None,
+        observed_predicted_types_lower_bound=types,
         original_metric_components=dict(required_type_denominator=len(required),
-            prediction_observation_complete=observations is not None and
-                trace.get("trace_status") == "COMPLETE" and
-                all(o["proposed_strings"] is not None for o in observations) and
-                all(p["response_json"] is not None for p in trace["providers"]),
-            proposed_required_matches=len(set(types) & set(required)),
-            extra_proposed_types=len(set(types) - set(required)) if observation_complete else None,
+            prediction_observation_complete=prediction_complete,
+            proposed_required_matches=len(set(types) & set(required)) if prediction_complete else None,
+            proposed_required_matches_lower_bound=len(set(types) & set(required)),
+            extra_proposed_types=len(set(types) - set(required)) if prediction_complete else None,
             extra_proposed_types_lower_bound=len(set(types) - set(required)),
-            predicted_type_count=len(types) if observation_complete else None,
+            predicted_type_count=len(types) if prediction_complete else None,
             # Failed executions stay in denominator. Missing proposal evidence
             # is unknown, never silently converted to a zero-extra success.
             required_credit=0 if not completed else None),
