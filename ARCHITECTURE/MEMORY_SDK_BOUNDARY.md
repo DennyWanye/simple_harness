@@ -1,5 +1,16 @@
 # Memory SDK 边界与 Host 接口契约
 
+
+## 2026-09-06 H073/M0613 runner successor（独立测试工具叶子）
+
+独立 `feat/typed-recall-0613`，base60f280dc；候选pins显式后继并保留旧lineage，
+原401/391+10/14攻击/阈值不变。observe在public/source层及cell统一不授PASS，FAIL保留。
+必要工具测试12passed；两原格真实installed public OBSERVED且业务断言通过，正式0PASS/0FAIL/2BLOCKED。
+source10与其余399未执行，旧178/0/223历史不覆写、不拼接。H164/M72包文件逐字节核对；无模型/native。
+资源入口145baed3默认共享锁，两组无残留且槽已释放。原runner applicability WIP未动，原三格仍BLOCKED。
+该工具叶子不表示S3/program或401全量完成，未合主树。
+[命令、资源与证据hash](../plans/2026-09-06-typed-recall-0613/RESULTS.md)。
+
 > 最后更新：2026-09-05
 > 验收基线：simple_harness `4e797ccd`；Harness `fbb156f` / 0.3.0 / wheel `cf629cee…`；
 > Memory `3d4247b` / 0.4.0 / wheel `bfcd2506…`

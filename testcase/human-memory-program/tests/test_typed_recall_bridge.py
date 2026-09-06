@@ -199,7 +199,7 @@ def test_worker_verifies_actual_installed_files(tmp_path, monkeypatch, fault):
         assert worker.verified_distribution(candidate)["verified_wheel_files"] == 2
 
 
-@pytest.mark.parametrize("source_fault", [None, "duplicate", "stale", "identity", "nonzero", "dirty", "cross-layer-rewrite"])
+@pytest.mark.parametrize("source_fault", [None, "duplicate", "stale", "identity", "nonzero", "dirty", "cross-layer-rewrite", "observe-pinned", "observe-successor", "observe-failure"])
 def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monkeypatch, source_fault):
     """Synthetic transport responses test aggregation, never product acceptance."""
     import types
@@ -219,7 +219,10 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
         source_adapter=str(source_adapter), source_checkout=str(tmp_path), child_timeout=5)
     def wheel_identity(path, sha, commit, distribution, package):
         name = "memory" if package == "simple_harness_memory" else "harness"
-        return dict(layers["clean_wheel_public_manager"][f"candidate_{name}_identity"], package=package)
+        identity = dict(layers["clean_wheel_public_manager"][f"candidate_{name}_identity"], package=package)
+        if source_fault == "observe-successor":
+            identity["source_commit"] = "a" * 40
+        return identity
     monkeypatch.setattr(bridge, "wheel_identity", wheel_identity)
     def source_identity(*args):
         if source_fault == "dirty":
@@ -230,6 +233,16 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
     # separate real-business oracle (covered by test_typed_recall_a2_oracle).
     monkeypatch.setattr(bridge, "assess_observed_cells", lambda *_: {})
     monkeypatch.setattr(bridge, "assess_source_cells", lambda *_: {})
+    if source_fault in {"observe-pinned", "observe-successor", "observe-failure"}:
+        def assessed(*values):
+            response = values[-1]
+            result = {row["cell_id"]: {"status": "PASS", "reason": "", "business_assertions": []}
+                      for row in response["cells"]}
+            if source_fault == "observe-failure":
+                result[response["cells"][0]["cell_id"]].update(status="FAIL", reason="independent_business_failure")
+            return result
+        monkeypatch.setattr(bridge, "assess_observed_cells", assessed)
+        monkeypatch.setattr(bridge, "assess_source_cells", assessed)
     invocations = []
     def run_child(command, cwd, *, timeout):
         request = bridge.read_json(command[command.index("--request") + 1])
@@ -265,7 +278,19 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
     summary = bridge.execute(args, layers, oracle._expected_product_cells(fixture))
     assert summary["required_cells"] == 401 and summary["passed_cells"] == []
     assert len(summary["layers"]["public"]["observed_cells"]) == 391
-    assert summary["status"] == ("FAIL" if source_fault else "NOT_RUN/BLOCKED")
+    assert summary["status"] == ("FAIL" if source_fault == "observe-failure" or (source_fault and not source_fault.startswith("observe-")) else "NOT_RUN/BLOCKED")
+    if source_fault in {"observe-pinned", "observe-successor"}:
+        assert summary["acceptance_counts"] == {"PASS": 0, "FAIL": 0, "BLOCKED": 401}
+        assert all(row["reason"] == "CANDIDATE_OBSERVATION_ONLY" for row in summary["cell_results"].values())
+        assert summary["status"] == "NOT_RUN/BLOCKED"
+        assert all(info["passed_cells"] == [] for info in summary["layers"].values())
+        assert all(info["status"] == "BLOCKED" and info["reason"] == "CANDIDATE_OBSERVATION_ONLY"
+                   for info in summary["layers"].values())
+        assert all(row["status"] == "BLOCKED" for row in summary["cell_results"].values())
+    if source_fault == "observe-failure":
+        assert summary["acceptance_counts"] == {"PASS": 0, "FAIL": 2, "BLOCKED": 399}
+        assert all(info["status"] == "FAIL" for info in summary["layers"].values())
+        assert sum(row["reason"] == "independent_business_failure" for row in summary["cell_results"].values()) == 2
     if not source_fault:
         assert len(summary["layers"]["source"]["observed_cells"]) == 10
         assert len(summary["artifacts"]) == 2
@@ -313,3 +338,35 @@ def test_environment_failure_preserves_both_inventories(tmp_path, monkeypatch):
     assert len(result["layers"]["public"]["missing_cells"]) == 391
     assert len(result["layers"]["source"]["missing_cells"]) == 10
     assert bridge.read_json(args.artifact_dir / "bridge-summary.json") == result
+
+
+def test_0613_successor_retains_original_obligations_and_candidate_lineage():
+    import subprocess
+    fixture_path = ROOT / "fixtures/typed-recall-v3.json"
+    layers_path = ROOT / "fixtures/typed-recall-execution-layers-v1.json"
+    fixture, layers = bridge.read_json(fixture_path), bridge.read_json(layers_path)
+    base = "60f280dc2dd674a2af42e517f9c0d04d46aec72c"
+    def prior(path):
+        return json.loads(subprocess.check_output(["git", "show", f"{base}:testcase/human-memory-program/{path}"], cwd=ROOT))
+    old = prior("fixtures/typed-recall-v3.json")
+    old_layers = prior("fixtures/typed-recall-execution-layers-v1.json")
+    # Exact equality of every original business section, not only total cell count.
+    for key, value in old.items():
+        if key not in {"fixture_revision", "public_consumer", "approved_oracle"}:
+            assert fixture[key] == value, key
+    for section, allowed in (("public_consumer", {"candidate_identity_pins"}),
+                             ("approved_oracle", {"candidate_identity", "candidate_approval"})):
+        for key, value in old[section].items():
+            if key not in allowed:
+                assert fixture[section][key] == value, (section, key)
+    assert fixture["candidate_successor_lineage"]["previous_candidate_identity"] == old["public_consumer"]["candidate_identity_pins"]
+    assert layers["all_cells"] == old_layers["all_cells"]
+    assert layers["source_exact_commit_integration"] == old_layers["source_exact_commit_integration"]
+    assert layers["combined_gate"] == old_layers["combined_gate"]
+    assert bridge.file_sha(fixture_path) == bridge.FIXTURE_SHA
+    assert bridge.file_sha(layers_path) == bridge.LAYERS_SHA
+    pins = fixture["public_consumer"]["candidate_identity_pins"]
+    assert pins == fixture["approved_oracle"]["candidate_identity"]
+    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.3", "0.6.13")
+    for name, pin in pins.items():
+        assert layers["clean_wheel_public_manager"][f"candidate_{name}_identity"] == pin

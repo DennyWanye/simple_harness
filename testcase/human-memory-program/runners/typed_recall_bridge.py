@@ -20,8 +20,8 @@ from email.parser import BytesParser
 from pathlib import Path
 
 SCHEMA = "typed-recall-execution-bridge/v1"
-FIXTURE_SHA = "862ff6585552854ab6c92006371a83fc5d3a09568a32bbc92348d44ce8c4f0e3"
-LAYERS_SHA = "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25"
+FIXTURE_SHA = "5264de18c41df71055330dfebcfe9d205aaed7d0fe3db44659749fb783363137"
+LAYERS_SHA = "a599863e9c596d73e9d3cddff25c8794fb2b924801b366876ba084c8d9478518"
 ORACLE_BLOCKERS = []
 
 
@@ -415,10 +415,6 @@ def _execute(args, layers, expected):
             if layer == "public":
                 judged = assess_observed_cells(fixture, response)
                 summary["cell_results"].update(judged)
-                if pin_changes:
-                    for row in judged.values():
-                        if row["status"] == "PASS":
-                            row.update(status="BLOCKED", reason="CANDIDATE_PIN_REVIEW_REQUIRED")
                 summary["layers"][layer]["passed_cells"] = sorted(name for name,row in judged.items() if row["status"] == "PASS")
                 if any(row["status"] == "FAIL" for row in judged.values()):
                     summary["layers"][layer]["status"] = "FAIL"
@@ -429,6 +425,15 @@ def _execute(args, layers, expected):
                 summary["cell_results"].update(judged)
                 if any(row["status"]=="FAIL" for row in judged.values()):
                     summary["layers"][layer]["status"]="FAIL"
+            # Observation mode is never formal acceptance, in either execution layer.
+            if args.observe_candidate or pin_changes:
+                for row in judged.values():
+                    if row["status"] == "PASS":
+                        row.update(status="BLOCKED", reason="CANDIDATE_OBSERVATION_ONLY")
+                summary["layers"][layer]["passed_cells"] = []
+                if summary["layers"][layer]["status"] != "FAIL":
+                    summary["layers"][layer].update(
+                        status="BLOCKED", reason="CANDIDATE_OBSERVATION_ONLY")
             summary["artifacts"].append({"layer": layer, "request_path": request_path.name,
                                          "request_sha256": file_sha(request_path), "relative_path": response_path.name,
                                          "sha256": file_sha(response_path), "runtime_path": runtime_path.name,
@@ -465,6 +470,8 @@ def _execute(args, layers, expected):
             reason=row.get('reason','')
             if reason=='CELL_NOT_SELECTED_THIS_BATCH':
                 row.update(assessment_scope='NOT_SELECTED',blocker_categories=[])
+            elif reason=='CANDIDATE_OBSERVATION_ONLY':
+                row.update(assessment_scope='OBSERVATION_ONLY',blocker_categories=[])
             elif reason=='CELL_EXECUTOR_NOT_IMPLEMENTED':row['blocker_categories']=['EXECUTOR_UNIMPLEMENTED']
             elif reason.startswith(('PUBLIC_CASE_PRECONDITION_REJECTED','STATE_PUBLIC_PRECONDITION:')) or any(v in reason for v in (
                     'APPLICABILITY_OR_SIGNAL','CANARY_AND_CROSS_SCOPE','128_BYTE','SHORT_PUBLIC_PRECONDITION')):

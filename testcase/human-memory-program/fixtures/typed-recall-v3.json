@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 7,
+  "fixture_revision": 8,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -30,16 +30,16 @@
       "harness": {
         "status": "PINNED",
         "distribution": "simple-harness-sdk",
-        "version": "0.7.2",
-        "source_commit": "2b8428465cbd41032ba024a0b7199183161f5ecd",
-        "wheel_sha256": "53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed"
+        "version": "0.7.3",
+        "source_commit": "0282fa982995b24bc893fdf6bed69d2caacd6587",
+        "wheel_sha256": "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7"
       },
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.5",
-        "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
-        "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
+        "version": "0.6.13",
+        "source_commit": "f2a6a706c5e3407e896ada3bd9e735cd9c0b77fd",
+        "wheel_sha256": "33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62"
       }
     },
     "consumer_entrypoint_argument": "--consumer-entrypoint",
@@ -3181,19 +3181,19 @@
       "harness": {
         "status": "PINNED",
         "distribution": "simple-harness-sdk",
-        "version": "0.7.2",
-        "source_commit": "2b8428465cbd41032ba024a0b7199183161f5ecd",
-        "wheel_sha256": "53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed"
+        "version": "0.7.3",
+        "source_commit": "0282fa982995b24bc893fdf6bed69d2caacd6587",
+        "wheel_sha256": "1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7"
       },
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.5",
-        "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
-        "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
+        "version": "0.6.13",
+        "source_commit": "f2a6a706c5e3407e896ada3bd9e735cd9c0b77fd",
+        "wheel_sha256": "33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62"
       }
     },
-    "candidate_approval": "Harness0.7.2 explicit user steering; Memory0.6.3 independently reviewed executor-built candidate",
+    "candidate_approval": "User authorized isolated H073/M0613 successor on 2026-09-06; no acceptance claim.",
     "pre_migration_main_candidate_identity": {
       "harness": {
         "distribution": "simple-harness-sdk",
@@ -3710,5 +3710,27 @@
     "authority": "User supplied reviewed exact0.6.5 candidate and authorized upgrade; integer5 mapping frozen before execution",
     "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
     "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
+  },
+  "candidate_successor_lineage": {
+    "base_host_commit": "60f280dc2dd674a2af42e517f9c0d04d46aec72c",
+    "previous_fixture_sha256": "862ff6585552854ab6c92006371a83fc5d3a09568a32bbc92348d44ce8c4f0e3",
+    "previous_layers_sha256": "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25",
+    "previous_candidate_identity": {
+      "harness": {
+        "status": "PINNED",
+        "distribution": "simple-harness-sdk",
+        "version": "0.7.2",
+        "source_commit": "2b8428465cbd41032ba024a0b7199183161f5ecd",
+        "wheel_sha256": "53bded3fea87168e5d2ad9e49fea5f99e1c1edb1d6077b2a52dd62716692f9ed"
+      },
+      "memory": {
+        "status": "PINNED",
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.5",
+        "source_commit": "30743bb17ed8301d01028357de6e4c5adcdde26b",
+        "wheel_sha256": "0977159d043d409d39232d0f14f91d27f1b09ac1a4523cf8aba9028f0d0a71df"
+      }
+    },
+    "scope": "Candidate identity only; original401, attacks, oracle inputs and thresholds unchanged."
   }
 }

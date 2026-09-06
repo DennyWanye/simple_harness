@@ -20,7 +20,15 @@ revision: 5
 
 # TC-HM-13 rev5 — Typed Recall 写入、Decision/Result 与结果绑定披露
 
-## Authority 与固定输入
+## 2026-09-06 successor（工具验证完成；两格仅观察）
+
+本隔离树当前候选为 H073/M0613；fixture revision8、layers revision6及 exact source/wheel/hash
+以 `fixtures/typed-recall-v3.json` / `typed-recall-execution-layers-v1.json` 为准。
+前序pins与文件hash保存在 `candidate_successor_lineage`；下节旧rev5身份仅作历史记录。
+原401/391+10/14攻击/阈值不变。observe在public/source均不授正式PASS，FAIL保持。
+详情：[后继准备与结果](../../plans/2026-09-06-typed-recall-0613/RESULTS.md)。
+
+## Authority 与固定输入（历史 rev5）
 
 - 只允许从 candidate wheels 的 `simple_harness` / `simple_harness_memory` 包根调用公开导出；禁止 source checkout
   import、私有 submodule、repository object、直接 SQL 和读取实现 diff。
