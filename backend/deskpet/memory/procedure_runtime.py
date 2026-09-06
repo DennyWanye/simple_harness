@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 from collections.abc import Mapping
 
 import simple_harness as h
@@ -25,8 +26,13 @@ class ProcedureRuntime:
         self.authorities, self.registry = authorities, registry
 
     async def bind_use(self, arguments, context):
-        if not isinstance(arguments, Mapping) or set(arguments) != {"memory_id", "revision", "steps"}:
+        if not isinstance(arguments, Mapping):
             raise ProcedureUseRejected("procedure_use_arguments_invalid")
+        arguments = h.thaw_json(arguments)
+        arguments.pop("deskpet_public_progress", None)
+        if set(arguments) != {"memory_id", "revision", "steps"}:
+            raise ProcedureUseRejected("procedure_use_arguments_invalid")
+        steps = _decode_steps(arguments["steps"])
         authority = self.authorities.resolve(context.run_id)
         if authority.request_id != context.request_id.value:
             raise ProcedureUseRejected("procedure_use_request_differs")
@@ -38,7 +44,7 @@ class ProcedureRuntime:
         use_id = "procedure-use:" + canonical_hash([
             runtime.principal().actor_id, context.run_id.value, target.memory_id, target.revision])
         use = await self.store.bind(authority=authority, registry=self.registry,
-            target=target, steps=arguments["steps"], use_id=use_id, context=context)
+            target=target, steps=steps, use_id=use_id, context=context)
         return {"procedure_use_id": use_id, "memory_id": target.memory_id,
                 "revision": target.revision, "steps": len(use["steps"]),
                 "execution_authorized": False}
@@ -200,6 +206,37 @@ class ProcedureRuntime:
                 or intent.terminal_receipt_id != final.metadata.tool_causal_link.terminal_receipt_id
                 or intent.terminal_receipt_hash != final.metadata.tool_causal_link.terminal_receipt_hash):
             raise ProcedureUseRejected("procedure_observation_final_receipt_differs")
+
+
+def _decode_steps(steps):
+    """Explicit JSON encoding for H078's closed-object Tool schema subset."""
+    if type(steps) is not list or not 1 <= len(steps) <= 16:
+        raise ProcedureUseRejected("procedure_use_steps_invalid")
+    def pairs(items):
+        value = {}
+        for key, item in items:
+            if key in value:
+                raise ValueError("duplicate key")
+            value[key] = item
+        return value
+    def constant(_):
+        raise ValueError("nonfinite number")
+    decoded = []
+    for step in steps:
+        if type(step) is not dict or set(step) != {"text", "tool", "arguments_json"}:
+            raise ProcedureUseRejected("procedure_use_steps_invalid")
+        raw = step["arguments_json"]
+        try:
+            if type(raw) is not str or len(raw.encode()) > 16384:
+                raise ValueError("arguments bytes")
+            arguments = json.loads(raw, object_pairs_hook=pairs, parse_constant=constant)
+            if type(arguments) is not dict:
+                raise ValueError("arguments object")
+            canonical_hash(arguments)  # Also rejects numeric overflow/non-JSON values.
+        except (TypeError, ValueError, RecursionError, UnicodeError) as error:
+            raise ProcedureUseRejected("procedure_use_step_arguments_invalid") from error
+        decoded.append(dict(text=step["text"], tool=step["tool"], arguments=arguments))
+    return decoded
 
 
 def _terminal_span(registration, effect_id):

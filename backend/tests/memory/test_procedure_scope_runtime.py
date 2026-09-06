@@ -79,7 +79,7 @@ class UseProvider(Provider):
             name, args = "tool_activate", {key: results[-1]["value"][key] for key in ("capability_id", "schema_hash", "describe_nonce")}
         elif n == 4:
             name, args = "procedure_use", {"memory_id": self.memory_id, "revision": self.revision,
-                "steps": [dict(text=text, tool="write_file", arguments=value)
+                "steps": [dict(text=text, tool="write_file", arguments_json=json.dumps(value))
                           for text, value in zip(STEPS, arguments, strict=True)]}
         elif n in (5, 6):
             name, args = "write_file", arguments[n - 5]
