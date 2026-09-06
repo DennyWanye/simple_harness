@@ -1,5 +1,10 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 工具多消息公开因果读取局部验证
+
+最后更新：2026-09-06。新增内部reader通过实际Host effect index和SDK公开投影/审计/结果读取绑定每个工具与父Provider消息，正确区分跨轮重复raw call ID；真实dynamic Host+SDK一个集成测试（含5个篡改控制）通过，峰166MiB，进程清空。仅来源投影，未接入terminal producer/短期整组索引，不签工具terminal receipt；原始失败保留、独审待续。[实现边界与证据](../plans/2026-09-06-tool-causality/RESULTS.md)。
+
+
 ## 2026-09-06 Memory 0.6.14隔离Host组合
 
 最后更新：2026-09-06。固定ec046e84接入受众绑定候选，独立6.3MiB环境H073/M0614/S0313全部SDK成员与vendor一致；必要组合32项及2个subtests通过，峰399MiB/22.247秒，进程清空。旧M0613环境保留。SELF与不同最终受众默认拒绝；协作者语义配对不构成外部原始历史授权。该结果不代表实际Provider/native或401/240完成。用户主树未切换，原计划继续。
