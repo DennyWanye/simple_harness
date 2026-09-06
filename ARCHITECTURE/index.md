@@ -1,5 +1,12 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 current-use 双 item 测试工具叶子
+
+独立原六格真实public执行：6OBSERVED，4PASS/0FAIL/2BLOCKED，其余395未选。
+两格Harness reservation/exact-once消费见证仍缺，原new-continuation未执行；无Memory新缺陷声明，
+不表示S3/401完成或主树已合入。冻结H073/M0613与阈值不变，测试槽已释放。
+[逐格结果与范围](../plans/2026-09-06-context-use-full/RESULTS.md)。
+
 
 ## 2026-09-06 source10完整oracle后继（独审待回）
 

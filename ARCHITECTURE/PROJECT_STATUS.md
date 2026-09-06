@@ -1,5 +1,17 @@
 # simple_harness — 全局项目状态与架构完成度
 
+最后更新：2026-09-06（context-use 测试工具叶子）
+
+## 2026-09-06 current-use 有界双 item 执行交付
+
+`feat/typed-recall-context-use-full` 独立树，basefbebdaff，执行器96ae15e2/transport测试修正24799e99，
+尚未合主。H073/M0613及原401/阈值未改。正式仅6格：6OBSERVED、4PASS/0FAIL/2BLOCKED，
+剩余395未选；旧182/219保留为原固定源历史，source10独立。两格仍缺Harness reservation/exact-once，
+new-continuation不冒执行，S3/program整体未完成。
+必要新测试及邻居通过，首轮transport旧输入清单10红保留、窄改后10绿；三批进程组均退出/无残留，
+默认OS锁2GiB/180s，槽释放。未跑模型/native/全量或重建wheel。
+[范围、实际证据和复现](../plans/2026-09-06-context-use-full/RESULTS.md)。
+
 
 ## 2026-09-06 source10完整oracle后继（独审待回）
 

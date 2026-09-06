@@ -165,8 +165,9 @@ async def run(request, workspace):
     short={**inputs['short'],'cases':[r for r in inputs['short']['cases'] if r['cell_id'] in selected]}
     cells += await _helpers('typed_recall_short_cases.py').run_cases(short,workspace)
     context_use=_helpers('typed_recall_context_use_cases.py')
-    cells += await context_use.run_cases({'cells':sorted(selected.intersection(context_use.CELLS)),
-        'payloads':inputs['conflict']['payloads']},workspace)
+    context_cells=sorted(selected.intersection(context_use.CELLS))
+    if context_cells:
+        cells += await context_use.run_cases({'cells':context_cells,'recipe':inputs['context_use']},workspace)
     done={row['cell_id'] for row in cells}
     cells += [{'cell_id':name,'status':'BLOCKED',
         'reason':'CELL_EXECUTOR_NOT_IMPLEMENTED' if name in selected else 'CELL_NOT_SELECTED_THIS_BATCH',

@@ -1,5 +1,19 @@
 # Memory SDK 边界与 Host 接口契约
 
+最后更新：2026-09-06（context-use 测试工具叶子）
+
+## 2026-09-06 原 current-use 六格双 item 执行
+
+独立 `feat/typed-recall-context-use-full`，basefbebdaff；H073/M0613/401及冻结阈值不变。
+实际installed public Run80e32957e5174b0fa8f752eddae06e31：6OBSERVED，4PASS/0FAIL/2BLOCKED；
+其余395未选，不与旧182/219或source10混成新全量结果。两个真实S1/CREATE、两item/page/fragment，
+独立完整hash、epoch3→4/policy不变、未忘项正控、same-attempt/reopen replay已执行。
+receipt-first/duplicate仍缺Harness reservation绑定及一次消费见证；Memory DTO没有continuation是原层次设计，
+不列作Memory产品缺陷；原new-continuation格未执行。S3/program不标完成，未合主组合。
+新executor+21篡改为一个测试通过，3邻居通过；原transport10同因红保留，精确输入清单修正后10通过。
+PGID31787/31892/31945均退出且无残留，最后批峰值138544KiB，槽已释放。无模型/native/新制品。
+[契约、逐格结果、命令与证据](../plans/2026-09-06-context-use-full/RESULTS.md)。
+
 
 ## 2026-09-06 source10完整oracle后继（独审待回）
 

@@ -303,7 +303,8 @@ def _execute(args, layers, expected):
     validation_code = {path.name: file_sha(path) for path in workspace.glob("*.py")}
     execution_code = {str(path):file_sha(path) for path in [
         *[adapter_dir / name for name in validation_code],
-        runner_dir / "typed_recall_a2_oracle.py",runner_dir / "typed_recall_normal_inputs.py",runner_dir / "typed_recall_source_oracle.py"]}
+        runner_dir / "typed_recall_a2_oracle.py", runner_dir / "typed_recall_normal_inputs.py",
+        runner_dir / "typed_recall_source_oracle.py", runner_dir / "typed_recall_context_use_oracle.py"]}
     if args.source_adapter:
         execution_code[str(Path(args.source_adapter).resolve())]=file_sha(args.source_adapter)
     python = args.consumer_python
@@ -350,6 +351,10 @@ def _execute(args, layers, expected):
     spec.loader.exec_module(compiler)
     inputs["normal"] = compiler.recipes(fixture)
     inputs["short"] = compiler.short_inputs(fixture)
+    context_spec = importlib.util.spec_from_file_location("context_use_inputs", runner_dir / "typed_recall_context_use_oracle.py")
+    context_compiler = importlib.util.module_from_spec(context_spec)
+    context_spec.loader.exec_module(context_compiler)
+    inputs["context_use"] = context_compiler.inputs(fixture)
     conflict = fixture["conflict_write_oracle"]
     inputs["conflict"] = {"payloads":{name:{**value,"qualifiers":[]} for name,value in conflict["canonical_payloads"].items()},
         "cases":[{"id":row["id"],"mutation":row.get("mutation",{})} for row in [conflict["create_case"],*conflict["reject_cases"],*conflict["resolution_cases"],conflict["recall_cases"][0]]]}

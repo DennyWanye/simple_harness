@@ -247,7 +247,13 @@ def test_two_layer_dispatch_retains_exact_inventory_and_failures(tmp_path, monke
     def run_child(command, cwd, *, timeout):
         request = bridge.read_json(command[command.index("--request") + 1])
         response_path = Path(command[command.index("--response") + 1])
-        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported", "normal", "conflict", "returns", "short"}
+        assert set(request["inputs"]) == {"claim", "validity", "mutations", "unsupported", "normal", "conflict", "returns", "short", "context_use"}
+        context_use = request["inputs"]["context_use"]
+        assert set(context_use) == {"version", "seeds", "query", "run_id", "turn_id", "evaluated_at", "use_at",
+                                   "context_expires_at", "attempt", "continuation", "next_attempt", "after_attempt",
+                                   "next_use_at", "next_continuation"}
+        assert len(context_use["seeds"]) == 2
+        assert all(set(seed) == {"memory_type", "payload"} for seed in context_use["seeds"])
         assert all(set(row) == {"original_attack", "public_path", "mutation"}
                    for row in request["inputs"]["mutations"])
         assert all(set(row) == {"id", "selectors", "modes"}
