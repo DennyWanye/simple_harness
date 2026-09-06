@@ -108,12 +108,20 @@ class WeMMEmbedder(Embedder):
         if self._model is not None:
             return
         # No await between inspecting and publishing the shared task. Completed
-        # failures retry only on a later explicit embedding request, never status.
+        # failures retry only on later explicit warmup/embedding, never status.
         if self._load_task is None or self._load_task.done():
             self._set_state("loading")
             self._load_task = asyncio.create_task(asyncio.to_thread(self._load_sync))
             self._load_task.add_done_callback(self._load_completed)
         await asyncio.shield(self._load_task)
+
+    async def warmup(self) -> None:
+        """Load this instance for startup without encoding or rebuilding vectors.
+
+        Concurrent startup/query waiters share the existing shielded load task;
+        cancelling a waiter neither duplicates nor interrupts physical loading.
+        """
+        await self._ensure_loaded()
 
     @property
     def kind(self) -> str:
