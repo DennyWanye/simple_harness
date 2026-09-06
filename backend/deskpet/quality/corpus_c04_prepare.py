@@ -66,13 +66,22 @@ async def open_c04_fixture(*, path, memory_path, principal, authority_ref, batch
     if type(batch) is not TemporalSetupBatch or batch != compile_c04_setup(
             batch.case_id, batch.setup_text, scenario_clock=SCENARIO_CLOCKS[batch.case_id]):
         raise ValueError('c04_exact_compiled_setup_required')
-    if batch.case_id in {'C04-12', 'C04-17'}:
-        raise ValueError('c04_public_lifecycle_chain_pending')
     clock = FixtureClock(batch.ingestion_time)
     delivery = SetupFixtureDeliveryAuthority()
+    from deskpet.quality.corpus_c04_lifecycle import TemporalActionAuthority, apply_c04_lifecycle
+    action_authority = TemporalActionAuthority(path, principal=principal, clock=clock)
+    registrations = consumer = None
+    signal_options = {}
+    if batch.case_id == 'C04-12':
+        from deskpet.memory.s5c_terminal_schema import initialize_s5c_terminal_state_db
+        from deskpet.memory.s5c_store import S5cStore, HostProspectiveSignalAuthority
+        await initialize_s5c_terminal_state_db(path)
+        registrations = S5cStore(path, principal)
+        signal_options['prospective_signal_authority'] = HostProspectiveSignalAuthority(path, principal)
     manager = await m.build_human_memory_v7(memory_path,
         classification_policy=classification_policy, supported_filter_policies=supported_filter_policies,
-        evidence_authority=HostEvidenceAuthority(path), analysis_delivery_authority=delivery, clock=clock)
+        evidence_authority=HostEvidenceAuthority(path), analysis_delivery_authority=delivery,
+        memory_action_authority=action_authority, clock=clock, **signal_options)
     try:
         source, proof = build_foreground_turn_evidence(subject=principal.actor_id, authority_ref=authority_ref,
             delivery_key='corpus-fixture:' + batch.case_id + ':' + batch.setup_hash, text=batch.setup_text)
@@ -110,10 +119,45 @@ async def open_c04_fixture(*, path, memory_path, principal, authority_ref, batch
             labels[spec[0]] = found[0]
         if len(labels) != len(graph.nodes):
             raise ValueError('c04_unexpected_graph_nodes')
+        lifecycle = None
+        old_registration = invalidation = None
+        if registrations is not None:
+            from deskpet.memory.s5c_consumer import ProspectiveRegistrationConsumer
+            from deskpet.memory.prospective_registration_source import PublicRegistrationAuthoritySource
+            consumer = ProspectiveRegistrationConsumer(registrations, manager,
+                PublicRegistrationAuthoritySource(store=registrations, memory=manager, clock=clock))
+            await consumer.run_once()
+            accepted, _, _ = await registrations.page_accepted_registrations()
+            candidates = [r for r in accepted if r.authority.intent.target_memory_id == labels['P_OLD'].memory_id]
+            if len(candidates) != 1:
+                raise ValueError('c04_old_registration_not_actually_acked')
+            old_registration = candidates[0]
+        if batch.case_id in {'C04-12', 'C04-17'}:
+            lifecycle = await apply_c04_lifecycle(manager=manager, principal=principal,
+                authority=action_authority, batch=batch, source_pair=(source, proof),
+                initial_plan=executor.executed_plan, initial_application=application)
+            labels['P' if batch.case_id == 'C04-12' else 'P_OLD'] = lifecycle['receipt'].operations[0]
+            graph = await manager.get_twin_graph_view(principal=principal)
+            if batch.case_id == 'C04-17' and not any(node.memory_id == labels['P'].memory_id and node.revision == 1 for node in graph.nodes):
+                raise ValueError('c04_cancel_changed_other_pending_reminder')
+        if consumer is not None:
+            await consumer.run_once()
+            intent = old_registration.authority.intent
+            invalidation = await registrations.accepted_invalidation(memory_id=intent.target_memory_id,
+                revision=intent.target_revision, registration_revision=intent.registration_revision,
+                registration_ref=intent.scheduler_registration_ref)
+            if invalidation is None:
+                raise ValueError('c04_old_registration_not_actually_invalidated')
+            accepted, _, _ = await registrations.page_accepted_registrations()
+            if not any(r.authority.intent.target_memory_id == labels['P'].memory_id
+                    and r.authority.intent.target_revision == 2
+                    and r.authority.intent.transition_to.value == 'rescheduled' for r in accepted):
+                raise ValueError('c04_new_rescheduled_registration_not_acked')
         yield manager, dict(batch=batch, clock=clock, labels=labels, graph=graph,
             source_pair=(source, proof), ingestion_receipt=ingestion,
             application=application, request=repository.request, plan=executor.executed_plan,
             fixture_executions=executor.executions, signals='not_requested',
-            event_publisher_bound=False, host_scoring_clock_bound=False)
+            event_publisher_bound=False, host_scoring_clock_bound=False, lifecycle=lifecycle,
+            registrations=registrations, old_registration=old_registration, invalidation=invalidation)
     finally:
         await manager.close()

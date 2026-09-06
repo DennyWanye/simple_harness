@@ -58,3 +58,25 @@ receipt；原superseded如何映射旧schedule而非重写旧snapshot，已发Di
 准备首批仅18个新public setup参数控（包含07/15实入库时间、06伦敦DST、10/11未触发、
 20原上海来源），全部NOT_RUN。native占槽期间无resource动作；12/17待真实链闭合后只跑
 其新增控制，不重跑旧C01/C02/C03或已审drain/prepare绿。
+
+## 同分支 lifecycle 后继（仍全部NOT_RUN）
+
+上述18条准备之后，已补12/17源码与剩余两个参数控，当前20条均有可执行入口，未运行。
+`corpus_c04_lifecycle.py` 使用原S1/公开初始mutation receipt精确目标、Host journal持久
+fixture action authority、公开MemoryMutationPlan REVISE，不直接改生命周期SQL。
+初始CREATE是实际SDK analysis，公开重放相同plan仅取得其既有receipt；是否真实幂等由
+首次控制核对原memory_id/revision/graph，不能兜底造ref或吞掉冲突。
+
+17真实P_OLD pending→REVISE cancelled，旧receipt/r1不改，另refund P保持同ID/r1可见。
+12先用既有S5c公开registration consumer取得旧计划actual ACK，再真实同ID/r2
+rescheduled（9月9日09:30），消费旧invalidation与新registration；三者必须有真实ACK。
+测试还在旧9月7日锚点调用实际PublicTimeAuthoritySource，旧登记已撤销且新时间更晚，
+必须没有旧TIME_DUE grant；没有伪signal或外部发布结果。
+
+Dirac只读支持最小解释：原“旧提醒superseded”映射旧schedule被新revision替代，
+不是声称旧r1 lifecycle=SUPERSEDED；原r1/receipt仍原样pending历史记录。
+不造两个heads/重复pending。若原AC另要求两个独立Prospective实体状态，该语义映射
+仍需主定界，本叶不会从gold反造第二memory或直接称该原格满足。
+
+18普通/事件pending与2生命周期共20个新参数控准备，资源仍留主native，未执行。
+原event publisher端到端仍是延期范围；10/11只证setup未触发，不计外部事件提醒通过。
