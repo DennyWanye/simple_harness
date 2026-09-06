@@ -105,8 +105,12 @@ async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(t
             # Simulate this owner's lost process helper; no direct SQL edits.
             await s["runtime"]._stop_lease_keeper()
             if mode == "expired_failed":
+                from simple_harness.providers import ProviderRequestRejectedError
                 async def fail_provider(request, *, cancel):
-                    raise RuntimeError("controlled provider failure after allowed route")
+                    # A generic after-handoff exception is correctly UNKNOWN /
+                    # WAITING. Use the public confirmed-rejection classification
+                    # to construct this distinct, actual SDK FAILED control.
+                    raise ProviderRequestRejectedError("controlled request rejected")
                 monkeypatch.setattr(s["provider"], "invoke", fail_provider)
                 response = await s["request"]("primary.decisions.respond", decisions.reply(s, old_item))
                 assert response["payload"]["ok"]
