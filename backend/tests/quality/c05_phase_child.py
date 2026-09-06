@@ -136,6 +136,11 @@ async def execute(directory, host, case_id, mode):
     finally:
         sys.stdout, sys.stderr = stdout, stderr
     result = json.loads(read_text(directory / 'execution.json'))
+    expected_code, expected_status = ((0, 'COMPLETED') if mode == 'visible' else (1, 'FOLLOWUP_UNMET'))
+    assert (code, result.get('execution_status')) == (expected_code, expected_status), (
+        f"C05 child exit={code} status={result.get('execution_status')} "
+        f"stage={result.get('stage')} error={result.get('error_type')}; "
+        f"see {directory / 'execution.json'} and original setup trace")
     assert result['cleanup_errors'] == []
     assert all(model._model is None for model in blocked_models)
     assert len(local) == 1 and local[0]._server is None and not local[0]._tasks
