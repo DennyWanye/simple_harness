@@ -64,3 +64,14 @@ The original pending selector now explicitly asserts actual read_effect is None,
 predecessor proof has different raw/internal IDs before exercising the same foreign-turn/wrong-args
 negatives and exact allow. Only this red selector needs re-execution on main's fixed current target.
 The actual-main consumer must also use this one helper; no settled-effect fallback or tool-name-only grant.
+
+## Only next red/new selectors
+
+- Red only: `backend/tests/quality/test_corpus_c05_authority.py::test_actual_pending_approval_rejects_foreign_turn_and_wrong_args_before_allow`
+- New only: `backend/tests/quality/test_corpus_c05_authority.py::test_nonempty_actual_candidate_policy_false_is_unverifiable`
+
+The new control first obtains an actual SDK successful nonempty search for an original publicly prepared
+scope and reads its real current visible source. Only then a controlled boolean False policy must raise
+c05_candidate_visibility_unverifiable, with exactly one policy call. It does not claim a typed suppression
+reason or actual underlying storage corruption. Hegel/main classify that exception as OBSERVATION_FAILED.
+The original real-empty/missing test passed already and is excluded. No tests run in this source tree.
