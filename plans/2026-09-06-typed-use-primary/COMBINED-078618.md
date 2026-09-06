@@ -1,6 +1,6 @@
 # H078/M618 当前组合结果
 
-更新：2026-09-06。固定测试源码1491309f，包含已审A7展示/ACK与Procedure v4创建、旧v3响应恢复。当前历史分页后继f28d3fbe未包含在本批测试内。
+更新：2026-09-06。固定测试源码1491309f，包含已审A7展示/ACK与Procedure v4创建、旧v3响应恢复。历史分页后继f28d3fbe未包含在最初5项内，后续必要组合见下。
 
 5项必要组合检查通过，耗时4.82秒：
 
@@ -32,3 +32,14 @@
 | r1/identity.json | fdd29f2e3a9935494fc72438b40deac026dc0c0f69b4225d686b480dd21f21f2 |
 
 Scope观察/适用性、真实事件来源、当前运行分页、两轮独立原生旅程、关系边和240条质量批次仍未闭合。未切换用户主checkout，未push/tag/release。
+
+## 历史分页与A7合并后的必要交互
+
+固定c9e1aebf，仅执行 `test_actual_history_page_and_physical_guard[allow]`，1PASS/4.71s。实际S1与公开SDK来源、首/续/尾页、错误hash拒绝、下一物理请求和重建stack依赖在H078/M618+A7组合通过；没有复跑旧history四项。PG3328 exit0、remaining=[]、cleanup_error=null，峰399792KiB，最低磁盘4780MiB。该结果仍是确定性HTTP，不是原生质量结论。原始根 `.local-test-evidence/2026-09-06/primary-078618/pages/`。
+
+| 文件 | SHA-256 |
+|---|---|
+| run_history_composition.py | 1467bdcf962651c826f8ac242b12a78e999c90933a5753c2070d298cacccf370 |
+| r1/command.log | 4fd07bcee9b5a8f0645ee8bc81e966b1fc7417a9a0ec85c8404455fe322cb09f |
+| r1/resource.json | edec7a63c9eeb4b7c750d3a57c4627325eab41ea98e790fe00de385348b53c3b |
+| r1/identity.json | 33e109a279b1796641bb433548a6ff03b5a7872ac150c16888753eff5ed899e5 |
