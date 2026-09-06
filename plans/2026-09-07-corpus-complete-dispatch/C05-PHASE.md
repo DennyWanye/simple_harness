@@ -1,3 +1,36 @@
+# C05 actualmain phase 接线：限定源码交付
+
+2026-09-07：04/09/14/20 的 shared dispatcher/session + 原固定 followup 已实现源码，**NOT_RUN**。新控制全部交主完整 candidate / H0710 M619 S0313；本分支未运行 pytest、模型、安装或资源载体。C08仍partial，其余C05不开放。下方旧“尚未接线”段落为历史准备状态。
+
+## 实际接线与独立观测
+
+- 原 compiler 的 `scheduler/cases.jsonl` 单独落 `scheduler.json`；初始 USER、setup、scheduler、oracle四路保持隔离。worker不读gold。04/09/14只f1，20按原表f1不切换、f2才明确选择。逐条精确校验表中字段、文本和顺序，不能替换fixture action。
+- C05不借空标量seed代表准备。真实main创建scope、必要material marker/closure、SDK与Host终态、原S1/source/disclosure全部核验后，才能freeze真实setup prefix；同store保留原facts。认知后台analysis在此fixture阶段关闭，USER通过原ingestion worker取得真实入场ACK，**不称其pending认知job已APPLIED**。
+- setup唯一HTTP fixture通过原resolver/physicalguard调用；每次wire hash派生的fixture response id与公开SDK invocation/response/工具call ID交叉核验。fixture自己的计数不单独成为SDK调用证明。源码独立保存每个setup Run，不计入评分Provider统计。
+- main构造只用一次固定ignored `runtime/task-workspace`，两条激活链同root；不能写用户默认工作区。原history reader继续current policy，只剔除已证明完整的setup组，后续评分组仍经真实来源读入。
+- freeze后必须fixture HTTP close/join、resolver无active binding，再登记`corpus-real-provider`。每条原评分/后续USER由同store真实新Run执行，校验Provider绑定、独立Run身份、SDK/Host完成组以及公开trace；不是初始turn成功就报整格完成。
+- 调度事件来自Carver `read_candidate_events` 的真实公开effect/schema/disclosure/current policy；另查公开start的原scope/route为空与Host当前无task route。实际empty是UNMET，不发followup；缺result/source/disclosure等不可验证是OBSERVATION_FAILED，不按empty绿化。任何一步失败均保存已实际发生的Run与请求观测，不救场/重发。
+- scoring审批与setup写权限分离。只允许原memory只读、task候选搜索，最后明确选择后才允许`resume_existing`；不授权新scope、文件或task mutation。实际原preview的visible_sources三元组在批准前按当前policy重读，目标来自真实Provider提议和真实公开candidate，不能由setup label/gold决定。错误但合法的候选照原脚本执行，语义正确性留原gold事后复核。
+- 每个scoring Run保留独立SDK trace/hash；review packet只聚合这些Run的真实调用/提议统计，setup排除。失败/缺trace保留未知与lower_bound，不伪造跨Run SDK receipt。
+
+## 当前已知待修、禁止抢跑
+
+主首次authority控制确认：open decision尚未执行时公开effect可为None，不能用已执行effect ledger证明pending raw/internal映射。Carver正在修原approval的公开prepared映射。本接线scoring approval也受此边界影响，需消费同一固定helper再启动actualmain新控；不把该fixture准入红归因SDK业务缺陷，不临时推导ID。已消费a0dc37eb的binding exact_receipt四字段修正，真实marker/closure新控会覆盖该深路径。
+
+## 最小新控制（均NOT_RUN）
+
+`backend/tests/quality/test_corpus_c05_phase.py::test_actual_main_task_setup_scoring_and_authored_followups[C05-04]`
+
+同node参数`[C05-09]`、`[C05-14]`、`[C05-20]`，合计4新控制。各自fresh child使用主完整源与实际installed target，无guard override。setup真实loopback HTTP，scoring仅受控HTTP响应；查询固定公开status词，最终选择只取真实工具返回第一候选，**不声称符合原语义gold**。独立检查setup无泄漏、future followup未提前入物理请求、每Run真实终态、20的f1无正式scope权威、最后exact resume和fixture/评分统计隔离。真实模型质量另计。
+
+`backend/tests/quality/test_corpus_c05_phase.py::test_actual_empty_preview_does_not_send_followup`
+
+原两scope真实准备非空，评分发真实无匹配search，要求真实空结果、仅一scoring Run、零f1/f2及零resume。不是用空库满足no-match。缺effect/result/disclosure的权威负控由Carver既有新控提供，不复制同套。
+
+原C07独立分支两次载体FAIL保持：缺tracked assets和借用installed target来源不匹配。主已在完整candidate解决载体并另报61f474e5实际phase通过；这些原失败不覆写，不用本C05源码追认。
+
+---
+
 # C05 正式 same-store phase 合同与构造接缝
 
 2026-09-07，source-only/NOT_RUN。Hegel负责shared session/dispatcher及main构造透传；Carver负责C05 transport/phase reader/exact setup approval/helper。全部后继验证由主完整candidate/实际vendor target统一执行，不在分支安装或测试。

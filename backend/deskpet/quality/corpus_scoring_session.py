@@ -148,7 +148,8 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     authored = json.loads((directory / "input.json").read_text())
     setup = json.loads((directory / "setup.json").read_text())
     case_id = setup["case_id"]
-    c07 = None
+    c07 = c05 = None
+    c05_schedule = None
     if setup["scenario_clock"] != authored["scenario_clock"]:
         raise ValueError("corpus_input_setup_clock_mismatch")
     if type(case_id) is str and case_id.startswith("C07-"):
@@ -157,6 +158,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         c07 = compile_c07_setup(case_id, setup["setup_source_text"],
             scenario_clock=setup["scenario_clock"]["instant"])
         validate_c07_recent_input(c07, authored["recent_messages"])
+    if type(case_id) is str and case_id.startswith("C05-"):
+        from deskpet.quality.corpus_c05 import compile_c05_setup
+        from deskpet.quality.corpus_c05_session import validate_schedule
+        c05 = compile_c05_setup(case_id, setup["setup_source_text"])
+        c05_schedule = validate_schedule(case_id, json.loads((directory / "scheduler.json").read_text()))
     if (authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None:
         raise ValueError("corpus_first_batch_scalar_input_required")
     text = authored["current_user_message"]
@@ -193,7 +199,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         embedding="NO_LOCAL_MODEL_LOADED", initialization="main_product_factory",
         cleanup_errors=[])
     service = None
-    recent_provider = None
+    recent_provider = task_provider = None
+    task_history = None
+    task_workspace = directory / "runtime" / "task-workspace" if c05 is not None else None
     try:
         outcome["stage"] = "host_schema_session"
         if main._state_db_path.resolve() != state_path.resolve():
@@ -212,7 +220,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         main._provider_registry = LLMProviderRegistry(main._CONFIG_PATH)
         if main._provider_registry.list_providers():
             raise ValueError("corpus_requires_empty_isolated_provider_registry")
-        if c07 is not None and c07.recent_messages and not initialize_only:
+        if c05 is not None and not initialize_only:
+            from deskpet.quality.corpus_c05_transport import TaskSetupHttpProvider
+            task_provider = await TaskSetupHttpProvider(model=main.config.llm.local.model).start()
+            await main._provider_registry.add_ephemeral_provider(task_provider.registration())
+        elif c07 is not None and c07.recent_messages and not initialize_only:
             from deskpet.quality.corpus_c07_phase import RecentMessagesProvider
             recent_provider = await RecentMessagesProvider(c07.recent_messages,
                 model=main.config.llm.local.model).start()
@@ -257,50 +269,66 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
             display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
         main.service_context.register("human_memory_host_service_factory", factory)
-        if case_id.startswith("C07-") or case_id == "C01-06":
+        if c05 is not None or case_id.startswith("C07-") or case_id == "C01-06":
             await factory.bind(auth).open_primary()
-        batch = compile_setup(case_id, setup["setup_source_text"],
-            scenario_clock=authored["scenario_clock"]["instant"])
-        # Fixture authorities are owned only by this setup scope. Close them
-        # before main reopens the same database with production authorities.
-        async with AsyncExitStack() as fixture_owners:
-            memory_path = main._paths.user_data_dir() / "data" / "human_memory_v7.db"
-            if case_id == "C01-06":
-                from deskpet.quality.corpus_c01_revision_prepare import open_c01_revision_fixture
-                _, seed = await fixture_owners.enter_async_context(open_c01_revision_fixture(
-                    path=main._state_db_path, memory_path=memory_path,
-                    principal=local_memory_principal(), authority_ref=auth.authority_ref,
-                    batch=batch, classification_policy=host_classification_policy(),
-                    supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
-            else:
-                delivery = SetupFixtureDeliveryAuthority()
-                fixture_manager = await memory.build_human_memory_v7(
-                    memory_path, classification_policy=host_classification_policy(),
-                    supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES,
-                    evidence_authority=HostEvidenceAuthority(main._state_db_path),
-                    analysis_delivery_authority=delivery, clock=clock)
-                fixture_owners.push_async_callback(fixture_manager.close)
-                seed = await prepare_runtime_seed(path=main._state_db_path, manager=fixture_manager,
-                    principal=local_memory_principal(), authority_ref=auth.authority_ref,
-                    batch=batch, delivery_authority=delivery)
-            outcome["setup_receipt"] = wire({name: seed[name] for name in
-                ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions")})
-            if case_id.startswith("C07-"):
-                outcome["setup_receipt"].update(wire({name: seed[name] for name in
-                    ("manifest_hash", "fixture_defaults", "application", "request")}))
-            elif case_id == "C01-06":
-                outcome["setup_receipt"].update(wire({name: seed[name] for name in
-                    ("ingestion_receipt", "application", "request", "initial_plan", "plan",
-                     "old_receipt", "new_receipt", "old_receipt_ref", "new_receipt_ref")}))
+        if c05 is not None:
+            # Task archives require the real main runtime. No empty scalar seed
+            # is substituted for those source/closure obligations.
+            outcome["task_phase_status"] = "NOT_RUN"
+        else:
+            batch = compile_setup(case_id, setup["setup_source_text"],
+                scenario_clock=authored["scenario_clock"]["instant"])
+            # Fixture authorities are owned only by this setup scope. Close them
+            # before main reopens the same database with production authorities.
+            async with AsyncExitStack() as fixture_owners:
+                memory_path = main._paths.user_data_dir() / "data" / "human_memory_v7.db"
+                if case_id == "C01-06":
+                    from deskpet.quality.corpus_c01_revision_prepare import open_c01_revision_fixture
+                    _, seed = await fixture_owners.enter_async_context(open_c01_revision_fixture(
+                        path=main._state_db_path, memory_path=memory_path,
+                        principal=local_memory_principal(), authority_ref=auth.authority_ref,
+                        batch=batch, classification_policy=host_classification_policy(),
+                        supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
+                else:
+                    delivery = SetupFixtureDeliveryAuthority()
+                    fixture_manager = await memory.build_human_memory_v7(
+                        memory_path, classification_policy=host_classification_policy(),
+                        supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES,
+                        evidence_authority=HostEvidenceAuthority(main._state_db_path),
+                        analysis_delivery_authority=delivery, clock=clock)
+                    fixture_owners.push_async_callback(fixture_manager.close)
+                    seed = await prepare_runtime_seed(path=main._state_db_path, manager=fixture_manager,
+                        principal=local_memory_principal(), authority_ref=auth.authority_ref,
+                        batch=batch, delivery_authority=delivery)
+                outcome["setup_receipt"] = wire({name: seed[name] for name in
+                    ("source_pair", "labels", "setup_hash", "outcome", "fixture_executions")})
+                if case_id.startswith("C07-"):
+                    outcome["setup_receipt"].update(wire({name: seed[name] for name in
+                        ("manifest_hash", "fixture_defaults", "application", "request")}))
+                elif case_id == "C01-06":
+                    outcome["setup_receipt"].update(wire({name: seed[name] for name in
+                        ("ingestion_receipt", "application", "request", "initial_plan", "plan",
+                         "old_receipt", "new_receipt", "old_receipt_ref", "new_receipt_ref")}))
         # Reopen with actual production authorities. Never replace the production
         # analysis authority with the local setup executor during scoring.
         outcome["stage"] = "main_product_runtime_factory"
-        await main._activate_product_sdk_runtime(clock=clock)
+        if task_workspace is not None:
+            task_workspace.mkdir(exist_ok=False)
+        await main._activate_product_sdk_runtime(clock=clock,
+            **({"configured_workspace_root": task_workspace} if task_workspace is not None else {}))
         # Isolate foreground scoring from unrelated background model analysis.
-        # Setup's real job is already APPLIED; this is not an unacknowledged skip.
         await main._memory_analysis_lane.close()
         outcome["stage"] = "main_foreground_factory"
-        await main._activate_human_memory_host_ports(epoch)
+        if c05 is not None:
+            from deskpet.execution.primary_history import PrimaryHistoryStore
+            from deskpet.quality.corpus_c05_history import C05PhaseHistoryReader
+            task_history = C05PhaseHistoryReader(path=main._state_db_path, subject=auth.subject,
+                delegate=PrimaryHistoryStore(main._state_db_path,
+                    settled_run_reader=main._sdk_runtime_stack.read_settled_primary_run,
+                    policy=main._primary_history_policy(auth.subject)))
+        await main._activate_human_memory_host_ports(epoch,
+            **({"history_reader": task_history, "configured_workspace_root": task_workspace}
+               if c05 is not None else {}))
         # Original main startup barrier: bind the real companion adapter before
         # accepting any foreground Run. This does not start background workers.
         await main._activate_companion_runtime_adapter_and_open_ingress()
@@ -319,6 +347,19 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             raise _InitializationComplete()
         worker = MemoryIngestionOutboxWorker(main._state_db_path, cognitive.manager,
             owner_id="corpus-scoring-user-ingestion")
+        if task_provider is not None:
+            from deskpet.quality.corpus_c05_session import prepare_setup_phase
+            from deskpet.quality.corpus_c07_phase import admit_scoring_provider
+            outcome["stage"] = "authored_task_setup_phase"
+            outcome["setup_phase"] = await prepare_setup_phase(main=main, batch=c05,
+                service=service, runtime=runtime, transport=task_provider, history_reader=task_history,
+                workspace_root=task_workspace, directory=directory, collect_turn=collect_turn,
+                record=write_result, ingestion_worker=worker)
+            outcome["task_phase_status"] = "CONFIRMED"
+            await task_provider.close()
+            await admit_scoring_provider(registry=main._provider_registry,
+                resolver=main._sdk_provider_binding_resolver, session_db=main._session_db,
+                base_url=base_url, key=key, model=main.config.llm.local.model)
         if recent_provider is not None:
             from deskpet.quality.corpus_c07_phase import execute_recent_phase, admit_scoring_provider
             outcome["stage"] = "authored_recent_phase"
@@ -333,52 +374,58 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 base_url=base_url, key=key, model=main.config.llm.local.model)
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
-        from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
-        approval = ReadOnlyMemoryApproval(ingress=main._sdk_ingress,
-            persist=lambda name, value: write_result(directory / (name + ".json"), value))
-        try:
-            executed = await execute_scoring_turn(service=service, runtime=runtime,
-                scoring_path=main._state_db_path, subject=auth.subject, text=text,
-                delivery_key="scoring-turn-1", ingestion_worker=worker,
-                approval_driver=approval)
-            outcome["queue_receipt"] = wire(executed.queue_receipt)
-            outcome["completed_group"] = wire(executed.completed_group)
-            outcome["stage"] = "post_terminal_public_trace"
-            outcome["actual_completed_group_available"] = True
-            outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt,
-                text, directory=directory))
-            if recent_provider is not None:
-                from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
-                binding = SdkRunBindingV1.from_record(main._sdk_runtime_stack.read_closure_run_facts(
-                    outcome["sdk_run_id"]).binding_record)
-                if (binding.provider_id != "corpus-real-provider"
-                        or outcome["sdk_run_id"] == outcome["setup_phase"]["sdk_run_id"]
-                        or recent_provider.attempts != 1):
-                    raise ValueError("c07_scoring_phase_identity_differs")
-                outcome["provider_statistics_scope"] = "scoring_run_only_setup_excluded"
-            outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
-                or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
-        except Exception as exc:
-            from deskpet.quality.corpus_approval import CorpusApprovalBlocked
-            if isinstance(exc, CorpusApprovalBlocked):
-                outcome["approval_status"] = "BLOCKED"
-            outcome["execution_status"] = "OBSERVATION_FAILED" if outcome.get(
-                "actual_completed_group_available") else "EXECUTION_FAILED"
-            outcome["error_type"] = type(exc).__name__
-            # Enqueue was durable even if runtime failed before returning the
-            # complete group. Re-read its exact single-case transport receipt.
-            turns = [turn for turn in (await service.queue_snapshot())["turns"]
-                if turn["delivery_key"] == "scoring-turn-1"]
-            if len(turns) == 1 and turns[0]["delivery_key"] == "scoring-turn-1":
-                outcome["queue_snapshot"] = turns
-                try:
-                    # Do not repeat collection after a successful group: every
-                    # observation has its own durable file and failure state.
-                    if not outcome.get("actual_completed_group_available"):
-                        outcome.update(await collect_turn(main, service, auth.subject, turns[0],
-                            text, directory=directory))
-                except Exception as trace_error:
-                    outcome["trace_error_type"] = type(trace_error).__name__
+        if c05 is not None:
+            from deskpet.quality.corpus_c05_session import execute_task_scoring
+            outcome.update(await execute_task_scoring(main=main, service=service, runtime=runtime,
+                subject=auth.subject, text=text, schedule=c05_schedule, directory=directory,
+                setup_phase=outcome["setup_phase"], worker=worker, collect_turn=collect_turn, record=write_result))
+        else:
+            from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
+            approval = ReadOnlyMemoryApproval(ingress=main._sdk_ingress,
+                persist=lambda name, value: write_result(directory / (name + ".json"), value))
+            try:
+                executed = await execute_scoring_turn(service=service, runtime=runtime,
+                    scoring_path=main._state_db_path, subject=auth.subject, text=text,
+                    delivery_key="scoring-turn-1", ingestion_worker=worker,
+                    approval_driver=approval)
+                outcome["queue_receipt"] = wire(executed.queue_receipt)
+                outcome["completed_group"] = wire(executed.completed_group)
+                outcome["stage"] = "post_terminal_public_trace"
+                outcome["actual_completed_group_available"] = True
+                outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt,
+                    text, directory=directory))
+                if recent_provider is not None:
+                    from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+                    binding = SdkRunBindingV1.from_record(main._sdk_runtime_stack.read_closure_run_facts(
+                        outcome["sdk_run_id"]).binding_record)
+                    if (binding.provider_id != "corpus-real-provider"
+                            or outcome["sdk_run_id"] == outcome["setup_phase"]["sdk_run_id"]
+                            or recent_provider.attempts != 1):
+                        raise ValueError("c07_scoring_phase_identity_differs")
+                    outcome["provider_statistics_scope"] = "scoring_run_only_setup_excluded"
+                outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
+                    or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
+            except Exception as exc:
+                from deskpet.quality.corpus_approval import CorpusApprovalBlocked
+                if isinstance(exc, CorpusApprovalBlocked):
+                    outcome["approval_status"] = "BLOCKED"
+                outcome["execution_status"] = "OBSERVATION_FAILED" if outcome.get(
+                    "actual_completed_group_available") else "EXECUTION_FAILED"
+                outcome["error_type"] = type(exc).__name__
+                # Enqueue was durable even if runtime failed before returning the
+                # complete group. Re-read its exact single-case transport receipt.
+                turns = [turn for turn in (await service.queue_snapshot())["turns"]
+                    if turn["delivery_key"] == "scoring-turn-1"]
+                if len(turns) == 1 and turns[0]["delivery_key"] == "scoring-turn-1":
+                    outcome["queue_snapshot"] = turns
+                    try:
+                        # Do not repeat collection after a successful group: every
+                        # observation has its own durable file and failure state.
+                        if not outcome.get("actual_completed_group_available"):
+                            outcome.update(await collect_turn(main, service, auth.subject, turns[0],
+                                text, directory=directory))
+                    except Exception as trace_error:
+                        outcome["trace_error_type"] = type(trace_error).__name__
     except _InitializationComplete:
         pass
     except Exception as exc:
@@ -406,6 +453,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 await recent_provider.close()
             except Exception as exc:
                 outcome["cleanup_errors"].append("recent_provider:" + type(exc).__name__)
+        if task_provider is not None:
+            try:
+                await task_provider.close()
+            except Exception as exc:
+                outcome["cleanup_errors"].append("task_provider:" + type(exc).__name__)
         for owner, method, kwargs in owners:
             if owner is None:
                 continue

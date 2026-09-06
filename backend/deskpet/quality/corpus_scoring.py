@@ -64,6 +64,7 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     catalog = rows("audit/catalog.jsonl")
     inputs = rows("input/initial-input.jsonl")
     setups = rows("setup/cases.jsonl")
+    schedules = rows("scheduler/cases.jsonl")
     oracles = rows("oracle/cases.jsonl")
     if not case_ids or len(set(case_ids)) != len(case_ids):
         raise ValueError("corpus_case_selection_empty_or_duplicate")
@@ -75,13 +76,19 @@ def prepare_batch(*, corpus_root, compiler_root, case_ids, output):
     save(output / "original-documents.json", json.loads(artifacts["audit/source-documents.json"]))
     for case_id in case_ids:
         matches = [i for i, row in enumerate(catalog) if row["case_id"] == case_id]
-        if len(matches) != 1 or not case_id.startswith(("C01-", "C07-")):
+        from deskpet.quality.corpus_c05_session import SUPPORTED_CASES, validate_schedule
+        if len(matches) != 1 or not (case_id.startswith(("C01-", "C07-")) or case_id in SUPPORTED_CASES):
             raise ValueError("corpus_batch_requires_exact_supported_id")
         i = matches[0]
         directory = output / case_id
         directory.mkdir()
         save(directory / "input.json", inputs[i])
         save(directory / "setup.json", dict(case_id=case_id, **setups[i]))
+        if case_id in SUPPORTED_CASES:
+            validate_schedule(case_id, schedules[i])
+            # Runner-only authored messages, separate from both initial input
+            # and gold; sent one at a time after actual prerequisite events.
+            save(directory / "scheduler.json", schedules[i])
         # This file is NOT a worker argument and is opened only after it exits.
         save(directory / "oracle.json", oracles[i])
         save(directory / "case.json", catalog[i])
@@ -97,21 +104,28 @@ def review_packet(directory, exit_code):
     oracle = load(directory / "oracle.json")
     case = load(directory / "case.json")
     no_match_batch = case["case_id"].startswith("C07-")
+    task_batch = case["case_id"].startswith("C05-")
     trace = result.get("trace")
-    observations = type_observations(trace) if trace else None
+    # C05 has several scoring Runs. Preserve their separate SDK trace hashes;
+    # aggregate only these statistics, never fabricate a multi-Run SDK receipt.
+    traces = ([item.get("trace") for item in result.get("scoring_runs", ())]
+        if task_batch else [trace])
+    providers = [provider for item in traces if item is not None for provider in item["providers"]]
+    observations = ([proposal for item in traces if item is not None for proposal in type_observations(item)]
+        if any(item is not None for item in traces) else None)
     types = sorted({t for o in (observations or []) for t in (o["proposed_strings"] or [])})
     required = oracle["labels"]["required_types"]
     completed = result["execution_status"] == "COMPLETED" and exit_code == 0
     blocked = result["execution_status"] == "SETUP_NOT_READY"
     observation_failed = result["execution_status"] == "OBSERVATION_FAILED"
-    handed_off_lower_bound = sum(p["handed_off_at"] is not None
-        for p in trace["providers"]) if trace is not None else 0
-    observation_complete = trace is not None and trace.get("provider_observation_complete") is True
+    handed_off_lower_bound = sum(p["handed_off_at"] is not None for p in providers)
+    observation_complete = bool(traces) and all(item is not None
+        and item.get("provider_observation_complete") is True for item in traces)
     handed_off = handed_off_lower_bound if observation_complete else None
-    prediction_complete = (observation_complete and trace.get("trace_status") == "COMPLETE"
+    prediction_complete = (observation_complete and all(item.get("trace_status") == "COMPLETE" for item in traces)
         and observations is not None
         and all(o["proposed_strings"] is not None for o in observations)
-        and all(p["response_json"] is not None for p in trace["providers"]))
+        and all(p["response_json"] is not None for p in providers))
     packet = dict(case=case, original_oracle=oracle,
         execution=result, worker_exit_code=exit_code, model_type_proposals=observations,
         observed_handed_off_invocations=handed_off,
@@ -133,10 +147,15 @@ def review_packet(directory, exit_code):
             "PENDING_POST_TERMINAL_REVIEW" if completed else "EXECUTION_FAILED",
         review_requirements=["核原gold每项语义和禁止行为",
             "核干扰库非空及零查询/零披露/后台gate，06和14另核实际最近历史" if no_match_batch
+            else "核实际候选披露/首轮无正式授权、原固定followup及最终exact resume；错候选不救场" if task_batch
             else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
         quality_thresholds_status="NOT_EVALUATED_PARTIAL_C07_BATCH" if no_match_batch
+            else "NOT_EVALUATED_PARTIAL_C05_BATCH" if task_batch
             else "NOT_EVALUATED_PARTIAL_C01_BATCH")
+    if task_batch:
+        packet["provider_statistics_scope"] = "all_scoring_runs_setup_excluded"
+        packet["scoring_trace_hashes"] = [item.get("trace_hash") if item else None for item in traces]
     packet["packet_hash"] = digest(packet)
     save(directory / "review-packet.json", packet)
     return packet
