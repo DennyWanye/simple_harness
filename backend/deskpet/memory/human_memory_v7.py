@@ -137,6 +137,11 @@ class HumanMemoryV7Runtime:
     def db_path(self) -> Path:
         return self._db_path
 
+    @property
+    def semantic_clock(self):
+        """The trusted clock shared with typed recall public consumers."""
+        return self._clock
+
     def principal(self) -> Any:
         return self._principal if self._principal is not None else local_memory_principal()
 

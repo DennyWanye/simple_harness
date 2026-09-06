@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +46,7 @@ class ProductTypedContextUseAuthority:
     def __init__(self, *, state_path, memory_runtime, stack_getter, namespace, ledger, terminal_sink):
         self._path = Path(state_path)
         self._memory = memory_runtime
+        self.clock = memory_runtime.semantic_clock
         self._stack = stack_getter
         self._namespace = dict(namespace)
         self._ledger = ledger
@@ -100,8 +100,9 @@ class ProductTypedContextUseAuthority:
             EvidenceRef(envelope.evidence_id, envelope.envelope_hash, 1), disclosure, parent_request_id)
 
     async def admitted_tool_context(self, context):
-        run_id, parent = context.run_id.value, context.request_id.value
-        view = self._stack().read_provider_context_use(run_id, parent)
+        run_id = context.run_id.value
+        view = self._stack().read_primary_tool_parent_use(context)
+        parent = view.provider_request_id
         if (view is None or view.invocation_state != "succeeded"
                 or view.authority_scope_ref != self.authority_scope_ref
                 or view.subject != self.subject or view.run_id != run_id
@@ -132,7 +133,7 @@ class ProductTypedContextUseAuthority:
                 raise ValueError("typed_use_projection_differs")
             page = await manager.page_typed_recall_result(principal=self._memory.principal(),
                 request=RecallResultPageRequestV1(result.result_id, result.result_hash,
-                    offset + 1, offset, 1, 16384, time.time()))
+                    offset + 1, offset, 1, 16384, self.clock()))
             if (page.result_id != result.result_id or page.result_hash != result.result_hash
                     or len(page.bindings) != 1 or page.bindings[0].item_id != selected.item_id
                     or page.bindings[0].item_hash != item.result_item_hash):
@@ -256,7 +257,7 @@ class ProductTypedContextUseAuthority:
         # source ownership and replay rules remain the authority.
         manager = await self._memory.manager()
         return await manager.authorize_recall_context_use(
-            principal=self._memory.principal(), request=request, now=time.time(),
+            principal=self._memory.principal(), request=request, now=self.clock(),
         )
 
     async def consumed_occurrences(self, *, db, run_id, request):

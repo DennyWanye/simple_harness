@@ -735,6 +735,59 @@ class ProductSdkRuntimeStack:
         from simple_harness import RequestId
         return self.require_ready().client.read_provider_context_use(RunId(run_id), RequestId(request_id))
 
+    def read_primary_tool_parent_use(self, context):
+        """Resolve the actual parent from public projections/response, not an ID recipe.
+
+        ToolContext.request_id is the admitted Run request, not the physical
+        Provider request. This bounded public scan fails on incomplete coverage.
+        """
+        from simple_harness import EffectId, RequestId, thaw_json
+        from simple_harness.execution.audit import audit_hash
+        from simple_harness.execution.provider_invocations import provider_response_from_json
+        self.require_ready()
+        if self._uow is None or context.effect_id is None:
+            raise ValueError("typed_use_tool_effect_missing")
+        effect = self._uow.read_effect(EffectId(context.effect_id.value))
+        if (effect is None or effect.run_id != context.run_id
+                or effect.call_id != context.call_id or effect.tool_name != "context_route"
+                or effect.task_execution_envelope != context.task_execution_envelope):
+            raise ValueError("typed_use_actual_tool_identity_differs")
+        after, found, complete = 0, {}, False
+        for _ in range(32):
+            receipts = self._uow.list_provider_projection_receipts(after_sequence=after, limit=256)
+            for receipt in receipts:
+                if receipt.sequence <= after:
+                    raise ValueError("typed_use_provider_projection_order")
+                after = receipt.sequence
+                if receipt.run_id != context.run_id.value:
+                    continue
+                if audit_hash(thaw_json(receipt.payload)) != receipt.payload_hash:
+                    raise ValueError("typed_use_provider_projection_hash")
+                invocation = self._uow.read_provider_invocation(receipt.invocation_id)
+                if invocation is None or invocation.run_id != context.run_id:
+                    raise ValueError("typed_use_provider_projection_identity")
+                if invocation.version != receipt.invocation_version or invocation.state.value != "succeeded":
+                    continue
+                view = self.read_provider_context_use(context.run_id.value, invocation.request_id.value)
+                if view is None or view.provider_turn_ordinal != effect.turn_ordinal:
+                    continue
+                if invocation.response_json is None:
+                    raise ValueError("typed_use_parent_response_missing")
+                response = provider_response_from_json(thaw_json(invocation.response_json))
+                if not 0 <= effect.call_ordinal < len(response.tool_calls):
+                    raise ValueError("typed_use_parent_call_missing")
+                call = response.tool_calls[effect.call_ordinal]
+                if (call.call_id.value != effect.raw_call_id or call.name != effect.tool_name
+                        or thaw_json(call.arguments) != thaw_json(effect.arguments)):
+                    raise ValueError("typed_use_parent_call_differs")
+                found[view.provider_request_id] = view
+            if len(receipts) < 256:
+                complete = True
+                break
+        if not complete or len(found) != 1:
+            raise ValueError("typed_use_parent_projection_unverifiable")
+        return next(iter(found.values()))
+
     def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
         """Public start and effect facts, never SDK-private history SQL."""
         from simple_harness import EffectId, thaw_json

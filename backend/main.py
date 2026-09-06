@@ -7953,6 +7953,7 @@ def _local_owner_auth():
 
 async def _build_product_sdk_runtime_stack(
     generation: int,
+    *, clock=time.time,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
     verify_memory_candidate()
@@ -8124,6 +8125,7 @@ async def _build_product_sdk_runtime_stack(
         tool_authorities.validate_runtime_tool_admission
     )
     driver = build_react_driver(
+        clock=clock,
         # max_consecutive_same_tool 此前漏设，取 SDK 默认值 3——而同处已放到
         # 25 轮 / 50 次工具调用。「总共允许 50 次、同一工具连续 3 次就掐断 Run」
         # 这个不对称是漏配：连读 4 个文件即触发，工具报可纠正错误后模型改对重试
@@ -8347,6 +8349,7 @@ async def _build_product_sdk_runtime_stack(
         Path(_paths.user_data_dir()) / "data" / "human_memory_v7.db",
         embedder_getter=lambda: service_context.get("embedder"),
         adapter_factory=_analysis_adapter,
+        clock=clock,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
     _typed_use_authority = None
@@ -8517,7 +8520,7 @@ async def _build_product_sdk_runtime_stack(
             ),
         ),
         grant_factory=authorization_policy.grant_factory,
-        clock=time.time,
+        clock=clock,
         terminal_lifecycle=project_skill_install_service,
     )
 
@@ -8582,7 +8585,7 @@ async def _build_product_sdk_runtime_stack(
     def ports_factory(database, uow):
         nonlocal projection_pump
         global _sdk_context_port
-        context = SqliteContextPort(database)
+        context = SqliteContextPort(database, clock=clock)
         _sdk_context_port = context
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
@@ -8619,6 +8622,7 @@ async def _build_product_sdk_runtime_stack(
                         state=record_state,
                     )
         effects = ProductEffectExecutor(
+            clock=clock,
             uow=uow,
             registry=tools_adapter,  # tools_adapter is already a ToolRegistry
             authorization=authorization_adapter,
@@ -8692,6 +8696,7 @@ async def _build_product_sdk_runtime_stack(
             evidence_ingress=_ensure_evidence_ingress(),
             context_use_authority=_typed_use_authority,
             typed_terminal=_typed_use_authority,
+            clock=clock,
         )
         if projection_pump is None:
             from deskpet.sdk_adapters.provider_projection_pump import (
@@ -8732,7 +8737,7 @@ async def _build_product_sdk_runtime_stack(
             tools=effects,
             authorization=authorization_adapter,
             context=context,
-            delivery=DeliveryDispatcher(uow, {"product": delivery_adapter}),
+            delivery=DeliveryDispatcher(uow, {"product": delivery_adapter}, clock=clock),
             tool_reconciliation=reconciliation_adapter,
             reconciliation=_NoopReconciliation(),
             provider_reconciliation=_NoopReconciliation(),
@@ -8792,6 +8797,7 @@ async def _build_product_sdk_runtime_stack(
         production_ports.clear()
         profiles = {"agent.general": RuntimeProfile("agent.general", "react")}
         runtime_config_kwargs = dict(
+            clock=clock,
             execution_path=execution_path,
             provider_builder=lambda uow: _production_ports_for(uow).provider,
             tools_builder=lambda uow: _production_ports_for(uow).tools,

@@ -2,12 +2,12 @@
 
 ## 2026-09-06 Host typed-use 生产接线独立叶
 
-从aacf3f4d复用隔离树，新feat/typed-use-primary-runtime。冻结H074源92292699/双wheel
-6caf9def已独立制品ACCEPT；本树tinyenv074614为8.2MiB，H074/M614/S0313三个SDK
-173/76/121个wheel成员（除RECORD）与本树vendor一致、96已加载SDK模块均归新环境。
-仅安装身份通过，真实Host typed occurrence→snapshot2→已消费grant→最终来源过滤尚未实现/测试；
-不能算正式401、Host/native或program完成。主树/旧SDK环境/用户数据库未变。
-[契约及独占范围](../plans/2026-09-06-typed-use-primary/CONTRACT.md)。
+最后更新：2026-09-06。aacf3f4d独立叶保留H074/M614/S0313环境。实际注入生产组件的long2item/
+pregrant拒绝/postgrant精确消费/no-recall/reopen批4PASS，独立固定clock1PASS、重叠负控批3PASS。
+真实11组short暴露H074 source_revision字段拒绝合法None；不填伪1。mainfactory邻居1PASS/1FAIL，
+缺schema时新增authority初始化改变拒绝顺序待修。原红与环境不改，后继H075独立处理DTO/持久边界。
+未完成本叶或正式401/原生/program；完整main组合、short及sink故障控制仍待验证。
+[具体结果及证据](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
 
 ## 2026-09-06 工具多消息公开因果读取局部验证
 

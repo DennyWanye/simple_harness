@@ -198,30 +198,8 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
                 short.extend(sources.get("short_horizon", ()))
                 short.append(binding)
                 continue
-            if fragment.get("lane") not in {"long_term_typed", "short_horizon_typed"}:
-                raise ValueError("primary_dependencies_carrier_unsupported")
-            binding = fragment.get("history_binding")
-            item = dependencies(recall=[binding])["recall"][0]
-            if item["item_id"] != fragment["ref"]:
-                raise ValueError("primary_dependencies_item_mismatch")
-            # Exact current TOOL occurrence only. Base USER/history proofs
-            # above remain untouched even when they contain this same 4-tuple.
-            consumed = (route.effect_id, item["item_id"]) in consumed_occurrences
-            if fragment.get("lane") == "short_horizon_typed":
-                from deskpet.task_scope.protocol import canonical_hash
-                payload = fragment.get("payload")
-                if (not isinstance(payload, Mapping) or not isinstance(payload.get("content"), str)
-                        or canonical_hash(dict(payload)) != fragment.get("payload_hash")):
-                    raise ValueError("primary_dependencies_short_bytes_mismatch")
-                sources = parse_dependencies(fragment.get("history_source_dependencies"))
-                if not sources["evidence"] or item not in sources["recall"] or sources.get("short_horizon"):
-                    raise ValueError("primary_dependencies_short_sources_missing")
-                # The Memory item grant does not attest the Host's whole-group
-                # and indirect history lineage. Those sources stay current.
-                evidence.extend(sources["evidence"])
-                recall.extend(value for value in sources["recall"] if not consumed or value != item)
-            if not consumed:
-                recall.append(item)
+            append_typed_fragment_dependencies(fragment, evidence=evidence, recall=recall,
+                consumed=(route.effect_id, fragment.get("ref")) in consumed_occurrences)
     # Every actual primary handler records its exact SDK identity, including
     # unscoped search/page-in. TaskScope reservations are not a complete index.
     if metadata.get("primary_effect_index_version") != 1:
@@ -275,6 +253,32 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
             recall.extend(scope_proof["recall"])
             short.extend(scope_proof.get("short_horizon", ()))
     return run, dependencies(evidence, recall, short, schema_version=2 if short else proof["schema_version"])
+
+
+def append_typed_fragment_dependencies(fragment, *, evidence, recall, consumed):
+    """Append this occurrence's dependencies without deleting any base proof.
+
+    In particular, an identical 4-tuple already present in history survives a
+    consumed current occurrence. Host short group/indirect roots always survive.
+    """
+    if fragment.get("lane") not in {"long_term_typed", "short_horizon_typed"}:
+        raise ValueError("primary_dependencies_carrier_unsupported")
+    item = dependencies(recall=[fragment.get("history_binding")])["recall"][0]
+    if item["item_id"] != fragment["ref"]:
+        raise ValueError("primary_dependencies_item_mismatch")
+    if fragment.get("lane") == "short_horizon_typed":
+        from deskpet.task_scope.protocol import canonical_hash
+        payload = fragment.get("payload")
+        if (not isinstance(payload, Mapping) or not isinstance(payload.get("content"), str)
+                or canonical_hash(dict(payload)) != fragment.get("payload_hash")):
+            raise ValueError("primary_dependencies_short_bytes_mismatch")
+        sources = parse_dependencies(fragment.get("history_source_dependencies"))
+        if not sources["evidence"] or item not in sources["recall"] or sources.get("short_horizon"):
+            raise ValueError("primary_dependencies_short_sources_missing")
+        evidence.extend(sources["evidence"])
+        recall.extend(value for value in sources["recall"] if not consumed or value != item)
+    if not consumed:
+        recall.append(item)
 
 
 async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, policy_factory, typed_use_authority=None):
