@@ -36,3 +36,17 @@
 这是一条确定性实际组合，不评回答质量。14共享同一分支/合同，其原recent helper已绿，此次不另跑旧14控制。官方20评分可执行状态须按组合与后续真实trace分别判，不因去掉原BLOCKED分支就报告20-ready。
 
 待跑仍用原CONTRACT的解释器/target/default resource runner，新ignored evidence目录 `.../corpus-c07-prepare/phase-r1/`，pytest仅选择上述一个node。**主/Carver交槽且Dirac源码接受后才运行**；本次文件写入未启动任何资源进程。
+
+## phase-r2：只复原1红，初始化资产门已越过
+
+固定b53bd07d（产品4dd75040不变）、原H079/M619target，1 FAIL/2.92s。capability_platform_ready真实17 packs、growth_authority_composed及public setup admission/application已到达；失败变为main_product_runtime_factory的Memory SDK candidate installed origin mismatch。没有recent或scoring Provider请求，不能报相位通过。生产sdk_candidate.py:128–145要求安装direct_url精确等于本checkout vendor路径；借用主target版本/wheel bytes相同不足以符合该路径门。本次未放宽/替换guard、未重装任何target。下一步须选择真实匹配的隔离安装载体，保留原失败后再验，当前不追加起测。
+
+PG79901 parent/returncode1，elapsed3.901s，peak380656KiB，minDisk4654MiB，stop_reason=null，remaining_group_members=[]，cleanup_error=null；锁已直接归还主。原6绿未重跑。
+
+phase-r1/command.log SHA256 `c4dbc617150b8602dee5d8b6707cd47a4d721773d40ace7e1e2a657e1ab2df54`。
+
+phase-r1/resource.json SHA256 `30cd2097c8b3774dc0e8ccf9051bf45f2f0c0266f23a86ecd3a3c18ed3104037`。
+
+phase-r2/command.log SHA256 `539fdfc38561f281151a16b7c6f1e5ef65b6ac78303a6eae696d97bf8d4903f8`。
+
+phase-r2/resource.json SHA256 `5047cf4a15969d1633f81a8ffa48502c1fbeeb3769544c4d706156b81e560c41`。
