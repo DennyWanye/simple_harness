@@ -753,6 +753,37 @@ class ProductSdkRuntimeStack:
 
         return project_primary_transcript(messages, current_text=current_text)
 
+    async def read_primary_tool_causal_sources(self, *, db_path, host_run_id, run_id,
+                                             subject, current_text, messages):
+        """Host identity index plus public SDK result authority; no new grant."""
+        import aiosqlite
+        from deskpet.task_scope.protocol import canonical_hash, canonical_json
+        from deskpet.memory.primary_tool_causality import (
+            PrimaryToolCausalityUnavailable, read_tool_causal_sources,
+        )
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        async with aiosqlite.connect(f"file:{db_path}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            rows = await (await db.execute(
+                "SELECT i.* FROM primary_effect_identities i "
+                "JOIN foreground_runs r ON r.host_run_id=i.host_run_id "
+                "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id AND b.sdk_run_id=i.sdk_run_id "
+                "WHERE i.host_run_id=? AND i.sdk_run_id=? AND r.subject=? ORDER BY i.sequence LIMIT 257",
+                (host_run_id, run_id, subject))).fetchall()
+            if not rows or len(rows) > 256:
+                raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_missing_or_limit")
+            for row in rows:
+                body = dict(host_run_id=host_run_id, sdk_run_id=run_id,
+                            effect_id=row["effect_id"], tool_name=row["tool_name"])
+                if row["identity_json"] != canonical_json(body) or row["identity_hash"] != canonical_hash(body):
+                    raise PrimaryToolCausalityUnavailable("primary_tool_host_identity_mismatch")
+        return read_tool_causal_sources(self._uow, run_id, current_text=current_text,
+            transcript=messages, project=project_primary_transcript,
+            effect_ids=tuple(row["effect_id"] for row in rows))
+
     def read_run_terminal_evidence(
         self, run_id: str
     ) -> SdkRunTerminalEvidence | None:

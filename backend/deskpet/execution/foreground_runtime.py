@@ -1482,10 +1482,24 @@ class SqliteSdkTerminalObserver:
                         # an empty complete proof to make generated history visible.
                         proof = None
             from deskpet.execution.primary_history import record_terminal_observation
+            tool_sources = None
+            read_tool_sources = getattr(self._runtime_stack, "read_primary_tool_causal_sources", None)
+            if terminal is RunState.COMPLETED and any(message.get("role") == "tool" for message in messages):
+                from deskpet.memory.primary_tool_causality import PrimaryToolCausalityUnavailable
+                if callable(read_tool_sources):
+                    try:
+                        tool_sources = await read_tool_sources(db_path=self._db_path,
+                            host_run_id=host_run_id, run_id=sdk_run_id, subject=subject,
+                            current_text=text, messages=messages)
+                    except PrimaryToolCausalityUnavailable:
+                        # Archive the complete original terminal. A missing or
+                        # incomplete tool source never permits partial indexing.
+                        tool_sources = None
             primary_event_id, primary_event_hash = await record_terminal_observation(
                 self._db_path, host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
                 owner_id=owner_id, generation=generation, terminal=terminal,
                 sdk_evidence=sdk_evidence, messages=messages, visibility_dependencies=proof,
+                tool_causal_sources=tool_sources,
                 error_code=self._terminal_error_code(sdk_run_id, sdk_evidence) if terminal is RunState.FAILED else None,
             )
             if effective_scope is None:

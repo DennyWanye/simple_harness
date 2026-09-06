@@ -1,8 +1,8 @@
 """Derive short-index authority from immutable completed primary Host facts.
 
 No Memory SQL, new evidence, timestamp refresh, or second registration ledger.
-The frozen single-pointer SDK can represent exactly USER + one assistant item
-from the new-terminal producer. Other complete transcripts stay archived, unindexed.
+The v1 two-message producer remains exact. New v2 text tool groups carry real
+per-message sources and explicit Host tool settlement attestations.
 """
 from __future__ import annotations
 
@@ -190,13 +190,18 @@ class PrimaryConversationAuthority:
         if user.envelope_hash != run["evidence_hash"] or user.source_kind.value != "user_message":
             raise ConversationRegistrationUnavailable("conversation_user_binding_mismatch")
         messages = payload["messages"]
-        if not isinstance(messages, list) or len(messages) != 2:
+        v2 = payload.get("message_source_contract") == "primary-message-v2"
+        if v2:
+            from deskpet.memory.primary_message_v2 import representable
+            if not representable(messages, payload.get("tool_causal_sources")):
+                raise RuntimeError("primary_message_v2_source_mismatch")
+        elif not isinstance(messages, list) or len(messages) != 2:
             raise ConversationRegistrationUnavailable("terminal_multiple_items_not_representable")
         if (set(messages[0]) != {"role", "content"} or messages[0]["role"] != "user"
                 or messages[0]["content"] != user.sanitized_payload.get("text")
                 or messages[0]["content"] != json.loads(run["turn_json"])["payload"]["text"]
-                or set(messages[1]) != {"role", "content"} or messages[1]["role"] != "assistant"
-                or not all(isinstance(m["content"], str) and m["content"] for m in messages)):
+                or (not v2 and (set(messages[1]) != {"role", "content"} or messages[1]["role"] != "assistant"
+                    or not all(isinstance(m["content"], str) and m["content"] for m in messages)))):
             raise ConversationRegistrationUnavailable("conversation_transcript_not_representable")
         dependencies, _ = _dependencies(payload.get("visibility_dependencies"))
         if dependencies.get(user.evidence_id) != user.envelope_hash:
@@ -215,13 +220,20 @@ class PrimaryConversationAuthority:
             raise ConversationRegistrationUnavailable("conversation_user_ingestion_pending")
         from simple_harness_memory.core.jobs import AnalysisLineage
         user_lineage = AnalysisLineage.from_json(json.loads(outbox["analysis_lineage_json"]))
-        assistant = await verify_primary_message_evidence_tx(db, primary_ref=self.primary_ref,
-            host_run_id=host_run_id, terminal_envelope=terminal, terminal_receipt=terminal_receipt, user=user)
-        if assistant is None:
-            if payload.get("message_source_contract") == "primary-message-v1":
-                raise RuntimeError("primary_message_source_missing")
-            raise ConversationRegistrationUnavailable("conversation_message_source_missing")
-        sources = ((user, user_receipt, "/text"), (*assistant, "/source/message/content"))
+        if v2:
+            from deskpet.memory.primary_message_v2 import verify
+            children = await verify(db, primary_ref=self.primary_ref, host_run_id=host_run_id,
+                                   terminal=terminal, terminal_receipt=terminal_receipt, user=user)
+        else:
+            assistant = await verify_primary_message_evidence_tx(db, primary_ref=self.primary_ref,
+                host_run_id=host_run_id, terminal_envelope=terminal, terminal_receipt=terminal_receipt, user=user)
+            if assistant is None:
+                if payload.get("message_source_contract") == "primary-message-v1":
+                    raise RuntimeError("primary_message_source_missing")
+                raise ConversationRegistrationUnavailable("conversation_message_source_missing")
+            children = (assistant,)
+        sources = ((user, user_receipt, "/text"),
+                   *((envelope, receipt, "/source/message/content") for envelope, receipt in children))
         manifest = canonical_hash({"domain": ISSUER + "/group", "payload": {
             "host_run_id": host_run_id, "terminal_receipt_hash": identity.host_receipt_hash,
             "sdk_event_hash": identity.raw_sdk_event_hash,
@@ -229,12 +241,21 @@ class PrimaryConversationAuthority:
                        "pointer": pointer, "role": messages[i]["role"], "ordinal": i + 1}
                       for i, (env, _, pointer) in enumerate(sources)],
         }})
-        return ConversationGroup(host_run_id, tuple(self._registration(run, source, i + 1, manifest)
+        return ConversationGroup(host_run_id, tuple(self._registration(run, source, i + 1, manifest, len(sources))
             for i, source in enumerate(sources)), user_lineage)
 
-    def _registration(self, run, source, ordinal, manifest):
+    def _registration(self, run, source, ordinal, manifest, group_count=2):
         envelope, receipt, pointer = source
-        role = h.ConversationEvidenceRole.USER if ordinal == 1 else h.ConversationEvidenceRole.ASSISTANT
+        kind = envelope.source_kind.value
+        role, actor, provenance = {
+            "user_message": (h.ConversationEvidenceRole.USER, h.EvidenceActorRole.USER, h.EvidenceProvenance.AUTHENTICATED_USER),
+            "assistant_message": (h.ConversationEvidenceRole.ASSISTANT, h.EvidenceActorRole.ASSISTANT, h.EvidenceProvenance.MODEL_OUTPUT),
+            "tool_result": (h.ConversationEvidenceRole.TOOL, h.EvidenceActorRole.TOOL, h.EvidenceProvenance.TRUSTED_TOOL),
+        }[kind]
+        link = None
+        if kind == "tool_result":
+            from deskpet.memory.primary_message_v2 import tool_link
+            link = tool_link(envelope)
         item = h.EvidenceItemAuthority(
             schema_version=h.EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,
             authority_id=_stable("item", [envelope.envelope_hash, pointer]),
@@ -243,8 +264,7 @@ class PrimaryConversationAuthority:
             source_kind=envelope.source_kind, item_ordinal=ordinal,
             item_id=_stable("item-id", [envelope.evidence_id, pointer]), item_json_pointer=pointer,
             normalization_version=h.EVIDENCE_NORMALIZATION_IDENTITY_UTF8_V1,
-            actor_role=h.EvidenceActorRole.USER if ordinal == 1 else h.EvidenceActorRole.ASSISTANT,
-            provenance=h.EvidenceProvenance.AUTHENTICATED_USER if ordinal == 1 else h.EvidenceProvenance.MODEL_OUTPUT,
+            actor_role=actor, provenance=provenance,
             required_privacy_class=h.PrivacyClass.PERSONAL, required_information_attributes=(),
             classification_authority_ref=CLASSIFICATION, issuer_ref=ISSUER,
         )
@@ -255,9 +275,9 @@ class PrimaryConversationAuthority:
             run_id=envelope.run_id, subject=self.subject, source_hash=envelope.source_hash,
             sanitized_hash=envelope.sanitized_hash, conversation_id=self.primary_ref,
             primary_conversation_id=self.primary_ref, causal_group_id=run["host_run_id"],
-            causal_group_sequence=run["enqueue_sequence"], item_ordinal=ordinal, group_item_count=2,
+            causal_group_sequence=run["enqueue_sequence"], item_ordinal=ordinal, group_item_count=group_count,
             ordered_group_manifest_hash=manifest, role=role, occurred_at=receipt.admitted_at,
-            task_scope_id=run["task_scope_id"], tool_causal_link=None, entities=(),
+            task_scope_id=run["task_scope_id"], tool_causal_link=link, entities=(),
         )
         metadata = h.authorize_conversation_public_text(metadata, h.AdmittedEvidenceAuthority(envelope, receipt, item))
         metadata_receipt = h.ConversationEvidenceMetadataReceipt(
