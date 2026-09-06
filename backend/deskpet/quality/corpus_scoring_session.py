@@ -148,7 +148,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     authored = json.loads((directory / "input.json").read_text())
     setup = json.loads((directory / "setup.json").read_text())
     case_id = setup["case_id"]
-    c07 = c05 = None
+    c07 = c05 = c08_retained = None
     c05_schedule = None
     if setup["scenario_clock"] != authored["scenario_clock"]:
         raise ValueError("corpus_input_setup_clock_mismatch")
@@ -163,6 +163,12 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         from deskpet.quality.corpus_c05_session import validate_schedule
         c05 = compile_c05_setup(case_id, setup["setup_source_text"])
         c05_schedule = validate_schedule(case_id, json.loads((directory / "scheduler.json").read_text()))
+    if type(case_id) is str and case_id.startswith("C08-"):
+        # Only source-complete retained carriers enter this phase. Other C08
+        # scalar/partial carriers are not made ready by an empty placeholder.
+        from deskpet.quality.corpus_c08_retained import compile_c08_retained_setup
+        c08_retained = compile_c08_retained_setup(case_id, setup["setup_source_text"],
+            scenario_clock=setup["scenario_clock"]["instant"])
     if (authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None:
         raise ValueError("corpus_first_batch_scalar_input_required")
     text = authored["current_user_message"]
@@ -198,12 +204,12 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         provider_clock_projection="CONFIGURED_MAIN_PRIMARY_SEMANTIC_CLOCK_NOT_OBSERVED",
         embedding="NO_LOCAL_MODEL_LOADED", initialization="main_product_factory",
         cleanup_errors=[])
-    if c05 is not None:
+    if c05 is not None or c08_retained is not None:
         # The fixture owns LLM responses, not the main embedder's lifecycle.
         # Model-load absence is established by the separate controlled carrier.
         outcome["embedding"] = "MAIN_EMBEDDER_LOAD_NOT_OBSERVED"
     service = None
-    recent_provider = task_provider = None
+    recent_provider = task_provider = retained_provider = None
     task_history = None
     task_workspace = directory / "runtime" / "task-workspace" if c05 is not None else None
     try:
@@ -228,6 +234,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             from deskpet.quality.corpus_c05_transport import TaskSetupHttpProvider
             task_provider = await TaskSetupHttpProvider(model=main.config.llm.local.model).start()
             await main._provider_registry.add_ephemeral_provider(task_provider.registration())
+        elif c08_retained is not None and not initialize_only:
+            from deskpet.quality.corpus_c08_retained import RetainedSummaryProvider
+            retained_provider = await RetainedSummaryProvider(c08_retained,
+                model=main.config.llm.local.model).start()
+            await main._provider_registry.add_ephemeral_provider(retained_provider.registration())
         elif c07 is not None and c07.recent_messages and not initialize_only:
             from deskpet.quality.corpus_c07_phase import RecentMessagesProvider
             recent_provider = await RecentMessagesProvider(c07.recent_messages,
@@ -273,12 +284,16 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
             display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
         main.service_context.register("human_memory_host_service_factory", factory)
-        if c05 is not None or case_id.startswith("C07-") or case_id == "C01-06":
+        if c05 is not None or c08_retained is not None or case_id.startswith("C07-") or case_id == "C01-06":
             await factory.bind(auth).open_primary()
         if c05 is not None:
             # Task archives require the real main runtime. No empty scalar seed
             # is substituted for those source/closure obligations.
             outcome["task_phase_status"] = "NOT_RUN"
+        elif c08_retained is not None:
+            # C08-01 also skips its old scalar seed: A and the retained summary
+            # must derive from this actual old USER in the same store.
+            outcome["retained_phase_status"] = "NOT_RUN"
         else:
             batch = compile_setup(case_id, setup["setup_source_text"],
                 scenario_clock=authored["scenario_clock"]["instant"])
@@ -364,6 +379,25 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             await admit_scoring_provider(registry=main._provider_registry,
                 resolver=main._sdk_provider_binding_resolver, session_db=main._session_db,
                 base_url=base_url, key=key, model=main.config.llm.local.model)
+        if retained_provider is not None:
+            from deskpet.quality.corpus_c08_retained_phase import execute_retained_phase
+            from deskpet.quality.corpus_c07_phase import admit_scoring_provider
+            outcome["stage"] = "authored_retained_source_phase"
+            phase, seed = await execute_retained_phase(main=main, service=service, runtime=runtime,
+                batch=c08_retained, worker=worker, directory=directory, provider=retained_provider,
+                collect_turn=collect_turn, record=write_result)
+            if phase["status"] != "CONFIRMED" or not seed["setup_complete"]:
+                raise ValueError("c08_retained_phase_not_confirmed")
+            outcome["setup_phase"] = phase
+            outcome["setup_receipt"] = wire({name: seed[name] for name in
+                ("setup_complete", "manifest_hash", "setup_hash", "labels", "source_pair", "outcome",
+                 "fixture_executions", "mutation_receipt_ref", "suppression_decision", "fixture_defaults")})
+            outcome["retained_phase_status"] = "CONFIRMED"
+            # Helper has joined the fixture HTTP owner, closed its temporary
+            # manager and reopened main's original production authority.
+            await admit_scoring_provider(registry=main._provider_registry,
+                resolver=main._sdk_provider_binding_resolver, session_db=main._session_db,
+                base_url=base_url, key=key, model=main.config.llm.local.model)
         if recent_provider is not None:
             from deskpet.quality.corpus_c07_phase import execute_recent_phase, admit_scoring_provider
             outcome["stage"] = "authored_recent_phase"
@@ -398,14 +432,15 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 outcome["actual_completed_group_available"] = True
                 outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt,
                     text, directory=directory))
-                if recent_provider is not None:
+                if recent_provider is not None or retained_provider is not None:
                     from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
                     binding = SdkRunBindingV1.from_record(main._sdk_runtime_stack.read_closure_run_facts(
                         outcome["sdk_run_id"]).binding_record)
                     if (binding.provider_id != "corpus-real-provider"
                             or outcome["sdk_run_id"] == outcome["setup_phase"]["sdk_run_id"]
-                            or recent_provider.attempts != 1):
-                        raise ValueError("c07_scoring_phase_identity_differs")
+                            or (recent_provider if recent_provider is not None else retained_provider).attempts != 1):
+                        raise ValueError("c07_scoring_phase_identity_differs" if recent_provider is not None
+                            else "c08_scoring_phase_identity_differs")
                     outcome["provider_statistics_scope"] = "scoring_run_only_setup_excluded"
                 outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
                     or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
@@ -462,6 +497,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 await task_provider.close()
             except Exception as exc:
                 outcome["cleanup_errors"].append("task_provider:" + type(exc).__name__)
+        if retained_provider is not None:
+            try:
+                await retained_provider.close()
+            except Exception as exc:
+                outcome["cleanup_errors"].append("retained_provider:" + type(exc).__name__)
         for owner, method, kwargs in owners:
             if owner is None:
                 continue

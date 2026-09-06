@@ -1,6 +1,8 @@
+最后更新：2026-09-07。C08仅01/06/11/18 retained已接正式shared dispatcher源码，01跳过scalar preseed，旧组/同库抑制及原authority重开确认后才切独立评分Provider；1新实际dispatcher控制已准备NOT_RUN，其他C08仍block，不重复原5helper绿、不计质量PASS。[契约与唯一nodeid](../plans/2026-09-07-corpus-complete-dispatch/C08-DISPATCH.md)。
+
 最后更新：2026-09-07。C05审批/缺证据3唯一控制分批通过：r1真empty与missing通过、pending无Effect红；公开audit+response身份proof修复后仅原红与False新控2PASS2.75s。无typed原因False不冒真零，PG83853/84899清空；marker/closure及多轮actualmain另首测，非模型质量。[结果](../plans/2026-09-06-corpus-public-seed/C05-AUTHORITY-RESULTS.md)。
 
-最后更新：2026-09-07。C05限定04/09/14/20 actualmain setup→独立评分Provider→原固定followup接线及5新控制源码已准备，NOT_RUN；两factory同ignored root、真实setup prefix与current disclosure保留，多个评分Run统计不含fixture。pending审批公开prepared映射仍待Carver窄修后主统一验证；C08 partial/其它C05未开放，不称20 ready或模型质量。[源码契约与待跑nodeids](../plans/2026-09-07-corpus-complete-dispatch/C05-PHASE.md)。
+最后更新：2026-09-07。C05限定04/09/14/20 actualmain setup→独立评分Provider→原固定followup接线及5新控制源码已准备，NOT_RUN；两factory同ignored root、真实setup prefix与current disclosure保留，多个评分Run统计不含fixture。pending审批与非空False-policy独立控制已通过；实际main首测在control记录Scope分类失败，修复待复验；C08 partial/其它C05未开放，不称20 ready或模型质量。[源码契约与待跑nodeids](../plans/2026-09-07-corpus-complete-dispatch/C05-PHASE.md)。
 
 最后更新：2026-09-07。C08-01/06/11/18保留旧USER+assistant摘要实际main及wrongassistant共5新控首批5PASS38.78s：原job APPLIED/IDLE，公开suppression后两history隐藏，重开生产authority后下一physical请求无旧内容。PG84053五child自然清空，非真实模型/原生/rolling-summary；正式dispatcher待接。本批也确认d60异步诊断两SDK来源实际写出且无未await警告。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。
 
