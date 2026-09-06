@@ -18,16 +18,19 @@ from simple_harness.runtime import (
 
 from deskpet.memory.s5c_store import S5cConflict, S5cStore, registration_signal_id
 from deskpet.task_scope.protocol import canonical_hash
+from deskpet.operation_audit.prospective_sources import ProspectiveSourceJournal
 
 
 class PublicRegistrationAuthoritySource:
     def __init__(self, *, store: S5cStore, memory, clock: Callable[[], float] = time.time,
-                 lifetime_seconds: float = 300.0):
+                 lifetime_seconds: float = 300.0, operation_audit: ProspectiveSourceJournal | None = None):
         if (not callable(clock) or type(lifetime_seconds) not in (int, float)
                 or not math.isfinite(lifetime_seconds) or not 0 < lifetime_seconds <= 86400):
             raise ValueError("prospective_source_clock_or_lifetime_invalid")
         self.store, self.memory, self.clock = store, memory, clock
         self.lifetime_seconds = lifetime_seconds
+        self.operation_audit = (operation_audit if operation_audit is not None
+                                else ProspectiveSourceJournal(store.path.parent / "operation-audit.db"))
 
     async def prepare_registration(self, *, principal, entry):
         from simple_harness_memory import MemoryPrincipal, ProspectiveOutboxSourceView
@@ -40,7 +43,7 @@ class PublicRegistrationAuthoritySource:
             # Revalidate immutable entry bytes; never renew an expired grant.
             await self.store.commit_registration(entry, existing.authority, expected_cursor=cursor)
             return existing.authority
-        source = await self.memory.read_prospective_outbox_source(
+        source = await self.operation_audit.read_prospective_outbox_source(self.memory,
             principal=principal, outbox_id=entry.outbox_id, payload_hash=entry.payload_hash,
         )
         if (type(source) is not ProspectiveOutboxSourceView

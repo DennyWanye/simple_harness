@@ -17,6 +17,7 @@ closure/compaction 与 program 剩余项未由本叶完成。
 最后更新：2026-09-06。H075/M616原生r5已实际完成中文Provider响应、WeMM编码、对话写入和审计UI；结束本轮后清空PG54846。后台analysis误用foreground guard已定位，正在修复；短期当前4组处于SDK最近10组排除窗口，尚无窗口外召回证据。完整native/program未闭合。[本轮证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
 
 最后更新：2026-09-06。原生启动暴露的服务登记槽与中断空库初始化已修复；新增两项实际 runtime 检查通过，原生主对话恢复可输入。真实 Provider 已返回，但中文输入用例和随后模型加载异常仍未闭合，完整 native 未通过。[本次结论与证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+最后更新：2026-09-06。独立Host source-read账本`0e983edc`已用真实M616 Manager完成14项必要验证/Dirac限定ACCEPT。默认registration实际读外层保存payload-free观察，复用memory_call_attempts/findings，无新schema/权限；原host_persistence_unverified保留，Host settlement独立。未调用/能力缺失不归因SDKfinding，写失败不重读、取消join清理后传播。未合主，v2 union、scheduler与全操作coverage仍独立待办。[接口及证据](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
 
 2026-09-06 合并复核更正：M616 uv.lock wheel hash 已从误留的M615值修正，新增锁文件一致性检查1项通过；Host恢复与提醒来源均已获得限定独审，详见下方组合记录。
 

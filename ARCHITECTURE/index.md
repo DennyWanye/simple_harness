@@ -5,6 +5,7 @@
 最后更新：2026-09-06。H075/M616原生r5已实际完成中文Provider响应、WeMM编码、对话写入和审计UI；结束本轮后清空PG54846。后台analysis误用foreground guard已定位，正在修复；短期当前4组处于SDK最近10组排除窗口，尚无窗口外召回证据。完整native/program未闭合。[本轮证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
 
 最后更新：2026-09-06。原生启动暴露的服务登记槽与中断空库初始化已修复；新增两项实际 runtime 检查通过，原生主对话恢复可输入。真实 Provider 已返回，但中文输入用例和随后模型加载异常仍未闭合，完整 native 未通过。[本次结论与证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+最后更新：2026-09-06。独立Host提醒来源观察接收叶`0e983edc`通过新增14项/5.17s及Dirac限定审查；复用既有sidecar，默认登记实际Manager读取接入，原SDK观察不提升为授权/持久receipt。已合入隔离primary候选；v2/scheduler/全操作coverage/native不在此验收内。[结果与接线边界](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
 
 2026-09-06：当前组合的M616锁文件hash已修正并定向验证，Host恢复/提醒来源限定独审已归档在组合记录。
 
