@@ -161,7 +161,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store, typed_use_authority)
         if extra_registrations:
             from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
             tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
@@ -639,7 +639,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None, typed_use_authority=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -657,7 +657,7 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
         service_factory_getter=lambda: factory,
         binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
         binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context,
-        recall_executor=recall_executor,
+        recall_executor=recall_executor, typed_use_authority=typed_use_authority,
         scope_disclosure_reader=None if scope_reader is None else scope_reader.read,
         producer_dependencies_reader=None if scope_reader is None else scope_reader.producer_dependencies)
     closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)
