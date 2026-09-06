@@ -1,0 +1,11 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.7.7",
+  "commit": "c29af66902dd0b418ab12c1c8f871182280f77bd",
+  "artifacts": {
+    "simple_harness_sdk-0.7.7-py3-none-any.whl": "60f7fb164f65ca98a1aa54e4fc75cd7abbc08e409a6a10fe397106d47148c5a3"
+  },
+  "build_count": 1,
+  "execution_schema": 9,
+  "scope": "bounded authorization terminal proof and explicit legacy expiry recovery; no native or original userdata recovery"
+}

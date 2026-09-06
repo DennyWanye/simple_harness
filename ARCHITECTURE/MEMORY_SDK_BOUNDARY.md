@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
+
+
 ## H077 public expiry terminal and cold Host recovery — isolated leaf
 
 From762af1ab, Host reads exact public SDK terminal metadata instead of SDK-private

@@ -20,19 +20,19 @@ from urllib.parse import unquote, urlparse
 
 from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
 
-SDK_VERSION = "0.7.5"
-SDK_WHEEL_FILENAME = "simple_harness_sdk-0.7.5-py3-none-any.whl"
-SDK_WHEEL_SHA256 = "7969a2e5028f2c5d0b348973a5b330bca797f10c1bdfa2532ae033d352d2ee66"
-SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.7.5.candidate-manifest.json"
-SDK_CANDIDATE_MANIFEST_SHA256 = "07dd7714adbf2dcc63a98b429082c7c3cce1f34c663fb79ed0d35fda28ce24f7"
-SDK_SOURCE_COMMIT = "abbb0fd707f2ceadb271471da2ef906c27748420"
+SDK_VERSION = "0.7.7"
+SDK_WHEEL_FILENAME = "simple_harness_sdk-0.7.7-py3-none-any.whl"
+SDK_WHEEL_SHA256 = "60f7fb164f65ca98a1aa54e4fc75cd7abbc08e409a6a10fe397106d47148c5a3"
+SDK_CANDIDATE_MANIFEST_FILENAME = "simple_harness_sdk-0.7.7.candidate-manifest.json"
+SDK_CANDIDATE_MANIFEST_SHA256 = "0e91fc0afe1c4a6948487005ea373db24f1ffd0239096e679504f47681dfec5e"
+SDK_SOURCE_COMMIT = "c29af66902dd0b418ab12c1c8f871182280f77bd"
 SDK_CI_RUN_ID = None
 SDK_CI_ARTIFACT_ID = None
 
-SDK_MEMORY_VERSION = "0.6.16"
-SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.6.16-py3-none-any.whl"
-SDK_MEMORY_WHEEL_SHA256 = "00937eb5d79c1ea989112c658eaf543e434fb211106f4edfbecbc10002bca9bf"
-SDK_MEMORY_SOURCE_COMMIT = "931b8c77076bb5b42ad41a3297ed4eb58bcaaab9"
+SDK_MEMORY_VERSION = "0.6.17"
+SDK_MEMORY_WHEEL_FILENAME = "simple_harness_memory_sdk-0.6.17-py3-none-any.whl"
+SDK_MEMORY_WHEEL_SHA256 = "e119cdcc29cd8d3566848e80a1e1c3ebb897715d666b7311643af1b514de869c"
+SDK_MEMORY_SOURCE_COMMIT = "32b9b9410cdf0f05ad205a18b42a5fc3ade55211"
 SDK_MEMORY_CI_RUN_ID = None
 SDK_MEMORY_CI_ARTIFACT_ID = None
 
