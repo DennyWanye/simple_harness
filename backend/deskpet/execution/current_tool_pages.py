@@ -184,10 +184,11 @@ class CurrentToolProjector:
     async def __call__(self, request, messages):
         from simple_harness.contracts.messages import Message
         from deskpet.sdk_adapters.composition import project_primary_transcript
-        large = [m for m in messages if m.role.value == "tool" and m.name not in CONTROL_TOOLS
+        large = [m for m in messages if m.role.value == "tool"
                  and isinstance(m.content, str) and len(m.content.encode()) > DEFAULT_LARGE_RESULT_BYTES]
         if not large:
-            return messages
+            return None
+        pageable = [m for m in large if m.name not in CONTROL_TOOLS]
         stack = self.stack_getter()
         run_id = request.run_id.value
         async with aiosqlite.connect(self.path) as db:
@@ -210,6 +211,8 @@ class CurrentToolProjector:
         _require(isinstance(current_text, str) and current_text and admitted_users
                  and admitted_users[-1] == current_text
                  and admission.get("turn", {}).get("text") == current_text, "current_input_missing")
+        if not pageable:
+            return messages  # real primary control carriers keep complete bytes
         transcript = project_primary_transcript(messages, current_text=current_text)
         sources = await stack.read_primary_tool_causal_sources(db_path=self.path, host_run_id=run["host_run_id"],
             run_id=run_id, subject=run["subject"], current_text=current_text, messages=transcript)
@@ -222,7 +225,7 @@ class CurrentToolProjector:
         for source in sources:
             index = indices[source["item_ordinal"] - 1]
             message = messages[index]
-            if message not in large:
+            if message not in pageable:
                 continue
             descriptor, content = source_content(stack.read_primary_effect_page_facts(run_id, source["effect_id"]))
             _require(transcript[source["item_ordinal"] - 1]["content"] == content, "transcript_mismatch")
