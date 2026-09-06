@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06：固定1491309f的H078/M618组合5PASS/4.82s，覆盖实际main factory、A7直接路由ACK终态、Procedure旧v3响应跨配置恢复及Memory身份/锁。173/84/116包成员与vendor一致、201模块全部来自新小target；PG2168正常退出并清空。原生/质量及随后历史分页代码不在此批范围。[当前组合结果](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
+
+
 2026-09-06：历史工具大内容分页固定536daece已独审接受并合候选。4个唯一场景验证真实S1/公开SDK来源、首/续/尾页、错误hash拒绝、后置遗忘阻止外发及冷重开依赖；证据为H077/M616和确定性HTTP，当前运行分页、当前组合及原生另验。[结果](../plans/2026-09-06-primary-context-compaction/RESULTS.md)。
 
 2026-09-06：Procedure提案按新v4区分明确采用/步骤叙述/不确定，Host核真实USER来源与有序引文；明确采用ACTIVE，其余合法分类DRAFT且观察成功数0，ACTIVE不授予执行权限。v3完整协议保留，普通失败跨配置重试P1由M618固定完整输入/cohort恢复；原Host反例零新Provider并应用旧v3语义已实际通过。源码/独立安装验收不代表Scope观察、适用性或真实分类质量；H078/M618组合另验。[来源与范围](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
