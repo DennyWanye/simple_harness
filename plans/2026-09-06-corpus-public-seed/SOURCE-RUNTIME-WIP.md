@@ -82,3 +82,19 @@ owned process. Existing green setup job not scheduled for repeat.
 - `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-first-r1/command.log` SHA256 `a80f01b726834de1c2dbe7a44c36c85b5a3e36984c4706937c4e4e38c8ff8895`
 
 - `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-first-r1/resource.json` SHA256 `6f187af0ebc64c370e159238df824ab0d7a1a70798adad6cfde72aab050e5413`
+
+
+runtime-first-r3 (only two previous failures): 1 passed, 1 failed in 1.61s.
+Graph public transient delivery failure produced actual retry/backoff; reopen
+IDLE is rejected as unconfirmed. Source Run now passes identity/runtime but full
+group correctly rejects conversation_user_ingestion_pending. Corrective fixture
+now registers actual runtime manager owner and delivers actual source outbox
+before group; scoring execute_scoring_turn accepts the existing ingestion worker
+and runs it before its own exact group check. Its return never replaces group
+proof. This last correction is NOT_RUN; no authority/USER role changes.
+PG19139 exit1 remaining[], peak183472KiB, default lock released; main/Singer
+notified. Actual setup job's prior green was not rerun.
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-first-r3/command.log` SHA256 `bcf0fa258bac9b4314cfaf0ed10070d0822956e0aa700ef60891201b363f640d`
+
+- `.local-test-evidence/2026-09-06/corpus-public-seed/runtime-first-r3/resource.json` SHA256 `7dfcf7f0814d451d1c255b2c70c694efe80a9b8f0b0b820958971bc92f028667`

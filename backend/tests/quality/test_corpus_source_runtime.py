@@ -6,6 +6,7 @@ from deskpet.memory.conversation_registration import PrimaryConversationAuthorit
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.human_memory_program import HumanMemoryProgramStore
 from deskpet.memory.history_source_authority import HostHistorySourceAuthority
+from deskpet.memory.memory_ingestion_outbox import MemoryIngestionOutboxWorker
 from tests.memory.test_primary_read_api import setup,result,AUTH
 import tests.execution.test_primary_foreground_runtime as runtime_fixture
 
@@ -27,6 +28,11 @@ async def test_source_run_import_interruption_replay_and_scoring_request_isolati
         await runtime.after_enqueue(subject=auth.subject)
         await runtime.drain()
         assert runtime.last_error is None and len(source_provider.requests)==1
+        memory=runtime.history_memory
+        manager=await memory.manager()
+        await manager.register_principal_owner(memory.principal(),m.MemoryScope.personal(auth.subject))
+        worker=MemoryIngestionOutboxWorker(source.path,memory.manager,owner_id='source-fixture-ingestion')
+        assert await worker.run_once()=='delivered'
         ids=await PrimaryConversationAuthority(source.path,subject=auth.subject).completed_run_ids()
         assert len(ids)==1
     finally:
@@ -64,8 +70,12 @@ async def test_source_run_import_interruption_replay_and_scoring_request_isolati
     scoring_provider=runtime_fixture.Provider()
     runtime,stack,_=await runtime_fixture.build(tmp_path/'scoring',scoring.path,scoring_provider)
     try:
+        memory=runtime.history_memory
+        manager=await memory.manager()
+        await manager.register_principal_owner(memory.principal(),m.MemoryScope.personal(auth.subject))
+        worker=MemoryIngestionOutboxWorker(scoring.path,memory.manager,owner_id='scoring-fixture-ingestion')
         executed=await execute_scoring_turn(service=scoring.factory.bind(auth),runtime=runtime,
-            scoring_path=scoring.path,subject=auth.subject,text=query,delivery_key='score-query')
+            scoring_path=scoring.path,subject=auth.subject,text=query,delivery_key='score-query',ingestion_worker=worker)
         assert executed.completed_group.terminal_source[0].sanitized_payload['terminal_state']=='COMPLETED'
         assert runtime.last_error is None and len(scoring_provider.requests)==1
         outgoing=repr(scoring_provider.requests[0].messages)

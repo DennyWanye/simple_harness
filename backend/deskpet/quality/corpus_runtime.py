@@ -15,7 +15,7 @@ class ExecutedCorpusTurn:
 
 
 async def execute_scoring_turn(*, service, runtime, scoring_path, subject,
-                               text: str, delivery_key: str):
+                               text: str, delivery_key: str, ingestion_worker=None):
     if type(text) is not str or type(delivery_key) is not str:
         raise TypeError('corpus_runtime_requires_isolated_turn_text')
     if runtime.subject != subject:
@@ -25,6 +25,10 @@ async def execute_scoring_turn(*, service, runtime, scoring_path, subject,
     await runtime.drain()
     if runtime.last_error is not None:
         raise RuntimeError('corpus_runtime_driver_failed') from runtime.last_error
+    # Complete-group authority requires the original USER ingestion ACK. An
+    # existing worker may deliver it; its return value is never group proof.
+    if ingestion_worker is not None:
+        await ingestion_worker.run_once()
     authority = PrimaryConversationAuthority(scoring_path,subject=subject)
     matched = []
     # Each case uses an isolated scoring DB with only authored turns. Full-run
