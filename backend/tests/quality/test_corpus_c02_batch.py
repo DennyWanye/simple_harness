@@ -34,10 +34,10 @@ async def test_c02_public_setup_preserves_distractors_and_epistemic_status(tmp_p
         if case_id=='C02-19':
             by_id={n.memory_id:n for n in graph.nodes}
             node=by_id[actual['labels']['B'].memory_id]
-            assert node.lifecycle_state=='candidate'
+            assert node.status=='inferred'
         if case_id=='C02-20':
             assert len(actual['labels'])==1
-            assert '颜色' not in actual['plan'].operations[0].payload.value
+            assert '颜色' not in actual['plan'].operations[0].payload.object_value
         if any(s[1]=='episode' for s in batch.specs):
             assert 'undated_past_episode=clock-24h' in actual['fixture_defaults']
         if any(s[1]=='prospective' for s in batch.specs):
