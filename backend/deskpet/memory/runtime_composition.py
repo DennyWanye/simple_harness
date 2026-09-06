@@ -11,6 +11,7 @@ from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.conversation_registration import PrimaryConversationAuthority
 from deskpet.memory.history_source_authority import HostHistorySourceAuthority
+from deskpet.memory.current_input_authority import HostCurrentInputAuthority
 from deskpet.memory.human_memory_v7 import HumanMemoryV7Runtime, local_memory_principal
 from deskpet.memory.semantic_correction import SemanticCorrectionAuthority
 
@@ -54,6 +55,8 @@ def compose_human_memory_runtime(
         analysis_authority=executor,
         memory_action_authority=authority,
         history_source_authority=HostHistorySourceAuthority(state_db_path),
+        current_input_authority=HostCurrentInputAuthority(state_db_path,
+            principal=principal if principal is not None else local_memory_principal()),
         audit_access_authority=audit_access,
         conversation_evidence_authority=PrimaryConversationAuthority(
             state_db_path, subject=(principal if principal is not None else local_memory_principal()).actor_id,

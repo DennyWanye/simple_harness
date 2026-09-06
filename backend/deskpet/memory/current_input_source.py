@@ -177,3 +177,26 @@ async def read_current_input_source(*, db_path, subject, turn_id):
             "source_sequence": row["enqueue_sequence"],
             "fact_hash": canonical_hash({"domain": "host.current-input.fact.v1", "payload": fact}),
         }
+
+
+def input_context_ref(source_ref, token, request_id):
+    """Versioned request correlation for new input turns only, never a grant."""
+    from base64 import urlsafe_b64encode
+    from deskpet.task_scope.protocol import identifier
+    identifier(request_id, "request_id", 512)
+    encoded = urlsafe_b64encode(request_id.encode()).decode().rstrip("=")
+    return source_ref + ":input-v1:" + encoded + ":" + canonical_hash({"binding": token, "request_id": request_id})
+
+
+def input_context_request_id(context):
+    from base64 import b64decode, urlsafe_b64encode
+    try:
+        _, encoded = context.authority_ref.rsplit(":input-v1:", 1)
+        encoded, request_hash = encoded.split(":")
+        digest(request_hash, "request_hash")
+        decoded = b64decode(encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True).decode()
+        if urlsafe_b64encode(decoded.encode()).decode().rstrip("=") != encoded:
+            raise ValueError("noncanonical")
+        return decoded
+    except (ValueError, UnicodeError):
+        raise CurrentInputSourceError("request_reference_invalid") from None

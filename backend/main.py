@@ -7760,7 +7760,8 @@ async def _primary_history_visibility_checker(*, subject, disclosure_context, bi
     if principal.actor_id != subject or disclosure_context.subject != subject:
         raise RuntimeError("primary_history_principal_mismatch")
     manager = await runtime.manager()
-    return await manager.check_history_visibility(principal=principal,
+    from deskpet.memory.current_input_visibility import check_primary_input_visibility
+    return await check_primary_input_visibility(db_path=_state_db_path, manager=manager, principal=principal,
         disclosure_context=disclosure_context, bindings=bindings)
 
 

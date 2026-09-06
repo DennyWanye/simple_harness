@@ -246,9 +246,13 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             from deskpet.memory.current_input_source import read_input_use_tx
             _, _, input_use = await read_input_use_tx(db, turn=row, config=current)
         assert_executable(current, input_use=input_use)
+        authority_ref = current["source_ref"] + ":" + canonical_hash({"binding": token, "request_id": request_id})
+        if input_use is not None:
+            from deskpet.memory.current_input_source import input_context_ref
+            authority_ref = input_context_ref(current["source_ref"], token, request_id)
         return DisclosureContext(run_id, subject, DeliveryRecipient(current["recipient"]),
             current["recipient_id"], IntendedAudience(current["intended_audience"]),
             DisclosurePurpose(current["purpose"]), DisclosureSource.AUTHENTICATED_HOST,
             DisclosureTrust.TRUSTED_AUTHORITY, DisclosureGeneration.CURRENT,
-            current["source_ref"] + ":" + canonical_hash({"binding": token, "request_id": request_id}),
+            authority_ref,
             (DisclosureReasonCode.MINIMUM_NECESSARY,))
