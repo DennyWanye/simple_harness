@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C08标量准备叶7022e8e0/287176d0在H0710/M619/S0313首批13PASS5.55s，PG79749自然清空。12事实真实APPLIED+ACCEPTED/抑制前非空→公开EVIDENCE suppression→冷重开隐藏且S1保留；其中01/02/04/09显式partial、另8case派生源未支持，不称12完整setup或模型质量。正式评分接线仍待。[结果与未完边界](../plans/2026-09-07-corpus-c08-prepare/RESULTS.md)。
+
 最后更新：2026-09-07。计分叶ebd81721修缺response时exact预测指标误零，改为null并保留lower_bound；失败denominator/credit不变，旧r4不覆写。仅affected真实SDK failed单Run控制1PASS0.91s，PG78605自然清空；非模型质量。[指标与结果](../plans/2026-09-07-corpus-c01-scoring/MISSING-RESPONSE-METRICS.md)。
 
 最后更新：2026-09-07。独立单POST诊断收到HTTP400/model_not_found，param=model，message unknown provider for model gpt-5.5；1post/0工具，PG77944正常退出无残留。只证明该次拒绝，不追认原r4同因、不称nullable线上通过。主另报告/models列该模型，清单不等于POST可用，暂停进一步请求并等待模型取舍。[受限结论与审核证据](../plans/2026-09-07-corpus-c01-scoring/HTTP-REJECTION.md)。
