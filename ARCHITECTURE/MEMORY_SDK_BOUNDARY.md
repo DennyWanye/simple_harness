@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：真实v4提案混入多种正文被编译拒绝，后继v5按memory_type分支schema并保持旧协议恢复。固定85a19260新3控通过；真实gpt5.5三意图分别产出ACTIVE/DRAFT/DRAFT，无编译拒绝。仅模型分类+编译，非Host持久链/原生/240质量；PG4986正常退出并清空。[实际失败、修复和三条结果](../plans/2026-09-06-procedure-adoption/V5-CLASSIFICATION.md)。
+
+
 2026-09-06：当前运行分页合并A7的构造器和调用均保留双方参数；固定320a419e在H078/M618实际main factory及current page allow两项2PASS/5.34s。PG3663清空；未closed写Scope撤回后终态pending仍单独修复，原生未开始。[组合结果](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
 
 
