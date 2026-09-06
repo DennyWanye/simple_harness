@@ -15,7 +15,7 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 from deskpet.quality.corpus_c05 import SETUPS, compile_c05_setup, operational_text
 from deskpet.quality.corpus_c05_prepare import TaskSetupProvider
-from deskpet.quality.corpus_c05_approval import C05SetupApproval
+from deskpet.quality.corpus_c05_approval import C05SetupApproval, verify_pending_call
 from deskpet.quality.corpus_c05_runtime import read_candidate_events
 from deskpet.quality.corpus_approval import CorpusApprovalBlocked
 from deskpet.quality.corpus_trace import digest
@@ -100,15 +100,18 @@ async def test_actual_pending_approval_rejects_foreign_turn_and_wrong_args_befor
             original = runtime._ingress.read_authorization_decision(run_id=current.sdk_run_id, decision_id=decision_id)
             _, (effect,) = stack.read_primary_dependency_facts(current.sdk_run_id,
                 (thaw_json(original.request)['effect_id'],))
-            assert effect.call_id.value != effect.raw_call_id  # decisive namespace control
-            assert effect.raw_call_id in transport.planned_calls
+            assert effect is None  # real REQUIRE_USER precedes prepare_effect
+            proof = await verify_pending_call(stack=stack, ingress=runtime._ingress,
+                sdk_run_id=current.sdk_run_id, decision_id=decision_id, request=thaw_json(original.request))
+            assert proof.internal_call_id != proof.raw_call_id
+            assert proof.raw_call_id in transport.planned_calls
             # Wrong queue cannot borrow this still-open decision.
             foreign_queue = dict(queued, turn_ref='foreign-turn')
             transport.queued = foreign_queue
             with pytest.raises(CorpusApprovalBlocked, match='c05_setup_exact_identity_differs'):
                 await approval(service=bound, queued=foreign_queue)
             transport.queued = queued
-            raw = effect.raw_call_id
+            raw = proof.raw_call_id
             actual_plan = transport.planned_calls[raw]
             transport.planned_calls[raw] = dict(actual_plan, arguments=dict(actual_plan['arguments'], title='unemitted title'))
             with pytest.raises(CorpusApprovalBlocked, match='c05_setup_exact_action_differs'):
@@ -119,8 +122,8 @@ async def test_actual_pending_approval_rejects_foreign_turn_and_wrong_args_befor
             assert await approval(service=bound, queued=queued) is True
             assert len(records) == 2
             assert records[-1][1]['response']['outcome'] == 'allowed'
-            assert records[-1][1]['internal_call_id'] == effect.call_id.value
-            assert records[-1][1]['raw_call_id'] == effect.raw_call_id
+            assert records[-1][1]['internal_call_id'] == proof.internal_call_id
+            assert records[-1][1]['raw_call_id'] == proof.raw_call_id
     finally:
         await runtime.close()
         await stack.close()
