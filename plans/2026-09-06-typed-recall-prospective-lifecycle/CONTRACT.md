@@ -23,7 +23,7 @@
 原负例必须有实际成功CREATE/REVISE receipt后调用真实recall，setup异常只能BLOCKED。
 候选正对照与其他合法前史分别记录并验证，不能用后来pending PASS替代原candidate无披露断言。
 
-实现和独立oracle/tests准备中；未运行测试，不声明这6格已闭合。
+初次契约记录源码准备状态；现ea030952经限定源码审查并通过新test/原6格，见[RESULTS.md](RESULTS.md)。
 固定源码后Dirac只读审查，再145默认锁2GiB/180s必要新tests+原6格定向验证；不跑无变更13格。
 
 ## 固定源码实现与待测清单
@@ -31,5 +31,6 @@
 新增独立lifecycle adapter/oracle；normal runner仅对原6格dispatch，旧13格路径保持。
 信号oracle新增显式registration_state/ack_identity参数用于rescheduled与candidate正对照的真实ACK，默认值不变。
 所有signal证明是实际调用记录的时序prefix/suffix视图，没有构造新的API结果；最终state/target/revision由独立原输入路径确定。
-一个新增集成test方法实际跑6原格，随后6state篡改、stale-target、删除新revision outbox、candidate正对照篡改。
+一个新增集成test方法实际跑6原格，含6state篡改、stale-target、删除新revision outbox、candidate正对照篡改；
+后继ea030952另增两个完整wire自洽P1篡改，最终11项负向检查，非11个pytest方法。
 通过固定源码review后只跑该新方法+原6formal，不跑无变更的旧13；若失败保留raw后固定修复复审。

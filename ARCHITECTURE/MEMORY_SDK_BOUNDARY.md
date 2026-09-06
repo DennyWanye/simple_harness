@@ -1,6 +1,18 @@
 # Memory SDK 边界与 Host 接口契约
 
 
+## 2026-09-06 Prospective剩余6 lifecycle公开runner叶子
+
+最后更新2026-09-06。ec68源码审查P1（receipt目标连续性与candidate正控来源）修复为ea030952并限定ACCEPT。
+实际installed H073/M0613一个新集成方法PASS1.17s（6真实格+11篡改），原6格正式6PASS/0FAIL/0BLOCKED，
+Run b7b8fe83520d430b8c52d93f72f4bb4f，dependency[]；其余395未选/整体NOT_RUN/BLOCKED/exit3。
+实际public ACK/matched signal/授权REVISE绑定原source与真实revision；candidate原负例+独立同ID正控，
+expired/completed仅synthetic显式状态更新，不称外部时间signal或任务完成。无Host/SDK生产修改。
+前13未重跑，不并片为同Run19或新401；projection/非法组合边界保留。
+两PGID均退出无残留、槽释放，最大135536KiB。
+[命令、P1与raw/hash](../plans/2026-09-06-typed-recall-prospective-lifecycle/RESULTS.md)。
+
+
 ## 2026-09-06 Prospective公开scheduler fixture叶子
 
 最后更新2026-09-06。4aee0cdb源码、dd988b19精确expiry test delta均Dirac限定ACCEPT。
