@@ -156,15 +156,26 @@ def attempt_rows(w):
 async def test_actual_scope_to_physical_closure(tmp_path, monkeypatch, mode):
     w = await world(tmp_path, monkeypatch, mode)
     try:
+        # Exercise the production single-driver registration. Calling
+        # _drive_once directly leaves _driver empty, so the real lease keeper
+        # may legitimately wake a second driver after SDK terminal publication.
+        await w.runtime.after_enqueue(subject=w.runtime.subject)
         if mode == "cancel_reserve":
             with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(w.runtime._drive_once(), 20)
+                await asyncio.wait_for(w.runtime.drain(), 20)
+            cancelled_driver = w.runtime._driver
+            assert cancelled_driver.done() and cancelled_driver.cancelled()
+            await asyncio.gather(cancelled_driver, return_exceptions=True)
+            # Fixture cleanup after the injected cancellation, not a claim
+            # that Runtime.close handles an already-cancelled driver.
+            w.runtime._driver = None
             assert attempt_rows(w) == []
             with sqlite3.connect(w.state) as db:
                 assert db.execute("SELECT COUNT(*) FROM human_memory_evidence WHERE source_ref LIKE 'closure-attempt-input:%'").fetchone()[0] == 0
             assert not w.sent
             return
-        assert await asyncio.wait_for(w.runtime._drive_once(), 20)
+        await asyncio.wait_for(w.runtime.drain(), 20)
+        assert w.runtime.last_error is None
         assert len(w.provider.requests) == 6
         attempts = attempt_rows(w)
         if mode == "unproven_event":
