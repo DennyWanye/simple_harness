@@ -61,6 +61,7 @@ async def test_actual_draft_only_forget_before_closure_blocks_http_without_incid
     monkeypatch.setattr(fixture, 'OmitClosureProvider', DraftAnswerProvider)
     physical_check = ClosurePhysicalRequestGuard.__call__
     reached = []
+    diagnostics = []
 
     async def forget_at_physical(guard, request):
         prepared = world.prepared[0]
@@ -83,13 +84,21 @@ async def test_actual_draft_only_forget_before_closure_blocks_http_without_incid
         reached.append(proof)
         return await physical_check(guard, request)
 
-    monkeypatch.setattr(ClosurePhysicalRequestGuard, '__call__', forget_at_physical)
+    async def diagnosed_guard(guard, request):
+        try:
+            return await forget_at_physical(guard, request)
+        except Exception as error:
+            import traceback
+            diagnostics.append(traceback.format_exc())
+            raise
+
+    monkeypatch.setattr(ClosurePhysicalRequestGuard, '__call__', diagnosed_guard)
     try:
         world = await fixture.world(tmp_path, monkeypatch, 'draft_only_forget')
         await world.runtime.after_enqueue(subject=world.runtime.subject)
         await asyncio.wait_for(world.runtime.drain(), 30)
         assert world.runtime.last_error is None
-        assert len(reached) == 1
+        assert len(reached) == 1, diagnostics
         assert world.sent == []  # MockTransport handler is the physical HTTP boundary.
         assert reached[0]['schema_version'] == 3
         assert reached[0]['procedure_drafts'][0]['memory_id'] == target[0]
