@@ -98,7 +98,7 @@ async def test_actual_main_revision_route_supplies_new_head_to_next_request(tmp_
     assert actual['ref'] == fragment['recall_binding']['item_id']
     assert actual['payload'] == fragment['public_payload']
     assert actual['payload_hash'] == fragment['public_payload_hash']
-    assert actual['payload']['value'] == '小周'
+    assert actual['payload']['object_value'] == '小周'
     providers = outcome['trace']['providers']
     assert len(providers) == 2 and all(p['state'] == 'succeeded' for p in providers)
     assert outcome['trace']['trace_status'] == 'COMPLETE'
