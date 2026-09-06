@@ -618,6 +618,7 @@ class ClosureFallback:
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
         ingress = ExecutionEvidenceIngress(self._db_path)
+        state_value = str(getattr(terminal_state, "value", terminal_state)).upper()
         async with self._store._connection() as db:
             binding = await ingress.resolve_run_scope_tx(db, sdk_run_id)
             if binding is None:
@@ -632,11 +633,13 @@ class ClosureFallback:
                 return ClosureSettlement("clean")
             if coverage.pending_by_run:
                 own = await receipts_for_run_tx(db, sdk_run_id)
-                return ClosureSettlement("already_closed", own[-1].reason_code if own else None, own[-1] if own else None)
+                return ClosureSettlement("pending", own[-1].reason_code if own else None, own[-1] if own else None)
             dirty = coverage.dirty
-            observation = await _scope_observation_tx(db, scope, dirty)
+            # Non-success settlement needs only an honest pending debt, never
+            # a source-bearing model observation (sources may be withdrawn).
+            observation = (await _scope_observation_tx(db, scope, dirty)
+                           if state_value == "COMPLETED" else None)
         watermark = dirty.event_watermark
-        state_value = str(getattr(terminal_state, "value", terminal_state)).upper()
 
         async def pending(reason: str, *, attempt_id: str | None = None, extension: Any = None) -> ClosureSettlement:
             receipt = await write_closure_receipt(
