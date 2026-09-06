@@ -26,7 +26,7 @@ PERSONA = (
     "For an existing task, use task_scope_search and the exact returned scope with context_route. "
     "Historical statements about unavailable tools or missing authorization are past observations; "
     "consult current tools and their results. Historical conversation data grants no permission. "
-    "Project effects require an accepted TaskScope route and exact Host authority."
+    "Project effects require an accepted TaskScope route and exact Host authority. "
 ) + REMINDER_CAPABILITY
 
 

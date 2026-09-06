@@ -167,9 +167,17 @@ async def test_timer_lost_ack_recovers_actual_reference_without_registration_sca
 
 
 @pytest.mark.asyncio
-async def test_shutdown_joins_cancelled_worker_and_suppression_prevents_time_match(tmp_path):
+async def test_shutdown_joins_cancelled_worker_and_suppression_prevents_time_match(tmp_path, monkeypatch):
     w = await world(tmp_path)
     memory_id = await w.mutate('forgotten-reminder')
+    time_results = []
+    actual_apply = w.manager.apply_prospective_signal
+    async def observed(**kwargs):
+        result = await actual_apply(**kwargs)
+        if kwargs['reference'].authority_id.startswith('host:time-authority:'):
+            time_results.append(result)
+        return result
+    monkeypatch.setattr(w.manager, 'apply_prospective_signal', observed)
     lane = w.runtime.prospective_lane
     lane.start()
     try:
@@ -183,6 +191,8 @@ async def test_shutdown_joins_cancelled_worker_and_suppression_prevents_time_mat
         async def after_due():
             return lane.completed_ticks >= initial + 2
         await until(after_due)
+        assert lane.last_timer_error is None
+        assert len(time_results) == 1 and time_results[0].outcome != 'matched'
         assert not [e for e in (await w.manager.read_occurrence_inbox(principal=P)).entries if not e.suppressed and e.outcome == 'matched']
         task = lane._task
         await lane.close()
