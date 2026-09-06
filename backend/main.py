@@ -8397,6 +8397,16 @@ async def _build_product_sdk_runtime_stack(
         clock=clock,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    from deskpet.memory.procedure_schema import initialize_procedure_state_db
+    from deskpet.sdk_adapters.procedure_use import procedure_use_registration
+    from simple_harness_memory import MemoryManager as _ProcedureMemoryManager
+    if any(not callable(getattr(_ProcedureMemoryManager, name, None)) for name in (
+        "read_procedure_use_target", "prepare_procedure_observation", "record_procedure_observation",
+    )):
+        raise RuntimeError("procedure_public_sdk_successor_required")
+    await initialize_procedure_state_db(_state_db_path)
+    projected_registrations = (*projected_registrations,
+        procedure_use_registration(_human_memory_v7.procedure_runtime))
     _typed_use_authority = None
     if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
         from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
@@ -8539,6 +8549,7 @@ async def _build_product_sdk_runtime_stack(
         execution_context_getter=execution_context_getter,
     )
     tools_adapter.bind_run_authorities(tool_authorities)
+    _human_memory_v7.procedure_runtime.bind_tools(tool_authorities, tools_adapter)
     frozen_catalog = _freeze_sdk_catalog(
         tools_adapter,
         generation,
@@ -8695,6 +8706,7 @@ async def _build_product_sdk_runtime_stack(
             foreground_admission=_ensure_foreground_effect_gate(),
             effect_gate=effect_gate,
             evidence_ingress=_ensure_evidence_ingress(),
+            procedure_runtime=_human_memory_v7.procedure_runtime,
         )
         from simple_harness.execution.context_authority import (
             DurableToolCatalogResolver,

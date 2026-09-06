@@ -56,9 +56,11 @@ def _validate_old_cursor(db, *, copied: bool):
         previous[owner] = (sequence, (when, outbox), digest)
 
 
-def validate_s5c_terminal_state_db(path: str | Path) -> None:
+def validate_s5c_terminal_state_db(path: str | Path, *, _expected_user_version=52) -> None:
     path = Path(path)
-    validate_s5c_timer_state_db(path, _expected_user_version=52)
+    if _expected_user_version not in (52, 53):
+        raise schema.HumanMemoryProgramEpochError("s5c_terminal_schema_invalid")
+    validate_s5c_timer_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
     try:
         # Only compute the successor's schema objects. The insert/select has no
@@ -107,6 +109,10 @@ def validate_s5c_terminal_state_db(path: str | Path) -> None:
 async def initialize_s5c_terminal_state_db(db_path: str | Path, *, fault_inject=None) -> None:
     path = Path(db_path)
     version = await migrator.read_user_version(path)
+    if version == 53:
+        from deskpet.memory.procedure_schema import validate_procedure_state_db
+        validate_procedure_state_db(path)
+        return
     if version == 52:
         validate_s5c_terminal_state_db(path)
         return

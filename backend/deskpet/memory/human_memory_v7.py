@@ -103,6 +103,7 @@ class HumanMemoryV7Runtime:
         history_source_authority: Any = None,
         audit_access_authority: Any = None,
         conversation_evidence_authority: Any = None,
+        procedure_observation_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
         clock: Callable[[], float] = time.time,
@@ -127,6 +128,8 @@ class HumanMemoryV7Runtime:
         self._history_source_authority = history_source_authority
         self.audit_access_authority = audit_access_authority
         self._conversation_evidence_authority = conversation_evidence_authority
+        self._procedure_observation_authority = procedure_observation_authority
+        self.procedure_runtime = None
         # Test seam only: optionally replace the public backend constructor.
         # The trusted clock follows the normal production builder path too.
         # (the production path is always ``build_human_memory_v7``).
@@ -179,6 +182,8 @@ class HumanMemoryV7Runtime:
             "classification_policy": host_classification_policy(),
             **({"conversation_evidence_authority": self._conversation_evidence_authority}
                if self._conversation_evidence_authority is not None else {}),
+            **({"procedure_observation_authority": self._procedure_observation_authority}
+               if self._procedure_observation_authority is not None else {}),
         }
 
     async def manager(self) -> Any:
@@ -409,6 +414,10 @@ class HumanMemoryV7Runtime:
             (evidence_ref,),
             RecallBudget(8, 16_384, 2_048, 1_000),
         )
+        if self.procedure_runtime is not None:
+            from dataclasses import replace
+            context = replace(context, procedure_applicability_fingerprints=(
+                await self.procedure_runtime.current_fingerprints(run_id)))
         plan = RecallPlan(
             str(
                 uuid.uuid5(

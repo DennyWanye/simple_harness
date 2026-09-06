@@ -79,9 +79,15 @@ class PrimaryShortIndexWorker:
                                      r.envelope.evidence_id, r.envelope.envelope_hash)
                                     for r in group.registrations)
                         if key in self._confirmed:
+                            observer = getattr(self.runtime, "procedure_runtime", None)
+                            if observer is not None:
+                                await observer.observe_group(group, manager)
                             self._confirmed.move_to_end(key)
                             continue
                         await service.register_group(group)
+                        observer = getattr(self.runtime, "procedure_runtime", None)
+                        if observer is not None:
+                            await observer.observe_group(group, manager)
                         pending.append(key)
                 except HostHistorySourceError:
                     raise

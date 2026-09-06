@@ -30,7 +30,7 @@ def _version(path):
 
 def validate_s5c_timer_state_db(path: str | Path, *, _expected_user_version: int = 51) -> None:
     path = Path(path)
-    if _expected_user_version not in (51, 52):
+    if _expected_user_version not in (51, 52, 53):
         raise schema.HumanMemoryProgramEpochError("s5c_timer_schema_invalid")
     validate_s5c_state_db(path, _expected_user_version=_expected_user_version)
     sql = _sql()
@@ -64,7 +64,10 @@ def validate_s5c_timer_state_db(path: str | Path, *, _expected_user_version: int
 def validate_s5c_domain_state_db(path: str | Path) -> None:
     """Domain stores accept exactly the known base or validated timer extension."""
     path = Path(path)
-    if _version(path) == 52:
+    if _version(path) == 53:
+        from deskpet.memory.procedure_schema import validate_procedure_state_db
+        validate_procedure_state_db(path)
+    elif _version(path) == 52:
         from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
         validate_s5c_terminal_state_db(path)
     elif _version(path) == 51:
@@ -75,7 +78,7 @@ def validate_s5c_domain_state_db(path: str | Path) -> None:
 
 def validate_s5c_timer_runtime_state_db(path: str | Path) -> None:
     """A timer requires the real time journal, including in the typed successor."""
-    if _version(path) not in (51, 52):
+    if _version(path) not in (51, 52, 53):
         raise schema.HumanMemoryProgramEpochError("s5c_timer_schema_required")
     validate_s5c_domain_state_db(path)
 

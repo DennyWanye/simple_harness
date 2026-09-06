@@ -34,6 +34,10 @@ def compose_human_memory_runtime(
     from deskpet.operation_audit.human_access import HumanAuditAccess
 
     audit_access = HumanAuditAccess(state_db_path, clock=clock)
+    from deskpet.memory.procedure_use_store import ProcedureUseStore
+    from deskpet.memory.procedure_runtime import ProcedureRuntime
+    procedure_store = ProcedureUseStore(state_db_path,
+        principal=principal if principal is not None else local_memory_principal(), clock=clock)
     authority = SemanticCorrectionAuthority(
         state_db_path,
         manager_getter=lambda: runtime.manager(),
@@ -58,8 +62,10 @@ def compose_human_memory_runtime(
         conversation_evidence_authority=PrimaryConversationAuthority(
             state_db_path, subject=(principal if principal is not None else local_memory_principal()).actor_id,
         ),
+        procedure_observation_authority=procedure_store,
         backend_factory=backend_factory,
         principal=principal,
         clock=clock,
     )
+    runtime.procedure_runtime = ProcedureRuntime(store=procedure_store, runtime_getter=lambda: runtime)
     return runtime

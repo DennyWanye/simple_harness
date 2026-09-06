@@ -32,7 +32,7 @@ def _sql() -> str:
 
 def validate_s5c_state_db(path: Path, *, _expected_user_version: int = 50) -> None:
     """Verify the base chain, v50 checksum/DDL and registered recovery fences."""
-    if _expected_user_version not in (50, 51, 52):
+    if _expected_user_version not in (50, 51, 52, 53):
         raise schema.HumanMemoryProgramEpochError("s5c_schema_invalid")
     for validator in (
         schema._validate_human_memory_program_marker,
