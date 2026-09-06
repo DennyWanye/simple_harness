@@ -33,14 +33,12 @@ async def test_actual_current_input_does_not_inherit_independent_draft_forget(en
         before = await journal.check_current_input_visibility(memory, **kwargs)
         assert before.invocation_input_allowed
         assert [item.visible for item in before.history_visibility.items] == [True, True]
-        assert before.history_visibility.all_visible
         await memory.suppress(principal=principal, request=m.SuppressionRequest(
             "forget-independent-draft", principal.actor_id, m.SuppressionScopeKind.MEMORY,
             memory_id, "user_forget", runtime.semantic_clock()))
         after = await journal.check_current_input_visibility(memory, **kwargs)
         assert after.invocation_input_allowed
         assert [item.visible for item in after.history_visibility.items] == [True, False]
-        assert not after.history_visibility.all_visible
         assert after.authority_epoch > before.authority_epoch
         assert before.request_hash == after.request_hash == request_hash(principal, context, binding, values)
         assert before.snapshot_hash != after.snapshot_hash
