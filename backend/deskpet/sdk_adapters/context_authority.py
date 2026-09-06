@@ -1147,13 +1147,16 @@ class ProductRunContextAuthority:
         if self._closure_reader is not None:
             closure_message = await self._closure_reader(request.run_id)
         source_messages = tuple(context.messages)
+        exact_sources = False
         if self._current_tool_projector is not None:
-            source_messages = await self._current_tool_projector(request, source_messages)
+            projected = await self._current_tool_projector(request, source_messages)
+            if projected is not None:
+                source_messages, exact_sources = projected, True
             if ports.context.load(request.run_id).revision != request.prior_context_revision:
                 raise SnapshotContractConflict("sdk_context_authority_revision_drift")
         messages, assembly_facts = _plan_turn_messages(
             source_messages, window_tokens, extra_protected=(inbox_message, closure_message),
-            exact_tool_sources=self._current_tool_projector is not None,
+            exact_tool_sources=exact_sources,
         )
         probe = ProviderRequest(
             RequestId("hash-only"),

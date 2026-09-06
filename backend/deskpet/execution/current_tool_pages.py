@@ -195,11 +195,21 @@ class CurrentToolProjector:
             rows = await (await db.execute("SELECT r.host_run_id,r.subject FROM foreground_runs r "
                 "JOIN foreground_run_sdk_bindings b USING(host_run_id) "
                 "WHERE b.sdk_run_id=?", (run_id,))).fetchall()
-        _require(len(rows) == 1, "host_run_missing")
-        run = rows[0]
         start, _ = stack.read_primary_dependency_facts(run_id)
-        current_text = start.get("input", {}).get("text")
-        _require(isinstance(current_text, str) and current_text, "current_input_missing")
+        admission = start.get("input", {})
+        metadata = admission.get("context_metadata", {})
+        if not rows and "visibility_dependencies" not in metadata:
+            # This authority is also composed for non-primary SDK callers.
+            # A trusted Host lookup plus absence of primary admission selects
+            # their existing planner, not a fabricated primary source grant.
+            return None
+        _require(len(rows) == 1 and metadata.get("root_run_id") == rows[0]["host_run_id"], "host_run_missing")
+        run = rows[0]
+        current_text = admission.get("input", {}).get("text")
+        admitted_users = [m.get("content") for m in admission.get("messages", ()) if m.get("role") == "user"]
+        _require(isinstance(current_text, str) and current_text and admitted_users
+                 and admitted_users[-1] == current_text
+                 and admission.get("turn", {}).get("text") == current_text, "current_input_missing")
         transcript = project_primary_transcript(messages, current_text=current_text)
         sources = await stack.read_primary_tool_causal_sources(db_path=self.path, host_run_id=run["host_run_id"],
             run_id=run_id, subject=run["subject"], current_text=current_text, messages=transcript)
