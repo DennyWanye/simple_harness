@@ -5,6 +5,14 @@
 最后更新：2026-09-06。authenticated control配置经queue幂等绑定进入turn/run解析器；schema48及8个契约测试函数已写，未测试、未合并，完整非SELF/输入许可/外发仍待后继。
 [源码复核接口和边界](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
 
+## 2026-09-06 Memory 0.6.14隔离Host组合
+
+最后更新：2026-09-06。固定ec046e84接入受众绑定候选，独立6.3MiB环境H073/M0614/S0313全部SDK成员与vendor一致；必要组合32项及2个subtests通过，峰399MiB/22.247秒，进程清空。旧M0613环境保留。SELF与不同最终受众默认拒绝；协作者语义配对不构成外部原始历史授权。该结果不代表实际Provider/native或401/240完成。用户主树未切换，原计划继续。
+[安装身份、失败保留、命令和证据](../plans/2026-09-06-disclosure-audience/COMBINED.md)。
+
+
+2026-09-06主复核：clock固定e32a2542纳入cbf99364，7个源码/证据hash一致；受影响实际memory job/semantic correction/history组合11项通过、进程已清理。原6项clock独立保留；[组合复核及限制](../plans/2026-09-06-corpus-clock/主代理复核.md)。以下待整合表述保留为当时历史。
+
 ## 2026-09-06 Host业务clock局部验收
 
 最后更新：2026-09-06。可信clock透传到runtime与公开SDK，进程内lease使用monotonic；6项真实SDK空库/clock契约通过，待主复核整合。未完成240质量或受众用途接线。

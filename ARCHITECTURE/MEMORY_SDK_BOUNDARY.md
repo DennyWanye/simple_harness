@@ -5,6 +5,14 @@
 最后更新：2026-09-06。`feat/host-trusted-disclosure` / base `cbf99364`新增authenticated control配置、schema48持久policy及queue幂等绑定；Context/scope/出站依赖检查按turn/run回读。原SELF组合保留；非SELF配置目前在生产enqueue拒绝，不作为SDK许可。源码及8个契约测试函数已写，未测试、未合并；当前输入许可与完整外发并发撤权仍未接通。
 [接口、schema、13源指纹及待验收范围](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
 
+## 2026-09-06 Memory 0.6.14隔离Host组合
+
+最后更新：2026-09-06。固定ec046e84接入受众绑定候选，独立6.3MiB环境H073/M0614/S0313全部SDK成员与vendor一致；必要组合32项及2个subtests通过，峰399MiB/22.247秒，进程清空。旧M0613环境保留。SELF与不同最终受众默认拒绝；协作者语义配对不构成外部原始历史授权。该结果不代表实际Provider/native或401/240完成。用户主树未切换，原计划继续。
+[安装身份、失败保留、命令和证据](../plans/2026-09-06-disclosure-audience/COMBINED.md)。
+
+
+2026-09-06主复核：clock固定e32a2542纳入cbf99364，7个源码/证据hash一致；受影响实际memory job/semantic correction/history组合11项通过、进程已清理。原6项clock独立保留；[组合复核及限制](../plans/2026-09-06-corpus-clock/主代理复核.md)。以下待整合表述保留为当时历史。
+
 ## 2026-09-06 Host业务clock局部透传
 
 最后更新：2026-09-06。独立 `feat/corpus-runtime-clock` / base `b34b32c3`：composition可信clock经HumanMemoryV7Runtime传至公开SDK builder和默认typed recall；默认仍为time.time，进程内analysis lease采用monotonic。真实公开SDK空库6项契约通过，包括独立history.checked_at、原C04两个时点、重开及内部now隔离；峰值90MiB，进程组已清空。未运行有效seed时间筛选、Provider/native或240质量评估，受众用途接线未完成，待主复核整合。
