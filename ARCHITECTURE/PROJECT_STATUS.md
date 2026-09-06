@@ -1,3 +1,26 @@
+<!-- 最后更新：2026-09-06 -->
+
+C01-06 history遗忘因果oracle已补：同binding/disclosure在MEMORY-only suppression
+前visible、后不可见，定向1PASS，PG8072清空；不新增unique语料计数。
+[结果](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
+C01公共seed后继：18个新case完整记录atomic创建/actualID与内容hash回读通过，
+C01-06真实REVISE同ID1→2/持久fixtureauthority/reopen/过期已消费replay及
+MEMORY-only suppression→graph/history不可见通过。旧C01-10/graph未重跑。
+20个C01都有实现路径；不称240质量/模型或runtime已完成，运行前seed/history与
+额外analysis隔离仍待接。无SDK改动。[批次与限制](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+<!-- 最后更新：2026-09-06 -->
+
+公共seed隔离叶：真实Host S1→Memory public ingestion/mutation/receipt链实现
+C01-10单记录幂等/重开；独立fixture以同atomic plan建claim+Procedure+applies_to，
+公开graph回读2nodes1edge且relation不作node。3unique控制分批绿，原入口红保留。
+非LLM提取、非240质量/真实runtime/native通过，其他样例仍NOT_RUN。
+[契约](../plans/2026-09-06-corpus-public-seed/CONTRACT.md) ·
+[结果](../plans/2026-09-06-corpus-public-seed/RESULTS.md)。
+
 <!-- Updated 2026-09-06 -->
 
 2026-09-06：用户明确将“发布成功后提醒”缺失的实际发布来源接入及对应端到端验收延期为F01。本次不继续推进、不计为通过，其余当前交付继续；已有事件协议层证据不替代真实发布。[后续待办](../plans/2026-09-06-typed-use-primary/FOLLOWUPS.md)。
