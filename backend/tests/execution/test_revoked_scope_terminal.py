@@ -259,6 +259,7 @@ async def test_revoked_unclosed_scope_real_fallback(tmp_path, monkeypatch, crash
             current = await holder.queue.current_snapshot(holder.runtime.subject)
             assert current.sdk_run_id != holder.first_run
             assert "EXACT_PAGE_TAIL" not in str(request.messages)
+            assert "Create a project and write its file" not in str(request.messages)
             next_requests.append(request)
             if len(next_requests) == 1:
                 response = ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Independent input."),
