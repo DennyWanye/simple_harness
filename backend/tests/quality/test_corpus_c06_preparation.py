@@ -18,7 +18,7 @@ CLOCK = '2026-09-06T10:00:00+08:00'
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('case_id', tuple(SPECS))
+@pytest.mark.parametrize('case_id', ('C06-02', 'C06-03', 'C06-04'))
 async def test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_path, case_id):
     batch = compile_c06_setup(case_id, SETUPS[case_id][0], scenario_clock=CLOCK)
     host = await setup(tmp_path/'host')
@@ -82,3 +82,13 @@ def test_c06_exact_setup_and_twenty_case_denominator():
     for case_id in SETUPS.keys()-SPECS.keys():
         with pytest.raises(ValueError, match='corpus_c06_setup_mapping_pending'):
             compile_c06_setup(case_id, SETUPS[case_id][0], scenario_clock=CLOCK)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('case_id', (
+    'C06-06', 'C06-08', 'C06-09', 'C06-11', 'C06-12', 'C06-15', 'C06-16',
+))
+async def test_public_c06_next_scalar_procedure_sources(tmp_path, case_id):
+    # Reuse the real public chain and all original source/owner/reopen oracles.
+    # A separate selector keeps the first fixed three controls out of this batch.
+    await test_public_c06_mixed_job_exact_source_reopen_and_foreign_owner(tmp_path, case_id)

@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C06后继同构setup新增06/08/09/11/12/15/16七条，仅SPECS映射与独立控制selector；复用32eb已审builder/authority，首3条selector保持固定。20原setup/hash未改，10条具备准备源码，全部新控NOT_RUN，非跨Task/模型质量结论；其余10条约束仍明确保留。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
 最后更新：2026-09-07。C09编译+19标量公开修订准备首次20PASS10.59s：真实job/原新receipt/同ID rev2、退役不入当前召回、16不变字段r1及20原子双修订。07回填单位已按原setup修正，13 Procedure与正式dispatcher仍待；不计模型质量。PG87580自然清空。[结果](../plans/2026-09-07-corpus-c09-prepare/RESULTS.md)。
 
 最后更新：2026-09-07。C05剩余16格已逐项核对；07/08新增正式状态来源组源码：首轮真实C admission/initial receipt、确认后新Run、complete档案原状态/terminal复核。3新actualmain控制均NOT_RUN，由主完整H0710/M619 target统一执行；原04/09/14/20与empty绿不重跑。另14格仍有限source/缺口，排名、首命名root、revision等不冒完成。[契约与清单](../plans/2026-09-07-corpus-c05-remaining/CONTRACT.md)。

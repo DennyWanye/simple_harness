@@ -2,7 +2,7 @@
 
 Base c5b55387; existing tree, feat/corpus-c06-preparation. No SDK modification,
 scoring/session change, tests, model calls, installation or resource work.
-All new controls **NOT_RUN**. This is not a 240 quality run.
+First source 32eb61f7 received Dirac limited source ACCEPT. All controls **NOT_RUN** in this tree; main owns execution. This is not a 240 quality run.
 
 ## Source and minimal vertical group
 
@@ -49,8 +49,15 @@ preparation proves cross-scope retrieval, non-SELF permission or quality.
 
 - 02/03/04: executable preparation source and three parameterized public controls;
   source/reopen/foreign-owner/same-text-other-S1 checks. NOT_RUN.
-- 05–16: next explicit semantic/procedure mappings; preserve description-only,
-  confirmation and personal/public restrictions. No executable mapping yet.
+- 06/08/09/11/12/15/16: next homogeneous group now mapped with the same builder,
+  authority and public source/readback chain. Seven new controls NOT_RUN. Dates,
+  noise constraints, Python preference, source-link preservation, centimeters
+  and ten-minute maximum are authored scalar values, not current-input answers.
+- 05/07/10/13/14: still unmapped in this leaf. Next mapping must retain respectively
+  description-only/no execution; preview/confirmation before execution; source
+  authorization and offline-copy verification; candidates-only/no deletion;
+  private-field review and later user sending confirmation. These constraints
+  must not disappear when encoded into Procedure conditions/steps.
 - 01: actual old Task source and new Task boundary required; standalone S1 cannot
   masquerade as that provenance.
 - 17: additional real public Episode, not a dropped distractor. Common synthetic
@@ -71,3 +78,16 @@ No broad fallback, fake receipt, private SQL or weakened disclosure authority.
 Use current installed target; source stage has executed none of them. No C01–C05
 reruns required. Foreign-owner control exercises real public Manager storage,
 but is explicitly not a non-SELF physical Provider disclosure test.
+
+## Second source delta: seven homogeneous cases
+
+Only `SPECS` data, a separate test selector and documentation change. Original
+32eb preparation/executor logic stays untouched. Twenty setup bytes and hashes
+stay unchanged. Mapped source count is now 10/20, **not** ten verified runtimes
+or quality passes. Remaining ten are 01/05/07/10/13/14/17/18/19/20.
+
+Main-only new selector:
+`backend/tests/quality/test_corpus_c06_preparation.py::test_public_c06_next_scalar_procedure_sources`
+(seven parameters, all NOT_RUN). It reuses the original public chain assertions;
+original 02/03/04 are now explicitly enumerated, so their selector does not
+silently expand. No new environment, SDK, session hook or framework.
