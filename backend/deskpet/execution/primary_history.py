@@ -102,7 +102,7 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
                 raise RuntimeError("primary_runtime_terminal_conflict")
             marker = payload.get("message_source_contract")
             if marker is not None:
-                if marker not in {"primary-message-v1", "primary-message-v2"}:
+                if marker not in {"primary-message-v1", "primary-message-v2", "primary-message-v3"}:
                     raise RuntimeError("primary_message_contract_unknown")
                 from deskpet.memory.primary_message_evidence import verify_new_primary_message_evidence_tx
                 prior_envelope, prior_receipt = evidence_pair(subject, sdk_run_id, payload, float(row["occurred_at"]))
@@ -128,6 +128,11 @@ async def record_terminal_observation(db_path, *, host_run_id, sdk_run_id, subje
         if terminal.value == "COMPLETED" and representable(messages, tool_causal_sources):
             payload.update(message_source_contract="primary-message-v2",
                            tool_causal_sources=list(tool_causal_sources))
+            cursor = await db.execute("PRAGMA user_version")
+            if (await cursor.fetchone())[0] == 53:
+                from deskpet.memory.primary_message_v3 import CONTRACT, read_scope_sources_tx
+                scopes = await read_scope_sources_tx(db, subject=subject, sdk_run_id=sdk_run_id, facts=tool_causal_sources)
+                payload.update(message_source_contract=CONTRACT, tool_scope_sources=scopes)
         reject_private_payload(payload)
         envelope, receipt = evidence_pair(subject, sdk_run_id, payload, float(sdk_evidence.occurred_at))
         committed = await HumanMemoryProgramStore(db_path).append_evidence_tx(

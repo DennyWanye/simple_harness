@@ -102,8 +102,12 @@ async def _prepare_message_tx(
     messages = payload["messages"]
     if payload["terminal_state"] != "COMPLETED":
         return PrimaryMessageProduction((), "conversation_group_not_complete")
-    if payload.get("message_source_contract") == "primary-message-v2":
-        from deskpet.memory.primary_message_v2 import pairs
+    if payload.get("message_source_contract") in {"primary-message-v2", "primary-message-v3"}:
+        from deskpet.memory import primary_message_v2, primary_message_v3
+        producer = primary_message_v3 if payload["message_source_contract"] == primary_message_v3.CONTRACT else primary_message_v2
+        if producer is primary_message_v3:
+            await producer.verify_scope_sources_tx(db, original)
+        pairs = producer.pairs
         try:
             dependencies, _ = _dependencies(payload.get("visibility_dependencies"))
         except ValueError:
@@ -156,8 +160,10 @@ async def verify_new_primary_message_evidence_tx(
     if isinstance(prepared, PrimaryMessageProduction):
         return prepared
     row, user, _, _ = prepared
-    if terminal_envelope.sanitized_payload.get("message_source_contract") == "primary-message-v2":
-        from deskpet.memory.primary_message_v2 import verify
+    if terminal_envelope.sanitized_payload.get("message_source_contract") in {"primary-message-v2", "primary-message-v3"}:
+        from deskpet.memory import primary_message_v2, primary_message_v3
+        producer = primary_message_v3 if terminal_envelope.sanitized_payload["message_source_contract"] == primary_message_v3.CONTRACT else primary_message_v2
+        verify = producer.verify
         found = await verify(db, primary_ref=row["primary_conversation_id"], host_run_id=host_run_id,
                              terminal=terminal_envelope, terminal_receipt=terminal_receipt, user=user)
         return PrimaryMessageProduction((user.evidence_id, *(source.evidence_id for source, _ in found)))

@@ -192,7 +192,8 @@ class PrimaryConversationAuthority:
         if user.envelope_hash != run["evidence_hash"] or user.source_kind.value != "user_message":
             raise ConversationRegistrationUnavailable("conversation_user_binding_mismatch")
         messages = payload["messages"]
-        v2 = payload.get("message_source_contract") == "primary-message-v2"
+        v3 = payload.get("message_source_contract") == "primary-message-v3"
+        v2 = v3 or payload.get("message_source_contract") == "primary-message-v2"
         if v2:
             from deskpet.memory.primary_message_v2 import representable
             if not representable(messages, payload.get("tool_causal_sources")):
@@ -223,7 +224,8 @@ class PrimaryConversationAuthority:
         from simple_harness_memory.core.jobs import AnalysisLineage
         user_lineage = AnalysisLineage.from_json(json.loads(outbox["analysis_lineage_json"]))
         if v2:
-            from deskpet.memory.primary_message_v2 import verify
+            from deskpet.memory import primary_message_v2, primary_message_v3
+            verify = primary_message_v3.verify if v3 else primary_message_v2.verify
             children = await verify(db, primary_ref=self.primary_ref, host_run_id=host_run_id,
                                    terminal=terminal, terminal_receipt=terminal_receipt, user=user)
         else:
@@ -243,10 +245,12 @@ class PrimaryConversationAuthority:
                        "pointer": pointer, "role": messages[i]["role"], "ordinal": i + 1}
                       for i, (env, _, pointer) in enumerate(sources)],
         }})
-        return ConversationGroup(host_run_id, tuple(self._registration(run, source, i + 1, manifest, len(sources))
+        scope_map = {item["item_ordinal"]: item["task_scope_id"] for item in payload.get("tool_scope_sources", ())} if v3 else {}
+        return ConversationGroup(host_run_id, tuple(self._registration(run, source, i + 1, manifest, len(sources),
+            task_scope_id=scope_map.get(i + 1, run["task_scope_id"]))
             for i, source in enumerate(sources)), user_lineage, (terminal, terminal_receipt))
 
-    def _registration(self, run, source, ordinal, manifest, group_count=2):
+    def _registration(self, run, source, ordinal, manifest, group_count=2, *, task_scope_id=None):
         envelope, receipt, pointer = source
         kind = envelope.source_kind.value
         role, actor, provenance = {
@@ -279,7 +283,7 @@ class PrimaryConversationAuthority:
             primary_conversation_id=self.primary_ref, causal_group_id=run["host_run_id"],
             causal_group_sequence=run["enqueue_sequence"], item_ordinal=ordinal, group_item_count=group_count,
             ordered_group_manifest_hash=manifest, role=role, occurred_at=receipt.admitted_at,
-            task_scope_id=run["task_scope_id"], tool_causal_link=link, entities=(),
+            task_scope_id=task_scope_id, tool_causal_link=link, entities=(),
         )
         metadata = h.authorize_conversation_public_text(metadata, h.AdmittedEvidenceAuthority(envelope, receipt, item))
         metadata_receipt = h.ConversationEvidenceMetadataReceipt(
