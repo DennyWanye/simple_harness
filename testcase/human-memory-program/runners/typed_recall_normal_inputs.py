@@ -55,7 +55,8 @@ def lifecycle_path(recipe):
     paths={
         'episode':{'amended':['active','amended'],'disputed':['active','disputed'],'superseded':['active','superseded']},
         'semantic':{'superseded':['active','superseded']},
-        'procedure':{s:['active',s] for s in ('reinforced','revised','inapplicable','superseded')},
+        'procedure':{**{s:['active',s] for s in ('reinforced','revised','inapplicable','superseded')},
+            'eligible':['draft','eligible']},
         'prospective':{**{s:['pending',s] for s in ('triggered','rescheduled','cancelled','expired')},
             'in_progress':['pending','triggered','in_progress'],'completed':['pending','triggered','completed']}}
     return [{**copy.deepcopy(seed),'state':s} for s in paths[kind].get(state,[state])]
