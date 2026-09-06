@@ -100,7 +100,7 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
             assert not report['confirmed'] and report['applied'] == ()
             assert len(report['rejected_applications']) == 1
             assert report['rejected_applications'][0].receipt.validation_status.value == 'rejected'
-            assert await manager.get_twin_graph_view(principal=principal) == graph
+            assert await manager.get_twin_graph_view(principal=principal) == replace(graph, generated_at=now[0])
             return
         assert report['confirmed']
         assert [o.value for o in report['outcomes']] == ['applied', 'applied']
@@ -117,7 +117,7 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
         lineage = seed['source_group'].user_analysis_lineage
         assert (user.request.provider_id, user.request.model_id, user.request.model_config_hash) == (
             lineage.provider_id, lineage.model_id, lineage.model_config_hash)
-        assert await manager.get_twin_graph_view(principal=principal) == graph
+        assert await manager.get_twin_graph_view(principal=principal) == replace(graph, generated_at=now[0])
         assert await PrimaryConversationAuthority(scoring, subject=auth.subject).completed_run_ids() == ()
     finally:
         await manager.close()
@@ -129,7 +129,7 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
             prior_applied=proofs, **args)
         assert restored['confirmed'] and restored['outcomes'] == ()
         assert restored['fixture_executions'] == 0
-        assert await reopened.get_twin_graph_view(principal=principal) == graph
+        assert await reopened.get_twin_graph_view(principal=principal) == replace(graph, generated_at=now[0])
         assert len(provider.requests) == 1
     finally:
         await reopened.close()
@@ -157,7 +157,7 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
                 await drain_inference_setup(authority=authority, manager=reopened,
                     prior_applied=(changed,), **args)
             assert authority.executor.executions == 0
-            assert await reopened.get_twin_graph_view(principal=principal) == graph
+            assert await reopened.get_twin_graph_view(principal=principal) == replace(graph, generated_at=now[0])
         finally:
             await reopened.close()
     authority = InferenceFixtureAuthority()
