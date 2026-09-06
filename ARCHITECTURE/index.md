@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06：大结果边界增量：8k小参数调用的1MiB精确分页通过（最大物理请求19,219字节）；4k预算拒绝后的真实ClosureFallback收尾/冷重开零重发负控通过，保留FAILED与Scope pending，不报4k分页成功。大型assistant参数原4k/8k超限失败保留，未提高预算或复跑32k/8k绿；进程组均清空。[结果与失败边界](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
 2026-09-06：公开SDK语料准备已合入，C01全部20条setup按各批验证，含同ID修订、遗忘前后可见性及独立2节点1条APPLIES_TO图谱fixture；没有真实模型评分，不计240完成。[结果与边界](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
 
 2026-09-06：当前运行新增1MiB边界控制1PASS/6.32s，两个实际文件结果均超过1MiB，8次物理请求最大28,209字节，精确尾页及重开依赖通过。仅32k窗口/fixture producer/MockTransport，不代表4k8k或原生；PG7739清空。[结果](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
