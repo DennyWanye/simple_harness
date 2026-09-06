@@ -70,11 +70,16 @@ async def verify_pending_call(*, stack, ingress, sdk_run_id, decision_id, reques
         raise CorpusApprovalBlocked('c05_pending_provider_response_missing')
     provider = providers[0]
     response_json = provider['response_json']
+    # corpus_trace.wire serializes the public RequestId dataclass as {value}.
+    request_identity = provider['request_id']
+    if not isinstance(request_identity, dict) or set(request_identity) != {'value'}:
+        raise CorpusApprovalBlocked('c05_pending_provider_request_identity_invalid')
+    provider_request_id = request_identity['value']
     if (audit_hash(response_json) != proposal['source_hash']
-            or audit_reference('request', provider['request_id']) != proposal['request_id']):
+            or audit_reference('request', provider_request_id) != proposal['request_id']):
         raise CorpusApprovalBlocked('c05_pending_response_binding_differs')
     response = provider_response_from_json(response_json)
-    if response.request_id.value != provider['request_id']:
+    if response.request_id.value != provider_request_id:
         raise CorpusApprovalBlocked('c05_pending_response_request_differs')
     ordinal = fact['call_ordinal']
     if not 0 <= ordinal < len(response.tool_calls):
