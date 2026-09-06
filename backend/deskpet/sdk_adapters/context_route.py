@@ -51,6 +51,12 @@ ROUTES = (
 _MAX_TEXT = 2048
 _AUDIT_CANCEL_SECONDS = 2.0
 _LOG = logging.getLogger(__name__)
+_WORKSPACE_REUSE_NEW_RUN = (
+    "This Run is already bound to a task. End this turn without switching scopes. "
+    "In the next Run, use task_scope_search to obtain the completed task's current source_hash, "
+    "then create_new with reuse_workspace_of before binding any other task. "
+    "This request did not reopen the completed task or edit its files."
+)
 
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -332,7 +338,8 @@ class ContextRouteToolService:
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
-                message=str(exc)[:512],
+                message=(_WORKSPACE_REUSE_NEW_RUN if code == "context_route_workspace_reuse_requires_new_run"
+                         else str(exc)[:512]),
             )
 
     async def _reject(
@@ -573,10 +580,7 @@ class ContextRouteToolService:
             if bound is not None or envelope.task_scope_id is not None:
                 return await self._reject(run_id, raw_call_id, effect_id, proposal,
                     "context_route_workspace_reuse_requires_new_run",
-                    message="This Run is already bound to a task. End this turn without switching scopes. "
-                            "In the next Run, use task_scope_search to obtain the completed task's current source_hash, "
-                            "then create_new with reuse_workspace_of before binding any other task. "
-                            "The completed task is not reopened and its files have not been edited.")
+                    message=_WORKSPACE_REUSE_NEW_RUN)
             from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
             continuation = await resolve_workspace_continuation(
                 service=service, binding_store=self._binding_store_factory(),
@@ -608,8 +612,8 @@ class ContextRouteToolService:
                 "context_route_workspace_root_not_configured",
                 task_scope_id=scope,
             )
-        # configured_root is an authority DTO, not a path string. Each task
-        # gets a stable direct child; title/model text never selects a root.
+        # Normal creation gets its own stable direct child. Explicit reuse
+        # selects the exact verified old root; model text never supplies a path.
         task_root = (Path(root.canonical_path) / f"task-{scope}" if continuation is None
                      else Path(continuation.root.canonical_path))
         outcome = await service.append_binding(AppendBindingRequest(
