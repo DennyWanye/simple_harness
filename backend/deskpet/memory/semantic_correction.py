@@ -103,7 +103,7 @@ class SemanticCorrectionAuthority:
             raise ValueError('analysis_observation_identity_invalid')
         return thaw_json(envelope.sanitized_payload)
 
-    async def _save(self, identity, request, payload):
+    async def _save(self, identity, request, payload, *, db=None):
         from simple_harness import (SanitizedEvidenceEnvelope, SanitizedEvidenceReceipt,
             EvidenceSourceKind, EvidenceReasonCode)
         digest = canonical_hash(payload)
@@ -118,7 +118,17 @@ class SemanticCorrectionAuthority:
             reason_codes=(EvidenceReasonCode.SANITIZED_AND_ACCEPTED,),
             disclosure_context=request.disclosure_context, evidence_refs=request.ordered_evidence_refs,
             admitted_at=float(self._clock()))
-        await self._store.append_evidence(envelope, receipt)
+        if db is None:
+            await self._store.append_evidence(envelope, receipt)
+        else:
+            cursor = await db.execute("SELECT primary_conversation_id FROM human_memory_primary_conversations "
+                                      "WHERE subject=? AND writable=1", (request.subject,))
+            primary = await cursor.fetchone()
+            await cursor.close()
+            if primary is None:
+                raise ValueError('analysis_primary_missing')
+            await self._store.append_evidence_tx(db, envelope, receipt,
+                primary_conversation_id=primary['primary_conversation_id'], committed_at=float(self._clock()))
 
     async def prepare(self, request, items):
         from simple_harness import (RecallContext, RecallPlan, RecallBudget, LongTermMemoryType,
@@ -188,9 +198,11 @@ class SemanticCorrectionAuthority:
         await self._save(identity, request, snapshot)
         return snapshot
 
-    async def bind_attempt(self, request, row, snapshot, provider_request):
-        # Persist before the existing attempt reserve/handoff. An orphan input
-        # observation is not a Provider-send fact and grants no mutation.
+    async def bind_attempt(self, request, row, snapshot, provider_request, *, db):
+        # This observation and the real attempt reserve commit together. It is
+        # still input lineage, not a Provider-send fact or a mutation grant.
+        from simple_harness.execution.provider_invocations import provider_request_json
+        from deskpet.memory.analysis_request_guard import read_observation_tx, source_policy_snapshot_tx
         identity = stable_id('analysis-attempt-input', row['attempt_id'])
         content = dict(request_id=provider_request.request_id.value,
             messages=[{'role':m.role.value, 'content':thaw_json(m.content)} for m in provider_request.messages],
@@ -200,9 +212,14 @@ class SemanticCorrectionAuthority:
             evidence_set_key=snapshot['evidence_set_key'],
             snapshot_id=stable_id('analysis-candidates', snapshot['evidence_set_key']),
             snapshot_hash=canonical_hash(snapshot), input_hash=canonical_hash(content), input=content)
-        old = await self._load(identity)
+        full = provider_request_json(provider_request)
+        body.update(physical_guard_version=1, analysis_request=request.to_json(),
+            provider_request=full, provider_request_hash=canonical_hash(full),
+            source_policy=await source_policy_snapshot_tx(db, request))
+        prior = await read_observation_tx(db, identity=identity, subject=request.subject)
+        old = None if prior is None else prior[1]
         if old is None:
-            await self._save(identity, request, body)
+            await self._save(identity, request, body, db=db)
         elif old != body:
             raise ValueError('analysis_attempt_input_conflict')
 
