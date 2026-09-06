@@ -94,43 +94,45 @@ def configure_process(directory, host_root):
     return key, base_url
 
 
-async def collect_turn(main, service, subject, queued, text):
+async def collect_turn(main, service, subject, queued, text, *, directory):
     """Host DB provides identity only; terminal/proposals come from public SDK."""
     with sqlite3.connect(f"file:{main._state_db_path}?mode=ro", uri=True) as db:
         db.row_factory = sqlite3.Row
         rows = db.execute("SELECT r.host_run_id,b.sdk_run_id FROM foreground_runs r "
             "JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id "
             "WHERE r.turn_id=? AND r.subject=?", (queued["turn_ref"], subject)).fetchall()
-        route_rows = []
-        if len(rows) == 1:
-            route_rows = db.execute("SELECT * FROM context_route_tool_invocations "
-                "WHERE sdk_run_id=? ORDER BY recorded_at,effect_id LIMIT 257",
-                (rows[0]["sdk_run_id"],)).fetchall()
     if len(rows) != 1:
         raise ValueError("corpus_exact_run_binding_missing_or_ambiguous")
     row = dict(rows[0])
-    stack = main._sdk_runtime_stack
-    trace = stack.read_corpus_scoring_trace(row["sdk_run_id"])
-    if len(route_rows) > 256:
-        raise ValueError("corpus_route_trace_limit")
-    from deskpet.sdk_adapters.context_authority import canonical_sha256
-    routes = []
-    for route_row in route_rows:
-        route = dict(route_row)
-        detail = json.loads(route["detail_json"])
-        content = dict(decision_id=route["decision_id"], detail=detail,
-            effect_id=route["effect_id"], proposal_hash=route["proposal_hash"],
-            raw_call_id=route["raw_call_id"], sdk_run_id=row["sdk_run_id"], verdict=route["verdict"])
-        if canonical_sha256(content) != route["invocation_hash"]:
-            raise ValueError("corpus_route_trace_hash")
-        routes.append({**content, "invocation_hash": route["invocation_hash"]})
-    _, effects = stack.read_primary_dependency_facts(row["sdk_run_id"],
-        effect_ids=tuple(r["effect_id"] for r in routes))
-    # Even a failed Run retains the actual public causal transcript if available.
-    transcript = stack.read_primary_run_messages(row["sdk_run_id"], current_text=text)
-    return {**row, "trace": trace, "transcript": wire(transcript),
-        "route_audit": routes, "route_effects": wire(effects),
-        "queue_snapshot": await service.queue_snapshot()}
+    write_result(directory / "observation-run-identity.json", row)
+
+    def route_reader():
+        from deskpet.sdk_adapters.context_authority import canonical_sha256
+        with sqlite3.connect(f"file:{main._state_db_path}?mode=ro", uri=True) as db:
+            db.row_factory = sqlite3.Row
+            route_rows = db.execute("SELECT * FROM context_route_tool_invocations "
+                "WHERE sdk_run_id=? ORDER BY recorded_at,effect_id LIMIT 257",
+                (row["sdk_run_id"],)).fetchall()
+        if len(route_rows) > 256:
+            raise ValueError("corpus_route_trace_limit")
+        routes = []
+        for route_row in route_rows:
+            route = dict(route_row)
+            detail = json.loads(route["detail_json"])
+            content = dict(decision_id=route["decision_id"], detail=detail,
+                effect_id=route["effect_id"], proposal_hash=route["proposal_hash"],
+                raw_call_id=route["raw_call_id"], sdk_run_id=row["sdk_run_id"], verdict=route["verdict"])
+            if canonical_sha256(content) != route["invocation_hash"]:
+                raise ValueError("corpus_route_trace_hash")
+            routes.append({**content, "invocation_hash": route["invocation_hash"]})
+        return routes
+
+    from deskpet.quality.corpus_trace import collect_bound_observations
+    observations = await collect_bound_observations(stack=main._sdk_runtime_stack,
+        run_id=row["sdk_run_id"], text=text, route_reader=route_reader,
+        queue_reader=service.queue_snapshot,
+        persist=lambda name, value: write_result(directory / ("observation-" + name + ".json"), value))
+    return {**row, **observations}
 
 
 async def run(directory, host_root, key, base_url):
@@ -244,8 +246,10 @@ async def run(directory, host_root, key, base_url):
             outcome["completed_group"] = wire(executed.completed_group)
             outcome["stage"] = "post_terminal_public_trace"
             outcome["actual_completed_group_available"] = True
-            outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt, text))
-            outcome["execution_status"] = "COMPLETED"
+            outcome.update(await collect_turn(main, service, auth.subject, executed.queue_receipt,
+                text, directory=directory))
+            outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
+                or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
         except Exception as exc:
             outcome["execution_status"] = "OBSERVATION_FAILED" if outcome.get(
                 "actual_completed_group_available") else "EXECUTION_FAILED"
@@ -256,7 +260,11 @@ async def run(directory, host_root, key, base_url):
             if len(turns) == 1 and turns[0]["delivery_key"] == "scoring-turn-1":
                 outcome["queue_snapshot"] = turns
                 try:
-                    outcome.update(await collect_turn(main, service, auth.subject, turns[0], text))
+                    # Do not repeat collection after a successful group: every
+                    # observation has its own durable file and failure state.
+                    if not outcome.get("actual_completed_group_available"):
+                        outcome.update(await collect_turn(main, service, auth.subject, turns[0],
+                            text, directory=directory))
                 except Exception as trace_error:
                     outcome["trace_error_type"] = type(trace_error).__name__
     except Exception as exc:

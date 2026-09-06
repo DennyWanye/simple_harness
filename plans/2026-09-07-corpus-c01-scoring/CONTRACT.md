@@ -39,3 +39,9 @@ Dirac先核：生产初始化没有假authorities；参数未换预算；worker�
 ## 原Procedure剩余项
 
 wholeFAILED 的精确失败来源/归因仍是原需求未完成项，**没有获得延期**。最小后继须绑定实际失败tool/Scope及public因果receipt，区分系统/Provider失败和可归因Procedure失败；不能把wholeFAILED伪装COMPLETED来注册完整对话，也不能凭失败计success。本批按用户优先级先推进真实C01，保留该followup。
+
+## Dirac证据保存P1修复（待控）
+
+初版 `aa7675bd` 静态审查拒绝：trace取得后若transcript失败，整个返回值丢失；无terminal亦无法导出已有attempt。后继改为身份先持久、public trace先独立保存，再分开读取transcript/route/effects/queue；各项失败有独立状态，不擦除前项。public terminal允许明确NONTERMINAL，保留真实attempt/audit，绝不因此算COMPLETED；任一观测缺口保持OBSERVATION_FAILED/未知计分。
+
+新增仅两参数控制：真实SDK已handoff而未终态，以及真实SDK失败终态，各注入后续transcript故障，要求前面的实际Provider trace已先写盘且不丢失。使用本地adapter故障，不调用网络Provider；不是main factory初始化证明。两项当前NOT_RUN；main初始化/退出仍须单独必要控制，不付费探初始化。

@@ -102,11 +102,15 @@ def review_packet(directory, exit_code):
     completed = result["execution_status"] == "COMPLETED" and exit_code == 0
     blocked = result["execution_status"] == "SETUP_NOT_READY"
     observation_failed = result["execution_status"] == "OBSERVATION_FAILED"
+    handed_off = (sum(p["handed_off_at"] is not None for p in trace["providers"])
+        if trace is not None else None)
     packet = dict(case=load(directory / "case.json"), original_oracle=oracle,
         execution=result, worker_exit_code=exit_code, model_type_proposals=observations,
+        observed_handed_off_invocations=handed_off,
         predicted_types=types if observations is not None else None,
         original_metric_components=dict(required_type_denominator=len(required),
             prediction_observation_complete=observations is not None and
+                trace.get("trace_status") == "COMPLETE" and
                 all(o["proposed_strings"] is not None for o in observations) and
                 all(p["response_json"] is not None for p in trace["providers"]),
             proposed_required_matches=len(set(types) & set(required)),
@@ -160,6 +164,13 @@ def main():
         execution_failed=sum(p["oracle_verdict"] == "EXECUTION_FAILED" for p in packets),
         setup_blocked=sum(p["oracle_verdict"] == "SETUP_BLOCKED" for p in packets),
         observation_failed=sum(p["oracle_verdict"] == "OBSERVATION_FAILED" for p in packets),
+        cases_with_observed_provider_handoff=sum(
+            (p["observed_handed_off_invocations"] or 0) > 0 for p in packets),
+        failed_cases_with_observed_provider_handoff=sum(
+            (p["observed_handed_off_invocations"] or 0) > 0 and
+            p["oracle_verdict"] in {"EXECUTION_FAILED", "OBSERVATION_FAILED"} for p in packets),
+        cases_with_unknown_provider_observation=sum(
+            p["observed_handed_off_invocations"] is None for p in packets),
         semantic_review_pending=sum(p["oracle_verdict"] == "PENDING_POST_TERMINAL_REVIEW" for p in packets),
         full_240_quality="NOT_EVALUATED", independent_root_runs=1))
     print("EVIDENCE_REQUIRES_POST_TERMINAL_REVIEW " + str(output))
