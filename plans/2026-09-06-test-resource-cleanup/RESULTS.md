@@ -34,3 +34,16 @@ python scripts/run_resource_bounded.py   --evidence-dir .local-test-evidence/202
 | first/resource.json | 417e065521ee278d058bd724502f9cd343b809a20ff6e5bda09d4b6a0d9561dd |
 | signal/command.log | aeef17da861cb8a9ba7f4616f4e3c941eae8bbffe6ef54a4931e891d3eee4f8b |
 | signal/resource.json | 97f3af13dd784218725e9f28d7d16955d10f82766b33d68749695f5c51722d24 |
+
+## probe异常后继修复
+
+主复核发现固定e2f6d7ce中ps probe异常会使TERM之后跳过KILL与reap。使用旧固定源、真实忽略TERM的子进程和注入的ps异常，反例明确FAIL（PID26358仍运行，测试finally自行清理）。修复后cleanup probe异常仍强制KILL本组并独立wait；保留cleanup_error，资源判定仍125，不伪装已核查清理成功。
+
+同反例加孤儿/SIGTERM两个必要邻居：3 PASS/2.493秒，外层PID26373峰值49904KiB/exit0。内层故障测试parent_returncode=-9且独立os.kill(pid,0)确认为不存在；cleanup_error=RuntimeError表示探测证据缺失，与内层进程已被实际杀掉的测试证据分开。原6及追加信号绿未无意义全量重跑。本轮实际唯一8个功能反例/边界，非8项一次运行。
+
+| 后继相对文件 | SHA256 |
+|---|---|
+| probe-red/command.log | c270be8292caae6c6a14b160a8a04f3fcac8890226b4d9e59b63f383f2afdb77 |
+| probe-red/resource.json | ad9fccb4924eeed957eac0821dc9056fa14038a7fb98238f522a58d2fd68fd91 |
+| probe-fixed/command.log | 80151bc0bf8dda1a0a02d6364fe8895a9e45a4ae552b62f5477895efbf33813e |
+| probe-fixed/resource.json | 1bb7d681346d706663a253a88fa0e6bff2569d233e1d240eb7b23fa224f6172c |

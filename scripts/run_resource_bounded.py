@@ -98,9 +98,17 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
             if process is not None:
                 try:
                     remaining = terminate(process.pid)
-                    parent_code = process.wait(timeout=5)
                 except Exception as exc:
                     cleanup_error = type(exc).__name__
+                    # A failed ps probe must not skip escalation/reaping.
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                try:
+                    parent_code = process.wait(timeout=5)
+                except Exception as exc:
+                    cleanup_error = cleanup_error or type(exc).__name__
             for sig, handler in previous.items():
                 signal.signal(sig, handler)
         if cleanup_error or remaining:

@@ -1,5 +1,6 @@
 """Real POSIX children, including an orphan ignoring SIGTERM; no model imports."""
 import fcntl
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,8 +10,10 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
-RUNNER = Path(__file__).resolve().parents[1] / "run_resource_bounded.py"
+RUNNER = Path(os.environ.get("RESOURCE_RUNNER_TEST_PATH",
+    str(Path(__file__).resolve().parents[1] / "run_resource_bounded.py")))
 
 
 @unittest.skipUnless(os.name == "posix", "POSIX process groups")
@@ -99,6 +102,34 @@ class ResourceRunnerTests(unittest.TestCase):
         self.assertEqual(receipt["remaining_group_members"], [])
         with self.lock.open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_failed_probe_still_kills_term_resistant_process(self):
+        spec = importlib.util.spec_from_file_location("resource_under_test", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        ready = self.base / "ready"
+        child = "import signal,time;from pathlib import Path;signal.signal(signal.SIGTERM,signal.SIG_IGN);Path("+repr(str(ready))+").touch();time.sleep(60)"
+        def broken_probe(_group):
+            until = time.monotonic()+5
+            while not ready.exists() and time.monotonic() < until:
+                time.sleep(.01)
+            raise RuntimeError("controlled ps probe failure")
+        with patch.object(module, "members", broken_probe):
+            result = module.run([sys.executable, "-c", child], evidence=self.evidence,
+                lock_path=self.lock, rss_mib=128, seconds=5)
+        receipt = json.loads((self.evidence / "resource.json").read_text())
+        pid = receipt["group_id"]
+        try:
+            self.assertEqual(result, 125)
+            self.assertEqual(receipt["cleanup_error"], "RuntimeError")
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+        finally:
+            # Also cleans the intentionally failing old-code counterexample.
+            try:
+                os.killpg(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 if __name__ == "__main__":
