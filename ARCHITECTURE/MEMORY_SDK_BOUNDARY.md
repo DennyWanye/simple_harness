@@ -1,5 +1,9 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 提醒注册公开来源
+
+最后更新：2026-09-06。新增 Host 来源解析经 Memory 公开接口绑定真实历史目标及 outbox，授权与 cursor 原子保存，失效复用真实 ACK。安装 H075/M616 下新增7项已有通过结果（首批5绿，两项 fixture 修正后定向2绿），进程清空。唯一 scheduler、signal 派生来源、完整审计接收仍待接线，默认49未改变。[生产边界与证据](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。
+
 ## 2026-09-06 M0615 installed tool groups
 
 Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).

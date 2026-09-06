@@ -1,5 +1,9 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 S5c 注册来源局部通过
+
+最后更新：2026-09-06。提醒来源及幂等恢复新增7项在已安装 H075/M616 下通过，S5c 完整 scheduler/occurrence/ack 尚未完成；用户主树及默认 schema49 未切换。[范围与剩余项](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)。
+
 ## 2026-09-06 M0615 installed tool groups
 
 Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).

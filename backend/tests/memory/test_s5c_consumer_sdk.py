@@ -39,7 +39,7 @@ from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from tests.memory.test_s5c_store import P
 
 
-async def fixture(tmp_path, clock, fault=None):
+async def fixture(tmp_path, clock, fault=None, *, action_authority=None, return_plan=False):
     path = tmp_path / "state.db"
     program = HumanMemoryProgramStore(path)
     await program.initialize_subject(P.actor_id)
@@ -75,6 +75,7 @@ async def fixture(tmp_path, clock, fault=None):
         supported_filter_policies=frozenset({HOST_PUBLIC_TURN_FILTER_POLICY}),
         evidence_authority=HostEvidenceAuthority(path),
         prospective_signal_authority=HostProspectiveSignalAuthority(path, P),
+        memory_action_authority=action_authority,
         classification_policy=InformationClassificationPolicy(
             policy_id="s5c-test-classification",
             policy_version="1",
@@ -146,7 +147,8 @@ async def fixture(tmp_path, clock, fault=None):
                 issuer_ref="host:prospective-signal/v1",
             )
 
-    return path, backend, ExactFixtureSource()
+    result = (path, backend, ExactFixtureSource())
+    return (*result, plan) if return_plan else result
 
 
 @pytest.mark.asyncio

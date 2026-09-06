@@ -61,6 +61,104 @@ async def test_public_source_delivers_actual_target_receipt_and_run(tmp_path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("point", ["s5c.registration.before_commit", "s5c.registration.after_commit"])
+async def test_first_host_commit_fault_preserves_atomic_source(tmp_path, point):
+    clock = [20.0]
+    path, memory, _ = await fixture(tmp_path, clock)
+    fired = False
+    def fault(actual):
+        nonlocal fired
+        if actual == point and not fired:
+            fired = True
+            raise ConnectionError(point)
+    try:
+        entry = await registration_entry(memory)
+        source = PublicRegistrationAuthoritySource(
+            store=S5cStore(path, P, fault_inject=fault), memory=memory, clock=lambda: clock[0])
+        with pytest.raises(ConnectionError, match=point):
+            await source.prepare_registration(principal=P, entry=entry)
+        store = S5cStore(path, P)
+        prepared = await store.registration(entry.outbox_id)
+        if point.endswith("before_commit"):
+            assert prepared is None and await store.cursor() is None
+        else:
+            assert prepared is not None and prepared.authority.issued_at == 20.0
+            assert await store.cursor() == (entry.created_at, entry.outbox_id)
+        clock[0] = 21.0
+        retry = PublicRegistrationAuthoritySource(store=store, memory=memory, clock=lambda: clock[0])
+        authority = await retry.prepare_registration(principal=P, entry=entry)
+        if prepared is not None:
+            assert authority == prepared.authority
+        else:
+            assert authority.issued_at == 21.0
+        assert len(await store.pending_registrations()) == 1
+    finally:
+        await memory.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("accepted", [False, True])
+async def test_actual_invalidation_requires_and_reuses_old_registration(tmp_path, accepted):
+    from simple_harness.runtime import (
+        ExistingMemoryTarget, MemoryActionAuthorityRef, MemoryMutationKind,
+        ProspectiveLifecycleState, ProspectiveMemoryPayload, ProspectiveTimeTrigger,
+        issue_memory_action_authority,
+    )
+    class ExactTestActionAuthority:
+        authority = None
+        async def resolve_memory_action_authority(self, reference):
+            assert reference == MemoryActionAuthorityRef.from_authority(self.authority)
+            return self.authority
+    action = ExactTestActionAuthority()
+    clock = [20.0]
+    path, memory, _, plan = await fixture(tmp_path, clock, action_authority=action, return_plan=True)
+    try:
+        store = S5cStore(path, P)
+        source = PublicRegistrationAuthoritySource(store=store, memory=memory, clock=lambda: clock[0])
+        original_entry = await registration_entry(memory)
+        if accepted:
+            await ProspectiveRegistrationConsumer(store, memory, source).run_once()
+        original = await store.registration(original_entry.outbox_id)
+        clock[0] = 21.0
+        operation = replace(plan.operations[0], operation_id="reschedule-operation",
+            kind=MemoryMutationKind.REVISE,
+            target=ExistingMemoryTarget(original_entry.payload["memory_id"], 1),
+            payload=ProspectiveMemoryPayload("send report later", ProspectiveTimeTrigger(40.0, "UTC")),
+            lifecycle_state=ProspectiveLifecycleState.RESCHEDULED)
+        revised = replace(plan, plan_id="reschedule-plan", run_id="reschedule-run",
+            turn_id="reschedule-turn", idempotency_key="reschedule-plan", base_revision=2,
+            disclosure_context=replace(plan.disclosure_context, run_id="reschedule-run"),
+            operations=(operation,))
+        action.authority = issue_memory_action_authority(revised.action_intent(operation.operation_id),
+            authority_id="test-reschedule-authority", issued_at=21.0, expires_at=60.0,
+            nonce="test-reschedule-nonce", issuer_ref="host:test-action")
+        revised = replace(revised, operations=(replace(operation,
+            action_authority_ref=MemoryActionAuthorityRef.from_authority(action.authority)),))
+        result = await memory.apply_memory_mutation_plan(principal=P,
+            scope=MemoryScope.personal(P.actor_id), plan=revised)
+        assert result.receipt_ref is not None
+        invalidation = next(e for e in (await memory.read_outbox(principal=P)).entries
+            if e.topic == "memory.prospective.invalidation.requested")
+        facts = await memory.read_prospective_outbox_source(principal=P,
+            outbox_id=invalidation.outbox_id, payload_hash=invalidation.payload_hash)
+        assert facts.target_run_id == plan.run_id != revised.run_id
+        if not accepted:
+            cursor = await store.cursor()
+            with pytest.raises(S5cConflict, match="s5c_invalidation_registration_missing"):
+                await source.prepare_registration(principal=P, entry=invalidation)
+            assert await store.registration(invalidation.outbox_id) is None
+            assert await store.cursor() == cursor
+        else:
+            await ProspectiveRegistrationConsumer(store, memory, source).run_once()
+            invalidated = await store.registration(invalidation.outbox_id)
+            assert invalidated.result is not None
+            assert invalidated.authority.intent.scheduler_registration_ref == original.authority.intent.scheduler_registration_ref
+            assert invalidated.authority.intent.signal_receipt_id == original.authority.intent.signal_receipt_id
+    finally:
+        await memory.close()
+
+
+@pytest.mark.asyncio
 async def test_concurrent_public_source_calls_keep_first_observation(tmp_path, monkeypatch):
     path, memory, _ = await fixture(tmp_path, [20.0])
     try:

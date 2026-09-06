@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。[S5c 提醒注册公开来源及7项局部验证](../plans/2026-09-05-human-memory-s5c-preparation/PUBLIC-SOURCE.md)；完整 scheduler 仍在进行，未切换默认运行路径。
+
 ## 2026-09-06 M0615 installed tool groups
 
 Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).
