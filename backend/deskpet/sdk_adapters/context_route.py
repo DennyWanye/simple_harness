@@ -684,17 +684,14 @@ class ContextRouteToolService:
                 expected_source_hash=item["source_hash"]))
             package = await self._scope_disclosure_reader(run_id, opened["resume_package"], effect_id)
             candidates.append({"task_scope_id": scope_id, "source_id": package["source_id"],
-                "source_hash": package["source_hash"], "scope_disclosure": package,
-                "continuation": ({"route": "create_new", "reuse_workspace_of": scope_id,
-                    "expected_source_hash": package["source_hash"],
-                    "requires_first_task_route_in_new_run": True}
-                    if package.get("status") in {"complete", "completed"} else None)})
+                "source_hash": package["source_hash"], "scope_disclosure": package})
         return {
             "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
             "receipt_hash": result.get("receipt_hash"),
             "note": "Candidates grant no authority. resume_existing reads history/status and does not reopen a completed task. "
-            "To edit a completed task's files, use its continuation proposal with a new title/goal and explicit original-workspace "
+            "To edit a completed task's files, copy its task_scope_id to reuse_workspace_of and source_hash to expected_source_hash "
+            "in create_new with a new title/goal and explicit original-workspace "
             "binding. It must be the first task route in a new Run; do not resume the old task first. "
             "Active tasks may use resume_existing with their exact task_scope_id.",
         }

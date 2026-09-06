@@ -86,10 +86,8 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
             candidate = hits[0]
             assert candidate["scope_disclosure"]["status"] == "complete"
             observed["old_package"] = candidate["scope_disclosure"]
-            continuation = candidate["continuation"]
-            assert continuation["requires_first_task_route_in_new_run"] is True
-            name, args = "context_route", {"route": continuation["route"], "title": "Further edits", "goal": "Update the original document",
-                "reuse_workspace_of": continuation["reuse_workspace_of"], "expected_source_hash": continuation["expected_source_hash"]}
+            name, args = "context_route", {"route": "create_new", "title": "Further edits", "goal": "Update the original document",
+                "reuse_workspace_of": candidate["task_scope_id"], "expected_source_hash": candidate["source_hash"]}
             if invalid == "stale_hash": args["expected_source_hash"] = "0" * 64
             if invalid == "foreign_scope": args["reuse_workspace_of"] = "foreign-unowned-scope"
         elif n == 2:
