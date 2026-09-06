@@ -17,7 +17,7 @@ import aiosqlite
 from simple_harness import (
     ContextFragmentV2, ContextFragmentType, EvidenceRef,
     RecallContextUseIntentV1, RecallFragmentAuthorityBindingV1,
-    RecallResultPageRequestV1, RunId, thaw_json,
+    RecallResultPageRequestV1, RunId, CallId, thaw_json,
 )
 from simple_harness.execution.provider_invocations import (
     provider_request_fingerprint, provider_request_json,
@@ -172,11 +172,14 @@ class ProductTypedContextUseAuthority:
             route = value["context_route_receipt"]
             if route.get("route") != "memory_standalone":
                 continue
+            if not isinstance(message.call_id, CallId):
+                raise ValueError("typed_use_tool_call_id_missing")
+            raw_call_id = message.call_id.value
             effect_id = route.get("effect_id")
             _, (effect,) = self._stack().read_primary_dependency_facts(run_id, (effect_id,))
             if (effect is None or not effect.terminal or effect.result is None
                     or effect.run_id.value != run_id or effect.tool_name != "context_route"
-                    or effect.raw_call_id != message.call_id or route.get("run_id") != run_id):
+                    or effect.raw_call_id != raw_call_id or route.get("run_id") != run_id):
                 raise ValueError("typed_use_tool_effect_unverified")
             expected = dict(outcome=effect.result.outcome.value, value=thaw_json(effect.result.value),
                             error_code=effect.result.error_code, public_message=effect.result.public_message)
@@ -184,7 +187,7 @@ class ProductTypedContextUseAuthority:
                 raise ValueError("typed_use_tool_result_differs")
             row = await (await db.execute("SELECT * FROM context_route_tool_invocations "
                 "WHERE sdk_run_id=? AND effect_id=?", (run_id, effect_id))).fetchone()
-            if row is None or row["verdict"] != "accepted" or row["raw_call_id"] != message.call_id:
+            if row is None or row["verdict"] != "accepted" or row["raw_call_id"] != raw_call_id:
                 raise ValueError("typed_use_host_carrier_missing")
             detail = json.loads(row["detail_json"])
             bound = {key: row[key] for key in ("decision_id", "effect_id", "proposal_hash", "raw_call_id", "sdk_run_id", "verdict")}
