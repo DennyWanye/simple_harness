@@ -67,6 +67,10 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
             "description": "For memory_standalone, request relevant prior conversation groups outside the current recent context. Defaults to false. Short and long-term results share one Host budget and current source checks.",
         },
         "task_scope_id": {"type": "string", "maxLength": 128},
+        "reuse_workspace_of": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "description": "Only create_new: explicitly bind the new active task to the completed task's existing workspace. Copy its exact task_scope_id and expected_source_hash from public search/resume. Requires one verified root and a new binding grant; never reopens the old task. Omit for a new separate workspace.",
+        },
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
         "expected_source_hash": {"type": "string", "minLength": 64, "maxLength": 64},
@@ -287,6 +291,9 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_route_invalid",
             )
+        if "reuse_workspace_of" in proposal and route_value != "create_new":
+            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                                      "context_route_workspace_reuse_requires_create_new")
         try:
             if route_value == "direct_standalone":
                 return await self._commit_receipt(
@@ -557,6 +564,13 @@ class ContextRouteToolService:
         service = self._bind_service(binding_append=self._binding_append_getter())
         from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
 
+        continuation = None
+        if "reuse_workspace_of" in proposal:
+            from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
+            continuation = await resolve_workspace_continuation(
+                service=service, binding_store=self._binding_store_factory(),
+                disclosure_reader=self._scope_disclosure_reader, run_id=run_id,
+                effect_id=effect_id, proposal=proposal)
         producer_dependencies = (None if self._producer_dependencies_reader is None
             else await self._producer_dependencies_reader(run_id))
         created = await service.create_task_scope(
@@ -585,11 +599,14 @@ class ContextRouteToolService:
             )
         # configured_root is an authority DTO, not a path string. Each task
         # gets a stable direct child; title/model text never selects a root.
-        task_root = Path(root.canonical_path) / f"task-{scope}"
+        task_root = (Path(root.canonical_path) / f"task-{scope}" if continuation is None
+                     else Path(continuation.root.canonical_path))
         outcome = await service.append_binding(AppendBindingRequest(
             scope_ref=scope,
             root=str(task_root),
             idempotency_key=f"context-route:{run_id}:{effect_id}",
+            expected_filesystem_identity_hash=(None if continuation is None else
+                continuation.root.filesystem_identity.identity_hash),
         ))
         if str(outcome.get("status", "")) == "authorization_required":
             return await self._reject(
@@ -609,7 +626,8 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=scope,
             binding=binding,
-            extras={"created": dict(created), "producer_dependencies": producer_dependencies},
+            extras={"created": dict(created), "producer_dependencies": producer_dependencies,
+                    **({} if continuation is None else {"workspace_source": dict(continuation.source)})},
         )
 
     # -- task_scope_search ------------------------------------------------

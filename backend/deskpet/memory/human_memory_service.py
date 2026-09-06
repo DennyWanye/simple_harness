@@ -170,11 +170,17 @@ class AppendBindingRequest:
     scope_ref: str
     root: str
     idempotency_key: str
+    expected_filesystem_identity_hash: str | None = None
 
     def __post_init__(self) -> None:
         identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.root, "root", 4096)
         identifier(self.idempotency_key, "idempotency_key", 512)
+
+        if self.expected_filesystem_identity_hash is not None:
+            value = self.expected_filesystem_identity_hash
+            if not isinstance(value, str) or len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                raise ValueError("expected_filesystem_identity_hash must be lowercase SHA-256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -335,6 +341,7 @@ class WorkspaceBindingAppendPort(Protocol):
         idempotency_key: str,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]: ...
 
     async def propose_manual_binding(
@@ -779,8 +786,11 @@ class HumanMemoryHostService:
             raise HumanMemoryHostServiceError(
                 "human_memory_binding_authority_unavailable"
             )
+        expected = ({} if request.expected_filesystem_identity_hash is None else
+                    {"expected_filesystem_identity_hash": request.expected_filesystem_identity_hash})
         committed = await self._append_host_evidence(
             payload={
+                **expected,
                 "schema_version": 1,
                 "action": "binding.append",
                 "scope_ref": request.scope_ref,
@@ -797,6 +807,7 @@ class HumanMemoryHostService:
             idempotency_key=request.idempotency_key,
             interaction_evidence_id=committed.evidence_id,
             interaction_evidence_hash=committed.envelope_sha256,
+            **expected,
         )
 
     async def propose_manual_binding(
