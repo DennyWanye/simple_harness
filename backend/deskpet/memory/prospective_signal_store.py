@@ -15,7 +15,7 @@ from simple_harness.runtime import ProspectiveSignalAuthority, ProspectiveSignal
 from simple_harness_memory import MemoryPrincipal
 
 from deskpet.memory.prospective_scheduler import PreparedTimer, TimerClaim
-from deskpet.memory.s5c_timer_schema import validate_s5c_timer_state_db
+from deskpet.memory.s5c_timer_schema import validate_s5c_timer_runtime_state_db
 from deskpet.task_scope.protocol import canonical_hash, canonical_json
 
 
@@ -28,7 +28,7 @@ class ProspectiveSignalStore:
         if type(principal) is not MemoryPrincipal:
             raise TypeError('MemoryPrincipal required')
         self.path, self.principal = Path(path), principal
-        validate_s5c_timer_state_db(self.path)
+        validate_s5c_timer_runtime_state_db(self.path)
         self.owner = canonical_hash([principal.deployment_id,principal.household_id,principal.actor_id])
 
     @asynccontextmanager
@@ -39,8 +39,8 @@ class ProspectiveSignalStore:
             try:
                 # Never create implicit schema or mutate a schema50 installation.
                 version=await (await db.execute('PRAGMA user_version')).fetchone()
-                if version[0]!=51:
-                    raise TimerConflict('prospective_timer_schema51_required')
+                if version[0] not in (51, 52):
+                    raise TimerConflict('prospective_timer_schema_required')
                 yield db
                 await db.commit()
             except BaseException:

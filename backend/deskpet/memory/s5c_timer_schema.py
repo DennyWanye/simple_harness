@@ -73,6 +73,13 @@ def validate_s5c_domain_state_db(path: str | Path) -> None:
         validate_s5c_state_db(path)
 
 
+def validate_s5c_timer_runtime_state_db(path: str | Path) -> None:
+    """A timer requires the real time journal, including in the typed successor."""
+    if _version(path) not in (51, 52):
+        raise schema.HumanMemoryProgramEpochError("s5c_timer_schema_required")
+    validate_s5c_domain_state_db(path)
+
+
 async def initialize_s5c_timer_state_db(db_path: str | Path, *, fault_inject=None) -> None:
     path = Path(db_path)
     version = await migrator.read_user_version(path)
