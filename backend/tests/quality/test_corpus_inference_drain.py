@@ -1,6 +1,9 @@
 """New multi-source drain controls; no quality Provider and no legacy reruns."""
 import pytest
+from dataclasses import replace
 import simple_harness_memory as m
+import simple_harness as h
+import deskpet.quality.corpus_inference_drain as drain_module
 
 from deskpet.memory.conversation_registration import PrimaryConversationAuthority
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
@@ -17,7 +20,16 @@ import tests.execution.test_primary_foreground_runtime as runtime_fixture
 
 
 @pytest.mark.asyncio
-async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_path):
+@pytest.mark.parametrize('invalid_reason', [False, True])
+async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_path, monkeypatch, invalid_reason):
+    if invalid_reason:
+        original_result = drain_module._fixture_result
+        def invalid_result(request, identity):
+            result = original_result(request, identity)
+            body = h.thaw_json(result.structured_result)
+            body['reason'] = body.pop('closure_reason')
+            return replace(result, structured_result=body)
+        monkeypatch.setattr(drain_module, '_fixture_result', invalid_result)
     auth = local_owner_auth()
     source, _, service, _, _ = await fixture(tmp_path / 'source')
     text = SETUPS['C03-20'][0]
@@ -59,6 +71,15 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
             host_run_id=run_ids[0], principal=principal, group=seed['source_group'],
             plan=seed['plan'], applied=seed['applied'], clock=config['clock'])
         report = await drain_inference_setup(authority=authority, manager=manager, **args)
+        if invalid_reason:
+            # Actual SDK finalization of rejected analysis is still APPLIED.
+            # It must not satisfy this fixture's legitimate no-op settlement.
+            assert [o.value for o in report['outcomes']] == ['applied']
+            assert not report['confirmed'] and report['applied'] == ()
+            assert len(report['rejected_applications']) == 1
+            assert report['rejected_applications'][0].receipt.validation_status.value == 'rejected'
+            assert await manager.get_twin_graph_view(principal=principal) == graph
+            return
         assert report['confirmed']
         assert [o.value for o in report['outcomes']] == ['applied', 'applied']
         assert report['fixture_executions'] == 2
@@ -81,6 +102,11 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
             prior_applied=proofs, **args)
         assert restored['confirmed'] and restored['outcomes'] == ()
         assert restored['fixture_executions'] == 0
+        proof = proofs[0]
+        with pytest.raises(ValueError, match='inference_fixture_claim_identity_differs'):
+            authority.executor.verify_claim(replace(proof.claim, job_ids=('different-actual-job',)))
+        assert not await authority.executor.application_is_accepted(proof.claim,
+            replace(proof.application, receipt=replace(proof.application.receipt, result_hash='0' * 64)))
         assert await reopened.get_twin_graph_view(principal=principal) == graph
         assert len(provider.requests) == 1
     finally:

@@ -17,6 +17,15 @@ from deskpet.task_scope.protocol import canonical_hash
 
 
 FALLBACK = AnalysisLineage('corpus-fixture-plan', 'no-language-model', CONFIG_HASH)
+# Exact accepted setup text, not a model input or a gold-derived target.
+C02_19_SETUP = 'A：本人直接声明优先选离线方案；B：系统曾推测本人偏好云端，未确认。'
+
+
+def _fixture_result(request, identity):
+    return h.MemoryAnalysisResult(request.job_id, request.run_id, request.request_hash,
+        'fixture-local:' + identity,
+        {'outcome': 'no_mutation', 'operations': [],
+         'closure_reason': 'synthetic_inference_setup_already_committed'}, 0, 0, 0, 0)
 
 
 @dataclass(frozen=True)
@@ -62,6 +71,7 @@ class CommittedInferenceExecutor(FixtureAnalysisDelivery):
         self.setup_hash = canonical_hash({'case_id': case_id, 'plan_hash': plan.plan_hash,
             'sources': [r.envelope.envelope_hash for r in group.registrations]})
         self.executions = 0
+        self.source_jobs = {}
 
     def source_for(self, request):
         for index, registration in enumerate(self.group.registrations):
@@ -77,6 +87,10 @@ class CommittedInferenceExecutor(FixtureAnalysisDelivery):
         raise ValueError('inference_fixture_request_source_or_lineage_differs')
 
     async def verify_committed_seed(self):
+        from deskpet.quality.corpus_c03 import SETUPS
+        expected_text = C02_19_SETUP if self.case_id == 'C02-19' else SETUPS['C03-20'][0]
+        if self.group.registrations[0].envelope.sanitized_payload.get('text') != expected_text:
+            raise ValueError('inference_fixture_case_source_differs')
         actual = await PrimaryConversationAuthority(self.source_path,
             subject=self.principal.actor_id).registrations_for_run(self.host_run_id)
         if actual != self.group:
@@ -107,6 +121,23 @@ class CommittedInferenceExecutor(FixtureAnalysisDelivery):
                     or record.evidence_ids != tuple(span.evidence_id for span in op.evidence_spans)):
                 raise ValueError('inference_fixture_committed_operation_differs')
 
+    async def bind_public_jobs(self):
+        # Public idempotent ingestion returns the original actual job identity.
+        # Never derive it from an ID format or trust caller-supplied claim IDs.
+        for index, registration in enumerate(self.group.registrations):
+            receipt = await self.manager.ingest_committed_evidence(
+                registration.envelope, registration.admission_receipt,
+                analysis_lineage=self.group.user_analysis_lineage if index == 0 else None)
+            self.source_jobs[registration.envelope.evidence_id] = receipt.mutation_job_id
+
+    def verify_claim(self, claim):
+        source_id = self.source_for(claim.request)
+        if (claim.job_ids != (self.source_jobs[source_id],)
+                or claim.subject != claim.request.subject
+                or claim.request.job_id != claim.batch_id):
+            raise ValueError('inference_fixture_claim_identity_differs')
+        return source_id
+
     async def analyze_memory(self, request):
         await self.verify_committed_seed()
         self.source_for(request)
@@ -116,12 +147,24 @@ class CommittedInferenceExecutor(FixtureAnalysisDelivery):
             pass
         else:
             return self._envelope(request, saved, receipt)
-        result = h.MemoryAnalysisResult(request.job_id, request.run_id, request.request_hash,
-            'fixture-local:' + self._identity(request),
-            {'outcome': 'no_mutation', 'operations': [],
-             'reason': 'synthetic_inference_setup_already_committed'}, 0, 0, 0, 0)
+        result = _fixture_result(request, self._identity(request))
         self.executions += 1
         return await self.deliver(request, result)
+
+    async def application_is_accepted(self, claim, application):
+        """Job APPLIED also covers rejected analyses; require accepted no-op."""
+        request = claim.request
+        saved, proof = await self.evidence.read_admitted(self._identity(request))
+        envelope = self._envelope(request, saved, proof)
+        expected = _fixture_result(request, self._identity(request))
+        receipt = application.receipt
+        return (envelope.result == expected
+            and (claim.envelope is None or claim.envelope == envelope)
+            and receipt.validation_status is h.AnalysisValidationStatus.ACCEPTED
+            and receipt.job_id == claim.batch_id
+            and (receipt.job_id, receipt.run_id, receipt.request_hash, receipt.result_hash)
+                == (request.job_id, request.run_id, request.request_hash, expected.result_hash)
+            and application.decisions == ())
 
 
 class _ObservedRepository:
@@ -133,6 +176,7 @@ class _ObservedRepository:
     def __init__(self, repository, executor):
         self.repository, self.executor = repository, executor
         self.applied = []
+        self.rejected = []
 
     def __getattr__(self, name):
         if name.startswith('_'):
@@ -143,7 +187,7 @@ class _ObservedRepository:
         claim = await self.repository.claim_analysis_batch(config, worker_id)
         if claim is not None:
             await self.executor.verify_committed_seed()
-            self.executor.source_for(claim.request)
+            self.executor.verify_claim(claim)
             if claim.envelope is not None:
                 # Recovery must use our exact durable fixture delivery, not an
                 # earlier real-model application merely sharing source IDs.
@@ -151,10 +195,13 @@ class _ObservedRepository:
         return claim
 
     async def finalize_analysis_application(self, claim, application):
-        source_id = self.executor.source_for(claim.request)
+        source_id = self.executor.verify_claim(claim)
         finalized = await self.repository.finalize_analysis_application(claim, application)
         if finalized:
-            self.applied.append(AppliedFixtureJob(source_id, claim.job_ids, claim.request, application, claim))
+            if await self.executor.application_is_accepted(claim, application):
+                self.applied.append(AppliedFixtureJob(source_id, claim.job_ids, claim.request, application, claim))
+            else:
+                self.rejected.append(application)
         return finalized
 
 
@@ -167,6 +214,7 @@ async def drain_inference_setup(*, authority, prior_applied=(), **kwargs):
     """
     executor = CommittedInferenceExecutor(**kwargs)
     await executor.verify_committed_seed()
+    await executor.bind_public_jobs()
     authority.bind(executor)
     repository = _ObservedRepository(kwargs['manager'].backend, executor)
     restored = set()
@@ -174,12 +222,14 @@ async def drain_inference_setup(*, authority, prior_applied=(), **kwargs):
         if type(previous) is not AppliedFixtureJob:
             raise ValueError('inference_fixture_prior_proof_type')
         claim = previous.claim
-        source_id = executor.source_for(claim.request)
+        source_id = executor.verify_claim(claim)
         if (previous.request != claim.request or previous.job_ids != claim.job_ids
                 or previous.source_id != source_id or source_id in restored):
             raise ValueError('inference_fixture_prior_proof_differs')
         saved, receipt = await executor.evidence.read_admitted(executor._identity(claim.request))
         executor._envelope(claim.request, saved, receipt)
+        if not await executor.application_is_accepted(claim, previous.application):
+            raise ValueError('inference_fixture_prior_application_not_accepted')
         if not await repository.finalize_analysis_application(claim, previous.application):
             raise ValueError('inference_fixture_prior_finalize_unconfirmed')
         restored.add(source_id)
@@ -191,11 +241,12 @@ async def drain_inference_setup(*, authority, prior_applied=(), **kwargs):
     for _ in range(len(executor.group.registrations) - len(restored)):
         outcome = await runner.run_once()
         outcomes.append(outcome)
-        if outcome is not WorkerRunOutcome.APPLIED:
+        if outcome is not WorkerRunOutcome.APPLIED or repository.rejected:
             break
     expected = {r.envelope.evidence_id for r in executor.group.registrations}
     observed = [item.source_id for item in repository.applied]
     confirmed = len(observed) == len(expected) and set(observed) == expected
     return dict(confirmed=confirmed, outcomes=tuple(outcomes), applied=tuple(repository.applied),
+        rejected_applications=tuple(repository.rejected),
         fixture_executions=executor.executions,
         reason=None if confirmed else 'inference_fixture_settlement_unconfirmed')

@@ -3,6 +3,21 @@
 2026-09-06，后继基线 d2e55fc9。源码准备，**NOT_RUN / 不可作为已完成合入**。
 r17 使用资源槽，本叶未运行 pytest、模型、native、build 或安装。
 
+## aea141af 只读 P1 与源码修订（尚未测试）
+
+Dirac 指出旧源码错误使用 `reason`，M618 仅接受 `closure_reason`；此外 SDK job APPLIED
+包括 validator REJECTED，旧判据可能错误确认完成。保留旧 commit，不将源码审读称实际红测。
+修订要求 exact fixture NO_MUTATION 全 result（包含0usage/fixture responseidentity）、
+application receipt ACCEPTED，job_id=claim.batch_id=request.job_id，run/request/result hash
+逐项绑定且 decisions 为空。拒绝的 application 可由 SDK 正常 finalize，但不进入成功集合。
+新控将实际发送非法 reason 的本地 analysis result，必须得到 SDK APPLIED + receipt REJECTED，
+同时 adapter confirmed=False。只准备，NOT_RUN。
+
+prior proof 共用上述 validator；claim.envelope 若存在必须等本 fixture durable envelope。
+公开幂等 `ingest_committed_evidence` 对原pair回读真实 mutation_job_id，核 claim.job_ids 单成员，
+不从ID格式猜造、不相信调用方自洽替换；USER传原lineage，ASSISTANT保留None，未覆盖旧身份。
+也绑定 case_id 对应原USER完整 setup 字符串。新增原proof换job_ids/receipt result_hash负控准备。
+
 ## 已核公共接缝
 
 - `build_human_memory_v7(analysis_delivery_authority=authority)` 在构造时绑定同一对象。
