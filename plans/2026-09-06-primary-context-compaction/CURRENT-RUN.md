@@ -20,3 +20,13 @@
 5. 首个新真实控制：同Run大tool已settled→新snapshot引用→模型publicpage-in→实际MockTransport尾页；重复raw call ID跨Provider turn不混源；pending sibling不能冒已settled结果；forget/权限变化后零外发；原Run重开复用真实parent request JSON不依赖内存映射。只新增决定性控，不重复历史已绿与原9/5。
 
 没有新增LLM摘要调用、后台compactor或第二authority。这个分支完成前，当前Run旧`page:causal:*`仍是明确未完成产品路径；历史page绿不能替代它。
+
+## Implemented source checkpoint (2026-09-06, not tested)
+
+CurrentToolProjector is composed before snapshot budget planning. Its complete public transcript/Host effect index binds item ordinal; targeted public audit and ProviderInvocationRecord rebind effect state/version/result and exact parent response call. The real parent request_json/fingerprint must contain the exact source summary before a page can read it. Target effect must precede page effect in verified Host identity order. No new S1, future terminal, persistent ledger or ID recipe is used.
+
+Correction to item 4 above: a prefix BEFORE the source would omit the source output's own recall dependencies. The page checks the existing full prefix BEFORE THE PAGE, thus INCLUDING the source output. Final guard retains the existing full Run dependency checks, including original USER/history and recall source checks; this leaf does not claim precise per-fragment exemption or change their conservative retention policy.
+
+Control carriers (context_route, context_page_in, task_scope_search, task_scope_update) stay complete to preserve typed intents/closure/disclosure fields. When the projector is composed, the planner cannot synthesize page:causal for them: their actual bytes count against original budget and oversized protected/open groups still fail. Generic successful large public tool results receive the exact source pages. Failed/unknown/pending outcomes are not promoted. Page-of-page is intentionally not summarized, so no recursive synthetic lineage is introduced.
+
+New tests use actual dynamic Host/SDK tools, public causal reader and production Provider resolver/MockTransport: two different large append results, repeated raw call ID across turns, actual in-flight page effect cannot serve as source, exact tail page, whole-stack reopen, and USER-source forgetting before next physical send. These tests are source-only pending first execution/review. No old green suite will be rerun.

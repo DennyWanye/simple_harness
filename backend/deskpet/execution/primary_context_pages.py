@@ -224,10 +224,20 @@ class PrimaryContextPageReader:
             if len(rows) != 1:
                 raise PrimaryContextPageUnavailable("primary_page_host_run_missing")
             run = rows[0]
-            result = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
-                                         start=start, arguments=arguments)
-            source = result["source"]
-            proof = dependencies([dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"])])
+            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX, admitted_current_page
+            if arguments["reference_id"].startswith(CURRENT_PREFIX):
+                result = await admitted_current_page(db=db, stack=stack, run=run,
+                    sdk_run_id=sdk_run_id, page_effect=effect, arguments=arguments)
+                from deskpet.execution.primary_dependencies import read_run_dependencies
+                # Includes the target's output dependencies, not merely the
+                # prefix before the target. The page must follow that source.
+                _, proof = await read_run_dependencies(db=db, stack=stack, sdk_run_id=sdk_run_id,
+                    before_effect_id=effect.effect_id.value)
+            else:
+                result = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                                             start=start, arguments=arguments)
+                source = result["source"]
+                proof = dependencies([dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"])])
             disclosure = await resolve_current_disclosure(db_path=self.path, subject=run["subject"],
                 run_id=sdk_run_id, request_id=context.request_id.value)
             policy = self.policy_factory(run["subject"])

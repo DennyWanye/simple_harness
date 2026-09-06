@@ -103,7 +103,8 @@ def build_context_page_in_handler(
         if runtime is None:
             return _error("context_scope_missing")
         from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
-        if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith(PREFIX):
+        from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PREFIX
+        if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith((PREFIX, CURRENT_PREFIX)):
             if store.primary_reader is None:
                 return _error("primary_page_reader_unavailable")
             try:

@@ -788,6 +788,14 @@ class ProductSdkRuntimeStack:
             raise ValueError("typed_use_parent_projection_unverifiable")
         return next(iter(found.values()))
 
+    def read_primary_effect_page_facts(self, run_id: str, effect_id: str):
+        """Exact current effect/parent through public SDK records and audit."""
+        from deskpet.execution.current_tool_pages import read_effect_facts
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        return read_effect_facts(self._uow, run_id, effect_id)
+
     def read_primary_dependency_facts(self, run_id: str, effect_ids=()):
         """Public start and effect facts, never SDK-private history SQL."""
         from simple_harness import EffectId, thaw_json

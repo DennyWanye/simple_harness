@@ -890,6 +890,7 @@ def _plan_turn_messages(
     window_tokens: int | None,
     *,
     extra_protected: Any = None,
+    exact_tool_sources: bool = False,
 ) -> tuple[tuple[Any, ...], dict[str, int]]:
     """Per-turn causal-group + frozen-budget assembly over the Run context.
 
@@ -935,7 +936,12 @@ def _plan_turn_messages(
         }
         for m in tail
     ]
-    plan = plan_recent_causal_groups(history)
+    # With an actual source projector, generic synthetic page:causal locators
+    # must not replace unpageable control/typed carriers. Keep their true bytes
+    # for the original budget checks, or fail the budget without losing proof.
+    plan = plan_recent_causal_groups(history, **({"large_result_bytes":
+        max((len(row["content"].encode("utf-8")) for row in history), default=0) + 1}
+        if exact_tool_sources else {}))
     protected_caps = PARTITION_CAPS[tier]["protected"]
     protected_bytes = sum(
         len(_message_text(m).encode("utf-8")) for m in protected
@@ -1053,8 +1059,10 @@ class ProductRunContextAuthority:
         closure_reader: Any = None,
         binding_store: Any = None,
         typed_use_authority: Any = None,
+        current_tool_projector: Any = None,
     ) -> None:
         self._typed_use_authority = typed_use_authority
+        self._current_tool_projector = current_tool_projector
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
         self._ledger = ledger
@@ -1138,8 +1146,14 @@ class ProductRunContextAuthority:
         closure_message = None
         if self._closure_reader is not None:
             closure_message = await self._closure_reader(request.run_id)
+        source_messages = tuple(context.messages)
+        if self._current_tool_projector is not None:
+            source_messages = await self._current_tool_projector(request, source_messages)
+            if ports.context.load(request.run_id).revision != request.prior_context_revision:
+                raise SnapshotContractConflict("sdk_context_authority_revision_drift")
         messages, assembly_facts = _plan_turn_messages(
-            tuple(context.messages), window_tokens, extra_protected=(inbox_message, closure_message)
+            source_messages, window_tokens, extra_protected=(inbox_message, closure_message),
+            exact_tool_sources=self._current_tool_projector is not None,
         )
         probe = ProviderRequest(
             RequestId("hash-only"),

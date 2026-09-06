@@ -9022,12 +9022,14 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         return await closure_instruction_for_run(db_path, getattr(run_id, "value", str(run_id)))
 
     service_context.register("sdk_closure_instruction_reader", closure_reader)
+    from deskpet.execution.current_tool_pages import CurrentToolProjector
     return ProductRunContextAuthority(
         ports_resolver=ports_resolver,
         exposure_resolver=exposure_resolver,
         ledger=ledger,
         reconcile=reconcile,
         typed_use_authority=typed_use_authority,
+        current_tool_projector=CurrentToolProjector(db_path, lambda: _sdk_runtime_stack),
         closure_reader=closure_reader,
         # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
         binding_store=WorkspaceBindingAuthorityStore(db_path),
