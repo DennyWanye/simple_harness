@@ -14,6 +14,7 @@ import time
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from contextvars import ContextVar
 from typing import Any, Protocol
 
 import httpx
@@ -41,6 +42,55 @@ _PROVIDER_TOOL_CALLS_METADATA_KEY = "provider_tool_calls"
 _PROVIDER_REASONING_CONTENT_METADATA_KEY = "provider_reasoning_content"
 _PUBLIC_PROGRESS_ARGUMENT = "deskpet_public_progress"
 logger = logging.getLogger(__name__)
+_diagnostic_request_ref: ContextVar[str] = ContextVar("provider_diagnostic_request_ref", default="missing")
+
+
+class _DiagnosticPostClient:
+    """Borrow the existing HTTP client; never own, retry or close it.
+
+    SDK status rejection precedes response parsing. Observe that one returned
+    response here, while leaving SDK cancellation, taxonomy and parsing intact.
+    """
+    def __init__(self, client: httpx.AsyncClient, redactor: Any) -> None:
+        self._client = client
+        self._redactor = redactor
+
+    async def post(self, *args: Any, **kwargs: Any) -> httpx.Response:
+        response = await self._client.post(*args, **kwargs)
+        if response.status_code >= 400:
+            try:
+                raw = response.content
+                diagnostic: dict[str, Any] = {
+                    "body_sha256": hashlib.sha256(raw).hexdigest(),
+                    "body_bytes": len(raw),
+                    "body_format": "oversized" if len(raw) > 65536 else "unstructured",
+                }
+                # Do not parse arbitrary-size bodies or log arbitrary JSON.
+                if len(raw) <= 65536:
+                    try:
+                        payload = response.json()
+                    except (ValueError, UnicodeError):
+                        payload = None
+                    error = payload.get("error") if isinstance(payload, Mapping) else None
+                    if isinstance(error, Mapping):
+                        diagnostic["body_format"] = "structured_error"
+                        for field, limit in (("code", 128), ("type", 128), ("param", 256), ("message", 1024)):
+                            value = error.get(field)
+                            if isinstance(value, str):
+                                # Redact before truncation, including a secret
+                                # crossing the clipping boundary. JSON escaping
+                                # prevents line/control-character log injection.
+                                diagnostic[field] = self._redactor.text(value)[:limit]
+                logger.warning(
+                    "product_provider_http_rejected request_ref=%s status_code=%s diagnostic=%s",
+                    _diagnostic_request_ref.get(), response.status_code,
+                    json.dumps(diagnostic, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+                )
+            except Exception:
+                # Diagnostics must never replace the original Provider error.
+                logger.warning("product_provider_http_rejection_diagnostic_unavailable request_ref=%s status_code=%s",
+                               _diagnostic_request_ref.get(), response.status_code)
+        return response
 
 
 def _opaque_ref(value: object) -> str:
@@ -168,6 +218,14 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
     ) -> None:
         super().__init__(*args, **kwargs)
         self._reasoning_wire = dict(reasoning_wire or {})
+        self._client = _DiagnosticPostClient(self._client, self._redactor)
+
+    async def _post_once(self, request: ProviderRequest) -> ProviderResponse:
+        token = _diagnostic_request_ref.set(_opaque_ref(request.request_id.value))
+        try:
+            return await super()._post_once(request)
+        finally:
+            _diagnostic_request_ref.reset(token)
 
     def _request_payload(self, request: ProviderRequest) -> dict[str, Any]:
         payload = super()._request_payload(request)
