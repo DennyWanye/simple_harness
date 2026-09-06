@@ -12,7 +12,7 @@ import hashlib
 import json
 import math
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +36,15 @@ from deskpet.memory.s5c_timer_schema import validate_s5c_domain_state_db
 
 class S5cConflict(ValueError):
     """Stable rejection; caller must not invent new signal/plan identities."""
+
+
+def _json_containers(value):
+    """Materialize public immutable JSON containers without changing their bytes."""
+    if isinstance(value, Mapping):
+        return {key: _json_containers(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_json_containers(item) for item in value]
+    return value
 
 
 def _hash(value) -> str:
@@ -260,7 +269,7 @@ class S5cStore:
         if (
             entry.topic != f"memory.prospective.{command}.requested"
             or entry.payload is None
-            or canonical_json(dict(entry.payload)) != canonical_json(expected)
+            or canonical_json(_json_containers(entry.payload)) != canonical_json(expected)
             or entry.payload_hash != _hash(expected)
             or intent.outbox_id != entry.outbox_id
             or intent.outbox_payload_hash != entry.payload_hash
@@ -517,10 +526,10 @@ class S5cStore:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN")
             if upper is None:
-                row = await (await db.execute("SELECT COALESCE(MAX(sequence),0) FROM prospective_outbox_cursor WHERE owner_key=?", (self.owner,))).fetchone()
+                row = await (await db.execute(f"SELECT COALESCE(MAX(sequence),0) FROM {self.cursor_table} WHERE owner_key=?", (self.owner,))).fetchone()
                 upper = row[0]
             rows = await (await db.execute(
-                "SELECT c.sequence,p.* FROM prospective_outbox_cursor c "
+                f"SELECT c.sequence,p.* FROM {self.cursor_table} c "
                 "JOIN prospective_scheduler_registrations p ON p.record_id=c.registration_record_id "
                 "WHERE c.owner_key=? AND c.sequence>? AND c.sequence<=? "
                 "ORDER BY c.sequence LIMIT ?", (self.owner, after, upper, limit))).fetchall()
