@@ -1327,7 +1327,10 @@ class ForegroundRuntimeExecutionAuthority:
                 pass
         self._notify_state_changed()
         self._provider.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
-        self._tools.mark_terminal(sdk_run_id, terminal.terminal_state.value.lower())
+        cleanup_tools = getattr(self._tools, "mark_terminal_if_registered", None)
+        if not callable(cleanup_tools):
+            cleanup_tools = self._tools.mark_terminal
+        cleanup_tools(sdk_run_id, terminal.terminal_state.value.lower())
         if self._effect_gate is not None:
             self._effect_gate.release(sdk_run_id)
 

@@ -416,6 +416,22 @@ class ProductForegroundToolPort:
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
         self._registry.mark_terminal(sdk_run_id, state)
 
+    def mark_terminal_if_registered(self, sdk_run_id: str, state: str) -> None:
+        """Release process-local authority after an authenticated durable terminal.
+
+        A cold recovered terminal has no registration in this process. Do not
+        reconstruct its old tool grant just to clean it up.
+        """
+        if state not in {"completed", "failed", "cancelled", "stopped"}:
+            raise ValueError("invalid terminal state")
+        try:
+            self._registry.resolve(sdk_run_id)
+        except KeyError as exc:
+            if exc.args != (sdk_run_id,):
+                raise
+            return
+        self.mark_terminal(sdk_run_id, state)
+
 
 __all__ = (
     "ProductForegroundProviderPort",
