@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06 14:38。原生r6真实Provider已完成后台分析并生成长期认知记忆；独立UI遗忘后列表及相关当前历史不再展示。semantic召回因授权等待后foreground_lease_expired失败，UI停止未收敛；Cytoscape画布有记忆仍空白。上述缺陷修复中，窗口外short/遗忘后召回未验，完整native/program未通过。完成现场采集后正常退出，PG60384清空。[r6证据与范围](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
+
 最后更新：2026-09-06。H075/M616原生r5已实际完成中文Provider响应、WeMM编码、对话写入和审计UI；结束本轮后清空PG54846。后台analysis误用foreground guard已定位，正在修复；短期当前4组处于SDK最近10组排除窗口，尚无窗口外召回证据。完整native/program未闭合。[本轮证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
 
 最后更新：2026-09-06。原生启动暴露的服务登记槽与中断空库初始化已修复；新增两项实际 runtime 检查通过，原生主对话恢复可输入。真实 Provider 已返回，但中文输入用例和随后模型加载异常仍未闭合，完整 native 未通过。[本次结论与证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
