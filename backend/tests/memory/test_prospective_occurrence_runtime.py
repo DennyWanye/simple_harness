@@ -4,6 +4,7 @@ NOT native/user-visible acknowledgement evidence. No SDK SQL or fake terminal ID
 """
 import asyncio
 import json
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -46,7 +47,7 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
         source=PublicTimeAuthoritySource(registrations=store,signals=signals),
         memory=w,clock=lambda:w.clock[0]).tick(claim_owner='real-a7')==1
     async def manager():return w.manager
-    current_runtime=SimpleNamespace(principal=lambda:principal,manager=manager)
+    current_runtime=SimpleNamespace(principal=lambda:principal,manager=manager,semantic_clock=time.time)
     coordinator=ProspectiveOccurrenceCoordinator(store=store,
         read_current=PublicOccurrenceCurrentReader(store=store,runtime_getter=lambda:current_runtime),
         clock=lambda:w.clock[0])
@@ -124,7 +125,7 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
                 runtime,stack,queue=await build(tmp_path,state,provider,
                     visibility_memory=visibility,occurrence_coordinator=coordinator,
                     extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-                    candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink)
+                    candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,context_use_memory=current_runtime)
             controls.turn=turn
             await service.enqueue_turn(QueueTurnRequest(None,f'a7-real-{turn}',f'Actual user turn {turn}'))
             await runtime.after_enqueue(subject=principal.actor_id)
@@ -178,7 +179,7 @@ async def test_real_four_runs_present_ack_terminal_reopen(tmp_path, monkeypatch,
         runtime,stack,queue=await build(tmp_path,state,provider,visibility_memory=visibility,
             occurrence_coordinator=coordinator,
             extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-            candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink)
+            candidate_identity=main.build_candidate_identity(),decision_sink_factory=decision_sink,context_use_memory=current_runtime)
         await runtime.after_enqueue(subject=principal.actor_id)
         await asyncio.wait_for(runtime.drain(),20)
         assert runtime.last_error is None and len(sends)==before

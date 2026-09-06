@@ -68,3 +68,14 @@ runner returned125/FileNotFoundError with group_id=null/remaining[], peak0. This
 an agent command error, not product evidence. No retry while main native takes
 priority. The correct command retains `<python> -I -B run_a7.py`; ab5aca99 remains
 NOT_RUN against the two actual-runtime failures.
+
+`a7-r9` after subject fix: 2 FAIL/7 deselected in2.85s, PG95502
+exit1/remaining[], peak395296KiB. Real enqueue and SDK Run start now succeed.
+Both actual Provider guards reject before suppression/no_recall with exact
+`s5c_occurrence_actual_handoff_missing`: the reused old foreground fixture never
+installed production typed Context-use authority/coordinator, so public Context-use
+view is unavailable. This is not a privacy negative PASS. Fixture gains optional
+real ProductTypedContextUseAuthority + ProductProviderInvocationCoordinator plus
+snapshot typed authority, as main already composes, preserving public handoff
+verification (no fabricated view/no relaxed guard). New fix NOT_RUN; slot released
+Hegel, who subsequently completed his four red retries and released the slot.

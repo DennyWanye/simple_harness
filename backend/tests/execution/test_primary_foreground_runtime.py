@@ -88,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -129,6 +129,13 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
                         projectless_admission="requires_project" if s["name"] == "write_file" else "safe") for s in specs)
     catalog = {"specs": specs, "schema_fingerprints": {s["name"]: canonical_hash(s["input_schema"]) for s in specs}}
     ledger = ContextRouteLedgerStore(state_path)
+    decision_sink = decision_sink_factory(ledger) if decision_sink_factory else ProductRuntimeDecisionSink(ledger=ledger)
+    typed_use_authority = None
+    if context_use_memory is not None:
+        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
+        typed_use_authority = await ProductTypedContextUseAuthority.create(
+            state_path=state_path, memory_runtime=context_use_memory,
+            stack_getter=lambda: stack, ledger=ledger, terminal_sink=decision_sink)
     class AuthorityCheckingAuthorization(Noop):
         async def authorize(self, prepared):
             if prepared.call.name == "write_file":
@@ -163,12 +170,19 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
                 tools.register(_sdk_tool(registration))
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
-        result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
+        if typed_use_authority is not None:
+            from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
+            provider_coordinator=ProductProviderInvocationCoordinator(uow=uow,
+                resolver=SimpleNamespace(resolve=lambda _:binding),
+                context_use_authority=typed_use_authority,typed_terminal=typed_use_authority)
+        else:
+            provider_coordinator=ProviderInvocationCoordinator(uow=uow,resolver=SimpleNamespace(resolve=lambda _:binding))
+        result = RuntimePorts(provider=provider_coordinator,
                             tools=EffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop),
                             authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
                             tool_reconciliation=noop, reconciliation=noop, provider_reconciliation=noop,
                             react_checkpoint=uow, tool_catalog=DurableToolCatalogResolver(uow),
-                            runtime_decision_sink=(decision_sink_factory(ledger) if decision_sink_factory else ProductRuntimeDecisionSink(ledger=ledger)),
+                            runtime_decision_sink=decision_sink,
                             agent_memory=memory,
                             context_provider=None if memory is None else ProductConversationContextProvider(sources),
                             context_staging=None if memory is None else ContextStagingRepository(database))
@@ -188,7 +202,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         from deskpet.execution.semantic_closure import closure_instruction_for_run
         return replace(result, run_context_authority=ProductRunContextAuthority(
             ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
-            occurrence_coordinator=occurrence_coordinator,
+            occurrence_coordinator=occurrence_coordinator, typed_use_authority=typed_use_authority,
             closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
         ))
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
