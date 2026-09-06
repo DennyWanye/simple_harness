@@ -22,6 +22,8 @@ every non-commit outcome is a stable ``{"ok": false, "error": {...}}`` failure
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import uuid
 from pathlib import Path
 from collections.abc import Mapping
@@ -47,6 +49,8 @@ ROUTES = (
 # The SDK bounds tool arguments but not tool results; the Host bounds its own
 # inputs again so an oversized model payload can never reach the S4 stores.
 _MAX_TEXT = 2048
+_AUDIT_CANCEL_SECONDS = 2.0
+_LOG = logging.getLogger(__name__)
 
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -159,6 +163,20 @@ class ContextRouteToolService:
         decision_id: str | None,
         detail: Mapping[str, Any],
     ) -> None:
+        if proposal.get("route") == "memory_standalone":
+            # Keep only the bounded enum/boolean projection. Raw query, invalid
+            # model values and provider exception text are not audit metadata.
+            try:
+                selected, short = parse_recall_selection(
+                    proposal.get("memory_types"), proposal.get("include_short_horizon", False),
+                )
+                selection = {"origin": "model_proposal",
+                             "requested_memory_types": list(selected),
+                             "include_short_horizon": short}
+            except ValueError as exc:
+                selection = {"origin": "model_proposal", "selection_status": "invalid",
+                             "selection_error": str(exc)}
+            detail = {**detail, "recall_selection": selection}
         await self._ledger.record_tool_invocation(
             sdk_run_id=run_id,
             raw_call_id=raw_call_id,
@@ -288,8 +306,13 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, turn_ordinal, proposal
             )
         except _CompositionUnavailable as exc:
-            return _error(exc.code)
+            return await self._reject(run_id, raw_call_id, effect_id, proposal, exc.code)
         except Exception as exc:  # noqa: BLE001 - stable fail-closed surface
+            if route_value == "memory_standalone":
+                # Exception messages/codes can contain provider or source text.
+                code = ("context_route_recall_timeout" if isinstance(exc, TimeoutError)
+                        else "context_route_adjudication_failed")
+                return await self._reject(run_id, raw_call_id, effect_id, proposal, code)
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
@@ -346,11 +369,25 @@ class ContextRouteToolService:
             )
         from deskpet.memory.human_memory_v7 import project_recall_fragments
 
-        execution = await self._recall_executor(
-            query=query, run_id=run_id, turn_ordinal=turn_ordinal,
-            memory_types=memory_types,
-            include_short_horizon=include_short_horizon,
-        )
+        try:
+            execution = await self._recall_executor(
+                query=query, run_id=run_id, turn_ordinal=turn_ordinal,
+                memory_types=memory_types,
+                include_short_horizon=include_short_horizon,
+            )
+        except asyncio.CancelledError:
+            # This boundary precedes route commit; cancellation is not a
+            # successful route or a normal tool return. Bound the audit write
+            # and always propagate cancellation, including if storage fails.
+            try:
+                await asyncio.wait_for(self._reject(
+                    run_id, raw_call_id, effect_id, proposal,
+                    "context_route_recall_cancelled",
+                ), timeout=_AUDIT_CANCEL_SECONDS)
+            except (Exception, asyncio.CancelledError):
+                _LOG.warning("context_route_cancel_audit_unavailable run_id=%s effect_id=%s",
+                             run_id, effect_id)
+            raise
         fragments = project_recall_fragments(execution)
         refs = tuple(dict.fromkeys(str(f["ref"]) for f in fragments))
         return await self._commit_receipt(
