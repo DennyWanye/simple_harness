@@ -48,3 +48,5 @@ PYTHONPATH="$P/.local-test-evidence/2026-09-07/harness0710-artifact/installed:$H
 |execution-r1/result.json|017efd21bc17328eb66feefe99b938fee0ba9612f5cb41570c772d4ec9710596|
 |execution-r1/handoff.json|959bcd8cad7dcb934b7b3b4b9a55b93a3cfd09b087e0d04d766410852cc67510|
 |resource-r1/resource.json|8856d393b13adefbb07aedfa9d6590034e2933fa713a6626b7c8ba4ee97f4827|
+
+同一服务只读GET /models返回200，共165模型且仍列gpt-5.5；列表存在不证明请求能路由。主本机摘要`.local-test-evidence/2026-09-07/provider-http-r4-diagnostic/model-catalog.json` SHA-256 `9bfbd6eb05bdba78a06354842fe75ad6af2e75e69f1dd06f4cddf096a38313c7`。当前未自行切换模型或再次POST，模型选择已询问用户；本地剩余工作继续。

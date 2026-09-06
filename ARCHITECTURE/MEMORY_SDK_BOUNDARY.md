@@ -1,3 +1,5 @@
+最后更新：2026-09-07。计分叶ebd81721修缺response时exact预测指标误零，改为null并保留lower_bound；失败denominator/credit不变，旧r4不覆写。仅affected真实SDK failed单Run控制1PASS0.91s，PG78605自然清空；非模型质量。[指标与结果](../plans/2026-09-07-corpus-c01-scoring/MISSING-RESPONSE-METRICS.md)。
+
 最后更新：2026-09-07。独立单POST诊断收到HTTP400/model_not_found，param=model，message unknown provider for model gpt-5.5；1post/0工具，PG77944正常退出无残留。只证明该次拒绝，不追认原r4同因、不称nullable线上通过。主另报告/models列该模型，清单不等于POST可用，暂停进一步请求并等待模型取舍。[受限结论与审核证据](../plans/2026-09-07-corpus-c01-scoring/HTTP-REJECTION.md)。
 
 最后更新：2026-09-07。C07独立准备叶（业务ade43237/测试修41296300）在原H079/M619载体分批6个唯一控制通过：20原setup编译边界、3种真实非空seed/job/public冷回读、06/14真实最近组→下一确定性请求。首批同因字段5红保留；PG77451正常退出无残留。只证明helper/Context准备，不是20条实际评分READY；正式06/14评分Provider相位、标量actualmain组合及模型质量仍未验，不改S3完成度。Dirac限定终审已接受并接入隔离主候选。[结果与边界](../plans/2026-09-07-corpus-c07-prepare/RESULTS.md)。
