@@ -36,3 +36,13 @@
 ## 必要新控制（共享slot当前Singer优先，不重跑旧time/schema）
 
 实际public inbox occurrence +真实Host snapshot：3个Run未ACK→3presented/1overdue/0退出投影/仍mandatory；第4Run ACK同receipt重放→terminal settle。snapshot before/aftercommit、ACK before/aftercommit恢复；wrongowner/Run/key/未呈现key拒绝零变化；第9条未注入不presented；重复Provider turn不增count；hash/关联篡改拒绝；fresh suppression在出站/ACK前拒绝且不生成退出投影。工具五路实际catalog可见和真实context dispatch。测试事实不冒充native/provider。
+
+## Dirac b619预审收紧（2026-09-06，实施约束）
+
+- 五路明确是direct_standalone/memory_standalone/continue_active/resume_existing/create_new，不是五种工具发现入口。
+- current reader返回typed组：已授权可见exact entries，以及针对请求keys的确证状态suppressed/superseded/expired/unverifiable。missing/page缺席不得当退出。每项绑定真实principal/Run/当前披露身份；无法核验就拒绝，不静默丢组。
+- actual Provider每次physical invoke前校验snapshot中实际注入的原组/entry hash与原披露身份；不得更换组/token。没有公开跨库epoch原子口，明确存在check-to-send窗口，不宣称跨库原子撤权。
+- snapshot replay从原持久组重建/核验，不以新过滤结果替换；最终gate仍重新读当前源。呈现计数是snapshot提交次数（按Run唯一），不等于Provider收到/用户已见。提交后gate拒绝/取消仍可留下presentation；第3Run overdue的计数不描述为3次成功投递。
+- 新ACK要求当前exactentry/sourcehash与本Run原presentation一致，变更拒绝。原ACK优先重放只返回已验证receipt，不返回旧body、不重新授予披露。两个Run并发ACK唯一赢家，另Run冲突；不能重复生成completion。
+- settle只使用ACK原Run实际terminal；旧ACK待收口仅恢复同Run，禁止后继Run代盖。FAILED/CANCELLED表示实际Host终态，不等于Memory意图完成。
+- 终态接口接现`PrimaryTerminalIdentity`与实际public SDKterminal（额外参数actual_sdk_terminal），调用现verify_sdk_terminal，禁止dict碰巧同Run冒raw证明。source模块仍依赖调用者在原TX从Host权威封套取得该identity；后续接线须实测。
