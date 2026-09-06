@@ -45,6 +45,7 @@ class CaseManager:
         self.disclosure = self.helpers._disclosure(self.principal.actor_id)
         self.events, self.sources, self.admitted, self.actions = [], [], {}, {}
         self.typed_receipts = {}
+        self.procedure_authorities = {}
         self.conversations = {}
         self.base_revision = 1
         self.audit_receipt = None
@@ -62,6 +63,14 @@ class CaseManager:
                     raise ValueError('memory action authority reference differs')
                 owner.events.append({'call':'resolve_memory_action_authority','reference':ref.to_json(),
                     'grant':grant.to_json(),'authority_hash':grant.authority_hash,'now':owner.actual_now})
+                return grant
+            async def resolve_procedure_observation_authority(self, ref):
+                grant = owner.procedure_authorities[ref.authority_id]
+                if ref != h.ProcedureObservationAuthorityRef.from_authority(grant):
+                    raise ValueError("procedure observation reference differs")
+                owner.events.append({"call":"resolve_procedure_observation_authority",
+                    "reference":ref.to_json(), "authority":grant.to_json(),
+                    "authority_hash":grant.authority_hash})
                 return grant
             async def resolve_conversation_registration(self, ref):
                 registration=owner.conversations[ref.registration_id]
@@ -81,6 +90,7 @@ class CaseManager:
         audit, self.audit_ref = self.cases.audit_authority(self.principal, self.actual_now)
         kwargs = dict(evidence_authority=self.authority, memory_action_authority=self.authority,
             conversation_evidence_authority=self.authority,
+            procedure_observation_authority=self.authority,
             audit_access_authority=audit, classification_policy=m.InformationClassificationPolicy(
                 policy_id='typed-recall-case-policy', policy_version='1', authority_ref='host-case-policy',
                 required_privacy_class=self.privacy, required_information_attributes=self.attributes))
@@ -176,7 +186,8 @@ class CaseManager:
                             'input': spec, 'target': None if target is None else target.to_json()})
         op = self.helpers._shared_operation(span, operation_id=operation_id, kind=h.MemoryMutationKind(kind),
             memory_type=h.LongTermMemoryType(memory_type), payload=None if kind=='suppress' else payload,
-            lifecycle_state=life(spec.get('state', 'pending' if memory_type=='prospective' else 'active')),
+            lifecycle_state=life('eligible_for_activation' if memory_type=='procedure' and spec.get('state')=='eligible'
+                else spec.get('state', 'pending' if memory_type=='prospective' else 'active')),
             epistemic_status=h.EpistemicStatus(spec.get('epistemic', 'explicit_user')),
             verification_state=h.VerificationState(spec.get('verification', 'source_bound')),
             conflict_status=h.ConflictStatus(spec.get('conflict_status', 'uncontested')),

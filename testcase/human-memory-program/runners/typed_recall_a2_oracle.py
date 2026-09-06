@@ -376,14 +376,16 @@ def check_execution_wire(value, context, plan):
         raise ValueError('selected ordinals differ')
 
 
-def normal_expected(fixture, recipe):
+def normal_expected(fixture, recipe, *, applicability=False, trigger_signal=False):
     name, spec = recipe['cell_id'],recipe['seed']
     if recipe['family'] in {'validity','lifecycle'}:
         row = next(r for r in fixture['eligibility_cases']+fixture['lifecycle_cases'] if name=='eligibility/'+r['id'])
         return row['expected']=='ELIGIBLE'
     if recipe['family']=='epistemic':
         return any(spec['memory_type'] in r['memory_types'] and spec['epistemic']==r['epistemic']
-            and spec['verification']==r['verification'] and r['expected']=='ELIGIBLE'
+            and spec['verification']==r['verification'] and (r['expected']=='ELIGIBLE'
+                or (r['expected']=='ELIGIBLE_WITH_APPLICABILITY' and applicability)
+                or (r['expected']=='ELIGIBLE_WITH_TRIGGER_SIGNAL' and trigger_signal))
             for r in fixture['epistemic_verification_cases'])
     if recipe['family']=='disclosure':
         return any(r['recipient']==recipe['recipient'] and r['purpose']==recipe['purpose']
@@ -402,7 +404,16 @@ def normal_projection(spec):
         interval=payload.pop('occurred_interval')
         payload.update(occurred_start=datetime.fromisoformat(interval['start'].replace('Z','+00:00')).timestamp(),
                        occurred_end=datetime.fromisoformat(interval['end'].replace('Z','+00:00')).timestamp())
+    elif spec['memory_type']=='procedure':
+        raw=payload['applicability']
+        if isinstance(raw,dict):payload['applicability']=[raw['tool']+'@'+raw['version']]
     return payload
+
+
+def actual_lifecycle(spec):
+    if spec['memory_type']=='procedure' and spec.get('state')=='eligible':
+        return 'eligible_for_activation'
+    return spec.get('state','pending' if spec['memory_type']=='prospective' else 'active')
 
 
 def assess_normal(fixture, cell):
@@ -419,7 +430,12 @@ def assess_normal(fixture, cell):
             # Seed/DTO refusal is a real observation, never a recall PASS.
             return dict(status='BLOCKED',reason='PUBLIC_CASE_PRECONDITION_REJECTED:'+observed['exception']['type']+':'+observed['exception']['reason'],
                 business_assertions=['actual public operation and exact rejection recorded'])
-        if recipe['seed']['memory_type'] in {'procedure','prospective'}:
+        procedure_revision=None;procedure_ref=None
+        if 'procedure_binding' in observed:
+            proof_spec=importlib.util.spec_from_file_location('procedure_oracle',Path(__file__).with_name('typed_recall_procedure_oracle.py'))
+            proof_module=importlib.util.module_from_spec(proof_spec);proof_spec.loader.exec_module(proof_module)
+            procedure_revision,procedure_ref=proof_module.check(observed,recipe,check_admitted_span)
+        if recipe['seed']['memory_type']=='prospective' or (recipe['seed']['memory_type']=='procedure' and procedure_revision is None):
             blockers.append('REQUIRED_APPLICABILITY_OR_SIGNAL_AUTHORITY_NOT_ESTABLISHED')
         if recipe['family']=='projection':
             blockers.append('FULL_SOURCE_RECORD_CANARY_AND_CROSS_SCOPE_SETUP_NOT_ESTABLISHED')
@@ -432,7 +448,9 @@ def assess_normal(fixture, cell):
         projection=normal_projection(recipe['seed'])
         kind=recipe['seed']['memory_type']
         full_source = (semantic_source(**projection) if kind=='semantic' else
-            {'memory_type':'episode',**projection,'thread_ref':None} if kind=='episode' else None)
+            {'memory_type':'episode',**projection,'thread_ref':None} if kind=='episode' else
+            {'memory_type':'procedure',**{k:v for k,v in projection.items() if k!='effective_risk'},
+             'proposed_risk_level':projection['effective_risk']} if kind=='procedure' else None)
         if source['input']!=recipe['seed'] or (full_source is not None and source['source_wire']!=full_source):
             raise ValueError('source DTO differs from independent inputs')
         history=recipe.get('lifecycle_path',[recipe['seed']])
@@ -454,13 +472,15 @@ def assess_normal(fixture, cell):
             target=None if ordinal==0 else {'memory_id':observed['sources'][ordinal-1]['receipt']['operations'][0]['memory_id'],
                 'revision':ordinal,'target_kind':'existing_memory'}
             if (operation['kind']!=expected_kind or actual['revision']!=ordinal+1
-                    or operation['lifecycle_state']!=step.get('state','pending' if kind=='prospective' else 'active')
+                    or operation['lifecycle_state']!=actual_lifecycle(step)
                     or (ordinal and (operation['target']!=target or actual['memory_id']!=target['memory_id']
                                      or operation['action_authority_ref'] is None))):
                 raise ValueError('lifecycle actual kind/target/revision/authority differs')
             for span in operation['evidence_spans']:
                 evidence_refs.append({'evidence_id':span['evidence_id'],
                     'content_hash':span['envelope_hash'],'ordinal':len(evidence_refs)+1})
+        if procedure_ref is not None:
+            evidence_refs.append({**procedure_ref,'ordinal':len(evidence_refs)+1})
         if any(r['context']['evidence_refs']!=evidence_refs or r['plan']['evidence_refs']!=evidence_refs for r in observed['recalls']):
             raise ValueError('recall does not bind complete lifecycle evidence history')
         for index, recall in enumerate(observed['recalls']):
@@ -481,7 +501,7 @@ def assess_normal(fixture, cell):
             if (operation['payload']!=source['source_wire'] or operation['kind']!=('create' if len(history)==1 else 'supersede' if recipe['seed']['state']=='superseded' else 'revise')
                     or operation['epistemic_status']!=recipe['seed'].get('epistemic','explicit_user')
                     or operation['verification_state']!=recipe['seed'].get('verification','source_bound')
-                    or operation['lifecycle_state']!=recipe['seed'].get('state','pending' if kind=='prospective' else 'active')
+                    or operation['lifecycle_state']!=actual_lifecycle(recipe['seed'])
                     or operation['proposed_privacy_class']!=recipe.get('privacy','personal').lower()
                     or operation['proposed_information_attributes']!=recipe.get('attributes',[])):
                 raise ValueError('actual mutation arguments differ from frozen recipe')
@@ -499,7 +519,7 @@ def assess_normal(fixture, cell):
             if (replay['decision']!=decision or replay['result']!=result or not replay['replayed']
                     or replay['candidate_query_count']!=0 or replay['candidate_query_started']):
                 raise ValueError('durable exact replay differs')
-            selected=normal_expected(fixture,recipe) and not (recipe['family']=='budget' and index==1)
+            selected=normal_expected(fixture,recipe,applicability=procedure_revision is not None) and not (recipe['family']=='budget' and index==1)
             if not blockers or kind not in {'procedure','prospective'}:
                 if len(items)!=int(selected) or result['confirmation_groups'] or decision['confirmation_groups']:
                     raise ValueError('original inclusion/exclusion oracle differs')
@@ -517,7 +537,7 @@ def assess_normal(fixture, cell):
             for item in items:
                 selected_item=item['selected_item']
                 if (item['public_payload']!=projection or selected_item['public_payload_hash']!=hash_json(projection)
-                        or selected_item['source_ref']!=op['memory_id'] or selected_item['source_revision']!=op['revision']
+                        or selected_item['source_ref']!=op['memory_id'] or selected_item['source_revision']!=(procedure_revision if procedure_revision is not None else op['revision'])
                         or op['revision']!=len(history) or selected_item['source_kind']!='cognitive_memory'
                         or selected_item['memory_type']!=kind or item['evidence_manifest_hash']!=hash_json(sorted(source.get('evidence_ids',[source['evidence_id']])))
                         or full_source is None or selected_item['source_content_hash']!=hash_json(full_source)

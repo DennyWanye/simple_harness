@@ -29,11 +29,16 @@ async def run_cases(recipes, workspace):
                     target=helper.h.ExistingMemoryTarget(previous.memory_id,previous.revision))
                 previous=await case.seed(spec,operation_id=f'create-{ordinal+1}',
                     evidence_id=f'evidence-case-{ordinal+1}',**kwargs)
+            procedure = load('typed_recall_procedure_cases')
+            if procedure.supported(recipe):
+                observed['procedure_binding'] = await procedure.bind(case, recipe, previous)
             payload = recipe['seed']['payload']
             query = str(payload.get('object_value',payload.get('title',payload.get('name',payload.get('action')))))
             params = dict(query=query,memory_types=(recipe['seed']['memory_type'],),
                 recipient=recipe.get('recipient','user_self'),purpose=recipe.get('purpose','personalization'),
                 modes=recipe.get('modes',('full_text',)))
+            if 'procedure_binding' in observed:
+                params['fingerprint'] = (observed['procedure_binding']['fingerprint'],)
             if recipe['family']=='budget':
                 limits = dict(max_items=8,max_bytes=16384,max_tokens=2048,deadline_ms=2000)
                 for ordinal, limit in enumerate(recipe['limits']):
