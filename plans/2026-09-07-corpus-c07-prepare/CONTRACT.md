@@ -1,6 +1,6 @@
 # C07 no-match setup 准备
 
-2026-09-07；base e698d449；分支 feat/corpus-c07-prepare。源码限定审查已收，首批6项 **1 PASS / 5同因测试字段 FAIL**；修后5红待跑，见 [RESULTS](RESULTS.md)。20条模型质量均 NOT_RUN。原载体未变，资源槽已释放；未安装/构建/启动模型或native。
+2026-09-07；base e698d449；分支 feat/corpus-c07-prepare。业务ade43237，测试字段修正41296300。约定6个控制分批1+5通过，原1PASS/5FAIL保留，见 [RESULTS](RESULTS.md)。20条模型质量仍NOT_RUN；06/14正式评分相位仍未接。原H079/M619载体未变，PG77451已清空释放。
 
 原义务来自 Memory 仓库 `plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/review-zh/successor-12x20/07-no-match.md` 的 setup 与 recent_messages。原文/fixture/阈值/候选 pins 不改。编译入口只有 case_id、原 setup 字符串、scenario_clock；拒绝整个 Case/input/gold 对象。SETUPS 保存逐条原文与固定 SHA256。scoring 子进程仍不读取 oracle；模型输入与 setup 分离。
 
@@ -46,7 +46,7 @@ Fixture executor 名称沿用 `corpus-fixture-plan/no-language-model`，不是�
 
 两条控制使用原 authored assistant 的确定性 transport 驱动真实 Host/SDK，再发独立当前输入，核下一**实际 ProviderRequest**的分角色历史与 seed 不泄漏。此证据只证明 carrier/Context 准备，不是语言模型质量。
 
-**当前实际缺口是评分 session 的相位适配，不是 SDK 能力：** 现 `corpus_scoring_session.run` 只有单一真实 Provider 初始化路径，尚无受控的 setup-only 确定性 producer → 原 SDK/Host完整终态 → 同库生产评分 Provider 恢复的相位接线。06/14 在该生产评分入口明确 `c07_scoring_same_store_recent_producer_unwired`，不得因为长期 seed 可运行就声称两例 READY。独立 helper 与其两项实际运行栈控制已实现但 NOT_RUN；后续应复用真实 runtime factory，不以 fake terminal/评分时拼接消息补洞。
+**当前实际缺口是评分 session 的相位适配，不是 SDK 能力：** 现 `corpus_scoring_session.run` 只有单一真实 Provider 初始化路径，尚无受控的 setup-only 确定性 producer → 原 SDK/Host完整终态 → 同库生产评分 Provider 恢复的相位接线。06/14 在该生产评分入口明确 `c07_scoring_same_store_recent_producer_unwired`，不得因为长期 seed 可运行就声称两例 READY。独立 helper 与其两项实际运行栈控制已通过限定确定性验证；后续应复用真实 runtime factory，不以 fake terminal/评分时拼接消息补洞。
 
 其余18条接入 C07 compiler/preparer 分发，**仍是源码可达、未执行，不是18 PASS**。评分主链当前 input/setup 传递、审批、实际 trace 与统一政策沿用；C07是否真正零查询/零披露/未建新记忆或提醒须后续逐例实际 trace 判，不凭 setup 完成推断。
 
@@ -54,12 +54,12 @@ Fixture executor 名称沿用 `corpus-fixture-plan/no-language-model`，不是�
 
 独占 `corpus_c07.py`、`corpus_c07_prepare.py`、`test_corpus_c07_prepare.py`。与 Carver 已协调共享小 hook：`corpus_scoring.py::prepare_batch` C07 ID 白名单/对应审阅提示；`corpus_scoring_session.py` C07 compiler/preparer 分发及结构化未接线拒绝。不改 C05、公共写入 helper、SDK、main 工作树。
 
-6个控制：1个全部setup/输入边界；3个真实非空类型分支/原proof/重开；2个实际最近组→下一请求。没有全401/240/旧绿复跑。默认资源锁获得后才运行；当前全部 NOT_RUN，失败时保留原 raw，只重试实质修正后的相关红。
+6个控制：1个全部setup/输入边界；3个真实非空类型分支/原proof/重开；2个实际最近组→下一请求。没有全401/240/旧绿复跑。已获默认资源锁分批执行6个控制并释放；原raw保留，1绿未重跑，只重试实质修正后的5红。
 
-待跑命令（在本树 backend；借用既有解释器与主 H079/M619 target，**非本树独立安装身份**）：
+r1已执行命令（r2只选原5红，见RESULTS；在本树 backend；借用既有解释器与主 H079/M619 target，**非本树独立安装身份**）：
 
 ```sh
 /Users/denny/projects/simple_harness-primary-candidate/.local-test-evidence/2026-09-06/primary-m0615/venv/bin/python -I -B /Users/denny/projects/simple_harness-primary-candidate/scripts/run_resource_bounded.py --evidence-dir /Users/denny/projects/simple_harness-typed-recall-context-use-full/.local-test-evidence/2026-09-07/corpus-c07-prepare/r1 -- /Users/denny/projects/simple_harness-primary-candidate/.local-test-evidence/2026-09-06/primary-m0615/venv/bin/python -I -B -c 'import sys; sys.path[:0]=["/Users/denny/projects/simple_harness-typed-recall-context-use-full/backend", "/Users/denny/projects/simple_harness-primary-candidate/.local-test-evidence/2026-09-07/memory619-artifact/installed"]; import pytest; raise SystemExit(pytest.main(["-q", "tests/quality/test_corpus_c07_prepare.py", "--basetemp=/Users/denny/projects/simple_harness-typed-recall-context-use-full/.local-test-evidence/2026-09-07/corpus-c07-prepare/r1/basetemp"]))'
 ```
 
-不启动此命令争槽；主/Singer当前持有资源。ARCH 未写“完成”：只有这批新控制通过后才回写当前验证事实与剩余边界。
+资源槽已释放，不再运行此命令；ARCH仅记录6个helper控制的当前事实，S3/20条评分完成度不提升。
