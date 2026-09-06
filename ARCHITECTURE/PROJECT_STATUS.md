@@ -1,3 +1,5 @@
+最后更新：2026-09-06。A7两项真实H076/M617 runtime控制已2PASS：三未ACKRun保持mandatory并准确拒绝no_recall/唯一overdue，第四ACK实际终态settle，ACK后Memory+SDK/Hostruntime重开同receipt零重发；实际physical guard在Memory-only suppress后exact拒绝且零HTTP。此前5事务绿未重跑。五路/终态故障/完整history继承与整App52startup仍未全闭合，未称完整A7。[结果和原红](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
 最后更新：2026-09-06。A7首次5项展示/ACK事务与拒绝控制通过；两项真实runtime控仍因fixture frozen-schema序列化失败未进入执行，修复后待仅重试两红。完整A7未完成，旧绿未重跑。[新增结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
 
 最后更新：2026-09-06。A7隔离叶修复实际service slot、分页截断failclosed、严格codec及真实factory暴露的schema顺序/ACK工具schema兼容问题。新风险分批验收：cap和重算receipt codec通过，真实factory首次构造+同52库重建保持namespace与ACK实际catalog通过；原失败保留。完整presentation/ACK/Provider历史继承仍未验完，未合主/未称native完成。[限定结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。

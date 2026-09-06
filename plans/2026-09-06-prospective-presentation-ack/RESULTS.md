@@ -79,3 +79,38 @@ real ProductTypedContextUseAuthority + ProductProviderInvocationCoordinator plus
 snapshot typed authority, as main already composes, preserving public handoff
 verification (no fabricated view/no relaxed guard). New fix NOT_RUN; slot released
 Hegel, who subsequently completed his four red retries and released the slot.
+
+## Actual runtime r10 — source86380353
+
+**2 PASS / 7 deselected**, only the two outstanding runtime failures rerun.
+Real H076/M617 public APIs, production Host current reader, typed-context-use
+coordinator, ProductProviderAdapter + deterministic HTTP transport, ProductToolsAdapter
+and actual SDK terminal evidence. No models/native.
+
+- Three real unACKed Runs: three committed presentations, same actual occurrence,
+  exact production NoRecallBlockedError and FAILED terminals, no exit, one overdue.
+- Fourth Run actual ACK tool: one receipt, Host ACK + original Run actual terminal
+  settle. Third-Run pre-ACK rebuild and ACK-afterward public Memory/full runtime
+  reopen preserve original receipt, empty queue produces no extra HTTP calls.
+- Late Memory-only suppression: the same actual handoff request first passes the
+  real physical guard; public suppress then changes current visibility, exact cause
+  s5c_occurrence_current_read_changed rejects, FAILED and zero HTTP calls, no repeat.
+- Five prior transaction controls fromr6 not rerun; no summing retries into suite
+  or full A7 completeness. Five explicit Context routes, exact terminal commit-fault
+  recovery, foreign principal and full derived-history inheritance remain separate.
+
+PG95773 exit0/remaining[], cleanupnull, peak397120KiB, elapsed6.444s; minDisk4202MiB.
+Slot released. r10 source delta and results submitted for Dirac limited review.
+Whole-app startup dispatch<=49 still separate main-owner seam; direct fixture
+stack rebuilding is not app startup acceptance.
+- `a7-r7/command.log` SHA256 `67df6ade2793c9171636312ca8f1aa93b790bef93c6b39e73db524465ec37531`
+- `a7-r7/resource.json` SHA256 `22a6fc7e2ae0d5216e827391e0acb7b8612800c2b567500f3e863c5a84df0d6e`
+- `a7-r7/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r8/command.log` SHA256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+- `a7-r8/resource.json` SHA256 `dc374f55c829890e3c55c526e28af7bbed51512f07a279a5b6fe6a1cb4deb1f3`
+- `a7-r9/command.log` SHA256 `8001c5ad74408006f4f8d3fb1a7bdd3b518594ad9cda3358931bd5143e1d55d4`
+- `a7-r9/resource.json` SHA256 `4ad31e6e11c0ac337a144a0830ba2031c067bdac691cbe42e7d706813e8d0f0d`
+- `a7-r9/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r10/command.log` SHA256 `34bf1c0b159f3519d342632dc33ba272552ef6385b7426d1501d8a3f808b5454`
+- `a7-r10/resource.json` SHA256 `7d3ca70c98295ef434ab80630cd4d4616362cabc5c3c0e4c58044f9ecf7ba14e`
+- `a7-r10/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
