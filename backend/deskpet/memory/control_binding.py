@@ -90,6 +90,9 @@ class _ConnectionRequestFence:
     def verify(self):
         self._binding._verify(self._ingress, self._challenge)
 
+    def authenticated_host_snapshot(self):
+        return self._binding.authenticate(self._ingress, self._challenge)
+
     def audit_lease_ref(self):
         """Opaque binding of this exact verified owner/connection generation."""
         from deskpet.task_scope.protocol import canonical_hash

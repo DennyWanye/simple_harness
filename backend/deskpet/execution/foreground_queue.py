@@ -373,6 +373,7 @@ class ForegroundQueueStore:
         idempotency_key: str,
         turn_payload: Mapping[str, object],
         task_scope_id: str | None = None,
+        disclosure_binding_ref: str | None = None,
         admitted_evidence_pair: tuple[
             SanitizedEvidenceEnvelopeLike, SanitizedEvidenceReceiptLike
         ] | None = None,
@@ -384,6 +385,8 @@ class ForegroundQueueStore:
         idempotency_key = identifier(idempotency_key, "idempotency_key", 512)
         if task_scope_id is not None:
             task_scope_id = identifier(task_scope_id, "task_scope_id", 512)
+        if disclosure_binding_ref is not None:
+            disclosure_binding_ref = identifier(disclosure_binding_ref, "disclosure_binding_ref", 512)
         if not isinstance(turn_payload, Mapping):
             raise ForegroundQueueError("foreground_turn_payload_invalid")
         payload = dict(turn_payload)
@@ -420,6 +423,21 @@ class ForegroundQueueStore:
                     "SELECT * FROM foreground_turns WHERE subject=? AND idempotency_key=?",
                     (subject, idempotency_key),
                 )
+                from deskpet.memory.trusted_disclosure import current_record_tx, enqueue_binding_tx
+
+                existing_request = None if existing is None else json.loads(str(existing["turn_json"]))
+                if existing_request is not None and "disclosure_binding" in existing_request:
+                    current = await current_record_tx(db, subject)
+                    selected_ref = disclosure_binding_ref or (None if current is None else current["binding_ref"])
+                    if selected_ref != existing_request["disclosure_binding"]["binding_ref"]:
+                        raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                elif existing_request is not None and disclosure_binding_ref is not None:
+                    raise ForegroundQueueError("foreground_turn_idempotency_conflict")
+                token = await enqueue_binding_tx(db, subject=subject, requested_ref=disclosure_binding_ref,
+                    legacy=existing_request is not None and "disclosure_binding" not in existing_request)
+                if token is not None:
+                    request["disclosure_binding"] = token
+                turn_hash = canonical_hash(request)
                 if existing is not None:
                     # Replay the actual persisted format, never upgrade an old
                     # split-admission row into a new atomic-origin assertion.
@@ -2478,6 +2496,17 @@ class ForegroundQueueStore:
             "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1",
             (subject,),
         )
+        if turn is None:
+            return None
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        while turn is not None:
+            rejected = await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=subject)
+            if rejected is None:
+                break
+            turn = await self._fetchone(db,
+                "SELECT t.* FROM foreground_turns t JOIN foreground_turn_heads h ON h.turn_id=t.turn_id "
+                "WHERE t.subject=? AND h.current_state='QUEUED' AND t.enqueue_sequence>? "
+                "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1", (subject, turn["enqueue_sequence"]))
         if turn is None:
             return None
         binding_revision = 0

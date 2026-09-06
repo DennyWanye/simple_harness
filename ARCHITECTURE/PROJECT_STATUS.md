@@ -1,5 +1,9 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 工具组与可信披露组合接入
+
+最后更新：2026-09-06。工具v2非空组源码及证据、可信披露f3675064的两个P1修复均已由主审和独立代理审查。当前合入同一隔离Host候选，组合验证待运行；下列开发记录中的未合并/待独审状态为此前阶段。空assistant仍有M0614真实失败，SDK后继修复中；非SELF、真实Provider/native及240质量尚未完成。
+
 ## 2026-09-06 工具多消息v2生产接线，仍有SDK空文本阻塞
 
 最后更新2026-09-06。新实际工具组的terminal/逐消息来源原子提交，Host实际结算attestation、完整6item公开注册/short非空/重开/遗忘通过；写中断无半组、两个来源篡改与五个旧v1邻居通过。新空assistant真实完整组被M0614 short non_blank校验拒绝，保持原红并继续修SDK，不丢消息/填placeholder。故本片未完成；源码独审待续，无真实Provider/native/用户主树切换。[各批范围与未完成项](../plans/2026-09-06-tool-causality/PRODUCER.md)。
@@ -9,6 +13,20 @@
 
 最后更新：2026-09-06。新增内部reader通过实际Host effect index和SDK公开投影/bounded审计/结果读取绑定每个工具与父Provider消息，正确区分跨轮重复raw call ID；真实dynamic Host+SDK一个集成测试（含5个篡改及1个截断控制）后继通过，重复读取不新增audit查看缓存，峰165MiB，进程清空。仅来源投影，未接入terminal producer/短期整组索引，不签工具terminal receipt；原始失败保留、独审待续。[实现边界与证据](../plans/2026-09-06-tool-causality/RESULTS.md)。
 
+## 2026-09-06 Dirac披露并发两P1局部修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure/base955a19cd，整片未合主、待主/Dirac复核。真实双控制连接先复现FIFO陈旧A阻塞B与慢checker换代后仍物理send两红；新增schema49 Host入场拒绝记录（无Run/Memory伪receipt）让A拒绝后B继续，出站checker后新连接复核原token。历史source不改。最终新增及必要邻居94项通过/41.51秒/峰222944KiB；PGID40284及全部本轮组已清空，测试槽释放。非SELF/完整外发原子撤权与240质量仍未完成，未跑真实模型/native。
+[两P1修复、接口、schema、原红和指纹](../plans/2026-09-06-host-trusted-disclosure/Dirac两P1修复.md)。
+
+## 2026-09-06 可信披露绑定局部验收与来源回归修复
+
+最后更新：2026-09-06。自有simple_harness-corpus-clock / feat/host-trusted-disclosure，组合点6df952fc（含主30f6b2d4/M614）。可信配置/queue持久绑定及当前解析器局部验收完成；source authority确定回归先红后修，最新29项通过，PGID37740已清理并释放测试槽。前序28邻居结果独立保留，不重复算为最终代码全量通过。仍待主/Dirac终审和主组合整合；240质量、完整非SELF/输入许可/外发未完成。
+[实际结果、原红及复现命令](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
+## 2026-09-06 Host可信披露绑定待源码复核
+
+最后更新：2026-09-06。复用 `simple_harness-corpus-clock`，分支 `feat/host-trusted-disclosure`，基线 `cbf99364`。可信配置→queue→turn/run解析器已写为生产源码候选，schema48及8个契约测试函数待验证；没有运行测试或占用资源槽，未合入主组合。非SELF门、当前输入permit、完整外发及240质量仍未完成。
+[固定源码交接](../plans/2026-09-06-host-trusted-disclosure/固定源码交接.md)。
 
 ## 2026-09-06 Memory 0.6.14隔离Host组合
 

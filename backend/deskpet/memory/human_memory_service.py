@@ -251,12 +251,15 @@ class QueueTurnRequest:
     scope_ref: str | None
     delivery_key: str
     text: str
+    disclosure_binding_ref: str | None = None
 
     def __post_init__(self) -> None:
         if self.scope_ref is not None:
             identifier(self.scope_ref, "scope_ref", 512)
         identifier(self.delivery_key, "delivery_key", 512)
         identifier(self.text, "text", 16_384)
+        if self.disclosure_binding_ref is not None:
+            identifier(self.disclosure_binding_ref, "disclosure_binding_ref", 512)
 
 
 @dataclass(frozen=True, slots=True)
@@ -978,6 +981,7 @@ class HumanMemoryHostService:
             turn_payload=payload,
             task_scope_id=request.scope_ref,
             admitted_evidence_pair=(envelope, receipt),
+            disclosure_binding_ref=request.disclosure_binding_ref,
         )
         if self._scheduler_wake is not None:
             await self._wake_committed("after_enqueue", queued.turn_id)
@@ -989,6 +993,15 @@ class HumanMemoryHostService:
             "content_sha256": queued.turn_hash,
             "delivery_key": request.delivery_key,
         }
+
+    async def configure_disclosure(self, *, request_id, expected_ref, selection):
+        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+        return await TrustedDisclosureStore(self._db_path).configure(
+            auth=self._auth, request_id=request_id, expected_ref=expected_ref, selection=selection)
+
+    async def current_disclosure_configuration(self):
+        from deskpet.memory.trusted_disclosure import TrustedDisclosureStore
+        return await TrustedDisclosureStore(self._db_path).current(auth=self._auth)
 
     async def search_task_scopes(
         self, request: SearchTaskScopesRequest
@@ -1667,6 +1680,15 @@ class HumanMemoryHostService:
                 "ORDER BY t.enqueue_sequence,t.turn_id",
                 (self._auth.subject,),
             ).fetchall()
+        import aiosqlite
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        rejections = {}
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            for row in rows:
+                rejection = await read_admission_rejection_tx(db, turn_id=row["turn_id"], subject=self._auth.subject)
+                if rejection is not None:
+                    rejections[row["turn_id"]] = rejection
         turns = []
         for row in rows:
             stored = json.loads(str(row["turn_json"]))
@@ -1675,7 +1697,8 @@ class HumanMemoryHostService:
                 {
                     "turn_ref": str(row["turn_id"]),
                     "enqueue_sequence": int(row["enqueue_sequence"]),
-                    "state": str(row["current_state"]),
+                    "state": "REJECTED" if row["turn_id"] in rejections else str(row["current_state"]),
+                    **({"rejection_reason": rejections[row["turn_id"]]["reason"]} if row["turn_id"] in rejections else {}),
                     "delivery_key": payload.get("delivery_key"),
                 }
             )
