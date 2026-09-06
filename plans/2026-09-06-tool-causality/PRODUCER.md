@@ -1,5 +1,7 @@
 # 工具多消息生产接线：局部通过，空assistant仍待SDK修复
 
+2026-09-06 successor status: the original M614 empty-assistant failure below is preserved. M615 installed combination passed22 tests+2 subtests on935d3e12. See [installed result](INSTALLED-0615.md).
+
 最后更新2026-09-06。对应INTEGRATION契约已获Dirac只读限定ACCEPT；faa4c98f production源码及8项证据hash已获Dirac只读限定ACCEPT（非空完整组范围），不称整片完成。
 
 新completed工具组：observer从真实Host effect身份index及SDK公开因果reader取得来源，terminal与全部child S1同租约/fence事务提交。v2独立UUID/marker，旧v1的两消息字节/重放不改；缺工具来源仍完整归档，不部分索引、不补旧source。每tool child带Host基于实际effect结算事实的版本化attestation；该凭据明确不是SDK独立ToolTerminalReceipt。读取按原terminal确定性核每child全部envelope/receipt，连同attestation重签外层校验和的伪造也被拒绝。group包括所有USER/assistant/tool，role/provenance、ordinal及tool parent来自actual source。

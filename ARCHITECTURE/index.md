@@ -1,5 +1,9 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 M0615 installed tool groups
+
+Updated2026-09-06:935d3e12 H073/M0615/S0313 own installs verified169/76/121 members. Original empty-assistant failure is fixed in this successor;22 tests+2 subtests passed13.05s, owned processes cleared. Text tool source chain only; nontext/native/H074/240 remain. [Chinese result and evidence](../plans/2026-09-06-tool-causality/INSTALLED-0615.md).
+
 ## 2026-09-06 工具组与可信披露组合接入
 
 最后更新：2026-09-06。工具v2非空组源码及证据、可信披露f3675064的两个P1修复均已由主审和独立代理审查。当前合入同一隔离Host候选1268e884，必要交叉检查21项通过14.55秒，测试组已清空（[证据](../plans/2026-09-06-host-trusted-disclosure/COMBINED.md)）；下列开发记录中的未合并/待独审状态为此前阶段。空assistant仍有M0614真实失败，SDK后继修复中；非SELF、真实Provider/native及240质量尚未完成。
