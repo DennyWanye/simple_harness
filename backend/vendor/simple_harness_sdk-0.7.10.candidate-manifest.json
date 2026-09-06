@@ -1,0 +1,12 @@
+{
+  "schema": "simple-harness-candidate-manifest-v1",
+  "version": "0.7.10",
+  "commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
+  "artifacts": {
+    "simple_harness_sdk-0.7.10-py3-none-any.whl": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539"
+  },
+  "build_count": 1,
+  "execution_schema": 9,
+  "source_date_epoch": "1788719622",
+  "scope": "Bounded nullable schema/value types; four unique SDK/Host source controls accepted; installed combination and native pending"
+}

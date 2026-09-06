@@ -1,3 +1,7 @@
+最后更新：2026-09-07。Harness0.7.10已从审定031fdc6不可变源离线构建一次并从vendor安装新H0710/M619/S0313 target，174/92/116成员逐字节一致。Host nullable叶与生产pin/lock/manifest同批接入；锁检查通过。4个源控制分批通过，当前installed功能组合/失败case复验及原生仍待。旧H079制品与三原FAIL保留。[制品与边界](../plans/2026-09-07-corpus-c01-scoring/INSTALLED-0710619.md)。
+
+最后更新：2026-09-07。nullable后继Host2d64e6e5/fad81ebb配SDK031fdc6/0.7.10 source新增4唯一控制通过；仅两workspace/source字段允许JSON null，3reuse判断一致，非适用hash拒绝，rawhash与exact绑定不归一。原夹具红保留，PG76045清空；需主统一新wheel/installed组合后使用（旧H079不支持），未称main/模型质量通过，原3case FAIL保留。[契约与结果](../plans/2026-09-07-corpus-c01-scoring/NULLABLE.md)。
+
 最后更新：2026-09-07。Manual组合原生UI固定e1e714d2已一次完整TypeScript/Vite/Rust/app构建通过；独立bundle端口18120，PG72450正常退出清空132.283s。尚未启动；先待SDK nullable继任/主组合及失败链复验，再用本UI验收。仅后端变化不重复同UI构建，防熄屏持续。[构建](../plans/2026-09-07-manual-workspace-binding/BUILD.md)。
 
 最后更新：2026-09-07。C01-20固定2c02be03首次真实评分仍FAIL：4Provider/3路由拒绝，无A/B；明确nonstrict与omit指引未解决实际环境。PG71822自然退出51.88s且清空。240历史3个不同case尝试/0通过，暂停扩跑同故障；推进SDK可选null支持，修后显式新候选复验失败链，旧FAIL保留。防熄屏持续。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R3.md)。

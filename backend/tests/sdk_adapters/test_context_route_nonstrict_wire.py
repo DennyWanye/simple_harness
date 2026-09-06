@@ -63,7 +63,7 @@ async def test_nonstrict_wire_omitted_memory_and_fake_reuse_rejected(tmp_path, m
             assert function["strict"] is False
             assert function["parameters"] == CONTEXT_ROUTE_SCHEMA
             assert function["parameters"]["required"] == ["route"]
-            assert function["parameters"]["properties"]["reuse_workspace_of"]["type"] == "string"
+            assert function["parameters"]["properties"]["reuse_workspace_of"]["type"] == ["string", "null"]
             args = thaw_json(response.tool_calls[0].arguments)
             assert args == expected  # No sentinel stripping or argument rewriting.
             validate_arguments(args, CONTEXT_ROUTE_SCHEMA)

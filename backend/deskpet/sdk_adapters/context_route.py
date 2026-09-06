@@ -54,8 +54,8 @@ _LOG = logging.getLogger(__name__)
 _WORKSPACE_REUSE_OMIT = (
     "reuse_workspace_of is only valid for create_new with an exact verified task ID "
     "and source hash. For memory_standalone, omit both reuse_workspace_of and "
-    "expected_source_hash entirely. Do not supply null, placeholder strings, "
-    "whitespace, or a fabricated hash."
+    "expected_source_hash entirely, or set them to JSON null. Do not supply "
+    "placeholder strings, whitespace, or a fabricated hash."
 )
 _WORKSPACE_REUSE_NEW_RUN = (
     "This Run is already bound to a task. End this turn without switching scopes. "
@@ -80,14 +80,14 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
         },
         "task_scope_id": {"type": "string", "maxLength": 128},
         "reuse_workspace_of": {
-            "type": "string", "minLength": 1, "maxLength": 128,
-            "description": "Only create_new: explicitly bind the new active task to the completed task's existing workspace. Copy its exact task_scope_id and expected_source_hash from public search/resume. Requires one verified root and a new binding grant; never reopens the old task. Omit for a new separate workspace. For memory_standalone omit this field and expected_source_hash entirely; never supply null, placeholder strings or whitespace.",
+            "type": ["string", "null"], "minLength": 1, "maxLength": 128,
+            "description": "Only create_new: explicitly bind the new active task to the completed task's existing workspace. Copy its exact task_scope_id and expected_source_hash from public search/resume. Requires one verified root and a new binding grant; never reopens the old task. For a new separate workspace or memory_standalone, omit this field and expected_source_hash or set them to JSON null; never use placeholder strings or whitespace.",
         },
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
         "expected_source_hash": {
-            "type": "string", "minLength": 64, "maxLength": 64,
-            "description": "Exact source_hash from public task search/resume for task-source validation. For memory_standalone omit this field and reuse_workspace_of entirely; never fabricate a hash or use placeholders.",
+            "type": ["string", "null"], "minLength": 64, "maxLength": 64,
+            "description": "Exact source_hash from public task search/resume for resume_existing or create_new workspace reuse. Otherwise omit this field or set it to JSON null; never fabricate a hash or use placeholders.",
         },
     },
     "required": ["route"],
@@ -256,7 +256,7 @@ class ContextRouteToolService:
             origin="context_tool",
             idempotency_key=effect_id,
             **({"require_unbound_run": True} if route is TaskScopeRoute.CREATE_NEW
-               and "reuse_workspace_of" in proposal else {}),
+               and proposal.get("reuse_workspace_of") is not None else {}),
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
@@ -308,10 +308,19 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_route_invalid",
             )
-        if "reuse_workspace_of" in proposal and route_value != "create_new":
+        if proposal.get("reuse_workspace_of") is not None and route_value != "create_new":
             return await self._reject(run_id, raw_call_id, effect_id, proposal,
                                       "context_route_workspace_reuse_requires_create_new",
                                       message=_WORKSPACE_REUSE_OMIT)
+        if proposal.get("expected_source_hash") is not None and not (
+            route_value == "resume_existing" or (
+                route_value == "create_new" and proposal.get("reuse_workspace_of") is not None
+            )
+        ):
+            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                "context_route_source_hash_not_applicable",
+                message="expected_source_hash requires resume_existing or exact create_new workspace reuse. "
+                        "Otherwise omit expected_source_hash or set it to JSON null; never fabricate a hash.")
         try:
             if route_value == "direct_standalone":
                 return await self._commit_receipt(
@@ -584,7 +593,7 @@ class ContextRouteToolService:
         from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
 
         continuation = None
-        if "reuse_workspace_of" in proposal:
+        if proposal.get("reuse_workspace_of") is not None:
             bound = await self._ledger.latest_route_decision_for_run(run_id, task_only=True)
             envelope = self._tool_context_getter().task_execution_envelope
             if bound is not None or envelope.task_scope_id is not None:
