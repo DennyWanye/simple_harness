@@ -134,7 +134,7 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
         await manager.ingest_committed_evidence(extra,extra_receipt)
         await manager.admit_evidence_source(principal=principal,envelope=terminal[0],receipt=terminal[1])
         spans['B']=span
-        sources.append(h.EvidenceRef(extra.evidence_id,extra.envelope_hash,1))
+        sources.append(h.EvidenceRef(extra.evidence_id,extra.envelope_hash,len(sources)+1))
     elif inference_path is not None or inference_host_run_id is not None:
         raise ValueError('corpus_unexpected_inference_source')
     operations=[]
