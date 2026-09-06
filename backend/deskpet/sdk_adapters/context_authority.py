@@ -451,6 +451,8 @@ class ContextRouteLedgerStore:
         payload_hash: str,
         expected_request_fingerprint: str,
         source_revisions: Mapping[str, int],
+        occurrence_coordinator: Any = None,
+        occurrence_presentation: Any = None,
     ) -> tuple[str, int]:
         """Allocate (snapshot_id, snapshot_revision); idempotent on replay."""
 
@@ -459,7 +461,7 @@ class ContextRouteLedgerStore:
         try:
             await db.execute("BEGIN IMMEDIATE")
             cursor = await db.execute(
-                "SELECT snapshot_id,snapshot_revision FROM run_context_snapshot_receipts "
+                "SELECT snapshot_id,snapshot_revision,receipt_hash FROM run_context_snapshot_receipts "
                 "WHERE sdk_run_id=? AND provider_turn_ordinal=? AND payload_hash=? "
                 "ORDER BY snapshot_revision DESC LIMIT 1",
                 (run, provider_turn_ordinal, payload_hash),
@@ -467,6 +469,9 @@ class ContextRouteLedgerStore:
             existing = await cursor.fetchone()
             await cursor.close()
             if existing is not None:
+                if occurrence_coordinator is not None:
+                    await occurrence_coordinator.record_tx(db,prepared=occurrence_presentation,
+                        snapshot_id=str(existing[0]),snapshot_receipt_hash=str(existing[2]))
                 await db.commit()
                 return str(existing[0]), int(existing[1])
             cursor = await db.execute(
@@ -509,6 +514,9 @@ class ContextRouteLedgerStore:
                     float(self._clock()),
                 ),
             )
+            if occurrence_coordinator is not None:
+                await occurrence_coordinator.record_tx(db,prepared=occurrence_presentation,
+                    snapshot_id=snapshot_id,snapshot_receipt_hash=receipt_hash)
             await self._ingest_fact_tx(
                 db,
                 sdk_run_id=run,
@@ -857,7 +865,7 @@ def _resolve_window_tokens(metadata: Mapping[str, Any]) -> int | None:
     return None
 
 
-def _pending_occurrence_message(pending: tuple[Any, ...]) -> Any:
+def _pending_occurrence_message(pending: tuple[Any, ...], *, overdue_keys=frozenset()) -> Any:
     """Bounded, Host-authored summary of eligible pending occurrences."""
 
     from simple_harness.contracts.messages import Message, MessageRole
@@ -868,6 +876,7 @@ def _pending_occurrence_message(pending: tuple[Any, ...]) -> Any:
             "occurred_at": float(entry.occurred_at),
             "occurrence_key": entry.occurrence_key,
             "memory_id": entry.memory_id,
+            "overdue": entry.occurrence_key in overdue_keys,
         }
         for entry in pending[:8]
     ]
@@ -1053,7 +1062,9 @@ class ProductRunContextAuthority:
         closure_reader: Any = None,
         binding_store: Any = None,
         typed_use_authority: Any = None,
+        occurrence_coordinator: Any = None,
     ) -> None:
+        self._occurrences = occurrence_coordinator
         self._typed_use_authority = typed_use_authority
         self._ports_resolver = ports_resolver
         self._exposure_resolver = exposure_resolver
@@ -1130,7 +1141,17 @@ class ProductRunContextAuthority:
             if isinstance(metadata, Mapping):
                 window_tokens = _resolve_window_tokens(metadata)
         inbox_message = None
-        if self._reconcile is not None:
+        presentation = None
+        if self._occurrences is not None:
+            presentation = await self._occurrences.restore_snapshot(sdk_run_id=request.run_id.value,
+                provider_turn_ordinal=request.provider_turn_ordinal,
+                prior_context_revision=request.prior_context_revision)
+            if presentation is None:
+                presentation = await self._occurrences.prepare(request.run_id.value)
+            if presentation.items:
+                inbox_message = _pending_occurrence_message(tuple(item.entry for item in presentation.items),
+                    overdue_keys=frozenset(item.entry.occurrence_key for item in presentation.items if item.overdue))
+        elif self._reconcile is not None:
             presented = await self._ledger.presented_occurrence_keys()
             pending = await self._reconcile(presented)
             if pending:
@@ -1153,6 +1174,9 @@ class ProductRunContextAuthority:
             "context": int(request.prior_context_revision),
             **assembly_facts,
         }
+        if presentation is not None:
+            from deskpet.memory.prospective_occurrence import presentation_revisions
+            source_revisions.update(presentation_revisions(presentation))
         snapshot_id, snapshot_revision = await self._ledger.record_snapshot_receipt(
             sdk_run_id=request.run_id.value,
             provider_turn_ordinal=request.provider_turn_ordinal,
@@ -1160,6 +1184,8 @@ class ProductRunContextAuthority:
             payload_hash=expected,
             expected_request_fingerprint=expected,
             source_revisions=source_revisions,
+            occurrence_coordinator=self._occurrences,
+            occurrence_presentation=presentation,
         )
         typed_fields = {}
         if self._typed_use_authority is not None:

@@ -46,3 +46,11 @@
 - 新ACK要求当前exactentry/sourcehash与本Run原presentation一致，变更拒绝。原ACK优先重放只返回已验证receipt，不返回旧body、不重新授予披露。两个Run并发ACK唯一赢家，另Run冲突；不能重复生成completion。
 - settle只使用ACK原Run实际terminal；旧ACK待收口仅恢复同Run，禁止后继Run代盖。FAILED/CANCELLED表示实际Host终态，不等于Memory意图完成。
 - 终态接口接现`PrimaryTerminalIdentity`与实际public SDKterminal（额外参数actual_sdk_terminal），调用现verify_sdk_terminal，禁止dict碰巧同Run冒raw证明。source模块仍依赖调用者在原TX从Host权威封套取得该identity；后续接线须实测。
+
+### WIP具体main接线（无main写入）
+
+- `ProspectiveOccurrenceCoordinator(store, read_current, clock)`；reader签名`(*,principal,sdk_run_id,requested_keys)->CurrentOccurrenceRead(owner,sdk_run_id,disclosure_identity_hash,visible,exits,unverifiable_keys)`。visible/exits均真实public DTO，exit必须明确public当前状态。原ACK重放仍认证Run，只回receipt；不把缺席变成exit。
+- `ProductRunContextAuthority(...,occurrence_coordinator=coordinator)`；新组的exactentry/count/index/disclosure承诺用现snapshot `source_revisions`整数字段保存，保持SDK Mapping[str,int]契约；原public wire不改。snapshot关联canonical presented原body可重建组，重放不取新可见集合改写。
+- `ProspectiveRequestGuard(sdk_run_id,coordinator,read_provider_context_use=stack.read_provider_context_use)`组成现`primary_guard`的额外await，位于实际delegate前。用public实际handed_off view绑定Run/request/fingerprint/snapshot，核原组protectedmessage后current-read；异常为Host专用ProviderRequestRejectedError子类，不改unknown/重发语义。没有handed_off证明不可凭Hostlatest查一个snapshot冒用。
+- `prospective_ack_registration(coordinator=...)`返回现ProductToolRegistration；加入main projected_registrations，现direct kernel/catalog同步包含此tool，五种Context route均NON_PROJECT_EFFECT默认OPTIONAL，不授予项目effect。
+- 原Hostterminal TX：`settle_acknowledged_tx(db,principal,sdk_run_id,terminal_identity=<read_primary_terminal_identity_tx返回>,actual_sdk_terminal=<本Run实际public terminal>)`。必须先有本TX可读的foreground terminal receipt/observation，verify_sdk_terminal继续严格比较raw namespace。后继Run不可调用代结算。
