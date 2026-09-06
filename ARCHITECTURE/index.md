@@ -6,6 +6,9 @@
 
 最后更新：2026-09-06。原生启动暴露的服务登记槽与中断空库初始化已修复；新增两项实际 runtime 检查通过，原生主对话恢复可输入。真实 Provider 已返回，但中文输入用例和随后模型加载异常仍未闭合，完整 native 未通过。[本次结论与证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
 最后更新：2026-09-06。独立Host提醒来源观察接收叶`0e983edc`通过新增14项/5.17s及Dirac限定审查；复用既有sidecar，默认登记实际Manager读取接入，原SDK观察不提升为授权/持久receipt。已合入隔离primary候选；v2/scheduler/全操作coverage/native不在此验收内。[结果与接线边界](../plans/2026-09-06-prospective-source-audit/RESULTS.md)。
+最后更新：2026-09-06。隔离 Host schema52 新增 typed cursor/独立终局表，保持50/51旧DDL及恢复注册身份、旧游标值/hash，封闭旧writer；正常注册接新版游标，5项新增迁移/故障/拒绝检查通过。not_required 公共回执消费及完整scheduler尚未接完，默认组合未切换。[范围与证据](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-52.md)。
+
+最后更新：2026-09-06。[隔离schema51时间事件日志](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-51.md)完成新4项及并发发布1项控制；只数据库扩展，完整scheduler和默认接线仍未完成。旧50SQL/默认49不在本叶变更。
 
 2026-09-06：当前组合的M616锁文件hash已修正并定向验证，Host恢复/提醒来源限定独审已归档在组合记录。
 

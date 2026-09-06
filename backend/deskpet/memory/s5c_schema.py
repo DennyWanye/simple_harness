@@ -30,8 +30,10 @@ def _sql() -> str:
     return (migrator.DEFAULT_MIGRATIONS_DIR / S5C_MIGRATION).read_text(encoding="utf-8")
 
 
-def validate_s5c_state_db(path: Path) -> None:
+def validate_s5c_state_db(path: Path, *, _expected_user_version: int = 50) -> None:
     """Verify the base chain, v50 checksum/DDL and registered recovery fences."""
+    if _expected_user_version not in (50, 51, 52):
+        raise schema.HumanMemoryProgramEpochError("s5c_schema_invalid")
     for validator in (
         schema._validate_human_memory_program_marker,
         schema._validate_task_scope_archive_marker,
@@ -42,7 +44,7 @@ def validate_s5c_state_db(path: Path) -> None:
         schema._validate_quiescence_marker,
         schema._validate_execution_marker,
     ):
-        validator(path, expected_user_version=50)
+        validator(path, expected_user_version=_expected_user_version)
     sql = _sql()
     try:
         with sqlite3.connect(":memory:") as expected:
