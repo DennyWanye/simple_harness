@@ -204,7 +204,7 @@ def check_corruption_state(o, name, check_seed_authority):
         if len(revisions)!=1 or revisions[0]['content_hash']!=m['content_hash'] or public_member['source_content_hash']!=m['content_hash'] or public_member['source_ref']!=m['memory_id'] or public_member['source_revision']!=m['revision']:
             raise ValueError('member revision/public source binding differs')
         claim=claims['incumbent' if ordinal==1 else 'challenger']
-        source={'memory_type':'semantic','subject_entity':claim['subject_entity'],'predicate':claim['predicate'],
+        source={'memory_type':'semantic','semantic_kind':'claim','subject_entity':claim['subject_entity'],'predicate':claim['predicate'],
                 'object_value':claim['object_value'],'object_value_hash':digest(claim['object_value']),'qualifiers':[]}
         if json.loads(revisions[0]['content_json'])!=source or m['content_hash']!=digest(source):
             raise ValueError('original incumbent/challenger content differs')

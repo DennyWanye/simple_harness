@@ -15,3 +15,5 @@
 主已明确原CONFLICT_GROUP_CORRUPT语义类别映射；代码实际读取冻结expect/reopen/零披露字段，
 保留真实outer/cause/frames，不修改SDK或fixture。
 尚未执行正负例；fixed源码复交Dirac，只读不占Singer/native槽。
+
+Dirac后继只读发现expected semantic source遗漏semantic_kind=claim；已补冻结字段，保留全内容/hash比较。仍NOT_RUN。
