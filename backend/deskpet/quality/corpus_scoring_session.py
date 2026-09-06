@@ -148,7 +148,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
     authored = json.loads((directory / "input.json").read_text())
     setup = json.loads((directory / "setup.json").read_text())
     case_id = setup["case_id"]
-    c07 = c05 = c08_retained = None
+    c07 = c05 = c08_retained = c09 = None
     c05_schedule = None
     c05_input = None
     if setup["scenario_clock"] != authored["scenario_clock"]:
@@ -171,6 +171,10 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         # scalar/partial carriers are not made ready by an empty placeholder.
         from deskpet.quality.corpus_c08_retained import compile_c08_retained_setup
         c08_retained = compile_c08_retained_setup(case_id, setup["setup_source_text"],
+            scenario_clock=setup["scenario_clock"]["instant"])
+    if type(case_id) is str and case_id.startswith("C09-"):
+        from deskpet.quality.corpus_c09 import compile_c09_setup
+        c09 = compile_c09_setup(case_id, setup["setup_source_text"],
             scenario_clock=setup["scenario_clock"]["instant"])
     if c05_input is None and ((authored["recent_messages"] and c07 is None) or authored["unresolved_source_text"] is not None):
         raise ValueError("corpus_first_batch_scalar_input_required")
@@ -287,7 +291,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             cognitive_runtime_getter=lambda: main.service_context.get("human_memory_v7_runtime"),
             display_invalidation=MemoryDisplayInvalidation(main._broadcast_control))
         main.service_context.register("human_memory_host_service_factory", factory)
-        if c05 is not None or c08_retained is not None or case_id.startswith("C07-") or case_id == "C01-06":
+        if c05 is not None or c08_retained is not None or c09 is not None or case_id.startswith("C07-") or case_id == "C01-06":
             await factory.bind(auth).open_primary()
         if c05 is not None:
             # Task archives require the real main runtime. No empty scalar seed
@@ -298,13 +302,20 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             # must derive from this actual old USER in the same store.
             outcome["retained_phase_status"] = "NOT_RUN"
         else:
-            batch = compile_setup(case_id, setup["setup_source_text"],
+            batch = c09 if c09 is not None else compile_setup(case_id, setup["setup_source_text"],
                 scenario_clock=authored["scenario_clock"]["instant"])
             # Fixture authorities are owned only by this setup scope. Close them
             # before main reopens the same database with production authorities.
             async with AsyncExitStack() as fixture_owners:
                 memory_path = main._paths.user_data_dir() / "data" / "human_memory_v7.db"
-                if case_id == "C01-06":
+                if c09 is not None:
+                    from deskpet.quality.corpus_c09_prepare import open_c09_fixture
+                    _, seed = await fixture_owners.enter_async_context(open_c09_fixture(
+                        path=main._state_db_path, memory_path=memory_path,
+                        principal=local_memory_principal(), authority_ref=auth.authority_ref,
+                        batch=batch, classification_policy=host_classification_policy(),
+                        supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES))
+                elif case_id == "C01-06":
                     from deskpet.quality.corpus_c01_revision_prepare import open_c01_revision_fixture
                     _, seed = await fixture_owners.enter_async_context(open_c01_revision_fixture(
                         path=main._state_db_path, memory_path=memory_path,
@@ -327,7 +338,7 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
                 if case_id.startswith("C07-"):
                     outcome["setup_receipt"].update(wire({name: seed[name] for name in
                         ("manifest_hash", "fixture_defaults", "application", "request")}))
-                elif case_id == "C01-06":
+                elif case_id == "C01-06" or c09 is not None:
                     outcome["setup_receipt"].update(wire({name: seed[name] for name in
                         ("ingestion_receipt", "application", "request", "initial_plan", "plan",
                          "old_receipt", "new_receipt", "old_receipt_ref", "new_receipt_ref")}))
