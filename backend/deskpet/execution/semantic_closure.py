@@ -591,6 +591,7 @@ class ClosureFallback:
         invoker: Any,
         service: Any,
         run_facts_reader: Any,
+        request_authority: Any = None,
         clock: Callable[[], float] = time.time,
         fault_inject: Callable[[str], None] | None = None,
         deadline_seconds: float = 60.0,
@@ -600,6 +601,7 @@ class ClosureFallback:
         self._invoker = invoker
         self._service = service
         self._facts = run_facts_reader
+        self._request_authority = request_authority
         self._clock = clock
         self._fault_inject = fault_inject
         self._deadline_seconds = float(deadline_seconds)
@@ -615,7 +617,6 @@ class ClosureFallback:
     ) -> ClosureSettlement:
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 
-        del owner_id  # the lease fence bound into the invoker carries the owner
         ingress = ExecutionEvidenceIngress(self._db_path)
         async with self._store._connection() as db:
             binding = await ingress.resolve_run_scope_tx(db, sdk_run_id)
@@ -694,21 +695,39 @@ class ClosureFallback:
                 max_output_tokens=1200,
             )
 
-        outcome = await self._invoker.invoke(
-            purpose="closure",
-            host_run_id=host_run_id,
-            sdk_run_id=sdk_run_id,
-            generation=generation,
-            task_scope_id=scope,
-            closure_watermark=watermark,
-            request_hash=request_hash,
-            evidence_set_key=evidence_set_key([event.event_id for event in dirty.material_events]),
-            members=members,
-            binding_record=facts.binding_record,
-            build_request=build_request,
-            plan_id=plan_id,
-            deadline_seconds=self._deadline_seconds,
-        )
+        async def prepare_attempt(row):
+            from types import SimpleNamespace
+            prepared = await self._request_authority.prepare(
+                host_run_id=host_run_id, sdk_run_id=sdk_run_id, subject=subject,
+                owner_id=owner_id, generation=generation, scope=scope,
+                observation=observation, answer=answer, binding_record=facts.binding_record)
+            actual_members = tuple((subject, s["run_id"], s["evidence_id"])
+                                   for s in prepared["host"]["sources"])
+            request = build_request(SimpleNamespace(**row))
+            async def observer(attempt, db):
+                await self._request_authority.bind_attempt(prepared, attempt, request, db=db)
+            return actual_members, observer
+
+        from deskpet.execution.closure_request_guard import ClosureSourceIncomplete
+        try:
+            outcome = await self._invoker.invoke(
+                purpose="closure",
+                host_run_id=host_run_id,
+                sdk_run_id=sdk_run_id,
+                generation=generation,
+                task_scope_id=scope,
+                closure_watermark=watermark,
+                request_hash=request_hash,
+                evidence_set_key=evidence_set_key([event.event_id for event in dirty.material_events]),
+                members=members,
+                binding_record=facts.binding_record,
+                build_request=build_request,
+                plan_id=plan_id,
+                deadline_seconds=self._deadline_seconds,
+                **({"prepare_attempt": prepare_attempt} if self._request_authority is not None else {}),
+            )
+        except ClosureSourceIncomplete:
+            return await pending("closure_source_incomplete")
         provider_calls = int(outcome.provider_calls)
         attempt_id = outcome.attempt_id
         if outcome.status == "lease_lost":

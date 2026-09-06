@@ -3160,12 +3160,21 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
                 generation=self.generation, boundary=EffectBoundary.CLOSURE,
             )
 
+        async def reserve_attempt_with_input(self, row, members, observer):
+            await foreground.reserve_post_turn_attempt(
+                host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, owner_id=self.owner_id,
+                generation=self.generation, attempt=row, members=members, input_observer_tx=observer)
+
     _runtime_owner_id = f"deskpet-foreground:{os.getpid()}:{uuid.uuid4().hex}"
     _closure_fence = _RuntimeLeaseFence(_runtime_owner_id)
+    from deskpet.execution.closure_request_guard import ClosureRequestAuthority, ClosurePhysicalRequestGuard
+    _closure_request_authority = ClosureRequestAuthority(
+        _state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)
 
     def _closure_adapter(record):  # type: ignore[no-untyped-def]
         binding = SdkRunBindingV1.from_record(record)
-        return _sdk_provider_binding_resolver.build_authority(binding).provider
+        return _sdk_provider_binding_resolver.build_authority(binding,
+            request_guard=ClosurePhysicalRequestGuard(_closure_request_authority, binding=binding)).provider
 
     class _BoundClosureFallback:
         """Binds the fence to the (host_run, sdk_run, generation) of each settle call."""
@@ -3178,6 +3187,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
                 ),
                 service=_closure_service,
                 run_facts_reader=_sdk_runtime_stack,
+                request_authority=_closure_request_authority,
             )
 
         async def settle(self, *, host_run_id, sdk_run_id, owner_id, generation, terminal_state):  # type: ignore[no-untyped-def]
