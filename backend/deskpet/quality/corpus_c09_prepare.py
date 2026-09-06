@@ -184,7 +184,12 @@ async def open_c09_fixture(*, path, memory_path, principal, authority_ref, batch
         if await runner.run_once() is not WorkerRunOutcome.IDLE:
             raise ValueError('c09_original_job_not_settled')
         graph_after = await manager.get_twin_graph_view(principal=principal)
+        # Preparation receipts only. Labels describe the authored history, not
+        # gold targets or Provider-visible memory references.
+        labels = {op.operation_id: op for op in prior.operations}
+        labels.update({op.operation_id: op for op in successor.operations})
         yield manager, dict(batch=batch, source_pair=(source, proof), fixture_executions=executor.executions,
+            labels=labels,
             setup_hash=batch.setup_hash, manifest_hash=batch.manifest_hash, outcome=outcome,
             ingestion_receipt=ingestion, application=witness.application, request=witness.request,
             initial_plan=original, plan=plan, old_receipt=prior, new_receipt=successor,
