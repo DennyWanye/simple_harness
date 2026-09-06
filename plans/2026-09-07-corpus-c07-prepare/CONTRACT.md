@@ -1,6 +1,6 @@
 # C07 no-match setup 准备
 
-2026-09-07；base e698d449；分支 feat/corpus-c07-prepare。**源码待审，6 个必要控制 NOT_RUN；20 条模型质量均 NOT_RUN。** 未占资源槽，未安装/构建/启动模型或 native。
+2026-09-07；base e698d449；分支 feat/corpus-c07-prepare。源码限定审查已收，首批6项 **1 PASS / 5同因测试字段 FAIL**；修后5红待跑，见 [RESULTS](RESULTS.md)。20条模型质量均 NOT_RUN。原载体未变，资源槽已释放；未安装/构建/启动模型或native。
 
 原义务来自 Memory 仓库 `plans/2026-08-29-human-memory-digital-twin/quality/recall-corpus-candidate/review-zh/successor-12x20/07-no-match.md` 的 setup 与 recent_messages。原文/fixture/阈值/候选 pins 不改。编译入口只有 case_id、原 setup 字符串、scenario_clock；拒绝整个 Case/input/gold 对象。SETUPS 保存逐条原文与固定 SHA256。scoring 子进程仍不读取 oracle；模型输入与 setup 分离。
 
