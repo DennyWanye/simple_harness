@@ -7,7 +7,7 @@ from deskpet.sdk_adapters.tools import ProductToolRegistration, active_product_t
 
 PROSPECTIVE_ACK_SCHEMA = {
     'type':'object',
-    'properties':{'occurrence_key':{'type':'string','pattern':'^[0-9a-f]{64}$'}},
+    'properties':{'occurrence_key':{'type':'string','description':'Exact 64 lowercase hexadecimal characters from the presented occurrence key.'}},
     'required':['occurrence_key'],
     'additionalProperties':False,
 }

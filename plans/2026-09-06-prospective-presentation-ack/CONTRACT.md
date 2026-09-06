@@ -107,3 +107,10 @@ namespace initialization called the old program initializer, which correctly rej
 and reads the original namespace (missing namespace still fails). Other/future epochs
 retain the original initializer rejection. Factory control now recomposes the same52
 DB and requires identical authority scope. This new fix/control is NOT_RUN.
+
+`a7-r4` factory-only retry on0167ad76: 1 FAIL/6 deselected, .96s;
+PG88507 exit1/remaining[], peak411248KiB. It passed namespace/schema creation but
+actual Harness tool catalog rejected JSON-schema `pattern` (unsupported public
+schema keyword). ACK schema now uses supported string/description; unchanged
+handler `_key` still requires exact lowercase64hex before reading context/writing.
+No SDK schema relaxation. Factory retry remains required.
