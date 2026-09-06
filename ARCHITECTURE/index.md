@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05当前任务保持/完成任务只读/提前切换拒绝3控分批通过47.18s；旧scalar拒Host混合声明已按原来源绑定修复。C09正式退役/原子双修订两新组合首次2PASS14.69s，关闭fixture再生产重开/评分请求隔离。均受控HTTP非质量，PG87968/88533/88901清空，无旧绿重复。[C05](../plans/2026-09-07-corpus-complete-dispatch/C05-STATE-RESULTS.md)／[C09](../plans/2026-09-07-corpus-complete-dispatch/C09-RESULTS.md)。
+
 最后更新：2026-09-07。C06新增六条条件Procedure来源首次6PASS3.20s，旧11未重跑；保留原描述/确认/授权/不删除限制及双条件分支，16/20来源准备有控，非执行许可/跨Task/模型质量。PG88468自然清空。[结果](../plans/2026-09-07-corpus-c06-preparation/RESULTS.md)。
 
 最后更新：2026-09-07。C06主r2报告11控通过（10条setup，原r1顺序断言红保留）；后继05/07/10/13/14/20六条安全条件描述映射及独立控源码NOT_RUN，16/20仅具备准备映射。确认/授权/不删除/分支条件保留，不构造动作授权，不算actualTask或质量；剩01/17/18/19来源未闭合。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
