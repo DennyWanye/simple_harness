@@ -8376,6 +8376,19 @@ async def _build_product_sdk_runtime_stack(
         clock=clock,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    _typed_use_authority = None
+    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
+        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
+        from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
+        _typed_ledger = _ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
+        _typed_ledger.verify_schema()
+        _typed_sink = ProductRuntimeDecisionSink(ledger=_typed_ledger, reconcile=_human_memory_v7.pending_occurrences)
+        _typed_use_authority = await ProductTypedContextUseAuthority.create(
+            state_path=_state_db_path, memory_runtime=_human_memory_v7,
+            stack_getter=lambda: _sdk_runtime_stack, ledger=_typed_ledger, terminal_sink=_typed_sink,
+        )
+    service_context.register("sdk_typed_context_use_authority", _typed_use_authority)
+
     _occurrence_coordinator = None
     if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
         from deskpet.memory.s5c_terminal_schema import initialize_s5c_terminal_state_db
@@ -8391,18 +8404,6 @@ async def _build_product_sdk_runtime_stack(
         projected_registrations=(*projected_registrations,
             prospective_ack_registration(coordinator=_occurrence_coordinator))
     service_context.register("prospective_occurrence_coordinator",_occurrence_coordinator)
-    _typed_use_authority = None
-    if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
-        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
-        from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
-        _typed_ledger = _ContextRouteLedgerStore(_state_db_path, evidence_ingress=_ensure_evidence_ingress())
-        _typed_ledger.verify_schema()
-        _typed_sink = ProductRuntimeDecisionSink(ledger=_typed_ledger, reconcile=_human_memory_v7.pending_occurrences)
-        _typed_use_authority = await ProductTypedContextUseAuthority.create(
-            state_path=_state_db_path, memory_runtime=_human_memory_v7,
-            stack_getter=lambda: _sdk_runtime_stack, ledger=_typed_ledger, terminal_sink=_typed_sink,
-        )
-    service_context.register("sdk_typed_context_use_authority", _typed_use_authority)
 
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
     scope_disclosure = ScopeDisclosureReader(_state_db_path, stack_getter=lambda: _sdk_runtime_stack, policy_factory=_primary_history_policy)

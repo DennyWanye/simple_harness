@@ -95,3 +95,15 @@ Dirac accepted the two P1 source deltas and exact-int direction (limited source
 review, not whole A7). Outer codec assertion is further narrowed to exact
 `storage_shape_invalid`, so an unrelated receipt mismatch cannot satisfy it;
 that stricter assertion is NOT_RUN. Slot released to Hegel, no immediate retry.
+
+`a7-r3`: 1 PASS (strict codec with recomputed receipt), 1 FAIL (factory),
+5 deselected; 1.99s pytest, PG88342 exit1/remaining[], peak433024KiB.
+The local launcher configures exact reviewed H076/M617 identities and wheel paths;
+real version/hash/installed-origin verification remains active, no product pin edit.
+Factory now exposed an actual ordering fault: upgrading to 52 before typed authority
+namespace initialization called the old program initializer, which correctly rejected
+52 as future. Correction initializes the namespace first on fresh composition; on
+52 restart the typed authority requires the existing complete terminal-domain validator
+and reads the original namespace (missing namespace still fails). Other/future epochs
+retain the original initializer rejection. Factory control now recomposes the same52
+DB and requires identical authority scope. This new fix/control is NOT_RUN.

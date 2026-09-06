@@ -465,6 +465,13 @@ async def test_human_epoch_composition_registers_three_authorities(
         assert controls <= set(catalog["tool_names"]) & SDK_DIRECT_TOOL_KERNEL
         assert all(item.projectless_admission == "safe" for item in inventory if item.name in controls)
         assert next(item for item in inventory if item.name == "write_file").projectless_admission == "requires_project"
+        # Recompose the same now-v52 database, retaining the actual namespace.
+        scope_ref=main.service_context.get("sdk_typed_context_use_authority").authority_scope_ref
+        await stack.close()
+        stack=await main._build_product_sdk_runtime_stack(2)
+        assert main.service_context.get("sdk_typed_context_use_authority").authority_scope_ref==scope_ref
+        assert isinstance(main.service_context.get("prospective_occurrence_coordinator"),
+                          ProspectiveOccurrenceCoordinator)
     finally:
         if stack is not None:
             await stack.close()

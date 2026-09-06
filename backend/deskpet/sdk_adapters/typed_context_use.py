@@ -59,7 +59,15 @@ class ProductTypedContextUseAuthority:
         # Use the existing Host initialization transaction on first composition;
         # never mint an independent authority epoch or replace an existing one.
         from deskpet.memory.human_memory_program import HumanMemoryProgramStore
-        await HumanMemoryProgramStore(state_path).initialize_subject(memory_runtime.principal().actor_id)
+        from deskpet.memory.schema import read_user_version
+        if await read_user_version(state_path) == 52:
+            # A7 composes after the primary namespace exists, then upgrades to
+            # the explicitly validated S5c domain. On restart reuse that exact
+            # namespace below; do not run the older fresh-program initializer.
+            from deskpet.memory.s5c_terminal_schema import validate_s5c_terminal_state_db
+            validate_s5c_terminal_state_db(state_path)
+        else:
+            await HumanMemoryProgramStore(state_path).initialize_subject(memory_runtime.principal().actor_id)
         async with aiosqlite.connect(f"file:{Path(state_path)}?mode=ro", uri=True) as db:
             db.row_factory = aiosqlite.Row
             await db.execute("BEGIN")
