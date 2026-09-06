@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C06十条S+Procedure来源及编译共11唯一控制通过：原r1 canonical操作顺序测试假设红，改按真实operation_id后原红/未跑/新七项11PASS4.88s，公共job/精确来源/foreign owner/冷重开。非跨Task/物理评分/质量通过；PG87793/88125均清空。[结果](../plans/2026-09-07-corpus-c06-preparation/RESULTS.md)。
+
 最后更新：2026-09-07。C06后继同构setup新增06/08/09/11/12/15/16七条，仅SPECS映射与独立控制selector；复用32eb已审builder/authority，首3条selector保持固定。20原setup/hash未改，10条具备准备源码，全部新控NOT_RUN，非跨Task/模型质量结论；其余10条约束仍明确保留。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
 
 最后更新：2026-09-07。C09编译+19标量公开修订准备首次20PASS10.59s：真实job/原新receipt/同ID rev2、退役不入当前召回、16不变字段r1及20原子双修订。07回填单位已按原setup修正，13 Procedure与正式dispatcher仍待；不计模型质量。PG87580自然清空。[结果](../plans/2026-09-07-corpus-c09-prepare/RESULTS.md)。
