@@ -40,6 +40,13 @@ async def world(tmp_path, monkeypatch, *, failed=False, pending_probe=False, leg
     await w.mutate("notice-source")
     await w.consumer().run_once()
     w.clock[0] = 30.
+    timer_results = []
+    apply_signal = w.apply_prospective_signal
+    async def capture_apply(**kwargs):
+        result = await apply_signal(**kwargs)
+        timer_results.append(result)
+        return result
+    monkeypatch.setattr(w, "apply_prospective_signal", capture_apply)
     store = S5cStore(state, principal)
     signals = ProspectiveSignalStore(state, principal)
     assert await ProspectiveScheduler(store=signals,
@@ -222,7 +229,7 @@ async def test_legal_public_reschedule_retires_notice_without_breaking_history(t
                 terminal = await (await db.execute("SELECT receipt_hash,receipt_json FROM foreground_terminal_receipts")).fetchall()
             return ([tuple(r) for r in ack], [tuple(r) for r in terminal])
         before = await commitments()
-        assert await env.w.mutate("notice-rescheduled", (original.memory_id, original.prospective_revision)) == original.memory_id
+        assert await env.w.mutate("notice-rescheduled", (original.memory_id, env.timer_results[0].committed_revision)) == original.memory_id
         current = (await env.w.manager.read_occurrence_inbox(principal=env.principal)).entries[0]
         assert current.lifecycle_state == "rescheduled"
         assert current.content_hash != original.content_hash
