@@ -1,6 +1,18 @@
 # ARCHITECTURE 索引
 
 
+## 2026-09-06 source10完整oracle后继（独审待回）
+
+固定65990a68，exact installed H073/M0613f2 source层正式10PASS/0FAIL/0BLOCKED。
+完整90表schema/PK/nonfinal根、request/attempt/terminal关系、原distinct admitted source与member/group hash、
+确切reopen outer/cause/trace及零recall/零写均独立判定；没有改SDK错误码、fixture、10AC/阈值。
+1个集成test含10正控+30篡改检查通过；schema2/extra-key、swap/reuse重hash命中目标reason。
+首轮three-member错误cause导致1红，已保留并定向修正为实际FKcause；不改原证据。
+本次未选391public，不与626/fbeb旧public计为新401全量，不称program/quality/native完成。
+全部默认OS锁2GiB/180s，最大157920KiB，无残留且slot已释放。
+[命令、红绿与原始hash](../plans/2026-09-06-typed-recall-source-oracle/RESULTS.md)。
+
+
 ## 2026-09-06 固定626后续正式分批（整体仍BLOCKED）
 
 H073/M0613、runner626ff8d8的11个fresh bounded调用互斥覆盖原391public+10source；
