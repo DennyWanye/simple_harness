@@ -167,9 +167,13 @@ class ProspectiveNoticeReader:
                     or now.lifecycle_state not in {"triggered", "in_progress", "rescheduled"}
                     or now.effective_privacy_class not in {"public", "personal"}):
                 continue
-            if (_identity(now) != _identity(original) or now.content_hash != original.content_hash
-                    or now.action_text != original.action_text):
+            if _identity(now) != _identity(original) or now.action_text != original.action_text:
                 raise S5cConflict("prospective_notice_current_content_differs")
+            # Public inbox action/origin are occurrence-pinned, but content_hash
+            # belongs to the current memory head. A legal REVISE retires this
+            # notice; do not replace its text or make ordinary history unreadable.
+            if now.content_hash != original.content_hash:
+                continue
             if type(now.action_text) is not str or not now.action_text.strip():
                 raise S5cConflict("prospective_notice_content_missing")
             result.append((2**62 + int(notice_id[:15], 16), "reminder", now.action_text,

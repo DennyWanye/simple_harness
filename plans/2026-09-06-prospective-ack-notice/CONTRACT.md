@@ -17,3 +17,6 @@ page/detail读取必须验证：真实subject/primary/HostRun→SDK绑定；ACK 
 必要新控（不复跑旧repair14）：真实public mutation/timer/ACK，模型只47仍有独立notice；同item分页/detail/重开稳定且零额外Provider；新ACK后的FAILED/terminal未提交仍可读；旧无markerACK无notice；wrong owner/key/snapshot/terminal拒绝；late memory-only或source suppression后page/detail无正文。前端只接受有真实wire notice_id的reminder并渲染独立标签/正文，旧response经epoch失效仍丢弃。
 
 后端可读≠前端已渲染≠用户已读。源控与UI组件控不追认r18；新原生场景由主在新组合验证，绝不重开已ACK原例。
+
+
+Dirac首轮修正（源码审查，未执行反例）：public inbox的action/origin固定在原occurrence revision，content_hash却取当前Memory head。合法REVISE/改期导致后者变化，应撤下旧notice、旧detail不可用，page仍可读；不能把合法变化当corruption阻断整页，也不能在旧notice_id下换正文。原origin/action错配仍严格拒绝。新增一条真实public REVISE控制，原ACK/terminal commitments前后精确不变。

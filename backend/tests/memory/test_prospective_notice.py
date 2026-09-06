@@ -208,3 +208,27 @@ async def test_foreign_ack_and_wrong_public_terminal_never_project(tmp_path, mon
                 await db.execute(trigger['sql'])
         bad = await env.read()
         assert not bad["payload"]["ok"] and len(env.sends) == 2
+
+
+@pytest.mark.asyncio
+async def test_legal_public_reschedule_retires_notice_without_breaking_history(tmp_path, monkeypatch):
+    async with world(tmp_path, monkeypatch) as env:
+        item, = notices(await env.read())
+        original = (await env.w.manager.read_occurrence_inbox(principal=env.principal)).entries[0]
+        async def commitments():
+            async with env.store._transaction() as db:
+                ack = await (await db.execute("SELECT record_id,record_hash,inbox_json FROM prospective_occurrences WHERE phase='acknowledged'")).fetchall()
+                terminal = await (await db.execute("SELECT receipt_hash,receipt_json FROM foreground_terminal_receipts")).fetchall()
+            return ([tuple(r) for r in ack], [tuple(r) for r in terminal])
+        before = await commitments()
+        assert await env.w.mutate("notice-rescheduled", (original.memory_id, original.prospective_revision)) == original.memory_id
+        current = (await env.w.manager.read_occurrence_inbox(principal=env.principal)).entries[0]
+        assert current.lifecycle_state == "rescheduled"
+        assert current.content_hash != original.content_hash
+        assert current.occurrence_key == original.occurrence_key and current.action_text == original.action_text
+        page = await env.read()
+        assert notices(page) == []
+        assert any(m["role"] == "user" and m["text"] == "29+18" for m in page["payload"]["result"]["items"])
+        detail = await env.read("primary.messages.detail", {"primary_ref": env.primary, "message_ref": item["message_ref"]})
+        assert not detail["payload"]["ok"]
+        assert await commitments() == before and len(env.sends) == 2
