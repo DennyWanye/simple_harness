@@ -22,7 +22,8 @@ function readItems(value: Record<string, unknown>, primaryRef: string): Binding[
 }
 const labels: Record<string, string> = { pending: "等待本次目录授权", expired: "本次目录授权已过期",
   denied: "已拒绝", bound: "新任务已绑定此目录", allow_recorded: "允许已记录，目录绑定尚未完成",
-  root_changed: "目录身份已变化，不能批准", binding_changed: "绑定版本已变化，不能批准" };
+  root_changed: "目录身份已变化，不能批准", binding_changed: "绑定版本已变化，不能批准",
+  policy_changed: "当前权限策略不允许批准此手动绑定" };
 
 export function PrimaryWorkspaceBindings({ port, primaryRef, ownerKey, ready, refreshVersion = 0 }: {
   port: PrimaryPort; primaryRef: string; ownerKey: string | null; ready: boolean; refreshVersion?: number;

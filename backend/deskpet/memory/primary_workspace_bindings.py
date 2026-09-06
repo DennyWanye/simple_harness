@@ -104,6 +104,8 @@ class PrimaryWorkspaceBindings:
             "challenge_ref": challenge.challenge_id, "challenge_hash": challenge.challenge_hash,
             "scope_ref": proposal.task_scope_id, "proposal_hash": proposal.proposal_hash}
         state, binding_receipt = self._decision_state(db, challenge, proposal, context)
+        if state in {"pending", "allow_recorded"} and context["mode"] != "manual":
+            state = "policy_changed"
         can_decide = state in {"pending", "allow_recorded"} and context["mode"] == "manual"
         if can_decide:
             current_root = canonical_workspace_root(proposal.root.canonical_path, root_id=proposal.root.root_id)
@@ -129,11 +131,15 @@ class PrimaryWorkspaceBindings:
         decision = ManualWorkspaceBindingAuthorizationReceipt.from_json(json.loads(row["decision_json"]))
         require(decision.receipt_hash == row["receipt_hash"] and decision.challenge_id == challenge.challenge_id
             and decision.decided_by_actor_id == self.subject and decision.decision.value == row["decision"])
+        try:
+            decision.verify_challenge(challenge)
+        except ValueError as exc:
+            # Match the original store's exact DENY replay contract: all
+            # challenge fields verify before its non-authorizing decision.
+            if decision.decision.value != "deny" or "does not authorize" not in str(exc):
+                raise
         if decision.decision.value == "deny":
-            # The existing store permits non-authorizing DENY receipts. They
-            # never reach the authorization verifier or become an allow.
             return "denied", None
-        decision.verify_challenge(challenge)
         grant_row = db.execute("SELECT * FROM task_workspace_binding_grants WHERE proposal_id=?",
             (proposal.proposal_id,)).fetchone()
         if grant_row is None:
