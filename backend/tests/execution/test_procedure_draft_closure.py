@@ -69,9 +69,10 @@ async def test_actual_draft_only_forget_before_closure_blocks_http_without_incid
         # Read the real bound request and public candidate, not an injected proof.
         assert world.provider.selected['memory_id'] == target[0]
         manager = await memory.manager()
-        await manager.suppress(principal=memory.principal(), request=SuppressionRequest(
+        decision = await manager.suppress(principal=memory.principal(), request=SuppressionRequest(
             'closure-draft-only-forget', memory.principal().actor_id,
-            SuppressionScopeKind.MEMORY, target[0], 'user_forget', memory.semantic_clock()()))
+            SuppressionScopeKind.MEMORY, target[0], 'user_forget', memory.semantic_clock()))
+        assert decision.scope_ref == target[0] and decision.request_id == 'closure-draft-only-forget'
         ordinary = dependencies(proof['evidence'], proof['recall'], proof.get('short_horizon', ()))
         async with aiosqlite.connect(world.state) as db:
             db.row_factory = aiosqlite.Row

@@ -50,6 +50,7 @@ class DiscoveryProvider(UseProvider):
 @pytest.mark.parametrize('forget_before_followup',[False,True])
 async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks_source(tmp_path,monkeypatch,forget_before_followup):
     provider=DiscoveryProvider()
+    forget_decisions=[]
     async with session(tmp_path,provider,with_discovery=True) as ctx:
         scope=await ctx.service.create_task_scope(CreateTaskScopeRequest('discover-scope','写记录','write','discover-create'))
         await bind_scope_root(ctx.state,scope['scope_ref'],ctx.root,tag='discover-root')
@@ -61,14 +62,17 @@ async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks
                 assert len(result['candidates'])==1
                 candidate=result['candidates'][0]['candidate']
                 manager=await ctx.memory.manager()
-                await manager.suppress(principal=ctx.memory.principal(),request=SuppressionRequest('forget-before-send',
-                    ctx.memory.principal().actor_id,SuppressionScopeKind.MEMORY,candidate['memory_id'],'user_forget',ctx.memory.semantic_clock()()))
+                decision=await manager.suppress(principal=ctx.memory.principal(),request=SuppressionRequest('forget-before-send',
+                    ctx.memory.principal().actor_id,SuppressionScopeKind.MEMORY,candidate['memory_id'],'user_forget',ctx.memory.semantic_clock()))
+                assert decision.scope_ref==candidate['memory_id'] and decision.request_id=='forget-before-send'
+                forget_decisions.append(decision)
                 return result
             monkeypatch.setattr(ctx.memory.procedure_runtime,'discover',then_forget)
         await ctx.service.enqueue_turn(QueueTurnRequest(None,'discover-turn','查找记录流程并执行两步。'))
         await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
         await asyncio.wait_for(ctx.runtime.drain(),30)
         if forget_before_followup:
+            assert len(forget_decisions)==1
             assert len(provider.requests)==2 and provider.selected is None
             assert not (ctx.root/'record-1.txt').exists()
             return
