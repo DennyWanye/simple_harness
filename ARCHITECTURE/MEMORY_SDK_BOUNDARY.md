@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：Procedure v4创建候选d1465653暂不可合入：新增24PASS／3FAIL，含确定P1——v3已持久response派生普通异常后，SDK failed重试采用新v4配置，Host不复用旧响应并再次调用Provider。两处测试修正及两项取消回收控制f2e747e9待续；r2 BUSY75无child，未轮询，PG97556已清空。本叶不改SDK／主schema.py，不称Procedure完成。[原红、源码位置与后继边界](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
+
 2026-09-06：WeMM startup warmup后继含一次无用户数据priming，同一实例／共享任务／encode队列，向量丢弃，无Memory查询或业务写入；新增warmup_state/is_primed及load/prime耗时区分。三项新控制3PASS，取消复用／成功幂等／失败显式重试有证据；SDK、1s预算、来源门未改，真实冷首次query待主验证。[详情](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 2026-09-06：旧 short generation 复用不会加载当前进程编码器；Host WeMM 新公开 warmup 仅委托已有 shared shield load，原 startup hook 可调用，不重建实例或向量。两项新公共控制2PASS（取消／并发／零预热encode／失败显式重试）；未运行真实模型或验证main/native首次查询，SDK及预算未改。[结果](../plans/2026-09-06-short-terminal-source/WARMUP.md)。

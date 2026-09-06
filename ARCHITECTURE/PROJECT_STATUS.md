@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：Procedure v4创建候选d1465653暂不可合入：新增24PASS／3FAIL，含确定P1——v3已持久response派生普通异常后，SDK failed重试采用新v4配置，Host不复用旧响应并再次调用Provider。两处测试修正及两项取消回收控制f2e747e9待续；r2 BUSY75无child，未轮询，PG97556已清空。本叶不改SDK／主schema.py，不称Procedure完成。[原红、源码位置与后继边界](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
+
 2026-09-06：自有clock树 `feat/wemm-startup-prime`／base082f68c0，源码68f525e2，三项priming新增控制3PASS／0.27s；PG95734无残留、共享锁释放，峰122208KiB、磁盘最低4217MiB。待独审／主合并／真实首次native查询，原r11冷FAIL保留；Procedure WIP未混入，旧绿不重跑。[证据](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 2026-09-06：自有clock树 `feat/wemm-startup-warmup`／base35b07098，源码270320d3接回现有WeMM启动预热，两项新增控制2PASS／0.25s，峰119616KiB、磁盘最低1462MiB、PG93645清空、锁释放。待独审／主合入／真实首冷query，Procedure WIP保留且未混入；旧绿未重跑。[证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。

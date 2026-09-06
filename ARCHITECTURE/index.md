@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+2026-09-06：Procedure v4创建候选d1465653暂不可合入：新增24PASS／3FAIL，含确定P1——v3已持久response派生普通异常后，SDK failed重试采用新v4配置，Host不复用旧响应并再次调用Provider。两处测试修正及两项取消回收控制f2e747e9待续；r2 BUSY75无child，未轮询，PG97556已清空。本叶不改SDK／主schema.py，不称Procedure完成。[原红、源码位置与后继边界](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
+
 最后更新：2026-09-06。r11 load-only 后首query仍超时；后继68f525e2在原实例／encode队列执行一次固定无用户数据priming，startup完成含加载及priming。三项新控制3PASS／0.27s，PG95734清空、锁释放；原1s预算不变，待独审／真实新进程首query，不能以暖态重试关闭。[结果与边界](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 最后更新：2026-09-06。WeMM公开 warmup 接通原 startup hook，共享原实例／加载任务；成功日志不再调用不存在的 is_mock。固定源码270320d3，两项新控制2PASS／0.25s，PG93645清空、共享锁释放。保持1s预算，真实冷启动初次query及独审待主，不以r10暖态PASS关闭冷FAIL。[边界与证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
