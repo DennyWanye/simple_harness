@@ -1,5 +1,7 @@
 # 草稿发现与失败来源：六项新增控制结果
 
+终审更新：Dirac限定ACCEPT Host242f1688+测试ade0d79a/结果8cf0bc66、SDKf03dab0。已独核r4两实际遗忘负控、source-state及5份本批raw/carrier hash，确认原误绿撤回，r1有效4+r4有效2=6unique。前台是夹具显式接生产guard函数，不冒真实main物理Provider链；closure是实际适配器与MockTransport物理边界。不是新installed/native/完整TC-HM04；主共同current-input组合1另计。下文待终审为原交审时记录。
+
 2026-09-06。SDK业务固定f03dab0，Host业务6da7dc39及closure修订242f1688；后续147881a7/7798fd92/ade0d79a只修新增负控诊断、时钟调用和实际拒绝断言。结果为6个唯一源码覆盖控制通过，待Dirac终审，不是新制品、installed/native或完整TC-HM04通过。旧13不重跑，未build/install/模型调用。
 
 | 批次 | 结果及有效边界 | 资源 |
