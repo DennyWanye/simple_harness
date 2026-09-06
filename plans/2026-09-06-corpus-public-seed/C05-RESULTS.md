@@ -28,3 +28,11 @@ Raw `.local-test-evidence/2026-09-07/c05-source-r2/command.log`: `4678600298a576
 `resource.json`: `6511b8543d2d475e31b866873a21efb477f9c9cf5db6b8d9fbbaf713c5c42d07`.
 
 No additional test batch or model call. Source repair and actual missing producer seam under review; do not claim all five fixed yet.
+
+## Same-failure source repair (not rerun)
+
+Dirac confirmed the clean-create diagnosis and recommended the existing material-effect seam, without changing `require_dirty` or inventing a closure instruction. The setup Provider now discovers/describes/activates the real `write_file`, writes a small constant synthetic marker under its authorized task root, then consumes the actual closure instruction and submits the original next-step/status mutation. Readback verifies the settled public marker effect, physical constant bytes, final disclosure and its original USER dependency. The marker contains no corpus text/gold and is explicitly preparation side-effect, not historical task evidence. Its tool history remains in the excluded setup archive. No product authority or closure rule changed.
+
+The retained suppression result was diagnosed through the public Memory builder/checker and production PrimaryHistoryStore on opaque backup copies of the retained Host/Memory DBs (original files unchanged; no new Run, Provider, directive or pytest). The extra group is exactly the third USER S1 above, role `user`, content `Scoring-only message 2`; its terminal observation/assistant is not returned. The revised existing oracle pins this exact ref/hash/content, requires the first scoring group unchanged, and forbids both affected assistant texts and the suppressed USER text. This is source-level correction, not dropping the privacy check or accepting an arbitrary count.
+
+Readback raw: `c05-source-r2/diagnosis/public-history.json`, SHA256 `04b7a4ab72f5a3ec28205b5b011f932a9ff1097b975a2650c98c95f8e931b015` (includes manager-close log). The original C05-20 negative now expects the exact compiler's existing rejection code. All three known causes are addressed in one source candidate; next execution remains only the original five failures when resources are handed back. Three greens remain unrepeated.
