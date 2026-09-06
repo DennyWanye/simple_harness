@@ -15,8 +15,12 @@ from deskpet.sdk_adapters.ingress import SdkRuntimeIngress
 from tests.memory.test_current_input_source import env, configured, admit, ok
 
 
-async def setup(env, kind="current_user"):
-    config = await configured(env)
+async def setup(env, kind="current_user", *, disclosure_selection=None):
+    if disclosure_selection is None:
+        config = await configured(env)
+    else:
+        from tests.memory.test_trusted_disclosure import command
+        config = ok(await command(env, "disclosure.configure", disclosure_selection))
     turn = ok(await admit(env, config, kind=kind))
     store = ForegroundQueueStore(env.path)
     candidate = await store.read_next_preparation_candidate(env.auth.subject)
