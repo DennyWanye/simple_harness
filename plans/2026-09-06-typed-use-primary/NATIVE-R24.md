@@ -25,3 +25,9 @@
 - `.local-test-evidence/2026-09-07/native079619/primary-ui-0veyms93/04-stopped-actual-history.ax.txt` SHA256 `610fd1f46eaab10456d92c3cca637599864d407051b9fa9cc96d01d87c014bfc`
 - `.local-test-evidence/2026-09-07/native079619/primary-ui-0veyms93/04-stopped-actual-history.png` SHA256 `279a2915d6b4273920bfc33e5b6da84bae5505b8c90ffa70075e77a4134eb7c4`
 - `.local-test-evidence/2026-09-07/native079619/r24-procedure/resource.json` SHA256 `f6cf86134dc2d69ac6701216dd483aed77468e8307ebd1aaf726e6b0731a3302`
+
+## 后续精确审计更正
+
+只读public SDK审计确认Host Run `6ccbcd90-ac98-5df7-bddf-1b4600bb2e5b` / SDK Run `product-sdk-0114d58f6645e2a087093ff72f24591a75c3e4f6b1a8c848247eaae9971f3de3`。唯一decision为allowed，无expired；context_route后4次tool_search成功，未出现Procedure发现/使用或文件效果。start inventory含Procedure两工具，因此不能归因为未注册。
+
+native.log进一步明确最后Provider请求在2026-09-07 00:28:15 +0800发生transport error/unknown_settled，实际UI停止在00:37:25，晚约9分钟。错误不是停止操作导致；停止后读取到cancelled也不能代表出错当时已终止。界面旧waiting提示和真实Provider未知状态的反馈分别定位，原测试保持未完成。
