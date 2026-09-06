@@ -27,11 +27,14 @@ A8 keeps only the first one-shot occurrence; recurrence remains backlog.
   actual first Host time observation. Do not pass an event as a timer observation,
   outbox registration ACK, or a changed old v51 authority body.
 
-## Minimal real product addition needed
+## Missing production fact source and existing consumer seam
 
-1. A concrete project publication operation must own the fact. Reuse its normal
-   project-effect authority and the existing SDK effect lifecycle/results. Its
-   successful structured result must bind:
+1. Main must identify the actual configured publication target/protocol and its
+   durable fact owner. This is not authorization to add an external publisher to
+   satisfy the reminder example. An existing operation receipt or a read-only
+   confirmation reader may supply the fact; reuse normal project-effect authority
+   and existing SDK effect lifecycle/results where applicable. The verified
+   structured result must bind:
    - actual principal, accepted TaskScope and binding epoch;
    - SDK Run/effect/rawcall, stable operation id;
    - publisher kind and configured destination identity;
@@ -102,3 +105,23 @@ workstream within the original plan. This leaf does not assume authorization to
 build a general publishing platform or treat local catalog publication as an
 external project release. No additional SDK version is needed for the existing
 EVENT_OCCURRED DTO itself.
+
+## Implementation boundary after Dirac challenge
+
+Protocol/storage work may proceed independently once the concrete receipt identity
+and registration causal cut are specified: separate versioned event observation,
+strict typed dispatch, original durable grant replay and invalidation. Existing
+PreparedTimer/time body/hash/DDL are not widened to accept arbitrary event data.
+A missing source produces no grant and no apply. Test-only receipt producers may
+exercise codec/recovery, but are never installed as production authority and do
+not prove publication. No extra ledger/schema is assumed.
+
+Still unresolved before a usable production source port can be frozen:
+- the actual durable publication receipt owner and its public exact lookup key;
+- a provable accepted-registration-to-confirmation causal cut, including restart;
+- the configured destination identity/revision against which a confirmation is read.
+
+These are concrete production inputs, not model-provided claims or caller clocks.
+Until their owner is identified, adding a nominal confirmation DTO would invent an
+authority protocol. The source remains NOT_IMPLEMENTED / NOT_RUN; A7 results are
+unchanged. This clarification follows Dirac's fixed-source boundary review.
