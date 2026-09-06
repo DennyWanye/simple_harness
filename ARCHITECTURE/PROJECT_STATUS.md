@@ -1,5 +1,17 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 后台 analysis 物理出站 guard
+
+最后更新：2026-09-06。产品 `bd5b1180` 将真实 post-turn attempt 与完整输入/来源权限快照
+在原事务内绑定；专属 guard 经生产 resolver 校验实际请求、当前披露、来源和候选后才出站。
+默认 foreground guard 保留，无新 schema/SDK 制品。14个独立定向控分批通过；最后3项
+补强已提交变化断言后通过，进程全部退出。实际 HTTP MockTransport/公开 Memory 物化与
+恢复已验；source terminal 是确定性 fixture，无真实 Provider/native 结论。
+主已报告合入 bd5 并在 a1fe 接工厂，r6由主独立验证；跨库最终检查非原子撤权事务，
+closure/compaction 与 program 剩余项未由本叶完成。
+[结果与原失败索引](../plans/2026-09-06-analysis-physical-guard/RESULTS.md)。
+
+
 最后更新：2026-09-06。H075/M616原生r5已实际完成中文Provider响应、WeMM编码、对话写入和审计UI；结束本轮后清空PG54846。后台analysis误用foreground guard已定位，正在修复；短期当前4组处于SDK最近10组排除窗口，尚无窗口外召回证据。完整native/program未闭合。[本轮证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
 
 最后更新：2026-09-06。原生启动暴露的服务登记槽与中断空库初始化已修复；新增两项实际 runtime 检查通过，原生主对话恢复可输入。真实 Provider 已返回，但中文输入用例和随后模型加载异常仍未闭合，完整 native 未通过。[本次结论与证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
