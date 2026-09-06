@@ -278,10 +278,14 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             owner_id="corpus-scoring-user-ingestion")
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
+        from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
+        approval = ReadOnlyMemoryApproval(ingress=main._sdk_ingress,
+            persist=lambda name, value: write_result(directory / (name + ".json"), value))
         try:
             executed = await execute_scoring_turn(service=service, runtime=runtime,
                 scoring_path=main._state_db_path, subject=auth.subject, text=text,
-                delivery_key="scoring-turn-1", ingestion_worker=worker)
+                delivery_key="scoring-turn-1", ingestion_worker=worker,
+                approval_driver=approval)
             outcome["queue_receipt"] = wire(executed.queue_receipt)
             outcome["completed_group"] = wire(executed.completed_group)
             outcome["stage"] = "post_terminal_public_trace"
@@ -291,6 +295,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
                 or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
         except Exception as exc:
+            from deskpet.quality.corpus_approval import CorpusApprovalBlocked
+            if isinstance(exc, CorpusApprovalBlocked):
+                outcome["approval_status"] = "BLOCKED"
             outcome["execution_status"] = "OBSERVATION_FAILED" if outcome.get(
                 "actual_completed_group_available") else "EXECUTION_FAILED"
             outcome["error_type"] = type(exc).__name__
