@@ -1,3 +1,5 @@
+最后更新：2026-09-06。独立新ACK typed notice叶：生产service默认从真实ACK/presentation与public occurrence来源投影“提醒”条目，原模型47及SDK终态不改；当前visibility/forget/合法改期撤下旧notice，旧ACK不补发。H079/M618固定载体下新增后端7个唯一控制分批通过（首批6绿1fixture stale-target红，真实timer修订号修正后仅原红1绿），另2个UI组件控制通过；非原生/用户已读证明。PG34308/34476/34505均清空，锁已交出。产品1355c5b7，测试a308fc60，最后独审/主合并待；原r18真实FAIL保留，不标完整S5c/program完成。[结果与命令](../plans/2026-09-06-prospective-ack-notice/RESULTS.md)。
+
 最后更新：2026-09-06。r16 mandatory-context 后继独立源：Host 将 no_recall 决策移至 SDK 真实响应 checkpoint 之后，反馈纳入新 snapshot/hash；repair-bearing 每次拟终态（包括已route）仍核真实ACK/pending，最多两次且继承原预算。Host 新3控首批PASS6.63s，SDK新11控分批PASS；含真实首零tool→ACK、route无ACK有限FAILED、续接前publicforget零新增发送，公开操作审计核repair identity。最后PG21416exit0/remaining[]，无模型/native/构建。Dirac固定源/14unique限定ACCEPT；H079待主统一制品与原生，H078/M618/原r16失败记录未改；非完整program完成。[精确结果](../plans/2026-09-06-prospective-mandatory-repair/RESULTS.md)。
 
 2026-09-06 H079/M618候选：新SDK单次离线制品已固定，main factory/真实零tool恢复至ACK/身份3项安装组合PASS4.37s，174/84/116包成员与202加载模块精确核对；PG21846正常退出并清空。源14绿不重跑，原生r17仍待验、r16失败保留。[安装结果与边界](../plans/2026-09-06-typed-use-primary/COMBINED-079618.md)。
