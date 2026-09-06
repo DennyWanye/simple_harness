@@ -58,3 +58,44 @@ async def test_v2_group_hashes_remain_exact_after_explicit_v53_upgrade(tmp_path)
             await manager.close()
         await runtime.close()
         await stack.close()
+
+
+@pytest.mark.asyncio
+async def test_real_route_control_ledger_has_no_physical_scope_and_mismatch_rejects(tmp_path):
+    from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+    path, _, _ = await _bound_run(tmp_path)
+    ingress = ExecutionEvidenceIngress(path)
+    ledger = ContextRouteLedgerStore(path, evidence_ingress=ingress)
+    await ledger.record_tool_invocation(sdk_run_id=RUN, raw_call_id='actual-route-call',
+        effect_id='actual-route-effect', proposal={'route': 'continue_active'},
+        verdict='accepted', decision_id='actual-route-decision', detail={'route': 'continue_active'})
+    await ingress.commit_fact(task_scope_id=fq.SCOPE, subject=fq.SUBJECT,
+        fact=_tool_fact(RUN, 'actual-physical-effect'))
+    control = dict(item_ordinal=3, sdk_run_id=RUN, effect_id='actual-route-effect',
+        raw_call_id='actual-route-call', internal_call_id='internal-route-call',
+        tool_name='context_route', state='succeeded')
+    physical = dict(item_ordinal=5, sdk_run_id=RUN, effect_id='actual-physical-effect',
+        internal_call_id='call-1', tool_name='write_file', state='succeeded')
+    async with aiosqlite.connect(path) as db:
+        db.row_factory = aiosqlite.Row
+        result = await read_scope_sources_tx(db, subject=fq.SUBJECT, sdk_run_id=RUN, facts=[control, physical])
+        assert result[0] == dict(item_ordinal=3, task_scope_id=None, ingest_receipt=None)
+        assert result[1]['task_scope_id'] == fq.SCOPE
+        assert result[1]['ingest_receipt']['source_event_id'] == 'effect:actual-physical-effect'
+        for change in ({'raw_call_id': 'foreign-raw'}, {'sdk_run_id': 'foreign-run'}, {'tool_name': 'write_file'}):
+            with pytest.raises(RuntimeError, match='scope_source_mismatch'):
+                await read_scope_sources_tx(db, subject=fq.SUBJECT, sdk_run_id=RUN, facts=[{**control, **change}])
+        # Simulate a damaged read response only, retaining real rows/triggers.
+        class ChangedCursor:
+            def __init__(self, original):
+                self.original = original
+            async def fetchone(self):
+                row = await self.original.fetchone()
+                return None if row is None else dict(row, proposal_hash='0' * 64)
+        class ChangedLedgerRead:
+            async def execute(self, sql, params=()):
+                cursor = await db.execute(sql, params)
+                return ChangedCursor(cursor) if 'FROM context_route_tool_invocations' in sql else cursor
+        with pytest.raises(RuntimeError, match='scope_source_mismatch'):
+            await read_scope_sources_tx(ChangedLedgerRead(), subject=fq.SUBJECT, sdk_run_id=RUN, facts=[control])
+        assert await read_scope_sources_tx(db, subject=fq.SUBJECT, sdk_run_id=RUN, facts=[control, physical]) == result
