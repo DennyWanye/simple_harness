@@ -1,5 +1,8 @@
 # Memory SDK 边界与 Host 接口契约
 
+
+最后更新：2026-09-06。独立Host52/H076/M617 consumer新6控分批通过；修复dependency嵌套immutable payload canonical转换与52 timer cursor误读旧表。真实public Manager旧catalog7.2→公开7.3升级、r2 not_required恢复/观察绑定已验；原红保留，无Memory SQL业务读取，非installed616生成旧库。最后PG74424exit0无残留，独审待反馈；H077组合/native/event/presentation未验。[结果](../plans/2026-09-06-prospective-consumer-m617/RESULTS.md)。
+
 最后更新：2026-09-06。原生r7包含已审租约修复，冷重建仍在Host读取实际SDK终态时因事件歧义拒绝，STOP_REQUESTED未闭合；没有放宽/篡改终态。遗忘后重启列表仍为空。原生现场采集后正常退出PG69808清空。完整native仍FAIL/未完成。[r7证据](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
 
 最后更新：2026-09-06 14:38。原生r6真实Provider已完成后台分析并生成长期认知记忆；独立UI遗忘后列表及相关当前历史不再展示。semantic召回因授权等待后foreground_lease_expired失败，UI停止未收敛；Cytoscape画布有记忆仍空白。上述缺陷修复中，窗口外short/遗忘后召回未验，完整native/program未通过。完成现场采集后正常退出，PG60384清空。[r6证据与范围](../plans/2026-09-06-typed-use-primary/NATIVE-075616.md)。
