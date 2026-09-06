@@ -848,8 +848,6 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 # is authoritative and must reach Runtime._cancel_run.
                 raise asyncio.CancelledError() from None
             raise
-        if context_use is not None and self._typed_terminal is not None and not response.tool_calls:
-            await self._typed_terminal.record_terminal(run_id, request, context_use)
         if binding is not None:
             await ingress.commit_fact(
                 task_scope_id=binding.task_scope_id,
@@ -857,6 +855,16 @@ class ProductProviderInvocationCoordinator(ProviderInvocationCoordinator):
                 fact=provider_invocation_fact(run_id.value, request, response),
             )
         return response
+
+    async def prepare_context_use_terminal(self, run_id, request, *, checkpoint, execution_lease):
+        # SDK calls this after the actual successful response is checkpointed.
+        await super().prepare_context_use_terminal(
+            run_id, request, checkpoint=checkpoint, execution_lease=execution_lease,
+        )
+        if self._typed_terminal is not None:
+            from simple_harness import ProviderContextUseAttemptV1
+            attempt = ProviderContextUseAttemptV1.from_json(checkpoint["context_use_attempt"])
+            await self._typed_terminal.record_terminal(run_id, request, attempt)
 
     def verify_context_use_terminal(self, run_id, request_id, *, checkpoint, execution_lease):
         view = super().verify_context_use_terminal(

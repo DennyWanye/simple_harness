@@ -1187,8 +1187,19 @@ class ProductRunContextAuthority:
                 source_messages, exact_sources = projected, True
             if ports.context.load(request.run_id).revision != request.prior_context_revision:
                 raise SnapshotContractConflict("sdk_context_authority_revision_drift")
+        feedback = getattr(request, "mandatory_context_feedback", None)
+        feedback_message = None
+        if feedback is not None:
+            from simple_harness import MandatoryContextFeedbackV1
+            if type(feedback) is not MandatoryContextFeedbackV1:
+                raise SnapshotContractConflict("sdk_mandatory_context_feedback_invalid")
+            feedback_message = feedback.message()
+            # The SDK also persisted this exact control in Context for generic
+            # consumers. Protect one copy inside the Host budgeted snapshot.
+            source_messages = tuple(m for m in source_messages if m != feedback_message)
         messages, assembly_facts = _plan_turn_messages(
-            source_messages, window_tokens, extra_protected=(inbox_message, closure_message),
+            source_messages, window_tokens,
+            extra_protected=(inbox_message, closure_message, feedback_message),
             exact_tool_sources=exact_sources,
         )
         probe = ProviderRequest(
@@ -1275,11 +1286,8 @@ class ProductRuntimeDecisionSink:
         provider_turn_ordinal: int,
         request_fingerprint: str,
     ) -> Any:
-        if self._reconcile is not None:
-            presented = await self._ledger.presented_occurrence_keys()
-            pending = await self._reconcile(presented)
-            if pending:
-                raise NoRecallBlockedError(len(pending))
+        await self.check_mandatory_context_actions(run_id=run_id,
+            provider_turn_ordinal=provider_turn_ordinal, request_fingerprint=request_fingerprint)
         import uuid
 
         from simple_harness.execution.context_authority import ContextRouteReceipt
@@ -1305,3 +1313,13 @@ class ProductRuntimeDecisionSink:
             request_fingerprint=request_fingerprint,
         )
         return receipt
+
+    async def check_mandatory_context_actions(self, *, run_id, provider_turn_ordinal, request_fingerprint):
+        """Read current ACK/mandatory-exit authority; never create a route here."""
+        if self._reconcile is not None:
+            presented = await self._ledger.presented_occurrence_keys()
+            pending = await self._reconcile(presented)
+            if pending:
+                from simple_harness import MandatoryContextActionRequired, MandatoryContextRejectionV1
+                raise MandatoryContextActionRequired(MandatoryContextRejectionV1(
+                    run_id.value, provider_turn_ordinal, request_fingerprint))

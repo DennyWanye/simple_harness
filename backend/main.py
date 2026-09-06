@@ -7954,6 +7954,13 @@ class _SdkRunContextAuthorityProxy:
 
 
 class _SdkRuntimeDecisionSinkProxy:
+    async def check_mandatory_context_actions(self, **values):
+        target = service_context.get("sdk_runtime_decision_sink")
+        operation = getattr(target, "check_mandatory_context_actions", None)
+        if not callable(operation):
+            raise RuntimeError("sdk_mandatory_context_action_recheck_unavailable")
+        return await operation(**values)
+
     async def record_no_recall(self, **values):  # type: ignore[no-untyped-def]
         target = service_context.get("sdk_runtime_decision_sink")
         operation = getattr(target, "record_no_recall", None)

@@ -296,8 +296,8 @@ class ProductTypedContextUseAuthority:
         return frozenset((effect_id, fragment.recall_binding.item_id) for effect_id, fs, _ in occurrences for fragment in fs)
 
     async def record_terminal(self, run_id, request, attempt):
-        # This executes before the SDK reserves its response checkpoint. Replay
-        # of an already-settled provider response still traverses this callback.
+        # The SDK has already checkpointed the real successful response. A typed
+        # mandatory-action rejection may now safely enter bounded same-Run repair.
         route = await self._ledger.latest_route_decision_for_run(run_id.value)
         if route is None or route.get("origin") == "no_recall":
             if attempt.intents:
