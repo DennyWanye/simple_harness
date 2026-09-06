@@ -48,7 +48,7 @@ async def seed_public_pending(path):
         memory_action_authority=authority,prospective_signal_authority=authority)
     principal=local_memory_principal(); scope=local_memory_scope()
     try:
-        await manager.register_principal_owner(principal=principal)
+        await manager.register_principal_owner(principal=principal, scope=scope)
         await manager.ingest_committed_evidence(envelope,receipt)
         plan=h.MemoryMutationPlan('pending-plan','run-1','turn-1',principal.actor_id,1,
             h.MemoryMutationPlanOutcome.MUTATE,(seed._create_prospective_operation(span),),
