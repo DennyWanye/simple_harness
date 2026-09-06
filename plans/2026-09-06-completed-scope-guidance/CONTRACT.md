@@ -10,3 +10,6 @@
 2. 原用户目标包含创建并回读验证；实际SDK只写文件后结束回答。由生产专用closure authority/main resolver发出的真实物理请求，携带完整原目标、真实write事件与证据引用、原staged answer，并暴露真实task_scope_update工具。确定性Provider提交有来源的“仍需回读”resume.update，落库非complete且目标未缩小；read_file并未执行。不仅检查文案关键词，也核真实文件/工具事件/物理请求承诺/持久Scope状态。确定性响应不声称模型能正确判断全部任务完成，原生r19/24轮质量仍未完成。
 
 先源码和Dirac挑战，主notice构建/native期间不跑资源；之后仅这两条新控，H079/M618既有target借用，不新venv/SDK制品、不复跑旧绿。
+
+
+首次执行校准：真实resume/inactive/sticky/下一HTTP/无文件均已到达。Host effect gate在SDK effect创建之前拒绝，返回effect=None，因此拒绝不会生成SDK effect head或成功Host产物projection。最末oracle应以公开tool proposal的真实Run/turn/call绑定、下一物理请求中的精确拒绝和无effect head共同验证，不能要求“公共effect拒绝终态”。r1/r2错误oracle失败保留；closure新控已经1PASS，不重跑。
