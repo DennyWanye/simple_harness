@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C01真实交互补丁222346d3/ac76e16a：可选精确公开审批仅允许memory_standalone，未知等待/非白名单BLOCKED；接原main ingress打开barrier。实际main/SDK新增组合1PASS16.83s（只HTTP delegate固定，权限/handler/终态真实），原ingressclosed失败保留；PG66376清空，最低磁盘599MiB，首真实C01须恢复默认准入再执行。本地WeMM实际加载，非真实LLM评分。[结果](../plans/2026-09-07-corpus-c01-scoring/APPROVAL-RESULTS.md)。
+
 最后更新：2026-09-07。C01评分叶99d17c11：真实main Memory初始化/关闭与gold隔离、真实未终态attempt保存红2修后通过，连同先前FAILED参数共3唯一无网络控制；PG65098/65129清空，旧失败保留。原coroutine diagnostics警告单列，不扩改。首C01-10已合候选，实际评分另验，当前模型评分0，不是质量PASS。[控制与准确运行命令](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。
 最后更新：2026-09-07。新构建原生r25固定d86e4805/H079/M619冷恢复与两次实际授权可用；首查询错把taskactive当流程状态，澄清后实际Procedure发现返回0且模型如实答无。正向草稿/完整Procedure仍未验收，240质量不计。PG62018正常退出清空，退出后仅清可再生构建缓存，防熄屏继续。[结果](../plans/2026-09-06-typed-use-primary/NATIVE-R25.md)。
 

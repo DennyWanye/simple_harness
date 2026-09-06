@@ -24,7 +24,7 @@
 
 ## 首C01-10：主合代码后执行
 
-仅一例、一个独立root、无case重试/探针/judge请求。主合上述源码后在primary执行；不从动态主root混入自有树控制证据。下面资源目录与评分目录分开，二者均使用新的r1名称，已有则不得覆盖。
+**执行前必须再合222346d3/ac76e16a的精确审批与实际ingress打开补丁，见[新增组合结果](APPROVAL-RESULTS.md)。** 仅一例、一个独立root、无case重试/探针/judge请求。主合上述源码后在primary执行；不从动态主root混入自有树控制证据。下面资源目录与评分目录分开，二者均使用新的r1名称，已有则不得覆盖。
 
 ```sh
 cd /Users/denny/projects/simple_harness-primary-candidate
@@ -64,4 +64,3 @@ PYTHONPATH=/Users/denny/projects/simple_harness-primary-candidate/.local-test-ev
 ## 单列限制
 
 init-r2暴露既有 `backend/observability/sdk.py:144` 的 `MemoryManager.diagnostics_snapshot` coroutine未await警告。保留原日志，不扩改异步diagnostics、不因此重跑绿。它不使本次初始化控制失败；也不据此宣称SDK审计完整。真实评分若Provider/audit公共证据缺失，仍按现runner的不完整观测规则阻止完整计分。当前3个唯一无网络控制不是实际模型或240质量证明。
-

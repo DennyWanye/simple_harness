@@ -58,3 +58,7 @@ Dirac追加计数问题同批修正：Provider/audit读取失败不能把默认�
 一次对照main原启动/关闭链后，后继将原lifespan的Memory创建块提取为 `_initialize_product_memory`，原lifespan与runner共用同一入口及全部原参数；SessionDB唯一拥有并关闭该manager，不重复close。预开库之前先public fresh epoch；真实provider readiness、完整Host factory（context_route延迟从registry取）、capability/growth/context/foreground与SDK slots均注册。停止借用方后关闭Session、capability center/platform及Workflow UoW。WeMM只构造同一惰性实例，控制要求实际状态cold/not_started，不warmup/encode。
 
 后继仅准备重跑NONTERMINAL和main初始化红2；本段源码修复本身不是绿，首C01真实评分仍0。raw索引为本树 `.local-test-evidence/2026-09-07/corpus-c01-controls/{trace-r1,init-r1}/`；临时vendor链接已还原。
+
+## 后继实际审批与dispatch
+
+原仅drain版本缺少confirm-only权限响应，不能据初始化绿称可执行。已接可选公开exact审批与原main ingress打开barrier，见[新增组合结果](APPROVAL-RESULTS.md)。生产policy不变；实际Memory调用可触发既有惰性WeMM，原“未启动”仅属于旧初始化控制，不能推广到正式评分。

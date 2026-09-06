@@ -263,6 +263,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         await main._memory_analysis_lane.close()
         outcome["stage"] = "main_foreground_factory"
         await main._activate_human_memory_host_ports(epoch)
+        # Original main startup barrier: bind the real companion adapter before
+        # accepting any foreground Run. This does not start background workers.
+        await main._activate_companion_runtime_adapter_and_open_ingress()
         runtime = main.service_context.get("human_memory_foreground_runtime_execution_authority")
         cognitive = main.service_context.get("human_memory_v7_runtime")
         if runtime is None or cognitive is None:
@@ -278,10 +281,14 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             owner_id="corpus-scoring-user-ingestion")
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
+        from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
+        approval = ReadOnlyMemoryApproval(ingress=main._sdk_ingress,
+            persist=lambda name, value: write_result(directory / (name + ".json"), value))
         try:
             executed = await execute_scoring_turn(service=service, runtime=runtime,
                 scoring_path=main._state_db_path, subject=auth.subject, text=text,
-                delivery_key="scoring-turn-1", ingestion_worker=worker)
+                delivery_key="scoring-turn-1", ingestion_worker=worker,
+                approval_driver=approval)
             outcome["queue_receipt"] = wire(executed.queue_receipt)
             outcome["completed_group"] = wire(executed.completed_group)
             outcome["stage"] = "post_terminal_public_trace"
@@ -291,6 +298,9 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             outcome["execution_status"] = "OBSERVATION_FAILED" if outcome["observation_errors"] \
                 or (outcome.get("trace") or {}).get("terminal_status") != "TERMINAL" else "COMPLETED"
         except Exception as exc:
+            from deskpet.quality.corpus_approval import CorpusApprovalBlocked
+            if isinstance(exc, CorpusApprovalBlocked):
+                outcome["approval_status"] = "BLOCKED"
             outcome["execution_status"] = "OBSERVATION_FAILED" if outcome.get(
                 "actual_completed_group_available") else "EXECUTION_FAILED"
             outcome["error_type"] = type(exc).__name__
