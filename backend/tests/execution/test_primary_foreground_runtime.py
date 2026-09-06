@@ -165,7 +165,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         if extra_registrations:
             from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
             tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
-                if spec['name'] not in {r.name for r in extra_registrations}))
+                if spec['name'] not in {r.name for r in extra_registrations}),
+                execution_identities={item.name:item.execution_identity for item in inventory})
             tools.bind_run_authorities(registry)
             for registration in extra_registrations:
                 tools.register(_sdk_tool(registration))
