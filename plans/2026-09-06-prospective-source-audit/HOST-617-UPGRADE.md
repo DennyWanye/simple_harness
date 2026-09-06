@@ -1,5 +1,7 @@
 # Host Memory 7.3 公共升级接线
 
+2026-09-06：Dirac已完成本叶源码及所列分批实际结果限定复审ACCEPT；不重跑旧绿，不外推本叶未验的组合或native。
+
 2026-09-06。HumanMemoryV7Runtime在实际默认builder之前依次调用SDK提供的7.0/7.1→7.2、7.2→7.3公开升级接口；每阶段独立backup路径和独立receipt字段。未知catalog仍交公开分类拒绝，仅MemoryLegacySchemaUnsupported允许继续探测后继/新库builder；不读取SDK私有schema、删除库或改写旧receipt。注入的测试backend_factory不做迁移。
 
 本次使用真实installed M616子进程创建并登记属主，再用H076/M617已安装组合及Host Runtime升级。升级后属主公共回执逐字段/hash保持，7.3backup hash匹配公开升级receipt；重开复用同owner receipt/upgrade receipt，backup未改。没有在当前native userdata上升级。

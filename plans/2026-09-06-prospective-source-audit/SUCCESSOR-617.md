@@ -1,5 +1,7 @@
 # Host V2 与 invalidation 终局观察接入
 
+2026-09-06：Dirac已完成本叶源码及所列分批实际结果限定复审ACCEPT；不重跑旧绿，不外推本叶未验的组合或native。
+
 2026-09-06。产品c48e7b88，测试f1c5c5f9；实际运行Host f1c5c5f9，使用各自已安装H076/M617 target，共享通用Python依赖，无SDK源码覆盖。M617 wheel及16变动成员已获独立限定ACCEPT，不在主重复扫描。
 
 公开读取V1、V2与settle三种operation显式区分request/observation域、结果类型与reason。settle required的source_hash和not_required的receipt_hash分别绑定；SDK原host_persistence_unverified保留，Host另存实际接收结果，不转授权或替代SDK持久回执。原V1路径与缺能力不fallback规则保留。

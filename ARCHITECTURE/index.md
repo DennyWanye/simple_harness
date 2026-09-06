@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06 原生r8：H077/M617/Host2c8c57c6在原userdata真实完成新偏好写入、长期召回命中、UI遗忘后同条件零命中，Cytoscape两节点/筛选一节点可见。旧任务已FAILED但后置Provider清理仍报KeyError；第11完整组后短期投影MemoryCorruptionError，窗口外短召回未通过。正常CmdQ后runner回收残留，资源125/最终组清空。[原生范围、Run与失败证据](../plans/2026-09-06-typed-use-primary/NATIVE-077617.md)。
+
+
 2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
 
 
