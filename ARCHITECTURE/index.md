@@ -1,5 +1,9 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 Applicability integration
+
+Updated2026-09-06:048b72eb integrated original public applicability axes; six affected tests passed and owned processes exited. Formal three-cell Run remains separate from other401 batches. [Review and evidence](../plans/2026-09-06-typed-recall-applicability-executor/COMBINED.md).
+
 ## 2026-09-06 原触发执行器组合验证
 
 最后更新2026-09-06。固定1f9b575d合入已独审trigger叶并保留全部oracle指纹；三个必要交叉集成通过，无进程残留。原正式2PASS/1构造BLOCKED保持独立Run，不外推新401。[主复核及证据](../plans/2026-09-06-typed-recall-trigger-executor/COMBINED.md)。
