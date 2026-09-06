@@ -1,7 +1,7 @@
 # Rich-source公开构造首叶：Episode
 
 2026-09-06，base03d9fc6b；用户明确先补rich-source独立义务，旧五literal/hash不可转PASS。
-首小叶仅原Episode；其余四类仍待实现，不冒称五类setup完成。源码待独审，尚未测试。
+首小叶仅原Episode；其余四类仍待实现，不冒称五类setup完成。执行源30fcc261已实际1PASS，见RESULTS.md；其余四类仍未完成。
 
 原完整source_record（含secret-evidence/SENSITIVE/cross_scope/must-strip）原样写入真实S1 public_text，
 span覆盖实际完整字节。通过public ConversationEvidenceRegistration登记rich-source-task来源，再公开CREATE Episode。
