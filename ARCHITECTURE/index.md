@@ -1,5 +1,28 @@
 # ARCHITECTURE 索引
 
+2026-09-06 C02-19原setup关联补强：完整原始S1/receipt与实际group USER精确比较，新增真实同文异Run负控1PASS；已有正向/19绿未重跑，PG19055清空。仅setup来源，runtime隔离/240质量不计完成。[结果](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
+
+
+2026-09-06 C02全部20条setup已分批通过（18首批、C20及C19失败修复后各1）；C19用真实完成Host/SDK assistant来源保留llm_inference/unverified，C20不补造颜色或通用预算。C01+C02共40条准备验证，240真实质量仍0，运行来源隔离继续。所有测试组已清空。[准备结果与失败历史](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。
+
+
+2026-09-06 原生r16：时间调度修复已在r14原userdata实际恢复并触发1条；普通问题却被SDK pending occurrence/no_recall检查拦截，UI无本轮回答/提醒，端到端仍FAIL。不自动ACK或放宽检查；PG17276正常退出并清空。[原生结果与卡点](../plans/2026-09-06-typed-use-primary/NATIVE-R16.md)。
+
+
+2026-09-06 原生r15：公开SDK准备的2节点/1条APPLIES_TO在真实Cytoscape画布显示、点击边打开正确有向详情；筛选为1节点0边时隐藏详情，清空后恢复原选择。限定图谱UI通过，不计模型抽取/240质量/完整旅程；PG14481正常退出并清空，峰1,327,584KiB。[原生结果](../plans/2026-09-06-typed-use-primary/NATIVE-R15.md)。
+
+
+2026-09-06 原生r14：一次性提醒后台实际创建且UI记忆可见，前台却否认；到期后真实普通下一轮仅答43，未展示提醒，Host登记/计时/occurrence/presented均0。判时间提醒原生FAIL，正在补生产调度生命周期；不以两Run COMPLETED或旧组件绿替代。PG11237正常退出并清空。[Run与原生证据](../plans/2026-09-06-typed-use-primary/NATIVE-R14.md)。
+
+
+2026-09-06：大结果边界增量：8k小参数调用的1MiB精确分页通过（最大物理请求19,219字节）；4k预算拒绝后的真实ClosureFallback收尾/冷重开零重发负控通过，保留FAILED与Scope pending，不报4k分页成功。大型assistant参数原4k/8k超限失败保留，未提高预算或复跑32k/8k绿；进程组均清空。[结果与失败边界](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
+2026-09-06：公开SDK语料准备已合入，C01全部20条setup按各批验证，含同ID修订、遗忘前后可见性及独立2节点1条APPLIES_TO图谱fixture；没有真实模型评分，不计240完成。[结果与边界](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+2026-09-06：当前运行新增1MiB边界控制1PASS/6.32s，两个实际文件结果均超过1MiB，8次物理请求最大28,209字节，精确尾页及重开依赖通过。仅32k窗口/fixture producer/MockTransport，不代表4k8k或原生；PG7739清空。[结果](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
 2026-09-06：用户明确将“发布成功后提醒”缺失的实际发布来源接入及对应端到端验收延期为F01。本次不继续推进、不计为通过，其余当前交付继续；已有事件协议层证据不替代真实发布。[后续待办](../plans/2026-09-06-typed-use-primary/FOLLOWUPS.md)。
 
 

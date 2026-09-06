@@ -31,7 +31,7 @@ LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 from deskpet.execution.current_tool_pages import CurrentToolProjector, MARKER, PREFIX as CURRENT_PREFIX
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["allow", "forget_after_page"])
-async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode):
+async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypatch, mode, provider_context_window=32768, write_chunks=None, expected_budget_stop=False):
     import main
     from deskpet.execution.primary_dependencies import read_run_dependencies
     from simple_harness_memory import SuppressionRequest, SuppressionScopeKind
@@ -42,6 +42,16 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     def context_authority(**kwargs):
         return actual_authority(**kwargs, current_tool_projector=CurrentToolProjector(state, lambda: holder.stack))
     monkeypatch.setattr(runtime_fixture, "ProductRunContextAuthority", context_authority)
+    if expected_budget_stop:
+        from deskpet.execution.semantic_closure import ClosureFallback
+        actual_runtime = runtime_fixture.ForegroundRuntimeExecutionAuthority
+        class Unused:
+            def __getattr__(self, name):
+                raise AssertionError("Failed-budget fallback attempted model/mutation: " + name)
+        def with_fallback(**kwargs):
+            return actual_runtime(**kwargs, closure_fallback=ClosureFallback(state,
+                invoker=Unused(), service=Unused(), run_facts_reader=Unused()))
+        monkeypatch.setattr(runtime_fixture, "ForegroundRuntimeExecutionAuthority", with_fallback)
 
     write_module = importlib.import_module("deskpet.tools.os_tools.write_file")
     original_write = write_module.write_file
@@ -56,7 +66,8 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     provider = CreateProvider()
     pages = ContextPageInStore()
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
-        binding_authority=authority, configured_root=configured, page_in_store=pages)
+        binding_authority=authority, configured_root=configured, page_in_store=pages,
+        provider_context_window=provider_context_window)
     holder = SimpleNamespace(runtime=runtime, stack=stack, queue=queue, phase=0, step=0,
         sent=[], responses=[], next_response=None, source=None, second_run=None, first_run=None)
     actual_page_reader = PrimaryContextPageReader(state, stack_getter=lambda:holder.stack,
@@ -118,9 +129,10 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
             provider.requests.append(request)
             response = ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "Write bounded chunks."),
                 tool_calls=tuple(ProviderToolCall(CallId(f"write-chunk-{i}"), "write_file",
-                    dict(path="fresh.txt", content=LARGE[offset:offset + 3000],
-                         mode="write" if offset == 0 else "append"))
-                    for i, offset in enumerate(range(0, len(LARGE), 3000))),
+                    dict(path="fresh.txt", content=chunk,
+                         mode="write" if i == 0 else "append"))
+                    for i, chunk in enumerate(write_chunks if write_chunks is not None else
+                        tuple(LARGE[offset:offset + 3000] for offset in range(0, len(LARGE), 3000)))),
                 model="model", usage=ProviderUsage(10, 10, 20))
         elif n == 5 and holder.phase == 0 and mode == "forget_after_page":
             # Settle the actual write scope through its public Tool first.
@@ -160,6 +172,7 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
             response = await scripted(request, cancel=cancel)
         holder.next_response = response
         binding = SdkRunBindingV1.from_record(holder.stack.read_closure_run_facts(current.sdk_run_id).binding_record)
+        assert binding.context_window == provider_context_window
         return await resolver.build_authority(binding).provider.invoke(request, cancel=cancel)
 
     provider.invoke = invoke
@@ -172,6 +185,23 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
     try:
         await service.enqueue_turn(QueueTurnRequest(None, "large-source", "Create a project and write its file"))
         await run()
+        if expected_budget_stop:
+            assert stack.read_run_terminal_evidence(holder.first_run).state == "failed"
+            assert await queue.current_snapshot(runtime.subject) is None
+            async with aiosqlite.connect(state) as db:
+                rows = await (await db.execute("SELECT outcome,reason_code FROM task_scope_closure_receipts WHERE sdk_run_id=?",
+                    (holder.first_run,))).fetchall()
+                assert rows == [("pending", "closure_run_not_completed")]
+            before = len(holder.sent)
+            await runtime.close()
+            await stack.close()
+            holder.runtime, holder.stack, holder.queue = await build(tmp_path, state, provider, dynamic=True,
+                binding_authority=authority, configured_root=configured, page_in_store=pages,
+                provider_context_window=provider_context_window)
+            assert holder.stack.read_run_terminal_evidence(holder.first_run).state == "failed"
+            assert not await holder.runtime._drive_once()
+            assert len(holder.sent) == before
+            return
         assert holder.responses and "EXACT_PAGE_TAIL" in holder.responses[0]["content"]
         if mode == "forget_after_page":
             assert len(holder.sent) == 7
@@ -185,7 +215,8 @@ async def test_actual_current_effect_page_and_physical_guard(tmp_path, monkeypat
         await runtime.close()
         await stack.close()
         holder.runtime, holder.stack, holder.queue = await build(tmp_path, state, provider, dynamic=True,
-            binding_authority=authority, configured_root=configured, page_in_store=pages)
+            binding_authority=authority, configured_root=configured, page_in_store=pages,
+        provider_context_window=provider_context_window)
         async with aiosqlite.connect(state) as db:
             db.row_factory = aiosqlite.Row
             _, after = await read_run_dependencies(db=db, stack=holder.stack, sdk_run_id=holder.first_run)
