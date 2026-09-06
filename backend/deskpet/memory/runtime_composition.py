@@ -33,6 +33,8 @@ def compose_human_memory_runtime(
     """
     from deskpet.operation_audit.human_access import HumanAuditAccess
 
+    from deskpet.memory.prospective_runtime import RuntimeProspectiveSignalAuthority, ProspectiveRuntimeLane
+
     audit_access = HumanAuditAccess(state_db_path, clock=clock)
     authority = SemanticCorrectionAuthority(
         state_db_path,
@@ -54,6 +56,8 @@ def compose_human_memory_runtime(
         analysis_authority=executor,
         memory_action_authority=authority,
         history_source_authority=HostHistorySourceAuthority(state_db_path),
+        prospective_signal_authority=RuntimeProspectiveSignalAuthority(
+            state_db_path, principal if principal is not None else local_memory_principal()),
         audit_access_authority=audit_access,
         conversation_evidence_authority=PrimaryConversationAuthority(
             state_db_path, subject=(principal if principal is not None else local_memory_principal()).actor_id,
@@ -62,4 +66,7 @@ def compose_human_memory_runtime(
         principal=principal,
         clock=clock,
     )
+    # Construct lazily; application schema52 initialization finishes before
+    # MemoryAnalysisLane.start owns the only running time worker.
+    runtime.prospective_lane = ProspectiveRuntimeLane(path=state_db_path, runtime=runtime, clock=clock)
     return runtime

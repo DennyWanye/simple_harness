@@ -101,6 +101,7 @@ class HumanMemoryV7Runtime:
         analysis_authority: Any = None,
         memory_action_authority: Any = None,
         history_source_authority: Any = None,
+        prospective_signal_authority: Any = None,
         audit_access_authority: Any = None,
         conversation_evidence_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
@@ -125,6 +126,7 @@ class HumanMemoryV7Runtime:
         self._analysis_authority = analysis_authority
         self._memory_action_authority = memory_action_authority
         self._history_source_authority = history_source_authority
+        self._prospective_signal_authority = prospective_signal_authority
         self.audit_access_authority = audit_access_authority
         self._conversation_evidence_authority = conversation_evidence_authority
         # Test seam only: optionally replace the public backend constructor.
@@ -219,6 +221,8 @@ class HumanMemoryV7Runtime:
                     kwargs["memory_action_authority"] = self._memory_action_authority
                 if self._history_source_authority is not None:
                     kwargs["history_source_authority"] = self._history_source_authority
+                if self._prospective_signal_authority is not None:
+                    kwargs["prospective_signal_authority"] = self._prospective_signal_authority
                 if self.audit_access_authority is not None:
                     kwargs["audit_access_authority"] = self.audit_access_authority
                 if self._backend_factory is not None:

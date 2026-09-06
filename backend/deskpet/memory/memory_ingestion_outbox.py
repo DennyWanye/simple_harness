@@ -421,6 +421,7 @@ class MemoryAnalysisLane:
         self._wake = asyncio.Event()
         self.last_error: BaseException | None = None
         self._closing = False
+        self.prospective_lane = getattr(runtime, "prospective_lane", None)
         self.short_indexer = None
         self.last_short_step = None
         self.last_short_error: BaseException | None = None
@@ -463,16 +464,22 @@ class MemoryAnalysisLane:
         # a claim that a particular memory was written. No idle polling events.
         from simple_harness_memory import WorkerRunOutcome
 
+        if job is WorkerRunOutcome.APPLIED and self.prospective_lane is not None:
+            self.prospective_lane.wake()
         if job is WorkerRunOutcome.APPLIED and self._display_invalidation is not None:
             await self._display_invalidation.changed()
         return outbox, job
 
     def wake(self) -> None:
         self._wake.set()
+        if self.prospective_lane is not None:
+            self.prospective_lane.wake()
 
     def start(self) -> None:
         if self._closing:
             return
+        if self.prospective_lane is not None:
+            self.prospective_lane.start()
         if self._task is None or self._task.done():
             self._stop.clear()
             self._task = asyncio.create_task(self._run(), name="memory-analysis-lane")
@@ -505,15 +512,20 @@ class MemoryAnalysisLane:
         self._wake.set()
         task = self._task
         try:
-            if task is not None:
-                try:
-                    await asyncio.wait_for(task, timeout=timeout_seconds)
-                except TimeoutError:
-                    task.cancel()
-                    await asyncio.gather(task, return_exceptions=True)
-            if self.short_indexer is not None:
-                await self.short_indexer.close()
-            self._runner = None
+            try:
+                if self.prospective_lane is not None:
+                    await self.prospective_lane.close()
+            finally:
+                # Closing the clock child cannot skip joining analysis ownership.
+                if task is not None:
+                    try:
+                        await asyncio.wait_for(task, timeout=timeout_seconds)
+                    except TimeoutError:
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                if self.short_indexer is not None:
+                    await self.short_indexer.close()
+                self._runner = None
         finally:
             self._task = None
             self._closing = False
