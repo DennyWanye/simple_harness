@@ -1,3 +1,5 @@
+最后更新：2026-09-07。评分自然退出叶ab36b6a5：WorkflowRunner独立UoW owner原未释放，补public runner/service close与main/carrier统一收尾；bootstrap明确服务拥有共享端口UoW，runner不关借用端口。唯一独立child实际main执行自然SystemExit控制1PASS17.01s，PG69388清空，无pytest全局lane清理代替。原C01-10语义FAIL及deadline保留，下一新case质量另验。[定位与结果](../plans/2026-09-07-corpus-c01-scoring/PROCESS-EXIT.md)。
+
 最后更新：2026-09-07。C01真实交互补丁222346d3/ac76e16a：可选精确公开审批仅允许memory_standalone，未知等待/非白名单BLOCKED；接原main ingress打开barrier。实际main/SDK新增组合1PASS16.83s（只HTTP delegate固定，权限/handler/终态真实），原ingressclosed失败保留；PG66376清空，最低磁盘599MiB，首真实C01须恢复默认准入再执行。本地WeMM实际加载，非真实LLM评分。[结果](../plans/2026-09-07-corpus-c01-scoring/APPROVAL-RESULTS.md)。
 
 最后更新：2026-09-07。C01评分叶99d17c11：真实main Memory初始化/关闭与gold隔离、真实未终态attempt保存红2修后通过，连同先前FAILED参数共3唯一无网络控制；PG65098/65129清空，旧失败保留。原coroutine diagnostics警告单列，不扩改。首C01-10待主合源码后真实评分，当前模型评分0，不是质量PASS。[控制与准确运行命令](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。
