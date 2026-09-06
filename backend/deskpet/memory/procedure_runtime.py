@@ -120,11 +120,7 @@ class ProcedureRuntime:
                 except MemoryValidationError as error:
                     if str(error) != "procedure_observation_source_already_counted":
                         raise
-                    # This is an actual public prepare rejection; no authority
-                    # was issued and no SDK consumption/receipt is invented.
-                    await self.store.journal(use["use_id"], "rejected", {
-                        "reason": str(error), "host_run_id": group.host_run_id,
-                        "source_registration_hashes": [item.registration_hash for item, _ in verified]})
+                    await self._reject_counted_source(use, group, verified, error)
                     return
             reference = h.ProcedureObservationAuthorityRef.from_authority(
                 h.ProcedureObservationAuthority.from_json(prepared["authority"]))
@@ -141,6 +137,14 @@ class ProcedureRuntime:
                 # A generic authority rejection alone never authorizes renewal.
                 try:
                     prepared = await self._prepare(use, group, verified, manager, previous=reference)
+                except MemoryValidationError as recovery_error:
+                    if str(recovery_error) != "procedure_observation_source_already_counted":
+                        raise
+                    # Another actual use consumed this Scope while our original
+                    # prepared ref was pending. Keep both historical facts; no
+                    # replacement authority or invented consumption is needed.
+                    await self._reject_counted_source(use, group, verified, recovery_error)
+                    return
                 except MemoryWriterConflict as recovery_error:
                     if str(recovery_error) != "procedure_observation_previous_already_consumed":
                         raise
@@ -151,6 +155,13 @@ class ProcedureRuntime:
                     result = await self._consume(manager, reference)
             await self.store.journal(use["use_id"], "applied", {"result": result.to_json(),
                 "result_hash": result.result_hash, "reference": reference.to_json()})
+
+    async def _reject_counted_source(self, use, group, verified, error):
+        # Record only the exact public rejection, for initial and recovery
+        # prepares alike. Never replace an existing prepared ref or SDK result.
+        await self.store.journal(use["use_id"], "rejected", {
+            "reason": str(error), "host_run_id": group.host_run_id,
+            "source_registration_hashes": [item.registration_hash for item, _ in verified]})
 
     async def _consume(self, manager, reference):
         runtime = self.runtime_getter()
