@@ -245,7 +245,8 @@ class ClosureRequestAuthority:
             [v for p in proofs for v in p["evidence"]] +
                 [dict(evidence_id=s["evidence_id"], envelope_hash=s["envelope_hash"]) for s in host["sources"]],
             [v for p in proofs for v in p["recall"]],
-            [v for p in proofs for v in p.get("short_horizon", ())])
+            [v for p in proofs for v in p.get("short_horizon", ())],
+            procedure_drafts=[v for p in proofs for v in p.get("procedure_drafts", ())])
         async with self.reader(snapshot=False) as db:
             if not await policy.check_dependencies(db=db, primary_ref=host["run"]["primary_conversation_id"],
                     dependencies=proof, disclosure_context=disclosure):
