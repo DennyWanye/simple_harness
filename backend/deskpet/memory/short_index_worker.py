@@ -18,6 +18,7 @@ class ShortIndexStep:
     blocked: tuple[tuple[str, str], ...] = ()
     wrapped: bool = False
     projection: object | None = None
+    generation: object | None = None
 
 
 class PrimaryShortIndexWorker:
@@ -41,6 +42,7 @@ class PrimaryShortIndexWorker:
         self._after, self._upper = 0, None
         self._confirmed = OrderedDict()
         self._last_projection = None
+        self._generation_pending = False
 
     def _fault(self, point):
         if self._fault_hook is not None:
@@ -91,19 +93,28 @@ class PrimaryShortIndexWorker:
             wrapped = not rows or self._after >= upper
             if wrapped:
                 self._after, self._upper = 0, None
-            projection = None
-            if pending or self._last_projection is None or self._now() - self._last_projection >= self.maintenance_seconds:
+            projection = generation = None
+            if (pending or self._generation_pending or self._last_projection is None
+                    or self._now() - self._last_projection >= self.maintenance_seconds):
+                # Cache hits are registration facts only. A failed maintenance
+                # generation must retry even if every group was already confirmed.
+                self._generation_pending = True
                 self._fault("short.before_projection")
                 async with asyncio.timeout(self.operation_timeout):
                     projection = await manager.rebuild_short_horizon_projection(principal=self.runtime.principal())
-                self._fault("short.after_projection")
+                    self._fault("short.after_projection")
+                    generation = await manager.rebuild_short_horizon_generation()
+                    if projection.projected_chunk_count and not generation.activated:
+                        raise RuntimeError("short_generation_not_activated")
+                    self._fault("short.after_generation")
+                self._generation_pending = False
                 self._last_projection = self._now()
                 for key in pending:
                     self._confirmed[key] = None
                     self._confirmed.move_to_end(key)
                     while len(self._confirmed) > self.cache_limit:
                         self._confirmed.popitem(last=False)
-            return ShortIndexStep(scanned, len(pending), tuple(blocked), wrapped, projection)
+            return ShortIndexStep(scanned, len(pending), tuple(blocked), wrapped, projection, generation)
 
     async def close(self):
         async with self._lock:

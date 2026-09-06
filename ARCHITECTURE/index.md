@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。02bf 后继后台 worker 已接公共 generation：同锁/既有 timeout 内 projection→generation，成功才确认 cache，失败/超时/取消可重试，SDK 按 lineage/manifest 幂等复用。实际 installed H077/M617 + 小测试 embedder 四控分批绿（含公共 query、维护/重开/lost-ACK 不重复 embedding）；PG82943 无残留、锁释放。尚待独审/主组合/实际 WeMM/native。[边界与结果](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
+
 最后更新：2026-09-06。隔离 Host 短期 terminal 来源补齐叶：r8 最终一致性副本在实际 M617 公共 rebuild 复现 history_source_lineage_missing；Host 同事务核验 terminal 后经公共 source-only admission 补齐祖先，13 组投影 0→3 chunks，重开保持，旧 registration/suppression/revision/jobs 不变。新增三控分批通过，PG82219 清空、锁释放；未改 SDK/原库，generation/真实 shortquery/native 尚未验证，待独审及主组合。[原因与证据](../plans/2026-09-06-short-terminal-source/RESULTS.md)。
 
 2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。

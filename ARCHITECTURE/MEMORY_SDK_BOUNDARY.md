@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：正常 MemoryAnalysisLane 的 short worker 在 projection 后调用 SDK 公共 generation；cache 只在生成成功后确认，维护失败保留 pending，原 SDK 幂等负责同 lineage/manifest 复用。四个小 embedder 公共接线控分批通过；未改 SDK 或 WeMM，真实 native 仍待主验证。[接线事实](../plans/2026-09-06-short-terminal-source/GENERATION.md)。
+
 2026-09-06：Host short indexing 补齐真实 terminal S1 祖先，仍由 M617 原 suppression 校验；不增加 conversation item、分析 job 或 grant。r8 最终副本公共 reconcile/reopen 恢复 3 chunks，旧注册/遗忘/认知/job 行保持，新增三个来源/遗忘/重开控分批绿。仅 Host 接线局部验证，待独审/合并/真实 generation 和 native 召回；Memory 制品不变。[详情](../plans/2026-09-06-short-terminal-source/RESULTS.md)。
 
 2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
