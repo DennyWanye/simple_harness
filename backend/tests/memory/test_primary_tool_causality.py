@@ -40,6 +40,8 @@ async def test_actual_reused_raw_call_ids_have_distinct_causal_parents(tmp_path)
         def read(uow=stack._uow, messages=transcript):
             return read_tool_causal_sources(uow, run_id, current_text=text,
                                            transcript=messages, project=project_primary_transcript, effect_ids=effect_ids)
+        cache_root = stack._uow.database.path.parent / ".audit-snapshots"
+        before_cache = set(cache_root.rglob("*.sqlite")) if cache_root.exists() else set()
         sources = read()
         assert len(sources) == 2
         assert [s["parent_item_ordinal"] for s in sources] == [2, 4]
@@ -49,6 +51,14 @@ async def test_actual_reused_raw_call_ids_have_distinct_causal_parents(tmp_path)
         assert len({s["effect_id"] for s in sources}) == 2
         assert all(s["result_hash"] and s["effect_evidence_ref"] for s in sources)
         assert read() == sources
+        after_cache = set(cache_root.rglob("*.sqlite")) if cache_root.exists() else set()
+        assert after_cache == before_cache
+        class TruncatedRead:
+            def __getattr__(self, name): return getattr(stack._uow, name)
+            def read_run_operation_audit(self, *args, **kwargs):
+                return replace(stack._uow.read_run_operation_audit(*args, **kwargs), truncated=True)
+        with pytest.raises(PrimaryToolCausalityUnavailable, match="^primary_tool_audit_snapshot_incomplete$"):
+            read(TruncatedRead())
         class ChangedRead:
             def __init__(self, change): self.change = change
             def __getattr__(self, name): return getattr(stack._uow, name)

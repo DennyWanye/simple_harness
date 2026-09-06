@@ -24,7 +24,7 @@ def _require(condition, code):
 def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, effect_ids):
     """Bounded, exact public-record read for a completed ReAct transcript.
 
-    Caller owns SDK lifetime. Public audit paging supplies verified proposal/effect
+    Caller owns SDK lifetime. The bounded public audit supplies verified proposal/effect
     joins; public records supply original results. No SQL or private SDK helper.
     A source projection never authorizes replay, mutation or context disclosure.
     """
@@ -55,21 +55,15 @@ def read_tool_causal_sources(uow, run_id, *, current_text, transcript, project, 
             break
     else:
         raise PrimaryToolCausalityUnavailable("primary_tool_provider_projection_limit")
-    page = uow.open_run_operation_audit(RunId(run_id), page_size=256)
-    snapshot_hash, page_index = page.snapshot_hash, 0
-    operations = []
-    while True:
-        _require(page.run_id == run_id and page.snapshot_hash == snapshot_hash
-                 and page.page_index == page_index and page.total_pages <= 32,
-                 "audit_snapshot_mismatch_or_limit")
-        operations.extend(o for o in page.operations
-                          if o.record_type == "head" and o.kind in {"provider", "effect"})
-        _require(len(operations) <= 256, "record_limit")
-        if page.next_cursor is None:
-            break
-        page_index += 1
-        _require(page_index < 32, "page_limit")
-        page = uow.read_run_operation_audit_page(RunId(run_id), cursor=page.next_cursor)
+    # The public paged viewer creates a retained cache per opening. Background
+    # source reads must not accumulate viewer caches: use its bounded snapshot
+    # and refuse truncation rather than silently dropping causal operations.
+    snapshot = uow.read_run_operation_audit(RunId(run_id), limit=4096)
+    _require(snapshot.run_id == run_id and not snapshot.truncated,
+             "audit_snapshot_incomplete")
+    operations = [o for o in snapshot.operations
+                  if o.record_type == "head" and o.kind in {"provider", "effect"}]
+    _require(len(operations) <= 256, "record_limit")
     providers, effects = {}, {}
     prefix = run_id + ":provider-turn:"
     for op in operations:
