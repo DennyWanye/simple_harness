@@ -888,3 +888,6 @@ fail closed。
 
 
 2026-09-06：Dirac指出A7新增slow source checker后漏Host披露绑定复验，真实G1→公开configure G2后仍physicalsend1红已保留。e858d98f同Run/request_id末次exact复验修复，同一新竞争控1PASS/1.80s、G2真实提交后旧G1拒绝、0send/0重发。PG1540清空；稳定历史/五路由未重跑。固定差异独审待回，整片不能沿用前ACCEPT。见[A7 P1结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
+
+2026-09-06：Dirac最终确认e858d98f slow-source披露P1闭合；连同A7来源/manifest继承、负控、五route、三合法Run与第四ACK、共享initializer，源码组合限定ACCEPT，可交主集成。原红保留，不扩展为H078/main/native或完整S5c通过；全部自有进程已退出。见[A7最终独审](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。

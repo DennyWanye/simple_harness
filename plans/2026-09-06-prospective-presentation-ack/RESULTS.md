@@ -246,3 +246,16 @@ launcher, exact test node `test_real_occurrence_source_checker_disclosure_genera
 - `a7-r22/command.log` SHA256 `45aa9d6dd818a106e70ffd5db002bc65e619e9860b9e7f5be5e5d12f13ad9de6`
 - `a7-r22/resource.json` SHA256 `ef4bb8a6c0a63a4ab7f78fb6bcd063f60ce92b98812375bba598b289ccc6f07f`
 - `a7-r22/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+## Final independent source disposition
+
+Dirac independently accepted e858d98f + f312d95c on2026-09-06: the slow-source
+G1/G2 P1 is closed. Together with37ff source/manifest inheritance,049330 negative
+controls,3fef five routes,6dbc three legal Runs/fourth ACK,180664 shared initializer,
+no remaining definite P0/P1 was found in this source slice. The review read r13,
+r14,r17,r20 and the original r21/red+r22/green, without rerunning fixed greens.
+This is a SOURCE COMBINATION LIMITED ACCEPT, ready for main integration. It does
+not claim main enabled, H078 installed combination/native, publication-event
+authority, recurrence expansion or all S5c complete. The check-to-send interval
+is not a cross-database atomic boundary. All owned test processes have exited;
+no new verification is running.
