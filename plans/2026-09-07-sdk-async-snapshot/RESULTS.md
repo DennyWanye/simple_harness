@@ -20,3 +20,5 @@
 | `.local-test-evidence/2026-09-07/sdk-async-snapshot/r1/resource.json` | `7dc9535a13aead02cae1a05bcbcc5411a0b05719539beb24aa44e03d95d121d1` |
 
 后继实际main观察：C08五个新独立child首次批均写出memory+harness健康snapshot且无never-awaited警告，来源与原始哈希见[实际组合](../2026-09-07-corpus-c01-scoring/C08-RETAINED-RESULTS.md)。这是附带验证新增接线，没有重跑旧main控制。
+
+34b6d8eb后续把SDK activation诊断await移到stack/ingress拥有引用已发布之后，普通清理可在该取消点找到owner。C08正式dispatcher新增组合1PASS8.00s顺带走过新位置，不重跑旧绿；不是额外取消故障测试。
