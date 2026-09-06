@@ -49,7 +49,8 @@ _NON_PRESENTABLE_STATES = frozenset(
 _ELIGIBLE_PRIVACY_CLASSES = frozenset({"public", "personal"})
 
 HOST_SUPPORTED_FILTER_POLICIES: frozenset[str] = frozenset(
-    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1", "host-primary-runtime-v1"}
+    {"credential-filter/v1", "host-public-turn/v1", "host-typed-ingress/v1", "host-primary-runtime-v1",
+     "host-closure-attempt-input/v1", "host-closure-result-source/v1"}
 )
 HOST_CLASSIFICATION_POLICY_ID = "deskpet-host-classification"
 HOST_CLASSIFICATION_POLICY_VERSION = "1"

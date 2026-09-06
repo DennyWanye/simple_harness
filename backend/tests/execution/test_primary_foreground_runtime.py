@@ -642,7 +642,7 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
             elif name == "task_scope_search":
                 result = await route.handle_task_scope_search(args)
             elif name == "task_scope_update":
-                return await closure.handle_task_scope_update(args)
+                result = await closure.handle_task_scope_update(args)
             elif name == "tool_search":
                 result = bridge.search(args["query"])
             elif name == "tool_describe":

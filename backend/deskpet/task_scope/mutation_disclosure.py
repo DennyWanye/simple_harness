@@ -39,7 +39,9 @@ def _arguments(plan):
 
 def _matches(arguments, plan):
     from deskpet.sdk_adapters.task_scope_mutation import _validate_shape
-    value = _validate_shape(arguments)
+    # The production handler strips only this declared presentation sidecar;
+    # all actual mutation fields and every other unexpected key stay strict.
+    value = _validate_shape({k: v for k, v in arguments.items() if k != "deskpet_public_progress"})
     value["closure_reason"] = value.get("closure_reason")
     value["evidence_refs"] = list(dict.fromkeys(value["evidence_refs"]))
     for op in value["operations"]:
