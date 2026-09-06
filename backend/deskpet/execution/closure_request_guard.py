@@ -235,9 +235,10 @@ class ClosureRequestAuthority:
         if (projected["canonical_revision"] != expected_scope["current_revision"]
                 or projected.get("status") != expected_scope["status"]
                 or any(fields.get(k) != expected_scope[k] for k in ("title", "goal"))
-                or expected_scope.get("resume") not in (None, {}, "")):
-            # No current complete source port for mutable resume. Do not
-            # silently delete that field to permit send.
+                or (expected_scope.get("resume") not in (None, {}, "")
+                    and fields.get("resume") != expected_scope["resume"])):
+            # All transmitted prose must match its current producer projection
+            # in full, including nonempty resume; truncated/legacy stays pending.
             raise ClosureSourceIncomplete("closure_scope_fields_incomplete")
         proofs.append(projected["disclosure_manifest"]["dependencies"])
         proof = dependencies(

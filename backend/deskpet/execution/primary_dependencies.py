@@ -86,16 +86,55 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         if "visibility_dependencies" in metadata or owned_run is not None:
             raise ValueError("primary_dependencies_host_binding_missing")
         return None
+    cutoff = None
+    if before_effect_id is not None:
+        # The producer need not itself be context_route (e.g. a successful
+        # task_scope_update). Use the real append-only primary effect order,
+        # never the position of an unrelated subset of route receipts.
+        from deskpet.task_scope.protocol import canonical_hash
+        cursor = await db.execute("SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
+            (sdk_run_id, before_effect_id))
+        target = await cursor.fetchone()
+        await cursor.close()
+        if target is None:
+            raise ValueError("primary_effect_index_prefix_missing")
+        identity = dict(host_run_id=run["host_run_id"], sdk_run_id=sdk_run_id,
+            effect_id=before_effect_id, tool_name=target["tool_name"])
+        if (target["host_run_id"] != run["host_run_id"] or target["identity_json"] != canonical_json(identity)
+                or target["identity_hash"] != canonical_hash(identity)):
+            raise ValueError("primary_effect_index_identity_mismatch")
+        _, (target_fact,) = stack.read_primary_dependency_facts(sdk_run_id, (before_effect_id,))
+        if (target_fact is None or target_fact.run_id.value != sdk_run_id
+                or target_fact.effect_id.value != before_effect_id or target_fact.tool_name != target["tool_name"]):
+            raise ValueError("primary_effect_index_prefix_unverified")
+        cutoff = target["sequence"]
     cursor = await db.execute(
         "SELECT receipt_json,origin,provider_turn_ordinal FROM context_route_decisions WHERE sdk_run_id=? ORDER BY rowid",
         (sdk_run_id,))
     decisions = [(json.loads(row[0]), row[1], row[2]) for row in await cursor.fetchall()]
-    if before_effect_id is not None:
-        position = next((i for i, (raw, _, _) in enumerate(decisions) if raw.get("effect_id") == before_effect_id), None)
-        if position is not None:
-            decisions = decisions[:position]
-    routes = [raw for raw, origin, _ in decisions if origin == "context_tool"]
     await cursor.close()
+    if before_effect_id is not None:
+        prefix = []
+        for raw, origin, ordinal in decisions:
+            if origin == "context_tool":
+                cursor = await db.execute("SELECT * FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
+                    (sdk_run_id, raw.get("effect_id")))
+                indexed = await cursor.fetchone()
+                await cursor.close()
+                if indexed is None:
+                    raise ValueError("primary_effect_index_route_missing")
+                identity = dict(host_run_id=run["host_run_id"], sdk_run_id=sdk_run_id,
+                    effect_id=raw["effect_id"], tool_name="context_route")
+                if (indexed["host_run_id"] != run["host_run_id"] or indexed["tool_name"] != "context_route"
+                        or indexed["identity_json"] != canonical_json(identity) or indexed["identity_hash"] != canonical_hash(identity)):
+                    raise ValueError("primary_effect_index_identity_mismatch")
+                if indexed["sequence"] >= cutoff:
+                    continue
+            # Initial scope and no-recall identity markers retain their exact
+            # validations below; they don't add a later tool source payload.
+            prefix.append((raw, origin, ordinal))
+        decisions = prefix
+    routes = [raw for raw, origin, _ in decisions if origin == "context_tool"]
     start, effects = stack.read_primary_dependency_facts(sdk_run_id, tuple(r["effect_id"] for r in routes))
     metadata = start.get("input", {}).get("context_metadata", {})
     if metadata.get("root_run_id") != run["host_run_id"]:
@@ -204,18 +243,11 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
     # unscoped search/page-in. TaskScope reservations are not a complete index.
     if metadata.get("primary_effect_index_version") != 1:
         raise ValueError("primary_effect_index_contract_missing")
-    cutoff = None
-    if before_effect_id is not None:
-        cursor = await db.execute("SELECT sequence FROM primary_effect_identities WHERE sdk_run_id=? AND effect_id=?",
-            (sdk_run_id, before_effect_id))
-        row = await cursor.fetchone()
-        if row is None:
-            raise ValueError("primary_effect_index_prefix_missing")
-        cutoff = row[0]
     cursor = await db.execute("SELECT * FROM primary_effect_identities WHERE sdk_run_id=? "
         "AND tool_name IN ('task_scope_search','context_page_in') AND (? IS NULL OR sequence<?) ORDER BY sequence LIMIT 257",
         (sdk_run_id, cutoff, cutoff))
     searches = await cursor.fetchall()
+    await cursor.close()
     if len(searches) > 256:
         raise ValueError("scope_disclosure_limit")
     for row in searches:

@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：`feat/closure-resume-source` / baseff2f2009独立叶，固定0a52085e非空resume真实producer与当前来源过滤完成本批限定验证；r1一绿四红、r2仅四红转绿，合计5unique，Dirac限定ACCEPT。实际tool/fallback→后继Run→物理MockTransport闭合、前缀稳定、来源遗忘和原子故障已验；H077/M616限定载体，已合primary候选，主组合/native待验，legacy/篡改/goal/恢复剩余控制与完整compaction继续保留。两新policy仅常量hunk，合主保留Singer typed modes；PG95551退出无残留，未重跑旧绿。[结果/命令](../plans/2026-09-06-closure-resume-source/RESULTS.md)。
+
 2026-09-06 原生r11（Host464b86ee/H077/M617）：既有startup hook实际完成WeMM预加载，但新进程唯一首query的encode1.44s仍超1s预算；UI明确查询失败，未重试，不以r10暖成功替代首查。PG93935正常退出且组清空；仅清可再生Rust链接对象恢复磁盘4.15GiB，native二进制哈希/模型/证据/用户库不变。继续同实例编码预热。[本次失败与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R11.md)。
 
 2026-09-06：自有clock树 `feat/wemm-startup-warmup`／base35b07098，源码270320d3接回现有WeMM启动预热，两项新增控制2PASS／0.25s，峰119616KiB、磁盘最低1462MiB、PG93645清空、锁释放。已获Dirac限定ACCEPT并合入primary候选；待真实首冷query，Procedure WIP保留且未混入；旧绿未重跑。[证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。

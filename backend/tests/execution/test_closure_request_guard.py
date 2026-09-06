@@ -31,7 +31,7 @@ class OmitClosureProvider(CreateProvider):
         return await super().invoke(request, cancel=cancel)
 
 
-async def world(tmp_path, monkeypatch, mode):
+async def world(tmp_path, monkeypatch, mode, *, closure_reply=None):
     import main
     state, _, service, configured, binding_authority = await fixture(tmp_path)
     await service.enqueue_turn(QueueTurnRequest(None, "closure-guard", "Create a new project and write its file"))
@@ -50,6 +50,8 @@ async def world(tmp_path, monkeypatch, mode):
         args = dict(outcome="no_mutation", base_revision=observation["task_scope"]["current_revision"],
             closure_reason="File written; no metadata change.", evidence_refs=observation["allowed_evidence_refs"],
             idempotency_key="physical-closure")
+        if closure_reply is not None:
+            args = closure_reply(observation, len(w.sent))
         return httpx.Response(200, json={"id":"closure-http", "model":"model", "choices":[{
             "message":{"role":"assistant","content":None,"tool_calls":[{"id":"close", "type":"function",
                 "function":{"name":"task_scope_update","arguments":json.dumps(args)}}]},"finish_reason":"tool_calls"}],
