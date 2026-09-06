@@ -353,6 +353,33 @@ class S5cStore:
             await cursor.close()
             return None if row is None else await self._read_registration_tx(db, row)
 
+    async def accepted_registration(self, *, memory_id: str, revision: int) -> PreparedRegistration | None:
+        """Read the actual acknowledged Host registration for a target revision.
+
+        This queries Host facts, never computes a Memory outbox identifier.
+        Multiple bindings are an inconsistency rather than a newest-row choice.
+        """
+        if not isinstance(memory_id, str) or not memory_id or type(revision) is not int or revision < 1:
+            raise ValueError("s5c_registration_target_invalid")
+        async with aiosqlite.connect(f"{self.path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            await db.execute("BEGIN")
+            async with db.execute(
+                "SELECT p.* FROM prospective_scheduler_registrations p "
+                "WHERE p.owner_key=? AND p.phase='prepared' "
+                "AND json_extract(p.source_json,'$.payload.command')='registration' "
+                "AND json_extract(p.source_json,'$.payload.memory_id')=? "
+                "AND json_extract(p.source_json,'$.payload.prospective_revision')=? LIMIT 2",
+                (self.owner, memory_id, revision),
+            ) as cursor:
+                rows = await cursor.fetchall()
+            if len(rows) > 1:
+                raise S5cConflict("s5c_registration_target_ambiguous")
+            if not rows:
+                return None
+            prepared = await self._read_registration_tx(db, rows[0])
+            return prepared if prepared.result is not None else None
+
     async def pending_registrations(
         self, *, limit: int = 100
     ) -> tuple[PreparedRegistration, ...]:
