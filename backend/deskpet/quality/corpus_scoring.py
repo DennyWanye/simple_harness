@@ -160,6 +160,7 @@ def review_packet(directory, exit_code):
             "核干扰库非空及零查询/零披露/后台gate，06和14另核实际最近历史" if no_match_batch
             else "核实际候选披露/首轮无正式授权、原固定followup及最终exact resume；错候选不救场" if task_batch
             else "核原USER及真实派生摘要同源、抑制前非空与当前拒绝、评分物理请求无旧内容" if suppressed_batch
+            else "按原gold核零查询，旧head不得作为当前事实；仅使用本轮合法current输入，不要求召回或注入A" if superseded_batch
             else "核实际A的ID/revision/ref进入工具结果及后续物理输入",
             "核timeout/refusal/invalid_plan及全部原始提议", "记录所引用trace路径与hash"],
         quality_thresholds_status="NOT_EVALUATED_PARTIAL_C07_BATCH" if no_match_batch
