@@ -110,7 +110,7 @@ async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(t
                     # A generic after-handoff exception is correctly UNKNOWN /
                     # WAITING. Use the public confirmed-rejection classification
                     # to construct this distinct, actual SDK FAILED control.
-                    raise ProviderRequestRejectedError("controlled request rejected")
+                    raise ProviderRequestRejectedError(public_message="controlled request rejected")
                 monkeypatch.setattr(s["provider"], "invoke", fail_provider)
                 response = await s["request"]("primary.decisions.respond", decisions.reply(s, old_item))
                 assert response["payload"]["ok"]
