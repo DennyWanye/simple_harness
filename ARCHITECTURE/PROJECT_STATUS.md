@@ -1,3 +1,5 @@
+最后更新：2026-09-07。主d86e4805（产品0e146792）与H079/M619/S0313安装组合仅Auto原root新Scope写入/alreadyBound拒绝2PASS4.05s；205已加载SDK模块属指定target，无重复全成员核验。PG61943 exit0/remaining[]已交native槽。原7unique不重复累计，Manual UI与原生仍待，原失败保留。[组合事实](../plans/2026-09-06-completed-scope-continuation/COMBINATION-619.md)。
+
 最后更新：2026-09-07。已完成项目续改独立叶：新Run公开search取得旧complete Scope/source，create_new经真实权限将新active Scope绑定原root，再实际工具写原文件；旧Scope不重开。同Run已绑定时在创建前及route同TX拒绝，下一物理请求给明确新Run指导。H079/M618确定性栈7个唯一控制分批PASS，最终源1a8e1dd6/Dirac限定ACCEPT；本次Auto/Manual两绿+alreadyBound双层hash修正单绿，PG57258 exit0/remaining[]已交槽，原业务/fixture/oracle失败全保留。仅AUTO配置root及公开Manual service路径；Manual UI、主组合和原生仍待，非program完成。已独审合入隔离主候选，用户主checkout未切换。[契约与结果](../plans/2026-09-06-completed-scope-continuation/RESULTS.md)。
 
 最后更新：2026-09-07。r24已allowed后旧等待提示的UI接线修复：手刷显式exact授权补读、同Run工具/终态推进补读、断线与空pending区分。真实View/Panel/Channel组合新增3控分批通过，原负控保留；尚未新构建/native复验。[结果与边界](../plans/2026-09-07-primary-decision-refresh/RESULTS.md)。
