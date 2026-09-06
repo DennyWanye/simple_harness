@@ -1,9 +1,9 @@
 """Synthetic scheduler over installed public Memory; no Host events/models/SQL."""
 import copy
-import dataclasses as dc
 import importlib.util
 import json
 import unittest
+import simple_harness_memory as m
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -55,16 +55,18 @@ class ProspectivePublicTests(unittest.IsolatedAsyncioTestCase):
                 missing=await case.recall(**args,key='missing')
                 self.assertEqual(missing['execution']['decision']['outcome'],'no_recall')
                 self.assertEqual(missing['execution']['candidate_query_count'],1)
-                with self.assertRaisesRegex(Exception,'prospective_scheduler_registration_not_live'):
+                with self.assertRaisesRegex(m.MemoryValidationError,'^prospective_scheduler_registration_not_live$'):
                     await adapter.signal(case,target,trigger,kind='event_occurred',state='pending',
                         next_state='triggered',identity='without-registration')
                 await adapter.register(case,target,trigger)
-                with self.assertRaisesRegex(Exception,'prospective_signal_observed_at_future'):
+                with self.assertRaisesRegex(m.MemoryValidationError,'^prospective_signal_observed_at_future$'):
                     await adapter.signal(case,target,trigger,kind='event_occurred',state='pending',
                         next_state='triggered',observed_at=case.now+1,identity='future')
-                with self.assertRaisesRegex(Exception,'prospective_signal_authority'):
+                with self.assertRaisesRegex(m.MemoryValidationError,'^prospective_signal_authority_rejected$') as expired:
                     await adapter.signal(case,target,trigger,kind='event_occurred',state='pending',
                         next_state='triggered',expires_at=case.now,identity='expired-authority')
+                self.assertIsInstance(expired.exception.__cause__,ValueError)
+                self.assertEqual(str(expired.exception.__cause__),'ProspectiveSignalAuthority is expired')
                 result=await adapter.signal(case,target,trigger,kind='event_occurred',state='pending',
                     next_state='triggered',identity='actual-synthetic-event')
                 self.assertEqual(result.outcome.value,'applied')
