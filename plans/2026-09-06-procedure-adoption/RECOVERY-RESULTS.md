@@ -1,5 +1,26 @@
 # Procedure 恢复新控结果
 
+## 2026-09-06 Dirac 恢复重复Scope P1修订
+
+Dirac核过原12项及6份证据，指出已有prepared的恢复分支漏接SDK公开`MemoryValidationError(procedure_observation_source_already_counted)`；此前整片没有最终ACCEPT。源码 `a7a9ca66` 共用初次/恢复的exact拒绝收口，保留A原prepared/ref和B真实result，不签替代authority、不伪consume。只有该错误持久rejected，其他异常继续传播。
+
+新增唯一真实序列控制 `test_procedure_duplicate_recovery.py`：A真实完整Scope使用后持久prepared未consume；B同Scope另一真实Run先consume成功数1；A原ref stale后重基遭duplicate，落Host rejected；B计数/结果及A原ref不变、无新attempt/消费；A下次visit零SDK调用。**1 PASS / 7.24s**，不重跑原12项。
+
+固定测试源码：Host `a7a9ca66a7be2f0e874998fb45a5559ef43067e5`，SDK `da7728b2a2836e5b39e9bbde40e67fb1838df457`（业务978ae99）。主native结束后以默认OS锁 `--rss-mib 2048 --seconds 180` 执行相同现有Python；载体 `run_recovery_p1_fixed.py` 先将13个tracked草稿WIP文件保存到本批ignored副本，再恢复fixed HEAD测试，finally逐字节还原，全部true。SIGTERM也走恢复；未导入untracked草稿模块，未创建新树/venv，vendor恢复。
+
+PG34197 exit0／8.117s／峰259968KiB／remaining=[]／cleanup=null，默认锁释放，已通知主/Hegel。该结果仅新恢复P1，非模型/native；草稿发现/失败前缀WIP未验证、未混入。待Dirac对此修订终审，不将原12控制追认成此前无P1。
+
+- `.local-test-evidence/2026-09-06/procedure-scope/recovery-p1-r1/command.log` SHA256 `882ad70b42c905680df071b60593724f17ef6c3b8e4dfd0b527b89c32214f01a`
+- `.local-test-evidence/2026-09-06/procedure-scope/recovery-p1-r1/resource.json` SHA256 `3fbbe287e0782b3eba16b1b82162024c7d6e51265b9d6f0e5ad773a5fcd4f701`
+- `.local-test-evidence/2026-09-06/procedure-scope/recovery-p1-r1/source-state.json` SHA256 `65d629cdd9ed1df4217bc4682897eb54608c8169e71350afc2ea65b172a7a86b`
+- `.local-test-evidence/2026-09-06/procedure-scope/recovery-p1-r1/wip-preservation.json` SHA256 `2ec410a69bc5470eba72a42c2d180cfb08f759b42f41db0d4ea4a6061fb48ed0`
+- `.local-test-evidence/2026-09-06/procedure-scope/recovery-p1-r1/wip-restored.json` SHA256 `ddb8abf7404ebfb5ff3caff0c567feb1da2ca556771fce4253e228944da1c203`
+- carrier `run_recovery_p1_fixed.py` SHA256 `e274c303577277d126c7037d4e1c528652ffd7bff87089ad4bbb0fc7342ef29c`
+- carrier `run_recovery.py` SHA256 `45bcf32002044d7575b6cb8aad858440cab44c82ba39fdb247e3e3819e0e36d5`
+- fixed `a7a9ca66:backend/deskpet/memory/procedure_runtime.py` SHA256 `a6ddf846d5c3f8c749c1a1ac7b7e44242ae8ea1570277faed0add460b0b347c1`
+- fixed `a7a9ca66:backend/tests/memory/test_procedure_duplicate_recovery.py` SHA256 `e6bd704b8e6af829c63475b717cdcb4f970f6bcb85f1945cac82355a374dfc36`
+
+
 最后更新：2026-09-06。Host业务 `ea63ddc6`、夹具修复 `c76da29c`；Memory业务及控制 `978ae99`。各基线分别5e513eda/db7ca22。仅此新增叶12个唯一控制分批通过，不重跑之前三Scope/SDK绿，不是installed后继、真实模型/native或TC-HM04全通过。
 
 ## 结果和原失败
