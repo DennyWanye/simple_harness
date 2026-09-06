@@ -35,6 +35,14 @@ receipt-first/duplicate仍缺Harness reservation绑定及一次消费见证；Me
 PGID31787/31892/31945均退出且无残留，最后批峰值138544KiB，槽已释放。无模型/native/新制品。
 [契约、逐格结果、命令与证据](../plans/2026-09-06-context-use-full/RESULTS.md)。
 
+## 2026-09-06 Rich Episode公开来源独立叶
+
+最后更新2026-09-06。30fcc261实际installed H073/M0613新方法1PASS0.48s；完整原rich S1、公开scope registration、真实mutation/recall/reopen/fresh，SENSITIVE与cross_scope绑定。
+含六泄露谓词/foreignID/禁止legacyPASS反例；原literal仍BLOCKED，另四类型setup待实现，不改变401统计。
+原始观察未单独导出JSON，只有命令/pytest/资源证据，不称正式矩阵Run。峰72096KiB，进程无残留、槽释放。
+[结果与边界](../plans/2026-09-06-typed-recall-rich-source/RESULTS.md)。
+
+
 ## 2026-09-06 Procedure applicability原三格公开executor
 
 最后更新2026-09-06。固定ecaeb50f获Dirac源码限定ACCEPT；installed H073/M0613新增方法1PASS0.68s（原3+4篡改），正式3PASS/0FAIL/0BLOCKED。
