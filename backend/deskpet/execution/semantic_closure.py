@@ -745,6 +745,10 @@ class ClosureFallback:
 
         async def settle_success(db: aiosqlite.Connection) -> None:
             await self._invoker.settle_succeeded_tx(db, attempt_id, response=response, plan_id=plan_id)
+            if self._request_authority is not None:
+                from deskpet.task_scope.mutation_disclosure import record_closure_result_tx
+                await record_closure_result_tx(db, db_path=self._db_path,
+                    attempt_id=attempt_id, plan_id=plan_id, response=response)
 
         arguments = _closure_arguments(response)
         if arguments is None:

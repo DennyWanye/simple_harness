@@ -40,6 +40,7 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
         cursor = await db.execute("SELECT r.state_json,s.state_hash FROM task_scope_canonical_revisions r JOIN task_scope_projection_sources s ON s.task_scope_id=r.task_scope_id AND s.canonical_revision=r.revision WHERE s.source_id=?",
             (package["source_id"],))
         row = await cursor.fetchone()
+        await cursor.close()
         state = json.loads(row[0])
         if canonical_hash(state) != row[1]:
             raise ValueError("scope_disclosure_state_hash_mismatch")
@@ -48,6 +49,7 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
         cursor = await db.execute("SELECT d.receipt_json FROM context_route_decisions d JOIN foreground_run_sdk_bindings b ON b.sdk_run_id=d.sdk_run_id JOIN foreground_runs r ON r.host_run_id=b.host_run_id WHERE d.task_scope_id=? AND d.route='create_new' AND d.origin='context_tool' AND r.subject=? ORDER BY d.rowid LIMIT 257",
             (package["task_scope_id"], subject))
         routes = [json.loads(r[0]) for r in await cursor.fetchall()]
+        await cursor.close()
         if len(routes) > 256:
             raise ValueError("scope_disclosure_limit")
         fields = {}
@@ -87,6 +89,10 @@ async def _render_scope_disclosure(*, db_path, package, subject, stack, policy=N
                     fields[name] = {"text": text, "utf8_sha256": text_hash(text),
                         "producer_run_id": route["run_id"], "producer_effect_id": route["effect_id"],
                         "producer_receipt_hash": canonical_hash(route), "dependencies": proof}
+        from deskpet.task_scope.mutation_disclosure import mutation_fields
+        fields.update(await mutation_fields(db=db, stack=stack, scope_id=package["task_scope_id"],
+            state=state, revision=package["canonical_revision"], subject=subject, policy=policy,
+            disclosure_context=disclosure_context, selected=selected))
     # Enums and numeric identity facts only; no title, reason, root path, or raw
     # checkpoint/binding row can enter through the structural channel.
     structural = {k: original[k] for k in ("task_scope_id", "source_id", "source_hash",
