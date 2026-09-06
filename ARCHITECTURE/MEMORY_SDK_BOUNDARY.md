@@ -1,3 +1,5 @@
+最后更新：2026-09-06。合入prepare叶后的Host9cace208，当前H079/M618/S0313新增C02完整prepare跨进程lostACK组合1PASS4.48s，174/84/116成员精确、188加载SDK来自target；PG46613清空。旧H078套件不重跑，C03新组合/240质量不外推。[组合结果](../plans/2026-09-06-corpus-public-seed/H079-PREPARE.md)。
+
 最后更新：2026-09-06。C02-19/C03-20完整fixture prepare与跨进程恢复叶e0e7d68c（产品182a5aa6）已独审合入候选：public seed后实际drain，finalize前保存原候选、重开经SDK确认；2新控制PASS7.30s、PG34647清空，旧绿未重跑。限定H078/M618源运行证据，当前H079完整prepare组合待验，240质量仍0。[准备与恢复](../plans/2026-09-06-corpus-public-seed/INFERENCE-PREPARE-RECOVERY.md)。
 
 最后更新：2026-09-06。固定ff35fb82/H079/M618正确18120新构建，r22真实新松柏提醒ACK后独立“提醒”正文可见；r23冷启动保留同一历史回执/提醒，后续普通问题只答44无新增提醒，两项限定通过。PG42213/45599正常退出且清空。前置r20 carrier异常原因未定、r21编译端口错误已纠正；原r18FAIL保留，完整旅程/240质量仍未完成。[原生与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R20-R23.md)。
