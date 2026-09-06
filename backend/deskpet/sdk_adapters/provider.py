@@ -173,6 +173,11 @@ class _ProductOpenAICompatibleProvider(OpenAICompatibleProvider):
         payload = super()._request_payload(request)
         payload["messages"] = self._wire_messages(request.messages)
         payload.update(self._reasoning_wire)
+        # Preserve Chat Completions' non-strict optional-field contract
+        # explicitly on the physical wire; do not rewrite schemas or arguments.
+        for tool in payload.get("tools", ()):
+            if tool.get("type") == "function":
+                tool["function"]["strict"] = False
         return payload
 
     @classmethod

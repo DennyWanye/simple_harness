@@ -1,3 +1,5 @@
+最后更新：2026-09-07。Host9073b965显式发送function.strict=false，保留原optional参数/精确workspace reuse校验，并给memory_standalone省略字段的公开失败指导。Dirac源窄审后唯一fakeHTTP→SDK参数→Host handler/ledger组合1PASS0.19s，PG71603正常退出无残留；空recall/合成tool context只证明协议路由，不代表真实relay/main或质量。C01-10/13原FAIL均保留（2尝试0通过），新真实case另验。[合同及结果](../plans/2026-09-07-corpus-c01-scoring/NONSTRICT.md)。
+
 最后更新：2026-09-07。Manual workspace UI产品ef0ed7bf/夹具修48169ae8/结果7324a740已独审接受并合候选；真实Host授权链与View父卸载恢复7backend＋4UI分批通过，原红保留，PG69778清空。包含工具发现说明的事实修正，尚不宣称解决模型反复搜索；组合构建/native、App进程冷启动自动发现仍待验。[结果](../plans/2026-09-07-manual-workspace-binding/RESULTS.md)。
 
 最后更新：2026-09-07。新C01-13真实324aa613首次评分FAIL：15物理请求/14次路由因无关workspace参数拒绝，未取得A；原提议四类型extra3保留。176.565s自然退出且PG69877清空，退出修复真实生效。240已尝试2/通过0；暂停同故障路径扩跑，修参数无值契约与核预算跨恢复计数。全阶段防熄屏保持。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R2.md)。
