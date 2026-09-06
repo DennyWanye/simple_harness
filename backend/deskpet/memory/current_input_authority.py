@@ -60,6 +60,16 @@ class HostCurrentInputAuthority:
             run_id=expected_run, request_id=binding.request_id, turn_id=binding.turn_id)
         if current != disclosure_context:
             return None
+        # Re-read the ORIGINAL claim after every slow external/source read. Do
+        # not replace it with a new current Run or a newer owner generation.
+        async with aiosqlite.connect(f"file:{self.path}?mode=ro", uri=True) as db:
+            db.row_factory = aiosqlite.Row
+            final = await (await db.execute("SELECT * FROM foreground_run_heads WHERE host_run_id=?",
+                (run["host_run_id"],))).fetchone()
+        stamp = ("host_run_id", "subject", "turn_id", "primary_conversation_id",
+            "owner_id", "generation", "current_state", "sdk_run_id")
+        if final is None or any(final[key] != run[key] for key in stamp):
+            return None
         kind = fact["input_use"]["declaration"]["kind"]
         item = EvidenceItemAuthority(
             schema_version=EVIDENCE_ITEM_AUTHORITY_SCHEMA_VERSION,

@@ -32,14 +32,18 @@ async def setup(env, kind="current_user"):
     fact = await read_current_input_source(db_path=env.path, subject=env.auth.subject, turn_id=turn["turn_ref"])
     binding = m.CurrentInputBindingV1(turn["turn_ref"], request_id, m.HistoryEvidenceBinding(fact["envelope"], fact["receipt"]))
     principal = m.MemoryPrincipal("input-deployment", "input-household", env.auth.subject, "input-session")
+    env.memory_principal = principal
+    env.claim = claim
     return principal, context, binding
 
 
-async def manager(env, authority=None, sink=None):
+async def manager(env, authority=None, sink=None, *, register=True):
     result = await m.build_human_memory_v7(env.path.with_name("memory.db"),
         current_input_authority=authority or HostCurrentInputAuthority(env.path),
         history_source_authority=HostHistorySourceAuthority(env.path),
         supported_filter_policies=frozenset({"host-public-turn/v1"}))
+    if register:
+        await result.register_principal_owner(env.memory_principal, m.MemoryScope.personal(env.memory_principal.actor_id))
     return result if sink is None else m.MemoryManager(result.backend, None, observability_sink=sink)
 
 
@@ -59,7 +63,7 @@ async def test_real_input_allowed_ordinary_history_denied_and_observed(env, kind
         records = [v for v in sink.events() if v.operation == "check_current_input_visibility"]
         assert len(records) == 1
         assert records[0].attributes["fingerprint"] == view.operation_observation.observation_hash
-        assert binding.evidence.envelope.sanitized_payload["text"] not in str(records[0].to_json())
+        assert binding.evidence.envelope.sanitized_payload["text"] not in str(records[0].to_dict())
         ordinary = await sdk.check_history_visibility(principal=principal, disclosure_context=context, bindings=(binding.evidence,))
         assert not ordinary.items[0].visible  # unchanged ordinary recipient gate
     finally:
