@@ -24,7 +24,7 @@ class ProspectiveSourceDependencies:
             raise S5cConflict('s5c_occurrence_source_principal_differs')
         return await runtime.manager()
 
-    async def _evidence_ids(self, manager, memory_id, revision, seen=None):
+    async def evidence_ids(self, manager, memory_id, revision, seen=None):
         from simple_harness_memory import (
             MutationTargetSource, ProspectiveSignalTargetSource,
             ProspectiveOutboxSourceViewV2, MemoryMutationReceiptView,
@@ -78,7 +78,7 @@ class ProspectiveSourceDependencies:
                     or result.memory_id != memory_id or result.committed_revision != revision
                     or not 0 < result.base_revision < revision):
                 raise S5cConflict('s5c_occurrence_source_signal_differs')
-            return await self._evidence_ids(manager, memory_id, result.base_revision, seen)
+            return await self.evidence_ids(manager, memory_id, result.base_revision, seen)
         raise S5cConflict('s5c_occurrence_source_type_invalid')
 
     async def for_group(self, group, *, check_current):
@@ -89,7 +89,7 @@ class ProspectiveSourceDependencies:
         manager = await self._manager()
         ids = set()
         for item in group.items:
-            ids.update(await self._evidence_ids(manager, item.entry.memory_id, item.entry.prospective_revision))
+            ids.update(await self.evidence_ids(manager, item.entry.memory_id, item.entry.prospective_revision))
         if not ids or len(ids) > 256:
             raise S5cConflict('s5c_occurrence_source_evidence_missing_or_limit')
         async with aiosqlite.connect(self.store.path) as db:

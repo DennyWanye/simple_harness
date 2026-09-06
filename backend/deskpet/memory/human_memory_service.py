@@ -451,6 +451,7 @@ class HumanMemoryHostService:
         self._cognitive_runtime_getter = cognitive_runtime_getter
         self._display_invalidation = display_invalidation
         from deskpet.memory.primary_read_model import PrimaryReadModel
+        from deskpet.memory.prospective_notice import ProspectiveNoticeReader
 
         self._primary_read = PrimaryReadModel(
             self._db_path,
@@ -459,6 +460,9 @@ class HumanMemoryHostService:
             suppression_resolver=suppression_resolver,
             run_binding_reader=run_binding_reader,
             history_visibility_checker=history_visibility_checker,
+            prospective_notice_reader=ProspectiveNoticeReader(
+                path=self._db_path, subject=auth.subject,
+                runtime_getter=cognitive_runtime_getter, terminal_reader=settled_run_reader),
         )
         from deskpet.memory.primary_decisions import PrimaryDecisions
         self._primary_decisions = PrimaryDecisions(

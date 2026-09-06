@@ -92,10 +92,12 @@ class PrimaryReadModel:
         suppression_resolver=None,
         run_binding_reader=None,
         history_visibility_checker=None,
+        prospective_notice_reader=None,
     ):
         self.path, self.subject = Path(db_path), subject
         self.reader, self.policy = settled_run_reader, suppression_resolver
         self.run_binding_reader = run_binding_reader
+        self.prospective_notice_reader = prospective_notice_reader
         self.history_policy = PrimaryHistoryPolicy(
             db_path, subject, history_visibility_checker
         )
@@ -159,6 +161,9 @@ class PrimaryReadModel:
         ):
             rows = await _rows(db, f"SELECT COALESCE(MAX(rowid),0) FROM {table}")
             facts.append(list(rows[0]))
+        if await _rows(db, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prospective_occurrences'"):
+            tail = await _rows(db, "SELECT COALESCE(MAX(rowid),0) FROM prospective_occurrences")
+            facts.append(list(tail[0]))
         heads = await _rows(
             db,
             (
@@ -502,6 +507,16 @@ class PrimaryReadModel:
                 )
         return messages
 
+    async def _messages_with_notices(self, db, primary, turn, disclosure_context):
+        messages = await self._messages(db, primary, turn)
+        if self.prospective_notice_reader is not None:
+            try:
+                messages.extend(await self.prospective_notice_reader.read(
+                    db=db, primary=primary, turn=turn, disclosure_context=disclosure_context))
+            except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+                raise PrimaryReadError("primary_reminder_unavailable") from exc
+        return messages
+
     async def _turns(self, db, primary, *, before, limit, turn_ref=None):
         select = (
             "SELECT t.*,h.current_state AS turn_state,h.host_run_id FROM "
@@ -548,6 +563,7 @@ class PrimaryReadModel:
             "run_ref": turn["host_run_id"],
             "delivery_key": turn["idempotency_key"],
             "role": role,
+            **({"notice_id": source} if role == "reminder" else {}),
             "text": text[:1024],
             "total_chars": len(text),
             "has_more": len(text) > 1024,
@@ -571,7 +587,7 @@ class PrimaryReadModel:
             turns = await self._turns(db, primary, before=before[0], limit=10)
             selected, next_key = [], None
             for turn in turns:
-                for message in reversed(await self._messages(db, primary, turn)):
+                for message in reversed(await self._messages_with_notices(db, primary, turn, disclosure_context)):
                     key = (turn["enqueue_sequence"], message[0])
                     if key >= before:
                         continue
@@ -629,7 +645,7 @@ class PrimaryReadModel:
             if not turns:
                 raise PrimaryReadError("primary_message_unavailable")
             turn = turns[0]
-            for message in await self._messages(db, primary, turn):
+            for message in await self._messages_with_notices(db, primary, turn, disclosure_context):
                 if message[0] != decoded["i"]:
                     continue
                 if self._item(primary, turn, message)["message_ref"] != message_ref:

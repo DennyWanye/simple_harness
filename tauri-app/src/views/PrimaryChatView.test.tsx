@@ -6,7 +6,7 @@ import type { ControlChannel } from "../ws/ControlChannel";
 vi.mock("../primary/PrimaryRunPanel", () => ({ PrimaryRunPanel: () => <div>运行权限面板</div> }));
 vi.mock("../code-panel/controlWs", () => ({ controlWS: { send: vi.fn(), state: () => "connected", on_message: () => () => {} } }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
-function fixture() {
+function fixture(messageItems?: Array<Record<string, unknown>>) {
   const listeners = new Set<(message: unknown) => void>();
   const bound = { type: "companion_profile_bound", payload: { profile_id: "p", profile_generation: 1 } };
   const sent: Array<Record<string, unknown>> = [];
@@ -30,7 +30,7 @@ function fixture() {
       const memories = { primary_ref: "primary", items: forgotten ? [] : [{ memory_id: "semantic-memory", revision: 1,
         label: "回答保持简洁", status: "active", can_forget: true, content_hash: "a".repeat(64) }], next_cursor: null };
       queueMicrotask(() => emit({ type: "human_memory_response", request_id: r.request_id, payload: {
-        ok: true, operation: r.operation, result: r.operation === "primary.memory.graph" ? { ...graph, primary_ref: "primary", nodes: [], edges: [] } : r.operation === "primary.messages.detail" ? { message_ref: "message", offset: 0, text: "旧来源完整详情", total_chars: 7, next_offset: null } : r.operation === "primary.memory.list" ? memories : r.operation === "primary.messages.page" ? { primary_ref: "primary", revision: "r", items: [item], next_cursor: null } : state,
+        ok: true, operation: r.operation, result: r.operation === "primary.memory.graph" ? { ...graph, primary_ref: "primary", nodes: [], edges: [] } : r.operation === "primary.messages.detail" ? { message_ref: "message", offset: 0, text: "旧来源完整详情", total_chars: 7, next_offset: null } : r.operation === "primary.memory.list" ? memories : r.operation === "primary.messages.page" ? { primary_ref: "primary", revision: "r", items: messageItems ?? [item], next_cursor: null } : state,
       } }));
       return true;
     },
@@ -172,4 +172,27 @@ it("a wrong-action ACK cannot clear unknown merely because a fresh list is empty
   fireEvent.click(screen.getByRole("button", { name: "关系图" }));
   await screen.findByText("有一项忘记操作尚未确认，请返回记忆列表处理。");
   expect(h.sent.filter((r) => r.operation === "primary.memory.graph")).toHaveLength(0);
+});
+
+
+it("renders a typed Host reminder separately when the model only answers 47 and retracts it on invalidation", async () => {
+  const h = fixture([
+    { message_ref: "answer", role: "assistant", text: "47", has_more: false, total_chars: 2 },
+    { message_ref: "notice", role: "reminder", notice_id: "a".repeat(64), text: "检查银杏测试清单", has_more: false, total_chars: 8 },
+  ]);
+  render(<PrimaryChatView channel={h.channel} />);
+  await screen.findByText("检查银杏测试清单");
+  expect(screen.getByText("提醒")).toBeTruthy();
+  expect(screen.getByText("47")).toBeTruthy();
+  h.stopReads();
+  act(() => h.emit({ type: "human_memory_changed" }));
+  expect(screen.queryByText("检查银杏测试清单")).toBeNull();
+  expect(h.sent.some((r) => r.operation === "prospective_ack")).toBe(false);
+});
+
+it("rejects reminder text without a typed notice identity", async () => {
+  const h = fixture([{ message_ref: "unbound", role: "reminder", text: "不得显示", has_more: false, total_chars: 4 }]);
+  render(<PrimaryChatView channel={h.channel} />);
+  await screen.findByText("提醒来源格式无效");
+  expect(screen.queryByText("不得显示")).toBeNull();
 });

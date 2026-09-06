@@ -331,7 +331,8 @@ async def ack_presented_tx(db, *, principal, sdk_run_id, occurrence_key, current
         raise S5cConflict('s5c_occurrence_exited')
     receipt=await _append(db,owner=owner,entry=current_entry,phase='acknowledged',run=run,
         snapshot=presented['snapshot_id'],proof=dict(presented_id=presented['record_id'],
-            presented_hash=presented['record_hash'],acknowledged_at=float(now)))
+            presented_hash=presented['record_hash'],acknowledged_at=float(now),
+            notice_contract="host.prospective.notice/v1"))
     await _exit_projection(db,entry=current_entry,run=run,now=now,reason='acknowledged')
     return receipt
 
