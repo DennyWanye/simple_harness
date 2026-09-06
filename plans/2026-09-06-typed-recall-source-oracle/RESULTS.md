@@ -1,6 +1,6 @@
 # Source10 successor preparation
 
-状态：固定65990a68 source10已实际执行通过，独审结果待回。以下NOT_RUN段为准备历史。
+状态：固定65990a68 source10已实际执行通过，文档bcc93644经Dirac独审及主代理复核限定ACCEPT，已FF纳入独立typed-recall-0613 runner。主代理读取完整source oracle并核对下列12份原始证据哈希；未重复未改变的测试。以下NOT_RUN段为准备历史。
 主native/build独占共享锁，未启动pytest/新source run/模型/native；没有新PASS。
 原626/fbeb的source10仍0PASS/0FAIL/10BLOCKED。
 
