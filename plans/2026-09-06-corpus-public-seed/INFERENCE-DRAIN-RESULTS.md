@@ -1,7 +1,8 @@
 # 多来源 analysis drain 新控制
 
 2026-09-06。源码 cb98739d；896d790d 已获 Dirac delta 源码无确定P1，
-本实测及最终范围待独审。原 aea141af 的 reason/APPLIED 误判为只读确定P1，未伪造红测。
+Dirac已对73a37dd1（产品896d790d/测试cb98739d）给出最终限定ACCEPT，核4rawhash一致；
+仅C03-20实际实例，不外推C02/自动prepare/跨进程proof/240。原 aea141af 的 reason/APPLIED 误判为只读确定P1，未伪造红测。
 
 ## 结果与范围
 

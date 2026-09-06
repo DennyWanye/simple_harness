@@ -4,7 +4,7 @@ C03 actualinference独立drain后继cb98739d的3个新控制分批通过：真�
 SDK APPLIED且analysis ACCEPTED、非法result虽job APPLIED但拒绝确认、audit_pending
 取消跨lease/reopen复用原application不重发首job。原lineage保持，完整prior入口
 换成员/receipt/跨job application拒绝，缺proof的IDLE不算完成。PG27665/27780清空；
-原时间预期红保留。尚待Dirac最终范围审；C02接线、跨进程proof序列化、240质量仍未完成。
+原时间预期红保留。73a37dd1已获Dirac最终限定ACCEPT；C02接线、跨进程proof序列化、240质量仍未完成。
 未改已有prepare默认返回的not_drained边界；调用方必须显式使用新drain结果。
 [新控制结果](../plans/2026-09-06-corpus-public-seed/INFERENCE-DRAIN-RESULTS.md)。
 
