@@ -1,3 +1,5 @@
+最后更新：2026-09-07。r24已allowed后旧等待提示的UI接线修复：手刷显式exact授权补读、同Run工具/终态推进补读、断线与空pending区分。真实View/Panel/Channel组合新增3控分批通过，原负控保留；尚未新构建/native复验。[结果与边界](../plans/2026-09-07-primary-decision-refresh/RESULTS.md)。
+
 最后更新：2026-09-07。原生r24固定b2da14da/H079/M619，待定流程记录可见；第二轮界面等待授权但停止后补出成功context_route及4次tool_search，Procedure发现/使用和文件核验未完成。PG50771正常退出且清空，非内存/预算阻塞。全测试阶段防熄屏保持。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R24.md)。
 
 最后更新：2026-09-07。C04 20条setup分批19+1通过，新增同时间戳游标修复5控已独审接受并合入候选；仅原H078/M618叶证据，当前H079/M619组合与240真实质量另验。晚到更早时间戳不在保证内。[结果](../plans/2026-09-06-corpus-public-seed/C04-CURSOR-RESULTS.md)。

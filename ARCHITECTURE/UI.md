@@ -1,3 +1,5 @@
+最后更新：2026-09-07。r24已allowed后旧等待提示的UI接线修复：手刷显式exact授权补读、同Run工具/终态推进补读、断线与空pending区分。真实View/Panel/Channel组合新增3控分批通过，原负控保留；尚未新构建/native复验。[结果与边界](../plans/2026-09-07-primary-decision-refresh/RESULTS.md)。
+
 # Simple Harness UI 当前架构
 
 ## 2026-09-06 WeMM按需加载与内存引用修复已接入组合

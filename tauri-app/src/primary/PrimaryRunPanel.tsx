@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 DennyWanye
 // SPDX-License-Identifier: BUSL-1.1
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { controlWS } from "../code-panel/controlWs";
 import { PermissionPopup } from "../components/PermissionPopup";
 import { ProjectDirectoryCard } from "../components/MessageStreamPanel";
@@ -10,19 +10,25 @@ import type { PrimaryRun, PrimaryPort } from "./controller";
 import { primaryRunChannel } from "./runChannel";
 import { record } from "./requests";
 
-export function PrimaryRunPanel({ run, primaryRef, port, onStop, visible = true }: { run: PrimaryRun; primaryRef: string; port: PrimaryPort; onStop: () => void; visible?: boolean }) {
+export function PrimaryRunPanel({ run, primaryRef, port, onStop, visible = true, refreshVersion = 0 }: { run: PrimaryRun; primaryRef: string; port: PrimaryPort; onStop: () => void; visible?: boolean; refreshVersion?: number }) {
   const { execution_session_ref, sdk_run_ref, run_ref, generation } = run;
   const channel = useMemo(() => primaryRunChannel(port, { execution_session_ref, sdk_run_ref, run_ref, generation, primary_ref: primaryRef }, controlWS), [port,execution_session_ref, sdk_run_ref, run_ref, generation, primaryRef]);
   useEffect(() => { channel.start(); return () => channel.dispose(); }, [channel]);
   const [decisionStatus, setDecisionStatus] = useState("");
   const permissions = usePermissionRequests(channel);
+  const lastRefresh = useRef(refreshVersion);
+  useEffect(() => {
+    if (lastRefresh.current === refreshVersion) return;
+    lastRefresh.current = refreshVersion;
+    channel.send({ type: "permissions_pending_list" });
+  }, [channel, refreshVersion]);
   const [directory, setDirectory] = useState<ProjectDirectoryRequest["payload"] | null>(null);
   const [directoryError, setDirectoryError] = useState("");
   const [tools, setTools] = useState<Array<{ id: string; name: string; status: string }>>([]);
   useEffect(() => channel.on_message((raw) => {
     const msg = record(raw), p = record(msg.payload);
     if (msg.type === "primary_decision_status") {
-      setDecisionStatus(String(p.error || ({ allowed: "已允许本次操作", denied: "已拒绝本次操作；可停止当前任务", expired: "本次授权已过期，未允许执行" }[String(p.outcome)] ?? (p.state === "waiting" ? "等待授权" : ""))));
+      setDecisionStatus(String(p.error || ({ allowed: "已允许本次操作", denied: "已拒绝本次操作；可停止当前任务", expired: "本次授权已过期，未允许执行" }[String(p.outcome)] ?? (p.state === "waiting" ? (Number(p.pending_count) > 0 ? "等待授权" : "运行等待中，暂无可操作的授权请求。") : ""))));
     }
     if (msg.type === "project_directory_request" && p.decision_id && p.nonce && typeof p.version === "number") {
       setDirectory(p as unknown as ProjectDirectoryRequest["payload"]);
