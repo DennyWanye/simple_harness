@@ -36,3 +36,17 @@ Dirac confirmed the clean-create diagnosis and recommended the existing material
 The retained suppression result was diagnosed through the public Memory builder/checker and production PrimaryHistoryStore on opaque backup copies of the retained Host/Memory DBs (original files unchanged; no new Run, Provider, directive or pytest). The extra group is exactly the third USER S1 above, role `user`, content `Scoring-only message 2`; its terminal observation/assistant is not returned. The revised existing oracle pins this exact ref/hash/content, requires the first scoring group unchanged, and forbids both affected assistant texts and the suppressed USER text. This is source-level correction, not dropping the privacy check or accepting an arbitrary count.
 
 Readback raw: `c05-source-r2/diagnosis/public-history.json`, SHA256 `04b7a4ab72f5a3ec28205b5b011f932a9ff1097b975a2650c98c95f8e931b015` (includes manager-close log). The original C05-20 negative now expects the exact compiler's existing rejection code. All three known causes are addressed in one source candidate; next execution remains only the original five failures when resources are handed back. Three greens remain unrepeated.
+
+## r3: original five failures pass
+
+Fixed source `f78004ef`, H079/M619/S0313 installed target unchanged. **5 PASS / 3 deselected, 12.15s**. Command is the r1 command with `-k 'actual_setup_routes_terminal_and_source_bound_readback or actual_scoring_pages_survive_setup_prefix_and_late_suppression'` and new `c05-source-r3` evidence directory. No test additions or three-green reruns, SDK overlay, model call or runtime WIP mixed into this batch.
+
+04/09/14 actual source-bound resume/status setup and marker effects pass;20 actual create/readback/retained archive/prefix/foreign/invalid-input checks pass. The three-scoring-turn test passes actual pagination, setup-history exclusion and exact late-suppression USER-only fallback while rejecting suppressed USER and derived assistants. These are public-runtime deterministic fixture controls, not model quality or all20 C05 preparation. The first three independent green controls remain r1 evidence, not an invented single eight-test run. Final physical outbound race and remaining case adapters still pending.
+
+PG80017 exit0, remaining=[], cleanup_error=null, elapsed12.696s, peak181120KiB, minimum disk4624MiB. Shared slot released immediately and main/Singer notified; no additional validation started.
+
+Raw `.local-test-evidence/2026-09-07/c05-source-r3/`:
+- `command.log`: `a63f2f8305cad551f74af12b981d1ca2476ae759fb770ad67a11a939d1eed784`
+- `resource.json`: `14e5800b02ae7e25b7fb426c527bf86bb40ce5ad7212cdefcc19a42cb2c20a93`
+
+Dirac source review accepted f780's bounded repair before this run. Post-result review requested separately; not yet claimed accepted here. Runtime WIP remains ignored under `c05-runtime-wip/` and is not part of this source leaf.

@@ -1,3 +1,11 @@
+<!-- 最后更新：2026-09-07 -->
+
+C05 固定 f78004ef 在 H079/M619 installed 的原5红定向复验5PASS/12.15s，3绿未重跑。
+04/09/14真实material marker→closure→来源绑定字段、20归档/prefix、真实评分分页与late suppression精确USER-only通过。
+仅确定性fixture/public runtime，不计模型质量或C05全部20准备；最终physical outbound race及其他case接线仍待完成。
+PG80017 exit0/remaining=[]，原两批红保留、WIP隔离，已释放资源。
+[来源、命令及历史结果](../plans/2026-09-06-corpus-public-seed/C05-RESULTS.md)。
+
 # ARCHITECTURE 索引
 
 2026-09-06 C02-19原setup关联补强：完整原始S1/receipt与实际group USER精确比较，新增真实同文异Run负控1PASS；已有正向/19绿未重跑，PG19055清空。仅setup来源，runtime隔离/240质量不计完成。[结果](../plans/2026-09-06-corpus-public-seed/C02-BATCH.md)。

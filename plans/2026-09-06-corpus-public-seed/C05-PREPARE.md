@@ -1,3 +1,5 @@
+2026-09-07 当前限定结果：f780原5红5PASS，另3绿保留r1，不是20prepare或质量完成。[实测结果](C05-RESULTS.md)。以下源阶段记录按历史保留。
+
 # C05 public TaskScope setup — source candidate
 
 2026-09-07. **NOT_RUN**, source review only. Original20 setup literals/hashes and denominator remain unchanged. No scoring/model execution, no C01–C04 rerun, no SDK changes. The mappings now cover all20; that does not mean all20 are prepared.
