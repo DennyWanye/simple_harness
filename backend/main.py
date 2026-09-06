@@ -8341,12 +8341,16 @@ async def _build_product_sdk_runtime_stack(
     # accepted analysis plan materializes inside Memory 0.6.1.
     def _analysis_adapter(record):  # type: ignore[no-untyped-def]
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+        from deskpet.memory.analysis_request_guard import AnalysisPhysicalRequestGuard
 
         resolver = _resolve_sdk_provider_binding_resolver()
         if resolver is None:
             raise RuntimeError("sdk_provider_binding_resolver_unavailable")
         binding = SdkRunBindingV1.from_record(record)
-        return resolver.build_authority(binding).provider
+        guard = AnalysisPhysicalRequestGuard(
+            _state_db_path, binding=binding, runtime_getter=lambda: _human_memory_v7,
+        )
+        return resolver.build_authority(binding, request_guard=guard).provider
 
     _human_memory_v7 = compose_human_memory_runtime(
         _state_db_path,
