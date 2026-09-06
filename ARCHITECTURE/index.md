@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05正式04/09/14/20多轮+真实empty及来源parser共6控制通过74.03s：同root真实setup/审批/marker/closure/terminal、过滤prefix、独立评分/followup/exact resume；context_route控制/physical来源误分类修复已在真实main闭合。原scope红/FK夹具红保留，PG85016/85509/85863均清空。固定HTTP非模型质量，剩余16case仍待。[结果](../plans/2026-09-07-corpus-complete-dispatch/C05-RESULTS.md)。
+
 最后更新：2026-09-07。C08正式dispatcher e81a9af7+helper f45da5f9新增1PASS8.00s：01跳scalar，真实旧组/抑制/生产重开CONFIRMED后独立评分Provider，next physical无旧内容/统计1；只本共享入口01组合，不重复旧5绿、不计模型质量。PG85743自然清空。[结果](../plans/2026-09-07-corpus-complete-dispatch/C08-RESULTS.md)。
 
 最后更新：2026-09-07。C05审批/缺证据3唯一控制分批通过：r1真empty与missing通过、pending无Effect红；公开audit+response身份proof修复后仅原红与False新控2PASS2.75s。无typed原因False不冒真零，PG83853/84899清空；marker/closure及多轮actualmain另首测，非模型质量。[结果](../plans/2026-09-06-corpus-public-seed/C05-AUTHORITY-RESULTS.md)。
