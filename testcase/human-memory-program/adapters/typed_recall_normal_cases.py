@@ -22,6 +22,10 @@ async def run_cases(recipes, workspace):
         try:
             await case.open()
             opened = True
+            if recipe['family']=='prospective_trigger':
+                observed=await load('typed_recall_trigger_cases').run(case,recipe)
+                rows.append({'cell_id':recipe['cell_id'],'status':'OBSERVED','reason':'','observations':observed})
+                continue
             lifecycle=load('typed_recall_prospective_lifecycle_cases')
             if lifecycle.supported(recipe):
                 observed=await lifecycle.run(case,recipe)

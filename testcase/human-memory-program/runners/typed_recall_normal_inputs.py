@@ -20,6 +20,10 @@ def recipes(fixture):
             add('eligibility/'+row['id'], 'validity', seed(valid_from=row['valid_from'],valid_until=row['valid_until']),now=row['now'])
     for name in ('not-suppressed','ordinary-uncontested'):
         add('eligibility/'+name,'basic',seed())
+    for row in fixture['eligibility_cases']:
+        if row['axis']=='prospective_trigger':
+            add('eligibility/'+row['id'],'prospective_trigger',seed('prospective',state='pending'),
+                trigger_contract=copy.deepcopy(row))
     for row in fixture['lifecycle_cases']:
         add('eligibility/'+row['id'], 'lifecycle', seed(row['memory_type'],state=row['state']))
     axis = fixture['exhaustive_axis_contract']['epistemic_verification']

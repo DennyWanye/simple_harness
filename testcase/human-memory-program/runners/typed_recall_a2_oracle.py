@@ -435,6 +435,10 @@ def assess_normal(fixture, cell):
     try:
         if observed['recipe']!=recipe or not observed['calls']:
             raise ValueError('consumer recipe/input identity differs')
+        if recipe['family']=='prospective_trigger':
+            ts=importlib.util.spec_from_file_location('trigger_oracle',Path(__file__).with_name('typed_recall_trigger_oracle.py'))
+            tm=importlib.util.module_from_spec(ts);ts.loader.exec_module(tm)
+            return tm.assess(fixture,observed,globals())
         if observed.get('exception'):
             # Seed/DTO refusal is a real observation, never a recall PASS.
             return dict(status='BLOCKED',reason='PUBLIC_CASE_PRECONDITION_REJECTED:'+observed['exception']['type']+':'+observed['exception']['reason'],
