@@ -11,6 +11,31 @@ from tests.execution.test_primary_create_new_runtime import fixture
 from tests.execution.test_primary_foreground_runtime import Provider, build
 
 
+@pytest.fixture
+def installed_candidate_identity():
+    """Use this installed consumer's actual wheel, not the old Host pin.
+
+    Product verify_sdk_candidate still verifies version/hash/origin. This is
+    fixture composition, not an independent artifact/member certification.
+    """
+    import hashlib
+    import json
+    from importlib import metadata
+    from pathlib import Path
+    from urllib.parse import unquote, urlparse
+    from deskpet.sdk_adapters.runtime_paths import SdkCandidateIdentity
+    distribution = metadata.distribution('simple-harness-sdk')
+    origin = json.loads(distribution.read_text('direct_url.json') or '{}')
+    url = urlparse(origin['url'])
+    if url.scheme != 'file' or url.netloc not in ('', 'localhost'):
+        raise ValueError('c05_installed_wheel_origin_not_local')
+    wheel = Path(unquote(url.path)).resolve(strict=True)
+    if wheel.suffix != '.whl':
+        raise ValueError('c05_installed_origin_not_wheel')
+    return SdkCandidateIdentity(distribution.version,
+        hashlib.sha256(wheel.read_bytes()).hexdigest(), wheel)
+
+
 def test_all_twenty_setup_mappings_preserve_input_and_outstanding_requirements():
     assert set(SETUPS) == set(SPECS) == {f'C05-{i:02}' for i in range(1, 21)}
     for key, (text, digest) in SETUPS.items():
@@ -28,11 +53,11 @@ def test_all_twenty_setup_mappings_preserve_input_and_outstanding_requirements()
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('case_id', ['C05-20', 'C05-04', 'C05-09', 'C05-14'])
-async def test_actual_setup_routes_terminal_and_source_bound_readback(tmp_path, case_id):
+async def test_actual_setup_routes_terminal_and_source_bound_readback(tmp_path, case_id, installed_candidate_identity):
     state, factory, service, configured, authority = await fixture(tmp_path)
     provider = TaskSetupProvider(target=Provider.target)
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
-        binding_authority=authority, configured_root=configured)
+        binding_authority=authority, configured_root=configured, candidate_identity=installed_candidate_identity)
     batch = compile_c05_setup(case_id, SETUPS[case_id][0])
     subject = local_owner_auth().subject
     archives = []
@@ -109,7 +134,7 @@ def test_history_reader_injection_keeps_default_production_reader(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_actual_scoring_pages_survive_setup_prefix_and_late_suppression(tmp_path, monkeypatch):
+async def test_actual_scoring_pages_survive_setup_prefix_and_late_suppression(tmp_path, monkeypatch, installed_candidate_identity):
     """NOT_RUN: real history/policy; deterministic setup and scoring Providers.
 
     The constructor override only supplies the approved optional reader. It
@@ -159,7 +184,7 @@ async def test_actual_scoring_pages_survive_setup_prefix_and_late_suppression(tm
     state, factory, service, configured, authority = await fixture(tmp_path)
     provider = PhaseProvider()
     runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
-        binding_authority=authority, configured_root=configured)
+        binding_authority=authority, configured_root=configured, candidate_identity=installed_candidate_identity)
     subject = local_owner_auth().subject
     batch = compile_c05_setup('C05-20', SETUPS['C05-20'][0])
     disclosure = current_disclosure(run_id='fixture-reader', subject=subject, request_id='fixture-reader')
