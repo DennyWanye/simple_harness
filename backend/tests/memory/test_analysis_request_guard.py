@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 import pytest_asyncio
-from simple_harness import RequestId
+from simple_harness import RequestId, thaw_json
 from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import CancelToken, ProviderRequest, ProviderRequestRejectedError
 from simple_harness_memory import MemoryManager, MemoryPrincipal, SuppressionRequest, SuppressionScopeKind
@@ -164,7 +164,8 @@ async def test_exact_physical_input_or_origin_mismatch_denies_zero_send(world, c
         if change == "metadata":
             return replace(request, metadata={"foreign": True})
         if change == "tool":
-            return replace(request, tools=(replace(request.tools[0], description="different schema contract"),))
+            return replace(request, tools=(replace(request.tools[0], description="different schema contract",
+                parameters=thaw_json(request.tools[0].parameters)),))
         if change == "request_id":
             return replace(request, request_id=RequestId("foreign-request"))
         if change == "run":
