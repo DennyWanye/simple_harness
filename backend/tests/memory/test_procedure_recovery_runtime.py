@@ -64,7 +64,8 @@ async def execute(ctx, index, *, scope_id=None, revision=None):
         await bind_scope_root(ctx.state, scope_id, ctx.root, tag=f"recovery-root-{index}")
     ctx.provider.configure(scope_id, ctx.memory_id, revision or ctx.revision, index)
     await ctx.service.enqueue_turn(QueueTurnRequest(None, f"recovery-turn-{index}", "执行记录和备份两步。"))
-    assert await asyncio.wait_for(ctx.runtime._drive_once(), 30)
+    await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
+    await asyncio.wait_for(ctx.runtime.drain(), 30)
     assert ctx.runtime.last_error is None
     assert (ctx.root / f"record-{index}.txt").read_text() == "actual record"
     assert (ctx.root / f"backup-{index}.txt").read_text() == "actual record"
@@ -152,9 +153,11 @@ async def test_second_real_run_same_scope_is_durably_rejected_without_increment(
 
 class DriftProvider(UseProvider):
     change = None
+    changed = False
     async def invoke(self, request, *, cancel):
         if self.stage == 5:
             self.change()
+            self.changed = True
         return await super().invoke(request, cancel=cancel)
 
 
@@ -175,7 +178,9 @@ async def test_actual_pre_use_drift_prevents_first_physical_file_and_step_reserv
         provider.change = change
         provider.configure(scope["scope_ref"], ctx.memory_id, ctx.revision, 1)
         await ctx.service.enqueue_turn(QueueTurnRequest(None, "drift-turn", "执行记录和备份两步。"))
-        assert await asyncio.wait_for(ctx.runtime._drive_once(), 30)
+        await ctx.runtime.after_enqueue(subject=local_owner_auth().subject)
+        await asyncio.wait_for(ctx.runtime.drain(), 30)
+        assert provider.changed  # Physical current state was changed after real binding.
         with sqlite3.connect(ctx.state) as db:
             # The use really bound before the changed current fingerprint.
             assert db.execute("SELECT count(*) FROM procedure_uses").fetchone()[0] == 1
