@@ -43,6 +43,11 @@ async def test_real_ack_history_inheritance_withdrawal(tmp_path,monkeypatch):
     await _run_occurrence_case(tmp_path,monkeypatch,inheritance=True)
 
 
+@pytest.mark.asyncio
+async def test_real_occurrence_source_withdrawal_and_foreign_authority(tmp_path,monkeypatch):
+    await _run_occurrence_case(tmp_path,monkeypatch,late_forget='source')
+
+
 async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal_fault=None,inheritance=False):
     state=tmp_path/'state.db'
     startup=await dispatch_startup_epoch(state,approved_fresh_lane=True)
@@ -125,9 +130,44 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
             pre_forget_passed.append(request.request_id.value)
             import simple_harness_memory as memory
             entry=(await w.manager.read_occurrence_inbox(principal=principal)).entries[0]
-            await w.manager.suppress(principal=principal,request=memory.SuppressionRequest(
-                'a7-late-forget',principal.actor_id,memory.SuppressionScopeKind.MEMORY,
-                entry.memory_id,'user_forget',w.clock[0]))
+            if late_forget=='source':
+                from dataclasses import replace
+                from deskpet.memory.s5c_store import S5cConflict
+                view=stack.read_provider_context_use(current.sdk_run_id,request.request_id.value)
+                async with store._transaction() as db:
+                    row=await (await db.execute('SELECT * FROM run_context_snapshot_receipts WHERE snapshot_id=?',
+                        (view.context_snapshot_id,))).fetchone()
+                group=await coordinator.restore_snapshot(sdk_run_id=current.sdk_run_id,
+                    provider_turn_ordinal=row['provider_turn_ordinal'],prior_context_revision=row['prior_context_revision'],
+                    snapshot_id=view.context_snapshot_id)
+                bound=await source_dependencies.for_group(group,check_current=True)
+                assert len(bound)==1
+                wrong_runtime=SimpleNamespace(principal=lambda:replace(principal,actor_id='foreign-owner'),manager=manager)
+                wrong=ProspectiveSourceDependencies(store=store,runtime_getter=lambda:wrong_runtime)
+                with pytest.raises(S5cConflict,match='source_principal_differs'):
+                    await wrong.for_group(group,check_current=True)
+                with pytest.raises(S5cConflict,match='source_owner_differs'):
+                    await source_dependencies.for_group(replace(group,owner='foreign'),check_current=True)
+                # The correct actual source reached this exact receipt read.
+                # A counterfeit public DTO must fail at receipt binding, not
+                # merely at an unrelated missing capability or early owner gate.
+                real_view=w.manager.get_memory_mutation_receipt_view
+                reached=[]
+                async def wrong_receipt(**kwargs):
+                    result=await real_view(**kwargs);reached.append(result.receipt_id)
+                    return replace(result,receipt_id='foreign-receipt')
+                with monkeypatch.context() as patch:
+                    patch.setattr(w.manager,'get_memory_mutation_receipt_view',wrong_receipt)
+                    with pytest.raises(S5cConflict,match='source_receipt_differs'):
+                        await source_dependencies.for_group(group,check_current=True)
+                assert len(reached)==1
+                await w.manager.suppress(principal=principal,request=memory.SuppressionRequest(
+                    'a7-source-forget',principal.actor_id,memory.SuppressionScopeKind.EVIDENCE,
+                    bound[0]['evidence_id'],'user_forget',w.clock[0]))
+            else:
+                await w.manager.suppress(principal=principal,request=memory.SuppressionRequest(
+                    'a7-late-forget',principal.actor_id,memory.SuppressionScopeKind.MEMORY,
+                    entry.memory_id,'user_forget',w.clock[0]))
         try:
             await actual_guard(request)
         except ProspectiveRequestRejected as error:
@@ -202,7 +242,8 @@ async def _run_occurrence_case(tmp_path,monkeypatch,*,late_forget=False,terminal
                 actual=stack.read_run_terminal_evidence(guarded[0][0])
                 assert actual.state=='failed'
                 assert pre_forget_passed==[guarded[0][1]]
-                assert late_denials==['s5c_occurrence_current_read_changed']
+                assert late_denials==[('s5c_occurrence_source_not_visible' if late_forget=='source'
+                                      else 's5c_occurrence_current_read_changed')]
                 assert runtime.last_error is None
                 await runtime.after_enqueue(subject=principal.actor_id)
                 await asyncio.wait_for(runtime.drain(),20)
