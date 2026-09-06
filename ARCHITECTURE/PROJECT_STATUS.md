@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05-18正式中途revision相位与2新增控制已准备源码NOT_RUN；未改SDK/未占资源，17/19仍未完成。07/08入口0915已送主并据主报告801ce506三项PASS、PG88533空，本树未重跑；C09共享接线2199/778待主独立组合。[本叶来源与NOT_RUN边界](../plans/2026-09-07-corpus-c05-remaining/REVISION-PHASE.md)。
+
 最后更新：2026-09-07。独立feat/corpus-c05-remaining基c5b55387已写07/08正式状态来源组与3新组合控制，NOT_RUN、未合主；其余14格明确来源/调度/公开契约缺口。复用原4格整链与empty证据，无新测试、模型、资源进程、版本变动，不计质量PASS。[逐格事实与待跑控制](../plans/2026-09-07-corpus-c05-remaining/CONTRACT.md)。
 
 最后更新：2026-09-07。C08正式dispatcher e81a9af7+helper f45da5f9新增1PASS8.00s：01跳scalar，真实旧组/抑制/生产重开CONFIRMED后独立评分Provider，next physical无旧内容/统计1；只本共享入口01组合，不重复旧5绿、不计模型质量。PG85743自然清空。[结果](../plans/2026-09-07-corpus-complete-dispatch/C08-RESULTS.md)。

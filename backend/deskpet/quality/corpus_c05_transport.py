@@ -11,6 +11,7 @@ from deskpet.quality.corpus_c05 import operational_text
 from deskpet.quality.corpus_c05_prepare import TaskSetupProvider
 
 PROVIDER_ID = 'corpus-task-setup-fixture'
+REVISION_PROVIDER_ID = 'corpus-task-revision-fixture'
 KEY = 'corpus-task-local-fixture-not-a-credential'
 
 
@@ -47,9 +48,13 @@ def _message(row):
 
 
 class TaskSetupHttpProvider:
-    def __init__(self, *, model):
+    def __init__(self, *, model, phase='initial'):
+        if phase not in {'initial', 'revision'}:
+            raise ValueError('c05_fixture_phase_invalid')
         self.model = model
-        self.target = ProviderTarget(PROVIDER_ID, model, model, 'local', 'fixture')
+        self.provider_id = PROVIDER_ID if phase == 'initial' else REVISION_PROVIDER_ID
+        self.priority = 2 if phase == 'initial' else 0
+        self.target = ProviderTarget(self.provider_id, model, model, 'local', 'fixture')
         self.planner = TaskSetupProvider(target=self.target)
         self._server = None
         self._tasks = set()
@@ -98,7 +103,7 @@ class TaskSetupHttpProvider:
     def registration(self):
         if self._server is None:
             raise RuntimeError('c05_fixture_not_listening')
-        return dict(id=PROVIDER_ID, base_url=self.base_url, api_key=KEY, models=[self.model], priority=2)
+        return dict(id=self.provider_id, base_url=self.base_url, api_key=KEY, models=[self.model], priority=self.priority)
 
     def _connected(self, reader, writer):
         task = asyncio.create_task(self._serve(reader, writer))

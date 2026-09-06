@@ -433,9 +433,17 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         outcome["stage"] = "original_scoring_turn"
         if c05 is not None:
             from deskpet.quality.corpus_c05_session import execute_task_scoring
+            revision_action = None
+            if c05.case_id == 'C05-18':
+                from deskpet.quality.corpus_c05_revision_phase import TaskRevisionPhase
+                revision_action = TaskRevisionPhase(main=main, batch=c05, service=service, runtime=runtime,
+                    history_reader=task_history, workspace_root=task_workspace, directory=directory,
+                    collect_turn=collect_turn, record=write_result, worker=worker,
+                    scoring_base_url=base_url, scoring_key=key)
             outcome.update(await execute_task_scoring(main=main, service=service, runtime=runtime,
                 subject=auth.subject, text=text, schedule=c05_schedule, directory=directory,
-                setup_phase=outcome["setup_phase"], worker=worker, collect_turn=collect_turn, record=write_result))
+                setup_phase=outcome["setup_phase"], worker=worker, collect_turn=collect_turn, record=write_result,
+                revision_action=revision_action))
         else:
             from deskpet.quality.corpus_approval import ReadOnlyMemoryApproval
             approval = ReadOnlyMemoryApproval(ingress=main._sdk_ingress,

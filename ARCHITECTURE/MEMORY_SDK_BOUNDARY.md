@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C05-18新增真实preview终态→独立fixture Run修订→独立评分Run接线源码，两新组合控制NOT_RUN；fixture身份/HTTP与统计分离、旧hash stale拒绝及历史保留待主首测。17/19首命名root仍缺Host明确入口，未开放。[相位与边界](../plans/2026-09-07-corpus-c05-remaining/REVISION-PHASE.md)。
+
 最后更新：2026-09-07。C05剩余16格已逐项核对；07/08新增正式状态来源组源码：首轮真实C admission/initial receipt、确认后新Run、complete档案原状态/terminal复核。3新actualmain控制均NOT_RUN，由主完整H0710/M619 target统一执行；原04/09/14/20与empty绿不重跑。另14格仍有限source/缺口，排名、首命名root、revision等不冒完成。[契约与清单](../plans/2026-09-07-corpus-c05-remaining/CONTRACT.md)。
 
 最后更新：2026-09-07。C08正式dispatcher e81a9af7+helper f45da5f9新增1PASS8.00s：01跳scalar，真实旧组/抑制/生产重开CONFIRMED后独立评分Provider，next physical无旧内容/统计1；只本共享入口01组合，不重复旧5绿、不计模型质量。PG85743自然清空。[结果](../plans/2026-09-07-corpus-complete-dispatch/C08-RESULTS.md)。

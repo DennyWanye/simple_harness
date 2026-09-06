@@ -6,7 +6,7 @@ not their gold. Runtime event/phase wiring consumes Carver's public fact reader.
 from dataclasses import dataclass
 
 
-SUPPORTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-14', 'C05-20'})
+SUPPORTED_CASES = frozenset({'C05-04', 'C05-07', 'C05-08', 'C05-09', 'C05-14', 'C05-18', 'C05-20'})
 _PREVIEW = 'candidate_preview_then_turn_terminal'
 _UNMET = 'record_unmet_and_stop_no_rescue'
 # Exact authored scripts. No target ID, expected answer, or selected label.
@@ -16,6 +16,7 @@ _SCRIPTS = {
     'C05-08': ((_PREVIEW, '选已经结束那次，只看最终结论，别重新做。'),),
     'C05-09': ((_PREVIEW, '选等待字体授权的家谱任务，先告诉我卡点。'),),
     'C05-14': ((_PREVIEW, '选需要核对座位的那项。'),),
+    'C05-18': ((_PREVIEW, '选月报整理，按最新状态继续说明。'),),
     'C05-20': ((_PREVIEW, '我原想选排版，先别切换。'),
                ('assistant_turn_terminal_after_f1', '改选封面校对，以这条为准。')),
 }
@@ -42,7 +43,8 @@ def validate_schedule(case_id, raw):
             or raw['scheduler_state'] != 'NOT_IMPLEMENTED'
             or type(raw['scripted_followup']) is not list):
         raise ValueError('c05_exact_compiler_schedule_required')
-    expected = tuple(ScheduledFollowup('f' + str(index), event, 'none', text, _UNMET)
+    action = 'append_predefined_current_revision' if case_id == 'C05-18' else 'none'
+    expected = tuple(ScheduledFollowup('f' + str(index), event, action, text, _UNMET)
         for index, (event, text) in enumerate(_SCRIPTS[case_id], 1))
     fields = set(ScheduledFollowup.__dataclass_fields__)
     rows = raw['scripted_followup']
@@ -54,7 +56,6 @@ def validate_schedule(case_id, raw):
 
 
 def _confirmed_setup_trace(observations, transport, *, binding, turn_ref):
-    from deskpet.quality.corpus_c05_transport import PROVIDER_ID
     trace = observations.get('trace') or {}
     providers = trace.get('providers', ())
     responses = tuple(transport.current_responses)
@@ -62,7 +63,7 @@ def _confirmed_setup_trace(observations, transport, *, binding, turn_ref):
     if (observations.get('observation_errors') or trace.get('trace_status') != 'COMPLETE'
             or trace.get('terminal_status') != 'TERMINAL'
             or trace.get('provider_observation_complete') is not True
-            or binding.provider_id != PROVIDER_ID or binding.model_id != transport.model
+            or binding.provider_id != transport.provider_id or binding.model_id != transport.model
             or binding.run_id != observations.get('sdk_run_id')
             or not responses or len(expected) != len(responses) or len(providers) != len(responses)
             or len(set(transport.current_request_hashes)) != len(responses)):
@@ -211,7 +212,7 @@ async def _unbound_preview_turn(*, stack, ledger, sdk_run_id):
 
 
 async def execute_task_scoring(*, main, service, runtime, subject, text, schedule,
-        directory, setup_phase, worker, collect_turn, record):
+        directory, setup_phase, worker, collect_turn, record, revision_action=None):
     """Initial turn + exact authored followups. No missing-event rescue or retry."""
     from deskpet.quality.corpus_runtime import execute_scoring_turn
     from deskpet.quality.corpus_c05_scoring_approval import C05ScoringApproval
@@ -226,6 +227,7 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
     result = dict(execution_status='DISPATCH_STARTED', scoring_runs=runs,
         followup_events=events, trace=None, provider_statistics_scope='all_scoring_runs_setup_excluded')
     setup_runs = {item['sdk_run_id'] for item in setup_phase['runs']}
+    expected_provider_id = 'corpus-real-provider'
     turns = [('initial', text), *((item.followup_id, item.user_message) for item in schedule)]
     for ordinal, (turn_name, current_text) in enumerate(turns):
         if ordinal:
@@ -261,6 +263,20 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
                 return result
             if visible:
                 preview_runs.append(sdk)
+            if followup.fixture_action != 'none':
+                if (followup.fixture_action != 'append_predefined_current_revision'
+                        or revision_action is None):
+                    result.update(execution_status='SETUP_NOT_READY', error_type='C05RevisionActionMissing')
+                    return result
+                try:
+                    action = await revision_action(prior_run=sdk)
+                except Exception as error:
+                    result.update(execution_status='SETUP_NOT_READY', error_type=type(error).__name__)
+                    return result
+                event['fixture_action_observation'] = action
+                record(directory / f'followup-{followup.followup_id}-action.json', action)
+                setup_runs.add(action['sdk_run_id'])
+                expected_provider_id = action['scoring_provider_id']
         turn_dir = directory / ('scoring-' + turn_name)
         turn_dir.mkdir(exist_ok=False)
         delivery_key = 'scoring-turn-' + str(ordinal + 1)
@@ -283,7 +299,7 @@ async def execute_task_scoring(*, main, service, runtime, subject, text, schedul
             sdk = observed['sdk_run_id']
             binding = SdkRunBindingV1.from_record(main._sdk_runtime_stack.read_closure_run_facts(sdk).binding_record)
             terminal = main._sdk_runtime_stack.read_run_terminal_evidence(sdk)
-            if (binding.provider_id != 'corpus-real-provider' or sdk in setup_runs
+            if (binding.provider_id != expected_provider_id or sdk in setup_runs
                     or sdk in {item.get('sdk_run_id') for item in runs[:-1]}):
                 raise ValueError('c05_scoring_provider_phase_differs')
             if (observed['observation_errors'] or observed['trace']['trace_status'] != 'COMPLETE'

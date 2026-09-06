@@ -83,7 +83,8 @@ class TaskSetupProvider:
             if spec.goal is not None:
                 args['goal'] = spec.goal
             if self._revision_of is not None:
-                args = dict(route='resume_existing', task_scope_id=self._revision_of.task_scope_id)
+                args = dict(route='resume_existing', task_scope_id=self._revision_of.task_scope_id,
+                            expected_source_hash=self._revision_of.source_hash)
             return self._tool(request, 'context_route', args)
         if self.route_receipt is None:
             raise RuntimeError('c05_actual_route_not_accepted')

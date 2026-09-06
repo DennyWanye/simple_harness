@@ -141,6 +141,12 @@ class C05PhaseHistoryReader:
         self._changing = False
         self._archives = ()
 
+    def completed_setup_archives(self):
+        """Only the exact previously verified fixture records, while idle."""
+        if self._scoring_reader is None or self._changing or self._reads:
+            raise ValueError('c05_history_phase_not_idle')
+        return self._archives
+
     async def freeze(self, *, archives, stack, primary_ref):
         if self._scoring_reader is not None or self._changing or self._reads:
             raise ValueError('c05_history_phase_change_not_idle')

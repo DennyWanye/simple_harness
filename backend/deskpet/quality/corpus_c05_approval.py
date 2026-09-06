@@ -99,7 +99,8 @@ async def verify_pending_call(*, stack, ingress, sdk_run_id, decision_id, reques
 
 
 class C05SetupApproval:
-    def __init__(self, *, ingress, stack, transport, ledger, binding_store, expected_configured_root, persist):
+    def __init__(self, *, ingress, stack, transport, ledger, binding_store, expected_configured_root, persist,
+                 revision_origin=None):
         self.ingress, self.transport = ingress, transport
         self.stack = stack
         self.ledger, self.binding_store = ledger, binding_store
@@ -107,23 +108,40 @@ class C05SetupApproval:
         self.persist = persist
         self.attempted = set()
         self.ordinal = 0
+        self.revision_origin = revision_origin
 
-    async def _scope(self, sdk, name, args):
+    async def _scope(self, sdk, name, args, service):
         configured = Path(self.binding_store.configured_root().canonical_path)
         if configured != self.expected_root:
             raise CorpusApprovalBlocked('c05_configured_root_differs')
-        if name == 'context_route':
+        origin = self.revision_origin
+        if name == 'context_route' and origin is None:
             if args.get('route') != 'create_new':
                 raise CorpusApprovalBlocked('c05_initial_phase_route_not_supported')
             return
-        if name not in {'tool_search', 'tool_describe', 'tool_activate', 'write_file', 'task_scope_update'}:
+        if name == 'context_route':
+            from deskpet.memory.human_memory_service import OpenTaskScopeRequest
+            if (origin.case_id != 'C05-18' or origin.phase != 'create' or origin.label != 'A'
+                    or args != dict(route='resume_existing', task_scope_id=origin.task_scope_id,
+                                    expected_source_hash=origin.source_hash)
+                    or self.stack.read_run_terminal_evidence(origin.sdk_run_id) != origin.terminal):
+                raise CorpusApprovalBlocked('c05_revision_origin_differs')
+            await service.open_task_scope(OpenTaskScopeRequest(origin.task_scope_id,
+                expected_source_hash=origin.source_hash))
+            route = await self.ledger.read_route_receipt(origin.sdk_run_id, origin.route_receipt['receipt_id'])
+            if route is None or route.to_json() != origin.route_receipt:
+                raise CorpusApprovalBlocked('c05_revision_source_route_differs')
+        elif name not in {'tool_search', 'tool_describe', 'tool_activate', 'write_file', 'task_scope_update'}:
             raise CorpusApprovalBlocked('c05_setup_tool_not_supported')
-        latest = await self.ledger.latest_route_decision_for_run(sdk, task_only=True)
-        if latest is None:
-            raise CorpusApprovalBlocked('c05_setup_scope_missing')
-        route = await self.ledger.read_route_receipt(sdk, latest['receipt_id'])
+        else:
+            latest = await self.ledger.latest_route_decision_for_run(sdk, task_only=True)
+            if latest is None:
+                raise CorpusApprovalBlocked('c05_setup_scope_missing')
+            route = await self.ledger.read_route_receipt(sdk, latest['receipt_id'])
         if route is None:
             raise CorpusApprovalBlocked('c05_setup_route_missing')
+        if origin is not None and route.task_scope_id != origin.task_scope_id:
+            raise CorpusApprovalBlocked('c05_revision_target_scope_differs')
         if (route.task_scope_id is None or route.binding_set_revision is None
                 or route.binding_set_receipt_id is None or route.binding_set_receipt_hash is None):
             raise CorpusApprovalBlocked('c05_setup_route_binding_missing')
@@ -185,7 +203,7 @@ class C05SetupApproval:
                     or planned['arguments'] != request.get('arguments')
                     or identifier in self.attempted or len(self.attempted) >= 50):
                 raise CorpusApprovalBlocked('c05_setup_exact_action_differs')
-            await self._scope(sdk, planned['name'], planned['arguments'])
+            await self._scope(sdk, planned['name'], planned['arguments'], service)
             verified.append((item, dict(sdk_run_ref=sdk, turn_ref=queued['turn_ref'],
                 decision_id=identifier, version=record.version, request_hash=digest(request),
                 actual_fixture_wire_hash=planned['wire_request_hash'], tool_name=planned['name'],
