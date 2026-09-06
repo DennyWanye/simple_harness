@@ -108,6 +108,9 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         # Never reuse a partial/failed causal chain as a completed dialogue.
         complete = [g for g in groups if g["terminal_state"] == "COMPLETED"
                     and g["messages"]]
+        from deskpet.execution.primary_context_pages import project_history_group
+        def project(group):
+            return project_history_group(group, run_id=sdk_run_id)
         caps = PARTITION_CAPS[budget_window(provider.context_window)]["recent_causal_groups"]
         current = {"role": "user", "content": _turn_text(candidate)}
         protected = [{"role": "system", "content": PERSONA}, current]
@@ -116,7 +119,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         if protected_tokens > budget:
             raise ContextBudgetExceeded()
         def over_cap():
-            rows = [m for g in complete for m in _context_messages(g)]
+            rows = [m for g in complete for m in project(g)]
             return (sum(len(g["messages"]) for g in complete) > caps["items_max"]
                     or len(canonical_json(rows).encode()) > caps["bytes_max"]
                     or protected_tokens + text_tokens(canonical_json(rows)) > budget)
@@ -140,7 +143,7 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                     ),
                 )
                 raise RuntimeError("primary_context_dependencies_not_visible")
-        messages = [protected[0], *(m for g in complete for m in _context_messages(g)), current]
+        messages = [protected[0], *(m for g in complete for m in project(g)), current]
         binding = {"provider_id": provider.provider_id, "model_id": provider.model_id,
                    "provider_incarnation_id": provider.provider_incarnation_id,
                    "provider_config_revision": provider.provider_config_revision,

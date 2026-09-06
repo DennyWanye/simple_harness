@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+Updated 2026-09-06: isolated primary history tool pages passed 4 unique controls across batches, preserving original failures: real terminal S1/public SDK transcript, Run-admitted summary, exact public first/next/tail pages, actual MockTransport, forget blocking subsequent sends, and full-stack dependency reopen. Existing H077/M616 installed targets; not native/external Provider. Current Run page:causal continues in this leaf; full S5/program remains incomplete. [Results](../plans/2026-09-06-primary-context-compaction/RESULTS.md).
+
 2026-09-06：Procedure提案按新v4区分明确采用/步骤叙述/不确定，Host核真实USER来源与有序引文；明确采用ACTIVE，其余合法分类DRAFT且观察成功数0，ACTIVE不授予执行权限。v3完整协议保留，普通失败跨配置重试P1由M618固定完整输入/cohort恢复；原Host反例零新Provider并应用旧v3语义已实际通过。源码/独立安装验收不代表Scope观察、适用性或真实分类质量；H078/M618组合另验。[来源与范围](../plans/2026-09-06-procedure-adoption/SOURCE.md)。
 
 2026-09-06：A7展示/ACK与来源继承已独审合入候选（固定cd594b8f）。真实五路由ACK终态、三轮未ACK保留pending/唯一overdue、第四轮ACK、终态故障恢复、异主体拒绝及跨轮派生历史遗忘分别通过；slow-source等待期间Host换代真实红例已修复并验证零外发。原no_recall规则不放宽，snapshot注入不当作用户已见。生产默认登记协调器/ACK并由组件升级52；H078组合和原生A7另验，事件触发来源继续。[原红、结果和范围](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。

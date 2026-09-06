@@ -8397,6 +8397,11 @@ async def _build_product_sdk_runtime_stack(
         clock=clock,
     )
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
+    from deskpet.execution.primary_context_pages import PrimaryContextPageReader
+    context_page_store.primary_reader = PrimaryContextPageReader(
+        _state_db_path, stack_getter=lambda: _sdk_runtime_stack,
+        policy_factory=_primary_history_policy,
+    )
     _typed_use_authority = None
     if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
         from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
