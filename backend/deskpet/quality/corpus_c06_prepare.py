@@ -48,6 +48,42 @@ def operations_for(batch, pair):
         payload=h.ProcedureMemoryPayload(title, conditions, steps, h.ProcedureRiskLevel.LOW),
         lifecycle_state=h.ProcedureLifecycleState.ACTIVE,
         evidence_spans=(derive_span(item, procedure_quote, span_id='setup-P'),))
+    if batch.case_id == 'C06-17':
+        # Reuse the approved common undated-episode convention. The literal
+        # old-project claim is preserved; no actual Task/closure is fabricated.
+        from deskpet.quality.corpus_c03_dates import c03_payload
+        spec = ('E', 'episode', 'user:self', '旧项目跳过抽样导致出错',
+            '旧项目跳过抽样导致出错', ())
+        episode = replace(semantic, operation_id='E',
+            memory_type=h.LongTermMemoryType.EPISODE, payload=c03_payload(batch, spec),
+            lifecycle_state=h.EpisodeLifecycleState.ACTIVE,
+            proposed_information_attributes=(),
+            evidence_spans=(derive_span(item, spec[4], span_id='setup-E'),))
+        return semantic, procedure, episode
+    if batch.case_id in ('C06-18', 'C06-19'):
+        first = replace(procedure, operation_id='P1',
+            evidence_spans=(derive_span(item, procedure_quote, span_id='setup-P1'),))
+        if batch.case_id == 'C06-18':
+            quote = '仅财务项目先套专有账模板'
+            second_payload = h.ProcedureMemoryPayload('财务专有账模板',
+                ('仅财务项目',), ('先套专有账模板',), h.ProcedureRiskLevel.LOW)
+        else:
+            quote = '需联网插件的active程序'
+            # Source gives a capability requirement but no actionable algorithm.
+            # Keep that limitation explicit, never invent plugin/tool/arguments.
+            second_payload = h.ProcedureMemoryPayload('需联网插件的程序（原文未提供具体步骤）',
+                ('需联网插件',), ('需联网插件的active程序',), h.ProcedureRiskLevel.LOW)
+        second = replace(procedure, operation_id='P2', payload=second_payload,
+            evidence_spans=(derive_span(item, quote, span_id='setup-P2'),))
+        if batch.case_id == 'C06-18':
+            return semantic, first, second
+        environment = replace(semantic, operation_id='ENV',
+            payload=h.SemanticMemoryPayload('device:current', '网络状态', '离线',
+                ('setup时点声明，非运行时设备观测',)),
+            proposed_information_attributes=(),
+            valid_time_interval=h.ValidTimeInterval(batch.scenario_time, None),
+            evidence_spans=(derive_span(item, '当前设备离线', span_id='setup-ENV'),))
+        return semantic, first, second, environment
     return semantic, procedure
 
 
@@ -148,4 +184,10 @@ async def prepare_c06_setup(*, path, manager, principal, authority_ref, batch, d
     labels = await read_c06_preparation(manager=manager, principal=principal, batch=batch, pair=pair)
     return dict(case_id=batch.case_id, setup_hash=batch.setup_hash, source_pair=pair,
         labels=labels, plan=executor.executed_plan, outcome=outcome,
-        fixture_executions=executor.executions)
+        fixture_executions=executor.executions,
+        source_limits={
+            'C06-17': ('undated_episode_uses_labelled_synthetic_time',),
+            'C06-18': ('finance_applicability_requires_actual_runtime_facts',),
+            'C06-19': ('online_procedure_steps_unspecified',
+                'setup_offline_declaration_is_not_runtime_capability_authority'),
+        }.get(batch.case_id, ()))

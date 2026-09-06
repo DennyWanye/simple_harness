@@ -120,3 +120,47 @@ It reuses the public source/job/owner/reopen oracle and checks actual serialized
 Procedure applicability as well as steps. Original 10 selectors are unchanged;
 no old green reruns requested. New code changes only mapping/tests/docs, no SDK,
 shared session, production authority or preparation implementation.
+
+Dirac limited delta source ACCEPT for 3d469a05: no P0/P1; six new controls remain NOT_RUN.
+
+## Extra-source successor: 17/18/19
+
+Main r3 ab812385 ran only six new description cases: 6PASS3.20s, PG88468
+exit0/remaining[]. The first 16 source cases are covered in distinct main batches;
+none was rerun here. No claim of actual Task or quality completion.
+
+New source (NOT_RUN) reuses the same Host S1/atomic public analysis job and adds:
+
+- 17: S/P/**E**. Actual original Episode quote is an independent span, with
+  `c03_payload`'s approved undated scenario-clock-minus-24h synthetic timing and
+  explicit title warning. No historical Task identity or execution is fabricated.
+- 18: S/**P1/P2**. P1 preserves global use; P2 has exact finance-only applicability
+  and original template step. No fake finance scope, template file or selection
+  receipt. Applicability text remains descriptive until actual runtime validation.
+- 19: S/**P1/P2/ENV**. P2 preserves actual quote and required online plugin, remains
+  ACTIVE as the source says. Since no algorithm/tool is specified, its only step
+  is the original description and its name explicitly notes missing steps. ENV
+  is an independent Semantic fact for `device:current`, exact offline source quote,
+  scenario-time validity start and explicit setup-only provenance qualifier. This
+  is not a current device observation or public capability receipt. No plugin,
+  tool name, internet availability or implementation is invented.
+
+Return dict adds `source_limits` tuple; 19 returns
+`online_procedure_steps_unspecified` and
+`setup_offline_declaration_is_not_runtime_capability_authority`; 18 marks actual
+finance applicability facts pending, 17 marks synthetic date precision. No full
+Case or current/gold enters the compiler. All nodes retain exact S1 and distinct
+span hashes; same original plan remains canonical and unmodified.
+
+New main selector (three parameters, NOT_RUN):
+`backend/tests/quality/test_corpus_c06_extra_sources.py::test_public_c06_extra_sources_are_not_dropped_or_promoted_to_authority`.
+It checks actual job/operation-ID cardinality and exact types, original extra
+quotes, public node/source hashes, independent conditions, temporal precision,
+source limitations, no fake foreground history and reopened readback. Old 16
+selectors are not expanded. No tests were executed by this owner.
+
+19/20 now have source mappings; 01 awaits Hegel's real old-Task archive seam.
+Hegel integration must consume current production principal/manager and keep
+these prepared graph views out of model input. Actual typed selection and
+physical disclosure checks remain required. 18/19 descriptive source completion
+must not be promoted to applicability/execution authority by the dispatcher.

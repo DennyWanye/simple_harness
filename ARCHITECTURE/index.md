@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C06主六新描述控6PASS3.20s、16sources已控；后继17/18/19额外Episode/第二Procedure/设备声明源码及独立3控NOT_RUN。19/20仅具备来源映射；19缺算法/实际设备能力证明通过source_limits明确，18真实finance适用性仍待runtime，01等真实archive。无SDK/session/资源变更。[契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
+
 最后更新：2026-09-07。C05当前任务保持/完成任务只读/提前切换拒绝3控分批通过47.18s；旧scalar拒Host混合声明已按原来源绑定修复。C09正式退役/原子双修订两新组合首次2PASS14.69s，关闭fixture再生产重开/评分请求隔离。均受控HTTP非质量，PG87968/88533/88901清空，无旧绿重复。[C05](../plans/2026-09-07-corpus-complete-dispatch/C05-STATE-RESULTS.md)／[C09](../plans/2026-09-07-corpus-complete-dispatch/C09-RESULTS.md)。
 
 最后更新：2026-09-07。C06新增六条条件Procedure来源首次6PASS3.20s，旧11未重跑；保留原描述/确认/授权/不删除限制及双条件分支，16/20来源准备有控，非执行许可/跨Task/模型质量。PG88468自然清空。[结果](../plans/2026-09-07-corpus-c06-preparation/RESULTS.md)。
