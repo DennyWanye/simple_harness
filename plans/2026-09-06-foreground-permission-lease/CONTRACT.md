@@ -25,7 +25,7 @@ Host改动仅foreground_runtime.py：
 - 空闲keeper只在存在durable pendingcontrol或SDKterminal时唤醒，轮询仅兜底丢失通知；
   不因WAITING反复prepare。原primary鉴权/独立SDKlease不改。
 
-7项新决定性controls（未执行）：实际installedSDK与生产权限适配器，实际Hoststore、
+7项新决定性业务controls（已分批通过，见RESULTS.md）：实际installedSDK与生产权限适配器，实际Hoststore、
 公开decision/真实SDKterminal→Hostreceipt；仅Provider为确定性fixture，无native/model。
 两个真实WAITING跨先前expiry再allow；live/expiredWAITING Stop；实际SDKprovider失败后
 过期同owner回收Stop保留FAILED；晚到旧heartbeat与外owner回收；query不可用/foreignidentity
@@ -35,5 +35,5 @@ Host改动仅foreground_runtime.py：
 
 Dirac 9d48465f预审新增清理缺口：工作异常之后的finally又读DB可能抛错，跳过keeper清理。
 后继修正失败/取消直接stop+join；成功后最终读失败也先join再传播。补3个局部控制，
-因此原7业务控加新3清理控，共10 unique待首次执行。旧native失败不改。
+因此原7业务控加新3清理控，共10 unique，已分批通过（见RESULTS.md）。旧native失败不改。
 过期控制复用同一Runtime/SDK stack，仅证明同实例恢复，不宣称重建进程恢复已验。
