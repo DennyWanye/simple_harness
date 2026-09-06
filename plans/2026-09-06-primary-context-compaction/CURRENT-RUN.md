@@ -1,3 +1,7 @@
+# Current status: implemented bounded source/page path
+
+2026-09-06: product0c1b4b38, two current Run controls passed in separate batches. See [actual results and remaining closure/native boundaries](CURRENT-RESULTS.md). The original design record below is retained chronologically; its initial unimplemented status is historical.
+
 # 同叶继续：当前 Run 大结果
 
 2026-09-06，源码调查确认，以下接线尚未实现/测试，不是无限后继占位。历史terminal S1首批验证后接同一page入口，冻结H077不改。

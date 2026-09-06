@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+Updated 2026-09-06: current primary large generic tool pages now use public settled effect/actual parent request authority, exact page read and final current-source guard. Two new actual-stack controls passed in separate retries (4.06s/3.81s), including reused raw ID, pending exclusion, tail/reopen and post-page forget with a pre-closed real write scope. Original unclosed-scope/withdrawal terminal-pending failure remains. Product0c1b4b38, H077/M616 plus Host source/MockTransport; main H078/M618/native and typed-consumed cross-SDK use are separate. [Results and limits](../plans/2026-09-06-primary-context-compaction/CURRENT-RESULTS.md).
+
+
 Updated 2026-09-06: isolated primary history tool pages passed 4 unique controls across batches, preserving original failures: real terminal S1/public SDK transcript, Run-admitted summary, exact public first/next/tail pages, actual MockTransport, forget blocking subsequent sends, and full-stack dependency reopen. Existing H077/M616 installed targets; not native/external Provider. Current Run page:causal continues in this leaf; full S5/program remains incomplete. [Results](../plans/2026-09-06-primary-context-compaction/RESULTS.md).
 
 
