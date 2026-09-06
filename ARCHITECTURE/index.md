@@ -1,3 +1,5 @@
+最后更新：2026-09-07。原生r24固定b2da14da/H079/M619，待定流程记录可见；第二轮界面等待授权但停止后补出成功context_route及4次tool_search，Procedure发现/使用和文件核验未完成。PG50771正常退出且清空，非内存/预算阻塞。全测试阶段防熄屏保持。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R24.md)。
+
 最后更新：2026-09-07。C04 20条setup分批19+1通过，新增同时间戳游标修复5控已独审接受并合入候选；仅原H078/M618叶证据，当前H079/M619组合与240真实质量另验。晚到更早时间戳不在保证内。[结果](../plans/2026-09-06-corpus-public-seed/C04-CURSOR-RESULTS.md)。
 
 最后更新：2026-09-07。共同Memory0.6.19 clean源e27003c已离线只构建一次，H079/M619/S0313安装新组合1PASS0.86s、174/92/116成员和184加载模块精确来自target；版本3控通过。Host vendor/pin/lock/生产identity固定新wheel，初次origin校验失败后通过真实vendor安装纠正，不手改metadata/不重build；PG50135清空。旧M618不改，当前候选可供M619原生验证，完整native/240质量待验。[制品与实际结果](../plans/2026-09-07-current-input-procedure/INSTALLED-079619.md)。

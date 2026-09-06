@@ -1,3 +1,5 @@
+最后更新：2026-09-07。原生r24固定b2da14da/H079/M619，待定流程记录可见；第二轮界面等待授权但停止后补出成功context_route及4次tool_search，Procedure发现/使用和文件核验未完成。PG50771正常退出且清空，非内存/预算阻塞。全测试阶段防熄屏保持。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R24.md)。
+
 <!-- 最后更新：2026-09-07 -->
 
 C04 原20公开setup分批19+1通过；实际same-timestamp晚append暴露Host游标漏注册，
