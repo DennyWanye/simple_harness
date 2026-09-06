@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：自有clock树 `feat/wemm-startup-warmup`／base35b07098，源码270320d3接回现有WeMM启动预热，两项新增控制2PASS／0.25s，峰119616KiB、磁盘最低1462MiB、PG93645清空、锁释放。已获Dirac限定ACCEPT并合入primary候选；待真实首冷query，Procedure WIP保留且未混入；旧绿未重跑。[证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
+
 2026-09-06 原生r10（Host0bedaa87/H077/M617）：FTS+VECTOR修复后的真实暖态短期查询成功，UI工具有三条recall refs，模型正确回答青竹九月/无糖茉莉茶。冷态首查仍timeout，单独保留失败并继续预热定位；不称完整short/性能/program通过。两轮均空闲，正常退出PG89400 exit0/remaining[]。已合closure九场景修复的原生Scope旅程另验。[实际结果与证据](../plans/2026-09-06-typed-use-primary/NATIVE-R10.md)。
 
 2026-09-06：自有 `simple_harness-corpus-clock`／`feat/short-vector-mode`，base e04627c4，源码 f8b2d41c 完成最小短期检索通道补齐。新增公共 typed→Host fragments 控制 1PASS／4.74s，PG89042 无残留、共享锁释放；只此新增控制，未重跑旧绿。Dirac限定ACCEPT、已合隔离primary候选；待native，未称整体召回质量完成。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。

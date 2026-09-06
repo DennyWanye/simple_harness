@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。WeMM公开 warmup 接通原 startup hook，共享原实例／加载任务；成功日志不再调用不存在的 is_mock。固定源码270320d3，两项新控制2PASS／0.25s，PG93645清空、共享锁释放。保持1s预算，已独审合入，真实冷启动初次query待主，不以r10暖态PASS关闭冷FAIL。[边界与证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
+
 2026-09-06 原生r10（Host0bedaa87/H077/M617）：FTS+VECTOR修复后的真实暖态短期查询成功，UI工具有三条recall refs，模型正确回答青竹九月/无糖茉莉茶。冷态首查仍timeout，单独保留失败并继续预热定位；不称完整short/性能/program通过。两轮均空闲，正常退出PG89400 exit0/remaining[]。已合closure九场景修复的原生Scope旅程另验。[实际结果与证据](../plans/2026-09-06-typed-use-primary/NATIVE-R10.md)。
 
 最后更新：2026-09-06。短期显式 typed 请求补齐 FTS＋VECTOR，long-only 仍 FTS；原 1s／2048 预算与来源门不变。固定源码 f8b2d41c，实际 H077/M617 公共链路新增反例 1PASS／4.74s，证明大 FTS 组超预算时小 vector-only 偏好可进入 Host fragments。PG89042 清空、锁释放；Dirac限定ACCEPT、已合隔离primary候选；待native 短期叶。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。

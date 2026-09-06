@@ -4994,14 +4994,14 @@ async def lifespan(app: FastAPI):
 
         # fire-and-forget; we deliberately don't await (same as embedder warmup)
         asyncio.create_task(_skill_matcher_prewarm_bg())
-    # P4-S15: Embedder warmup runs in the background so cold-start isn't
-    # blocked by 286 MB of BGE-M3 weights. Mock fallback returns instantly.
+    # Preload the registered production embedder in the background. Reopening
+    # an existing short generation reuses vectors and does not load the encoder.
     _emb = service_context.get("embedder")
     if _emb is not None and callable(getattr(_emb, "warmup", None)):
         async def _embedder_warmup_bg() -> None:
             try:
                 await _emb.warmup()
-                logger.info("p4_embedder_ready", is_mock=_emb.is_mock())
+                logger.info("p4_embedder_ready", embedder_kind=getattr(_emb, "kind", None))
             except Exception as exc:
                 logger.warning("p4_embedder_warmup_failed", error=str(exc))
         # fire-and-forget; we deliberately don't await
