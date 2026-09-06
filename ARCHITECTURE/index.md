@@ -1,3 +1,5 @@
+最后更新：2026-09-07。当前H0710/M619 C01-06实际main完整路由控制新增1PASS7.16s：真实job同ID修订→nullable proposal/公开审批→真实typed route→下一physical请求exact fragment为rev2小周。HTTP两响应受控，不算模型质量。原错字段oracle红保留，PG81693/81834都清空；原生/服务model_not_found仍待。[结果](../plans/2026-09-07-corpus-c01-scoring/MAIN-REVISION-ROUTE.md)。
+
 <!-- 最后更新：2026-09-07 -->
 
 C05 固定 f78004ef 在 H079/M619 installed 的原5红定向复验5PASS/12.15s，3绿未重跑。
