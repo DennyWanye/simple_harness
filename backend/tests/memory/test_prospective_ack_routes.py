@@ -37,6 +37,15 @@ from tests.sdk_adapters.test_product_host_ports import Registry
 @pytest.mark.asyncio
 @pytest.mark.parametrize('route', ['direct_standalone','memory_standalone','continue_active','resume_existing','create_new'])
 async def test_real_context_route_preserves_ack_through_terminal(tmp_path,monkeypatch,route):
+    await _run_route_case(tmp_path,monkeypatch,route)
+
+
+@pytest.mark.asyncio
+async def test_three_legal_route_presentations_then_fourth_run_ack(tmp_path,monkeypatch):
+    await _run_route_case(tmp_path,monkeypatch,'direct_standalone',presentations=4)
+
+
+async def _run_route_case(tmp_path,monkeypatch,route,*,presentations=1):
     state,factory,service,configured,binding_authority=await fixture(tmp_path)
     primary=(await service.open_primary())['primary_ref']
     identity=HumanMemoryV7Runtime(tmp_path/'identity.db')
@@ -64,6 +73,7 @@ async def test_real_context_route_preserves_ack_through_terminal(tmp_path,monkey
         read_current=PublicOccurrenceCurrentReader(store=store,runtime_getter=lambda:memory_runtime),
         source_dependencies=ProspectiveSourceDependencies(store=store,runtime_getter=lambda:memory_runtime))
     sends=[];route_results=[];ack_results=[];closed=False
+    round_start=0;round_index=1;runs=[]
     def physical(request):
         nonlocal closed
         body=json.loads(request.content);sends.append(body)
@@ -72,17 +82,20 @@ async def test_real_context_route_preserves_ack_through_terminal(tmp_path,monkey
         groups=[json.loads(item['content']) for item in body['messages'] if isinstance(item.get('content'),str)
             and 'pending_prospective_occurrences' in item['content'] and item['role']=='system']
         name=None;args={}
-        if len(sends)==1:
+        current_call=len(sends)-round_start
+        if current_call==1:
             name='context_route';args={'route':route}
             if route=='resume_existing':args['task_scope_id']=scope
             elif route=='create_new':args.update(title='New A7 project',goal='Acknowledge the actual reminder')
             elif route=='memory_standalone':args.update(query='unrelated semantic query',memory_types=['semantic'])
-        elif len(sends)==2:
+        elif current_call==2:
             value=values[-1]['value']
             assert value['context_route_receipt']['route']==route, value
             route_results.append(value)
             assert len(groups)==1 and groups[0]['count']==1
-            name='prospective_ack';args={'occurrence_key':groups[0]['entries'][0]['occurrence_key']}
+            assert groups[0]['entries'][0]['overdue']==(round_index>=3)
+            if round_index==presentations:
+                name='prospective_ack';args={'occurrence_key':groups[0]['entries'][0]['occurrence_key']}
         else:
             if not ack_results:
                 value=values[-1]['value'];assert value['state']=='acknowledged';ack_results.append(value)
@@ -107,6 +120,7 @@ async def test_real_context_route_preserves_ack_through_terminal(tmp_path,monkey
     runtime=stack=None
     async def guard(request):
         current=await queue.current_snapshot(principal.actor_id)
+        if current.sdk_run_id not in runs:runs.append(current.sdk_run_id)
         await check_runtime_dependencies(db_path=state,stack=stack,sdk_run_id=current.sdk_run_id,
             request=request,policy_factory=lambda _:runtime.history_policy,typed_use_authority=runtime.typed_use_authority)
         await ProspectiveRequestGuard(sdk_run_id=current.sdk_run_id,coordinator=coordinator,
@@ -130,22 +144,37 @@ async def test_real_context_route_preserves_ack_through_terminal(tmp_path,monkey
                 after=(await (await db.execute('SELECT COUNT(*) FROM prospective_occurrences')).fetchone())[0]
             assert before==after
     provider._pre_invoke_guard=guard
+    from deskpet.sdk_adapters.context_authority import ProductRuntimeDecisionSink
+    async def reconcile(keys):
+        return await HumanMemoryV7Runtime.pending_occurrences(memory_runtime,keys)
     try:
         runtime,stack,queue=await build(tmp_path,state,provider,dynamic=True,binding_authority=binding_authority,
             configured_root=configured,visibility_memory=memory_runtime,context_use_memory=memory_runtime,
             recall_executor=partial(HumanMemoryV7Runtime.typed_recall,memory_runtime),
             occurrence_coordinator=coordinator,extra_registrations=(prospective_ack_registration(coordinator=coordinator),),
-            candidate_identity=main.build_candidate_identity())
-        await service.enqueue_turn(QueueTurnRequest(scope if route=='continue_active' else None,'a7-route-turn','Please handle the pending reminder.'))
-        await runtime.after_enqueue(subject=principal.actor_id)
-        await asyncio.wait_for(runtime.drain(),30)
-        assert runtime.last_error is None
-        assert len(route_results)==len(ack_results)==1
+            candidate_identity=main.build_candidate_identity(),
+            decision_sink_factory=lambda ledger:ProductRuntimeDecisionSink(ledger=ledger,reconcile=reconcile))
+        for round_index in range(1,presentations+1):
+            round_start=len(sends)
+            await service.enqueue_turn(QueueTurnRequest(scope if route=='continue_active' else None,
+                f'a7-route-turn-{round_index}','Please handle the pending reminder.'))
+            await runtime.after_enqueue(subject=principal.actor_id)
+            await asyncio.wait_for(runtime.drain(),30)
+            assert runtime.last_error is None
+            assert stack.read_run_terminal_evidence(runs[-1]).state=='completed'
+            async with store._transaction() as db:
+                phases=dict(await (await db.execute('SELECT phase,COUNT(*) FROM prospective_occurrences GROUP BY phase')).fetchall())
+            assert phases['presented']==round_index
+            assert phases.get('overdue',0)==int(round_index>=3)
+            if round_index<presentations:
+                assert phases.get('acknowledged',0)==phases.get('settled',0)==0
+        assert len(route_results)==presentations and len(ack_results)==1
         assert await queue.current_snapshot(principal.actor_id) is None
         async with store._transaction() as db:
             counts=dict(await (await db.execute('SELECT phase,COUNT(*) FROM prospective_occurrences GROUP BY phase')).fetchall())
             row=await (await db.execute("SELECT sdk_run_id FROM prospective_occurrences WHERE phase='settled'")).fetchone()
-        assert counts=={'claimed':1,'presented':1,'acknowledged':1,'settled':1}
+        assert counts==dict(claimed=1,presented=presentations,acknowledged=1,settled=1,
+            **({'overdue':1} if presentations>=3 else {}))
         assert stack.read_run_terminal_evidence(row[0]).state=='completed'
         await assert_exact_sdk_terminal_identity(state,stack,primary)
     finally:
