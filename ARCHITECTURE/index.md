@@ -1,5 +1,8 @@
 # ARCHITECTURE 索引
 
+2026-09-06：当前运行分页合并A7的构造器和调用均保留双方参数；固定320a419e在H078/M618实际main factory及current page allow两项2PASS/5.34s。PG3663清空；未closed写Scope撤回后终态pending仍单独修复，原生未开始。[组合结果](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。
+
+
 2026-09-06：当前运行大工具结果分页固定c5aea726已独审合入，两个唯一实际栈控制通过；来源为已完成effect及实际父请求，保留A7协调器和原预算。未关闭写Scope后撤回来源的终态pending真实缺口仍在修复，H078/M618组合和原生另验。[当前运行结果](../plans/2026-09-06-primary-context-compaction/CURRENT-RESULTS.md)。
 
 2026-09-06：历史分页合并A7后，固定c9e1aebf在H078/M618运行1条必要交互检查，1PASS/4.71s，实际首/续/尾页、后续物理请求与重开依赖通过；PG3328正常退出并清空。当前运行分页及原生长旅程仍待验。[组合增量](../plans/2026-09-06-typed-use-primary/COMBINED-078618.md)。

@@ -43,3 +43,16 @@ Scope观察/适用性、真实事件来源、当前运行分页、两轮独立�
 | r1/command.log | 4fd07bcee9b5a8f0645ee8bc81e966b1fc7417a9a0ec85c8404455fe322cb09f |
 | r1/resource.json | edec7a63c9eeb4b7c750d3a57c4627325eab41ea98e790fe00de385348b53c3b |
 | r1/identity.json | 33e109a279b1796641bb433548a6ff03b5a7872ac150c16888753eff5ed899e5 |
+
+## 当前运行分页与A7的装配交互
+
+固定320a419e，执行真实main factory与 `test_actual_current_effect_page_and_physical_guard[allow]` 两项，2PASS/5.34s。合并冲突为构造器及调用处相邻关键字，保留 occurrence_coordinator 与 current_tool_projector。H078/M618当前组合的实际双大结果、父请求来源、分页后物理发送、闭合及重开依赖通过；不代表typed-consumed跨SDK全覆盖或原生。原未closed写Scope撤回来源时终态pending仍OPEN，已交原实现者修复。
+
+PG3663 exit0、remaining=[]、cleanup_error=null，峰410960KiB、最低磁盘4760MiB，默认资源锁释放。仅针对新增合并接线与新SDK组合验证，不重跑旧page全套。
+
+| 文件（pages根） | SHA-256 |
+|---|---|
+| run_current_composition.py | 48317a55dd626703c73ec7a384122d892e1d77ee9928778b559a4b275e1c3967 |
+| current-r1/command.log | dbf8aa747a2544f8deb54f83995a9df7837645561d6640299550a36b50397109 |
+| current-r1/resource.json | 3004bb2a3f76b20dd16cb79bcc645e36a73963cfb478b893fdaab86a13724786 |
+| current-r1/identity.json | 33e109a279b1796641bb433548a6ff03b5a7872ac150c16888753eff5ed899e5 |
