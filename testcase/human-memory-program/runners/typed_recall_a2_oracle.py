@@ -901,6 +901,8 @@ def check_action_grant(observed,plan):
 
 
 def assess_context_use(fixture,cell):
+    if cell['observations'].get('executor_version') == 2:
+        return _full_context_use_oracle().assess(fixture, cell, globals())
     o=cell['observations'];checks=[]
     try:
         if o.get('exception'):
@@ -992,6 +994,8 @@ def assess_context_use(fixture,cell):
 
 
 def check_context_use_bundle(bundle):
+    if bundle.get('executor_version') == 2:
+        return _full_context_use_oracle().check_bundle(bundle, globals())
     recall=bundle['recall'];value=recall['execution'];check_execution_wire(value,recall['context'],recall['plan'])
     result=value['result'];decision=value['decision'];page=bundle['page'];fragment=bundle['fragment'];request=bundle['request']
     check_page(page,result,value['result_hash'],value['result_item_hashes'])
@@ -1026,3 +1030,13 @@ def check_context_use_bundle(bundle):
                 or not request['requested_at']<=receipt['authorized_at']<receipt['expires_at']
                 or receipt['expires_at']>result['authority_expires_at']):
             raise ValueError('current-use receipt request/hash/time binding differs')
+
+
+def _full_context_use_oracle():
+    import importlib.util
+    from pathlib import Path
+    path = Path(__file__).with_name('typed_recall_context_use_oracle.py')
+    spec = importlib.util.spec_from_file_location('typed_recall_context_use_oracle', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
