@@ -1,5 +1,11 @@
 # Procedure 创建判别：v4 源码候选
 
+## 2026-09-06 恢复后继结果
+
+SDK `d46bf1f` 与 Host `6b53f27c`：必要SDK三项/Host五项全部通过（0.47s/2.59s），旧24绿不重跑。原 `[3-True]` 普通异常使旧batch failed后，新v4配置重开，完整原request语义保留、旧failed JSON/hash不变且零新增Provider，旧v3 ACTIVE应用保留；v4恢复仍DRAFT。两个取消控制独立验证。PG1149/exit0/remaining=[]，槽释放。仍是H077/M617依赖上的Memory源码覆盖，待M618源码最终独审和制品/installed，尚不合默认v4。
+
+精确raw索引、命令和hash见 [SDK结果](/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/plans/2026-09-06-analysis-retry-protocol/RESULTS.md)。以下原红记录保留为历史。
+
 2026-09-06。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，分支 `feat/procedure-adoption-source`，base `387a8d9eb539906af6fcfa5e2fe5fc270fdc5f02`。源码 `d1465653`，测试修正／补充 `f2e747e9`。原契约来自 `9deb3610`，本目录 `CONTRACT.md` 保留原文。首批发现真实跨版本恢复 P1，当前候选暂不可合入默认 v4；没有新 worktree、环境或真实模型调用。
 
 ## 首批真实缺口：failed batch 重试与取消回收不同
