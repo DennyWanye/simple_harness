@@ -1,6 +1,6 @@
 # r11 首次 encode 超时：同实例启动 priming
 
-2026-09-06，源码候选，未运行测试或真实模型。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，分支 `feat/wemm-startup-prime`，base `082f68c0`；Procedure WIP 保留，不纳入本叶。
+2026-09-06，源码固定 `68f525e2`，三项新控制通过，未运行真实模型。自有树 `/Users/denny/projects/simple_harness-corpus-clock`，分支 `feat/wemm-startup-prime`，base `082f68c0`；Procedure WIP 保留，不纳入本叶。
 
 ## 最早差异与测量边界
 
@@ -18,12 +18,24 @@
 
 查询1s／2048预算、来源及privacy门、模型参数、实例数、SDK和旧业务向量均不改。priming不是查询 admission barrier，也不保证所有长度输入都可在1s内完成；真实新进程首次查询仍由主验证，不能手动先失败再重试当完成。
 
-## 必要控制准备
+## 必要控制与结果
 
-`test_wemm_warmup.py` 两项原 load-only 控制按变更后的契约修订，增加一个 prime 失败控制，共三项待执行：
+`test_wemm_warmup.py` 两项原 load-only 控制按变更后的契约修订，增加一个 prime 失败控制，共三项实际执行通过：
 
 - 并发预热＋priming期间取消 waiter＋查询排队，只有一次固定句 encode、一个模型，物理encode peak1；成功后幂等。
 - 实际加载错误保持 failed，显式重试后才加载／prime，状态读取不重试。
 - 模型加载成功但真实输出维度校验使 prime 失败，is_primed=false；显式重试复用已加载实例，成功后幂等。
 
-只使用已有假模型工厂与真实任务／线程／队列，不加载模型权重；旧 WeMM suite 不重跑。源码供主转 Dirac，测试待主退出原生并释放默认资源锁／确认磁盘准入；未声称绿或 native 完成。
+只使用已有假模型工厂与真实任务／线程／队列，不加载模型权重；旧 WeMM suite 不重跑。主通知锁空闲可尝试后，本叶取得默认共享锁：**3 PASS／0.27s**，固定源码和测试未变。PG95734 exit0、remaining=[]、cleanup_error=null；额外 ps 核同 PG 无成员，锁已释放。资源入口总耗时0.882s、峰122208KiB、最低可用磁盘4217MiB；512MiB／90s 限制、默认1024MiB磁盘准入保持。
+
+本环境无直接 Dirac 子代理通信入口，源码及证据交主转发；独审及新进程真实首次 native 查询尚未通过，不能用假工厂或手动暖态重试替代。
+
+原始证据全部 ignored，根为 `/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/wemm-priming/`：
+
+| 文件 | SHA-256 |
+|---|---|
+| run_controls.py | 23e77302de063ca140c39d1472bf0f090fd4121a26ac53dc183e4744dc87c399 |
+| r1/command.log | 09fe4441627f625ef92c265990f13e7b462b863c5c79a8b5dc18c887f0020ca0 |
+| r1/resource.json | cc1b7c375a8edc091e445d88699d561758921bc7af75d297909a5ca55d97a1e7 |
+
+命令：`<primary-m0614/venv/bin/python> /Users/denny/projects/simple_harness-test-resource-cleanup/scripts/run_resource_bounded.py --evidence-dir <上述根>/r1 --rss-mib 512 --seconds 90 -- <同Python> -I -B <上述根>/run_controls.py <上述根>/r1`。carrier 加载实际 H077/M617 installed 和自有 Host backend，只收集 `tests/memory/test_wemm_warmup.py` 三项；没有 build/install 或新增环境。

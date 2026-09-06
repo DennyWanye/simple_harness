@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：自有clock树 `feat/wemm-startup-prime`／base082f68c0，源码68f525e2，三项priming新增控制3PASS／0.27s；PG95734无残留、共享锁释放，峰122208KiB、磁盘最低4217MiB。待独审／主合并／真实首次native查询，原r11冷FAIL保留；Procedure WIP未混入，旧绿不重跑。[证据](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
+
 2026-09-06：自有clock树 `feat/wemm-startup-warmup`／base35b07098，源码270320d3接回现有WeMM启动预热，两项新增控制2PASS／0.25s，峰119616KiB、磁盘最低1462MiB、PG93645清空、锁释放。待独审／主合入／真实首冷query，Procedure WIP保留且未混入；旧绿未重跑。[证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。
 
 2026-09-06：自有 `simple_harness-corpus-clock`／`feat/short-vector-mode`，base e04627c4，源码 f8b2d41c 完成最小短期检索通道补齐。新增公共 typed→Host fragments 控制 1PASS／4.74s，PG89042 无残留、共享锁释放；只此新增控制，未重跑旧绿。待独审／主合并／native，未称整体召回质量完成。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
