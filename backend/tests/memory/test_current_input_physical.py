@@ -72,11 +72,10 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
     runtime = stack = None
     try:
         sdk = await visibility.manager()
-        original = sdk.check_current_input_visibility
         changed = False
         async def slow(**kwargs):
             nonlocal changed
-            result = await original(**kwargs)
+            result = await original_policy_check(**kwargs)
             if inside_physical and not changed and change in {"policy", "claim"}:
                 changed = True
                 if change == "policy":
@@ -86,9 +85,12 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
                     await queue.request_control(host_run_id=current.host_run_id, subject=env.auth.subject,
                         generation=current.generation, control_kind="stop", reason="late-physical-stop", idempotency_key="late-stop")
             return result
-        monkeypatch.setattr(sdk, "check_current_input_visibility", slow)
         runtime, stack, queue = await build(tmp_path, env.path, provider, visibility_memory=visibility,
             visibility_checker=main._primary_history_visibility_checker)
+        original_policy_check = runtime.history_policy.check_dependencies
+        # Change facts after the entire real policy read returns, so the last
+        # physical fence (not an earlier inner checker) must catch the change.
+        monkeypatch.setattr(runtime.history_policy, "check_dependencies", slow)
         await asyncio.wait_for(runtime._drive_once(), 15)
         assert len(entered) == 1  # reached actual adapter immediately before network
         if change == "none":
@@ -105,7 +107,7 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
                 causes.append(str(error))
                 error = error.__cause__ or error.__context__
             expected = {"request_bytes": "current_input_provider_request_mismatch",
-                        "policy": "binding_stale", "claim": "claim_changed_during_check"}[change]
+                        "policy": "binding_stale", "claim": "primary_input_claim_changed_during_check"}[change]
             assert expected in " ".join(causes), causes
             if change in {"policy", "claim"}:
                 assert changed
