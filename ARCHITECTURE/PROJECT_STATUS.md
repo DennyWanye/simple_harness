@@ -1,5 +1,8 @@
 <!-- 最后更新：2026-09-06 -->
 
+2026-09-06 原生r14：一次性提醒后台实际创建且UI记忆可见，前台却否认；到期后真实普通下一轮仅答43，未展示提醒，Host登记/计时/occurrence/presented均0。判时间提醒原生FAIL，正在补生产调度生命周期；不以两Run COMPLETED或旧组件绿替代。PG11237正常退出并清空。[Run与原生证据](../plans/2026-09-06-typed-use-primary/NATIVE-R14.md)。
+
+
 2026-09-06：大结果边界增量：8k小参数调用的1MiB精确分页通过（最大物理请求19,219字节）；4k预算拒绝后的真实ClosureFallback收尾/冷重开零重发负控通过，保留FAILED与Scope pending，不报4k分页成功。大型assistant参数原4k/8k超限失败保留，未提高预算或复跑32k/8k绿；进程组均清空。[结果与失败边界](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
 
 
