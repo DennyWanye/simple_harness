@@ -110,6 +110,9 @@ async def test_stop_converges_exact_original_sdk_terminal_after_lease_recovery(t
                 monkeypatch.setattr(s["provider"], "invoke", fail_provider)
                 response = await s["request"]("primary.decisions.respond", decisions.reply(s, old_item))
                 assert response["payload"]["ok"]
+                # Authorization schedules the actual SDK continuation on the
+                # next loop turn; wait_idle before that handoff sees no driver.
+                await asyncio.sleep(0)
                 await s["runtime"]._ingress.wait_idle(s["current"].sdk_run_id)
                 assert s["runtime"]._ingress.query(s["current"].sdk_run_id).state.value == "failed"
             current = await s["queue"].current_snapshot(s["auth"].subject)
