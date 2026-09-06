@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.19",
+  "source": "e27003c68b892fe061aac0ca2c9a140871f564cd",
+  "reviewed_source": "e27003c68b892fe061aac0ca2c9a140871f564cd",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.19-py3-none-any.whl": "c95cdf4852c3ca07a6d62f40aa3c8559f2715e7f4dfa966f9d412f8c063509d1"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788710890",
+  "memory_schema": "7.3",
+  "scope": "Combined Procedure recovery and discovery plus current input visibility; source controls accepted, installed functional and native acceptance pending"
+}
