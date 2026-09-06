@@ -17,6 +17,7 @@ from simple_harness.tools.schema import validate_arguments, validate_tool_schema
 
 from deskpet.memory.human_memory_service import SearchTaskScopesRequest
 from deskpet.memory.schema import initialize_human_memory_program_state_db
+from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
 from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore, canonical_sha256
 from deskpet.sdk_adapters.context_route import CONTEXT_ROUTE_SCHEMA, ContextRouteToolService, local_owner_auth
 from deskpet.sdk_adapters.provider import _ProductOpenAICompatibleProvider
@@ -115,7 +116,8 @@ async def test_nullable_create_new_public_source_binding_and_missing_pin(tmp_pat
     current = None
     service = ContextRouteToolService(service_factory_getter=lambda: factory,
         binding_store_factory=lambda: store, binding_append_getter=lambda: authority,
-        ledger=TrackingLedger(state), tool_context_getter=lambda: current,
+        ledger=TrackingLedger(state, evidence_ingress=ExecutionEvidenceIngress(state)),
+        tool_context_getter=lambda: current,
         scope_disclosure_reader=disclosure)
     proposals = [
         dict(route="create_new", title="Separate task", reuse_workspace_of=None, expected_source_hash=None),
