@@ -101,11 +101,11 @@ existing M614/S0313 only; no M615/M616 transitional environment or old-green rer
 | Process loss after Provider succeeded, before Hostsink | Reopen creates one sink fact, same actual Run/request/attempt/grant, one total physical send, Host+SDK COMPLETED | terminal-r2 PASS |
 | Process loss after Hostsink commit | Reopen reuses exact prior sink hash, same identities, one total physical send, COMPLETED | terminal-r2 PASS |
 | Process loss after durable response_reserved | Original SDK verifier succeeds; Host validates its returned public view and exact original sink; one total physical send, COMPLETED | terminal-r3 PASS |
-| Real pending occurrence with model no-recall answer | Public Memory admission/mutation/outbox/registration/due/inbox yields matched pending; Host sink refuses, Host FAILED, actual Provider stays succeeded, pending remains | terminal-r3 PASS |
+| Real pending occurrence with no-tool Provider answer | Public Memory admission/mutation/outbox/registration/due/inbox yields matched pending; Host sink refuses, Host FAILED, actual Provider stays succeeded, pending remains | terminal-r3 PASS |
 
 These are four distinct scenarios across two batches, not a new full-suite count.
 terminal-r2:2PASS then1FAIL7.92s; resource8.616s/PG48301/peak306624KiB/exit1/children[].
-terminal-r3:2PASS (see indexed log), resource4.530s/PG48561/peak305696KiB/exit0/children[].
+terminal-r3:2PASS3.75s, resource4.530s/PG48561/peak305696KiB/exit0/children[].
 Child os._exit73 is deliberate process loss after durable facts, not exception
 rollback. Injected trusted clock+120s expires SDK leases without editing persisted
 values; it is not a real120-second wait or native evidence. These use actual empty

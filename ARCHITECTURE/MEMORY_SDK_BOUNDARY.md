@@ -3,7 +3,7 @@
 ## 2026-09-06 Host typed-use 生产接线独立叶
 
 最后更新：2026-09-06。独立typed-use叶现闭合H075 short及no-recall必要恢复范围。
-原short0伪revision保持拒绝、actualNone经H075公开page/grant→真实physicalguard正常外发；
+原short伪revision保持拒绝、actualNone经H075公开page/grant→真实physicalguard正常外发；
 独立Host来源遗忘仍拒绝。新4场景分别证明sink前/后进程丢失恢复、response_reserved恢复
 同receipt不重发、真实pending拒绝同时保留Provider成功事实。发现并修复本叶启动时序P1：
 使用SDK原terminal verifier返回的实际publicview，避免查询尚未发布的Hoststack；原校验不减。
