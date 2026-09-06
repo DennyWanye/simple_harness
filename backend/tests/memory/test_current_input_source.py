@@ -23,7 +23,7 @@ def declared(text, kind="current_user"):
 
 async def configured(env):
     return ok(await command(env, "disclosure.configure", selection(
-        recipient="external_party", recipient_id="vendor:actual", intended_audience="external_party")))
+        recipient="external_party", recipient_id="vendor:actual", intended_audience="external")))
 
 
 async def admit(env, config, text="请整理本轮提供的公开工作材料。", key="input-1", kind="current_user"):
