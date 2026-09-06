@@ -18,6 +18,7 @@ from deskpet.quality.corpus_c08_retained import (
     retained_phase_kind,
 )
 from deskpet.quality.corpus_setup_jobs import SetupFixtureDeliveryAuthority
+from deskpet.quality.corpus_c08_derived import fixture_options, verify_reminder_reopen
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
 
 
@@ -73,7 +74,8 @@ async def execute_retained_phase(*, main, service, runtime, batch, worker, direc
             classification_policy=host_classification_policy(), supported_filter_policies=HOST_SUPPORTED_FILTER_POLICIES,
             evidence_authority=HostEvidenceAuthority(main._state_db_path), analysis_delivery_authority=delivery,
             conversation_evidence_authority=authority,
-            history_source_authority=HostHistorySourceAuthority(main._state_db_path), clock=cognitive.semantic_clock)
+            history_source_authority=HostHistorySourceAuthority(main._state_db_path), clock=cognitive.semantic_clock,
+            **await fixture_options(path=main._state_db_path, principal=principal, batch=batch))
         seed = await prepare_c08_retained_seed(path=main._state_db_path, manager=fixture,
             principal=principal, batch=batch, executed=executed, delivery_authority=delivery)
         if not seed['setup_complete'] or seed['fixture_executions'] != 1:
@@ -102,6 +104,10 @@ async def execute_retained_phase(*, main, service, runtime, batch, worker, direc
         if (graph.nodes or graph.edges or len(visibility.items) != 2
                 or any(item.visible or item.reason != 'history_suppressed' for item in visibility.items)):
             raise ValueError('c08_retained_phase_production_suppression_differs')
+        reminder = await verify_reminder_reopen(path=main._state_db_path, manager=reopened,
+            principal=principal, seed=seed)
+        if reminder is not None:
+            record(phase_dir / 'reminder-reopen.json', reminder)
         phase.update(status='CONFIRMED', stage='ready_for_separate_scoring',
             production_manager_reopened=True, evidence_directory='setup-retained')
     except BaseException as exc:
