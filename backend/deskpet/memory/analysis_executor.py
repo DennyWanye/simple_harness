@@ -117,9 +117,9 @@ def evidence_set_key(request: Any) -> str:
 
 
 class AnalysisLeaseFence:
-    """Memory job lease as the fence: reserve for a terminal Run; revalidate against the deadline."""
+    """Process-local elapsed lease; its clock is independent of scenario dates."""
 
-    def __init__(self, store: ForegroundQueueStore, *, clock: Callable[[], float], lease_seconds: float) -> None:
+    def __init__(self, store: ForegroundQueueStore, *, clock: Callable[[], float] = time.monotonic, lease_seconds: float) -> None:
         self._store = store
         self._clock = clock
         self._lease_seconds = float(lease_seconds)
@@ -304,7 +304,7 @@ class HostMemoryAnalysisExecutor:
                 raise HostAnalysisExecutorError("analysis_evidence_hash_mismatch", evidence_id=ref.evidence_id)
             items.append(item)
         deadline_seconds = float(request.budget.deadline_ms) / 1000.0
-        fence = AnalysisLeaseFence(self._store, clock=self._clock, lease_seconds=deadline_seconds + self._lease_margin)
+        fence = AnalysisLeaseFence(self._store, lease_seconds=deadline_seconds + self._lease_margin)
         fence.bind(host_run_id=outbox.host_run_id, sdk_run_id=outbox.sdk_run_id)
         invoker = RunBoundInvoker(
             self._db_path,

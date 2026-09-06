@@ -13,7 +13,7 @@ from tests.sdk_adapters import s5b_closure_harness as ch
 def memory_env(env, adapter, *, fault=None):
     async def public_builder(path, **kwargs):
         return await MemoryManager.build_human_memory_v7(
-            path, **kwargs, clock=env.clock, allow_development_embedder=True)
+            path, **kwargs, allow_development_embedder=True)
     runtime = compose_human_memory_runtime(
         env.db_path, env.db_path.parent / 'semantic.db',
         adapter_factory=lambda _: adapter, clock=env.clock, fault_inject=fault,

@@ -1,10 +1,14 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Host业务clock局部验收完成
+
+最后更新：2026-09-06。`feat/corpus-runtime-clock` / base `b34b32c3`，自有稀疏树 `simple_harness-corpus-clock`，尚未合入主组合。可信clock贯通composition、runtime和公开SDK；默认真实时间，进程内lease独立monotonic。安装候选6项必要契约通过，0.579秒、峰值92256KiB、PGID33180无残留。仅完成本片clock边界；有效seed时间筛选、受众用途公共setup、240质量、Provider/native均不在本次通过范围。
+[固定接口、测试与指纹](../plans/2026-09-06-corpus-clock/验收结果.md)。
+
 ## 2026-09-06 记忆提议失败审计与连接取消清理
 
 最后更新：2026-09-06。后继c39b2569默认在Host调用账本记录成功/拒绝的安全记忆类型与short选择；召回执行器取消在提交路由前记录取消原因并传播CancelledError。非法输入及异常原文不进入该审计投影。取消写入不等待SQLite写锁，连接建立/PRAGMA初始化失败或取消由内部等待并关闭自有连接；2秒仅为取消请求deadline，不冒称物理硬限额。实际后继32项必要检查通过（含12项故障/取消检查），峰约97MiB、进程已清理；源码独审限定ACCEPT。原36项批次独立保留。仍不覆盖强杀、写盘失败的完整持久性、route决策/审计两事务原子性、Service全部操作或真实模型/native。
 [实现、真实故障边界与本机证据](../plans/2026-09-06-model-recall-selection/FAILURE-AUDIT.md)。
-
 
 ## 2026-09-06 新组合原生构建通过，启动因内存前置未执行
 
