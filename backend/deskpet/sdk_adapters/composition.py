@@ -865,43 +865,44 @@ class ProductSdkRuntimeStack:
         expected = str(run_id).strip()
         if not expected:
             raise ValueError("run_id is required")
-        with uow.database.transaction() as connection:
-            run = connection.execute(
-                "SELECT state FROM runs WHERE run_id=?", (expected,)
-            ).fetchone()
-            if run is None:
-                return None
-            state = str(run["state"])
-            if state not in {"completed", "failed", "cancelled"}:
-                return None
-            events = connection.execute(
-                "SELECT event_id,kind,payload_json,created_at FROM run_events "
-                "WHERE run_id=? AND kind IN "
-                "('run.completed','run.failed','run.cancelled')",
-                (expected,),
-            ).fetchall()
-            if len(events) != 1 or str(events[0]["kind"]) != f"run.{state}":
-                raise SdkRuntimeNotReady("SDK terminal event is ambiguous")
-            event = events[0]
-            raw_payload = str(event["payload_json"])
-            error_code: str | None = None
-            if state == "failed":
-                try:
-                    payload = json.loads(raw_payload)
-                except ValueError:
-                    payload = None
-                if isinstance(payload, Mapping):
-                    code = payload.get("code")
-                    if isinstance(code, str) and code.strip():
-                        error_code = code.strip()
-            return SdkRunTerminalEvidence(
-                expected,
-                state,
-                str(event["event_id"]),
-                hashlib.sha256(raw_payload.encode("utf-8")).hexdigest(),
-                float(event["created_at"]),
-                error_code,
-            )
+        reader = getattr(uow, "read_run_terminal_record", None)
+        if not callable(reader):
+            raise SdkRuntimeNotReady("SDK public terminal metadata reader is unavailable")
+        record = reader(RunId(expected))
+        if record is None:
+            return None
+        proof = record.terminal_evidence
+        if record.run_id != expected or not proof.matches(
+            event_id=record.event_id, payload_hash=proof.event_payload_hash, state=proof.state
+        ):
+            raise SdkRuntimeNotReady("SDK public terminal metadata differs from its proof")
+        return SdkRunTerminalEvidence(expected, proof.state, record.event_id,
+                                      proof.event_payload_hash, proof.created_at, record.error_code)
+
+    def recover_expired_authorization_terminal(self, run_id: str):
+        """Explicit SDK-owned expiry repair for the exact bound foreground Run.
+
+        Called by terminal observation only after the public reader reports missing
+        evidence. Unknown/ambiguous shapes propagate rejection. No Host SDK SQL or
+        synthesized event identity is involved.
+        """
+        self.require_ready()
+        if self._uow is None:
+            raise SdkRuntimeNotReady("SDK Runtime transaction owner is unavailable")
+        reader = getattr(self._uow, "read_expired_authorization_terminal_recovery", None)
+        recover = getattr(self._uow, "recover_expired_authorization_terminal", None)
+        if not callable(reader) or not callable(recover):
+            raise SdkRuntimeNotReady("SDK explicit expiry recovery is unavailable")
+        witness = reader(RunId(run_id))
+        if witness is None:
+            raise SdkRuntimeNotReady("SDK expired authorization is not recoverable")
+        proof = recover(witness, now=float(self._clock()))
+        metadata = self.read_run_terminal_evidence(run_id)
+        if metadata is None or not proof.matches(
+            event_id=metadata.event_id, payload_hash=metadata.event_hash, state=metadata.state
+        ):
+            raise SdkRuntimeNotReady("SDK recovered terminal differs from its public proof")
+        return metadata
 
     async def commit_preflight_blocked_root(
         self,

@@ -1573,7 +1573,32 @@ class SqliteSdkTerminalObserver:
             raise ForegroundRuntimeError(
                 "foreground_sdk_terminal_evidence_reader_unavailable"
             )
-        sdk_evidence = read_terminal(sdk_run_id)
+        from simple_harness.execution.audit import RunAuditUnavailable
+        try:
+            sdk_evidence = read_terminal(sdk_run_id)
+        except RunAuditUnavailable as exc:
+            # Only the supported missing-proof failure can request explicit repair.
+            # Conflicting/multiple terminals and every other audit failure remain
+            # failures. Recovery independently proves the exact original Run.
+            if raw_state != "failed" or str(exc) != "terminal_event_unavailable":
+                raise
+            recover = getattr(self._runtime_stack, "recover_expired_authorization_terminal", None)
+            if not callable(recover):
+                raise
+            # Repair only the actual still-owned Host/SDK binding being observed.
+            # This is Host SQL; the SDK independently owns all terminal sources.
+            async with aiosqlite.connect(self._db_path) as recovery_db:
+                bound = await (await recovery_db.execute(
+                    "SELECT 1 FROM foreground_run_heads h "
+                    "JOIN foreground_runs r ON r.host_run_id=h.host_run_id "
+                    "JOIN foreground_run_sdk_bindings b ON b.host_run_id=h.host_run_id "
+                    "WHERE h.host_run_id=? AND r.subject=? AND h.owner_id=? "
+                    "AND h.generation=? AND h.sdk_run_id=? AND b.sdk_run_id=?",
+                    (host_run_id, subject, owner_id, generation, sdk_run_id, sdk_run_id),
+                )).fetchone()
+            if bound is None:
+                raise ForegroundRuntimeError("foreground_sdk_terminal_recovery_binding_mismatch")
+            sdk_evidence = recover(sdk_run_id)
         if sdk_evidence is None:
             return None
         if (
