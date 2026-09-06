@@ -14,7 +14,7 @@ from simple_harness.contracts.messages import Message, MessageRole
 from simple_harness.providers import ProviderResponse, ProviderToolCall, ProviderUsage
 
 from deskpet.execution.primary_context_pages import (
-    HISTORY_PREFIX, PREFIX, PrimaryContextPageReader, _excerpt, project_history_group,
+    HISTORY_PREFIX, PREFIX, PrimaryContextPageReader, _excerpt, project_history_group, verify_history_projections,
 )
 from deskpet.memory.human_memory_service import QueueTurnRequest
 from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
@@ -27,7 +27,8 @@ from tests.sdk_adapters.test_product_host_ports import Registry
 LARGE = "中文边界" * 1400 + "A" * 1300 + "EXACT_PAGE_TAIL"
 
 
-def test_utf8_page_oracle_and_no_invented_source():
+@pytest.mark.asyncio
+async def test_utf8_page_oracle_and_no_invented_source():
     # Independent bytes oracle: walk the actual returned boundary, preserving
     # the complete original stream, including characters split by byte 1024.
     offset, chunks = 0, []
@@ -47,6 +48,13 @@ def test_utf8_page_oracle_and_no_invented_source():
     assert PREFIX not in project_history_group(group, run_id="new")[0]["content"]
     group.update(source_ref="actual-source", terminal_state="FAILED")
     assert PREFIX not in project_history_group(group, run_id="new")[0]["content"]
+    group["terminal_state"] = "COMPLETED"
+    literal = project_history_group(group, run_id="new")[0]
+    literal["metadata"] = None
+    # A literal USER quotation cannot enroll its own claimed source as Host
+    # metadata, and must not trigger SDK/source reads or a new denial.
+    assert await verify_history_projections(db=None, stack=None, run=None, sdk_run_id="new",
+        start={"input": {"messages": [literal]}}, proof={"evidence": []}) == ()
 
 
 def summary_from(request):

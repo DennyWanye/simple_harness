@@ -157,7 +157,8 @@ async def verify_history_projections(*, db, stack, run, sdk_run_id, start, proof
     if len(messages) > 256:
         raise PrimaryContextPageUnavailable("primary_page_start_limit")
     for message in messages:
-        if message.get("metadata", {}).get("source") != PROJECTION_SOURCE:
+        marker = message.get("metadata")
+        if not isinstance(marker, Mapping) or marker.get("source") != PROJECTION_SOURCE:
             continue
         content = message.get("content")
         if message.get("role") != "user" or not isinstance(content, str) or not content.startswith(HISTORY_PREFIX):
