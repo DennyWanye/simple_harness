@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：WeMM startup warmup后继含一次无用户数据priming，同一实例／共享任务／encode队列，向量丢弃，无Memory查询或业务写入；新增warmup_state/is_primed及load/prime耗时区分。三项新控制3PASS，取消复用／成功幂等／失败显式重试有证据；SDK、1s预算、来源门未改，真实冷首次query待主验证。[详情](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
+
+
 2026-09-06：非空resume来源独立叶（baseff2f2009、产品0a52085e）以实际SDK tool effect或同TX后台response S1证明最新字段，依赖前缀按真实effect序号固定，并经当前Memory可见性和原最终Host fence。仅显式增加两种真实S1 policy；凭据/subject/hash校验不变。5个不同场景分批通过，Dirac源码与结果限定ACCEPT：tool/fallback后继Run物理MockTransport closure、同Run晚route不改冻结proof、来源遗忘撤下字段、写故障无半提交。H077/M616安装载体+Host源码，已合primary候选/未native；legacy、独立篡改、goal和ACK恢复专门控仍缺，不标完整Closure/compaction/program。PG95551清空并释放槽。[结果和保留边界](../plans/2026-09-06-closure-resume-source/RESULTS.md)。
 
 2026-09-06 原生r11（Host464b86ee/H077/M617）：既有startup hook实际完成WeMM预加载，但新进程唯一首query的encode1.44s仍超1s预算；UI明确查询失败，未重试，不以r10暖成功替代首查。PG93935正常退出且组清空；仅清可再生Rust链接对象恢复磁盘4.15GiB，native二进制哈希/模型/证据/用户库不变。继续同实例编码预热。[本次失败与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R11.md)。

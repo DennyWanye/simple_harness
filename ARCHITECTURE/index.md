@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+最后更新：2026-09-06。r11 load-only 后首query仍超时；后继68f525e2在原实例／encode队列执行一次固定无用户数据priming，startup完成含加载及priming。三项新控制3PASS／0.27s，PG95734清空、锁释放；原1s预算不变，已独审合入primary候选，待真实新进程首query，不能以暖态重试关闭。[结果与边界](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
+
 2026-09-06 原生r11（Host464b86ee/H077/M617）：既有startup hook实际完成WeMM预加载，但新进程唯一首query的encode1.44s仍超1s预算；UI明确查询失败，未重试，不以r10暖成功替代首查。PG93935正常退出且组清空；仅清可再生Rust链接对象恢复磁盘4.15GiB，native二进制哈希/模型/证据/用户库不变。继续同实例编码预热。[本次失败与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R11.md)。
 
 最后更新：2026-09-06。WeMM公开 warmup 接通原 startup hook，共享原实例／加载任务；成功日志不再调用不存在的 is_mock。固定源码270320d3，两项新控制2PASS／0.25s，PG93645清空、共享锁释放。保持1s预算，已独审合入，真实冷启动初次query待主，不以r10暖态PASS关闭冷FAIL。[边界与证据](../plans/2026-09-06-short-terminal-source/WARMUP.md)。

@@ -14,11 +14,17 @@ only (``local_files_only=True``).
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 from simple_harness_memory.embedders.base import Embedder, EmbeddingLineage
+
+log = logging.getLogger(__name__)
+# Fixed startup input: no conversation, query, identity, or memory content.
+_PRIMING_TEXT = "这是一条用于初始化文本编码器的固定测试句子。"
 
 
 class WeMMEmbedder(Embedder):
@@ -41,6 +47,8 @@ class WeMMEmbedder(Embedder):
         self._device = device
         self._model: Any = None
         self._load_task: asyncio.Task[None] | None = None
+        self._warmup_task: asyncio.Task[None] | None = None
+        self._warmup_state = "not_started"
         # A cancelled asyncio waiter does not stop its underlying thread.
         # This lock is held by the thread through physical load/encode completion.
         self._encode_queue = asyncio.Lock()
@@ -53,6 +61,7 @@ class WeMMEmbedder(Embedder):
         with self._state_lock:
             return {
                 "state": self._state, "is_ready": self._state == "ready",
+                "warmup_state": self._warmup_state, "is_primed": self._warmup_state == "ready",
                 "is_mock": False, "model_path": self._model_ref,
                 "model_name": self._model_name,
                 **({"reason": self._reason} if self._reason else {}),
@@ -116,12 +125,49 @@ class WeMMEmbedder(Embedder):
         await asyncio.shield(self._load_task)
 
     async def warmup(self) -> None:
-        """Load this instance for startup without encoding or rebuilding vectors.
+        """Load and prime this instance once, without writing business vectors.
 
-        Concurrent startup/query waiters share the existing shielded load task;
-        cancelling a waiter neither duplicates nor interrupts physical loading.
+        Waiter cancellation leaves the owned load/encode task running. Priming
+        uses the ordinary physical encode queue; no second model or query call.
         """
-        await self._ensure_loaded()
+        if self.status_snapshot()["is_primed"]:
+            return
+        if self._warmup_task is None or self._warmup_task.done():
+            self._warmup_task = asyncio.create_task(self._warmup_owned())
+            self._warmup_task.add_done_callback(self._warmup_completed)
+        await asyncio.shield(self._warmup_task)
+
+    def _warmup_completed(self, task: asyncio.Task[None]) -> None:
+        try:
+            self._observe_completion(task)
+        finally:
+            if self._warmup_task is task:
+                self._warmup_task = None
+
+    async def _warmup_owned(self) -> None:
+        with self._state_lock:
+            self._warmup_state = "loading"
+        phase, started = "load", time.monotonic()
+        try:
+            await self._ensure_loaded()
+            log.info("wemm_warmup_phase_completed phase=load elapsed_ms=%.3f",
+                     (time.monotonic() - started) * 1000)
+            with self._state_lock:
+                self._warmup_state = "priming"
+            phase, started = "prime", time.monotonic()
+            # Never goes through MemoryManager, generation, or a query audit.
+            # The owned task retains the same queue through physical completion.
+            await self._encode_owned(_PRIMING_TEXT, threading.Event())
+            with self._state_lock:
+                self._warmup_state = "ready"
+            log.info("wemm_warmup_phase_completed phase=prime elapsed_ms=%.3f",
+                     (time.monotonic() - started) * 1000)
+        except BaseException:
+            with self._state_lock:
+                self._warmup_state = "failed"
+            log.warning("wemm_warmup_phase_failed phase=%s elapsed_ms=%.3f",
+                        phase, (time.monotonic() - started) * 1000)
+            raise
 
     @property
     def kind(self) -> str:
