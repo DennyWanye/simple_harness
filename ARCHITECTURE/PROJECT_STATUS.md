@@ -1,5 +1,10 @@
 <!-- 最后更新：2026-09-07 -->
 
+2026-09-07 v5.1真实分类2calls：原r24未采用流程→Procedure DRAFT+Episode；明确一次性两文件→仅Episode。
+两项实际public mutation均COMMITTED并回读receipt；0retry，PG69158exit0清空32.26s。
+这是生产Provider适配器/同构analysis请求+编译/公开物化，非foreground durable job/native全链；原r24FAIL保留。
+[真实结果](../plans/2026-09-07-procedure-draft-classification/MODEL-RESULTS.md)，证据独审待反馈。
+
 Procedure候选流程提示修复342e2722：独立Host prompt/v5.1，schema/policy仍v5；旧v3/v4/v5产品bytes与持久请求路由保留。
 必要6控单批6PASS/0.87s，含真实旧v5 response-only→新worker恢复0新增Provider；PG66123已清空释放。
 H079/M619/S0313 installed，手工分类只证明source/compiler；真实模型正反尚NOT_RUN，r24FAIL不追认。
