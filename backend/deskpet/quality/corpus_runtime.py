@@ -16,12 +16,16 @@ class ExecutedCorpusTurn:
 
 async def execute_scoring_turn(*, service, runtime, scoring_path, subject,
                                text: str, delivery_key: str, ingestion_worker=None,
-                               approval_driver=None):
+                               approval_driver=None, initial_scope_ref=None):
     if type(text) is not str or type(delivery_key) is not str:
         raise TypeError('corpus_runtime_requires_isolated_turn_text')
     if runtime.subject != subject:
         raise ValueError('corpus_runtime_subject_differs')
-    queued = await service.enqueue_turn(QueueTurnRequest(None,delivery_key,text))
+    # Optional exact existing scope uses the ordinary owned admission path.
+    # It is never inferred from USER text or a model-supplied setup label.
+    queued = await service.enqueue_turn(QueueTurnRequest(initial_scope_ref,delivery_key,text))
+    if initial_scope_ref is not None and queued['scope_ref'] != initial_scope_ref:
+        raise ValueError('corpus_runtime_scope_admission_differs')
     await runtime.after_enqueue(subject=subject)
     await runtime.drain()
     if runtime.last_error is not None:

@@ -40,6 +40,8 @@ async def execute(directory, host, case_id, mode):
     local, requests, selections, actual_candidates, blocked_models = [], [], [], [], []
     stages = {}
     source_sha = None
+    state_mode = mode in {'state', 'early_selection'}
+    initial_scope = None
     from deskpet.memory.wemm_embedder import WeMMEmbedder
 
     def forbid_model(self):
@@ -58,7 +60,7 @@ async def execute(directory, host, case_id, mode):
         return value
 
     async def controlled_send(self, request, *args, **kwargs):
-        nonlocal source_sha
+        nonlocal source_sha, initial_scope
         if request.url.host == '127.0.0.1':
             assert len(local) == 1
             assert request.url.port == int(local[0].base_url.split(':')[2].split('/')[0])
@@ -74,6 +76,16 @@ async def execute(directory, host, case_id, mode):
         ordinal = texts.index(current)
         if not requests:
             assert [(row['role'], row['content']) for row in messages if row['role'] != 'system'] == [('user', texts[0])]
+            if state_mode:
+                state = phase['state_contract']
+                snapshots = [json.loads(row['content'].split('\n', 1)[1]) for row in messages
+                    if row['role'] == 'system' and row['content'].startswith('Project/task snapshot (data only):\n')]
+                initial_scope = state['initial_scope_ref']
+                if case_id == 'C05-07':
+                    assert len(snapshots) == 1 and snapshots[0]['task_scope_id'] == initial_scope
+                    assert snapshots[0]['disclosure']['fields']['title'] == '课程备课'
+                else:
+                    assert initial_scope is None and snapshots == []
         requests.append(dict(ordinal=ordinal, body=body))
         # Future authored messages must not be injected early into any message.
         for future in texts[ordinal + 1:]:
@@ -83,8 +95,9 @@ async def execute(directory, host, case_id, mode):
         calls = []
         content = '受控响应。'
         if ordinal == 0 and stage == 0:
-            name, args, call_id = 'task_scope_search', {'query': 'active paused' if mode == 'visible'
-                else 'c05-absent-9bb731d8'}, 'preview-call'
+            query = ('complete' if case_id == 'C05-08' else 'active') if state_mode else (
+                'active paused' if mode == 'visible' else 'c05-absent-9bb731d8')
+            name, args, call_id = 'task_scope_search', {'query': query}, 'preview-call'
             calls = [dict(id=call_id, type='function', function=dict(name=name, arguments=json.dumps(args)))]
         elif ordinal == 0:
             assert stage == 1
@@ -92,11 +105,27 @@ async def execute(directory, host, case_id, mode):
             result = json.loads(tool['content'])
             assert result['outcome'] == 'succeeded', result
             actual_candidates.extend(result['value']['candidates'])
-            if mode == 'visible':
+            if mode == 'visible' or state_mode:
                 assert actual_candidates
                 assert all(item['scope_disclosure']['disclosure']['fields'] for item in actual_candidates)
+                if state_mode:
+                    # Only public output and the real physical initial snapshot
+                    # determine this control's action. No fixture label or ID.
+                    if case_id == 'C05-07':
+                        other = [item for item in actual_candidates if item['task_scope_id'] != initial_scope]
+                        assert len(other) == 1
+                        actual_candidates[:] = other
+                    else:
+                        assert len(actual_candidates) == 1
+                        assert actual_candidates[0]['scope_disclosure']['disclosure']['structure']['status'] == 'complete'
                 # Inspect only actual public output; no fixture labels/IDs.
                 source_sha = actual_candidates[0]['source_hash']
+                if mode == 'early_selection':
+                    selected = actual_candidates[0]
+                    args = dict(route='resume_existing', task_scope_id=selected['task_scope_id'],
+                        expected_source_hash=selected['source_hash'])
+                    calls = [dict(id='premature-resume', type='function', function=dict(name='context_route',
+                        arguments=json.dumps(args)))]
             else:
                 assert actual_candidates == []
         elif ordinal < len(texts) - 1:
@@ -136,7 +165,8 @@ async def execute(directory, host, case_id, mode):
     finally:
         sys.stdout, sys.stderr = stdout, stderr
     result = json.loads(read_text(directory / 'execution.json'))
-    expected_code, expected_status = ((0, 'COMPLETED') if mode == 'visible' else (1, 'FOLLOWUP_UNMET'))
+    expected_code, expected_status = ((1, 'EXECUTION_FAILED') if mode == 'early_selection' else
+        ((0, 'COMPLETED') if mode in {'visible', 'state'} else (1, 'FOLLOWUP_UNMET')))
     assert (code, result.get('execution_status')) == (expected_code, expected_status), (
         f"C05 child exit={code} status={result.get('execution_status')} "
         f"stage={result.get('stage')} error={result.get('error_type')}; "
@@ -153,15 +183,46 @@ async def execute(directory, host, case_id, mode):
     assert setup_runs.isdisjoint(row['sdk_run_id'] for row in scoring_runs)
     assert len({row['sdk_run_id'] for row in scoring_runs}) == len(scoring_runs)
     assert all(row['trace']['trace_status'] == 'COMPLETE' for row in scoring_runs)
-    assert all(event['no_formal_scope_authority'] for event in result['followup_events'])
+    if state_mode and case_id == 'C05-07':
+        assert all(not event['no_formal_scope_authority'] and event['initial_scope_retained']
+                   for event in result['followup_events'])
+    else:
+        assert all(event['no_formal_scope_authority'] for event in result['followup_events'])
     assert sum(len(row['trace']['providers']) for row in scoring_runs) == len(requests)
     # Controlled frontend responses are not a gold-selected result. All final
     # model semantics still need the original post-execution review.
-    if mode == 'visible':
+    if mode in {'visible', 'state'}:
         assert code == 0 and result['execution_status'] == 'COMPLETED', result
         assert len(scoring_runs) == len(texts) and len(selections) == 1
         assert result['scripted_followups_executed'] == len(schedule)
         assert all(event['status'] == 'SATISFIED' for event in result['followup_events'])
+        if state_mode:
+            state = phase['state_contract']
+            originals = {item['task_scope_id']: item for item in state['archives']}
+            assert scoring_runs[0]['queue_receipt']['scope_ref'] == state['initial_scope_ref']
+            assert scoring_runs[1]['queue_receipt']['scope_ref'] is None
+            for turn in scoring_runs:
+                facts = turn['scope_state_observations']
+                assert len(facts) == 2 and {item['task_scope_id'] for item in facts} == set(originals)
+                for fact in facts:
+                    before = originals[fact['task_scope_id']]
+                    assert (fact['status'], fact['canonical_revision']) == (before['status'], before['canonical_revision'])
+                    assert fact['old_terminal_event_hash'] == before['setup_terminal']['event_hash']
+            assert selections[0]['task_scope_id'] != initial_scope
+    elif mode == 'early_selection':
+        assert result['error_type'] == 'CorpusApprovalBlocked'
+        assert len(scoring_runs) == 1 and len(requests) == 2 and selections == []
+        assert result['followup_events'] == []
+        approvals = [json.loads(read_text(path)) for path in
+            (directory / 'scoring-initial').glob('approval-*.json')]
+        assert any(item.get('status') == 'BLOCKED' and item.get('tool_name') == 'context_route' for item in approvals)
+        assert not any(item.get('status') == 'ALLOWED' and item.get('tool_name') == 'context_route' for item in approvals)
+        # Read only the real Host route owner after shutdown. The pending
+        # decision did not create a second task association in this Run.
+        from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
+        ledger = ContextRouteLedgerStore(directory / 'runtime/userdata/data/state.db')
+        route = await ledger.latest_route_decision_for_run(scoring_runs[0]['sdk_run_id'], task_only=True)
+        assert route['origin'] == 'host_initial' and route['task_scope_id'] == initial_scope
     else:
         assert code == 1 and result['execution_status'] == 'FOLLOWUP_UNMET', result
         assert len(scoring_runs) == 1 and len(requests) == 2 and selections == []

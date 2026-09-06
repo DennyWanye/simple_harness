@@ -1,3 +1,5 @@
+最后更新：2026-09-07。独立feat/corpus-c05-remaining基c5b55387已写07/08正式状态来源组与3新组合控制，NOT_RUN、未合主；其余14格明确来源/调度/公开契约缺口。复用原4格整链与empty证据，无新测试、模型、资源进程、版本变动，不计质量PASS。[逐格事实与待跑控制](../plans/2026-09-07-corpus-c05-remaining/CONTRACT.md)。
+
 最后更新：2026-09-07。C06跨scope语料准备首组02/03/04新增专属public Host S1→Memory分析job→Semantic/Procedure回读源码；20原setup/hash全保留。全部新控NOT_RUN，未接共享scoring/session，未证明跨Task typed召回/非SELF出站/质量。无测试、模型或SDK制品变更。[源码契约](../plans/2026-09-07-corpus-c06-preparation/CONTRACT.md)。
 
 最后更新：2026-09-07。C08历史纪要15/检查列表16两个新控制首次2PASS16.01s：实际main旧USER与派生assistant→真实job→公开抑制→生产重开→下一受控HTTP无旧内容。PG87213自然清空；文档文本来源，非文件/模型质量，正式dispatcher接入另待，旧绿未重跑。[结果](../plans/2026-09-07-corpus-c01-scoring/C08-DOCUMENTS-RESULTS.md)。
