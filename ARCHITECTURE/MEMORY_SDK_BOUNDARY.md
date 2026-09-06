@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06 原生r10（Host0bedaa87/H077/M617）：FTS+VECTOR修复后的真实暖态短期查询成功，UI工具有三条recall refs，模型正确回答青竹九月/无糖茉莉茶。冷态首查仍timeout，单独保留失败并继续预热定位；不称完整short/性能/program通过。两轮均空闲，正常退出PG89400 exit0/remaining[]。已合closure九场景修复的原生Scope旅程另验。[实际结果与证据](../plans/2026-09-06-typed-use-primary/NATIVE-R10.md)。
+
 2026-09-06：Host 显式短期 RecallContext／Plan 请求 FTS＋VECTOR，使 SDK 已检索的小 vector-only 组可参与统一预算选择；long-only 仍 FTS，预算及公开来源／privacy 检查不改。实际 installed H077/M617 新控 1PASS，旧 FTS-only 同源计划空结果反例与 Host fragments 来源核验均通过；未改 SDK／installed，真实 WeMM/native 由主后继验收。[范围与证据](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
 
 2026-09-06：隔离 `feat/closure-physical-request-guard` 自666b475b，main closure 默认专用物理守卫已接；以真实SDK终态/来源和当前Host披露准备完整attempt-input S1，与原reservation同TX保存，实际出站复核完整请求、来源与原head。9唯一场景分批通过并获Dirac限定ACCEPT：原8包含真实send/no_mutation和拒绝/UNKNOWN/取消，新实际CREATE_NEW→RESUME_EXISTING闭合复现读TX递归access写自锁后，4a86ecb0释放外层读TX修复，原访问审计保留。H077/M616 installed目标+Host源码，非native；已合隔离primary候选。非空scope.resume/无来源修改字段仍pending，完整Closure/compaction/长旅程未完成。PG88793 exit0/remaining[]，未重跑旧绿。[分批结果、失败与限制](../plans/2026-09-06-closure-physical-guard/RESULTS.md)。

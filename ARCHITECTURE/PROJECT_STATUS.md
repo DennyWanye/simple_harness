@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06 原生r10（Host0bedaa87/H077/M617）：FTS+VECTOR修复后的真实暖态短期查询成功，UI工具有三条recall refs，模型正确回答青竹九月/无糖茉莉茶。冷态首查仍timeout，单独保留失败并继续预热定位；不称完整short/性能/program通过。两轮均空闲，正常退出PG89400 exit0/remaining[]。已合closure九场景修复的原生Scope旅程另验。[实际结果与证据](../plans/2026-09-06-typed-use-primary/NATIVE-R10.md)。
+
 2026-09-06：自有 `simple_harness-corpus-clock`／`feat/short-vector-mode`，base e04627c4，源码 f8b2d41c 完成最小短期检索通道补齐。新增公共 typed→Host fragments 控制 1PASS／4.74s，PG89042 无残留、共享锁释放；只此新增控制，未重跑旧绿。Dirac限定ACCEPT、已合隔离primary候选；待native，未称整体召回质量完成。[结果](../plans/2026-09-06-short-terminal-source/VECTOR-MODE.md)。
 
 2026-09-06：隔离closure物理guard叶（base666b475b、生产5375fc85+4a86ecb0）默认接专用factory，已通过9唯一场景的分批必要控制并获Dirac限定ACCEPT。真实resume依赖读TX→access receipt写自锁独立原红转绿，访问审计未删；不是完整Closure可用，非空resume/缺来源字段仍显式pending。H077/M616限定安装载体与Host本树源码，已合隔离primary候选/未native；SDK和原库未改，所有测试进程已清空，旧绿不重复。[结果、命令和保留失败](../plans/2026-09-06-closure-physical-guard/RESULTS.md)。
