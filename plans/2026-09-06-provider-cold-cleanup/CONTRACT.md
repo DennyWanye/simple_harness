@@ -10,7 +10,7 @@ r8 原日志 `simple_harness-primary-candidate/.local-test-evidence/2026-09-06/n
 
 ## 最小变更与边界
 
-只修改 `_ProductSdkProviderBindingResolver.mark_terminal`：先维持合法 terminal state 校验，仅 binding 与 authority 缓存均不存在时返回；已有 binding 或不一致缓存仍走原严格清理，不捕获任何内部异常。不会重建旧 Provider authority、伪造终态或授权。现有 tool cleanup 和 Host durable terminal 提交顺序不变。
+只修改 `_ProductSdkProviderBindingResolver.mark_terminal`：先维持合法 terminal state 校验，仅 binding 与 authority 缓存均不存在时返回；其余仍走原清理，不捕获任何内部异常。authority 有而 binding 无会抛错；binding 有而 authority 无仍可正常清理，这是旧行为。不会重建旧 Provider authority、伪造终态或授权。现有 tool cleanup 和 Host durable terminal 提交顺序不变。
 
 ## 必要单项控制（待执行）
 
