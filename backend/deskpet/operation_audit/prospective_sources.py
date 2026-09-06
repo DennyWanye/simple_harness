@@ -177,6 +177,20 @@ class ProspectiveSourceJournal(MemoryAttemptJournal):
 
     async def _settle_safe(self, identity, **kwargs):
         try:
+            if kwargs["state"] == "cancelled_before_call":
+                # The generic memory-attempt finding attributes failures to SDK;
+                # no SDK was invoked here, so only settle the Host call fact.
+                def not_invoked(db):
+                    body = dict(state="cancelled_before_call", observation_status="not_invoked",
+                                observation=None, observation_hash=None, result_hash=None, decision_hash=None)
+                    changed = db.execute("UPDATE memory_call_attempts SET state=?,observation_status=?,"
+                               "settled_at=?,settlement_hash=? WHERE attempt_ref=? AND settlement_hash IS NULL",
+                               (body["state"], body["observation_status"], float(self.clock()),
+                                digest(body), identity[0]))
+                    if changed.rowcount != 1:
+                        raise ValueError("prospective_audit_start_unknown")
+                await self._write(not_invoked)
+                return
             await self.settle(identity, **kwargs)
         except asyncio.CancelledError:
             raise
