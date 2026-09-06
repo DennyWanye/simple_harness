@@ -12,3 +12,17 @@ Raw本树.local-test-evidence/2026-09-06/prospective-timer/r2,r3,r4/{command.log
 命令为默认共享scripts/run_resource_bounded.py --rss-mib2048 --seconds180，既有primary-m0615/venv Python -I -B run_installed076.py，仅test_prospective_timer_sdk.py两参数。
 运行generic依赖复用旧env；H076/M616各自installedtarget优先且逐已导入模块路径核target，非SDK源码overlay。r1误预建evidence目录被入口拒绝，无child。
 所有测试/构建进程已退出、槽释放。无模型/native/全量旧suite。
+
+## 新风险控制（2026-09-06，独立于上文已绿两case）
+
+测试源eb944f61经Dirac限定源码预审；risks-r1实际1PASS2FAIL/2.10s，PG68816exit1/peak198368KiB。
+observation复制库自洽外hash篡改拒绝首轮通过。lease失败为整数lease经SQLite REAL变float导致journalhash错，2ce1dff1在持久hash前规范float；
+late-invalidation失败是重开测试backend漏classificationpolicy，a5358955保留同policy后合法REVISE实际执行。
+risks-r2仅两失败：2PASS1deselected/1.46s，PG68902exit0/peak185072KiB/minDisk2927MiB/remaining[]cleanupnull。
+三新风险各有通过证据，不计第二次3PASS；旧pending/rescheduled及已绿observation不复跑。
+
+late-invalidation只证明claim后/live双检前actualREVISE+ACK失效阻止apply且inbox空，不外推所有跨库窗口。
+lease证明真实handoff、超期接管epoch+1后旧owner assert/handoff/invalidate/actualresult settle均拒绝且journal不变；不能撤回既有SDK物理调用。
+observation三字段在backupcopy仅改timerbody、重算body/record外hash，拒绝理由精确observation_binding_differs；原DB/S1不动，触发器原SQL恢复。
+原始新日志/identity/resource：.local-test-evidence/2026-09-06/prospective-timer/risks-r1及risks-r2；同既有H076/M616 installed target，无新env。
+本次产品delta仅2ce1dff1，测试fixturedelta a5358955；schema52未合。最终源码/证据限定复核待回；完整presentation/ack/native仍未验。
