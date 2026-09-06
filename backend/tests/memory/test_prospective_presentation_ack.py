@@ -148,6 +148,8 @@ async def test_snapshot_rollback_and_full_group_codec(tmp_path):
         payload=presentation_payload(prepared)
         assert presentation_from_payload(payload)==prepared
         malformed=[]
+        for version in (True, 1.0):
+            changed=deepcopy(payload);changed['schema_version']=version;malformed.append(changed)
         extra=deepcopy(payload);extra['unexpected']=1;malformed.append(extra)
         extra=deepcopy(payload);extra['items'][0]['extra']=1;malformed.append(extra)
         duplicate=deepcopy(payload);duplicate['items'].append(deepcopy(duplicate['items'][0]));malformed.append(duplicate)
@@ -172,6 +174,50 @@ async def test_snapshot_rollback_and_full_group_codec(tmp_path):
             row=dict(await (await db.execute('SELECT * FROM run_context_snapshot_receipts WHERE snapshot_id=?',(identity[0],))).fetchone())
         revisions,group=decode_snapshot(row)
         assert revisions=={'context':1} and group==prepared
+        for version in (True, 2.0):
+            stored=json.loads(row['source_revisions_json'])
+            stored['host_snapshot_schema_version']=version
+            changed=dict(row,source_revisions_json=json.dumps(stored))
+            with pytest.raises(S5cConflict,match='snapshot'):
+                decode_snapshot(changed)
         corrupted=dict(row,receipt_hash='0'*64)
         with pytest.raises(S5cConflict,match='receipt_corrupt'):decode_snapshot(corrupted)
     finally:await w.manager.close()
+
+
+@pytest.mark.asyncio
+async def test_current_reader_cap_rejects_unseen_mandatory(monkeypatch):
+    """Page transport control: 16 exit-only pages cannot prove empty mandatory set."""
+    from contextlib import asynccontextmanager
+    from deskpet.memory import prospective_current_reader as module
+
+    class Cursor:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def fetchall(self): return []
+    class DB:
+        def execute(self, *args): return Cursor()
+    @asynccontextmanager
+    async def transaction(): yield DB()
+    context=SimpleNamespace(subject=P.actor_id,run_id='run-cap',recipient_id=P.actor_id,
+        recipient=SimpleNamespace(value='user_self'),intended_audience=SimpleNamespace(value='user_self'),
+        purpose=SimpleNamespace(value='task_execution'),trust=SimpleNamespace(value='trusted_authority'),
+        generation=SimpleNamespace(value='current'),to_json=lambda:{'fixture':'disclosure'})
+    async def disclosure(**kwargs): return context
+    monkeypatch.setattr(module,'resolve_current_disclosure',disclosure)
+    calls=[]
+    class Manager:
+        async def read_occurrence_inbox(self, *, principal, after, limit):
+            assert principal==P and limit==200
+            assert after == (None if not calls else (float(len(calls)),str(len(calls))))
+            calls.append(after);n=len(calls)
+            entry=SimpleNamespace(occurred_at=float(n),event_id=str(n),occurrence_key=str(n),
+                suppressed=False,lifecycle_state='expired')
+            return SimpleNamespace(entries=(entry,),next_after=(float(n),str(n)))
+    async def manager(): return Manager()
+    store=SimpleNamespace(path='unused',principal=P,owner='owner',_transaction=transaction)
+    runtime=SimpleNamespace(principal=lambda:P,manager=manager)
+    reader=module.PublicOccurrenceCurrentReader(store=store,runtime_getter=lambda:runtime)
+    with pytest.raises(S5cConflict,match='s5c_occurrence_inbox_scan_incomplete'):
+        await reader(principal=P,sdk_run_id='run-cap')
+    assert len(calls)==16

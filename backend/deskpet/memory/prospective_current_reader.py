@@ -66,6 +66,10 @@ class PublicOccurrenceCurrentReader:
             if not page.entries or page.next_after!=prior:
                 raise S5cConflict('s5c_occurrence_current_cursor_invalid')
             after=page.next_after
+        else:
+            # An unseen key may be mandatory even when no tracked key is missing.
+            # A bounded prefix is not an authoritative empty inbox.
+            raise S5cConflict("s5c_occurrence_inbox_scan_incomplete")
         # Recheck current Host config after public Memory reads. It is not an
         # atomic Memory/Host lease; physical guard performs a further fresh read.
         checked=await resolve_current_disclosure(db_path=self.store.path,subject=principal.actor_id,

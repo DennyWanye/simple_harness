@@ -71,3 +71,16 @@
 A7 production适用范围通过Host foreground Run+SDK binding事实判定，覆盖该Run五种Context route；没有primary turn的child/workflow保留原authority链，不能因新增primary reader让全部子Agent失败。非本owner的已绑定Run拒绝。此判断不是工具调用授权，ACK仍必须有本Runpresentation。
 
 除待测main接线外，派生assistant的后继history仍须继承本Run实际mandatory occurrence组；当前read_run_dependencies仅原recall来源，不可将新组静默视为recall=[]完整来源。保留snapshot完整publicentry/事件hash及实际SDKsnapshot/request绑定后，可用现public inbox当前exactkey验证其可见性（缺席unknown），不造typed recall或SDK新字段。该history/API接缝尚未实现，未经闭合不得把本叶合成完整隐私产品。
+
+### 78d5c7a0 review delta — 2026-09-06
+
+- Register the actual `ServiceContext` whitelist and dataclass slot. The existing
+  human-epoch production `_build_product_sdk_runtime_stack` control now requires
+  the real coordinator and projectless/direct `prospective_ack` registration.
+- A 16-page inbox prefix with a remaining cursor raises
+  `s5c_occurrence_inbox_scan_incomplete`; no empty mandatory group is returned.
+  This bounded reader does not promise resumable scanning beyond the cap.
+- Both Host codec version tags require exact `int`, rejecting bool/float aliases.
+- New/changed controls are initially NOT_RUN; prior A7 tests remain unverified.
+  The cap control isolates public page transport with synthetic pages; it does
+  not claim 3201 real SDK mutations or native/Provider coverage.

@@ -112,7 +112,7 @@ def presentation_payload(prepared):
 
 
 def presentation_from_payload(payload):
-    if type(payload) is not dict or set(payload)!={'schema_version','owner','sdk_run_id','disclosure_identity_hash','items'} or payload['schema_version']!=1:
+    if type(payload) is not dict or set(payload)!={'schema_version','owner','sdk_run_id','disclosure_identity_hash','items'} or type(payload['schema_version']) is not int or payload['schema_version']!=1:
         raise S5cConflict('s5c_occurrence_group_shape_invalid')
     if type(payload['items']) is not list or len(payload['items'])>8:
         raise S5cConflict('s5c_occurrence_group_bound')
@@ -145,7 +145,7 @@ def decode_snapshot(row):
     stored=_load_json(row['source_revisions_json'])
     if type(stored) is not dict:raise S5cConflict('s5c_snapshot_storage_invalid')
     if 'host_snapshot_schema_version' in stored:
-        if set(stored)!={'host_snapshot_schema_version','source_revisions','host_occurrence_group'} or stored['host_snapshot_schema_version']!=2:
+        if set(stored)!={'host_snapshot_schema_version','source_revisions','host_occurrence_group'} or type(stored['host_snapshot_schema_version']) is not int or stored['host_snapshot_schema_version']!=2:
             raise S5cConflict('s5c_snapshot_storage_shape_invalid')
         revisions=stored['source_revisions'];group=stored['host_occurrence_group']
         prepared=presentation_from_payload(group)
