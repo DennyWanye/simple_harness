@@ -148,7 +148,7 @@ class ScopeDisclosureReader:
         return found[1]
 
     async def read(self, run_id, package, effect_id):
-        from deskpet.execution.primary_dependencies import current_disclosure
+        from deskpet.memory.trusted_disclosure import resolve_current_disclosure
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
             cursor = await db.execute("SELECT r.subject FROM foreground_runs r JOIN foreground_run_sdk_bindings b ON b.host_run_id=r.host_run_id WHERE b.sdk_run_id=?", (run_id,))
@@ -157,4 +157,5 @@ class ScopeDisclosureReader:
             raise ValueError("scope_disclosure_run_missing")
         return await render_scope_disclosure(db_path=self.db_path, package=package, subject=row["subject"],
             stack=self.stack_getter(), policy=self.policy_factory(row["subject"]),
-            disclosure_context=current_disclosure(run_id=run_id, subject=row["subject"], request_id=effect_id))
+            disclosure_context=await resolve_current_disclosure(db_path=self.db_path,
+                run_id=run_id, subject=row["subject"], request_id=effect_id))

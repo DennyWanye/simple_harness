@@ -605,7 +605,16 @@ class ForegroundRuntimeExecutionAuthority:
                 return False
             if candidate.subject != self._subject:
                 raise ForegroundRuntimeError("foreground_runtime_candidate_subject_drift")
-            lineage = await self._context.draft_lineage(candidate)
+            from deskpet.memory.trusted_disclosure import TrustedDisclosureError
+            try:
+                lineage = await self._context.draft_lineage(candidate)
+            except TrustedDisclosureError as exc:
+                if exc.code not in {"host_disclosure_binding_stale", "host_disclosure_legacy_policy_changed"}:
+                    raise
+                from deskpet.execution.admission_rejection import reject_stale_candidate
+                await reject_stale_candidate(self._store, candidate)
+                self._notify_state_changed()
+                return True
             draft = await self._store.prepare_candidate(
                 subject=self._subject,
                 expected_candidate_hash=candidate.candidate_hash,

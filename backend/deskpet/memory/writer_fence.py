@@ -39,6 +39,17 @@ def _request_scope():
     return scope if scope is not None and scope.task is asyncio.current_task() else None
 
 
+def require_authenticated_host_snapshot(expected):
+    """New policy writes require a live signed control scope, not an auth DTO."""
+    scope = _request_scope()
+    if scope is None or not hasattr(scope.fence, "authenticated_host_snapshot"):
+        raise HumanMemoryIngressFenced()
+    scope.fence.verify()
+    if scope.fence.authenticated_host_snapshot() != expected:
+        raise HumanMemoryIngressFenced()
+    return scope.fence.audit_lease_ref()
+
+
 @asynccontextmanager
 async def human_memory_request_boundary():
     """A short existing revocation lease, rechecked at the actual DB boundary."""

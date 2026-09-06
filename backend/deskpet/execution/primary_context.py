@@ -6,7 +6,8 @@ from deskpet.execution.preparation_rejection import PreparationDisclosureRejecte
 from deskpet.execution.foreground_runtime import FrozenContextAuthority
 from deskpet.execution.foreground_runtime_ports import TaskScopeForegroundContextPort, _turn_text
 from deskpet.execution.primary_history import PrimaryHistoryStore
-from deskpet.execution.primary_dependencies import dependencies, current_disclosure
+from deskpet.execution.primary_dependencies import dependencies
+from deskpet.memory.trusted_disclosure import resolve_current_disclosure
 import aiosqlite
 from deskpet.sdk_adapters.context_authority import PreparedSdkContextSnapshotV1
 from deskpet.sdk_adapters.context_partitions import (
@@ -59,7 +60,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
                 primary_ref=candidate.primary_conversation_id, evidence_id=candidate.evidence_id)
             if envelope.envelope_hash != candidate.evidence_hash:
                 raise RuntimeError("primary_current_user_hash_mismatch")
-        disclosure = current_disclosure(run_id=envelope.run_id, subject=self._subject, request_id=candidate.turn_id)
+        disclosure = await resolve_current_disclosure(db_path=self._history_path, turn_id=candidate.turn_id,
+            run_id=envelope.run_id, subject=self._subject, request_id=candidate.turn_id)
         groups = await self._history.read(subject=self._subject, primary_ref=candidate.primary_conversation_id,
                                           before_sequence=candidate.enqueue_sequence, completed_only=True, disclosure_context=disclosure)
         source_hash = canonical_hash({"turn": candidate.turn_id, "history": groups})
@@ -128,10 +130,12 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
         async with aiosqlite.connect(self._history_path) as db:
             db.row_factory = aiosqlite.Row
             if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,
-                    dependencies=proof, disclosure_context=current_disclosure(run_id=sdk_run_id,
+                    dependencies=proof, disclosure_context=await resolve_current_disclosure(
+                        db_path=self._history_path, turn_id=candidate.turn_id, run_id=sdk_run_id,
                         subject=self._subject, request_id=request_id)):
                 await self._reject_current_user_if_proven(
-                    db=db, claimed=claimed, disclosure_context=current_disclosure(
+                    db=db, claimed=claimed, disclosure_context=await resolve_current_disclosure(
+                        db_path=self._history_path, turn_id=candidate.turn_id,
                         run_id=sdk_run_id, subject=self._subject, request_id=request_id,
                     ),
                 )
@@ -171,7 +175,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             raise RuntimeError("foreground_context_lineage_changed_after_claim")
         if self._stack_getter is None:
             raise RuntimeError("scope_disclosure_reader_missing")
-        disclosure = current_disclosure(run_id=sdk_run_id, subject=self._subject, request_id=request_id)
+        disclosure = await resolve_current_disclosure(db_path=self._history_path, turn_id=candidate.turn_id,
+            run_id=sdk_run_id, subject=self._subject, request_id=request_id)
         package = await render_scope_disclosure(db_path=self._history_path, package=opened.resume_package,
             subject=self._subject, stack=self._stack_getter(), policy=self._history_policy,
             disclosure_context=disclosure)
@@ -183,7 +188,8 @@ class PrimaryForegroundContextPort(TaskScopeForegroundContextPort):
             if not await self._history_policy.check_dependencies(db=db, primary_ref=candidate.primary_conversation_id,
                     dependencies=proof, disclosure_context=disclosure):
                 await self._reject_current_user_if_proven(
-                    db=db, claimed=claimed, disclosure_context=current_disclosure(
+                    db=db, claimed=claimed, disclosure_context=await resolve_current_disclosure(
+                        db_path=self._history_path, turn_id=candidate.turn_id,
                         run_id=sdk_run_id, subject=self._subject, request_id=request_id,
                     ),
                 )

@@ -343,12 +343,26 @@ async def _dispatch(  # type: ignore[no-untyped-def]
                 request_id,
             )
         )
+    if operation == "disclosure.configure":
+        fields = {"recipient", "recipient_id", "intended_audience", "purpose", "expected_ref"}
+        if set(request) != fields:
+            raise HumanMemoryHostServiceError("host_disclosure_configuration_fields_invalid")
+        return await service.configure_disclosure(request_id=request_id,
+            expected_ref=request["expected_ref"],
+            selection={key: request[key] for key in fields - {"expected_ref"}})
+    if operation == "disclosure.current":
+        if request:
+            raise HumanMemoryHostServiceError("host_disclosure_configuration_fields_invalid")
+        return await service.current_disclosure_configuration()
     if operation == "queue.enqueue":
+        if not set(request) <= {"scope_ref", "delivery_key", "text", "disclosure_binding_ref"}:
+            raise HumanMemoryHostServiceError("human_memory_queue_fields_invalid")
         return await service.enqueue_turn(
             QueueTurnRequest(
                 request.get("scope_ref"),
                 str(request.get("delivery_key") or request_id),
                 str(request.get("text") or ""),
+                request.get("disclosure_binding_ref"),
             )
         )
     if operation == "queue.control":
