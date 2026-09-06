@@ -133,3 +133,62 @@ async def test_confirmed_cache_does_not_hide_generation_interruption(gen, interr
     assert recovered.generation.activated and not gen.worker._generation_pending
     # One committed old generation, one interrupted attempt, one successful retry.
     assert gen.embedder.batches == 3
+
+
+@pytest.mark.asyncio
+async def test_cold_shared_load_survives_bounded_worker_timeouts_without_confirmation(gen):
+    from deskpet.memory.short_indexing import PrimaryShortIndexingService
+
+    # Prepare the real conversation sources only. Generation remains exclusively
+    # the worker's public call; no model is loaded or index built by the test.
+    manager = await gen.runtime.manager()
+    await PrimaryShortIndexingService(gen.runtime.conversation_evidence_authority,
+        manager=manager, principal=gen.runtime.principal()).reconcile()
+    assert gen.worker.operation_timeout == 5.0
+    gen.worker.operation_timeout = 0.5  # scaled deadline; load waits past both attempts
+    release = asyncio.Event()
+    load_task = None
+    loads = active = peak = attempts = 0
+    original = gen.embedder.embed_batch
+
+    async def shared_load():
+        await release.wait()
+
+    async def cold_batch(texts):
+        nonlocal load_task, loads, active, peak, attempts
+        attempts += 1
+        active += 1
+        peak = max(peak, active)
+        try:
+            if load_task is None:
+                loads += 1
+                load_task = asyncio.create_task(shared_load())
+            await asyncio.shield(load_task)
+            return await original(texts)
+        finally:
+            active -= 1
+
+    gen.embedder.embed_batch = cold_batch
+    tasks = [asyncio.create_task(gen.worker.step()) for _ in range(2)]
+    try:
+        failures = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), 5)
+        assert all(isinstance(failure, TimeoutError) for failure in failures)
+        assert attempts == 2 and loads == 1 and peak == 1
+        assert load_task is not None and not load_task.done()
+        assert not gen.worker._confirmed and gen.worker._last_projection is None
+        assert gen.worker._generation_pending and gen.clock[0] == 0.0
+        release.set()
+        await load_task
+        gen.worker.operation_timeout = 5.0
+        recovered = await gen.worker.step()  # no 60-second maintenance advance
+        assert recovered.generation.activated
+        assert not gen.worker._generation_pending and gen.worker._confirmed
+        assert loads == 1 and peak == 1 and gen.embedder.batches == 1
+    finally:
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        release.set()
+        if load_task is not None:
+            await load_task

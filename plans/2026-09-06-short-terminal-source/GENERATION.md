@@ -1,5 +1,9 @@
 # 正常后台 worker 接通公共 generation
 
+2026-09-06 补充冷加载恢复控：在固定生产源码161702be上只追加一个测试，未改默认 operation_timeout=5s 或 WeMM。公共小 embedder 的共享 shield 加载任务由事件延后完成，以0.5s缩放 deadline 跨两次超时；同时发出的两次 worker.step 被现有锁串行执行（peak=1），load task 只创建一次，两次超时后确认 cache 为空、_last_projection=None、generation_pending=True。放行加载后，不推进模拟维护时钟即可恢复 generation，实际 embed batch 成功一次。此为 worker 恢复控，不是实际 WeMM 8秒加载/线程清理验收。
+
+r3 仅 `-k cold_shared`：1 PASS/4 deselected，5.60s；PG83348/173920KiB/6.232s/remaining=[]，共享锁释放。原四绿和 WeMM suite 未重跑。当前测试文件 SHA327f1c7269102f59c5aa7569c79776713db8c35bcdf84bbcd0e7f43ea3042108；r3/command.log SHA7b7b5d3df071169ae053b4fb828b102a0339c68afc908933623a8d719d29e062；r3/resource.json SHA0451d62a1a26b5bfe8c78de43bcbee17b0f2dd95738fc50670191605aba44eb4。下文四项结果和测试文件hash保留161702be时的历史版本。
+
 最后更新：2026-09-06。后继基线 `02bf7dcc`；自有 `/Users/denny/projects/simple_harness-corpus-clock`，分支 `feat/short-index-generation`。02bf 来源叶由主转 Dirac ACCEPT，本叶单独待审。未改 Memory SDK、制品、原库或 WeMM 实现。
 
 ## 真实配置与最小生产变化
