@@ -8171,11 +8171,14 @@ async def _build_product_sdk_runtime_stack(
     )
     if verification_driver_factory is None:
         raise RuntimeError("Skill verification driver factory is unavailable")
-    driver = ProductRootDriverRouter(
+    from simple_harness.runtime import StartModeDriverRouter
+
+    host_control_driver = ProductRootDriverRouter(
         react_driver=driver,
         attempt_resolver=SkillInstallVerificationAttemptResolver(capability_store),
         verification_driver_factory=verification_driver_factory,
     )
+    driver = StartModeDriverRouter(ordinary=driver, host_control=host_control_driver)
 
     def execution_context_getter():
         from deskpet.sdk_adapters.tools import (
