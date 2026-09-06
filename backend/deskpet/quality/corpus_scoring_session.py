@@ -198,6 +198,10 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
         provider_clock_projection="CONFIGURED_MAIN_PRIMARY_SEMANTIC_CLOCK_NOT_OBSERVED",
         embedding="NO_LOCAL_MODEL_LOADED", initialization="main_product_factory",
         cleanup_errors=[])
+    if c05 is not None:
+        # The fixture owns LLM responses, not the main embedder's lifecycle.
+        # Model-load absence is established by the separate controlled carrier.
+        outcome["embedding"] = "MAIN_EMBEDDER_LOAD_NOT_OBSERVED"
     service = None
     recent_provider = task_provider = None
     task_history = None

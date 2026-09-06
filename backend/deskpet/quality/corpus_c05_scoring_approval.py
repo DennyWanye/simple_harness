@@ -15,24 +15,26 @@ class C05ScoringApproval(ReadOnlyMemoryApproval):
         self.selection_allowed = selection_allowed
         self.preview_runs = tuple(preview_runs)
 
-    async def allow_request(self, *, request, sdk_run_id, queued, service):
-        from simple_harness import thaw_json
+    async def allow_request(self, *, request, sdk_run_id, decision_id, queued, service):
+        from deskpet.quality.corpus_c05_approval import verify_pending_call
         from deskpet.quality.corpus_c05_runtime import read_candidate_events
-        effect_id = request.get('effect_id')
-        if not isinstance(effect_id, str) or not effect_id:
-            return False
-        _, (effect,) = self.main._sdk_runtime_stack.read_primary_dependency_facts(sdk_run_id, (effect_id,))
-        if (effect is None or effect.run_id.value != sdk_run_id or effect.effect_id.value != effect_id
-                or effect.call_id.value != request.get('call_id')
-                or effect.tool_name != request.get('tool_name')
-                or thaw_json(effect.arguments) != request.get('arguments')):
-            return False
+        # OPEN authorization precedes EffectRecord creation. The common helper
+        # reads actual public waiting/proposal/response facts, not a fake effect.
+        proof = await verify_pending_call(stack=self.main._sdk_runtime_stack, ingress=self.ingress,
+            sdk_run_id=sdk_run_id, decision_id=decision_id, request=request)
+        self.record(dict(status='PENDING_CALL_OBSERVED', sdk_run_id=sdk_run_id,
+            decision_id=decision_id, effect_id=proof.effect_id,
+            internal_call_id=proof.internal_call_id, raw_call_id=proof.raw_call_id,
+            waiting_source_ref=proof.waiting_source_ref, waiting_source_hash=proof.waiting_source_hash,
+            provider_invocation_ref=proof.provider_invocation_ref,
+            provider_response_hash=proof.provider_response_hash))
         name, args = request.get('tool_name'), request.get('arguments')
         if not isinstance(args, dict):
             return False
         if name == 'task_scope_search':
             return True  # Actual production schema, source/disclosure and final guards still apply.
-        if await super().allow_request(request=request, sdk_run_id=sdk_run_id, queued=queued, service=service):
+        if await super().allow_request(request=request, sdk_run_id=sdk_run_id,
+                decision_id=decision_id, queued=queued, service=service):
             return True
         if name != 'context_route' or args.get('route') != 'resume_existing' or not self.selection_allowed:
             return False
@@ -49,6 +51,5 @@ class C05ScoringApproval(ReadOnlyMemoryApproval):
         if not matches:
             return False
         self.record(dict(status='CURRENT_PREVIEW_SOURCE_OBSERVED', sdk_run_id=sdk_run_id,
-            effect_id=effect_id, sources=matches))
+            effect_id=proof.effect_id, sources=matches))
         return True
-
