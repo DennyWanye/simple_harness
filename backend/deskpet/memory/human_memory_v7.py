@@ -104,7 +104,13 @@ class HumanMemoryV7Runtime:
         conversation_evidence_authority: Any = None,
         backend_factory: Callable[..., Any] | None = None,
         principal: Any = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
+        if not callable(clock):
+            raise TypeError("memory runtime clock must be callable")
+        # Business/scenario time. Keep physical deadlines and leases on their
+        # own elapsed-time clocks; never monkeypatch process-global time.
+        self._clock = clock
         self._db_path = Path(db_path)
         from deskpet.operation_audit.memory_attempts import MemoryAttemptJournal
         self.operation_audit = MemoryAttemptJournal(self._db_path.with_name("operation-audit.db"))
@@ -120,7 +126,8 @@ class HumanMemoryV7Runtime:
         self._history_source_authority = history_source_authority
         self.audit_access_authority = audit_access_authority
         self._conversation_evidence_authority = conversation_evidence_authority
-        # Test seam only: build the backend with an injected clock/fault injector
+        # Test seam only: optionally replace the public backend constructor.
+        # The trusted clock follows the normal production builder path too.
         # (the production path is always ``build_human_memory_v7``).
         self._backend_factory = backend_factory
         self.registration_receipt: Any | None = None
@@ -157,6 +164,7 @@ class HumanMemoryV7Runtime:
             # power the short-horizon vector lane.
             embedder = None
         return {
+            "clock": self._clock,
             "short_horizon_embedder": embedder,
             "supported_filter_policies": HOST_SUPPORTED_FILTER_POLICIES,
             "evidence_authority": self._evidence_authority,
@@ -319,7 +327,7 @@ class HumanMemoryV7Runtime:
             requested_names, typed_short = HOST_DEFAULT_MEMORY_TYPES, False
         manager = await self.manager()
         principal = self.principal()
-        moment = time.time() if now is None else float(now)
+        moment = float(self._clock()) if now is None else float(now)
         subject = principal.actor_id
         # The Host is the only author of disclosure identity; model payloads
         # can never override recipient/purpose (program hard contract 89-91).

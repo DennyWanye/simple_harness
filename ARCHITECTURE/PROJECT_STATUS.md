@@ -1,5 +1,10 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Host业务clock局部验收完成
+
+最后更新：2026-09-06。`feat/corpus-runtime-clock` / base `b34b32c3`，自有稀疏树 `simple_harness-corpus-clock`，尚未合入主组合。可信clock贯通composition、runtime和公开SDK；默认真实时间，进程内lease独立monotonic。安装候选6项必要契约通过，0.579秒、峰值92256KiB、PGID33180无残留。仅完成本片clock边界；有效seed时间筛选、受众用途公共setup、240质量、Provider/native均不在本次通过范围。
+[固定接口、测试与指纹](../plans/2026-09-06-corpus-clock/验收结果.md)。
+
 ## 2026-09-06 新组合原生构建通过，启动因内存前置未执行
 
 最后更新：2026-09-06。18ec7194新前端嵌入独立app构建通过，18.737秒/峰1.06GiB/进程清理。native carrier改同一资源组，两个实际进程/流检查通过；首次启动在Popen前因5579MiB<7GiB预算被拒，应用和模型未启动，无UI/重启证据，不冒称原生验收完成。

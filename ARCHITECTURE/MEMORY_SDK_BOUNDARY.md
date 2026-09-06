@@ -1,5 +1,10 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 Host业务clock局部透传
+
+最后更新：2026-09-06。独立 `feat/corpus-runtime-clock` / base `b34b32c3`：composition可信clock经HumanMemoryV7Runtime传至公开SDK builder和默认typed recall；默认仍为time.time，进程内analysis lease采用monotonic。真实公开SDK空库6项契约通过，包括独立history.checked_at、原C04两个时点、重开及内部now隔离；峰值90MiB，进程组已清空。未运行有效seed时间筛选、Provider/native或240质量评估，受众用途接线未完成，待主复核整合。
+[接口、命令及原始证据指纹](../plans/2026-09-06-corpus-clock/验收结果.md)。
+
 ## 2026-09-06 模型短期召回及测试资源管理已组合
 
 最后更新：2026-09-06。独审cb743007、145baed3依次fast-forward接入组合：H073/M0613/S0313再次核对169/75/121 installed成员与本树vendor一致；实际候选/短期worker22PASS/9.90秒，峰值265MiB、进程已退出。新模型长短期请求单typed预算、完整来源和最终出站再检查；资源入口默认串行锁/RSS/时间限制及父退出后组清理，三个实际故障点均原红→修复绿并独审通过。

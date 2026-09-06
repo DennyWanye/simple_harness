@@ -60,5 +60,6 @@ def compose_human_memory_runtime(
         ),
         backend_factory=backend_factory,
         principal=principal,
+        clock=clock,
     )
     return runtime
