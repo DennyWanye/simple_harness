@@ -2,12 +2,14 @@
 
 ## 2026-09-06 Host typed-use 生产接线独立叶
 
-最后更新：2026-09-06。aacf3f4d独立叶保留H074/M614/S0313环境。实际注入生产组件的long2item/
-pregrant拒绝/postgrant精确消费/no-recall/reopen批4PASS，独立固定clock1PASS、重叠负控批3PASS。
-真实11组short暴露H074 source_revision字段拒绝合法None；不填伪1。mainfactory邻居1PASS/1FAIL，
-缺schema时新增authority初始化改变拒绝顺序待修。原红与环境不改，后继H075独立处理DTO/持久边界。
-未完成本叶或正式401/原生/program；完整main组合、short及sink故障控制仍待验证。
-[具体结果及证据](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
+最后更新：2026-09-06。独立typed-use叶保留cb544203/H074真实short红；经Dirac确认，
+H075仅short源revision允许None、其他仍positive，schema9正式backup迁移。实际11组short→公开
+page/fragment→Memory grant→physicalguard正常外发及独立Host祖先source遗忘拒绝均通过；
+安装版同两控+原factory缺ledger失败修正3PASS11.40s，PGID46888退出/无残留。
+H075新target独立、旧074614环境/用户库不变；Host默认接同一真实authority及官方迁移。
+本片short边界完成，原long/clock证据保留；整个typed-use no-recall sink故障恢复、主组合及
+M615/M616/native仍独立待办，不标401/program完成。
+[结果、候选身份及证据](../plans/2026-09-06-typed-use-primary/RESULTS.md)。
 
 ## 2026-09-06 工具多消息公开因果读取局部验证
 

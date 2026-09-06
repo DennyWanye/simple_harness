@@ -49,3 +49,43 @@ Root: .local-test-evidence/2026-09-06/typed-use-primary/
 - `short-r1/resource.json` SHA256 `91ce3a0e555a80ed7182c1eb8fdeb083542b32f4e1c71dbc921780eaf12d0c58`
 - `factory-r1/command.log` SHA256 `b986eb42852e78322197b92d13006058fec196015c4803ad968198909f781a9c`
 - `factory-r1/resource.json` SHA256 `7eceeae5b5f4a3f29f1dff1af24991cf05f1ac6132a5685c935e80ce4d110aec`
+
+
+## H075 exact short closure (2026-09-06)
+
+Dirac scoped source ACCEPT for SDK87e4b64/business0735fb5 +Host f1cdeb9f short delta.
+This completes the short source-revision path, not the entire typed-use leaf.
+Frozen SDK075 sourceabbb0fd707f2ceadb271471da2ef906c27748420; wheel SHA256
+7969a2e5028f2c5d0b348973a5b330bca797f10c1bdfa2532ae033d352d2ee66.
+Host selected None is copied unchanged; no short revision1 and no Memory changes.
+
+- short-h075-r1 source overlay:2PASS9.58s, normal real11groups/one short/grant/
+  physicalguard/second localHTTP send/COMPLETED/reopen0newsend; independent Host
+  group ancestor S1 suppressed after grant -> guard denies/one physical send/FAILED.
+- installed075-short: same2 controls plus the previously failed real main factory
+  missing-ledger refusal control,3PASS11.40s (one existing asyncio warning).
+  PGID46888 exit0, peak401552KiB, resource12.455s, remainingchildren[].
+  This is the installation rerun of the same short oracle, not3 additional goals.
+
+Small H075 target is under SDK short-context-revision artifact-075/installed-target;
+uv installed only H075 from THIS Host vendor wheel with --no-deps. -I consumer has
+no PYTHONPATH and imports actual SDK only from target;175 wheel members (except
+RECORD) match new target,119 loaded Harness modules are target-owned. Existing
+venv074614 and M614/S0313 unchanged; no old-package rescan. Host source/tests are
+explicit inputs to the consumer, not claimed installed Host or native. Candidate
+pin/vendor/lock names now075; no other package resolution or environment reinstall.
+
+Official existing execution DB call is now migrate_execution_to_v9, before any
+runtime handle, with `<db>.pre-schema-9.backup`. Exact7/8 migrate backup-first,
+fresh9 returnsNone, upgraded9 replays same receipt; old H074 refuses schema9 early.
+No actual user DB migrated. Raw/old archives retained. Final source-token check,
+raw USER/history and standalone short current checks remain.
+
+Remaining: whole-leaf no-recall pending/sink crash/recovery controls, broader main
+combination and M615/M616 composition/native. Do not infer these from short ACCEPT.
+No additional green long/clock/migration reruns are planned.
+
+- `short-h075-r1/command.log` SHA256 `599721acb2656a5ecc23361bb8356ccaa49f0e865f5bb16df1b33ed17c7a58b0`
+- `short-h075-r1/resource.json` SHA256 `f0f860de33b631ce101b6e1a270fd58fe9443108f8f56bc88542c28433c2e35d`
+- `installed075-short/command.log` SHA256 `4d86a241c2ad7484098bce1969c7a7a1498d0f7050a3c20f5055e5b12f95f636`
+- `installed075-short/resource.json` SHA256 `43cb4cda666b245493f46633776b70ce615022908fc3dc3adc7c1a8d47c11660`

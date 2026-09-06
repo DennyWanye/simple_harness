@@ -79,10 +79,10 @@ Host ledger, including reopen; no fake tool/SDK terminal.
 
 ## Official migration
 
-Composition invokes synchronous public migrate_execution_v7_to_v8 only for an
+H075 successor composition invokes synchronous public migrate_execution_to_v9 only for an
 existing execution file, before any Runtime/UoW handle opens. Same-directory fixed
 backup is retained and exact upgrade receipt reused. Fresh paths remain builder-owned;
-valid fresh8 no-op is legal. Unknown schema/backup mismatch/busy refuses. Old active
+valid fresh9 no-op is legal. Unknown schema/backup mismatch/busy refuses. Old active
 Runs lacking typed admission proof stay explicitly legacy/unverified; no universal
 adoption. Test copies/fixtures only; user main DB and old073 env are untouched.
 
@@ -137,3 +137,9 @@ Host evidence roots and indirect recall dependencies current; exempt only the
 exact tool occurrence's own typed4tuple. A long-typed grant-first positive cannot
 stand in for short-typed receipt-first availability. Sink failure after a real send
 retains that send fact and must not be labelled pre-delegate definitely-not-sent.
+
+
+H074's source_revision required-positive conflict is superseded by reviewed H075:
+actual shortNone only, nonshort positive. SameV2 hash domain/keys; schema9 early
+binary boundary and explicit7/8->9 migration. Prior plans/results describe historical
+H074 inputs; current tested artifact is075 and the old env remains untouched.
