@@ -49,6 +49,53 @@ def archive_facts(state, scope):
             "SELECT receipt_json FROM task_workspace_binding_revisions WHERE task_scope_id=? ORDER BY binding_set_revision"))
 
 
+def verify_added_bound_events(db, added, sdk_run_id, stack):
+    """Exact new facts of real route ingress; no blanket same-Run allowance."""
+    from deskpet.task_scope.protocol import canonical_hash
+    db.row_factory = sqlite3.Row
+    route = db.execute("SELECT * FROM context_route_decisions WHERE sdk_run_id=? AND task_scope_id IS NOT NULL", (sdk_run_id,)).fetchall()
+    assert len(route) == 1 and route[0]["route"] == "resume_existing"
+    route = route[0]
+    invocations = db.execute("SELECT * FROM context_route_tool_invocations WHERE sdk_run_id=? ORDER BY rowid", (sdk_run_id,)).fetchall()
+    assert len(invocations) == 2
+    assert [r["verdict"] for r in invocations] == ["accepted", "rejected"]
+    assert json.loads(invocations[-1]["detail_json"])["code"] == "context_route_workspace_reuse_requires_new_run"
+    terminal = db.execute("SELECT * FROM foreground_terminal_receipts WHERE sdk_run_id=?", (sdk_run_id,)).fetchone()
+    assert terminal is not None and terminal["terminal_state"] == "COMPLETED"
+    expected = {
+        "route:" + route["decision_id"]: ("harness.route_decision", {
+            "decision_id": route["decision_id"], "route": route["route"], "origin": route["origin"],
+            "task_scope_id": route["task_scope_id"], "receipt_id": route["receipt_id"],
+            "receipt_hash": route["receipt_hash"], "provider_turn_ordinal": route["provider_turn_ordinal"],
+        }),
+        f"{sdk_run_id}:terminal:completed": ("harness.run_terminal", {
+            "generation": terminal["generation"], "terminal_state": terminal["terminal_state"],
+            "sdk_terminal_event_hash": terminal["sdk_event_hash"],
+        }),
+    }
+    from simple_harness import thaw_json
+    _, effects = stack.read_primary_dependency_facts(sdk_run_id, tuple(r["effect_id"] for r in invocations))
+    for invocation, effect in zip(invocations, effects, strict=True):
+        assert effect is not None and effect.terminal and effect.tool_name == "context_route"
+        assert effect.run_id.value == sdk_run_id and effect.raw_call_id == invocation["raw_call_id"]
+        assert effect.effect_id.value == invocation["effect_id"]
+        assert canonical_hash(thaw_json(effect.arguments)) == invocation["proposal_hash"]
+        expected["effect:" + invocation["effect_id"]] = ("harness.tool_invocation", {
+            "tool_name": "context_route", "effect_id": invocation["effect_id"],
+            "raw_call_id": invocation["raw_call_id"], "verdict": invocation["verdict"],
+            "decision_id": invocation["decision_id"], "proposal_hash": invocation["proposal_hash"],
+        })
+    assert {row[5] for row in added} == {"execution:" + key for key in expected} and len(added) == len(expected)
+    for row in added:
+        payload = json.loads(row[7])
+        kind, public = expected[payload["event_id"]]
+        assert row[3] == kind and row[4] == "harness"
+        assert payload["run_id"] == sdk_run_id and "execution:" + payload["event_id"] == row[5]
+        assert payload["public_payload"] == public
+        assert canonical_hash(payload) == row[6]
+    db.row_factory = None
+
+
 async def actual_world(tmp_path, *, mode="auto", invalid=None):
     state, factory, service, configured, authority, old, root = await archive(tmp_path, mode)
     prior = archive_facts(state, old)
@@ -168,16 +215,19 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
         price_resolver=lambda *_: (1, 1, "fixture-prices"), pre_invoke_guard=guard)
     try:
         from deskpet.tools.os_tools.registration import register_os_tools
-        class ToolSchemas:
-            def __init__(self): self.schemas = {}
-            def register(self, *, name, schema, **_): self.schemas[name] = schema["parameters"]
-        captured = ToolSchemas()
-        register_os_tools(captured)
+        from deskpet.tools.registry import ToolRegistry
+        from deskpet.tools.os_tools.write_file import write_file
+        actual_tools = ToolRegistry()
+        register_os_tools(actual_tools)
+        write_spec = actual_tools.get("write_file")
+        assert write_spec is not None and write_spec.handler is write_file
+        assert write_spec.context_handler is not None
+        assert write_spec.permission_category == "write_file"
         from deskpet.execution.evidence_ingress import ExecutionEvidenceIngress
         from deskpet.sdk_adapters.context_authority import ContextRouteLedgerStore
         runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True, binding_authority=authority, configured_root=configured,
             context_route_ledger_factory=lambda path: ContextRouteLedgerStore(path, evidence_ingress=ExecutionEvidenceIngress(path)),
-            write_file_schema=captured.schemas["write_file"])
+            write_file_schema=write_spec.schema["parameters"])
         await service.enqueue_turn(QueueTurnRequest(None, "continue-original", "Continue editing the accepted project's original document in a new task"))
         await runtime.after_enqueue(subject=runtime.subject)
         await asyncio.wait_for(runtime.drain(), 25)
@@ -190,8 +240,7 @@ async def actual_world(tmp_path, *, mode="auto", invalid=None):
             with sqlite3.connect(state) as db:
                 sdk_run_id = db.execute("SELECT sdk_run_id FROM foreground_run_sdk_bindings").fetchone()[0]
                 added = after[1][len(prior[1]):]
-                assert [row[3] for row in added] == ["harness.tool_invocation", "harness.run_terminal"]
-                assert all(row[4] == "harness" and json.loads(row[7])["run_id"] == sdk_run_id for row in added)
+                verify_added_bound_events(db, added, sdk_run_id, stack)
                 assert db.execute("SELECT COUNT(*) FROM context_route_decisions WHERE task_scope_id IS NOT NULL").fetchone()[0] == 1
         else:
             assert after[1] == prior[1]
