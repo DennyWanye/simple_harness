@@ -1,0 +1,12 @@
+# 工具多消息S1与short接线契约
+
+2026-09-06。此文件为d6fc92ed公开因果reader的下一实施边界，尚未完成。无需用户再次批准，沿原计划继续。
+
+1. 终态observer仅在COMPLETED且包含tool的实际当前turn尝试读取因果来源。Host primary_effect_identities是ID来源，按run/主体/primary与identity_json/hash完整核对；SDK公共reader复核结果。新调用输入通过内部方法传递，不加入model/tool schema。读缺/UNKNOWN/截断/特殊投影不完整时只保留完整原终态，标明不可索引；不得丢tool或只取末条assistant。
+2. 新tool组使用primary-message-v2 marker及独立UUID域；原两消息primary-message-v1及既有终态字节不改、不补写。observer原子提交实际终态、全部assistant/tool逐消息S1及各sanitization receipt，同一Host租约/fence/事务。每个child指向原USER与exact终态，包含原messages对应ordinal/json pointer，tool另包含实际public因果投影。任一child失败整体回滚；重放只核旧marker对应已提交sources，缺child为损坏而非修复机会。
+3. 工具结算凭据明确为Host依据实际已结算effect签发并持久承诺的v1 attestation，引用effect_id/version/state/result_hash/evidence_ref_hash及Provider/call/父message绑定；不是SDK不存在的独立ToolTerminalReceipt，也不是Run terminal hash/审计row source_hash。receipt ID/hash经独立版本域从完整attestation计算并存于child。ConversationToolCausalLink引用该Host凭据，重读必须核原始attestation、child/terminal/hash与唯一对应。
+4. ConversationGroup必须包含原USER与所有assistant/tool，顺序和group_item_count从实际完整transcript决定，最多256。tool role/source_kind/provenance由Host观察事实映射，parent_item_ordinal必须是实际Provider assistant；不由文本相同或raw call ID单独推断。所有元数据仍通过公开SDK authorize_conversation_public_text及registration ports；普通短期worker默认处理新已支持组，工具输出不晋升为用户确认事实。
+5. 对含空assistant文本但实际tool call的组先检查SDK公开文本契约能否表示；不发明placeholder替换原消息。非文本artifact、多根/不完整tool因果组需明确保留阻塞，后继继续支持，不把过滤后的子集称完整。
+6. 实际验收：dynamic Host重复raw ID跨两轮→一次完整6item组，11turn使其真正进入short并非空命中；最后source/terminal祖先遗忘使selected来源与最终出站拒绝。提交中故障无半组、重开相同manifest/ACK、缺或改child/Host tool attestation拒绝、旧v1重放不补写。H073/M0614先维持，不依赖正在构建的H074消费链；后者接入时运行必要交叉用例。
+
+资源限制沿145同锁2GiB/180秒，所有DB/raw保持ignored。公开audit bounded snapshot不得生成查看器缓存；projection全局8192读取上限是当前能力边界，后继按Run查询接口的性能工作另验证。正式Host集成前仍需独立源码审查，不据此要求用户追加确认。
