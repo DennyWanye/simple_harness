@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+2026-09-06 原生r12（Host33809aae/H077/M617）：同实例启动load+prime完成后，新进程首次short查询真实成功，无手动重试；新工具三条recall refs和模型青竹九月/无糖茉莉茶回答均可见。本场景PASS，工具总耗时1516.972ms不等SDK检索或p95；原预算未增，广泛性能/质量另验。PG96027正常退出/组清空，磁盘5219MiB；原r10/r11失败保留。[首查结果、Run与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R12.md)。
+
 最后更新：2026-09-06。r11 load-only 后首query仍超时；后继68f525e2在原实例／encode队列执行一次固定无用户数据priming，startup完成含加载及priming。三项新控制3PASS／0.27s，PG95734清空、锁释放；原1s预算不变，已独审合入primary候选，待真实新进程首query，不能以暖态重试关闭。[结果与边界](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 2026-09-06 原生r11（Host464b86ee/H077/M617）：既有startup hook实际完成WeMM预加载，但新进程唯一首query的encode1.44s仍超1s预算；UI明确查询失败，未重试，不以r10暖成功替代首查。PG93935正常退出且组清空；仅清可再生Rust链接对象恢复磁盘4.15GiB，native二进制哈希/模型/证据/用户库不变。继续同实例编码预热。[本次失败与资源证据](../plans/2026-09-06-typed-use-primary/NATIVE-R11.md)。

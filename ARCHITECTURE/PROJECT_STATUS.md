@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06 原生r12（Host33809aae/H077/M617）：同实例启动load+prime完成后，新进程首次short查询真实成功，无手动重试；新工具三条recall refs和模型青竹九月/无糖茉莉茶回答均可见。本场景PASS，工具总耗时1516.972ms不等SDK检索或p95；原预算未增，广泛性能/质量另验。PG96027正常退出/组清空，磁盘5219MiB；原r10/r11失败保留。[首查结果、Run与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R12.md)。
+
 2026-09-06：自有clock树 `feat/wemm-startup-prime`／base082f68c0，源码68f525e2，三项priming新增控制3PASS／0.27s；PG95734无残留、共享锁释放，峰122208KiB、磁盘最低4217MiB。已独审合入primary候选，待真实首次native查询，原r11冷FAIL保留；Procedure WIP未混入，旧绿不重跑。[证据](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
 
 2026-09-06：`feat/closure-resume-source` / baseff2f2009独立叶，固定0a52085e非空resume真实producer与当前来源过滤完成本批限定验证；r1一绿四红、r2仅四红转绿，合计5unique，Dirac限定ACCEPT。实际tool/fallback→后继Run→物理MockTransport闭合、前缀稳定、来源遗忘和原子故障已验；H077/M616限定载体，已合primary候选，主组合/native待验，legacy/篡改/goal/恢复剩余控制与完整compaction继续保留。两新policy仅常量hunk，合主保留Singer typed modes；PG95551退出无残留，未重跑旧绿。[结果/命令](../plans/2026-09-06-closure-resume-source/RESULTS.md)。
