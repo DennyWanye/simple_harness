@@ -82,16 +82,18 @@ class SetupBatch:
 
 
 def compile_setup(case_id, setup_text, *, scenario_clock):
-    if type(case_id) is not str or case_id not in SETUPS:
+    from deskpet.quality.corpus_c02 import SETUPS as C02_SETUPS, SPECS as C02_SPECS
+    setups, all_specs = (C02_SETUPS, C02_SPECS) if type(case_id) is str and case_id.startswith('C02-') else (SETUPS, SPECS)
+    if type(case_id) is not str or case_id not in setups:
         raise ValueError('corpus_unknown_setup')
-    text,digest=SETUPS[case_id]
+    text,digest=setups[case_id]
     if type(setup_text) is not str or setup_text!=text or sha256(setup_text.encode()).hexdigest()!=digest:
         raise ValueError('corpus_setup_source_changed')
-    if case_id not in SPECS:
+    if case_id not in all_specs:
         raise ValueError('corpus_revision_setup_requires_public_action_authority')
     clock=datetime.fromisoformat(scenario_clock)
     if clock.tzinfo is None:raise ValueError('corpus_clock_offset_required')
-    specs=SPECS[case_id]
+    specs=all_specs[case_id]
     defaults=tuple(sorted({ 'undated_past_episode=clock-24h' if s[1]=='episode' else
         'undated_unexpired_prospective=clock+24h' for s in specs if s[1] in ('episode','prospective')}))
     return SetupBatch(case_id,text,digest,clock.timestamp(),specs,defaults)
@@ -125,13 +127,20 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
         span=derive_span(item,batch.setup_text,span_id='setup-'+label)
         lifecycle={'semantic':h.SemanticLifecycleState.ACTIVE,'episode':h.EpisodeLifecycleState.ACTIVE,
             'prospective':h.ProspectiveLifecycleState.PENDING}[kind]
+        from deskpet.quality.corpus_c02 import CLASSIFICATIONS
+        classification=CLASSIFICATIONS.get((batch.case_id,label))
+        epistemic,verification,reason=h.EpistemicStatus.EXPLICIT_USER,h.VerificationState.SOURCE_BOUND,'explicit_user_assertion'
+        if classification is not None:
+            state,knowledge,verified,reason=classification
+            lifecycle=h.SemanticLifecycleState(state)
+            epistemic,verification=h.EpistemicStatus(knowledge),h.VerificationState(verified)
         operations.append(h.MemoryMutationOperation(operation_id=label,kind=h.MemoryMutationKind.CREATE,
             memory_type=h.LongTermMemoryType(kind),payload=payload(spec,batch.scenario_time),
             target=None,depends_on_operation_ids=(),lifecycle_state=lifecycle,
-            epistemic_status=h.EpistemicStatus.EXPLICIT_USER,conflict_status=h.ConflictStatus.UNCONTESTED,
-            verification_state=h.VerificationState.SOURCE_BOUND,valid_time_interval=h.ValidTimeInterval(None,None),
+            epistemic_status=epistemic,conflict_status=h.ConflictStatus.UNCONTESTED,
+            verification_state=verification,valid_time_interval=h.ValidTimeInterval(None,None),
             proposed_privacy_class=h.PrivacyClass.PERSONAL,proposed_information_attributes=(),
-            evidence_spans=(span,),reason_code='explicit_user_assertion'))
+            evidence_spans=(span,),reason_code=reason))
     identity='corpus-'+canonical_hash([batch.case_id,batch.setup_hash,envelope.evidence_id,batch.scenario_time])
     plan=h.MemoryMutationPlan(identity,envelope.run_id,identity,principal.actor_id,base_revision,
         h.MemoryMutationPlanOutcome.MUTATE,tuple(operations),envelope.disclosure_context,
@@ -150,7 +159,8 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
         actual=mapped[op.operation_id]
         if (actual.memory_type!=op.memory_type.value or actual.revision!=1
                 or actual.content_hash!=canonical_hash(op.payload.to_json())
-                or actual.evidence_ids!=(envelope.evidence_id,)):
+                or actual.evidence_ids!=(envelope.evidence_id,)
+                or actual.epistemic_status!=op.epistemic_status.value):
             raise ValueError('corpus_setup_public_readback_differs')
     return dict(case_id=batch.case_id,setup_hash=batch.setup_hash,fixture_defaults=batch.fixture_defaults,
         source_id=envelope.evidence_id,source_hash=envelope.envelope_hash,
