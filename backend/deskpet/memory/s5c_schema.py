@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: BUSL-1.1
-"""Explicit isolated v48 initializer. Not called by production composition.
+"""Explicit isolated v50 initializer. Not called by production composition.
 
 Use the existing transactional SQL runner/recovery registry. Keep this SQL in a
-subdirectory so the ordinary v47 migration glob cannot silently activate S5c.
+subdirectory so the ordinary v49 migration glob cannot silently activate S5c.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import aiosqlite
 
 from deskpet.memory import migrator, schema
 
-S5C_MIGRATION = "s5c/040_prospective_memory_actions_v48.sql"
+S5C_MIGRATION = "s5c/042_prospective_memory_actions_v50.sql"
 S5C_TABLES = (
     "prospective_scheduler_registrations",
     "prospective_outbox_cursor",
@@ -31,7 +31,7 @@ def _sql() -> str:
 
 
 def validate_s5c_state_db(path: Path) -> None:
-    """Verify the base chain, v48 checksum/DDL and registered recovery fences."""
+    """Verify the base chain, v50 checksum/DDL and registered recovery fences."""
     for validator in (
         schema._validate_human_memory_program_marker,
         schema._validate_task_scope_archive_marker,
@@ -42,7 +42,7 @@ def validate_s5c_state_db(path: Path) -> None:
         schema._validate_quiescence_marker,
         schema._validate_execution_marker,
     ):
-        validator(path, expected_user_version=48)
+        validator(path, expected_user_version=50)
     sql = _sql()
     try:
         with sqlite3.connect(":memory:") as expected:
@@ -57,7 +57,7 @@ def validate_s5c_state_db(path: Path) -> None:
                 "WHERE migration_id=?",
                 (S5C_MIGRATION,),
             ).fetchone()
-            if row != (48, hashlib.sha256(sql.encode()).hexdigest()):
+            if row != (50, hashlib.sha256(sql.encode()).hexdigest()):
                 raise ValueError("migration hash")
             if (
                 db.execute(
@@ -103,11 +103,19 @@ async def initialize_s5c_state_db(
 ) -> None:
     path = Path(db_path)
     version = await migrator.read_user_version(path)
-    if version > 48:
+    if version > 50:
         raise schema.HumanMemoryProgramEpochError(
             "human_memory_program_future_database_unsupported"
         )
-    if version < 48:
+    # Older unpublished S5c schemas used numbers now owned by Primary.
+    # Reject their actual table identity before invoking any ordinary repair path.
+    if path.exists() and version != 50:
+        with sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True) as db:
+            placeholders = ",".join("?" for _ in S5C_TABLES)
+            if db.execute(f"SELECT 1 FROM sqlite_master WHERE type='table' AND name IN ({placeholders}) LIMIT 1",
+                    S5C_TABLES).fetchone() is not None:
+                raise schema.HumanMemoryProgramEpochError("s5c_unpublished_schema_incompatible")
+    if version < 50:
         await schema.initialize_human_memory_program_state_db(path)
     async with schema._human_memory_program_lock(path):
         async with aiosqlite.connect(path) as db:
@@ -117,11 +125,11 @@ async def initialize_s5c_state_db(
                 cursor = await db.execute("PRAGMA user_version")
                 current = (await cursor.fetchone())[0]
                 await cursor.close()
-                if current == 48:
+                if current == 50:
                     await db.rollback()
                     validate_s5c_state_db(path)
                     return
-                if current != 47:
+                if current != 49:
                     raise schema.HumanMemoryProgramEpochError(
                         "s5c_base_version_differs"
                     )
@@ -135,8 +143,8 @@ async def initialize_s5c_state_db(
                     raise schema.HumanMemoryProgramEpochError(
                         "s5c_migration_recovery_fenced"
                     )
-                # Validate every v47 marker while holding the migration write lock.
-                schema._validate_s4_migration_chain(path, expected_user_version=47)
+                # Validate every v49 marker while holding the migration write lock.
+                schema._validate_s4_migration_chain(path, expected_user_version=49)
                 sql = _sql()
                 await migrator._execute_transactional_script(db, sql)
                 await migrator._register_recovery_tables(
@@ -146,7 +154,7 @@ async def initialize_s5c_state_db(
                     "INSERT INTO human_memory_migration_chain VALUES (?,?,?,?)",
                     (
                         S5C_MIGRATION,
-                        48,
+                        50,
                         hashlib.sha256(sql.encode()).hexdigest(),
                         time.time(),
                     ),
@@ -155,7 +163,7 @@ async def initialize_s5c_state_db(
                     "INSERT INTO schema_migrations VALUES (?,?)",
                     (S5C_MIGRATION, time.time()),
                 )
-                await db.execute("PRAGMA user_version=48")
+                await db.execute("PRAGMA user_version=50")
                 if fault_inject:
                     fault_inject("s5c.migration.before_commit")
                 await db.commit()

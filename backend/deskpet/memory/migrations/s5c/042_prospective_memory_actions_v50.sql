@@ -1,4 +1,4 @@
--- S5c T2 explicit-only migration. The default production initializer stays v47.
+-- S5c T2 explicit-only migration. The default production initializer stays v49.
 -- Four domain journals; no timer, grant issuer, Tool, or disclosure bypass.
 CREATE TABLE prospective_scheduler_registrations (
     record_id TEXT PRIMARY KEY,

@@ -106,11 +106,11 @@ def counts(path):
 
 
 @pytest.mark.asyncio
-async def test_explicit_v48_upgrade_reopen_preserves_v47_and_default_rejects(tmp_path):
+async def test_explicit_v50_upgrade_reopen_preserves_v49_and_default_rejects(tmp_path):
     path = tmp_path / "state.db"
     await schema.initialize_human_memory_program_state_db(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 47
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 49
         before = db.execute(
             "SELECT * FROM human_memory_migration_chain ORDER BY migration_id"
         ).fetchall()
@@ -120,7 +120,7 @@ async def test_explicit_v48_upgrade_reopen_preserves_v47_and_default_rejects(tmp
     await initialize_s5c_state_db(path)
     await initialize_s5c_state_db(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 48
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 50
         after = db.execute(
             "SELECT * FROM human_memory_migration_chain ORDER BY migration_id"
         ).fetchall()
@@ -154,7 +154,7 @@ async def test_fault_rolls_back_all_four_tables_or_registration_and_cursor(
         with pytest.raises(RuntimeError, match=point):
             await initialize_s5c_state_db(path, fault_inject=fault)
         with sqlite3.connect(path) as db:
-            assert db.execute("PRAGMA user_version").fetchone()[0] == 47
+            assert db.execute("PRAGMA user_version").fetchone()[0] == 49
             assert not db.execute(
                 "SELECT 1 FROM sqlite_master WHERE name=?", (S5C_TABLES[0],)
             ).fetchone()
@@ -236,7 +236,7 @@ async def test_replay_changed_payload_or_observed_time_rejected(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_v48_ddl_and_recovery_guard_are_verified_on_reopen(tmp_path):
+async def test_v50_ddl_and_recovery_guard_are_verified_on_reopen(tmp_path):
     path, _ = await ready(tmp_path)
     with sqlite3.connect(path) as db:
         db.execute("DROP TRIGGER s5c_action_no_delete")
@@ -464,7 +464,7 @@ async def test_action_resolver_exact_authorized_fixture_and_tamper(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_migration_rejects_live_foreground_without_partial_v48(tmp_path):
+async def test_migration_rejects_live_foreground_without_partial_v50(tmp_path):
     from deskpet.memory.migrator import MigrationBlocked
     from tests.sdk_adapters import s5b_memory_harness as mh
 
@@ -472,7 +472,7 @@ async def test_migration_rejects_live_foreground_without_partial_v48(tmp_path):
     with pytest.raises(MigrationBlocked):
         await initialize_s5c_state_db(env.db_path)
     with sqlite3.connect(env.db_path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 47
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 49
         assert not db.execute(
             "SELECT 1 FROM sqlite_master WHERE name='memory_action_events'"
         ).fetchone()
@@ -573,7 +573,7 @@ async def test_migration_cannot_extend_already_closing_recovery_manifest(tmp_pat
     with pytest.raises(schema.HumanMemoryProgramEpochError, match="recovery_fenced"):
         await initialize_s5c_state_db(path)
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 47
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 49
         assert not db.execute(
             "SELECT 1 FROM sqlite_master WHERE name='memory_action_events'"
         ).fetchone()
@@ -610,7 +610,7 @@ async def test_crash_after_commit_reopens_without_recreating_facts(tmp_path, poi
 
 
 @pytest.mark.asyncio
-async def test_v48_and_request_append_preserve_real_host_raw_rows(tmp_path):
+async def test_v50_and_request_append_preserve_real_host_raw_rows(tmp_path):
     from tests.faults._runner_contract import state_hash
     from tests.sdk_adapters import s5b_memory_harness as mh
 

@@ -1,5 +1,9 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 S5c schema50 successor
+
+Updated 2026-09-06: Primary49 to isolated50; 43 tests passed, real old S5c47/48 rejected without DB byte changes. Default remains49; scheduler/presentation/ACK not wired. Independent review pending. [Mapping and evidence](../plans/2026-09-05-human-memory-s5c-preparation/SCHEMA-50.md).
+
 ## 2026-09-05 S5c schema48 isolated successor
 
 Primary source index now owns global47; deferred S5c is explicitly remapped47->48
