@@ -1,6 +1,6 @@
 # Memory 0.6.14 Host组合复核
 
-最后更新：2026-09-06。Host固定ec046e84，业务源27dceffe05247415ba9b48a55e865a0faba37629，wheel SHA256 f60e7696af830704399f1e964fbd312ea1fea6e41ee7b9123a8a3dfe303368eb。SELF召回不能携带不同最终受众；协作者语义配对修复不等于开放外部/公开原始历史。业务源d7已获独立限定ACCEPT；制品独立复核结果另记，不以本组合测试代替。
+最后更新：2026-09-06。Host固定ec046e84，业务源27dceffe05247415ba9b48a55e865a0faba37629，wheel SHA256 f60e7696af830704399f1e964fbd312ea1fea6e41ee7b9123a8a3dfe303368eb。SELF召回不能携带不同最终受众；协作者语义配对修复不等于开放外部/公开原始历史。业务源d7已获独立限定ACCEPT；Dirac随后对固定2b5e761制品证据限定ACCEPT，无P0/P1；不以本组合测试代替源与制品复核。
 
 隔离安装H0.7.3/M0.6.14/S0.3.13，三个SDK的169/76/121个wheel成员（除RECORD）逐字节核对。新CPython3.12.13环境仅6.3MiB，通用依赖复用主树既有site-packages，三个SDK各自从新环境加载；不是完整依赖求解。旧M0613环境/制品保留。初次setup脚本在安装核对成功后因误写Service模块名而退出1；保留原始失败，随后仅纠正只读验证脚本为simple_harness_service，未重新安装或覆盖证据。
 
