@@ -132,6 +132,7 @@ class HumanMemoryV7Runtime:
         self._backend_factory = backend_factory
         self.registration_receipt: Any | None = None
         self.schema_upgrade_receipt: Any | None = None
+        self.settlement_schema_upgrade_receipt: Any | None = None
 
     @property
     def db_path(self) -> Path:
@@ -189,15 +190,19 @@ class HumanMemoryV7Runtime:
                 if self._backend_factory is None and self._db_path.exists():
                     from simple_harness_memory import migrations
 
-                    upgrade = getattr(migrations, "migrate_human_memory_v7_to_v7_2", None)
-                    if upgrade is not None:
-                        from simple_harness_memory.core.errors import MemoryLegacySchemaUnsupported
-
+                    from simple_harness_memory.core.errors import MemoryLegacySchemaUnsupported
+                    for api, version, receipt_field in (
+                        ("migrate_human_memory_v7_to_v7_2", "7.2", "schema_upgrade_receipt"),
+                        ("migrate_human_memory_v7_2_to_v7_3", "7.3", "settlement_schema_upgrade_receipt"),
+                    ):
+                        upgrade = getattr(migrations, api, None)
+                        if upgrade is None:
+                            continue
                         try:
-                            self.schema_upgrade_receipt = await upgrade(
+                            receipt = await upgrade(
                                 self._db_path,
                                 backup_path=self._db_path.with_name(
-                                    f"{self._db_path.name}.pre-schema-7.2.backup"
+                                    f"{self._db_path.name}.pre-schema-{version}.backup"
                                 ),
                             )
                         except MemoryLegacySchemaUnsupported:
@@ -206,7 +211,8 @@ class HumanMemoryV7Runtime:
                             # initialized stores; the public builder below owns
                             # fresh-store admission and still rejects unknown
                             # schemas. Never remove/probe/rewrite the SDK DB here.
-                            pass
+                            continue
+                        setattr(self, receipt_field, receipt)
                 kwargs = self.build_kwargs()
                 if self._memory_action_authority is not None:
                     kwargs["memory_action_authority"] = self._memory_action_authority
