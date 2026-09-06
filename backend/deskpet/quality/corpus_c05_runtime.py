@@ -252,15 +252,26 @@ async def read_candidate_events(*, path, subject, sdk_run_id, stack, policy):
             if row['identity_hash'] != canonical_hash(identity) or row['identity_json'] != canonical_json(identity):
                 raise RuntimeError('c05_candidate_effect_index_differs')
             _, (effect,) = stack.read_primary_dependency_facts(sdk_run_id, (row['effect_id'],))
-            if effect is None or not effect.terminal or effect.result is None:
-                continue
+            if effect is None:
+                raise ValueError('c05_indexed_effect_missing')
+            if not effect.terminal:
+                continue  # pending, never evidence of completed evaluation
+            if effect.result is None:
+                raise ValueError('c05_terminal_effect_result_missing')
             if effect.tool_name != 'task_scope_search' or effect.run_id.value != sdk_run_id:
                 raise RuntimeError('c05_candidate_effect_differs')
+            if effect.result.call_id != effect.call_id:
+                raise ValueError('c05_candidate_result_call_differs')
+            outcome = effect.result.outcome.value
+            if outcome in ('rejected', 'failed') and effect.result.error_code:
+                continue  # real SDK terminal failure, not an arbitrary payload key
+            if outcome != 'succeeded':
+                raise ValueError('c05_candidate_outcome_unverifiable')
             value = thaw_json(effect.result.value)
             if not isinstance(value, dict):
                 raise ValueError('c05_candidate_result_invalid')
             if 'error' in value:
-                continue
+                raise ValueError('c05_candidate_error_payload_unverified')
             if not isinstance(value.get('candidates'), list):
                 raise ValueError('c05_candidate_result_invalid')
             disclosure = await resolve_current_disclosure(db_path=path, subject=subject,
