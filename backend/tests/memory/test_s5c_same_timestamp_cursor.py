@@ -62,7 +62,12 @@ async def test_late_append_rejects_stale_consumption_cas(tmp_path):
 async def test_real_terminal_receipt_late_key_atomic_reopen(tmp_path, monkeypatch, point):
     # Real SDK public legacy/upgrade/settlement receipt. Only the higher Host
     # cursor row is scripted: this isolates the new store ordering contract.
-    from tests.memory.test_prospective_consumer_m617 import legacy_world
+    from tests.memory.test_prospective_consumer_m617 import legacy_world, World
+    from deskpet.memory.human_memory_service import HOST_PUBLIC_TURN_FILTER_POLICY
+    # The shared helper proxies unknown attributes to its manager; supply
+    # constructor options before that manager exists, without altering it.
+    monkeypatch.setattr(World, 'filter_policies', frozenset({HOST_PUBLIC_TURN_FILTER_POLICY}), raising=False)
+    monkeypatch.setattr(World, 'history_options', {}, raising=False)
     w, entry = await legacy_world(tmp_path, monkeypatch)
     try:
         source = await w.manager.read_prospective_outbox_source_v2(
