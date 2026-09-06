@@ -3044,7 +3044,8 @@ async def _activate_terminal_operation_audit():
     return consumer
 
 
-async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ignore[no-untyped-def]
+async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=None,
+        configured_workspace_root=None) -> None:  # type: ignore[no-untyped-def]
     """Publish fresh-HUMAN authorities only after their dependencies are ready."""
 
     from deskpet.memory.schema import StartupCompositionMode
@@ -3074,6 +3075,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         subject="deskpet-local-owner-v1",
         foreground=foreground,
         policy=policy,
+        configured_workspace_root=configured_workspace_root,
     )
     recovery = build_recovery_lifecycle_port(
         db_path=_state_db_path,
@@ -3245,6 +3247,7 @@ async def _activate_human_memory_host_ports(startup_epoch) -> None:  # type: ign
         context=PrimaryForegroundContextPort(
             _state_db_path,
             subject="deskpet-local-owner-v1",
+            **({"history_reader": history_reader} if history_reader is not None else {}),
             clock=_context_memory_runtime.semantic_clock,
             policy=_primary_history_policy("deskpet-local-owner-v1"),
             stack_getter=lambda: _sdk_runtime_stack,
@@ -7987,7 +7990,7 @@ def _local_owner_auth():
 
 async def _build_product_sdk_runtime_stack(
     generation: int,
-    *, clock=time.time,
+    *, clock=time.time, configured_workspace_root=None,
 ):
     """Build SDK Runtime Stack with product adapters (Slice C ingress)."""
     verify_memory_candidate()
@@ -8361,7 +8364,8 @@ async def _build_product_sdk_runtime_stack(
             WorkspaceBindingAuthorityStore,
         )
 
-        return WorkspaceBindingAuthorityStore(_state_db_path)
+        return WorkspaceBindingAuthorityStore(_state_db_path,
+            configured_workspace_root=configured_workspace_root)
 
     from deskpet.memory.runtime_composition import compose_human_memory_runtime
 
@@ -9005,6 +9009,7 @@ async def _build_product_sdk_runtime_stack(
             reconcile=_occurrence_reconcile,
             typed_use_authority=_typed_use_authority,
             occurrence_coordinator=_occurrence_coordinator,
+            configured_workspace_root=configured_workspace_root,
         ),
     )
     service_context.register(
@@ -9066,6 +9071,7 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
     reconcile,
     typed_use_authority=None,
     occurrence_coordinator=None,
+    configured_workspace_root=None,
 ):
     """Production ``ProductRunContextAuthority`` with the real semantic-closure reader (F-2)."""
 
@@ -9090,7 +9096,8 @@ def _build_run_context_authority(  # type: ignore[no-untyped-def]
         current_tool_projector=CurrentToolProjector(db_path, lambda: _sdk_runtime_stack),
         closure_reader=closure_reader,
         # S5b Task 6 (AC-3⑥): ≥2-root scopes never see PROJECT_EFFECT Tools.
-        binding_store=WorkspaceBindingAuthorityStore(db_path),
+        binding_store=WorkspaceBindingAuthorityStore(db_path,
+            configured_workspace_root=configured_workspace_root),
     )
 
 
@@ -11034,7 +11041,7 @@ def _provider_chain_or_none(provider_registry):
 
 
 async def _activate_product_sdk_runtime(
-    *, clock=time.time,
+    *, clock=time.time, configured_workspace_root=None,
 ) -> None:
     """Activate SDK Runtime Stack and ingress (Slice C production)."""
     global _sdk_runtime_stack, _sdk_ingress, _sdk_runtime_catalog
@@ -11092,7 +11099,8 @@ async def _activate_product_sdk_runtime(
     # `product_sdk_runtime_skipped` left the Host running with no SDK runtime
     # at all (every chat turn then fails later, far from the cause).
     try:
-        stack = await _build_product_sdk_runtime_stack(state.generation, clock=clock)
+        stack = await _build_product_sdk_runtime_stack(state.generation, clock=clock,
+            configured_workspace_root=configured_workspace_root)
     except Exception as exc:
         logger.exception("product_sdk_runtime_build_failed", reason=str(exc))
         raise RuntimeError(f"product_sdk_runtime_build_failed: {exc}") from exc
