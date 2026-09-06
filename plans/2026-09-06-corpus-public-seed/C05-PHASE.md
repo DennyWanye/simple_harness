@@ -10,7 +10,7 @@ Hegel owns `corpus_scoring_session`/dispatcher and main constructor passthrough.
 2. `TaskSetupHttpProvider(model=actual_model)` -> `await start()` -> `registration()`. Register the returned distinct process-only provider before setup; main resolver, ProductProviderAdapter, exact guard and SDK driver remain intact. HTTP is local, bounded, setup-only, no external model/gold. `arm` verifies frozen setup/operational fixture text; every planned tool must be actually offered by the real wire request. Local HTTP request hash is not represented as an SDK Run/request/receipt identity.
 3. Construct `C05PhaseHistoryReader(path=HostDB, subject=actualsubject, delegate=actual PrimaryHistoryStore)` once and pass through main's optional constructor seam. Setup reads use the ordinary delegate. No authority object is replaced later.
 4. For each frozen scope, call existing `prepare_scope_archive(..., provider=http_provider, drive=drive_exact_queued, disclosure_context_resolver=resolver)`. After actual enqueue it calls `http_provider.bind_queued(queued)`. The drive closure reads `http_provider.queued`; it must execute this exact queue item with normal runtime and exact setup decisions, not enqueue another USER. `resolver(*, run_id, turn_id)` awaits actual Host `resolve_current_disclosure` after real route IDs exist. Static disclosure_context and resolver are mutually exclusive. No fixture-reader identity in main.
-5. `C05SetupApproval(ingress, transport, ledger, binding_store, expected_configured_root, persist)` is callable with `service, queued`. It compares actual public pending decision Run/turn/generation/version/nonce/call_id/name/full arguments to this setup's actual emitted fixture call. It verifies the configured root and exact routed root for scoped actions; only the original create route and concrete discovery/marker/update calls qualify. No allallow, truncated argument preview, fake challenge, policy mode mutation or reuse of C01's read-only memory approver. Unknown waits stay blocked. Manual directory challenges are not silently approved by this tool-decision driver.
+5. `C05SetupApproval(ingress, stack, transport, ledger, binding_store, expected_configured_root, persist)` is callable with `service, queued`. It compares actual public pending decision Run/turn/generation/version/nonce/call_id/name/full arguments to this setup's actual emitted fixture call. It verifies the configured root and exact routed root for scoped actions; only the original create route and concrete discovery/marker/update calls qualify. No allallow, truncated argument preview, fake challenge, policy mode mutation or reuse of C01's read-only memory approver. Unknown waits stay blocked. Manual directory challenges are not silently approved by this tool-decision driver.
 6. `prepare_scope_archive` re-reads actual SDK effect/terminal, Host source binding, material marker bytes and ordinary disclosure. Capture each returned immutable archive. Per-arm `current_request_hashes` and `planned_calls`; lifetime `attempts` and `request_hashes` describe only fixture HTTP observations, not source authority. Provider source/binding trace remains the SDK's actual public output.
 7. After all setup terminals settle and the main resolver reports no active fixture Run, `await phase_reader.freeze(archives=..., stack=actualstack, primary_ref=actualprimary)`. This validates complete setup prefix and actual terminal bindings. Retain original source archive; do not copy only USER evidence to a fresh scoring DB.
 8. Switch next Run's provider through the existing public registry/session binding reconciliation to real scoring Provider. Retired fixture binding stays resolvable for old audit. Enqueue only the original scoring text with `scope_ref=None` for these first four cases; the setup target must not be a preselected scoring target. Teardown closes the local server and owned connection tasks.
@@ -54,7 +54,7 @@ HTTP `current_responses` records turn_ref, wire_request_hash, response_id, respo
 call_ids for each locally prepared response. Response ID is `c05-fixture-<exact request bytes SHA256>`;
 this lets the consumer join the actual public provider response identity to its local wire hash.
 A prepared response does not prove physical delivery/SDK acceptance; actual SDK trace must match.
-`C05SetupApproval(*, ingress, transport, ledger, binding_store, expected_configured_root, persist)`
+`C05SetupApproval(*, ingress, stack, transport, ledger, binding_store, expected_configured_root, persist)`
 is awaited as `approval(service=actual_service, queued=actual_queue_receipt)`.
 
 Minimum next controls (NOT_RUN): actual-main 04/09/14/20 setup/phase consumer, exact wrong-turn/args
@@ -67,3 +67,11 @@ It now constructs public CallId from that exact field and preserves name; missin
 never synthesized. Added one unrun codec control. Installed H0710 kernel's actual tool_authorization
 producer records `request.call_id` from prepared.call.call_id (and exact arguments/tool_name/nonce);
 C05SetupApproval uses that real field, not a tool_call_id alias. This was code reading, not runtime proof.
+
+Dirac corrected the call identity namespace: decision.request.call_id is the SDK internal ID,
+not the physical Provider raw ID. Approval now requires stack, reads the actual public effect by
+request.effect_id, checks Run/effect/internal call/tool/full args, then matches effect.raw_call_id
+against this queued setup's actual HTTP plan. No inferred ID transformation or name-only permission.
+Missing indexed effect or terminal result now raises; real nonterminal is pending, SDK rejected/failed
+with stable error code yields no candidate, unknown/partial/malformed success fails unverifiable.
+An arbitrary error key is not accepted as proof of a terminal failure. New source remains NOT_RUN.
