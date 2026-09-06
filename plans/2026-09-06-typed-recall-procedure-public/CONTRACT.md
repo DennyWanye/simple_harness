@@ -1,7 +1,8 @@
 # Procedure公开applicability最小后继
 
 2026-09-06；base5819b15e；复用source-oracle worktree，分支feat/typed-recall-procedure-public。
-只源码准备，尚未运行任何测试/SDK/model/native/build，无新venv/checkout；Singer持槽。
+初次源码冻结时只做准备、未运行测试，无新venv/checkout。其后Dirac限定ACCEPT；
+主授权默认锁下已完成3方法及原4格，实际结果以[RESULTS.md](RESULTS.md)为准。
 H073/M0613固定artifact不变。原401/阈值/原32禁止组合/Prospective/旧未跟踪applicability均不改。
 
 ## 实施范围
@@ -30,7 +31,7 @@ exact注册task/run、intent/ref/authority/result/hash及重放关系验证适�
 projection原格不纳入此能力，不宣称关闭完整projection/hash门。
 任何public setup异常仍BLOCKED，不能当召回负例通过；32禁止组合保持原construction-conflict事实。
 
-## 待槽的必要验证（尚未执行）
+## 原定必要验证（现已执行，见RESULTS）
 
 新增tests/test_typed_recall_procedure_public.py三个测试方法：
 1. 四原格（active、eligible、explicit_user/source_bound、explicit_user/user_confirmed）真实public+独立oracle；

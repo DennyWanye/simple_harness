@@ -1,6 +1,17 @@
 # Memory SDK 边界与 Host 接口契约
 
 
+## 2026-09-06 Procedure公开适用性runner叶子
+
+最后更新：2026-09-06。固定ad189f52已Dirac限定源码ACCEPT；实际installed H073/M0613
+必要公开测试3PASS1.09s，原四格正式4PASS/0FAIL/0BLOCKED（Run3913be071c484d069b48082fc5cec12a）。
+公开conversation registration/authority snapshot绑定真实revision，错fingerprint不召回，重开exact重放零candidate读取；
+eligible保留原literal/INELIGIBLE，经draft→授权REVISE映射eligible_for_activation，不算观察晋升。
+其余397未选，整体NOT_RUN/BLOCKED/exit3，不合旧182或source10为新全量；无SDK/Host生产代码变更。
+两批默认OS锁2GiB/180s，最大135584KiB，自有进程均退出无残留、槽释放。
+[实际结果、命令、raw索引与hash](../plans/2026-09-06-typed-recall-procedure-public/RESULTS.md)。
+
+
 ## 2026-09-06 source10完整oracle后继（独审待回）
 
 固定65990a68，exact installed H073/M0613f2 source层正式10PASS/0FAIL/0BLOCKED。
