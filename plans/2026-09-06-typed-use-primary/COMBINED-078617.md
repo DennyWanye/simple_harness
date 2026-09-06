@@ -1,6 +1,6 @@
 # H078/M617 Host 驱动选择组合
 
-更新：2026-09-06。Host源码 `a0a44485`，H078 source `f778cba9c5ee599e7ff5ac55796d0f331d215f62`。SDK源审13abfe8限定ACCEPT；制品/Host独立审查另记录。本片已完成必要安装及Host构造验证，新的原生Run尚未执行。
+更新：2026-09-06。Host源码 `a0a44485`，H078 source `f778cba9c5ee599e7ff5ac55796d0f331d215f62`。SDK源审13abfe8限定ACCEPT；制品与Host `a0a44485` 均获Dirac限定ACCEPT。本片已完成必要安装及Host构造验证，新的原生Run尚未执行。
 
 ## 真实问题与修复
 

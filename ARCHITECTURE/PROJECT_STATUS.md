@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06原生r13（Hostb3680732/H078/M617）：新普通对话真实回答45/idle，默认后台审计45/45公开DTO enumerated，SDK明确verified_current_intervals与coverage_gaps[]。只关闭本场景驱动核验，旧r12 unverified不追认，完整工具/Service/Memory覆盖另验。正常退出PG99878、组清空。[Run、截图及审计](../plans/2026-09-06-typed-use-primary/NATIVE-R13.md)。
+
 2026-09-06：H078/M617/S0313接入候选。SDK正式按持久start_mode选择实际driver，保留Host控制校验，避免普通主对话因不透明wrapper失去审计核验；源4项、安装3项、Host新组合4项分别通过。旧r12实际98/98条审计已读取但coverage仍unverified，不追认旧区间；新native/fullcoverage另验。所属进程清空。[组合及真实缺口](../plans/2026-09-06-typed-use-primary/COMBINED-078617.md)。
 
 2026-09-06：提醒状态库50/51/52已接入应用启动及通用初始化的逐版完整校验；新增负控发现并修复bootstrap缺失时绕过human校验的问题。9个唯一新增场景分批通过（非空重开/损坏拒绝/未知版本/fresh49），资源组均清空；完整A7与原生schema52重启仍待验，未默认安装半成品。[结果与边界](../plans/2026-09-06-typed-use-primary/STARTUP-52.md)。
