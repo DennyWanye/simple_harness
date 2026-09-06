@@ -57,7 +57,7 @@ async def test_utf8_page_oracle_and_no_invented_source():
         start={"input": {"messages": [literal]}}, proof={"evidence": []}) == ()
 
 
-def summary_from(request):
+def summary_from(request, *, content_hash):
     for message in request.messages:
         if message.role.value != "user" or not isinstance(message.content, str) or not message.content.startswith(HISTORY_PREFIX):
             continue
@@ -65,7 +65,8 @@ def summary_from(request):
         for item in group["messages"]:
             if item["role"] == "tool":
                 content = json.loads(item["content"])
-                if content.get("kind") == "primary_tool_result_summary_v1":
+                if (content.get("kind") == "primary_tool_result_summary_v1"
+                        and content.get("content_hash") == content_hash):
                     return content
     raise AssertionError("actual initial history summary missing")
 
@@ -154,7 +155,8 @@ async def test_actual_history_page_and_physical_guard(tmp_path, monkeypatch, mod
             n = holder.step
             holder.step += 1
             if n == 0:
-                holder.source = summary_from(request)
+                holder.source = summary_from(request,
+                    content_hash=hashlib.sha256(holder.raw_tool.encode()).hexdigest())
                 assert LARGE not in str(request.messages)
                 assert len(holder.source["excerpt"].encode()) <= 1024
                 assert holder.source["content_hash"] == hashlib.sha256(holder.raw_tool.encode()).hexdigest()
