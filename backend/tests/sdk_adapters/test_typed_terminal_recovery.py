@@ -45,7 +45,10 @@ async def seed_public_pending(path):
     envelope,receipt=seed._admitted(); span=seed._span(envelope,receipt)
     authority=seed._SeedAuthority(envelope,receipt,span)
     manager=await m.MemoryManager.build_human_memory_v7(path,evidence_authority=authority,
-        memory_action_authority=authority,prospective_signal_authority=authority)
+        memory_action_authority=authority,prospective_signal_authority=authority,
+        classification_policy=m.InformationClassificationPolicy(policy_id="memory-classification-policy",
+            policy_version="1", authority_ref="memory-policy-registry:classification/v1",
+            required_privacy_class=h.PrivacyClass.PERSONAL, required_information_attributes=()))
     principal=local_memory_principal(); scope=local_memory_scope()
     try:
         await manager.register_principal_owner(principal=principal, scope=scope)

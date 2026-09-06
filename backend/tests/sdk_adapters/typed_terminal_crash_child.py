@@ -74,7 +74,7 @@ async def main(root, target, mode, point):
         return original_verify(authority,run_id,request_id,checkpoint)
     patch.setattr(ProductTypedContextUseAuthority,'record_terminal',record)
     patch.setattr(ProductTypedContextUseAuthority,'verify_terminal',verify)
-    runtime,stack,queue,authority = await wired_runtime(root,state,memory,provider,patch)
+    runtime,stack,queue,authority = await wired_runtime(root,state,memory,provider,patch,restore_recoverable=True)
     holder['stack']=stack
     try:
         if mode == 'seed':

@@ -66,7 +66,7 @@ async def seed_two(state, memory):
     return ids, expected
 
 
-async def wired_runtime(tmp_path, state, memory, provider, monkeypatch):
+async def wired_runtime(tmp_path, state, memory, provider, monkeypatch, *, restore_recoverable=False):
     """Bind the same three production components, with real Host fixture ports."""
     from deskpet.sdk_adapters import context_route, tools as product_tools
     ledger = ContextRouteLedgerStore(state)
@@ -87,6 +87,22 @@ async def wired_runtime(tmp_path, state, memory, provider, monkeypatch):
     class ClockedProductEffects(product_tools.ProductEffectExecutor):
         def __init__(self, **kwargs):
             super().__init__(clock=authority.clock, **kwargs)
+    original_context_authority = foreground_fixture.ProductRunContextAuthority
+    def context_authority(**kwargs):
+        if restore_recoverable:
+            # Same historical restoration as main.ports_factory, before runtime.start
+            # auto-recovery. The old foreground fixture omits this production step.
+            from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+            ports = kwargs["ports_resolver"]()
+            owner = ports.react_checkpoint
+            registry = kwargs["exposure_resolver"].__self__
+            for run in (*owner.list_recoverable_root_runs(), *owner.list_recoverable_child_runs()):
+                metadata = owner.read_start_snapshot(run.run_id)["input"]["context_metadata"]
+                registry.restore_run(run_start_record=metadata["tool_authority"],
+                    run_binding=SdkRunBindingV1.from_record(metadata["run_binding"]),
+                    catalog_resolver=ports.tool_catalog,
+                    lease_state="waiting" if run.state.value == "waiting" else "active")
+        return original_context_authority(typed_use_authority=authority, **kwargs)
     with monkeypatch.context() as patch:
         patch.setattr(foreground_fixture, "SqliteContextPort", functools.partial(
             foreground_fixture.SqliteContextPort, clock=authority.clock))
@@ -101,8 +117,7 @@ async def wired_runtime(tmp_path, state, memory, provider, monkeypatch):
             foreground_fixture.ReActDriver, clock=authority.clock))
         patch.setattr(foreground_fixture, "ProviderInvocationCoordinator", functools.partial(
             ProductProviderInvocationCoordinator, context_use_authority=authority, typed_terminal=authority, clock=authority.clock))
-        patch.setattr(foreground_fixture, "ProductRunContextAuthority", functools.partial(
-            foreground_fixture.ProductRunContextAuthority, typed_use_authority=authority))
+        patch.setattr(foreground_fixture, "ProductRunContextAuthority", context_authority)
         patch.setattr(context_route, "ContextRouteToolService", functools.partial(
             context_route.ContextRouteToolService, typed_use_authority=authority))
         runtime, stack, queue = await foreground_fixture.build(tmp_path, state, provider, dynamic=True,
