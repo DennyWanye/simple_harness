@@ -1,5 +1,10 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 披露绑定历史来源回归修复
+
+最后更新：2026-09-06。真实默认SELF foreground/outbox/short/history链复现精确形状回归后修复，最新29项通过；历史配置事实与当前head判定分离，待主/Dirac终审，非SELF和完整外发仍待后继。
+[修复、消费者扫描与证据](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
 ## 2026-09-06 Host可信披露配置源码候选
 
 最后更新：2026-09-06。authenticated control配置经queue幂等绑定进入turn/run解析器；schema48及8个契约测试函数已写，未测试、未合并，完整非SELF/输入许可/外发仍待后继。

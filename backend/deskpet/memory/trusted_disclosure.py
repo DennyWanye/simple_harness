@@ -14,7 +14,7 @@ from simple_harness import (
     DeliveryRecipient, IntendedAudience, DisclosurePurpose, DisclosureContext,
     DisclosureSource, DisclosureTrust, DisclosureGeneration, DisclosureReasonCode,
 )
-from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier
+from deskpet.task_scope.protocol import canonical_hash, canonical_json, identifier, digest
 from deskpet.memory.writer_fence import (
     human_memory_connection, assert_human_memory_ingress_open_tx,
     require_authenticated_host_snapshot,
@@ -52,7 +52,8 @@ def _decode(row, subject):
     if row is None:
         _reject("binding_missing")
     raw = json.loads(row["binding_json"])
-    if (row["subject"] != subject or raw["subject"] != subject
+    if (type(raw["policy_generation"]) is not int
+            or row["subject"] != subject or raw["subject"] != subject
             or raw["binding_ref"] != row["binding_ref"]
             or raw["source_ref"] != row["binding_ref"]
             or raw["policy_generation"] != row["policy_generation"]
@@ -72,6 +73,28 @@ async def current_record_tx(db, subject):
 def binding_token(raw):
     return {"binding_ref": raw["binding_ref"], "binding_hash": canonical_hash(raw),
             "policy_generation": raw["policy_generation"]}
+
+
+async def bound_record_tx(db, *, subject, token):
+    """Exact immutable binding fact, independent of the current policy head.
+
+    History origins use this reader; only current execution resolves the head.
+    In particular, bool/float must not compare equal to an integer generation.
+    """
+    if (type(token) is not dict
+            or set(token) != {"binding_ref", "binding_hash", "policy_generation"}
+            or type(token["policy_generation"]) is not int or token["policy_generation"] < 1):
+        _reject("binding_token_invalid")
+    try:
+        identifier(token["binding_ref"], "binding_ref", 512)
+        digest(token["binding_hash"], "binding_hash")
+    except (TypeError, ValueError):
+        _reject("binding_token_invalid")
+    row = await _one(db, "SELECT * FROM human_memory_disclosure_configs WHERE binding_ref=?", (token["binding_ref"],))
+    raw = _decode(row, subject)
+    if token != binding_token(raw):
+        _reject("binding_mismatch")
+    return raw
 
 
 def assert_executable(raw):
@@ -205,12 +228,13 @@ async def resolve_current_disclosure(*, db_path, subject, run_id, request_id, tu
             _reject("turn_hash_mismatch")
         token = turn.get("disclosure_binding")
         current = await current_record_tx(db, subject)
-        if token is None:
+        if "disclosure_binding" not in turn:
             if current is not None and current["source_origin"] != "host_default":
                 _reject("legacy_policy_changed")
             # Existing persisted pre-v48 turns retain the original SELF lane.
             from deskpet.execution.primary_dependencies import current_disclosure
             return current_disclosure(run_id=run_id, subject=subject, request_id=request_id)
+        await bound_record_tx(db, subject=subject, token=token)
         if current is None or token != binding_token(current):
             _reject("binding_stale")
         assert_executable(current)

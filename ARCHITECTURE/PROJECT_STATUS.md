@@ -1,5 +1,10 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 可信披露绑定局部验收与来源回归修复
+
+最后更新：2026-09-06。自有simple_harness-corpus-clock / feat/host-trusted-disclosure，组合点6df952fc（含主30f6b2d4/M614）。可信配置/queue持久绑定及当前解析器局部验收完成；source authority确定回归先红后修，最新29项通过，PGID37740已清理并释放测试槽。前序28邻居结果独立保留，不重复算为最终代码全量通过。仍待主/Dirac终审和主组合整合；240质量、完整非SELF/输入许可/外发未完成。
+[实际结果、原红及复现命令](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
 ## 2026-09-06 Host可信披露绑定待源码复核
 
 最后更新：2026-09-06。复用 `simple_harness-corpus-clock`，分支 `feat/host-trusted-disclosure`，基线 `cbf99364`。可信配置→queue→turn/run解析器已写为生产源码候选，schema48及8个契约测试函数待验证；没有运行测试或占用资源槽，未合入主组合。非SELF门、当前输入permit、完整外发及240质量仍未完成。

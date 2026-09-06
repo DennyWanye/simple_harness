@@ -99,6 +99,17 @@ class HostHistorySourceAuthority:
             if body.get("schema_version") == 2:
                 expected.update(schema_version=2, source_admission="atomic-evidence-and-turn/v1")
                 proof_kind = "atomic"
+            if "disclosure_binding" in body:
+                from deskpet.memory.trusted_disclosure import bound_record_tx
+
+                # The exact bound configuration is a durable admission fact.
+                # Its head may since have changed; visibility checks that head
+                # separately and must not rewrite historical source ordering.
+                try:
+                    await bound_record_tx(db, subject=principal.actor_id, token=body["disclosure_binding"])
+                except (ValueError, TypeError, KeyError, RuntimeError) as exc:
+                    raise HostHistorySourceError("host_history_turn_binding_mismatch") from exc
+                expected["disclosure_binding"] = body["disclosure_binding"]
             if (
                 body != expected or canonical_hash(expected) != row["turn_hash"]
                 or row["evidence_hash"] != actual.envelope_hash

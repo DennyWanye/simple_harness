@@ -78,7 +78,7 @@ async def test_signed_configuration_readback_reopen_and_expected_ref(env):
     assert first["policy_generation"] == 1
     assert len(first["control_lease_ref"]) == 64
     assert ok(await command(env, "disclosure.configure", selection())) == first
-    env.factory = HumanMemoryHostServiceFactory(env.path, await dispatch_startup_epoch(env.path))
+    env.factory = HumanMemoryHostServiceFactory(env.path, await dispatch_startup_epoch(env.path, approved_fresh_lane=False))
     assert ok(await command(env, "disclosure.current", {}))["configuration"] == first
     error(await command(env, "disclosure.configure", selection(purpose="export")),
           "host_disclosure_configuration_idempotency_conflict")
@@ -106,7 +106,7 @@ async def test_default_self_queue_reopen_and_no_input_contamination(env):
         assert turn["disclosure_binding"]["binding_ref"] == config["binding_ref"]
         assert "disclosure_binding" not in turn["payload"]
         assert "disclosure_binding" not in db.execute("SELECT envelope_json FROM human_memory_evidence").fetchone()[0]
-    env.factory = HumanMemoryHostServiceFactory(env.path, await dispatch_startup_epoch(env.path))
+    env.factory = HumanMemoryHostServiceFactory(env.path, await dispatch_startup_epoch(env.path, approved_fresh_lane=False))
     context = await resolve(env, first)
     assert context.recipient.value == context.intended_audience.value == "user_self"
     assert context.purpose.value == "task_execution"
@@ -169,8 +169,9 @@ async def test_nonself_is_persisted_but_production_enqueue_rejects(env):
 @pytest.mark.asyncio
 async def test_configuration_requires_live_connection_and_writer_fence(env):
     error(await command(env, "disclosure.configure", selection(), scoped=False), "human_memory_ingress_fenced")
-    with sqlite3.connect(env.path) as db:
-        db.execute("UPDATE human_memory_recovery_fence SET state='CLOSING'")
+    from deskpet.execution.recovery_fence import HumanMemoryRecoveryCoordinator
+    coordinator = await HumanMemoryRecoveryCoordinator.bind_for_host(env.path, export_root=env.path.parent / "exports")
+    await coordinator.begin_close()
     error(await command(env, "disclosure.configure", selection()), "human_memory_ingress_fenced")
     with sqlite3.connect(env.path) as db:
         assert db.execute("SELECT COUNT(*) FROM human_memory_disclosure_configs").fetchone()[0] == 0
@@ -200,7 +201,7 @@ async def test_run_lookup_uses_durable_turn_binding_after_reopen(env):
     await store.record_start_observation(**common, sdk_run_id="sdk-fixture", outcome="RETURNED",
         result_ref="start-fixture", result_hash="b" * 64, idempotency_key="start-observation")
     await store.bind_sdk_run(**common, sdk_run_id="sdk-fixture", idempotency_key="bind")
-    await dispatch_startup_epoch(env.path)
+    await dispatch_startup_epoch(env.path, approved_fresh_lane=False)
     by_run = await resolve(env, turn, run_id="sdk-fixture", turn_id=None)
     by_turn = await resolve(env, turn, run_id="sdk-fixture")
     assert by_run == by_turn
@@ -216,5 +217,6 @@ async def test_reopen_rejects_missing_policy_trigger_despite_migration_receipt(e
     ok(await command(env, "disclosure.configure", selection()))
     with sqlite3.connect(env.path) as db:
         db.execute("DROP TRIGGER human_memory_disclosure_no_update")
-    with pytest.raises(HumanMemoryProgramEpochError, match="disclosure_schema_invalid"):
-        await dispatch_startup_epoch(env.path)
+    # Public startup intentionally normalizes detailed schema failures.
+    with pytest.raises(HumanMemoryProgramEpochError, match="human_memory_marker_chain_invalid"):
+        await dispatch_startup_epoch(env.path, approved_fresh_lane=False)

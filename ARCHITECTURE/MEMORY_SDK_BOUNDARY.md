@@ -1,5 +1,10 @@
 # Memory SDK 边界与 Host 接口契约
 
+## 2026-09-06 披露绑定与历史来源跨层回归已修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure保留eefc8762并在6df952fc合入主30f6b2d4/M614。主指出新turn绑定字段不被旧history source精确形状接受；真实11个foreground/outbox后的short来源登记先红，后继精确token/持久配置校验修复。历史来源仅查绑定时配置，当前使用另核head；换head不改来源receipt。修复后29项通过（10.95秒、峰192368KiB），进程组无残留。源码待主/Dirac终审，未合入主组合；非SELF门、输入permit及完整外发并发撤权仍待后继。
+[跨层证据、消费者扫描、失败历史与源码指纹](../plans/2026-09-06-host-trusted-disclosure/验收与跨层修复.md)。
+
 ## 2026-09-06 Host可信披露绑定源码候选
 
 最后更新：2026-09-06。`feat/host-trusted-disclosure` / base `cbf99364`新增authenticated control配置、schema48持久policy及queue幂等绑定；Context/scope/出站依赖检查按turn/run回读。原SELF组合保留；非SELF配置目前在生产enqueue拒绝，不作为SDK许可。源码及8个契约测试函数已写，未测试、未合并；当前输入许可与完整外发并发撤权仍未接通。
