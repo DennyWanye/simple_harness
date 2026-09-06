@@ -1,6 +1,6 @@
 # C01 首批真实评分接线
 
-2026-09-07。基线 Host `b2da14da`，自有树 `simple_harness-corpus-clock`，分支 `feat/corpus-c01-scoring`。本批仅源码静态审查准备；初始化、Provider、评分均 **NOT_RUN**。不改 r4 成员、旧 compiler、gold、spec、metric 或模型 prompt。不是新的240通过结论。
+2026-09-07。基线 Host `b2da14da`，自有树 `simple_harness-corpus-clock`，分支 `feat/corpus-c01-scoring`。源码99d17c11的必要无网络控制已完成，详见[实际结果与首例命令](RESULTS.md)；Provider与评分仍 **NOT_RUN**。不改 r4 成员、旧 compiler、gold、spec、metric 或模型 prompt。不是新的240通过结论。
 
 ## 第一批与接口
 

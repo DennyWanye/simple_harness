@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C01评分叶99d17c11：真实main Memory初始化/关闭与gold隔离、真实未终态attempt保存红2修后通过，连同先前FAILED参数共3唯一无网络控制；PG65098/65129清空，旧失败保留。原coroutine diagnostics警告单列，不扩改。首C01-10待主合源码后真实评分，当前模型评分0，不是质量PASS。[控制与准确运行命令](../plans/2026-09-07-corpus-c01-scoring/RESULTS.md)。
+
 最后更新：2026-09-07。共同Memory0.6.19 clean源e27003c已离线只构建一次，H079/M619/S0313安装新组合1PASS0.86s、174/92/116成员和184加载模块精确来自target；版本3控通过。Host vendor/pin/lock/生产identity固定新wheel，初次origin校验失败后通过真实vendor安装纠正，不手改metadata/不重build；PG50135清空。旧M618不改，当前候选可供M619原生验证，完整native/240质量待验。[制品与实际结果](../plans/2026-09-07-current-input-procedure/INSTALLED-079619.md)。
 
 最后更新：2026-09-07。Host80764c13/共同Memorya15c7be源组合1PASS0.82s并独审接受：真实签名当前输入与独立Procedure draft同批前均可见，公开遗忘后只draft拒绝，当前项不受误伤；Host审计请求/快照精确绑定。PG49417清空，原属性oracle红保留。Memory新0.6.19制品/installed/native另验。[结果](../plans/2026-09-07-current-input-procedure/RESULTS.md)。
