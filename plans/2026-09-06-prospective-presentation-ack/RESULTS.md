@@ -114,3 +114,30 @@ stack rebuilding is not app startup acceptance.
 - `a7-r10/command.log` SHA256 `34bf1c0b159f3519d342632dc33ba272552ef6385b7426d1501d8a3f808b5454`
 - `a7-r10/resource.json` SHA256 `7d3ca70c98295ef434ab80630cd4d4616362cabc5c3c0e4c58044f9ecf7ba14e`
 - `a7-r10/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+## ACK terminal recovery (4438ceaf / 409dcc60)
+
+a7-r11: 1 PASS / 1 FAIL / 9 deselected, 5.53s. after_commit passed; before_commit
+recovered the real completed SDK Run but failed process-local tool authority release
+with KeyError. Production startup restores only recoverable SDK Runs, so completed
+Run authority is correctly absent. 409dcc60 makes foreground release lookup absence
+idempotent after the checked Host terminal TX; cleanup/listener errors still propagate.
+It does not authenticate terminal state or recreate active authority.
+
+a7-r12: 5 PASS / 9 deselected, 4.27s. One actual before_commit retry, three new
+release boundary controls, and one accidentally selected old ACK unit control
+(the latter is not new coverage). after_commit was not rerun. PG97749 exit0,
+remaining[], cleanupnull, peak399904KiB; slot released. Exact SDK terminal event/hash,
+ACK record/hash, unique settled fact and unchanged physical send count are asserted.
+Dirac fixed-source 409dcc60 / 4438ceaf and r12 limited ACCEPT.
+No full-app52/native evidence. Derived-history withdrawal, five routes and foreign
+principal remain incomplete; subsequent source WIP is not covered by this acceptance.
+Command uses the existing installed H076/M617 launcher with both occurrence runtime
+and release test files, selection `before_commit or cold_terminal_release or present_authority_cleanup`.
+
+- `a7-r11/command.log` SHA256 `95d5101ae408a1dc06afa025a2edd1b4734830a10103094f9ab97cf8b01937d9`
+- `a7-r11/resource.json` SHA256 `28e1adfb15fc9ce6ab984e886b6ca8006400f39d7dd068796af9ca761813d2c7`
+- `a7-r11/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r12/command.log` SHA256 `6481ecf66446eca1b944bcd24848872e0d811e790db55bba0ddfa9abfaf506a8`
+- `a7-r12/resource.json` SHA256 `e6ec6d9ad6359408b9eebe8e0476a787df8a716fa25030b6deb468ae4729a4b6`
+- `a7-r12/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`

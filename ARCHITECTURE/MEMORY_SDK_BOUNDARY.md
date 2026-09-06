@@ -876,3 +876,6 @@ fail closed。
 - r7 独立审计因附件截图错配、recall fault 缺直接 attestation、S6-A8 状态文字与导入 custody 不完整而
   判 FAIL；这些证据/文档缺口已在继任 Gate 输入前修复，r7 不作为发布 receipt。原始截图、日志、进程
   attestation 和 Gate ledger 仅在 ignored `.local-test-evidence/2026-08-22/`，Git 只保存结论与 hash 索引。
+
+
+2026-09-06：A7真实ACK终态before/after commit恢复分批通过，409dcc60修冷重建已终态Run的进程内authority释放；原SDK终态/ACK身份不变、零重发。Dirac限定ACCEPT，PG97749清空。历史继承/五route/异主体仍未完成，非全app/native。见[结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。

@@ -3339,3 +3339,6 @@ SDK 源码修复已提交 `2b8428465cbd41032ba024a0b7199183161f5ecd`（candidate
 4. 发现新的项目级已知问题 / 测试纪律 → 更新 §5
 
 每次更新都改顶部"最后更新"日期。生产链路和边界写对应模块架构；本文件只保留聚合状态、里程碑、已知问题和证据链接。`STATUS/` 兼容文件禁止新增正文。
+
+
+2026-09-06：A7真实ACK终态before/after commit恢复分批通过，409dcc60修冷重建已终态Run的进程内authority释放；原SDK终态/ACK身份不变、零重发。Dirac限定ACCEPT，PG97749清空。历史继承/五route/异主体仍未完成，非全app/native。见[结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
