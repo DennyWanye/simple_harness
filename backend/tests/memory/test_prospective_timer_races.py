@@ -9,6 +9,7 @@ from simple_harness.runtime import (ExistingMemoryTarget, MemoryActionAuthorityR
     MemoryMutationKind, ProspectiveLifecycleState, ProspectiveMemoryPayload,
     ProspectiveTimeTrigger, issue_memory_action_authority)
 from simple_harness_memory import MemoryScope
+from simple_harness_memory.core.mutations import InformationClassificationPolicy
 from simple_harness_memory.backends.sqlite_v5 import SQLiteHumanMemoryBackend
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
 from deskpet.memory.human_memory_service import HOST_PUBLIC_TURN_FILTER_POLICY
@@ -46,7 +47,10 @@ async def setup(tmp_path):
             return await (signals if ref.authority_id.startswith('host:time-authority:') else old).resolve_prospective_signal_authority(ref)
     memory=SQLiteHumanMemoryBackend(tmp_path/'memory.db',now=lambda:clock[0],
         supported_filter_policies=frozenset({HOST_PUBLIC_TURN_FILTER_POLICY}),
-        evidence_authority=HostEvidenceAuthority(path),prospective_signal_authority=Authority(),memory_action_authority=action)
+        evidence_authority=HostEvidenceAuthority(path),prospective_signal_authority=Authority(),memory_action_authority=action,
+        classification_policy=InformationClassificationPolicy(policy_id='s5c-test-classification',
+            policy_version='1',authority_ref='host:classification/v1',required_privacy_class='personal',
+            required_information_attributes=()))
     await memory.initialize()
     try:
         source=PublicTimeAuthoritySource(registrations=registrations,signals=signals)
