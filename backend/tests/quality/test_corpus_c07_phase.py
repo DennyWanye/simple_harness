@@ -19,7 +19,7 @@ from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity
 async def test_actual_main_recent_phase_then_separate_scoring_run(tmp_path, monkeypatch):
     # Use this tree's real candidate, never an older hard-coded fixture version.
     identity = build_candidate_identity()
-    assert identity.version == version('simple-harness-sdk') == '0.7.9'
+    assert identity.version == version('simple-harness-sdk') == '0.7.10'
     assert sha256(identity.wheel_path.read_bytes()).hexdigest() == identity.wheel_sha256
     assert version('simple-harness-memory-sdk') == '0.6.19'
     sdk_root = Path('/Users/denny/projects/simple-harness-memory-sdk')
