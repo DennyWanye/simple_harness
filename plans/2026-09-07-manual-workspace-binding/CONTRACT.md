@@ -48,3 +48,8 @@ Dirac三项校准已落实到源码：proposal/challenge.run_id 是 Manual 派�
 Dirac确认旧 `lastDecision` 在卡片effect局部；真实 PrimaryController断线会置primaryRef=null，父View卸载卡片。后端pending已排除bound，故旧孤立port重连控不足，不能称真实UI可恢复。本次新增 `PrimaryBindingRecovery`，由稳定PrimaryChatView持有：只保存每个精确 `(verifiedOwnerKey,primary_ref)` 最近一次用户点击的完整identity，不保存root路径、nonce、grant、决定结果或正文；连接变化/卡片不可见/卡片卸载不销毁该引用。新签名连接重新确认owner与primary后，卡片仅用该namespace引用读 `primary.bindings.status`，还需全部identity匹配；没有自动decide，也不将缓存引用视为授权。其他owner或primary不读取/显示此引用。
 
 替换原孤立port lost-ACK重连测试为 `views/PrimaryBindingRecovery.test.tsx` 真View/controller/boundPort/条件卸载控制：服务端bound但ACK丢失→断线卡片确实卸载→旧响应不显示→不同owner、不同primary各自重挂零status→回原owner/primary，pending=[]后必须exact status才显示原newScope/继续指引，始终仅原1次decide。当前仍7 backend+4 UI **NOT_RUN**，无测试/build/安装。此状态仅在当前View生命周期内保留；整个应用进程退出后的UI自动发现旧bound引用不在本控保证，已有独立进程backend控制仅证明给定exact原引用可查，不外推原生冷启动交互闭环。
+
+
+## 首批实际结果与唯一红控时序修正
+
+首批ef0ed7bf/H079M619已运行：6 backend PASS、1 rebind FAIL；4 UI PASS。此前各阶段NOT_RUN是当时状态，当前结果以[RESULTS.md](RESULTS.md)为准。原rebind夹具在请求持有shared revocation lease的同一调用内等待完整签名_bind；ProfileBindingCoordinator.bind必须取得同barrier exclusive，静态路径构成自等待，默认5秒异常投影为通用拒绝，不是已观测到旧连接获准。此红保留。修正只改变这条负控的调度：慢read后真实IdentityReadyGate.unbind使旧身份失效，保持expected human_memory_connection_stale和零decision；旧请求退出shared后再经真实签名_bind恢复。该顺序区分“先暴露unready”与“完成durable rebind”，不声称独占写能穿过有效shared lease。产品、超时与既有绿均不改，修后该1项尚未执行。

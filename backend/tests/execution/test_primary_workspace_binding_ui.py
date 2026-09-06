@@ -73,7 +73,12 @@ async def test_actual_route_manual_public_ui_source(tmp_path, control):
             for operation in ("primary.bindings.pending", "primary.bindings.decide"):
                 async def slow_read(**kwargs):
                     result = await read(**kwargs)
-                    await _bind(private, ingress, HumanMemoryControlBinding())
+                    # Match the readiness loss that lifecycle code exposes
+                    # BEFORE waiting for the exclusive revocation lease. A
+                    # complete signed bind cannot be awaited inside our own
+                    # shared lease; it is performed below after rejection.
+                    ingress.identity_gate.unbind(expected_binding_epoch=challenge.binding_epoch)
+                    assert not ingress.identity_gate.ready
                     return result
                 authority.manual_binding_read_context = slow_read
                 try:
