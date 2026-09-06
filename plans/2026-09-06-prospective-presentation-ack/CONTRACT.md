@@ -114,3 +114,23 @@ actual Harness tool catalog rejected JSON-schema `pattern` (unsupported public
 schema keyword). ACK schema now uses supported string/description; unchanged
 handler `_key` still requires exact lowercase64hex before reading context/writing.
 No SDK schema relaxation. Factory retry remains required.
+
+### Next A7 functional controls (prepared, NOT_RUN)
+
+- Existing transaction controls still need their first execution: three unique
+  Run snapshot commits/one overdue, same-Run replay, fourth-Run ACK receipt,
+  ACK before/after-commit recovery, keyword-only real guard rejection.
+- New `test_prospective_occurrence_runtime.py` drives actual public Memory due
+  inbox through four real Harness foreground Runs, real ProductToolsAdapter ACK,
+  real public current reader and ProductProviderAdapter with deterministic HTTP
+  transport; third-Run restart, fourth-Run exact SDK terminal settle are asserted.
+  A separate parameter suppresses the actual Memory after snapshot/before send,
+  requiring FAILED and zero HTTP delegate calls/no repeat. NOT_RUN, not native.
+- The shared runtime fixture only gains optional coordinator/registrations/exact
+  candidate seams; original default setup remains unchanged. No fake SDK terminal
+  is used in the new runtime control.
+- Still required after first execution: cross-Run competing ACK/foreign owner,
+  canonical group corruption at actual physical guard, and confirmed full
+  terminal rollback/recovery semantics. Five Context route exposure and derived
+  history-source inheritance remain explicit open verification/product boundaries.
+- Main native PG89400 owns the slot; this preparation starts no test process.

@@ -229,3 +229,32 @@ async def test_current_reader_cap_rejects_unseen_mandatory(monkeypatch):
     with pytest.raises(S5cConflict,match='s5c_occurrence_inbox_scan_incomplete'):
         await reader(principal=P,sdk_run_id='run-cap')
     assert len(calls)==16
+
+
+@pytest.mark.asyncio
+async def test_two_presented_runs_compete_for_single_ack(tmp_path):
+    import asyncio
+    w=await setup(tmp_path);c=coordinator(w)
+    try:
+        prepared,_=await snapshot(w,c,'run-1')
+        await snapshot(w,c,'run-2')
+        key=prepared.items[0].entry.occurrence_key
+        results=await asyncio.gather(*(c.ack(sdk_run_id=run,occurrence_key=key)
+            for run in ('run-1','run-2')),return_exceptions=True)
+        assert sum(isinstance(result,dict) for result in results)==1
+        assert sum(isinstance(result,S5cConflict) for result in results)==1
+        winner=('run-1','run-2')[next(i for i,result in enumerate(results) if isinstance(result,dict))]
+        receipt=next(result for result in results if isinstance(result,dict))
+        assert await c.ack(sdk_run_id=winner,occurrence_key=key)==receipt
+        counts,exited=await facts(c)
+        assert counts=={'claimed':1,'presented':2,'acknowledged':1} and exited==1
+        # A different actual terminal identity must not settle the winner's ACK.
+        identity=PrimaryTerminalIdentity(winner,'fixture-terminal','f'*64,'COMPLETED',
+            'fixture-host-receipt','e'*64,False,None)
+        actual=SimpleNamespace(run_id=winner,event_id='other-terminal',event_hash='a'*64,state='completed')
+        with pytest.raises(RuntimeError,match='^primary_history_terminal_mismatch$'):
+            async with c.store._transaction() as db:
+                await settle_acknowledged_tx(db,principal=P,sdk_run_id=winner,
+                    terminal_identity=identity,actual_sdk_terminal=actual)
+        assert await facts(c)==(counts,exited)
+    finally:await w.manager.close()

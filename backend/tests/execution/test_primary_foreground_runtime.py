@@ -88,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -120,6 +120,9 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     if page_in_store is not None:
         from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
         specs.append(dict(name="context_page_in", description="Load exact context", input_schema=CONTEXT_PAGE_IN_SCHEMA["parameters"]))
+    from deskpet.sdk_adapters.tools import _sdk_tool
+    specs.extend(dict(name=r.name, description=r.description, input_schema=_sdk_tool(r).spec.input_schema)
+                 for r in extra_registrations)
     inventory = tuple(ProductToolInventoryEntry(name=s["name"], dispatch_kind="control", permission_category="read_file",
                         source="fixture", version="v1", execution_identity="fixture",
                         projectless_admission="requires_project" if s["name"] == "write_file" else "safe") for s in specs)
@@ -151,6 +154,12 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
             tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store)
+        if extra_registrations:
+            from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
+            tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
+                if spec['name'] not in {r.name for r in extra_registrations}))
+            for registration in extra_registrations:
+                tools.register(_sdk_tool(registration))
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
         result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
@@ -178,12 +187,13 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         from deskpet.execution.semantic_closure import closure_instruction_for_run
         return replace(result, run_context_authority=ProductRunContextAuthority(
             ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
+            occurrence_coordinator=occurrence_coordinator,
             closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
         ))
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
     scope_reader = ScopeDisclosureReader(state_path, stack_getter=lambda: stack,
         policy_factory=lambda _: history_policy)
-    expected = build_candidate_identity()
+    expected = candidate_identity or build_candidate_identity()
     origin = json.loads(metadata.distribution("simple-harness-sdk").read_text("direct_url.json"))["url"]
     # Reuse the exact installed 0.7.2 wheel path; normal production verifier
     # still checks version/hash/origin. No SDK import or verifier is mocked.
@@ -219,12 +229,17 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         return await manager.check_history_visibility(principal=visibility_memory.principal(),
             disclosure_context=disclosure_context, bindings=bindings)
     history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject, checker)
+    def occurrence_terminal_hook(run_id):
+        from deskpet.memory.prospective_terminal_hook import prepare_occurrence_terminal_hook
+        return prepare_occurrence_terminal_hook(principal=occurrence_coordinator.store.principal,
+            sdk_run_id=run_id,actual_sdk_terminal=stack.read_run_terminal_evidence(run_id))
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
         provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
+        terminal_commit_hook_factory=occurrence_terminal_hook if occurrence_coordinator else None,
     )
     runtime.history_policy = history_policy
     runtime.history_memory = visibility_memory
