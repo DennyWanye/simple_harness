@@ -53,10 +53,11 @@ class ClosureRequestAuthority:
         self.stack_getter, self.policy_factory, self.clock = stack_getter, policy_factory, clock
 
     @asynccontextmanager
-    async def reader(self):
+    async def reader(self, *, snapshot=True):
         async with aiosqlite.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True) as db:
             db.row_factory = aiosqlite.Row
-            await db.execute("BEGIN")
+            if snapshot:
+                await db.execute("BEGIN")
             yield db
 
     async def host_snapshot_tx(self, db, identity):
@@ -148,6 +149,11 @@ class ClosureRequestAuthority:
             host = await self.host_snapshot_tx(db, identity)
             if host["observation"] != observation:
                 raise ClosureSourceIncomplete("closure_observation_changed")
+        # A public dependency read may recursively verify a retained scope via
+        # open_exact, which records an access receipt on another connection.
+        # Do not hold a Host read transaction over that writer (DELETE journal
+        # otherwise self-deadlocks). Exact Host facts are fenced again below.
+        async with self.reader(snapshot=False) as db:
             own = await read_run_dependencies(db=db, stack=stack, sdk_run_id=sdk_run_id)
             if own is None:
                 raise ClosureSourceIncomplete("closure_final_answer_sources_missing")
@@ -170,6 +176,7 @@ class ClosureRequestAuthority:
                 source_binding = SdkRunBindingV1.from_record(stack.read_closure_run_facts(source_run).binding_record)
                 await resolve_current_disclosure(db_path=self.path, subject=subject,
                     run_id=source_run, request_id=source_binding.request_id)
+        async with self.reader() as db:
             events = []
             for event_id in host["event_ids"]:
                 event_rows = await rows(db, "SELECT * FROM task_scope_events WHERE event_id=?", (event_id,))
@@ -215,7 +222,8 @@ class ClosureRequestAuthority:
         from deskpet.task_scope.search import TaskScopeSearchError
         try:
             # Initial preparation may materialize the existing deterministic
-            # projection. Physical revalidation only reads that exact source.
+            # projection. Physical revalidation reuses that exact source, but
+            # the existing open API still records access receipts.
             opened = await TaskScopeSearchStore(self.path).open_exact(subject=subject,
                 allowed_scope_ids=(scope,), task_scope_id=scope, materialized_only=not materialize)
         except (ProjectionIntegrityError, TaskScopeSearchError) as exc:
@@ -237,7 +245,7 @@ class ClosureRequestAuthority:
                 [dict(evidence_id=s["evidence_id"], envelope_hash=s["envelope_hash"]) for s in host["sources"]],
             [v for p in proofs for v in p["recall"]],
             [v for p in proofs for v in p.get("short_horizon", ())])
-        async with self.reader() as db:
+        async with self.reader(snapshot=False) as db:
             if not await policy.check_dependencies(db=db, primary_ref=host["run"]["primary_conversation_id"],
                     dependencies=proof, disclosure_context=disclosure):
                 raise ClosureSourceIncomplete("closure_sources_not_visible")

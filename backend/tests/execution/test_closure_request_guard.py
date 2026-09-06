@@ -266,7 +266,8 @@ async def test_resumed_scope_closure_does_not_hold_read_transaction_across_acces
         await w.service.enqueue_turn(QueueTurnRequest(None, "closure-resume", "Resume the project and write another file"))
         await w.runtime.after_enqueue(subject=w.runtime.subject)
         await asyncio.wait_for(w.runtime.drain(), 20)
-        assert w.runtime.last_error is None
+        if w.runtime.last_error is not None:
+            raise w.runtime.last_error  # retain the actual failing production stack
         assert len(second_requests) == 6
         assert len(w.sent) == 2 and [r["status"] for r in attempt_rows(w)] == ["succeeded", "succeeded"]
         assert [o.status for o in w.outcomes] == ["no_mutation", "no_mutation"]
