@@ -39,6 +39,10 @@ async def world(tmp_path, monkeypatch):
     auth = control.authenticate(ingress, challenge)
     for module in (mh, ch, fq):
         monkeypatch.setattr(module, "SUBJECT", auth.subject)
+    original_draft = fq._draft
+    async def draft_for_authenticated_subject(store, **kwargs):
+        return await original_draft(store, subject=auth.subject, **kwargs)
+    monkeypatch.setattr(fq, "_draft", draft_for_authenticated_subject)
     env = await mh.bound_turn_run(tmp_path, "analysis-origin", text="My preferred drink is coffee.")
     registry = Registry("test-not-a-real-key")
     registry.entry.id = "provider-1"
@@ -129,8 +133,7 @@ async def test_real_resolver_send_materializes_and_durable_reopen_never_resends(
     from simple_harness import MemoryAnalysisRequest
     request = MemoryAnalysisRequest.from_json(carrier["analysis_request"])
     authority = w.runtime._memory_action_authority
-    # Same durable succeeded response must still recover when physical input
-    # could no longer be authorized; no new call is used to recreate the result.
+    # Same durable succeeded response/reopen requires no new physical call.
     first = await w.runtime.analysis_authority.analyze_memory(request)
     await w.runtime.close()
     w.reopen()
