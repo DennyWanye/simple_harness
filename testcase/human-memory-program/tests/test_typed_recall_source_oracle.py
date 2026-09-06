@@ -73,7 +73,8 @@ async def test_source_ten_complete_state_and_rejection_counterexamples(tmp_path)
                 else:wire['unknown']=True
                 row['request_json']=state.canonical(wire)
             table['root_hash']=state.digest(table['rows'])
-        assert oracle.assess_source(cell)['status']=='FAIL',mutation
+        verdict=oracle.assess_source(cell)
+        assert verdict['status']=='FAIL' and verdict['reason']=='durable request exact schema/keys differ',(mutation,verdict)
     original=next(c for c in cells if 'one-member' in c['cell_id'])
     for mutation in ('swap','reuse'):
         cell=copy.deepcopy(original);o=cell['observations']
