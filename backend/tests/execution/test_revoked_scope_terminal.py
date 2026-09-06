@@ -53,7 +53,7 @@ async def test_revoked_unclosed_scope_real_fallback(tmp_path, monkeypatch, crash
             body_after_revoke.append(canonical_hash(body))
         return body
     monkeypatch.setattr(closure, "_scope_observation_tx", observe_body)
-    calls = []
+    calls, settlement_statuses = [], []
     class Unused:
         def __getattr__(self, name):
             calls.append(name)
@@ -61,8 +61,15 @@ async def test_revoked_unclosed_scope_real_fallback(tmp_path, monkeypatch, crash
     def with_fallback(**kwargs):
         # The same production class/settle method instantiated by main's
         # _BoundClosureFallback; only unavailable model dependencies are traps.
-        return actual_runtime(**kwargs, closure_fallback=closure.ClosureFallback(state,
-            invoker=Unused(), service=Unused(), run_facts_reader=Unused()))
+        fallback = closure.ClosureFallback(state,
+            invoker=Unused(), service=Unused(), run_facts_reader=Unused())
+        settle = fallback.settle
+        async def observed_settle(**arguments):
+            result = await settle(**arguments)
+            settlement_statuses.append(result.status)
+            return result
+        fallback.settle = observed_settle
+        return actual_runtime(**kwargs, closure_fallback=fallback)
     monkeypatch.setattr(runtime_fixture, "ForegroundRuntimeExecutionAuthority", with_fallback)
     failures = []
     def crash(point):
@@ -233,6 +240,7 @@ async def test_revoked_unclosed_scope_real_fallback(tmp_path, monkeypatch, crash
         await run()  # same failed SDK Run, no Provider retransmission
         assert len(holder.sent) == 6 and calls == []
         assert await pending_facts() == pending_before
+        assert settlement_statuses == (["pending", "pending"] if crash_before_terminal else ["pending"])
         recovered_terminal = holder.stack.read_run_terminal_evidence(holder.first_run)
         assert recovered_terminal == actual_terminal
         with __import__("sqlite3").connect(state) as db:
