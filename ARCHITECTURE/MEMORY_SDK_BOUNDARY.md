@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：提醒状态库50/51/52已接入应用启动及通用初始化的逐版完整校验；新增负控发现并修复bootstrap缺失时绕过human校验的问题。9个唯一新增场景分批通过（非空重开/损坏拒绝/未知版本/fresh49），资源组均清空；完整A7与原生schema52重启仍待验，未默认安装半成品。[结果与边界](../plans/2026-09-06-typed-use-primary/STARTUP-52.md)。
+
 2026-09-06 原生r12（Host33809aae/H077/M617）：同实例启动load+prime完成后，新进程首次short查询真实成功，无手动重试；新工具三条recall refs和模型青竹九月/无糖茉莉茶回答均可见。本场景PASS，工具总耗时1516.972ms不等SDK检索或p95；原预算未增，广泛性能/质量另验。PG96027正常退出/组清空，磁盘5219MiB；原r10/r11失败保留。[首查结果、Run与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R12.md)。
 
 2026-09-06：WeMM startup warmup后继含一次无用户数据priming，同一实例／共享任务／encode队列，向量丢弃，无Memory查询或业务写入；新增warmup_state/is_primed及load/prime耗时区分。三项新控制3PASS，取消复用／成功幂等／失败显式重试有证据；SDK、1s预算、来源门未改，真实冷首次query待主验证。[详情](../plans/2026-09-06-short-terminal-source/PRIMING.md)。
