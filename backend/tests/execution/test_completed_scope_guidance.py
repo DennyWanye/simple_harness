@@ -115,8 +115,21 @@ async def test_completed_scope_actual_resume_rejection_reaches_next_physical_req
         assert await scope_store.read_head_status(scope) == "complete"
         with sqlite3.connect(state) as db:
             sdk_run_id = db.execute("SELECT sdk_run_id FROM foreground_run_sdk_bindings").fetchone()[0]
-            effect_ids = [r[0] for r in db.execute("SELECT effect_id FROM primary_effect_identities WHERE tool_name='write_file'")]
-        _, effects = stack.read_primary_dependency_facts(sdk_run_id, tuple(effect_ids))
+        # Rejected effects have no successful primary source projection. Read
+        # actual effect identities from the public SDK audit, not a Host table
+        # whose purpose is to expose completed tool-result sources.
+        from simple_harness import RunId
+        api = stack.require_ready().client
+        page = await api.open_run_operation_audit(RunId(sdk_run_id), page_size=256)
+        operations = list(page.operations)
+        while page.next_cursor is not None:
+            page = await api.read_run_operation_audit_page(RunId(sdk_run_id), cursor=page.next_cursor)
+            operations.extend(page.operations)
+        heads = [o for o in operations if o.kind == "effect" and o.record_type == "head"
+            and o.operation_name == "write_file"]
+        assert len(heads) == 2
+        assert {o.raw_call_id for o in heads} == {"archive-4", "archive-5"}
+        _, effects = stack.read_primary_dependency_facts(sdk_run_id, tuple(o.effect_id for o in heads))
         assert len(effects) == 2 and all(e.terminal and e.result.error_code in {
             "effect_gate_task_scope_not_active", "effect_gate_route_receipt_rejected"} for e in effects)
     finally:
