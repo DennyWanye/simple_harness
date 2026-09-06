@@ -17,6 +17,22 @@ from deskpet.quality.corpus_scoring_session import configure_process, run
 from deskpet.sdk_adapters.sdk_candidate import build_candidate_identity
 
 
+def objects(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from objects(child)
+    elif isinstance(value, str) and value.lstrip().startswith(('{', '[')):
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return
+        yield from objects(decoded)
+
+
 async def execute(root, host, case_id):
     assert build_candidate_identity().version == version('simple-harness-sdk') == '0.7.10'
     assert version('simple-harness-memory-sdk') == '0.6.19'
@@ -85,6 +101,19 @@ async def execute(root, host, case_id):
         assert seed['labels'][f'successor-{i}'] == successor
     assert all(op['kind'] == ('supersede' if case_id == 'C09-02' else 'revise')
         for op in seed['plan']['operations'])
+    physical = scoring[0]['messages']
+    if case_id == 'C09-02':
+        assert '松木路8号' not in json.dumps(physical, ensure_ascii=False)
+    # For numeric facts, inspect the actual old payload and revision identities;
+    # a blanket substring ban on "12"/"4" would reject unrelated system limits.
+    public_objects = list(objects(physical))
+    for operation in seed['initial_plan']['operations']:
+        old_payload = operation['payload']
+        assert not any(all(obj.get(k) == v for k, v in old_payload.items())
+            for obj in public_objects)
+    for prior in before.values():
+        assert not any(obj.get('source_ref') == prior['memory_id']
+            and obj.get('source_revision') == prior['revision'] for obj in public_objects)
     assert result['route_audit'] == []
     trace = result['trace']
     assert trace['trace_status'] == 'COMPLETE' and len(trace['providers']) == 1
