@@ -1,5 +1,14 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 Prospective trigger executor公开runner叶子
+
+最后更新2026-09-06。固定7e6337b5获Dirac源码限定ACCEPT后，installed H073/M0613新集成方法1PASS0.63s（原3格+3篡改），正式原3格2PASS/0FAIL/1BLOCKED。
+Run edb882f0ec224e1fbdbfff4e5bcc714c；missing trigger无法公开构造，未以DTO拒绝冒充eligibility通过；其余398未选，整体NOT_RUN/BLOCKED、exit3。
+pending ACK仅synthetic registration合同，不是Host提醒；两projection旧wire/hash及canary/scope义务、32非法组合保持边界。
+旧19未重跑、不并历史为新401。最大135408KiB、进程无残留、槽释放。
+[命令、边界和9raw hash](../plans/2026-09-06-typed-recall-trigger-executor/RESULTS.md)。
+
+
 
 ## 2026-09-06 Prospective剩余6 lifecycle公开runner叶子
 

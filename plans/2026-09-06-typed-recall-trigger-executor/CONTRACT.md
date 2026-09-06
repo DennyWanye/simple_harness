@@ -1,7 +1,7 @@
 # Prospective trigger executor与projection构造边界
 
 2026-09-06，base dfec8bbb；复用own树feat/typed-recall-trigger-executor。
-源码准备未测试，固定审查后仅新test方法+原3格；旧19/Procedure不重跑。
+固定源码7e6337b5经Dirac限定ACCEPT后，仅新test方法+原3格已执行，见RESULTS.md；旧19/Procedure未重跑。
 
 ## 原三格与公开执行
 
@@ -15,7 +15,7 @@
 
 父oracle读取冻结原三行，独立核original recipe/boolean/expected；有效source/ACK/ref/clock/hash复用已审独立校验，
 对照与原回合均核完整public wire、query/subject/run/budget/来源内容/分类/evidence/revision/实际candidate access/重放。
-新test三原格应2PASS1BLOCKED；三篡改包括外Run、丢publicoutbox、正控旧revision自洽重hash命中来源理由。
+新test三原格应2PASS1BLOCKED；三篡改包括外Run、丢publicoutbox、正控错误revision=9自洽重hash命中来源理由。
 
 ## Projection精确冲突（只读事实，未改原格/阈值）
 
