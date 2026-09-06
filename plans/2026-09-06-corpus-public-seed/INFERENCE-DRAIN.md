@@ -61,3 +61,15 @@ prior proof 共用上述 validator；claim.envelope 若存在必须等本 fixtur
    扫描能力。失败 claim 保留 SDK lease/backoff 事实，不删 job，不启动生产 worker。
 
 240质量仍0；这些只属于 synthetic fixture setup/隔离控制。
+
+## 896d790d 后续控制准备
+
+Dirac 对896d790d delta只读未发现新增确定P1，明确NOT_RUN而非终ACCEPT。
+测试现准备三个新分支：合法两来源、非法reason被SDK真实拒绝、公开finalize接缝取消后
+audit_pending跨close/reopen（可信clock越过原210s lease）。恢复必须保留原application，
+第一job零executor重发，第二job执行一次。
+
+合法分支另以完整 `drain_inference_setup(prior_applied=...)` 入口验证自洽换job_ids、
+错误receipt result_hash、另一真实job application混用拒绝；不再仅直接调用validator。
+真实已完成库重开但不提供原proof时只IDLE且confirmedFalse。
+上述全部只源码准备；无进程/测试结果，不计入原20setup绿。

@@ -1,5 +1,6 @@
 """New multi-source drain controls; no quality Provider and no legacy reruns."""
 import pytest
+import asyncio
 from dataclasses import replace
 import simple_harness_memory as m
 import simple_harness as h
@@ -20,8 +21,9 @@ import tests.execution.test_primary_foreground_runtime as runtime_fixture
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('invalid_reason', [False, True])
-async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_path, monkeypatch, invalid_reason):
+@pytest.mark.parametrize('mode', ['accepted', 'invalid_reason', 'cancel_audit_pending'])
+async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_path, monkeypatch, mode):
+    invalid_reason = mode == 'invalid_reason'
     if invalid_reason:
         original_result = drain_module._fixture_result
         def invalid_result(request, identity):
@@ -57,8 +59,9 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
 
     scoring, _, _, _, _ = await fixture(tmp_path / 'scoring')
     principal = m.MemoryPrincipal('host', 'household', auth.subject, 'corpus-fixture')
+    now = [1788660000.0]
     config = dict(classification_policy=classification_policy(), supported_filter_policies=FILTERS,
-        evidence_authority=HostEvidenceAuthority(scoring), clock=lambda: 1788660000.0)
+        evidence_authority=HostEvidenceAuthority(scoring), clock=lambda: now[0])
     authority = InferenceFixtureAuthority()
     manager = await m.build_human_memory_v7(tmp_path / 'memory.db',
         analysis_delivery_authority=authority, **config)
@@ -70,6 +73,25 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
         args = dict(case_id='C03-20', source_path=source, scoring_path=scoring,
             host_run_id=run_ids[0], principal=principal, group=seed['source_group'],
             plan=seed['plan'], applied=seed['applied'], clock=config['clock'])
+        interrupted = []
+        if mode == 'cancel_audit_pending':
+            # Fault at the public finalize seam: result/application/audit are
+            # already actually stored by SDK; no fake receipt or private SQL.
+            async def cancel_finalize(claim, application):
+                interrupted.append((claim, application))
+                raise asyncio.CancelledError()
+            with monkeypatch.context() as fault:
+                fault.setattr(manager.backend, 'finalize_analysis_application', cancel_finalize)
+                with pytest.raises(asyncio.CancelledError):
+                    await drain_inference_setup(authority=authority, manager=manager, **args)
+            assert len(interrupted) == 1
+            assert interrupted[0][1].receipt.validation_status.value == 'accepted'
+            assert authority.executor.executions == 1
+            await manager.close()
+            now[0] += 211.0  # Actual configured 210s lease, no wall-clock sleep.
+            authority = InferenceFixtureAuthority()
+            manager = await m.build_human_memory_v7(tmp_path / 'memory.db',
+                analysis_delivery_authority=authority, **config)
         report = await drain_inference_setup(authority=authority, manager=manager, **args)
         if invalid_reason:
             # Actual SDK finalization of rejected analysis is still APPLIED.
@@ -82,8 +104,13 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
             return
         assert report['confirmed']
         assert [o.value for o in report['outcomes']] == ['applied', 'applied']
-        assert report['fixture_executions'] == 2
+        assert report['fixture_executions'] == (1 if interrupted else 2)
         proofs = report['applied']
+        if interrupted:
+            recovered = next(p for p in proofs if p.request.request_hash == interrupted[0][0].request.request_hash)
+            assert recovered.application == interrupted[0][1]
+            assert recovered.claim.application == interrupted[0][1]
+            assert recovered.claim.envelope is not None
         assert len({p.request.run_id for p in proofs}) == 2
         assert len({p.request.job_id for p in proofs}) == 2
         user = next(p for p in proofs if p.source_id == original[0].evidence_id)
@@ -102,12 +129,44 @@ async def test_inference_two_actual_jobs_applied_and_reopen_exact_finalize(tmp_p
             prior_applied=proofs, **args)
         assert restored['confirmed'] and restored['outcomes'] == ()
         assert restored['fixture_executions'] == 0
-        proof = proofs[0]
-        with pytest.raises(ValueError, match='inference_fixture_claim_identity_differs'):
-            authority.executor.verify_claim(replace(proof.claim, job_ids=('different-actual-job',)))
-        assert not await authority.executor.application_is_accepted(proof.claim,
-            replace(proof.application, receipt=replace(proof.application.receipt, result_hash='0' * 64)))
         assert await reopened.get_twin_graph_view(principal=principal) == graph
         assert len(provider.requests) == 1
+    finally:
+        await reopened.close()
+    if mode != 'accepted':
+        return
+    # Each negative enters the real public-builder/drain/recovery path. A
+    # self-consistent replacement of claim.job_ids must not borrow APPLIED.
+    proof = proofs[0]
+    wrong_jobs = ('different-actual-job',)
+    negatives = [
+        (replace(proof, job_ids=wrong_jobs, claim=replace(proof.claim, job_ids=wrong_jobs)),
+            'inference_fixture_claim_identity_differs'),
+        (replace(proof, application=replace(proof.application,
+            receipt=replace(proof.application.receipt, result_hash='0' * 64))),
+            'inference_fixture_prior_application_not_accepted'),
+        (replace(proof, application=proofs[1].application),
+            'inference_fixture_prior_application_not_accepted'),
+    ]
+    for changed, reason in negatives:
+        authority = InferenceFixtureAuthority()
+        reopened = await m.build_human_memory_v7(tmp_path / 'memory.db',
+            analysis_delivery_authority=authority, **config)
+        try:
+            with pytest.raises(ValueError, match=reason):
+                await drain_inference_setup(authority=authority, manager=reopened,
+                    prior_applied=(changed,), **args)
+            assert authority.executor.executions == 0
+            assert await reopened.get_twin_graph_view(principal=principal) == graph
+        finally:
+            await reopened.close()
+    authority = InferenceFixtureAuthority()
+    reopened = await m.build_human_memory_v7(tmp_path / 'memory.db',
+        analysis_delivery_authority=authority, **config)
+    try:
+        absent_proof = await drain_inference_setup(authority=authority, manager=reopened, **args)
+        assert [o.value for o in absent_proof['outcomes']] == ['idle']
+        assert not absent_proof['confirmed'] and absent_proof['applied'] == ()
+        assert absent_proof['fixture_executions'] == 0
     finally:
         await reopened.close()
