@@ -1680,6 +1680,15 @@ class HumanMemoryHostService:
                 "ORDER BY t.enqueue_sequence,t.turn_id",
                 (self._auth.subject,),
             ).fetchall()
+        import aiosqlite
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        rejections = {}
+        async with aiosqlite.connect(self._db_path) as db:
+            db.row_factory = aiosqlite.Row
+            for row in rows:
+                rejection = await read_admission_rejection_tx(db, turn_id=row["turn_id"], subject=self._auth.subject)
+                if rejection is not None:
+                    rejections[row["turn_id"]] = rejection
         turns = []
         for row in rows:
             stored = json.loads(str(row["turn_json"]))
@@ -1688,7 +1697,8 @@ class HumanMemoryHostService:
                 {
                     "turn_ref": str(row["turn_id"]),
                     "enqueue_sequence": int(row["enqueue_sequence"]),
-                    "state": str(row["current_state"]),
+                    "state": "REJECTED" if row["turn_id"] in rejections else str(row["current_state"]),
+                    **({"rejection_reason": rejections[row["turn_id"]]["reason"]} if row["turn_id"] in rejections else {}),
                     "delivery_key": payload.get("delivery_key"),
                 }
             )

@@ -85,7 +85,7 @@ async def test_signed_configuration_readback_reopen_and_expected_ref(env):
     error(await command(env, "disclosure.configure", selection(), key="stale-update"),
           "host_disclosure_configuration_changed")
     with sqlite3.connect(env.path) as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 48
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 49
         assert dict(db.execute("SELECT table_name,taxonomy FROM human_memory_recovery_table_registry "
             "WHERE table_name LIKE 'human_memory_disclosure_%'")) == {
                 "human_memory_disclosure_configs": "A", "human_memory_disclosure_heads": "B"}

@@ -2498,6 +2498,17 @@ class ForegroundQueueStore:
         )
         if turn is None:
             return None
+        from deskpet.execution.admission_rejection import read_admission_rejection_tx
+        while turn is not None:
+            rejected = await read_admission_rejection_tx(db, turn_id=turn["turn_id"], subject=subject)
+            if rejected is None:
+                break
+            turn = await self._fetchone(db,
+                "SELECT t.* FROM foreground_turns t JOIN foreground_turn_heads h ON h.turn_id=t.turn_id "
+                "WHERE t.subject=? AND h.current_state='QUEUED' AND t.enqueue_sequence>? "
+                "ORDER BY t.enqueue_sequence,t.turn_id LIMIT 1", (subject, turn["enqueue_sequence"]))
+        if turn is None:
+            return None
         binding_revision = 0
         binding_receipt_id: str | None = None
         binding_receipt_hash: str | None = None

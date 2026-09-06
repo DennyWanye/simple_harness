@@ -126,7 +126,9 @@ PRIMARY_EFFECT_SOURCES_MIGRATION = "039_primary_effect_sources_v47.sql"
 PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION = 47
 TRUSTED_DISCLOSURE_MIGRATION = "040_trusted_disclosure_v48.sql"
 TRUSTED_DISCLOSURE_SCHEMA_VERSION = 48
-HUMAN_MEMORY_TARGET_SCHEMA_VERSION = TRUSTED_DISCLOSURE_SCHEMA_VERSION
+ADMISSION_REJECTIONS_MIGRATION = "041_foreground_admission_rejections_v49.sql"
+ADMISSION_REJECTIONS_SCHEMA_VERSION = 49
+HUMAN_MEMORY_TARGET_SCHEMA_VERSION = ADMISSION_REJECTIONS_SCHEMA_VERSION
 HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
     {
         HUMAN_MEMORY_PROGRAM_MIGRATION,
@@ -143,6 +145,7 @@ HUMAN_MEMORY_PROGRAM_MIGRATIONS = frozenset(
         EFFECT_CLOSURE_MIGRATION,
         PRIMARY_EFFECT_SOURCES_MIGRATION,
         TRUSTED_DISCLOSURE_MIGRATION,
+        ADMISSION_REJECTIONS_MIGRATION,
     }
 )
 
@@ -178,6 +181,7 @@ MIGRATION_STEPS: dict[str, int] = {
     EFFECT_CLOSURE_MIGRATION: EFFECT_CLOSURE_SCHEMA_VERSION,
     PRIMARY_EFFECT_SOURCES_MIGRATION: PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION,
     TRUSTED_DISCLOSURE_MIGRATION: TRUSTED_DISCLOSURE_SCHEMA_VERSION,
+    ADMISSION_REJECTIONS_MIGRATION: ADMISSION_REJECTIONS_SCHEMA_VERSION,
 }
 
 _S4_HUMAN_MIGRATIONS = frozenset(
@@ -196,6 +200,7 @@ _S4_HUMAN_MIGRATIONS = frozenset(
         EFFECT_CLOSURE_MIGRATION,
         PRIMARY_EFFECT_SOURCES_MIGRATION,
         TRUSTED_DISCLOSURE_MIGRATION,
+        ADMISSION_REJECTIONS_MIGRATION,
     }
 )
 
@@ -918,6 +923,8 @@ async def run_migrations(
                             (version, migration_sha256, time.time()),
                         )
                     if version in _S4_HUMAN_MIGRATIONS:
+                        if version == ADMISSION_REJECTIONS_MIGRATION:
+                            await _register_recovery_tables(db, (("foreground_admission_rejections", "A"),))
                         if version == TRUSTED_DISCLOSURE_MIGRATION:
                             await _register_recovery_tables(db, (
                                 ("human_memory_disclosure_configs", "A"),
@@ -1194,7 +1201,9 @@ async def run_migrations(
                         "provider binding lifecycle repair failed"
                     ) from exc
         durable_version = (
-            TRUSTED_DISCLOSURE_SCHEMA_VERSION
+            ADMISSION_REJECTIONS_SCHEMA_VERSION
+            if ADMISSION_REJECTIONS_MIGRATION in durable_markers
+            else TRUSTED_DISCLOSURE_SCHEMA_VERSION
             if TRUSTED_DISCLOSURE_MIGRATION in durable_markers
             else PRIMARY_EFFECT_SOURCES_SCHEMA_VERSION
             if PRIMARY_EFFECT_SOURCES_MIGRATION in durable_markers

@@ -1,5 +1,10 @@
 # ARCHITECTURE 索引
 
+## 2026-09-06 Dirac披露并发两P1局部修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure/base955a19cd，整片未合主、待主/Dirac复核。真实双控制连接先复现FIFO陈旧A阻塞B与慢checker换代后仍物理send两红；新增schema49 Host入场拒绝记录（无Run/Memory伪receipt）让A拒绝后B继续，出站checker后新连接复核原token。历史source不改。最终新增及必要邻居94项通过/41.51秒/峰222944KiB；PGID40284及全部本轮组已清空，测试槽释放。非SELF/完整外发原子撤权与240质量仍未完成，未跑真实模型/native。
+[两P1修复、接口、schema、原红和指纹](../plans/2026-09-06-host-trusted-disclosure/Dirac两P1修复.md)。
+
 ## 2026-09-06 披露绑定历史来源回归修复
 
 最后更新：2026-09-06。真实默认SELF foreground/outbox/short/history链复现精确形状回归后修复，最新29项通过；历史配置事实与当前head判定分离，待主/Dirac终审，非SELF和完整外发仍待后继。

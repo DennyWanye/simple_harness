@@ -1,5 +1,10 @@
 # simple_harness — 全局项目状态与架构完成度
 
+## 2026-09-06 Dirac披露并发两P1局部修复
+
+最后更新：2026-09-06。自有feat/host-trusted-disclosure/base955a19cd，整片未合主、待主/Dirac复核。真实双控制连接先复现FIFO陈旧A阻塞B与慢checker换代后仍物理send两红；新增schema49 Host入场拒绝记录（无Run/Memory伪receipt）让A拒绝后B继续，出站checker后新连接复核原token。历史source不改。最终新增及必要邻居94项通过/41.51秒/峰222944KiB；PGID40284及全部本轮组已清空，测试槽释放。非SELF/完整外发原子撤权与240质量仍未完成，未跑真实模型/native。
+[两P1修复、接口、schema、原红和指纹](../plans/2026-09-06-host-trusted-disclosure/Dirac两P1修复.md)。
+
 ## 2026-09-06 可信披露绑定局部验收与来源回归修复
 
 最后更新：2026-09-06。自有simple_harness-corpus-clock / feat/host-trusted-disclosure，组合点6df952fc（含主30f6b2d4/M614）。可信配置/queue持久绑定及当前解析器局部验收完成；source authority确定回归先红后修，最新29项通过，PGID37740已清理并释放测试槽。前序28邻居结果独立保留，不重复算为最终代码全量通过。仍待主/Dirac终审和主组合整合；240质量、完整非SELF/输入许可/外发未完成。

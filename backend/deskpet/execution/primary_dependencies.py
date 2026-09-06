@@ -282,10 +282,17 @@ async def check_runtime_dependencies(*, db_path, stack, sdk_run_id, request, pol
                 return  # trusted Host lookup: this is not a foreground primary Run
             run, proof = found
             policy = policy_factory(run["subject"])
+            disclosure = await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
+                subject=run["subject"], request_id=request.request_id.value)
             allowed = await policy.check_dependencies(db=db, primary_ref=run["primary_conversation_id"],
-                dependencies=proof, disclosure_context=await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
-                    subject=run["subject"], request_id=request.request_id.value))
+                dependencies=proof, disclosure_context=disclosure)
             if not allowed:
                 raise ValueError("primary_dependencies_not_visible")
+        # Fresh connection/snapshot AFTER the asynchronous checker and its DB
+        # cleanup: a true result for an earlier generation is not current use.
+        current = await resolve_current_disclosure(db_path=db_path, run_id=sdk_run_id,
+            subject=run["subject"], request_id=request.request_id.value)
+        if current != disclosure:
+            raise ValueError("primary_disclosure_changed_during_check")
     except Exception as exc:
         raise PrimaryHistoryDisclosureRejected(private_cause=exc) from None
