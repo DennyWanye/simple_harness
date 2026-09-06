@@ -60,6 +60,7 @@ class _PrimaryBindingTarget:
     evidence_id: str
     evidence_hash: str
     origin: object
+    expected_filesystem_identity_hash: str | None = None
 
 
 class WorkspaceBindingRuntimeAuthority:
@@ -108,9 +109,11 @@ class WorkspaceBindingRuntimeAuthority:
         idempotency_key: str,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]:
         self._assert_subject(subject)
-        self._ensure_task_directory(root)
+        if expected_filesystem_identity_hash is None:
+            self._ensure_task_directory(root)
         state = await self._policy.get_policy_state()
         mode = str(getattr(state, "mode", ""))
         if mode == WorkspaceBindingMode.MANUAL.value:
@@ -121,6 +124,7 @@ class WorkspaceBindingRuntimeAuthority:
                 idempotency_key=idempotency_key,
                 interaction_evidence_id=interaction_evidence_id,
                 interaction_evidence_hash=interaction_evidence_hash,
+                expected_filesystem_identity_hash=expected_filesystem_identity_hash,
             )
             return {
                 "status": "authorization_required",
@@ -137,6 +141,7 @@ class WorkspaceBindingRuntimeAuthority:
                 policy_generation=int(getattr(state, "generation", -1)),
                 interaction_evidence_id=interaction_evidence_id,
                 interaction_evidence_hash=interaction_evidence_hash,
+                expected_filesystem_identity_hash=expected_filesystem_identity_hash,
             )
         except WorkspaceBindingError as exc:
             if exc.code == "workspace_root_not_configured_descendant":
@@ -185,6 +190,7 @@ class WorkspaceBindingRuntimeAuthority:
         idempotency_key: str,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]:
         self._assert_subject(subject)
         state = await self._policy.get_policy_state()
@@ -197,6 +203,7 @@ class WorkspaceBindingRuntimeAuthority:
             task_scope_id=task_scope_id,
             root=root,
             idempotency_key=idempotency_key,
+            expected_filesystem_identity_hash=expected_filesystem_identity_hash,
         )
         now = int(self._clock_millis())
         challenge = await self._store.issue_manual_challenge(
@@ -313,6 +320,8 @@ class WorkspaceBindingRuntimeAuthority:
             "root": check.proposal.root.canonical_path,
             "idempotency_key": check.proposal.idempotency_key,
         }
+        if row is not None and "expected_filesystem_identity_hash" in json.loads(str(row["payload_json"])):
+            expected_payload["expected_filesystem_identity_hash"] = check.proposal.root.filesystem_identity.identity_hash
         if (
             row is None
             or str(row["subject"]) != check.proposal.subject
@@ -355,6 +364,7 @@ class WorkspaceBindingRuntimeAuthority:
         policy_generation: int,
         interaction_evidence_id: str,
         interaction_evidence_hash: str,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> Mapping[str, object]:
         configured = self._store.configured_root()
         from deskpet.sdk_adapters.tools import active_product_foreground_origin
@@ -371,7 +381,8 @@ class WorkspaceBindingRuntimeAuthority:
             run_id = current.host_run_id
             if current.task_scope_id is None:
                 target = _PrimaryBindingTarget(run_id, task_scope_id, root, idempotency_key,
-                    interaction_evidence_id, interaction_evidence_hash, origin)
+                    interaction_evidence_id, interaction_evidence_hash, origin,
+                    expected_filesystem_identity_hash)
                 self._verify_primary_target(current, target)
             run_revision = current.generation
             base_revision = self._binding_revision(task_scope_id) if current.task_scope_id is None else current.binding_set_revision
@@ -419,6 +430,7 @@ class WorkspaceBindingRuntimeAuthority:
                 task_scope_id=task_scope_id,
                 root=root,
                 idempotency_key=idempotency_key,
+                expected_filesystem_identity_hash=expected_filesystem_identity_hash,
                 base_revision=base_revision,
             )
             request = RunBindingModeSnapshotRequest(
@@ -462,6 +474,8 @@ class WorkspaceBindingRuntimeAuthority:
             raise WorkspaceBindingError("workspace_binding_current_run_authority_stale")
         expected = {"schema_version": 1, "action": "binding.append", "scope_ref": target.task_scope_id,
                     "root": target.root, "idempotency_key": target.idempotency_key}
+        if target.expected_filesystem_identity_hash is not None:
+            expected["expected_filesystem_identity_hash"] = target.expected_filesystem_identity_hash
         with sqlite3.connect(f"file:{self._db_path.resolve()}?mode=ro", uri=True) as db:
             row = db.execute(
                 "SELECT e.envelope_sha256,e.payload_json FROM human_memory_evidence e "
@@ -484,12 +498,16 @@ class WorkspaceBindingRuntimeAuthority:
         root: str,
         idempotency_key: str,
         base_revision: int | None = None,
+        expected_filesystem_identity_hash: str | None = None,
     ) -> WorkspaceBindingProposal:
         revision = self._binding_revision(task_scope_id) if base_revision is None else base_revision
         canonical = canonical_workspace_root(
             root,
             root_id=_uuid(f"workspace-binding-root-id:{task_scope_id}:{root}"),
         )
+        if (expected_filesystem_identity_hash is not None
+                and canonical.filesystem_identity.identity_hash != expected_filesystem_identity_hash):
+            raise WorkspaceBindingError("workspace_binding_expected_root_identity_changed")
         return WorkspaceBindingProposal(
             proposal_id=_uuid(
                 f"workspace-binding-proposal:{self._subject}:{task_scope_id}:{idempotency_key}"

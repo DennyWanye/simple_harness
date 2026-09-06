@@ -51,6 +51,12 @@ ROUTES = (
 _MAX_TEXT = 2048
 _AUDIT_CANCEL_SECONDS = 2.0
 _LOG = logging.getLogger(__name__)
+_WORKSPACE_REUSE_NEW_RUN = (
+    "This Run is already bound to a task. End this turn without switching scopes. "
+    "In the next Run, use task_scope_search to obtain the completed task's current source_hash, "
+    "then create_new with reuse_workspace_of before binding any other task. "
+    "This request did not reopen the completed task or edit its files."
+)
 
 CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -67,6 +73,10 @@ CONTEXT_ROUTE_SCHEMA: dict[str, Any] = {
             "description": "For memory_standalone, request relevant prior conversation groups outside the current recent context. Defaults to false. Short and long-term results share one Host budget and current source checks.",
         },
         "task_scope_id": {"type": "string", "maxLength": 128},
+        "reuse_workspace_of": {
+            "type": "string", "minLength": 1, "maxLength": 128,
+            "description": "Only create_new: explicitly bind the new active task to the completed task's existing workspace. Copy its exact task_scope_id and expected_source_hash from public search/resume. Requires one verified root and a new binding grant; never reopens the old task. Omit for a new separate workspace.",
+        },
         "title": {"type": "string", "maxLength": 256},
         "goal": {"type": "string", "maxLength": _MAX_TEXT},
         "expected_source_hash": {"type": "string", "minLength": 64, "maxLength": 64},
@@ -236,6 +246,8 @@ class ContextRouteToolService:
             provider_turn_ordinal=turn_ordinal,
             origin="context_tool",
             idempotency_key=effect_id,
+            **({"require_unbound_run": True} if route is TaskScopeRoute.CREATE_NEW
+               and "reuse_workspace_of" in proposal else {}),
         )
         result: dict[str, Any] = {"context_route_receipt": receipt.to_json()}
         if extras:
@@ -287,6 +299,9 @@ class ContextRouteToolService:
                 run_id, raw_call_id, effect_id, proposal,
                 "context_route_route_invalid",
             )
+        if "reuse_workspace_of" in proposal and route_value != "create_new":
+            return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                                      "context_route_workspace_reuse_requires_create_new")
         try:
             if route_value == "direct_standalone":
                 return await self._commit_receipt(
@@ -323,7 +338,8 @@ class ContextRouteToolService:
             code = str(getattr(exc, "code", "") or "context_route_adjudication_failed")
             return await self._reject(
                 run_id, raw_call_id, effect_id, proposal, code,
-                message=str(exc)[:512],
+                message=(_WORKSPACE_REUSE_NEW_RUN if code == "context_route_workspace_reuse_requires_new_run"
+                         else str(exc)[:512]),
             )
 
     async def _reject(
@@ -557,6 +573,19 @@ class ContextRouteToolService:
         service = self._bind_service(binding_append=self._binding_append_getter())
         from deskpet.memory.human_memory_service import AppendBindingRequest, CreateTaskScopeRequest
 
+        continuation = None
+        if "reuse_workspace_of" in proposal:
+            bound = await self._ledger.latest_route_decision_for_run(run_id, task_only=True)
+            envelope = self._tool_context_getter().task_execution_envelope
+            if bound is not None or envelope.task_scope_id is not None:
+                return await self._reject(run_id, raw_call_id, effect_id, proposal,
+                    "context_route_workspace_reuse_requires_new_run",
+                    message=_WORKSPACE_REUSE_NEW_RUN)
+            from deskpet.sdk_adapters.workspace_continuation import resolve_workspace_continuation
+            continuation = await resolve_workspace_continuation(
+                service=service, binding_store=self._binding_store_factory(),
+                disclosure_reader=self._scope_disclosure_reader, run_id=run_id,
+                effect_id=effect_id, proposal=proposal)
         producer_dependencies = (None if self._producer_dependencies_reader is None
             else await self._producer_dependencies_reader(run_id))
         created = await service.create_task_scope(
@@ -583,13 +612,16 @@ class ContextRouteToolService:
                 "context_route_workspace_root_not_configured",
                 task_scope_id=scope,
             )
-        # configured_root is an authority DTO, not a path string. Each task
-        # gets a stable direct child; title/model text never selects a root.
-        task_root = Path(root.canonical_path) / f"task-{scope}"
+        # Normal creation gets its own stable direct child. Explicit reuse
+        # selects the exact verified old root; model text never supplies a path.
+        task_root = (Path(root.canonical_path) / f"task-{scope}" if continuation is None
+                     else Path(continuation.root.canonical_path))
         outcome = await service.append_binding(AppendBindingRequest(
             scope_ref=scope,
             root=str(task_root),
             idempotency_key=f"context-route:{run_id}:{effect_id}",
+            expected_filesystem_identity_hash=(None if continuation is None else
+                continuation.root.filesystem_identity.identity_hash),
         ))
         if str(outcome.get("status", "")) == "authorization_required":
             return await self._reject(
@@ -609,7 +641,8 @@ class ContextRouteToolService:
             proposal=proposal,
             task_scope_id=scope,
             binding=binding,
-            extras={"created": dict(created), "producer_dependencies": producer_dependencies},
+            extras={"created": dict(created), "producer_dependencies": producer_dependencies,
+                    **({} if continuation is None else {"workspace_source": dict(continuation.source)})},
         )
 
     # -- task_scope_search ------------------------------------------------
@@ -656,9 +689,11 @@ class ContextRouteToolService:
             "candidates": candidates,
             "next_cursor": result.get("next_cursor"),
             "receipt_hash": result.get("receipt_hash"),
-            "note": "Candidates are permission-first hits only; they grant no "
-            "authority. Confirm one and pass its exact task_scope_id to "
-            "context_route(route=resume_existing).",
+            "note": "Candidates grant no authority. resume_existing reads history/status and does not reopen a completed task. "
+            "To edit a completed task's files, copy its task_scope_id to reuse_workspace_of and source_hash to expected_source_hash "
+            "in create_new with a new title/goal and explicit original-workspace "
+            "binding. It must be the first task route in a new Run; do not resume the old task first. "
+            "Active tasks may use resume_existing with their exact task_scope_id.",
         }
 
 
