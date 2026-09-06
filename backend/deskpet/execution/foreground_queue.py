@@ -2214,6 +2214,7 @@ class ForegroundQueueStore:
         sdk_run_id: str,
         attempt: Mapping[str, object],
         members: Sequence[tuple[str, str, str]] = (),
+        input_observer_tx=None,
     ) -> str:
         """Insert one ``reserved`` **analysis** attempt row for a terminal Run (S5b Task 4).
 
@@ -2246,6 +2247,8 @@ class ForegroundQueueStore:
                     db, host_run_id=host_run_id, sdk_run_id=sdk_run_id, generation=int(head["generation"]),
                     attempt=attempt, members=members, now=now,
                 )
+                if input_observer_tx is not None:
+                    await input_observer_tx(attempt, db)
                 await db.commit()
             except Exception:
                 await db.rollback()

@@ -134,10 +134,9 @@ class AnalysisLeaseFence:
         self._reserved_at = None
 
     async def reserve_attempt(self, row: Mapping[str, Any], members: Sequence[tuple[str, str, str]]) -> None:
-        if self.reservation_observer is not None:
-            await self.reservation_observer(row)
         await self._store.reserve_analysis_attempt(
-            host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, attempt=row, members=members
+            host_run_id=self.host_run_id, sdk_run_id=self.sdk_run_id, attempt=row, members=members,
+            input_observer_tx=self.reservation_observer,
         )
         self._reserved_at = float(self._clock())
 
@@ -345,8 +344,8 @@ class HostMemoryAnalysisExecutor:
 
         if candidate_snapshot is not None:
             from types import SimpleNamespace
-            fence.reservation_observer = lambda row: self._semantic_correction.bind_attempt(
-                request, row, candidate_snapshot, build_request(SimpleNamespace(**row)))
+            fence.reservation_observer = lambda row, db: self._semantic_correction.bind_attempt(
+                request, row, candidate_snapshot, build_request(SimpleNamespace(**row)), db=db)
         started = time.monotonic()
         outcome = await invoker.invoke(
             purpose="analysis",
