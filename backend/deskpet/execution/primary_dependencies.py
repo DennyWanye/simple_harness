@@ -143,6 +143,9 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
     current = {"evidence_id": run["evidence_id"], "envelope_hash": run["evidence_hash"]}
     if current not in proof["evidence"]:
         raise ValueError("primary_dependencies_current_user_missing")
+    from deskpet.execution.primary_context_pages import verify_history_projections
+    await verify_history_projections(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                                     start=start, proof=proof)
     recall = list(proof["recall"])
     evidence = list(proof["evidence"])
     short = list(proof.get("short_horizon", ()))
@@ -268,6 +271,15 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         if "error" in value:
             continue  # errors contain no candidate content
         if row["tool_name"] == "context_page_in":
+            if value.get("kind") == "primary_tool_history_page_v1":
+                from deskpet.execution.primary_context_pages import admitted_page
+                expected = await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                    start=start, arguments=thaw_json(fact.arguments))
+                if value != expected:
+                    raise ValueError("primary_page_effect_result_mismatch")
+                source = expected["source"]
+                evidence.append(dict(evidence_id=source["evidence_id"], envelope_hash=source["envelope_hash"]))
+                continue
             if value.get("kind") == "skill":
                 continue  # configuration/tool instructions, not scope history
             if initial_package is None or value.get("content") != canonical_json(initial_package):

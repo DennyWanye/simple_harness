@@ -46,6 +46,7 @@ class ContextPageInStore:
         self._max = max(1, int(max_refs))
         self._records: dict[str, ContextPageInReference] = {}
         self._active: set[str] = set()
+        self.primary_reader = None  # composed Host reader; never an in-memory grant
 
     def put(self, *, kind: str, source: str, content: str, session_id: str,
             request_id: str, scope_id: str) -> ContextPageInReference:
@@ -101,6 +102,14 @@ def build_context_page_in_handler(
         runtime = execution_context_getter()
         if runtime is None:
             return _error("context_scope_missing")
+        from deskpet.execution.primary_context_pages import PREFIX, PrimaryContextPageUnavailable
+        if isinstance(args.get("reference_id"), str) and args["reference_id"].startswith(PREFIX):
+            if store.primary_reader is None:
+                return _error("primary_page_reader_unavailable")
+            try:
+                return json.dumps(await store.primary_reader(args), ensure_ascii=False)
+            except PrimaryContextPageUnavailable as exc:
+                return _error(str(exc))
         reference_id = str(args.get("reference_id", "") or "").strip()
         source_hash = str(args.get("source_hash", "") or "").strip()
         ref = store.get(reference_id)
