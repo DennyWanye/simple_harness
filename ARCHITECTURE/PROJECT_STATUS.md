@@ -1,5 +1,8 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：用户明确将“发布成功后提醒”缺失的实际发布来源接入及对应端到端验收延期为F01。本次不继续推进、不计为通过，其余当前交付继续；已有事件协议层证据不替代真实发布。[后续待办](../plans/2026-09-06-typed-use-primary/FOLLOWUPS.md)。
+
+
 Updated 2026-09-06: revoked-source/non-success semantic fallback preserves pending debt and genuine FAILED terminal, without constructing a source-bearing model observation. Original main fallback already settled the unclosed-scope flow; earlier current-r3 lacked that component and is not main deadlock evidence. Two new actual-stack controls passed7.75s, including Host terminal.before_commit crash, cold same-receipt reuse/no retransmission, pending replay status and independent next input without withdrawn USER text. Productc6af1ac4; H077/M616 plus Host source/MockTransport, not native. PG4841 empty/lock released; no schema/hash/SDK changes. [Results and baseline calibration](../plans/2026-09-06-revoked-scope-terminal/RESULTS.md).
 
 
