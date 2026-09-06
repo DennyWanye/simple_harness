@@ -35,3 +35,19 @@ New batch evidence hashes:
 - `a7-r5/command.log` SHA256 `3974de7443beebd4eb72ef69c0ed167b4b4e4cee5c06cfaacda6b857ee0ab7cf`
 - `a7-r5/resource.json` SHA256 `c27181387d2d8da2d8dce2f2badcc59cb64c4efce6fcbb7405054ae40649de12`
 - `a7-r5/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+## Core first batch a7-r6 (71ddcc79)
+
+5 PASS / 2 FAIL / 2 deselected in6.86s; PG93287 exit1/remaining[],
+peak402704KiB, cleanupnull. Five first-execution transaction/ACK controls passed:
+three unACKed presentations/overdue and fourth ACK+unit terminal, two ACK
+commit-fault replays, real exception guard invocation, competing ACK one winner
+and exact wrong-terminal rejection. These still use fixture Run IDs, not actual
+Harness completion evidence. Two new actual-runtime parameters both stopped in
+fixture catalog hashing of the SDK frozen mappingproxy; no runtime acceptance.
+The fixture now uses public thaw_json for the actual SDK tool schema, preserving
+its exact content before Host canonical hash. Only these two failures need retry.
+Shared slot released to Hegel. No old green rerun.
+- `a7-r6/command.log` SHA256 `ee19aee83c4ee941c00cbb692640a340cb3f12698aec30997efb04495c2fb58e`
+- `a7-r6/resource.json` SHA256 `6bfc79eb1945caa68fa50a255fc94df3f17a827495b21458e2af1240c58d06a2`
+- `a7-r6/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`

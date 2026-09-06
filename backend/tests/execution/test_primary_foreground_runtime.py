@@ -121,7 +121,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
         specs.append(dict(name="context_page_in", description="Load exact context", input_schema=CONTEXT_PAGE_IN_SCHEMA["parameters"]))
     from deskpet.sdk_adapters.tools import _sdk_tool
-    specs.extend(dict(name=r.name, description=r.description, input_schema=_sdk_tool(r).spec.input_schema)
+    from simple_harness import thaw_json
+    specs.extend(dict(name=r.name, description=r.description, input_schema=thaw_json(_sdk_tool(r).spec.input_schema))
                  for r in extra_registrations)
     inventory = tuple(ProductToolInventoryEntry(name=s["name"], dispatch_kind="control", permission_category="read_file",
                         source="fixture", version="v1", execution_identity="fixture",
