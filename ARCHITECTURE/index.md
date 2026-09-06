@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+2026-09-06主复核：clock固定e32a2542纳入cbf99364，7个源码/证据hash一致；受影响实际memory job/semantic correction/history组合11项通过、进程已清理。原6项clock独立保留；[组合复核及限制](../plans/2026-09-06-corpus-clock/主代理复核.md)。以下待整合表述保留为当时历史。
+
 ## 2026-09-06 Host业务clock局部验收
 
 最后更新：2026-09-06。可信clock透传到runtime与公开SDK，进程内lease使用monotonic；6项真实SDK空库/clock契约通过，待主复核整合。未完成240质量或受众用途接线。
