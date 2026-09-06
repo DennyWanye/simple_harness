@@ -74,7 +74,7 @@ async def test_actual_main_recent_phase_then_separate_scoring_run(tmp_path, monk
     stdout, stderr = sys.stdout, sys.stderr
     try:
         key, _ = configure_process(directory, host, initialize_only=True)  # no real .env or secret
-        code = await run(directory, host, key, 'http://c07-scoring.invalid/v1')
+        code = await run(directory, host, key, 'https://c07-scoring.invalid/v1')
     finally:
         sys.stdout, sys.stderr = stdout, stderr
     result = json.loads(read_text(directory / 'execution.json'))
