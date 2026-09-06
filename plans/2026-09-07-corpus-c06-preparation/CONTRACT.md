@@ -95,7 +95,7 @@ silently expand. No new environment, SDK, session hook or framework.
 ## Conditional-description successor (after main r2)
 
 Main reported r2 at abf1b43c: original positional-order red plus unrun and new
-seven controls total **11 PASS 4.97s** (main command.log authoritative),
+seven controls total **11 PASS 4.88s** (main command.log confirmed; supersedes preliminary 4.97s),
 PG88125 exit0/remaining[]. Original r1 FAIL remains. These are 10/20 source
 controls, not actual Task/quality runs. No execution was performed in this tree.
 
@@ -120,3 +120,5 @@ It reuses the public source/job/owner/reopen oracle and checks actual serialized
 Procedure applicability as well as steps. Original 10 selectors are unchanged;
 no old green reruns requested. New code changes only mapping/tests/docs, no SDK,
 shared session, production authority or preparation implementation.
+
+Dirac limited delta source ACCEPT for 3d469a05: no P0/P1; six new controls remain NOT_RUN.
