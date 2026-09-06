@@ -1,5 +1,7 @@
 # ARCHITECTURE 索引
 
+2026-09-06：A7展示/ACK与来源继承已独审合入候选（固定cd594b8f）。真实五路由ACK终态、三轮未ACK保留pending/唯一overdue、第四轮ACK、终态故障恢复、异主体拒绝及跨轮派生历史遗忘分别通过；slow-source等待期间Host换代真实红例已修复并验证零外发。原no_recall规则不放宽，snapshot注入不当作用户已见。生产默认登记协调器/ACK并由组件升级52；H078组合和原生A7另验，事件触发来源继续。[原红、结果和范围](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
 2026-09-06原生r13（Hostb3680732/H078/M617）：新普通对话真实回答45/idle，默认后台审计45/45公开DTO enumerated，SDK明确verified_current_intervals与coverage_gaps[]。只关闭本场景驱动核验，旧r12 unverified不追认，完整工具/Service/Memory覆盖另验。正常退出PG99878、组清空。[Run、截图及审计](../plans/2026-09-06-typed-use-primary/NATIVE-R13.md)。
 
 2026-09-06：H078/M617/S0313接入候选。SDK正式按持久start_mode选择实际driver，保留Host控制校验，避免普通主对话因不透明wrapper失去审计核验；源4项、安装3项、Host新组合4项分别通过。旧r12实际98/98条审计已读取但coverage仍unverified，不追认旧区间；新native/fullcoverage另验。所属进程清空。[组合及真实缺口](../plans/2026-09-06-typed-use-primary/COMBINED-078617.md)。

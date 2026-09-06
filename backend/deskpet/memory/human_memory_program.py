@@ -540,6 +540,8 @@ class HumanMemoryProgramStore:
 
     async def initialize_subject(self, subject: str) -> PrimaryConversationReceipt:
         subject = _bounded_identifier(subject, "subject", maximum=512)
+        # The shared initializer now validates exact S5c extension epochs as
+        # well as the program epoch. Keep one startup/namespace schema policy.
         await initialize_human_memory_program_state_db(self._db_path)
         async with human_memory_connection(self._db_path) as db:
             db.row_factory = aiosqlite.Row

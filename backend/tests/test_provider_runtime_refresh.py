@@ -420,6 +420,7 @@ async def test_human_epoch_composition_registers_three_authorities(
         "sdk_runtime_decision_sink",
         "sdk_task_execution_authority",
         "human_memory_v7_runtime",
+        "prospective_occurrence_coordinator",
     )
     previous = {
         name: main.service_context.get(name) for name in (*services, *slots)
@@ -445,6 +446,10 @@ async def test_human_epoch_composition_registers_three_authorities(
             ProductTaskExecutionAuthority,
         )
         assert main.service_context.get("human_memory_v7_runtime") is not None
+        from deskpet.memory.prospective_occurrence import ProspectiveOccurrenceCoordinator
+        coordinator = main.service_context.get("prospective_occurrence_coordinator")
+        assert isinstance(coordinator, ProspectiveOccurrenceCoordinator)
+        assert main.service_context.prospective_occurrence_coordinator is coordinator
         # Use the real production registrations, not a hand-made safe inventory.
         # A primary Run needs these controls before it can bind its first scope.
         from deskpet.sdk_adapters.tool_authority import SDK_DIRECT_TOOL_KERNEL
@@ -456,10 +461,17 @@ async def test_human_epoch_composition_registers_three_authorities(
             workspace_resolution_kind="projectless",
             primary_route_capable=True,
         )
-        controls = {"context_route", "task_scope_search", "task_scope_update"}
+        controls = {"context_route", "task_scope_search", "task_scope_update", "prospective_ack"}
         assert controls <= set(catalog["tool_names"]) & SDK_DIRECT_TOOL_KERNEL
         assert all(item.projectless_admission == "safe" for item in inventory if item.name in controls)
         assert next(item for item in inventory if item.name == "write_file").projectless_admission == "requires_project"
+        # Recompose the same now-v52 database, retaining the actual namespace.
+        scope_ref=main.service_context.get("sdk_typed_context_use_authority").authority_scope_ref
+        await stack.close()
+        stack=await main._build_product_sdk_runtime_stack(2)
+        assert main.service_context.get("sdk_typed_context_use_authority").authority_scope_ref==scope_ref
+        assert isinstance(main.service_context.get("prospective_occurrence_coordinator"),
+                          ProspectiveOccurrenceCoordinator)
     finally:
         if stack is not None:
             await stack.close()

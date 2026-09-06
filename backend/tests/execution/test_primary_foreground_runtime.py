@@ -88,7 +88,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -120,11 +120,22 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     if page_in_store is not None:
         from deskpet.tools.context_page_in_tools import CONTEXT_PAGE_IN_SCHEMA
         specs.append(dict(name="context_page_in", description="Load exact context", input_schema=CONTEXT_PAGE_IN_SCHEMA["parameters"]))
+    from deskpet.sdk_adapters.tools import _sdk_tool
+    from simple_harness import thaw_json
+    specs.extend(dict(name=r.name, description=r.description, input_schema=thaw_json(_sdk_tool(r).spec.input_schema))
+                 for r in extra_registrations)
     inventory = tuple(ProductToolInventoryEntry(name=s["name"], dispatch_kind="control", permission_category="read_file",
                         source="fixture", version="v1", execution_identity="fixture",
                         projectless_admission="requires_project" if s["name"] == "write_file" else "safe") for s in specs)
     catalog = {"specs": specs, "schema_fingerprints": {s["name"]: canonical_hash(s["input_schema"]) for s in specs}}
     ledger = ContextRouteLedgerStore(state_path)
+    decision_sink = decision_sink_factory(ledger) if decision_sink_factory else ProductRuntimeDecisionSink(ledger=ledger)
+    typed_use_authority = None
+    if context_use_memory is not None:
+        from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority
+        typed_use_authority = await ProductTypedContextUseAuthority.create(
+            state_path=state_path, memory_runtime=context_use_memory,
+            stack_getter=lambda: stack, ledger=ledger, terminal_sink=decision_sink)
     class AuthorityCheckingAuthorization(Noop):
         async def authorize(self, prepared):
             if prepared.call.name == "write_file":
@@ -150,15 +161,30 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         for spec in specs:
             tools.register(FunctionTool(ToolSpec(spec["name"], spec["description"], spec["input_schema"]), handler))
         if dynamic:
-            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store)
+            tools = dynamic_tools(state_path, tools, registry, inventory, dynamic_factory, binding_authority, configured_root, recall_executor, scope_reader, page_in_store, typed_use_authority)
+        if extra_registrations:
+            from deskpet.sdk_adapters.tools import ProductToolsAdapter, _sdk_tool
+            tools=ProductToolsAdapter(tuple(tools.get(spec['name']) for spec in specs
+                if spec['name'] not in {r.name for r in extra_registrations}),
+                execution_identities={item.name:item.execution_identity for item in inventory})
+            tools.bind_run_authorities(registry)
+            for registration in extra_registrations:
+                tools.register(_sdk_tool(registration))
         published = uow.put_tool_catalog_snapshot(tuple(ProviderToolSpec(s["name"], s["description"], s["input_schema"]) for s in specs))
         catalog.update(generation=published.generation, content_fingerprint=published.content_fingerprint)
-        result = RuntimePorts(provider=ProviderInvocationCoordinator(uow=uow, resolver=SimpleNamespace(resolve=lambda _: binding)),
+        if typed_use_authority is not None:
+            from deskpet.sdk_adapters.provider import ProductProviderInvocationCoordinator
+            provider_coordinator=ProductProviderInvocationCoordinator(uow=uow,
+                resolver=SimpleNamespace(resolve=lambda _:binding),
+                context_use_authority=typed_use_authority,typed_terminal=typed_use_authority)
+        else:
+            provider_coordinator=ProviderInvocationCoordinator(uow=uow,resolver=SimpleNamespace(resolve=lambda _:binding))
+        result = RuntimePorts(provider=provider_coordinator,
                             tools=EffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop),
                             authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
                             tool_reconciliation=noop, reconciliation=noop, provider_reconciliation=noop,
                             react_checkpoint=uow, tool_catalog=DurableToolCatalogResolver(uow),
-                            runtime_decision_sink=ProductRuntimeDecisionSink(ledger=ledger),
+                            runtime_decision_sink=decision_sink,
                             agent_memory=memory,
                             context_provider=None if memory is None else ProductConversationContextProvider(sources),
                             context_staging=None if memory is None else ContextStagingRepository(database))
@@ -178,12 +204,13 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         from deskpet.execution.semantic_closure import closure_instruction_for_run
         return replace(result, run_context_authority=ProductRunContextAuthority(
             ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
+            occurrence_coordinator=occurrence_coordinator, typed_use_authority=typed_use_authority,
             closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
         ))
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
     scope_reader = ScopeDisclosureReader(state_path, stack_getter=lambda: stack,
         policy_factory=lambda _: history_policy)
-    expected = build_candidate_identity()
+    expected = candidate_identity or build_candidate_identity()
     origin = json.loads(metadata.distribution("simple-harness-sdk").read_text("direct_url.json"))["url"]
     # Reuse the exact installed 0.7.2 wheel path; normal production verifier
     # still checks version/hash/origin. No SDK import or verifier is mocked.
@@ -219,15 +246,22 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         return await manager.check_history_visibility(principal=visibility_memory.principal(),
             disclosure_context=disclosure_context, bindings=bindings)
     history_policy = PrimaryHistoryPolicy(state_path, local_owner_auth().subject, checker)
+    def occurrence_terminal_hook(run_id):
+        from deskpet.memory.prospective_terminal_hook import prepare_occurrence_terminal_hook
+        return prepare_occurrence_terminal_hook(principal=occurrence_coordinator.store.principal,
+            sdk_run_id=run_id,actual_sdk_terminal=stack.read_run_terminal_evidence(run_id))
     runtime = ForegroundRuntimeExecutionAuthority(
         store=queue, subject=local_owner_auth().subject, owner_id="primary-worker", ingress=ingress,
         context=PrimaryForegroundContextPort(state_path, subject=local_owner_auth().subject, route_ledger=ledger, policy=history_policy, stack_getter=lambda: stack),
-        provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack),
+        provider=ProviderPort(binding), tools=tools, terminal_observer=SqliteSdkTerminalObserver(str(state_path), ingress, observer_stack,
+            occurrence_coordinator=occurrence_coordinator),
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
+        terminal_commit_hook_factory=occurrence_terminal_hook if occurrence_coordinator else None,
     )
     runtime.history_policy = history_policy
     runtime.history_memory = visibility_memory
+    runtime.typed_use_authority = typed_use_authority
     original_close = runtime.close
     async def close(**kwargs):
         await original_close(**kwargs)
@@ -607,7 +641,7 @@ async def test_primary_pre_observation_history_rebuild_reads_actual_sdk(tmp_path
         await stack.close()
 
 
-def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None):
+def dynamic_tools(state_path, source_tools, authorities, inventory, factory, binding_authority=None, configured_root=None, recall_executor=None, scope_reader=None, page_in_store=None, typed_use_authority=None):
     from deskpet.sdk_adapters.tools import ProductToolsAdapter, active_product_tool_context
     from deskpet.sdk_adapters.effect_gate import project_tool_execution_context
     from deskpet.sdk_adapters.context_route import ContextRouteToolService
@@ -625,7 +659,7 @@ def dynamic_tools(state_path, source_tools, authorities, inventory, factory, bin
         service_factory_getter=lambda: factory,
         binding_store_factory=lambda: WorkspaceBindingAuthorityStore(state_path, configured_workspace_root=configured_root),
         binding_append_getter=lambda: binding_authority, ledger=ledger, tool_context_getter=active_product_tool_context,
-        recall_executor=recall_executor,
+        recall_executor=recall_executor, typed_use_authority=typed_use_authority,
         scope_disclosure_reader=None if scope_reader is None else scope_reader.read,
         producer_dependencies_reader=None if scope_reader is None else scope_reader.producer_dependencies)
     closure = TaskScopeUpdateService(state_path, tool_context_getter=active_product_tool_context, route_ledger=ledger)
