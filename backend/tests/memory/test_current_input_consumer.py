@@ -174,3 +174,51 @@ async def test_claim_changes_during_real_origin_read_reject_input(env, monkeypat
         assert not view.invocation_input_allowed and view.reason == "current_input_authority_unverifiable"
     finally:
         await sdk.close()
+
+
+@pytest.mark.asyncio
+async def test_ingested_placeholder_cannot_claim_current_input_namespace(env):
+    principal, context, binding = await setup(env)
+    sdk = await manager(env, register=False)
+    try:
+        admitted = await sdk.ingest_committed_evidence(binding.evidence.envelope, binding.evidence.receipt)
+        assert admitted is not None  # real public ingest creates the legacy placeholder
+        placeholder = m.MemoryPrincipal(principal.actor_id, principal.actor_id, principal.actor_id, principal.session_id)
+        observed = await sdk.check_current_input_visibility(principal=placeholder, disclosure_context=context, binding=binding)
+        assert not observed.invocation_input_allowed
+        assert observed.reason == "current_input_authority_unverifiable"
+        await sdk.register_principal_owner(principal, m.MemoryScope.personal(principal.actor_id))
+        assert (await sdk.check_current_input_visibility(principal=principal, disclosure_context=context, binding=binding)).invocation_input_allowed
+    finally:
+        await sdk.close()
+
+
+@pytest.mark.asyncio
+async def test_input_batch_exact_exception_does_not_spread_to_old_sources_or_unowned_refs(env):
+    from deskpet.memory.human_memory_service import build_foreground_turn_evidence
+    from deskpet.memory.human_memory_program import HumanMemoryProgramStore
+    from deskpet.operation_audit.current_inputs import request_hash
+    principal, context, binding = await setup(env)
+    old_pair = build_foreground_turn_evidence(subject=principal.actor_id, authority_ref=env.auth.authority_ref,
+        delivery_key="old-private-source", text="Earlier private health and family facts.")
+    await HumanMemoryProgramStore(env.path).append_evidence(*old_pair)
+    # Unknown exact public recall/short tuples must not inherit an input grant.
+    # These two negatives do not claim materialized typed/short product evidence.
+    values = (binding.evidence, m.HistoryEvidenceBinding(*old_pair),
+        m.HistoryRecallBinding("unowned-result", "a" * 64, "unowned-item", "b" * 64),
+        m.HistoryShortHorizonBinding("unowned-audit", "unowned-chunk", "c" * 64))
+    sdk = await manager(env)
+    try:
+        ordinary = await sdk.check_history_visibility(principal=principal, disclosure_context=context, bindings=values)
+        assert all(not item.visible for item in ordinary.items)
+        batch = await sdk.check_current_input_visibility(principal=principal, disclosure_context=context, binding=binding, bindings=values)
+        assert batch.invocation_input_allowed
+        assert [i.visible for i in batch.history_visibility.items] == [True, False, False, False]
+        assert [i.reason for i in batch.history_visibility.items[1:]] == [i.reason for i in ordinary.items[1:]]
+        assert batch.request_hash == request_hash(principal, context, binding, values)
+        reverse = await sdk.check_current_input_visibility(principal=principal, disclosure_context=context, binding=binding, bindings=values[::-1])
+        assert reverse.request_hash != batch.request_hash
+        assert reverse.operation_observation.request_hash == reverse.request_hash
+        assert [i.visible for i in reverse.history_visibility.items] == [False, False, False, True]
+    finally:
+        await sdk.close()

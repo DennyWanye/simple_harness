@@ -41,7 +41,10 @@ async def check_primary_input_visibility(*, db_path, manager, principal, disclos
         # E.g. reading only old completed history before composing this input.
         return await manager.check_history_visibility(principal=principal,
             disclosure_context=disclosure_context, bindings=bindings)
-    observed = await manager.check_current_input_visibility(principal=principal,
+    from deskpet.operation_audit.current_inputs import CurrentInputJournal
+    from pathlib import Path
+    journal = CurrentInputJournal(Path(db_path).with_name("operation-audit.db"))
+    observed = await journal.check_current_input_visibility(manager, principal=principal,
         disclosure_context=disclosure_context,
         binding=CurrentInputBindingV1(original["turn_id"], request_id, current[0]), bindings=bindings)
     # Fresh ORIGINAL claim + ORIGINAL disclosure, after Memory's slow read.
