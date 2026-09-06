@@ -8399,17 +8399,19 @@ async def _build_product_sdk_runtime_stack(
     service_context.register("human_memory_v7_runtime", _human_memory_v7)
     from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
     from deskpet.sdk_adapters.procedure_use import procedure_use_registration
+    from deskpet.sdk_adapters.procedure_discovery import procedure_discovery_registration
     from simple_harness_memory import MemoryManager as _ProcedureMemoryManager
     import simple_harness_memory as _procedure_memory_sdk
     if getattr(_procedure_memory_sdk, "PROCEDURE_OBSERVATION_RECOVERY_VERSION", None) != 1:
         raise RuntimeError("procedure_public_recovery_sdk_required")
     if any(not callable(getattr(_ProcedureMemoryManager, name, None)) for name in (
-        "read_procedure_use_target", "prepare_procedure_observation", "record_procedure_observation",
+        "read_procedure_use_target", "prepare_procedure_observation", "record_procedure_observation", "discover_procedure_drafts",
     )):
         raise RuntimeError("procedure_public_sdk_successor_required")
     await initialize_procedure_recovery_state_db(_state_db_path)
     projected_registrations = (*projected_registrations,
-        procedure_use_registration(_human_memory_v7.procedure_runtime))
+        procedure_use_registration(_human_memory_v7.procedure_runtime),
+        procedure_discovery_registration(_human_memory_v7.procedure_runtime))
     _typed_use_authority = None
     if _ContextRouteLedgerStore(_state_db_path).user_version() >= 35:
         from deskpet.sdk_adapters.typed_context_use import ProductTypedContextUseAuthority

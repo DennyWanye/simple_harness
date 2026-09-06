@@ -23,7 +23,7 @@ from tests.memory.test_procedure_scope_runtime import UseProvider, create_draft
 
 
 @asynccontextmanager
-async def session(tmp_path, provider=None, *, risk_level="low"):
+async def session(tmp_path, provider=None, *, risk_level="low", with_discovery=False):
     state = tmp_path / "state.db"
     service = HumanMemoryHostServiceFactory(state,
         await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
@@ -43,9 +43,13 @@ async def session(tmp_path, provider=None, *, risk_level="low"):
     ctx.root.mkdir()
     try:
         ctx.memory_id, ctx.revision = await create_draft(memory, state, risk_level=risk_level)
+        extra = ()
+        if with_discovery:
+            from deskpet.sdk_adapters.procedure_discovery import procedure_discovery_registration
+            extra = (procedure_discovery_registration(memory.procedure_runtime),)
         runtime, stack, _ = await build(tmp_path, state, ctx.provider, dynamic=True,
             visibility_memory=memory, procedure_runtime=memory.procedure_runtime,
-            extra_registrations=(procedure_use_registration(memory.procedure_runtime),))
+            extra_registrations=(procedure_use_registration(memory.procedure_runtime), *extra))
         ctx.runtime, ctx.stack = runtime, stack
         yield ctx
     finally:

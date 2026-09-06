@@ -25,6 +25,27 @@ class ProcedureRuntime:
     def bind_tools(self, authorities, registry):
         self.authorities, self.registry = authorities, registry
 
+    async def discover(self, arguments, context):
+        from deskpet.memory.trusted_disclosure import resolve_current_disclosure
+        arguments = h.thaw_json(arguments)
+        arguments.pop("deskpet_public_progress", None)
+        if set(arguments) != {"query", "after"}:
+            raise ProcedureUseRejected("procedure_discovery_arguments_invalid")
+        runtime = self.runtime_getter()
+        disclosure = await resolve_current_disclosure(db_path=self.store.path, subject=runtime.principal().actor_id,
+            run_id=context.run_id.value, request_id=context.request_id.value)
+        page = await self.operation_audit.invoke(await runtime.manager(), "discover_procedure_drafts",
+            principal=runtime.principal(), scope=runtime.scope(), disclosure_context=disclosure,
+            query=arguments["query"], after=arguments["after"], limit=8, max_bytes=32768)
+        current = await resolve_current_disclosure(db_path=self.store.path, subject=runtime.principal().actor_id,
+            run_id=context.run_id.value, request_id=context.request_id.value)
+        if current != disclosure:
+            raise ProcedureUseRejected("procedure_discovery_disclosure_changed")
+        return {"kind":"procedure_draft_preview", "execution_authorized":False,
+            "candidates":[{"candidate":c.to_json(), "history_binding":{
+                "memory_id":c.memory_id, "revision":c.revision, "candidate_hash":c.source_hash}}
+                for c in page.candidates], "next_after":page.next_after, "omitted_oversize":page.omitted_oversize}
+
     async def bind_use(self, arguments, context):
         if not isinstance(arguments, Mapping):
             raise ProcedureUseRejected("procedure_use_arguments_invalid")
@@ -50,7 +71,7 @@ class ProcedureRuntime:
                 "execution_authorized": False}
 
     async def before_call(self, context, call):
-        if call.name in {"procedure_use", "context_route", "task_scope_search", "task_scope_update", "prospective_ack"}:
+        if call.name in {"procedure_use", "procedure_discover", "context_route", "task_scope_search", "task_scope_update", "prospective_ack"}:
             return  # These controls are never counted as procedure steps.
         use = await self.store.use_for_run(context.run_id.value)
         if use is None:
@@ -170,7 +191,7 @@ class ProcedureRuntime:
 
     async def _step_sources(self, use, group):
         reservations = await self.store.reservations(use["use_id"])
-        if len(reservations) != len(use["steps"]):
+        if not 1 <= len(reservations) <= len(use["steps"]):
             return ()
         by_call = {}
         for registration in group.registrations:
@@ -189,7 +210,9 @@ class ProcedureRuntime:
                     or source["internal_call_id"] != reservation["call_id"]):
                 raise ProcedureUseRejected("procedure_actual_terminal_identity_differs")
             verified.append((registration, source))
-        return tuple(verified) if all(source["state"] == "succeeded" for _, source in verified) else ()
+        if _observed_outcome(use, verified) is None:
+            return ()
+        return tuple(verified)
 
     async def _prepare(self, use, group, verified, manager, *, previous=None):
         runtime = self.runtime_getter()
@@ -198,6 +221,9 @@ class ProcedureRuntime:
             revision=use["target_revision"], allow_observation_rebase=True)
         _same_use_definition(use, current)
         registration, source = verified[-1]
+        outcome = _observed_outcome(use, verified)
+        if outcome is None:
+            raise ProcedureUseRejected("procedure_observation_outcome_unproved")
         preparation = await self.operation_audit.invoke(manager, "prepare_procedure_observation",
             principal=runtime.principal(), scope=MemoryScope.personal(runtime.principal().actor_id),
             observation_id=use["use_id"], target_memory_id=use["memory_id"], target_revision=use["target_revision"],
@@ -207,7 +233,8 @@ class ProcedureRuntime:
             evidence_span=_terminal_span(registration, source["effect_id"]),
             terminal_receipt_id=registration.metadata.tool_causal_link.terminal_receipt_id,
             terminal_receipt_hash=registration.metadata.tool_causal_link.terminal_receipt_hash,
-            outcome=h.ProcedureObservationOutcome.SUCCESS, attributable=True,
+            outcome=outcome,
+            attributable=outcome is h.ProcedureObservationOutcome.SUCCESS,
             observed_at=registration.metadata.occurred_at, run_id=use["sdk_run_id"],
             operation_id="procedure-observe:" + canonical_hash(use["use_id"]),
             allow_observation_rebase=True, previous_reference=previous)
@@ -230,8 +257,8 @@ class ProcedureRuntime:
         if (intent.run_id != use["sdk_run_id"] or intent.task_scope_id != use["task_scope_id"]
                 or intent.target_memory_id != use["memory_id"] or intent.target_revision < use["target_revision"]
                 or intent.applicability.to_json() != use["applicability"]
-                or intent.hazard.value != use["hazard"] or not intent.attributable
-                or intent.outcome is not h.ProcedureObservationOutcome.SUCCESS):
+                or intent.hazard.value != use["hazard"]
+                or intent.kind is not h.ProcedureObservationKind.TERMINAL_OUTCOME):
             raise ProcedureUseRejected("procedure_observation_use_binding_differs")
         if "preparation" in prepared:
             from simple_harness_memory.core.procedure_operation_observation import ProcedureOperationObservationV1
@@ -245,7 +272,7 @@ class ProcedureRuntime:
             raise ProcedureUseRejected("procedure_legacy_source_revision_differs")
         group = await self.runtime_getter().conversation_evidence_authority.registrations_for_run(prepared["host_run_id"])
         reservations = await self.store.reservations(use["use_id"])
-        if len(reservations) != len(use["steps"]):
+        if not 1 <= len(reservations) <= len(use["steps"]):
             raise ProcedureUseRejected("procedure_observation_steps_incomplete")
         by_call = {r.metadata.tool_causal_link.tool_call_id: r for r in group.registrations
                    if r.metadata.tool_causal_link is not None}
@@ -256,9 +283,13 @@ class ProcedureRuntime:
                 raise ProcedureUseRejected("procedure_observation_scope_source_differs")
             source = registration.envelope.sanitized_payload["source"]["tool_terminal_attestation"]["payload"]["source"]
             if (source["tool_name"] != reservation["call"]["tool"] or source["sdk_run_id"] != use["sdk_run_id"]
-                    or source["state"] != "succeeded"):
+                    or source["internal_call_id"] != reservation["call_id"]):
                 raise ProcedureUseRejected("procedure_observation_terminal_source_differs")
             verified.append(registration)
+        actual_outcome = _observed_outcome(use, [(r, r.envelope.sanitized_payload["source"]["tool_terminal_attestation"]["payload"]["source"]) for r in verified])
+        if (actual_outcome is None or intent.outcome is not actual_outcome
+                or intent.attributable is not (actual_outcome is h.ProcedureObservationOutcome.SUCCESS)):
+            raise ProcedureUseRejected("procedure_observation_attribution_unproved")
         if [r.registration_hash for r in verified] != prepared["source_registration_hashes"]:
             raise ProcedureUseRejected("procedure_observation_source_hashes_differ")
         final = verified[-1]
@@ -325,3 +356,20 @@ def _same_use_definition(use, current):
             or current.applicability_fingerprint not in (UNBOUND_PROCEDURE_APPLICABILITY, use["applicability_fingerprint"])
             or current.bound_hazard not in (None, use["hazard"])):
         raise ProcedureUseRejected("procedure_use_target_changed")
+
+
+def _observed_outcome(use, verified):
+    """An exact failed executed prefix proves failure, never its semantic cause.
+
+    UNKNOWN/cancelled/rejected or missing tool terminals are not failure evidence.
+    All successful steps are attributable to the explicitly bound physical use;
+    an error may instead be infrastructure, arguments, permissions or environment.
+    """
+    if not verified or any(source["state"] != "succeeded" for _, source in verified[:-1]):
+        return None
+    state = verified[-1][1]["state"]
+    if state == "failed":
+        return h.ProcedureObservationOutcome.FAILURE
+    if state == "succeeded" and len(verified) == len(use["steps"]):
+        return h.ProcedureObservationOutcome.SUCCESS
+    return None

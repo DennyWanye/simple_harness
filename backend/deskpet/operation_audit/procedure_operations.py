@@ -6,7 +6,7 @@ from deskpet.operation_audit.memory_attempts import owner_ref
 from deskpet.operation_audit.prospective_sources import ProspectiveSourceJournal
 from deskpet.operation_audit.store import digest
 
-OPERATIONS = frozenset({"prepare_procedure_observation", "read_procedure_use_target", "record_procedure_observation"})
+OPERATIONS = frozenset({"discover_procedure_drafts", "prepare_procedure_observation", "read_procedure_use_target", "record_procedure_observation"})
 
 
 def captured(value, *, operation, binding, result=None, error=None):
@@ -29,7 +29,11 @@ def captured(value, *, operation, binding, result=None, error=None):
             if (checked.outcome, checked.reason) != error_outcome(error):
                 raise ValueError("procedure_observation_error")
         else:
-            if operation == "prepare_procedure_observation":
+            if operation == "discover_procedure_drafts":
+                if type(result) is not m.ProcedureDraftPage:
+                    raise ValueError("procedure_draft_page_type")
+                expected = digest({"domain":"memory.procedure.draft-page.v1", "payload":result.to_json()})
+            elif operation == "prepare_procedure_observation":
                 if type(result) is not m.PreparedProcedureObservation:
                     raise ValueError("procedure_preparation_type")
                 expected = ProcedureObservationIntent.from_json(result.intent.to_json()).intent_hash
