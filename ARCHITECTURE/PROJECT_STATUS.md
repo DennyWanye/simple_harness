@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：隔离 `feat/provider-cold-terminal-cleanup` 自2c8c57c6，Provider后置清理修复及真实resolver冷恢复单控 1PASS/4.32s，H077/M616限定载体。产品f0f72650、测试79508593；未合主，待Dirac结果终审及主组合。PG81519 exit0/remaining[]；原r8业务证据与resource125独立保留，不标完整native/program通过。[结果与原红](../plans/2026-09-06-provider-cold-cleanup/RESULTS.md)。
+
 2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
 
 

@@ -1,5 +1,7 @@
 <!-- Updated 2026-09-06 -->
 
+2026-09-06：隔离 Provider cold cleanup 窄修（产品 f0f72650、测试79508593），仅空 binding/authority 注册跳过终态后清理。真实 production resolver/port 的受影响冷恢复单控 1PASS/4.32s（H077/M616），核实 FAILED 持久终态、零 Provider、effect gate 释放、已有 binding 内部 KeyError 传播。旧测试使用 no-op ProviderPort，未覆盖这个生产回调，不能由其旧绿推断修复已验证。本叶未合主、待结果终审/native；H077制品及原库未修改。PG81519清空。[分批结果](../plans/2026-09-06-provider-cold-cleanup/RESULTS.md)。
+
 2026-09-06：候选固定 H077/M617/S0313，授权过期与冷启动修复8cec2353已合；主vendor小target离线安装和3项受影响身份/锁校验通过。旧功能测试按原组合复用，新组合native尚未验收，用户主树不变。[接入与边界](../plans/2026-09-06-typed-use-primary/COMBINED-077617.md)。
 
 
