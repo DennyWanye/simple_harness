@@ -1,5 +1,8 @@
 <!-- 最后更新：2026-09-06 -->
 
+2026-09-06：当前运行新增1MiB边界控制1PASS/6.32s，两个实际文件结果均超过1MiB，8次物理请求最大28,209字节，精确尾页及重开依赖通过。仅32k窗口/fixture producer/MockTransport，不代表4k8k或原生；PG7739清空。[结果](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
 C01-06 history遗忘因果oracle已补：同binding/disclosure在MEMORY-only suppression
 前visible、后不可见，定向1PASS，PG8072清空；不新增unique语料计数。
 [结果](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。

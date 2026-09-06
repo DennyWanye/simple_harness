@@ -1,5 +1,10 @@
 # ARCHITECTURE 索引
 
+2026-09-06：公开SDK语料准备已合入，C01全部20条setup按各批验证，含同ID修订、遗忘前后可见性及独立2节点1条APPLIES_TO图谱fixture；没有真实模型评分，不计240完成。[结果与边界](../plans/2026-09-06-corpus-public-seed/C01-BATCH.md)。
+
+2026-09-06：当前运行新增1MiB边界控制1PASS/6.32s，两个实际文件结果均超过1MiB，8次物理请求最大28,209字节，精确尾页及重开依赖通过。仅32k窗口/fixture producer/MockTransport，不代表4k8k或原生；PG7739清空。[结果](../plans/2026-09-06-primary-context-compaction/MEGABYTE.md)。
+
+
 2026-09-06：用户明确将“发布成功后提醒”缺失的实际发布来源接入及对应端到端验收延期为F01。本次不继续推进、不计为通过，其余当前交付继续；已有事件协议层证据不替代真实发布。[后续待办](../plans/2026-09-06-typed-use-primary/FOLLOWUPS.md)。
 
 
