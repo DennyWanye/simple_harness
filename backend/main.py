@@ -11110,7 +11110,6 @@ async def _activate_product_sdk_runtime(
 
     # Start SDK Runtime
     await stack.start()
-    await _sdk_observability.export_async()
 
     # Create ingress facade
     ingress = SdkRuntimeIngress(stack)
@@ -11218,6 +11217,10 @@ async def _activate_product_sdk_runtime(
     )
     for recovered_run_id in tuple(_sdk_retained_presentations):
         _ensure_sdk_recovery_watcher(recovered_run_id)
+
+    # Publish owning references before this cancellable diagnostic await, so
+    # ordinary shutdown can close the started stack if collection is cancelled.
+    await _sdk_observability.export_async()
 
     logger.info(
         "product_sdk_runtime_ready",
