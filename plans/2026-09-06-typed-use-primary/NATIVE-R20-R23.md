@@ -12,7 +12,7 @@ Host `ff35fb822272f4963abb2d9e2903d7cceb1b5798`，H079/M618/S0313 当前安装�
 - r23：正常退出后的新进程打开同一数据，历史中保留这张提醒卡片及同一 ACK 回执。新的“72减28等于多少？”只答 44，没有新 ACK 请求或新增提醒卡片；截图展示原提醒在新问题之前，而不是再次投递到末尾。
 - occurrence key：`abec9b71b479f581e489923abd7717638ddb53d0d797c7db0ac3e05bb439850a`；receipt ID：`5a2baee48d9210cc2c13c5c8388863062d0b79f83df2ebb79ad4c1bb9e53e34a`；receipt hash：`2c2416831e4e549cfd7954dc5bde14b1e9c839d40bdcd08fcc96efe2fde2a1f2`。
 
-这是原生可见显示与历史去重证据，不声称用户已阅读，不改写模型回答，也未撤销/重放旧银杏 ACK。精确公共投影身份及本次操作审计由后续只读审查补充，不用它替代 UI 证据。
+这是原生可见显示与历史去重证据，不声称用户已阅读，不改写模型回答，也未撤销/重放旧银杏 ACK。精确公共投影身份及本次操作审计已获Dirac只读限定ACCEPT，不用它替代 UI 证据。
 
 ## 两次前置失败和构建纠正
 
@@ -74,3 +74,13 @@ r21 的 backend 18120 健康，但原生界面未连接。原因是我第一次�
 - `.local-test-evidence/2026-09-06/native079618/r21-notice/resource.json`：`25e4719d8d363a7d8e3c5e1aae459fdf2c84cd3def8319cce4ff2e653f3e7499`
 - `.local-test-evidence/2026-09-06/native079618/r22-notice/resource.json`：`eafd05fd7a4e1c555ace08bb874a5c85189ecd79b0552074f6d6d73d96b22073`
 - `.local-test-evidence/2026-09-06/native079618/r23-cold-notice/resource.json`：`b002276edc5e1bcbe2447109ba1006dd391055b7a0b2a9875fb5fc2a485016ab`
+
+## 独立审查补充
+
+Dirac限定ACCEPT。r22 Host Run `2b8cae45-fe18-53f0-9f78-551484948eec` → SDK Run `product-sdk-0142b045784e913fb543157e733bc7aa786c58a17d6d62798f12b970398b7d7a`；r23 Host Run `d6e35153-7d82-584a-838c-cc490a2515a7` → SDK Run `product-sdk-d0c710e455f4ca57e7306ddb73b5c962955166fefa356a9a67a76f59fe57159d`。新key的claimed/presented/acknowledged/settled各1条，原hash精确关联，r23无第二ACK/presentation。
+
+实际保存的SDK公开审计页分别enumerated98/98、47/47，两次verified_current_intervals、coverage_gaps=[]、history_coverage=recorded、0findings；r22唯一ACK succeeded head与实际raw call按公开Run/turn1/ordinal0复合hash一致，r23 ACK head为0。只支持两Run区间，不称全操作覆盖。
+
+按已核实际owner/Run/occurrence/ACK字段与产品公式派生notice ID `70c7b42e298c312d40a1df616f66f255877cb7eb2587f6ffa0d7035a3c6cd103`；不是另抓WS原DTO。独审时原state/Memory有非空WAL，使用mode=ro/query_only事务读取Host持久公开DTO，没有用immutable或将主db单文件当完整快照。
+
+独审本机ignored摘要：`/Users/denny/projects/simple_harness-primary-api/.local-test-evidence/2026-09-06/dirac-r22-r23-notice/review-summary.md`，SHA-256 `79196fafc0b28aeec5e657a61097634a045e086d162c4eb6a843f239be427d17`。仅读取并整理本次证据，未再跑模型/audit或重扫旧r17/r18。
