@@ -25,6 +25,7 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
     import main
     sends = []
     entered = []
+    rejected = []
     config = await configured(env)
     queued = ok(await admit(env, config, text="整理本轮输入，不使用旧健康家庭记忆。"))
     visibility = HumanMemoryV7Runtime(tmp_path / "visibility-memory.db",
@@ -51,6 +52,9 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
         try:
             await check_runtime_dependencies(db_path=env.path, stack=stack, sdk_run_id=current.sdk_run_id,
                 request=request, policy_factory=lambda _: runtime.history_policy)
+        except Exception as error:
+            rejected.append(error)
+            raise
         finally:
             inside_physical = False
 
@@ -89,6 +93,17 @@ async def test_current_input_actual_physical_boundary(env, tmp_path, monkeypatch
             assert "整理本轮输入" in json.dumps(sends, ensure_ascii=False)
         else:
             assert sends == []
+            assert len(rejected) == 1
+            assert rejected[0].error_code == "primary_history_disclosure_rejected"
+            # Inspect the actual guard cause, never manufacture a refusal.
+            causes = []
+            error = rejected[0]
+            while error is not None:
+                causes.append(str(error))
+                error = getattr(error, "private_cause", None) or error.__cause__
+            expected = {"request_bytes": "current_input_provider_request_mismatch",
+                        "policy": "binding_stale", "claim": "claim_changed_during_check"}[change]
+            assert expected in " ".join(causes), causes
             if change in {"policy", "claim"}:
                 assert changed
         from deskpet.operation_audit.current_inputs import CurrentInputJournal
