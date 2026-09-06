@@ -165,3 +165,52 @@ five route execution controls are separate and were not included in these passes
 - `a7-r14/command.log` SHA256 `ed0e04e8da13c5cf66ece366c648da41180d431c7508ef6710eea006227548ea`
 - `a7-r14/resource.json` SHA256 `62c71924f694dd9d3836764370e855a8774083cb737de2e9ad23a9c3aea155c9`
 - `a7-r14/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+## Five actual routes and successful unACKed Runs
+
+- r15 (20639ef8): 5FAIL/7deselect8.43s, PG99084exit1. Combined test adapter
+  lost process-local Run authority. Production main already binds it.
+- r16 (621a64d3): 5FAIL/7deselect8.46s, PG99240exit1. Combined test adapter
+  also lost the frozen execution-identity mapping. No product gate was weakened.
+- r17 (3fef4770): 5PASS/7deselect10.67s, PG99406exit0/remaining[],
+  peak415344KiB. Actual production direct_standalone, memory_standalone,
+  continue_active, resume_existing, create_new each reaches ACK then exact SDK
+  completed/Host settled. Public typed recall and real workspace binding are
+  exercised; no fake route receipt or fake TaskScope. Direct also refuses a
+  foreign-principal ACK through actual current-disclosure reader with zero journal
+  writes. This is deterministic HTTP transport, not native or external action.
+- r18: default lock BUSY75, no child.
+- r19: agent command omitted interpreter, runner125/FileNotFoundError, no child.
+  This is a command mistake, not a product failure.
+- r20 (18066453, test6dbc51ba): 1PASS/7deselect3.68s, PG99816exit0/remaining[],
+  peak399808KiB/minDisk4957MiB. Three real explicit direct routes complete without
+  ACK; presentations count3/uniqueoverdue1 and still pending. Fourth Run ACK and
+  same-Run terminal settle. Real production reconcile retains original no_recall
+  mandatory rule. Shared exact52 initializer from main is exercised by enqueue.
+
+Runner commands select the new five-route test only for r15-r17; r20 selects only
+`test_three_legal_route_presentations_then_fourth_run_ack`. r17 green parameters
+were not rerun. All processes cleared; shared slot released to main native.
+
+Integration: main startup commits e21f6e47/6809c22b/f2e524b3/88e9106b were
+cherry-picked unchanged; 18066453 removes our redundant namespace52 special case
+in favor of their shared initializer. No main factory hunk from another owner was
+overwritten. H076/M617 installed proof stays separate from main H078/native.
+New source/aggregate evidence independent review is pending; earlier 409dcc60 ACK
+release acceptance remains scoped. A7 native journey and event-trigger receipt
+source are not covered by these tests; no reminder action is inferred from ACK.
+
+- `a7-r15/command.log` SHA256 `fe0e266b0162dd4edfe56c0aa50422bcf70fe414618a9aecea71f1987ebd3090`
+- `a7-r15/resource.json` SHA256 `401f6c64d2bd2573457ab29879416460f5611ba4428fd38564da3a3aca6461e0`
+- `a7-r15/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r16/command.log` SHA256 `a39be558760d77ccc117852f2de5e2488854891b33f62fc61c4ecfc232b69b2c`
+- `a7-r16/resource.json` SHA256 `7aa7d9d343b77449e85b082f49f159105c24e9b1f2b122a2aa6766092c90b4d4`
+- `a7-r16/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r17/command.log` SHA256 `98a89b385424f6a3f379983fa8672cfa49c035338b33e6c63d6626bf06ee1f10`
+- `a7-r17/resource.json` SHA256 `53ec7e8aee7995ae659641881256dca0b599132f39934bb6700babacf2c14d82`
+- `a7-r17/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r19/command.log` SHA256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
+- `a7-r19/resource.json` SHA256 `5706dc10da77699b7b788ee6e1738ffb0e607f8d5eea1490935d99c10eb72615`
+- `a7-r20/command.log` SHA256 `3ba43022ad4058bc6e5e1731b789b049f1a98ebd5973b9c3c963213ee9a50b22`
+- `a7-r20/resource.json` SHA256 `1044fcbd31aef5a4c66c98c132c0486d7787f9e8517810c229d8ac62de3a2e13`
+- `a7-r20/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`

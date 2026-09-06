@@ -191,3 +191,10 @@ independent original USER still uses the original policy. No old evidence is alt
 The source scanner explicitly rejects over256 snapshots or over256 evidence IDs;
 this is an unavailable boundary, never empty complete history. There is still a
 check-to-send interval, not a cross-database atomic revocation lock.
+
+
+Current namespace integration (18066453): `initialize_subject` again calls the
+shared `initialize_human_memory_program_state_db`. Main's accepted exact extension
+validation is present unchanged; this supersedes the earlier experimental local52
+branch/missing-namespace statements above. Legitimate new subject namespace creation
+retains its original writer transaction; an invalid/future schema is not admitted.
