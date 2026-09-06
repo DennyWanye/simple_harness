@@ -879,3 +879,6 @@ fail closed。
 
 
 2026-09-06：A7真实ACK终态before/after commit恢复分批通过，409dcc60修冷重建已终态Run的进程内authority释放；原SDK终态/ACK身份不变、零重发。Dirac限定ACCEPT，PG97749清空。历史继承/五route/异主体仍未完成，非全app/native。见[结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。
+
+
+2026-09-06：A7继承原Prospective mutation的真实S1，ACK后两代历史经MEMORY-only遗忘与重开过滤，下一实际Provider请求无旧canary；另原EVIDENCE撤回/foreign source/错receipt控制通过。新两控分批各1PASS，PG98592/98894清空；五route与完整A7仍未闭合，独审待续。见[A7结果](../plans/2026-09-06-prospective-presentation-ack/RESULTS.md)。

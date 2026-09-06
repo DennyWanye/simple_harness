@@ -141,3 +141,27 @@ and release test files, selection `before_commit or cold_terminal_release or pre
 - `a7-r12/command.log` SHA256 `6481ecf66446eca1b944bcd24848872e0d811e790db55bba0ddfa9abfaf506a8`
 - `a7-r12/resource.json` SHA256 `e6ec6d9ad6359408b9eebe8e0476a787df8a716fa25030b6deb468ae4729a4b6`
 - `a7-r12/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+
+## New original-source / history controls
+
+- a7-r13 source37ff071f: 1 PASS/7 deselected3.91s, PG98592exit0/remaining[],
+  peak392096KiB. Real ACK terminal and next derived turn are visible before
+  MEMORY-only suppression; both histories are filtered afterward, public Memory
+  reopen retains withdrawal and next physical Provider request has no canary while
+  the independent current USER remains. Original no_recall refusals stay intact.
+- a7-r14 source049330e0: 1 PASS/7 deselected1.78s, PG98894exit0/remaining[],
+  peak392176KiB. Real source positive reaches exact receipt; foreign principal/owner
+  and substituted receipt ID reject at their named checks. Late EVIDENCE-only
+  suppression rejects before any HTTP send at source_not_visible (not merely
+  missing SDK handoff or an unrelated capability).
+
+Both use the installed H076/M617 launcher and exactly the named new test node +
+matching -k. No old green controls reran. No native/model. Source review pending;
+five route execution controls are separate and were not included in these passes.
+
+- `a7-r13/command.log` SHA256 `7dc5e54e1bafe9e46f1ac73e10dd1cfbd26a32d43c47f742e89d5c1fc6966da5`
+- `a7-r13/resource.json` SHA256 `4b9d3801221bb81511c673bfb19c53663c888d8ff95f9bee1ea58de0d59abf8e`
+- `a7-r13/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`
+- `a7-r14/command.log` SHA256 `ed0e04e8da13c5cf66ece366c648da41180d431c7508ef6710eea006227548ea`
+- `a7-r14/resource.json` SHA256 `62c71924f694dd9d3836764370e855a8774083cb737de2e9ad23a9c3aea155c9`
+- `a7-r14/identity.json` SHA256 `6efc30ddb9838c238fa7dddd1ebcae3dd89b736033f5cefee4f11f63b9d2f7ba`

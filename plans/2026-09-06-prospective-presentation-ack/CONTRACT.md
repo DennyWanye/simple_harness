@@ -166,3 +166,28 @@ interruptions use original queue fault hooks. Require actual SDK completed event
 unchanged, ACK receipt unchanged, before commit no settled / after commit settled,
 full runtime rebuild and same Run terminal completion with no extra HTTP send.
 New two parameters NOT_RUN; existing actual two green parameters need no repetition.
+
+
+## A7 derived-history source closure (37ff071f, 2026-09-06)
+
+`ProspectiveSourceDependencies` follows actual ACKed Host registration, then public
+`read_prospective_outbox_source_v2` and exact mutation receipt view. Owner/scope,
+outbox payload/created_at, target/revision/trigger, Run/op and receipt/plan hashes
+are bound before accepting committed operation `evidence_ids`. Signal target
+sources recurse through the public apply result's real prior revision and actual
+Host ACK registration; absent/cyclic/overlong chains are unverifiable. No private
+Memory SQL, synthetic audit ID, evidence restamping or new ledger.
+
+The physical guard checks these original Host S1 pairs through the existing public
+Memory history visibility policy. Terminal observer collects complete committed
+Host snapshot groups outside the writer TX, merges real evidence bindings into
+`visibility_dependencies`, and commits `prospective_source_dependencies` in the
+existing terminal S1. This marker binds ordered snapshot IDs, their original
+receipt hashes and source bindings. Nothing opaque enters SDK source_revisions.
+Ordinary history requires the complete marker for nonempty A7 groups and follows
+original sources recursively in its existing Memory batch. Older A7 observations
+without this proof remain archived and cannot disclose generated text; their
+independent original USER still uses the original policy. No old evidence is altered.
+The source scanner explicitly rejects over256 snapshots or over256 evidence IDs;
+this is an unavailable boundary, never empty complete history. There is still a
+check-to-send interval, not a cross-database atomic revocation lock.
