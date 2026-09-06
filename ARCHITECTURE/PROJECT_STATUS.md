@@ -1,3 +1,12 @@
+<!-- 最后更新：2026-09-06 -->
+
+公共seed隔离叶：真实Host S1→Memory public ingestion/mutation/receipt链实现
+C01-10单记录幂等/重开；独立fixture以同atomic plan建claim+Procedure+applies_to，
+公开graph回读2nodes1edge且relation不作node。3unique控制分批绿，原入口红保留。
+非LLM提取、非240质量/真实runtime/native通过，其他样例仍NOT_RUN。
+[契约](../plans/2026-09-06-corpus-public-seed/CONTRACT.md) ·
+[结果](../plans/2026-09-06-corpus-public-seed/RESULTS.md)。
+
 <!-- Updated 2026-09-06 -->
 
 2026-09-06：用户明确将“发布成功后提醒”缺失的实际发布来源接入及对应端到端验收延期为F01。本次不继续推进、不计为通过，其余当前交付继续；已有事件协议层证据不替代真实发布。[后续待办](../plans/2026-09-06-typed-use-primary/FOLLOWUPS.md)。
