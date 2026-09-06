@@ -1,5 +1,7 @@
 # Memory SDK 边界与 Host 接口契约
 
+2026-09-06主复核：Procedure公开适用性固定ad189/3de9已纳入1c690bdb；9份原始证据hash一致，受合并影响的15项组合检查通过、进程已清理。原四格独立PASS，不代表Host观察晋升或全401；[组合范围与证据](../plans/2026-09-06-typed-recall-procedure-public/COMBINED.md)。
+
 ## 2026-09-06 Context与source oracle已组合复验
 
 最后更新：2026-09-06。独审后的两个执行器合并固定9bad3a43，两个代码指纹入口均保留；12项必要组合检查通过、进程组32908已退出。原source正式10PASS与Context正式4PASS/2BLOCKED按各自固定源及Run保留，不拼成新401全量；Harness凭据消费/continuation仍需实现，原SDK pin与阈值未改。详见[组合结果](../plans/2026-09-06-context-use-full/COMBINED.md)。
