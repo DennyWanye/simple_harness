@@ -299,6 +299,11 @@ class ProductForegroundProviderPort:
         )
 
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
+        # A cold Host terminal recovery does not restore authority for an SDK
+        # Run that is already terminal. This hook only releases process-local
+        # authority after the verified Host terminal transaction has committed.
+        if self._resolver.registry.resolve(sdk_run_id) is None:
+            return
         self._resolver.mark_terminal(sdk_run_id, state)
 
 
@@ -414,6 +419,13 @@ class ProductForegroundToolPort:
         )
 
     def mark_terminal(self, sdk_run_id: str, state: str) -> None:
+        try:
+            self._registry.resolve(sdk_run_id)
+        except KeyError:
+            # Completed SDK Runs are absent from the startup recovery inventory.
+            # Do not recreate active tool authority just to release it. Catch
+            # only this lookup: listener/cleanup failures must remain visible.
+            return
         self._registry.mark_terminal(sdk_run_id, state)
 
 
