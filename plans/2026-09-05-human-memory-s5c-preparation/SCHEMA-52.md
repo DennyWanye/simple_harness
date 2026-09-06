@@ -6,7 +6,7 @@ Host 恢复注册表本身不可变，因此不重建旧游标表来冒充原列
 
 原 schema50/51 SQL、migration hash 和旧注册回执均不改。52 在同一写事务验证旧链、复制、注册新恢复表/触发器并发布版本；事务前后中断均保留真实边界，未知版本、旧链损坏、缺失封闭触发器不自动修复。
 
-本轮 5 项新检查通过 / 2.50s：实际 Store 生成的非空旧注册链迁移、旧 writer 拒绝/新 Store 继续、幂等重开；提交前后故障两项；旧链损坏拒绝；空目标游标及封闭触发器缺失拒绝。测试使用已安装 H075/M616 与原有共享 Python，未新建环境，未重跑 schema51 旧集合。PG68334 exit0、remaining=[]、cleanup_error=null，elapsed2.997s、峰值162160KiB，最低磁盘2956MiB。独立源码审查待固定提交后进行。
+本轮 5 项新检查通过 / 2.50s：实际 Store 生成的非空旧注册链迁移、旧 writer 拒绝/新 Store 继续、幂等重开；提交前后故障两项；旧链损坏拒绝；空目标游标及封闭触发器缺失拒绝。测试使用已安装 H075/M616 与原有共享 Python，未新建环境，未重跑 schema51 旧集合。PG68334 exit0、remaining=[]、cleanup_error=null，elapsed2.997s、峰值162160KiB，最低磁盘2956MiB。固定源码 f6e70fc2 已获 Dirac 限定 ACCEPT，无本增量 P0/P1；并发发布分支仅源码审查，未计入动态测试覆盖。
 
 尚未声称新的 not_required 回执实际写入或消费通过；独立 terminal 表当前只提供存储契约，后继 Memory 0.6.17 公共 DTO 与 Host source/consumer 仍在实施。不是 SDK ACK，也未生成伪造 authority。
 
