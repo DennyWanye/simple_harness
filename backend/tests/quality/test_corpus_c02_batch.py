@@ -11,17 +11,41 @@ CLOCK='2026-09-06T10:00:00+08:00'
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('case_id',list(SPECS))
-async def test_c02_public_setup_preserves_distractors_and_epistemic_status(tmp_path,case_id):
+async def test_c02_public_setup_preserves_distractors_and_epistemic_status(tmp_path,case_id,monkeypatch):
     batch=compile_setup(case_id,SETUPS[case_id][0],scenario_clock=CLOCK)
     f=await setup(tmp_path/'host')
     result(await f.send('queue.enqueue',{'text':batch.setup_text},key='setup-only'))
     envelope,receipt=(await pairs(f))[0]
+    inference={}
+    if case_id=='C02-19':
+        import simple_harness as h
+        from simple_harness.contracts.messages import Message,MessageRole
+        from simple_harness.providers import ProviderResponse,ProviderUsage
+        import tests.execution.test_primary_foreground_runtime as runtime_fixture
+        from deskpet.memory.conversation_registration import PrimaryConversationAuthority
+        class InferenceProvider(runtime_fixture.Provider):
+            async def invoke(self,request,*,cancel):
+                self.requests.append(request)
+                return ProviderResponse(request.request_id,Message(MessageRole.ASSISTANT,
+                    '我推测你偏好云端；尚未得到确认。'),model='model',usage=ProviderUsage(10,10,20))
+        monkeypatch.setattr(runtime_fixture,'local_owner_auth',lambda:AUTH)
+        provider=InferenceProvider()
+        runtime,stack,_=await runtime_fixture.build(tmp_path/'host',f.path,provider)
+        try:
+            assert await runtime._drive_once() and runtime.last_error is None
+            assert len(provider.requests)==1
+            runs=await PrimaryConversationAuthority(f.path,subject=AUTH.subject).completed_run_ids()
+            assert len(runs)==1
+            inference=dict(inference_path=f.path,inference_host_run_id=runs[0])
+        finally:
+            await runtime.close()
+            await stack.close()
     principal=m.MemoryPrincipal('host','household',AUTH.subject,'corpus-fixture')
     manager=await m.build_human_memory_v7(tmp_path/'memory.db',
         classification_policy=classification_policy(),supported_filter_policies=FILTERS,
         evidence_authority=HostEvidenceAuthority(f.path),clock=lambda:batch.scenario_time)
     try:
-        actual=await apply_setup(manager=manager,principal=principal,batch=batch,envelope=envelope,receipt=receipt)
+        actual=await apply_setup(manager=manager,principal=principal,batch=batch,envelope=envelope,receipt=receipt,**inference)
         assert set(actual['labels'])=={s[0] for s in batch.specs}
         assert len({x.memory_id for x in actual['labels'].values()})==len(batch.specs)
         graph=await manager.get_twin_graph_view(principal=principal)

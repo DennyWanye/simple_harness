@@ -107,7 +107,7 @@ def payload(spec, clock):
     raise ValueError('corpus_seed_type_unimplemented')
 
 
-async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revision=1):
+async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revision=1, inference_path=None, inference_host_run_id=None):
     from simple_harness_memory import MemoryScope
     from deskpet.memory.analysis_proposal import admitted_item, derive_span
     from deskpet.task_scope.protocol import canonical_hash
@@ -121,10 +121,26 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
         raise ValueError('corpus_setup_admitted_source_differs')
     await manager.register_principal_owner(principal,MemoryScope.personal(principal.actor_id))
     await manager.ingest_committed_evidence(envelope,receipt)
+    sources=[h.EvidenceRef(envelope.evidence_id,envelope.envelope_hash,1)]
+    spans={}
+    if batch.case_id=='C02-19':
+        if inference_path is None or inference_host_run_id is None:
+            raise ValueError('corpus_inference_actual_source_required')
+        from deskpet.quality.corpus_inference import inference_source
+        extra,extra_receipt,span,terminal=await inference_source(path=inference_path,
+            subject=principal.actor_id,batch=batch,host_run_id=inference_host_run_id,quote='偏好云端')
+        # Public full admission is required by cognitive mutation; source-only
+        # admission does not satisfy this prerequisite and is not mixed in.
+        await manager.ingest_committed_evidence(extra,extra_receipt)
+        await manager.admit_evidence_source(principal=principal,envelope=terminal[0],receipt=terminal[1])
+        spans['B']=span
+        sources.append(h.EvidenceRef(extra.evidence_id,extra.envelope_hash,1))
+    elif inference_path is not None or inference_host_run_id is not None:
+        raise ValueError('corpus_unexpected_inference_source')
     operations=[]
     for spec in batch.specs:
         label,kind,*_=spec
-        span=derive_span(item,batch.setup_text,span_id='setup-'+label)
+        span=spans.get(label) or derive_span(item,batch.setup_text,span_id='setup-'+label)
         lifecycle={'semantic':h.SemanticLifecycleState.ACTIVE,'episode':h.EpisodeLifecycleState.ACTIVE,
             'prospective':h.ProspectiveLifecycleState.PENDING}[kind]
         from deskpet.quality.corpus_c02 import CLASSIFICATIONS
@@ -144,7 +160,7 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
     identity='corpus-'+canonical_hash([batch.case_id,batch.setup_hash,envelope.evidence_id,batch.scenario_time])
     plan=h.MemoryMutationPlan(identity,envelope.run_id,identity,principal.actor_id,base_revision,
         h.MemoryMutationPlanOutcome.MUTATE,tuple(operations),envelope.disclosure_context,
-        (h.EvidenceRef(envelope.evidence_id,envelope.envelope_hash,1),),identity)
+        tuple(sources),identity)
     applied=await manager.apply_memory_mutation_plan(principal=principal,
         scope=MemoryScope.personal(principal.actor_id),plan=plan)
     if applied.outcome is not h.MemoryMutationApplyOutcome.COMMITTED or applied.receipt_ref is None:
@@ -159,7 +175,7 @@ async def apply_setup(*, manager, principal, batch, envelope, receipt, base_revi
         actual=mapped[op.operation_id]
         if (actual.memory_type!=op.memory_type.value or actual.revision!=1
                 or actual.content_hash!=canonical_hash(op.payload.to_json())
-                or actual.evidence_ids!=(envelope.evidence_id,)
+                or actual.evidence_ids!=tuple(sorted({s.evidence_id for s in op.evidence_spans}))
                 or actual.epistemic_status!=op.epistemic_status.value):
             raise ValueError('corpus_setup_public_readback_differs')
     return dict(case_id=batch.case_id,setup_hash=batch.setup_hash,fixture_defaults=batch.fixture_defaults,
