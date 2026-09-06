@@ -209,22 +209,32 @@ async def test_slow_visibility_then_current_change_denies_before_transport(world
         await original(request, snapshot)
         if not guard_entered or changed:
             return
-        changed = True
         if change == "disclosure":
             import aiosqlite
             async with aiosqlite.connect(w.env.db_path) as db:
                 db.row_factory = aiosqlite.Row
                 head = await current_record_tx(db, w.auth.subject)
             with w.control.request_scope(w.ingress, w.challenge):
-                await TrustedDisclosureStore(w.env.db_path).configure(auth=w.auth, request_id="changed-policy",
-                    expected_ref=head["binding_ref"], selection={"recipient": "user_self",
+                updated = await TrustedDisclosureStore(w.env.db_path).configure(auth=w.auth, request_id="changed-policy",
+                    expected_ref=None if head is None else head["binding_ref"], selection={"recipient": "user_self",
                     "recipient_id": w.auth.subject, "intended_audience": "user_self", "purpose": "task_execution"})
+            assert updated["binding_ref"] != (None if head is None else head["binding_ref"])
+            async with aiosqlite.connect(w.env.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                committed = await current_record_tx(db, w.auth.subject)
+            assert committed["binding_ref"] == updated["binding_ref"]
         else:
             manager = await w.runtime.manager()
-            await manager.suppress(principal=w.runtime.principal(), request=SuppressionRequest(
+            decision = await manager.suppress(principal=w.runtime.principal(), request=SuppressionRequest(
                 "late-guard-forget", w.auth.subject,
                 SuppressionScopeKind.MEMORY if candidate else SuppressionScopeKind.EVIDENCE,
                 candidate or w.env.evidence_id, "user_forget", float(w.env.clock())))
+            assert decision.request_id == "late-guard-forget"
+            assert decision.subject == w.auth.subject
+            assert decision.scope_ref == (candidate or w.env.evidence_id)
+            assert decision.decision_hash
+        # Only a successfully committed policy/suppression change satisfies this control.
+        changed = True
     authority.check = slow
     assert await mh.run_job(w.menv) == "retry_scheduled"
     assert changed and len(w.sent) == baseline
