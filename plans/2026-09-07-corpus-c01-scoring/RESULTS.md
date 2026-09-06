@@ -44,7 +44,7 @@ PYTHONPATH=/Users/denny/projects/simple_harness-primary-candidate/.local-test-ev
   --case C01-10 --execute
 ```
 
-资源预算2GiB/180s、默认共享锁/磁盘准入，不覆盖lockfile；超时保留失败，不补重试。生产driver保持25轮/50工具/同工具连续10次；`BudgetPolicy()`无新增货币硬上限，不能把资源限时称金额限额。沿原config的gpt-5.5、max_tokens=8192、context_window_tokens=800000，不覆盖原模型参数/Provider deadline；实际物理请求以保存的原request为准。180s是外部本批限制，不改生产Run预算。
+资源预算2GiB/180s、默认共享锁/磁盘准入，不覆盖lockfile；超时保留失败，不补重试。生产driver保持25轮/50工具/同名同参数连续10次（参数hash改变会重置streak）；`BudgetPolicy()`无新增货币硬上限，不能把资源限时称金额限额。沿原config的gpt-5.5、max_tokens=8192、context_window_tokens=800000，不覆盖原模型参数/Provider deadline；实际物理请求以保存的原request为准。180s是外部本批限制，不改生产Run预算。
 
 凭据仅worker从 `/Users/denny/projects/simple_harness/.env` 读取APIKEY/BASEURL进入进程；命令无secret，无复制.env/写keychain。worker输入仅原USER和公开setup执行所需字段；父进程在worker退出后打开oracle生成review packet。外部强停可能没有完整packet，此时以原始持久attempt/失败证据记录，绝不算通过。
 

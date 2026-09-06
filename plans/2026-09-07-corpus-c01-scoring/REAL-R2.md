@@ -6,7 +6,7 @@
 
 实际请求中的reuse_workspace_of依次出现字符串“null”“none”“unused”“dummy”、空格及全零串，expected_source_hash还出现全零值。它们不是JSON null，不能当作真实workspace/source授权，Host拒绝非create_new的reuse字段是有效防护。模型在重复失败后仍未提供合法请求。现公共错误只给通用Tool execution failed，不包含字段省略指引。
 
-当前本地SDK与Host `_request_payload`保留原parameters（required只有route），没有设置strict也未补全required。**尚未证实**为何模型持续填无关字段；不能直接断言远端转换缺陷。下一步检查可选字段的明确无值契约及错误反馈，禁止把字符串占位符当有效source。独立追踪授权恢复间的连续工具/总轮数是否重置，不以本次外层限时冒充生产预算。
+当前本地SDK与Host `_request_payload`保留原parameters（required只有route），没有设置strict也未补全required。**尚未证实**为何模型持续填无关字段；不能直接断言远端转换缺陷。下一步检查可选字段的明确无值契约及错误反馈，禁止把字符串占位符当有效source。后续只读核对确认：14个公开决定各allowed，28份approval文件是attempted/allowed两阶段，不是28个决定；SDK持久TerminationState跨授权保留。重复键是工具名+canonical arguments SHA，本次14个参数hash全不同，streak最大1。实际15轮<25、14工具<50、1<10，没有超限或恢复清零；变化参数的同类失败不受该重复键上限拦截。只纠正Host注释，不加新限额或重测。
 
 ## 实际退场与统计
 

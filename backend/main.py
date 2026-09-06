@@ -8154,13 +8154,9 @@ async def _build_product_sdk_runtime_stack(
     )
     driver = build_react_driver(
         clock=clock,
-        # max_consecutive_same_tool 此前漏设，取 SDK 默认值 3——而同处已放到
-        # 25 轮 / 50 次工具调用。「总共允许 50 次、同一工具连续 3 次就掐断 Run」
-        # 这个不对称是漏配：连读 4 个文件即触发，工具报可纠正错误后模型改对重试
-        # 也在第 4 次被杀。S5b 终验实测：三个不同厂商的模型都因此
-        # react_repeated_tool_exceeded 终止（file_read 连挂 7~12 次）。
-        # 取 10：覆盖连读 5~10 个文件与 2~3 次纠错重试这类正常形态，同时只占
-        # 50 次预算的五分之一，真死循环仍在烧掉五分之一预算前被终止，护栏目的不变。
+        # SDK H079 的重复键是工具名 + canonical arguments hash；10 限制的是
+        # 同名同参的连续调用。改变参数会重置 streak，不是同一工具名总计10次。
+        # 25轮/50工具的持久累计计数跨授权恢复保留；外部测试限时另行记录。
         limits=TerminationLimits(
             max_turns=25, max_tool_calls=50, max_consecutive_same_tool=10
         ),
