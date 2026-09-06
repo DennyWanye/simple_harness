@@ -37,6 +37,64 @@ class ResourceRunnerTests(unittest.TestCase):
         self.assertIsNone(receipt["cleanup_error"])
         return result, receipt
 
+    def disk_module(self):
+        spec = importlib.util.spec_from_file_location("disk_resource_under_test", RUNNER)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    def test_low_disk_admission_starts_no_child_or_evidence(self):
+        module = self.disk_module()
+        marker = self.base / "must-not-start"
+        from types import SimpleNamespace
+        with patch("shutil.disk_usage", return_value=SimpleNamespace(free=439*1024**2)):
+            result = module.run([sys.executable, "-c", "from pathlib import Path;Path("+repr(str(marker))+").touch()"],
+                evidence=self.evidence, lock_path=self.lock, rss_mib=128, seconds=5)
+        self.assertEqual(result, 125)
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.evidence.exists())
+        with self.lock.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_disk_probe_failure_before_spawn_is_closed(self):
+        module = self.disk_module()
+        marker = self.base / "must-not-start"
+        with patch("shutil.disk_usage", side_effect=OSError("controlled disk probe failure")):
+            result = module.run([sys.executable, "-c", "from pathlib import Path;Path("+repr(str(marker))+").touch()"],
+                evidence=self.evidence, lock_path=self.lock, rss_mib=128, seconds=5)
+        self.assertEqual(result, 125)
+        self.assertFalse(marker.exists())
+        self.assertFalse(self.evidence.exists())
+
+    def test_disk_drop_stops_owned_child_and_keeps_evidence(self):
+        module = self.disk_module()
+        from types import SimpleNamespace
+        marker = self.base / "started"
+        child = "from pathlib import Path;import time;Path("+repr(str(marker))+").touch();time.sleep(60)"
+        samples = []
+        def disk_sample(path):
+            samples.append(Path(path))
+            if len(samples) <= 2:
+                return SimpleNamespace(free=4*1024**3)
+            until = time.monotonic()+5
+            while not marker.exists() and time.monotonic() < until:
+                time.sleep(.01)
+            return SimpleNamespace(free=128*1024**2)
+        with patch("shutil.disk_usage", disk_sample):
+            result = module.run([sys.executable, "-c", child], evidence=self.evidence,
+                lock_path=self.lock, rss_mib=128, seconds=.4)
+        receipt = json.loads((self.evidence / "resource.json").read_text())
+        self.assertTrue(marker.exists())
+        self.assertEqual(result, 125)
+        self.assertEqual(receipt["stop_reason"], "disk_limit")
+        self.assertEqual(receipt["min_disk_free_mib"], 128)
+        self.assertEqual(receipt["remaining_group_members"], [])
+        self.assertIsNone(receipt["cleanup_error"])
+        self.assertIn(Path.cwd(), samples)
+        self.assertIn(self.base, samples)
+        with self.assertRaises(ProcessLookupError):
+            os.kill(receipt["group_id"], 0)
+
     def test_command_failure_keeps_its_exit_status(self):
         result, receipt = self.execute("raise SystemExit(7)")
         self.assertEqual(result.returncode, 7)

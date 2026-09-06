@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 import time
@@ -44,6 +45,20 @@ def terminate(group: int) -> list[dict[str, int]]:
     return members(group)
 
 
+# Keep enough room to finish cleanup and preserve a receipt after a sampled stop.
+# These are operational defaults, not a filesystem quota or an RSS measurement.
+DISK_ADMISSION_MIB = 1024
+DISK_STOP_MIB = 256
+
+
+def disk_free_mib(evidence: Path) -> int:
+    destination = evidence.absolute()
+    while not destination.exists():
+        destination = destination.parent
+    # Check both destinations; evidence may live on a different volume from cwd.
+    return min(shutil.disk_usage(path).free for path in (Path.cwd(), destination)) // 1024**2
+
+
 def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
         seconds: float) -> int:
     if os.name != "posix":
@@ -55,6 +70,17 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
         except BlockingIOError:
             print("Test resource slot is busy; no command started.", file=sys.stderr)
             return 75
+        try:
+            minimum_disk = disk_free_mib(evidence)
+            admission_reason = "disk_admission" if minimum_disk < DISK_ADMISSION_MIB else None
+        except OSError:
+            minimum_disk, admission_reason = None, "disk_probe_failed"
+        if admission_reason:
+            # No new evidence directory on a full disk. The caller can retain stdout.
+            print(json.dumps({"schema_version": 1, "group_id": None,
+                "stop_reason": admission_reason, "returncode": 125,
+                "min_disk_free_mib": minimum_disk, "disk_admission_mib": DISK_ADMISSION_MIB}), flush=True)
+            return 125
         # Never overwrite a prior failure or receipt.
         evidence.mkdir(parents=True, exist_ok=False)
         process = None
@@ -86,6 +112,10 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
                     peak = max(peak, sum(row["rss_kib"] for row in live))
                     if peak > rss_mib * 1024:
                         reason = "rss_limit"
+                        break
+                    minimum_disk = min(minimum_disk, disk_free_mib(evidence))
+                    if minimum_disk <= DISK_STOP_MIB:
+                        reason = "disk_limit"
                         break
                     if parent_code is not None:
                         if any(row["pid"] != process.pid for row in live):
@@ -129,6 +159,9 @@ def run(command, *, evidence: Path, lock_path: Path, rss_mib: int,
             "deadline_seconds": seconds, "elapsed_seconds": round(time.monotonic()-started, 3),
             "remaining_group_members": remaining, "cleanup_error": cleanup_error,
             "scope": "owned_process_group_only",
+            "disk_scope": "working_directory_and_evidence_volumes",
+            "min_disk_free_mib": minimum_disk,
+            "disk_admission_mib": DISK_ADMISSION_MIB, "disk_stop_mib": DISK_STOP_MIB,
         }
         # Any forced stop/orphan cleanup is a resource failure, not a green test.
         code = 125 if reason else (parent_code if parent_code is not None else 125)
