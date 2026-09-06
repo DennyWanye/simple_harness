@@ -1,3 +1,5 @@
+最后更新：2026-09-07。C01-06/11正式session分派独立源码叶（base61f474e5）：06接真实job→同ID公开REVISE→关闭fixture→main重开，11沿已合可信Context时钟解除旧block。本叶NOT_RUN/待主完整候选验证，不沿用helper绿冒称正式评分通过；C08 partial/C05未接门保持。[契约](../plans/2026-09-07-corpus-complete-dispatch/CONTRACT.md)。
+
 最后更新：2026-09-07。主H0710/M619完整来源组合新增3唯一控制分批通过：C01同ID修订/公开选新版、可信日期冻结与跨日；C07 actualmain真实recent fixture终态后独立scoring Run/统计，评分HTTP受控。r1两绿+C07错误oracle红，r2只红1PASS7.28s，PG80368/80594皆清空；无WeMM实际加载，非真实模型质量。06/11正式评分适配仍待接，服务model_not_found独立阻塞。[结果](../plans/2026-09-07-corpus-c01-scoring/MAIN-PHASE-CLOCK.md)。
 
 最后更新：2026-09-07。C08标量准备叶7022e8e0/287176d0在H0710/M619/S0313首批13PASS5.55s，PG79749自然清空。12事实真实APPLIED+ACCEPTED/抑制前非空→公开EVIDENCE suppression→冷重开隐藏且S1保留；其中01/02/04/09显式partial、另8case派生源未支持，不称12完整setup或模型质量。正式评分接线仍待。[结果与未完边界](../plans/2026-09-07-corpus-c08-prepare/RESULTS.md)。
