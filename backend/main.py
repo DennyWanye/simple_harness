@@ -7758,7 +7758,7 @@ class _ProductSdkProviderBindingResolver:
         self._client = client
         self._authorities: dict[str, Any] = {}
 
-    def build_authority(self, binding: Any) -> Any:
+    def build_authority(self, binding: Any, *, request_guard: Any = ...) -> Any:
         from simple_harness.execution import ProviderBinding
         from simple_harness.execution.budget import BudgetPolicy, FrozenPriceEstimator
         from simple_harness import thaw_json
@@ -7780,6 +7780,10 @@ class _ProductSdkProviderBindingResolver:
                 sdk_run_id=binding.run_id, request=request, policy_factory=_primary_history_policy,
                 typed_use_authority=service_context.get("sdk_typed_context_use_authority"))
 
+        if request_guard is ...:
+            request_guard = primary_guard
+        elif not callable(request_guard):
+            raise TypeError("SDK provider request guard must be callable")
         provider = ProductProviderAdapter(
             self._provider_registry,
             provider_id=binding.provider_id,
@@ -7787,7 +7791,7 @@ class _ProductSdkProviderBindingResolver:
             price_resolver=_sdk_price_snapshot,
             model=binding.model_id,
             model_params=thaw_json(binding.model_params),
-            pre_invoke_guard=primary_guard,
+            pre_invoke_guard=request_guard,
         )
         price = provider.price_snapshot
         estimator = FrozenPriceEstimator(
