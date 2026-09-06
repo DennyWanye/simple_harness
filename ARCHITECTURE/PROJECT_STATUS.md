@@ -1,3 +1,5 @@
+最后更新：2026-09-07。已完成项目续改独立叶：新Run公开search取得旧complete Scope/source，create_new经真实权限将新active Scope绑定原root，再实际工具写原文件；旧Scope不重开。同Run已绑定时在创建前及route同TX拒绝，下一物理请求给明确新Run指导。H079/M618确定性栈7个唯一控制分批PASS，最终源1a8e1dd6/Dirac限定ACCEPT；本次Auto/Manual两绿+alreadyBound双层hash修正单绿，PG57258 exit0/remaining[]已交槽，原业务/fixture/oracle失败全保留。仅AUTO配置root及公开Manual service路径；Manual UI、主组合和原生仍待，非program完成。分支feat/completed-scope-new-workspace尚未合主。[契约与结果](../plans/2026-09-06-completed-scope-continuation/RESULTS.md)。
+
 最后更新：2026-09-06。r19 completed Scope指导新增2个唯一实际链控制分批PASS：真实resume仍complete、写入准入拒绝通过下一物理请求及公开proposal精确关联、零effect/文件；实际closure输入保留未做readback目标并持久非complete。原两次oracle误要求拒绝effect的失败保留，产品a189未变；最终PG47277清空已交槽。仅H079/M618确定性栈，新active Scope显式原root续改和原生旅程仍未完成。[结果](../plans/2026-09-06-completed-scope-guidance/RESULTS.md)。
 
 2026-09-06 原生r19独立长旅程仅前5轮：真实任务/docx创建但漏readback；原任务被模型收尾为complete，后续resume路由成功但编辑被生命周期门拒绝，第4轮FAIL并原生停止；随后43正常。完整两组旅程未完成，PG29074正常退出清空，非内存阻塞。[现场与边界](../plans/2026-09-06-typed-use-primary/NATIVE-R19.md)。

@@ -1,6 +1,6 @@
 # 已完成项目的合法续改：新 Scope + 原 root
 
-2026-09-06。独立 `feat/completed-scope-new-workspace`，base `cb7ed574`（生产a189）。主原native与H079/M618不改；尚未测试，不算交付。
+最后更新：2026-09-07。独立 `feat/completed-scope-new-workspace`，base `cb7ed574`（生产a189）。主原native与H079/M618不改；分批验证事实见 RESULTS.md，不将确定性栈结果称为原生验收。
 
 原义务是 Memory program S5b `design-freeze.md` §7：completed后禁止plan/status重开；route resume只是公开历史/status读取。现Host `HumanMemoryHostService.create_task_scope`、`append_binding`和`WorkspaceBindingRuntimeAuthority`已有真实新active Scope及AUTO配置/MANUAL持久挑战授权，`context_route.create_new`缺少选择原root的前台参数，固定新task目录导致不能编辑原文档。
 
@@ -18,7 +18,7 @@ Host先由公开owned `open_task_scope`核精确source，正常ScopeDisclosureRe
 
 ## 必要新控制
 
-1. 真实旧complete Scope+原文件；实际前台search/resume取source，create_new显式原root，真实tool activation/edit旧文件并下一物理请求读结果。新Scope active且root path/inode相同、root_id/receipt属于新Scope；旧head/事件/绑定字节不变。
+1. 真实旧complete Scope+原文件；新Run实际前台search取source，create_new显式原root作为首个Scope，真实tool activation/edit旧文件并下一物理请求读结果。新Scope active且root path/inode相同、root_id/receipt属于新Scope；旧head/事件/绑定字节不变。
 2. 错source hash/foreign Scope/多root或错误selector拒绝，不创建可用新route、不写原文件。至少一次真实原栈拒绝传下一Provider，而非仅函数返回。
 3. MANUAL真实challenge绑定newScope+原root，未授权无route，真实公开decide允许后原resume_existing(newScope)可用；deny不能由模型bool绕过。无需新UI authority。
 4. root身份在检查后/proposal前变化拒绝零binding；旧source+新Run重复原action/effect遵守已有幂等/未知边界。只新增必要控制，不复跑刚绿指导2控。
@@ -31,8 +31,14 @@ Host先由公开owned `open_task_scope`核精确source，正常ScopeDisclosureRe
 
 原r1为1PASS/5FAIL，inode pin拒绝绿保留。正向先resume旧Scope再create新Scope，两个route曾落地而后续effect被原Run单Scope证据绑定拒绝；这是真实不支持的同Run换Scope，不抹红。三个负控已到真实拒绝，后面错误要求resume新产生的合法Host事件也不得追加，oracle错误另记。
 
-已授权可交付路径固定为新Run **公开task_scope_search返回complete/source/continuation提案→create_new显式原root为本Run首个Scope→真实文件effect**。测试从实际HTTP中的公开搜索返回值取Scope/hash，不在Provider fixture偷注expected pin。搜索候选/工具说明不再强制先resume已complete Scope。
+已授权可交付路径固定为新Run **公开task_scope_search返回complete/source→模型构造create_new显式原root提案→本Run首个Scope→真实文件effect**。测试从实际HTTP中的公开搜索返回值取Scope/hash，不在Provider fixture偷注expected pin。搜索候选/工具说明不再强制先resume已complete Scope。
 
 已绑定旧Scope的Run，在创建前核实际Tool envelope及本Run所有task route（standalone不能隐藏），明确返回下一Run先search的指导；不造新Scope/新grant/第二acceptedroute。在发布新route的同BEGIN IMMEDIATE内再次通过原evidence ingress公有resolve_run_scope_tx及已持久task route核未绑定，防止读后状态变化。原单Scope账本不改、不回填原r1失败。新增原双Scope路径负控要求实际下一物理请求见明确拒绝，旧canonical/binding不变、旧事件前缀不变，合法新增tool/terminal事件逐一核类型及本Run归属。
 
 Dirac静态P1在执行前修正：搜索candidate是原物理guard精确校验的四字段，不能追加continuation污染旧publicproof。本叶保留candidate原形不改，只调整note/schema/main说明；模型从实际候选task_scope_id/source_hash/status构造create_new提案。原及新查询的exact校验不放宽、旧持久候选无需重签。此静态缺陷未执行，不冒充已跑红。
+
+## 终态两层绑定（r4 oracle 修正依据）
+
+`composition.read_run_terminal_evidence` 从 SDK 公共 `read_run_terminal_record` 验证 proof 后返回原 `event_payload_hash`。`foreground_runtime` 将该值写入 ExecutionEvidence 的 `public_payload.sdk_terminal_event_hash`；摄入后返回的 AuthenticatedTerminalObservation 则携带整个 ExecutionEvidence 的 canonical hash，`foreground_queue.record_sdk_terminal` 用该外层 hash 查验摄入记录并写 Host terminal receipt 的 `sdk_event_hash`。两者不能要求相等。
+
+alreadyBound 控制分别核同 Run/state/event ID 的公共 SDK 原终态 proof、内层 event hash、完整外层 canonical hash、Host terminal receipt 的外层 hash。原事件全集、每个 effect 的公开参数/hash、旧事件完整前缀、唯一 accepted route、新 Scope/文件零变更和下一物理请求指导全部保留。r4错误地跨层比较 hash 的 FAIL 保留；不改生产字段、旧数据或凭据。
