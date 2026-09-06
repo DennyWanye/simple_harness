@@ -1,6 +1,17 @@
 # ARCHITECTURE 索引
 
 
+## 2026-09-06 固定626后续正式分批（整体仍BLOCKED）
+
+H073/M0613、runner626ff8d8的11个fresh bounded调用互斥覆盖原391public+10source；
+public182PASS/0FAIL/209BLOCKED，source0PASS/0FAIL/10BLOCKED。
+本次分批并集182/0/219，非一个full401 Run、非质量/机器gate；不拼旧2格observe或旧178历史。
+355public+10source实际OBSERVED，36executor未实现；BLOCKED原因为122fixture/setup、61oracle、36executor。
+source使用exact clean M0613f2；真实fault/corruption仅source证据，完整oracle仍缺。
+全部默认OS共享锁、2GiB/180s/批，最大147904KiB，所有进程组无残留且槽释放。
+[逐批Run、命令与逐格分类索引](../plans/2026-09-06-typed-recall-0613/FORMAL-BATCHES.md)。
+
+
 ## 2026-09-06 H073/M0613 runner successor（独立测试工具叶子）
 
 独立 `feat/typed-recall-0613`，base60f280dc；候选pins显式后继并保留旧lineage，

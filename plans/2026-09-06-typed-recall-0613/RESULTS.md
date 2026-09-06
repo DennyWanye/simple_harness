@@ -71,3 +71,7 @@ resource.json记录进程组/RSS/退出事实，不含argv。命令参数见上�
 consumer=/Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/venv/bin/python
 "$consumer" /Users/denny/projects/simple_harness-primary-candidate/scripts/run_resource_bounded.py --evidence-dir .local-test-evidence/2026-09-06/typed-recall-0613/reproduce-resource --rss-mib 2048 --seconds 180 -- "$consumer" -B testcase/human-memory-program/runners/run_typed_recall_public_consumer.py --consumer-python "$consumer" --artifact-dir .local-test-evidence/2026-09-06/typed-recall-0613/reproduce-public --harness-wheel /Users/denny/projects/simple-harness-sdk-operation-audit/.local-test-evidence/2026-09-06/run-operation-audit-073/build1/simple_harness_sdk-0.7.3-py3-none-any.whl --harness-wheel-sha256 1a9ed5c95e6cddd4e0ccd85124320a6001008740a53213712fc89f3467cb4cd7 --harness-source-commit 0282fa982995b24bc893fdf6bed69d2caacd6587 --memory-wheel /Users/denny/projects/simple-harness-memory-sdk-typed-short-sources/.local-test-evidence/2026-09-06/typed-short-sources/artifact/build1/simple_harness_memory_sdk-0.6.13-py3-none-any.whl --memory-wheel-sha256 33fcc494f0cb8c9f358e411b372d4dcdc423725563dda6f5b96684f5fa1ffd62 --memory-source-commit f2a6a706c5e3407e896ada3bd9e735cd9c0b77fd --observe-candidate --cell eligibility/not-suppressed --cell eligibility/ordinary-uncontested --child-timeout 120
 ```
+
+## 后续正式批次（独立于以上2格observe）
+
+固定626完整原矩阵分批执行及每格分类见[FORMAL-BATCHES.md](FORMAL-BATCHES.md)。以上观察证据不重写、不混计。
