@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 13,
+  "fixture_revision": 14,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -37,9 +37,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.25",
-        "source_commit": "b45db92cd06e9171a146949785424c59ed3c7aaa",
-        "wheel_sha256": "f36bb383107d8070f436722ec6482ab3c75b681bbccbdd902087a225a2e8b357"
+        "version": "0.6.26",
+        "source_commit": "9b148b969926c7286fbac0e0371d81f9359b2bcd",
+        "wheel_sha256": "abe301b03f912b0b749cf5dedd1c0291a8f87cb449628e6b860b474603e4306c"
       }
     },
     "consumer_entrypoint_argument": "--consumer-entrypoint",
@@ -3188,9 +3188,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.25",
-        "source_commit": "b45db92cd06e9171a146949785424c59ed3c7aaa",
-        "wheel_sha256": "f36bb383107d8070f436722ec6482ab3c75b681bbccbdd902087a225a2e8b357"
+        "version": "0.6.26",
+        "source_commit": "9b148b969926c7286fbac0e0371d81f9359b2bcd",
+        "wheel_sha256": "abe301b03f912b0b749cf5dedd1c0291a8f87cb449628e6b860b474603e4306c"
       }
     },
     "candidate_approval": "User authorized trunk-development re-pin to Host main composition H0.7.10/M0.6.20 on 2026-09-07; pins frozen before execution; no acceptance claim.",
@@ -3792,16 +3792,34 @@
         "source_commit": "3b51e0f68680456792c6cf1947a5e689e1c35c12",
         "wheel_sha256": "0c6548b8e0ed10f4b960a4f39e203cf59324760ec6beb4e0ed7514e355339179"
       }
+    },
+    {
+      "fixture_sha256": "753cbaedd436a2a05c5999c46a79957124105c19f2323d5a1279c7c7dadad8a9",
+      "fixture_revision": 13,
+      "harness": {
+        "status": "PINNED",
+        "distribution": "simple-harness-sdk",
+        "version": "0.7.10",
+        "source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
+        "wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539"
+      },
+      "memory": {
+        "status": "PINNED",
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.25",
+        "source_commit": "b45db92cd06e9171a146949785424c59ed3c7aaa",
+        "wheel_sha256": "f36bb383107d8070f436722ec6482ab3c75b681bbccbdd902087a225a2e8b357"
+      }
     }
   ],
   "candidate_pin_change": {
     "date": "2026-09-07",
-    "scope": "Candidate identity only: Memory 0.6.24 -> 0.6.25 (procedure discovery surface also lists adopted ACTIVE/REINFORCED procedures incl. UNBOUND applicability, and matches CJK lexical terms; typed-recall applicability-fingerprint gate, procedure_use semantics, candidate DTO/hash domain and memory schema 7.4 unchanged, no DDL change; memory-only forget and CJK lexical gate retained). Original 401 cells, attacks, oracle inputs and thresholds unchanged.",
+    "scope": "Candidate identity only: Memory 0.6.25 -> 0.6.26 (prospective trigger rendered as CJK natural-language text shared by the cognitive-vector and lexical gate; cognitive-vector manifest hash now carries text_format_version 2 so stale generations degrade to lexical until rebuild; public payload shape, hash domain, eligibility gates, 0.45 threshold, lane budgets and memory schema 7.4 unchanged, no DDL change; memory-only forget and CJK lexical gate retained). Original 401 cells, attacks, oracle inputs and thresholds unchanged.",
     "authority": "User 2026-09-07 decision: trunk development on main, quality gate first; pins frozen before any execution on this candidate",
     "harness_source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
     "harness_wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539",
-    "source_commit": "b45db92cd06e9171a146949785424c59ed3c7aaa",
-    "wheel_sha256": "f36bb383107d8070f436722ec6482ab3c75b681bbccbdd902087a225a2e8b357"
+    "source_commit": "9b148b969926c7286fbac0e0371d81f9359b2bcd",
+    "wheel_sha256": "abe301b03f912b0b749cf5dedd1c0291a8f87cb449628e6b860b474603e4306c"
   },
   "candidate_successor_lineage": {
     "base_host_commit": "60f280dc2dd674a2af42e517f9c0d04d46aec72c",

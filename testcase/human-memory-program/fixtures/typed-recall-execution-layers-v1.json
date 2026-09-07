@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
   "fixture_id": "typed-recall-execution-layers-v1",
-  "fixture_revision": 11,
+  "fixture_revision": 12,
   "typed_recall_fixture": "typed-recall-v3.json",
-  "typed_recall_fixture_revision": 13,
-  "typed_recall_fixture_sha256": "753cbaedd436a2a05c5999c46a79957124105c19f2323d5a1279c7c7dadad8a9",
+  "typed_recall_fixture_revision": 14,
+  "typed_recall_fixture_sha256": "de75d943dd46726f2cd4e4ac215633702039ec691692d024b267f0cc995d323c",
   "quality_gate": "NOT_RUN/BLOCKED",
   "all_cells": {
     "count": 401,
@@ -51,9 +51,9 @@
     "candidate_memory_identity": {
       "status": "PINNED",
       "distribution": "simple-harness-memory-sdk",
-      "version": "0.6.25",
-      "source_commit": "b45db92cd06e9171a146949785424c59ed3c7aaa",
-      "wheel_sha256": "f36bb383107d8070f436722ec6482ab3c75b681bbccbdd902087a225a2e8b357"
+      "version": "0.6.26",
+      "source_commit": "9b148b969926c7286fbac0e0371d81f9359b2bcd",
+      "wheel_sha256": "abe301b03f912b0b749cf5dedd1c0291a8f87cb449628e6b860b474603e4306c"
     },
     "candidate_harness_identity": {
       "status": "PINNED",
@@ -135,7 +135,7 @@
     }
   },
   "hash_correction_previous_fixture_sha256": "594189edb4c46ff1c52a778c1caeef9a94d324bfd67f778ce61a3ec1c5f63d8a",
-  "candidate_pin_previous_layers_sha256": "21be7cffe85a82b4a6c4c04b7444a8e957353086465a8cd32ede4d95c3fa245d",
+  "candidate_pin_previous_layers_sha256": "db7a68a48afdf12f931ff59b1a6c9261e6ff9e4a137193b2d8d8ae37e3df16f1",
   "candidate_pin_layers_lineage": [
     "45d77ad06642c87141b3f96d4450f92ad1bfe7081238573fed89c45d462c6814",
     "11002372a2d795726f819a63691e78d22b0c9c2d7bccc3eea1a21fe536fd0a25",
@@ -143,6 +143,7 @@
     "a599863e9c596d73e9d3cddff25c8794fb2b924801b366876ba084c8d9478518",
     "8c6b8129daa8a38a8c4ce1e51435697b0526d446ba39dc7244e7a9ce707d73d4",
     "8e9b24ddc74680c338fb28005e73ccc62c62ca6e0e968a55ef93646cfcb3a7d5",
-    "598ba9b2efde1a4f0c1c0769d67ce4446bdcf49431be660fdfe60e326e6c480a"
+    "598ba9b2efde1a4f0c1c0769d67ce4446bdcf49431be660fdfe60e326e6c480a",
+    "21be7cffe85a82b4a6c4c04b7444a8e957353086465a8cd32ede4d95c3fa245d"
   ]
 }
