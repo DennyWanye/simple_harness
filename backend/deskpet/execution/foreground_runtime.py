@@ -355,7 +355,7 @@ class ForegroundRuntimeExecutionAuthority:
         terminal_audit_wake: Callable[[], None] | None = None,
         terminal_commit_hook_factory=None,
         provider_reconciliation: object | None = None,
-        provider_reconcile: Callable[[], Awaitable[object]] | None = None,
+        provider_reconcile: Callable[[str], Awaitable[object]] | None = None,
     ) -> None:
         if not subject.strip() or not owner_id.strip():
             raise ValueError("subject and owner_id are required")
@@ -1256,12 +1256,15 @@ class ForegroundRuntimeExecutionAuthority:
     ) -> bool:
         """F06：对 waiting 的 SDK Run 触发一次 provider reconcile；True 表示应重新观察。
 
-        * Host 步骤 = ``coordinator.reconcile_incomplete(retry-once)``；blocker 一旦有
+        * Host 步骤 = ``reconcile_for_run(sdk_run_id)``：先过在途闸门（账本里还有
+          ``handed_off`` 的物理请求时直接返回 0，不碰别的 Run），再按 Run 作用域跑
+          ``coordinator.reconcile_incomplete(retry-once)``；blocker 一旦有
           resolution，kernel 的 wake-drain（≤50ms 周期）把 Run 改回 running 并重驱 →
           这里有界轮询到 Run 离开 waiting → ``provider_reconciled``；
         * 策略已标记"同一 request 二次未知"→ ``provider_unknown_exhausted`` + cancel，
           下一轮观察拿到 cancelled → Host CANCELLED 终态；
-        * 没有 provider 未知（如权限 WAITING / 工具 continuation）→ False，维持原行为。
+        * 本 Run 没有可裁决的 provider 未知（权限 WAITING / 工具 continuation），或在途
+          闸门判定"此刻有别的调用在飞行中"→ ``settled == 0`` → False，维持原行为。
         """
         reconcile = self._provider_reconcile
         if reconcile is None:
@@ -1269,7 +1272,7 @@ class ForegroundRuntimeExecutionAuthority:
         before = self._ingress.query(sdk_run_id)
         before_version = int(getattr(before, "version", 0) or 0)
         try:
-            settled = await reconcile()
+            settled = await reconcile(sdk_run_id)
         except Exception as exc:  # noqa: BLE001 - 不能让 reconcile 失败把 Run 变成静默停摆
             self._record_audit(
                 "foreground.runtime.provider_reconcile_failed",

@@ -7433,11 +7433,16 @@ _provider_reconciliation = None
 _runtime_reconciliation = None
 
 
-async def _reconcile_incomplete_providers() -> int:
-    """前台运行时在 SDK Run waiting 时调用：只跑 Host provider reconcile 步骤。"""
+async def _reconcile_incomplete_providers(sdk_run_id: str) -> int:
+    """前台运行时在 SDK Run waiting 时调用：只跑 Host provider reconcile 步骤。
+
+    走 ``reconcile_for_run``（在途闸门 + Run 作用域），不是启动路径的全量 ``reconcile()``：
+    运行期并发 Run 共享同一个 coordinator，全量调和会把别人在飞行中的 ``HANDED_OFF``
+    判成 UNKNOWN → 正常响应被丢弃 + 重复发送。
+    """
     if _runtime_reconciliation is None:
         return 0
-    return await _runtime_reconciliation.reconcile()
+    return await _runtime_reconciliation.reconcile_for_run(sdk_run_id)
 
 
 def _ensure_provider_reconciliation():

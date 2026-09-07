@@ -289,10 +289,12 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
         terminal_commit_hook_factory=occurrence_terminal_hook if occurrence_coordinator else None,
-        provider_reconciliation=provider_reconciliation, provider_reconcile=runtime_reconciliation.reconcile,
+        provider_reconciliation=provider_reconciliation, provider_reconcile=runtime_reconciliation.reconcile_for_run,
         audit_sink=audit_sink,
     )
     runtime.history_policy = history_policy
+    runtime.runtime_reconciliation = runtime_reconciliation
+    runtime.built_ports = built_ports
     runtime.history_memory = visibility_memory
     runtime.typed_use_authority = typed_use_authority
     original_close = runtime.close
