@@ -12,12 +12,23 @@ from typing import Any, Callable
 
 CONTEXT_PAGE_IN_SCHEMA: dict[str, Any] = {
     "name": "context_page_in",
-    "description": "Load one exact context reference prepared for this request.",
+    "description": (
+        "Load one exact page reference already prepared for this request. Only a page "
+        "reference is accepted: copy reference_id and source_hash verbatim from a truncation "
+        "marker carrying page_tool=\"context_page_in\" (fields reference_id / source_hash), or "
+        "from a \"[Context page-in reference: id=... hash=...]\" line. The ref of a recall "
+        "fragment returned by context_route (fragments[].ref, e.g. \"recall-item:<id>:1\") is a "
+        "memory item id, not a page reference; passing it fails. If this request offers no such "
+        "reference_id, do not call this tool."
+    ),
     "parameters": {
         "type": "object",
         "properties": {
-            "reference_id": {"type": "string", "minLength": 1},
-            "source_hash": {"type": "string", "minLength": 64, "maxLength": 64},
+            "reference_id": {"type": "string", "minLength": 1,
+                "description": "Verbatim reference_id from a page reference prepared for this "
+                                "request; never a recall fragment ref such as \"recall-item:<id>:1\"."},
+            "source_hash": {"type": "string", "minLength": 64, "maxLength": 64,
+                "description": "The source_hash published beside that reference_id."},
         },
         "required": ["reference_id", "source_hash"],
         "additionalProperties": False,

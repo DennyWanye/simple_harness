@@ -177,3 +177,101 @@ async def test_scoped_prepared_snapshot_cannot_drift_before_first_provider(tmp_p
     finally:
         await runtime.close()
         await stack.close()
+
+
+class RecallItemPageInProvider(CreateProvider):
+    """F07 复现形状：模型把 typed 召回项 id 当作 context_page_in 的页引用。"""
+
+    reference_id = "recall-item:0123456789abcdef01234567:1"
+
+    def __init__(self):
+        super().__init__()
+        self.page_in_sent = False
+
+    async def invoke(self, request, *, cancel):
+        if not self.page_in_sent and len(self.requests) == 4:
+            # 不计入 self.requests：失败回合之后父类步序保持原样。
+            self.page_in_sent = True
+            from simple_harness import CallId
+            from simple_harness.contracts.messages import Message, MessageRole
+            from simple_harness.providers import ProviderResponse, ProviderUsage
+            return ProviderResponse(request.request_id, Message(MessageRole.ASSISTANT, "读取召回项正文"),
+                tool_calls=(ProviderToolCall(CallId("page-in-recall-item"), "context_page_in",
+                    {"reference_id": self.reference_id, "source_hash": "0" * 64}),),
+                model="model", usage=ProviderUsage(10, 10, 20))
+        return await super().invoke(request, cancel=cancel)
+
+
+async def _drive_recall_item_page_in(tmp_path, rejections, *, after_run=None):
+    """跑一次含"召回项 id 当页引用"失败回合的 Run；after_run 在关闭前拿到真实 stack 复核。"""
+    from deskpet.tools.context_page_in_tools import ContextPageInStore
+    from deskpet.execution.primary_dependencies import PrimaryHistoryDisclosureRejected
+
+    state, _, service, configured, authority = await fixture(tmp_path)
+    await service.enqueue_turn(QueueTurnRequest(None, "create-source", "Create Fresh project and write output"))
+    provider = RecallItemPageInProvider()
+    runtime, stack, queue = await build(tmp_path, state, provider, dynamic=True,
+        binding_authority=authority, configured_root=configured, page_in_store=ContextPageInStore())
+    guarded = []
+    original = provider.invoke
+    async def invoke(request, *, cancel):
+        current = await queue.current_snapshot(local_owner_auth().subject)
+        guarded.append((current.sdk_run_id, request))
+        try:
+            await check_runtime_dependencies(db_path=state, stack=stack, sdk_run_id=current.sdk_run_id,
+                request=request, policy_factory=lambda _: runtime.history_policy)
+        except PrimaryHistoryDisclosureRejected as error:
+            rejections.append(error.error_code)
+            raise
+        return await original(request, cancel=cancel)
+    provider.invoke = invoke
+    try:
+        assert await asyncio.wait_for(runtime._drive_once(), 30)
+        if after_run is not None:
+            await after_run(state=state, stack=stack, runtime=runtime, guarded=guarded)
+    finally:
+        await runtime.close()
+        await stack.close()
+    with sqlite3.connect(state) as db:
+        db.row_factory = sqlite3.Row
+        pages = db.execute("SELECT * FROM primary_effect_identities WHERE tool_name='context_page_in'").fetchall()
+    return state, provider, pages
+
+
+@pytest.mark.asyncio
+async def test_recall_item_reference_page_in_failure_keeps_the_run_verifiable(tmp_path):
+    """F07：处理器拒绝的 context_page_in 失败 carrier 经确定性复核后不再判 Run 不可核验。"""
+    rejections = []
+    state, provider, pages = await _drive_recall_item_page_in(tmp_path, rejections)
+    assert provider.page_in_sent and len(pages) == 1
+    # 修前：失败 carrier 被当作"不可核验"，下一次 provider 调用即抛 primary_history_disclosure_rejected。
+    assert rejections == []
+    assert len(provider.requests) == 7
+    with sqlite3.connect(state) as db:
+        assert db.execute("SELECT terminal_state FROM foreground_terminal_receipts").fetchone()[0] == "COMPLETED"
+    assert (next(p for p in (tmp_path / "configured").iterdir() if p.name.startswith("task-")) / "fresh.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_non_deterministic_page_in_failure_still_rejects_the_next_request(tmp_path, monkeypatch):
+    """负控：同样 arguments 重放反而成功 → 失败非确定性，history 仍判不可核验。"""
+    from deskpet.execution import primary_context_pages
+    from deskpet.execution.primary_dependencies import PrimaryHistoryDisclosureRejected
+
+    rejections, causes = [], []
+
+    async def after_run(*, state, stack, runtime, guarded):
+        sdk_run_id, request = guarded[-1]
+        check = dict(db_path=state, stack=stack, sdk_run_id=sdk_run_id, request=request,
+                     policy_factory=lambda _: runtime.history_policy)
+        await check_runtime_dependencies(**check)  # 同一请求在未打补丁时确实通过
+        async def replay_succeeds(**kwargs):
+            return {"ok": True, "kind": "primary_tool_history_page_v1", "content": "replayed"}
+        monkeypatch.setattr(primary_context_pages, "admitted_page", replay_succeeds)
+        with pytest.raises(PrimaryHistoryDisclosureRejected) as caught:
+            await check_runtime_dependencies(**check)
+        causes.append(str(caught.value._private_cause))
+
+    state, provider, pages = await _drive_recall_item_page_in(tmp_path, rejections, after_run=after_run)
+    assert provider.page_in_sent and len(pages) == 1 and rejections == []
+    assert causes == ["scope_search_result_unverified"]
