@@ -270,6 +270,139 @@ claim, and077 artifact is unchanged. [Contract](../plans/2026-09-06-expiry-termi
 
 # Memory SDK 边界与 Host 接口契约
 
+> 2026-09-07 转主干开发：并入 `feat/typed-recall-0613`（401 矩阵 runner）。以下为合并时两路状态段的并集，各自描述当时状态。
+
+## 2026-09-06 Applicability integration
+
+Updated2026-09-06:048b72eb integrated original public applicability axes; six affected tests passed and owned processes exited. Formal three-cell Run remains separate from other401 batches. [Review and evidence](../plans/2026-09-06-typed-recall-applicability-executor/COMBINED.md).
+
+## 2026-09-06 原触发执行器组合验证
+
+最后更新2026-09-06。固定1f9b575d合入已独审trigger叶并保留全部oracle指纹；三个必要交叉集成通过，无进程残留。原正式2PASS/1构造BLOCKED保持独立Run，不外推新401。[主复核及证据](../plans/2026-09-06-typed-recall-trigger-executor/COMBINED.md)。
+
+2026-09-06主复核：Prospective后六格dfec8bbb源/9raw hash一致，合入c202be39；实际共享执行器组合9项通过7.17秒，峰111MiB且无残留。前13/后6分别保持正式Run证据，非一次401/Host提醒验收。[组合边界](../plans/2026-09-06-typed-recall-prospective-lifecycle/COMBINED.md)。
+
+
+2026-09-06主组合复核：固定ea57e720公开Prospective 13格叶纳入29479573；13个raw hash一致，四oracle指纹均保留。受影响组合18项通过6.31秒，峰112MiB/组已清空；synthetic SDK信号不代表实际Host提醒，余6个lifecycle仍继续。[复核与证据](../plans/2026-09-06-typed-recall-prospective-public/COMBINED.md)。
+
+
+2026-09-06主复核：Procedure公开适用性固定ad189/3de9已纳入1c690bdb；9份原始证据hash一致，受合并影响的15项组合检查通过、进程已清理。原四格独立PASS，不代表Host观察晋升或全401；[组合范围与证据](../plans/2026-09-06-typed-recall-procedure-public/COMBINED.md)。
+
+## 2026-09-06 Context与source oracle已组合复验
+
+最后更新：2026-09-06。独审后的两个执行器合并固定9bad3a43，两个代码指纹入口均保留；12项必要组合检查通过、进程组32908已退出。原source正式10PASS与Context正式4PASS/2BLOCKED按各自固定源及Run保留，不拼成新401全量；Harness凭据消费/continuation仍需实现，原SDK pin与阈值未改。详见[组合结果](../plans/2026-09-06-context-use-full/COMBINED.md)。
+
+
+最后更新：2026-09-06（context-use 测试工具叶子）
+
+## 2026-09-06 原 current-use 六格双 item 执行
+
+独立 `feat/typed-recall-context-use-full`，basefbebdaff；H073/M0613/401及冻结阈值不变。
+实际installed public Run80e32957e5174b0fa8f752eddae06e31：6OBSERVED，4PASS/0FAIL/2BLOCKED；
+其余395未选，不与旧182/219或source10混成新全量结果。两个真实S1/CREATE、两item/page/fragment，
+独立完整hash、epoch3→4/policy不变、未忘项正控、same-attempt/reopen replay已执行。
+receipt-first/duplicate仍缺Harness reservation绑定及一次消费见证；Memory DTO没有continuation是原层次设计，
+不列作Memory产品缺陷；原new-continuation格未执行。S3/program不标完成，未合主组合。
+新executor+21篡改为一个测试通过，3邻居通过；原transport10同因红保留，精确输入清单修正后10通过。
+PGID31787/31892/31945均退出且无残留，最后批峰值138544KiB，槽已释放。无模型/native/新制品。
+[契约、逐格结果、命令与证据](../plans/2026-09-06-context-use-full/RESULTS.md)。
+
+## 2026-09-06 Rich Episode公开来源独立叶
+
+最后更新2026-09-06。30fcc261实际installed H073/M0613新方法1PASS0.48s；完整原rich S1、公开scope registration、真实mutation/recall/reopen/fresh，SENSITIVE与cross_scope绑定。
+含六泄露谓词/foreignID/禁止legacyPASS反例；原literal仍BLOCKED，另四类型setup待实现，不改变401统计。
+原始观察未单独导出JSON，只有命令/pytest/资源证据，不称正式矩阵Run。峰72096KiB，进程无残留、槽释放。
+[结果与边界](../plans/2026-09-06-typed-recall-rich-source/RESULTS.md)。
+
+
+## 2026-09-06 Procedure applicability原三格公开executor
+
+最后更新2026-09-06。固定ecaeb50f获Dirac源码限定ACCEPT；installed H073/M0613新增方法1PASS0.68s（原3+4篡改），正式3PASS/0FAIL/0BLOCKED。
+Run67db4f2a02d544db83a20da646f8e16e；原app-v2/app-v3/null映射真实public context，原语义reason保留，实际读取后no_recall不能由前置拒绝替代。
+其余398未选、整体NOT_RUN/BLOCKED、exit3。synthetic SDK合同非Host工具/提醒；32非法与projection原义务未闭合。
+旧绿未重跑；最大135440KiB、进程无残留、槽释放。
+[命令与9raw hash](../plans/2026-09-06-typed-recall-applicability-executor/RESULTS.md)。
+
+
+## 2026-09-06 Prospective trigger executor公开runner叶子
+
+最后更新2026-09-06。固定7e6337b5获Dirac源码限定ACCEPT后，installed H073/M0613新集成方法1PASS0.63s（原3格+3篡改），正式原3格2PASS/0FAIL/1BLOCKED。
+Run edb882f0ec224e1fbdbfff4e5bcc714c；missing trigger无法公开构造，未以DTO拒绝冒充eligibility通过；其余398未选，整体NOT_RUN/BLOCKED、exit3。
+pending ACK仅synthetic registration合同，不是Host提醒；两projection旧wire/hash及canary/scope义务、32非法组合保持边界。
+旧19未重跑、不并历史为新401。最大135408KiB、进程无残留、槽释放。
+[命令、边界和9raw hash](../plans/2026-09-06-typed-recall-trigger-executor/RESULTS.md)。
+
+
+
+## 2026-09-06 Prospective剩余6 lifecycle公开runner叶子
+
+最后更新2026-09-06。ec68源码审查P1（receipt目标连续性与candidate正控来源）修复为ea030952并限定ACCEPT。
+实际installed H073/M0613一个新集成方法PASS1.17s（6真实格+11篡改），原6格正式6PASS/0FAIL/0BLOCKED，
+Run b7b8fe83520d430b8c52d93f72f4bb4f，dependency[]；其余395未选/整体NOT_RUN/BLOCKED/exit3。
+实际public ACK/matched signal/授权REVISE绑定原source与真实revision；candidate原负例+独立同ID正控，
+expired/completed仅synthetic显式状态更新，不称外部时间signal或任务完成。无Host/SDK生产修改。
+前13未重跑，不并片为同Run19或新401；projection/非法组合边界保留。
+两PGID均退出无残留、槽释放，最大135536KiB。
+[命令、P1与raw/hash](../plans/2026-09-06-typed-recall-prospective-lifecycle/RESULTS.md)。
+
+
+## 2026-09-06 Prospective公开scheduler fixture叶子
+
+最后更新2026-09-06。4aee0cdb源码、dd988b19精确expiry test delta均Dirac限定ACCEPT。
+实际installed H073/M0613必要3方法PASS，受影响1方法窄复验PASS；原13格正式13PASS/0FAIL/0BLOCKED，
+Run ae075cb1eaed43a3b8f8221160d2c874，无dependency，其余388未选/整体NOT_RUN/BLOCKED/exit3。
+真实public outbox ACK+synthetic signal绑定原trigger/source/run/clock/expiry与实际revision，重开exact零读取。
+这是SDK合同synthetic scheduler，不声称Host真实提醒/外部event；原19另6lifecycle及projection未覆盖。
+不合旧182/source10/Procedure4为完整401；无SDK/Host生产变更。三PGID均退出无残留，槽释放，最大135296KiB。
+[命令、边界、raw与hash](../plans/2026-09-06-typed-recall-prospective-public/RESULTS.md)。
+
+
+## 2026-09-06 Procedure公开适用性runner叶子
+
+最后更新：2026-09-06。固定ad189f52已Dirac限定源码ACCEPT；实际installed H073/M0613
+必要公开测试3PASS1.09s，原四格正式4PASS/0FAIL/0BLOCKED（Run3913be071c484d069b48082fc5cec12a）。
+公开conversation registration/authority snapshot绑定真实revision，错fingerprint不召回，重开exact重放零candidate读取；
+eligible保留原literal/INELIGIBLE，经draft→授权REVISE映射eligible_for_activation，不算观察晋升。
+其余397未选，整体NOT_RUN/BLOCKED/exit3，不合旧182或source10为新全量；无SDK/Host生产代码变更。
+两批默认OS锁2GiB/180s，最大135584KiB，自有进程均退出无残留、槽释放。
+[实际结果、命令、raw索引与hash](../plans/2026-09-06-typed-recall-procedure-public/RESULTS.md)。
+
+
+## 2026-09-06 source10完整oracle后继（独审待回）
+
+固定65990a68，exact installed H073/M0613f2 source层正式10PASS/0FAIL/0BLOCKED。
+完整90表schema/PK/nonfinal根、request/attempt/terminal关系、原distinct admitted source与member/group hash、
+确切reopen outer/cause/trace及零recall/零写均独立判定；没有改SDK错误码、fixture、10AC/阈值。
+1个集成test含10正控+30篡改检查通过；schema2/extra-key、swap/reuse重hash命中目标reason。
+首轮three-member错误cause导致1红，已保留并定向修正为实际FKcause；不改原证据。
+本次未选391public，不与626/fbeb旧public计为新401全量，不称program/quality/native完成。
+全部默认OS锁2GiB/180s，最大157920KiB，无残留且slot已释放。
+[命令、红绿与原始hash](../plans/2026-09-06-typed-recall-source-oracle/RESULTS.md)。
+
+
+## 2026-09-06 固定626后续正式分批（整体仍BLOCKED）
+
+H073/M0613、runner626ff8d8的11个fresh bounded调用互斥覆盖原391public+10source；
+public182PASS/0FAIL/209BLOCKED，source0PASS/0FAIL/10BLOCKED。
+本次分批并集182/0/219，非一个full401 Run、非质量/机器gate；不拼旧2格observe或旧178历史。
+355public+10source实际OBSERVED，36executor未实现；BLOCKED原因为122fixture/setup、61oracle、36executor。
+source使用exact clean M0613f2；真实fault/corruption仅source证据，完整oracle仍缺。
+全部默认OS共享锁、2GiB/180s/批，最大147904KiB，所有进程组无残留且槽释放。
+[逐批Run、命令与逐格分类索引](../plans/2026-09-06-typed-recall-0613/FORMAL-BATCHES.md)。
+
+
+## 2026-09-06 H073/M0613 runner successor（独立测试工具叶子）
+
+独立 `feat/typed-recall-0613`，base60f280dc；候选pins显式后继并保留旧lineage，
+原401/391+10/14攻击/阈值不变。observe在public/source层及cell统一不授PASS，FAIL保留。
+必要工具测试12passed；两原格真实installed public OBSERVED且业务断言通过，正式0PASS/0FAIL/2BLOCKED。
+source10与其余399未执行，旧178/0/223历史不覆写、不拼接。H164/M72包文件逐字节核对；无模型/native。
+资源入口145baed3默认共享锁，两组无残留且槽已释放。原runner applicability WIP未动，原三格仍BLOCKED。
+该工具叶子不表示S3/program或401全量完成，未合主树。
+[命令、资源与证据hash](../plans/2026-09-06-typed-recall-0613/RESULTS.md)。
+
+> 最后更新：2026-09-05
+
 最后更新：2026-09-06。Host默认Memory builder已接7.3公开升级链；实际installed M616旧库→M617升级/重开保留属主与升级回执，新控1项及空库/未知库2邻居分批通过。原生userdata未升级，完整consumer/native仍未通过。[升级边界与证据](../plans/2026-09-06-prospective-source-audit/HOST-617-UPGRADE.md)。
 
 最后更新：2026-09-06。Host明确接入M617 V2/settle观察，H076/M617实际installed组合4新+4受影响检查共8PASS/2.91s，无源码overlay/模型/native；终局真正消费、跨库恢复及完整scheduler仍单独验收。PG71205清空。[边界与证据](../plans/2026-09-06-prospective-source-audit/SUCCESSOR-617.md)。
@@ -870,6 +1003,16 @@ carrier，必须在运行层拒绝复用/出站；不称 S6/S5b/program gate 完
 
 本文档是 simple_harness 的 Memory 生产边界事实源。2026-08-22 的官方一等集成已完成代码、自动化门禁
 与真实 macOS Computer Use UI 验收；SH-M1～SH-M6、SH-SURFACE 均已在真实 DeepSeek provider 下通过。
+
+## 2026-09-05 Typed recall 执行桥验证工具（仅独立分支）
+
+- `feature/human-memory-typed-recall-runner`：已批准§3–4修订，§3既有JSON-domain、§4 state NUL；独立向量先于执行。401 IDs/391+10/14攻击/阈值不变；fixture rev7/layers rev5。
+- 代码 `1e72f2ff`：**76个桥回归通过**；Harness0.7.2 + Memory0.6.5 clean两层消费者 **178 PASS / 0 FAIL / 223 BLOCKED**，public349+source10真实OBSERVED，42 public未实现，0 source正式PASS。14攻击见证、typed/UNKNOWN setup及14合法lifecycle历史已接通；6个short/mixed公开路径仍为完整oracle待闭合的OBSERVED。
+- 独立复审接受拒绝基线P1/跨principal P2，以及lifecycle中间payload/action grant两项P2修复。旧 provisional PASS不倒填，当前来自加强控制后重跑；执行代码hash与提交Git blob逐字节一致。
+- 本机索引 `.local-test-evidence/2026-09-05/typed-recall-clock065-r5/bridge-summary.json`，SHA256 `255e40bb644ecbd32b4987eb892d67318348bd7bc6331fd40f148e2f6aabc2c0`。命令、身份、setup与oracle剩余项见 [本批记录](../testcase/human-memory-program/runners/TYPED-RECALL-NORMAL-BATCH-2026-09-05.md)。
+- 2026-09-05 增量 leaf 小批：12 public真实OBSERVED，**7 PASS / 0 FAIL / 5 BLOCKED**；其余389本轮未运行，不能与历史178相加。合法USER+TOOL双span已接通；leaf本机10测试通过。4个剩余适用性/信号setup、原128byte反例保留；无新产品缺陷结论。[小批命令与证据](../testcase/human-memory-program/runners/TYPED-RECALL-PUBLIC-LOOP-BATCH.md)。
+- 2026-09-05 current-use增量：6 public真实OBSERVED，**0 PASS/0 FAIL/6 BLOCKED**；记住→纠正→忘记→reopen及新attempt拒旧result业务断言通过加强后的oracle，两个桥P2已修并独立复审ACCEPT。完整原epoch/continuation门仍未闭合；与leaf合计18个本批distinct cells为7/0/11，不替代完整401历史结果。新增[历史可见性只读设计](../testcase/human-memory-program/runners/TYPED-RECALL-HISTORY-VISIBILITY-GAP.md)，未实现SDK入口。
+- **仅独立分支工具事实；未并入主树，合并暂缓，S3/program未完成。** 主共享venv仍Memory0.6.3；无provider/UI/MPS或SDK全量测试。128byte、原AUDIT/epistemic不可构造组合及short时间/hash差异保持BLOCKED；未将setup缺失报告成产品缺陷。
 
 ## 2026-09-05 Primary API P1 后继修复
 

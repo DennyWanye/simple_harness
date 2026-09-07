@@ -387,6 +387,9 @@ def _check_exhaustive_axes(fixture: dict[str, Any], errors: list[str]) -> tuple[
 
 def self_check(fixture_path: Path, execution_layers_path: Path) -> dict[str, Any]:
     fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    if fixture.get("fixture_revision", 0) >= 4:
+        return {"status": "NOT_RUN/BLOCKED", "passed_cells": [],
+                "reason": "rev4 uses independent A2 oracle regressions; legacy 401 synthetic artifact self-check is disabled"}
     errors: list[str] = []
     if fixture.get("fixture_revision") != 3:
         errors.append("fixture_revision must be 3")
@@ -628,8 +631,8 @@ def _validate_execution_layers(
             "errors": [f"invalid execution-layers fixture: {type(exc).__name__}"],
         }
     errors: list[str] = []
-    if layers.get("schema_version") != 1 or layers.get("fixture_revision") != 1:
-        errors.append("execution-layers schema/revision must be 1")
+    if layers.get("schema_version") != 1 or layers.get("fixture_revision") not in (1, 2, 3, 4, 5):
+        errors.append("execution-layers schema/revision unsupported")
     if layers.get("quality_gate") != "NOT_RUN/BLOCKED":
         errors.append("execution-layers semantic quality gate must remain NOT_RUN/BLOCKED")
     if layers.get("typed_recall_fixture") != fixture_path.name:
@@ -744,6 +747,8 @@ def _expected_state_hashes(
     """
 
     oracle = fixture["state_hash_oracle"]
+    if fixture.get("fixture_revision") != 3:
+        raise ValueError("legacy cell tags are not actual state hashes for revised fixtures")
     fields = oracle["canonical_payload_fields"]
     prefix = oracle["domain_prefix_utf8_with_nul"].replace("\\0", "\0").encode("utf-8")
 
@@ -776,6 +781,8 @@ def _validate_candidate_artifacts(
     identity: dict[str, Any],
     invocation_started: datetime,
 ) -> dict[str, Any] | None:
+    if fixture.get("fixture_revision") != 3:
+        return {"status": "FAIL", "reason": "legacy synthetic state commitments cannot admit revised fixture artifacts"}
     expected_fixture_hash = _sha256_bytes(fixture_path.read_bytes())
     index_path = artifact_dir / "evidence-index.json"
     if index_path.is_symlink():
@@ -1072,59 +1079,19 @@ def _artifact_validator_self_check(fixture_path: Path, fixture: dict[str, Any]) 
 
 def _execute_candidate(
     args: argparse.Namespace,
-    execution_layers: dict[str, Any],
 ) -> dict[str, Any]:
-    if args.consumer_entrypoint:
-        return {
-            "status": "FAIL",
-            "reason": "product test-helper entrypoints are prohibited; use the validation-side public Manager adapter",
-        }
-    required_identity_args = (
-        args.harness_wheel,
-        args.harness_wheel_sha256,
-        args.harness_source_commit,
-        args.memory_wheel,
-        args.memory_wheel_sha256,
-        args.memory_source_commit,
-    )
-    if not all(required_identity_args):
-        return {
-            "status": "NOT_RUN/BLOCKED",
-            "reason": "exact candidate wheels, SHA-256 pins, and source commits are required before layered execution",
-        }
-    wheels = [Path(args.harness_wheel).resolve(), Path(args.memory_wheel).resolve()]
-    for wheel in wheels:
-        if not wheel.is_file() or wheel.suffix != ".whl":
-            return {"status": "NOT_RUN/BLOCKED", "reason": f"candidate wheel missing: {wheel}"}
-    expected_wheel_hashes = [args.harness_wheel_sha256, args.memory_wheel_sha256]
-    if not all(HEX64.fullmatch(value) for value in expected_wheel_hashes):
-        return {"status": "NOT_RUN/BLOCKED", "reason": "candidate wheel SHA-256 pin must be lowercase hex64"}
-    actual_wheel_hashes = [_sha256_bytes(wheel.read_bytes()) for wheel in wheels]
-    if actual_wheel_hashes != expected_wheel_hashes:
-        return {"status": "FAIL", "reason": "candidate wheel SHA-256 mismatch"}
-    public_layer = execution_layers["clean_wheel_public_manager"]
-    pins = {
-        "harness": public_layer["candidate_harness_identity"],
-        "memory": public_layer["candidate_memory_identity"],
-    }
-    supplied = {
-        "harness": {"wheel_sha256": args.harness_wheel_sha256, "source_commit": args.harness_source_commit},
-        "memory": {"wheel_sha256": args.memory_wheel_sha256, "source_commit": args.memory_source_commit},
-    }
-    for name in ("harness", "memory"):
-        if pins[name]["status"] != "PINNED" or not pins[name]["wheel_sha256"] or not pins[name]["source_commit"] or not pins[name]["version"]:
-            return {"status": "NOT_RUN/BLOCKED", "reason": f"final {name} candidate identity is not frozen in fixture"}
-        if any(supplied[name][field] != pins[name][field] for field in ("wheel_sha256", "source_commit")):
-            return {"status": "FAIL", "reason": f"{name} candidate identity does not match frozen fixture pin"}
-    return {
-        "status": "NOT_RUN/BLOCKED",
-        "reason": "validation-side 391-cell public Manager artifacts and exact-source 10-cell integration artifacts have not both been supplied",
-        "clean_wheel_public_manager_cells": public_layer["count"],
-        "source_exact_commit_integration_cells": execution_layers[
-            "source_exact_commit_integration"
-        ]["count"],
-        "combined_exact_union_cells": execution_layers["all_cells"]["count"],
-    }
+    import importlib.util
+
+    path = Path(__file__).with_name("typed_recall_bridge.py")
+    spec = importlib.util.spec_from_file_location("typed_recall_bridge", path)
+    bridge = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bridge)
+    try:
+        fixture = bridge.read_json(args.fixture)
+        execution_layers = bridge.read_json(args.execution_layers)
+        return bridge.execute(args, execution_layers, _expected_product_cells(fixture))
+    except (bridge.BridgeError, OSError, ValueError, KeyError, TypeError) as exc:
+        return {"status": "FAIL", "reason": str(exc), "passed_cells": []}
 
 
 def main() -> int:
@@ -1150,16 +1117,18 @@ def main() -> int:
     parser.add_argument("--memory-source-commit")
     parser.add_argument("--consumer-entrypoint")
     parser.add_argument("--artifact-dir", default=".local-test-evidence/typed-recall-public-consumer")
+    parser.add_argument("--consumer-python", help="Borrow an installed interpreter; verify exact wheel files in an isolated child. Default: clean venv.")
+    parser.add_argument("--observe-candidate", action="store_true", help="Execute supplied candidate despite historical pin differences; cannot award PASS or repin fixtures.")
+    parser.add_argument("--source-adapter", help="Validation-side Python file exporting async run(request, workspace) for the 10 source cells.")
+    parser.add_argument("--source-checkout", help="Exact clean Memory checkout for the source adapter.")
+    parser.add_argument("--cell", action="append", default=None, help="Run an original cell in a bounded batch; repeat as needed. Full401 inventory remains; unselected cells are not current evidence.")
+    parser.add_argument("--child-timeout", type=float, default=60.0)
     args = parser.parse_args()
-    checked = self_check(args.fixture.resolve(), args.execution_layers.resolve())
-    if checked["status"] != "PASS":
-        print(json.dumps(checked, ensure_ascii=False, sort_keys=True))
-        return 1
     if args.self_check:
+        checked = self_check(args.fixture.resolve(), args.execution_layers.resolve())
         print(json.dumps(checked, ensure_ascii=False, sort_keys=True))
-        return 0
-    execution_layers = json.loads(args.execution_layers.read_text(encoding="utf-8"))
-    result = _execute_candidate(args, execution_layers)
+        return 0 if checked["status"] == "PASS" else BLOCKED_EXIT if checked["status"] == "NOT_RUN/BLOCKED" else 1
+    result = _execute_candidate(args)
     print(json.dumps(result, ensure_ascii=False, sort_keys=True))
     if result["status"] == "PASS":
         return 0
