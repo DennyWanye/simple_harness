@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
-import { TaskScopeRequests, parseTaskScopeEvidenceGroups, parseTaskScopeEvidencePage, parseTaskScopeOpen, parseTaskScopeSearch, parseTaskScopeView } from "./taskScopeRequests";
-import { candidate, evidenceView, groups, open, page, planView, search } from "./testing/taskScopeFixture";
+import { TaskScopeRequests, parseTaskScopeEvidenceGroups, parseTaskScopeEvidencePage, parseTaskScopeList, parseTaskScopeOpen, parseTaskScopeSearch, parseTaskScopeView } from "./taskScopeRequests";
+import { bindingSummary, boundOpen, candidate, evidenceView, groups, listPage, open, page, planView, search } from "./testing/taskScopeFixture";
 import { flush, wire } from "./testing/graphFixture";
 
 const without = <T extends object>(value: T, key: keyof T) => { const copy = { ...value }; delete copy[key]; return copy; };
@@ -86,5 +86,35 @@ it("evidence source stale/unavailable and cross-revision views drop the opened s
   void c.loadEvidenceGroups();
   w.emit({ type: "human_memory_response", request_id: w.sent[6].request_id, payload: { ok: false, operation: "task_scope.evidence_groups", error: { code: "human_memory_evidence_source_unavailable" } } });
   await flush(); expect(c.getSnapshot().open).toBeNull(); expect(c.getSnapshot().error).toMatch(/不可用/);
+  stop();
+});
+
+it("list parse keeps the candidate shape, bounds the page and refuses a partial binding summary", () => {
+  expect(parseTaskScopeList(listPage)).toEqual(listPage);
+  expect(() => parseTaskScopeList(without(listPage, "receipt_hash"))).toThrow();
+  expect(() => parseTaskScopeList({ ...listPage, items: [without(listPage.items[0], "updated_at")] })).toThrow();
+  expect(() => parseTaskScopeList({ ...listPage, items: [without(listPage.items[0], "binding_summary")] })).toThrow();
+  expect(() => parseTaskScopeList({ ...listPage, items: [{ ...listPage.items[0], binding_summary: { ...bindingSummary, roots: [without(bindingSummary.roots[0], "state")] } }] })).toThrow();
+  expect(() => parseTaskScopeList({ ...listPage, items: [{ ...listPage.items[0], binding_summary: { ...bindingSummary, mode: "root" } }] })).toThrow();
+  expect(() => parseTaskScopeList({ ...listPage, items: Array.from({ length: 33 }, (_, i) => ({ ...listPage.items[1], scope_ref: `s${i}` })) })).toThrow();
+  expect(parseTaskScopeOpen(boundOpen, "scope-a")).toEqual(boundOpen);
+  expect(() => parseTaskScopeOpen(without(open, "binding_summary"), "scope-a")).toThrow();
+  expect(() => parseTaskScopeOpen(without(open, "drift_probe"), "scope-a")).toThrow();
+  expect(() => parseTaskScopeOpen({ ...boundOpen, binding_summary: without(bindingSummary, "receipt_hash") }, "scope-a")).toThrow();
+});
+it("list is an explicit bounded read whose items open exactly like search candidates", async () => {
+  const w = wire(), c = new TaskScopeRequests(); const stop = c.connect(w.port, "p", "owner:1", true);
+  expect(w.sent).toHaveLength(0);
+  void c.list(); expect(w.sent[0].operation).toBe("task_scope.list"); expect(w.sent[0].request).toEqual({ limit: 20 });
+  w.reply(0, listPage); await flush(); expect(c.getSnapshot().list?.items.map((i) => i.scope_ref)).toEqual(["scope-a", "scope-b"]);
+  void c.open(c.getSnapshot().list!.items[0]);
+  expect(w.sent[1].operation).toBe("task_scope.open_exact");
+  expect(w.sent[1].request).toEqual({ scope_ref: "scope-a", expected_source_hash: "a".repeat(64) });
+  w.reply(1, boundOpen); await flush(); expect(c.getSnapshot().open?.binding_summary?.mode).toBe("auto");
+  w.emit({ type: "human_memory_changed", payload: {} });
+  expect(c.getSnapshot().list).toBeNull(); expect(c.getSnapshot().open).toBeNull();
+  void c.list(); w.reply(2, { ...listPage, items: [{ ...listPage.items[0], binding_summary: { ...bindingSummary, state: "gone" } }] });
+  await flush(); expect(c.getSnapshot().list).toBeNull(); expect(c.getSnapshot().error).toMatch(/未通过核对/);
+  expect(w.sent.every((r) => ["task_scope.list", "task_scope.open_exact"].includes(r.operation))).toBe(true);
   stop();
 });
