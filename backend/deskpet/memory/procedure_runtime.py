@@ -29,6 +29,9 @@ class ProcedureRuntime:
         from deskpet.memory.trusted_disclosure import resolve_current_disclosure
         arguments = h.thaw_json(arguments)
         arguments.pop("deskpet_public_progress", None)
+        # r10: the model omits the cursor on a first page; a required-but-empty
+        # cursor only produced tool_arguments.missing and a failed attempt.
+        arguments.setdefault("after", "")
         if set(arguments) != {"query", "after"}:
             raise ProcedureUseRejected("procedure_discovery_arguments_invalid")
         runtime = self.runtime_getter()

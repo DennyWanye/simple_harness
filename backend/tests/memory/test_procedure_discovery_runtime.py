@@ -118,3 +118,10 @@ async def test_first_draft_is_discovered_without_known_id_and_next_send_rechecks
         use=await ctx.memory.procedure_runtime.store.use_for_run(group.terminal_source[0].run_id)
         result=(await ctx.memory.procedure_runtime.store.journal(use['use_id'],'applied'))['result']
         assert result['independent_successes']==1 and result['lifecycle_state']=='draft'
+
+
+def test_discover_schema_makes_the_first_page_cursor_optional():
+    """原生 r10：模型首页调用省略 after，schema 不得判 missing；运行时按空游标处理。"""
+    from deskpet.sdk_adapters.procedure_discovery import SCHEMA
+    assert SCHEMA["required"] == ["query"]
+    assert "after" in SCHEMA["properties"]

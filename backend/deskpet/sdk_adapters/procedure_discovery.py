@@ -1,9 +1,9 @@
 """Separate draft preview tool; drafts are data and never applicability authority."""
 from deskpet.sdk_adapters.tools import ProductToolRegistration, active_product_tool_context
 
-SCHEMA = {"type":"object","additionalProperties":False,"required":["query","after"],"properties":{
+SCHEMA = {"type":"object","additionalProperties":False,"required":["query"],"properties":{
     "query":{"type":"string","minLength":1,"maxLength":512},
-    "after":{"type":"string","maxLength":1024,"description":"Empty for first page; otherwise exact next_after from the previous page."}}}
+    "after":{"type":"string","maxLength":1024,"description":"Omit or leave empty for the first page; otherwise the exact next_after from the previous page."}}}
 
 
 def procedure_discovery_registration(service):
