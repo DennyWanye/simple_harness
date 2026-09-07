@@ -276,28 +276,49 @@ async def read_run_dependencies(*, db, stack, sdk_run_id, before_effect_id=None,
         if fact is None or not fact.terminal or fact.result is None or fact.tool_name != row["tool_name"] or fact.run_id.value != sdk_run_id:
             raise ValueError("scope_search_effect_unverified")
         value = thaw_json(fact.result.value)
-        if (row["tool_name"] == "context_page_in" and fact.state.value == "failed"
-                and fact.result.outcome.value == "failed" and value is None
-                and fact.result.error_code == "primary_page_hash_mismatch"
-                and fact.result.public_message == "Requested primary page is unavailable."):
-            # The SDK failure carrier has no value. Independently reconstruct
-            # this deterministic rejection; never interpret arbitrary failed
-            # effects or a claimed error code as a successful content read.
-            from deskpet.execution.primary_context_pages import admitted_page, PrimaryContextPageUnavailable
-            try:
-                await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
-                    start=start, arguments=thaw_json(fact.arguments))
-            except PrimaryContextPageUnavailable as exc:
-                if str(exc) != "primary_page_hash_mismatch":
-                    raise
-            else:
-                raise ValueError("primary_page_rejection_mismatch")
-            continue
-        if (fact.state.value == "failed" and fact.result.outcome.value == "failed" and value is None
-                and fact.result.error_code in ("missing_required_argument", "invalid_tool_arguments")):
+        failed_carrier = (fact.state.value == "failed" and fact.result.outcome.value == "failed"
+                          and value is None)
+        if failed_carrier and fact.result.error_code in ("missing_required_argument", "invalid_tool_arguments"):
             # The tool wrapper rejected the arguments before any handler ran, so
             # no candidate content was ever read; there is nothing to verify.
             # (r10: an omitted first-page cursor must not make the Run unverifiable.)
+            continue
+        if row["tool_name"] == "context_page_in" and failed_carrier:
+            # The SDK failure carrier has no value. Independently reconstruct
+            # this deterministic rejection by replaying the exact same
+            # arguments; never interpret an arbitrary failed effect or a
+            # claimed error code as a successful content read. (F07: the model
+            # passing a typed recall item id as reference_id must not make the
+            # whole Run unverifiable.)
+            from deskpet.execution.primary_context_pages import (
+                PREFIX as HISTORY_PAGE_PREFIX, PrimaryContextPageUnavailable, admitted_page)
+            from deskpet.execution.current_tool_pages import PREFIX as CURRENT_PAGE_PREFIX, admitted_current_page
+            arguments = thaw_json(fact.arguments)
+            reference = arguments.get("reference_id") if isinstance(arguments, Mapping) else None
+            # Only the primary page handler publishes a stable rejection code;
+            # every other reference lands in the request-scoped store, whose
+            # rejection the wrapper collapses into an opaque ``tool_failed``.
+            primary_reference = isinstance(reference, str) and reference.startswith(
+                (HISTORY_PAGE_PREFIX, CURRENT_PAGE_PREFIX))
+            if primary_reference:
+                if fact.result.public_message != "Requested primary page is unavailable.":
+                    raise ValueError("scope_search_result_unverified")
+            elif fact.result.error_code != "tool_failed":
+                raise ValueError("scope_search_result_unverified")
+            try:
+                if isinstance(reference, str) and reference.startswith(CURRENT_PAGE_PREFIX):
+                    await admitted_current_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                        page_effect=fact, arguments=arguments)
+                else:
+                    await admitted_page(db=db, stack=stack, run=run, sdk_run_id=sdk_run_id,
+                        start=start, arguments=arguments)
+            except PrimaryContextPageUnavailable as exc:
+                if primary_reference and str(exc) != fact.result.error_code:
+                    raise ValueError("primary_page_rejection_mismatch") from exc
+            else:
+                # A replay that succeeds means the recorded failure was not
+                # deterministic, so admitted content may have been read.
+                raise ValueError("scope_search_result_unverified")
             continue
         if isinstance(value, str):
             value = json.loads(value)
