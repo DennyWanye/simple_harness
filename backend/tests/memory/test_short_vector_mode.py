@@ -53,6 +53,9 @@ async def test_large_fts_small_vector_public_typed_fragments_and_long_only(tmp_p
     state = tmp_path / 'state.db'
     service = HumanMemoryHostServiceFactory(state,
         await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
+    # 生产启动（main.py）安装 v50–v54 扩展；worker 的 procedure 观察需要 procedure_uses 表。
+    from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
+    await initialize_procedure_recovery_state_db(state)
     await service.open_primary()
     foreground, stack, _ = await build(tmp_path, state, Provider())
     # Both eligible groups are real Host turns; ten later groups create the

@@ -24,6 +24,9 @@ async def seed(tmp_path_factory):
     state = path / "state.db"
     service = HumanMemoryHostServiceFactory(state,
         await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
+    # 生产启动（main.py）安装 v50–v54 扩展；worker 的 procedure 观察需要 procedure_uses 表。
+    from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
+    await initialize_procedure_recovery_state_db(state)
     await service.open_primary()
     runtime, stack, queue = await build(path, state, Provider())
     try:
@@ -107,6 +110,8 @@ async def test_low_sequence_late_delivery_and_fixed_upper_wrap(env):
     assert short._upper == 11
     service = HumanMemoryHostServiceFactory(env.state,
         await dispatch_startup_epoch(env.state, approved_fresh_lane=True)).bind(local_owner_auth())
+    from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
+    await initialize_procedure_recovery_state_db(env.state)  # 生产启动安装的 v50–v54 扩展
     await service.enqueue_turn(QueueTurnRequest(None, "arrived-during-scan", "new incomplete group"))
     for _ in range(3):
         last = await short.step()
@@ -246,6 +251,8 @@ async def test_real_tool_group_and_unfinished_do_not_starve_plain_group(tmp_path
     state = tmp_path / "state.db"
     service = HumanMemoryHostServiceFactory(state,
         await dispatch_startup_epoch(state, approved_fresh_lane=True)).bind(local_owner_auth())
+    from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
+    await initialize_procedure_recovery_state_db(state)  # 生产启动安装的 v50–v54 扩展
     await service.open_primary()
     foreground, stack, _ = await build(tmp_path, state, ToolFirst())
     try:

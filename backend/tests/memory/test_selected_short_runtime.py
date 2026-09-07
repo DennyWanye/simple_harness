@@ -196,6 +196,8 @@ async def test_lazy_actual_namespace_rechecked_and_never_replaced(tmp_path):
         path = tmp_path / name
         service = HumanMemoryHostServiceFactory(path,
             await dispatch_startup_epoch(path, approved_fresh_lane=True)).bind(local_owner_auth())
+        from deskpet.memory.procedure_recovery_schema import initialize_procedure_recovery_state_db
+        await initialize_procedure_recovery_state_db(path)  # 生产启动安装的 v50–v54 扩展
         primary = (await service.open_primary())["primary_ref"]
     authority.db_path = tmp_path / "first.db"
     await authority.bind_primary()

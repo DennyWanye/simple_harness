@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.23",
+  "source": "78ddf386c2f9807b89cb51ffaeb7295610009bff",
+  "reviewed_source": "78ddf386c2f9807b89cb51ffaeb7295610009bff",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.23-py3-none-any.whl": "56a1a0dc77dfa95154a4762f003f0820f096d5409cb282e55f7412938208eebe"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788781311",
+  "memory_schema": "7.4",
+  "scope": "0.6.22 plus cognitive-memory vector lane (generation rebuild, schema 7.4 additive with 7.3 forward, degradation codes); source controls passed locally (0 new failures vs 0.6.22); corpus C01/C07 recalibration and native acceptance pending"
+}
