@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { PrimaryMemoryGraph } from "./PrimaryMemoryGraph";
 import { PrimaryAuditPanel } from "./PrimaryAuditPanel";
+import { PrimaryTaskPanel } from "./PrimaryTaskPanel";
 import { CognitiveRequests } from "../primary/cognitiveRequests";
 import type { PrimaryPort } from "../primary/controller";
 import { buttonStyle, dark } from "../theme/components";
@@ -19,7 +20,7 @@ export interface PrimaryMemoryPanelProps {
 }
 
 export function PrimaryMemoryPanel({ port, primaryRef, verifiedOwnerKey, ready, requests, onForgotten, onClose }: PrimaryMemoryPanelProps) {
-  const [tab, setTab] = useState<"list" | "graph" | "audit">("list");
+  const [tab, setTab] = useState<"list" | "graph" | "audit" | "task">("list");
   // Layout-only state survives the owner-keyed graph remount; no data is retained.
   const viewportShown = useRef(false);
   const claimInitialReveal = useCallback(() => {
@@ -42,8 +43,10 @@ export function PrimaryMemoryPanel({ port, primaryRef, verifiedOwnerKey, ready, 
       <button aria-pressed={tab === "list"} onClick={() => setTab("list")}>记忆列表</button>
       <button aria-pressed={tab === "graph"} onClick={() => { if (tab !== "graph") viewportShown.current = false; setTab("graph"); }}>关系图</button>
       <button aria-pressed={tab === "audit"} onClick={() => setTab("audit")}>操作记录</button>
+      <button aria-pressed={tab === "task"} onClick={() => setTab("task")}>任务</button>
     </nav>
     {tab === "graph" && <PrimaryMemoryGraph key={`${primaryRef}:${verifiedOwnerKey ?? "unbound"}`} port={port} primaryRef={primaryRef} verifiedOwnerKey={verifiedOwnerKey} ready={ready} cognitive={client} claimInitialReveal={claimInitialReveal} />}
+    {tab === "task" && <PrimaryTaskPanel port={port} primaryRef={primaryRef} verifiedOwnerKey={verifiedOwnerKey} ready={ready} />}
     {tab === "audit" && <PrimaryAuditPanel port={port} primaryRef={primaryRef} verifiedOwnerKey={verifiedOwnerKey} ready={ready} />}
     {tab === "list" && <>
     <p>这里展示当前认知记忆。忘记会禁止该记忆继续使用，原始历史档案保留；不会自动撤销。</p>
