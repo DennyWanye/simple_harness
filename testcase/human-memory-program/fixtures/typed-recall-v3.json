@@ -1,7 +1,7 @@
 {
   "schema_version": 3,
   "fixture_id": "HM-TYPED-RECALL-V3",
-  "fixture_revision": 10,
+  "fixture_revision": 11,
   "seed": "HM-TYPED-RECALL-20260831-V3",
   "quality_gate": "NOT_RUN/BLOCKED",
   "quality_gate_reason": "Deterministic protocol verification does not replace the independently reviewed 200+ query real-model corpus.",
@@ -37,9 +37,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.22",
-        "source_commit": "67b176d087094d514d3730b3a5f77c31fa412256",
-        "wheel_sha256": "dafdc447e19e2b3fe1a594fb6c344c879aab498035c8983aa5703520a05034ce"
+        "version": "0.6.23",
+        "source_commit": "78ddf386c2f9807b89cb51ffaeb7295610009bff",
+        "wheel_sha256": "56a1a0dc77dfa95154a4762f003f0820f096d5409cb282e55f7412938208eebe"
       }
     },
     "consumer_entrypoint_argument": "--consumer-entrypoint",
@@ -3188,9 +3188,9 @@
       "memory": {
         "status": "PINNED",
         "distribution": "simple-harness-memory-sdk",
-        "version": "0.6.22",
-        "source_commit": "67b176d087094d514d3730b3a5f77c31fa412256",
-        "wheel_sha256": "dafdc447e19e2b3fe1a594fb6c344c879aab498035c8983aa5703520a05034ce"
+        "version": "0.6.23",
+        "source_commit": "78ddf386c2f9807b89cb51ffaeb7295610009bff",
+        "wheel_sha256": "56a1a0dc77dfa95154a4762f003f0820f096d5409cb282e55f7412938208eebe"
       }
     },
     "candidate_approval": "User authorized trunk-development re-pin to Host main composition H0.7.10/M0.6.20 on 2026-09-07; pins frozen before execution; no acceptance claim.",
@@ -3738,16 +3738,34 @@
         "source_commit": "52910b0c2ab14b23a44e845ee4edc7f519f618f5",
         "wheel_sha256": "0cc065d9db191d5c26a2111b64a79c362bce3d7d873f2a4907f07b878ffcea98"
       }
+    },
+    {
+      "fixture_sha256": "d43645f996a63e03b54220c92f91fbb063b2ce90cc76cf0911767dfb1c067761",
+      "fixture_revision": 10,
+      "harness": {
+        "status": "PINNED",
+        "distribution": "simple-harness-sdk",
+        "version": "0.7.10",
+        "source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
+        "wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539"
+      },
+      "memory": {
+        "status": "PINNED",
+        "distribution": "simple-harness-memory-sdk",
+        "version": "0.6.22",
+        "source_commit": "67b176d087094d514d3730b3a5f77c31fa412256",
+        "wheel_sha256": "dafdc447e19e2b3fe1a594fb6c344c879aab498035c8983aa5703520a05034ce"
+      }
     }
   ],
   "candidate_pin_change": {
     "date": "2026-09-07",
-    "scope": "Candidate identity only: Memory 0.6.20 -> 0.6.22 (memory-only forget per user decision; CJK lexical gate retained). Original 401 cells, attacks, oracle inputs and thresholds unchanged.",
+    "scope": "Candidate identity only: Memory 0.6.22 -> 0.6.23 (cognitive-memory vector lane, memory schema 7.4 additive; memory-only forget and CJK lexical gate retained). Original 401 cells, attacks, oracle inputs and thresholds unchanged.",
     "authority": "User 2026-09-07 decision: trunk development on main, quality gate first; pins frozen before any execution on this candidate",
     "harness_source_commit": "031fdc688ceea604ffa409a06a69fd85071aa612",
     "harness_wheel_sha256": "e559bc1b58ebfce0423247bc11ead0969f2364d76209fe7b9481bb2892ad2539",
-    "source_commit": "67b176d087094d514d3730b3a5f77c31fa412256",
-    "wheel_sha256": "dafdc447e19e2b3fe1a594fb6c344c879aab498035c8983aa5703520a05034ce"
+    "source_commit": "78ddf386c2f9807b89cb51ffaeb7295610009bff",
+    "wheel_sha256": "56a1a0dc77dfa95154a4762f003f0820f096d5409cb282e55f7412938208eebe"
   },
   "candidate_successor_lineage": {
     "base_host_commit": "60f280dc2dd674a2af42e517f9c0d04d46aec72c",

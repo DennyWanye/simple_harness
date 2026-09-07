@@ -373,6 +373,6 @@ def test_0613_successor_retains_original_obligations_and_candidate_lineage():
     assert bridge.file_sha(layers_path) == bridge.LAYERS_SHA
     pins = fixture["public_consumer"]["candidate_identity_pins"]
     assert pins == fixture["approved_oracle"]["candidate_identity"]
-    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.10", "0.6.22")
+    assert (pins["harness"]["version"], pins["memory"]["version"]) == ("0.7.10", "0.6.23")
     for name, pin in pins.items():
         assert layers["clean_wheel_public_manager"][f"candidate_{name}_identity"] == pin
