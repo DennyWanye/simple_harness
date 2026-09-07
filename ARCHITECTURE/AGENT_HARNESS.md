@@ -940,6 +940,33 @@ Provider 临时 HTTP 响应，不属于 unknown：coordinator 把首个 invocati
 的 provisional envelope，失败、取消和重连会 retract；只有 canonical outcome 可进入最终
 消息投影。
 
+**provider 传输超时后的 Host 续推（F06，2026-09-07）**：`ProviderTimeoutError`（读响应超时）
+不在 SDK 的确定失败集合里，coordinator 把该调用 `settle_unknown`（`provider_error_after_handoff`），
+ReAct driver 返回 WAITING 并挂 provider wait-blocker，Run 进入 `waiting`，等 Host 通过
+`ProviderReconciliationPort` 给可判定结论；SDK 内核自身不调用 `reconcile_incomplete`。此前 Host
+生产接线是 `_NoopReconciliation`（永远 `STILL_UNKNOWN`）且无人调用 `reconcile_incomplete`，前台
+运行时记完 `BOUND_WAITING` 就退出，只剩租约心跳——Run 永久停摆，重启后 `recover()` 也不捞
+`waiting`。现在（`backend/deskpet/sdk_adapters/reconciliation.py`、`backend/main.py`、
+`backend/deskpet/execution/foreground_runtime.py`）：① `ProductRuntimeReconciliation` 作为
+`RuntimeReconciliationPort`，在 SDK 启动 `_start_once` 与前台 waiting 时调用
+`ProviderInvocationCoordinator.reconcile_incomplete(provider_reconciliation=retry-once)`；②
+`ProviderUnknownRetryOncePolicy`：同一 request 首次未知（`rehandoff_count==0`）→
+`CONFIRMED_NOT_STARTED`（evidence `product-policy:provider-retry-once:…`），SDK 用同一 `request_id`
+重新 hand off 一次（`handoff_attempt` 1→2）；再次未知 → 保持 `STILL_UNKNOWN` 并记入
+`exhausted_runs`；③ 前台 `_finish_bound` 观察到 `waiting` 后跑 Host reconcile 步骤（不调
+`kernel.reconcile()`，避免其 `recover()`/统一 drain 与工具 continuation 交付路径互扰），有界轮询
+到 kernel wake-drain（≤50ms）把 Run 改回 running 后重新 `wait_idle`（审计
+`foreground.runtime.provider_reconciled`）；二次未知则 `cancel`（审计
+`foreground.runtime.provider_unknown_exhausted`）→ Host CANCELLED，绝不静默停在 RUNNING；权限
+WAITING/工具 continuation 的 waiting（`reconcile_incomplete` 返回 0）维持原行为；④ 重启路径：
+`ports_factory` 恢复历史工具授权时把被 UNKNOWN provider 调用挂住的 `waiting` Run 一并
+`restore_waiting_run`（`waiting_runs_blocked_on_provider`），否则启动 reconcile 重驱后
+`sdk_runtime_tool_exposure_unavailable` → FAILED。可接受代价：`CONFIRMED_NOT_STARTED` 是策略断言，
+极端情况服务端已完成并计费会二次计费；rehandoff 上限一次来自 SDK。单测
+`backend/tests/execution/test_primary_provider_timeout_reconciliation.py`（T1 同 request 发 2 次、
+`provider_invocations succeeded handoff_attempt=2 rehandoff_count=1`、Host COMPLETED；T2 重启后由
+SDK 启动 reconcile 续推；T3 两次超时 → CANCELLED；T4 策略与生产接线不再用 Noop）。原生 r12 待验。
+
 OpenAI-compatible SSE 不再使用固定的 180 秒“整次响应总时限”。当前边界是滑动的
 “模型事件间隔时限”：content、reasoning、tool call、usage 或 final 任一已解析事件都会重置
 180 秒计时，因此 `sf-glm-5.2` 等重推理模型只要持续输出有效进展，就可以运行超过 180 秒；
@@ -1796,6 +1823,15 @@ fingerprint 不再对 `final_params` 做浅拷贝。
 tuple、set、非字符串 key 或非有限浮点仍由严格 validator 拒绝，修复没有放宽 JSON 契约。
 
 ## 验证状态
+
+### 2026-09-07 F06 provider 传输超时后前台 Run 续推
+
+Host 侧修复（不发 Harness 新版本）：retry-once `ProviderReconciliationPort` + `RuntimeReconciliationPort`
+调 `reconcile_incomplete` + 前台 `_finish_bound` waiting 后续推/二次未知 cancel + 重启恢复 waiting Run
+的工具授权。新增 5 个单测通过；`test_primary_foreground_runtime.py`、`test_recovery_fence.py`、
+`test_provider_tool_call_continuation.py`、`test_closure_resume_sources.py` 无新增红（既有红与
+`git stash` 基线一致；`test_primary_none_routes_to_exact_task_and_writes_real_file[False]` 基线即偶发）。
+原生 r12 步 5 复跑待做（证据目录沿用 `.local-test-evidence/2026-09-07/native-a8734fbf/`）。
 
 ### 2026-08-13 Harness 历史基线与结构预算收口
 

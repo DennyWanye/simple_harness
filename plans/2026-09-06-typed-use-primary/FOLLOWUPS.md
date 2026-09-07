@@ -34,6 +34,8 @@
 
 `task_scope.open_exact` 的 resume_package 视图超 4096 字节会被截断加「…」，STATUS JSON 截断后前端 `statusSummary` 返回 null，状态/目标/水位提示整段消失（独审 REVIEW-TASK-PANEL.md F-2）。建议显示「STATUS 概览已截断」并允许 README/STATUS 点击页入（后端 `task_scope.view` 已支持）。契约只要求首次概括，不阻塞 Task 2。
 
-## F06 provider 传输超时后 Run 停摆（2026-09-07 原生 r11 发现，待修）
+## F06 provider 传输超时后 Run 停摆（2026-09-07 原生 r11 发现；2026-09-07 已修（Host 侧），待 r12 原生验证）
 
 luna 一次请求 240s 传输超时后，SDK 将该 provider 调用 `settle_unknown`（`reconcile.unknown_settled`、`provider_attempt.degraded`），Host 前台运行时随后既不重试也不终止，Run 停在 RUNNING（20+ 分钟零事件）；同 userdata 冷启动后 `reconcile.recovered` 但仍不续推。证据 `plans/2026-09-07-native-main-journey/NATIVE-R11-PROCEDURE-CHAIN.md`。需要：Host 的 `_ProviderReconciliation` 对 unknown 调用给出可判定结果（重发或按失败收尾）并让前台循环续推；单测 + 原生 r12。
+
+**已修（2026-09-07，工作树 m0623-adopt）**：按 `plans/2026-09-07-native-main-journey/DECISION-PROVIDER-TIMEOUT-STALL.md`——`backend/deskpet/sdk_adapters/reconciliation.py` 新增 `ProviderUnknownRetryOncePolicy`/`ProductProviderRetryOnceReconciliation`（同一 request 首次未知 → `CONFIRMED_NOT_STARTED` 授权重发一次；再次未知 → `STILL_UNKNOWN` + `exhausted_runs`）与 `ProductRuntimeReconciliation`（`RuntimeReconciliationPort` → `coordinator.reconcile_incomplete`）；`backend/main.py` 三处 `_NoopReconciliation` 替换为真实实现，并在 `ports_factory` 恢复被 UNKNOWN provider 调用挂住的 waiting Run 的工具授权（`waiting_runs_blocked_on_provider`）；`backend/deskpet/execution/foreground_runtime.py` `_finish_bound` 观察到 waiting 后跑 Host reconcile 步骤并重新观察，二次未知 cancel 收尾。与分析的偏离：前台不调 `kernel.reconcile()`（其 `recover()`/统一 drain 与工具 continuation 交付互扰，dynamic 路由用例卡死），改为直接 `reconcile_incomplete` + 有界轮询 kernel wake-drain；重启路径额外需要恢复 waiting Run 的工具授权（分析未覆盖）。单测 `backend/tests/execution/test_primary_provider_timeout_reconciliation.py` T1–T4 通过。**待 r12 原生验证**（步 5 复跑，比对 SDK 库 `reconciliation_resolutions` 非空、Host `foreground_execution_reconciliations` 出现 `BOUND_TERMINAL`）。可选 Harness 后续：`_settle_unknown` 保留原始 `exc.code`（区分超时与其他异常）、允许 N 次 rehandoff。

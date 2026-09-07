@@ -89,7 +89,7 @@ class Noop:
 
 
 
-async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None, procedure_runtime=None, context_route_ledger_factory=None, write_file_schema=None, context_clock=None):
+async def build(tmp_path, state_path, provider, *, fault=None, memory=None, state_changed=None, legacy_observer=False, dynamic=False, binding_authority=None, configured_root=None, visibility_memory=None, recall_executor=None, authorization_factory=None, page_in_store=None, terminal_audit_wake=None, occurrence_coordinator=None, extra_registrations=(), candidate_identity=None, decision_sink_factory=None, context_use_memory=None, provider_context_window=32768, visibility_checker=None, procedure_runtime=None, context_route_ledger_factory=None, write_file_schema=None, context_clock=None, provider_reconciliation=None, audit_sink=None):
     from deskpet.execution.primary_context import ForegroundConversationEntrypoint
     from deskpet.memory.identity import ValidatedLocalMemoryIdentityAuthority
     from deskpet.memory.session_db import SessionDB
@@ -155,6 +155,14 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
     foreground_gate = ForegroundEffectAdmissionGate()
     noop = AuthorityCheckingAuthorization() if dynamic else Noop()
     authorization = authorization_factory(registry) if authorization_factory else noop
+    # F06: same reconciliation wiring as production (main.py) — the SDK startup /
+    # runtime.reconcile() step hands UNKNOWN provider invocations to the coordinator's
+    # reconcile_incomplete with the retry-once policy.
+    from deskpet.sdk_adapters.reconciliation import ProductProviderRetryOnceReconciliation, ProductRuntimeReconciliation
+    if provider_reconciliation is None:
+        provider_reconciliation = ProductProviderRetryOnceReconciliation()
+    built_ports = {}
+    runtime_reconciliation = ProductRuntimeReconciliation(lambda: built_ports.get("ports"), provider_reconciliation)
     def ports(database, uow):
         tools = ToolRegistry()
         async def handler(_args, _ctx):
@@ -185,7 +193,7 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         result = RuntimePorts(provider=provider_coordinator,
                             tools=EffectExecutor(uow=uow, registry=tools, authorization=authorization, reconciliation=noop),
                             authorization=authorization, context=SqliteContextPort(database), delivery=DeliveryDispatcher(uow, {}),
-                            tool_reconciliation=noop, reconciliation=noop, provider_reconciliation=noop,
+                            tool_reconciliation=noop, reconciliation=runtime_reconciliation, provider_reconciliation=provider_reconciliation,
                             react_checkpoint=uow, tool_catalog=DurableToolCatalogResolver(uow),
                             runtime_decision_sink=decision_sink,
                             agent_memory=memory,
@@ -206,11 +214,27 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
                               procedure_runtime=procedure_runtime),
                               task_execution_authority=ProductTaskExecutionAuthority(root_resolver=BindingRootResolver(bindings)))
         from deskpet.execution.semantic_closure import closure_instruction_for_run
-        return replace(result, run_context_authority=ProductRunContextAuthority(
+        result = replace(result, run_context_authority=ProductRunContextAuthority(
             ports_resolver=lambda: result, exposure_resolver=registry.resolve_exposure, ledger=ledger,
             occurrence_coordinator=occurrence_coordinator, typed_use_authority=typed_use_authority,
             closure_reader=(lambda run: closure_instruction_for_run(state_path, run.value)) if dynamic else None,
         ))
+        built_ports["ports"] = result
+        # F06: mirror main.ports_factory — a waiting Run parked behind an UNKNOWN
+        # provider invocation is resumed by the SDK startup reconcile step and needs
+        # its historical tool authority restored first (lease_state=waiting).
+        from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
+        for run in waiting_runs_blocked_on_provider(uow):
+            try:
+                registry.resolve(run.run_id)
+                continue
+            except KeyError:
+                pass
+            metadata = uow.read_start_snapshot(run.run_id)["input"]["context_metadata"]
+            registry.restore_waiting_run(run_start_record=metadata["tool_authority"],
+                run_binding=SdkRunBindingV1.from_record(metadata["run_binding"]),
+                catalog_resolver=result.tool_catalog)
+        return result
     from deskpet.task_scope.disclosure import ScopeDisclosureReader
     scope_reader = ScopeDisclosureReader(state_path, stack_getter=lambda: stack,
         policy_factory=lambda _: history_policy)
@@ -265,6 +289,8 @@ async def build(tmp_path, state_path, provider, *, fault=None, memory=None, stat
         run_binding_reader=stack.read_closure_run_facts, conversation_entrypoint=conversation,
         state_changed=state_changed, effect_gate=foreground_gate, terminal_audit_wake=terminal_audit_wake,
         terminal_commit_hook_factory=occurrence_terminal_hook if occurrence_coordinator else None,
+        provider_reconciliation=provider_reconciliation, provider_reconcile=runtime_reconciliation.reconcile,
+        audit_sink=audit_sink,
     )
     runtime.history_policy = history_policy
     runtime.history_memory = visibility_memory

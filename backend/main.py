@@ -3281,6 +3281,8 @@ async def _activate_human_memory_host_ports(startup_epoch, *, history_reader=Non
         state_changed=_primary_state_changed,
         terminal_audit_wake=_terminal_audit.wake if _terminal_audit is not None else None,
         terminal_commit_hook_factory=_occurrence_terminal_hook,
+        provider_reconciliation=_ensure_provider_reconciliation(),
+        provider_reconcile=_reconcile_incomplete_providers,
     )
     service_context.register("human_memory_foreground_scheduler_wake", runtime)
     service_context.register(
@@ -7424,6 +7426,28 @@ async def _build_product_agent_loop(request):
 # SDK Runtime globals (production ingress)
 _sdk_runtime_stack = None
 _sdk_ingress = None
+# F06：单例 retry-once provider reconciliation；SDK 端口与前台运行时共用同一份
+# ``exhausted_runs``（二次未知的 run 由前台 cancel 收尾）。
+_provider_reconciliation = None
+# F06：SDK 栈构建时绑定的 Host RuntimeReconciliationPort（coordinator.reconcile_incomplete）。
+_runtime_reconciliation = None
+
+
+async def _reconcile_incomplete_providers() -> int:
+    """前台运行时在 SDK Run waiting 时调用：只跑 Host provider reconcile 步骤。"""
+    if _runtime_reconciliation is None:
+        return 0
+    return await _runtime_reconciliation.reconcile()
+
+
+def _ensure_provider_reconciliation():
+    global _provider_reconciliation
+    if _provider_reconciliation is None:
+        from deskpet.sdk_adapters.reconciliation import (
+            ProductProviderRetryOnceReconciliation,
+        )
+        _provider_reconciliation = ProductProviderRetryOnceReconciliation()
+    return _provider_reconciliation
 # Shared final Tool-effect admission gate.  The SDK effect executor consults
 # it before every physical dispatch; the foreground runtime registers exact
 # lease identities into it.  Created lazily because the SDK stack starts
@@ -8624,10 +8648,18 @@ async def _build_product_sdk_runtime_stack(
     from deskpet.sdk_adapters.desktop_runtime import _DeliverySink
     delivery_adapter = _DeliverySink()
 
-    # Create a simple Noop reconciliation for general reconciliation port
-    class _NoopReconciliation:
-        async def reconcile(self):
-            return None
+    # F06（2026-09-07）：provider 传输超时后 SDK 把调用记 UNKNOWN、Run 进 waiting 并
+    # 挂 provider wait-blocker，等 Host 通过 ProviderReconciliationPort 给可判定结论；
+    # 之前这里是 Noop（永远 STILL_UNKNOWN）且无人调用 reconcile_incomplete → Run 永久
+    # 停摆。现在：RuntimeReconciliationPort 在 SDK 启动与 runtime.reconcile() 时调
+    # provider coordinator 的 reconcile_incomplete，provider 侧用 retry-once 策略。
+    from deskpet.sdk_adapters.reconciliation import ProductRuntimeReconciliation
+    global _runtime_reconciliation
+    provider_reconciliation = _ensure_provider_reconciliation()
+    runtime_reconciliation = ProductRuntimeReconciliation(
+        lambda: production_ports.get("ports"), provider_reconciliation
+    )
+    _runtime_reconciliation = runtime_reconciliation
 
     projection_pump = None
     if _memory_backend is None:
@@ -8678,10 +8710,21 @@ async def _build_product_sdk_runtime_stack(
         context = SqliteContextPort(database, clock=clock)
         _sdk_context_port = context
         from deskpet.sdk_adapters.run_bindings import SdkRunBindingV1
+        from deskpet.sdk_adapters.reconciliation import waiting_runs_blocked_on_provider
 
         recoverable = (
             *uow.list_recoverable_root_runs(),
             *uow.list_recoverable_child_runs(),
+        )
+        # F06（2026-09-07）：SDK 的 recoverable 列表不含 waiting；但被 UNKNOWN provider
+        # 调用挂住的 waiting Run 会在 SDK 启动 reconcile 后立刻重驱，届时 ReAct driver
+        # 需要 resolve_exposure——不先恢复其工具授权就会 sdk_runtime_tool_exposure_unavailable
+        # → FAILED。这里把这类 waiting Run 一并按历史授权恢复（lease_state=waiting）。
+        recoverable = (
+            *recoverable,
+            *waiting_runs_blocked_on_provider(uow, exclude={
+                str(record.run_id) for record in recoverable
+            }),
         )
         for record in recoverable:
             start = uow.read_start_snapshot(str(record.run_id))
@@ -8830,8 +8873,8 @@ async def _build_product_sdk_runtime_stack(
             context=context,
             delivery=DeliveryDispatcher(uow, {"product": delivery_adapter}, clock=clock),
             tool_reconciliation=reconciliation_adapter,
-            reconciliation=_NoopReconciliation(),
-            provider_reconciliation=_NoopReconciliation(),
+            reconciliation=runtime_reconciliation,
+            provider_reconciliation=provider_reconciliation,
             react_checkpoint=uow,
             tool_catalog=durable_catalog_resolver,
             owner_id=f"deskpet-product-sdk-g{generation}",
@@ -8897,8 +8940,8 @@ async def _build_product_sdk_runtime_stack(
             context_staging_builder=lambda _database: production_ports["ports"].context_staging,
             authorization=authorization_adapter,
             tool_reconciliation=reconciliation_adapter,
-            reconciliation=_NoopReconciliation(),
-            provider_reconciliation=_NoopReconciliation(),
+            reconciliation=runtime_reconciliation,
+            provider_reconciliation=provider_reconciliation,
             tool_catalog=production_tool_catalog,
             driver=driver,
             profiles=profiles,
