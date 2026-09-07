@@ -1,0 +1,13 @@
+{
+  "schema": "simple-harness-memory-candidate-v1",
+  "version": "0.6.20",
+  "source": "52910b0c2ab14b23a44e845ee4edc7f519f618f5",
+  "reviewed_source": "52910b0c2ab14b23a44e845ee4edc7f519f618f5",
+  "artifacts": {
+    "simple_harness_memory_sdk-0.6.20-py3-none-any.whl": "0cc065d9db191d5c26a2111b64a79c362bce3d7d873f2a4907f07b878ffcea98"
+  },
+  "build_count": 1,
+  "source_date_epoch": "1788754732",
+  "memory_schema": "7.3",
+  "scope": "0.6.19 plus typed-recall CJK bigram lexical gate fix; source controls (3 CJK tests + snapshot) passed locally on taiwan Mac; installed/native acceptance pending"
+}
