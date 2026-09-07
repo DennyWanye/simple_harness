@@ -38,6 +38,7 @@ class PrimaryShortIndexWorker:
         self.reset()
 
     def reset(self):
+        self.last_cognitive_generation = None
         self._manager = None
         self._after, self._upper = 0, None
         self._confirmed = OrderedDict()
@@ -113,6 +114,10 @@ class PrimaryShortIndexWorker:
                     if projection.projected_chunk_count and not generation.activated:
                         raise RuntimeError("short_generation_not_activated")
                     self._fault("short.after_generation")
+                    # Memory 0.6.23: cognitive vector generation shares the same
+                    # maintenance tick, embedder and retry semantics.
+                    self.last_cognitive_generation = await manager.rebuild_cognitive_vector_generation()
+                    self._fault("short.after_cognitive_generation")
                 self._generation_pending = False
                 self._last_projection = self._now()
                 for key in pending:

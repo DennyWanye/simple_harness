@@ -467,6 +467,11 @@ async def run(directory, host_root, key, base_url, *, initialize_only=False):
             await admit_scoring_provider(registry=main._provider_registry,
                 resolver=main._sdk_provider_binding_resolver, session_db=main._session_db,
                 base_url=base_url, key=key, model=main.config.llm.local.model)
+        # Production rebuilds the cognitive vector generation on the short index
+        # worker tick; the scoring runway has no such worker, so build it once
+        # here after every seed/setup phase and before the scoring turn. This
+        # also warms the production embedder ahead of the recall deadline.
+        outcome["cognitive_vector_generation"] = wire(await cognitive.manager.rebuild_cognitive_vector_generation())
         outcome["execution_status"] = "DISPATCH_STARTED"
         outcome["stage"] = "original_scoring_turn"
         if c05 is not None:
