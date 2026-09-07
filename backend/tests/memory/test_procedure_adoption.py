@@ -18,6 +18,7 @@ from simple_harness_memory import MemoryManager, MemoryPrincipal
 from deskpet.memory import analysis_proposal as v3, analysis_proposal_v4 as v4
 from deskpet.memory import analysis_proposal_v5 as v5
 from deskpet.memory import analysis_proposal_v5_1 as v5_1
+from deskpet.memory import analysis_proposal_v6 as v6
 from deskpet.memory.analysis_executor import HostMemoryAnalysisExecutor, HostAnalysisExecutorError
 from deskpet.memory.analysis_protocol import protocol_for_request
 from deskpet.memory.evidence_authority import HostEvidenceAuthority
@@ -179,7 +180,7 @@ def public_env(env, adapter, *, fault=None, version=4):
         principal=MemoryPrincipal("deskpet-local", "deskpet-local-household", mh.SUBJECT, "primary-conversation"))
     config = build_worker_config(provider_id=mh.BINDING["provider_id"], model_id=mh.BINDING["model_id"],
         model_config_hash=mh.expected_model_config_hash(), deadline_ms=5000)
-    protocol = {3: v3, 4: v4, 5: v5, "5.1": v5_1}[version]
+    protocol = {3: v3, 4: v4, 5: v5, "5.1": v5_1, 6: v6}[version]
     config = replace(config, prompt_version=protocol.PROMPT_VERSION,
         result_schema_version=protocol.RESULT_SCHEMA_VERSION, policy_version=protocol.POLICY_VERSION)
     return mh.MemoryEnv(executor=executor, runtime=runtime, config=config, adapter=adapter,

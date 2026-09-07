@@ -66,6 +66,8 @@
 
 最后更新：2026-09-07。Procedure prompt/v5.1叶342e2722/20f58862已独审：6限定控制通过；2次真实分类与public strict mutation提交通过（未采用流程→DRAFT+Episode，一次性任务→仅Episode），零重试，PG69158正常退出。旧v3/v4/v5持久请求保留；这只是Provider适配器/编译/公开写入，durable分析job与原生完整链仍待验，原r24FAIL保留。[真实分类](../plans/2026-09-07-procedure-draft-classification/MODEL-RESULTS.md)。
 
+最后更新：2026-09-07（v6）。分析协议 v6（`memory/analysis_proposal_v6.py`，默认 `host-analysis-prompt/v6`）允许模型在同一提案内提出 `semantic_relation`（`applies_to`：claim→procedure/prospective），编译为 SDK `SemanticRelationMemoryPayload` 并声明 depends_on；端点未知/自环只拒绝该关系操作（`analysis_relation_endpoint_unknown` / `analysis_relation_self_loop`），其余操作照常。控制：`tests/memory/test_analysis_proposal_v6.py` 8 项 + `tests/memory/test_analysis_v6_public_relation.py`（假 Provider 提案经真实 outbox/analysis job 写入公开 Memory SDK 后 twin graph 出现 1 条 applies_to 边）通过；旧 v3–v5.1 持久请求按版本恢复不变。真实模型关系抽取与原生图谱边展示（r8）待批量语料释放资源锁后验证。
+
 最后更新：2026-09-07。评分自然退出叶ab36b6a5：WorkflowRunner独立UoW owner原未释放，补public runner/service close与main/carrier统一收尾；bootstrap明确服务拥有共享端口UoW，runner不关借用端口。唯一独立child实际main执行自然SystemExit控制1PASS17.01s，PG69388清空，无pytest全局lane清理代替。原C01-10语义FAIL及deadline保留，下一新case质量另验。[定位与结果](../plans/2026-09-07-corpus-c01-scoring/PROCESS-EXIT.md)。
 
 最后更新：2026-09-07。首真实C01-10固定30b07393/H079/M619：1物理请求、0工具，排序正确但未取得已存A，原gold FAIL（主审+独审）；240已尝试1/通过0。业务COMPLETED后worker线程退场挂起，180s外部deadline退出125并清空PG67059，非内存/磁盘门。修复退出与通用记忆来源指导继续，均未称通过。全阶段防熄屏保持。[真实结果](../plans/2026-09-07-corpus-c01-scoring/REAL-R1.md)。

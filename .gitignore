@@ -267,3 +267,6 @@ plans/**/manual-results-*/recordings/
 # 留在本地不入库，后续自动归档到局域网 NAS（见 r14 follow-up §F5）。
 plans/2026-08-04-workbench-ui/verification/
 plans/2026-08-04-workbench-ui/verification-manifest-r*.json
+
+# local backups of credentials (never commit)
+.env.bak*
