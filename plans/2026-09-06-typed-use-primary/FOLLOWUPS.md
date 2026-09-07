@@ -37,3 +37,7 @@
 ## F06 provider 传输超时后 Run 停摆（2026-09-07 原生 r11 发现，待修）
 
 luna 一次请求 240s 传输超时后，SDK 将该 provider 调用 `settle_unknown`（`reconcile.unknown_settled`、`provider_attempt.degraded`），Host 前台运行时随后既不重试也不终止，Run 停在 RUNNING（20+ 分钟零事件）；同 userdata 冷启动后 `reconcile.recovered` 但仍不续推。证据 `plans/2026-09-07-native-main-journey/NATIVE-R11-PROCEDURE-CHAIN.md`。需要：Host 的 `_ProviderReconciliation` 对 unknown 调用给出可判定结果（重发或按失败收尾）并让前台循环续推；单测 + 原生 r12。
+
+## F07 `context_page_in` 处理器失败后整个 Run 被判 history 不可核验（2026-09-08 语料 run-01e C04-16 发现，待修）
+
+模型调用 `context_page_in` 失败（`product_tool.failed code=tool_failed`，value 为空）后，下一次 provider 调用被 `PrimaryHistoryDisclosureRejected` 拒绝并终止 Run。`primary_dependencies.py` 只对 `primary_page_hash_mismatch` 做确定性复算、对参数拒绝（a8734fbf）跳过，其余失败 carrier 一律视为不可核验。需要：区分"处理器未返回任何内容"的失败（value 为空且有错误码）与真正不可核验的情况；同时查该次 page_in 失败的根因（页引用是否由模型编造）。与 F06 一起在 r12 前后处理。
